@@ -1,0 +1,14 @@
+# Proves this deployment's network placement (layer 3 of the egress
+# design) and backd egress (layer 2) from a real function call, in this
+# stack's own topology — see deploy/production/test.sh and the docs,
+# Functions -> Outbound network.
+# Not a usable app function; admin-only.
+mode: sync
+# Four checks, each with its own 3s internal timeout (see index.js): a
+# generous ceiling in case a blocked raw TCP attempt hangs instead of
+# refusing immediately.
+timeout: 30s
+invoke: "user != nil"
+network:
+  - 169.254.169.254:80
+  - mongo-data.internal.test:27017

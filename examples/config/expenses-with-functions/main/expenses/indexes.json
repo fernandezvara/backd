@@ -1,0 +1,4 @@
+[
+  { "fields": ["group_id", "-_meta.created_at"] },
+  { "fields": ["_meta.owner"] }
+]

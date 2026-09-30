@@ -1,0 +1,5 @@
+{
+  "type": ["object", "null"],
+  "properties": { "day": { "type": "string", "minLength": 10, "maxLength": 10, "description": "YYYY-MM-DD (UTC)" } },
+  "additionalProperties": false
+}

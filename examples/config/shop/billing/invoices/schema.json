@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "properties": {
+    "number":    { "type": "string", "pattern": "^INV-[0-9]{6}$" },
+    "client_id": { "type": "string" },
+    "total":     { "type": "number", "exclusiveMinimum": 0 },
+    "paid":      { "type": "boolean" }
+  },
+  "required": ["number", "client_id", "total"]
+}

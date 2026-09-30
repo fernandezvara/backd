@@ -1,0 +1,2 @@
+read: user != nil
+write: user != nil

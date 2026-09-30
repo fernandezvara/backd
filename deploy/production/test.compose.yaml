@@ -1,0 +1,13 @@
+# Test-only additions to compose.yaml, used by test.sh: a client container
+# on the edge network with a known address, so the test can check exactly
+# which address backd logs. (Traffic through published ports doesn't always
+# keep the client's address: rootless Podman, for one, replaces it.)
+services:
+  probe:
+    image: docker.io/curlimages/curl:8.16.0
+    entrypoint: ["sleep", "infinity"]
+    volumes:
+      - ${SECRETS_DIR:-./secrets}/ca.pem:/ca.pem:ro
+    networks:
+      edge:
+        ipv4_address: ${PROBE_IP:-172.30.80.99}

@@ -1,0 +1,121 @@
+// backd's function runner: `deno run <permissions> runner.js <bundle>`, one
+// process per invocation, started by `backd executor`.
+//
+// Protocol: stdout carries only the protocol — {"ready":true} once the
+// bundle is loaded, then one JSON result line. stdin carries one JSON
+// envelope (input, caller, secrets, callback). The function's console goes
+// to stderr as JSON lines, where the executor captures and masks it.
+import { createClient } from "./client/index.js";
+
+const enc = new TextEncoder();
+const stdoutWrite = Deno.stdout.writeSync.bind(Deno.stdout);
+const stderrWrite = Deno.stderr.writeSync.bind(Deno.stderr);
+const out = (obj) => stdoutWrite(enc.encode(JSON.stringify(obj) + "\n"));
+
+// Function code gets stderr as its stdout, so it can't write to (or forge)
+// the protocol.
+Object.defineProperty(Deno, "stdout", { value: Deno.stderr, writable: false, configurable: false });
+
+const text = (a) => {
+  if (typeof a === "string") return a;
+  if (a instanceof Error) return a.stack ?? String(a);
+  try { return JSON.stringify(a); } catch { return String(a); }
+};
+for (const level of ["log", "info", "warn", "error", "debug", "trace", "dir", "table"]) {
+  const value = (...args) => stderrWrite(enc.encode(JSON.stringify({ level, line: args.map(text).join(" ") }) + "\n"));
+  Object.defineProperty(console, level, { value, writable: false, configurable: false });
+}
+
+// A 4xx error the function wants its caller to see, as `throw ctx.error(…)`.
+const brand = Symbol.for("backd.FunctionError");
+class FunctionError extends Error {
+  constructor(status, code, message, details) {
+    super(message);
+    this.name = "FunctionError";
+    this.status = status;
+    this.code = code;
+    this.details = details;
+    this[brand] = true;
+  }
+}
+
+let handler;
+try {
+  const mod = await import(new URL(Deno.args[0], "file:///").href);
+  handler = mod.default;
+  if (typeof handler !== "function") throw new Error("the bundle's default export is not a function");
+} catch (e) {
+  out({ ok: false, error: `load: ${e?.stack ?? e}` });
+  Deno.exit(1);
+}
+out({ ready: true });
+
+// One envelope per process.
+let buf = "";
+const dec = new TextDecoder();
+for await (const chunk of Deno.stdin.readable) {
+  buf += dec.decode(chunk, { stream: true });
+  if (buf.includes("\n")) break;
+}
+const env = JSON.parse(buf.slice(0, buf.indexOf("\n")));
+
+const client = (token) =>
+  createClient({ url: env.callback.url, realm: env.callback.realm, apiKey: token, headers: { "X-Request-ID": env.request_id ?? "" } });
+
+const ctx = {
+  input: env.input ?? null,
+  user: env.user ?? null,
+  secrets: Object.freeze({ ...(env.secrets ?? {}) }),
+  idempotencyKey: env.idempotency_key ?? null,
+  requestId: env.request_id ?? null,
+  error: (status, code, message, details) => {
+    if (!Number.isInteger(status) || status < 400 || status > 499) {
+      throw new TypeError("ctx.error: status must be a 4xx code");
+    }
+    return new FunctionError(status, String(code), String(message ?? code), details);
+  },
+};
+if (env.mode === "webhook") {
+  // backd sends headers as {Name: [values...]} (Go's http.Header, once
+  // JSON-encoded); functions get plain lower-case-keyed strings, the
+  // shape signature-verification examples (Stripe's included) expect.
+  // Several values for the same header are folded with ", ", as HTTP
+  // itself treats them as equivalent to one comma-joined value.
+  const headers = {};
+  for (const [k, v] of Object.entries(env.webhook?.headers ?? {})) {
+    headers[k.toLowerCase()] = Array.isArray(v) ? v.join(", ") : String(v);
+  }
+  ctx.request = Object.freeze({
+    body: env.webhook?.body ?? "",
+    headers: Object.freeze(headers),
+  });
+}
+if (env.callback?.token) {
+  const caller = client(env.callback.token);
+  ctx.db = (name) => caller.db(name);
+}
+if (env.callback?.admin_token) {
+  const admin = client(env.callback.admin_token);
+  ctx.admin = Object.freeze({ db: (name) => admin.db(name) });
+}
+Object.freeze(ctx);
+
+try {
+  const result = await handler(ctx);
+  if (env.mode === "webhook") {
+    const status = Number.isInteger(result?.status) ? result.status : 200;
+    const body = typeof result?.body === "string" ? result.body : "";
+    const headers = result?.headers && typeof result.headers === "object" ? result.headers : {};
+    out({ ok: true, webhook: { status, body, headers } });
+  } else {
+    out({ ok: true, output: result === undefined ? null : result });
+  }
+  Deno.exit(0);
+} catch (e) {
+  if (e && e[brand]) {
+    out({ ok: false, function_error: { status: e.status, code: e.code, message: e.message, details: e.details ?? null } });
+  } else {
+    out({ ok: false, error: String(e?.stack ?? e) });
+  }
+  Deno.exit(1);
+}

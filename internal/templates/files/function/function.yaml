@@ -1,0 +1,45 @@
+# function.yaml: how this function runs. Every key is optional; the values
+# shown are the defaults. backd reads this file strictly: unknown keys are
+# errors. After changing the function's code, run `backd functions build`.
+
+# sync: the caller waits for the output. async: the caller gets a job to
+# check later. webhook: for callbacks from other services (e.g. Stripe).
+# mode: sync
+
+# Stop the function after this long. Up to 60s for sync and webhook
+# functions (default 10s), up to 24h for async ones (default 15m).
+# timeout: 10s
+
+# Memory for the function's JavaScript heap (32MiB to 4GiB).
+# memory: 128MB
+
+# The largest output accepted (1KiB to 64MiB; 15MiB for async functions).
+# max_output: 1MiB
+
+# How many calls of this function may run at once on each backd instance.
+# With several instances, up to that many times this value run at once.
+# concurrency: 10
+
+# Calls allowed per caller, counted across instances.
+# rate_limit:
+#   per: user          # user or ip
+#   limit: 10
+#   window: 1m
+
+# Idempotency-Key header: optional or required.
+# idempotency: optional
+
+# Who may call the function, as an expression like those in rules.yaml. It
+# sees `user` (nil for anonymous callers) and hasRole(user, 'role'). Without
+# it, only API keys may call the function. Only in realms with auth enabled.
+# invoke: "user != nil"
+
+# true gives the function full access to the realm's data (ctx.admin.db),
+# whatever the caller may do. Keep it false unless the function needs it.
+# admin: false
+
+# Secrets the function may read: NAME (this database's) or realm.NAME.
+# secrets: [STRIPE_KEY]
+
+# Hosts the function may call. Without a list, it can only call backd.
+# network: [api.stripe.com]

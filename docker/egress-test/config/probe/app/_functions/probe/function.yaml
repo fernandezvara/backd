@@ -1,0 +1,9 @@
+# Proves F4's egress proxy and network placement: run by
+# docker/egress-test/test.sh, not meant to be deployed for real.
+mode: sync
+timeout: 20s
+invoke: "true"
+network:
+  - 169.254.169.254:80
+  - mongo-clone.test:27017
+  - sneaky.test:9100

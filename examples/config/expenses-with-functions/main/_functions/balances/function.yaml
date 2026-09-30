@@ -1,0 +1,8 @@
+# Closes hole 4 ("Balances are computed by clients") from "expenses
+# without functions": one authoritative balance per group, computed here
+# from data the caller can no longer fake (holes 1-3 are closed), counting
+# only confirmed settlements.
+mode: sync
+timeout: 10s
+invoke: "user != nil"
+admin: true

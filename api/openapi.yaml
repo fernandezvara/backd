@@ -1,0 +1,1640 @@
+openapi: 3.1.0
+info:
+  title: backd HTTP API
+  version: 0.2.0
+  summary: Config-driven, schema-validated REST API over MongoDB.
+  description: |
+    The contract of backd's HTTP API. Collections and their document fields
+    are defined per deployment (CONFIG_DIR), so documents appear here as
+    open objects; their system fields (`id`, `_meta`) are described exactly.
+
+    Every error response uses the `Error` envelope. `default` responses list
+    errors that can happen on any operation (for example `413`, `415`, `500`,
+    `503`, or `404` for an unknown realm).
+  license:
+    name: MIT
+    identifier: MIT
+
+servers:
+  - url: "{baseUrl}"
+    description: Your backd deployment.
+    variables:
+      baseUrl:
+        default: https://localhost:8443
+
+tags:
+  - name: health
+    description: Liveness and readiness probes, outside the /v1 prefix.
+  - name: auth
+    description: "Sign-up, login and sessions of a realm with `auth: enabled`."
+  - name: admin
+    description: User, role and invitation management with an API key.
+  - name: documents
+    description: CRUD and queries on any configured collection.
+  - name: functions
+    description: Calls to a database's server-side functions (preview).
+
+security: []
+
+paths:
+  /healthz:
+    get:
+      tags: [health]
+      summary: Liveness probe
+      operationId: healthz
+      responses:
+        "200":
+          description: The process is running.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+
+  /readyz:
+    get:
+      tags: [health]
+      summary: Readiness probe
+      operationId: readyz
+      responses:
+        "200":
+          description: MongoDB is reachable. Includes the fingerprint of the config this instance runs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+        "503":
+          $ref: "#/components/responses/Error"
+
+  # ── /_auth ────────────────────────────────────────────────────────────
+  /v1/{realm}/_auth/signup:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Create an account and sign in
+      description: |
+        Realms with `signup: open` accept anyone; `signup: invite` needs a
+        valid `invitation`; `signup: closed` refuses.
+      operationId: signup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8, maxLength: 128 }
+                invitation: { type: string, description: "Invitation token (`bdi_…`), for `signup: invite`." }
+      responses:
+        "201": { $ref: "#/components/responses/SessionCreated" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/login:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Sign in with email and password
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Session" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/logout:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: End the current session
+      operationId: logout
+      security: [{ session: [] }]
+      responses:
+        "204": { description: Session ended. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/logout-all:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: End every session of the user
+      operationId: logoutAll
+      security: [{ session: [] }]
+      responses:
+        "204": { description: All sessions ended. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/me:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [auth]
+      summary: The signed-in user
+      operationId: me
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The user.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [auth]
+      summary: Delete the account
+      operationId: deleteMe
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [password]
+              properties:
+                password: { type: string }
+      responses:
+        "204": { description: Account deleted. }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/password:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Change the password
+      description: The current session stays valid; every other session ends.
+      operationId: changePassword
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string }
+                new_password: { type: string, minLength: 8, maxLength: 128 }
+      responses:
+        "204": { description: Password changed. }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/sessions:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [auth]
+      summary: The user's active sessions
+      operationId: listSessions
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: Sessions, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/SessionInfo" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/sessions/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    delete:
+      tags: [auth]
+      summary: End one of the user's sessions
+      operationId: revokeSession
+      security: [{ session: [] }]
+      responses:
+        "204": { description: Session ended. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  # ── /_admin ───────────────────────────────────────────────────────────
+  /v1/{realm}/_admin/users:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [admin]
+      summary: List users, or find one by email
+      operationId: adminListUsers
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - name: email
+          in: query
+          description: Exact email (case-insensitive); returns zero or one user.
+          schema: { type: string }
+        - { $ref: "#/components/parameters/limit" }
+        - { $ref: "#/components/parameters/skip" }
+      responses:
+        "200":
+          description: A page of users, sorted by email.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, limit, skip, has_more]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/AdminUser" } }
+                  limit: { type: integer }
+                  skip: { type: integer }
+                  has_more: { type: boolean }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [admin]
+      summary: Create a user
+      operationId: adminCreateUser
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8, maxLength: 128 }
+      responses:
+        "201":
+          description: The user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminUser" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/users/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    get:
+      tags: [admin]
+      summary: Get a user
+      operationId: adminGetUser
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200": { $ref: "#/components/responses/AdminUser" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [admin]
+      summary: Change a user's flags
+      description: Only `email_verified` and `disabled`; emails can't be changed.
+      operationId: adminUpdateUser
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                email_verified: { type: boolean }
+                disabled: { type: boolean }
+      responses:
+        "200": { $ref: "#/components/responses/AdminUser" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      summary: Delete a user
+      operationId: adminDeleteUser
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "204": { description: User deleted; documents they own are kept. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/users/{id}/password:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    post:
+      tags: [admin]
+      summary: Set a user's password
+      description: Ends all of the user's sessions.
+      operationId: adminSetPassword
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [password]
+              properties:
+                password: { type: string, minLength: 8, maxLength: 128 }
+      responses:
+        "204": { description: Password set. }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/users/{id}/roles/{role}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+      - name: role
+        in: path
+        required: true
+        description: A role declared in the realm's realm.yaml.
+        schema: { type: string }
+    put:
+      tags: [admin]
+      summary: Assign a role
+      operationId: adminAddRole
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200": { $ref: "#/components/responses/AdminUser" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      summary: Take a role away
+      operationId: adminRemoveRole
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200": { $ref: "#/components/responses/AdminUser" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/users/{id}/networks:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    put:
+      tags: [admin]
+      summary: Set a user's network restrictions
+      description: >-
+        Replaces the user's admin and login networks (IP addresses or CIDR
+        networks). Empty lists remove the restrictions. Admin networks must
+        lie within the realm's `admin.allowed_networks`. `realm.yaml`
+        settings for the user win at the next startup.
+      operationId: adminSetUserNetworks
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [admin_networks, login_networks]
+              properties:
+                admin_networks: { type: array, items: { type: string } }
+                login_networks: { type: array, items: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/AdminUser" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/apikeys:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [admin]
+      summary: List API keys
+      operationId: adminListAPIKeys
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The realm's API keys, by name; never the keys themselves.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/APIKey" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [admin]
+      summary: Create an API key
+      operationId: adminCreateAPIKey
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name: { type: string, description: "Same rules as realm names; unique in the realm." }
+                role: { enum: [data, admin], description: "Default data." }
+                expires_in: { type: string, description: "Days (`90d`) or Go duration (`12h`); default: never.", examples: ["90d"] }
+                networks: { type: array, items: { type: string }, description: "IP addresses or CIDR networks the key may be used from." }
+      responses:
+        "201":
+          description: The key, shown only here.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/APIKeyCreated" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/apikeys/{name}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - name: name
+        in: path
+        required: true
+        schema: { type: string }
+    delete:
+      tags: [admin]
+      summary: Revoke an API key
+      description: The key stops working at once.
+      operationId: adminRevokeAPIKey
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "204": { description: Key revoked. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/secrets:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [admin]
+      summary: List secrets
+      description: Metadata only — scope, name and who last changed it. Values are write-only.
+      operationId: adminListSecrets
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The realm's secrets, by scope and name; never their values.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Secret" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/secrets/{name}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - name: name
+        in: path
+        required: true
+        schema: { type: string, description: "Upper-case letters, digits and _, starting with a letter." }
+    put:
+      tags: [admin]
+      summary: Set a secret's value
+      description: |
+        Creates the secret, or replaces its value: functions read it as
+        `ctx.secrets`, decrypted, within about a minute of this call.
+        Without `database` it's the realm scope (`realm.NAME` in
+        function.yaml); with it, that database's scope (`NAME`, for
+        functions of that database only — never another's).
+      operationId: adminSetSecret
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [value]
+              properties:
+                value: { type: string, description: "The secret's new value; must not be empty." }
+                database: { type: string, description: "Scopes it to this database of the realm instead of the realm itself." }
+      responses:
+        "204": { description: Secret set. }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      summary: Delete a secret
+      description: A function that declares it answers `secret_missing` again.
+      operationId: adminDeleteSecret
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { name: database, in: query, description: "Its database scope; absent means the realm scope.", schema: { type: string } }
+      responses:
+        "204": { description: Secret deleted. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/audit:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [admin]
+      summary: Read the audit trail
+      description: |
+        Security-sensitive actions and events of the realm, newest first. The trail is
+        append-only: no endpoint changes or deletes records, which expire after the
+        realm's `audit.retention` (default 365 days).
+      operationId: adminListAudit
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { name: action, in: query, description: "Only this action, such as `role.add`.", schema: { type: string } }
+        - { name: actor, in: query, description: "Only this actor, such as `user:<id>` or `key:<name>`.", schema: { type: string } }
+        - { name: target, in: query, description: "Only this target, such as `user:<id>`.", schema: { type: string } }
+        - { name: since, in: query, description: "Records at or after this time.", schema: { type: string, format: date-time } }
+        - { name: until, in: query, description: "Records before this time.", schema: { type: string, format: date-time } }
+        - { $ref: "#/components/parameters/limit" }
+        - { $ref: "#/components/parameters/skip" }
+      responses:
+        "200":
+          description: A page of audit records, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, limit, skip, has_more]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/AuditRecord" } }
+                  limit: { type: integer }
+                  skip: { type: integer }
+                  has_more: { type: boolean }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/invocations:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [admin]
+      summary: Read function invocation history
+      description: |
+        What functions did, newest first: never their input or output,
+        only status, timing and their own console log lines (already
+        masked of any declared secrets). Records expire after the
+        realm's `functions.log_retention` (default 7 days; roadmap F10).
+      operationId: adminListInvocations
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { name: function, in: query, description: "Only this function, as `<database>/<name>`.", schema: { type: string } }
+        - { name: request_id, in: query, description: "Only the call with this request id.", schema: { type: string } }
+        - { name: since, in: query, description: "Records at or after this time.", schema: { type: string, format: date-time } }
+        - { name: until, in: query, description: "Records before this time.", schema: { type: string, format: date-time } }
+        - { $ref: "#/components/parameters/limit" }
+        - { $ref: "#/components/parameters/skip" }
+      responses:
+        "200":
+          description: A page of invocation records, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, limit, skip, has_more]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/InvocationRecord" } }
+                  limit: { type: integer }
+                  skip: { type: integer }
+                  has_more: { type: boolean }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/jobs:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [admin]
+      summary: List async and scheduled jobs
+      description: |
+        The realm's async function calls and cron runs, newest first: their
+        state and how they ended, never their input or output (read one job
+        in full at `GET /v1/{realm}/{database}/_jobs/{id}`, as its caller or
+        with an API key). Jobs expire after `functions.job_retention` once
+        done (roadmap F19).
+      operationId: adminListJobs
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { name: function, in: query, description: "Only this function, as `<database>/<name>`.", schema: { type: string } }
+        - { name: status, in: query, description: "Only jobs in this state.", schema: { type: string, enum: [queued, running, done] } }
+        - { name: scheduled, in: query, description: "`true`: only cron runs; `false`: only calls made by callers.", schema: { type: boolean } }
+        - { name: since, in: query, description: "Jobs created at or after this time.", schema: { type: string, format: date-time } }
+        - { name: until, in: query, description: "Jobs created before this time.", schema: { type: string, format: date-time } }
+        - { $ref: "#/components/parameters/limit" }
+        - { $ref: "#/components/parameters/skip" }
+      responses:
+        "200":
+          description: A page of jobs, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, limit, skip, has_more]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/JobSummary" } }
+                  limit: { type: integer }
+                  skip: { type: integer }
+                  has_more: { type: boolean }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/invitations:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [admin]
+      summary: List unused, unexpired invitations
+      operationId: adminListInvitations
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: Invitations, newest first; tokens are never listed.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Invitation" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [admin]
+      summary: Create an invitation
+      operationId: adminCreateInvitation
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                email: { type: string, format: email, description: "Only this email may use the invitation." }
+                expires_in: { type: string, description: "Days (`7d`) or Go duration (`12h`); default 7d, at most 90d.", examples: ["7d"] }
+      responses:
+        "201":
+          description: The invitation, with its token (shown only here).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InvitationCreated" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/invitations/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    delete:
+      tags: [admin]
+      summary: Revoke an invitation
+      operationId: adminRevokeInvitation
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "204": { description: Invitation revoked. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  # ── documents ─────────────────────────────────────────────────────────
+  /v1/{realm}/{database}/_func/{function}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/function" }
+    post:
+      tags: [functions]
+      summary: Call a function
+      description: |
+        Runs the database's function with the request body as its input
+        (`ctx.input`), except for `webhook` functions, whose raw body
+        and headers are passed through unparsed. In realms with `auth:
+        enabled`, API keys may always call; other callers need the
+        function's `invoke` rule to allow them (a `webhook` function's
+        rule must allow anonymous callers, since the sender has neither
+        a session nor a key). For `sync`, the input and output are
+        checked against the function's `input.schema.json` and
+        `output.schema.json`, when present; `webhook` and `async` skip
+        the output check (a `webhook` function answers its sender
+        directly; an `async` function has no response to check yet).
+
+        A `sync` function runs immediately and returns its output. An
+        `async` function (roadmap F11) is queued and answers 202 with a
+        job id and a `Location` to poll for its result at
+        `GET /v1/{realm}/{database}/_jobs/{id}`. A `webhook` function
+        (roadmap F13) sets its own response — status, headers and body,
+        not necessarily JSON — reflected as-is in this response.
+
+        Errors the function raises with `ctx.error(status, code, message)`
+        arrive with that 4xx status and code (for `async`, in the job's
+        `result` once done, not in this response; `webhook` functions
+        answer errors themselves, through their own response).
+
+        `Idempotency-Key` (roadmap F12) reaches the function as
+        `ctx.idempotencyKey`, and also makes repeated calls with the
+        same key safe to retry: the same key with the same input
+        replays the first call's response (for `async`, the same job);
+        the same key with different input answers `422`; the same key
+        while the first call is still running answers `409`. Scoped to
+        the function and the caller, so two different callers can never
+        collide on the same client-chosen key. `function.yaml`'s
+        `idempotency: required` refuses calls with no key (`400`).
+      operationId: callFunction
+      security: [{}, { session: [] }, { apiKey: [] }]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          description: >-
+            1-200 characters of letters, digits, `.`, `_`, `:` or `-`.
+            Passed to the function as `ctx.idempotencyKey`.
+          schema: { type: string }
+      requestBody:
+        description: The input, any JSON value (an empty body is `null`).
+        content:
+          application/json:
+            schema: {}
+      responses:
+        "200":
+          description: >-
+            A `sync` function's output, any JSON value. For a `webhook`
+            function, the response it set itself — status (reflected in
+            this HTTP status), headers and body — which isn't
+            necessarily JSON.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+            X-Backd-Dev-Duration-Ms: { $ref: "#/components/headers/DevDurationMs" }
+            X-Backd-Dev-Logs: { $ref: "#/components/headers/DevLogs" }
+          content:
+            application/json:
+              schema: {}
+            "*/*":
+              schema: {}
+        "202":
+          description: >-
+            An `async` function was queued (roadmap F11); poll `Location`
+            for its result.
+          headers:
+            Location: { description: "`/v1/{realm}/{database}/_jobs/{id}`.", schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429":
+          description: >-
+            Either the function, or its realm, is at its concurrency
+            limit on this instance (`function.yaml`'s `concurrency`, or
+            `functions.max_concurrency` in `realm.yaml`; roadmap F8); or
+            the caller is over the function's declared rate limit
+            (`function.yaml`'s `rate_limit`, shared across instances;
+            roadmap F9).
+          headers:
+            Retry-After: { $ref: "#/components/headers/RetryAfter" }
+            X-Request-ID: { $ref: "#/components/headers/RequestID" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "4XX": { $ref: "#/components/responses/Error" }
+        "409":
+          description: A call with this `Idempotency-Key` is still running (roadmap F12).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: This `Idempotency-Key` was already used with different input (roadmap F12).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "504": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/{database}/_jobs/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/id" }
+    get:
+      tags: [functions]
+      summary: Read an async job's status and result
+      description: |
+        Readable only by the job's own caller (the signed-in user who
+        enqueued it), or by any API key (roadmap F11). Anonymous callers
+        get 401; any other caller that isn't the job's own owner gets
+        404, the same as an unknown job id, so a job's existence isn't
+        leaked to callers who aren't allowed to see it.
+      operationId: getJob
+      security: [{}, { session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: The job's current status, and its result once done.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/{database}/_batch:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+    post:
+      tags: [documents]
+      summary: Write several documents atomically
+      description: |
+        Creates, replaces, patches and deletes documents across the
+        database's collections in one MongoDB transaction: either every
+        operation applies, or none does. Each operation is validated
+        against its collection's schema.json and, for callers whose
+        access rules apply (not API keys or admin functions), checked
+        against the create/update/delete rule exactly like a single
+        write. The first operation that fails aborts the whole batch;
+        its index is in the error's `details` (e.g. `{"path": "1", ...}`).
+      operationId: batchWrite
+      security: [{}, { session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BatchRequest" }
+      responses:
+        "200":
+          description: One result per operation, in the same order.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BatchResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/{database}/{collection}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+    get:
+      tags: [documents]
+      summary: List documents
+      description: |
+        In realms with `auth: enabled`, only documents the caller's access
+        rules allow are listed and counted.
+      operationId: listDocuments
+      security: [{}, { session: [] }, { apiKey: [] }]
+      parameters:
+        - name: where
+          in: query
+          description: >-
+            JSON filter, e.g. `{"price":{"$lt":20}}`. Keys combine with AND;
+            `$or` and `$and` take an array of such objects, e.g.
+            `{"$or":[{"title":{"$icontains":"go"}},{"body":{"$icontains":"go"}}]}`.
+          schema: { type: string }
+        - name: order_by
+          in: query
+          description: Comma-separated fields; `-` prefix for descending.
+          schema: { type: string }
+        - { $ref: "#/components/parameters/limit" }
+        - { $ref: "#/components/parameters/skip" }
+        - name: count
+          in: query
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: A page of documents.
+          headers:
+            Vary: { $ref: "#/components/headers/DataVary" }
+            Cache-Control: { $ref: "#/components/headers/DataCacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DocumentList" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [documents]
+      summary: Create a document
+      operationId: createDocument
+      security: [{}, { session: [] }, { apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DocumentBody" }
+      responses:
+        "201":
+          description: The created document.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+            Vary: { $ref: "#/components/headers/DataVary" }
+            Cache-Control: { $ref: "#/components/headers/DataCacheControl" }
+            Location:
+              required: true
+              description: Path of the new document.
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Document" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/{database}/{collection}/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+      - { $ref: "#/components/parameters/id" }
+    get:
+      tags: [documents]
+      summary: Get a document
+      operationId: getDocument
+      security: [{}, { session: [] }, { apiKey: [] }]
+      responses:
+        "200": { $ref: "#/components/responses/Document" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      tags: [documents]
+      summary: Replace a document
+      operationId: replaceDocument
+      security: [{}, { session: [] }, { apiKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/ifMatch" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DocumentBody" }
+      responses:
+        "200": { $ref: "#/components/responses/Document" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/VersionMismatch" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [documents]
+      summary: Update a document (JSON Merge Patch)
+      operationId: patchDocument
+      security: [{}, { session: [] }, { apiKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/ifMatch" }]
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: { $ref: "#/components/schemas/DocumentBody" }
+      responses:
+        "200": { $ref: "#/components/responses/Document" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/VersionMismatch" }
+        "415": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [documents]
+      summary: Delete a document
+      operationId: deleteDocument
+      security: [{}, { session: [] }, { apiKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/ifMatch" }]
+      responses:
+        "204":
+          description: Document deleted.
+          headers:
+            Vary: { $ref: "#/components/headers/DataVary" }
+            Cache-Control: { $ref: "#/components/headers/DataCacheControl" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/VersionMismatch" }
+        default: { $ref: "#/components/responses/Error" }
+
+components:
+  securitySchemes:
+    session:
+      type: http
+      scheme: bearer
+      description: A session token (`bds_…`) from signup or login.
+    apiKey:
+      type: http
+      scheme: bearer
+      description: >-
+        An API key (`bdk_…`). Full access to the realm's data; the admin API
+        (`/_admin`) needs a key with the `admin` role (a `data` key gets 403).
+        Never use it in browsers.
+
+  parameters:
+    realm:
+      name: realm
+      in: path
+      required: true
+      schema: { type: string }
+    database:
+      name: database
+      in: path
+      required: true
+      schema: { type: string }
+    collection:
+      name: collection
+      in: path
+      required: true
+      schema: { type: string }
+    function:
+      name: function
+      in: path
+      required: true
+      schema: { type: string }
+    id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    skip:
+      name: skip
+      in: query
+      schema: { type: integer, minimum: 0, default: 0 }
+    ifMatch:
+      name: If-Match
+      in: header
+      description: '`"<version>"`, a list of them, or `*`. The write fails with 412 unless the current version matches.'
+      schema: { type: string }
+
+  headers:
+    ETag:
+      required: true
+      description: '`"<version>"`, the document''s `_meta.version`.'
+      schema: { type: string, pattern: '^"[0-9]+"$' }
+    NoStore:
+      required: true
+      schema: { const: no-store }
+    DataVary:
+      required: true
+      description: >-
+        Document responses depend on the caller and the origin, so caches
+        must key them on both.
+      schema: { type: string, pattern: "Origin.*Authorization" }
+    DataCacheControl:
+      description: >-
+        Sent when the request carries credentials: shared caches must not
+        store the response, and browsers must revalidate it.
+      schema: { const: "private, no-cache" }
+    RetryAfter:
+      required: true
+      description: Seconds to wait before retrying.
+      schema: { type: string, pattern: '^[0-9]+$' }
+    WWWAuthenticate:
+      required: true
+      schema: { type: string, pattern: '^Bearer realm="' }
+    RequestID:
+      required: true
+      description: The request ID, echoed from the request or generated; also in the error body as `request_id`.
+      schema: { type: string, minLength: 1 }
+    DevDurationMs:
+      description: >-
+        The function's time inside the executor, in milliseconds. Only when
+        the server runs with `BACKD_DEV=true` (never in production); read by
+        `backd functions invoke`.
+      schema: { type: string, pattern: '^[0-9]+$' }
+    DevLogs:
+      description: >-
+        The function's console output as a JSON array of `{level, line}`,
+        secrets masked. Only when the server runs with `BACKD_DEV=true`
+        (never in production); read by `backd functions invoke`.
+      schema: { type: string }
+
+  responses:
+    Error:
+      description: An error.
+      headers:
+        X-Request-ID: { $ref: "#/components/headers/RequestID" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthenticated:
+      description: Missing, invalid, expired or revoked credentials.
+      headers:
+        WWW-Authenticate: { $ref: "#/components/headers/WWWAuthenticate" }
+        X-Request-ID: { $ref: "#/components/headers/RequestID" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooManyRequests:
+      description: Too many failed attempts.
+      headers:
+        Retry-After: { $ref: "#/components/headers/RetryAfter" }
+        X-Request-ID: { $ref: "#/components/headers/RequestID" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    VersionMismatch:
+      description: If-Match doesn't match the current version.
+      headers:
+        X-Request-ID: { $ref: "#/components/headers/RequestID" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Session:
+      description: A new session.
+      headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Session" }
+    SessionCreated:
+      description: The new user, signed in.
+      headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Session" }
+    AdminUser:
+      description: The user.
+      headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AdminUser" }
+    Document:
+      description: The document.
+      headers:
+        ETag: { $ref: "#/components/headers/ETag" }
+        Vary: { $ref: "#/components/headers/DataVary" }
+        Cache-Control: { $ref: "#/components/headers/DataCacheControl" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Document" }
+
+  schemas:
+    Timestamp:
+      type: string
+      format: date-time
+      description: RFC3339 in UTC with millisecond precision.
+
+    Status:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok, ready] }
+        config:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+          description: "Readiness only: the fingerprint of the config this instance runs (`backd config fingerprint`), to check that every instance runs the same one."
+
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message, request_id]
+          properties:
+            code:
+              type: string
+              pattern: "^[a-z][a-z0-9_]{0,63}$"
+              description: |
+                backd's codes: invalid_json, validation_error, invalid_query,
+                invalid_header, unauthenticated, invalid_credentials, forbidden,
+                not_found, method_not_allowed, conflict, email_taken,
+                write_conflict, version_mismatch, payload_too_large,
+                unsupported_media_type, too_many_requests, internal_error,
+                unavailable; for function calls also function_failed,
+                function_timeout, invalid_output, secret_missing,
+                idempotency_key_required, idempotency_key_reused and
+                request_in_progress. A function's own errors (`ctx.error`)
+                carry the code it chose.
+            message: { type: string }
+            details:
+              type: array
+              minItems: 1
+              items:
+                type: object
+                additionalProperties: false
+                required: [path, reason]
+                properties:
+                  path: { type: string }
+                  reason: { type: string }
+            request_id: { type: string, minLength: 1 }
+
+    User:
+      type: object
+      additionalProperties: false
+      required: [id, email, email_verified, roles, created_at]
+      properties:
+        id: { type: string }
+        email: { type: string }
+        email_verified: { type: boolean }
+        roles: { type: array, items: { type: string } }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+
+    AdminUser:
+      type: object
+      additionalProperties: false
+      required: [id, email, email_verified, roles, disabled, admin_networks, login_networks, created_at, updated_at]
+      properties:
+        id: { type: string }
+        email: { type: string }
+        email_verified: { type: boolean }
+        roles: { type: array, items: { type: string } }
+        disabled: { type: boolean }
+        admin_networks:
+          description: CIDR networks this user's admin API requests must come from; empty means no restriction of their own.
+          type: array
+          items: { type: string }
+        login_networks:
+          description: CIDR networks this user's login and session must be used from; empty means anywhere.
+          type: array
+          items: { type: string }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        updated_at: { $ref: "#/components/schemas/Timestamp" }
+
+    APIKey:
+      type: object
+      additionalProperties: false
+      required: [name, role, prefix, networks, created_at, last_used_at, expires_at]
+      properties:
+        name: { type: string }
+        role: { enum: [data, admin] }
+        prefix: { type: string, description: "The first characters of the key, to recognize it.", pattern: "^bdk_" }
+        networks: { type: array, items: { type: string }, description: "Where the key may be used from; empty means anywhere." }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        last_used_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
+        expires_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
+
+    APIKeyCreated:
+      description: An API key as listed, plus the key itself, shown only here.
+      type: object
+      additionalProperties: false
+      required: [name, role, prefix, networks, created_at, last_used_at, expires_at, key]
+      properties:
+        name: { type: string }
+        role: { enum: [data, admin] }
+        prefix: { type: string, pattern: "^bdk_" }
+        networks: { type: array, items: { type: string } }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        last_used_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
+        expires_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
+        key: { type: string, pattern: "^bdk_" }
+
+    Secret:
+      description: A secret's metadata, as listed — never its value.
+      type: object
+      additionalProperties: false
+      required: [database, name, created_at, updated_at, updated_by]
+      properties:
+        database: { type: string, description: "Its database scope; empty means the realm scope." }
+        name: { type: string }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        updated_at: { $ref: "#/components/schemas/Timestamp" }
+        updated_by: { type: string, description: "Who last set it, e.g. `user:<id>` or `key:<name>`." }
+
+    AuditRecord:
+      description: |
+        One entry of the audit trail. Users are named by id, keys by name, invitations by id.
+        Records never hold passwords or hashes, tokens, keys, emails or request bodies.
+      type: object
+      additionalProperties: false
+      required: [id, at, action, actor, target, details, request_id, client_ip]
+      properties:
+        id: { type: string }
+        at: { $ref: "#/components/schemas/Timestamp" }
+        action:
+          type: string
+          description: "For example `user.create`, `role.add`, `apikey.create`, `admin.login`, `admin.refused`."
+          examples: [role.add]
+        actor: { type: string, description: "`user:<id>`, `key:<name>`, `anonymous`, `config:realm.yaml` or `cli:bootstrap`." }
+        target: { type: [string, "null"], description: "`user:<id>`, `key:<name>`, `invitation:<id>`, or null." }
+        details: { type: object, description: "Non-secret facts about the action, such as the role assigned." }
+        request_id: { type: [string, "null"] }
+        client_ip: { type: [string, "null"], description: "The client's address, following TRUSTED_PROXIES." }
+
+    InvocationRecord:
+      description: |
+        One function call. Never its input or output — only what
+        happened and its own console log lines (roadmap F10).
+      type: object
+      additionalProperties: false
+      required: [id, at, function, actor, mode, status, duration_ms, request_id, job_id, logs]
+      properties:
+        id: { type: string }
+        at: { $ref: "#/components/schemas/Timestamp" }
+        function: { type: string, description: "`<database>/<name>`." }
+        actor: { type: string, description: "`user:<id>`, `key:<name>`, `anonymous`, or `func:<name> as ...` for an admin function calling back." }
+        mode: { type: string, description: "`sync` or `async`; `webhook` planned." }
+        status:
+          type: string
+          description: "`ok`, `function_error`, `timeout`, `memory`, `cpu`, `crash`, `output_too_large`, `busy` or `bundle`."
+          examples: [ok]
+        code: { type: [string, "null"], description: "The function's own error code, when status is `function_error`." }
+        duration_ms: { type: integer }
+        request_id: { type: [string, "null"] }
+        job_id: { type: [string, "null"], description: "The async job this call ran for (roadmap F11); null for sync calls." }
+        logs:
+          type: array
+          description: "The function's captured console output, already masked of any declared secrets."
+          items:
+            type: object
+            additionalProperties: false
+            required: [level, line]
+            properties:
+              level: { type: string }
+              line: { type: string }
+
+    JobSummary:
+      description: |
+        A job as the admin listing shows it (roadmap F19): state and outcome,
+        never the input or the output.
+      type: object
+      additionalProperties: false
+      required: [id, function, status, scheduled, attempts, created_at, completed_at, result]
+      properties:
+        id: { type: string, description: "For cron runs, `cron_<database>_<function>_<yyyymmddhhmm>` (UTC)." }
+        function: { type: string, description: "`<database>/<name>`." }
+        status: { type: string, description: "`queued`, `running` or `done`." }
+        scheduled: { type: boolean, description: "True for a cron run." }
+        attempts: { type: integer, description: "How many times a worker claimed it (more than 1 after a lost worker)." }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        completed_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
+        result:
+          description: "Null until `status` is `done`."
+          oneOf:
+            - type: "null"
+            - type: object
+              additionalProperties: false
+              required: [status, code, duration_ms]
+              properties:
+                status: { type: string, description: "`ok`, `function_error`, `timeout`, `output_too_large` or `error`." }
+                code: { type: [string, "null"], description: "The error code, when the job did not end `ok`." }
+                duration_ms: { type: integer }
+    Job:
+      description: |
+        An async function call (roadmap F11): its status, and once
+        `status` is `done`, its result. Never its input.
+      type: object
+      additionalProperties: false
+      required: [id, function, status, created_at, result]
+      properties:
+        id: { type: string }
+        function: { type: string, description: "`<database>/<name>`." }
+        status: { type: string, description: "`queued`, `running` or `done`." }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        result:
+          description: "Null until `status` is `done`."
+          type: [object, "null"]
+          additionalProperties: false
+          required: [status, duration_ms]
+          properties:
+            status:
+              type: string
+              description: "`ok`, `function_error`, `timeout`, `memory`, `cpu`, `crash`, `output_too_large` or `bundle`."
+            output: { description: "The function's output, when status is `ok`." }
+            http_status:
+              type: integer
+              description: >-
+                The status a `sync` call would have answered with for
+                this same outcome; absent only when status is `ok`.
+            code:
+              type: string
+              description: >-
+                The function's own error code when status is
+                `function_error`; one of backd's own (`function_timeout`,
+                `invalid_output`, `function_failed`) otherwise. Absent
+                only when status is `ok`.
+            message: { type: string, description: "Absent only when status is `ok`." }
+            details:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [path, reason]
+                properties:
+                  path: { type: string }
+                  reason: { type: string }
+            duration_ms: { type: integer }
+
+    Session:
+      type: object
+      additionalProperties: false
+      required: [token, token_type, session_id, expires_at, user]
+      properties:
+        token: { type: string, pattern: "^bds_" }
+        token_type: { const: Bearer }
+        session_id: { type: string }
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
+        user: { $ref: "#/components/schemas/User" }
+
+    SessionInfo:
+      type: object
+      additionalProperties: false
+      required: [id, created_at, last_used_at, expires_at, current]
+      properties:
+        id: { type: string }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        last_used_at: { $ref: "#/components/schemas/Timestamp" }
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
+        current: { type: boolean }
+
+    Invitation:
+      type: object
+      additionalProperties: false
+      required: [id, email, created_by, created_at, expires_at]
+      properties:
+        id: { type: string }
+        email: { type: [string, "null"] }
+        created_by: { type: string }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
+
+    InvitationCreated:
+      type: object
+      additionalProperties: false
+      required: [id, token, email, created_by, created_at, expires_at]
+      properties:
+        id: { type: string }
+        token: { type: string, pattern: "^bdi_" }
+        email: { type: [string, "null"] }
+        created_by: { type: string }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
+
+    Meta:
+      type: object
+      additionalProperties: false
+      required: [created_at, updated_at]
+      description: |
+        Server-owned. `version` is missing only on documents stored before
+        versioning existed. The ownership fields exist in realms with
+        `auth: enabled`, and not on documents stored before them.
+      properties:
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        updated_at: { $ref: "#/components/schemas/Timestamp" }
+        version: { type: integer, minimum: 1 }
+        owner: { type: [string, "null"] }
+        created_by: { type: string }
+        updated_by: { type: string }
+
+    Document:
+      type: object
+      required: [id, _meta]
+      description: A stored document. Other fields follow the collection's schema.json.
+      properties:
+        id: { type: string }
+        _meta: { $ref: "#/components/schemas/Meta" }
+      additionalProperties: true
+
+    DocumentBody:
+      type: object
+      description: |
+        The document's fields, validated against the collection's
+        schema.json. `id`, `_id` and `_meta` are ignored.
+      additionalProperties: true
+
+    DocumentList:
+      type: object
+      additionalProperties: false
+      required: [items, limit, skip, has_more]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Document" } }
+        limit: { type: integer }
+        skip: { type: integer }
+        has_more: { type: boolean }
+        total: { type: integer, description: "Present when `count=true`." }
+
+    BatchOperation:
+      type: object
+      required: [op, collection]
+      description: |
+        One write, applied atomically with the batch's other operations.
+        `create` and `replace` need `document`; `patch` needs `patch` (a
+        JSON Merge Patch). `replace`, `patch` and `delete` need `id`, and
+        accept `if_match`: the version expected, as returned in `ETag`
+        (e.g. `"3"`), or `"*"` for any existing document.
+      properties:
+        op: { type: string, enum: [create, replace, patch, delete] }
+        collection: { type: string }
+        id: { type: string }
+        document: { type: object, additionalProperties: true }
+        patch: { type: object, additionalProperties: true }
+        if_match: { type: string }
+
+    BatchRequest:
+      type: object
+      additionalProperties: false
+      required: [operations]
+      properties:
+        operations:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: "#/components/schemas/BatchOperation" }
+
+    BatchResult:
+      type: object
+      required: [id]
+      description: The written document for create, replace and patch; just its id for delete.
+      properties:
+        id: { type: string }
+      additionalProperties: true
+
+    BatchResponse:
+      type: object
+      additionalProperties: false
+      required: [results]
+      properties:
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/BatchResult" }

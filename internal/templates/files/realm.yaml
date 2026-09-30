@@ -1,0 +1,63 @@
+# realm.yaml: settings for this realm. backd refuses to start without it.
+# Every key except `auth` and the admin role is commented out and shows
+# its default value.
+# Uncomment and change what you need.
+
+# Authentication: enabled or disabled.
+# With `disabled` the realm has no users and no access rules: anyone who can
+# reach backd can read and modify all of its data. Never expose such a realm
+# to the internet. The keys below only apply when auth is enabled.
+auth: enabled
+
+# Who can create accounts:
+#   open    anyone can sign up
+#   invite  sign-up needs an invitation from an administrator
+#   closed  administrators create the users
+# signup: closed
+
+# Sessions expire after `idle_timeout` without use, and never live longer
+# than `max_lifetime`. Use days ("30d") or Go durations ("12h").
+# sessions:
+#   idle_timeout: 30d
+#   max_lifetime: 90d
+
+# Minimum password length, between 8 and 128.
+# password:
+#   min_length: 12
+
+# How long the audit trail keeps its records (at least 1d). They hold user
+# ids and client addresses: personal data in many jurisdictions.
+# audit:
+#   retention: 365d
+
+# Browser origins allowed to call this realm (CORS). Empty means CORS is off.
+# cors:
+#   origins:
+#     - https://app.example.com
+
+# Caps how many function calls may run at once on this backd instance
+# (applies whether or not auth is enabled). This is PER INSTANCE, not a
+# limit for the whole deployment: with N instances, up to N × this value
+# can run at once. A function's own `concurrency` (function.yaml) caps it
+# individually; this caps the realm's functions together. Unset means
+# unlimited (bounded only by each function's own limit, and the
+# executor's own cap on running processes).
+# functions:
+#   max_concurrency: 50
+
+# Roles that access rules can check. `users` lists emails that get the role
+# at startup (seed assignments): plain emails, or objects with an `email`.
+# Keeping them here lets you rebuild the realm on new infrastructure; roles
+# assigned through the admin API live only in the database.
+#
+# `admin: true` makes a role an admin role: its users' sessions can use the
+# admin API, and `backd bootstrap` gives it to the realm's first
+# administrator. Keep at least one: without it, nobody can manage the realm.
+roles:
+  admin:
+    description: Manages users, invitations and API keys
+    admin: true
+    # users:
+    #   - ops@example.com
+  # editor:
+  #   description: Publishes articles

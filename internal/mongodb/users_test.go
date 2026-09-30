@@ -1,0 +1,475 @@
+package mongodb
+
+import (
+	"context"
+	"errors"
+	"reflect"
+	"testing"
+	"time"
+
+	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/registry"
+)
+
+// authFixture provisions an auth-enabled realm and returns its store.
+func authFixture(t *testing.T) (*AuthStore, string) {
+	t.Helper()
+	client := testClient(t)
+	realm := testRealm(t, client)
+	log, _ := testLogger()
+	reg := loadRegistryWith(t, realm, "", map[string]string{"app/notes": `{}`})
+	if err := (&Provisioner{Client: client, Registry: reg, Log: log}).Apply(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	return NewAuthStore(client, realm), realm
+}
+
+func TestAuthStoreUsers(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+
+	for _, email := range []string{"bob@example.com", "ada@example.com"} {
+		if err := s.CreateUser(ctx, auth.User{ID: "id-" + email[:3], Email: email, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatalf("CreateUser(%s): %v", email, err)
+		}
+	}
+	if err := s.CreateUser(ctx, auth.User{ID: "other", Email: "ada@example.com", CreatedAt: now, UpdatedAt: now}); !errors.Is(err, auth.ErrEmailTaken) {
+		t.Errorf("duplicate email: %v", err)
+	}
+
+	u, err := s.UserByEmail(ctx, "ada@example.com")
+	if err != nil || u.ID != "id-ada" || u.Roles == nil || !u.CreatedAt.Equal(now) {
+		t.Errorf("UserByEmail = %+v, %v", u, err)
+	}
+	if _, err := s.UserByEmail(ctx, "nobody@example.com"); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("unknown email: %v", err)
+	}
+	if u, err := s.UserByID(ctx, "id-ada"); err != nil || u.Email != "ada@example.com" {
+		t.Errorf("UserByID = %+v, %v", u, err)
+	}
+	if _, err := s.UserByID(ctx, "nope"); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("unknown id: %v", err)
+	}
+
+	list, err := s.ListUsers(ctx)
+	if err != nil || len(list) != 2 || list[0].Email != "ada@example.com" {
+		t.Errorf("ListUsers = %+v, %v", list, err)
+	}
+
+	later := now.Add(time.Hour)
+	yes := true
+	if err := s.UpdateUser(ctx, "id-ada", auth.UserUpdate{EmailVerified: &yes, Disabled: &yes}, later); err != nil {
+		t.Fatal(err)
+	}
+	u, _ = s.UserByEmail(ctx, "ada@example.com")
+	if !u.EmailVerified || !u.Disabled || !u.UpdatedAt.Equal(later) {
+		t.Errorf("after update: %+v", u)
+	}
+	if err := s.UpdateUser(ctx, "missing", auth.UserUpdate{Disabled: &yes}, later); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("update missing user: %v", err)
+	}
+
+	// Network restrictions round-trip, and an empty list removes them.
+	nets, _ := registry.ParseNetworks([]string{"10.0.0.0/8", "2001:db8::1"})
+	if err := s.UpdateUser(ctx, "id-ada", auth.UserUpdate{AdminNetworks: &nets, LoginNetworks: &nets}, later); err != nil {
+		t.Fatal(err)
+	}
+	u, _ = s.UserByID(ctx, "id-ada")
+	if !u.AdminNetworks.Equal(nets) || !u.LoginNetworks.Equal(nets) {
+		t.Errorf("networks = %v / %v", u.AdminNetworks, u.LoginNetworks)
+	}
+	none := registry.Networks{}
+	if err := s.UpdateUser(ctx, "id-ada", auth.UserUpdate{LoginNetworks: &none}, later); err != nil {
+		t.Fatal(err)
+	}
+	u, _ = s.UserByID(ctx, "id-ada")
+	if !u.AdminNetworks.Equal(nets) || len(u.LoginNetworks) != 0 {
+		t.Errorf("after clearing login networks: %v / %v", u.AdminNetworks, u.LoginNetworks)
+	}
+
+	for range 2 {
+		if err := s.AddRoles(ctx, "id-ada", []string{"admin", "editor"}, later); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.RemoveRole(ctx, "id-ada", "admin", later); err != nil {
+		t.Fatal(err)
+	}
+	if u, _ := s.UserByEmail(ctx, "ada@example.com"); !reflect.DeepEqual(u.Roles, []string{"editor"}) {
+		t.Errorf("roles = %v", u.Roles)
+	}
+	if err := s.AddRoles(ctx, "missing", []string{"x"}, later); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("add role to missing user: %v", err)
+	}
+}
+
+func TestAuthStoreIdentitiesAndDelete(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	if err := s.CreateUser(ctx, auth.User{ID: "u1", Email: "ada@example.com", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+
+	first := auth.Identity{ID: "i1", UserID: "u1", Provider: auth.ProviderPassword, Subject: "u1", PasswordHash: "$argon2id$first", CreatedAt: now, UpdatedAt: now}
+	if err := s.PutIdentity(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	later := now.Add(time.Hour)
+	if err := s.PutIdentity(ctx, auth.Identity{ID: "i2", UserID: "u1", Provider: auth.ProviderPassword, Subject: "u1", PasswordHash: "$argon2id$second", CreatedAt: later, UpdatedAt: later}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Identity(ctx, auth.ProviderPassword, "u1")
+	if err != nil || got.ID != "i1" || !got.CreatedAt.Equal(now) || !got.UpdatedAt.Equal(later) || got.PasswordHash != "$argon2id$second" {
+		t.Errorf("identity after second put = %+v, %v", got, err)
+	}
+	if _, err := s.Identity(ctx, auth.ProviderPassword, "nobody"); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("unknown identity: %v", err)
+	}
+
+	// A session to be removed with the user.
+	if _, err := s.sessions().InsertOne(ctx, bson.D{
+		{Key: "_id", Value: "s1"}, {Key: "token_hash", Value: "h1"}, {Key: "user_id", Value: "u1"},
+		{Key: "created_at", Value: now}, {Key: "last_used_at", Value: now}, {Key: "expires_at", Value: now.Add(24 * time.Hour)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteUser(ctx, "u1"); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []string{UsersCollection, IdentitiesCollection, SessionsCollection} {
+		n, err := s.db.Collection(c).CountDocuments(ctx, bson.D{})
+		if err != nil || n != 0 {
+			t.Errorf("%s: %d documents left after DeleteUser (%v)", c, n, err)
+		}
+	}
+	if err := s.DeleteUser(ctx, "u1"); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("second delete: %v", err)
+	}
+}
+
+// TestUsersServiceOnMongoDB runs the user service against the real store,
+// so the system validators must accept everything it writes.
+func TestUsersServiceOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	svc := &auth.Users{
+		Store:    s,
+		Hasher:   auth.NewHasher(1, auth.Argon2Params{Memory: 64, Time: 1, Threads: 1}),
+		Settings: registry.RealmSettings{PasswordMinLength: 12},
+	}
+	pw := "dev-p4ssw0rd!"
+	u, err := svc.Create(ctx, "Ada@Example.com", &pw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Create(ctx, "bob@example.com", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetPassword(ctx, "bob@example.com", pw); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetEmailVerified(ctx, "ada@example.com", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetDisabled(ctx, "ada@example.com", true); err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.Identity(ctx, auth.ProviderPassword, u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := svc.Hasher.Verify(ctx, pw, id.PasswordHash); !ok || err != nil {
+		t.Errorf("stored password doesn't verify: %v", err)
+	}
+	if err := svc.Delete(ctx, "ada@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := svc.List(ctx); len(list) != 1 || list[0].Email != "bob@example.com" {
+		t.Errorf("list = %+v", list)
+	}
+}
+
+// TestSessionsOnMongoDB runs the session flows against the real store.
+func TestSessionsOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	clock := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	svc := &auth.Users{
+		Store:  s,
+		Hasher: auth.NewHasher(1, auth.Argon2Params{Memory: 64, Time: 1, Threads: 1}),
+		Settings: registry.RealmSettings{
+			Signup: registry.SignupOpen, IdleTimeout: time.Hour, MaxLifetime: 24 * time.Hour, PasswordMinLength: 12,
+		},
+		Now: func() time.Time { return clock },
+	}
+
+	me, token, err := svc.Signup(ctx, "ada@example.com", "dev-p4ssw0rd!", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := svc.Authenticate(ctx, token)
+	if err != nil || p.User.Email != "ada@example.com" || p.Session.ID != me.Session.ID {
+		t.Fatalf("Authenticate = %+v, %v", p, err)
+	}
+
+	// A use after a minute slides the expiry, persisted in MongoDB.
+	clock = clock.Add(10 * time.Minute)
+	if _, err := svc.Authenticate(ctx, token); err != nil {
+		t.Fatal(err)
+	}
+	p, _ = svc.Authenticate(ctx, token)
+	if !p.Session.LastUsedAt.Equal(clock) || !p.Session.ExpiresAt.Equal(clock.Add(time.Hour)) {
+		t.Errorf("after touch: %+v", p.Session)
+	}
+
+	clock = clock.Add(time.Minute)
+	_, token2, err := svc.Login(ctx, "ada@example.com", "dev-p4ssw0rd!", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, err := svc.Sessions(ctx, me)
+	if err != nil || len(list) != 2 || list[1].ID != me.Session.ID {
+		t.Fatalf("Sessions = %+v, %v", list, err)
+	}
+
+	if err := svc.ChangePassword(ctx, me, "dev-p4ssw0rd!", "dev-p4ssw0rd!2"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Authenticate(ctx, token2); !errors.Is(err, auth.ErrUnauthenticated) {
+		t.Errorf("other session survived password change: %v", err)
+	}
+	if _, err := svc.Authenticate(ctx, token); err != nil {
+		t.Errorf("current session ended: %v", err)
+	}
+	if err := svc.RevokeSession(ctx, me, "missing"); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("revoke missing: %v", err)
+	}
+	if err := svc.LogoutAll(ctx, me); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Authenticate(ctx, token); !errors.Is(err, auth.ErrUnauthenticated) {
+		t.Errorf("session survived logout-all: %v", err)
+	}
+	if _, _, err := svc.Login(ctx, "ada@example.com", "dev-p4ssw0rd!", ""); !errors.Is(err, auth.ErrInvalidCredentials) {
+		t.Errorf("login with old password: %v", err)
+	}
+}
+
+func TestAPIKeysOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	clock := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	svc := &auth.Users{Store: s, Settings: registry.RealmSettings{}, Now: func() time.Time { return clock }}
+
+	_, key, err := svc.CreateAPIKey(ctx, "billing", auth.KeyOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, tempKey, err := svc.CreateAPIKey(ctx, "temp", auth.KeyOptions{TTL: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := svc.CreateAPIKey(ctx, "billing", auth.KeyOptions{}); !errors.Is(err, auth.ErrKeyNameTaken) {
+		t.Errorf("duplicate name: %v", err)
+	}
+
+	clock = clock.Add(2 * time.Minute)
+	k, err := svc.AuthenticateKey(ctx, key)
+	if err != nil || k.Name != "billing" {
+		t.Fatalf("AuthenticateKey = %+v, %v", k, err)
+	}
+	list, err := svc.ListAPIKeys(ctx)
+	if err != nil || len(list) != 2 || list[0].Name != "billing" || list[0].LastUsedAt == nil || !list[0].LastUsedAt.Equal(clock) ||
+		list[0].ExpiresAt != nil || list[1].ExpiresAt == nil || list[1].LastUsedAt != nil {
+		t.Errorf("ListAPIKeys = %+v, %v", list, err)
+	}
+
+	pinned, _ := registry.ParseNetworks([]string{"192.0.2.0/24"})
+	if _, _, err := svc.CreateAPIKey(ctx, "pinned", auth.KeyOptions{Role: auth.KeyRoleAdmin, Networks: pinned}); err != nil {
+		t.Fatal(err)
+	}
+	keys, _ := svc.ListAPIKeys(ctx)
+	for _, k := range keys {
+		if k.Name == "pinned" && (!k.IsAdmin() || !k.Networks.Equal(pinned)) {
+			t.Errorf("pinned key = %+v", k)
+		}
+		if k.Name == "billing" && (k.Role != auth.KeyRoleData || len(k.Networks) != 0) {
+			t.Errorf("billing key = %+v", k)
+		}
+	}
+
+	clock = clock.Add(time.Hour)
+	if _, err := svc.AuthenticateKey(ctx, tempKey); !errors.Is(err, auth.ErrUnauthenticated) {
+		t.Errorf("expired key: %v", err)
+	}
+	if err := svc.RevokeAPIKey(ctx, "billing"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AuthenticateKey(ctx, key); !errors.Is(err, auth.ErrUnauthenticated) {
+		t.Errorf("revoked key: %v", err)
+	}
+	if err := svc.RevokeAPIKey(ctx, "billing"); !errors.Is(err, auth.ErrKeyNotFound) {
+		t.Errorf("revoke twice: %v", err)
+	}
+}
+
+func TestLoginAttemptsOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	t0 := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+
+	if a, err := s.LoginAttempts(ctx, "account:a@x.io"); err != nil || a.Failures != 0 {
+		t.Fatalf("no counter: %+v, %v", a, err)
+	}
+	for i := range 3 {
+		at := t0.Add(time.Duration(i) * time.Minute)
+		if err := s.RecordLoginFailure(ctx, "account:a@x.io", at, at.Add(15*time.Minute)); err != nil {
+			t.Fatalf("record: %v", err)
+		}
+	}
+	a, err := s.LoginAttempts(ctx, "account:a@x.io")
+	if err != nil || a.Failures != 3 || !a.LastFailureAt.Equal(t0.Add(2*time.Minute)) {
+		t.Errorf("after 3 failures: %+v, %v", a, err)
+	}
+
+	// A failure after the window restarts the count, even if MongoDB's TTL
+	// monitor hasn't deleted the old counter yet.
+	late := t0.Add(time.Hour)
+	if err := s.RecordLoginFailure(ctx, "account:a@x.io", late, late.Add(15*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := s.LoginAttempts(ctx, "account:a@x.io"); a.Failures != 1 {
+		t.Errorf("after the window: %+v", a)
+	}
+
+	if err := s.ClearLoginAttempts(ctx, "account:a@x.io"); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := s.LoginAttempts(ctx, "account:a@x.io"); a.Failures != 0 {
+		t.Errorf("after clear: %+v", a)
+	}
+}
+
+// TestIncrementCounterOnMongoDB proves the fixed-window behavior
+// IncrementCounter needs for rate limits (F9), which differs from
+// RecordLoginFailure's sliding cleanup deadline (TestLoginAttemptsOnMongoDB
+// above): repeated calls inside one window must not keep pushing the
+// reset time forward, or a steady stream of calls would never reset.
+func TestIncrementCounterOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	t0 := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
+	window := time.Minute
+
+	var resetAt time.Time
+	for i := range 3 {
+		at := t0.Add(time.Duration(i) * 10 * time.Second)
+		count, r, err := s.IncrementCounter(ctx, "func:shop/app/send:ip:203.0.113.1", at, at.Add(window))
+		if err != nil {
+			t.Fatalf("call %d: %v", i+1, err)
+		}
+		if count != i+1 {
+			t.Errorf("call %d: count = %d, want %d", i+1, count, i+1)
+		}
+		if i == 0 {
+			resetAt = r
+		} else if !r.Equal(resetAt) {
+			t.Errorf("call %d: reset time moved from %v to %v; a fixed window must not keep sliding forward", i+1, resetAt, r)
+		}
+	}
+
+	// After the window actually ends, the next call restarts the count.
+	late := resetAt.Add(time.Second)
+	count, newReset, err := s.IncrementCounter(ctx, "func:shop/app/send:ip:203.0.113.1", late, late.Add(window))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Errorf("after the window: count = %d, want 1", count)
+	}
+	if !newReset.After(resetAt) {
+		t.Errorf("after the window: reset time %v didn't move past %v", newReset, resetAt)
+	}
+}
+
+// TestLoginThrottleAcrossInstances runs two backd "instances" (separate
+// clients and services) on one realm: failures on one throttle the other.
+func TestLoginThrottleAcrossInstances(t *testing.T) {
+	s1, realm := authFixture(t)
+	ctx := context.Background()
+	s2 := NewAuthStore(testClient(t), realm)
+	settings := registry.RealmSettings{Signup: registry.SignupOpen, IdleTimeout: time.Hour, MaxLifetime: 24 * time.Hour, PasswordMinLength: 12}
+	hasher := auth.NewHasher(2, auth.Argon2Params{Memory: 64, Time: 1, Threads: 1})
+	a := &auth.Users{Store: s1, Hasher: hasher, Settings: settings}
+	b := &auth.Users{Store: s2, Hasher: hasher, Settings: settings}
+	if _, _, err := a.Signup(ctx, "ada@example.com", "dev-p4ssw0rd!", ""); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 5 {
+		svc := []*auth.Users{a, b}[i%2]
+		if _, _, err := svc.Login(ctx, "ada@example.com", "dev-p4ssw0rd!0", "203.0.113.1"); !errors.Is(err, auth.ErrInvalidCredentials) {
+			t.Fatalf("failure %d: %v", i+1, err)
+		}
+	}
+	var te *auth.ThrottledError
+	for _, svc := range []*auth.Users{a, b} {
+		if _, _, err := svc.Login(ctx, "ada@example.com", "dev-p4ssw0rd!", "198.51.100.1"); !errors.As(err, &te) {
+			t.Errorf("not throttled on one instance: %v", err)
+		}
+	}
+}
+
+func TestInvitationsOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	svc := &auth.Users{
+		Store: s, Hasher: auth.NewHasher(2, auth.Argon2Params{Memory: 64, Time: 1, Threads: 1}),
+		Settings: registry.RealmSettings{Signup: registry.SignupInvite, IdleTimeout: time.Hour, MaxLifetime: time.Hour, PasswordMinLength: 12},
+		Now:      func() time.Time { return now },
+	}
+	inv, token, err := svc.CreateInvitation(ctx, "ada@example.com", 0, "key:svc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list, err := svc.Invitations(ctx); err != nil || len(list) != 1 || list[0].ID != inv.ID || list[0].Email != "ada@example.com" {
+		t.Errorf("list = %+v, %v", list, err)
+	}
+
+	// Two concurrent claims: exactly one wins.
+	results := make(chan error, 2)
+	for range 2 {
+		go func() {
+			_, err := s.ClaimInvitation(ctx, auth.HashToken(token), now)
+			results <- err
+		}()
+	}
+	var wins int
+	for range 2 {
+		if err := <-results; err == nil {
+			wins++
+		} else if !errors.Is(err, auth.ErrNotFound) {
+			t.Fatal(err)
+		}
+	}
+	if wins != 1 {
+		t.Errorf("%d claims won", wins)
+	}
+	// Restoring (as after a failed sign-up) makes it usable again.
+	if err := s.CreateInvitation(ctx, inv); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := svc.Signup(ctx, "ada@example.com", "dev-p4ssw0rd!", token); err != nil {
+		t.Errorf("signup with restored invitation: %v", err)
+	}
+
+	// Expired invitations can't be claimed, even before the TTL monitor deletes them.
+	_, late, _ := svc.CreateInvitation(ctx, "", time.Minute, "key:svc")
+	if _, err := s.ClaimInvitation(ctx, auth.HashToken(late), now.Add(time.Hour)); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("expired claim: %v", err)
+	}
+}

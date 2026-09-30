@@ -1,0 +1,141 @@
+# The local stack, on one origin: https://localhost:8443 (http://localhost:8080
+# redirects there). nginx's certificate comes from a local CA that
+# scripts/local-certs.sh creates and renews in docker/certs/.
+#   /            documentation site (live reload while you edit docs/)
+#   /docs/       documentation pages
+#   /example/    the JavaScript client's example apps (clients/js/examples)
+#   /v1/, /healthz, /readyz   backd's API
+#
+#   make example             (or: scripts/local-certs.sh && docker compose up --build)
+#
+# Also runs the functions executor, egress and (folded into backd with
+# --with-worker) a worker: the blog realm's sample function (main/_functions/
+# stats) calls the executor for real, e.g. `curl .../v1/blog/main/_func/stats`.
+#
+# WARNING: the shop example realm has auth disabled. Keep this on localhost.
+services:
+  mongo:
+    image: docker.io/library/mongo:8.2
+    # A single-node replica set (backd refuses standalone servers). The health
+    # check initiates it on first start and passes once it is the primary.
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "try { rs.status() } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo:27017'}]}) } if (!db.hello().isWritablePrimary) quit(1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # One-shot: bundles every example realm's functions before backd starts
+  # (backd refuses stale or missing bundles). Uses the executor image
+  # (backd + the pinned Deno) so no extra image is needed to build; needs
+  # write access to examples/config, unlike backd's own read-only mount.
+  functions-build:
+    build:
+      context: .
+      dockerfile: docker/executor/Dockerfile
+    entrypoint: ["/usr/local/bin/backd"]
+    command: ["functions", "build"]
+    user: root
+    environment:
+      CONFIG_DIR: /config
+    volumes:
+      - ./examples/config:/config
+
+  backd:
+    build: .
+    command: ["serve", "--with-worker"]
+    environment:
+      CONFIG_DIR: /config
+      MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      LOG_LEVEL: info
+      # Requests arrive through nginx on the compose network.
+      TRUSTED_PROXIES: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7
+      # Functions: the executor and, for a smaller stack than the
+      # production reference's dedicated worker, --with-worker above runs
+      # async jobs in this same process. These tokens are dev-only, fixed,
+      # and never real secrets — this stack is for localhost, never the
+      # internet.
+      BACKD_INTERNAL_ADDR: ":8081"
+      BACKD_EXECUTOR_URL: http://executor:9100
+      BACKD_EXECUTOR_TOKEN: local-dev-executor-token-not-a-secret-0123456789
+      BACKD_CALLBACK_URL: http://backd:8081
+      BACKD_CALLBACK_KEY: local-dev-callback-key-not-a-secret-0123456789ab
+      # Functions that declare secrets (the workshop realm's payment_webhook)
+      # need the master key they are encrypted under; same dev-only rule.
+      BACKD_SECRETS_KEY: local-dev-secrets-key-not-a-secret-0123456789abc
+    volumes:
+      - ./examples/config:/config:ro
+    depends_on:
+      mongo:
+        condition: service_healthy
+      functions-build:
+        condition: service_completed_successfully
+    # Longer than SHUTDOWN_TIMEOUT (15s) so in-flight requests can drain.
+    stop_grace_period: 20s
+
+  # One Deno process per function call (docs: Functions ->
+  # "Running in production"). Unlike the production reference, this stack
+  # doesn't isolate the executor onto its own network — it's a local,
+  # single-user convenience, not a hardened deployment; see
+  # deploy/production for the real network placement (F4).
+  executor:
+    build:
+      context: .
+      dockerfile: docker/executor/Dockerfile
+    environment:
+      BACKD_EXECUTOR_TOKEN: local-dev-executor-token-not-a-secret-0123456789
+      EXECUTOR_PROXY: http://egress:3128
+      BACKD_EGRESS_KEY: local-dev-egress-key-not-a-secret-0123456789abcd
+      LOG_LEVEL: info
+    depends_on:
+      - backd
+
+  # backd egress: the only route out for function processes (docs: "Egress:
+  # the network allowlist, completed").
+  egress:
+    build: .
+    command: ["egress"]
+    environment:
+      BACKD_EGRESS_KEY: local-dev-egress-key-not-a-secret-0123456789abcd
+      EGRESS_ALLOW_PRIVATE: "backd:8081"
+      LOG_LEVEL: info
+    depends_on:
+      - backd
+
+  docs:
+    build: docker/docs
+    environment:
+      # Shows links to the example app, which only exists in this stack.
+      HUGO_PARAMS_EXAMPLEURL: /example/
+    volumes:
+      - .:/src:ro
+      - docs-cache:/cache
+
+  nginx:
+    image: docker.io/library/nginx:1.29-alpine
+    ports:
+      - "127.0.0.1:8443:443"
+      - "127.0.0.1:8080:80"
+    environment:
+      # Lets the config template use the container's DNS servers.
+      NGINX_ENTRYPOINT_LOCAL_RESOLVERS: "1"
+    volumes:
+      - ./docker/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./docker/nginx/proxy.inc:/etc/nginx/proxy.inc:ro
+      - ./docker/certs:/etc/nginx/certs:ro
+      - ./clients/js/examples:/srv/example:ro
+      - ./clients/js/src:/srv/client:ro
+    depends_on:
+      - backd
+      - docs
+
+volumes:
+  mongo-data:
+  docs-cache:

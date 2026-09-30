@@ -1,0 +1,64 @@
+# JavaScript client integration tests: backd (built from this checkout,
+# running both the serve and worker roles) + a real functions executor +
+# MongoDB with the config in clients/js/test/integration/config.
+# Run with `make js-integration`.
+services:
+  mongo:
+    image: docker.io/library/mongo:8.2
+    # A single-node replica set, initiated by the health check.
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "try { rs.status() } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo:27017'}]}) } if (!db.hello().isWritablePrimary) quit(1)"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  # One-shot: bundles the test functions so backd's startup check passes.
+  # Uses the executor image (backd + the pinned Deno) so no extra image
+  # is needed to build (see docker/egress-test/docker-compose.yml).
+  functions-build:
+    build:
+      context: .
+      dockerfile: docker/executor/Dockerfile
+    entrypoint: ["/usr/local/bin/backd"]
+    command: ["functions", "build"]
+    user: root
+    environment:
+      CONFIG_DIR: /config
+    volumes:
+      - ./clients/js/test/integration/config:/config
+
+  backd:
+    build: .
+    # --with-worker: sync and async functions both run in this one
+    # process, so the integration tests need no separate worker service.
+    command: ["serve", "--with-worker"]
+    ports:
+      - "127.0.0.1:18080:8080"
+    environment:
+      CONFIG_DIR: /config
+      MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      LOG_LEVEL: warn
+      BACKD_INTERNAL_ADDR: :8081
+      BACKD_EXECUTOR_URL: http://executor:9100
+      BACKD_EXECUTOR_TOKEN: js-integration-executor-token-0123456789ab
+      BACKD_CALLBACK_URL: http://backd:8081
+      BACKD_CALLBACK_KEY: js-integration-callback-key-0123456789abcdef
+    volumes:
+      - ./clients/js/test/integration/config:/config:ro
+    depends_on:
+      mongo:
+        condition: service_healthy
+      functions-build:
+        condition: service_completed_successfully
+
+  # No egress or network isolation here (unlike docker/egress-test): the
+  # test functions never reach the network, so there's nothing to prove.
+  executor:
+    build:
+      context: .
+      dockerfile: docker/executor/Dockerfile
+    depends_on: [backd]
+    environment:
+      BACKD_EXECUTOR_TOKEN: js-integration-executor-token-0123456789ab
+      LOG_LEVEL: warn

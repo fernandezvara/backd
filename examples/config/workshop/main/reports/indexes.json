@@ -1,0 +1,4 @@
+[
+  { "fields": ["export_key"] },
+  { "fields": ["_meta.owner", "-_meta.created_at"] }
+]

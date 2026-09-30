@@ -1,0 +1,68 @@
+# Local dev stack: MongoDB, backd, the functions executor and egress (the
+# executor's only way out), on the same network shape backd's own tests
+# use (docker/egress-test in the backd repository): the executor reaches
+# only backd's internal listener and egress; egress bridges to the
+# internet. `docker compose up --build` and set the three secrets below
+# first (openssl rand -base64 32, one each).
+#
+# After changing schemas, rules or realm.yaml: `docker compose up -d --build backd`.
+# After changing a function's code: `backd functions build` first, or run
+# with BACKD_DEV=true while you edit (see the docs, Functions → Build, dev and test).
+services:
+  mongo:
+    image: docker.io/library/mongo:8.2
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "try { rs.status() } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo:27017'}]}) } if (!db.hello().isWritablePrimary) quit(1)"]
+      interval: 2s
+      retries: 30
+    networks: [data]
+
+  # `--with-worker` also runs the worker role in this process: async jobs and
+  # cron schedules (docs: Functions -> Async jobs, Scheduled functions) only
+  # run while a worker does.
+  backd:
+    build: .
+    command: ["serve", "--with-worker"]
+    depends_on:
+      mongo: { condition: service_healthy }
+    environment:
+      MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      HTTP_ADDR: :8080
+      BACKD_INTERNAL_ADDR: :8081
+      BACKD_EXECUTOR_URL: http://executor:9100
+      BACKD_EXECUTOR_TOKEN: ${EXECUTOR_TOKEN:?set a random 32+ character value, e.g. `openssl rand -base64 32`}
+      BACKD_CALLBACK_URL: http://backd:8081
+      BACKD_CALLBACK_KEY: ${CALLBACK_KEY:?set a random 32+ character value}
+    ports: ["127.0.0.1:8080:8080"]
+    networks: [data, isolated]
+
+  # No route to MongoDB or the internet: only `isolated`, where its only
+  # peers are backd's internal listener and egress.
+  executor:
+    build:
+      context: .
+      dockerfile: Dockerfile.executor
+    depends_on: [backd]
+    environment:
+      BACKD_EXECUTOR_TOKEN: ${EXECUTOR_TOKEN:?set a random 32+ character value}
+      EXECUTOR_PROXY: http://egress:3128
+      BACKD_EGRESS_KEY: ${EGRESS_KEY:?set a random 32+ character value}
+    networks: [isolated]
+
+  # The executor network's only way out: on `isolated` (backd and the
+  # executor) and `uplink` (the internet).
+  egress:
+    build: .
+    command: ["egress"]
+    depends_on: [backd]
+    environment:
+      BACKD_EGRESS_KEY: ${EGRESS_KEY:?set a random 32+ character value}
+      EGRESS_ALLOW_PRIVATE: "backd:8081"
+    networks: [isolated, uplink]
+
+networks:
+  data: {}
+  isolated:
+    internal: true
+  uplink: {}

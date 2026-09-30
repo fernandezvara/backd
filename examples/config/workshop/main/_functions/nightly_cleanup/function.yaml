@@ -1,0 +1,12 @@
+# A scheduled function: `schedule` (cron, UTC) on an async function. There is
+# no caller, so ctx.input is empty, ctx.user is null, and ctx.admin.db (full
+# access, recorded as this function) is always available in a scheduled run.
+# Needs at least one running worker: `backd worker`, or
+# `backd serve --with-worker`.
+#
+# `admin: true` is what lets you also call it by hand to test it (an API key
+# call has a caller, and only gets ctx.admin when the function declares it).
+mode: async
+schedule: "0 3 * * *"   # every day at 03:00 UTC
+timeout: 10m
+admin: true

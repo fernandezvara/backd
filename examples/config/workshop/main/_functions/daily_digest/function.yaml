@@ -1,0 +1,9 @@
+# Runs once a day, at 00:00 UTC (@daily), and summarizes the day before.
+#
+# It can also be called by hand to (re)build one day, for example after an
+# outage: an API key calls it with {"day": "2026-09-28"}. A scheduled run has
+# no caller and always gets ctx.admin; a call made by hand only does with
+# `admin: true`, so it is set here.
+mode: async
+schedule: "@daily"
+admin: true

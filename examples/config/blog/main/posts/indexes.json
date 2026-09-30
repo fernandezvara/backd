@@ -1,0 +1,5 @@
+[
+  { "fields": ["published", "-_meta.created_at"] },
+  { "fields": ["category", "-_meta.created_at"] },
+  { "fields": ["_meta.owner"] }
+]

@@ -1,0 +1,6 @@
+# The async twin of ../network_probe: proves this deployment's worker
+# claims and runs a job for real, through the same executor and network
+# placement — see deploy/production/test.sh. Not a usable app function.
+mode: async
+timeout: 20s
+invoke: "user != nil"

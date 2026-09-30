@@ -1,0 +1,148 @@
+package auth
+
+import (
+	"context"
+	"log/slog"
+	"time"
+
+	"github.com/rs/xid"
+
+	"github.com/fernandezvara/backd/internal/registry"
+)
+
+// Audit actions: security-sensitive changes and events, recorded in the
+// realm's append-only audit trail.
+const (
+	AuditUserCreate      = "user.create"   // by an administrator (or bootstrap)
+	AuditUserSignup      = "user.signup"   // self-service sign-up
+	AuditUserPassword    = "user.password" // set by an administrator
+	AuditPasswordChange  = "user.password_change"
+	AuditUserVerifyEmail = "user.verify_email" // details: verified
+	AuditUserDisable     = "user.disable"
+	AuditUserEnable      = "user.enable"
+	AuditUserDelete      = "user.delete"
+	AuditAccountDelete   = "user.delete_account" // self-service
+	AuditUserNetworks    = "user.networks"       // details: admin_networks, login_networks
+	AuditRoleAdd         = "role.add"            // details: role
+	AuditRoleRemove      = "role.remove"         // details: role
+	AuditAPIKeyCreate    = "apikey.create"       // details: role, expires_at, networks
+	AuditAPIKeyRevoke    = "apikey.revoke"
+	AuditInviteCreate    = "invitation.create" // details: bound_to_email, expires_at
+	AuditInviteRevoke    = "invitation.revoke"
+	AuditAdminLogin      = "admin.login"   // login of a user holding an admin role
+	AuditAdminRefused    = "admin.refused" // details: reason
+	AuditBootstrap       = "realm.bootstrap"
+	AuditSecretSet       = "secret.set"        // details: database ("": realm scope); never the value
+	AuditSecretDelete    = "secret.delete"     // details: database
+	AuditSecretsRotated  = "secret.rotate_key" // by backd secret rotate-key; details: count
+)
+
+// Actors that aren't a credential.
+const (
+	// ActorConfig applies realm.yaml's role and network seeds.
+	ActorConfig = "config:realm.yaml"
+	// ActorBootstrap is `backd bootstrap`.
+	ActorBootstrap = "cli:bootstrap"
+	// ActorAnonymous is a caller without credentials.
+	ActorAnonymous = "anonymous"
+)
+
+// AuditRecord is one entry of the audit trail. It names users by id, keys
+// by name and invitations by id, and never holds secrets: no passwords or
+// hashes, tokens, keys, emails or request bodies.
+type AuditRecord struct {
+	ID        string
+	At        time.Time
+	ExpiresAt time.Time // removed after this (the realm's retention)
+	Action    string
+	Actor     string // "user:<id>", "key:<name>", "anonymous", or an Actor* constant
+	Target    string // "user:<id>", "key:<name>", "invitation:<id>", or ""
+	Details   map[string]any
+	RequestID string
+	ClientIP  string
+}
+
+// AuditFilter selects audit records. Zero fields match everything.
+type AuditFilter struct {
+	Action, Actor, Target string
+	Since, Until          time.Time // At >= Since, At < Until
+	Limit, Skip           int
+}
+
+// AuditSource says who is acting and from where. The HTTP layer puts it in
+// the request context; commands set their own.
+type AuditSource struct {
+	Actor, RequestID, ClientIP string
+}
+
+type auditSourceKey struct{}
+
+// WithAuditSource returns a context whose audit records take their actor,
+// request id and client address from source, called when a record is
+// written (the actor may be known only after authentication).
+func WithAuditSource(ctx context.Context, source func() AuditSource) context.Context {
+	return context.WithValue(ctx, auditSourceKey{}, source)
+}
+
+func auditSource(ctx context.Context) AuditSource {
+	var src AuditSource
+	if fn, ok := ctx.Value(auditSourceKey{}).(func() AuditSource); ok {
+		src = fn()
+	}
+	if src.Actor == "" {
+		src.Actor = ActorAnonymous
+	}
+	return src
+}
+
+func (s *Users) auditRetention() time.Duration {
+	if s.Settings.AuditRetention > 0 {
+		return s.Settings.AuditRetention
+	}
+	return registry.DefaultAuditRetention
+}
+
+// Audit appends a record to the realm's audit trail and writes it to the
+// log. A record that can't be stored is logged as an error; the action it
+// describes has already happened, so it isn't undone.
+func (s *Users) Audit(ctx context.Context, action, target string, details map[string]any) {
+	s.AuditAs(ctx, "", action, target, details)
+}
+
+// AuditAs is Audit with an explicit actor (when not empty), for events
+// whose actor isn't the caller yet, such as a login.
+func (s *Users) AuditAs(ctx context.Context, actor, action, target string, details map[string]any) {
+	src := auditSource(ctx)
+	if actor != "" {
+		src.Actor = actor
+	}
+	now := s.now()
+	rec := AuditRecord{
+		ID: xid.New().String(), At: now, ExpiresAt: now.Add(s.auditRetention()),
+		Action: action, Actor: src.Actor, Target: target, Details: details,
+		RequestID: src.RequestID, ClientIP: src.ClientIP,
+	}
+	log := s.Log
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
+	}
+	attrs := []any{"action", action, "actor", rec.Actor, "target", target, "request_id", rec.RequestID, "client", rec.ClientIP}
+	if s.Realm != "" {
+		attrs = append([]any{"realm", s.Realm}, attrs...)
+	}
+	if len(details) > 0 {
+		attrs = append(attrs, "details", details)
+	}
+	// The trail must outlive the request that caused it.
+	if err := s.Store.AppendAudit(context.WithoutCancel(ctx), rec); err != nil {
+		log.Error("audit record not stored", append(attrs, "error", err)...)
+		return
+	}
+	log.Info("audit", attrs...)
+}
+
+// AuditTrail returns records matching f, newest first, and whether more
+// follow.
+func (s *Users) AuditTrail(ctx context.Context, f AuditFilter) ([]AuditRecord, bool, error) {
+	return s.Store.ListAudit(ctx, f)
+}

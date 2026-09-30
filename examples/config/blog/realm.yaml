@@ -1,0 +1,15 @@
+# The blog example realm, used by docker-compose.yml, the JavaScript
+# client's example app (clients/js/examples/blog) and the production
+# reference (deploy/production). Unlike the template (`backd template
+# realm`), it lets anyone sign up: in public, only behind a proxy that
+# rate-limits sign-up, as deploy/production does. The example is served
+# on the same origin as the API, so it needs no CORS settings.
+auth: enabled
+signup: open
+
+# The realm's administrators: `backd bootstrap --realm blog --email <email>` creates the
+# first one; they manage users and API keys through the admin API.
+roles:
+  admin:
+    description: Manages users, invitations and API keys
+    admin: true

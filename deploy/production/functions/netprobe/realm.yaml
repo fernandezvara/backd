@@ -1,0 +1,11 @@
+# A minimal realm that exists only so this deployment's own test
+# (deploy/production/test.sh) can prove the F4 egress and network-placement
+# design from a real function call, in this stack's own topology — not a
+# usable app. `auth` defaults to enabled; `signup` defaults to closed, so
+# the only way in is the admin bootstrapped by the test.
+#
+# Review or remove this realm before adapting this reference for your own
+# config, the same as you would the blog example.
+roles:
+  admin:
+    admin: true

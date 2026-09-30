@@ -1,0 +1,16 @@
+# The executor's image: Deno (pinned to the version this backd version
+# bundles functions with) plus the backd binary, copied out of the same
+# published image `Dockerfile` uses — no backd source needed. When backd
+# publishes its own executor image (planned, roadmap F15), drop this file
+# and use `image: ghcr.io/fernandezvara/backd-executor:v${BACKD_VERSION}`
+# in compose.yaml instead.
+ARG BACKD_VERSION=0.3.0
+FROM ghcr.io/fernandezvara/backd:v${BACKD_VERSION} AS backd
+
+# Keep this in sync with the backd version above (its registry.DenoVersion).
+FROM docker.io/denoland/deno:alpine-2.9.7
+COPY --from=backd /backd /usr/local/bin/backd
+ENV EXECUTOR_DIR=/tmp/backd-executor
+USER deno
+EXPOSE 9100
+ENTRYPOINT ["/usr/local/bin/backd", "executor"]

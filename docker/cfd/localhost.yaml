@@ -1,0 +1,19 @@
+# nginx's certificate for the example stack, signed by the local CA.
+# scripts/local-certs.sh creates it once, then asks certsfor for it on every
+# run, which renews it when less than 20% of its lifetime is left.
+dn:
+  cn: localhost
+  c: ""
+  l: ""
+  o: backd
+  ou: local development
+  p: ""
+  pc: ""
+  st: ""
+san:
+  - localhost
+  - 127.0.0.1
+  - "::1"
+key: ecdsa:256
+exp: 90
+client: false

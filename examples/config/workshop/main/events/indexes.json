@@ -1,0 +1,3 @@
+[
+  { "fields": ["event_id"], "unique": true }
+]

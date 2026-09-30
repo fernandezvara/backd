@@ -1,0 +1,27 @@
+# Local planning material — never commit
+/support_docs/
+
+# Hugo build output
+/docs/public/
+/docs/resources/_gen/
+/docs/.hugo_build.lock
+
+# Local build output
+/bin/
+
+# Local CA and certificates for the example stack (scripts/local-certs.sh)
+/docker/certs/
+
+# GoReleaser output (make release-check)
+/dist/
+# `go build ./cmd/backd` output
+/backd
+/cmd/backd/backd
+
+# `backd functions build` output for test fixtures (built fresh by each run)
+/clients/js/test/integration/config/**/_functions/.build/
+# same, for the local stack's functions-build service (docker-compose.yml)
+/examples/config/**/_functions/.build/
+
+# Private Claude Code instructions (imports ~/.claude/projects/backd.md)
+/CLAUDE.local.md

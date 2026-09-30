@@ -1,0 +1,36 @@
+# Unlike the "without functions" example, a direct read only ever returns
+# your OWN entries — never anyone else's, regardless of group membership.
+# Seeing the group's *other* expenses always goes through list_expenses
+# instead, which checks the caller's CURRENT group membership before
+# returning anything — closing holes 1 and 2 (see the docs page comparing
+# the two examples). This narrow read is what lets update and delete work
+# normally below for your own entries: backd fetches the current document
+# through the read rule to evaluate them against, the same as any other
+# collection, so a read rule of `false` here would have refused those too,
+# not just direct reads.
+read: user != nil && document._meta.owner == user.id
+
+# Defense in depth: repeats what a rule *can* check on its own, even
+# though add_expense/request_settlement already checked it before ever
+# calling create. What a rule can't check — that group_id and
+# split_between are real, current members of that group — is the
+# function's job (hole 1).
+create: >
+  user != nil
+  && data.paid_by == user.email
+  && (data.kind == 'expense'
+      || (len(data.split_between) == 1 && !(user.email in data.split_between) && data.status == 'pending'))
+
+# Only the writer edits their own entry, it can't move to another group or
+# change kind, and — the one rule that's new here — the writer can never
+# set their own settlement's status: only confirm_settlement may, using
+# ctx.admin.db, because it's the *receiver*, not the writer, who confirms
+# (hole 3).
+update: >
+  user != nil
+  && document._meta.owner == user.id
+  && !('group_id' in changed())
+  && !('kind' in changed())
+  && !('status' in changed())
+
+delete: user != nil && document._meta.owner == user.id

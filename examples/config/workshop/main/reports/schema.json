@@ -1,0 +1,13 @@
+{
+  "$comment": "The result of an export_orders job, written as the customer who asked for it. export_key ties a report to the call that queued the job, so a retried job finds it instead of writing a second one.",
+  "type": "object",
+  "properties": {
+    "kind":         { "enum": ["orders"] },
+    "export_key":   { "type": "string", "minLength": 1, "maxLength": 200 },
+    "rows":         { "type": "integer", "minimum": 0 },
+    "csv":          { "type": "string", "maxLength": 5000000 },
+    "requested_by": { "type": "string", "format": "email" }
+  },
+  "required": ["kind", "export_key", "rows", "csv", "requested_by"],
+  "additionalProperties": false
+}

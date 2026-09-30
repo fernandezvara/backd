@@ -1,0 +1,18 @@
+# The "expenses without functions" example: a small tricount-like app
+# (clients/js/examples/expenses-without-functions). Groups share expenses
+# and compute who owes whom. The rules here are as strict as backd's rules
+# can be today, and the app still has known holes that only server-side
+# functions (planned) can close: see the docs page "Expenses without
+# functions" and the hack script next to the app.
+#
+# Anyone can sign up. Access is by email: a group lists its members'
+# emails, and rules compare them with the signed-in user's email.
+auth: enabled
+signup: open
+
+# The realm's administrators: `backd bootstrap --realm expenses --email <email>` creates the
+# first one; they manage users and API keys through the admin API.
+roles:
+  admin:
+    description: Manages users, invitations and API keys
+    admin: true

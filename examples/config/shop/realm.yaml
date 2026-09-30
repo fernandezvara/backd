@@ -1,0 +1,5 @@
+# The shop example realm runs without authentication, so the quick-start
+# requests in the README work without an API key. Anyone who can reach
+# backd can read and modify its data: never expose a realm like this.
+# The blog realm next to it shows the default, `auth: enabled`.
+auth: disabled

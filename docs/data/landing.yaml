@@ -1,0 +1,85 @@
+# Landing page sections, ordered by weight. Rendered by the hugodoks theme.
+
+sections:
+
+  hero:
+    enable: true
+    weight: 10
+    template: hero
+
+    badge: "v0.3.0 · users, access rules and server-side functions"
+
+    title: "backd"
+    subtitle: "A **config-driven** REST backend over MongoDB. Declare realms, databases and collections as files on disk, and get a **schema-validated**, **queryable** document API. Add **server-side functions** for the logic clients can't be trusted with: background jobs, cron schedules and webhooks included."
+
+    cta:
+      - text: "Get started"
+        icon: rocket_launch
+        url: "docs/getting-started/"
+      - text: "Functions"
+        icon: function
+        url: "docs/functions/"
+        style: secondary
+        outline: true
+      - text: "GitHub"
+        icon: code
+        url: "https://github.com/fernandezvara/backd"
+        style: contrast
+        outline: true
+
+    info: "**Open source**, MIT licensed. Before exposing a realm, go through the [hardening checklist](docs/operations/checklist/)."
+
+  liveExample:
+    enable: true
+    weight: 15
+    template: banner
+    only_when_param: exampleurl
+    text: "**Live examples are running.** A blog and a shared-expenses app, built with Alpine.js and the JavaScript client, on this same server."
+    cta:
+      text: "Open the examples"
+      icon: rocket_launch
+
+  features:
+    enable: true
+    weight: 20
+    template: features
+
+    title: What you get
+    subtitle: One stateless Go service and a MongoDB database. No handlers to write per collection.
+
+    items:
+      - title: Configuration as files
+        icon: folder_open
+        description: "A directory per realm, database and collection. Each collection is a JSON Schema, with optional indexes.json. Invalid config stops startup and names the file."
+
+      - title: Schema-validated writes
+        icon: rule
+        description: "JSON Schema draft 2020-12 enforced on every write, with field-level errors. The same schema is mirrored as a MongoDB $jsonSchema validator."
+
+      - title: Queries without injection
+        icon: search
+        description: "Filter with where, sort with order_by, paginate and count. Every field and value is checked against the schema. Client input never reaches MongoDB raw."
+
+      - title: Optimistic concurrency
+        icon: sync_lock
+        description: "_meta.version, ETag and If-Match. Every write is conditional, so concurrent updates are never silently lost."
+
+      - title: Automatic provisioning
+        icon: database
+        description: "Collections, validators and indexes are created at startup, or verified for least-privilege deployments. Nothing is ever dropped."
+
+      - title: Users and single sign-on
+        icon: group
+        description: "Built-in users per realm with argon2id passwords, sessions valid across the realm's databases, API keys for services, invitations and brute-force protection."
+
+      - title: Access rules
+        icon: policy
+        description: "Per-collection rules.yaml decides who may read, create, update and delete each document. Read rules run inside the database query, so lists and counts only show what callers may see."
+
+      - title: Server-side functions
+        icon: function
+        description: "JavaScript or TypeScript next to your collections, run in isolated Deno processes: sync calls, background jobs you can follow, cron schedules, webhooks. Rules, secrets, rate limits, idempotency, a network allowlist and full call history are built in. [Start here](docs/functions/)."
+
+      - title: Built for operations
+        icon: monitor_heart
+        description: "JSON logs with request IDs, health and readiness probes, request limits, timeouts and graceful shutdown."

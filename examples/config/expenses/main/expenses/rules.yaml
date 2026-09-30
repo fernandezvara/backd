@@ -1,0 +1,37 @@
+# The best rules can do today. What they can't check is marked HOLE: the
+# docs page "Expenses without functions" explains each one, and the hack
+# script next to the app reproduces them.
+
+# Readers must be listed in the expense's copy of the members.
+# HOLE: the copy is written by clients, and never compared with the group.
+read: user != nil && user.email in document.members
+
+# You record only what you paid yourself, among people of the expense's
+# members; a settlement goes to exactly one other person.
+# HOLE: group_id and members aren't checked against the group, so anyone
+# who knows a group's id can add expenses to it.
+# HOLE: a settlement is recorded by the payer alone; the receiver never
+# confirms it.
+create: >
+  user != nil
+  && user.email in data.members
+  && data.paid_by == user.email
+  && all(data.split_between, # in data.members)
+  && (data.kind == 'expense'
+      || (len(data.split_between) == 1 && !(user.email in data.split_between)))
+
+# Only who wrote it changes it, and it stays in its group, of its kind,
+# and paid by them. The members copy may change: the app refreshes the
+# copies of its own expenses when the group changes.
+update: >
+  user != nil
+  && document._meta.owner == user.id
+  && !('group_id' in changed())
+  && !('kind' in changed())
+  && data.paid_by == user.email
+  && user.email in data.members
+  && all(data.split_between, # in data.members)
+  && (data.kind == 'expense'
+      || (len(data.split_between) == 1 && !(user.email in data.split_between)))
+
+delete: user != nil && document._meta.owner == user.id

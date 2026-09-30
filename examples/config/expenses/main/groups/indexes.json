@@ -1,0 +1,3 @@
+[
+  { "fields": ["members", "-_meta.created_at"] }
+]

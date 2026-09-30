@@ -1,0 +1,3 @@
+# A sync function that runs as the caller: ctx.db reads with the caller's
+# own access rules, so a customer can only price their own orders.
+invoke: "user != nil"

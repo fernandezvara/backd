@@ -1,0 +1,39 @@
+{
+  "name": "@backd/client",
+  "version": "0.1.0",
+  "description": "JavaScript client for backd: auth, sessions and data for browsers, Node and edge runtimes.",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    }
+  },
+  "types": "./types/index.d.ts",
+  "files": [
+    "src",
+    "types"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "typecheck": "tsc -p tsconfig.json",
+    "build:types": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build:types",
+    "test:integration": "node --test --test-concurrency=1 \"test/integration/*.test.js\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fernandezvara/backd.git",
+    "directory": "clients/js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "typescript": "^5.9.3"
+  }
+}

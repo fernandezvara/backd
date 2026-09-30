@@ -1,0 +1,4 @@
+# Lint settings for api/openapi.yaml: make lint-api. Warnings fail the lint.
+# Deliberate exceptions live in .redocly.lint-ignore.yaml.
+extends:
+  - recommended-strict

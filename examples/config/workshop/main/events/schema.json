@@ -1,0 +1,11 @@
+{
+  "$comment": "The payment provider's events the webhook has already handled. The unique index on event_id is what makes a retried delivery harmless.",
+  "type": "object",
+  "properties": {
+    "event_id": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "type":     { "type": "string", "maxLength": 100 },
+    "order_id": { "type": "string", "maxLength": 100 }
+  },
+  "required": ["event_id", "type"],
+  "additionalProperties": false
+}

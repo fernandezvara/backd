@@ -1,0 +1,3 @@
+[
+  { "fields": ["status", "-_meta.created_at"] }
+]

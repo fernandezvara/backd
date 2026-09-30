@@ -1,0 +1,21 @@
+# The "workshop" realm: one small shop, with the server-side functions the
+# documentation's Functions section walks through (docs: Functions ->
+# Cookbook). Every function here is real and tested: a sync call reading
+# data as the caller, a privileged atomic refund, an async report job, two
+# cron schedules, and a webhook.
+#
+# Anyone can sign up and place orders. `staff` may call refund; the cron
+# functions need at least one worker (`backd serve --with-worker`, which the
+# local stack runs, or a dedicated `backd worker`).
+auth: enabled
+signup: open
+
+# `backd bootstrap --realm workshop --email <email>` creates the first
+# administrator; give people the staff role in `roles.staff.users` below or
+# with `backd user add-role --role staff`.
+roles:
+  admin:
+    description: Manages users, invitations and API keys
+    admin: true
+  staff:
+    description: Refunds orders and reads the daily digests

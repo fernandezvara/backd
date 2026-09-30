@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "properties": {
+    "order_id": { "type": "string" },
+    "subtotal": { "type": "integer" },
+    "tax":      { "type": "integer" },
+    "total":    { "type": "integer" }
+  },
+  "required": ["order_id", "subtotal", "tax", "total"]
+}

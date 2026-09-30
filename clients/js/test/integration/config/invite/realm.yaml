@@ -1,0 +1,4 @@
+signup: invite
+roles:
+  ops:
+    admin: true

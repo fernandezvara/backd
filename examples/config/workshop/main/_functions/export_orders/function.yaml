@@ -1,0 +1,10 @@
+# An async function: the call answers 202 with a job, and a worker runs the
+# function in the background. Use it for work that may take longer than a
+# caller should wait, or that must survive the caller going away.
+#
+# It runs as the customer who asked (ctx.db), so it can only export their
+# own orders. `timeout` is how long the job may run (up to 24h).
+mode: async
+timeout: 5m
+invoke: "user != nil"
+rate_limit: { per: user, limit: 5, window: 1h }

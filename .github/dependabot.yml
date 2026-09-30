@@ -1,0 +1,27 @@
+# Weekly dependency updates, grouped per ecosystem so each week brings at
+# most a few pull requests. CI (vet, tests, govulncheck, image scan) checks
+# each one.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule: { interval: weekly }
+    groups: { go: { patterns: ["*"] } }
+  - package-ecosystem: gomod
+    directory: /docs # the Hugo theme module
+    schedule: { interval: weekly }
+    groups: { docs: { patterns: ["*"] } }
+  - package-ecosystem: npm
+    directory: /clients/js
+    schedule: { interval: weekly }
+    groups: { js: { patterns: ["*"] } }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    groups: { actions: { patterns: ["*"] } }
+  - package-ecosystem: docker
+    # /docker/test pins the Deno of registry.DenoVersion: a bump there fails
+    # the build tests until the constant follows.
+    directories: ["/", "/deploy/production/ops", "/docker/docs", "/docker/test", "/docker/executor"]
+    schedule: { interval: weekly }
+    groups: { images: { patterns: ["*"] } }

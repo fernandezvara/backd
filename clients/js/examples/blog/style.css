@@ -1,0 +1,28 @@
+[x-cloak] { display: none !important; }
+body { font: 16px/1.5 system-ui, sans-serif; margin: 0; background: #f6f7f9; color: #1f2328; }
+main { max-width: 40rem; margin: 0 auto; padding: 1.5rem 1rem; }
+header { display: flex; justify-content: space-between; align-items: baseline; }
+h1 { margin: 0; font-size: 1.5rem; }
+h2 { font-size: 1.1rem; margin: 0 0 .75rem; }
+h3 { margin: 0 0 .25rem; font-size: 1.05rem; }
+.card { background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+form.card, form.edit { display: grid; gap: .6rem; }
+label { display: grid; gap: .25rem; font-size: .9rem; }
+label.inline { display: flex; align-items: center; gap: .5rem; }
+input, textarea { font: inherit; padding: .45rem .6rem; border: 1px solid #d0d7de; border-radius: 6px; }
+button { font: inherit; padding: .45rem .9rem; border-radius: 6px; border: 1px solid #1f6feb; background: #1f6feb; color: #fff; cursor: pointer; justify-self: start; }
+button:disabled { opacity: .6; cursor: default; }
+button.link { background: none; border: none; color: #1f6feb; padding: 0 .4rem; }
+button.link.danger { color: #cf222e; }
+.error { background: #ffebe9; border: 1px solid #ff8182; border-radius: 6px; padding: .6rem .8rem; }
+.muted { color: #656d76; font-size: .9rem; }
+.who { margin: 0; }
+.filter { background: #ddf4ff; border: 1px solid #54aeff; border-radius: 6px; padding: .5rem .8rem; }
+button.link.author { padding: 0; }
+.chip { margin-right: .5rem; }
+button.tag { background: #eef1f4; color: #1f2328; border: 1px solid #d0d7de; border-radius: 1rem; padding: 0 .6rem; font-size: .8rem; }
+button.tag:hover:not(:disabled) { border-color: #1f6feb; color: #1f6feb; }
+.badge { background: #fff8c5; border: 1px solid #d4a72c; border-radius: 1rem; padding: 0 .5rem; font-size: .8rem; margin-left: .5rem; }
+footer { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+a.card.example { display: block; color: inherit; text-decoration: none; }
+a.card.example:hover { border-color: #1f6feb; }

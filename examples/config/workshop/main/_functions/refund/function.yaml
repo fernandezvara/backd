@@ -1,0 +1,10 @@
+# A privileged, atomic change no customer rule may allow: mark the order
+# refunded and record the refund together, or neither.
+#
+# - `admin: true` gives ctx.admin.db, full access recorded as this function.
+# - Only staff may call it (API keys always may).
+# - `idempotency: required`: a retried request with the same
+#   Idempotency-Key gets the first answer back instead of refunding twice.
+admin: true
+invoke: "user != nil && hasRole(user, 'staff')"
+idempotency: required

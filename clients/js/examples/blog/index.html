@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>backd blog example</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Resolves `import … from '@backd/client'`, as a bundler would; nginx
+       serves clients/js/src at /example/client/. -->
+  <script type="importmap">{ "imports": { "@backd/client": "/example/client/index.js" } }</script>
+  <!-- The app registers its component on alpine:init, so it loads before Alpine. -->
+  <script type="module" src="app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.17.4/dist/cdn.min.js"></script>
+</head>
+<body>
+  <main x-data="blog" x-cloak>
+    <header>
+      <h1>backd blog</h1>
+      <template x-if="user">
+        <p class="who">
+          <span x-text="user.email"></span>
+          <button class="link" @click="logout" :disabled="busy">Log out</button>
+        </p>
+      </template>
+    </header>
+
+    <p class="muted stats" title="From the server-side stats function: see main/_functions/stats and the docs page &quot;Blog&quot;.">
+      <span x-text="stats.published"></span> published <span x-text="stats.published === 1 ? 'post' : 'posts'"></span>
+      <template x-if="user"> · <span x-text="stats.mine"></span> yours (published or draft)</template>
+    </p>
+
+    <p class="error" x-show="error" x-text="error" role="alert"></p>
+
+    <!-- Signed out: log in or sign up. -->
+    <form class="card" x-show="!user" @submit.prevent="submitAuth">
+      <h2 x-text="mode === 'login' ? 'Log in' : 'Sign up'"></h2>
+      <label>Email <input type="email" x-model="email" required autocomplete="email"></label>
+      <label>Password <input type="password" x-model="password" required minlength="12"
+        :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"></label>
+      <button type="submit" :disabled="busy" x-text="mode === 'login' ? 'Log in' : 'Create account'"></button>
+      <button type="button" class="link" @click="mode = mode === 'login' ? 'signup' : 'login'"
+        x-text="mode === 'login' ? 'No account? Sign up' : 'Have an account? Log in'"></button>
+    </form>
+
+    <!-- Signed in: write a post. -->
+    <form class="card" x-show="user" @submit.prevent="create">
+      <h2>New post</h2>
+      <label>Title <input x-model="draft.title" required></label>
+      <label>Text <textarea x-model="draft.body" rows="3"></textarea></label>
+      <label>Category <input x-model="draft.category" list="categories" maxlength="40" placeholder="optional, e.g. news"></label>
+      <datalist id="categories">
+        <template x-for="c in categories" :key="c"><option :value="c"></option></template>
+      </datalist>
+      <label class="inline"><input type="checkbox" x-model="draft.published"> Publish now</label>
+      <button type="submit" :disabled="busy">Post</button>
+    </form>
+
+    <section>
+      <h2>Posts</h2>
+      <p class="filter" x-show="filters.author || filters.category">
+        Showing
+        <template x-if="filters.author">
+          <span class="chip">by <strong x-text="filters.author"></strong>
+            <button class="link" @click="filterBy('author', null)" :disabled="busy" title="Remove this filter">✕</button></span>
+        </template>
+        <template x-if="filters.category">
+          <span class="chip">in <strong x-text="filters.category"></strong>
+            <button class="link" @click="filterBy('category', null)" :disabled="busy" title="Remove this filter">✕</button></span>
+        </template>
+        <button class="link" @click="clearFilters()" :disabled="busy">Show all</button>
+      </p>
+      <p class="muted" x-show="posts.length === 0">No posts yet.</p>
+      <template x-for="post in posts" :key="post.id">
+        <article class="card">
+          <!-- Editing one of your posts. -->
+          <template x-if="editing?.id === post.id">
+            <form class="edit" @submit.prevent="saveEdit(post)" @keydown.escape="editing = null">
+              <label>Title <input x-model="editing.title" required></label>
+              <label>Text <textarea x-model="editing.body" rows="4"></textarea></label>
+              <label>Category <input x-model="editing.category" list="categories" maxlength="40" placeholder="optional"></label>
+              <span>
+                <button type="submit" :disabled="busy">Save</button>
+                <button type="button" class="link" @click="editing = null" :disabled="busy">Cancel</button>
+              </span>
+            </form>
+          </template>
+          <template x-if="editing?.id !== post.id">
+            <div>
+              <h3 x-text="post.title"></h3>
+              <p x-text="post.body"></p>
+              <footer class="muted">
+                <span>
+                  <span x-text="new Date(post._meta.created_at).toLocaleString()"></span>
+                  <template x-if="post.author?.email">
+                    <span>by <button class="link author" @click="filterBy('author', post.author.email)" :disabled="busy"
+                      :title="'Show posts by ' + post.author.email" x-text="post.author.email"></button></span>
+                  </template>
+                </span>
+                <template x-if="post.category">
+                  <button class="tag" @click="filterBy('category', post.category)" :disabled="busy"
+                    :title="'Show posts in ' + post.category" x-text="post.category"></button>
+                </template>
+                <span x-show="!post.published" class="badge">Draft</span>
+                <template x-if="isMine(post)">
+                  <span>
+                    <button class="link" @click="startEdit(post)" :disabled="busy || editing !== null">Edit</button>
+                    <button class="link" @click="togglePublished(post)" :disabled="busy"
+                      x-text="post.published ? 'Unpublish' : 'Publish'"></button>
+                    <button class="link danger" @click="remove(post)" :disabled="busy">Delete</button>
+                  </span>
+                </template>
+              </footer>
+            </div>
+          </template>
+        </article>
+      </template>
+    </section>
+  </main>
+</body>
+</html>

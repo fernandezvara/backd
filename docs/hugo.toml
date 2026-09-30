@@ -1,0 +1,82 @@
+baseURL = "https://fernandezvara.github.io/backd/"
+languageCode = "en-us"
+title = "backd"
+enableGitInfo = true
+
+[markup.goldmark.renderer]
+  unsafe = false
+
+[markup.highlight]
+  noClasses = false
+
+[markup.tableOfContents]
+  startLevel = 2
+  endLevel = 3
+
+[module]
+  [[module.imports]]
+    path = "github.com/fernandezvara/hugodoks"
+
+  # The default mounts, restated because adding one replaces them all.
+  [[module.mounts]]
+    source = "content"
+    target = "content"
+  [[module.mounts]]
+    source = "data"
+    target = "data"
+  [[module.mounts]]
+    source = "layouts"
+    target = "layouts"
+  [[module.mounts]]
+    source = "static"
+    target = "static"
+  [[module.mounts]]
+    source = "assets"
+    target = "assets"
+  [[module.mounts]]
+    source = "i18n"
+    target = "i18n"
+  # The runnable examples the pages quote, read by the example-file shortcode
+  # (layouts/shortcodes/example-file.html) so the docs show the code that is
+  # actually tested.
+  [[module.mounts]]
+    source = "../examples/config/workshop"
+    target = "assets/examples/workshop"
+    includeFiles = ["**.ts", "**.yaml", "**.json"]
+    excludeFiles = ["**/.build/**"]
+
+# Hugo does not merge outputs from a theme: the search index is ours to enable.
+[outputs]
+  home = ["html", "rss", "searchindex"]
+
+[params]
+  description = "Config-driven REST backend over MongoDB"
+
+  [params.footer]
+    copyright = "© 2026 backd contributors · [MIT License](https://github.com/fernandezvara/backd/blob/main/LICENSE)"
+
+  [params.social]
+    github = "fernandezvara/backd"
+
+  [params.docs]
+    editPage = true
+    lastMod = true
+    aiAssist = true
+    repoURL = "https://github.com/fernandezvara/backd"
+    repoBranch = "main"
+    repoContentDir = "docs/content"
+
+  [params.brand]
+    icon = "database"
+
+[menu]
+  [[menu.primary]]
+    name = "Docs"
+    pageRef = "/docs"
+    identifier = "docs"
+    weight = 10
+  [[menu.primary]]
+    name = "GitHub"
+    url = "https://github.com/fernandezvara/backd"
+    identifier = "github"
+    weight = 20

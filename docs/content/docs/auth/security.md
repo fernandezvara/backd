@@ -1,0 +1,74 @@
+---
+title: "Security model"
+description: "What backd protects, how, and a checklist before exposing it."
+icon: "shield"
+weight: 590
+toc: true
+---
+
+This page summarizes how `backd` protects data in realms with `auth: enabled`, and what the operator is responsible for. To report a vulnerability, see [`SECURITY.md`](https://github.com/fernandezvara/backd/blob/main/SECURITY.md).
+
+## Who can do what
+
+| Caller | Proves identity with | Can |
+|---|---|---|
+| Anonymous | nothing | What [access rules](../rules/) allow `user == nil` |
+| User | session token (`bds_…`) | What access rules allow that user; manage their own account and sessions |
+| Server-side service | API key (`bdk_…`) with the `data` role | Everything in the realm's data; act as a user with `X-Backd-On-Behalf-Of` |
+| Management tooling | API key with the `admin` role | The same, plus the [admin API](../admin/): users, roles, invitations, API keys |
+| Administrator | session of a user holding an [admin role](../../configuration/realm/#roles), for example through [`backd login`](../cli/) | What access rules allow that user, plus the admin API |
+| Operator | access to `CONFIG_DIR` and MongoDB | Everything, including creating a realm's first administrator with [`backd bootstrap`](../cli/#the-first-administrator) |
+
+Credentials belong to one realm and are unknown in every other realm. Invalid, expired or revoked credentials are always refused (`401`), never downgraded to anonymous access.
+
+## How it's protected
+
+- **Passwords** are hashed with argon2id (64 MiB, 3 passes, per-password salt). Hashing concurrency is capped per process so floods can't exhaust memory.
+- **Tokens and keys** are 256-bit random values. Only their SHA-256 hashes are stored; they are never logged.
+- **Sessions** expire after idle time and a maximum lifetime, and end on logout, password change, disabling or deletion. Changes to roles and account status apply on the next request.
+- **Login** gives the same answer, after the same work, for every failure, so neither answers nor timing reveal registered emails. Failed logins are throttled per account and per address, without lockout. Password checks for one account run one at a time in each process, so parallel requests can't slip past the throttle; with several instances, at most one attempt per instance can run while a wait expires.
+- **Administration** goes through the admin API. The `backd user` and `backd apikey` commands are clients of it and need no database credentials, so every change passes the same authentication, role and network checks. Only `backd bootstrap` writes to the database, and only to create the first administrator of a realm that has none. The CLI keeps its sessions in a file readable only by its owner.
+- **An audit trail** records who changed users, roles, network restrictions, API keys and invitations, administrators' logins and refused admin requests, with the client address and request id. It is append-only, holds no secrets, and in the production reference `backd`'s own database user can't change it (see [Audit trail](../audit/)).
+- **Functions** run in a separate executor, one Deno process per call, with no environment, no files but their own bundle, no processes or FFI, and time, memory and output limits. They reach data only through `backd`, with credentials signed by `backd`, valid for one call and only on the internal listener: as the caller (rules apply; the caller is resolved by `backd`, and nothing in the request can choose it, see [who is calling](../../functions/writing/#who-is-calling-sessions-and-identity)) or, with `admin: true`, with full access recorded as the function. The executor never sees the signing key, `CONFIG_DIR` or MongoDB. Their outbound network is a separate control, below.
+- **Scheduled functions** (cron) have no caller, so they always receive `ctx.admin.db` — full access, recorded as the function — whether or not they declare `admin: true`; review a function with a `schedule` as if it did. Runs are created by workers under a deterministic id per scheduled time, so extra workers never duplicate them (see [Scheduled functions](../../functions/cron/)).
+- **Function secrets** are encrypted at rest (AES-256-GCM) under `BACKD_SECRETS_KEY`, which `backd` never persists; a function receives only the values it declares, as `ctx.secrets`, never in its process environment, and the supervisor masks their exact values in captured logs. Managed only by realm administrators, through the same admin API and audit trail as everything else in this list (see [Functions → Secrets](../../functions/secrets/)). **Trust model:** a realm's administrators can set and read (by using) that realm's own secrets, never another realm's; the operator holding `BACKD_SECRETS_KEY` can decrypt every secret of every realm on the instance — the same reach they already have through `CONFIG_DIR` and MongoDB access.
+- **Function invocation history** ([logs](../../functions/logs/)) never stores a call's input or output, only what happened (status, duration, actor, its own console output) — the same secret-masking captured logs already get. **Async job results** are the one deliberate exception (a job's input and output are stored, since there's nowhere else to keep them until read): a job is readable only by the caller who enqueued it or by any API key, the same "unreadable answers 404, not 403" pattern documents already use, so a job's existence isn't revealed to a caller who can't see it; an anonymous request (no credential at all) answers `401` instead, since there's no identity to even compare (see [Async jobs](../../functions/jobs/)).
+- **`Idempotency-Key` claims are scoped to the function *and* the caller**, never just the function: two different callers can never collide on the same client-chosen key, even if they happen to pick an identical string, because the caller's own identity (signed-in user, or API key) is part of what makes a claim's storage key unique. Without this, a coincidental key collision between two callers could let one receive the other's stored response (see [Idempotency](../../functions/calling/#idempotency)).
+
+### Server-side functions: egress and network placement
+
+A function runs code you didn't necessarily write yourself — an npm dependency, a library update pulled in at build time. If a bug or a compromised dependency in it could reach the network freely, it could read from MongoDB directly (bypassing every access rule), steal your cloud provider's credentials from its metadata endpoint (SSRF), reach `backd`'s or the executor's internal endpoints, or send your data anywhere. Three independent layers stop this, each closing a gap the others leave open — a single hostname allowlist isn't enough, because it checks **names**, not the addresses they resolve to, and it can't see raw TCP at all:
+
+| Layer | What it does | What it alone can't stop |
+|---|---|---|
+| 1. Per-function allowlist | `network:` in `function.yaml` becomes that process's `--allow-net` (Deno's own permission system), plus `backd`'s address; with no list, a function reaches only `backd` | An allowed name resolving somewhere it shouldn't (DNS rebinding, misconfiguration); raw TCP to a host that was never in the allowlist by name |
+| 2. `backd egress` | An HTTP forward/CONNECT proxy every function process is routed through, authenticated with a token scoped to that invocation's own allowed hosts (minted by the executor, so a compromised function can't widen its own scope). It resolves every target itself — not trusting the name — and refuses loopback, private, link-local (cloud metadata), CGNAT, multicast and unspecified addresses, with `backd`'s own internal listener as its only exception | Raw TCP (`Deno.connect`), which never consults an HTTP proxy at all |
+| 3. Network placement | The executor's container reaches only `backd egress` and `backd`'s internal listener at the network level — MongoDB and everything else is simply unroutable from it, even for a raw TCP connection that bypasses layers 1 and 2 entirely | A raw TCP connection to the executor's own loopback address, which no network placement can prevent (it's the same container reaching itself) |
+
+That last gap — a function reaching the executor's own `/invoke` over its own loopback — is closed by authentication, not the network: `/invoke` requires `BACKD_EXECUTOR_TOKEN`, a secret a function's process never has, so reaching the socket gets an unauthenticated request nowhere.
+
+**What's proven, and what's still your job.** Layers 1 and 2 are enforced by `backd` itself. Layer 3 is proven correct by `docker/egress-test/` in the repository — a real, isolated Docker Compose network where a declared host name resolving to MongoDB's actual address gets no route at all over raw TCP — and wired into the [production reference](../../operations/production/#functions-executor-egress-and-worker), whose own test proves it from a real function call in that stack's actual topology. If you assemble your own deployment instead of adapting the reference, **you must reproduce it yourself**: the executor's container or network namespace must have no route to MongoDB, `backd`'s public listener, or anything else private, other than `backd egress` and `backd`'s internal listener. Without it, layers 1 and 2 alone leave raw TCP wide open. See [Functions → Egress](../../functions/network/#egress-the-network-allowlist-completed) for the full design and how to run the proof yourself.
+- **Emails** can't be changed through `backd`, so a stolen session can't take over an account.
+- **Network restrictions** can limit the admin API to your networks, per realm and per admin, confine a user's login and sessions to theirs, and pin an API key to a service's addresses (see [network restrictions](../../configuration/realm/#network-restrictions)).
+- **Access rules** gate whole documents. Unreadable documents answer `404`, so their existence isn't revealed. Rules can't dereference a missing user, a check that happens at startup. Read rules are applied inside the database query, so pages and counts never include unreadable documents.
+- **Queries** from clients are translated through an allowlist; they never reach MongoDB as raw query documents.
+- **CORS** only allows the origins you list, without credentials mode. Tokens travel in the `Authorization` header, never in cookies, so there is no cross-site request forgery surface.
+- **Logs** never contain request bodies, document contents, passwords or credentials.
+- **Responses** of `/_auth` and `/_admin` carry `Cache-Control: no-store`, so proxies and browsers don't cache tokens or account data. Document responses vary on `Origin` and `Authorization`, and those to requests with credentials are `private, no-cache`, so a cache never serves one caller's documents to another (see [Caching](../../api/#caching)). Every response carries `X-Content-Type-Options: nosniff`.
+
+## What you are responsible for
+
+- **TLS.** `backd` serves plain HTTP; terminate TLS in front of it.
+- **Rate limiting** of requests other than failed logins, in the [reverse proxy](../../operations/#rate-limiting-and-abuse).
+- **`TRUSTED_PROXIES`** when behind a proxy, so throttling sees real clients.
+- **API keys:** store them as secrets, give each service its own, set expiries and rotate them (see the [policy](../api-keys/#expiry-and-rotation-policy)), revoke unused ones. Never ship them to browsers or apps.
+- **Rules:** review each `rules.yaml`. A missing rule denies, but a too-broad one (`read: "true"`) publishes a collection. Unique indexes can reveal that a value exists: creating a document with a value that a hidden document already has answers `409`.
+- **`auth: disabled` realms** must never be reachable from the internet.
+- **Browser apps** must protect their users' tokens against cross-site scripting.
+- **MongoDB:** restrict network access, require authentication and TLS, give `backd` a [least-privilege user](../../operations/production/#least-privilege-provisioning), and back up the `<realm>___system` databases like the rest: they hold password and token hashes.
+- **If you run functions and didn't start from the [production reference](../../operations/production/#functions-executor-egress-and-worker):** [network placement](#server-side-functions-egress-and-network-placement) for the executor — it must reach only `backd egress` and `backd`'s internal listener, nothing else.
+- **`webhook` functions verify their own sender.** `backd` enforces only that a `webhook` function's `invoke` rule allows anonymous callers (refusing to start otherwise, since a webhook sender has no session or API key) — it has no way to know what a genuine request from Stripe, GitHub, or any other sender looks like. Checking the sender's signature (e.g. against `ctx.request.headers`) is the function's own job, every time, before trusting the body; skipping it means anyone who finds the URL can trigger the function (see [Webhooks](../../functions/webhooks/)).
+
+## Checklist before exposing a realm
+
+Go through the [hardening checklist](../../operations/checklist/) before any realm faces the internet. It covers realms and their rules, credentials, the edge in front of `backd`, MongoDB and operations, on one page.

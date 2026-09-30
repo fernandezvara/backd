@@ -1,0 +1,4 @@
+[
+  { "fields": ["status", "-_meta.created_at"] },
+  { "fields": ["_meta.owner", "-_meta.created_at"] }
+]

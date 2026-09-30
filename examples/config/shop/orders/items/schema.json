@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name":   { "type": "string", "minLength": 1, "maxLength": 200 },
+    "price":  { "type": "number", "minimum": 0 },
+    "stock":  { "type": "integer", "minimum": 0 },
+    "status": { "enum": ["active", "archived"] },
+    "tags":   { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+  },
+  "required": ["name", "price"],
+  "additionalProperties": false
+}

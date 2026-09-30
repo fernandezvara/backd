@@ -1,0 +1,6 @@
+# Half of closing hole 3 ("Unconfirmed settlements") from "expenses
+# without functions": records a settlement as pending, not confirmed. See
+# ../confirm_settlement, the other half — only the receiver may confirm it.
+mode: sync
+timeout: 10s
+invoke: "user != nil"

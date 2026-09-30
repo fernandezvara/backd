@@ -1,0 +1,19 @@
+# The "expenses with functions" example: the same group-expenses app as
+# examples/config/expenses ("expenses without functions"), with holes 1-4
+# closed by server-side functions instead of client-trusted copies. See the
+# docs page "Expenses with functions" for what changed and why, next to
+# "Expenses without functions" for the comparison.
+#
+# Anyone can sign up. Access is by email: a group lists its members'
+# emails, and rules compare them with the signed-in user's email — exactly
+# as in the "without functions" version; groups didn't need to change.
+auth: enabled
+signup: open
+
+# The realm's administrators: `backd bootstrap --realm expenses-with-functions
+# --email <email>` creates the first one; they manage users and API keys through
+# the admin API.
+roles:
+  admin:
+    description: Manages users, invitations and API keys
+    admin: true

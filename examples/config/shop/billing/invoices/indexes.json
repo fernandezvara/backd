@@ -1,0 +1,4 @@
+[
+  { "fields": ["number"], "unique": true },
+  { "fields": ["client_id"] }
+]

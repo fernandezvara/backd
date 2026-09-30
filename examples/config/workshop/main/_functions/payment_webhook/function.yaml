@@ -1,0 +1,11 @@
+# A webhook: another service (your payment provider) calls this URL. The
+# sender has no backd session, so `invoke` must allow anonymous callers and
+# the function itself is the only check: it verifies the signature.
+#
+# `admin: true` because marking an order paid is not something a customer
+# rule allows. The signing secret is set with
+#   backd secret set --realm workshop --database main --name PAYMENT_WEBHOOK_SECRET
+mode: webhook
+invoke: "true"
+admin: true
+secrets: [PAYMENT_WEBHOOK_SECRET]

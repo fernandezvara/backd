@@ -1,0 +1,7 @@
+signup: open
+roles:
+  admin: {}
+  ops:
+    admin: true
+cors:
+  origins: [http://localhost:5173]

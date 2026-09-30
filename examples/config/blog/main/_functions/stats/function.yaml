@@ -1,0 +1,5 @@
+# A public, read-only function: see function.yaml's full reference (backd
+# template function) for every key. invoke: "true" means anyone may call
+# it, published or not — this one only ever returns counts, never a post's
+# content, so that's fine here.
+invoke: "true"

@@ -1,0 +1,27 @@
+{{- /*
+  Prints a file of a runnable example, highlighted, so the docs quote the code
+  that is tested rather than a copy.
+
+    {{< example-file path="workshop/main/_functions/refund/index.ts" >}}
+    {{< example-file path="workshop/realm.yaml" lines="10-20" >}}
+
+  path   relative to examples/config/ (mounted from ../examples/config/workshop)
+  lang   defaults to the file extension (ts, yaml, json)
+  lines  optional first-last range, 1-based, inclusive
+  title  optional caption; defaults to the file's path
+*/ -}}
+{{- $path := .Get "path" -}}
+{{- $file := resources.Get (printf "examples/%s" $path) -}}
+{{- if not $file }}{{ errorf "example-file: examples/config/%s not found (%s)" $path .Position }}{{ end -}}
+{{- $lang := .Get "lang" | default (strings.TrimPrefix "." (path.Ext $path)) -}}
+{{- $text := $file.Content | strings.TrimSuffix "\n" -}}
+{{- with .Get "lines" -}}
+  {{- $range := split . "-" -}}
+  {{- $lines := split $text "\n" -}}
+  {{- $from := int (index $range 0) -}}
+  {{- $to := int (index $range 1) -}}
+  {{- if or (lt $from 1) (gt $to (len $lines)) (gt $from $to) }}{{ errorf "example-file: bad lines %q for %s (%d lines)" . $path (len $lines) }}{{ end -}}
+  {{- $text = delimit (first (add (sub $to $from) 1) (after (sub $from 1) $lines)) "\n" -}}
+{{- end -}}
+<p class="hd-example-path"><code>examples/config/{{ $path }}</code></p>
+{{ transform.Highlight $text $lang "" }}

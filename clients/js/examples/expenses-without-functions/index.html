@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Expenses without functions · backd example</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Resolves `import … from '@backd/client'`; nginx serves clients/js/src
+       at /example/client/. -->
+  <script type="importmap">{ "imports": { "@backd/client": "/example/client/index.js" } }</script>
+  <!-- The app registers its component on alpine:init, so it loads before Alpine. -->
+  <script type="module" src="app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.17.4/dist/cdn.min.js"></script>
+</head>
+<body>
+  <main x-data="expensesApp" x-cloak>
+    <header>
+      <h1><a href="../">Examples</a> / Expenses</h1>
+      <template x-if="user">
+        <p class="who"><span x-text="user.email"></span>
+          <button class="link" @click="logout" :disabled="busy">Log out</button></p>
+      </template>
+    </header>
+    <p class="note">An example of shared data on backd, <strong>without server-side functions</strong>: it has
+      <a href="/docs/examples/expenses/#known-holes">known holes</a>. Shows why functions with logic are needed.</p>
+
+    <p class="error" x-show="error" x-text="error" role="alert"></p>
+
+    <form class="card" x-show="!user" @submit.prevent="submitAuth">
+      <h2 x-text="mode === 'login' ? 'Log in' : 'Sign up'"></h2>
+      <label>Email <input type="email" x-model="email" required autocomplete="email"></label>
+      <label>Password <input type="password" x-model="password" required minlength="12"
+        :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"></label>
+      <button type="submit" :disabled="busy" x-text="mode === 'login' ? 'Log in' : 'Create account'"></button>
+      <button type="button" class="link" @click="mode = mode === 'login' ? 'signup' : 'login'"
+        x-text="mode === 'login' ? 'No account? Sign up' : 'Have an account? Log in'"></button>
+      <p class="muted">You'll see every group that lists your email.</p>
+    </form>
+
+    <template x-if="user">
+      <div class="layout">
+        <!-- Groups -->
+        <aside class="card">
+          <h2>Groups</h2>
+          <p class="muted" x-show="groups.length === 0">No groups yet.</p>
+          <ul class="groups">
+            <template x-for="g in groups" :key="g.id">
+              <li><button class="link" :class="{ active: group && group.id === g.id }" @click="select(g)" :disabled="busy" x-text="g.name"></button></li>
+            </template>
+          </ul>
+          <form @submit.prevent="createGroup" class="stack">
+            <input x-model="newGroup.name" placeholder="New group, e.g. Lisbon trip" required maxlength="80">
+            <input x-model="newGroup.currency" placeholder="EUR" required pattern="[A-Za-z]{3}" maxlength="3" class="currency">
+            <button type="submit" :disabled="busy">Create</button>
+          </form>
+        </aside>
+
+        <section x-show="!group" class="card muted">Create a group, or ask someone to invite your email to theirs.</section>
+        <section x-show="group">
+          <template x-if="group">
+            <div>
+              <div class="card">
+                <h2 x-text="group.name + ' · ' + group.currency"></h2>
+                <p class="muted">Members, by email. Invited people see the group when they sign up or log in with that email.</p>
+                <ul class="members">
+                  <template x-for="m in group.members" :key="m">
+                    <li><span x-text="m"></span>
+                      <button class="link danger" x-show="m !== user.email" @click="removeMember(m)" :disabled="busy" title="Remove from the group">✕</button></li>
+                  </template>
+                </ul>
+                <form @submit.prevent="addMember" class="row">
+                  <input type="email" x-model="invite" placeholder="Invite by email" required>
+                  <button type="submit" :disabled="busy">Invite</button>
+                </form>
+              </div>
+
+              <div class="card">
+                <h2>Balances</h2>
+                <table class="balances">
+                  <template x-for="p in people" :key="p">
+                    <tr :class="{ outsider: !group.members.includes(p) }">
+                      <td x-text="p + (p === user.email ? ' (you)' : '') + (group.members.includes(p) ? '' : ' — not a member')"></td>
+                      <td class="num" :class="(balances[p] ?? 0) < 0 ? 'neg' : 'pos'" x-text="money(balances[p] ?? 0)"></td>
+                    </tr>
+                  </template>
+                </table>
+                <h3>To settle up</h3>
+                <p class="muted" x-show="plan.length === 0">Everyone is even.</p>
+                <ul class="plan">
+                  <template x-for="p in plan" :key="p.from + p.to">
+                    <li><span x-text="p.from + ' pays ' + p.to + ' ' + money(p.amount)"></span>
+                      <button class="link" x-show="p.from === user.email" @click="settle(p.to, p.amount)" :disabled="busy">I paid this</button></li>
+                  </template>
+                </ul>
+              </div>
+
+              <form class="card" @submit.prevent="addExpense">
+                <h2>New expense</h2>
+                <label>What <input x-model="draft.description" placeholder="Dinner" maxlength="120"></label>
+                <label>Amount <input x-model="draft.amount" inputmode="decimal" placeholder="60.00" required></label>
+                <fieldset>
+                  <legend>Paid by you, split between</legend>
+                  <template x-for="m in group.members" :key="m">
+                    <label class="inline"><input type="checkbox" :value="m" x-model="draft.split"> <span x-text="m"></span></label>
+                  </template>
+                </fieldset>
+                <button type="submit" :disabled="busy">Add</button>
+              </form>
+
+              <div class="card">
+                <h2>History</h2>
+                <p class="muted" x-show="entries.length === 0">Nothing yet.</p>
+                <ul class="entries">
+                  <template x-for="e in entries" :key="e.id">
+                    <li :class="{ suspicious: suspicious(e) }">
+                      <div>
+                        <strong x-text="e.kind === 'settlement' ? e.paid_by + ' paid ' + e.split_between[0] : (e.description || 'Expense')"></strong>
+                        <span class="num" x-text="money(e.amount)"></span>
+                      </div>
+                      <div class="muted">
+                        <span x-show="e.kind === 'expense'" x-text="'paid by ' + e.paid_by + ', split between ' + e.split_between.length"></span>
+                        <span x-text="' · ' + new Date(e._meta.created_at).toLocaleString()"></span>
+                        <span class="warn" x-show="suspicious(e)" title="Paid by someone who isn't in the group: a former member, or anyone who knew the group's id (hole 1)">⚠ not from a member</span>
+                        <button class="link danger" x-show="isMine(e)" @click="remove(e)" :disabled="busy">Delete</button>
+                      </div>
+                    </li>
+                  </template>
+                </ul>
+              </div>
+            </div>
+          </template>
+        </section>
+      </div>
+    </template>
+  </main>
+</body>
+</html>

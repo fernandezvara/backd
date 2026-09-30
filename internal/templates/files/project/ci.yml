@@ -1,0 +1,35 @@
+name: config
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+env:
+  BACKD_VERSION: 0.3.0
+  IMAGE: ghcr.io/CHANGE_ME/backd-config # your org/repo, lower-case
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, packages: write }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with: { deno-version: "2.9.7" } # the Deno this backd version bundles functions with
+      - name: Test each function's own logic (deno test)
+        run: deno test config/*/*/_functions/
+      - name: Install backd
+        run: |
+          curl -fsSL "https://github.com/fernandezvara/backd/releases/download/v${BACKD_VERSION}/backd_${BACKD_VERSION}_linux_amd64.tar.gz" | tar -xz backd
+          sudo mv backd /usr/local/bin/
+      - run: backd functions build
+        env: { CONFIG_DIR: ./config }
+      - run: backd config check
+        env: { CONFIG_DIR: ./config }
+      - uses: docker/login-action@v3
+        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      - name: Image for this commit
+        run: |
+          docker build -t "$IMAGE:${GITHUB_SHA::12}" .
+          docker push "$IMAGE:${GITHUB_SHA::12}"
+      - name: On a tag, the same image under the tag (no rebuild)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: docker buildx imagetools create -t "$IMAGE:${GITHUB_REF_NAME}" "$IMAGE:${GITHUB_SHA::12}"

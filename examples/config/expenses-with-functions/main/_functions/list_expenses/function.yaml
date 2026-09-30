@@ -1,0 +1,8 @@
+# Closes hole 1 (group_id validated against the real group) and hole 2
+# ("Stale member copies") from "expenses without functions": expenses have
+# no members copy in this version — every read checks the caller's
+# CURRENT group membership instead, fresh, every time.
+mode: sync
+timeout: 10s
+invoke: "user != nil"
+admin: true

@@ -1,0 +1,16 @@
+# The local CA for the example stack, created once by scripts/local-certs.sh
+# with certsfor (https://www.certsfor.dev). Trust it in your browser or
+# system to accept https://localhost:8443 without warnings.
+dn:
+  cn: backd local development CA
+  c: ""
+  l: ""
+  o: backd
+  ou: local development
+  p: ""
+  pc: ""
+  st: ""
+san: []
+key: ecdsa:256
+exp: 3650
+client: false

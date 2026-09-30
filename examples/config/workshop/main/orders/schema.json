@@ -1,0 +1,12 @@
+{
+  "$comment": "An order. Customers create drafts; the payment webhook marks them paid; refund (staff) marks them refunded. Nothing else changes an order's status.",
+  "type": "object",
+  "properties": {
+    "item":     { "type": "string", "minLength": 1, "maxLength": 100 },
+    "quantity": { "type": "integer", "minimum": 1, "maximum": 1000 },
+    "amount":   { "type": "integer", "exclusiveMinimum": 0, "maximum": 100000000, "description": "In cents, before tax." },
+    "status":   { "enum": ["draft", "paid", "refunded"] }
+  },
+  "required": ["item", "quantity", "amount", "status"],
+  "additionalProperties": false
+}

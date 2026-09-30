@@ -1,0 +1,308 @@
+# backd production reference deployment. See README.md and the docs page
+# "Production deployment" for what each part does and why.
+#
+#   ./setup.sh                                   # certificates and passwords
+#   docker compose --env-file .env up -d --build
+#
+# Only nginx is reachable from outside: it terminates TLS, rate-limits,
+# caps body sizes and overwrites X-Forwarded-For. backd trusts exactly
+# nginx's address (PROXY_IP). MongoDB requires TLS and authentication, sits
+# on an internal network, and backd connects as a user that can only read
+# and write documents (PROVISION_MODE=verify). A one-shot provision job
+# with admin credentials creates collections, indexes and that user's grants.
+# Backup and restore jobs are in the "ops" profile (docs: Backup and restore).
+#
+# Functions (docs: Functions): the executor runs on its
+# own network, `func`, reaching only backd's internal listener and egress
+# — never MongoDB or the internet directly (F4's network placement).
+# `backd egress` bridges `func` to the internet (`uplink`) for functions
+# that declare outbound hosts. A dedicated worker runs async jobs.
+name: backd-production
+
+services:
+  mongo:
+    image: docker.io/library/mongo:8.2
+    # A single-node replica set (backd refuses standalone servers). With
+    # authentication on, a replica set needs a key file, which mongod only
+    # accepts when no one else can read it: install a private copy for the
+    # mongodb user, then start as usual.
+    entrypoint:
+      - bash
+      - -c
+      - install -m 400 -o mongodb -g mongodb /etc/mongo/tls/keyfile /tmp/mongo-keyfile && exec docker-entrypoint.sh "$$@"
+      - --
+    command:
+      - --replSet=rs0
+      - --keyFile=/tmp/mongo-keyfile
+      - --tlsMode=requireTLS
+      - --tlsCertificateKeyFile=/etc/mongo/tls/mongo.pem
+      # Clients check the server's certificate; they don't present one.
+      - --tlsAllowConnectionsWithoutCertificates
+      - --tlsCAFile=/etc/mongo/tls/ca.pem
+    environment:
+      # Creates the admin user on first start, and turns on authentication.
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?run ./setup.sh and pass --env-file .env}
+    volumes:
+      - mongo-data:/data/db
+      - ${SECRETS_DIR:-./secrets}/mongo:/etc/mongo/tls:ro
+    networks:
+      data:
+        # A fixed address, so a function's declared `network:` entry can
+        # name it directly (see functions/netprobe, deploy/production's
+        # own proof that the executor has no route here at all).
+        ipv4_address: 172.30.90.10
+    healthcheck:
+      # Initiates the replica set on first start; healthy once it's the primary.
+      test: ["CMD-SHELL", "mongosh --quiet --tls --tlsCAFile /etc/mongo/tls/ca.pem --host localhost -u root -p \"$$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --eval \"try { rs.status() } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo:27017'}]}) } if (!db.hello().isWritablePrimary) quit(1)\""]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  # One-shot deploy step, run with admin credentials: `backd provision`,
+  # then least-privilege grants on exactly the databases the config uses
+  # (ops/provision.sh). Run it again after every config change.
+  provision:
+    build:
+      context: ../..
+      dockerfile: deploy/production/ops/Dockerfile
+    # Shared with the backup and restore jobs, so `up --build` updates them too.
+    image: backd-ops
+    command: ["/ops/provision.sh"]
+    environment:
+      CONFIG_DIR: /config
+      MONGO_URI: "mongodb://root:${MONGO_ROOT_PASSWORD}@mongo:27017/?replicaSet=rs0&authSource=admin&tls=true&tlsCAFile=/etc/backd/tls/ca.pem"
+      BACKD_APP_USER: backd
+      BACKD_APP_PASSWORD: ${BACKD_APP_PASSWORD:?run ./setup.sh}
+      BACKD_BACKUP_PASSWORD: ${BACKD_BACKUP_PASSWORD:-}
+      LOG_LEVEL: warn
+    # The config is part of the images (app/Dockerfile, ops/Dockerfile), not
+    # mounted: every container of a deployment runs exactly the same one.
+    volumes: &tls
+      - ${SECRETS_DIR:-./secrets}/mongo/ca.pem:/etc/backd/tls/ca.pem:ro
+    networks: [data]
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: "no"
+
+  # Encrypted backup, run on a schedule (see ops/backup.sh):
+  #   docker compose --env-file .env run --rm backup
+  backup:
+    image: backd-ops
+    pull_policy: never
+    profiles: [ops]
+    command: ["/ops/backup.sh"]
+    # root in the container, to write to the backup directory on the host.
+    user: "0"
+    environment:
+      MONGO_URI: "mongodb://backup:${BACKD_BACKUP_PASSWORD}@mongo:27017/?replicaSet=rs0&authSource=admin&tls=true&tlsCAFile=/etc/backd/tls/ca.pem"
+      BACKUP_RECIPIENTS: ${BACKUP_RECIPIENTS:-}
+      BACKUP_KEEP: ${BACKUP_KEEP:-14}
+    volumes:
+      - ${SECRETS_DIR:-./secrets}/mongo/ca.pem:/etc/backd/tls/ca.pem:ro
+      - ${BACKUP_DIR:-./backups}:/backups
+    networks: [data]
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  # Restore, run by hand with admin credentials and the backup's private key:
+  #   docker compose --env-file .env run --rm \
+  #     -v /path/to/backup-identity.txt:/run/backup-identity:ro \
+  #     restore /backups/<file>
+  restore:
+    image: backd-ops
+    pull_policy: never
+    profiles: [ops]
+    entrypoint: ["/ops/restore.sh"]
+    user: "0"
+    environment:
+      MONGO_URI: "mongodb://root:${MONGO_ROOT_PASSWORD}@mongo:27017/?replicaSet=rs0&authSource=admin&tls=true&tlsCAFile=/etc/backd/tls/ca.pem"
+    volumes:
+      - ${SECRETS_DIR:-./secrets}/mongo/ca.pem:/etc/backd/tls/ca.pem:ro
+      - ${BACKUP_DIR:-./backups}:/backups:ro
+    networks: [data]
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  # backd with its config baked in (app/Dockerfile): the deployable artifact.
+  backd:
+    build:
+      context: ../..
+      dockerfile: deploy/production/app/Dockerfile
+    # Shared with the worker job (below), so `up --build` updates it too.
+    image: backd-app
+    environment:
+      CONFIG_DIR: /config
+      MONGO_URI: "mongodb://backd:${BACKD_APP_PASSWORD}@mongo:27017/?replicaSet=rs0&authSource=admin&tls=true&tlsCAFile=/etc/backd/tls/ca.pem"
+      # Refuse to start if MongoDB differs from the config; never change it.
+      PROVISION_MODE: verify
+      # Exactly nginx's address: X-Forwarded-For is believed from nothing else.
+      TRUSTED_PROXIES: ${PROXY_IP:-172.30.80.10}
+      # nginx's client_max_body_size matches this.
+      MAX_BODY_BYTES: "1048576"
+      # Functions: the executor and worker (docs: Functions ->
+      # "Running in production").
+      BACKD_INTERNAL_ADDR: ":8081"
+      BACKD_EXECUTOR_URL: http://executor:9100
+      BACKD_EXECUTOR_TOKEN: ${BACKD_EXECUTOR_TOKEN:?run ./setup.sh}
+      BACKD_CALLBACK_URL: http://backd:8081
+      BACKD_CALLBACK_KEY: ${BACKD_CALLBACK_KEY:?run ./setup.sh}
+      BACKD_SECRETS_KEY: ${BACKD_SECRETS_KEY:?run ./setup.sh}
+      LOG_LEVEL: info
+    volumes: *tls
+    networks: [edge, data, func]
+    depends_on:
+      provision:
+        condition: service_completed_successfully
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # Password hashing uses 64 MiB per login; the default concurrency
+    # follows these limits (here: min(2 CPUs, 512 MiB / 2 / 64 MiB) = 2).
+    cpus: 2
+    mem_limit: 512m
+    # Longer than SHUTDOWN_TIMEOUT (15s) so in-flight requests can drain.
+    stop_grace_period: 20s
+    restart: unless-stopped
+
+  # Claims and runs async jobs (docs: "Running the worker"). Its own
+  # deployment: scale it independently of the API instance above, which
+  # never runs the worker role itself in this reference (fold the two with
+  # `serve --with-worker` instead for a smaller deployment).
+  worker:
+    image: backd-app
+    pull_policy: never
+    command: ["worker"]
+    environment:
+      CONFIG_DIR: /config
+      MONGO_URI: "mongodb://backd:${BACKD_APP_PASSWORD}@mongo:27017/?replicaSet=rs0&authSource=admin&tls=true&tlsCAFile=/etc/backd/tls/ca.pem"
+      PROVISION_MODE: verify
+      BACKD_EXECUTOR_URL: http://executor:9100
+      BACKD_EXECUTOR_TOKEN: ${BACKD_EXECUTOR_TOKEN:?run ./setup.sh}
+      BACKD_CALLBACK_URL: http://backd:8081
+      BACKD_CALLBACK_KEY: ${BACKD_CALLBACK_KEY:?run ./setup.sh}
+      BACKD_SECRETS_KEY: ${BACKD_SECRETS_KEY:?run ./setup.sh}
+      LOG_LEVEL: info
+    volumes: *tls
+    networks: [data, func]
+    depends_on:
+      provision:
+        condition: service_completed_successfully
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 1
+    mem_limit: 256m
+    stop_grace_period: 20s
+    restart: unless-stopped
+
+  # One Deno process per function call, stopped at its deadline (docs:
+  # "Running the executor"). Reaches only `func`: no route to `data`
+  # (MongoDB) or the internet at all, except through egress below (F4's
+  # network placement).
+  executor:
+    build:
+      context: ../..
+      dockerfile: docker/executor/Dockerfile
+    environment:
+      BACKD_EXECUTOR_TOKEN: ${BACKD_EXECUTOR_TOKEN:?run ./setup.sh}
+      # Sized for this many functions running at once, at the default
+      # 128 MiB memory each: mem_limit below is EXECUTOR_MAX_PROCESSES *
+      # (128 MiB + ~130 MiB overhead); pids_limit is EXECUTOR_MAX_PROCESSES
+      # * ~5 (F0's spike finding, `--single-threaded`). Raise all three
+      # together; matches WORKER_CONCURRENCY's own default (10).
+      EXECUTOR_MAX_PROCESSES: "10"
+      EXECUTOR_PROXY: http://egress:3128
+      BACKD_EGRESS_KEY: ${BACKD_EGRESS_KEY:?run ./setup.sh}
+      LOG_LEVEL: info
+    extra_hosts:
+      # A declared function host resolving to MongoDB's real address on
+      # this deployment's data network: proves layer 3 with no route at
+      # all, the same way functions/netprobe's own function does.
+      - mongo-data.internal.test:172.30.90.10
+    networks: [func]
+    depends_on: [backd]
+    read_only: true
+    tmpfs: [/tmp/backd-executor]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 2
+    mem_limit: 2560m
+    pids_limit: 75
+    restart: unless-stopped
+
+  # The `func` network's only way out: reachable by the executor and backd
+  # on `func`, and the internet on `uplink`, bridging the two (F4's layer
+  # 2). Refuses loopback, private, link-local, CGNAT, multicast and
+  # unspecified addresses except backd's own internal listener.
+  egress:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: ["egress"]
+    environment:
+      BACKD_EGRESS_KEY: ${BACKD_EGRESS_KEY:?run ./setup.sh}
+      EGRESS_ALLOW_PRIVATE: "backd:8081"
+      LOG_LEVEL: info
+    extra_hosts:
+      - mongo-data.internal.test:172.30.90.10
+    networks: [func, uplink]
+    depends_on: [backd]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 1
+    mem_limit: 128m
+    restart: unless-stopped
+
+  nginx:
+    image: docker.io/library/nginx:1.29-alpine
+    ports:
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTP_PORT:-80}:80"
+    environment:
+      NGINX_ENTRYPOINT_LOCAL_RESOLVERS: "1"
+      SERVER_NAME: ${SERVER_NAME:-localhost}
+      # One IP address or network allowed to reach /v1/{realm}/_admin, or "all".
+      ADMIN_ALLOW_FROM: ${ADMIN_ALLOW_FROM:-all}
+    volumes:
+      - ./nginx/backd.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${SECRETS_DIR:-./secrets}/tls:/etc/nginx/tls:ro
+    tmpfs: [/etc/nginx/conf.d, /var/cache/nginx, /var/run]
+    read_only: true
+    networks:
+      edge:
+        ipv4_address: ${PROXY_IP:-172.30.80.10}
+    depends_on: [backd]
+    restart: unless-stopped
+
+networks:
+  # nginx and backd. A fixed subnet, so nginx has a fixed address that
+  # TRUSTED_PROXIES can name exactly.
+  edge:
+    ipam:
+      config:
+        - subnet: ${EDGE_SUBNET:-172.30.80.0/24}
+  # backd, the worker, MongoDB and the ops jobs. No route out, nothing
+  # published. A fixed subnet, so MongoDB has a fixed address a function's
+  # declared `network:` entry can name (functions/netprobe's own proof
+  # that the executor has no route here).
+  data:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.90.0/24
+  # The executor's only peers: backd's internal listener and egress (F4's
+  # layer 3 — no route to `data` or the internet at the network level).
+  func:
+    internal: true
+  # egress's route to the internet, for functions that declare outbound
+  # hosts reachable there.
+  uplink: {}
+
+volumes:
+  mongo-data:

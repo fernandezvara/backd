@@ -1,0 +1,5 @@
+{{/* A link to the running example app, only in the local stack's build
+     (docker-compose.yml sets HUGO_PARAMS_EXAMPLEURL). Renders nothing elsewhere. */}}
+{{ with site.Params.exampleurl }}
+<p><strong>It's running now:</strong> <a href="{{ . }}">open the example app</a>.</p>
+{{ end }}

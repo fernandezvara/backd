@@ -1,0 +1,11 @@
+{
+  "$comment": "One document per UTC day, written by the daily_digest cron function.",
+  "type": "object",
+  "properties": {
+    "day":     { "type": "string", "minLength": 10, "maxLength": 10, "description": "The UTC day, as YYYY-MM-DD." },
+    "orders":  { "type": "integer", "minimum": 0 },
+    "revenue": { "type": "integer", "minimum": 0, "description": "In cents, of the orders that were paid." }
+  },
+  "required": ["day", "orders", "revenue"],
+  "additionalProperties": false
+}

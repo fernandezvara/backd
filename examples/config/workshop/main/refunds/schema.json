@@ -1,0 +1,12 @@
+{
+  "$comment": "Written only by the refund function, in the same transaction that marks the order refunded.",
+  "type": "object",
+  "properties": {
+    "order_id":    { "type": "string", "minLength": 1 },
+    "amount":      { "type": "integer", "exclusiveMinimum": 0 },
+    "reason":      { "type": "string", "maxLength": 200 },
+    "refunded_by": { "type": "string", "format": "email" }
+  },
+  "required": ["order_id", "amount", "refunded_by"],
+  "additionalProperties": false
+}

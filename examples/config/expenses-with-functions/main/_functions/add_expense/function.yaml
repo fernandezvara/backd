@@ -1,0 +1,7 @@
+# Closes hole 1 ("Fake expenses in someone else's group") from "expenses
+# without functions": validates group_id and split_between against the
+# group's REAL, current members before creating the expense, something a
+# rule can't do (a rule only ever sees the document being written).
+mode: sync
+timeout: 10s
+invoke: "user != nil"

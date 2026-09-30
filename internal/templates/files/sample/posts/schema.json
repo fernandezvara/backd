@@ -1,0 +1,19 @@
+{
+  "$comment": "Every document written to this collection must match this JSON Schema (draft 2020-12). backd adds the id and _meta fields itself, so don't declare them.",
+  "type": "object",
+  "properties": {
+    "title":     { "type": "string", "minLength": 1, "description": "Post title. Required and never empty." },
+    "body":      { "type": "string", "description": "Post content." },
+    "published": { "type": "boolean", "description": "Whether readers can see the post." },
+    "category":  { "type": "string", "minLength": 1, "maxLength": 40, "description": "Optional topic, e.g. \"news\". indexes.json indexes it for listing a category's posts." },
+    "author":    {
+      "type": "object",
+      "description": "Who wrote the post. Nested objects can be queried with dot paths, e.g. where={\"author.email\":\"ada@example.com\"}. rules.yaml checks that author.email is the writer's own email.",
+      "properties": {
+        "name":  { "type": "string" },
+        "email": { "type": "string", "format": "email" }
+      }
+    }
+  },
+  "required": ["title"]
+}

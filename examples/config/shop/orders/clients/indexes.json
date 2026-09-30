@@ -1,0 +1,4 @@
+[
+  { "fields": ["email"], "unique": true },
+  { "fields": ["address.country", "name"] }
+]

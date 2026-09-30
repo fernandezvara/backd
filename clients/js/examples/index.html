@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>backd examples</title>
+  <link rel="stylesheet" href="blog/style.css">
+</head>
+<body>
+  <main>
+    <header><h1>backd examples</h1></header>
+    <p class="muted">Apps built with <code>@backd/client</code> on this server. Each realm's configuration is in <code>examples/config</code>.</p>
+    <a class="card example" href="blog/">
+      <h2>Blog</h2>
+      <p>Sign up, write posts, publish them, filter by author or category. Realm <code>blog</code>.</p>
+    </a>
+    <a class="card example" href="expenses-without-functions/">
+      <h2>Expenses without functions</h2>
+      <p>Share expenses in a group and see who owes whom. Its access rules are as strict as rules allow, and it still has known holes that only a server-side function can close. Realm <code>expenses</code>.</p>
+    </a>
+    <a class="card example" href="expenses-with-functions/">
+      <h2>Expenses with functions</h2>
+      <p>The same app, same layout, with those holes closed by five functions instead of client-trusted copies. Compare it with the version above. Realm <code>expenses-with-functions</code>.</p>
+    </a>
+    <p class="muted"><a href="/docs/examples/">About the examples</a></p>
+  </main>
+</body>
+</html>

@@ -1,0 +1,45 @@
+# Dockerized test environment. Run with: make test
+services:
+  # A single-node replica set (backd refuses standalone servers). The health
+  # check initiates it on first start and passes once it is the primary.
+  mongo:
+    image: docker.io/library/mongo:8.2
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "try { rs.status() } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo:27017'}]}) } if (!db.hello().isWritablePrimary) quit(1)"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  # A standalone server, only to test that backd refuses it.
+  mongo-standalone:
+    image: docker.io/library/mongo:8.2
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  # Go plus Deno (for the function build tests): docker/test/Dockerfile.
+  tests:
+    build:
+      context: .
+      dockerfile: docker/test/Dockerfile
+    entrypoint: []
+    working_dir: /src
+    volumes:
+      - .:/src
+      - gomodcache:/go/pkg/mod
+    environment:
+      CGO_ENABLED: "0"
+      MONGO_TEST_URI: mongodb://mongo:27017/?replicaSet=rs0
+      MONGO_STANDALONE_TEST_URI: mongodb://mongo-standalone:27017
+    depends_on:
+      mongo:
+        condition: service_healthy
+      mongo-standalone:
+        condition: service_healthy
+    command: ["go", "test", "-count=1", "./..."]
+
+volumes:
+  gomodcache:
