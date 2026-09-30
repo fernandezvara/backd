@@ -5,6 +5,7 @@
     "declaration": true,
     "emitDeclarationOnly": true,
     "outDir": "types",
+    "rootDir": "src",
     "types": []
   },
   "include": ["src"]
