@@ -8,8 +8,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: Vet
@@ -24,7 +24,7 @@ jobs:
           docker compose -f docker-compose.yml config -q
           docker compose -f docker-compose.js.yml config -q
           docker compose -f docker-compose.test.yml config -q
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: Lint the OpenAPI spec
@@ -34,7 +34,7 @@ jobs:
       - name: "@backd/functions-testing tests (dockerized)"
         run: make functions-testing-test
       - name: Check the release configuration
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
           version: "~> v2"
@@ -43,8 +43,8 @@ jobs:
   supply-chain:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: Known vulnerabilities in code backd calls (govulncheck)
@@ -63,8 +63,8 @@ jobs:
       run:
         working-directory: clients/js
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -80,17 +80,17 @@ jobs:
   production-reference:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Test the production reference deployment
         run: deploy/production/test.sh
 
   docs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # full history for "last updated" dates (enableGitInfo)
-      - uses: actions/setup-go@v5 # Hugo modules (hugodoks theme) need Go
+      - uses: actions/setup-go@v7 # Hugo modules (hugodoks theme) need Go
         with:
           go-version-file: docs/go.mod
       - uses: peaceiris/actions-hugo@v3
