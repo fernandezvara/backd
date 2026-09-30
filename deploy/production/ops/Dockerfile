@@ -21,7 +21,7 @@ COPY deploy/production/functions/netprobe /config/netprobe
 ENV CONFIG_DIR=/config
 RUN /usr/local/bin/backd functions build --check
 
-FROM docker.io/library/mongo:8.2
+FROM docker.io/library/mongo:8.3
 RUN apt-get update && apt-get install -y --no-install-recommends age && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/backd /usr/local/bin/backd
 COPY deploy/production/ops/*.sh deploy/production/ops/*.js /ops/
