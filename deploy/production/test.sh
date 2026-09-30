@@ -226,7 +226,10 @@ printf '\n# another version of the config\n' >> "$work/other-config/blog/realm.y
 # way) rather than rebuilding it here, which would need Deno to reach the
 # internet for its own dependencies (esbuild) on a cold cache — exactly
 # what the executor's network is deliberately isolated from.
-docker cp "${project}_backd_1:/config/blog/main/_functions/.build" "$work/other-config/blog/main/_functions/.build" 2>"$work/other-build.log" ||
+# The container's name depends on the tool (docker compose v2 names it
+# <project>-backd-1, podman-compose <project>_backd_1): ask compose for it.
+backd_ctr=$(compose ps -aq backd 2>/dev/null | head -n1)
+docker cp "${backd_ctr:-${project}_backd_1}:/config/blog/main/_functions/.build" "$work/other-config/blog/main/_functions/.build" 2>"$work/other-build.log" ||
   { echo "copying the built function bundle for the other-config drill failed:"; cat "$work/other-build.log"; }
 compose run --rm -T --no-deps -v "$work/other-config/blog:/config/blog:ro" backd > "$work/other.log" 2>&1 || true
 check "backd refuses to start with a config other than the provisioned one" \
