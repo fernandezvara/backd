@@ -39,6 +39,7 @@ toc: true
 | `Dockerfile` | Multi-stage build into a distroless image |
 | `docker-compose.test.yml` | Dockerized test environment |
 | `.github/workflows/ci.yml` | CI: vet, OpenAPI lint, dockerized tests, release configuration check, JavaScript client checks and integration tests, the production reference test, docs build |
+| `.github/workflows/pages.yml` | On version tags, builds this documentation site, checks its links and callouts, and publishes it to GitHub Pages (see [Releasing](#releasing)) |
 | `.github/workflows/release.yml`, `.goreleaser.yaml` | Releases on version tags: binaries, GitHub release, container image (see [Releasing](#releasing)) |
 | `.github/dependabot.yml` | Weekly dependency updates (see [Supply chain](#supply-chain)) |
 | `docker-compose.js.yml` | Stack for the JavaScript client's integration tests |
@@ -109,6 +110,8 @@ The workflow then:
 - builds the image and scans it with Trivy, and stops if it finds a critical or high vulnerability that has a fix;
 - builds and pushes the multi-arch container image `ghcr.io/fernandezvara/backd:vX.Y.Z` with Docker Buildx, plus `latest` for versions without a pre-release suffix (a tag such as `v1.0.0-rc.1` is a pre-release and doesn't move `latest`), with SBOM and provenance attestations;
 - signs the image with cosign, keyless: the signature is tied to this repository's release workflow through GitHub's OIDC identity.
+
+A second workflow, `pages.yml`, runs on the same tag and publishes this documentation site to GitHub Pages, so the site always shows the latest tagged version. It needs *Settings → Pages → Source: GitHub Actions* set once in the repository.
 
 The version reaches the binary through `-X main.version`, in both GoReleaser and the Dockerfile (`--build-arg VERSION`); local builds report `dev`.
 
