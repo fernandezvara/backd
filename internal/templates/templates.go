@@ -7,11 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
+	"github.com/fernandezvara/backd/internal/email"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -30,7 +33,8 @@ type File struct {
 	Created bool   // false: it already existed and was left unchanged
 }
 
-// Realm creates <realm>/realm.yaml under configDir. With sample, it also
+// Realm creates <realm>/realm.yaml, and the default email templates under
+// <realm>/email/, under configDir. With sample, it also
 // creates the database "main" with the blog sample collection.
 func Realm(configDir, realm string, sample bool) ([]File, error) {
 	if !registry.ValidName(realm) {
@@ -40,8 +44,26 @@ func Realm(configDir, realm string, sample bool) ([]File, error) {
 		return nil, err
 	}
 	out, err := write(configDir, realm+"/"+registry.RealmFile, "files/realm.yaml")
-	if err != nil || !sample {
+	if err != nil {
 		return out, err
+	}
+	// The English email templates, one folder per kind (used once the realm
+	// configures `email:`).
+	for _, kind := range email.SystemKinds {
+		defaults, err := email.DefaultFiles(kind)
+		if err != nil {
+			return out, err
+		}
+		for _, name := range slices.Sorted(maps.Keys(defaults)) {
+			more, err := writeBytes(configDir, realm+"/"+email.DirName+"/"+kind+"/"+name, defaults[name])
+			if err != nil {
+				return out, err
+			}
+			out = append(out, more...)
+		}
+	}
+	if !sample {
+		return out, nil
 	}
 	more, err := writeSample(configDir, realm+"/"+sampleDatabase)
 	return append(out, more...), err
@@ -52,6 +74,9 @@ func Realm(configDir, realm string, sample bool) ([]File, error) {
 func Database(configDir, realm, database string, sample bool) ([]File, error) {
 	if !registry.ValidName(database) {
 		return nil, fmt.Errorf("invalid database name %q: must be lowercase letters and digits, optionally separated by single '-' or '_'", database)
+	}
+	if slices.Contains(registry.ReservedDirs, database) {
+		return nil, fmt.Errorf("%q can't be a database name: a realm's %s folder holds something else (email templates)", database, database)
 	}
 	if name := realm + "__" + database; len(name) >= 64 {
 		return nil, fmt.Errorf("MongoDB database name %q must be shorter than 64 characters", name)

@@ -7,10 +7,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
+	"github.com/fernandezvara/backd/internal/email"
 	"github.com/fernandezvara/backd/internal/rules"
 )
 
@@ -68,6 +70,9 @@ func Load(root string) (*Registry, error) {
 			continue
 		}
 		for _, dbName := range dbDirs {
+			if slices.Contains(ReservedDirs, dbName) {
+				continue
+			}
 			db, dbErrs := loadDatabase(realm, dbName, filepath.Join(realmPath, dbName))
 			errs = append(errs, dbErrs...)
 			if db != nil {
@@ -75,10 +80,40 @@ func Load(root string) (*Registry, error) {
 			}
 		}
 	}
+	for _, realmName := range reg.RealmNames() {
+		errs = append(errs, loadEmail(reg.Realms[realmName], filepath.Join(root, realmName))...)
+	}
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
 	return reg, nil
+}
+
+// loadEmail checks a realm's email settings against its functions and loads
+// its templates.
+func loadEmail(rl *Realm, realmPath string) []error {
+	es := rl.Settings.Email
+	if es == nil {
+		return nil
+	}
+	file := filepath.Join(realmPath, RealmFile)
+	var errs []error
+	dbName, fnName := es.DatabaseAndName()
+	var fn *Function
+	if db := rl.Databases[dbName]; db != nil && db.Functions != nil {
+		fn = db.Functions.Functions[fnName]
+	}
+	switch {
+	case fn == nil:
+		errs = append(errs, fmt.Errorf("%s: email.function: %q is not a function of this realm (the delivery function is _functions/%s in the database %q)", file, es.Function, fnName, dbName))
+	case !fn.Internal:
+		errs = append(errs, fmt.Errorf("%s: email.function: %s must have `internal: true` in its function.yaml (nobody should call it over HTTP)", file, es.Function))
+	case fn.Mode != ModeAsync:
+		errs = append(errs, fmt.Errorf("%s: email.function: %s must have `mode: async` in its function.yaml (nothing waits for an email in a request)", file, es.Function))
+	}
+	tpl, terrs := email.Load(filepath.Join(realmPath, email.DirName), es.Locales)
+	rl.Email = tpl
+	return append(errs, terrs...)
 }
 
 func loadDatabase(rl *Realm, name, path string) (*Database, []error) {

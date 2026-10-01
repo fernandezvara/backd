@@ -2,7 +2,7 @@
 title: "Running in production"
 description: "The executor, workers and egress: how to run them."
 icon: "monitor_heart"
-weight: 562
+weight: 563
 toc: true
 ---
 
@@ -69,6 +69,7 @@ The executor and the internal listener must **never be published** to the intern
 | `BACKD_EXECUTOR_TOKEN` | both | A shared secret, 32 characters or more: `backd` calls the executor with it, and the executor fetches bundles with it |
 | `BACKD_INTERNAL_ADDR` | `backd serve` | The internal listener's address (default `:8081`), served when functions exist and the executor is configured |
 | `BACKD_CALLBACK_URL` | `backd serve` | The internal listener as the executor and functions reach it, e.g. `http://backd:8081` |
+| `BACKD_URL` | `backd serve`, `backd worker` | `backd`'s public address, e.g. `https://api.example.com`: the base of the links in [emails](../email/). A realm's `email.public_url` overrides it; startup fails when a realm sends email and neither is set |
 | `BACKD_CALLBACK_KEY` | `backd serve` | A secret, 32 characters or more, signing the short-lived credentials functions call back with. Every `backd` instance of a deployment needs the same one; the executor never gets it |
 | `EXECUTOR_ADDR` | executor | Listen address (default `:9100`) |
 | `EXECUTOR_DIR` | executor | Writable directory for the bundle cache (the image uses `/tmp/backd-executor`: mount a tmpfs) |

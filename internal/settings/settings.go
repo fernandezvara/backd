@@ -46,6 +46,9 @@ type Settings struct {
 	InternalAddr  string
 	CallbackURL   string
 	CallbackKey   string
+	// BackdURL is backd's public address (BACKD_URL), the base of the links
+	// in emails; a realm's email.public_url overrides it. No trailing slash.
+	BackdURL string
 	// SecretsKey is the master key functions' secrets (roadmap F5) are
 	// encrypted under (BACKD_SECRETS_KEY, or BACKD_SECRETS_KEY_FILE for a
 	// file holding it). Empty when neither is set: functions that declare
@@ -133,6 +136,12 @@ func Load(getenv func(string) string) (Settings, error) {
 	s.InternalAddr = orDefault(getenv("BACKD_INTERNAL_ADDR"), ":8081")
 	s.CallbackURL = getenv("BACKD_CALLBACK_URL")
 	s.CallbackKey = getenv("BACKD_CALLBACK_KEY")
+	if v := strings.TrimSuffix(getenv("BACKD_URL"), "/"); v != "" {
+		if !httpURL(v) {
+			errs = append(errs, fmt.Errorf("BACKD_URL must be backd's public http(s) address, e.g. https://api.example.com, got %q", v))
+		}
+		s.BackdURL = v
+	}
 	if s.ExecutorURL != "" {
 		if !httpURL(s.ExecutorURL) {
 			errs = append(errs, fmt.Errorf("BACKD_EXECUTOR_URL must be an http(s) URL, got %q", s.ExecutorURL))

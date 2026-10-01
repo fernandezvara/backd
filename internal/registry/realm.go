@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net/mail"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -81,6 +83,45 @@ type RealmSettings struct {
 	// F11) is kept once done (functions.job_retention); DefaultJobRetention
 	// when not set. Needs auth enabled, like FunctionsLogRetention.
 	FunctionsJobRetention time.Duration
+	// Email is how the realm sends email (email in realm.yaml); nil when it
+	// doesn't, and then no email is ever sent.
+	Email *EmailSettings
+}
+
+// Defaults of email.limits.
+const (
+	DefaultEmailPerKindPerHour = 3
+	DefaultEmailPerDay         = 10
+	DefaultEmailPerIPPerHour   = 20
+	// DefaultLocale is email.default_locale when not set.
+	DefaultLocale = "en"
+)
+
+// EmailSettings are the email settings of a realm: which function delivers
+// its messages and who they come from. backd renders the messages and never
+// sends one itself.
+type EmailSettings struct {
+	Function      string // <database>/<function>: internal and async
+	From          string // "Name <address>" or an address
+	ReplyTo       string // optional
+	PublicURL     string // overrides BACKD_URL for this realm's links; no trailing slash
+	DefaultLocale string
+	Locales       []string // every one needs every required template
+	Limits        EmailLimits
+}
+
+// EmailLimits bound how many emails one address, and one client address,
+// can cause.
+type EmailLimits struct {
+	PerKindPerHour int // emails of one kind to one recipient, per hour
+	PerDay         int // emails to one recipient, per day
+	PerIPPerHour   int // email-sending requests from one client address, per hour
+}
+
+// DatabaseAndName splits Function into the database and the function name.
+func (e EmailSettings) DatabaseAndName() (string, string) {
+	db, name, _ := strings.Cut(e.Function, "/")
+	return db, name
 }
 
 // UserNetworks restricts where one user may act from.
@@ -123,11 +164,31 @@ type realmDoc struct {
 		Admin       bool        `yaml:"admin"`
 		Users       []roleEntry `yaml:"users"`
 	} `yaml:"roles"`
+	Email     *emailDoc `yaml:"email"`
 	Functions *struct {
 		MaxConcurrency *int    `yaml:"max_concurrency"`
 		LogRetention   *string `yaml:"log_retention"`
 		JobRetention   *string `yaml:"job_retention"`
 	} `yaml:"functions"`
+}
+
+// emailDoc mirrors the email section of realm.yaml.
+type emailDoc struct {
+	Function      string   `yaml:"function"`
+	From          string   `yaml:"from"`
+	ReplyTo       string   `yaml:"reply_to"`
+	PublicURL     string   `yaml:"public_url"`
+	DefaultLocale string   `yaml:"default_locale"`
+	Locales       []string `yaml:"locales"`
+	Limits        *struct {
+		PerRecipient *struct {
+			PerKindPerHour *int `yaml:"per_kind_per_hour"`
+			PerDay         *int `yaml:"per_day"`
+		} `yaml:"per_recipient"`
+		PerIP *struct {
+			PerHour *int `yaml:"per_hour"`
+		} `yaml:"per_ip"`
+	} `yaml:"limits"`
 }
 
 // roleEntry is one user of a role in realm.yaml: an email, or an object
@@ -341,6 +402,16 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 		}
 	}
 
+	if e := doc.Email; e != nil {
+		if !s.AuthEnabled {
+			errs = append(errs, errors.New("email: only applies when auth is enabled"))
+		} else {
+			var es []error
+			s.Email, es = parseEmail(e)
+			errs = append(errs, es...)
+		}
+	}
+
 	if a := doc.Admin; a != nil {
 		nets, err := ParseNetworks(a.AllowedNetworks)
 		if err != nil {
@@ -459,3 +530,80 @@ func NormalizeEmail(v string) (string, error) {
 	}
 	return e, nil
 }
+
+// parseEmail checks the email section of realm.yaml.
+func parseEmail(d *emailDoc) (*EmailSettings, []error) {
+	e := &EmailSettings{
+		Function: d.Function, From: d.From, ReplyTo: d.ReplyTo, DefaultLocale: DefaultLocale,
+		Limits: EmailLimits{PerKindPerHour: DefaultEmailPerKindPerHour, PerDay: DefaultEmailPerDay, PerIPPerHour: DefaultEmailPerIPPerHour},
+	}
+	var errs []error
+	add := func(format string, args ...any) { errs = append(errs, fmt.Errorf("email."+format, args...)) }
+
+	db, name, ok := strings.Cut(d.Function, "/")
+	if !ok || !namePattern.MatchString(db) || !namePattern.MatchString(name) {
+		add("function: must be <database>/<function> (the internal, async function that delivers the messages), got %q", d.Function)
+	}
+	if d.From == "" {
+		add("from: is required: the sender of every message, as an address or \"Name <address>\"")
+	} else if _, err := mail.ParseAddress(d.From); err != nil {
+		add("from: %q isn't a valid address (want an address or \"Name <address>\")", d.From)
+	}
+	if d.ReplyTo != "" {
+		if _, err := mail.ParseAddress(d.ReplyTo); err != nil {
+			add("reply_to: %q isn't a valid address", d.ReplyTo)
+		}
+	}
+	if d.PublicURL != "" {
+		u, err := url.Parse(d.PublicURL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+			add("public_url: %q isn't an absolute http(s) URL (backd's public address, e.g. https://api.example.com)", d.PublicURL)
+		} else {
+			e.PublicURL = strings.TrimSuffix(d.PublicURL, "/")
+		}
+	}
+	if d.DefaultLocale != "" {
+		e.DefaultLocale = d.DefaultLocale
+	}
+	if !localePattern.MatchString(e.DefaultLocale) {
+		add("default_locale: %q isn't a language tag such as en or es-MX", e.DefaultLocale)
+	}
+	e.Locales = []string{e.DefaultLocale}
+	if len(d.Locales) > 0 {
+		e.Locales = nil
+		for i, l := range d.Locales {
+			switch {
+			case !localePattern.MatchString(l):
+				add("locales[%d]: %q isn't a language tag such as en or es-MX", i, l)
+			case slices.Contains(e.Locales, l):
+				add("locales[%d]: %q is listed twice", i, l)
+			default:
+				e.Locales = append(e.Locales, l)
+			}
+		}
+		if !slices.Contains(e.Locales, e.DefaultLocale) {
+			add("locales: must include default_locale (%s)", e.DefaultLocale)
+		}
+	}
+	if l := d.Limits; l != nil {
+		limit := func(key string, v *int, dst *int) {
+			switch {
+			case v == nil:
+			case *v < 1:
+				add("limits.%s: must be at least 1, got %d", key, *v)
+			default:
+				*dst = *v
+			}
+		}
+		if r := l.PerRecipient; r != nil {
+			limit("per_recipient.per_kind_per_hour", r.PerKindPerHour, &e.Limits.PerKindPerHour)
+			limit("per_recipient.per_day", r.PerDay, &e.Limits.PerDay)
+		}
+		if ip := l.PerIP; ip != nil {
+			limit("per_ip.per_hour", ip.PerHour, &e.Limits.PerIPPerHour)
+		}
+	}
+	return e, errs
+}
+
+var localePattern = regexp.MustCompile(`^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$`)

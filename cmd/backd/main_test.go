@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"github.com/fernandezvara/backd/internal/email"
 	"io"
 	"log/slog"
 	"os"
@@ -60,8 +61,8 @@ func TestRunTemplate(t *testing.T) {
 		wantOut  string
 		wantErr  string
 	}{
-		{"realm", []string{"template", "realm", "--realm", "demo"}, 0, "created   demo/realm.yaml\n", ""},
-		{"realm again", []string{"template", "realm", "--realm", "demo"}, 0, "exists    demo/realm.yaml (left unchanged)\n", ""},
+		{"realm", []string{"template", "realm", "--realm", "demo"}, 0, "created   demo/realm.yaml\n" + emailLines("demo", "created   ", ""), ""},
+		{"realm again", []string{"template", "realm", "--realm", "demo"}, 0, "exists    demo/realm.yaml (left unchanged)\n" + emailLines("demo", "exists    ", " (left unchanged)"), ""},
 		{"database with sample", []string{"template", "database", "--realm", "demo", "--database", "cms", "--sample"}, 0,
 			"database  demo/cms/\ncreated   demo/cms/_functions/deno.json\ncreated   demo/cms/_functions/stats/function.yaml\ncreated   demo/cms/_functions/stats/index.ts\ncreated   demo/cms/posts/indexes.json\ncreated   demo/cms/posts/rules.yaml\ncreated   demo/cms/posts/schema.json\n", ""},
 		{"missing realm", []string{"template", "database", "--realm", "ghost", "--database", "app"}, 1, "", "backd template realm --realm ghost"},
@@ -192,4 +193,16 @@ func TestVersion(t *testing.T) {
 			t.Errorf("%s: code %d, output %q", arg, code, stdout.String())
 		}
 	}
+}
+
+// emailLines are the lines `template realm` prints for the default email
+// templates: one per file, kinds in order.
+func emailLines(realm, prefix, suffix string) string {
+	var b strings.Builder
+	for _, kind := range email.SystemKinds {
+		for _, name := range []string{"en.html", "en.subject.txt", "en.txt"} {
+			b.WriteString(prefix + realm + "/email/" + kind + "/" + name + suffix + "\n")
+		}
+	}
+	return b.String()
 }

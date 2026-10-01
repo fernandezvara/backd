@@ -10,6 +10,7 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
+	"github.com/fernandezvara/backd/internal/email"
 	"github.com/fernandezvara/backd/internal/rules"
 )
 
@@ -24,7 +25,14 @@ type Realm struct {
 	Name      string
 	Settings  RealmSettings // from realm.yaml
 	Databases map[string]*Database
+	// Email holds the parsed email templates of <realm>/email/; nil when the
+	// realm doesn't configure email.
+	Email *email.Templates
 }
+
+// ReservedDirs are folders of a realm that hold something other than a
+// database: they are never read as databases.
+var ReservedDirs = []string{email.DirName, "pages"}
 
 // Database is one application's data, stored in one MongoDB database.
 type Database struct {
