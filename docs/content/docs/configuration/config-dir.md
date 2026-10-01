@@ -41,6 +41,7 @@ backd template realm --realm demo              # demo/realm.yaml
 backd template database --realm demo --database cms       # the demo/cms/ directory
 backd template database --realm demo --database blog --sample
 backd template function --realm demo --database blog --name stats  # a function, see Functions
+backd template email-capture --realm demo --database blog          # a development email function, see Functions -> Email
 ```
 
 With `--sample`, the command adds a `posts` collection (title, body, published, optional category, author) with explanations: `schema.json`, `indexes.json` and a commented [`rules.yaml`](../../auth/rules/) (anyone reads published posts, signed-in users write posts signed with their own email, authors edit and delete their own but can't change who wrote them). `backd template realm --realm demo --sample` creates the realm plus a database named `main` holding that sample: the same database as the `blog` realm in `examples/config` (whose `realm.yaml` is adjusted for the example app).

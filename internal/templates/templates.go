@@ -208,6 +208,45 @@ func Function(configDir, realm, database, name string) ([]File, error) {
 	return out, nil
 }
 
+// EmailCapture adds the development delivery function email-capture to
+// <realm>/<database>/_functions, and the collection outbox it writes to.
+// The database must exist.
+func EmailCapture(configDir, realm, database string) ([]File, error) {
+	if err := checkDir(configDir); err != nil {
+		return nil, err
+	}
+	dbDir := realm + "/" + database
+	if fi, err := os.Stat(filepath.Join(configDir, dbDir)); err != nil || !fi.IsDir() {
+		return nil, fmt.Errorf("database %s doesn't exist in %s (create it with `backd template database --realm %s --database %s`)", dbDir, configDir, realm, database)
+	}
+	project := dbDir + "/" + registry.FunctionsDir
+	var out []File
+	add := func(more []File, err error) error {
+		out = append(out, more...)
+		return err
+	}
+	if err := add(write(configDir, project+"/deno.json", "files/function/deno.json")); err != nil {
+		return out, err
+	}
+	replacer := strings.NewReplacer("__DATABASE__", database)
+	for _, f := range [][2]string{
+		{project + "/email-capture/" + registry.FunctionFile, "files/email-capture/function.yaml"},
+		{project + "/email-capture/index.ts", "files/email-capture/index.ts"},
+		{dbDir + "/outbox/schema.json", "files/email-capture/outbox/schema.json"},
+		{dbDir + "/outbox/rules.yaml", "files/email-capture/outbox/rules.yaml"},
+		{dbDir + "/outbox/indexes.json", "files/email-capture/outbox/indexes.json"},
+	} {
+		data, err := files.ReadFile(f[1])
+		if err != nil {
+			return out, err
+		}
+		if err := add(writeBytes(configDir, f[0], []byte(replacer.Replace(string(data))))); err != nil {
+			return out, err
+		}
+	}
+	return out, nil
+}
+
 // writeSample copies the embedded sample collections into dir.
 func writeSample(configDir, dir string) ([]File, error) {
 	var out []File

@@ -39,7 +39,8 @@ CONFIG_DIR=./config BACKD_DEV=true HTTP_ADDR=127.0.0.1:8080 backd serve
 
 - Every second, `backd` hashes each functions project's sources; when a hash changes it runs the same `deno bundle` that `backd functions build` does and starts serving the new bundle immediately — no restart. A broken source (e.g. a syntax error) is logged and retried on the next tick, and the last good bundle keeps serving.
 - Only function code is watched. `schema.json`, `rules.yaml`, `function.yaml` and `realm.yaml` still need a restart, the same as any other config change.
-- `backd` refuses to start with `BACKD_DEV=true` unless `HTTP_ADDR` is bound to localhost (`127.0.0.1:port`, `[::1]:port` or `localhost:port`) — dev mode must never be reachable off the machine — and logs a warning while it runs, as a reminder this is a local-only, hot-reload exception.
+- `backd` refuses to start with `BACKD_DEV=true` unless `HTTP_ADDR` is bound to localhost (`127.0.0.1:port`, `[::1]:port` or `localhost:port`) — dev mode must never be reachable off the machine — and logs a warning while it runs, as a reminder this is a local-only, hot-reload exception. The one exception is a container whose ports are published on the host's `127.0.0.1` only (the local docker stack): it sets `BACKD_DEV_ANY_ADDR=true`, and `backd` logs a warning.
+- Functions with [`dev_only: true`](../reference/) run only in dev mode: without `BACKD_DEV=true`, `backd` refuses to start and names the function.
 {{< hint danger >}}
 Never set `BACKD_DEV=true` in production: it turns off the "bundles are frozen and checked at startup" guarantee the rest of the security model relies on.
 {{< /hint >}}

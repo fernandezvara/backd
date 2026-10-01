@@ -95,6 +95,21 @@ Links and tokens in a message are credentials. `backd` hides the token from the 
 - **Lifetimes:** 48 hours to verify an address, 1 hour to reset a password, 24 hours to confirm an email change, 7 days to undo one and to accept an invitation.
 - **In the job list** an email job appears with the delivery function as its `function` and `origin: backd:email.<kind>`, and its attempts, next attempt and result (the `message_id`); never a message, a link or an address.
 
+## Developing without a provider
+
+`backd template email-capture --realm <realm> --database <database>` adds a delivery function that **stores each email instead of sending it**: `email-capture` in the database's `_functions`, and an `outbox` collection it writes to (schema, rules and indexes included). Point the realm at it, and run `backd` in [dev mode](../testing/#dev-mode):
+
+```yaml
+email:
+  function: notifications/email-capture
+  from: "Dev <dev@example.com>"
+  public_url: http://localhost:8080
+```
+
+Every message, with its working links, shows up in `outbox`: read it with the API (`GET /v1/<realm>/notifications/outbox`, readable by anyone, since it exists only on a development machine) or click through verification and reset by hand.
+
+`email-capture` is `dev_only: true`: `backd` refuses to start with it unless `BACKD_DEV=true`, because the outbox holds working links. Replace it with your provider's delivery function before you deploy anywhere real.
+
 ## Limits
 
 So the realm can't be used to flood an address or as a relay, `backd` limits how many emails it queues: per recipient, **3 emails of one kind per hour** and **10 in all per day**, and per client address, **20 email-sending requests per hour** (the keys of `email.limits` change them). The counters live in the realm's system database, shared by every instance, with the recipient only as a hash. A request made without a signed-in user (sign-up, a password-reset request) that goes over a limit is skipped silently, so the answer reveals nothing; a signed-in user's request answers `429` with `Retry-After`.

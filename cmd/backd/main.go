@@ -138,7 +138,10 @@ func isLoopbackAddr(addr string) bool {
 
 func serve(ctx context.Context, a *app) error {
 	if a.cfg.Dev && !isLoopbackAddr(a.cfg.HTTPAddr) {
-		return fmt.Errorf("BACKD_DEV=true requires HTTP_ADDR bound to localhost (e.g. 127.0.0.1:8080), got %q: dev mode must never be reachable off the machine", a.cfg.HTTPAddr)
+		if !a.cfg.DevAnyAddr {
+			return fmt.Errorf("BACKD_DEV=true requires HTTP_ADDR bound to localhost (e.g. 127.0.0.1:8080), got %q: dev mode must never be reachable off the machine (a container whose ports are published on 127.0.0.1 only can set BACKD_DEV_ANY_ADDR=true)", a.cfg.HTTPAddr)
+		}
+		a.log.Warn("BACKD_DEV_ANY_ADDR=true: dev mode on an address that isn't localhost; make sure nothing but this machine can reach it", "addr", a.cfg.HTTPAddr)
 	}
 	if a.withWorker && a.cfg.ExecutorURL == "" {
 		return errors.New("--with-worker requires BACKD_EXECUTOR_URL")
@@ -299,6 +302,19 @@ func templateFunction(c *cli.CommandContext) error {
 	}
 	files, err := templates.Function(dir, str(c, "realm"), str(c, "database"), str(c, "name"))
 	printTemplateFiles(c.Stdout(), files)
+	return err
+}
+
+func templateEmailCapture(c *cli.CommandContext) error {
+	dir, err := configDir(c)
+	if err != nil {
+		return err
+	}
+	files, err := templates.EmailCapture(dir, str(c, "realm"), str(c, "database"))
+	printTemplateFiles(c.Stdout(), files)
+	if err == nil {
+		fmt.Fprintf(c.Stdout(), "\nnext: set `email.function: %s/email-capture` in %s/realm.yaml (see the file's comments), then run backd with BACKD_DEV=true\n", str(c, "database"), str(c, "realm"))
+	}
 	return err
 }
 
@@ -617,6 +633,18 @@ func checkFunctions(reg *registry.Registry, cfg settings.Settings, log *slog.Log
 	if len(cfg.SecretsKey) == 0 {
 		if fn := firstFunctionWithSecrets(reg); fn != nil {
 			return fmt.Errorf("%s/%s/%s declares secrets, but BACKD_SECRETS_KEY (or BACKD_SECRETS_KEY_FILE) is not set", fn.Realm, fn.Database, fn.Name)
+		}
+	}
+	if !cfg.Dev {
+		for _, db := range reg.Databases() {
+			if db.Functions == nil {
+				continue
+			}
+			for _, name := range slices.Sorted(maps.Keys(db.Functions.Functions)) {
+				if fn := db.Functions.Functions[name]; fn.DevOnly {
+					return fmt.Errorf("%s/%s/%s declares dev_only: true, so it only runs with BACKD_DEV=true (local development): remove the function from this deployment's config", fn.Realm, fn.Database, fn.Name)
+				}
+			}
 		}
 	}
 	for _, name := range reg.RealmNames() {

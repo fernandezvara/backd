@@ -175,6 +175,7 @@ docker build -t backd .
 | `backd template realm --realm <realm> [--sample]` | Create a commented `realm.yaml` (and, with `--sample`, a sample database) |
 | `backd template database --realm <realm> --database <database> [--sample]` | Create a database directory (and, with `--sample`, a sample collection) |
 | `backd template function --realm <realm> --database <database> --name <name>` | Create a [function](../functions/) in the database's `_functions` project |
+| `backd template email-capture --realm <realm> --database <database>` | Add a development [email](../functions/email/#developing-without-a-provider) function that stores each email in an `outbox` collection |
 | `backd template project --dir <directory> --realm <realm>` | Create a complete config repository: realm, sample database and function (with tests), Dockerfiles, a local dev stack and CI (see [Starting from a template](../configuration/config-dir/#starting-from-a-template)) |
 | `backd functions build [--check]` | Bundle the functions in `CONFIG_DIR` with Deno (see [Functions](../functions/testing/#building)) |
 | `backd functions invoke\|history\|logs\|jobs --function <realm>/<database>/<name>` | Call a function through a running `backd`, and see its recent calls, its console output and its async and scheduled jobs (see [Calling functions](../functions/calling/), [Async jobs](../functions/jobs/))  |
