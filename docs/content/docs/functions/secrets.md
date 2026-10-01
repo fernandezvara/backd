@@ -2,7 +2,7 @@
 title: "Secrets"
 description: "Encrypted values a function may read, managed by realm administrators."
 icon: "vpn_key"
-weight: 559
+weight: 560
 toc: true
 ---
 

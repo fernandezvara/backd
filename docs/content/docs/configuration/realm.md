@@ -58,13 +58,14 @@ An empty file, or one with only comments, is valid: every key has a default.
 | `roles` | none | Roles that access rules can check. See below. |
 | `audit.retention` | `365d` | How long [audit records](../../auth/audit/) are kept, at least `1d`. |
 | `admin.allowed_networks` | none (any network) | IP addresses or CIDR networks, IPv4 or IPv6, allowed to use the [admin API](../../auth/admin/). See [Network restrictions](#network-restrictions). |
+| `email` | none (no email) | How the realm sends email: the delivery function, the sender, backd's public address for links, languages and limits. backd never sends mail itself. See [Email](../../functions/email/) |
 | `functions.max_concurrency` | none (unlimited) | Caps how many of the realm's [functions](../../functions/calling/#concurrency-limits) may run at once **on this `backd` instance**; with several instances, up to that many times this value run at once. |
 | `functions.log_retention` | `7d` | How long [function invocation records](../../functions/logs/) are kept, at least `1h`. |
 | `functions.job_retention` | `24h` | How long an [async job](../../functions/jobs/)'s result is kept once done, at least `1h`. |
 
 Durations are a whole number of days (`30d`) or Go durations (`12h`, `90m`), with a minimum of one minute.
 
-`signup`, `sessions`, `password`, `roles`, `admin`, `audit`, `functions.log_retention` and `functions.job_retention` only apply when `auth` is `enabled`. Setting them in a realm with `auth: disabled` is an error, so a realm can't carry settings that do nothing. `cors` and `functions.max_concurrency` apply either way.
+`signup`, `sessions`, `password`, `roles`, `admin`, `audit`, `email`, `functions.log_retention` and `functions.job_retention` only apply when `auth` is `enabled`. Setting them in a realm with `auth: disabled` is an error, so a realm can't carry settings that do nothing. `cors` and `functions.max_concurrency` apply either way.
 
 ## CORS
 

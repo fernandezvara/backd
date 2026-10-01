@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/fernandezvara/backd/internal/email"
 )
 
 const fingerprintSalt = "backd-config-v1\x00"
@@ -32,6 +34,18 @@ func (r *Registry) Fingerprint() (string, error) {
 	}
 	for _, rl := range r.SortedRealms() {
 		add(filepath.Join(rl.Name, RealmFile))
+		if rl.Settings.Email != nil {
+			// The templates backd renders its emails from.
+			dir := filepath.Join(r.Root, rl.Name, email.DirName)
+			_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+				if err == nil && d.Type().IsRegular() && !strings.HasPrefix(d.Name(), ".") {
+					if rel, err := filepath.Rel(r.Root, path); err == nil {
+						files = append(files, filepath.ToSlash(rel))
+					}
+				}
+				return nil
+			})
+		}
 		for _, db := range rl.Databases {
 			for _, c := range db.Collections {
 				for _, f := range []string{schemaFile, indexesFile, rulesFile} {

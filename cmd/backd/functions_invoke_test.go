@@ -63,6 +63,9 @@ func writeFuncManifest(t *testing.T, dir string, names ...string) {
 		}
 		m.Functions[name] = registry.ManifestBundle{Bundle: file, SHA256: hash}
 	}
+	if src, err := registry.SourceHash(dir); err == nil {
+		m.Source = src // so the build counts as fresh
+	}
 	out, err := json.Marshal(m)
 	if err != nil {
 		t.Fatal(err)

@@ -48,6 +48,9 @@ type Config struct {
 	CallbackURL string
 	// ExecutorToken authenticates the executor's bundle fetches.
 	ExecutorToken string
+	// BackdURL is backd's public address, the base of the links in emails
+	// (BACKD_URL); a realm's email.public_url overrides it.
+	BackdURL string
 	// Dev rereads function bundle manifests on every call instead of once
 	// (BACKD_DEV), so a background rebuild is served without a restart.
 	Dev bool

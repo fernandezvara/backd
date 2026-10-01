@@ -2,7 +2,7 @@
 title: "Cookbook"
 description: "Six complete, tested recipes: a sync function as the caller, a privileged idempotent refund, a background report, a nightly cleanup, a daily digest and a payment webhook."
 icon: "integration_instructions"
-weight: 564
+weight: 565
 toc: true
 ---
 

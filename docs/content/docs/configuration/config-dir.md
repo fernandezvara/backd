@@ -11,6 +11,7 @@ The data model is a directory tree under `CONFIG_DIR`, loaded once at startup. D
 ```
 $CONFIG_DIR/<realm>/
     realm.yaml           # required — realm settings
+    email/<kind>/        # optional — email templates (see Functions → Email)
     <database>/<collection>/
         schema.json      # required — JSON Schema draft 2020-12
         indexes.json     # optional — index declarations
@@ -21,6 +22,7 @@ $CONFIG_DIR/<realm>/
 - Each directory under `CONFIG_DIR` is a **realm**. It must contain a [`realm.yaml`](../realm/).
 - Each directory inside a realm is a **database**, stored in the MongoDB database `<realm>__<database>`.
 - Each directory inside a database is a **collection**, stored in a MongoDB collection of the same name. It must contain a `schema.json`.
+- A realm's `email` folder holds its [email templates](../../functions/email/#templates), and `pages` is reserved for the pages backd will serve; neither is a database, so they are never read as one and can't be database names.
 - A database's `_functions` directory holds its [functions](../../functions/), not a collection.
 - Other plain files at the realm and database levels are ignored, as are hidden entries (names starting with `.`).
 - Changing the config requires a restart. There is no hot-reload.

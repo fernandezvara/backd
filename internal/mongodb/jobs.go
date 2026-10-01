@@ -27,6 +27,13 @@ type jobResultDoc struct {
 	HTTPStatus int `bson:"http_status,omitempty"`
 }
 
+type emailJobDoc struct {
+	Kind       string `bson:"kind"`
+	UserID     string `bson:"user_id"`
+	Locale     string `bson:"locale,omitempty"`
+	RedirectTo string `bson:"redirect_to,omitempty"`
+}
+
 type jobDoc struct {
 	ID             string        `bson:"_id"`
 	Database       string        `bson:"database"`
@@ -38,6 +45,7 @@ type jobDoc struct {
 	Scheduled      bool          `bson:"scheduled,omitempty"`
 	ActsAsFunction bool          `bson:"acts_as_function,omitempty"`
 	Origin         string        `bson:"origin,omitempty"`
+	Email          *emailJobDoc  `bson:"email,omitempty"`
 	ParentID       string        `bson:"parent_id,omitempty"`
 	Depth          int32         `bson:"depth,omitempty"`
 	Status         string        `bson:"status"`
@@ -109,11 +117,25 @@ func jobResultFromDoc(d *jobResultDoc) *auth.JobResult {
 	return &auth.JobResult{Status: d.Status, Output: encodeJSONAny(d.Output), Code: d.Code, Message: d.Message, Details: encodeJSONAny(d.Details), DurationMS: d.DurationMS, HTTPStatus: d.HTTPStatus}
 }
 
+func emailJobFromDoc(d *emailJobDoc) *auth.EmailJob {
+	if d == nil {
+		return nil
+	}
+	return &auth.EmailJob{Kind: d.Kind, UserID: d.UserID, Locale: d.Locale, RedirectTo: d.RedirectTo}
+}
+
+func emailJobToDoc(e *auth.EmailJob) *emailJobDoc {
+	if e == nil {
+		return nil
+	}
+	return &emailJobDoc{Kind: e.Kind, UserID: e.UserID, Locale: e.Locale, RedirectTo: e.RedirectTo}
+}
+
 func jobFromDoc(d jobDoc) auth.Job {
 	j := auth.Job{
 		ID: d.ID, Database: d.Database, Function: d.Function, Input: encodeJSONAny(d.Input),
 		CallerActor: d.CallerActor, CallerUserID: d.CallerUserID, CallerKeyHash: d.CallerKeyHash, Scheduled: d.Scheduled,
-		ActsAsFunction: d.ActsAsFunction, Origin: d.Origin, ParentID: d.ParentID, Depth: int(d.Depth),
+		ActsAsFunction: d.ActsAsFunction, Email: emailJobFromDoc(d.Email), Origin: d.Origin, ParentID: d.ParentID, Depth: int(d.Depth),
 		TimeoutMS: d.TimeoutMS, RequestID: d.RequestID,
 		Status: d.Status, Attempts: int(d.Attempts), CreatedAt: d.CreatedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC(),
 		Result: jobResultFromDoc(d.Result),
@@ -137,7 +159,7 @@ func (s *AuthStore) EnqueueJob(ctx context.Context, j auth.Job) error {
 	_, err = s.jobs().InsertOne(ctx, jobDoc{
 		ID: j.ID, Database: j.Database, Function: j.Function, Input: input,
 		CallerActor: j.CallerActor, CallerUserID: j.CallerUserID, CallerKeyHash: j.CallerKeyHash, Scheduled: j.Scheduled, Status: j.Status,
-		ActsAsFunction: j.ActsAsFunction, Origin: j.Origin, ParentID: j.ParentID, Depth: int32(j.Depth),
+		ActsAsFunction: j.ActsAsFunction, Email: emailJobToDoc(j.Email), Origin: j.Origin, ParentID: j.ParentID, Depth: int32(j.Depth),
 		Attempts: 0, TimeoutMS: j.TimeoutMS, RequestID: j.RequestID,
 		CreatedAt: j.CreatedAt, ExpiresAt: j.ExpiresAt,
 	})

@@ -45,6 +45,27 @@ auth: enabled
 # functions:
 #   max_concurrency: 50
 
+# Email. backd never sends mail itself: it renders each message from the
+# templates in this realm's `email/` folder (written next to this file; edit
+# them freely) and hands it to ONE function of yours, which delivers it
+# through any provider (Postmark, SES, Resend, Mailgun, ...). That function
+# must be `internal: true` and `mode: async` (see the docs, Functions ->
+# Email). Without this section the realm sends no email.
+#
+# Deliverability (a verified sending domain, SPF/DKIM/DMARC, bounces and
+# complaints) is the sender's responsibility, handled with your provider.
+# email:
+#   function: notifications/deliver        # <database>/<function>
+#   from: "Acme <no-reply@acme.example>"
+#   reply_to: support@acme.example         # optional
+#   public_url: https://api.acme.example   # backd's public address, for links in emails;
+#                                          # overrides the BACKD_URL environment variable
+#   default_locale: en                     # language of the templates used when a user has none
+#   locales: [en]                          # each listed language needs every template (es.txt, ...)
+#   limits:                                # defaults shown
+#     per_recipient: { per_kind_per_hour: 3, per_day: 10 }
+#     per_ip: { per_hour: 20 }
+
 # Roles that access rules can check. `users` lists emails that get the role
 # at startup (seed assignments): plain emails, or objects with an `email`.
 # Keeping them here lets you rebuild the realm on new infrastructure; roles

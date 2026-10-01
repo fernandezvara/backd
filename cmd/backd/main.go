@@ -388,6 +388,7 @@ func (a *app) handlerConfig() httpapi.Config {
 		Functions:         runner,
 		CallbackKey:       []byte(a.cfg.CallbackKey),
 		CallbackURL:       a.cfg.CallbackURL,
+		BackdURL:          a.cfg.BackdURL,
 		ExecutorToken:     a.cfg.ExecutorToken,
 		Log:               a.log,
 		Registry:          a.reg,
@@ -616,6 +617,11 @@ func checkFunctions(reg *registry.Registry, cfg settings.Settings, log *slog.Log
 	if len(cfg.SecretsKey) == 0 {
 		if fn := firstFunctionWithSecrets(reg); fn != nil {
 			return fmt.Errorf("%s/%s/%s declares secrets, but BACKD_SECRETS_KEY (or BACKD_SECRETS_KEY_FILE) is not set", fn.Realm, fn.Database, fn.Name)
+		}
+	}
+	for _, name := range reg.RealmNames() {
+		if e := reg.Realms[name].Settings.Email; e != nil && e.PublicURL == "" && cfg.BackdURL == "" {
+			return fmt.Errorf("realm %s configures email, but backd's public address is unknown: set BACKD_URL (or email.public_url in its realm.yaml), the base of the links in its emails", name)
 		}
 	}
 	warnAnonymousFunctionsWithoutRateLimit(reg, log)

@@ -2,7 +2,7 @@
 title: "Outbound network"
 description: "What a function may reach: the per-function allowlist, the egress proxy and network placement."
 icon: "shield"
-weight: 560
+weight: 561
 toc: true
 ---
 

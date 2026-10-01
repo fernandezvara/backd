@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fernandezvara/backd/internal/email"
 	"github.com/fernandezvara/backd/internal/functions"
 	"github.com/fernandezvara/backd/internal/registry"
 )
@@ -40,13 +41,24 @@ func TestSampleMatchesExample(t *testing.T) {
 	}
 }
 
+// emailFiles are the default email templates `template realm` writes, in order.
+func emailFiles(realm string, created bool) []File {
+	var out []File
+	for _, kind := range email.SystemKinds {
+		for _, name := range []string{"en.html", "en.subject.txt", "en.txt"} {
+			out = append(out, File{Path: realm + "/email/" + kind + "/" + name, Created: created})
+		}
+	}
+	return out
+}
+
 func TestRealm(t *testing.T) {
 	root := t.TempDir()
 	files, err := Realm(root, "demo", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []File{{Path: "demo/realm.yaml", Created: true}}; !reflect.DeepEqual(files, want) {
+	if want := append([]File{{Path: "demo/realm.yaml", Created: true}}, emailFiles("demo", true)...); !reflect.DeepEqual(files, want) {
 		t.Errorf("files = %v, want %v", files, want)
 	}
 
@@ -59,15 +71,15 @@ func TestRealm(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []File{
-		{Path: "demo/realm.yaml"},
+	want := append([]File{{Path: "demo/realm.yaml"}}, emailFiles("demo", false)...)
+	want = append(want, []File{
 		{Path: "demo/main/_functions/deno.json", Created: true},
 		{Path: "demo/main/_functions/stats/function.yaml", Created: true},
 		{Path: "demo/main/_functions/stats/index.ts", Created: true},
 		{Path: "demo/main/posts/indexes.json", Created: true},
 		{Path: "demo/main/posts/rules.yaml", Created: true},
 		{Path: "demo/main/posts/schema.json", Created: true},
-	}
+	}...)
 	if !reflect.DeepEqual(files, want) {
 		t.Errorf("files = %v, want %v", files, want)
 	}
@@ -126,6 +138,8 @@ func TestProject(t *testing.T) {
 		"config/shop/main/_functions/stats/function.yaml",
 		"config/shop/main/_functions/stats/index.ts",
 		"config/shop/main/_functions/stats/index.test.ts",
+		"config/shop/email/verify-email/en.txt",
+		"config/shop/email/invitation/en.html",
 		"Dockerfile",
 		"Dockerfile.executor",
 		"compose.yaml",
@@ -145,8 +159,8 @@ func TestProject(t *testing.T) {
 			t.Errorf("missing %s", p)
 		}
 	}
-	if len(got) != len(wantPaths) {
-		t.Errorf("got %d files, want %d: %v", len(got), len(wantPaths), files)
+	if want := len(wantPaths) + len(email.SystemKinds)*3 - 2; len(got) != want { // the two email files listed above are among the 24
+		t.Errorf("got %d files, want %d: %v", len(got), want, files)
 	}
 
 	// The generated config loads and its README names the actual realm
