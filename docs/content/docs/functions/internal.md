@@ -61,6 +61,20 @@ const receipt = await ctx.call("send-receipt", { order_id }, { idempotencyKey: `
 4. **Attribution.** What the callee writes through `ctx.admin.db` is recorded as the callee; through `ctx.db`, as the user (or anonymous).
 5. **Traceability.** Every nested call is its own record in the [invocation history](../logs/), with the same `request_id`, a `parent_id` and an `origin` of `function`.
 
+## Running a function by hand
+
+An administrator runs any function, internal or public, through the admin API: to re-run a clean-up that failed, or to test a scheduled function without waiting for the clock.
+
+```sh
+backd functions invoke --function workshop/main/cleanup --input input.json --as ana@example.com
+```
+
+- `backd functions invoke` tries the normal `_func` route and, when it answers `404` (an internal function), runs the function through `POST /v1/<realm>/_admin/functions/<database>/<name>/invoke` instead, and says so. It needs an admin API key or an admin session; `admin.allowed_networks` and a user's `admin_networks` apply.
+- `--as <email>` runs the function with that user as `ctx.user`; without it there is no user and `ctx.db` acts as anonymous. A function with a [`schedule`](../cron/) run with no user acts as its schedule would, with full access as itself, so it needs no `admin: true` just to be tested.
+- The function's `invoke` rule isn't evaluated (the credential is an admin one) and its `rate_limit` doesn't apply; its input schema does, and so does `idempotency: required`. `webhook` functions can't be run this way.
+- Every run is [audited](../../auth/audit/) as `function.invoke_manual`, with the user's id, never their email. Calls between functions are not audited: they show in the [invocation history](../logs/).
+- From the [JavaScript client](../../clients/js/#functions): `await backd.admin.invokeFunction('main/cleanup', { input, as })`.
+
 {{< hint style="tip" title="Best practice" >}}
 Keep a function internal unless something outside needs to call it. `internal`, `calls`, `admin`, `secrets` and `network` together show in one place what each function may do.
 {{< /hint >}}

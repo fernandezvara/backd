@@ -262,7 +262,7 @@ func (w *Worker) fail(ctx context.Context, log *slog.Logger, svc *auth.Users, jo
 // freshness principle secrets already follow for async calls.
 func (w *Worker) callerFor(ctx context.Context, realm string, svc *auth.Users, job auth.Job) auth.Caller {
 	var c auth.Caller
-	if job.Scheduled {
+	if job.Scheduled || job.ActsAsFunction {
 		return auth.Caller{Func: &auth.FuncCaller{Name: realm + "/" + job.Database + "/" + job.Function, Admin: true}}
 	}
 	if job.CallerUserID != "" {

@@ -60,6 +60,7 @@ backd functions invoke --function shop/orders/checkout --input cart.json --url h
 ```
 
 - `--input <file>` reads the request body from a JSON file (`-` for standard input); without it, the body is `null`, same as an empty request.
+- An [internal function](../internal/) has no `_func` route; `invoke` then runs it through the admin API (and says so), which needs an admin API key or an admin session.
 - It authenticates the same way as `backd user`/`backd apikey`: a session stored by `backd login`, or `BACKD_API_KEY`.
 - `--as <email>` calls on that user's behalf (an admin API key only, via [`X-Backd-On-Behalf-Of`](../../auth/api-keys/#acting-on-behalf-of-a-user)); without it, calls as whatever credential is active.
 - With `BACKD_DEV=true` on the server, the response also carries the function's console logs and its time inside the executor (`X-Backd-Dev-Logs`, `X-Backd-Dev-Duration-Ms`); `invoke` prints them to standard error, output stays on standard output alone so it's safe to pipe. These headers are never sent outside dev mode — a production call never leaks another caller's function logs.

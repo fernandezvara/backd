@@ -47,19 +47,22 @@ func (f *fakeFuncRunner) lastRequest() executor.InvokeRequest {
 
 // writeFuncManifest writes a one-function manifest as `backd functions
 // build` would, so the handler's index finds a built bundle.
-func writeFuncManifest(t *testing.T, dir, name string) {
+func writeFuncManifest(t *testing.T, dir string, names ...string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(dir, registry.BuildDir), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	data := []byte("export default () => null;\n")
-	sum := sha256.Sum256(data)
-	hash := hex.EncodeToString(sum[:])
-	file := name + "-" + hash[:8] + ".js"
-	if err := os.WriteFile(filepath.Join(dir, registry.BuildDir, file), data, 0o644); err != nil {
-		t.Fatal(err)
+	m := registry.Manifest{Deno: registry.DenoVersion, Functions: map[string]registry.ManifestBundle{}}
+	for _, name := range names {
+		data := []byte("export default () => '" + name + "';\n")
+		sum := sha256.Sum256(data)
+		hash := hex.EncodeToString(sum[:])
+		file := name + "-" + hash[:8] + ".js"
+		if err := os.WriteFile(filepath.Join(dir, registry.BuildDir, file), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		m.Functions[name] = registry.ManifestBundle{Bundle: file, SHA256: hash}
 	}
-	m := registry.Manifest{Deno: registry.DenoVersion, Functions: map[string]registry.ManifestBundle{name: {Bundle: file, SHA256: hash}}}
 	out, err := json.Marshal(m)
 	if err != nil {
 		t.Fatal(err)
@@ -75,8 +78,10 @@ func TestFunctionsInvoke(t *testing.T) {
 		"acme/realm.yaml":              "roles:\n  ops:\n    admin: true\n",
 		fnDir + "/hello/function.yaml": "invoke: \"false\"\n", // API keys bypass this
 		fnDir + "/hello/index.js":      "",
+		fnDir + "/tidy/function.yaml":  "internal: true\n",
+		fnDir + "/tidy/index.js":       "",
 	})
-	writeFuncManifest(t, filepath.Join(root, fnDir), "hello")
+	writeFuncManifest(t, filepath.Join(root, fnDir), "hello", "tidy")
 	reg, err := registry.Load(root)
 	if err != nil {
 		t.Fatal(err)
@@ -167,6 +172,19 @@ func TestFunctionsInvoke(t *testing.T) {
 	if invoked {
 		t.Error("the function was called despite the unresolved --as")
 	}
+
+	// An internal function has no _func route: the command falls back to the
+	// admin route, as the --as user when given, and says so.
+	code, out, errOut = c.run("", "functions", "invoke", "--function", "acme/app/tidy", "--input", input, "--url", srv.URL)
+	if code != 0 || !strings.Contains(out, `"n": 1`) || !strings.Contains(errOut, "the function is internal") {
+		t.Fatalf("internal: code %d, stdout %q, stderr %q", code, out, errOut)
+	}
+	c.expect(0, `"n": 1`, "", "functions", "invoke", "--function", "acme/app/tidy", "--input", input, "--as", "dev@example.com", "--url", srv.URL)
+	if err := json.Unmarshal(runner.lastRequest().Envelope.User, &user); err != nil || user.Email != "dev@example.com" {
+		t.Errorf("internal as dev: Envelope.User = %s", runner.lastRequest().Envelope.User)
+	}
+	// A function that doesn't exist is still a clear 404.
+	c.expect(1, "404 not_found", "", "functions", "invoke", "--function", "acme/app/ghost", "--url", srv.URL)
 
 	// Without --input the body is null.
 	c.expect(0, "null", "", "functions", "invoke", "--function", "acme/app/hello", "--url", srv.URL)

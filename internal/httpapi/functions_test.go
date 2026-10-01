@@ -745,3 +745,70 @@ func TestNestedCalls(t *testing.T) {
 }
 
 func slicesEqual(a, b []string) bool { return strings.Join(a, ",") == strings.Join(b, ",") }
+
+// An administrator runs a function by hand: as a user or as nobody, with the
+// invoke rule and rate limit left out, audited without the user's email.
+func TestAdminInvokeFunction(t *testing.T) {
+	f := newRulesFixture(t)
+	ctx := context.Background()
+	run := func(cred, name, body string) (int, map[string]any) {
+		h := map[string]string{"Content-Type": "application/json", "Authorization": "Bearer " + cred}
+		rec, out := f.doH(t, "POST", "/v1/acme/_admin/functions/app/"+name+"/invoke", body, h)
+		return rec.Code, out
+	}
+
+	// Without `as` there is no user; the function still runs, and an internal one too.
+	if code, out := run(f.key, "echo", `{"input": {"n": 7}}`); code != 200 || out["n"] != float64(7) {
+		t.Fatalf("echo: %d %v", code, out)
+	}
+	req := f.runner.last()
+	if len(req.Envelope.User) > 0 && string(req.Envelope.User) != "null" {
+		t.Errorf("a run without `as` has a user: %s", req.Envelope.User)
+	}
+	if c, _ := auth.VerifyCallback(f.callbackKey, req.Envelope.Callback.Token, *f.clock); c.UserID != "" || c.KeyHash != "" {
+		t.Errorf("the run's ctx.db should be anonymous: %+v", c)
+	}
+	if code, out := run(f.key, "cleanup", `{}`); code != 202 || out["id"] == nil {
+		t.Fatalf("internal function: %d %v", code, out)
+	}
+
+	// With `as`, the function sees that user, even where its invoke rule
+	// would refuse them (echo wants a verified user; carl isn't one).
+	if code, out := run(f.key, "echo", `{"input": 1, "as": "carl@example.com"}`); code != 200 {
+		t.Fatalf("as carl: %d %v", code, out)
+	}
+	var user map[string]any
+	json.Unmarshal(f.runner.last().Envelope.User, &user)
+	if user["email"] != "carl@example.com" {
+		t.Errorf("user = %v", user)
+	}
+	// A scheduled function run by hand with no user runs as its schedule would:
+	// full access as the function, no user.
+	if code, out := run(f.key, "nightly", `{}`); code != 202 {
+		t.Fatalf("nightly: %d %v", code, out)
+	}
+	if jobs, _, _ := f.svc.Jobs(ctx, auth.JobFilter{Database: "app", Function: "nightly"}); len(jobs) != 1 || !jobs[0].ActsAsFunction || jobs[0].Scheduled || jobs[0].Origin != "admin" {
+		t.Errorf("jobs of nightly: %+v", jobs)
+	}
+	// An admin session may do it too; a customer may not.
+	if code, _ := run(f.bob, "echo", `{}`); code != 403 {
+		t.Errorf("customer: %d", code)
+	}
+
+	// Audited with ids, never the email; recorded with the origin `admin`.
+	recs, _, err := f.svc.AuditTrail(ctx, auth.AuditFilter{Action: "function.invoke_manual"})
+	if err != nil || len(recs) != 4 {
+		t.Fatalf("audit: %d %v", len(recs), err)
+	}
+	for _, r := range recs {
+		if r.Target != "app/echo" && r.Target != "app/cleanup" && r.Target != "app/nightly" {
+			t.Errorf("audit target %q", r.Target)
+		}
+		if b, _ := json.Marshal(r.Details); strings.Contains(string(b), "@") {
+			t.Errorf("audit details have an email: %s", b)
+		}
+	}
+	if inv, _, _ := f.svc.Invocations(ctx, auth.InvocationFilter{Function: "app/echo"}); len(inv) == 0 || inv[0].Origin != "admin" {
+		t.Errorf("invocation origin: %+v", inv)
+	}
+}

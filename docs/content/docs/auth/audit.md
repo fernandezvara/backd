@@ -17,6 +17,7 @@ Each realm with `auth: enabled` keeps an **audit trail**: one record per securit
 | `user.password` | An administrator sets a user's password | |
 | `user.password_change` | A user changes their own password | |
 | `user.verify_email` | An administrator marks an email as verified, or not | `verified` |
+| `function.invoke_manual` | An administrator runs a function by hand ([admin API](../admin/)) | `as` (the user's **id**, never their email, or null) |
 | `user.disable`, `user.enable` | An administrator disables or re-enables a user | |
 | `user.delete` | An administrator deletes a user | |
 | `user.delete_account` | A user deletes their own account | |

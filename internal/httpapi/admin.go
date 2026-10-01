@@ -22,6 +22,7 @@ import (
 type adminAPI struct {
 	users func(realm string) *auth.Users
 	reg   *registry.Registry
+	fns   *functions // runs functions by hand (see adminInvoke)
 }
 
 type adminUserKey struct{}
@@ -54,6 +55,7 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		r.Get("/audit", a.listAudit)
 		r.Get("/invocations", a.listInvocations)
 		r.Get("/jobs", a.listJobs)
+		r.With(json).Post("/functions/{database}/{name}/invoke", a.fns.adminInvoke)
 	})
 }
 

@@ -53,6 +53,7 @@ const (
 	originHTTP     = "http"
 	originFunction = "function"
 	originCron     = "cron"
+	originAdmin    = "admin"
 )
 
 // callMeta says how an invocation started: its place in a chain of
@@ -223,15 +224,18 @@ func (f *functions) invoke(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
-		if fn.InputSchema != nil {
-			v, _ := jsonschema.UnmarshalJSON(bytes.NewReader(input))
-			if err := fn.InputSchema.Validate(v); err != nil {
-				writeError(w, r, http.StatusBadRequest, codeValidation, "input failed schema validation", validationDetails(err)...)
-				return
-			}
+		if !validInput(w, r, fn, input) {
+			return
 		}
 		hashInput = input
 	}
+	f.run(w, r, fn, realm, database, name, caller, meta, input, webhook, hashInput)
+}
+
+// run does what follows the checks of a call: idempotency, rate limit, then
+// the executor (sync) or the queue (async), and the answer. hashInput is
+// what the idempotency key is bound to.
+func (f *functions) run(w http.ResponseWriter, r *http.Request, fn *registry.Function, realm, database, name string, caller auth.Caller, meta callMeta, input json.RawMessage, webhook *executor.WebhookRequest, hashInput []byte) {
 	claimID, ok := f.checkIdempotency(w, r, fn, realm, database, name, caller, hashInput)
 	if !ok {
 		return
@@ -352,6 +356,90 @@ func (f *functions) invoke(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	f.respond(w, r, fn, res)
+}
+
+// adminInvoke handles POST /v1/{realm}/_admin/functions/{database}/{name}/invoke:
+// an administrator runs any function (internal or public) on purpose, as a
+// given user or with none, to re-run a clean-up or test a scheduled
+// function (which then runs as its schedule would). The function's invoke rule is not evaluated (the credential is
+// an admin one) and its rate limit doesn't apply; the run is audited.
+func (f *functions) adminInvoke(w http.ResponseWriter, r *http.Request) {
+	realm, database, name := chi.URLParam(r, "realm"), chi.URLParam(r, "database"), chi.URLParam(r, "name")
+	fn := f.lookup(realm, database, name)
+	if fn == nil {
+		notFound(w, r)
+		return
+	}
+	if fn.Mode == registry.ModeWebhook {
+		writeError(w, r, http.StatusBadRequest, codeValidation, "a webhook function can't be run by hand: its sender calls it over HTTP")
+		return
+	}
+	data, err := io.ReadAll(r.Body)
+	var tooBig *http.MaxBytesError
+	if errors.As(err, &tooBig) {
+		tooLarge(w, r, tooBig.Limit)
+		return
+	}
+	var body struct {
+		Input json.RawMessage `json:"input"`
+		As    string          `json:"as"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err != nil || dec.Decode(&body) != nil || dec.More() {
+		writeError(w, r, http.StatusBadRequest, codeInvalidJSON, `the body must be a JSON object with optional "input" and "as"`)
+		return
+	}
+	input := body.Input
+	if len(bytes.TrimSpace(input)) == 0 {
+		input = json.RawMessage("null")
+	}
+	svc := usersOf(r)
+	var caller auth.Caller
+	var asID any
+	if body.As != "" {
+		email, err := registry.NormalizeEmail(body.As)
+		var u auth.User
+		if err == nil {
+			u, err = svc.Store.UserByEmail(r.Context(), email)
+		}
+		if err != nil {
+			writeError(w, r, http.StatusNotFound, codeNotFound, "no user with that email in this realm")
+			return
+		}
+		if u.Disabled {
+			writeError(w, r, http.StatusConflict, codeConflict, "that user is disabled")
+			return
+		}
+		caller = auth.Caller{User: &auth.Principal{User: u}}
+		asID = u.ID
+	}
+	// A scheduled function run by hand, with no user, runs as its schedule
+	// would (no caller, full access as the function): an operator re-runs
+	// it as it normally runs, with no need for `admin: true` just to test it.
+	if body.As == "" && fn.Schedule != nil {
+		caller = auth.Caller{Func: &auth.FuncCaller{Name: realm + "/" + database + "/" + name, Admin: true}}
+	}
+	if !validInput(w, r, fn, input) {
+		return
+	}
+	// Ids only, never the email.
+	svc.Audit(r.Context(), "function.invoke_manual", database+"/"+name, map[string]any{"as": asID})
+	f.run(w, r, fn, realm, database, name, caller, callMeta{Origin: originAdmin}, input, nil, input)
+}
+
+// validInput checks a call's input against the function's input schema,
+// answering 400 when it doesn't match.
+func validInput(w http.ResponseWriter, r *http.Request, fn *registry.Function, input json.RawMessage) bool {
+	if fn.InputSchema == nil {
+		return true
+	}
+	v, _ := jsonschema.UnmarshalJSON(bytes.NewReader(input))
+	if err := fn.InputSchema.Validate(v); err != nil {
+		writeError(w, r, http.StatusBadRequest, codeValidation, "input failed schema validation", validationDetails(err)...)
+		return false
+	}
+	return true
 }
 
 // validIdempotencyKey bounds a client-supplied Idempotency-Key to what's
@@ -477,6 +565,7 @@ func (f *functions) enqueue(w http.ResponseWriter, r *http.Request, fn *registry
 		Database: database, Function: name, Input: input, CallerActor: caller.Actor(),
 		TimeoutMS: fn.Timeout.Milliseconds(), RequestID: requestID(r.Context()),
 		Origin: meta.Origin, ParentID: meta.ParentID, Depth: meta.Depth,
+		ActsAsFunction: caller.Func != nil && caller.Func.Admin,
 	}
 	if caller.User != nil {
 		job.CallerUserID = caller.User.User.ID

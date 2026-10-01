@@ -37,25 +37,26 @@ const leaseMargin = 30 * time.Second
 // job's input and result are — there's nowhere else to keep them until
 // the caller reads them back.
 type Job struct {
-	ID            string
-	Database      string
-	Function      string // name only; Database plus this is the function
-	Input         json.RawMessage
-	CallerActor   string // for display: "user:<id>", "key:<name>", "anonymous"
-	CallerUserID  string // "" unless the caller was a signed-in user
-	CallerKeyHash string // "" unless the caller was an API key
-	Scheduled     bool   // created by the function's cron schedule, acts as the function itself
-	Origin        string // http, function (ctx.call), cron, admin or backd:<event>
-	ParentID      string // the invocation that queued it with ctx.call; empty otherwise
-	Depth         int    // nested calls above it
-	TimeoutMS     int64  // the function's timeout at enqueue time, for the worker's lease
-	RequestID     string
-	Status        string // queued | running | done
-	Attempts      int
-	CreatedAt     time.Time
-	CompletedAt   time.Time // zero until done
-	ExpiresAt     time.Time
-	Result        *JobResult // nil until done
+	ID             string
+	Database       string
+	Function       string // name only; Database plus this is the function
+	Input          json.RawMessage
+	CallerActor    string // for display: "user:<id>", "key:<name>", "anonymous"
+	CallerUserID   string // "" unless the caller was a signed-in user
+	CallerKeyHash  string // "" unless the caller was an API key
+	Scheduled      bool   // created by the function's cron schedule, acts as the function itself
+	ActsAsFunction bool   // run as the function itself, with full access (a scheduled function run by hand)
+	Origin         string // http, function (ctx.call), cron, admin or backd:<event>
+	ParentID       string // the invocation that queued it with ctx.call; empty otherwise
+	Depth          int    // nested calls above it
+	TimeoutMS      int64  // the function's timeout at enqueue time, for the worker's lease
+	RequestID      string
+	Status         string // queued | running | done
+	Attempts       int
+	CreatedAt      time.Time
+	CompletedAt    time.Time // zero until done
+	ExpiresAt      time.Time
+	Result         *JobResult // nil until done
 }
 
 // JobResult is how a job's run ended: the same vocabulary as a sync

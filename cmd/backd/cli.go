@@ -270,7 +270,7 @@ func registerRemote(cfg *cli.Config) {
 		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
 	}
 	fn.SubCommand("invoke").ShortHelp("call the function through a running backd").
-		LongHelp("Calls the function through a running backd's real HTTP path: the same invoke\nrule, schemas and secrets apply as for any other caller. --input reads the\nrequest body from a JSON file (\"-\" for standard input); without it, the body\nis null. --as <email> calls on the user's behalf (needs an admin API key,\nBACKD_API_KEY); without it, calls as whatever credential is active. When the\nserver runs with BACKD_DEV=true, also prints the function's console logs and\nits time inside the executor.").
+		LongHelp("Calls the function through a running backd's real HTTP path: the same invoke\nrule, schemas and secrets apply as for any other caller. An internal function has\nno such route: it is run through the admin API instead (as --as, if given). --input reads the\nrequest body from a JSON file (\"-\" for standard input); without it, the body\nis null. --as <email> calls on the user's behalf (needs an admin API key,\nBACKD_API_KEY); without it, calls as whatever credential is active. When the\nserver runs with BACKD_DEV=true, also prints the function's console logs and\nits time inside the executor.").
 		Func(act("functions invoke", functionsInvoke)).Config(func(cc *cli.CommandConfig) {
 		fnFlag(cc)
 		optional(cc, "input", "a JSON file with the request body, or - for standard input")
