@@ -45,6 +45,9 @@ type Job struct {
 	CallerUserID  string // "" unless the caller was a signed-in user
 	CallerKeyHash string // "" unless the caller was an API key
 	Scheduled     bool   // created by the function's cron schedule, acts as the function itself
+	Origin        string // http, function (ctx.call), cron, admin or backd:<event>
+	ParentID      string // the invocation that queued it with ctx.call; empty otherwise
+	Depth         int    // nested calls above it
 	TimeoutMS     int64  // the function's timeout at enqueue time, for the worker's lease
 	RequestID     string
 	Status        string // queued | running | done

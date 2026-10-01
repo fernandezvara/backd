@@ -36,6 +36,9 @@ type jobDoc struct {
 	CallerUserID  string        `bson:"caller_user_id,omitempty"`
 	CallerKeyHash string        `bson:"caller_key_hash,omitempty"`
 	Scheduled     bool          `bson:"scheduled,omitempty"`
+	Origin        string        `bson:"origin,omitempty"`
+	ParentID      string        `bson:"parent_id,omitempty"`
+	Depth         int32         `bson:"depth,omitempty"`
 	Status        string        `bson:"status"`
 	Attempts      int32         `bson:"attempts"`
 	TimeoutMS     int64         `bson:"timeout_ms"`
@@ -107,6 +110,7 @@ func jobFromDoc(d jobDoc) auth.Job {
 	j := auth.Job{
 		ID: d.ID, Database: d.Database, Function: d.Function, Input: encodeJSONAny(d.Input),
 		CallerActor: d.CallerActor, CallerUserID: d.CallerUserID, CallerKeyHash: d.CallerKeyHash, Scheduled: d.Scheduled,
+		Origin: d.Origin, ParentID: d.ParentID, Depth: int(d.Depth),
 		TimeoutMS: d.TimeoutMS, RequestID: d.RequestID,
 		Status: d.Status, Attempts: int(d.Attempts), CreatedAt: d.CreatedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC(),
 		Result: jobResultFromDoc(d.Result),
@@ -126,6 +130,7 @@ func (s *AuthStore) EnqueueJob(ctx context.Context, j auth.Job) error {
 	_, err = s.jobs().InsertOne(ctx, jobDoc{
 		ID: j.ID, Database: j.Database, Function: j.Function, Input: input,
 		CallerActor: j.CallerActor, CallerUserID: j.CallerUserID, CallerKeyHash: j.CallerKeyHash, Scheduled: j.Scheduled, Status: j.Status,
+		Origin: j.Origin, ParentID: j.ParentID, Depth: int32(j.Depth),
 		Attempts: 0, TimeoutMS: j.TimeoutMS, RequestID: j.RequestID,
 		CreatedAt: j.CreatedAt, ExpiresAt: j.ExpiresAt,
 	})

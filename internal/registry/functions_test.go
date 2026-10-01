@@ -344,6 +344,9 @@ func TestCallGraph(t *testing.T) {
 		files := map[string]string{}
 		for name, c := range calls {
 			files[fnPrefix+name+"/function.yaml"] = "calls: [" + c + "]\n"
+			if name == "hook" {
+				files[fnPrefix+name+"/function.yaml"] = "mode: webhook\ninvoke: \"true\"\n"
+			}
 			files[fnPrefix+name+"/index.js"] = "export default () => 1;\n"
 		}
 		return files
@@ -356,6 +359,7 @@ func TestCallGraph(t *testing.T) {
 		{"chain of four", map[string]string{"a": "b", "b": "c", "c": "d", "d": ""}, ""},
 		{"diamond", map[string]string{"a": "b, c", "b": "d", "c": "d", "d": ""}, ""},
 		{"chain of five", map[string]string{"a": "b", "b": "c", "c": "d", "d": "e", "e": ""}, "a chain of 5 functions starts here, the longest allowed is 4"},
+		{"calls a webhook", map[string]string{"a": "hook", "hook": ""}, `"hook" is a webhook function`},
 		{"cycle of two", map[string]string{"a": "b", "b": "a"}, "cycle a -> b -> a"},
 		{"cycle behind an entry", map[string]string{"a": "b", "b": "c", "c": "b"}, "cycle b -> c -> b"},
 	} {

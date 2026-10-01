@@ -1413,7 +1413,7 @@ components:
         happened and its own console log lines (roadmap F10).
       type: object
       additionalProperties: false
-      required: [id, at, function, actor, mode, status, duration_ms, request_id, job_id, logs]
+      required: [id, at, function, actor, mode, status, duration_ms, request_id, job_id, parent_id, origin, logs]
       properties:
         id: { type: string }
         at: { $ref: "#/components/schemas/Timestamp" }
@@ -1428,6 +1428,8 @@ components:
         duration_ms: { type: integer }
         request_id: { type: [string, "null"] }
         job_id: { type: [string, "null"], description: "The async job this call ran for (roadmap F11); null for sync calls." }
+        parent_id: { type: [string, "null"], description: "The invocation that called this one with `ctx.call`; null otherwise." }
+        origin: { type: [string, "null"], description: "What started the call: `http`, `function` (`ctx.call`), `cron`, `admin`, or `backd:<event>`. Null for records made before origins were recorded." }
         logs:
           type: array
           description: "The function's captured console output, already masked of any declared secrets."

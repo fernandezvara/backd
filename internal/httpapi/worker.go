@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"github.com/rs/xid"
 	"log/slog"
 	"strings"
 	"time"
@@ -203,6 +204,14 @@ func (w *Worker) runJob(ctx context.Context, realm string, svc *auth.Users, job 
 	}
 	caller := w.callerFor(ctx, realm, svc, job)
 	deadline := w.fns.docs.now().Add(fn.Timeout)
+	invID := xid.New().String()
+	meta := callMeta{Origin: job.Origin, ParentID: job.ParentID, Depth: job.Depth}
+	if job.Scheduled {
+		meta.Origin = originCron
+	}
+	if meta.Origin == "" {
+		meta.Origin = originHTTP // queued before origins were recorded
+	}
 	req := executor.InvokeRequest{
 		Function:  realm + "/" + job.Database + "/" + job.Function,
 		Bundle:    executor.Bundle{SHA256: hash, URL: strings.TrimRight(w.fns.callbackURL, "/") + "/_internal/functions/" + hash},
@@ -215,7 +224,7 @@ func (w *Worker) runJob(ctx context.Context, realm string, svc *auth.Users, job 
 			Input:     job.Input,
 			User:      userEnvelope(caller),
 			Secrets:   secrets,
-			Callback:  w.fns.callback(realm, job.Database, job.Function, fn, caller, deadline.Add(callbackMargin)),
+			Callback:  w.fns.callback(realm, job.Database, job.Function, fn, caller, deadline.Add(callbackMargin), invID, job.Depth),
 			RequestID: job.RequestID,
 		},
 	}
@@ -231,7 +240,7 @@ func (w *Worker) runJob(ctx context.Context, realm string, svc *auth.Users, job 
 		log.Warn("executor busy; leaving the job to be retried")
 		return
 	}
-	w.fns.recordInvocation(ctx, job.RequestID, realm, job.Database, job.Function, registry.ModeAsync, caller, res, job.ID)
+	w.fns.recordInvocation(ctx, job.RequestID, realm, job.Database, job.Function, registry.ModeAsync, caller, res, job.ID, invID, meta)
 	if err := svc.CompleteJob(ctx, job.ID, jobResultFromExecutor(res)); err != nil {
 		log.Error("complete job", "error", err)
 	}

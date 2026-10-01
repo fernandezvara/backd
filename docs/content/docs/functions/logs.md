@@ -28,11 +28,15 @@ Every function call — `sync`, `webhook`, and once an [async](../jobs/) job fin
   "duration_ms": 118,
   "request_id": "darf9mq5mh5g00aq9df0",
   "job_id": null,
+  "parent_id": null,
+  "origin": "http",
   "logs": [{ "level": "log", "line": "charging card for 1250" }]
 }
 ```
 
 `status` is one of `ok`, `function_error`, `timeout`, `memory`, `cpu`, `crash`, `output_too_large`, `busy` or `bundle` — the same reasons a call can end that show up in `backd`'s own log and in the [error table](../calling/#calling-a-function). `code` is the function's own error code (`ctx.error`'s second argument) when `status` is `function_error`. For an [async](../jobs/) call, `mode` is `async` and `job_id` names the job; the record is written once the job finishes, not when it's queued.
+
+`origin` says what started the call: `http`, `function` (another function's [`ctx.call`](../internal/#calling-another-function)), `cron` or `admin`. For a call made with `ctx.call`, `parent_id` is the `id` of the invocation that made it, so a chain of calls can be followed record by record (they share the `request_id` too). Both are `null` in records written before they existed.
 
 ## Retention: a debugging window, not a log archive
 

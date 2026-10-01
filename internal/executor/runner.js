@@ -93,6 +93,23 @@ if (env.mode === "webhook") {
 if (env.callback?.token) {
   const caller = client(env.callback.token);
   ctx.db = (name) => caller.db(name);
+  // Calls another function of this database that function.yaml lists in
+  // `calls`: its output for a sync callee, a job handle for an async one.
+  // A 4xx the callee chose (ctx.error) arrives as the same FunctionError;
+  // anything else (function_failed, function_timeout, call_not_declared,
+  // unavailable) is a BackdError the caller may catch or let end it.
+  ctx.call = async (name, input, options = {}) => {
+    try {
+      const opts = options.idempotencyKey === undefined ? undefined : { idempotencyKey: options.idempotencyKey };
+      return await caller.db(env.callback.database).fn(name, input, opts);
+    } catch (e) {
+      if (e && Number.isInteger(e.status) && e.status >= 400 && e.status <= 499 && typeof e.code === "string"
+          && e.code !== "call_not_declared" && e.code !== "call_too_deep") {
+        throw new FunctionError(e.status, e.code, e.message, e.details?.length ? e.details : undefined);
+      }
+      throw e;
+    }
+  };
 }
 if (env.callback?.admin_token) {
   const admin = client(env.callback.admin_token);

@@ -903,9 +903,11 @@ func invocationJSON(rec auth.InvocationRecord) map[string]any {
 		"duration_ms": rec.DurationMS,
 		"request_id":  nil,
 		"job_id":      nil,
+		"parent_id":   nil,
+		"origin":      nil,
 		"logs":        logs,
 	}
-	for k, v := range map[string]string{"code": rec.Code, "request_id": rec.RequestID, "job_id": rec.JobID} {
+	for k, v := range map[string]string{"code": rec.Code, "request_id": rec.RequestID, "job_id": rec.JobID, "parent_id": rec.ParentID, "origin": rec.Origin} {
 		if v != "" {
 			out[k] = v
 		}

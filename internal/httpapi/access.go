@@ -131,7 +131,7 @@ func (d *documents) identifyCallback(w http.ResponseWriter, r *http.Request, rea
 	}
 	setActor(r.Context(), "func:"+claims.Realm+"/"+claims.Function)
 	if svc == nil {
-		return caller, false, true
+		return auth.Caller{Func: auth.FuncCallerOf(claims)}, false, true
 	}
 	if caller, err = svc.CallbackCaller(r.Context(), claims); err != nil {
 		unauthenticated(w, r, true, "the function's caller can no longer act")

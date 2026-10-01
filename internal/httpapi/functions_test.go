@@ -497,8 +497,10 @@ func TestInternalListener(t *testing.T) {
 			t.Errorf("GET %s on the internal listener: %d", p, code)
 		}
 	}
-	if code, _, _ := do("POST", "/v1/acme/app/_func/echo", `{}`, admin); code != 404 && code != 405 {
-		t.Errorf("functions calling functions: %d", code)
+	// A function may call another only with a token that lists it in `calls`
+	// (see TestNestedCalls); the admin token never does.
+	if code, out, _ := do("POST", "/v1/acme/app/_func/echo", `{}`, admin); code != 403 || out["error"].(map[string]any)["code"] != "call_not_declared" {
+		t.Errorf("admin token calling a function: %d %v", code, out)
 	}
 }
 
@@ -527,3 +529,219 @@ func TestInternalFunctionHasNoRoute(t *testing.T) {
 		t.Error("an internal function reached the executor")
 	}
 }
+
+// ctx.call: a function calling another through the internal listener.
+func TestNestedCalls(t *testing.T) {
+	f := newRulesFixture(t)
+	ctx := context.Background()
+	public := func(cred, name, body string) *http.Response {
+		t.Helper()
+		h := map[string]string{"Content-Type": "application/json"}
+		if cred != "" {
+			h["Authorization"] = "Bearer " + cred
+		}
+		rec, _ := f.doH(t, "POST", "/v1/acme/app/_func/"+name, body, h)
+		return rec.Result()
+	}
+	// callbackOf runs name over HTTP as cred and returns the token the executor got.
+	callbackOf := func(cred, name string) (string, auth.CallbackClaims) {
+		t.Helper()
+		if res := public(cred, name, `{}`); res.StatusCode != 200 {
+			t.Fatalf("%s: %d", name, res.StatusCode)
+		}
+		tok := f.runner.last().Envelope.Callback.Token
+		claims, err := auth.VerifyCallback(f.callbackKey, tok, *f.clock)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tok, claims
+	}
+	nested := func(tok, name, body string, hdr ...string) (int, map[string]any) {
+		t.Helper()
+		req := httptest.NewRequest("POST", "/v1/acme/app/_func/"+name, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+tok)
+		for i := 0; i+1 < len(hdr); i += 2 {
+			req.Header.Set(hdr[i], hdr[i+1])
+		}
+		rec := httptest.NewRecorder()
+		f.internal.ServeHTTP(rec, req)
+		var out map[string]any
+		json.Unmarshal(rec.Body.Bytes(), &out)
+		return rec.Code, out
+	}
+	errCode := func(out map[string]any) string {
+		e, _ := out["error"].(map[string]any)
+		c, _ := e["code"].(string)
+		return c
+	}
+
+	// The caller's token says what it may call and where it stands.
+	tok, claims := callbackOf(f.ada, "checkout")
+	if !slicesEqual(claims.Calls, []string{"reserve", "tally", "echo", "capped", "admin"}) || claims.Depth != 0 || claims.Inv == "" {
+		t.Fatalf("claims: %+v", claims)
+	}
+	if cb := f.runner.last().Envelope.Callback; cb.Database != "app" {
+		t.Errorf("callback database = %q", cb.Database)
+	}
+
+	// A declared internal function runs, as the caller's user, one level down.
+	if code, out := nested(tok, "reserve", `{"n": 1}`); code != 200 || out["n"] != float64(1) {
+		t.Fatalf("reserve: %d %v", code, out)
+	}
+	req := f.runner.last()
+	var user map[string]any
+	json.Unmarshal(req.Envelope.User, &user)
+	if req.Function != "acme/app/reserve" || user["id"] != f.adaID {
+		t.Errorf("reserve request: %s user %v", req.Function, user)
+	}
+	inner, err := auth.VerifyCallback(f.callbackKey, req.Envelope.Callback.Token, *f.clock)
+	if err != nil || inner.Depth != 1 || !slicesEqual(inner.Calls, []string{"leaf"}) || inner.UserID != f.adaID || inner.KeyHash != "" || inner.Admin || inner.Inv == claims.Inv {
+		t.Errorf("callee token: %+v %v", inner, err)
+	}
+	if req.Envelope.Callback.AdminToken != "" {
+		t.Error("a callee got admin access it didn't declare")
+	}
+
+	// The history links the calls: the callee's parent is the caller's invocation.
+	recs, _, err := f.svc.Invocations(ctx, auth.InvocationFilter{Function: "app/reserve"})
+	if err != nil || len(recs) != 1 || recs[0].ParentID != claims.Inv || recs[0].Origin != "function" || recs[0].ID != inner.Inv {
+		t.Errorf("callee record: %+v %v", recs, err)
+	}
+	recs, _, _ = f.svc.Invocations(ctx, auth.InvocationFilter{Function: "app/checkout"})
+	if len(recs) != 1 || recs[0].Origin != "http" || recs[0].ID != claims.Inv || recs[0].ParentID != "" {
+		t.Errorf("caller record: %+v", recs)
+	}
+
+	// Not declared: refused, whatever the function is.
+	for _, name := range []string{"cleanup", "typed", "leaf", "nothing_here"} {
+		if code, out := nested(tok, name, `{}`); code != 403 || errCode(out) != "call_not_declared" {
+			t.Errorf("undeclared %s: %d %v", name, code, out)
+		}
+	}
+	// The admin token and a public-listener token can't call.
+	if code, out := nested(f.runner.last().Envelope.Callback.Token, "leaf", `{}`); code != 200 {
+		t.Errorf("leaf from reserve: %d %v", code, out)
+	}
+	callbackOf(f.ada, "admin")
+	if code, out := nested(f.runner.last().Envelope.Callback.AdminToken, "reserve", `{}`); code != 403 || errCode(out) != "call_not_declared" {
+		t.Errorf("admin token: %d %v", code, out)
+	}
+	if rec, out := f.doH(t, "POST", "/v1/acme/app/_func/reserve", `{}`, map[string]string{"Authorization": "Bearer " + tok, "Content-Type": "application/json"}); rec.Code != 401 && rec.Code != 404 {
+		t.Errorf("a callback token on the public listener: %d %v", rec.Code, out)
+	}
+	// Nor can anyone without a token.
+	if code, _ := nested("", "reserve", `{}`); code != 401 {
+		t.Errorf("no token: %d", code)
+	}
+
+	// The depth limit: the token of a function already 3 calls down can't call on.
+	deep := auth.SignCallback(f.callbackKey, auth.CallbackClaims{Realm: "acme", Function: "app/leaf2", Expires: f.clock.Add(time.Minute), Calls: []string{"leaf3"}, Depth: 3, Inv: "x"})
+	if code, out := nested(deep, "leaf3", `{}`); code != 403 || errCode(out) != "call_too_deep" {
+		t.Errorf("too deep: %d %v", code, out)
+	}
+	ok2 := auth.SignCallback(f.callbackKey, auth.CallbackClaims{Realm: "acme", Function: "app/leaf2", Expires: f.clock.Add(time.Minute), Calls: []string{"leaf3"}, Depth: 2, Inv: "x"})
+	if code, out := nested(ok2, "leaf3", `{}`); code != 200 {
+		t.Errorf("at the limit: %d %v", code, out)
+	}
+
+	// Another database is never reachable.
+	other := auth.SignCallback(f.callbackKey, auth.CallbackClaims{Realm: "acme", Function: "elsewhere/x", Expires: f.clock.Add(time.Minute), Calls: []string{"reserve"}, Inv: "x"})
+	if code, out := nested(other, "reserve", `{}`); code != 403 || errCode(out) != "call_not_declared" {
+		t.Errorf("other database: %d %v", code, out)
+	}
+
+	// A public callee's invoke rule and rate limit don't apply to nested calls:
+	// echo wants a verified user, capped allows 2 calls per minute.
+	carlTok, _ := callbackOf(f.carl, "checkout")
+	if code, out := nested(carlTok, "echo", `{"n": 1}`); code != 200 {
+		t.Errorf("invoke rule applied to a nested call: %d %v", code, out)
+	}
+	for i := 0; i < 4; i++ {
+		if code, out := nested(carlTok, "capped", `{}`); code != 200 {
+			t.Errorf("rate limit applied to a nested call (%d): %d %v", i, code, out)
+		}
+	}
+
+	// An API key's access isn't inherited: the callee has no user and no key.
+	keyTok, keyClaims := callbackOf(f.key, "checkout")
+	if keyClaims.KeyHash == "" {
+		t.Fatal("the key's own token should name the key")
+	}
+	nested(keyTok, "reserve", `{}`)
+	req = f.runner.last()
+	if len(req.Envelope.User) > 0 && string(req.Envelope.User) != "null" {
+		t.Errorf("callee of a key has a user: %s", req.Envelope.User)
+	}
+	if c, _ := auth.VerifyCallback(f.callbackKey, req.Envelope.Callback.Token, *f.clock); c.KeyHash != "" || c.UserID != "" {
+		t.Errorf("callee token of a key: %+v", c)
+	}
+	// On behalf of a user, the callee has that user.
+	h := map[string]string{"Authorization": "Bearer " + f.key, "Content-Type": "application/json", onBehalfHeader: f.bobID}
+	f.doH(t, "POST", "/v1/acme/app/_func/checkout", `{}`, h)
+	nested(f.runner.last().Envelope.Callback.Token, "reserve", `{}`)
+	if !strings.Contains(string(f.runner.last().Envelope.User), f.bobID) {
+		t.Errorf("on behalf: %s", f.runner.last().Envelope.User)
+	}
+
+	// The callee never outlives the function waiting for it.
+	short := auth.SignCallback(f.callbackKey, auth.CallbackClaims{Realm: "acme", Function: "app/checkout", Expires: f.clock.Add(callbackMargin + 3*time.Second), Calls: []string{"reserve"}, Inv: "x"})
+	if code, _ := nested(short, "reserve", `{}`); code != 200 {
+		t.Fatalf("short deadline: %d", code)
+	}
+	if ms := f.runner.last().TimeoutMS; ms > 3000 || ms < 2000 {
+		t.Errorf("callee timeout = %dms, want about the caller's 3s left", ms)
+	}
+	gone := auth.SignCallback(f.callbackKey, auth.CallbackClaims{Realm: "acme", Function: "app/checkout", Expires: f.clock.Add(callbackMargin + 100*time.Millisecond), Calls: []string{"reserve"}, Inv: "x"})
+	if code, out := nested(gone, "reserve", `{}`); code != 504 || errCode(out) != "function_timeout" {
+		t.Errorf("no time left: %d %v", code, out)
+	}
+
+	// A callee's own error reaches the caller as the same status and code; a busy executor fails fast.
+	f.runner.set(func(executor.InvokeRequest) (executor.Result, error) {
+		return executor.Result{Status: executor.StatusFunctionError, FunctionError: &executor.FunctionError{Status: 409, Code: "out_of_stock", Message: "no stock"}}, nil
+	})
+	if code, out := nested(tok, "reserve", `{}`); code != 409 || errCode(out) != "out_of_stock" {
+		t.Errorf("function error: %d %v", code, out)
+	}
+	f.runner.set(func(executor.InvokeRequest) (executor.Result, error) {
+		return executor.Result{Status: executor.StatusBusy}, nil
+	})
+	if code, out := nested(tok, "reserve", `{}`); code != 503 || errCode(out) != "unavailable" {
+		t.Errorf("busy: %d %v", code, out)
+	}
+	f.runner.set(nil)
+
+	// An async callee is queued as the caller's user; the caller (and only its
+	// own invocation) reads the job.
+	code, out := nested(tok, "tally", `{"k": 1}`)
+	if code != 202 || out["id"] == nil {
+		t.Fatalf("tally: %d %v", code, out)
+	}
+	jobID := out["id"].(string)
+	job, found, err := f.svc.GetJob(ctx, jobID)
+	if err != nil || !found || job.ParentID != claims.Inv || job.Origin != "function" || job.Depth != 1 || job.CallerUserID != f.adaID {
+		t.Errorf("job: %+v %v", job, err)
+	}
+	get := func(token string) int {
+		req := httptest.NewRequest("GET", "/v1/acme/app/_jobs/"+jobID, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		f.internal.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if c := get(tok); c != 200 {
+		t.Errorf("the caller reads its job: %d", c)
+	}
+	if c := get(carlTok); c != 404 {
+		t.Errorf("another invocation reads the job: %d", c)
+	}
+	// The job's invocation records where it came from once a worker runs it.
+	if code, out := nested(tok, "tally", `{"k": 1}`, "Idempotency-Key", "tally-1"); code != 202 {
+		t.Fatalf("keyed: %d %v", code, out)
+	} else if code2, out2 := nested(tok, "tally", `{"k": 1}`, "Idempotency-Key", "tally-1"); code2 != 202 || out2["id"] != out["id"] {
+		t.Errorf("the same key returns the same job: %d %v %v", code2, out2["id"], out["id"])
+	}
+}
+
+func slicesEqual(a, b []string) bool { return strings.Join(a, ",") == strings.Join(b, ",") }

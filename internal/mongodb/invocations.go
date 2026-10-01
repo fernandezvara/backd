@@ -28,6 +28,8 @@ type invocationDoc struct {
 	DurationMS int64        `bson:"duration_ms"`
 	RequestID  string       `bson:"request_id,omitempty"`
 	JobID      string       `bson:"job_id,omitempty"`
+	ParentID   string       `bson:"parent_id,omitempty"`
+	Origin     string       `bson:"origin,omitempty"`
 	Logs       []logLineDoc `bson:"logs,omitempty"`
 }
 
@@ -42,7 +44,7 @@ func (s *AuthStore) RecordInvocation(ctx context.Context, r auth.InvocationRecor
 	}
 	_, err := s.invocations().InsertOne(ctx, invocationDoc{
 		ID: r.ID, At: r.At, ExpiresAt: r.ExpiresAt, Function: r.Function, Actor: r.Actor, Mode: r.Mode,
-		Status: r.Status, Code: r.Code, DurationMS: r.DurationMS, RequestID: r.RequestID, JobID: r.JobID, Logs: logs,
+		Status: r.Status, Code: r.Code, DurationMS: r.DurationMS, RequestID: r.RequestID, JobID: r.JobID, ParentID: r.ParentID, Origin: r.Origin, Logs: logs,
 	})
 	return err
 }
@@ -88,7 +90,7 @@ func (s *AuthStore) ListInvocations(ctx context.Context, f auth.InvocationFilter
 		}
 		out[i] = auth.InvocationRecord{
 			ID: d.ID, At: d.At.UTC(), ExpiresAt: d.ExpiresAt.UTC(), Function: d.Function, Actor: d.Actor, Mode: d.Mode,
-			Status: d.Status, Code: d.Code, DurationMS: d.DurationMS, RequestID: d.RequestID, JobID: d.JobID, Logs: logs,
+			Status: d.Status, Code: d.Code, DurationMS: d.DurationMS, RequestID: d.RequestID, JobID: d.JobID, ParentID: d.ParentID, Origin: d.Origin, Logs: logs,
 		}
 	}
 	return out, more, nil

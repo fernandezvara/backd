@@ -27,6 +27,12 @@ type CallbackClaims struct {
 	KeyHash  string    `json:"k,omitempty"`
 	Admin    bool      `json:"a,omitempty"`
 	Expires  time.Time `json:"e"`
+	// Calls are the functions of the caller's database this invocation may
+	// ctx.call (its function.yaml `calls`); Depth counts the nested calls
+	// above it; Inv is its own invocation id, the parent of what it calls.
+	Calls []string `json:"c,omitempty"`
+	Depth int      `json:"d,omitempty"`
+	Inv   string   `json:"i,omitempty"`
 }
 
 // ErrInvalidCallback means a callback token is malformed, forged or expired.
@@ -74,13 +80,23 @@ func VerifyCallback(key []byte, token string, now time.Time) (CallbackClaims, er
 type FuncCaller struct {
 	Name  string // <realm>/<database>/<function>
 	Admin bool   // ctx.admin.db: full access, recorded as the function
+	// What the invocation behind the token may do next (see CallbackClaims).
+	Calls      []string
+	Depth      int
+	Invocation string
+	Expires    time.Time
+}
+
+// FuncCallerOf is the function behind a verified callback token.
+func FuncCallerOf(c CallbackClaims) *FuncCaller {
+	return &FuncCaller{Name: c.Realm + "/" + c.Function, Admin: c.Admin, Calls: c.Calls, Depth: c.Depth, Invocation: c.Inv, Expires: c.Expires}
 }
 
 // CallbackCaller resolves a verified token into the caller it acts as,
 // checking the user and key still exist and may act: a user disabled or a
 // key revoked during the invocation loses access at once.
 func (s *Users) CallbackCaller(ctx context.Context, c CallbackClaims) (Caller, error) {
-	fn := &FuncCaller{Name: c.Realm + "/" + c.Function, Admin: c.Admin}
+	fn := FuncCallerOf(c)
 	if c.Admin {
 		return Caller{Func: fn}, nil
 	}

@@ -233,6 +233,13 @@ func checkCalls(fns *Functions) []error {
 			}
 		}
 	}
+	for _, n := range names {
+		for _, c := range fns.Functions[n].Calls {
+			if t := fns.Functions[c]; t != nil && t.Mode == ModeWebhook {
+				errs = append(errs, fmt.Errorf("%s: calls: %q is a webhook function, which only its sender calls", file(n), c))
+			}
+		}
+	}
 	if len(errs) > 0 {
 		return errs
 	}
