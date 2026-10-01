@@ -23,6 +23,7 @@ Every key is optional. `backd` reads the file strictly: an unknown key or an inv
 | `admin` | `false` | `true` gives the function full access to the realm's data, whatever the caller may do. Keep it off unless the function needs it |
 | `internal` | `false` | `true` removes the function's HTTP route: `_func/<name>` answers `404` to everyone, like a function that doesn't exist. Only `backd` and scheduled runs may call it (see [Internal functions](../internal/)). Can't be combined with `invoke` or `mode: webhook` |
 | `calls` | none | The functions of the same database this one lists as callable (see [Internal functions](../internal/#declaring-which-functions-it-may-call)); startup rejects unknown names, cycles and chains longer than 4 functions |
+| `retry` | none | Tries a failed `async` function again: `{attempts, backoff, max_backoff}` (see [Retrying a failed job](../jobs/#retrying-a-failed-job)). A single attempt unless `attempts` is above 1 |
 | `schedule` | none | A cron expression: the function [runs on a schedule](../cron/). Needs `mode: async` and at least one running [worker](../running/#running-the-worker) |
 | `secrets` | none | Secrets the function may read: `NAME` (its own database's) or `realm.NAME` (the realm's). Names are upper-case letters, digits and `_` |
 | `network` | none | Hosts the function may call: `host` or `host:port`, lower case, no scheme, path or wildcard. Without a list, a function can only call `backd` |

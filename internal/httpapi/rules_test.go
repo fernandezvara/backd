@@ -102,6 +102,8 @@ func newRulesFixture(t *testing.T) *rulesFixture {
 		fnDir + "leaf2/index.js":           "",
 		fnDir + "leaf3/function.yaml":      "internal: true\n",
 		fnDir + "leaf3/index.js":           "",
+		fnDir + "flaky/function.yaml":      "mode: async\ninvoke: \"true\"\nretry: {attempts: 3, backoff: 1m}\n",
+		fnDir + "flaky/index.js":           "",
 		fnDir + "tally/function.yaml":      "internal: true\nmode: async\n",
 		fnDir + "tally/index.js":           "",
 	} {

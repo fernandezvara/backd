@@ -51,8 +51,10 @@ type Job struct {
 	Depth          int    // nested calls above it
 	TimeoutMS      int64  // the function's timeout at enqueue time, for the worker's lease
 	RequestID      string
-	Status         string // queued | running | done
-	Attempts       int
+	Status         string    // queued | running | done
+	Attempts       int       // times a worker claimed it
+	Failures       int       // attempts that ended in a failure worth retrying
+	NextAttemptAt  time.Time // when a retry may be claimed; zero unless one is waiting
 	CreatedAt      time.Time
 	CompletedAt    time.Time // zero until done
 	ExpiresAt      time.Time
@@ -149,6 +151,12 @@ func (s *Users) ClaimJob(ctx context.Context, workerID string) (Job, bool, error
 func (s *Users) CompleteJob(ctx context.Context, id string, result JobResult) error {
 	now := s.now()
 	return s.Store.CompleteJob(ctx, id, result, now, now.Add(s.jobRetention()))
+}
+
+// RetryJob puts a job whose attempt failed back in the queue, to be
+// claimed again once delay has passed.
+func (s *Users) RetryJob(ctx context.Context, id string, delay time.Duration) error {
+	return s.Store.RetryJob(ctx, id, s.now().Add(delay))
 }
 
 // GetJob returns a job by id, for its caller to poll its status.

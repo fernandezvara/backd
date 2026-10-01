@@ -241,9 +241,36 @@ func (w *Worker) runJob(ctx context.Context, realm string, svc *auth.Users, job 
 		return
 	}
 	w.fns.recordInvocation(ctx, job.RequestID, realm, job.Database, job.Function, registry.ModeAsync, caller, res, job.ID, invID, meta)
+	// A failure that may pass (the function threw, timed out or crashed) is
+	// tried again after a growing wait while attempts are left; one the
+	// function chose (ctx.error) or that would only repeat (an output over
+	// its limit) ends the job.
+	if rp := fn.Retry; rp != nil && retryableStatus(res.Status) {
+		if failed := job.Failures + 1; failed < rp.Attempts {
+			wait := rp.Wait(failed)
+			log.Warn("attempt failed; it will be tried again", "attempt", failed, "of", rp.Attempts, "status", res.Status, "retry_in", wait.String())
+			if err := svc.RetryJob(ctx, job.ID, wait); err != nil {
+				log.Error("queue the retry", "error", err)
+			}
+			return
+		}
+		log.Warn("attempts used up; the job fails", "attempts", rp.Attempts, "status", res.Status)
+	}
 	if err := svc.CompleteJob(ctx, job.ID, jobResultFromExecutor(res)); err != nil {
 		log.Error("complete job", "error", err)
 	}
+}
+
+// retryableStatus says whether an attempt that ended this way may succeed
+// when repeated: the function threw, ran out of time or resources, or its
+// process died. A function's own ctx.error is an answer, not a fault, and an
+// output over its limit would only be over it again.
+func retryableStatus(status string) bool {
+	switch status {
+	case executor.StatusError, executor.StatusTimeout, executor.StatusMemory, executor.StatusCPU, executor.StatusCrash, executor.StatusBundle:
+		return true
+	}
+	return false
 }
 
 // fail completes a job with an internal error result: not something the

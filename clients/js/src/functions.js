@@ -26,6 +26,8 @@ import { errorClassFor } from './errors.js'
  * @property {string} function `<database>/<name>`.
  * @property {'queued' | 'running' | 'done'} status
  * @property {string} created_at
+ * @property {number} [attempts] How many times a worker has started it.
+ * @property {string | null} [next_attempt_at] When a failed attempt will be retried (the function's `retry` policy); null otherwise.
  * @property {JobResult | null} result
  */
 

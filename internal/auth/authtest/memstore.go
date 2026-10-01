@@ -599,9 +599,28 @@ func (m *MemStore) ClaimJob(_ context.Context, workerID string, at time.Time, ma
 	}
 	best.Status = auth.JobRunning
 	best.Attempts++
+	best.NextAttemptAt = time.Time{}
 	best.leaseExpires = at.Add(time.Duration(best.TimeoutMS)*time.Millisecond + margin)
 	m.jobs[bestID] = best
 	return best.Job, true, nil
+}
+
+func (m *MemStore) RetryJob(_ context.Context, id string, notBefore time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	j, ok := m.jobs[id]
+	if !ok {
+		return auth.ErrNotFound
+	}
+	if j.Status == auth.JobDone {
+		return nil
+	}
+	j.Status = auth.JobQueued
+	j.Failures++
+	j.NextAttemptAt = notBefore
+	j.leaseExpires = notBefore
+	m.jobs[id] = j
+	return nil
 }
 
 func (m *MemStore) CompleteJob(_ context.Context, id string, result auth.JobResult, completedAt, expiresAt time.Time) error {

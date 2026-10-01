@@ -42,6 +42,8 @@ type jobDoc struct {
 	Depth          int32         `bson:"depth,omitempty"`
 	Status         string        `bson:"status"`
 	Attempts       int32         `bson:"attempts"`
+	Failures       int32         `bson:"failures,omitempty"`
+	NextAttemptAt  *time.Time    `bson:"next_attempt_at,omitempty"`
 	TimeoutMS      int64         `bson:"timeout_ms"`
 	RequestID      string        `bson:"request_id,omitempty"`
 	LeaseOwner     string        `bson:"lease_owner,omitempty"`
@@ -116,6 +118,10 @@ func jobFromDoc(d jobDoc) auth.Job {
 		Status: d.Status, Attempts: int(d.Attempts), CreatedAt: d.CreatedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC(),
 		Result: jobResultFromDoc(d.Result),
 	}
+	j.Failures = int(d.Failures)
+	if d.NextAttemptAt != nil {
+		j.NextAttemptAt = d.NextAttemptAt.UTC()
+	}
 	if d.CompletedAt != nil {
 		j.CompletedAt = d.CompletedAt.UTC()
 	}
@@ -161,7 +167,7 @@ func (s *AuthStore) ClaimJob(ctx context.Context, workerID string, at time.Time,
 		{Key: "lease_owner", Value: workerID},
 		{Key: "lease_expires", Value: leaseExpires},
 		{Key: "attempts", Value: bson.D{{Key: "$add", Value: bson.A{"$attempts", int32(1)}}}},
-	}}}}
+	}}}, {{Key: "$unset", Value: "next_attempt_at"}}}
 	opts := options.FindOneAndUpdate().SetSort(bson.D{{Key: "created_at", Value: 1}}).SetReturnDocument(options.After)
 	var d jobDoc
 	err := s.jobs().FindOneAndUpdate(ctx, filter, pipeline, opts).Decode(&d)
@@ -190,6 +196,23 @@ func (s *AuthStore) CompleteJob(ctx context.Context, id string, result auth.JobR
 		{Key: "expires_at", Value: expiresAt},
 		{Key: "result", Value: doc},
 	}}})
+	return err
+}
+
+// RetryJob counts a failed attempt and queues the job again: its lease runs
+// until notBefore, so no worker claims it earlier. Conditional on the job
+// not being done, like CompleteJob.
+func (s *AuthStore) RetryJob(ctx context.Context, id string, notBefore time.Time) error {
+	filter := bson.D{{Key: "_id", Value: id}, {Key: "status", Value: bson.D{{Key: "$ne", Value: auth.JobDone}}}}
+	_, err := s.jobs().UpdateOne(ctx, filter, bson.D{
+		{Key: "$set", Value: bson.D{
+			{Key: "status", Value: auth.JobQueued},
+			{Key: "lease_expires", Value: notBefore},
+			{Key: "next_attempt_at", Value: notBefore},
+		}},
+		{Key: "$unset", Value: bson.D{{Key: "lease_owner", Value: ""}}},
+		{Key: "$inc", Value: bson.D{{Key: "failures", Value: 1}}},
+	})
 	return err
 }
 

@@ -645,11 +645,16 @@ func jobVisibleTo(job auth.Job, c auth.Caller) bool {
 // result only once done.
 func jobJSON(job auth.Job) map[string]any {
 	out := map[string]any{
-		"id":         job.ID,
-		"function":   job.Database + "/" + job.Function,
-		"status":     job.Status,
-		"created_at": formatTime(job.CreatedAt),
-		"result":     nil,
+		"id":              job.ID,
+		"function":        job.Database + "/" + job.Function,
+		"status":          job.Status,
+		"created_at":      formatTime(job.CreatedAt),
+		"attempts":        job.Attempts,
+		"next_attempt_at": nil,
+		"result":          nil,
+	}
+	if !job.NextAttemptAt.IsZero() && job.Status != auth.JobDone {
+		out["next_attempt_at"] = formatTime(job.NextAttemptAt)
 	}
 	if job.Status == auth.JobDone && job.Result != nil {
 		out["result"] = jobResultJSON(job)
