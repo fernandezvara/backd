@@ -146,6 +146,14 @@ func TestFunctionErrors(t *testing.T) {
 		want  string
 	}{
 		{"unknown key", fn("timeout: 1s\nretries: 3\n"), "field retries not found"},
+		{"retry on sync", fn("retry: {attempts: 3}\n"), "retry: only async functions can be retried"},
+		{"retry attempts low", fn("mode: async\nretry: {attempts: 0}\n"), "retry.attempts: must be between 1 and 20"},
+		{"retry attempts high", fn("mode: async\nretry: {attempts: 21}\n"), "retry.attempts: must be between 1 and 20"},
+		{"retry backoff", fn("mode: async\nretry: {attempts: 3, backoff: soon}\n"), "retry.backoff: invalid duration"},
+		{"retry backoff bounds", fn("mode: async\nretry: {attempts: 3, backoff: 500ms}\n"), "retry.backoff: must be between 1s and 24h0m0s"},
+		{"retry max below backoff", fn("mode: async\nretry: {attempts: 3, backoff: 10m, max_backoff: 1m}\n"), "retry.max_backoff: must not be shorter than backoff"},
+		{"retry too long", fn("mode: async\nretry: {attempts: 20, backoff: 1h, max_backoff: 6h}\n"), "more than the 24h0m0s a job may keep retrying"},
+		{"retry unknown key", fn("mode: async\nretry: {attempts: 3, delay: 1m}\n"), "field delay not found"},
 		{"internal with invoke", fn("internal: true\ninvoke: \"true\"\n"), "internal: a function with no HTTP route has no use for an invoke rule"},
 		{"internal webhook", fn("internal: true\nmode: webhook\ninvoke: \"true\"\n"), "a webhook function is called over HTTP by its sender"},
 		{"calls itself", fn("calls: [f]\n"), `calls[0]: "f" calls itself`},
@@ -397,5 +405,37 @@ func TestInternalFunction(t *testing.T) {
 	}
 	if !reflect.DeepEqual(fns["checkout"].Calls, []string{"send"}) {
 		t.Errorf("Calls = %v", fns["checkout"].Calls)
+	}
+}
+
+func TestRetryPolicy(t *testing.T) {
+	root := functionTree(t, map[string]string{
+		fnPrefix + "none/function.yaml":  "mode: async\n",
+		fnPrefix + "none/index.js":       "",
+		fnPrefix + "once/function.yaml":  "mode: async\nretry: {attempts: 1}\n",
+		fnPrefix + "once/index.js":       "",
+		fnPrefix + "five/function.yaml":  "mode: async\nretry: {attempts: 5}\n",
+		fnPrefix + "five/index.js":       "",
+		fnPrefix + "tuned/function.yaml": "mode: async\nretry: {attempts: 4, backoff: 10s, max_backoff: 25s}\n",
+		fnPrefix + "tuned/index.js":      "",
+	})
+	reg, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fns := reg.Realms["shop"].Databases["app"].Functions.Functions
+	if fns["none"].Retry != nil || fns["once"].Retry != nil {
+		t.Errorf("one attempt means no retry: %+v %+v", fns["none"].Retry, fns["once"].Retry)
+	}
+	if r := fns["five"].Retry; r == nil || r.Attempts != 5 || r.Backoff != time.Minute || r.MaxBackoff != time.Hour {
+		t.Errorf("defaults: %+v", r)
+	}
+	r := fns["tuned"].Retry
+	var waits []time.Duration
+	for i := 1; i <= 4; i++ {
+		waits = append(waits, r.Wait(i))
+	}
+	if !reflect.DeepEqual(waits, []time.Duration{10 * time.Second, 20 * time.Second, 25 * time.Second, 25 * time.Second}) {
+		t.Errorf("waits = %v", waits)
 	}
 }

@@ -233,3 +233,123 @@ func TestWorkerRunsScheduledFunction(t *testing.T) {
 		t.Error("a run missed by 20 minutes was replayed")
 	}
 }
+
+// TestWorkerRetries proves an async function with a retry policy is tried
+// again after the function threw, with growing waits, until it succeeds or
+// the attempts run out; and that an answer the function chose isn't retried.
+func TestWorkerRetries(t *testing.T) {
+	f := newRulesFixture(t)
+	f.svc.Now = func() time.Time { return *f.clock } // the queue's clock, so waits can be crossed
+	w := newTestWorker(t, f)
+	ctx := context.Background()
+	failing := func(status string) func(executor.InvokeRequest) (executor.Result, error) {
+		return func(executor.InvokeRequest) (executor.Result, error) {
+			return executor.Result{Status: status, Message: "boom"}, nil
+		}
+	}
+	enqueue := func() string {
+		t.Helper()
+		rec, out := f.doH(t, "POST", "/v1/acme/app/_func/flaky", `{}`, bearer(f.ada))
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("enqueue: %d %v", rec.Code, out)
+		}
+		return out["id"].(string)
+	}
+	job := func(id string) map[string]any {
+		t.Helper()
+		code, out := f.as(t, f.ada, "GET", "/v1/acme/app/_jobs/"+id, "")
+		if code != 200 {
+			t.Fatalf("get job: %d %v", code, out)
+		}
+		return out
+	}
+
+	// Every attempt throws: waits of 1m and 2m, then the job ends as failed.
+	f.runner.set(failing(executor.StatusError))
+	id := enqueue()
+	w.RunOnce(ctx)
+	j := job(id)
+	if j["status"] != "queued" || j["attempts"] != float64(1) || j["result"] != nil || j["next_attempt_at"] != formatTime(f.clock.Add(time.Minute)) {
+		t.Fatalf("after the first failure: %v", j)
+	}
+	if w.RunOnce(ctx) {
+		t.Error("a retry was claimed before its wait was over")
+	}
+	*f.clock = f.clock.Add(time.Minute)
+	if !w.RunOnce(ctx) {
+		t.Fatal("the retry wasn't claimed once its wait was over")
+	}
+	j = job(id)
+	if j["status"] != "queued" || j["attempts"] != float64(2) || j["next_attempt_at"] != formatTime(f.clock.Add(2*time.Minute)) {
+		t.Fatalf("after the second failure: %v", j)
+	}
+	*f.clock = f.clock.Add(2 * time.Minute)
+	if !w.RunOnce(ctx) {
+		t.Fatal("the last attempt wasn't claimed")
+	}
+	j = job(id)
+	if r, _ := j["result"].(map[string]any); j["status"] != "done" || j["attempts"] != float64(3) || j["next_attempt_at"] != nil || r["status"] != "error" {
+		t.Fatalf("after the last attempt: %v", j)
+	}
+	if w.RunOnce(ctx) {
+		t.Error("a finished job was claimed again")
+	}
+	// Each attempt is its own record in the history, all with the job's id.
+	recs, _, _ := f.svc.Invocations(ctx, auth.InvocationFilter{Function: "app/flaky"})
+	if len(recs) != 3 {
+		t.Fatalf("invocation records: %d", len(recs))
+	}
+	for _, r := range recs {
+		if r.JobID != id || r.Status != "error" {
+			t.Errorf("record: %+v", r)
+		}
+	}
+
+	// It succeeds on the second attempt: done, ok, nothing more to run.
+	calls := 0
+	f.runner.set(func(executor.InvokeRequest) (executor.Result, error) {
+		calls++
+		if calls == 1 {
+			return executor.Result{Status: executor.StatusTimeout}, nil
+		}
+		return executor.Result{Status: executor.StatusOK, Output: json.RawMessage(`{"ok":true}`)}, nil
+	})
+	id = enqueue()
+	w.RunOnce(ctx)
+	*f.clock = f.clock.Add(time.Minute)
+	w.RunOnce(ctx)
+	if j = job(id); j["status"] != "done" || j["attempts"] != float64(2) || j["result"].(map[string]any)["status"] != "ok" {
+		t.Errorf("success on a retry: %v", j)
+	}
+
+	// What the function chose (ctx.error), or that would repeat, isn't retried.
+	for name, res := range map[string]executor.Result{
+		"function error": {Status: executor.StatusFunctionError, FunctionError: &executor.FunctionError{Status: 409, Code: "conflict", Message: "no"}},
+		"output too big": {Status: executor.StatusOutputTooBig},
+	} {
+		f.runner.set(func(executor.InvokeRequest) (executor.Result, error) { return res, nil })
+		id = enqueue()
+		w.RunOnce(ctx)
+		if j = job(id); j["status"] != "done" || j["attempts"] != float64(1) {
+			t.Errorf("%s was retried: %v", name, j)
+		}
+	}
+
+	// A worker lost mid-run isn't a failure: the lease expires and the job is
+	// claimed again, and the attempt that never finished doesn't use one up.
+	f.runner.set(failing(executor.StatusError))
+	id = enqueue()
+	if _, found, _ := f.svc.ClaimJob(ctx, "lost-worker"); !found {
+		t.Fatal("couldn't claim the job")
+	}
+	*f.clock = f.clock.Add(time.Hour)
+	for i, want := range []string{"queued", "queued", "done"} {
+		if !w.RunOnce(ctx) {
+			t.Fatalf("attempt %d wasn't claimed", i)
+		}
+		if got := job(id)["status"]; got != want {
+			t.Fatalf("attempt %d: status %v, want %s", i, got, want)
+		}
+		*f.clock = f.clock.Add(time.Hour)
+	}
+}

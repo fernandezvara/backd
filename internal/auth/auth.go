@@ -156,6 +156,9 @@ type Store interface {
 	// the job's own timeout plus margin. found is false when there is
 	// none to claim.
 	ClaimJob(ctx context.Context, workerID string, at time.Time, margin time.Duration) (j Job, found bool, err error)
+	// RetryJob counts a failed attempt and queues the job again, not to be
+	// claimed before notBefore (it is still the same job: same id, same input).
+	RetryJob(ctx context.Context, id string, notBefore time.Time) error
 	// CompleteJob records a job's result; expiresAt starts its retention
 	// countdown (MongoDB removes it once past).
 	CompleteJob(ctx context.Context, id string, result JobResult, completedAt, expiresAt time.Time) error

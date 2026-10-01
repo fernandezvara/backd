@@ -72,6 +72,7 @@ curl -X POST https://api.example.com/v1/workshop/main/_func/daily_digest \
 - **It acts as the function.** There is no caller: `ctx.input` is empty (`null`), `ctx.user` is `null`, `ctx.db` acts as an anonymous caller (which, subject to the rules, can do little), and **`ctx.admin.db` is always available**, with full access recorded as `func:<realm>/<database>/<name>`, whether or not `admin: true` is set. Review a scheduled function as if it declared `admin: true`. (A call made *by hand* needs `admin: true` to get `ctx.admin`, which is why `daily_digest` sets it.)
 - **It is an async function.** `mode: async`, so `timeout` runs up to 24 hours (15 minutes by default) and the [async limits](../jobs/#storage-and-retention) apply. `schedule` needs `auth: enabled`.
 - **Secrets and network work as usual**: declare what it needs.
+- **A failed run can be retried**: `retry` works as for any [async job](../jobs/#retrying-a-failed-job). The run keeps its id; later minutes don't start a second one.
 - **It can still be called by hand** through its `invoke` rule, like any async function; that run has a caller and its own input. Administrators can also [run it by hand](../internal/#running-a-function-by-hand) as its schedule would run it.
 
 ## A worker must be running
@@ -112,8 +113,8 @@ Every run is a job with a predictable id, so you can look at any of them:
 ```sh
 # Recent runs of one function, newest first: state, tries and outcome
 backd functions jobs --function workshop/main/nightly_cleanup --scheduled --since 7d
-# CREATED                   FUNCTION              STATUS  RESULT  CODE  DURATION  TRIES  SCHEDULED  ID
-# 2026-09-30T03:00:05.512Z  main/nightly_cleanup  done    ok      -     412ms     1      true       cron_main_nightly_cleanup_202609300300
+# CREATED                   FUNCTION              STATUS  RESULT  CODE  DURATION  TRIES  NEXT ATTEMPT  SCHEDULED  ID
+# 2026-09-30T03:00:05.512Z  main/nightly_cleanup  done    ok      -     412ms     1      -             true       cron_main_nightly_cleanup_202609300300
 
 # One run in full (output included), with an API key, from the id above
 curl https://api.example.com/v1/workshop/main/_jobs/cron_main_nightly_cleanup_202609300300 -H "Authorization: Bearer $API_KEY"

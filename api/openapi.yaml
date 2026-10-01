@@ -1511,13 +1511,14 @@ components:
         never the input or the output.
       type: object
       additionalProperties: false
-      required: [id, function, status, scheduled, attempts, created_at, completed_at, result]
+      required: [id, function, status, scheduled, attempts, next_attempt_at, created_at, completed_at, result]
       properties:
         id: { type: string, description: "For cron runs, `cron_<database>_<function>_<yyyymmddhhmm>` (UTC)." }
         function: { type: string, description: "`<database>/<name>`." }
         status: { type: string, description: "`queued`, `running` or `done`." }
         scheduled: { type: boolean, description: "True for a cron run." }
-        attempts: { type: integer, description: "How many times a worker claimed it (more than 1 after a lost worker)." }
+        attempts: { type: integer, description: "How many times a worker started it (more than 1 after a lost worker or a retry)." }
+        next_attempt_at: { type: [string, "null"], format: date-time, description: "When a failed attempt will be retried (the function's `retry` policy); null otherwise." }
         created_at: { $ref: "#/components/schemas/Timestamp" }
         completed_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
         result:
@@ -1537,12 +1538,14 @@ components:
         `status` is `done`, its result. Never its input.
       type: object
       additionalProperties: false
-      required: [id, function, status, created_at, result]
+      required: [id, function, status, created_at, attempts, next_attempt_at, result]
       properties:
         id: { type: string }
         function: { type: string, description: "`<database>/<name>`." }
-        status: { type: string, description: "`queued`, `running` or `done`." }
+        status: { type: string, description: "`queued`, `running` or `done`. A job waiting to be retried is `queued`, with `next_attempt_at` set." }
         created_at: { $ref: "#/components/schemas/Timestamp" }
+        attempts: { type: integer, description: "How many times a worker has started it." }
+        next_attempt_at: { type: [string, "null"], format: date-time, description: "When a failed attempt will be retried (the function's `retry` policy); null otherwise." }
         result:
           description: "Null until `status` is `done`."
           type: [object, "null"]

@@ -177,3 +177,45 @@ func TestListJobsOnMongoDB(t *testing.T) {
 		t.Errorf("done job: %+v", jobs)
 	}
 }
+
+func TestRetryJobOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	t0 := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
+	if err := s.EnqueueJob(ctx, auth.Job{ID: "r0", Database: "app", Function: "flaky", Input: json.RawMessage(`{}`),
+		TimeoutMS: 60000, Status: auth.JobQueued, CreatedAt: t0, ExpiresAt: t0.Add(48 * time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	claimed, found, err := s.ClaimJob(ctx, "w", t0, 30*time.Second)
+	if err != nil || !found || claimed.Attempts != 1 || claimed.Failures != 0 {
+		t.Fatalf("claim: %+v %v %v", claimed, found, err)
+	}
+
+	// A failed attempt queues it again, not claimable before its wait is over.
+	again := t0.Add(time.Minute)
+	if err := s.RetryJob(ctx, "r0", again); err != nil {
+		t.Fatal(err)
+	}
+	j, _, _ := s.GetJob(ctx, "r0")
+	if j.Status != auth.JobQueued || j.Failures != 1 || j.Attempts != 1 || !j.NextAttemptAt.Equal(again) {
+		t.Fatalf("after RetryJob: %+v", j)
+	}
+	if _, found, _ := s.ClaimJob(ctx, "w", again.Add(-time.Second), 30*time.Second); found {
+		t.Error("a retry was claimed before its wait was over")
+	}
+	claimed, found, err = s.ClaimJob(ctx, "w", again, 30*time.Second)
+	if err != nil || !found || claimed.Attempts != 2 || claimed.Failures != 1 || !claimed.NextAttemptAt.IsZero() {
+		t.Fatalf("claim of the retry: %+v %v %v", claimed, found, err)
+	}
+
+	// A job that's done stays done.
+	if err := s.CompleteJob(ctx, "r0", auth.JobResult{Status: "ok"}, again, again.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RetryJob(ctx, "r0", again.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if j, _, _ := s.GetJob(ctx, "r0"); j.Status != auth.JobDone || j.Failures != 1 {
+		t.Errorf("a done job was retried: %+v", j)
+	}
+}

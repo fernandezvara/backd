@@ -69,6 +69,10 @@ const (
 	DefaultConcurrency = 10
 	maxConcurrency     = 1000
 	minRateWindow      = time.Second
+	maxRetryAttempts   = 20
+	defaultBackoff     = time.Minute
+	defaultMaxBackoff  = time.Hour
+	maxRetryWindow     = 24 * time.Hour // all the waits of one job together
 	maxRateWindow      = 24 * time.Hour
 )
 
@@ -89,6 +93,7 @@ type Function struct {
 	MaxOutput             int64 // bytes
 	Concurrency           int
 	RateLimit             *RateLimit     // nil: none
+	Retry                 *Retry         // nil: a single attempt
 	Idempotency           string         // optional or required
 	Invoke                *rules.Rule    // nil: only API keys may invoke
 	Admin                 bool           // ctx.admin.db with full access
@@ -100,6 +105,24 @@ type Function struct {
 	Network               []string // hosts (host or host:port) the function may reach
 	InputSchema           *jsonschema.Schema
 	OutputSchema          *jsonschema.Schema
+}
+
+// Retry is an async function's retry policy: how often a failed attempt
+// is repeated and how long to wait between attempts.
+type Retry struct {
+	Attempts   int           // total attempts, the first included
+	Backoff    time.Duration // the wait after the first failure; doubles after each one
+	MaxBackoff time.Duration // the longest single wait
+}
+
+// Wait is how long to wait after the failures-th failed attempt (1 for the
+// first failure): Backoff, doubled for each further failure, up to MaxBackoff.
+func (r Retry) Wait(failures int) time.Duration {
+	d := r.Backoff
+	for i := 1; i < failures && d < r.MaxBackoff; i++ {
+		d *= 2
+	}
+	return min(d, r.MaxBackoff)
 }
 
 // RateLimit limits calls per caller (user or client address).
@@ -141,6 +164,11 @@ type functionDoc struct {
 		Limit  int    `yaml:"limit"`
 		Window string `yaml:"window"`
 	} `yaml:"rate_limit"`
+	Retry *struct {
+		Attempts   int    `yaml:"attempts"`
+		Backoff    string `yaml:"backoff"`
+		MaxBackoff string `yaml:"max_backoff"`
+	} `yaml:"retry"`
 	Idempotency *string  `yaml:"idempotency"`
 	Invoke      *string  `yaml:"invoke"`
 	Admin       bool     `yaml:"admin"`
@@ -408,6 +436,59 @@ func loadFunction(db *Database, settings RealmSettings, name, dir string) (*Func
 		}
 		r.Window = d
 		fn.RateLimit = r
+	}
+
+	if rt := doc.Retry; rt != nil {
+		r := &Retry{Attempts: rt.Attempts, Backoff: defaultBackoff, MaxBackoff: defaultMaxBackoff}
+		ok := true
+		if fn.Mode != ModeAsync {
+			add("retry: only async functions can be retried (a sync caller is waiting, and a webhook sender retries by itself)")
+			ok = false
+		}
+		if rt.Attempts < 1 || rt.Attempts > maxRetryAttempts {
+			add("retry.attempts: must be between 1 and %d (the first attempt included), got %d", maxRetryAttempts, rt.Attempts)
+			ok = false
+		}
+		for _, d := range []struct {
+			key string
+			v   string
+			dst *time.Duration
+		}{{"backoff", rt.Backoff, &r.Backoff}, {"max_backoff", rt.MaxBackoff, &r.MaxBackoff}} {
+			if d.v == "" {
+				continue
+			}
+			v, err := ParseDuration(d.v)
+			switch {
+			case err != nil:
+				add("retry.%s: %v", d.key, err)
+				ok = false
+			case v < time.Second || v > maxRetryWindow:
+				add("retry.%s: must be between 1s and %s, got %s", d.key, maxRetryWindow, d.v)
+				ok = false
+			default:
+				*d.dst = v
+			}
+		}
+		if ok && rt.MaxBackoff == "" && r.MaxBackoff < r.Backoff {
+			r.MaxBackoff = r.Backoff
+		}
+		if ok && r.MaxBackoff < r.Backoff {
+			add("retry.max_backoff: must not be shorter than backoff (%s)", r.Backoff)
+			ok = false
+		}
+		if ok && r.Attempts > 1 {
+			var total time.Duration
+			for i := 1; i < r.Attempts; i++ {
+				total += r.Wait(i)
+			}
+			if total > maxRetryWindow {
+				add("retry: the waits between %d attempts add up to %s, more than the %s a job may keep retrying", r.Attempts, total, maxRetryWindow)
+				ok = false
+			}
+		}
+		if ok && r.Attempts > 1 {
+			fn.Retry = r
+		}
 	}
 
 	fn.Idempotency = "optional"

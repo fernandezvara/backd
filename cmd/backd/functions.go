@@ -220,6 +220,7 @@ type jobRecord struct {
 	Status      string  `json:"status"`
 	Scheduled   bool    `json:"scheduled"`
 	Attempts    int     `json:"attempts"`
+	NextAttempt *string `json:"next_attempt_at"`
 	CreatedAt   string  `json:"created_at"`
 	CompletedAt *string `json:"completed_at"`
 	Result      *struct {
@@ -282,13 +283,17 @@ func functionsJobs(c *cli.CommandContext) error {
 		return encodeJSONLines(c.Stdout(), jobs)
 	}
 	tw := tabwriter.NewWriter(c.Stdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "CREATED\tFUNCTION\tSTATUS\tRESULT\tCODE\tDURATION\tTRIES\tSCHEDULED\tID")
+	fmt.Fprintln(tw, "CREATED\tFUNCTION\tSTATUS\tRESULT\tCODE\tDURATION\tTRIES\tNEXT ATTEMPT\tSCHEDULED\tID")
 	for _, j := range jobs {
 		result, code, duration := "-", "-", "-"
 		if j.Result != nil {
 			result, code, duration = j.Result.Status, orDash(j.Result.Code), fmt.Sprintf("%dms", j.Result.DurationMS)
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%d\t%t\t%s\n", j.CreatedAt, j.Function, j.Status, result, code, duration, j.Attempts, j.Scheduled, j.ID)
+		next := "-"
+		if j.NextAttempt != nil {
+			next = *j.NextAttempt
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\t%t\t%s\n", j.CreatedAt, j.Function, j.Status, result, code, duration, j.Attempts, next, j.Scheduled, j.ID)
 	}
 	return tw.Flush()
 }

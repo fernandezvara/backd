@@ -866,14 +866,18 @@ func (a *adminAPI) listJobs(w http.ResponseWriter, r *http.Request) {
 // ended, never its input or output.
 func jobSummaryJSON(j auth.Job) map[string]any {
 	out := map[string]any{
-		"id":           j.ID,
-		"function":     j.Database + "/" + j.Function,
-		"status":       j.Status,
-		"scheduled":    j.Scheduled,
-		"attempts":     j.Attempts,
-		"created_at":   formatTime(j.CreatedAt),
-		"completed_at": nil,
-		"result":       nil,
+		"id":              j.ID,
+		"function":        j.Database + "/" + j.Function,
+		"status":          j.Status,
+		"scheduled":       j.Scheduled,
+		"attempts":        j.Attempts,
+		"created_at":      formatTime(j.CreatedAt),
+		"completed_at":    nil,
+		"next_attempt_at": nil,
+		"result":          nil,
+	}
+	if !j.NextAttemptAt.IsZero() && j.Status != auth.JobDone {
+		out["next_attempt_at"] = formatTime(j.NextAttemptAt)
 	}
 	if !j.CompletedAt.IsZero() {
 		out["completed_at"] = formatTime(j.CompletedAt)

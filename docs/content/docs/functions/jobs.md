@@ -51,9 +51,30 @@ A job only runs while a [worker](../running/#running-the-worker) is running (`ba
 
 | Status | Means |
 |---|---|
-| `queued` | Stored, not yet claimed. If it stays here, no worker is running (see [below](#when-a-job-doesnt-finish)) |
+| `queued` | Stored, not yet claimed. If it stays here, no worker is running (see [below](#when-a-job-doesnt-finish)). A job whose attempt failed and is waiting to be [retried](#retrying-a-failed-job) is `queued` too, with `next_attempt_at` set |
 | `running` | A worker claimed it. It holds a *lease* for the function's `timeout` plus 30 seconds; if the worker dies, or the executor is unreachable or busy, the lease simply expires and the job is claimed again |
 | `done` | The function ended, one way or another. Look at `result` to see how |
+
+## Retrying a failed job
+
+By default a job runs once: if the function throws, times out or crashes, the job ends as `done` with that result. Add `retry` to `function.yaml` and `backd` tries again after a growing wait:
+
+```yaml
+mode: async
+retry:
+  attempts: 5      # total attempts, the first included (default: 1, no retry; at most 20)
+  backoff: 1m      # the wait after the first failure; it doubles after each one (default 1m)
+  max_backoff: 1h  # the longest single wait (default 1h)
+```
+
+With these values the waits are 1m, 2m, 4m and 8m. `retry` works for every `async` function, including [scheduled](../cron/) runs, and needs `mode: async`; the waits of one job may add up to at most 24 hours.
+
+- **What is retried:** an attempt that threw, ran out of time or memory, or whose process died. **What isn't:** an error the function chose with `ctx.error(...)` (it is an answer, not a fault) and an output over `max_output` (it would only be over it again). Those end the job at once.
+- **A retry is the same job**: same id, same input. Each attempt is its own record in the [invocation history](../logs/), all with the job's `job_id`. While a retry is waiting, the job is `queued` with `attempts` so far and `next_attempt_at`.
+- **After the last attempt** the job is `done` with the last attempt's result: look at `result.status` (it isn't `ok`), as for any failed job. The log of the worker names the attempts used up.
+- **A lost worker is not a failed attempt.** If a worker dies mid-run, the lease expires and the job is claimed again without using up one of the `retry` attempts.
+
+A retry runs the function again, so it must be safe to repeat ([below](#designing-jobs-that-are-safe-to-repeat)): the first attempt may have done part of its work before it failed.
 
 ## Knowing when a job finished
 
@@ -116,13 +137,13 @@ To see *many* jobs at once, or a job you didn't start, an administrator uses the
 
 ```sh
 backd functions jobs --function workshop/main/export_orders --status done --since 24h
-# CREATED                   FUNCTION            STATUS  RESULT  CODE  DURATION  TRIES  SCHEDULED  ID
-# 2026-09-30T09:12:41.002Z  main/export_orders  done    ok      -     118ms     1      false      d3c9ljp8hc2g00b6s1m0
+# CREATED                   FUNCTION            STATUS  RESULT  CODE  DURATION  TRIES  NEXT ATTEMPT  SCHEDULED  ID
+# 2026-09-30T09:12:41.002Z  main/export_orders  done    ok      -     118ms     1      -             false      d3c9ljp8hc2g00b6s1m0
 
 backd functions jobs --realm workshop --status running    # what is being worked on right now, in every function
 ```
 
-It shows each job's state, how many times a worker claimed it (`TRIES` above 1 means a worker was lost or the executor was unavailable) and how it ended, but never its input or output. It needs an admin API key or a session of a user with an admin role ([the admin API](../../auth/admin/)).
+It shows each job's state, how many times a worker started it (`TRIES` above 1 means a worker was lost, the executor was unavailable, or the function is being [retried](#retrying-a-failed-job); `NEXT ATTEMPT` says when) and how it ended, but never its input or output. It needs an admin API key or a session of a user with an admin role ([the admin API](../../auth/admin/)).
 
 ### Have the function say so
 
