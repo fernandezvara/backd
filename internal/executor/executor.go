@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -84,14 +85,18 @@ type Envelope struct {
 	// Mode tells the runner how to shape ctx and interpret the
 	// handler's return value: "sync"/"async" use Input/Output; "webhook"
 	// uses Webhook/the Result's Webhook field instead.
-	Mode           string            `json:"mode,omitempty"`
-	Input          json.RawMessage   `json:"input,omitempty"`
-	Webhook        *WebhookRequest   `json:"webhook,omitempty"`
-	User           json.RawMessage   `json:"user,omitempty"`
-	Secrets        map[string]string `json:"secrets,omitempty"`
-	Callback       *Callback         `json:"callback,omitempty"`
-	IdempotencyKey string            `json:"idempotency_key,omitempty"`
-	RequestID      string            `json:"request_id,omitempty"`
+	Mode    string            `json:"mode,omitempty"`
+	Input   json.RawMessage   `json:"input,omitempty"`
+	Webhook *WebhookRequest   `json:"webhook,omitempty"`
+	User    json.RawMessage   `json:"user,omitempty"`
+	Secrets map[string]string `json:"secrets,omitempty"`
+	// Mask lists values that must never appear in the function's logs or
+	// error message (such as a token in a link), without being given to it
+	// as secrets: the executor replaces them like it does secrets' values.
+	Mask           []string  `json:"mask,omitempty"`
+	Callback       *Callback `json:"callback,omitempty"`
+	IdempotencyKey string    `json:"idempotency_key,omitempty"`
+	RequestID      string    `json:"request_id,omitempty"`
 }
 
 // WebhookRequest is a webhook call's raw body and headers (roadmap
@@ -505,9 +510,10 @@ func (e *Executor) run(ctx context.Context, bundle string, req InvokeRequest, ti
 	if res.Status == StatusCrash {
 		res = crashReason(cmd, waitErr, stderr.String(), cpu)
 	}
-	res.Logs = parseLogs(stderr.String(), req.Envelope.Secrets)
+	masked := maskValues(req.Envelope)
+	res.Logs = parseLogs(stderr.String(), masked)
 	if res.Status != StatusOK {
-		res.Message = mask(res.Message, req.Envelope.Secrets)
+		res.Message = mask(res.Message, masked)
 	}
 	return res
 }
@@ -590,7 +596,7 @@ func lastLines(s string, n int) string {
 
 // parseLogs turns the captured stderr into log lines, secrets masked.
 // Lines that aren't the runner's JSON (Deno's own messages) are errors.
-func parseLogs(s string, secrets map[string]string) []LogLine {
+func parseLogs(s string, masked []string) []LogLine {
 	var out []LogLine
 	for _, raw := range strings.Split(s, "\n") {
 		if strings.TrimSpace(raw) == "" {
@@ -600,7 +606,7 @@ func parseLogs(s string, secrets map[string]string) []LogLine {
 		if json.Unmarshal([]byte(raw), &l) != nil || l.Level == "" {
 			l = LogLine{Level: "error", Line: raw}
 		}
-		l.Line = mask(l.Line, secrets)
+		l.Line = mask(l.Line, masked)
 		out = append(out, l)
 	}
 	if len(s) >= maxLogBytes {
@@ -609,9 +615,19 @@ func parseLogs(s string, secrets map[string]string) []LogLine {
 	return out
 }
 
-// mask replaces the exact values of the function's secrets.
-func mask(s string, secrets map[string]string) string {
-	for _, v := range secrets {
+// maskValues are the exact values to hide: the function's secrets and the
+// extra values backd asked to mask.
+func maskValues(env Envelope) []string {
+	out := slices.Clone(env.Mask)
+	for _, v := range env.Secrets {
+		out = append(out, v)
+	}
+	return out
+}
+
+// mask replaces every one of the values with ***.
+func mask(s string, values []string) string {
+	for _, v := range values {
 		if v != "" {
 			s = strings.ReplaceAll(s, v, "***")
 		}

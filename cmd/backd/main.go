@@ -388,6 +388,7 @@ func (a *app) handlerConfig() httpapi.Config {
 		Functions:         runner,
 		CallbackKey:       []byte(a.cfg.CallbackKey),
 		CallbackURL:       a.cfg.CallbackURL,
+		BackdURL:          a.cfg.BackdURL,
 		ExecutorToken:     a.cfg.ExecutorToken,
 		Log:               a.log,
 		Registry:          a.reg,

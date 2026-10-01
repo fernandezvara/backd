@@ -168,6 +168,16 @@ type Store interface {
 	// GetJob returns one job by id; found is false if there is none.
 	GetJob(ctx context.Context, id string) (j Job, found bool, err error)
 
+	// CreateEmailToken stores a token's hash with its purpose and user.
+	CreateEmailToken(ctx context.Context, t EmailToken) error
+	// RedeemEmailToken atomically marks the token with this hash and purpose
+	// used, if it is unused and unexpired at now, and returns it; otherwise
+	// ErrInvalidToken.
+	RedeemEmailToken(ctx context.Context, hash, purpose string, now time.Time) (EmailToken, error)
+	// InvalidateEmailTokens marks used every unused token of the user and
+	// purpose.
+	InvalidateEmailTokens(ctx context.Context, userID, purpose string, now time.Time) error
+
 	// ClaimIdempotency (roadmap F12) atomically inserts rec if its id
 	// isn't already used, or returns the existing record (running or
 	// done) if it is. claimed is false in the second case.

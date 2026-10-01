@@ -25,6 +25,7 @@ type MemStore struct {
 	audit       []auth.AuditRecord
 	secrets     map[string]auth.Secret // "database\x00name" → secret
 	invocations []auth.InvocationRecord
+	emailTokens map[string]auth.EmailToken
 	jobs        map[string]memJob                 // id → job
 	idempotency map[string]auth.IdempotencyRecord // id → record
 	// FailPutIdentity, when set, is returned by PutIdentity.
@@ -621,6 +622,62 @@ func (m *MemStore) RetryJob(_ context.Context, id string, notBefore time.Time) e
 	j.leaseExpires = notBefore
 	m.jobs[id] = j
 	return nil
+}
+
+func (m *MemStore) CreateEmailToken(_ context.Context, t auth.EmailToken) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.emailTokens == nil {
+		m.emailTokens = map[string]auth.EmailToken{}
+	}
+	m.emailTokens[t.Hash] = t
+	return nil
+}
+
+func (m *MemStore) RedeemEmailToken(_ context.Context, hash, purpose string, now time.Time) (auth.EmailToken, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	t, ok := m.emailTokens[hash]
+	if !ok || t.Purpose != purpose || !t.UsedAt.IsZero() || !now.Before(t.ExpiresAt) {
+		return auth.EmailToken{}, auth.ErrInvalidToken
+	}
+	t.UsedAt = now
+	m.emailTokens[hash] = t
+	return t, nil
+}
+
+func (m *MemStore) InvalidateEmailTokens(_ context.Context, userID, purpose string, now time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for h, t := range m.emailTokens {
+		if t.UserID == userID && t.Purpose == purpose && t.UsedAt.IsZero() {
+			t.UsedAt = now
+			m.emailTokens[h] = t
+		}
+	}
+	return nil
+}
+
+// CounterKeys returns the keys of every counter, for tests.
+func (m *MemStore) CounterKeys() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]string, 0, len(m.attempts))
+	for k := range m.attempts {
+		out = append(out, k)
+	}
+	return out
+}
+
+// EmailTokens returns every stored token record, for tests.
+func (m *MemStore) EmailTokens() []auth.EmailToken {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]auth.EmailToken, 0, len(m.emailTokens))
+	for _, t := range m.emailTokens {
+		out = append(out, t)
+	}
+	return out
 }
 
 func (m *MemStore) CompleteJob(_ context.Context, id string, result auth.JobResult, completedAt, expiresAt time.Time) error {

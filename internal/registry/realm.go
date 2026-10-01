@@ -108,6 +108,9 @@ type EmailSettings struct {
 	DefaultLocale string
 	Locales       []string // every one needs every required template
 	Limits        EmailLimits
+	// Timeout is the delivery function's own timeout, set when the config is
+	// loaded; email jobs lease for it.
+	Timeout time.Duration
 }
 
 // EmailLimits bound how many emails one address, and one client address,

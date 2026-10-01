@@ -49,16 +49,29 @@ type Job struct {
 	Origin         string // http, function (ctx.call), cron, admin or backd:<event>
 	ParentID       string // the invocation that queued it with ctx.call; empty otherwise
 	Depth          int    // nested calls above it
-	TimeoutMS      int64  // the function's timeout at enqueue time, for the worker's lease
-	RequestID      string
-	Status         string    // queued | running | done
-	Attempts       int       // times a worker claimed it
-	Failures       int       // attempts that ended in a failure worth retrying
-	NextAttemptAt  time.Time // when a retry may be claimed; zero unless one is waiting
-	CreatedAt      time.Time
-	CompletedAt    time.Time // zero until done
-	ExpiresAt      time.Time
-	Result         *JobResult // nil until done
+	// Email is set on an email job: backd's own request to send a message, which
+	// a worker renders and hands to the realm's delivery function. It holds no
+	// message and no token.
+	Email         *EmailJob
+	TimeoutMS     int64 // the function's timeout at enqueue time, for the worker's lease
+	RequestID     string
+	Status        string    // queued | running | done
+	Attempts      int       // times a worker claimed it
+	Failures      int       // attempts that ended in a failure worth retrying
+	NextAttemptAt time.Time // when a retry may be claimed; zero unless one is waiting
+	CreatedAt     time.Time
+	CompletedAt   time.Time // zero until done
+	ExpiresAt     time.Time
+	Result        *JobResult // nil until done
+}
+
+// EmailJob is what an email job stores: which email, for whom, and nothing
+// that works as a credential.
+type EmailJob struct {
+	Kind       string
+	UserID     string
+	Locale     string
+	RedirectTo string // checked when the request was made; bound to the token the worker creates
 }
 
 // JobResult is how a job's run ended: the same vocabulary as a sync

@@ -25,7 +25,9 @@ type Worker struct {
 	id  string
 	fns *functions
 	reg *registry.Registry
-	log *slog.Logger
+	// backdURL is backd's public address, for the links in emails.
+	backdURL string
+	log      *slog.Logger
 
 	lastScheduled map[string]time.Time // only touched by the schedule loop
 }
@@ -48,7 +50,7 @@ func NewWorker(cfg Config, id string) *Worker {
 	}
 	docs := &documents{reg: cfg.Registry, now: now, users: users, callbackKey: cfg.CallbackKey}
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, log: log}
-	return &Worker{id: id, fns: fns, reg: cfg.Registry, log: log, lastScheduled: map[string]time.Time{}}
+	return &Worker{id: id, fns: fns, reg: cfg.Registry, backdURL: cfg.BackdURL, log: log, lastScheduled: map[string]time.Time{}}
 }
 
 // Run claims and runs jobs until ctx is done, with concurrency
@@ -182,6 +184,23 @@ func (w *Worker) runJob(ctx context.Context, realm string, svc *auth.Users, job 
 		w.fail(ctx, log, svc, job, "the function no longer exists")
 		return
 	}
+	caller := w.callerFor(ctx, realm, svc, job)
+	var mask []string
+	if job.Email != nil {
+		// An email job holds no message: the worker makes it now, in memory.
+		var ok bool
+		if job.Input, mask, ok = w.prepareEmail(ctx, log, realm, svc, job); !ok {
+			return
+		}
+		caller = auth.Caller{} // backd's own request: no user, ctx.db anonymous
+	}
+	w.execute(ctx, log, realm, svc, job, fn, caller, mask)
+}
+
+// execute runs the function for a claimed job (its input already in place)
+// and records how it went: done, or queued again for a retry. mask lists
+// values that must not show in the function's logs.
+func (w *Worker) execute(ctx context.Context, log *slog.Logger, realm string, svc *auth.Users, job auth.Job, fn *registry.Function, caller auth.Caller, mask []string) {
 	var secrets map[string]string
 	if len(fn.Secrets) > 0 {
 		values, missing, err := svc.ResolveSecrets(ctx, fn.Secrets, job.Database)
@@ -202,7 +221,6 @@ func (w *Worker) runJob(ctx context.Context, realm string, svc *auth.Users, job 
 		log.Warn("job claimed but functions aren't available; leaving it to be retried")
 		return
 	}
-	caller := w.callerFor(ctx, realm, svc, job)
 	deadline := w.fns.docs.now().Add(fn.Timeout)
 	invID := xid.New().String()
 	meta := callMeta{Origin: job.Origin, ParentID: job.ParentID, Depth: job.Depth}
@@ -224,6 +242,7 @@ func (w *Worker) runJob(ctx context.Context, realm string, svc *auth.Users, job 
 			Input:     job.Input,
 			User:      userEnvelope(caller),
 			Secrets:   secrets,
+			Mask:      mask,
 			Callback:  w.fns.callback(realm, job.Database, job.Function, fn, caller, deadline.Add(callbackMargin), invID, job.Depth),
 			RequestID: job.RequestID,
 		},

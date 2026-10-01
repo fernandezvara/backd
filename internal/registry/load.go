@@ -111,6 +111,9 @@ func loadEmail(rl *Realm, realmPath string) []error {
 	case fn.Mode != ModeAsync:
 		errs = append(errs, fmt.Errorf("%s: email.function: %s must have `mode: async` in its function.yaml (nothing waits for an email in a request)", file, es.Function))
 	}
+	if fn != nil {
+		rl.Settings.Email.Timeout = fn.Timeout
+	}
 	tpl, terrs := email.Load(filepath.Join(realmPath, email.DirName), es.Locales)
 	rl.Email = tpl
 	return append(errs, terrs...)

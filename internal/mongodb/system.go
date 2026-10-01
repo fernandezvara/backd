@@ -35,6 +35,8 @@ const (
 	// IdempotencyCollection ties an Idempotency-Key to its outcome
 	// (roadmap F12), scoped to the function and the caller.
 	IdempotencyCollection = "idempotency"
+	// EmailTokensCollection holds the hashes of the tokens sent in emails.
+	EmailTokensCollection = "email_tokens"
 )
 
 // SystemDatabaseName is the MongoDB database holding a realm's users,
@@ -242,6 +244,23 @@ var systemCollections = []systemCollection{
 			{keys: bson.D{{Key: "status", Value: 1}, {Key: "lease_expires", Value: 1}, {Key: "created_at", Value: 1}}},
 			// Listing a function's jobs, newest first (GET _admin/jobs).
 			{keys: bson.D{{Key: "database", Value: 1}, {Key: "function", Value: 1}, {Key: "created_at", Value: -1}}},
+			{keys: bson.D{{Key: "expires_at", Value: 1}}, ttl: true},
+		},
+	},
+	{
+		name: EmailTokensCollection,
+		// _id is the SHA-256 of the token: the token itself is never stored.
+		validator: jsonSchema([]string{"_id", "purpose", "user_id", "created_at", "expires_at"}, map[string]any{
+			"_id":         str(),
+			"purpose":     str(),
+			"user_id":     str(),
+			"redirect_to": str(),
+			"created_at":  typ("date"),
+			"expires_at":  typ("date"),
+			"used_at":     typ("date"),
+		}),
+		indexes: []systemIndex{
+			{keys: bson.D{{Key: "user_id", Value: 1}, {Key: "purpose", Value: 1}}},
 			{keys: bson.D{{Key: "expires_at", Value: 1}}, ttl: true},
 		},
 	},

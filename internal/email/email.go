@@ -63,6 +63,19 @@ func TokenPurpose(kind string) Purpose {
 	return ""
 }
 
+// DefaultLifetime is how long a token of this purpose can be redeemed.
+func (p Purpose) DefaultLifetime() time.Duration {
+	switch p {
+	case "reset-password":
+		return time.Hour
+	case "change-email":
+		return 24 * time.Hour
+	case "revert-email-change", "invitation":
+		return 7 * 24 * time.Hour
+	}
+	return 48 * time.Hour // verify-email
+}
+
 // LinkPath is the route of backd that a link of this purpose opens, under
 // /v1/<realm>/_auth/.
 func (p Purpose) LinkPath() string {

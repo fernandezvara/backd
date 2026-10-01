@@ -15,6 +15,7 @@ import (
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/auth/authtest"
+	"github.com/fernandezvara/backd/internal/email"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -59,7 +60,7 @@ func newRulesFixture(t *testing.T) *rulesFixture {
 	t.Helper()
 	root := t.TempDir()
 	for p, content := range map[string]string{
-		"acme/realm.yaml":              "signup: open\nroles:\n  admin: {}\n  staff:\n    admin: true\n",
+		"acme/realm.yaml":              "signup: open\nroles:\n  admin: {}\n  staff:\n    admin: true\nemail:\n  function: app/deliver\n  from: \"Acme <no-reply@acme.example>\"\n  public_url: https://api.acme.example\n  locales: [en, es]\n",
 		"acme/app/posts/schema.json":   postsSchema,
 		"acme/app/posts/rules.yaml":    postsRules,
 		"acme/app/notes/schema.json":   postsSchema,
@@ -90,6 +91,8 @@ func newRulesFixture(t *testing.T) *rulesFixture {
 		fnDir + "capped/index.js":          "",
 		fnDir + "cappedip/function.yaml":   "invoke: \"true\"\nrate_limit:\n  per: ip\n  limit: 2\n  window: 1m\n",
 		fnDir + "cappedip/index.js":        "",
+		fnDir + "deliver/function.yaml":    "internal: true\nmode: async\nretry: {attempts: 3, backoff: 1m}\n",
+		fnDir + "deliver/index.js":         "",
 		fnDir + "cleanup/function.yaml":    "internal: true\nmode: async\n",
 		fnDir + "cleanup/index.js":         "",
 		fnDir + "checkout/function.yaml":   "invoke: \"true\"\ncalls: [reserve, tally, echo, capped, admin]\n",
@@ -110,6 +113,19 @@ func newRulesFixture(t *testing.T) *rulesFixture {
 		_ = os.MkdirAll(filepath.Dir(filepath.Join(root, p)), 0o755)
 		if err := os.WriteFile(filepath.Join(root, p), []byte(content), 0o644); err != nil {
 			t.Fatal(err)
+		}
+	}
+	// The default email templates, in English and (the same text) Spanish.
+	for _, kind := range email.SystemKinds {
+		defaults, _ := email.DefaultFiles(kind)
+		for name, data := range defaults {
+			for _, loc := range []string{"en", "es"} {
+				p := filepath.Join(root, "acme", "email", kind, loc+strings.TrimPrefix(name, "en"))
+				_ = os.MkdirAll(filepath.Dir(p), 0o755)
+				if err := os.WriteFile(p, data, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
 		}
 	}
 	writeManifest(t, filepath.Join(root, fnDir))
