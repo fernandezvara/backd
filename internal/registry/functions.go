@@ -92,6 +92,8 @@ type Function struct {
 	Idempotency           string         // optional or required
 	Invoke                *rules.Rule    // nil: only API keys may invoke
 	Admin                 bool           // ctx.admin.db with full access
+	Internal              bool           // no HTTP route: only backd, scheduled runs and other functions call it
+	Calls                 []string       // functions of the same database this one may ctx.call
 	Schedule              *cron.Schedule // nil: not scheduled
 	ScheduleExpr          string
 	Secrets               []SecretRef
@@ -142,6 +144,8 @@ type functionDoc struct {
 	Idempotency *string  `yaml:"idempotency"`
 	Invoke      *string  `yaml:"invoke"`
 	Admin       bool     `yaml:"admin"`
+	Internal    bool     `yaml:"internal"`
+	Calls       []string `yaml:"calls"`
 	Schedule    *string  `yaml:"schedule"`
 	Secrets     []string `yaml:"secrets"`
 	Network     []string `yaml:"network"`
@@ -200,10 +204,77 @@ func loadFunctions(db *Database, settings RealmSettings, dbPath string) (*Functi
 			fns.Functions[name] = fn
 		}
 	}
+	errs = append(errs, checkCalls(fns)...)
 	if len(fns.Functions) == 0 && len(errs) == 0 {
 		errs = append(errs, fmt.Errorf("%s: no functions (each function is a folder with %s and index.js or index.ts)", dir, FunctionFile))
 	}
 	return fns, errs
+}
+
+// MaxCallChain is the longest chain of functions calling each other, the
+// entry function included.
+const MaxCallChain = 4
+
+// checkCalls checks the call graph of a database's functions: every name
+// in `calls` exists, there are no cycles and no chain is longer than
+// MaxCallChain.
+func checkCalls(fns *Functions) []error {
+	var errs []error
+	names := make([]string, 0, len(fns.Functions))
+	for n := range fns.Functions {
+		names = append(names, n)
+	}
+	slices.Sort(names)
+	file := func(n string) string { return filepath.Join(fns.Functions[n].Dir, FunctionFile) }
+	for _, n := range names {
+		for _, c := range fns.Functions[n].Calls {
+			if _, ok := fns.Functions[c]; !ok {
+				errs = append(errs, fmt.Errorf("%s: calls: %q is not a function of this database", file(n), c))
+			}
+		}
+	}
+	if len(errs) > 0 {
+		return errs
+	}
+	// Depth-first search: state 1 = on the current path, 2 = done; depth[n]
+	// is the longest chain starting at n.
+	state := map[string]int{}
+	depth := map[string]int{}
+	var path []string
+	var visit func(n string)
+	visit = func(n string) {
+		state[n] = 1
+		path = append(path, n)
+		longest := 0
+		for _, c := range fns.Functions[n].Calls {
+			switch state[c] {
+			case 1:
+				i := slices.Index(path, c)
+				cycle := append(slices.Clone(path[i:]), c)
+				errs = append(errs, fmt.Errorf("%s: calls: cycle %s", file(n), strings.Join(cycle, " -> ")))
+			case 0:
+				visit(c)
+			}
+			longest = max(longest, depth[c])
+		}
+		path = path[:len(path)-1]
+		state[n] = 2
+		depth[n] = longest + 1
+	}
+	for _, n := range names {
+		if state[n] == 0 {
+			visit(n)
+		}
+	}
+	if len(errs) > 0 {
+		return errs
+	}
+	for _, n := range names {
+		if depth[n] > MaxCallChain {
+			errs = append(errs, fmt.Errorf("%s: calls: a chain of %d functions starts here, the longest allowed is %d", file(n), depth[n], MaxCallChain))
+		}
+	}
+	return errs
 }
 
 func loadFunction(db *Database, settings RealmSettings, name, dir string) (*Function, []error) {
@@ -364,6 +435,26 @@ func loadFunction(db *Database, settings RealmSettings, name, dir string) (*Func
 	}
 
 	fn.Admin = doc.Admin
+
+	fn.Internal = doc.Internal
+	if fn.Internal && doc.Invoke != nil {
+		add("internal: a function with no HTTP route has no use for an invoke rule; remove one of them")
+	}
+	if fn.Internal && fn.Mode == ModeWebhook {
+		add("internal: a webhook function is called over HTTP by its sender, so it can't be internal")
+	}
+	for i, c := range doc.Calls {
+		switch {
+		case !namePattern.MatchString(c):
+			add("calls[%d]: %q is not a valid function name", i, c)
+		case c == name:
+			add("calls[%d]: %q calls itself", i, c)
+		case slices.Contains(fn.Calls, c):
+			add("calls[%d]: %q is listed twice", i, c)
+		default:
+			fn.Calls = append(fn.Calls, c)
+		}
+	}
 
 	if doc.Schedule != nil {
 		switch {

@@ -2,7 +2,7 @@
 title: "Function logs"
 description: "See what your deployed functions did: invocation history, console logs, retention, and shipping logs to a long-term system."
 icon: "description"
-weight: 562
+weight: 563
 toc: true
 aliases: ["/docs/configuration/function-logs/"]
 ---

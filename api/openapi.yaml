@@ -811,6 +811,10 @@ paths:
         the function and the caller, so two different callers can never
         collide on the same client-chosen key. `function.yaml`'s
         `idempotency: required` refuses calls with no key (`400`).
+
+        A function with `internal: true` has no HTTP route: it answers
+        `404`, like a function that doesn't exist, to every caller,
+        whatever their credentials.
       operationId: callFunction
       security: [{}, { session: [] }, { apiKey: [] }]
       parameters:
@@ -853,6 +857,7 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
         "429":
           description: >-
             Either the function, or its realm, is at its concurrency

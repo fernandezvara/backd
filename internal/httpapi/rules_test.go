@@ -90,6 +90,8 @@ func newRulesFixture(t *testing.T) *rulesFixture {
 		fnDir + "capped/index.js":          "",
 		fnDir + "cappedip/function.yaml":   "invoke: \"true\"\nrate_limit:\n  per: ip\n  limit: 2\n  window: 1m\n",
 		fnDir + "cappedip/index.js":        "",
+		fnDir + "cleanup/function.yaml":    "internal: true\nmode: async\n",
+		fnDir + "cleanup/index.js":         "",
 	} {
 		_ = os.MkdirAll(filepath.Dir(filepath.Join(root, p)), 0o755)
 		if err := os.WriteFile(filepath.Join(root, p), []byte(content), 0o644); err != nil {

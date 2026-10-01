@@ -549,6 +549,13 @@ func TestContract(t *testing.T) {
 		return executor.Result{Status: executor.StatusFunctionError, FunctionError: &executor.FunctionError{Status: 409, Code: "out_of_stock", Message: "no stock"}}, nil
 	})
 	req("POST", fn+"echo", `{}`, ada, 409)
+	// Any other 4xx the function chooses (documented as 4XX).
+	f.runner.set(func(executor.InvokeRequest) (executor.Result, error) {
+		return executor.Result{Status: executor.StatusFunctionError, FunctionError: &executor.FunctionError{Status: 418, Code: "teapot", Message: "short and stout"}}, nil
+	})
+	req("POST", fn+"echo", `{}`, ada, 418)
+	// An internal function has no route.
+	req("POST", fn+"cleanup", `{}`, ada, 404)
 	f.runner.set(func(executor.InvokeRequest) (executor.Result, error) {
 		return executor.Result{Status: executor.StatusTimeout}, nil
 	})

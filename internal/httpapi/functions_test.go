@@ -501,3 +501,29 @@ func TestInternalListener(t *testing.T) {
 		t.Errorf("functions calling functions: %d", code)
 	}
 }
+
+// An internal function has no HTTP route: every caller gets the 404 of a
+// function that doesn't exist, and nothing reaches the executor.
+func TestInternalFunctionHasNoRoute(t *testing.T) {
+	f := newRulesFixture(t)
+	before := len(f.runner.reqs)
+	for _, tt := range []struct{ name, cred string }{
+		{"anonymous", ""}, {"user", f.ada}, {"api key", f.key},
+	} {
+		h := map[string]string{"Content-Type": "application/json"}
+		if tt.cred != "" {
+			h["Authorization"] = "Bearer " + tt.cred
+		}
+		rec, out := f.doH(t, "POST", "/v1/acme/app/_func/cleanup", `{}`, h)
+		_, missing := f.doH(t, "POST", "/v1/acme/app/_func/nothing_here", `{}`, h)
+		if rec.Code != 404 || out["error"].(map[string]any)["code"] != "not_found" {
+			t.Errorf("%s: %d %v", tt.name, rec.Code, out)
+		}
+		if out["error"].(map[string]any)["message"] != missing["error"].(map[string]any)["message"] {
+			t.Errorf("%s: an internal function answers differently from a missing one: %v / %v", tt.name, out, missing)
+		}
+	}
+	if len(f.runner.reqs) != before {
+		t.Error("an internal function reached the executor")
+	}
+}

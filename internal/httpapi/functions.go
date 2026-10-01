@@ -129,7 +129,9 @@ func (f *functions) routes(r chi.Router) {
 func (f *functions) invoke(w http.ResponseWriter, r *http.Request) {
 	realm, database, name := chi.URLParam(r, "realm"), chi.URLParam(r, "database"), chi.URLParam(r, "function")
 	fn := f.lookup(realm, database, name)
-	if fn == nil {
+	// An internal function has no HTTP route: it answers like one that
+	// doesn't exist, before looking at the caller, whoever that is.
+	if fn == nil || fn.Internal {
 		notFound(w, r)
 		return
 	}
