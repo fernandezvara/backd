@@ -18,6 +18,10 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/backd ./cmd/backd
 
 FROM docker.io/denoland/deno:alpine-2.9.7
+# The base image lags behind Alpine's security fixes (the release scan failed
+# on OpenSSL once), so pick them up at build time.
+USER root
+RUN apk upgrade --no-cache
 COPY --from=build /out/backd /usr/local/bin/backd
 ENV EXECUTOR_DIR=/tmp/backd-executor
 USER deno
