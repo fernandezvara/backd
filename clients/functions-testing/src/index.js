@@ -268,7 +268,57 @@ export class FunctionError extends Error {
  * @property {MemoryStore} [store]      Shared across several createContext calls, to seed data ctx.db reads.
  * @property {boolean} [admin]          Also give ctx.admin.db (function.yaml's admin: true).
  * @property {string[]} [calls]         function.yaml's `calls`: ctx.call refuses any other name with `call_not_declared`, as backd does.
+ * @property {boolean | { externalRecipients?: boolean }} [email]  Give the function ctx.email.send (function.yaml's `email: true`); `externalRecipients` also allows `to`, `cc` and `bcc` addresses.
  */
+
+/**
+ * A fake of `ctx.email`: `send` records the email and refuses what backd
+ * would (a missing `kind`, addresses without `externalRecipients`), and
+ * `sent()` lists what was sent. `createContext({ email: true })` uses one.
+ * @param {{ externalRecipients?: boolean }} [opts]
+ */
+export function fakeEmail({ externalRecipients = false } = {}) {
+  /** @type {Array<Record<string, any>>} */
+  const sent = []
+  return {
+    /** @param {Record<string, any>} [msg] */
+    send: async (msg = {}) => {
+      if (typeof msg.kind !== 'string' || msg.kind === '') throw new TypeError('ctx.email.send: kind is required')
+      const hasAddresses = msg.to !== undefined || msg.cc !== undefined || msg.bcc !== undefined
+      if (hasAddresses && !externalRecipients) {
+        throw new TypeError('ctx.email.send: to, cc and bcc need `email: { external_recipients: true }` in function.yaml; use to_user for a user of the realm')
+      }
+      if (!hasAddresses && typeof msg.to_user !== 'string') throw new TypeError('ctx.email.send: to_user is required')
+      sent.push(structuredClone(msg))
+      return fakeJob({ id: `email-job-${sent.length}` })
+    },
+    sent: () => structuredClone(sent),
+  }
+}
+
+/**
+ * A message as the realm's delivery function receives it as `ctx.input`
+ * (see the docs, Functions -> Email), for testing a delivery function:
+ * `createContext({ input: emailMessage({ kind: 'reset-password' }) })`.
+ * @param {Record<string, any>} [overrides]
+ */
+export function emailMessage(overrides = {}) {
+  return {
+    id: 'email-test',
+    kind: 'verify-email',
+    from: 'Test <no-reply@example.com>',
+    reply_to: null,
+    to: [{ email: 'ana@example.com', name: null }],
+    cc: [],
+    bcc: [],
+    subject: 'Confirm your email address',
+    text: 'Open https://example.com/v1/test/_auth/verify-email?token=test-token',
+    html: '<p><a href="https://example.com/v1/test/_auth/verify-email?token=test-token">Confirm</a></p>',
+    locale: 'en',
+    data: { link: 'https://example.com/v1/test/_auth/verify-email?token=test-token', expires_at: '2030-01-02T15:04:00Z' },
+    ...overrides,
+  }
+}
 
 /**
  * What a faked async callee returns, like the job handle `ctx.call` gives:
@@ -291,10 +341,10 @@ export function callTimedOut() {
  * Builds a fake ctx for one call to a function's handler, backed by an
  * in-memory store (a fresh one per call unless `store` is given, so
  * several calls in one test can share state). Also returns `fakeCall` to
- * fake what `ctx.call(name, ...)` answers, and `calls` to list what the
- * function called.
+ * fake what `ctx.call(name, ...)` answers, `calls` to list what the
+ * function called, and `sentEmails` to list what it sent with `ctx.email.send`.
  * @param {ContextOptions} [opts]
- * @returns {{ ctx: any, store: MemoryStore, fakeCall: (name: string, handler: (input: any, options: any) => any) => void, calls: (name: string) => Array<{ input: any, options: any }> }}
+ * @returns {{ ctx: any, store: MemoryStore, fakeCall: (name: string, handler: (input: any, options: any) => any) => void, calls: (name: string) => Array<{ input: any, options: any }>, sentEmails: () => Array<Record<string, any>> }}
  */
 export function createContext(opts = {}) {
   const store = opts.store ?? new MemoryStore()
@@ -333,9 +383,14 @@ export function createContext(opts = {}) {
     recorded.push({ name, input, options })
     return await handler(input, options)
   }
+
+  // ctx.email.send: records the email; checks what backd would refuse.
+  const mail = fakeEmail(typeof opts.email === 'object' ? opts.email : {})
+  if (opts.email) ctx.email = Object.freeze({ send: mail.send })
   return {
     ctx: Object.freeze(ctx),
     store,
+    sentEmails: mail.sent,
     fakeCall: (name, handler) => void fakes.set(name, handler),
     calls: (name) => recorded.filter((c) => c.name === name).map(({ input, options }) => ({ input, options })),
   }

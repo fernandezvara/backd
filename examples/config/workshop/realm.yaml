@@ -10,6 +10,16 @@
 auth: enabled
 signup: open
 
+# Email goes through the function `notifications/email-capture`, which only
+# stores each message in the `outbox` collection instead of sending it: read
+# them in the Mailbox of the local stack (https://localhost:8443/example/mailbox/).
+# It is dev_only, so the local stack runs backd in dev mode. For real mail
+# you would replace it with your provider's function (docs: Functions -> Email).
+email:
+  function: notifications/email-capture
+  from: "Workshop <no-reply@workshop.example>"
+  # Links point at BACKD_URL, which the local stack sets to https://localhost:8443.
+
 # `backd bootstrap --realm workshop --email <email>` creates the first
 # administrator; give people the staff role in `roles.staff.users` below or
 # with `backd user add-role --role staff`.

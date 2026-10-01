@@ -1,0 +1,4 @@
+[
+  { "fields": ["-_meta.created_at"] },
+  { "fields": ["email_id"] }
+]

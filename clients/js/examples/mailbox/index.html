@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>backd mailbox</title>
+  <link rel="stylesheet" href="../blog/style.css">
+  <link rel="stylesheet" href="style.css">
+  <!-- Resolves `import … from '@backd/client'`; nginx serves clients/js/src at /example/client/. -->
+  <script type="importmap">{ "imports": { "@backd/client": "/example/client/index.js" } }</script>
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <main>
+    <header><h1>backd mailbox</h1></header>
+    <p class="muted">
+      The emails the <code id="realm">workshop</code> realm would have sent, captured by its
+      <code>email-capture</code> function instead (local development only). Links work: click through
+      verification and password reset by hand.
+      <button id="refresh" type="button" class="link">Refresh</button>
+    </p>
+    <p class="error" id="error" role="alert" hidden></p>
+    <div class="mailbox">
+      <ul id="list" aria-label="Captured emails"></ul>
+      <section id="view" aria-live="polite">
+        <p class="muted" id="empty">No emails yet. Sign up in the app, or ask for a password reset.</p>
+        <div id="message" hidden>
+          <dl>
+            <dt>To</dt><dd id="to"></dd>
+            <dt>Subject</dt><dd id="subject"></dd>
+            <dt>Kind</dt><dd id="kind"></dd>
+          </dl>
+          <p><a id="open-link" target="_blank" rel="noopener" hidden>Open the link</a></p>
+          <div class="tabs">
+            <button type="button" data-tab="html" aria-pressed="true">HTML</button>
+            <button type="button" data-tab="text" aria-pressed="false">Text</button>
+          </div>
+          <!-- The message's HTML is untrusted: a sandboxed frame, whose links open in a new tab. -->
+          <iframe id="html" sandbox="allow-popups allow-popups-to-escape-sandbox" title="HTML body"></iframe>
+          <pre id="text" hidden></pre>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

@@ -106,9 +106,19 @@ email:
   public_url: http://localhost:8080
 ```
 
-Every message, with its working links, shows up in `outbox`: read it with the API (`GET /v1/<realm>/notifications/outbox`, readable by anyone, since it exists only on a development machine) or click through verification and reset by hand.
+Every message, with its working links, shows up in `outbox`: read it with the API (`GET /v1/<realm>/notifications/outbox`, readable by anyone, since it exists only on a development machine) or in the Mailbox.
+
+**The Mailbox** is a small web app of the [local stack](../../getting-started/) (`make example`, then <https://localhost:8443/example/mailbox/>): it lists the `workshop` realm's captured emails and shows each one, text and HTML, with a button that opens its link, so you can click through verification and password reset by hand. The workshop realm is configured exactly like this, and its function is the tested one the template writes:
+
+{{< example-file path="workshop/notifications/_functions/email-capture/function.yaml" >}}
+
+{{< example-file path="workshop/notifications/_functions/email-capture/index.ts" >}}
+
+The local stack runs `backd` in dev mode for this (`BACKD_DEV=true`, with `BACKD_DEV_ANY_ADDR=true` because its ports are published on `127.0.0.1` only).
 
 `email-capture` is `dev_only: true`: `backd` refuses to start with it unless `BACKD_DEV=true`, because the outbox holds working links. Replace it with your provider's delivery function before you deploy anywhere real.
+
+To unit-test your own delivery function or a function that sends email, [`@backd/functions-testing`](../testing/#unit-testing-a-functions-logic) provides `emailMessage()` (a message in the contract's shape, as `ctx.input`) and `fakeEmail()` (a fake `ctx.email.send` that records what a function sends).
 
 ## Limits
 
