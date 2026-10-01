@@ -1,6 +1,10 @@
 package httpapi
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/fernandezvara/backd/internal/registry"
+)
 
 // concurrencyLimiter counts concurrent function calls per key (a
 // function, or a realm), on this backd instance only (roadmap F8): with
@@ -42,4 +46,22 @@ func (l *concurrencyLimiter) release(key string, max int) {
 	} else {
 		l.counts[key]--
 	}
+}
+
+var (
+	limitersMu sync.Mutex
+	limiters   = map[*registry.Registry]*concurrencyLimiter{}
+)
+
+// limiterFor is the limiter of everything serving one registry: the public
+// handler and the internal one (ctx.call) count against the same limits.
+func limiterFor(reg *registry.Registry) *concurrencyLimiter {
+	limitersMu.Lock()
+	defer limitersMu.Unlock()
+	l, ok := limiters[reg]
+	if !ok {
+		l = newConcurrencyLimiter()
+		limiters[reg] = l
+	}
+	return l
 }

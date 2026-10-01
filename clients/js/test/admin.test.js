@@ -142,3 +142,20 @@ test('jobs listing', async () => {
   assert.equal(q.get('since'), '2026-09-29T00:00:00.000Z')
   assert.equal(q.get('limit'), '5')
 })
+
+test('invokeFunction runs a function by hand', async () => {
+  const jobData = { id: 'j1', function: 'app/cleanup', status: 'queued', created_at: '2026-10-01T00:00:00.000Z', result: null }
+  const m = mockFetch([{ body: { sent: true } }, { status: 202, body: jobData }])
+  const a = adminOf(m)
+  assert.deepEqual(await a.invokeFunction('app/send', { input: { n: 1 }, as: 'ana@example.com', idempotencyKey: 'k1' }), { sent: true })
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/functions/app/send/invoke')
+  assert.equal(m.calls[0].method, 'POST')
+  assert.deepEqual(m.calls[0].body, { input: { n: 1 }, as: 'ana@example.com' })
+  assert.equal(m.calls[0].headers['Idempotency-Key'], 'k1')
+
+  const job = /** @type {import('../src/functions.js').Job} */ (await a.invokeFunction('app/cleanup'))
+  assert.deepEqual(m.calls[1].body, { input: null })
+  assert.equal(job.id, 'j1')
+
+  await assert.rejects(() => a.invokeFunction('cleanup'), TypeError)
+})

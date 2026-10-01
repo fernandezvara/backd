@@ -4,9 +4,10 @@
 # Needs at least one running worker: `backd worker`, or
 # `backd serve --with-worker`.
 #
-# `admin: true` is what lets you also call it by hand to test it (an API key
-# call has a caller, and only gets ctx.admin when the function declares it).
+# `internal: true`: nobody can call it over HTTP. An administrator can still
+# run it by hand to test it, as its schedule would run it:
+#   backd functions invoke --function workshop/main/nightly_cleanup
+internal: true
 mode: async
 schedule: "0 3 * * *"   # every day at 03:00 UTC
 timeout: 10m
-admin: true

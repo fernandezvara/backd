@@ -32,6 +32,8 @@ type InvocationRecord struct {
 	DurationMS int64
 	RequestID  string
 	JobID      string // async jobs (roadmap F11); empty until then
+	ParentID   string // the invocation that called this one (ctx.call); empty otherwise
+	Origin     string // http, function, cron, admin or backd:<event>
 	Logs       []LogLine
 }
 
@@ -54,7 +56,9 @@ func (s *Users) logRetention() time.Duration {
 // undone by a failed write, the same philosophy as Audit.
 func (s *Users) RecordInvocation(ctx context.Context, rec InvocationRecord) {
 	now := s.now()
-	rec.ID = xid.New().String()
+	if rec.ID == "" {
+		rec.ID = xid.New().String()
+	}
 	rec.At = now
 	rec.ExpiresAt = now.Add(s.logRetention())
 	log := s.Log

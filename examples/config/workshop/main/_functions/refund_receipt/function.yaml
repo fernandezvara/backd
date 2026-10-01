@@ -1,0 +1,10 @@
+# An internal function: no HTTP route (`_func/refund_receipt` answers 404), so
+# nobody can call it directly. Only a function that lists it in `calls`
+# (refund does) or an administrator, by hand, can run it.
+#
+# It is async, so refund doesn't wait for it, and it has its own
+# `admin: true`: refund's admin access is not passed down to what it calls,
+# so each function declares exactly the privilege it needs.
+internal: true
+mode: async
+admin: true

@@ -14,12 +14,14 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/rs/xid"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/fernandezvara/backd/internal/auth"
@@ -42,7 +44,26 @@ const (
 	codeIdempotencyKeyRequired = "idempotency_key_required"
 	codeIdempotencyKeyReused   = "idempotency_key_reused"
 	codeRequestInProgress      = "request_in_progress"
+	codeCallNotDeclared        = "call_not_declared"
+	codeCallTooDeep            = "call_too_deep"
 )
+
+// Where an invocation came from, as the invocation history records it.
+const (
+	originHTTP     = "http"
+	originFunction = "function"
+	originCron     = "cron"
+	originAdmin    = "admin"
+)
+
+// callMeta says how an invocation started: its place in a chain of
+// ctx.call calls and how long its caller can still wait.
+type callMeta struct {
+	Origin    string
+	ParentID  string        // the invocation that called this one
+	Depth     int           // nested calls above this one
+	Remaining time.Duration // > 0: the caller's remaining time caps this call's timeout
+}
 
 // callbackMargin keeps a callback token valid a little past the deadline,
 // for requests the function started just before it.
@@ -117,6 +138,14 @@ func (f *functions) bundlePath(sha string) (string, bool) {
 	return p, ok
 }
 
+// internalRoutes are the function routes of the internal listener: a
+// function calling another with ctx.call, and reading the job of an async
+// callee, both with a callback token.
+func (f *functions) internalRoutes(r chi.Router) {
+	r.With(noStore).Post("/v1/{realm}/{database}/_func/{function}", f.invoke)
+	r.With(noStore).Get("/v1/{realm}/{database}/_jobs/{id}", f.getJob)
+}
+
 func (f *functions) routes(r chi.Router) {
 	// Content-Type is checked inside invoke: sync and async need JSON,
 	// but a webhook sender's body isn't necessarily JSON at all.
@@ -129,7 +158,10 @@ func (f *functions) routes(r chi.Router) {
 func (f *functions) invoke(w http.ResponseWriter, r *http.Request) {
 	realm, database, name := chi.URLParam(r, "realm"), chi.URLParam(r, "database"), chi.URLParam(r, "function")
 	fn := f.lookup(realm, database, name)
-	if fn == nil {
+	// An internal function has no HTTP route: it answers like one that
+	// doesn't exist, before looking at the caller, whoever that is. (The
+	// internal listener is the way in for ctx.call, below.)
+	if !f.docs.internal && (fn == nil || fn.Internal) {
 		notFound(w, r)
 		return
 	}
@@ -137,7 +169,33 @@ func (f *functions) invoke(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if hasAuth && !f.mayInvoke(w, r, fn, caller) {
+	meta := callMeta{Origin: originHTTP}
+	if f.docs.internal {
+		// A function calling another: the callee must be declared in the
+		// caller's `calls`, in the same database, within the depth limit.
+		fc := caller.Func
+		if fc == nil || fc.Admin {
+			writeError(w, r, http.StatusForbidden, codeCallNotDeclared, "this credential can't call functions")
+			return
+		}
+		if callerDB, _, _ := strings.Cut(strings.TrimPrefix(fc.Name, realm+"/"), "/"); callerDB != database || !slices.Contains(fc.Calls, name) {
+			writeError(w, r, http.StatusForbidden, codeCallNotDeclared, "this function didn't declare "+database+"/"+name+" in its `calls`")
+			return
+		}
+		if fn == nil {
+			notFound(w, r)
+			return
+		}
+		if fc.Depth+2 > registry.MaxCallChain {
+			writeError(w, r, http.StatusForbidden, codeCallTooDeep, fmt.Sprintf("calls can be nested to %d functions", registry.MaxCallChain))
+			return
+		}
+		meta = callMeta{Origin: originFunction, ParentID: fc.Invocation, Depth: fc.Depth + 1, Remaining: max(fc.Expires.Sub(f.docs.now())-callbackMargin, time.Millisecond)}
+		// The callee inherits the caller's user and nothing else: no API
+		// key's access, no admin access.
+		caller = auth.Caller{User: caller.User}
+		hasAuth = f.docs.users(realm) != nil
+	} else if hasAuth && !f.mayInvoke(w, r, fn, caller) {
 		return
 	}
 	var input json.RawMessage
@@ -166,25 +224,30 @@ func (f *functions) invoke(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
-		if fn.InputSchema != nil {
-			v, _ := jsonschema.UnmarshalJSON(bytes.NewReader(input))
-			if err := fn.InputSchema.Validate(v); err != nil {
-				writeError(w, r, http.StatusBadRequest, codeValidation, "input failed schema validation", validationDetails(err)...)
-				return
-			}
+		if !validInput(w, r, fn, input) {
+			return
 		}
 		hashInput = input
 	}
+	f.run(w, r, fn, realm, database, name, caller, meta, input, webhook, hashInput)
+}
+
+// run does what follows the checks of a call: idempotency, rate limit, then
+// the executor (sync) or the queue (async), and the answer. hashInput is
+// what the idempotency key is bound to.
+func (f *functions) run(w http.ResponseWriter, r *http.Request, fn *registry.Function, realm, database, name string, caller auth.Caller, meta callMeta, input json.RawMessage, webhook *executor.WebhookRequest, hashInput []byte) {
 	claimID, ok := f.checkIdempotency(w, r, fn, realm, database, name, caller, hashInput)
 	if !ok {
 		return
 	}
-	if !f.checkRateLimit(w, r, fn, realm, database, name, caller) {
+	// Rate limits guard callers on the internet; a nested call is bounded
+	// by the call graph and the concurrency limits instead.
+	if meta.Origin == originHTTP && !f.checkRateLimit(w, r, fn, realm, database, name, caller) {
 		f.releaseClaim(r.Context(), realm, claimID)
 		return
 	}
 	if fn.Mode == registry.ModeAsync {
-		f.enqueue(w, r, fn, realm, database, name, caller, input, claimID)
+		f.enqueue(w, r, fn, realm, database, name, caller, input, claimID, meta)
 		return
 	}
 
@@ -240,13 +303,24 @@ func (f *functions) invoke(w http.ResponseWriter, r *http.Request) {
 			f.concurrency.release(realmKey, realmMax)
 		}()
 	}
-	deadline := f.docs.now().Add(fn.Timeout)
+	// A nested call never outlives the function waiting for it.
+	timeout := fn.Timeout
+	if meta.Remaining > 0 && meta.Remaining < timeout {
+		timeout = meta.Remaining
+	}
+	if timeout < time.Second {
+		f.releaseClaim(r.Context(), realm, claimID)
+		writeError(w, r, http.StatusGatewayTimeout, codeFunctionTimeout, "the calling function has no time left to wait for this call")
+		return
+	}
+	deadline := f.docs.now().Add(timeout)
 	// Let the response be written after a long function.
-	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(fn.Timeout + 30*time.Second))
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(timeout + 30*time.Second))
+	invID := xid.New().String()
 	req := executor.InvokeRequest{
 		Function:  realm + "/" + database + "/" + name,
 		Bundle:    executor.Bundle{SHA256: hash, URL: strings.TrimRight(f.callbackURL, "/") + "/_internal/functions/" + hash},
-		TimeoutMS: fn.Timeout.Milliseconds(),
+		TimeoutMS: timeout.Milliseconds(),
 		MemoryMB:  (fn.Memory + 1<<20 - 1) >> 20,
 		MaxOutput: fn.MaxOutput,
 		Network:   fn.Network,
@@ -256,12 +330,12 @@ func (f *functions) invoke(w http.ResponseWriter, r *http.Request) {
 			Webhook:        webhook,
 			User:           userEnvelope(caller),
 			Secrets:        secrets,
-			Callback:       f.callback(realm, database, name, fn, caller, deadline.Add(callbackMargin)),
+			Callback:       f.callback(realm, database, name, fn, caller, deadline.Add(callbackMargin), invID, meta.Depth),
 			IdempotencyKey: r.Header.Get("Idempotency-Key"),
 			RequestID:      requestID(r.Context()),
 		},
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), fn.Timeout+10*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), timeout+10*time.Second)
 	defer cancel()
 	res, err := f.runner.Invoke(ctx, req)
 	f.logResult(r.Context(), req.Function, res, err)
@@ -270,7 +344,7 @@ func (f *functions) invoke(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusServiceUnavailable, codeUnavailable, "the function executor is unavailable")
 		return
 	}
-	f.recordInvocation(r.Context(), requestID(r.Context()), realm, database, name, fn.Mode, caller, res, "")
+	f.recordInvocation(r.Context(), requestID(r.Context()), realm, database, name, fn.Mode, caller, res, "", invID, meta)
 	if claimID != "" {
 		if res.Status == executor.StatusBusy {
 			f.releaseClaim(r.Context(), realm, claimID)
@@ -282,6 +356,90 @@ func (f *functions) invoke(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	f.respond(w, r, fn, res)
+}
+
+// adminInvoke handles POST /v1/{realm}/_admin/functions/{database}/{name}/invoke:
+// an administrator runs any function (internal or public) on purpose, as a
+// given user or with none, to re-run a clean-up or test a scheduled
+// function (which then runs as its schedule would). The function's invoke rule is not evaluated (the credential is
+// an admin one) and its rate limit doesn't apply; the run is audited.
+func (f *functions) adminInvoke(w http.ResponseWriter, r *http.Request) {
+	realm, database, name := chi.URLParam(r, "realm"), chi.URLParam(r, "database"), chi.URLParam(r, "name")
+	fn := f.lookup(realm, database, name)
+	if fn == nil {
+		notFound(w, r)
+		return
+	}
+	if fn.Mode == registry.ModeWebhook {
+		writeError(w, r, http.StatusBadRequest, codeValidation, "a webhook function can't be run by hand: its sender calls it over HTTP")
+		return
+	}
+	data, err := io.ReadAll(r.Body)
+	var tooBig *http.MaxBytesError
+	if errors.As(err, &tooBig) {
+		tooLarge(w, r, tooBig.Limit)
+		return
+	}
+	var body struct {
+		Input json.RawMessage `json:"input"`
+		As    string          `json:"as"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err != nil || dec.Decode(&body) != nil || dec.More() {
+		writeError(w, r, http.StatusBadRequest, codeInvalidJSON, `the body must be a JSON object with optional "input" and "as"`)
+		return
+	}
+	input := body.Input
+	if len(bytes.TrimSpace(input)) == 0 {
+		input = json.RawMessage("null")
+	}
+	svc := usersOf(r)
+	var caller auth.Caller
+	var asID any
+	if body.As != "" {
+		email, err := registry.NormalizeEmail(body.As)
+		var u auth.User
+		if err == nil {
+			u, err = svc.Store.UserByEmail(r.Context(), email)
+		}
+		if err != nil {
+			writeError(w, r, http.StatusNotFound, codeNotFound, "no user with that email in this realm")
+			return
+		}
+		if u.Disabled {
+			writeError(w, r, http.StatusConflict, codeConflict, "that user is disabled")
+			return
+		}
+		caller = auth.Caller{User: &auth.Principal{User: u}}
+		asID = u.ID
+	}
+	// A scheduled function run by hand, with no user, runs as its schedule
+	// would (no caller, full access as the function): an operator re-runs
+	// it as it normally runs, with no need for `admin: true` just to test it.
+	if body.As == "" && fn.Schedule != nil {
+		caller = auth.Caller{Func: &auth.FuncCaller{Name: realm + "/" + database + "/" + name, Admin: true}}
+	}
+	if !validInput(w, r, fn, input) {
+		return
+	}
+	// Ids only, never the email.
+	svc.Audit(r.Context(), "function.invoke_manual", database+"/"+name, map[string]any{"as": asID})
+	f.run(w, r, fn, realm, database, name, caller, callMeta{Origin: originAdmin}, input, nil, input)
+}
+
+// validInput checks a call's input against the function's input schema,
+// answering 400 when it doesn't match.
+func validInput(w http.ResponseWriter, r *http.Request, fn *registry.Function, input json.RawMessage) bool {
+	if fn.InputSchema == nil {
+		return true
+	}
+	v, _ := jsonschema.UnmarshalJSON(bytes.NewReader(input))
+	if err := fn.InputSchema.Validate(v); err != nil {
+		writeError(w, r, http.StatusBadRequest, codeValidation, "input failed schema validation", validationDetails(err)...)
+		return false
+	}
+	return true
 }
 
 // validIdempotencyKey bounds a client-supplied Idempotency-Key to what's
@@ -402,10 +560,12 @@ func (f *functions) checkRateLimit(w http.ResponseWriter, r *http.Request, fn *r
 // "" unless the caller sent an Idempotency-Key (roadmap F12), in which
 // case the job's id is recorded against it (or the claim released, on
 // failure) once enqueuing is decided.
-func (f *functions) enqueue(w http.ResponseWriter, r *http.Request, fn *registry.Function, realm, database, name string, caller auth.Caller, input json.RawMessage, claimID string) {
+func (f *functions) enqueue(w http.ResponseWriter, r *http.Request, fn *registry.Function, realm, database, name string, caller auth.Caller, input json.RawMessage, claimID string, meta callMeta) {
 	job := auth.Job{
 		Database: database, Function: name, Input: input, CallerActor: caller.Actor(),
 		TimeoutMS: fn.Timeout.Milliseconds(), RequestID: requestID(r.Context()),
+		Origin: meta.Origin, ParentID: meta.ParentID, Depth: meta.Depth,
+		ActsAsFunction: caller.Func != nil && caller.Func.Admin,
 	}
 	if caller.User != nil {
 		job.CallerUserID = caller.User.User.ID
@@ -471,6 +631,10 @@ func (f *functions) getJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func jobVisibleTo(job auth.Job, c auth.Caller) bool {
+	// A function sees the jobs its own invocation queued with ctx.call.
+	if c.Func != nil && !c.Func.Admin && job.ParentID != "" && job.ParentID == c.Func.Invocation {
+		return true
+	}
 	if c.Key != nil {
 		return true
 	}
@@ -533,7 +697,7 @@ func jobResultJSON(job auth.Job) map[string]any {
 // auth disabled have no system database to store it in, so it's skipped
 // there — the same limitation secrets and rate limits already have.
 // jobID is "" for sync calls; a worker passes it for async ones (F11).
-func (f *functions) recordInvocation(ctx context.Context, requestID, realm, database, name, mode string, caller auth.Caller, res executor.Result, jobID string) {
+func (f *functions) recordInvocation(ctx context.Context, requestID, realm, database, name, mode string, caller auth.Caller, res executor.Result, jobID, invID string, meta callMeta) {
 	u := f.docs.users(realm)
 	if u == nil {
 		return
@@ -547,6 +711,7 @@ func (f *functions) recordInvocation(ctx context.Context, requestID, realm, data
 		logs[i] = auth.LogLine{Level: l.Level, Line: l.Line}
 	}
 	u.RecordInvocation(ctx, auth.InvocationRecord{
+		ID:         invID,
 		Function:   database + "/" + name,
 		Actor:      caller.Actor(),
 		Mode:       mode,
@@ -555,6 +720,8 @@ func (f *functions) recordInvocation(ctx context.Context, requestID, realm, data
 		DurationMS: res.DurationMS,
 		RequestID:  requestID,
 		JobID:      jobID,
+		ParentID:   meta.ParentID,
+		Origin:     meta.Origin,
 		Logs:       logs,
 	})
 }
@@ -620,15 +787,15 @@ func userEnvelope(c auth.Caller) json.RawMessage {
 
 // callback gives the function its tokens: ctx.db acts as the caller,
 // ctx.admin.db (admin: true only) has full access as the function.
-func (f *functions) callback(realm, database, name string, fn *registry.Function, c auth.Caller, expires time.Time) *executor.Callback {
-	claims := auth.CallbackClaims{Realm: realm, Function: database + "/" + name, Expires: expires}
+func (f *functions) callback(realm, database, name string, fn *registry.Function, c auth.Caller, expires time.Time, invID string, depth int) *executor.Callback {
+	claims := auth.CallbackClaims{Realm: realm, Function: database + "/" + name, Expires: expires, Calls: fn.Calls, Depth: depth, Inv: invID}
 	if c.User != nil {
 		claims.UserID = c.User.User.ID
 	}
 	if c.Key != nil {
 		claims.KeyHash = c.Key.Hash
 	}
-	cb := &executor.Callback{URL: f.callbackURL, Realm: realm, Token: auth.SignCallback(f.docs.callbackKey, claims)}
+	cb := &executor.Callback{URL: f.callbackURL, Realm: realm, Database: database, Token: auth.SignCallback(f.docs.callbackKey, claims)}
 	if fn.Admin || (c.Func != nil && c.Func.Admin) {
 		cb.AdminToken = auth.SignCallback(f.docs.callbackKey, auth.CallbackClaims{Realm: realm, Function: database + "/" + name, Admin: true, Expires: expires})
 	}

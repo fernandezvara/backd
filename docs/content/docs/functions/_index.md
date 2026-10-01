@@ -36,6 +36,7 @@ This function, and every other one quoted in this section, is in [`examples/conf
 | Compute something readers can't, or check across several documents | A **`sync`** function | [Writing](writing/), [Calling](calling/) |
 | Make a change no user rule may allow (a refund, a role change) | A `sync` function with `admin: true` | [Writing](writing/#privileged-changes-admin-and-batch) |
 | Do work that takes more than a few seconds, or must survive the caller going away | An **`async`** job | [Async jobs](jobs/) |
+| Keep a function away from HTTP, or share a helper between functions | An **internal** function, called with `ctx.call` | [Internal functions](internal/) |
 | Run something every night, hour or week | A **scheduled** function (`schedule:` on an async function) | [Scheduled functions](cron/) |
 | Receive a callback from Stripe, GitHub or any other service | A **`webhook`** function | [Webhooks](webhooks/) |
 | Call an outside API with a key | Any function, with [secrets](secrets/) and a [network allowlist](network/) | |

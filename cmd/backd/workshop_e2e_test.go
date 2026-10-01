@@ -195,7 +195,11 @@ func TestWorkshopExample(t *testing.T) {
 	if code != 200 || first["amount"] != float64(1000) {
 		t.Fatalf("refund: %d %v", code, first)
 	}
-	if code, replay := refund(bob, o1, "Idempotency-Key", "k1"); code != 200 || replay["refund_id"] != first["refund_id"] {
+	receiptJob, _ := first["receipt_job"].(string)
+	if receiptJob == "" {
+		t.Fatalf("refund should queue a receipt with ctx.call: %v", first)
+	}
+	if code, replay := refund(bob, o1, "Idempotency-Key", "k1"); code != 200 || replay["refund_id"] != first["refund_id"] || replay["receipt_job"] != receiptJob {
 		t.Errorf("replayed refund: %d %v", code, replay)
 	}
 	if code, out := refund(bob, o1, "Idempotency-Key", "k2"); code != 409 || errorCode(out) != "not_refundable" {
@@ -209,6 +213,13 @@ func TestWorkshopExample(t *testing.T) {
 	}
 	if items := expect(200, "GET", base+"/main/refunds", adminKey, "")["items"].([]any); len(items) != 1 {
 		t.Errorf("refunds: %v", items)
+	}
+
+	// Internal functions have no HTTP route, for anyone.
+	for _, name := range []string{"refund_receipt", "nightly_cleanup"} {
+		for _, cred := range []string{"", ada, bob, adminKey} {
+			expect(404, "POST", base+"/main/_func/"+name, cred, `{}`)
+		}
 	}
 
 	// async: a report job, run by a worker, read back through _jobs.
@@ -234,6 +245,35 @@ func TestWorkshopExample(t *testing.T) {
 	expect(404, "GET", base+"/main/reports/"+output["report_id"].(string), bob, "")
 	if items := expect(200, "GET", base+"/_admin/jobs?function=main/export_orders&status=done", adminKey, "")["items"].([]any); len(items) != 1 {
 		t.Errorf("admin job listing: %v", items)
+	}
+
+	// The receipt job refund queued ran with the export (same worker loop): it
+	// wrote one receipt, as its own admin access, and the history links it to
+	// the refund call that queued it.
+	receipt := expect(200, "GET", base+"/main/_jobs/"+receiptJob, adminKey, "")
+	if r, _ := receipt["result"].(map[string]any); receipt["status"] != "done" || r["status"] != "ok" || r["output"].(map[string]any)["written"] != true {
+		t.Fatalf("receipt job: %v", receipt)
+	}
+	if items := expect(200, "GET", base+"/main/receipts", adminKey, "")["items"].([]any); len(items) != 1 || !strings.Contains(items[0].(map[string]any)["text"].(string), "Refund of 10.00 for order "+o1) {
+		t.Errorf("receipts: %v", items)
+	}
+	expect(403, "GET", base+"/main/receipts", ada, "") // customers can't read receipts
+	nested := expect(200, "GET", base+"/_admin/invocations?function=main/refund_receipt", adminKey, "")["items"].([]any)
+	if len(nested) != 1 {
+		t.Fatalf("receipt invocations: %v", nested)
+	}
+	if n := nested[0].(map[string]any); n["origin"] != "function" || n["parent_id"] == nil {
+		t.Errorf("receipt invocation: %v", n)
+	} else {
+		found := false
+		for _, p := range expect(200, "GET", base+"/_admin/invocations?function=main/refund", adminKey, "")["items"].([]any) {
+			if pm := p.(map[string]any); pm["id"] == n["parent_id"] {
+				found = pm["origin"] == "http" && pm["status"] == "ok" && pm["request_id"] == n["request_id"]
+			}
+		}
+		if !found {
+			t.Errorf("the receipt's parent is not the successful refund call: %v", n)
+		}
 	}
 
 	// cron. A draft nobody finished for 45 days (backdated in MongoDB) and
@@ -275,13 +315,17 @@ func TestWorkshopExample(t *testing.T) {
 	if byFunction["main/nightly_cleanup"]["id"] != wantID {
 		t.Errorf("cron job id = %v, want %s", byFunction["main/nightly_cleanup"]["id"], wantID)
 	}
-	// Called by hand (an API key has a caller), it needs admin: true to get
+	// An administrator runs it by hand through the admin API (it is
+	// internal, so it has no _func route): it runs as its schedule would, with
 	// ctx.admin, and behaves the same: the draft is already gone.
-	byHand := expect(202, "POST", base+"/main/_func/nightly_cleanup", adminKey, `{}`)
+	byHand := expect(202, "POST", base+"/_admin/functions/main/nightly_cleanup/invoke", adminKey, `{}`)
 	for w.RunOnce(ctx) {
 	}
 	if j := expect(200, "GET", base+"/main/_jobs/"+byHand["id"].(string), adminKey, ""); j["status"] != "done" || j["result"].(map[string]any)["status"] != "ok" {
-		t.Fatalf("nightly_cleanup called by hand: %v", j)
+		t.Fatalf("nightly_cleanup run by hand: %v", j)
+	}
+	if audit := expect(200, "GET", base+"/_admin/audit?action=function.invoke_manual", adminKey, "")["items"].([]any); len(audit) != 1 {
+		t.Errorf("audit of the manual run: %v", audit)
 	}
 	// The scheduled digest summarizes yesterday (nothing was ordered then).
 	yesterday := now.AddDate(0, 0, -1).Format("2006-01-02")

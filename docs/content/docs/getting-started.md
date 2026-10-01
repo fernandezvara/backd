@@ -48,8 +48,8 @@ examples/config/
 └── workshop/                   the functions cookbook: sync, jobs, cron and a webhook
     ├── realm.yaml
     └── main/
-        ├── orders/, refunds/, reports/, digests/, events/
-        └── _functions/{order_total, refund, export_orders, nightly_cleanup, daily_digest, payment_webhook}/
+        ├── orders/, refunds/, receipts/, reports/, digests/, events/
+        └── _functions/{order_total, refund, refund_receipt, export_orders, nightly_cleanup, daily_digest, payment_webhook}/
 ```
 
 ```sh

@@ -2,7 +2,7 @@
 title: "Build, dev and test"
 description: "Bundle functions, iterate in dev mode, call them through a running backd and unit-test their logic."
 icon: "checklist"
-weight: 560
+weight: 561
 toc: true
 ---
 
@@ -60,6 +60,7 @@ backd functions invoke --function shop/orders/checkout --input cart.json --url h
 ```
 
 - `--input <file>` reads the request body from a JSON file (`-` for standard input); without it, the body is `null`, same as an empty request.
+- An [internal function](../internal/) has no `_func` route; `invoke` then runs it through the admin API (and says so), which needs an admin API key or an admin session.
 - It authenticates the same way as `backd user`/`backd apikey`: a session stored by `backd login`, or `BACKD_API_KEY`.
 - `--as <email>` calls on that user's behalf (an admin API key only, via [`X-Backd-On-Behalf-Of`](../../auth/api-keys/#acting-on-behalf-of-a-user)); without it, calls as whatever credential is active.
 - With `BACKD_DEV=true` on the server, the response also carries the function's console logs and its time inside the executor (`X-Backd-Dev-Logs`, `X-Backd-Dev-Duration-Ms`); `invoke` prints them to standard error, output stays on standard output alone so it's safe to pipe. These headers are never sent outside dev mode — a production call never leaks another caller's function logs.
@@ -81,6 +82,7 @@ Deno.test("checkout charges the cart's total", async () => {
 ```
 
 - `ctx.db`/`ctx.admin.db` are backed by an in-memory store shaped like the [JS client](../../clients/js/): the same methods, and the same `NotFoundError`/`VersionMismatchError` classes on a missing document or a failed `ifMatch`.
+- `ctx.call` is faked per test: `const { ctx, fakeCall, calls } = createContext({ calls: ["send-receipt"] })`, then `fakeCall("send-receipt", async (input) => ({ sent: true }))`. A fake can return a value, throw `ctx.error(...)` (the caller sees the same `FunctionError` as with a real callee), return `fakeJob({ output })` for an async callee, or throw `callTimedOut()`; `calls("send-receipt")` lists what the function called, with its input and options. Calling a name the test didn't fake throws, and with `calls` set, a name outside it fails with `call_not_declared` like backd does.
 - It has no access rules (`ctx.db` here always has full access) and only a practical subset of the query language: good for testing what your function does, not a substitute for the server's own rule tests.
 - The [cookbook](../cookbook/)'s functions have tests you can copy (`order_total/index.test.ts`, `export_orders/index.test.ts`, `lib/lib.test.ts`), run in CI with `make functions-testing-test`; what the fake can't do (batch writes, `ctx.request`, rules, idempotency) is exercised by `TestWorkshopExample`, which runs every function for real.
 - Not published yet: import it by a relative path, or copy `src/index.js` into your project. See its [README](https://github.com/fernandezvara/backd/tree/main/clients/functions-testing) for the full API and what it deliberately leaves out.

@@ -146,6 +146,12 @@ func TestFunctionErrors(t *testing.T) {
 		want  string
 	}{
 		{"unknown key", fn("timeout: 1s\nretries: 3\n"), "field retries not found"},
+		{"internal with invoke", fn("internal: true\ninvoke: \"true\"\n"), "internal: a function with no HTTP route has no use for an invoke rule"},
+		{"internal webhook", fn("internal: true\nmode: webhook\ninvoke: \"true\"\n"), "a webhook function is called over HTTP by its sender"},
+		{"calls itself", fn("calls: [f]\n"), `calls[0]: "f" calls itself`},
+		{"calls twice", fn("calls: [g, g]\n"), `calls[1]: "g" is listed twice`},
+		{"calls bad name", fn("calls: [Not_A_Name]\n"), "is not a valid function name"},
+		{"calls unknown", fn("calls: [ghost]\n"), `calls: "ghost" is not a function of this database`},
 		{"mode", fn("mode: batch\n"), `mode: must be sync, async or webhook, got "batch"`},
 		{"sync timeout cap", fn("timeout: 2m\n"), "timeout: must be between 1s and 1m0s for sync functions"},
 		{"webhook timeout cap", fn("mode: webhook\ntimeout: 90s\n"), "for webhook functions"},
@@ -330,5 +336,66 @@ func TestScheduledFunction(t *testing.T) {
 	f := reg.Realms["shop"].Databases["app"].Functions.Functions["nightly"]
 	if f.Schedule == nil || f.ScheduleExpr != "0 3 * * *" {
 		t.Fatalf("nightly = %+v", f)
+	}
+}
+
+func TestCallGraph(t *testing.T) {
+	tree := func(calls map[string]string) map[string]string {
+		files := map[string]string{}
+		for name, c := range calls {
+			files[fnPrefix+name+"/function.yaml"] = "calls: [" + c + "]\n"
+			if name == "hook" {
+				files[fnPrefix+name+"/function.yaml"] = "mode: webhook\ninvoke: \"true\"\n"
+			}
+			files[fnPrefix+name+"/index.js"] = "export default () => 1;\n"
+		}
+		return files
+	}
+	for _, tt := range []struct {
+		name  string
+		calls map[string]string
+		want  string // "" means valid
+	}{
+		{"chain of four", map[string]string{"a": "b", "b": "c", "c": "d", "d": ""}, ""},
+		{"diamond", map[string]string{"a": "b, c", "b": "d", "c": "d", "d": ""}, ""},
+		{"chain of five", map[string]string{"a": "b", "b": "c", "c": "d", "d": "e", "e": ""}, "a chain of 5 functions starts here, the longest allowed is 4"},
+		{"calls a webhook", map[string]string{"a": "hook", "hook": ""}, `"hook" is a webhook function`},
+		{"cycle of two", map[string]string{"a": "b", "b": "a"}, "cycle a -> b -> a"},
+		{"cycle behind an entry", map[string]string{"a": "b", "b": "c", "c": "b"}, "cycle b -> c -> b"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Load(functionTree(t, tree(tt.calls)))
+			switch {
+			case tt.want == "" && err != nil:
+				t.Fatalf("unexpected error: %v", err)
+			case tt.want != "" && (err == nil || !strings.Contains(err.Error(), tt.want)):
+				t.Fatalf("error %v, want %q", err, tt.want)
+			}
+		})
+	}
+	// The error names the file.
+	_, err := Load(functionTree(t, tree(map[string]string{"a": "b", "b": "a"})))
+	if err == nil || !strings.Contains(err.Error(), "function.yaml: calls: cycle") {
+		t.Errorf("cycle error should name the file: %v", err)
+	}
+}
+
+func TestInternalFunction(t *testing.T) {
+	root := functionTree(t, map[string]string{
+		fnPrefix + "send/function.yaml":     "internal: true\nmode: async\n",
+		fnPrefix + "send/index.js":          "export default () => 1;\n",
+		fnPrefix + "checkout/function.yaml": "invoke: \"user != nil\"\ncalls: [send]\n",
+		fnPrefix + "checkout/index.js":      "export default () => 1;\n",
+	})
+	reg, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fns := reg.Realms["shop"].Databases["app"].Functions.Functions
+	if !fns["send"].Internal || fns["checkout"].Internal {
+		t.Errorf("Internal: send=%v checkout=%v", fns["send"].Internal, fns["checkout"].Internal)
+	}
+	if !reflect.DeepEqual(fns["checkout"].Calls, []string{"send"}) {
+		t.Errorf("Calls = %v", fns["checkout"].Calls)
 	}
 }

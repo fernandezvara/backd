@@ -38,5 +38,7 @@ export type Context = {
   db(name: string): Database;
   /** Present for `admin: true` functions, and always for scheduled runs. */
   admin: { db(name: string): Database };
+  /** Calls a function of this database listed in `calls`: its output (sync) or a job handle (async). */
+  call(name: string, input?: unknown, options?: { idempotencyKey?: string }): Promise<any>;
   error(status: number, code: string, message: string): Error;
 };

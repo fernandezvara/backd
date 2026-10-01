@@ -705,6 +705,70 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/functions/{database}/{name}/invoke:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - name: name
+        in: path
+        required: true
+        description: The function's name.
+        schema: { type: string }
+    post:
+      tags: [admin]
+      summary: Run a function by hand
+      description: |
+        Runs any function of the database, internal or public, on purpose:
+        to re-run a clean-up that failed, or to test a scheduled function.
+        The function's `invoke` rule is not evaluated (the credential is an
+        admin one) and its `rate_limit` doesn't apply; its input schema and
+        `idempotency: required` do. With `as`, the function runs with that
+        user as `ctx.user` (their rules and ownership apply to `ctx.db`);
+        without it there is no user. Answers like `_func`: the output for a
+        `sync` function, `202` with a job for an `async` one. `webhook`
+        functions can't be run this way. Every run is audited as
+        `function.invoke_manual`, with the user's id, never their email.
+      operationId: adminInvokeFunction
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          description: >-
+            As on `_func`: 1-200 characters of letters, digits, `.`, `_`, `:` or `-`.
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                input: { description: "The function's input, any JSON value (default `null`)." }
+                as: { type: string, format: email, description: "Run as this user of the realm." }
+      responses:
+        "200":
+          description: A `sync` function's output, any JSON value.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema: {}
+        "202":
+          description: An `async` function was queued; poll `Location` for its result.
+          headers:
+            Location: { description: "`/v1/{realm}/{database}/_jobs/{id}`.", schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "4XX": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/invitations:
     parameters: [{ $ref: "#/components/parameters/realm" }]
     get:
@@ -811,6 +875,10 @@ paths:
         the function and the caller, so two different callers can never
         collide on the same client-chosen key. `function.yaml`'s
         `idempotency: required` refuses calls with no key (`400`).
+
+        A function with `internal: true` has no HTTP route: it answers
+        `404`, like a function that doesn't exist, to every caller,
+        whatever their credentials.
       operationId: callFunction
       security: [{}, { session: [] }, { apiKey: [] }]
       parameters:
@@ -853,6 +921,7 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
         "429":
           description: >-
             Either the function, or its realm, is at its concurrency
@@ -1408,7 +1477,7 @@ components:
         happened and its own console log lines (roadmap F10).
       type: object
       additionalProperties: false
-      required: [id, at, function, actor, mode, status, duration_ms, request_id, job_id, logs]
+      required: [id, at, function, actor, mode, status, duration_ms, request_id, job_id, parent_id, origin, logs]
       properties:
         id: { type: string }
         at: { $ref: "#/components/schemas/Timestamp" }
@@ -1423,6 +1492,8 @@ components:
         duration_ms: { type: integer }
         request_id: { type: [string, "null"] }
         job_id: { type: [string, "null"], description: "The async job this call ran for (roadmap F11); null for sync calls." }
+        parent_id: { type: [string, "null"], description: "The invocation that called this one with `ctx.call`; null otherwise." }
+        origin: { type: [string, "null"], description: "What started the call: `http`, `function` (`ctx.call`), `cron`, `admin`, or `backd:<event>`. Null for records made before origins were recorded." }
         logs:
           type: array
           description: "The function's captured console output, already masked of any declared secrets."

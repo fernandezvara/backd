@@ -108,6 +108,7 @@ type WebhookRequest struct {
 type Callback struct {
 	URL        string `json:"url"`
 	Realm      string `json:"realm"`
+	Database   string `json:"database,omitempty"` // the function's own database, for ctx.call
 	Token      string `json:"token,omitempty"`
 	AdminToken string `json:"admin_token,omitempty"`
 }

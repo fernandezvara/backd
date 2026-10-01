@@ -90,6 +90,20 @@ func newRulesFixture(t *testing.T) *rulesFixture {
 		fnDir + "capped/index.js":          "",
 		fnDir + "cappedip/function.yaml":   "invoke: \"true\"\nrate_limit:\n  per: ip\n  limit: 2\n  window: 1m\n",
 		fnDir + "cappedip/index.js":        "",
+		fnDir + "cleanup/function.yaml":    "internal: true\nmode: async\n",
+		fnDir + "cleanup/index.js":         "",
+		fnDir + "checkout/function.yaml":   "invoke: \"true\"\ncalls: [reserve, tally, echo, capped, admin]\n",
+		fnDir + "checkout/index.js":        "",
+		fnDir + "reserve/function.yaml":    "internal: true\ncalls: [leaf]\n",
+		fnDir + "reserve/index.js":         "",
+		fnDir + "leaf/function.yaml":       "internal: true\ncalls: [leaf2]\n",
+		fnDir + "leaf/index.js":            "",
+		fnDir + "leaf2/function.yaml":      "internal: true\n",
+		fnDir + "leaf2/index.js":           "",
+		fnDir + "leaf3/function.yaml":      "internal: true\n",
+		fnDir + "leaf3/index.js":           "",
+		fnDir + "tally/function.yaml":      "internal: true\nmode: async\n",
+		fnDir + "tally/index.js":           "",
 	} {
 		_ = os.MkdirAll(filepath.Dir(filepath.Join(root, p)), 0o755)
 		if err := os.WriteFile(filepath.Join(root, p), []byte(content), 0o644); err != nil {
@@ -127,6 +141,8 @@ func newRulesFixture(t *testing.T) *rulesFixture {
 		Log: slog.New(slog.NewJSONHandler(&buf, nil)), Registry: reg, Store: f.store,
 		Now:           func() time.Time { return *f.clock },
 		CallbackKey:   callbackKey,
+		CallbackURL:   "http://backd-internal:8081",
+		Functions:     runner,
 		ExecutorToken: executorToken,
 		Users: func(realm string) *auth.Users {
 			if realm == "acme" {

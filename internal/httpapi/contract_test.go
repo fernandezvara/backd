@@ -549,6 +549,34 @@ func TestContract(t *testing.T) {
 		return executor.Result{Status: executor.StatusFunctionError, FunctionError: &executor.FunctionError{Status: 409, Code: "out_of_stock", Message: "no stock"}}, nil
 	})
 	req("POST", fn+"echo", `{}`, ada, 409)
+	// Any other 4xx the function chooses (documented as 4XX).
+	f.runner.set(func(executor.InvokeRequest) (executor.Result, error) {
+		return executor.Result{Status: executor.StatusFunctionError, FunctionError: &executor.FunctionError{Status: 418, Code: "teapot", Message: "short and stout"}}, nil
+	})
+	req("POST", fn+"echo", `{}`, ada, 418)
+	// An internal function has no route.
+	req("POST", fn+"cleanup", `{}`, ada, 404)
+	// Running functions by hand (internal ones included).
+	run := ad + "/functions/app/"
+	f.runner.set(nil)
+	req("POST", run+"cleanup/invoke", `{"input": {"n": 1}}`, key, 202)
+	req("POST", run+"echo/invoke", `{"input": {"n": 1}, "as": "ada@example.com"}`, key, 200)
+	req("POST", run+"echo/invoke", `{"as": "nobody@example.com"}`, key, 404)
+	req("POST", run+"nothing_here/invoke", `{}`, key, 404)
+	req("POST", run+"hook/invoke", `{}`, key, 400)
+	req("POST", run+"typed/invoke", `{"input": {"n": "x"}}`, key, 400)
+	req("POST", run+"echo/invoke", `{}`, nil, 401)
+	req("POST", run+"echo/invoke", `{}`, with(ada, "Content-Type", "application/json"), 403)
+	if _, _, err := f.svc.Signup(context.Background(), "gone@example.com", "dev-p4ssw0rd!", ""); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.svc.SetDisabled(context.Background(), "gone@example.com", true)
+	req("POST", run+"echo/invoke", `{"as": "gone@example.com"}`, key, 409)
+	f.runner.set(func(executor.InvokeRequest) (executor.Result, error) {
+		return executor.Result{Status: executor.StatusFunctionError, FunctionError: &executor.FunctionError{Status: 418, Code: "teapot", Message: "short and stout"}}, nil
+	})
+	req("POST", run+"echo/invoke", `{}`, key, 418)
+	f.runner.set(nil)
 	f.runner.set(func(executor.InvokeRequest) (executor.Result, error) {
 		return executor.Result{Status: executor.StatusTimeout}, nil
 	})

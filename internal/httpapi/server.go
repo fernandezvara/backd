@@ -102,9 +102,9 @@ func NewHandler(cfg Config) http.Handler {
 	}
 	authRoutes := &authAPI{users: users, opTimeout: opTimeout}
 	authRoutes.routes(r)
-	(&adminAPI{users: users, reg: cfg.Registry}).routes(r, authRoutes.resolveRealm, withTimeout(opTimeout))
 	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users, callbackKey: cfg.CallbackKey}
-	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, executorToken: cfg.ExecutorToken, log: cfg.Log, dev: cfg.Dev, concurrency: newConcurrencyLimiter()}
+	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, executorToken: cfg.ExecutorToken, log: cfg.Log, dev: cfg.Dev, concurrency: limiterFor(cfg.Registry)}
+	(&adminAPI{users: users, reg: cfg.Registry, fns: fns}).routes(r, authRoutes.resolveRealm, withTimeout(opTimeout))
 	fns.routes(r)
 	docs.routes(r)
 	return r
@@ -140,8 +140,9 @@ func NewInternalHandler(cfg Config) http.Handler {
 	})
 	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users,
 		internal: true, callbackKey: cfg.CallbackKey}
-	fns := &functions{docs: docs, executorToken: cfg.ExecutorToken, log: cfg.Log, dev: cfg.Dev}
+	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, executorToken: cfg.ExecutorToken, log: cfg.Log, dev: cfg.Dev, concurrency: limiterFor(cfg.Registry)}
 	r.Get("/_internal/functions/{sha256}", fns.bundle)
+	fns.internalRoutes(r)
 	docs.routes(r)
 	return r
 }

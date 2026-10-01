@@ -28,24 +28,28 @@ type jobResultDoc struct {
 }
 
 type jobDoc struct {
-	ID            string        `bson:"_id"`
-	Database      string        `bson:"database"`
-	Function      string        `bson:"function"`
-	Input         any           `bson:"input"`
-	CallerActor   string        `bson:"caller_actor"`
-	CallerUserID  string        `bson:"caller_user_id,omitempty"`
-	CallerKeyHash string        `bson:"caller_key_hash,omitempty"`
-	Scheduled     bool          `bson:"scheduled,omitempty"`
-	Status        string        `bson:"status"`
-	Attempts      int32         `bson:"attempts"`
-	TimeoutMS     int64         `bson:"timeout_ms"`
-	RequestID     string        `bson:"request_id,omitempty"`
-	LeaseOwner    string        `bson:"lease_owner,omitempty"`
-	LeaseExpires  *time.Time    `bson:"lease_expires,omitempty"`
-	CreatedAt     time.Time     `bson:"created_at"`
-	CompletedAt   *time.Time    `bson:"completed_at,omitempty"`
-	ExpiresAt     time.Time     `bson:"expires_at"`
-	Result        *jobResultDoc `bson:"result,omitempty"`
+	ID             string        `bson:"_id"`
+	Database       string        `bson:"database"`
+	Function       string        `bson:"function"`
+	Input          any           `bson:"input"`
+	CallerActor    string        `bson:"caller_actor"`
+	CallerUserID   string        `bson:"caller_user_id,omitempty"`
+	CallerKeyHash  string        `bson:"caller_key_hash,omitempty"`
+	Scheduled      bool          `bson:"scheduled,omitempty"`
+	ActsAsFunction bool          `bson:"acts_as_function,omitempty"`
+	Origin         string        `bson:"origin,omitempty"`
+	ParentID       string        `bson:"parent_id,omitempty"`
+	Depth          int32         `bson:"depth,omitempty"`
+	Status         string        `bson:"status"`
+	Attempts       int32         `bson:"attempts"`
+	TimeoutMS      int64         `bson:"timeout_ms"`
+	RequestID      string        `bson:"request_id,omitempty"`
+	LeaseOwner     string        `bson:"lease_owner,omitempty"`
+	LeaseExpires   *time.Time    `bson:"lease_expires,omitempty"`
+	CreatedAt      time.Time     `bson:"created_at"`
+	CompletedAt    *time.Time    `bson:"completed_at,omitempty"`
+	ExpiresAt      time.Time     `bson:"expires_at"`
+	Result         *jobResultDoc `bson:"result,omitempty"`
 }
 
 func (s *AuthStore) jobs() *mongo.Collection { return s.db.Collection(JobsCollection) }
@@ -107,6 +111,7 @@ func jobFromDoc(d jobDoc) auth.Job {
 	j := auth.Job{
 		ID: d.ID, Database: d.Database, Function: d.Function, Input: encodeJSONAny(d.Input),
 		CallerActor: d.CallerActor, CallerUserID: d.CallerUserID, CallerKeyHash: d.CallerKeyHash, Scheduled: d.Scheduled,
+		ActsAsFunction: d.ActsAsFunction, Origin: d.Origin, ParentID: d.ParentID, Depth: int(d.Depth),
 		TimeoutMS: d.TimeoutMS, RequestID: d.RequestID,
 		Status: d.Status, Attempts: int(d.Attempts), CreatedAt: d.CreatedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC(),
 		Result: jobResultFromDoc(d.Result),
@@ -126,6 +131,7 @@ func (s *AuthStore) EnqueueJob(ctx context.Context, j auth.Job) error {
 	_, err = s.jobs().InsertOne(ctx, jobDoc{
 		ID: j.ID, Database: j.Database, Function: j.Function, Input: input,
 		CallerActor: j.CallerActor, CallerUserID: j.CallerUserID, CallerKeyHash: j.CallerKeyHash, Scheduled: j.Scheduled, Status: j.Status,
+		ActsAsFunction: j.ActsAsFunction, Origin: j.Origin, ParentID: j.ParentID, Depth: int32(j.Depth),
 		Attempts: 0, TimeoutMS: j.TimeoutMS, RequestID: j.RequestID,
 		CreatedAt: j.CreatedAt, ExpiresAt: j.ExpiresAt,
 	})

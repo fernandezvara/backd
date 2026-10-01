@@ -72,7 +72,7 @@ curl -X POST https://api.example.com/v1/workshop/main/_func/daily_digest \
 - **It acts as the function.** There is no caller: `ctx.input` is empty (`null`), `ctx.user` is `null`, `ctx.db` acts as an anonymous caller (which, subject to the rules, can do little), and **`ctx.admin.db` is always available**, with full access recorded as `func:<realm>/<database>/<name>`, whether or not `admin: true` is set. Review a scheduled function as if it declared `admin: true`. (A call made *by hand* needs `admin: true` to get `ctx.admin`, which is why `daily_digest` sets it.)
 - **It is an async function.** `mode: async`, so `timeout` runs up to 24 hours (15 minutes by default) and the [async limits](../jobs/#storage-and-retention) apply. `schedule` needs `auth: enabled`.
 - **Secrets and network work as usual**: declare what it needs.
-- **It can still be called by hand** through its `invoke` rule, like any async function; that run has a caller and its own input.
+- **It can still be called by hand** through its `invoke` rule, like any async function; that run has a caller and its own input. Administrators can also [run it by hand](../internal/#running-a-function-by-hand) as its schedule would run it.
 
 ## A worker must be running
 
@@ -141,6 +141,6 @@ if (stale || failed) alert(`nightly_cleanup: ${stale ? 'no recent run' : last.re
 
 ## Testing a schedule
 
-- **Call the function by hand** first: `backd functions invoke --function workshop/main/nightly_cleanup` (a call made by hand has a caller, so the function needs `admin: true` to get `ctx.admin`; it answers with a job to look at, as any async call does) exercises the code without waiting for the clock.
+- **Run the function by hand** first: `backd functions invoke --function workshop/main/nightly_cleanup`. `nightly_cleanup` is [internal](../internal/), so it has no HTTP route and `invoke` runs it through the admin API, as its schedule would run it (with `ctx.admin`; it answers with a job to look at, as any async call does). That exercises the code without waiting for the clock.
 - **Use a fast schedule locally**: `schedule: "* * * * *"` in the [local stack](../quickstart/) (its `backd` runs a worker) shows a run every minute; put the real schedule back before you commit.
 - **Unit-test the logic**: cron changes nothing about how the function's code is tested ([Build, dev and test](../testing/#unit-testing-a-functions-logic)).

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"strconv"
@@ -104,6 +105,25 @@ func functionsInvoke(c *cli.CommandContext) error {
 	start := time.Now()
 	var out json.RawMessage
 	hdr, callErr := t.callHeaders("POST", database+"/_func/"+name, nil, body, &out, reqHeaders)
+	// An internal function has no _func route (it answers like a missing
+	// one): an administrator runs it through the admin route instead.
+	var ae *apiError
+	if errors.As(callErr, &ae) && ae.Status == http.StatusNotFound && ae.Code == "not_found" {
+		adminBody := map[string]any{"input": body}
+		if body == nil {
+			adminBody["input"] = nil
+		}
+		if email := str(c, "as"); email != "" {
+			adminBody["as"] = email
+		}
+		var viaAdmin json.RawMessage
+		if h2, err := t.callHeaders("POST", "_admin/functions/"+database+"/"+name+"/invoke", nil, adminBody, &viaAdmin, nil); err == nil {
+			hdr, callErr, out = h2, nil, viaAdmin
+			fmt.Fprintln(stderr, "(run through the admin API: the function is internal)")
+		} else if errors.As(err, &ae) && ae.Status != http.StatusNotFound && ae.Status != http.StatusUnauthorized && ae.Status != http.StatusForbidden {
+			callErr = err // the function exists and failed: that error is the answer
+		}
+	}
 	elapsed := time.Since(start)
 
 	if hdr != nil {

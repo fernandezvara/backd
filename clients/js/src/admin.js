@@ -1,3 +1,5 @@
+import { Job } from './functions.js'
+
 /**
  * @typedef {import('./client.js').Client} Client
  * @typedef {import('./client.js').RequestOptions} RequestOptions
@@ -118,6 +120,31 @@ export class Admin {
     this.audit = new AdminAudit(this)
     /** The realm's async and scheduled jobs (read-only). */
     this.jobs = new AdminJobs(this)
+  }
+
+  /**
+   * Runs a function by hand, internal ones included: to re-run a clean-up
+   * that failed, or to test a scheduled function. `function` is
+   * `<database>/<name>`. With `as` (a user's email) the function runs with
+   * that user as `ctx.user`; without it there is no user. Returns the
+   * output of a `sync` function, and a `Job` handle for an `async` one,
+   * like `db.fn()`. The function's `invoke` rule and `rate_limit` don't
+   * apply; every run is audited.
+   * @param {string} fn
+   * @param {{ input?: unknown, as?: string, idempotencyKey?: string }} [params]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<unknown | Job>}
+   */
+  async invokeFunction(fn, { input, as, idempotencyKey } = {}, opts) {
+    const [database, name, ...rest] = fn.split('/')
+    if (!database || !name || rest.length > 0) throw new TypeError('invokeFunction: the function must be "<database>/<name>"')
+    /** @type {Record<string, unknown>} */
+    const body = { input: input === undefined ? null : input }
+    if (as !== undefined) body.as = as
+    const headers = idempotencyKey === undefined ? undefined : { 'Idempotency-Key': idempotencyKey }
+    const { status, data } = await this._request({ method: 'POST', path: ['functions', database, name, 'invoke'], body, headers, ...opts })
+    if (status === 202) return new Job(this.client, database, /** @type {import('./functions.js').JobData} */ (data))
+    return data
   }
 
   /**

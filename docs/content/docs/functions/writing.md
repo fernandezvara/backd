@@ -57,6 +57,7 @@ export default async function handler(ctx) {
   ctx.secrets.STRIPE_KEY // a declared secret (see Secrets)
   ctx.db("orders")     // the realm's data, as the caller (see below)
   ctx.admin.db("orders") // full access: admin: true, and always for scheduled runs
+  ctx.call("send-receipt", input) // another function of this database, listed in `calls` (see Internal functions)
   ctx.admin.db("orders").batch([...]) // several writes, atomically (see below)
   throw ctx.error(409, "out_of_stock", "Not enough stock", [{ path: "items[0]", reason: "sold out" }])
 }

@@ -192,6 +192,8 @@ const output = await job.wait({ pollIntervalMs: 500, timeoutMs: 30_000 })
 - With no `timeoutMs`, `wait` polls until the job finishes, however long that takes (up to the function's own `timeout`).
 - `job.raw` is the last `GET .../_jobs/{id}` response `status()`/`wait()` fetched, if you need fields beyond `id`, `function` and `status`.
 
+An administrator can also run a function by hand, internal ones included, with `backd.admin.invokeFunction('<database>/<name>', { input, as, idempotencyKey })` (see [Internal functions](../../functions/internal/#running-a-function-by-hand)); it returns the output or a `Job`, like `db.fn()`.
+
 An `Idempotency-Key` makes a retried call safe (see [Idempotency](../../functions/calling/#idempotency)):
 
 ```js
