@@ -56,7 +56,7 @@ See [Writing a function](../writing/), including the input and output schemas an
 ```sh
 curl -s $API/main/_func/refund -H "Authorization: Bearer $STAFF_TOKEN" -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: refund-d3c9ljp8hc2g00b6s1m0' -d '{"order_id": "d3c9ljp8hc2g00b6s1m0", "reason": "damaged"}'
-# → {"refund_id": "d3c9lq38hc2g00b6s1o0", "order_id": "d3c9ljp8hc2g00b6s1m0", "amount": 1000}
+# → {"refund_id": "d3c9lq38hc2g00b6s1o0", "order_id": "d3c9ljp8hc2g00b6s1m0", "amount": 1000, "receipt_job": "d3c9lq38hc2g00b6s1p0"}
 # the same request again → the same answer, and nothing is refunded twice
 # without an Idempotency-Key → 400 idempotency_key_required;  as a customer → 403;  an unpaid order → 409 not_refundable
 ```
@@ -85,7 +85,7 @@ More on [knowing when a job finished](../jobs/#knowing-when-a-job-finished) and 
 
 ## A nightly cleanup
 
-`nightly_cleanup` runs at 03:00 UTC and deletes draft orders nobody finished in 30 days, in batches of a hundred, using `ctx.admin.db` (a scheduled run has no caller). It only deletes what is already past the cutoff, so running twice is harmless.
+`nightly_cleanup` runs at 03:00 UTC and deletes draft orders nobody finished in 30 days, in batches of a hundred, using `ctx.admin.db` (a scheduled run has no caller). It is [internal](../internal/): nobody can call it over HTTP. It only deletes what is already past the cutoff, so running twice is harmless.
 
 {{< example-file path="workshop/main/_functions/nightly_cleanup/function.yaml" >}}
 

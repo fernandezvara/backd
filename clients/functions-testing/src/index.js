@@ -13,7 +13,7 @@
 // are not evaluated at all — ctx.db here is always full access, as if
 // admin: true — because the point is testing the function's own code, not
 // backd's rule engine (that's what the real integration tests are for).
-import { NotFoundError, VersionMismatchError } from '../../js/src/errors.js'
+import { BackdError, NotFoundError, VersionMismatchError } from '../../js/src/errors.js'
 
 let seq = 0
 /** Deterministic, distinct ids across a test run (resets with resetIds()). */
@@ -267,14 +267,34 @@ export class FunctionError extends Error {
  * @property {string} [requestId]
  * @property {MemoryStore} [store]      Shared across several createContext calls, to seed data ctx.db reads.
  * @property {boolean} [admin]          Also give ctx.admin.db (function.yaml's admin: true).
+ * @property {string[]} [calls]         function.yaml's `calls`: ctx.call refuses any other name with `call_not_declared`, as backd does.
  */
+
+/**
+ * What a faked async callee returns, like the job handle `ctx.call` gives:
+ * `await job.wait()` is the output, `job.status()` is `done`.
+ * @param {{ id?: string, output?: unknown }} [opts]
+ */
+export function fakeJob({ id = 'job-test', output = null } = {}) {
+  return { id, status: async () => 'done', wait: async () => output }
+}
+
+/**
+ * The error a callee that ran out of time makes `ctx.call` throw: fake it
+ * with `fakeCall(name, () => { throw callTimedOut() })`.
+ */
+export function callTimedOut() {
+  return new BackdError({ status: 504, code: 'function_timeout', message: "the function didn't finish in time" })
+}
 
 /**
  * Builds a fake ctx for one call to a function's handler, backed by an
  * in-memory store (a fresh one per call unless `store` is given, so
- * several calls in one test can share state).
+ * several calls in one test can share state). Also returns `fakeCall` to
+ * fake what `ctx.call(name, ...)` answers, and `calls` to list what the
+ * function called.
  * @param {ContextOptions} [opts]
- * @returns {{ ctx: object, store: MemoryStore }}
+ * @returns {{ ctx: any, store: MemoryStore, fakeCall: (name: string, handler: (input: any, options: any) => any) => void, calls: (name: string) => Array<{ input: any, options: any }> }}
  */
 export function createContext(opts = {}) {
   const store = opts.store ?? new MemoryStore()
@@ -296,5 +316,27 @@ export function createContext(opts = {}) {
   if (opts.admin) {
     ctx.admin = Object.freeze({ db: (name) => new FakeDatabase(store, name, 'func:test') })
   }
-  return { ctx: Object.freeze(ctx), store }
+
+  // ctx.call: only what the test fakes, and only what `calls` declares.
+  /** @type {Map<string, (input: any, options: any) => any>} */
+  const fakes = new Map()
+  /** @type {Array<{ name: string, input: any, options: any }>} */
+  const recorded = []
+  ctx.call = async (name, input = null, options = {}) => {
+    if (opts.calls && !opts.calls.includes(name)) {
+      throw new FunctionError(403, 'call_not_declared', `this function didn't declare ${name} in its \`calls\``)
+    }
+    const handler = fakes.get(name)
+    if (!handler) {
+      throw new Error(`@backd/functions-testing: ctx.call(${JSON.stringify(name)}) isn't faked: use fakeCall(${JSON.stringify(name)}, handler)`)
+    }
+    recorded.push({ name, input, options })
+    return await handler(input, options)
+  }
+  return {
+    ctx: Object.freeze(ctx),
+    store,
+    fakeCall: (name, handler) => void fakes.set(name, handler),
+    calls: (name) => recorded.filter((c) => c.name === name).map(({ input, options }) => ({ input, options })),
+  }
 }

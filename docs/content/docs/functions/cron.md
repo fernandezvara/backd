@@ -141,6 +141,6 @@ if (stale || failed) alert(`nightly_cleanup: ${stale ? 'no recent run' : last.re
 
 ## Testing a schedule
 
-- **Call the function by hand** first: `backd functions invoke --function workshop/main/nightly_cleanup` (a call made by hand has a caller, so the function needs `admin: true` to get `ctx.admin`; it answers with a job to look at, as any async call does) exercises the code without waiting for the clock.
+- **Run the function by hand** first: `backd functions invoke --function workshop/main/nightly_cleanup`. `nightly_cleanup` is [internal](../internal/), so it has no HTTP route and `invoke` runs it through the admin API, as its schedule would run it (with `ctx.admin`; it answers with a job to look at, as any async call does). That exercises the code without waiting for the clock.
 - **Use a fast schedule locally**: `schedule: "* * * * *"` in the [local stack](../quickstart/) (its `backd` runs a worker) shows a run every minute; put the real schedule back before you commit.
 - **Unit-test the logic**: cron changes nothing about how the function's code is tested ([Build, dev and test](../testing/#unit-testing-a-functions-logic)).

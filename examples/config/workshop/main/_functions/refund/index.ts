@@ -1,6 +1,7 @@
 // refund: mark a paid order refunded and record the refund, in one
 // transaction. `ifMatch` makes the order's patch fail if anyone changed the
 // order since we read it, which aborts the whole batch: nothing is written.
+// Afterwards it asks the internal refund_receipt function to write the receipt.
 import { relay } from "../lib/relay.ts";
 import type { Context, Doc } from "../lib/types.ts";
 
@@ -32,5 +33,10 @@ export default async function handler(ctx: Context) {
     relay(err, ctx.error);
   }
   console.log(`refunded order ${order_id}`);
-  return { refund_id: refund.id, order_id, amount: order.amount };
+
+  // The receipt is written by an internal function, as a job: the refund is
+  // already done, so a slow or failing receipt never undoes it. The key makes
+  // a retried refund queue the same job instead of a second one.
+  const job = await ctx.call("refund_receipt", { refund_id: refund.id, order_id, amount: order.amount }, { idempotencyKey: `receipt-${refund.id}` });
+  return { refund_id: refund.id, order_id, amount: order.amount, receipt_job: job.id };
 }

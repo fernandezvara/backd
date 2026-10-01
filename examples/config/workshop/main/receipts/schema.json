@@ -1,0 +1,11 @@
+{
+  "$comment": "Written only by the internal refund_receipt function, which refund calls after a refund. The unique index on refund_id makes a retried job harmless.",
+  "type": "object",
+  "properties": {
+    "refund_id": { "type": "string", "minLength": 1 },
+    "order_id":  { "type": "string", "minLength": 1 },
+    "text":      { "type": "string", "maxLength": 500 }
+  },
+  "required": ["refund_id", "order_id", "text"],
+  "additionalProperties": false
+}

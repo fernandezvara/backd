@@ -1,4 +1,4 @@
-import { createContext, MemoryStore, resetIds } from './index.js'
+import { callTimedOut, createContext, fakeJob, FunctionError, MemoryStore, resetIds } from './index.js'
 import { NotFoundError, VersionMismatchError } from '../../js/src/errors.js'
 
 // No test-framework dependency, matching the JS client's "no runtime
@@ -139,4 +139,43 @@ Deno.test('a shared MemoryStore lets several createContext calls see the same da
   const { ctx: ctx2 } = createContext({ store })
   await ctx2.db('shop').collection('orders').create({ item: 'from ctx2' })
   assertEquals(store.all('shop', 'orders').length, 2)
+})
+
+Deno.test('ctx.call: faked callees, recorded calls, errors and timeouts', async () => {
+  const { ctx, fakeCall, calls } = createContext({ calls: ['send-receipt', 'reserve', 'report', 'slow'] })
+  fakeCall('send-receipt', async (input) => ({ sent: true, to: input.to }))
+  fakeCall('reserve', () => {
+    throw ctx.error(409, 'out_of_stock', 'No stock')
+  })
+  fakeCall('report', () => fakeJob({ id: 'j1', output: { rows: 3 } }))
+  fakeCall('slow', () => {
+    throw callTimedOut()
+  })
+
+  assertEquals(await ctx.call('send-receipt', { to: 'ana@example.com' }, { idempotencyKey: 'k1' }), { sent: true, to: 'ana@example.com' })
+  assertEquals(calls('send-receipt'), [{ input: { to: 'ana@example.com' }, options: { idempotencyKey: 'k1' } }])
+  assertEquals(calls('reserve'), [])
+
+  const e = await assertRejects(() => ctx.call('reserve', {}), FunctionError)
+  assertEquals([e.status, e.code], [409, 'out_of_stock'])
+
+  const job = await ctx.call('report', {})
+  assertEquals(job.id, 'j1')
+  assertEquals(await job.wait(), { rows: 3 })
+
+  const t = await assertRejects(() => ctx.call('slow', {}))
+  assertEquals([t.status, t.code], [504, 'function_timeout'])
+})
+
+Deno.test('ctx.call refuses undeclared and unfaked functions', async () => {
+  const { ctx, fakeCall } = createContext({ calls: ['reserve', 'unfaked'] })
+  fakeCall('other', () => 1)
+  const e = await assertRejects(() => ctx.call('other', {}), FunctionError)
+  assertEquals([e.status, e.code], [403, 'call_not_declared'])
+  const u = await assertRejects(() => ctx.call('unfaked', {}))
+  assert(String(u.message).includes('isn\'t faked'), u.message)
+  // Without `calls`, any faked name works.
+  const free = createContext()
+  free.fakeCall('anything', () => 'ok')
+  assertEquals(await free.ctx.call('anything'), 'ok')
 })

@@ -32,6 +32,18 @@ calls: [reserve-stock, send-receipt]
 
 At startup `backd` rejects a name that isn't a function of the same database, a function that calls itself, a cycle (`a -> b -> a`) and a chain longer than 4 functions, naming the file and the cycle.
 
+## Example: a receipt after a refund
+
+The workshop's `refund` function is public (for staff) and does the privileged part: it marks the order refunded and records the refund in one transaction. Writing the receipt is a separate step that must never undo the refund, so `refund` hands it to an internal function and doesn't wait:
+
+{{< example-file path="workshop/main/_functions/refund/function.yaml" >}}
+
+{{< example-file path="workshop/main/_functions/refund_receipt/function.yaml" >}}
+
+{{< example-file path="workshop/main/_functions/refund_receipt/index.ts" >}}
+
+`refund` calls it with `ctx.call("refund_receipt", input, { idempotencyKey })`, keyed by the refund's id, and returns the job's id (`receipt_job`). `refund_receipt` is `async`, so it runs on a worker, at least once: the unique index on `receipts.refund_id` makes a repeated run harmless. It declares its own `admin: true`, because `refund`'s admin access is not passed down to what it calls. Nobody can call it over HTTP: `_func/refund_receipt` answers `404` to everyone.
+
 ## Calling another function
 
 ```js
