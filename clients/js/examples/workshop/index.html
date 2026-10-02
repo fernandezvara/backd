@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>backd workshop tour</title>
+  <link rel="stylesheet" href="../blog/style.css">
+  <link rel="stylesheet" href="style.css">
+  <!-- Resolves `import … from '@backd/client'`, as a bundler would; nginx
+       serves clients/js/src at /example/client/. -->
+  <script type="importmap">{ "imports": { "@backd/client": "/example/client/index.js" } }</script>
+  <!-- The app registers its component on alpine:init, so it loads before Alpine. -->
+  <script type="module" src="app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.17.4/dist/cdn.min.js"></script>
+</head>
+<body>
+  <div class="tour" x-data="tour" x-cloak>
+    <main>
+      <header>
+        <h1>backd workshop tour</h1>
+        <p class="muted"><a href="/docs/functions/cookbook/">Cookbook</a> · <a href="../mailbox/">Mailbox</a> · <a href="../">Examples</a></p>
+      </header>
+
+      <p class="muted">
+        A guided walk through the functions of the <code>workshop</code> realm. Every call this page makes
+        appears in the inspector: the request, the answer, the function's own log lines and a <code>curl</code>
+        command that repeats it.
+      </p>
+
+      <p class="error" x-show="error" x-text="error" role="alert"></p>
+
+      <section class="card" aria-labelledby="who">
+        <h2 id="who">Who are you?</h2>
+        <p class="muted">
+          Demo accounts, created the first time you use them (password <code>dev-p4ssw0rd!</code>).
+          Staff and operator get their roles from the realm's configuration.
+        </p>
+        <div class="accounts">
+          <template x-for="a in accounts" :key="a.key">
+            <button type="button" class="account" :aria-pressed="account && account.key === a.key"
+              :disabled="busy" @click="signInAs(a)">
+              <strong x-text="a.name"></strong>
+              <small x-text="a.role"></small>
+            </button>
+          </template>
+        </div>
+        <p x-show="user" class="who">
+          Signed in as <code x-text="user && user.email"></code>
+          with roles <code x-text="user && (user.roles.length ? user.roles.join(', ') : 'none')"></code>.
+          <button type="button" class="link" @click="whoAmI" :disabled="busy">Who am I? (a call)</button>
+          <button type="button" class="link" @click="signOut" :disabled="busy">Sign out</button>
+        </p>
+        <p x-show="!user" class="muted">Not signed in.</p>
+      </section>
+
+      <section class="card" aria-labelledby="on-the-tour">
+        <h2 id="on-the-tour">On the tour</h2>
+        <ol class="outline">
+          <template x-for="s in tour" :key="s.n">
+            <li><strong x-text="s.title"></strong> <code x-text="s.fn"></code> <small class="muted" x-text="s.kind"></small></li>
+          </template>
+        </ol>
+      </section>
+    </main>
+
+    <aside class="inspector" aria-labelledby="inspector-title">
+      <header>
+        <h2 id="inspector-title">Inspector</h2>
+        <button type="button" class="link" @click="clearInspector" x-show="entries.length">Clear</button>
+      </header>
+      <p class="muted" x-show="!entries.length">
+        Nothing yet. Sign in as a demo account and watch the calls appear here.
+      </p>
+      <ol class="entries">
+        <template x-for="(e, i) in entries" :key="e.id">
+          <li>
+            <p class="step muted" x-show="e.step && (i === 0 || entries[i - 1].step !== e.step)" x-text="e.step"></p>
+            <button type="button" class="entry" :aria-expanded="open === e.id" @click="toggle(e)">
+              <span class="method" x-text="e.method"></span>
+              <span class="path" x-text="e.path"></span>
+              <span class="status" :class="statusClass(e)" x-text="badge(e)"></span>
+              <span class="ms muted" x-text="e.ms === null ? '' : e.ms + ' ms'"></span>
+            </button>
+            <div class="details" x-show="open === e.id">
+              <p class="muted" x-show="e.requestId">Request id <code x-text="e.requestId"></code></p>
+              <template x-if="e.request">
+                <div><h3>Request</h3><pre x-text="e.request"></pre></div>
+              </template>
+              <template x-if="e.response">
+                <div><h3>Answer</h3><pre x-text="e.response"></pre></div>
+              </template>
+              <p class="error" x-show="e.error" x-text="e.error"></p>
+              <template x-if="e.logs.length">
+                <div>
+                  <h3>The function's log <small class="muted" x-show="e.executorMs">(ran in <span x-text="e.executorMs"></span> ms)</small></h3>
+                  <pre><template x-for="l in e.logs"><span x-text="'[' + l.level + '] ' + l.line + '\n'"></span></template></pre>
+                </div>
+              </template>
+              <button type="button" class="link" @click="copyCurl(e)" x-text="copied === e.id ? 'Copied' : 'Copy as curl'"></button>
+            </div>
+          </li>
+        </template>
+      </ol>
+    </aside>
+  </div>
+</body>
+</html>
