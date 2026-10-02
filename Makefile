@@ -1,6 +1,6 @@
 COMPOSE_TEST = docker compose -f docker-compose.test.yml
 
-.PHONY: build test test-local vet lint-api js-test js-integration functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions release-check
+.PHONY: build test test-local vet lint-api js-test js-integration functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour release-check
 
 build:
 	go build -o bin/backd ./cmd/backd
@@ -67,6 +67,13 @@ hack-expenses:
 # closed (hole 5 stays open; nothing here changes it).
 hack-expenses-functions:
 	NODE_EXTRA_CA_CERTS=docker/certs/ca.crt node clients/js/examples/expenses-with-functions/hack.js
+
+# Walks the workshop tour (clients/js/examples/workshop) without a browser on
+# the running local stack (make example) and checks what each step says: the
+# server's tax, a signed webhook, the idempotent refund and its receipt, the
+# async report, and what an operator can see and do.
+workshop-tour:
+	NODE_EXTRA_CA_CERTS=docker/certs/ca.crt node clients/js/examples/workshop/tour.js
 
 # Checks the release configuration and builds every release artifact into
 # dist/, without publishing (the release workflow runs on version tags).
