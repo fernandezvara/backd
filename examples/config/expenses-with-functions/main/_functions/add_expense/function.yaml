@@ -4,4 +4,4 @@
 # rule can't do (a rule only ever sees the document being written).
 mode: sync
 timeout: 10s
-invoke: "user != nil"
+invoke: "user != nil && user.email_verified"

@@ -1,15 +1,15 @@
 # Members see and edit their groups; only the creator deletes one.
-read: user != nil && user.email in document.members
+read: user != nil && user.email_verified && user.email in document.members
 
 # The creator must be a member of the group they create.
-create: user != nil && user.email in data.members
+create: user != nil && user.email_verified && user.email in data.members
 
 # Members invite (add emails) and remove others, but can't remove
 # themselves, and the currency is fixed: amounts are stored in it.
 update: >
-  user != nil
+  user != nil && user.email_verified
   && user.email in document.members
   && user.email in data.members
   && !('currency' in changed())
 
-delete: user != nil && document._meta.owner == user.id
+delete: user != nil && user.email_verified && document._meta.owner == user.id

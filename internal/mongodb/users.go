@@ -184,6 +184,24 @@ func (s *AuthStore) UpdateUser(ctx context.Context, id string, upd auth.UserUpda
 	return s.updateByID(ctx, id, update)
 }
 
+// ListUnverifiedUsers returns the oldest users that never verified their address.
+func (s *AuthStore) ListUnverifiedUsers(ctx context.Context, before time.Time, limit int) ([]auth.User, error) {
+	cur, err := s.users().Find(ctx, bson.D{{Key: "email_verified", Value: false}, {Key: "created_at", Value: bson.D{{Key: "$lt", Value: before}}}},
+		options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}}).SetLimit(int64(limit)))
+	if err != nil {
+		return nil, err
+	}
+	var docs []userDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	out := make([]auth.User, len(docs))
+	for i, d := range docs {
+		out[i] = d.user()
+	}
+	return out, nil
+}
+
 // DeleteUser removes sessions and identities first, so an interrupted
 // delete never leaves credentials without their user.
 func (s *AuthStore) DeleteUser(ctx context.Context, id string) error {

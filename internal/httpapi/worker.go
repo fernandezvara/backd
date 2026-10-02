@@ -30,6 +30,7 @@ type Worker struct {
 	log      *slog.Logger
 
 	lastScheduled map[string]time.Time // only touched by the schedule loop
+	lastPurge     map[string]time.Time // realm → last purge of unverified accounts; same
 }
 
 // NewWorker builds a worker from the same Config NewHandler uses. id
@@ -50,7 +51,7 @@ func NewWorker(cfg Config, id string) *Worker {
 	}
 	docs := &documents{reg: cfg.Registry, now: now, users: users, callbackKey: cfg.CallbackKey}
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, log: log}
-	return &Worker{id: id, fns: fns, reg: cfg.Registry, backdURL: cfg.BackdURL, log: log, lastScheduled: map[string]time.Time{}}
+	return &Worker{id: id, fns: fns, reg: cfg.Registry, backdURL: cfg.BackdURL, log: log, lastScheduled: map[string]time.Time{}, lastPurge: map[string]time.Time{}}
 }
 
 // Run claims and runs jobs until ctx is done, with concurrency
@@ -86,10 +87,34 @@ const (
 func (w *Worker) scheduleLoop(ctx context.Context) {
 	for {
 		w.EnqueueDue(ctx)
+		w.PurgeDue(ctx)
 		select {
 		case <-ctx.Done():
 			return
 		case <-time.After(scheduleInterval):
+		}
+	}
+}
+
+// purgeInterval is how often a worker looks for unverified accounts to purge.
+const purgeInterval = 10 * time.Minute
+
+// PurgeDue deletes the accounts that never verified their address in the
+// realms that ask for it (account.purge_unverified_after). Running it in
+// every worker is harmless: deleting an account twice is not an error.
+func (w *Worker) PurgeDue(ctx context.Context) {
+	now := w.fns.docs.now()
+	for realm, rl := range w.reg.Realms {
+		if rl.Settings.Account.PurgeUnverifiedAfter <= 0 || now.Sub(w.lastPurge[realm]) < purgeInterval {
+			continue
+		}
+		svc := w.fns.docs.users(realm)
+		if svc == nil {
+			continue
+		}
+		w.lastPurge[realm] = now
+		if _, err := svc.PurgeUnverified(auth.WithAuditSource(ctx, func() auth.AuditSource { return auth.AuditSource{Actor: auth.ActorSystem} })); err != nil {
+			w.log.Error("purge unverified accounts", "realm", realm, "error", err)
 		}
 	}
 }

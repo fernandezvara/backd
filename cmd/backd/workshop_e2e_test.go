@@ -294,14 +294,25 @@ func TestWorkshopExample(t *testing.T) {
 	}
 	for w.RunOnce(ctx) {
 	}
-	if j := expect(200, "GET", base+"/_admin/jobs?function=notifications/email-capture", adminKey, ""); len(j["items"].([]any)) != 1 || j["items"].([]any)[0].(map[string]any)["status"] != "done" {
-		t.Fatalf("email job: %v", j)
+	// Each sign-up of this test already asked for a verification email; ours is one more.
+	var mailJobDone bool
+	for _, it := range expect(200, "GET", base+"/_admin/jobs?function=notifications/email-capture", adminKey, "")["items"].([]any) {
+		if j := it.(map[string]any); j["id"] == mailJob.ID {
+			mailJobDone = j["status"] == "done"
+		}
 	}
-	outbox := expect(200, "GET", base+"/notifications/outbox", "", "")["items"].([]any)
-	if len(outbox) != 1 {
-		t.Fatalf("outbox: %v", outbox)
+	if !mailJobDone {
+		t.Fatalf("email job %s didn't finish", mailJob.ID)
 	}
-	mail := outbox[0].(map[string]any)
+	var mail map[string]any
+	for _, it := range expect(200, "GET", base+"/notifications/outbox", "", "")["items"].([]any) {
+		if m := it.(map[string]any); m["email_id"] == mailJob.ID {
+			mail = m
+		}
+	}
+	if mail == nil {
+		t.Fatal("the email isn't in the outbox")
+	}
 	link, _ := mail["link"].(string)
 	if mail["email_id"] != mailJob.ID || mail["kind"] != "verify-email" || mail["subject"] != "Confirm your email address for "+realm || !strings.HasPrefix(link, "https://workshop.test/v1/"+realm+"/_auth/verify-email?token=") ||
 		!strings.Contains(mail["text"].(string), link) || !strings.Contains(mail["html"].(string), `href="`+link+`"`) || mail["to"].([]any)[0] != "ada@example.com" {
@@ -322,9 +333,15 @@ func TestWorkshopExample(t *testing.T) {
 			t.Errorf("%s contains the token", path)
 		}
 	}
-	if inv := expect(200, "GET", base+"/_admin/invocations?function=notifications/email-capture", adminKey, "")["items"].([]any); len(inv) != 1 ||
-		inv[0].(map[string]any)["origin"] != "backd:email.verify-email" || !strings.Contains(fmt.Sprint(inv[0].(map[string]any)["logs"]), "captured verify-email email for ada@example.com") {
-		t.Errorf("email invocation: %v", inv)
+	var ours map[string]any
+	inv := expect(200, "GET", base+"/_admin/invocations?function=notifications/email-capture", adminKey, "")["items"].([]any)
+	for _, it := range inv {
+		if m := it.(map[string]any); m["job_id"] == mailJob.ID {
+			ours = m
+		}
+	}
+	if len(inv) != 3 || ours == nil || ours["origin"] != "backd:email.verify-email" || !strings.Contains(fmt.Sprint(ours["logs"]), "captured verify-email email for ada@example.com") {
+		t.Errorf("email invocations (the three sign-ups' and ours): %v", inv)
 	}
 
 	// cron. A draft nobody finished for 45 days (backdated in MongoDB) and

@@ -44,7 +44,7 @@ func TestCreateUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if u.Email != "ada@example.com" || u.ID == "" || u.EmailVerified || u.Disabled || u.Roles == nil || !u.CreatedAt.Equal(clock) {
+	if u.Email != "ada@example.com" || u.ID == "" || !u.EmailVerified || u.Disabled || u.Roles == nil || !u.CreatedAt.Equal(clock) {
 		t.Errorf("user = %+v", u)
 	}
 	id, err := store.Identity(ctx, ProviderPassword, u.ID)

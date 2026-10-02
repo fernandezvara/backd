@@ -70,6 +70,7 @@ await backd.auth.deleteAccount({ password }) // documents the user owns are kept
 
 - `signup` and `login` store the session token; every later request sends it as `Authorization: Bearer …`.
 - In realms with `signup: invite`, pass the invitation: `signup({ email, password, invitation })`.
+- In a realm that [requires verified addresses](../../auth/sessions/#email-verification), `signup` creates the account and then rejects with a `VerificationRequiredError`: there is no session yet, and the user logs in after following the link in the email. A `login` before that rejects with a `ForbiddenError` whose `code` is `email_not_verified`. `redirectTo` names where the page after the link may send the user (it must be within the realm's `email.allowed_redirects`).
 - `logout` always removes the stored token, even if the server can't be reached or already forgot the session.
 
 The endpoints behind these calls, and their rules, are described in [Sign-up, login and sessions](../../auth/sessions/).

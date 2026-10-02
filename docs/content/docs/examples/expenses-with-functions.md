@@ -6,7 +6,7 @@ weight: 730
 toc: true
 ---
 
-The same group-expenses tracker as [expenses without functions](../expenses/), with the same layout, the same data model's spirit, and the same rules where nothing needed to change — but holes 1 through 4 are closed, by five small [functions](../../functions/) instead of client-trusted copies. Hole 5 (email verification) is still open: nothing here changes it, since email verification itself doesn't exist yet.
+The same group-expenses tracker as [expenses without functions](../expenses/), with the same layout, the same data model's spirit, and the same rules where nothing needed to change — but holes 1 through 4 are closed, by five small [functions](../../functions/) instead of client-trusted copies. Hole 5 (signing up with someone else's email) is closed too, but by [email verification](../../auth/sessions/#email-verification), not by functions: the realm requires a verified address, and rules and functions check `user.email_verified`.
 
 Read [expenses without functions](../expenses/) first if you haven't: this page assumes you know the five holes it documents, and spends its time on what's different here and why.
 
@@ -24,7 +24,7 @@ Open <https://localhost:8443/example/expenses-with-functions/>. It looks and wor
 make hack-expenses-functions
 ```
 
-Runs the same kind of attacks as [`make hack-expenses`](../expenses/#try-the-attacks) does against the other example, against this one — and where that script reports holes 1-4 as open, this one reports them **closed**, with real calls, not just by reading the functions' source.
+Runs the same kind of attacks as [`make hack-expenses`](../expenses/#try-the-attacks) does against the other example, against this one — and where that script reports holes 1-4 as open, this one reports them **closed** (and hole 5 too), with real calls, not just by reading the functions' source.
 
 ## What changed
 
@@ -63,7 +63,7 @@ One visible consequence: editing or deleting *someone else's* entry now answers 
 
 ## Known holes
 
-Hole 5 is the only one left, unchanged from [expenses without functions](../expenses/#known-holes): email verification doesn't exist yet, so whoever signs up with an invited email first gets the group. Nothing about functions can fix this — it needs email verification itself, still planned.
+No holes are left. Hole 5, unchanged from [expenses without functions](../expenses/#known-holes), is closed by email verification rather than functions: the realm sets `account.require_verified_email`, so whoever signs up with an invited email without access to its mailbox never gets a session, and the rules and every function's `invoke` also check `user.email_verified`.
 
 ## Best practices
 

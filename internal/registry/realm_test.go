@@ -22,6 +22,7 @@ func TestRealmSettingsDefaults(t *testing.T) {
 			Roles:             map[string]Role{},
 			UserNetworks:      map[string]UserNetworks{},
 			AuditRetention:    365 * 24 * time.Hour,
+			Account:           AccountSettings{VerifyEmailTTL: DefaultVerifyEmailTTL},
 		}
 		if !reflect.DeepEqual(s, want) {
 			t.Errorf("%q: got %+v, want %+v", content, s, want)
@@ -65,6 +66,7 @@ roles:
 		},
 		UserNetworks:   map[string]UserNetworks{},
 		AuditRetention: 30 * 24 * time.Hour,
+		Account:        AccountSettings{VerifyEmailTTL: DefaultVerifyEmailTTL},
 	}
 	if !reflect.DeepEqual(s, want) {
 		t.Errorf("got %+v\nwant %+v", s, want)

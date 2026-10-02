@@ -60,7 +60,7 @@ A user looks like this:
 {
   "id": "dars2ql90v600434mf0g",
   "email": "ada@example.com",
-  "email_verified": false,
+  "email_verified": true,
   "roles": ["editor"],
   "locale": "en",
   "disabled": false,
@@ -77,7 +77,7 @@ A user looks like this:
 
 ### Behavior
 
-- **Create:** the email must be valid and not registered (`409 email_taken`). Without `password`, the user can't sign in with a password until one is set. Roles seeded in `realm.yaml` for that email are applied.
+- **Create:** the email must be valid and not registered (`409 email_taken`). The user starts with a verified address: an administrator vouches for it. Without `password`, the user can't sign in with a password until one is set. Roles seeded in `realm.yaml` for that email are applied.
 - **Update:** only `email_verified` and `disabled` can change. Disabling a user ends all their sessions and blocks login. Sending `email` answers `400`: emails can't be changed through `backd`.
 - **Password:** must follow the realm's [password policy](../users/#password-policy); all of the user's sessions end.
 - **Roles:** only roles declared in `realm.yaml` (`400` otherwise). Like `backd user add-role`, assignments that `realm.yaml` doesn't list live only in the database, and removing a seeded one only lasts until the next startup.

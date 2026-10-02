@@ -8,7 +8,7 @@
 # through the read rule to evaluate them against, the same as any other
 # collection, so a read rule of `false` here would have refused those too,
 # not just direct reads.
-read: user != nil && document._meta.owner == user.id
+read: user != nil && user.email_verified && document._meta.owner == user.id
 
 # Defense in depth: repeats what a rule *can* check on its own, even
 # though add_expense/request_settlement already checked it before ever
@@ -16,7 +16,7 @@ read: user != nil && document._meta.owner == user.id
 # split_between are real, current members of that group — is the
 # function's job (hole 1).
 create: >
-  user != nil
+  user != nil && user.email_verified
   && data.paid_by == user.email
   && (data.kind == 'expense'
       || (len(data.split_between) == 1 && !(user.email in data.split_between) && data.status == 'pending'))
@@ -27,10 +27,10 @@ create: >
 # ctx.admin.db, because it's the *receiver*, not the writer, who confirms
 # (hole 3).
 update: >
-  user != nil
+  user != nil && user.email_verified
   && document._meta.owner == user.id
   && !('group_id' in changed())
   && !('kind' in changed())
   && !('status' in changed())
 
-delete: user != nil && document._meta.owner == user.id
+delete: user != nil && user.email_verified && document._meta.owner == user.id

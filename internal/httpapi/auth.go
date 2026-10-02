@@ -35,6 +35,7 @@ func (a *authAPI) routes(r chi.Router) {
 		json := requireContentType("application/json")
 		r.With(json).Post("/signup", a.signup)
 		r.With(json).Post("/login", a.login)
+		r.With(json).Post("/verify-email/resend", a.resendVerification)
 		a.hostedRoutes(r)
 		r.Group(func(r chi.Router) {
 			r.Use(a.requireSession)
@@ -111,23 +112,36 @@ func (a *authAPI) signup(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"email": "string", "password": "string", "invitation": "string?", "locale": "string?"})
+	f, ok := fields(w, r, obj, map[string]string{"email": "string", "password": "string", "invitation": "string?", "locale": "string?", "redirect_to": "string?"})
 	if !ok {
 		return
 	}
 	email, password := f["email"].(string), f["password"].(string)
 	invitation, _ := f["invitation"].(string)
 	requested, _ := f["locale"].(string)
+	redirectTo, _ := f["redirect_to"].(string)
+	if !a.checkRedirect(w, r, redirectTo) {
+		return
+	}
 	if _, err := registry.NormalizeEmail(email); err != nil {
 		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid sign-up request", Detail{Path: "email", Reason: "must be a valid email address"})
 		return
 	}
 	// The language asked for in the request comes first, then the browser's.
-	p, token, err := usersOf(r).Signup(r.Context(), email, password, invitation, append([]string{requested}, acceptLanguages(r.Header.Get("Accept-Language"))...)...)
+	res, err := usersOf(r).SignUp(r.Context(), auth.SignupRequest{
+		Email: email, Password: password, Invitation: invitation, RedirectTo: redirectTo, ClientIP: clientIP(r), RequestID: requestID(r.Context()),
+		Locales: append([]string{requested}, acceptLanguages(r.Header.Get("Accept-Language"))...),
+	})
 	if err != nil {
 		authError(w, r, err, "password")
 		return
 	}
+	if res.Pending {
+		// No session until the address is verified.
+		writeJSON(w, http.StatusAccepted, map[string]any{"status": "verification_required"})
+		return
+	}
+	p, token := res.Principal, res.Token
 	setActor(r.Context(), "user:"+p.User.ID)
 	writeJSON(w, http.StatusCreated, sessionJSON(p, token, usersOf(r).LocaleOf(p.User)))
 }
@@ -330,6 +344,8 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 		writeError(w, r, http.StatusTooManyRequests, codeTooManyRequests, "too many failed attempts; retry later")
 	case errors.Is(err, auth.ErrInvalidCredentials):
 		writeError(w, r, http.StatusUnauthorized, codeInvalidCreds, err.Error())
+	case errors.Is(err, auth.ErrEmailNotVerified):
+		writeError(w, r, http.StatusForbidden, codeEmailNotVerified, err.Error())
 	case errors.Is(err, auth.ErrUnauthenticated):
 		unauthenticated(w, r, true, err.Error())
 	case errors.Is(err, auth.ErrEmailTaken):

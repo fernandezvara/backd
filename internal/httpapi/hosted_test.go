@@ -27,7 +27,6 @@ func fakeActions() []hostedAction {
 		}
 	}
 	return []hostedAction{
-		{Purpose: "verify-email", Page: email.PageVerifyEmail, Run: run("verify-email", false)},
 		{Purpose: "reset-password", Page: email.PageResetPassword, Password: true, Locale: true, Run: run("reset-password", true)},
 	}
 }

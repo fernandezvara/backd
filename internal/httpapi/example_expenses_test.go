@@ -54,8 +54,22 @@ func newExampleFixture(t *testing.T, realm string) *exampleFixture {
 	return &exampleFixture{fixture: f, svc: svc}
 }
 
-// signup returns a session token for a new user.
+// signup returns a session token for a new user whose address is verified,
+// as the realm requires (they followed the link in their email).
 func (f *exampleFixture) signup(t *testing.T, email string) string {
+	t.Helper()
+	tok := f.signupUnverified(t, email)
+	if err := f.svc.SetEmailVerified(context.Background(), email, true); err != nil {
+		t.Fatal(err)
+	}
+	return tok
+}
+
+// signupUnverified returns a session token for a new user who never
+// verified their address. The realm itself gives no session to such a user
+// (TestExampleRealmsRequireVerifiedEmail); this is what a session would be
+// worth if one existed, for example after an administrator unverifies them.
+func (f *exampleFixture) signupUnverified(t *testing.T, email string) string {
 	t.Helper()
 	_, tok, err := f.svc.Signup(context.Background(), email, "dev-p4ssw0rd!", "")
 	if err != nil {
@@ -161,10 +175,35 @@ func TestExpensesExample(t *testing.T) {
 			t.Errorf("hole 1: ada should see the fake expense in her group: %d %v", code, out)
 		}
 
-		// Hole 5: no email verification. Whoever signs up as an invited
-		// email gets the group.
-		f.want(t, "ada invites dan", 200, ada, "PATCH", group, `{"members": ["ada@example.com", "bob@example.com", "dan@example.com"]}`)
-		squatter := f.signup(t, "dan@example.com")
-		f.want(t, "hole 5: anyone signing up as dan@example.com reads the group", 200, squatter, "GET", group, "")
 	})
+
+	// Hole 5 is closed by email verification: whoever signs up as an invited
+	// email gets the group only after proving the mailbox is theirs.
+	t.Run("signing up as an invited email", func(t *testing.T) {
+		f.want(t, "ada invites dan", 200, ada, "PATCH", group, `{"members": ["ada@example.com", "bob@example.com", "dan@example.com"]}`)
+		squatter := f.signupUnverified(t, "dan@example.com")
+		f.want(t, "an unverified dan@example.com doesn't read the group", 403, squatter, "GET", group, "")
+		f.want(t, "nor lists the expenses", 403, squatter, "GET", expensesPath, "")
+		if err := f.svc.SetEmailVerified(context.Background(), "dan@example.com", true); err != nil {
+			t.Fatal(err)
+		}
+		f.want(t, "the real dan, after verifying, reads the group", 200, squatter, "GET", group, "")
+	})
+}
+
+// The realm gives no session before the address is verified.
+func TestExampleRealmsRequireVerifiedEmail(t *testing.T) {
+	for _, realm := range []string{"expenses", "expenses-with-functions"} {
+		f := newExampleFixture(t, realm)
+		if !f.svc.Settings.Account.RequireVerifiedEmail {
+			t.Errorf("%s: the realm must require verified emails", realm)
+		}
+		res, err := f.svc.SignUp(context.Background(), auth.SignupRequest{Email: "dan@example.com", Password: "dev-p4ssw0rd!"})
+		if err != nil || !res.Pending || res.Token != "" {
+			t.Errorf("%s: sign-up gave %+v, %v", realm, res, err)
+		}
+		if _, _, err := f.svc.Login(context.Background(), "dan@example.com", "dev-p4ssw0rd!", ""); err != auth.ErrEmailNotVerified {
+			t.Errorf("%s: login before verifying: %v", realm, err)
+		}
+	}
 }

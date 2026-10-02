@@ -36,10 +36,11 @@ func (s *Users) now() time.Time {
 	return time.Now().UTC()
 }
 
-// Create adds a user, as an administrator. With password nil the user has
+// Create adds a user, as an administrator, with the address already verified. With password nil the user has
 // no password identity and can't sign in with a password until one is set.
 func (s *Users) Create(ctx context.Context, email string, password *string) (User, error) {
-	u, err := s.create(ctx, email, password, "")
+	// An administrator vouches for the address (bootstrap and the admin API).
+	u, err := s.create(ctx, email, password, "", true)
 	if err != nil {
 		return User{}, err
 	}
@@ -51,7 +52,7 @@ func userTarget(id string) string { return "user:" + id }
 
 // create makes a user. locale is the language they asked for ("" for none): it
 // is mapped to one the realm lists, or its default.
-func (s *Users) create(ctx context.Context, email string, password *string, locale string) (User, error) {
+func (s *Users) create(ctx context.Context, email string, password *string, locale string, verified bool) (User, error) {
 	email, err := registry.NormalizeEmail(email)
 	if err != nil {
 		return User{}, err
@@ -68,7 +69,7 @@ func (s *Users) create(ctx context.Context, email string, password *string, loca
 	if roles == nil {
 		roles = []string{}
 	}
-	u := User{ID: xid.New().String(), Email: email, Roles: roles, Locale: s.Settings.BestLocale(locale), CreatedAt: now, UpdatedAt: now}
+	u := User{ID: xid.New().String(), Email: email, Roles: roles, Locale: s.Settings.BestLocale(locale), EmailVerified: verified, CreatedAt: now, UpdatedAt: now}
 	if err := s.Store.CreateUser(ctx, u); err != nil {
 		return User{}, err
 	}

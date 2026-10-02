@@ -139,5 +139,29 @@ const request = await operator.admin.invocations.list({ requestId: refundCall?.r
 const child = request.items.find((r) => r.function === 'main/refund_receipt')
 check('its receipt was called by the refund (origin function, parent_id)', child?.origin === 'function' && child.parent_id === refundCall?.id, JSON.stringify(child))
 
+heading('6. Email verification (email-capture)')
+{
+  const visitor = createClient({ url, realm: 'workshop' })
+  const address = `visitor-${Date.now().toString(36)}@example.com`
+  const session = await visitor.auth.signup({ email: address, password: PASSWORD })
+  check('this realm signs a visitor in at once, unverified', session.user.email_verified === false)
+  const box = createClient({ url, realm: 'workshop' }).db('notifications').collection('outbox')
+  /** @type {any} */ let mail
+  for (let i = 0; i < 40 && !mail; i++) {
+    mail = (await box.list({ orderBy: '-_meta.created_at', limit: 50 })).items.find((m) => m.kind === 'verify-email' && m.to.includes(address))
+    if (!mail) await new Promise((r) => setTimeout(r, 500))
+  }
+  check('the verification email reached the outbox, with a link', mail?.link?.startsWith(`${url}/v1/workshop/_auth/verify-email?token=`), JSON.stringify(mail))
+  const token = new URL(mail?.link ?? `${url}?token=`).searchParams.get('token') ?? ''
+  const page = await fetch(mail.link)
+  check('opening the link only shows a page (no-store, no-referrer)', page.status === 200 && page.headers.get('cache-control') === 'no-store' && page.headers.get('referrer-policy') === 'no-referrer')
+  check('and does not verify yet', (await visitor.auth.me()).email_verified === false)
+  const verified = await fetch(`${url}/v1/workshop/_auth/verify-email`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) })
+  check('posting the token verifies the address (204)', verified.status === 204)
+  check('the visitor is verified, and no new session was issued', (await visitor.auth.me()).email_verified === true)
+  const again = await fetch(`${url}/v1/workshop/_auth/verify-email`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) })
+  check('the token works once (400 invalid_token)', again.status === 400 && (await again.text()).includes('invalid_token'))
+}
+
 console.log(failed === 0 ? '\nThe whole tour works.' : `\n${failed} check(s) failed.`)
 process.exit(failed === 0 ? 0 : 1)

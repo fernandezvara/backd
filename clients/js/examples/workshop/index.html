@@ -328,17 +328,31 @@ await job.wait()</pre></details>
 
       <!-- 6. email -->
       <section class="card panel" id="email" aria-labelledby="email-title">
-        <h2 id="email-title"><span class="n">6</span> Email <code>email-capture</code></h2>
-        <p class="goal">backd never sends mail itself: the realm names a delivery function that hands each message to your provider. In this realm that function only stores the messages, so you can read them.</p>
-        <p><a href="../mailbox/" target="_blank" rel="noopener">Open the Mailbox</a> to read what the realm "sent".</p>
+        <h2 id="email-title"><span class="n">6</span> Email verification <code>email-capture</code></h2>
+        <p class="goal">backd never sends mail itself: the realm names a delivery function that hands each message to your provider. In this realm that function only stores the messages, so you can read them. Signing up asks for a <code>verify-email</code> message; its link proves the address is the user's.</p>
+        <div class="actions">
+          <button type="button" :disabled="busy" @click="verifySignUp">1. Sign up a visitor</button>
+          <button type="button" :disabled="busy || !vf" @click="verifyFindMail">2. Look in the outbox</button>
+          <button type="button" :disabled="busy || !vf || !vf.mail || vf.done" @click="verifyWithToken">3. Verify with the token</button>
+          <button type="button" :disabled="busy || !vf" @click="verifyCheck">4. Read the visitor</button>
+        </div>
+        <ul class="results" x-show="vf">
+          <li class="ok">Visitor <code x-text="vf && vf.email"></code>: email verified <strong x-text="vf && vf.verified"></strong></li>
+          <li class="ok" x-show="vf && vf.mail">Email <q x-text="vf && vf.mail && vf.mail.subject"></q> · <a :href="vf && vf.mail && vf.mail.link" target="_blank" rel="noopener">open its link</a> (backd's page: a button, so mail scanners can't use the link up) · <a href="../mailbox/" target="_blank" rel="noopener">the Mailbox</a></li>
+        </ul>
         <div class="notice">
           <strong>What to notice</strong>
           <ul>
+            <li>The visitor got a session at once and <code>email_verified</code> is <code>false</code>: this realm doesn't require verification. A realm that does (<code>account.require_verified_email</code>, as the <a href="../expenses-without-functions/">expenses examples</a> do) answers <code>202</code> without a session, and a login before verifying answers <code>403 email_not_verified</code>.</li>
             <li>The message and its link are made by a worker at send time; backd stores only a hash of the token, never the message.</li>
-            <li>Emails appear in the Mailbox once account flows send them (verification and password reset are on the roadmap); the delivery path itself is already tested end to end.</li>
+            <li>Step 3 is what an app with its own page does: <code>POST /_auth/verify-email</code> with the token, no session issued. Step 4 shows the result, with the visitor's own session.</li>
           </ul>
         </div>
-        <p class="muted"><a href="/docs/functions/email/">Email</a></p>
+        <details class="code"><summary>The code</summary><pre>const session = await backd.auth.signup({ email, password })  // a verify-email message is queued
+// a worker renders it; email-capture stores it in the outbox. The link has the token:
+await backd.request({ method: 'POST', path: ['_auth', 'verify-email'], body: { token }, auth: false })  // 204
+(await backd.auth.me()).email_verified   // true</pre></details>
+        <p class="muted"><a href="/docs/auth/sessions/#email-verification">Email verification</a> · <a href="/docs/functions/email/">Email</a></p>
       </section>
     </main>
 

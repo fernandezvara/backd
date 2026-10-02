@@ -109,7 +109,7 @@ What the rules above don't cover, by design or until planned features exist. The
 | Limit | Why | What would change it |
 |---|---|---|
 | **The author's display name is free text.** Bob can publish as "Ada Lovelace" with his own email. | Only `author.email` is checked against the writer; a name can't be. | Showing the email, or a profile collection the app reads names from |
-| **Unverified emails can post.** | backd doesn't verify emails yet, so the rule doesn't require `user.email_verified`. | Email verification (planned), then `&& user.email_verified` in the create rule |
+| **Unverified emails can post.** | This realm sends no email (it is also the [production reference](../../operations/production/), which has no mail provider), so nobody could verify an address and the rule doesn't require `user.email_verified`. | A realm with [email](../../functions/email/) and `&& user.email_verified` in the create rule, as the [expenses example](../expenses/) does |
 | **A post without `published` is a draft.** | In a read rule, a missing field never equals `true` (see [missing and null fields](../../auth/rules/#missing-and-null-fields)). | Nothing: this is the intended behavior. The app always sends `published` |
 | **Published posts are public, so they can be scraped.** | That's what `read` allows for anonymous callers. | Rate limits or a CDN in front, as in the [production reference](../../operations/production/#rate-limits) |
 

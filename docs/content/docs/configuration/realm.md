@@ -59,13 +59,17 @@ An empty file, or one with only comments, is valid: every key has a default.
 | `audit.retention` | `365d` | How long [audit records](../../auth/audit/) are kept, at least `1d`. |
 | `admin.allowed_networks` | none (any network) | IP addresses or CIDR networks, IPv4 or IPv6, allowed to use the [admin API](../../auth/admin/). See [Network restrictions](#network-restrictions). |
 | `email` | none (no email) | How the realm sends email: the delivery function, the sender, backd's public address for links, languages, the pages the links open, where users go afterwards, and limits. backd never sends mail itself. See [Email](../../functions/email/) |
+| `account.require_verified_email` | `false` | `true`: no session until the address is verified. See [Account](#account) |
+| `account.welcome_email` | `false` | `true`: send the `welcome` email once the address is verified |
+| `account.purge_unverified_after` | off | Delete accounts that never verified after this long (at least `1m`; never accounts with roles) |
+| `account.tokens.verify_email` | `48h` | How long the verification link works |
 | `functions.max_concurrency` | none (unlimited) | Caps how many of the realm's [functions](../../functions/calling/#concurrency-limits) may run at once **on this `backd` instance**; with several instances, up to that many times this value run at once. |
 | `functions.log_retention` | `7d` | How long [function invocation records](../../functions/logs/) are kept, at least `1h`. |
 | `functions.job_retention` | `24h` | How long an [async job](../../functions/jobs/)'s result is kept once done, at least `1h`. |
 
 Durations are a whole number of days (`30d`) or Go durations (`12h`, `90m`), with a minimum of one minute.
 
-`signup`, `sessions`, `password`, `roles`, `admin`, `audit`, `email`, `functions.log_retention` and `functions.job_retention` only apply when `auth` is `enabled`. Setting them in a realm with `auth: disabled` is an error, so a realm can't carry settings that do nothing. `cors` and `functions.max_concurrency` apply either way.
+`signup`, `sessions`, `password`, `roles`, `admin`, `audit`, `email`, `account`, `functions.log_retention` and `functions.job_retention` only apply when `auth` is `enabled`. Setting them in a realm with `auth: disabled` is an error, so a realm can't carry settings that do nothing. `cors` and `functions.max_concurrency` apply either way.
 
 ## CORS
 
@@ -91,6 +95,19 @@ cors:
 {{< /hint >}}
 
 CORS only tells browsers which pages may read responses. It isn't access control: requests from other origins, and from anything that isn't a browser, still go through [authentication and access rules](../../auth/).
+
+## Account
+
+```yaml
+account:
+  require_verified_email: false
+  welcome_email: false
+  purge_unverified_after: 30d
+  tokens:
+    verify_email: 48h
+```
+
+Each of `require_verified_email`, `welcome_email` and `purge_unverified_after` needs the [`email`](../../functions/email/) section: without one, startup fails naming the key. What they do is described in [Email verification](../../auth/sessions/#email-verification).
 
 ## Roles
 

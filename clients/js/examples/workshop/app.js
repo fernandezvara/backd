@@ -13,6 +13,7 @@ import { exportPanel } from './panels/export.js'
 import { operatorPanel } from './panels/operator.js'
 import { ordersPanel } from './panels/orders.js'
 import { refundPanel } from './panels/refund.js'
+import { verifyPanel } from './panels/verify.js'
 import { webhookPanel } from './panels/webhook.js'
 
 const REALM = 'workshop'
@@ -32,7 +33,7 @@ const TOUR = [
   { n: 3, id: 'webhook', title: 'A webhook from a payment provider', fn: 'payment_webhook', kind: 'webhook, signed, deduplicated' },
   { n: 4, id: 'export', title: 'A report in the background', fn: 'export_orders', kind: 'async job' },
   { n: 5, id: 'operating', title: 'Operating it', fn: 'nightly_cleanup, daily_digest', kind: 'cron, history, secrets' },
-  { n: 6, id: 'email', title: 'Email', fn: 'email-capture', kind: 'delivery through your own function' },
+  { n: 6, id: 'email', title: 'Email verification', fn: 'email-capture', kind: 'delivery through your own function' },
 ]
 
 let rerender = () => {}
@@ -116,6 +117,7 @@ document.addEventListener('alpine:init', () => {
     ...webhookPanel({ backd, fetchRaw: inspector.fetch, ACCOUNTS }),
     ...exportPanel({ db, backd }),
     ...operatorPanel({ backd }),
+    ...verifyPanel({ backd, fetch: inspector.fetch, realm: REALM }),
     known: loadKnown(),
     accounts: ACCOUNTS,
     tour: TOUR,

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createClient, AuthenticationError, NetworkError, localStorageStorage, memoryStorage } from '../src/index.js'
+import { createClient, AuthenticationError, NetworkError, VerificationRequiredError, localStorageStorage, memoryStorage } from '../src/index.js'
 import { mockFetch, errorBody, session, user } from './helpers.js'
 
 /** @param {ReturnType<typeof mockFetch>} m */
@@ -27,6 +27,24 @@ test('signup stores the session and announces it', async () => {
 
   await c.auth.signup({ email: 'b@example.com', password: 'dev-p4ssw0rd!', invitation: 'bdi_x' })
   assert.equal(m.calls[1].body.invitation, 'bdi_x')
+})
+
+test('signup in a realm that requires verified addresses starts no session', async () => {
+  const m = mockFetch([{ status: 202, body: { status: 'verification_required' } }])
+  const { c, events } = clientWith(m)
+  await assert.rejects(
+    c.auth.signup({ email: 'ada@example.com', password: 'dev-p4ssw0rd!', redirectTo: 'https://app.example/welcome' }),
+    (/** @type {any} */ e) => e instanceof VerificationRequiredError && e.code === 'verification_required',
+  )
+  assert.equal(await c.auth.token(), null)
+  assert.deepEqual(events, [])
+  assert.deepEqual(m.calls[0].body, { email: 'ada@example.com', password: 'dev-p4ssw0rd!', redirect_to: 'https://app.example/welcome' })
+})
+
+test('login with an unverified address is a forbidden error with its code', async () => {
+  const m = mockFetch([{ status: 403, body: { error: { code: 'email_not_verified', message: 'verify your email address before signing in', request_id: 'r1' } } }])
+  const { c } = clientWith(m)
+  await assert.rejects(c.auth.login({ email: 'ada@example.com', password: 'dev-p4ssw0rd!' }), (/** @type {any} */ e) => e.code === 'email_not_verified' && e.status === 403)
 })
 
 test('login stores the token; later requests send it', async () => {

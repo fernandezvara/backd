@@ -5,7 +5,7 @@
 // its rules.yaml files. What they can't enforce is done here, in the
 // browser, where any user can bypass it: see the docs page "Expenses
 // without functions" and hack.js next to this file.
-import { createClient, localStorageStorage, VersionMismatchError, ForbiddenError } from '@backd/client'
+import { createClient, localStorageStorage, VerificationRequiredError, VersionMismatchError, ForbiddenError } from '@backd/client'
 import { balances, settlementPlan, toCents } from './ledger.js'
 
 const backd = createClient({
@@ -30,6 +30,7 @@ document.addEventListener('alpine:init', () => {
     invite: '',
     draft: emptyDraft(),
     error: '',
+    notice: '', // what to do next after signing up
     busy: false,
 
     async init() {
@@ -64,8 +65,20 @@ document.addEventListener('alpine:init', () => {
 
     submitAuth() {
       return this.run(async () => {
+        this.notice = ''
         const credentials = { email: this.email, password: this.password }
-        const session = this.mode === 'signup' ? await backd.auth.signup(credentials) : await backd.auth.login(credentials)
+        let session
+        try {
+          session = this.mode === 'signup' ? await backd.auth.signup(credentials) : await backd.auth.login(credentials)
+        } catch (err) {
+          // The realm gives no session before the address is verified: the
+          // account exists, and the link in the email finishes it.
+          if (!(err instanceof VerificationRequiredError)) throw err
+          this.notice = `We sent a link to ${this.email}. Follow it to verify your address, then log in.`
+          this.mode = 'login'
+          this.password = ''
+          return
+        }
         this.user = session.user
         this.password = ''
         await this.loadGroups()
@@ -113,8 +126,8 @@ document.addEventListener('alpine:init', () => {
     },
 
     // Invitations are emails added to the group: the invited person sees it
-    // when they sign up or log in with that email. (Hole 5: until emails are
-    // verified, whoever signs up first with that email gets it.)
+    // when they sign up or log in with that email. (Only after verifying the
+    // address: the realm gives no session before.)
     addMember() {
       return this.run(async () => {
         const email = this.invite.trim().toLowerCase()

@@ -3,20 +3,23 @@
 // happened. Compare with ../expenses-without-functions/hack.js: the same
 // rule-level attacks are stopped the same way (groups didn't change), but
 // holes 1-4 are now CLOSED — this script proves it with real calls, not
-// just by reading the functions' source. Hole 5 (email verification)
-// stays open: nothing here changed that.
+// just by reading the functions' source. Hole 5 (signing up with someone
+// else's email) is closed by email verification, not by functions.
 //
-// It exits with 0 when every attack is stopped, holes 1-4 are closed, and
-// hole 5 is still open, which is the expected state today. Exits 1 and
-// says which line differs otherwise.
+// It exits with 0 when every attack is stopped and holes 1-5 are closed,
+// which is the expected state. Exits 1 and says which line differs
+// otherwise.
 //
 //   make example                              # in another terminal
 //   make hack-expenses-functions               # or:
 //   NODE_EXTRA_CA_CERTS=docker/certs/ca.crt node clients/js/examples/expenses-with-functions/hack.js
 //
 // BACKD_URL overrides the server (default https://localhost:8443). Every
-// run signs up new users with unique emails.
-import { createClient, AuthenticationError, ForbiddenError, NotFoundError, BackdError } from '../../src/index.js'
+// run signs up new users with unique emails and verifies them through the
+// realm's development outbox, like a person following the link in the email
+// (a worker must be running, as in the local stack).
+import { createClient, AuthenticationError, ForbiddenError, NotFoundError, BackdError, VerificationRequiredError } from '../../src/index.js'
+import { signupVerified } from '../verify-email.js'
 
 const url = process.env.BACKD_URL ?? 'https://localhost:8443'
 const run = Date.now().toString(36)
@@ -56,10 +59,9 @@ async function hole(what, action) {
   }
 }
 
-/** Signs up a new user and returns their client, database and collections. */
+/** Signs up a new user, verifies their address and returns their client, database and collections. */
 async function user(/** @type {string} */ name, /** @type {string} */ address = email(name)) {
-  const c = createClient({ url, realm: 'expenses-with-functions' })
-  await c.auth.signup({ email: address, password })
+  const c = await signupVerified({ url, realm: 'expenses-with-functions', email: address, password })
   const db = c.db('main')
   return { email: address, c, db, groups: db.collection('groups'), expenses: db.collection('expenses') }
 }
@@ -143,13 +145,18 @@ console.log(`  ✓ closed       4. Balances are computed once, on the server (th
 
 const dan = email('dan')
 await ada.groups.patch(group.id, { members: [...remaining, dan] })
-await hole(`5. Ada invites ${dan}; someone else signs up with that email first and reads the group`, async () => {
-  const squatter = await user('squatter', dan)
-  const g = await squatter.groups.get(group.id)
-  return `The squatter sees "${g.name}" with ${g.members.length} members. Email verification (planned) would close this.`
-})
+await stopped(`5. Ada invites ${dan}; someone else signs up with that email first, without access to its mailbox`, async () => {
+  const squatter = createClient({ url, realm: 'expenses-with-functions' })
+  try {
+    await squatter.auth.signup({ email: dan, password })
+    throw new Error('the sign-up started a session')
+  } catch (err) {
+    if (!(err instanceof VerificationRequiredError)) throw err
+  }
+  await squatter.auth.login({ email: dan, password }) // no session until the address is verified
+}, ForbiddenError)
 
 console.log(unexpected === 0
-  ? '\nAs documented: every attack above was stopped, holes 1-4 are closed, and hole 5 is still open.'
+  ? '\nAs documented: every attack above was stopped, holes 1-5 are closed.'
   : `\n${unexpected} result(s) differ from the documentation: see the lines marked ✗.`)
 process.exit(unexpected === 0 ? 0 : 1)

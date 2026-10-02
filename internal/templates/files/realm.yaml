@@ -76,6 +76,15 @@ auth: enabled
 #     per_recipient: { per_kind_per_hour: 3, per_day: 10 }
 #     per_ip: { per_hour: 20 }
 
+# Accounts. Each setting here needs the `email:` section above.
+# account:
+#   require_verified_email: false  # true: no session until the address is verified (sign-up answers 202;
+#                                  # a login with the right password answers 403 email_not_verified)
+#   welcome_email: false           # true: send the `welcome` email once the address is verified
+#   purge_unverified_after: 30d    # optional: delete accounts that never verified (never ones with roles)
+#   tokens:
+#     verify_email: 48h            # how long the verification link works (default shown)
+
 # Roles that access rules can check. `users` lists emails that get the role
 # at startup (seed assignments): plain emails, or objects with an `email`.
 # Keeping them here lets you rebuild the realm on new infrastructure; roles

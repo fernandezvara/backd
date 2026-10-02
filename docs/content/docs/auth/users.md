@@ -19,7 +19,7 @@ Every command also takes `--url`, to pick the server for that command.
 
 | Command | Effect |
 |---|---|
-| `backd user create --realm <realm> --email <email>` | Create a user and ask for their password |
+| `backd user create --realm <realm> --email <email>` | Create a user (with a verified address) and ask for their password |
 | `backd user create --realm <realm> --email <email> --no-password` | Create a user without a password; they can't sign in with one until it's set |
 | `backd user list --realm <realm>` | List the realm's users |
 | `backd user set-password --realm <realm> --email <email>` | Set or replace the password, and revoke all of the user's sessions |
