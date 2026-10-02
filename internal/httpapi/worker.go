@@ -49,7 +49,7 @@ func NewWorker(cfg Config, id string) *Worker {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	docs := &documents{reg: cfg.Registry, now: now, users: users, callbackKey: cfg.CallbackKey}
+	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, users: users, callbackKey: cfg.CallbackKey}
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, log: log}
 	return &Worker{id: id, fns: fns, reg: cfg.Registry, backdURL: cfg.BackdURL, log: log, lastScheduled: map[string]time.Time{}, lastPurge: map[string]time.Time{}}
 }
@@ -178,7 +178,8 @@ func (w *Worker) loop(ctx context.Context) {
 // functions. It returns whether it found one — callers use that to
 // decide whether to poll again immediately or back off.
 func (w *Worker) RunOnce(ctx context.Context) bool {
-	for _, realm := range w.reg.FunctionRealms(true) {
+	// Every realm with users: erase jobs need no functions.
+	for _, realm := range w.reg.AuthRealms() {
 		svc := w.fns.docs.users(realm)
 		if svc == nil {
 			continue
@@ -204,6 +205,10 @@ func (w *Worker) RunOnce(ctx context.Context) bool {
 // semantics.
 func (w *Worker) runJob(ctx context.Context, realm string, svc *auth.Users, job auth.Job) {
 	log := w.log.With("job_id", job.ID, "function", realm+"/"+job.Database+"/"+job.Function)
+	if job.Erase != nil {
+		w.runErase(ctx, log, realm, svc, job) // not a function: a worker applies the policies itself
+		return
+	}
 	fn := w.fns.lookup(realm, job.Database, job.Function)
 	if fn == nil {
 		w.fail(ctx, log, svc, job, "the function no longer exists")

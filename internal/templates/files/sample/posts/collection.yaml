@@ -1,0 +1,12 @@
+# What happens to this collection when an administrator erases a user
+# (`backd user delete`, docs: Auth -> Deleting and erasing users). Without this
+# file an erase leaves every post as it is.
+#
+# Here the posts a user wrote stay (a blog's archive keeps its articles), but
+# the byline stops pointing at them: the author's email is removed, the name is
+# replaced, and the owner is cleared, so nobody can edit the posts any more.
+on_owner_delete:
+  action: anonymize
+  remove: [author.email]
+  replace:
+    author.name: "Erased author"

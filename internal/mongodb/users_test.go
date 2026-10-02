@@ -502,3 +502,124 @@ func TestListUnverifiedUsersOnMongoDB(t *testing.T) {
 		t.Errorf("limit: %+v", got)
 	}
 }
+
+func TestEraseUserOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Date(2126, 10, 1, 12, 0, 0, 0, time.UTC)
+	for _, u := range []auth.User{
+		{ID: "u1", Email: "ada@example.com", Roles: []string{"admin"}, Locale: "es", PendingEmail: "new@example.com", PreviousEmail: "old@example.com", CreatedAt: now, UpdatedAt: now},
+		{ID: "u2", Email: "bob@example.com", CreatedAt: now, UpdatedAt: now},
+	} {
+		if err := s.CreateUser(ctx, u); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.PutIdentity(ctx, auth.Identity{UserID: "u1", Provider: auth.ProviderPassword, PasswordHash: "h", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateSession(ctx, auth.Session{ID: "s1", UserID: "u1", TokenHash: "t1", CreatedAt: now, LastUsedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tk := range []auth.EmailToken{{Hash: "k1", Purpose: "reset-password", UserID: "u1", CreatedAt: now, ExpiresAt: now.Add(time.Hour)}, {Hash: "k2", Purpose: "reset-password", UserID: "u2", CreatedAt: now, ExpiresAt: now.Add(time.Hour)}} {
+		if err := s.CreateEmailToken(ctx, tk); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for range 2 { // repeating it is harmless
+		if err := s.EraseUser(ctx, "u1", "erased-u1@erased.invalid", now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	u, err := s.UserByID(ctx, "u1")
+	if err != nil || u.Email != "erased-u1@erased.invalid" || !u.ErasedAt.Equal(now) || !u.Disabled || !u.EmailVerified || len(u.Roles) != 0 ||
+		u.Locale != "" || u.PendingEmail != "" || u.PreviousEmail != "" {
+		t.Errorf("tombstone: %+v %v", u, err)
+	}
+	if _, err := s.Identity(ctx, auth.ProviderPassword, "u1"); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("identity: %v", err)
+	}
+	if sessions, _ := s.ListSessions(ctx, "u1"); len(sessions) != 0 {
+		t.Errorf("sessions: %+v", sessions)
+	}
+	// The real address is free again, and the placeholder can't be anyone's.
+	if err := s.CreateUser(ctx, auth.User{ID: "u3", Email: "ada@example.com", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Errorf("reusing the address: %v", err)
+	}
+	if other, _ := s.UserByID(ctx, "u2"); other.ErasedAt != (time.Time{}) || other.Email != "bob@example.com" {
+		t.Errorf("another user: %+v", other)
+	}
+	if err := s.DeleteEmailTokensOfUser(ctx, "u1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetEmailToken(ctx, "k1"); !errors.Is(err, auth.ErrInvalidToken) {
+		t.Errorf("her token: %v", err)
+	}
+	if _, err := s.GetEmailToken(ctx, "k2"); err != nil {
+		t.Errorf("his token: %v", err)
+	}
+}
+
+func TestEraseJobOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Date(2126, 10, 1, 12, 0, 0, 0, time.UTC)
+	job := auth.Job{ID: "e1", Database: "_backd", Function: "erase", Origin: auth.EraseOrigin, TimeoutMS: 1000, Status: auth.JobQueued, CreatedAt: now, ExpiresAt: now.Add(time.Hour),
+		Erase: &auth.EraseJob{UserID: "u1", Email: "ada@example.com"}}
+	if err := s.EnqueueJob(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		if err := s.AddEraseCount(ctx, "e1", "main/orders/anonymized", 2); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, _, _ := s.GetJob(ctx, "e1")
+	if got.Erase == nil || got.Erase.UserID != "u1" || got.Erase.Email != "ada@example.com" || got.Erase.Counts["main/orders/anonymized"] != 6 {
+		t.Errorf("erase job: %+v", got.Erase)
+	}
+	if found, _, _ := s.ListJobs(ctx, auth.JobFilter{Origin: auth.EraseOrigin, EraseUser: "u1"}); len(found) != 1 {
+		t.Errorf("by user: %+v", found)
+	}
+	if found, _, _ := s.ListJobs(ctx, auth.JobFilter{EraseUser: "u2"}); len(found) != 0 {
+		t.Errorf("another user: %+v", found)
+	}
+	if reopened, err := s.ReopenJob(ctx, "e1", now.Add(time.Hour)); err != nil || reopened {
+		t.Errorf("reopening a job that isn't done: %v %v", reopened, err)
+	}
+	if err := s.CompleteJob(ctx, "e1", auth.JobResult{Status: "error", Message: "boom"}, now, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := s.ReopenJob(ctx, "e1", now.Add(48*time.Hour))
+	if err != nil || !reopened {
+		t.Fatalf("reopen: %v %v", reopened, err)
+	}
+	if got, _, _ = s.GetJob(ctx, "e1"); got.Status != auth.JobQueued || got.Result != nil || got.Failures != 0 || got.Erase.Counts["main/orders/anonymized"] != 6 {
+		t.Errorf("reopened: %+v", got)
+	}
+	if err := s.ClearEraseEmail(ctx, "e1"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ = s.GetJob(ctx, "e1"); got.Erase.Email != "" || got.Erase.UserID != "u1" {
+		t.Errorf("cleared: %+v", got.Erase)
+	}
+	// A finished-ok job isn't reopened.
+	if err := s.CompleteJob(ctx, "e1", auth.JobResult{Status: "ok"}, now, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if reopened, _ := s.ReopenJob(ctx, "e1", now); reopened {
+		t.Error("an ok job was reopened")
+	}
+	// Email jobs of the user are removed.
+	mail := auth.Job{ID: "m1", Database: "n", Function: "d", Status: auth.JobQueued, CreatedAt: now, ExpiresAt: now.Add(time.Hour), Email: &auth.EmailJob{Kind: "reset-password", UserID: "u1"}}
+	if err := s.EnqueueJob(ctx, mail); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteEmailJobsOfUser(ctx, "u1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, _ := s.GetJob(ctx, "m1"); found {
+		t.Error("the email job should be gone")
+	}
+}

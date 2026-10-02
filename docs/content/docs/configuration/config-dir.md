@@ -46,7 +46,7 @@ backd template email-capture --realm demo --database blog          # a developme
 backd template collection-policy --realm demo --database blog --collection posts   # a commented collection.yaml
 ```
 
-With `--sample`, the command adds a `posts` collection (title, body, published, optional category, author) with explanations: `schema.json`, `indexes.json` and a commented [`rules.yaml`](../../auth/rules/) (anyone reads published posts, signed-in users write posts signed with their own email, authors edit and delete their own but can't change who wrote them). `backd template realm --realm demo --sample` creates the realm plus a database named `main` holding that sample: the same database as the `blog` realm in `examples/config` (whose `realm.yaml` is adjusted for the example app).
+With `--sample`, the command adds a `posts` collection (title, body, published, optional category, author) with explanations: `schema.json`, `indexes.json` and a commented [`rules.yaml`](../../auth/rules/) (anyone reads published posts, signed-in users write posts signed with their own email, authors edit and delete their own but can't change who wrote them), and a [`collection.yaml`](#collectionyaml) that anonymizes the byline when a user is erased. `backd template realm --realm demo --sample` creates the realm plus a database named `main` holding that sample: the same database as the `blog` realm in `examples/config` (whose `realm.yaml` is adjusted for the example app).
 
 The command prints each file it created and each one it left unchanged because it already existed.
 

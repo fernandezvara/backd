@@ -673,7 +673,12 @@ paths:
         default: { $ref: "#/components/responses/Error" }
     delete:
       tags: [auth]
-      summary: Delete the account
+      summary: Delete the account (deactivates it)
+      description: |
+        Needs the current password. The account is **deactivated**: it is
+        disabled and every session ends, and all data is kept (an administrator
+        can reactivate it). Deactivating is not erasing: erasing a user's data is an
+        administrator's action (`DELETE /_admin/users/{id}`).
       operationId: deleteMe
       security: [{ session: [] }]
       requestBody:
@@ -687,7 +692,7 @@ paths:
               properties:
                 password: { type: string }
       responses:
-        "204": { description: Account deleted. }
+        "204": { description: Account deactivated. }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
@@ -856,11 +861,36 @@ paths:
         default: { $ref: "#/components/responses/Error" }
     delete:
       tags: [admin]
-      summary: Delete a user
+      summary: Erase a user
+      description: |
+        **Irreversible.** The user becomes a tombstone at once: their id stays,
+        their email becomes `erased-<id>@erased.invalid` (so the real address is
+        free again), and their sessions, sign-in methods, email tokens and email
+        jobs are deleted. A worker then applies the `collection.yaml` policy of
+        every collection that declares one (deleting or anonymizing the documents
+        the user owns, removing them from other documents' fields) and records the
+        counts in the audit trail as `user.erased`. The answer is the erase job
+        (`origin: backd:account.erase` in the jobs list). Repeating the call for a
+        user whose erase job failed queues it again; for one still going it
+        returns the job. Erasing a user is an administrator's action: deactivating
+        (`PATCH` with `disabled`, or the user's own `DELETE /_auth/me`) keeps the
+        data.
       operationId: adminDeleteUser
       security: [{ apiKey: [] }, { session: [] }]
       responses:
-        "204": { description: User deleted; documents they own are kept. }
+        "202":
+          description: The erase job.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [id, status]
+                properties:
+                  id: { type: string, description: The erase job's id. }
+                  status: { type: string, enum: [queued, running, done] }
+        "409": { description: "`already_erased`: the user was erased and nothing is left to do.", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -1988,8 +2018,9 @@ components:
     AdminUser:
       type: object
       additionalProperties: false
-      required: [id, email, email_verified, roles, locale, disabled, admin_networks, login_networks, created_at, updated_at]
+      required: [id, email, email_verified, roles, locale, disabled, admin_networks, login_networks, created_at, updated_at, erased_at]
       properties:
+        erased_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }], description: "When the user was erased; a tombstone has no email of its own, no roles and can't be enabled." }
         id: { type: string }
         email: { type: string }
         email_verified: { type: boolean }

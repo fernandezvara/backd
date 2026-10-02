@@ -117,7 +117,7 @@ roles:
 	call(in, "DELETE", base+"_auth/me", `{"password": "`+cyPassword2+`"}`, cy, 204)
 	secrets = append(secrets, cyPassword, cyPassword2, cy)
 
-	call(in, "DELETE", u, "", ada, 204)
+	call(in, "DELETE", u, "", ada, 202)
 	call(in, "DELETE", base+"_admin/apikeys/tooling", "", ada, 204)
 	call(out, "GET", base+"_admin/users", "", ada, 404) // refused by network
 

@@ -792,6 +792,18 @@ func (r *Registry) CheckBundles() error {
 	return errors.Join(errs...)
 }
 
+// AuthRealms returns the realms with auth enabled (the ones with users, and
+// so with jobs), sorted.
+func (r *Registry) AuthRealms() []string {
+	var out []string
+	for _, rl := range r.SortedRealms() {
+		if rl.Settings.AuthEnabled {
+			out = append(out, rl.Name)
+		}
+	}
+	return out
+}
+
 // FunctionRealms returns the realms with at least one function, sorted.
 func (r *Registry) FunctionRealms(authEnabled bool) []string {
 	var out []string

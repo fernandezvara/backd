@@ -28,7 +28,7 @@ Every command also takes `--url`, to pick the server for that command.
 | `backd user verify-email --realm <realm> --email <email>` | Mark the email as verified |
 | `backd user disable --realm <realm> --email <email>` | Block sign-in and revoke all of the user's sessions, without deleting the account |
 | `backd user enable --realm <realm> --email <email>` | Let a disabled user sign in again |
-| `backd user delete --realm <realm> --email <email> --yes` | Delete the user with their sign-in methods and sessions |
+| `backd user delete --realm <realm> --email <email> --yes` | **Erase** the user: a tombstone, and the collections' policies applied; waits for the job (`--wait`) and prints the counts. Irreversible: see [Deleting and erasing users](../erasure/) (`disable` keeps the data) |
 | `backd user add-role --realm <realm> --email <email> --role <role>` | Assign a role declared in `realm.yaml` |
 | `backd user remove-role --realm <realm> --email <email> --role <role>` | Take a role away |
 | `backd user networks --realm <realm> --email <email>` | Show the user's [network restrictions](../../configuration/realm/#network-restrictions) |

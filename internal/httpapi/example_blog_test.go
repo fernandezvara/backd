@@ -12,6 +12,20 @@ import (
 
 const blogPosts = "/v1/blog/main/posts"
 
+// Erasing an author keeps their posts but removes the byline's email, replaces
+// its name and clears the owner (the policy of examples/config/blog).
+func TestBlogErasurePolicy(t *testing.T) {
+	f := newExampleFixture(t, "blog")
+	c, ok := f.reg.Collection("blog", "main", "posts")
+	if !ok || c.Erasure == nil {
+		t.Fatal("the posts have no erasure policy")
+	}
+	p := c.Erasure
+	if p.Action != "anonymize" || len(p.Remove) != 1 || p.Remove[0] != "author.email" || p.Replace["author.name"] != "Erased author" {
+		t.Errorf("policy: %+v", p)
+	}
+}
+
 func TestBlogExample(t *testing.T) {
 	f := newExampleFixture(t, "blog")
 	ada, bob := f.signup(t, "ada@example.com"), f.signup(t, "bob@example.com")

@@ -15,6 +15,9 @@ import (
 
 // userStatus is where a user stands: active, deactivated (disabled) or erased.
 func userStatus(u auth.User) string {
+	if !u.ErasedAt.IsZero() {
+		return "erased"
+	}
 	if u.Disabled {
 		return "deactivated"
 	}
@@ -31,6 +34,10 @@ func ownedReport(ctx context.Context, reg *registry.Registry, store Store, realm
 	}
 	collections := []map[string]any{}
 	without := []string{}
+	if !u.ErasedAt.IsZero() {
+		// Nothing left to count: the user is a tombstone.
+		return map[string]any{"user": map[string]any{"id": u.ID, "status": "erased"}, "collections": collections, "without_policy": without}, nil
+	}
 	for _, dbName := range slices.Sorted(maps.Keys(rl.Databases)) {
 		db := rl.Databases[dbName]
 		for _, name := range slices.Sorted(maps.Keys(db.Collections)) {

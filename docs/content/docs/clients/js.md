@@ -66,7 +66,7 @@ const sessions = await backd.auth.sessions() // [{ id, created_at, last_used_at,
 await backd.auth.revokeSession(sessions[1].id)
 await backd.auth.logout()                    // this session
 await backd.auth.logoutAll()                 // every session of the user
-await backd.auth.deleteAccount({ password }) // documents the user owns are kept
+await backd.auth.deleteAccount({ password }) // deactivates the account; all data is kept
 ```
 
 - `signup` and `login` store the session token; every later request sends it as `Authorization: Bearer …`.
@@ -317,7 +317,7 @@ await backd.admin.users.setPassword(user.id, newPassword)        // ends their s
 await backd.admin.users.addRole(user.id, 'editor')               // roles declared in realm.yaml
 await backd.admin.users.removeRole(user.id, 'editor')
 await backd.admin.users.owned(user.id)                          // what erasing them would do, per collection with a policy
-await backd.admin.users.delete(user.id)
+await backd.admin.users.delete(user.id)                         // ERASES them (irreversible): a tombstone, and the collections' policies; resolves with the erase job
 
 const invitation = await backd.admin.invitations.create({ email: 'eve@example.com', expiresIn: '3d' })
 sendInvitationEmail(invitation.token)                              // shown only here

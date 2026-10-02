@@ -248,7 +248,7 @@ func (a *authAPI) deleteMe(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := usersOf(r).DeleteAccount(r.Context(), principalOf(r), f["password"]); err != nil {
+	if err := usersOf(r).DeactivateAccount(r.Context(), principalOf(r), f["password"]); err != nil {
 		authError(w, r, err)
 		return
 	}

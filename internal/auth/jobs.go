@@ -52,7 +52,9 @@ type Job struct {
 	// Email is set on an email job: backd's own request to send a message, which
 	// a worker renders and hands to the realm's delivery function. It holds no
 	// message and no token.
-	Email         *EmailJob
+	Email *EmailJob
+	// Erase is set on an erase job (origin backd:account.erase).
+	Erase         *EraseJob
 	TimeoutMS     int64 // the function's timeout at enqueue time, for the worker's lease
 	RequestID     string
 	Status        string    // queued | running | done
@@ -85,6 +87,18 @@ type EmailJob struct {
 	// the account emails it stores what the function gave: the recipients'
 	// addresses and the data for the template, for as long as jobs are kept.
 	Custom *CustomEmail
+}
+
+// EraseJob is what an erase job carries: whose data to erase, the email to
+// match fields that hold it (cleared when the job finishes), and what has
+// been done so far.
+//
+// An erase job is not a function: it has no executor, a worker applies the
+// collections' policies itself.
+type EraseJob struct {
+	UserID string
+	Email  string
+	Counts map[string]int64 // "<database>/<collection>/<operation>" → documents
 }
 
 // CustomEmail is what a function's email job carries.
@@ -138,6 +152,7 @@ func (s *Users) EnqueueJob(ctx context.Context, j Job) (Job, error) {
 type JobFilter struct {
 	Database, Function string    // Function is the name only; "" matches every function
 	Origin             string    // exact origin, such as function:main/ship; "" matches every one
+	EraseUser          string    // the erase jobs of this user
 	Status             string    // queued, running or done
 	Scheduled          *bool     // nil: both; true: cron runs only; false: called ones only
 	Since, Until       time.Time // on created_at: from Since, before Until

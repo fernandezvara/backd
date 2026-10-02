@@ -30,8 +30,11 @@ type User struct {
 	// so the old address can be told and can undo it.
 	PendingEmail  string
 	PreviousEmail string
-	Roles         []string
-	Disabled      bool
+	// ErasedAt is when an administrator erased the user: what is left is a
+	// tombstone, the id with an anonymized email and no way to sign in.
+	ErasedAt time.Time
+	Roles    []string
+	Disabled bool
 	// Locale is the user's language: one the realm lists (see
 	// RealmSettings.Languages). Empty for users from before languages existed;
 	// those use the realm's default.
@@ -93,6 +96,23 @@ type Store interface {
 	// ListUnverifiedUsers returns up to limit users whose address is still
 	// unverified and who were created before the given time, oldest first.
 	ListUnverifiedUsers(ctx context.Context, createdBefore time.Time, limit int) ([]User, error)
+	// EraseUser turns the user into a tombstone: it deletes their sessions and
+	// sign-in methods, and sets email (the unique placeholder), ErasedAt,
+	// disabled and verified, with no roles, locale, networks or pending and
+	// previous addresses. Repeating it is harmless.
+	EraseUser(ctx context.Context, id, placeholderEmail string, now time.Time) error
+	// DeleteEmailTokensOfUser removes the user's email tokens.
+	DeleteEmailTokensOfUser(ctx context.Context, userID string) error
+	// DeleteEmailJobsOfUser removes the email jobs addressed to the user.
+	DeleteEmailJobsOfUser(ctx context.Context, userID string) error
+	// AddEraseCount adds n to the erase job's count under key
+	// ("<database>/<collection>/<operation>"), atomically.
+	AddEraseCount(ctx context.Context, jobID, key string, n int64) error
+	// ClearEraseEmail removes the email an erase job held.
+	ClearEraseEmail(ctx context.Context, jobID string) error
+	// ReopenJob queues a job that ended in failure again, with a fresh
+	// attempt count and expiry; false when it isn't a failed job.
+	ReopenJob(ctx context.Context, id string, expiresAt time.Time) (bool, error)
 	// DeleteUser removes the user with their identities and sessions.
 	DeleteUser(ctx context.Context, id string) error
 	// PutIdentity creates the identity, or, when one with the same provider

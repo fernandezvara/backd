@@ -292,18 +292,6 @@ func (s *Users) ChangePassword(ctx context.Context, p Principal, current, next s
 	return nil
 }
 
-// DeleteAccount deletes the caller after checking their password.
-func (s *Users) DeleteAccount(ctx context.Context, p Principal, password string) error {
-	if err := s.checkPassword(ctx, p.User, password); err != nil {
-		return err
-	}
-	if err := s.Store.DeleteUser(ctx, p.User.ID); err != nil {
-		return err
-	}
-	s.Audit(ctx, AuditAccountDelete, userTarget(p.User.ID), nil)
-	return nil
-}
-
 // checkPassword returns ErrInvalidCredentials unless password is the
 // user's current password. It is throttled like logins for the account,
 // so a stolen session can't be used to guess the password.

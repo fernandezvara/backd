@@ -18,6 +18,7 @@ import { Job } from './functions.js'
  * @property {string[]} login_networks  CIDR networks the user's login and session must be used from; empty: anywhere.
  * @property {string} created_at
  * @property {string} updated_at
+ * @property {string | null} erased_at   When the user was erased; a tombstone keeps only its id (and a placeholder email).
  */
 
 /**
@@ -282,13 +283,19 @@ class AdminUsers {
   }
 
   /**
-   * Deletes a user with their sign-in methods and sessions.
+   * Erases a user. **Irreversible.** The user becomes a tombstone at once (the
+   * id stays, the email becomes `erased-<id>@erased.invalid`, and their
+   * sessions, sign-in methods and email tokens are deleted); a worker then
+   * applies the `collection.yaml` policy of every collection that declares one.
+   * Resolves with the erase job (`origin: backd:account.erase` in
+   * `admin.jobs.list()`); the counts land in the audit trail as `user.erased`.
+   * To keep the data, deactivate with `update(id, { disabled: true })`.
    * @param {string} id
    * @param {RequestOptions} [opts]
-   * @returns {Promise<void>}
+   * @returns {Promise<{ id: string, status: 'queued' | 'running' | 'done' }>}
    */
   async delete(id, opts) {
-    await this.admin._request({ method: 'DELETE', path: ['users', id], ...opts })
+    return (await this.admin._request({ method: 'DELETE', path: ['users', id], ...opts })).data
   }
 
   /**

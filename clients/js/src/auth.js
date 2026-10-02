@@ -264,7 +264,9 @@ export class Auth {
   }
 
   /**
-   * Deletes the signed-in user's account. Documents they own are kept.
+   * Deletes the signed-in user's account: it is **deactivated** (disabled, its
+   * sessions end) and all data is kept. Erasing a user's data is an
+   * administrator's action (`admin.users.delete`).
    * @param {{ password: string }} input
    * @param {RequestOptions} [opts]
    * @returns {Promise<void>}

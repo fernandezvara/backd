@@ -24,6 +24,7 @@ func newTestWorker(t *testing.T, f *rulesFixture) *Worker {
 	})
 	return NewWorker(Config{
 		Registry: f.reg,
+		Store:    f.store,
 		Users: func(realm string) *auth.Users {
 			if realm == "acme" {
 				return f.svc

@@ -215,8 +215,9 @@ func registerRemote(cfg *cli.Config) {
 	user("verify-email", "mark the email as verified", true, userPatch(map[string]bool{"email_verified": true}, "email of %s marked as verified\n"), nil)
 	user("disable", "block sign-in and revoke all sessions", true, userPatch(map[string]bool{"disabled": true}, "%s disabled; all of their sessions were revoked\n"), nil)
 	user("enable", "allow a disabled user to sign in again", true, userPatch(map[string]bool{"disabled": false}, "%s enabled\n"), nil)
-	user("delete", "delete the user, their sign-in methods and sessions", true, userDelete, func(cc *cli.CommandConfig) {
-		boolean(cc, "yes", "confirm the deletion")
+	user("delete", "erase the user: a tombstone, and the collections' policies applied", true, userDelete, func(cc *cli.CommandConfig) {
+		boolean(cc, "yes", "confirm the erase, which can't be undone")
+		cc.Define("wait").String().Flag("wait").Default("2m").Description("how long to wait for the erase to finish (such as 30s; 0s: don't wait)")
 	})
 	user("add-role", "assign a role declared in realm.yaml", true, func(c *userCtx) error {
 		return userRole(c, "add", str(c.cmd, "role"))

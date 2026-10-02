@@ -757,7 +757,12 @@ func TestContract(t *testing.T) {
 	f.runner.set(nil)
 	req("DELETE", ad+"/apikeys/contract", "", nil, 401)
 	req("DELETE", ad+"/apikeys/contract", "", ada, 403)
-	req("DELETE", ad+"/users/"+dan, "", key, 204)
+	erase := req("DELETE", ad+"/users/"+dan, "", key, 202)
+	req("DELETE", ad+"/users/"+dan, "", key, 202) // the job is still going: the same answer
+	if err := f.svc.CompleteJob(context.Background(), erase["id"].(string), auth.JobResult{Status: "ok"}); err != nil {
+		t.Fatal(err)
+	}
+	req("DELETE", ad+"/users/"+dan, "", key, 409) // erased, nothing left to do
 	req("DELETE", ad+"/users/nope", "", key, 404)
 
 	// Documents. "posts" has rules, "private" has none (API keys only).

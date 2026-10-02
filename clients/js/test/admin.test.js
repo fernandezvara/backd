@@ -69,7 +69,7 @@ test('users', async () => {
   const m = mockFetch([
     { body: page }, { body: page }, { body: { items: [], limit: 20, skip: 0, has_more: false } },
     { body: adminUser }, { status: 201, body: adminUser }, { status: 201, body: adminUser },
-    { body: adminUser }, { status: 204 }, { status: 204 }, { body: adminUser }, { body: adminUser },
+    { body: adminUser }, { status: 204 }, { status: 202, body: { id: 'erase1', status: 'queued' } }, { body: adminUser }, { body: adminUser },
     { status: 404, body: errorBody('not_found') },
   ])
   const a = adminOf(m)
@@ -99,7 +99,7 @@ test('users', async () => {
   assert.equal(m.calls[7].url.pathname, '/v1/acme/_admin/users/u1/password')
   assert.deepEqual(m.calls[7].body, { password: 'dev-p4ssw0rd!2' })
 
-  await a.users.delete('u1')
+  assert.deepEqual(await a.users.delete('u1'), { id: 'erase1', status: 'queued' })
   assert.equal(m.calls[8].method, 'DELETE')
 
   await a.users.addRole('u1', 'admin')

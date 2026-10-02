@@ -119,6 +119,9 @@ func (r *memRepo) CountReferences(_ context.Context, field, value string, _ bool
 func (r *memRepo) DeleteOwned(_ context.Context, owner string, limit int) (int64, error) {
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
+	if r.s.fail != nil {
+		return 0, r.s.fail
+	}
 	docs := r.matching(limit, ownedBy(owner))
 	for _, d := range docs {
 		delete(r.coll(), d["id"].(string))
@@ -129,6 +132,9 @@ func (r *memRepo) DeleteOwned(_ context.Context, owner string, limit int) (int64
 func (r *memRepo) AnonymizeOwned(_ context.Context, owner string, remove []string, replace map[string]any, limit int, now time.Time) (int64, error) {
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
+	if r.s.fail != nil {
+		return 0, r.s.fail
+	}
 	docs := r.matching(limit, ownedBy(owner))
 	for _, d := range docs {
 		for _, f := range remove {
@@ -146,6 +152,9 @@ func (r *memRepo) AnonymizeOwned(_ context.Context, owner string, remove []strin
 func (r *memRepo) PullReference(_ context.Context, field, value string, limit int, now time.Time) (int64, error) {
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
+	if r.s.fail != nil {
+		return 0, r.s.fail
+	}
 	docs := r.matching(limit, holds(field, value))
 	for _, d := range docs {
 		v, _ := pathGet(d, field)
@@ -164,6 +173,9 @@ func (r *memRepo) PullReference(_ context.Context, field, value string, limit in
 func (r *memRepo) ClearReference(_ context.Context, field, value string, limit int, now time.Time) (int64, error) {
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
+	if r.s.fail != nil {
+		return 0, r.s.fail
+	}
 	docs := r.matching(limit, holds(field, value))
 	for _, d := range docs {
 		pathUnset(d, field)
