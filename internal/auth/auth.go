@@ -27,6 +27,10 @@ type User struct {
 	EmailVerified bool
 	Roles         []string
 	Disabled      bool
+	// Locale is the user's language: one the realm lists (see
+	// RealmSettings.Languages). Empty for users from before languages existed;
+	// those use the realm's default.
+	Locale string
 	// AdminNetworks restrict the user's admin API requests; LoginNetworks
 	// their login and every request with their session. Empty: no
 	// restriction beyond the realm's.
@@ -51,6 +55,7 @@ type Identity struct {
 type UserUpdate struct {
 	EmailVerified *bool
 	Disabled      *bool
+	Locale        *string
 	AdminNetworks *registry.Networks // set (empty clears)
 	LoginNetworks *registry.Networks // set (empty clears)
 }

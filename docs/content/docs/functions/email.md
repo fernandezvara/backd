@@ -52,6 +52,20 @@ email:
 - Subjects and text bodies use Go's `text/template`; HTML bodies use `html/template`, which escapes what it prints. Available: `{{.Realm}}`, `{{.User.Email}}`, `{{.User.Locale}}`, `{{.Link}}`, `{{.ExpiresAt}}` and `{{.Data}}`. Templates never receive text written by whoever caused the email, so `backd` can't be used to send someone else's words.
 - Templates are parsed and test-rendered at startup (a syntax error or an unknown field stops it), held in memory, and part of the [config fingerprint](../../operations/deploying/).
 
+## Languages
+
+Every user has a `locale`, and every email to them is rendered in it. A realm lists the languages it supports in `email.locales` and picks the fallback with `email.default_locale` (English only when neither is set).
+
+```yaml
+email:
+  default_locale: en
+  locales: [en, es]     # every listed language needs every template
+```
+
+- **Allowed means translated.** Every listed language needs every required template (`es.subject.txt`, `es.txt`, `es.html` for each kind), or startup fails naming the missing files. To add a language, copy a kind's English files, translate them, and list it.
+- **At sign-up** the user's language is the best listed match for the `locale` in the request or the browser's `Accept-Language`: exact (`es-MX`), then the language (`es`), then the default, never failing. **Changing it** later is an explicit request, `PATCH /_auth/me {"locale"}`, and must name a listed language. See [Sessions](../../auth/sessions/#language).
+- **Which language an email uses:** the one the request asked for when there is one, else the user's own, else `default_locale`.
+
 ## The delivery function
 
 The delivery function receives a finished message as `ctx.input` and hands it to your provider. It must be [`internal: true`](../internal/) and `mode: async`; it typically declares the provider's key as a [secret](../secrets/) and the provider's host in [`network`](../network/).

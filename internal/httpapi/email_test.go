@@ -291,3 +291,28 @@ func TestEmailLimits(t *testing.T) {
 		t.Errorf("another address: %v", err)
 	}
 }
+
+// With no language in the request, an email is in the user's own language.
+func TestEmailUsesTheUsersLanguage(t *testing.T) {
+	f := newRulesFixture(t)
+	w := newTestWorker(t, f)
+	ctx := context.Background()
+	if _, err := f.svc.SetLocale(ctx, f.adaID, "es"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.QueueEmail(ctx, auth.EmailRequest{Kind: email.PasswordChanged, UserID: f.adaID, Address: "ada@example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	w.RunOnce(ctx)
+	if in := deliveredEmail(t, f.runner.last()); in.Locale != "es" {
+		t.Errorf("locale = %q, want the user's es", in.Locale)
+	}
+	// A language the request names wins; one with no template falls back to the default.
+	if _, err := f.svc.QueueEmail(ctx, auth.EmailRequest{Kind: email.Welcome, UserID: f.adaID, Address: "ada@example.com", Locale: "en"}); err != nil {
+		t.Fatal(err)
+	}
+	w.RunOnce(ctx)
+	if in := deliveredEmail(t, f.runner.last()); in.Locale != "en" {
+		t.Errorf("locale = %q, want en", in.Locale)
+	}
+}

@@ -181,3 +181,24 @@ test('localStorage adapter', () => {
   assert.throws(() => localStorageStorage(), /not available/)
   assert.equal(memoryStorage().get(), null)
 })
+
+test('signup can name the user\'s language', async () => {
+  const m = mockFetch([{ status: 201, body: session('bds_1') }])
+  const { c } = clientWith(m)
+  await c.auth.signup({ email: 'ada@example.com', password: 'dev-p4ssw0rd!', locale: 'es-MX' })
+  assert.deepEqual(m.calls[0].body, { email: 'ada@example.com', password: 'dev-p4ssw0rd!', locale: 'es-MX' })
+})
+
+test('updateMe changes the language, and an unlisted one is a validation error', async () => {
+  const m = mockFetch([
+    { status: 200, body: { ...user, locale: 'es' } },
+    { status: 400, body: { error: { code: 'invalid_locale', message: "this realm doesn't offer that language", request_id: 'r1', details: [{ path: 'locale', reason: 'locale must be one of: en, es' }] } } },
+  ])
+  const { c } = clientWith(m)
+  const me = await c.auth.updateMe({ locale: 'es' })
+  assert.equal(me.locale, 'es')
+  assert.equal(m.calls[0].method, 'PATCH')
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_auth/me')
+  assert.deepEqual(m.calls[0].body, { locale: 'es' })
+  await assert.rejects(() => c.auth.updateMe({ locale: 'fr' }), (/** @type {any} */ e) => e.code === 'invalid_locale' && e.status === 400 && e.details[0].path === 'locale')
+})

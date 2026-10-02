@@ -393,6 +393,10 @@ func TestContract(t *testing.T) {
 	req("POST", a+"/login", `{"email": "victim@example.com", "password": "dev-p4ssw0rd!0"}`, nil, 429)
 
 	req("GET", a+"/me", "", me, 200)
+	// The user's language: a listed one is accepted, any other is refused.
+	req("PATCH", a+"/me", `{"locale": "es"}`, with(me, "Content-Type", "application/json"), 200)
+	req("PATCH", a+"/me", `{"locale": "fr"}`, with(me, "Content-Type", "application/json"), 400)
+	req("PATCH", a+"/me", `{"locale": "es"}`, map[string]string{"Content-Type": "application/json"}, 401)
 	sessions := req("GET", a+"/sessions", "", me, 200)
 	sid := sessions["items"].([]any)[0].(map[string]any)["id"].(string)
 	for _, op := range [][2]string{{"POST", "/logout"}, {"POST", "/logout-all"}, {"GET", "/me"}, {"GET", "/sessions"}, {"DELETE", "/sessions/" + sid}} {

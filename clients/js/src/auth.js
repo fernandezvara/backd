@@ -12,6 +12,7 @@ import { AuthenticationError } from './errors.js'
  * @property {string} email
  * @property {boolean} email_verified
  * @property {string[]} roles
+ * @property {string} locale       The user's language, one the realm lists (used for their emails).
  * @property {string} created_at   RFC3339 timestamp.
  */
 
@@ -60,15 +61,19 @@ export class Auth {
 
   /**
    * Creates an account and signs in. Realms with `signup: invite` need an
-   * invitation token.
-   * @param {{ email: string, password: string, invitation?: string }} input
+   * invitation token. `locale` (such as `es` or `es-MX`) is the language to
+   * use for the user; the server maps it silently to one the realm lists. A
+   * browser also sends its `Accept-Language`, which is used when no `locale`
+   * is given.
+   * @param {{ email: string, password: string, invitation?: string, locale?: string }} input
    * @param {RequestOptions} [opts]
    * @returns {Promise<Session>}
    */
-  async signup({ email, password, invitation }, opts) {
+  async signup({ email, password, invitation, locale }, opts) {
     /** @type {Record<string, string>} */
     const body = { email, password }
     if (invitation) body.invitation = invitation
+    if (locale) body.locale = locale
     const { data } = await this.client.request({ method: 'POST', path: ['_auth', 'signup'], body, auth: false, ...opts })
     return this.signedIn(data)
   }
@@ -118,6 +123,19 @@ export class Auth {
    */
   async me(opts) {
     return (await this.client.request({ method: 'GET', path: ['_auth', 'me'], ...opts })).data
+  }
+
+  /**
+   * Changes the signed-in user's own settings: today their language, which
+   * must be one the realm lists (case is ignored). Anything else is a
+   * `ValidationError` with code `invalid_locale` and the allowed languages in
+   * `details`.
+   * @param {{ locale?: string }} changes
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<User>}
+   */
+  async updateMe(changes, opts) {
+    return (await this.client.request({ method: 'PATCH', path: ['_auth', 'me'], body: changes, ...opts })).data
   }
 
   /**

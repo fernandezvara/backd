@@ -11,6 +11,7 @@ import { Job } from './functions.js'
  * @property {string} id
  * @property {string} email
  * @property {boolean} email_verified
+ * @property {string} locale
  * @property {string[]} roles
  * @property {boolean} disabled
  * @property {string[]} admin_networks  CIDR networks the user's admin requests must come from; empty: no own restriction.

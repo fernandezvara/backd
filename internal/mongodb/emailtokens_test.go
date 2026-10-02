@@ -94,3 +94,28 @@ func TestEmailJobOnMongoDB(t *testing.T) {
 		t.Fatalf("ClaimJob = %+v, %v, %v", claimed, found, err)
 	}
 }
+
+func TestUserLocaleOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	if err := s.CreateUser(ctx, auth.User{ID: "u1", Email: "ana@example.com", Roles: []string{}, Locale: "es", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateUser(ctx, auth.User{ID: "u2", Email: "bob@example.com", Roles: []string{}, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if u, err := s.UserByID(ctx, "u1"); err != nil || u.Locale != "es" {
+		t.Fatalf("created with a locale: %+v %v", u, err)
+	}
+	if u, _ := s.UserByEmail(ctx, "bob@example.com"); u.Locale != "" {
+		t.Errorf("a user without one has none stored: %q", u.Locale)
+	}
+	en := "en"
+	if err := s.UpdateUser(ctx, "u1", auth.UserUpdate{Locale: &en}, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if u, _ := s.UserByID(ctx, "u1"); u.Locale != "en" {
+		t.Errorf("after the change: %q", u.Locale)
+	}
+}

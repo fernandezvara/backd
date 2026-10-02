@@ -102,7 +102,7 @@ func (s *Users) RevokeInvitation(ctx context.Context, id string) error {
 
 // signupWithInvitation creates the user if the invitation is valid for
 // email. The invitation is used up only if the user is created.
-func (s *Users) signupWithInvitation(ctx context.Context, email, password, token string) (User, error) {
+func (s *Users) signupWithInvitation(ctx context.Context, email, password, token, locale string) (User, error) {
 	if token == "" {
 		return User{}, ErrInvitationRequired
 	}
@@ -129,7 +129,7 @@ func (s *Users) signupWithInvitation(ctx context.Context, email, password, token
 		restore()
 		return User{}, ErrInvalidInvitation
 	}
-	u, err := s.create(ctx, email, &password)
+	u, err := s.create(ctx, email, &password, locale)
 	if err != nil {
 		restore()
 		return User{}, err

@@ -62,6 +62,7 @@ A user looks like this:
   "email": "ada@example.com",
   "email_verified": false,
   "roles": ["editor"],
+  "locale": "en",
   "disabled": false,
   "admin_networks": [],
   "login_networks": ["10.20.0.0/16"],

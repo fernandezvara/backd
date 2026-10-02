@@ -402,3 +402,101 @@ func TestLoginRightAfterSignup(t *testing.T) {
 		t.Errorf("each login should get its own session token: %d distinct", len(seen))
 	}
 }
+
+func TestAcceptLanguages(t *testing.T) {
+	for header, want := range map[string]string{
+		"":                          "",
+		"es":                        "es",
+		"fr-CA, es;q=0.8, en;q=0.5": "fr-CA,es,en",
+		"en;q=0.5, es;q=0.9, pt-BR": "pt-BR,es,en", // by q, then as given
+		"*, de;q=0":                 "",            // wildcard and q=0 are out
+		" es-MX ; q=0.7 ,en":        "en,es-MX",
+		"es;q=oops, en;q=0.2":       "es,en", // an unreadable q counts as 1
+	} {
+		if got := strings.Join(acceptLanguages(header), ","); got != want {
+			t.Errorf("acceptLanguages(%q) = %q, want %q", header, got, want)
+		}
+	}
+}
+
+// Sign-up maps the language asked for to one the realm lists, silently; an
+// explicit change must name a listed one.
+func TestUserLocale(t *testing.T) {
+	f := newRulesFixture(t) // acme lists en (the default) and es
+	signup := func(email, body string, hdr ...string) map[string]any {
+		t.Helper()
+		h := map[string]string{"Content-Type": "application/json"}
+		for i := 0; i+1 < len(hdr); i += 2 {
+			h[hdr[i]] = hdr[i+1]
+		}
+		rec, out := f.doH(t, "POST", "/v1/acme/_auth/signup", `{"email": "`+email+`", "password": "dev-p4ssw0rd!"`+body+`}`, h)
+		if rec.Code != 201 {
+			t.Fatalf("signup %s: %d %v", email, rec.Code, out)
+		}
+		return out
+	}
+	locale := func(out map[string]any) any { return out["user"].(map[string]any)["locale"] }
+
+	if got := locale(signup("a1@example.com", ``)); got != "en" {
+		t.Errorf("no language asked for: %v", got)
+	}
+	if got := locale(signup("a2@example.com", `, "locale": "es"`)); got != "es" {
+		t.Errorf("locale es: %v", got)
+	}
+	if got := locale(signup("a3@example.com", `, "locale": "es-MX"`)); got != "es" {
+		t.Errorf("es-MX maps to es: %v", got)
+	}
+	if got := locale(signup("a4@example.com", `, "locale": "fr"`)); got != "en" {
+		t.Errorf("an unlisted language maps to the default, silently: %v", got)
+	}
+	if got := locale(signup("a5@example.com", ``, "Accept-Language", "fr-CA, es;q=0.8, en;q=0.5")); got != "es" {
+		t.Errorf("Accept-Language: %v", got)
+	}
+	if got := locale(signup("a6@example.com", `, "locale": "en"`, "Accept-Language", "es")); got != "en" {
+		t.Errorf("the request's locale comes before Accept-Language: %v", got)
+	}
+
+	// GET /me shows it; PATCH /me changes it.
+	out := signup("a7@example.com", `, "locale": "es"`)
+	token := out["token"].(string)
+	if code, me := f.as(t, token, "GET", "/v1/acme/_auth/me", ""); code != 200 || me["locale"] != "es" {
+		t.Fatalf("me: %d %v", code, me)
+	}
+	patch := func(cred, body string) (int, map[string]any) {
+		h := map[string]string{"Content-Type": "application/json"}
+		if cred != "" {
+			h["Authorization"] = "Bearer " + cred
+		}
+		rec, out := f.doH(t, "PATCH", "/v1/acme/_auth/me", body, h)
+		return rec.Code, out
+	}
+	if code, me := patch(token, `{"locale": "EN"}`); code != 200 || me["locale"] != "en" {
+		t.Errorf("change to en (case ignored): %d %v", code, me)
+	}
+	code, bad := patch(token, `{"locale": "fr"}`)
+	e, _ := bad["error"].(map[string]any)
+	details, _ := e["details"].([]any)
+	if code != 400 || e["code"] != "invalid_locale" || len(details) != 1 || !strings.Contains(details[0].(map[string]any)["reason"].(string), "en, es") {
+		t.Errorf("an unlisted language: %d %v", code, bad)
+	}
+	// An explicit change isn't mapped silently: es-MX isn't listed.
+	if code, _ := patch(token, `{"locale": "es-MX"}`); code != 400 {
+		t.Errorf("an explicit unlisted region: %d", code)
+	}
+	if code, me := patch(token, `{}`); code != 200 || me["locale"] != "en" {
+		t.Errorf("an empty change: %d %v", code, me)
+	}
+	if code, _ := patch(token, `{"email": "x@example.com"}`); code != 400 {
+		t.Errorf("an unknown field: %d", code)
+	}
+	if code, _ := patch("", `{"locale": "es"}`); code != 401 {
+		t.Errorf("anonymous: %d", code)
+	}
+	if code, me := f.as(t, token, "GET", "/v1/acme/_auth/me", ""); code != 200 || me["locale"] != "en" {
+		t.Errorf("me after the change: %d %v", code, me)
+	}
+	// Users from before languages existed show the realm's default.
+	if code, me := f.as(t, f.ada, "GET", "/v1/acme/_auth/me", ""); code != 200 || me["locale"] == nil || me["locale"] == "" {
+		t.Errorf("a user's locale is always shown: %d %v", code, me)
+	}
+}

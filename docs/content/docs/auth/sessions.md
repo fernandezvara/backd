@@ -25,6 +25,7 @@ Signing up or logging in returns a **session token**:
     "email": "ada@example.com",
     "email_verified": false,
     "roles": [],
+    "locale": "en",
     "created_at": "2026-09-26T12:58:18.838Z"
   }
 }
@@ -53,11 +54,12 @@ All request bodies are JSON objects sent with `Content-Type: application/json`. 
 
 | Method and path | Needs a session | Body | Success |
 |---|---|---|---|
-| `POST /_auth/signup` | no | `{"email", "password", "invitation"?}` | `201` with a session |
+| `POST /_auth/signup` | no | `{"email", "password", "invitation"?, "locale"?}` | `201` with a session |
 | `POST /_auth/login` | no | `{"email", "password"}` | `200` with a session |
 | `POST /_auth/logout` | yes | none | `204`; ends this session |
 | `POST /_auth/logout-all` | yes | none | `204`; ends all of the user's sessions, including this one |
 | `GET /_auth/me` | yes | none | `200` with the user |
+| `PATCH /_auth/me` | yes | `{"locale"?}` | `200` with the user; changes the user's [language](#language) |
 | `DELETE /_auth/me` | yes | `{"password"}` | `204`; deletes the account |
 | `POST /_auth/password` | yes | `{"current_password", "new_password"}` | `204`; ends all other sessions |
 | `GET /_auth/sessions` | yes | none | `200` with the user's sessions |
@@ -114,8 +116,16 @@ Behind a reverse proxy or load balancer, set [`TRUSTED_PROXIES`](../../operation
 `GET /_auth/me` returns the signed-in user:
 
 ```json
-{"id": "dars2ql90v600434mf0g", "email": "ada@example.com", "email_verified": false, "roles": [], "created_at": "2026-09-26T12:58:18.838Z"}
+{"id": "dars2ql90v600434mf0g", "email": "ada@example.com", "email_verified": false, "roles": [], "locale": "en", "created_at": "2026-09-26T12:58:18.838Z"}
 ```
+
+### Language
+
+Every user has a `locale`, the language of the emails they receive. A realm lists the languages it supports in [`email.locales`](../../functions/email/#languages) (English only when it sends no email), with `email.default_locale` as the fallback.
+
+- **At sign-up** `backd` picks the best listed language for what was asked, silently and without ever failing: the `locale` in the body (such as `es` or `es-MX`), else the browser's `Accept-Language`, matched exactly (`es-MX`), then by language (`es`), else the realm's default. A page sends `locale: navigator.language` to use the browser's language; a browser's `Accept-Language` header is used when the body has none.
+- **To change it**, `PATCH /_auth/me` with `{"locale": "es"}`: the value must be a listed language (case is ignored). Anything else answers `400 invalid_locale` with the allowed languages in `details`: an explicit change is never mapped silently.
+- Users who signed up before languages existed use the realm's default.
 
 `DELETE /_auth/me` with `{"password": "…"}` deletes the account, its sign-in methods and sessions. Documents the user owns are kept. A wrong password returns `401 invalid_credentials`.
 

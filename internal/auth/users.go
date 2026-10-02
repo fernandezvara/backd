@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/rs/xid"
@@ -38,7 +39,7 @@ func (s *Users) now() time.Time {
 // Create adds a user, as an administrator. With password nil the user has
 // no password identity and can't sign in with a password until one is set.
 func (s *Users) Create(ctx context.Context, email string, password *string) (User, error) {
-	u, err := s.create(ctx, email, password)
+	u, err := s.create(ctx, email, password, "")
 	if err != nil {
 		return User{}, err
 	}
@@ -48,7 +49,9 @@ func (s *Users) Create(ctx context.Context, email string, password *string) (Use
 
 func userTarget(id string) string { return "user:" + id }
 
-func (s *Users) create(ctx context.Context, email string, password *string) (User, error) {
+// create makes a user. locale is the language they asked for ("" for none): it
+// is mapped to one the realm lists, or its default.
+func (s *Users) create(ctx context.Context, email string, password *string, locale string) (User, error) {
 	email, err := registry.NormalizeEmail(email)
 	if err != nil {
 		return User{}, err
@@ -65,7 +68,7 @@ func (s *Users) create(ctx context.Context, email string, password *string) (Use
 	if roles == nil {
 		roles = []string{}
 	}
-	u := User{ID: xid.New().String(), Email: email, Roles: roles, CreatedAt: now, UpdatedAt: now}
+	u := User{ID: xid.New().String(), Email: email, Roles: roles, Locale: s.Settings.BestLocale(locale), CreatedAt: now, UpdatedAt: now}
 	if err := s.Store.CreateUser(ctx, u); err != nil {
 		return User{}, err
 	}
@@ -108,6 +111,38 @@ func (s *Users) SetEmailVerified(ctx context.Context, email string, verified boo
 	}
 	s.Audit(ctx, AuditUserVerifyEmail, userTarget(u.ID), map[string]any{"verified": verified})
 	return nil
+}
+
+// InvalidLocaleError means a language the realm doesn't list was asked for.
+type InvalidLocaleError struct{ Allowed []string }
+
+func (e *InvalidLocaleError) Error() string {
+	return "locale must be one of: " + strings.Join(e.Allowed, ", ")
+}
+
+// SetLocale changes a user's language to one the realm lists (ignoring case;
+// es-mx sets es-MX). Any other value is an *InvalidLocaleError naming the
+// allowed ones: unlike sign-up, an explicit change isn't silently mapped.
+func (s *Users) SetLocale(ctx context.Context, userID, locale string) (User, error) {
+	listed := s.Settings.ListedLocale(locale)
+	if listed == "" {
+		_, allowed := s.Settings.Languages()
+		return User{}, &InvalidLocaleError{Allowed: allowed}
+	}
+	if err := s.Store.UpdateUser(ctx, userID, UserUpdate{Locale: &listed}, s.now()); err != nil {
+		return User{}, err
+	}
+	return s.Store.UserByID(ctx, userID)
+}
+
+// LocaleOf is the language of a user: theirs, or the realm's default for
+// users from before languages existed.
+func (s *Users) LocaleOf(u User) string {
+	if u.Locale != "" {
+		return u.Locale
+	}
+	def, _ := s.Settings.Languages()
+	return def
 }
 
 // SetDisabled disables or re-enables the user. Disabling revokes all of
