@@ -14,7 +14,7 @@ import (
 func TestInvocationsOnMongoDB(t *testing.T) {
 	s, _ := authFixture(t)
 	ctx := context.Background()
-	t0 := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
+	t0 := time.Date(2126, 9, 29, 12, 0, 0, 0, time.UTC)
 	for i, r := range []auth.InvocationRecord{
 		{Function: "app/checkout", Actor: "user:u1", Mode: "sync", Status: "ok", DurationMS: 12, RequestID: "r1", Logs: []auth.LogLine{{Level: "log", Line: "charging card"}}},
 		{Function: "app/checkout", Actor: "user:u0", Mode: "sync", Status: "function_error", Code: "out_of_stock", DurationMS: 3, RequestID: "r2"},

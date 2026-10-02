@@ -16,7 +16,7 @@ import (
 func TestJobsOnMongoDB(t *testing.T) {
 	s, _ := authFixture(t)
 	ctx := context.Background()
-	t0 := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
+	t0 := time.Date(2126, 9, 29, 12, 0, 0, 0, time.UTC)
 
 	j1 := auth.Job{ID: "j0", Database: "app", Function: "checkout", Input: json.RawMessage(`{"cart":["a","b"],"total":19.5}`),
 		CallerActor: "user:u1", CallerUserID: "u1", TimeoutMS: 15 * 60 * 1000, RequestID: "r1",
@@ -115,7 +115,7 @@ func TestJobsOnMongoDB(t *testing.T) {
 func TestListJobsOnMongoDB(t *testing.T) {
 	s, _ := authFixture(t)
 	ctx := context.Background()
-	t0 := time.Date(2026, 9, 29, 3, 0, 0, 0, time.UTC)
+	t0 := time.Date(2126, 9, 29, 3, 0, 0, 0, time.UTC)
 	mk := func(id, function string, at time.Time, scheduled bool) auth.Job {
 		return auth.Job{ID: id, Database: "app", Function: function, Scheduled: scheduled, CallerActor: "user:u1", CallerUserID: "u1",
 			TimeoutMS: 1000, Status: auth.JobQueued, CreatedAt: at, ExpiresAt: at.Add(48 * time.Hour)}
@@ -181,7 +181,7 @@ func TestListJobsOnMongoDB(t *testing.T) {
 func TestRetryJobOnMongoDB(t *testing.T) {
 	s, _ := authFixture(t)
 	ctx := context.Background()
-	t0 := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
+	t0 := time.Date(2126, 9, 29, 12, 0, 0, 0, time.UTC)
 	if err := s.EnqueueJob(ctx, auth.Job{ID: "r0", Database: "app", Function: "flaky", Input: json.RawMessage(`{}`),
 		TimeoutMS: 60000, Status: auth.JobQueued, CreatedAt: t0, ExpiresAt: t0.Add(48 * time.Hour)}); err != nil {
 		t.Fatal(err)
