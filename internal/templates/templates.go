@@ -62,6 +62,18 @@ func Realm(configDir, realm string, sample bool) ([]File, error) {
 			out = append(out, more...)
 		}
 	}
+	// The hosted pages the links in emails open, in English.
+	for _, kind := range email.PageKinds {
+		data, err := email.DefaultPage(kind)
+		if err != nil {
+			return out, err
+		}
+		more, err := writeBytes(configDir, realm+"/"+email.PagesDirName+"/"+kind+"/en.html", data)
+		if err != nil {
+			return out, err
+		}
+		out = append(out, more...)
+	}
 	if !sample {
 		return out, nil
 	}

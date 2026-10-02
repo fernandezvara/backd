@@ -21,6 +21,8 @@ import (
 type authAPI struct {
 	// users returns the user service of an auth-enabled realm, or nil.
 	users     func(realm string) *auth.Users
+	reg       *registry.Registry
+	actions   []hostedAction // the flows behind links in emails
 	opTimeout time.Duration
 }
 
@@ -33,6 +35,7 @@ func (a *authAPI) routes(r chi.Router) {
 		json := requireContentType("application/json")
 		r.With(json).Post("/signup", a.signup)
 		r.With(json).Post("/login", a.login)
+		a.hostedRoutes(r)
 		r.Group(func(r chi.Router) {
 			r.Use(a.requireSession)
 			r.Post("/logout", a.logout)

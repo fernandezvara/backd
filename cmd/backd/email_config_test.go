@@ -30,6 +30,10 @@ func TestEmailNeedsAPublicURL(t *testing.T) {
 				files["acme/email/"+kind+"/"+name] = string(data)
 			}
 		}
+		for _, kind := range email.PageKinds {
+			page, _ := email.DefaultPage(kind)
+			files["acme/pages/"+kind+"/en.html"] = string(page)
+		}
 		root := writeConfig(t, files)
 		writeFuncManifest(t, filepath.Join(root, fnDir), "deliver")
 		reg, err := registry.Load(root)

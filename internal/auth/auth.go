@@ -175,6 +175,9 @@ type Store interface {
 
 	// CreateEmailToken stores a token's hash with its purpose and user.
 	CreateEmailToken(ctx context.Context, t EmailToken) error
+	// GetEmailToken returns the token with this hash whatever its state, or
+	// ErrInvalidToken when there is none.
+	GetEmailToken(ctx context.Context, hash string) (EmailToken, error)
 	// RedeemEmailToken atomically marks the token with this hash and purpose
 	// used, if it is unused and unexpired at now, and returns it; otherwise
 	// ErrInvalidToken.

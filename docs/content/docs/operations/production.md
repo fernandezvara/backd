@@ -28,7 +28,7 @@ It uses Docker Compose, but each part maps directly onto other platforms: a Kube
                                     worker (claims and runs async jobs)
 ```
 
-- **nginx** is the only thing reachable from outside. It terminates TLS, redirects HTTP to HTTPS, rate-limits requests, caps body sizes and sets the client address that `backd` sees.
+- **nginx** is the only thing reachable from outside. It terminates TLS, redirects HTTP to HTTPS, rate-limits requests, caps body sizes and sets the client address that `backd` sees. Its access log (`edge` format) records the path without the query string, because the links in [emails](../../functions/email/#links-and-pages) carry their token there.
 - **backd** runs with `PROVISION_MODE=verify` as a MongoDB user that can only read and write documents. It has a read-only filesystem, no Linux capabilities and CPU and memory limits.
 - **MongoDB** requires TLS and authentication, and sits on an internal network with no published ports.
 - A **provision job** runs before `backd` with admin credentials: it creates collections, validators and indexes, and grants `backd`'s user access to exactly the collections the config uses.

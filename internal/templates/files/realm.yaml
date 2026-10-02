@@ -62,6 +62,16 @@ auth: enabled
 #                                          # overrides the BACKD_URL environment variable
 #   default_locale: en                     # language of the templates used when a user has none
 #   locales: [en]                          # each listed language needs every template (es.txt, ...)
+#                                          # and every page in pages/ (es.html, ...)
+#   redirect_delay: 3s                     # how long the result page waits before sending the user back to your app
+#   allowed_redirects:                     # where links may send users afterwards: origins, or an app's scheme
+#     - https://app.acme.example
+#     - acme://
+#   redirects:                             # where, per flow, when the request didn't say
+#     verify_email: https://app.acme.example/verified
+#     reset_password: https://app.acme.example/signin
+#   links:                                 # optional: your own page instead of backd's (it posts the token as JSON)
+#     reset_password: https://app.acme.example/reset?token={token}
 #   limits:                                # defaults shown
 #     per_recipient: { per_kind_per_hour: 3, per_day: 10 }
 #     per_ip: { per_hour: 20 }

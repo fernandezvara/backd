@@ -56,11 +56,11 @@ type rulesFixture struct {
 	internal     http.Handler // the internal listener, for functions calling back
 }
 
-func newRulesFixture(t *testing.T) *rulesFixture {
+func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 	t.Helper()
 	root := t.TempDir()
 	for p, content := range map[string]string{
-		"acme/realm.yaml":              "signup: open\nroles:\n  admin: {}\n  staff:\n    admin: true\nemail:\n  function: app/deliver\n  from: \"Acme <no-reply@acme.example>\"\n  public_url: https://api.acme.example\n  locales: [en, es]\n",
+		"acme/realm.yaml":              "signup: open\nroles:\n  admin: {}\n  staff:\n    admin: true\nemail:\n  function: app/deliver\n  from: \"Acme <no-reply@acme.example>\"\n  public_url: https://api.acme.example\n  locales: [en, es]\n  allowed_redirects: [https://app.acme.example]\n  redirects:\n    verify_email: https://app.acme.example/verified\n  links:\n    change_email: https://app.acme.example/confirm?token={token}\n",
 		"acme/app/posts/schema.json":   postsSchema,
 		"acme/app/posts/rules.yaml":    postsRules,
 		"acme/app/notes/schema.json":   postsSchema,
@@ -115,6 +115,17 @@ func newRulesFixture(t *testing.T) *rulesFixture {
 			t.Fatal(err)
 		}
 	}
+	// The default hosted pages, in English and (the same text) Spanish.
+	for _, kind := range email.PageKinds {
+		page, _ := email.DefaultPage(kind)
+		for _, loc := range []string{"en", "es"} {
+			p := filepath.Join(root, "acme", "pages", kind, loc+".html")
+			_ = os.MkdirAll(filepath.Dir(p), 0o755)
+			if err := os.WriteFile(p, page, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 	// The default email templates, in English and (the same text) Spanish.
 	for _, kind := range email.SystemKinds {
 		defaults, _ := email.DefaultFiles(kind)
@@ -153,6 +164,9 @@ func newRulesFixture(t *testing.T) *rulesFixture {
 			return nil
 		}
 		c.Log = slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		for _, o := range opts {
+			o(c)
+		}
 	})
 	rf := &rulesFixture{fixture: f, reg: reg, svc: svc, log: &buf, runner: runner, callbackKey: callbackKey}
 	rf.internal = NewInternalHandler(Config{

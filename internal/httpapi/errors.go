@@ -19,6 +19,7 @@ const (
 	codeMethodNotAllowed = "method_not_allowed"
 	codeConflict         = "conflict"
 	codeInvalidLocale    = "invalid_locale"
+	codeInvalidToken     = "invalid_token"
 	codeWriteConflict    = "write_conflict"
 	codeVersionMismatch  = "version_mismatch"
 	codeInvalidHeader    = "invalid_header"

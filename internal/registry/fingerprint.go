@@ -36,15 +36,16 @@ func (r *Registry) Fingerprint() (string, error) {
 		add(filepath.Join(rl.Name, RealmFile))
 		if rl.Settings.Email != nil {
 			// The templates backd renders its emails from.
-			dir := filepath.Join(r.Root, rl.Name, email.DirName)
-			_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-				if err == nil && d.Type().IsRegular() && !strings.HasPrefix(d.Name(), ".") {
-					if rel, err := filepath.Rel(r.Root, path); err == nil {
-						files = append(files, filepath.ToSlash(rel))
+			for _, folder := range []string{email.DirName, email.PagesDirName} {
+				_ = filepath.WalkDir(filepath.Join(r.Root, rl.Name, folder), func(path string, d fs.DirEntry, err error) error {
+					if err == nil && d.Type().IsRegular() && !strings.HasPrefix(d.Name(), ".") {
+						if rel, err := filepath.Rel(r.Root, path); err == nil {
+							files = append(files, filepath.ToSlash(rel))
+						}
 					}
-				}
-				return nil
-			})
+					return nil
+				})
+			}
 		}
 		for _, db := range rl.Databases {
 			for _, c := range db.Collections {

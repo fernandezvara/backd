@@ -108,6 +108,19 @@ type EmailSettings struct {
 	DefaultLocale string
 	Locales       []string // every one needs every required template
 	Limits        EmailLimits
+	// RedirectDelay is how long a hosted result page waits before it sends the
+	// user on (email.redirect_delay).
+	RedirectDelay time.Duration
+	// Redirects are where the hosted pages send users afterwards, by flow
+	// (verify_email, reset_password, change_email, invitation), when the
+	// request that caused the email named no other place.
+	Redirects map[string]string
+	// AllowedRedirects are the origins (https://app.example.com) and app
+	// schemes (acme://) that redirect_to, redirects and links may point at.
+	AllowedRedirects []string
+	// Links replace the hosted page of a flow with a page of the app: the
+	// link in the email is this URL, with {token} replaced.
+	Links map[string]string
 	// Timeout is the delivery function's own timeout, set when the config is
 	// loaded; email jobs lease for it.
 	Timeout time.Duration
@@ -177,13 +190,17 @@ type realmDoc struct {
 
 // emailDoc mirrors the email section of realm.yaml.
 type emailDoc struct {
-	Function      string   `yaml:"function"`
-	From          string   `yaml:"from"`
-	ReplyTo       string   `yaml:"reply_to"`
-	PublicURL     string   `yaml:"public_url"`
-	DefaultLocale string   `yaml:"default_locale"`
-	Locales       []string `yaml:"locales"`
-	Limits        *struct {
+	Function         string            `yaml:"function"`
+	From             string            `yaml:"from"`
+	ReplyTo          string            `yaml:"reply_to"`
+	PublicURL        string            `yaml:"public_url"`
+	DefaultLocale    string            `yaml:"default_locale"`
+	Locales          []string          `yaml:"locales"`
+	RedirectDelay    string            `yaml:"redirect_delay"`
+	Redirects        map[string]string `yaml:"redirects"`
+	AllowedRedirects []string          `yaml:"allowed_redirects"`
+	Links            map[string]string `yaml:"links"`
+	Limits           *struct {
 		PerRecipient *struct {
 			PerKindPerHour *int `yaml:"per_kind_per_hour"`
 			PerDay         *int `yaml:"per_day"`
@@ -606,7 +623,109 @@ func parseEmail(d *emailDoc) (*EmailSettings, []error) {
 			limit("per_ip.per_hour", ip.PerHour, &e.Limits.PerIPPerHour)
 		}
 	}
+	errs = append(errs, parseRedirects(e, d)...)
 	return e, errs
+}
+
+// Flows the hosted pages and links cover, by realm.yaml key.
+var redirectKeys = []string{"verify_email", "reset_password", "change_email", "invitation"}
+var linkKeys = []string{"verify_email", "reset_password", "change_email", "revert_email_change", "invitation"}
+
+// DefaultRedirectDelay is email.redirect_delay when not set.
+const DefaultRedirectDelay = 3 * time.Second
+
+func parseRedirects(e *EmailSettings, d *emailDoc) []error {
+	var errs []error
+	add := func(format string, args ...any) { errs = append(errs, fmt.Errorf("email."+format, args...)) }
+	e.RedirectDelay = DefaultRedirectDelay
+	if d.RedirectDelay != "" {
+		dur, err := ParseDuration(d.RedirectDelay)
+		switch {
+		case err != nil:
+			add("redirect_delay: %v", err)
+		case dur > 30*time.Second:
+			add("redirect_delay: must be at most 30s, got %s", d.RedirectDelay)
+		default:
+			e.RedirectDelay = dur
+		}
+	}
+	for i, o := range d.AllowedRedirects {
+		norm, ok := normalizeRedirectOrigin(o)
+		switch {
+		case !ok:
+			add("allowed_redirects[%d]: %q must be an origin such as https://app.example.com (no path), or an app scheme such as acme://", i, o)
+		case slices.Contains(e.AllowedRedirects, norm):
+			add("allowed_redirects[%d]: %q is listed twice", i, o)
+		default:
+			e.AllowedRedirects = append(e.AllowedRedirects, norm)
+		}
+	}
+	e.Redirects = map[string]string{}
+	for _, k := range slices.Sorted(maps.Keys(d.Redirects)) {
+		v := d.Redirects[k]
+		switch {
+		case !slices.Contains(redirectKeys, k):
+			add("redirects: unknown flow %q (want %s)", k, strings.Join(redirectKeys, ", "))
+		case !e.AllowedRedirect(v):
+			add("redirects.%s: %q must be an absolute URL within allowed_redirects", k, v)
+		default:
+			e.Redirects[k] = v
+		}
+	}
+	e.Links = map[string]string{}
+	for _, k := range slices.Sorted(maps.Keys(d.Links)) {
+		v := d.Links[k]
+		switch {
+		case !slices.Contains(linkKeys, k):
+			add("links: unknown flow %q (want %s)", k, strings.Join(linkKeys, ", "))
+		case strings.Count(v, "{token}") != 1:
+			add("links.%s: %q must contain {token} exactly once", k, v)
+		case !e.AllowedRedirect(strings.Replace(v, "{token}", "x", 1)):
+			add("links.%s: %q must be an absolute URL within allowed_redirects", k, v)
+		default:
+			e.Links[k] = v
+		}
+	}
+	return errs
+}
+
+// normalizeRedirectOrigin accepts an http(s) origin without a path, or an app
+// scheme with nothing after it (acme://), and returns it lower-cased.
+func normalizeRedirectOrigin(o string) (string, bool) {
+	o = strings.TrimSpace(o)
+	if scheme, rest, ok := strings.Cut(o, "://"); ok && rest == "" && schemePattern.MatchString(scheme) {
+		switch s := strings.ToLower(scheme); s {
+		case "http", "https", "javascript", "data", "vbscript", "file", "blob":
+			return "", false
+		default:
+			return s + "://", true
+		}
+	}
+	o = strings.TrimSuffix(o, "/")
+	u, err := url.Parse(o)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+		return "", false
+	}
+	return strings.ToLower(u.Scheme) + "://" + strings.ToLower(u.Host), true
+}
+
+var schemePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.-]*$`)
+
+// AllowedRedirect reports whether raw is an absolute URL on one of the
+// allowed origins or app schemes: where a page may send a user.
+func (e EmailSettings) AllowedRedirect(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.User != nil || strings.ContainsAny(raw, " \t\r\n") {
+		return false
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme == "http" || scheme == "https" {
+		if u.Host == "" {
+			return false
+		}
+		return slices.Contains(e.AllowedRedirects, scheme+"://"+strings.ToLower(u.Host))
+	}
+	return slices.Contains(e.AllowedRedirects, scheme+"://")
 }
 
 var localePattern = regexp.MustCompile(`^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$`)

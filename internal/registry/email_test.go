@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fernandezvara/backd/internal/email"
 )
@@ -27,6 +28,13 @@ func emailTree(t *testing.T, realmYAML, deliverYAML string, extra map[string]str
 		for name, data := range defaults {
 			files["shop/email/"+kind+"/"+name] = string(data)
 		}
+	}
+	for _, kind := range email.PageKinds {
+		page, err := email.DefaultPage(kind)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files["shop/pages/"+kind+"/en.html"] = string(page)
 	}
 	for p, c := range extra {
 		files[p] = c
@@ -75,7 +83,39 @@ func esTemplates(t *testing.T) map[string]string {
 			out["shop/email/"+kind+"/es"+strings.TrimPrefix(name, "en")] = string(data)
 		}
 	}
+	for _, kind := range email.PageKinds {
+		page, _ := email.DefaultPage(kind)
+		out["shop/pages/"+kind+"/es.html"] = string(page)
+	}
 	return out
+}
+
+func TestEmailRedirects(t *testing.T) {
+	realm := goodEmail + "  redirect_delay: 10s\n  allowed_redirects: [https://app.shop.example/, acme://]\n  redirects:\n    verify_email: https://app.shop.example/verified\n  links:\n    reset_password: https://app.shop.example/reset?token={token}\n"
+	reg, err := Load(emailTree(t, realm, goodDeliver, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	es := reg.Realms["shop"].Settings.Email
+	if es.RedirectDelay != 10*time.Second || es.Redirects["verify_email"] != "https://app.shop.example/verified" || !strings.Contains(es.Links["reset_password"], "{token}") {
+		t.Errorf("settings: %+v", es)
+	}
+	for raw, want := range map[string]bool{
+		"https://app.shop.example/anything?x=1": true, "acme://welcome": true, "https://app.shop.example.evil.com/": false,
+		"http://app.shop.example/": false, "javascript:alert(1)": false, "//app.shop.example/": false, "/relative": false, "": false, "other://x": false,
+	} {
+		if got := es.AllowedRedirect(raw); got != want {
+			t.Errorf("AllowedRedirect(%q) = %v", raw, got)
+		}
+	}
+	// Without settings: the default delay, and nothing is allowed.
+	reg, err = Load(emailTree(t, goodEmail, goodDeliver, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if es := reg.Realms["shop"].Settings.Email; es.RedirectDelay != DefaultRedirectDelay || es.AllowedRedirect("https://app.shop.example/") {
+		t.Errorf("defaults: %+v", es)
+	}
 }
 
 func TestEmailErrors(t *testing.T) {
@@ -96,6 +136,12 @@ func TestEmailErrors(t *testing.T) {
 		{"locale not listed", goodEmail + "  locales: [es]\n", goodDeliver, nil, "locales: must include default_locale (en)"},
 		{"locale untranslated", goodEmail + "  locales: [en, fr]\n", goodDeliver, nil, "fr.subject.txt: missing"},
 		{"limit", goodEmail + "  limits:\n    per_ip: {per_hour: 0}\n", goodDeliver, nil, "limits.per_ip.per_hour: must be at least 1"},
+		{"redirect delay", goodEmail + "  redirect_delay: 5m\n", goodDeliver, nil, "redirect_delay"},
+		{"redirect not allowed", goodEmail + "  allowed_redirects: [https://app.shop.example]\n  redirects:\n    verify_email: https://evil.example/x\n", goodDeliver, nil, "redirects.verify_email"},
+		{"redirect unknown flow", goodEmail + "  allowed_redirects: [https://app.shop.example]\n  redirects:\n    welcome: https://app.shop.example/x\n", goodDeliver, nil, `unknown flow "welcome"`},
+		{"link without token", goodEmail + "  allowed_redirects: [https://app.shop.example]\n  links:\n    reset_password: https://app.shop.example/reset\n", goodDeliver, nil, "{token}"},
+		{"link outside", goodEmail + "  allowed_redirects: [https://app.shop.example]\n  links:\n    reset_password: https://evil.example/r?t={token}\n", goodDeliver, nil, "links.reset_password"},
+		{"page missing", goodEmail + "  locales: [en, fr]\n", goodDeliver, nil, "fr.html: missing"},
 		{"unknown key", goodEmail + "  smtp: x\n", goodDeliver, nil, "field smtp not found"},
 		{"template broken", goodEmail, goodDeliver, map[string]string{"shop/email/verify-email/en.txt": "{{.Link"}, "verify-email/en.txt"},
 	} {
