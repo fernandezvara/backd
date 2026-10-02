@@ -41,6 +41,13 @@ export class AuthenticationError extends BackdError {}
 /** 403: the caller isn't allowed to do this. */
 export class ForbiddenError extends BackdError {}
 
+/**
+ * Not an HTTP error: a sign-up in a realm that requires verified addresses
+ * answers `202`, because the account exists but there is no session. Thrown
+ * by `auth.signup()` so the code after it, which expects a session, doesn't run.
+ */
+export class VerificationRequiredError extends BackdError {}
+
 /** 404: unknown realm, collection, document, user or session. */
 export class NotFoundError extends BackdError {}
 

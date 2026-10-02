@@ -4,7 +4,7 @@
 
 # Readers must be listed in the expense's copy of the members.
 # HOLE: the copy is written by clients, and never compared with the group.
-read: user != nil && user.email in document.members
+read: user != nil && user.email_verified && user.email in document.members
 
 # You record only what you paid yourself, among people of the expense's
 # members; a settlement goes to exactly one other person.
@@ -13,7 +13,7 @@ read: user != nil && user.email in document.members
 # HOLE: a settlement is recorded by the payer alone; the receiver never
 # confirms it.
 create: >
-  user != nil
+  user != nil && user.email_verified
   && user.email in data.members
   && data.paid_by == user.email
   && all(data.split_between, # in data.members)
@@ -24,7 +24,7 @@ create: >
 # and paid by them. The members copy may change: the app refreshes the
 # copies of its own expenses when the group changes.
 update: >
-  user != nil
+  user != nil && user.email_verified
   && document._meta.owner == user.id
   && !('group_id' in changed())
   && !('kind' in changed())
@@ -34,4 +34,4 @@ update: >
   && (data.kind == 'expense'
       || (len(data.split_between) == 1 && !(user.email in data.split_between)))
 
-delete: user != nil && document._meta.owner == user.id
+delete: user != nil && user.email_verified && document._meta.owner == user.id

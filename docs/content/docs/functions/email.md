@@ -144,7 +144,7 @@ email:
 
 Every message, with its working links, shows up in `outbox`: read it with the API (`GET /v1/<realm>/notifications/outbox`, readable by anyone, since it exists only on a development machine) or in the Mailbox.
 
-**The Mailbox** is a small web app of the [local stack](../../getting-started/) (`make example`, then <https://localhost:8443/example/mailbox/>): it lists the `workshop` realm's captured emails and shows each one, text and HTML, with a button that opens its link, so you can click through verification and password reset by hand. The workshop realm is configured exactly like this, and its function is the tested one the template writes:
+**The Mailbox** is a small web app of the [local stack](../../getting-started/) (`make example`, then <https://localhost:8443/example/mailbox/>): it lists a realm's captured emails (`?realm=<realm>`, the `workshop` realm by default; the two expenses examples use it too, since they require verified addresses) and shows each one, text and HTML, with a button that opens its link, so you can click through verification and password reset by hand. The workshop realm is configured exactly like this, and its function is the tested one the template writes:
 
 {{< example-file path="workshop/notifications/_functions/email-capture/function.yaml" >}}
 

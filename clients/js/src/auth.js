@@ -1,4 +1,4 @@
-import { AuthenticationError } from './errors.js'
+import { AuthenticationError, VerificationRequiredError } from './errors.js'
 
 /**
  * @typedef {import('./client.js').Client} Client
@@ -64,17 +64,27 @@ export class Auth {
    * invitation token. `locale` (such as `es` or `es-MX`) is the language to
    * use for the user; the server maps it silently to one the realm lists. A
    * browser also sends its `Accept-Language`, which is used when no `locale`
-   * is given.
-   * @param {{ email: string, password: string, invitation?: string, locale?: string }} input
+   * is given. `redirectTo` is where the page after the verification link may
+   * send the user (it must be within the realm's `email.allowed_redirects`).
+   *
+   * A realm that requires verified addresses (`account.require_verified_email`)
+   * creates the account but starts no session: this rejects with a
+   * {@link VerificationRequiredError}, nothing is stored, and the user signs
+   * in after following the link in the email they were sent.
+   * @param {{ email: string, password: string, invitation?: string, locale?: string, redirectTo?: string }} input
    * @param {RequestOptions} [opts]
    * @returns {Promise<Session>}
    */
-  async signup({ email, password, invitation, locale }, opts) {
+  async signup({ email, password, invitation, locale, redirectTo }, opts) {
     /** @type {Record<string, string>} */
     const body = { email, password }
     if (invitation) body.invitation = invitation
     if (locale) body.locale = locale
-    const { data } = await this.client.request({ method: 'POST', path: ['_auth', 'signup'], body, auth: false, ...opts })
+    if (redirectTo) body.redirect_to = redirectTo
+    const { status, data } = await this.client.request({ method: 'POST', path: ['_auth', 'signup'], body, auth: false, ...opts })
+    if (status === 202) {
+      throw new VerificationRequiredError({ status, code: 'verification_required', message: 'the account was created: verify the email address, then sign in' })
+    }
     return this.signedIn(data)
   }
 

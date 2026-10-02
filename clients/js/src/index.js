@@ -13,6 +13,7 @@ export {
   VersionMismatchError,
   RetryableError,
   NetworkError,
+  VerificationRequiredError,
 } from './errors.js'
 export { memoryStorage, localStorageStorage } from './storage.js'
 

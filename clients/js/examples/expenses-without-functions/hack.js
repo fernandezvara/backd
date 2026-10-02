@@ -3,9 +3,9 @@
 //
 //   - attacks the access rules stop (examples/config/expenses/*/rules.yaml);
 //   - holes that stay open because this example doesn't use server-side
-//     functions yet (a "with functions" version is planned), and email
-//     verification (planned) doesn't exist yet. See the docs page
-//     "Expenses without functions".
+//     functions (the "with functions" version closes them), and one that
+//     email verification closes. See the docs page "Expenses without
+//     functions".
 //
 // It exits with 0 when every attack is stopped and every known hole is
 // open, which is the expected state today. When a future version closes a
@@ -17,9 +17,12 @@
 //   NODE_EXTRA_CA_CERTS=docker/certs/ca.crt node clients/js/examples/expenses-without-functions/hack.js
 //
 // BACKD_URL overrides the server (default https://localhost:8443). Every
-// run signs up new users with unique emails.
-import { createClient, AuthenticationError, ForbiddenError, NotFoundError } from '../../src/index.js'
+// run signs up new users with unique emails and verifies them through the
+// realm's development outbox, like a person following the link in the email
+// (a worker must be running, as in the local stack).
+import { createClient, AuthenticationError, ForbiddenError, NotFoundError, VerificationRequiredError } from '../../src/index.js'
 import { balances } from './ledger.js'
+import { signupVerified } from '../verify-email.js'
 
 const url = process.env.BACKD_URL ?? 'https://localhost:8443'
 const run = Date.now().toString(36)
@@ -49,12 +52,22 @@ async function hole(what, attack) {
   }
 }
 
-/** Signs up a new user and returns their client and collections. */
+/** Signs up a new user, verifies their address and returns their client and collections. */
 async function user(/** @type {string} */ name, /** @type {string} */ address = email(name)) {
-  const c = createClient({ url, realm: 'expenses' })
-  await c.auth.signup({ email: address, password })
+  const c = await signupVerified({ url, realm: 'expenses', email: address, password })
   const db = c.db('main')
   return { email: address, c, groups: db.collection('groups'), expenses: db.collection('expenses') }
+}
+
+/** A sign-up in this realm gives no session. */
+async function assertPending(/** @type {Promise<unknown>} */ signup) {
+  try {
+    await signup
+  } catch (err) {
+    if (err instanceof VerificationRequiredError) return
+    throw err
+  }
+  throw new Error('the sign-up started a session')
 }
 
 const cents = (/** @type {number} */ n) => (n / 100).toFixed(2) + ' €'
@@ -92,7 +105,7 @@ await stopped('Ada moves her dinner to another group', () => ada.expenses.patch(
 await stopped('Bob changes the group\'s currency', () => bob.groups.patch(group.id, { currency: 'USD' }), ForbiddenError)
 await stopped('Bob deletes the group he didn\'t create', () => bob.groups.delete(group.id), ForbiddenError)
 
-console.log('\nHoles this example leaves open (server-side functions and email verification would close them):')
+console.log('\nHoles this example leaves open (server-side functions would close them):')
 await hole('3. Mallory records "Mallory paid Ada 20 €", which Ada never received or confirmed', async () => {
   await mallory.expenses.create(expense({ kind: 'settlement', description: 'Settlement', amount: 2000, paid_by: mallory.email, split_between: [ada.email] }))
   return 'Mallory now owes nothing; Ada is out 20 €.'
@@ -117,11 +130,12 @@ await hole('1. Mallory adds a 900 € "Taxi" to the group she left, split betwee
 
 const dan = email('dan')
 await ada.groups.patch(group.id, { members: [...remaining, dan] })
-await hole(`5. Ada invites ${dan}; someone else signs up with that email first and reads the group`, async () => {
-  const squatter = await user('squatter', dan)
-  const g = await squatter.groups.get(group.id)
-  return `The squatter sees "${g.name}" with ${g.members.length} members.`
-})
+console.log('\nAnd the one email verification closes:')
+await stopped(`5. Ada invites ${dan}; someone else signs up with that email first, without access to its mailbox`, async () => {
+  const squatter = createClient({ url, realm: 'expenses' })
+  await assertPending(squatter.auth.signup({ email: dan, password }))
+  await squatter.auth.login({ email: dan, password }) // no session until the address is verified
+}, ForbiddenError)
 
 console.log(`  ! open         4. Balances are computed by each client: the fake entries above change everyone's numbers,
                  and there is no authoritative balance on the server.`)

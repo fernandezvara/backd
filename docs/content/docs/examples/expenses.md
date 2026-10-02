@@ -8,7 +8,7 @@ toc: true
 
 A small group-expenses tracker in the style of Tricount or Splitwise. People create a group, invite others by email, record what they paid, and see who owes whom.
 
-Unlike the [blog](../blog/), where each post belongs to its writer, here documents are shared between users, and some of the checks it needs involve more than one document. It is also a lesson in the limits of access rules. Its [rules](../../auth/rules/) are as strict as rules can be today, and they still leave holes, because some checks need data from another document or logic on the server. Those holes are documented here on purpose: this is deliberately the "before" half of a pair. **[Expenses with functions](../expenses-with-functions/)** is the "after" — the same app, same layout, with holes 1–4 closed by [server-side functions](../../functions/), compared side by side with what changed and why. Hole 5 needs email verification, still planned, so it stays open in both.
+Unlike the [blog](../blog/), where each post belongs to its writer, here documents are shared between users, and some of the checks it needs involve more than one document. It is also a lesson in the limits of access rules. Its [rules](../../auth/rules/) are as strict as rules can be today, and they still leave holes, because some checks need data from another document or logic on the server. Those holes are documented here on purpose: this is deliberately the "before" half of a pair. **[Expenses with functions](../expenses-with-functions/)** is the "after" — the same app, same layout, with holes 1–4 closed by [server-side functions](../../functions/), compared side by side with what changed and why. Hole 5 is closed by [email verification](../../auth/sessions/#email-verification) in both: access here is by email address, so the address has to be the user's own.
 
 The configuration is the `expenses` realm in `examples/config/expenses`. The application is in `clients/js/examples/expenses-without-functions`.
 
@@ -20,7 +20,7 @@ The configuration is the `expenses` realm in `examples/config/expenses`. The app
 make example
 ```
 
-Open <https://localhost:8443/example/expenses-without-functions/>. Sign up, create a group, and invite a second email. Then log out and sign up with that email in the same browser, or in a private window: the group is there. Add expenses as each person, and watch the balances and the "to settle up" list change. "I paid this" records a settlement.
+Open <https://localhost:8443/example/expenses-without-functions/>. Sign up: the realm requires a verified address, so the app answers "We sent a link" instead of signing you in. Open the [Mailbox](../../functions/email/#developing-without-a-provider) (the page offers a link; the local stack sends no real mail), press the button in the verification email, and log in. Create a group and invite a second email. Then log out and repeat for that email in the same browser, or in a private window: once it is verified, the group is there. Add expenses as each person, and watch the balances and the "to settle up" list change. "I paid this" records a settlement.
 
 The app is plain JavaScript with [Alpine.js](https://alpinejs.dev/) and the [JavaScript client](../../clients/js/), with no build step:
 
@@ -49,11 +49,11 @@ Two collections in the database `main`:
 
 ## What the rules enforce
 
-`groups/rules.yaml`:
+`groups/rules.yaml` (every rule of both collections also starts with `user != nil && user.email_verified`; the table shows the rest):
 
 | Rule | Enforces |
 |---|---|
-| `read: user != nil && user.email in document.members` | Only members see a group |
+| `read: user != nil && user.email_verified && user.email in document.members` | Only members see a group, and only with a verified address: membership is by email, so the email must be the user's own (hole 5) |
 | `create: … user.email in data.members` | You can't create a group without being in it |
 | `update: … user.email in document.members && user.email in data.members && !('currency' in changed())` | Members edit the group and invite people; nobody removes themselves, and the currency never changes |
 | `delete: … document._meta.owner == user.id` | Only the creator deletes it |
@@ -95,9 +95,9 @@ These remain with the rules above. The same test checks that each one is still p
 | 2 | **Stale member copies.** Someone removed from a group still reads the expenses written while they were a member. New members don't see old expenses until their writers' apps update the copies. | The copies live in each expense, and only the expense's writer may change them. | A function reading membership fresh from the group every time — see [expenses with functions](../expenses-with-functions/) |
 | 3 | **Unconfirmed settlements.** Mallory records "Mallory paid Ada 20 €" without paying; Ada's balance changes without her agreement. | A rule can check who records a settlement, not that the other person agrees. | A function implementing a request-and-accept flow — see [expenses with functions](../expenses-with-functions/) |
 | 4 | **Balances are computed by clients.** Each client computes its own balances, so none can falsify another's, but fake entries (holes 1 and 3) change everyone's numbers, and there's no authoritative balance. | backd has no server-side computation. | A function that computes balances on the server — see [expenses with functions](../expenses-with-functions/) |
-| 5 | **Signing up with someone else's email.** Anyone who signs up as an invited email, before its owner does, gets that group. | Email addresses aren't verified yet, so rules can't require `user.email_verified` in practice. | Email verification (planned), then `user.email_verified` in the rules — still open even in [expenses with functions](../expenses-with-functions/) |
+| 5 | **Signing up with someone else's email.** Anyone who signs up as an invited email, before its owner does, would get that group. | Rules compare emails, so the email must be the user's own. | **Closed here:** the realm sets `account.require_verified_email` (no session before the address is verified) and every rule checks `user.email_verified`. Someone who signs up as `dan@…` without access to that mailbox never gets a session |
 
-Holes 1–4 didn't need *new* backd features to close — [`sync` functions](../../functions/), reaching data through `ctx.db` with the caller's own rules and ownership, were exactly the tool. **[Expenses with functions](../expenses-with-functions/)** is the same app with them closed: same layout, compared side by side, with what changed and why.
+Hole 5 is closed with email verification, in the realm and in the rules. Holes 1–4 didn't need *new* backd features to close — [`sync` functions](../../functions/), reaching data through `ctx.db` with the caller's own rules and ownership, were exactly the tool. **[Expenses with functions](../expenses-with-functions/)** is the same app with them closed: same layout, compared side by side, with what changed and why.
 
 ## Try the attacks
 
@@ -110,9 +110,10 @@ make hack-expenses
 It signs up fresh users (Ada, Bob, Mallory and others), then:
 
 1. tries every attack in [Rules to avoid](#rules-to-avoid), plus reading a group as an outsider (including with an `$or` that would match everything) and as an anonymous caller, and reports each one as stopped;
-2. reproduces holes 1, 2, 3 and 5, and shows their effect. For example, Mallory's fake taxi in a group she left moves Ada's balance, as Ada's app computes it, from 20.00 € to −430.00 €.
+2. reproduces holes 1, 2 and 3, and shows their effect. For example, Mallory's fake taxi in a group she left moves Ada's balance, as Ada's app computes it, from 20.00 € to −430.00 €;
+3. signs up as an invited email without access to its mailbox, and shows that no session starts (hole 5, closed).
 
-The script exits with status 0 when the results match this page: every attack stopped and every known hole open — this example stays as it is, deliberately, for the comparison. [Expenses with functions](../expenses-with-functions/) has its own `hack.js` (`make hack-expenses-functions`) making the same attacks and reporting holes 1–4 **closed**, with real calls against the real functions, not just by reading their source.
+The script exits with status 0 when the results match this page: every attack stopped and holes 1–4 open — this example stays as it is, deliberately, for the comparison. [Expenses with functions](../expenses-with-functions/) has its own `hack.js` (`make hack-expenses-functions`) making the same attacks and reporting holes 1–4 **closed**, with real calls against the real functions, not just by reading their source.
 
 ```
 Attacks the rules stop:
@@ -123,7 +124,7 @@ Attacks the rules stop:
 This example is deliberately incomplete: it keeps its known holes open so you can compare it with [the version with functions](../expenses-with-functions/). Don't copy it into a real app as it is.
 {{< /hint >}}
 
-Holes this example leaves open (server-side functions and email verification would close them):
+Holes this example leaves open (server-side functions would close them):
   ! open         1. Mallory adds a 900 € "Taxi" to the group she left, split between Ada and Bob
                  Ada's balance, as her app computes it: 20.00 € → -430.00 €.
   …

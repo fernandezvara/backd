@@ -26,6 +26,8 @@
       Compare the two — same layout, different logic behind it.</p>
 
     <p class="error" x-show="error" x-text="error" role="alert"></p>
+    <p class="note" x-show="notice" role="status"><span x-text="notice"></span>
+      <a href="/example/mailbox/?realm=expenses-with-functions" target="_blank" rel="noopener">Open the mailbox</a> (local stack: no real email is sent).</p>
 
     <form class="card" x-show="!user" @submit.prevent="submitAuth">
       <h2 x-text="mode === 'login' ? 'Log in' : 'Sign up'"></h2>
@@ -35,7 +37,7 @@
       <button type="submit" :disabled="busy" x-text="mode === 'login' ? 'Log in' : 'Create account'"></button>
       <button type="button" class="link" @click="mode = mode === 'login' ? 'signup' : 'login'"
         x-text="mode === 'login' ? 'No account? Sign up' : 'Have an account? Log in'"></button>
-      <p class="muted">You'll see every group that lists your email.</p>
+      <p class="muted">You'll see every group that lists your email, once you have verified it.</p>
     </form>
 
     <template x-if="user">

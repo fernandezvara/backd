@@ -1,0 +1,7 @@
+Hello,
+
+You were invited to {{.Realm}} with {{.User.Email}}. To create your account, open this link:
+
+{{.Link}}
+
+The link works once and expires on {{.ExpiresAt.Format "2006-01-02 15:04"}} UTC.

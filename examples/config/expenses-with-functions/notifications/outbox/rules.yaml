@@ -1,0 +1,4 @@
+# Anyone can read the outbox: it exists only on a development machine, to read
+# emails (and click their links) without a mail provider. Nobody writes it
+# directly: email-capture does, as admin.
+read: "true"

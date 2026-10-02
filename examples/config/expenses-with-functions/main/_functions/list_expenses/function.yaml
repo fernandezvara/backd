@@ -4,5 +4,5 @@
 # CURRENT group membership instead, fresh, every time.
 mode: sync
 timeout: 10s
-invoke: "user != nil"
+invoke: "user != nil && user.email_verified"
 admin: true

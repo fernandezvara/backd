@@ -1,0 +1,3 @@
+Hello,
+
+Your email address {{.User.Email}} is confirmed. Welcome to {{.Realm}}!

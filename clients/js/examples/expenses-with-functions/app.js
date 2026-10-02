@@ -7,7 +7,7 @@
 // read, settled and totaled did. See the docs page "Expenses with
 // functions" for what changed and why, and examples/config/
 // expenses-with-functions for the rules and the functions themselves.
-import { createClient, localStorageStorage, VersionMismatchError } from '@backd/client'
+import { createClient, localStorageStorage, VerificationRequiredError, VersionMismatchError } from '@backd/client'
 import { toCents } from './ledger.js'
 
 const backd = createClient({
@@ -38,6 +38,7 @@ document.addEventListener('alpine:init', () => {
     invite: '',
     draft: emptyDraft(),
     error: '',
+    notice: '', // what to do next after signing up
     busy: false,
 
     async init() {
@@ -72,8 +73,20 @@ document.addEventListener('alpine:init', () => {
 
     submitAuth() {
       return this.run(async () => {
+        this.notice = ''
         const credentials = { email: this.email, password: this.password }
-        const session = this.mode === 'signup' ? await backd.auth.signup(credentials) : await backd.auth.login(credentials)
+        let session
+        try {
+          session = this.mode === 'signup' ? await backd.auth.signup(credentials) : await backd.auth.login(credentials)
+        } catch (err) {
+          // The realm gives no session before the address is verified: the
+          // account exists, and the link in the email finishes it.
+          if (!(err instanceof VerificationRequiredError)) throw err
+          this.notice = `We sent a link to ${this.email}. Follow it to verify your address, then log in.`
+          this.mode = 'login'
+          this.password = ''
+          return
+        }
         this.user = session.user
         this.password = ''
         await this.loadGroups()
