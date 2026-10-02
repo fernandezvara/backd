@@ -53,6 +53,55 @@ export function verifyPanel({ backd, fetch, realm }) {
       })
     },
 
+    // Password reset, for the same visitor ("I forgot my password").
+    /** @type {null | { mail: null | { subject: string, link: string }, done: boolean, oldSessionEnded: boolean | null, signedIn: boolean }} */
+    rs: null,
+
+    resetAsk() {
+      return this.step('Ask for a password reset (always answers 202)', async () => {
+        await visitor.request({ method: 'POST', path: ['_auth', 'reset-password', 'request'], body: { email: this.vf.email }, auth: false })
+        this.rs = { mail: null, done: false, oldSessionEnded: null, signedIn: false }
+      })
+    },
+
+    resetFindMail() {
+      return this.step('Look for the reset email in the outbox', async () => {
+        for (let i = 0; i < 40; i++) {
+          const page = await outbox.list({ orderBy: '-_meta.created_at', limit: 50 })
+          const mail = page.items.find((m) => m.kind === 'reset-password' && m.to.includes(this.vf.email))
+          if (mail) {
+            this.rs = { ...this.rs, mail: { subject: mail.subject, link: mail.link } }
+            return
+          }
+          await new Promise((r) => setTimeout(r, 500))
+        }
+        throw new Error('no email yet: is a worker running?')
+      })
+    },
+
+    resetApply() {
+      return this.step('Set a new password with the token (POST /_auth/reset-password)', async () => {
+        const token = new URL(this.rs.mail.link).searchParams.get('token')
+        await visitor.request({ method: 'POST', path: ['_auth', 'reset-password'], body: { token, password: `${PASSWORD}2` }, auth: false })
+        // The reset ended every session, the visitor's own included.
+        let ended = false
+        try {
+          await visitor.auth.me()
+        } catch (err) {
+          ended = err.status === 401
+        }
+        this.rs = { ...this.rs, done: true, oldSessionEnded: ended }
+      })
+    },
+
+    resetLogin() {
+      return this.step('Log in with the new password', async () => {
+        await visitor.auth.login({ email: this.vf.email, password: `${PASSWORD}2` })
+        this.rs = { ...this.rs, signedIn: true }
+        await this.verifyCheck()
+      })
+    },
+
     verifyCheck() {
       return this.step('Read the visitor', async () => {
         const me = await visitor.auth.me()

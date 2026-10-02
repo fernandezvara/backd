@@ -14,7 +14,7 @@
 // new orders on every run, so it can run again and again. Exits 0 when every
 // check passes, 1 otherwise.
 import { createHmac } from 'node:crypto'
-import { createClient, ForbiddenError, NotFoundError } from '../../src/index.js'
+import { createClient, AuthenticationError, ForbiddenError, NotFoundError } from '../../src/index.js'
 
 const url = process.env.BACKD_URL ?? 'https://localhost:8443'
 const PASSWORD = 'dev-p4ssw0rd!'
@@ -161,6 +161,26 @@ heading('6. Email verification (email-capture)')
   check('the visitor is verified, and no new session was issued', (await visitor.auth.me()).email_verified === true)
   const again = await fetch(`${url}/v1/workshop/_auth/verify-email`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) })
   check('the token works once (400 invalid_token)', again.status === 400 && (await again.text()).includes('invalid_token'))
+  // Password reset: always 202, then a form, then every session ends.
+  const unknown = await fetch(`${url}/v1/workshop/_auth/reset-password/request`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: `nobody-${address}` }) })
+  check('asking for a reset answers 202 for an unknown address too', unknown.status === 202 && (await unknown.text()).includes('accepted'))
+  await fetch(`${url}/v1/workshop/_auth/reset-password/request`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: address }) })
+  /** @type {any} */ let reset
+  for (let i = 0; i < 40 && !reset; i++) {
+    reset = (await box.list({ orderBy: '-_meta.created_at', limit: 50 })).items.find((m) => m.kind === 'reset-password' && m.to.includes(address))
+    if (!reset) await new Promise((r) => setTimeout(r, 500))
+  }
+  check('the reset email reached the outbox', reset?.link?.startsWith(`${url}/v1/workshop/_auth/reset-password?token=`), JSON.stringify(reset))
+  const resetToken = new URL(reset?.link ?? `${url}?token=`).searchParams.get('token') ?? ''
+  const resetBody = (/** @type {string} */ password) => JSON.stringify({ token: resetToken, password })
+  const post = (/** @type {string} */ body) => fetch(`${url}/v1/workshop/_auth/reset-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
+  check('a password the policy refuses leaves the token usable (400)', (await post(resetBody('short'))).status === 400)
+  check('a good password resets it (204)', (await post(resetBody(`${PASSWORD}2`))).status === 204)
+  await refused('the visitor\'s session ended with the reset', () => visitor.auth.me(), AuthenticationError, 'unauthenticated')
+  const relogin = createClient({ url, realm: 'workshop' })
+  check('the new password works, the old one does not', (await relogin.auth.login({ email: address, password: `${PASSWORD}2` })).user.email === address)
+  await refused('the old password is refused', () => createClient({ url, realm: 'workshop' }).auth.login({ email: address, password: PASSWORD }), AuthenticationError, 'invalid_credentials')
+  check('the reset token works once (400)', (await post(resetBody(`${PASSWORD}3`))).status === 400)
 }
 
 console.log(failed === 0 ? '\nThe whole tour works.' : `\n${failed} check(s) failed.`)

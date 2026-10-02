@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/fernandezvara/backd/internal/email"
 )
@@ -146,3 +147,12 @@ func (s *Users) PurgeUnverified(ctx context.Context) (int, error) {
 	}
 	return n, nil
 }
+
+// Per-address and per-client limits of reset requests, counted like failed
+// logins and for every address, registered or not, so reaching one reveals
+// nothing about the account.
+const (
+	resetPerAddress = 5
+	resetPerIP      = 30
+	resetWindow     = 15 * time.Minute
+)

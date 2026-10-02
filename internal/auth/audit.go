@@ -18,6 +18,7 @@ const (
 	AuditUserPassword    = "user.password" // set by an administrator
 	AuditPasswordChange  = "user.password_change"
 	AuditUserVerifyEmail = "user.verify_email"      // details: verified
+	AuditPasswordReset   = "user.password_reset"    // by the link in an email; details: verified_address
 	AuditUserPurged      = "user.purged_unverified" // details: count; never addresses
 	AuditUserDisable     = "user.disable"
 	AuditUserEnable      = "user.enable"

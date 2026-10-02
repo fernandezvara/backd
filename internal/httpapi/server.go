@@ -17,11 +17,9 @@ import (
 
 // Config holds the handler dependencies.
 type Config struct {
-	// hostedActions adds flows behind email links (tests plug in fakes).
-	hostedActions []hostedAction
-	Log           *slog.Logger
-	Registry      *registry.Registry
-	Store         Store
+	Log      *slog.Logger
+	Registry *registry.Registry
+	Store    Store
 	// Ready reports whether backd can serve requests (e.g. MongoDB reachable).
 	Ready func(ctx context.Context) error
 	// Now is the clock for _meta timestamps; defaults to time.Now.
@@ -105,7 +103,7 @@ func NewHandler(cfg Config) http.Handler {
 	if users == nil {
 		users = func(string) *auth.Users { return nil }
 	}
-	authRoutes := &authAPI{users: users, reg: cfg.Registry, actions: append(hostedActions(), cfg.hostedActions...), opTimeout: opTimeout}
+	authRoutes := &authAPI{users: users, reg: cfg.Registry, actions: hostedActions(), opTimeout: opTimeout}
 	authRoutes.routes(r)
 	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users, callbackKey: cfg.CallbackKey}
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, executorToken: cfg.ExecutorToken, log: cfg.Log, dev: cfg.Dev, concurrency: limiterFor(cfg.Registry)}

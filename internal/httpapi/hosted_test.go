@@ -15,25 +15,9 @@ import (
 	"github.com/fernandezvara/backd/internal/executor"
 )
 
-// fakeActions stand in for the flows that plug into the hosted pages: one
-// with a password, one without, the second also taking a locale.
-func fakeActions() []hostedAction {
-	run := func(purpose email.Purpose, password bool) func(context.Context, *auth.Users, hostedInput) (auth.EmailToken, error) {
-		return func(ctx context.Context, svc *auth.Users, in hostedInput) (auth.EmailToken, error) {
-			if password && len(in.Password) < 12 {
-				return auth.EmailToken{}, &auth.PolicyError{Reason: "must have at least 12 characters"}
-			}
-			return svc.RedeemEmailToken(ctx, in.Token, string(purpose))
-		}
-	}
-	return []hostedAction{
-		{Purpose: "reset-password", Page: email.PageResetPassword, Password: true, Locale: true, Run: run("reset-password", true)},
-	}
-}
-
 func newHostedFixture(t *testing.T) *rulesFixture {
 	t.Helper()
-	f := newRulesFixture(t, func(c *Config) { c.hostedActions = fakeActions() })
+	f := newRulesFixture(t)
 	f.svc.Now = func() time.Time { return *f.clock }
 	return f
 }
@@ -201,10 +185,11 @@ func TestHostedJSON(t *testing.T) {
 		status int
 		code   string
 	}{
-		{`{"token": "` + token + `"}`, 400, "validation_error"},                                       // password missing
-		{`{"token": "` + token + `", "password": "short"}`, 400, "validation_error"},                  // the policy
-		{`{"token": "` + token + `", "password": "dev-p4ssw0rd!2", "x": 1}`, 400, "validation_error"}, // unknown field
-		{`{"token": "` + token + `", "password": "dev-p4ssw0rd!2", "locale": "es"}`, 204, ""},
+		{`{"token": "` + token + `"}`, 400, "validation_error"},                                               // password missing
+		{`{"token": "` + token + `", "password": "short"}`, 400, "validation_error"},                          // the policy
+		{`{"token": "` + token + `", "password": "dev-p4ssw0rd!2", "x": 1}`, 400, "validation_error"},         // unknown field
+		{`{"token": "` + token + `", "password": "dev-p4ssw0rd!2", "locale": "es"}`, 400, "validation_error"}, // not a field of this flow
+		{`{"token": "` + token + `", "password": "dev-p4ssw0rd!2"}`, 204, ""},
 		{`{"token": "` + token + `", "password": "dev-p4ssw0rd!2"}`, 400, "invalid_token"},
 	} {
 		rec := f.page(t, "POST", "/v1/acme/_auth/reset-password", "application/json", tc.body, "")
