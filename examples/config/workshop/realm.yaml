@@ -23,9 +23,19 @@ email:
 # `backd bootstrap --realm workshop --email <email>` creates the first
 # administrator; give people the staff role in `roles.staff.users` below or
 # with `backd user add-role --role staff`.
+#
+# Two demo accounts get their roles when they sign up (seed assignments), so
+# the companion app (https://localhost:8443/example/workshop/) can offer
+# "sign in as staff" and "sign in as operator" with the fixed local password
+# `dev-p4ssw0rd!`. They exist only in the local stack: never keep demo users
+# like these in a real realm.
 roles:
   admin:
     description: Manages users, invitations and API keys
     admin: true
+    users:
+      - operator@workshop.example
   staff:
     description: Refunds orders and reads the daily digests
+    users:
+      - staff@workshop.example

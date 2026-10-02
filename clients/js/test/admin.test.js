@@ -159,3 +159,43 @@ test('invokeFunction runs a function by hand', async () => {
 
   await assert.rejects(() => a.invokeFunction('cleanup'), TypeError)
 })
+
+test('secrets: list, set and delete', async () => {
+  const info = { database: '', name: 'PAYMENT_WEBHOOK_SECRET', created_at: '2026-10-02T10:00:00.000Z', updated_at: '2026-10-02T10:00:00.000Z', updated_by: 'user:u1' }
+  const m = mockFetch([{ body: { items: [info] } }, { status: 204 }, { status: 204 }, { status: 204 }])
+  const a = adminOf(m)
+  assert.deepEqual(await a.secrets.list(), [info])
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/secrets')
+
+  await a.secrets.set('PAYMENT_WEBHOOK_SECRET', 'whsec_test')
+  assert.equal(m.calls[1].method, 'PUT')
+  assert.equal(m.calls[1].url.pathname, '/v1/acme/_admin/secrets/PAYMENT_WEBHOOK_SECRET')
+  assert.deepEqual(m.calls[1].body, { value: 'whsec_test' })
+
+  await a.secrets.set('STRIPE_KEY', 'sk', { database: 'main' })
+  assert.deepEqual(m.calls[2].body, { value: 'sk', database: 'main' })
+
+  const m2 = mockFetch([{ status: 204 }, { status: 204 }])
+  const b = adminOf(m2)
+  await b.secrets.delete('STRIPE_KEY')
+  assert.equal(m2.calls[0].method, 'DELETE')
+  assert.equal(m2.calls[0].url.search, '')
+  await b.secrets.delete('STRIPE_KEY', { database: 'main' })
+  assert.equal(m2.calls[1].url.searchParams.get('database'), 'main')
+})
+
+test('invocations listing', async () => {
+  const rec = { id: 'i1', at: '2026-10-02T10:00:00.000Z', function: 'main/refund_receipt', actor: 'user:u1', mode: 'async', status: 'ok', code: null,
+    duration_ms: 12, request_id: 'r1', job_id: 'j1', parent_id: 'i0', origin: 'function', logs: [] }
+  const page = { items: [rec], limit: 50, skip: 0, has_more: false }
+  const m = mockFetch([{ body: page }, { body: page }])
+  const a = adminOf(m)
+  assert.deepEqual(await a.invocations.list(), page)
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/invocations')
+  await a.invocations.list({ function: 'main/refund', requestId: 'r1', since: new Date('2026-10-01T00:00:00Z'), limit: 5 })
+  const q = m.calls[1].url.searchParams
+  assert.equal(q.get('function'), 'main/refund')
+  assert.equal(q.get('request_id'), 'r1')
+  assert.equal(q.get('since'), '2026-10-01T00:00:00.000Z')
+  assert.equal(q.get('limit'), '5')
+})

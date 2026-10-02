@@ -299,6 +299,11 @@ sendInvitationEmail(invitation.token)                              // shown only
 await backd.admin.invitations.list()
 await backd.admin.invitations.revoke(invitation.id)
 
+const secrets = await backd.admin.secrets.list()                  // scope, name, who set it; never the values
+await backd.admin.secrets.set('STRIPE_KEY', value, { database: 'main' })   // omit database for a realm secret
+await backd.admin.secrets.delete('STRIPE_KEY', { database: 'main' })
+const history = await backd.admin.invocations.list({ function: 'main/refund', limit: 20 })   // function calls, with origin and parent_id
+
 const created = await backd.admin.apiKeys.create({ name: 'billing', role: 'data', expiresIn: '90d', networks: ['203.0.113.0/24'] })
 storeSecret(created.key)                                           // shown only here
 await backd.admin.apiKeys.list()                                   // never the keys themselves
