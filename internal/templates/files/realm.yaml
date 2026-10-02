@@ -84,6 +84,7 @@ auth: enabled
 #   purge_unverified_after: 30d    # optional: delete accounts that never verified (never ones with roles)
 #   tokens:
 #     verify_email: 48h            # how long the verification link works (default shown)
+#     reset_password: 1h           # how long a password reset link works (default shown)
 
 # Roles that access rules can check. `users` lists emails that get the role
 # at startup (seed assignments): plain emails, or objects with an `email`.

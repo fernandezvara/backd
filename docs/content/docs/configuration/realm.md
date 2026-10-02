@@ -63,6 +63,7 @@ An empty file, or one with only comments, is valid: every key has a default.
 | `account.welcome_email` | `false` | `true`: send the `welcome` email once the address is verified |
 | `account.purge_unverified_after` | off | Delete accounts that never verified after this long (at least `1m`; never accounts with roles) |
 | `account.tokens.verify_email` | `48h` | How long the verification link works |
+| `account.tokens.reset_password` | `1h` | How long a [password reset](../../auth/sessions/#password-reset) link works |
 | `functions.max_concurrency` | none (unlimited) | Caps how many of the realm's [functions](../../functions/calling/#concurrency-limits) may run at once **on this `backd` instance**; with several instances, up to that many times this value run at once. |
 | `functions.log_retention` | `7d` | How long [function invocation records](../../functions/logs/) are kept, at least `1h`. |
 | `functions.job_retention` | `24h` | How long an [async job](../../functions/jobs/)'s result is kept once done, at least `1h`. |
@@ -105,6 +106,7 @@ account:
   purge_unverified_after: 30d
   tokens:
     verify_email: 48h
+    reset_password: 1h
 ```
 
 Each of `require_verified_email`, `welcome_email` and `purge_unverified_after` needs the [`email`](../../functions/email/) section: without one, startup fails naming the key. What they do is described in [Email verification](../../auth/sessions/#email-verification).

@@ -263,6 +263,118 @@ paths:
         "415": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_auth/reset-password/request:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Ask for a password reset email
+      description: |
+        Answers `202` whether or not the address belongs to an account (a
+        disabled account gets no message either), so it can't be used to find
+        out who is registered. Requests are counted per address and per client
+        address, for every address alike: past the limit the answer is `429`
+        with `Retry-After`. The email limits apply on top and are silent.
+        `404` in a realm without `email`.
+      operationId: requestPasswordReset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email]
+              properties:
+                email: { type: string }
+                redirect_to: { type: string, description: "Where the page after the reset may send the user: within the realm's `email.allowed_redirects`." }
+      responses:
+        "202":
+          description: Accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [accepted] }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/reset-password:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [auth]
+      summary: The form the reset link opens
+      description: |
+        The link in the `reset-password` message: a form for the new password
+        (twice). Opening it never uses the token up. The page is the realm's
+        `pages/reset-password/<locale>.html`; an expired, used or unknown
+        token shows the same error page (`400`).
+      operationId: resetPasswordPage
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema: { type: string }
+        - name: Accept-Language
+          in: header
+          schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/HostedPage" }
+        "400": { $ref: "#/components/responses/HostedPage" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [auth]
+      summary: Set a new password with a reset token
+      description: |
+        Applies the realm's password policy first: a refused password leaves the
+        token usable (`400 validation_error`, or the form again with the
+        reason). On success the password is set, **every session of the user
+        ends**, the address is marked verified (the token proves the person
+        reads that mailbox) and `password-changed` is sent. No session is
+        issued. The hosted form posts here
+        (`application/x-www-form-urlencoded`, answered with a page); an app with
+        its own pages posts JSON. A token that is expired, used, unknown or for
+        another purpose is `400 invalid_token`.
+      operationId: resetPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token, password]
+              properties:
+                token: { type: string }
+                password: { type: string }
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [token, password, password_confirm]
+              properties:
+                token: { type: string }
+                password: { type: string }
+                password_confirm: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/HostedPage" }
+        "204": { description: The password is set and the user's sessions have ended. }
+        "400":
+          description: Invalid, expired or used token (`invalid_token`), a password the policy refuses, or an invalid body.
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+            text/html:
+              schema: { type: string }
+        "404": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_auth/logout:
     parameters: [{ $ref: "#/components/parameters/realm" }]
     post:

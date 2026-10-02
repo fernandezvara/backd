@@ -50,6 +50,9 @@ func hostedActions() []hostedAction {
 		{Purpose: "verify-email", Page: email.PageVerifyEmail, Run: func(ctx context.Context, svc *auth.Users, in hostedInput) (auth.EmailToken, error) {
 			return svc.VerifyEmail(ctx, in.Token)
 		}},
+		{Purpose: "reset-password", Page: email.PageResetPassword, Password: true, Run: func(ctx context.Context, svc *auth.Users, in hostedInput) (auth.EmailToken, error) {
+			return svc.ResetPassword(ctx, in.Token, in.Password)
+		}},
 	}
 }
 
@@ -268,6 +271,38 @@ func (a *authAPI) resendVerification(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := usersOf(r).ResendVerification(r.Context(), address, redirectTo, clientIP(r), requestID(r.Context())); err != nil {
+		authError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"status": "accepted"})
+}
+
+// requestPasswordReset handles POST /_auth/reset-password/request. Like
+// resend, it answers 202 whatever the account is; past the per-address or
+// per-client limit it answers 429 for every address alike.
+func (a *authAPI) requestPasswordReset(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.hostedRealm(r); !ok {
+		writeError(w, r, http.StatusNotFound, codeNotFound, "resource not found")
+		return
+	}
+	obj, ok := readObject(w, r)
+	if !ok {
+		return
+	}
+	f, ok := fields(w, r, obj, map[string]string{"email": "string", "redirect_to": "string?"})
+	if !ok {
+		return
+	}
+	address, _ := f["email"].(string)
+	redirectTo, _ := f["redirect_to"].(string)
+	if _, err := registry.NormalizeEmail(address); err != nil {
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "email", Reason: "must be a valid email address"})
+		return
+	}
+	if !a.checkRedirect(w, r, redirectTo) {
+		return
+	}
+	if err := usersOf(r).RequestPasswordReset(r.Context(), address, redirectTo, clientIP(r), requestID(r.Context())); err != nil {
 		authError(w, r, err)
 		return
 	}

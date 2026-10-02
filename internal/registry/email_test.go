@@ -119,7 +119,7 @@ func TestEmailRedirects(t *testing.T) {
 }
 
 func TestAccountSettings(t *testing.T) {
-	realm := goodEmail + "account:\n  require_verified_email: true\n  welcome_email: true\n  purge_unverified_after: 30d\n  tokens:\n    verify_email: 12h\n"
+	realm := goodEmail + "account:\n  require_verified_email: true\n  welcome_email: true\n  purge_unverified_after: 30d\n  tokens:\n    verify_email: 12h\n    reset_password: 20m\n"
 	reg, err := Load(emailTree(t, realm, goodDeliver, nil))
 	if err != nil {
 		t.Fatal(err)
@@ -131,7 +131,7 @@ func TestAccountSettings(t *testing.T) {
 	if got := a.TokenLifetime(email.TokenPurpose(email.VerifyEmail)); got != 12*time.Hour {
 		t.Errorf("verify lifetime %s", got)
 	}
-	if got := a.TokenLifetime(email.TokenPurpose(email.ResetPassword)); got != time.Hour {
+	if got := a.TokenLifetime(email.TokenPurpose(email.ResetPassword)); got != 20*time.Minute {
 		t.Errorf("reset lifetime %s", got)
 	}
 }

@@ -98,7 +98,11 @@ func (s *Users) SetPassword(ctx context.Context, email, password string) error {
 		return err
 	}
 	s.Audit(ctx, AuditUserPassword, userTarget(u.ID), nil)
-	return s.Store.DeleteSessions(ctx, u.ID)
+	if err := s.Store.DeleteSessions(ctx, u.ID); err != nil {
+		return err
+	}
+	s.notifyPasswordChanged(ctx, u)
+	return nil
 }
 
 // SetEmailVerified marks the user's email as verified or not.

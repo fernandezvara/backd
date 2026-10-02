@@ -58,6 +58,8 @@ All request bodies are JSON objects sent with `Content-Type: application/json`. 
 | `POST /_auth/login` | no | `{"email", "password"}` | `200` with a session |
 | `POST /_auth/verify-email` | no | `{"token"}` | `204`; [verifies the address](#email-verification) |
 | `POST /_auth/verify-email/resend` | no | `{"email", "redirect_to"?}` | `202`, whatever the account |
+| `POST /_auth/reset-password/request` | no | `{"email", "redirect_to"?}` | `202`, whatever the account; [password reset](#password-reset) |
+| `POST /_auth/reset-password` | no | `{"token", "password"}` | `204`; sets the password and ends every session |
 | `POST /_auth/logout` | yes | none | `204`; ends this session |
 | `POST /_auth/logout-all` | yes | none | `204`; ends all of the user's sessions, including this one |
 | `GET /_auth/me` | yes | none | `200` with the user |
@@ -101,7 +103,7 @@ In a realm with [`email`](../../functions/email/), sign-up sends a `verify-email
 
 - **`POST /_auth/verify-email/resend`** with `{"email"}` sends the message again. It answers `202` whatever the account is (unknown, disabled or already verified), and the [email limits](../../functions/email/#limits) count the same in every case, so it can't be used to learn who is registered.
 - **Who is verified from the start:** users created by `backd bootstrap`, by the [admin API](../admin/) or `backd user create`, and users who sign up with an [invitation](../admin/#invitations) bound to their address. Users who sign up themselves, and those whose invitation isn't bound to an address, are not.
-- **Requiring it.** With `account.require_verified_email: true` in [`realm.yaml`](../../configuration/realm/#account), sign-up answers `202 {"status": "verification_required"}` without a session, and a login with the **right password** for an unverified address answers `403 email_not_verified`. A wrong password still answers `401 invalid_credentials`, so the answer reveals nothing to someone who doesn't know the password. Users of an existing realm who are unverified when you switch this on are locked out until they use resend (or, once available, password reset). In this mode an address that is already registered still answers `409 email_taken`, so the answer to a sign-up can tell whether an address is registered.
+- **Requiring it.** With `account.require_verified_email: true` in [`realm.yaml`](../../configuration/realm/#account), sign-up answers `202 {"status": "verification_required"}` without a session, and a login with the **right password** for an unverified address answers `403 email_not_verified`. A wrong password still answers `401 invalid_credentials`, so the answer reveals nothing to someone who doesn't know the password. Users of an existing realm who are unverified when you switch this on are locked out until they use resend or [reset their password](#password-reset). In this mode an address that is already registered still answers `409 email_taken`, so the answer to a sign-up can tell whether an address is registered.
 - **Welcome.** `account.welcome_email: true` sends the `welcome` message once the address is verified.
 - **Lifetime.** The link works for `account.tokens.verify_email` (48 hours by default).
 - **Squatters.** Anyone can sign up with someone else's address and leave it unverified. `account.purge_unverified_after` (off by default) lets a worker delete accounts that never verified after that time (except those with roles), recorded in the [audit trail](../audit/) as `user.purged_unverified` with a count. Documents such accounts created are kept, as with any deleted user.
@@ -146,7 +148,22 @@ Every user has a `locale`, the language of the emails they receive. A realm list
 
 `POST /_auth/password` with `{"current_password": "…", "new_password": "…"}` replaces the password. The current session stays valid and every other session ends. A wrong current password returns `401 invalid_credentials`; a new password that breaks the policy returns `400 validation_error` naming `new_password`.
 
-There is no self-service password reset yet, because `backd` doesn't send email. An operator can set a new password with [`backd user set-password`](../users/).
+In a realm with [`email`](../../functions/email/), the owner gets a `password-changed` email after this, after a [reset](#password-reset) and after an administrator sets a password ([`backd user set-password`](../users/)), so a change they didn't make doesn't go unnoticed.
+
+### Password reset
+
+In a realm with `email`, a user who forgot the password asks for a link:
+
+```sh
+curl -X POST https://localhost:8443/v1/blog/_auth/reset-password/request \
+  -H 'Content-Type: application/json' -d '{"email": "ada@example.com"}'
+```
+
+The answer is always `202 {"status": "accepted"}`: for a registered address, an unknown one and a disabled account alike, so it can't be used to find out who is registered. Only an enabled account gets the `reset-password` message. `redirect_to` (within the realm's `email.allowed_redirects`) says where the page after the reset may send the user.
+
+- **The link** opens a page of `backd` with a form for the new password, twice. Opening it never uses the token up. The form shows the password policy's reason on the same page, and a refused password leaves the link usable. Apps with their own pages point the link at them with [`email.links`](../../functions/email/#links-and-pages) and post `{"token", "password"}` to `POST /_auth/reset-password` (`204`, or `400 invalid_token` for an expired, used or unknown token, `400 validation_error` for a password the policy refuses).
+- **What a reset does:** sets the password, **ends every session of the user**, marks the address **verified** (the token proves they read that mailbox, and it ends a squatter's access), and sends `password-changed`. It never starts a session: the user logs in afterwards. A token works once and for `account.tokens.reset_password` (1 hour by default).
+- **Limits.** Requests are counted per address (5 per 15 minutes) and per client address (30 per 15 minutes), for every address alike: past either, the answer is `429 too_many_requests` with `Retry-After`. The [email limits](../../functions/email/#limits) apply on top and stay silent. A realm without `email` answers `404`: there, an operator sets passwords with [`backd user set-password`](../users/).
 
 ### Sessions
 

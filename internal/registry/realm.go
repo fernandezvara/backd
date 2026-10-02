@@ -100,17 +100,25 @@ type AccountSettings struct {
 	WelcomeEmail bool
 	// VerifyEmailTTL is how long a verification link works (account.tokens.verify_email).
 	VerifyEmailTTL time.Duration
+	// ResetPasswordTTL is how long a reset link works (account.tokens.reset_password).
+	ResetPasswordTTL time.Duration
 	// PurgeUnverifiedAfter deletes accounts that never verified; 0 is off.
 	PurgeUnverifiedAfter time.Duration
 }
 
 // TokenLifetime is how long a token of this purpose works in the realm.
 func (a AccountSettings) TokenLifetime(p email.Purpose) time.Duration {
-	if p == email.TokenPurpose(email.VerifyEmail) && a.VerifyEmailTTL > 0 {
+	switch {
+	case p == email.TokenPurpose(email.VerifyEmail) && a.VerifyEmailTTL > 0:
 		return a.VerifyEmailTTL
+	case p == email.TokenPurpose(email.ResetPassword) && a.ResetPasswordTTL > 0:
+		return a.ResetPasswordTTL
 	}
 	return p.DefaultLifetime()
 }
+
+// DefaultResetPasswordTTL is account.tokens.reset_password when not set.
+const DefaultResetPasswordTTL = time.Hour
 
 // DefaultVerifyEmailTTL is account.tokens.verify_email when not set.
 const DefaultVerifyEmailTTL = 48 * time.Hour
@@ -213,7 +221,8 @@ type realmDoc struct {
 		WelcomeEmail         bool   `yaml:"welcome_email"`
 		PurgeUnverifiedAfter string `yaml:"purge_unverified_after"`
 		Tokens               *struct {
-			VerifyEmail string `yaml:"verify_email"`
+			VerifyEmail   string `yaml:"verify_email"`
+			ResetPassword string `yaml:"reset_password"`
 		} `yaml:"tokens"`
 	} `yaml:"account"`
 	Functions *struct {
@@ -468,6 +477,7 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 	}
 
 	s.Account.VerifyEmailTTL = DefaultVerifyEmailTTL
+	s.Account.ResetPasswordTTL = DefaultResetPasswordTTL
 	if a := doc.Account; a != nil {
 		if !s.AuthEnabled {
 			errs = append(errs, errors.New("account: only applies when auth is enabled"))
@@ -495,6 +505,7 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 			dur("purge_unverified_after", a.PurgeUnverifiedAfter, &s.Account.PurgeUnverifiedAfter)
 			if a.Tokens != nil {
 				dur("tokens.verify_email", a.Tokens.VerifyEmail, &s.Account.VerifyEmailTTL)
+				dur("tokens.reset_password", a.Tokens.ResetPassword, &s.Account.ResetPasswordTTL)
 			}
 		}
 	}

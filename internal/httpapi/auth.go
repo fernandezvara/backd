@@ -36,6 +36,7 @@ func (a *authAPI) routes(r chi.Router) {
 		r.With(json).Post("/signup", a.signup)
 		r.With(json).Post("/login", a.login)
 		r.With(json).Post("/verify-email/resend", a.resendVerification)
+		r.With(json).Post("/reset-password/request", a.requestPasswordReset)
 		a.hostedRoutes(r)
 		r.Group(func(r chi.Router) {
 			r.Use(a.requireSession)

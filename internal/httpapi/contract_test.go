@@ -409,6 +409,41 @@ func TestContract(t *testing.T) {
 	req("POST", a+"/verify-email", `{"token": "x"}`, map[string]string{"Content-Type": "text/plain"}, 415)
 	req("POST", "/v1/nope/_auth/verify-email", `{"token": "x"}`, nil, 404)
 
+	// Password reset.
+	// The token belongs to a user nothing else in this test uses: a reset ends all sessions.
+	resetter, _, err := f.svc.Signup(context.Background(), "resetter@example.com", "dev-p4ssw0rd!", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resetToken := func() string {
+		tok, _, err := f.svc.NewEmailToken(context.Background(), "reset-password", resetter.User.ID, "", time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tok
+	}
+	req("POST", a+"/reset-password/request", `{"email": "bob@example.com", "redirect_to": "https://app.acme.example/signin"}`, nil, 202)
+	req("POST", a+"/reset-password/request", `{"email": "nobody@example.com"}`, nil, 202)
+	req("POST", a+"/reset-password/request", `{"email": "nope"}`, nil, 400)
+	req("POST", a+"/reset-password/request", `{"email": "bob@example.com", "redirect_to": "https://evil.example/"}`, nil, 400)
+	req("POST", a+"/reset-password/request", `{"email": "a@example.com"}`, map[string]string{"Content-Type": "text/plain"}, 415)
+	req("POST", "/v1/nope/_auth/reset-password/request", `{"email": "a@example.com"}`, nil, 404)
+	for range 5 {
+		req("POST", a+"/reset-password/request", `{"email": "limited@example.com"}`, nil, 202)
+	}
+	req("POST", a+"/reset-password/request", `{"email": "limited@example.com"}`, nil, 429)
+	req("GET", a+"/reset-password?token="+resetToken(), "", nil, 200)
+	req("GET", a+"/reset-password?token=nope", "", nil, 400)
+	req("GET", "/v1/nope/_auth/reset-password?token=x", "", nil, 404)
+	rt := resetToken()
+	req("POST", a+"/reset-password", "token="+rt+"&password=short&password_confirm=short", form, 400)
+	req("POST", a+"/reset-password", `{"token": "`+rt+`", "password": "short"}`, nil, 400)
+	req("POST", a+"/reset-password", "token="+rt+"&password=dev-p4ssw0rd!2&password_confirm=dev-p4ssw0rd!2", form, 200)
+	req("POST", a+"/reset-password", `{"token": "`+resetToken()+`", "password": "dev-p4ssw0rd!2"}`, nil, 204)
+	req("POST", a+"/reset-password", `{"token": "nope", "password": "dev-p4ssw0rd!2"}`, nil, 400)
+	req("POST", a+"/reset-password", `{"token": "x"}`, map[string]string{"Content-Type": "text/plain"}, 415)
+	req("POST", "/v1/nope/_auth/reset-password", `{"token": "x", "password": "y"}`, nil, 404)
+
 	login := req("POST", a+"/login", `{"email": "new@example.com", "password": "dev-p4ssw0rd!"}`, nil, 200)
 	me := bearer(login["token"].(string))
 	req("POST", a+"/login", `{"email": "new@example.com"}`, nil, 400)

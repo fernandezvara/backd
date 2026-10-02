@@ -285,7 +285,11 @@ func (s *Users) ChangePassword(ctx context.Context, p Principal, current, next s
 		return err
 	}
 	s.Audit(ctx, AuditPasswordChange, userTarget(p.User.ID), nil)
-	return s.Store.DeleteOtherSessions(ctx, p.User.ID, p.Session.ID)
+	if err := s.Store.DeleteOtherSessions(ctx, p.User.ID, p.Session.ID); err != nil {
+		return err
+	}
+	s.notifyPasswordChanged(ctx, p.User)
+	return nil
 }
 
 // DeleteAccount deletes the caller after checking their password.
