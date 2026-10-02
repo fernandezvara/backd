@@ -23,3 +23,31 @@ button.entry .path { overflow-wrap: anywhere; font-family: ui-monospace, monospa
 .details { border: 1px solid #d0d7de; border-top: none; padding: .5rem .75rem; }
 .details h3 { font-size: .85rem; margin: .5rem 0 .2rem; }
 .details pre { margin: 0; padding: .5rem; background: #f6f7f9; border-radius: 6px; overflow: auto; font-size: .8rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Panels */
+.panel h2 { display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap; }
+.panel h2 .n { background: #1f6feb; color: #fff; border-radius: 50%; width: 1.5rem; height: 1.5rem; display: inline-grid; place-items: center; font-size: .85rem; flex: none; }
+.panel .goal { margin-top: 0; }
+.notice { background: #f6f8fa; border-left: 3px solid #1f6feb; padding: .5rem .75rem; margin: .75rem 0; font-size: .9rem; }
+.notice ul { margin: .25rem 0 0; padding-left: 1.1rem; display: grid; gap: .25rem; }
+details.code { margin: .5rem 0; font-size: .9rem; }
+details.code pre { margin: .4rem 0 0; padding: .6rem; background: #1f2328; color: #f0f3f6; border-radius: 6px; overflow: auto; font-size: .8rem; }
+.inline-form, .form { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .5rem; align-items: end; margin-bottom: .5rem; }
+.form { grid-template-columns: 1fr; }
+select { font: inherit; padding: .45rem .6rem; border: 1px solid #d0d7de; border-radius: 6px; background: #fff; }
+.inline { display: flex; gap: .4rem; align-items: center; }
+.inline input { flex: 1; }
+.actions { display: flex; flex-wrap: wrap; gap: .4rem; margin: .4rem 0; }
+button.secondary { background: #fff; color: #1f6feb; }
+ul.orders, ul.results { list-style: none; margin: .5rem 0; padding: 0; display: grid; gap: .5rem; }
+ul.orders > li { border: 1px solid #d0d7de; border-radius: 6px; padding: .5rem .75rem; }
+.row { display: flex; gap: .75rem; align-items: baseline; flex-wrap: wrap; justify-content: space-between; }
+code.id { font-size: .75rem; color: #656d76; overflow-wrap: anywhere; }
+.chip { border-radius: 1rem; padding: 0 .5rem; font-size: .8rem; border: 1px solid #d0d7de; background: #f6f7f9; margin: 0; }
+.chip.s-paid { background: #dafbe1; border-color: #4ac26b; }
+.chip.s-refunded { background: #fff8c5; border-color: #d4a72c; }
+ul.results li, p.result { padding: .4rem .6rem; border-radius: 6px; margin: 0; }
+ul.results li.ok, p.result.ok { background: #dafbe1; border: 1px solid #4ac26b; }
+ul.results li.bad, p.result.bad { background: #ffebe9; border: 1px solid #ff8182; }
+pre.csv { margin: .4rem 0 0; padding: .5rem; background: #fff; border: 1px solid #d0d7de; border-radius: 6px; font-size: .8rem; overflow: auto; max-height: 10rem; }
+.inline-form input, .form input, .form select { min-width: 0; width: 100%; box-sizing: border-box; }

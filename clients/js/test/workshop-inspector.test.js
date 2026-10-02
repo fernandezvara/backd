@@ -54,6 +54,12 @@ test('dev-mode headers become the function log and its time', async () => {
   assert.equal(inspector.entries[0].executorMs, '42')
 })
 
+test('a function that logged nothing gives an empty log, not null', async () => {
+  const inspector = createInspector({ fetch: fakeFetch({ headers: { 'X-Backd-Dev-Logs': 'null' } }) })
+  await inspector.fetch('https://x/v1/workshop/main/_func/order_total', { method: 'POST' })
+  assert.deepEqual(inspector.entries[0].logs, [])
+})
+
 test('failures are recorded and still thrown', async () => {
   const inspector = createInspector({ fetch: async () => { throw new Error('network down') } })
   await assert.rejects(() => inspector.fetch('https://x/v1/workshop/main/orders'), /network down/)

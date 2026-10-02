@@ -9,6 +9,10 @@
 // stack, with a fixed password: never do this in a real realm.
 import { createClient, localStorageStorage } from '@backd/client'
 import { createInspector } from './lib/inspector.js'
+import { exportPanel } from './panels/export.js'
+import { ordersPanel } from './panels/orders.js'
+import { refundPanel } from './panels/refund.js'
+import { webhookPanel } from './panels/webhook.js'
 
 const REALM = 'workshop'
 const PASSWORD = 'dev-p4ssw0rd!'
@@ -20,12 +24,12 @@ const ACCOUNTS = [
   { key: 'operator', name: 'Operator', role: 'operator (admin)', email: 'operator@workshop.example' },
 ]
 
-// The tour, in order. The panels arrive step by step.
+// The tour, in order.
 const TOUR = [
-  { n: 1, title: 'A function that reads as the caller', fn: 'order_total', kind: 'sync' },
-  { n: 2, title: 'A privileged, idempotent refund', fn: 'refund', kind: 'sync, admin, calls an internal function' },
-  { n: 3, title: 'A webhook from a payment provider', fn: 'payment_webhook', kind: 'webhook, signed, deduplicated' },
-  { n: 4, title: 'A report in the background', fn: 'export_orders', kind: 'async job' },
+  { n: 1, id: 'orders', title: 'A function that reads as the caller', fn: 'order_total', kind: 'sync' },
+  { n: 2, id: 'refund', title: 'A privileged, idempotent refund', fn: 'refund', kind: 'sync, admin, calls an internal function' },
+  { n: 3, id: 'webhook', title: 'A webhook from a payment provider', fn: 'payment_webhook', kind: 'webhook, signed, deduplicated' },
+  { n: 4, id: 'export', title: 'A report in the background', fn: 'export_orders', kind: 'async job' },
   { n: 5, title: 'Operating it', fn: 'nightly_cleanup, daily_digest', kind: 'cron, history, secrets' },
   { n: 6, title: 'Email', fn: 'email-capture', kind: 'delivery through your own function' },
 ]
@@ -41,6 +45,21 @@ const backd = createClient({
   storage: localStorageStorage('backd-workshop-tour'),
 })
 
+const db = backd.db('main')
+
+// Orders the page has seen, by any demo account: staff can't list customers'
+// orders (the rules forbid it), so the refund panel offers the ones seen here.
+const KNOWN_KEY = 'backd-workshop-tour-orders'
+function loadKnown() {
+  try {
+    return JSON.parse(localStorage.getItem(KNOWN_KEY) ?? '[]')
+  } catch {
+    return []
+  }
+}
+
+const money = (cents) => `€${(cents / 100).toFixed(2)}`
+
 function describe(err) {
   if (err?.code) return `${err.status} ${err.code}: ${err.message}`
   return err?.message ?? String(err)
@@ -48,6 +67,11 @@ function describe(err) {
 
 document.addEventListener('alpine:init', () => {
   window.Alpine.data('tour', () => ({
+    ...ordersPanel({ db, ACCOUNTS, money }),
+    ...refundPanel({ db, backd }),
+    ...webhookPanel({ backd, fetchRaw: inspector.fetch, ACCOUNTS }),
+    ...exportPanel({ db, backd }),
+    known: loadKnown(),
     accounts: ACCOUNTS,
     tour: TOUR,
     user: null,
@@ -100,19 +124,44 @@ document.addEventListener('alpine:init', () => {
     // in this realm, and the realm's seed assignments give staff and operator
     // their roles when their emails sign up.
     signInAs(account) {
-      return this.step(`Sign in as ${account.name}`, async () => {
-        if (this.user) await backd.auth.logout().catch(() => {})
-        this.user = null
-        this.account = null
-        try {
-          await backd.auth.login({ email: account.email, password: PASSWORD })
-        } catch (err) {
-          if (err.status !== 401) throw err
-          await backd.auth.signup({ email: account.email, password: PASSWORD })
-        }
-        this.user = await backd.auth.me()
-        this.account = account
-      })
+      return this.step(`Sign in as ${account.name}`, () => this._signIn(account))
+    },
+
+    async _signIn(account) {
+      if (this.user) await backd.auth.logout().catch(() => {})
+      this.user = null
+      this.account = null
+      try {
+        await backd.auth.login({ email: account.email, password: PASSWORD })
+      } catch (err) {
+        if (err.status !== 401) throw err
+        await backd.auth.signup({ email: account.email, password: PASSWORD })
+      }
+      this.user = await backd.auth.me()
+      this.account = account
+      this.orders = []
+      this.totals = {}
+      this.exportRuns = []
+      if (account.role === 'customer') await this.loadOrders()
+    },
+
+    // Remembers the orders just seen, for the refund panel.
+    remember(orders) {
+      const byId = new Map(this.known.map((o) => [o.id, o]))
+      for (const o of orders) byId.set(o.id, { id: o.id, item: o.item, amount: o.amount, status: o.status, owner: this.account?.name ?? '?' })
+      this.known = [...byId.values()]
+      try {
+        localStorage.setItem(KNOWN_KEY, JSON.stringify(this.known))
+      } catch {
+        // Not saved: the list lasts until the page closes.
+      }
+    },
+
+    get isCustomer() {
+      return this.account?.role === 'customer'
+    },
+    get isStaff() {
+      return this.account?.key === 'staff'
     },
 
     signOut() {

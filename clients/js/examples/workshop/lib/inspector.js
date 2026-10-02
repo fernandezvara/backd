@@ -108,7 +108,9 @@ export function createInspector({ fetch: inner = globalThis.fetch.bind(globalThi
       const devLogs = res.headers.get('X-Backd-Dev-Logs')
       if (devLogs) {
         try {
-          entry.logs = JSON.parse(devLogs)
+          // backd sends `null` for a function that logged nothing.
+          const parsed = JSON.parse(devLogs)
+          entry.logs = Array.isArray(parsed) ? parsed : []
         } catch {
           // Not what we expect: leave the logs out.
         }
