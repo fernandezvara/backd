@@ -1,8 +1,8 @@
 # Design: account lifecycle
 
 - **Issues:** design 4.1 (#5) → features 4.3 (#11), 4.4 (#12), 4.5 (#13), 4.6 (#14), 4.7 (#15), 4.8, 4.9
-- **Status:** decided
-- **Related designs:** [email-delivery.md](./email-delivery.md) (templates, tokens, hosted pages, limits), [internal-functions.md](./internal-functions.md) (`account.on_delete` hook)
+- **Status:** decided; §4.6 and §5 revised 2026-10-02 (deactivate by default, tombstone, opt-in policies)
+- **Related designs:** [email-delivery.md](./email-delivery.md) (templates, tokens, hosted pages, limits), [internal-functions.md](./internal-functions.md) (the deferred `account.on_delete` hook)
 
 ## 1. Decisions at a glance
 
@@ -18,9 +18,13 @@
 | Generic sign-up answer | only with `require_verified_email: true`; otherwise `409 email_taken` stays |
 | Email change | per realm `account.allow_email_change` (default `false`); confirmed by the new address, revert link to the old one |
 | Extra emails | `password-changed` and `invitation` |
-| Erasure | `collection.yaml` with `on_owner_delete` **required** in auth realms: `delete`, `anonymize`, `keep`, plus `pull` and `unset`; the user's id in `_meta.created_by` and `_meta.updated_by` is always replaced by `erased` |
-| Erasure execution | account removed at once; data erased by a resumable job; optional `account.on_delete` internal function |
-| Before deleting | an "owned" report in the admin API and CLI |
+| Deleting an account | `DELETE /_auth/me` (password) **deactivates**: disabled, sessions revoked, **all data kept**. Only an administrator **erases** (`DELETE /_admin/users/{id}`); a deactivated account keeps its email, so the address stays taken until then |
+| Erased user | a **tombstone**: the id stays; the email becomes `erased-<id>@erased.invalid` (unique, never deliverable); password, sign-in methods, roles and networks are removed. Ids in `_meta` and in documents stay (pseudonymous) |
+| Erasure policy | **optional** `collection.yaml` with `on_owner_delete`: `action: delete \| anonymize` (+ `remove`, `replace`) for the user's documents, and `pull` / `unset` for references in any document, each field naming `email` or `id`. **No file: nothing happens to the collection** |
+| Erasure execution | the request deactivates and tombstones at once and queues one **erase job**; a worker applies the policies in batches, resumable; one audit record with counts |
+| Other stores | deleted: sign-in methods, sessions, email tokens, the user's email jobs. Left to their retention, documented: audit, function history, async jobs, idempotency records, counters. Backups are out of scope |
+| External clean-up | done by the developer **before** calling erase; the `account.on_delete` hook is deferred (§13) |
+| Before erasing | an "owned" report, limited to collections that declare a policy |
 
 ## 2. Configuration (`realm.yaml`)
 
@@ -37,10 +41,9 @@ account:
     change_email: 24h
     revert_email_change: 7d
   purge_unverified_after: 30d     # optional, off by default: delete accounts that never verified; needs email:
-  on_delete: notifications/cleanup   # optional; <database>/<function>, internal + async
 ```
 
-**Startup checks:** any of `require_verified_email`, `welcome_email`, `allow_email_change` set to `true` without an `email:` section fails; `on_delete` must name an internal async function; durations must be positive; `purge_unverified_after` without an `email:` section fails.
+**Startup checks:** any of `require_verified_email`, `welcome_email`, `allow_email_change` set to `true` without an `email:` section fails; durations must be positive; `purge_unverified_after` without an `email:` section fails.
 
 ## 3. Tokens
 
@@ -74,7 +77,7 @@ Rules (from [email-delivery.md §8](./email-delivery.md#8-tokens)): created when
 - Success sets `email_verified: true`, sends `welcome` if `welcome_email: true`, and redirects (hosted page). **No session is issued.**
 - **Born verified:** users created by `backd bootstrap`, by the admin API (`POST /_admin/users`) and by accepting an invitation start with `email_verified: true`, since an operator or the address's owner vouched for them. Users who sign up themselves start unverified.
 - **Enabling the gate on an existing realm** locks out users who are unverified until they use resend or password reset; the docs say so before the switch is flipped.
-- **Purging squatters:** with `account.purge_unverified_after`, a worker periodically deletes accounts that never verified after that time (they own nothing yet, so it reuses the erasure path); audited as `user.purged_unverified` with a count, never addresses.
+- **Purging squatters:** with `account.purge_unverified_after`, a worker periodically deletes accounts that never verified after that time (they usually own nothing, but if they wrote anything the purge is an erase, as §5, so no id is left dangling); audited as `user.purged_unverified` with a count, never addresses.
 - **Resend:** `POST /_auth/verify-email/resend { email, redirect_to? }` answers `202` identically whether or not the account exists or is already verified; email limits apply.
 - **Login gate** (`require_verified_email: true`): a login with the **correct password** for an unverified address answers `403 email_not_verified`; the check happens only after the password is verified, so it reveals nothing to someone without the password. Wrong passwords keep answering `invalid_credentials`.
 
@@ -105,48 +108,100 @@ Only when `allow_email_change: true` (otherwise the route doesn't exist: `404`).
 
 ### 4.6 Account deletion
 
-- Self-delete (`DELETE /_auth/me` with password) and admin delete remove the user, identities and sessions **immediately**, then start the erasure job (§5).
+| Who | Call | What happens |
+|---|---|---|
+| The user | `DELETE /_auth/me` (password) | **Deactivation**: the user is disabled and every session ends; nothing else changes. Audited as `user.delete_account` |
+| An administrator | `PATCH /_admin/users/{id}` `disabled` (`backd user disable` / `enable`) | Deactivates or reactivates, as today |
+| An administrator | `DELETE /_admin/users/{id}` (`backd user delete --yes`) | **Erasure** (§5). Irreversible; an erased user can't be enabled |
+
+- **Why deactivation by default:** the data (purchase history, for example) is needed for historical reasons, and deactivation is reversible. The docs say plainly that **deactivating is not erasing**: a person who asks for their data to be erased needs an administrator (or the developer's backend, with an admin key) to erase them.
+- **Why only an administrator erases:** it is irreversible, the operator is the one who knows whether erasing is allowed now (open orders, disputes, legal retention), and it can touch other people's documents. A "delete my data" button belongs in the developer's backend, which checks its own rules and then calls the admin API. A background process that erases after a deactivation period (`account.erase_after`) is a later follow-up (§13).
+- **Finding who asked:** self-deletion is in the audit trail (`backd audit --action user.delete_account`); there is no extra field.
+- A deactivated account still holds its email, so signing up with it answers as for any registered address until the account is erased.
 
 ## 5. Erasure of personal data (issue 4.6)
 
 ### 5.1 Policy per collection
 
-New file `collection.yaml` next to `schema.json`, parsed strictly. It's the home for collection-level data settings (future soft delete, 7.15, goes here too). **Required for every collection in an auth realm**; startup fails naming the collections without one. `backd template database` always writes it with comments.
+New **optional** file `collection.yaml` next to `schema.json`, parsed strictly; the home for collection-level data settings (future soft delete, 7.15, goes here too). **A collection without the file is left alone by an erase**: its documents keep everything, which is also how purchase records are kept. `backd template database` writes a commented example only on request.
 
 ```yaml
 on_owner_delete:
-  action: anonymize            # delete | anonymize | keep
-  remove: [phone, address]     # anonymize: fields removed
-  replace:                     # anonymize: fields replaced
-    name: "Deleted user"
-  pull: [members]              # any action: remove the user's id from these arrays in EVERY document
-  unset: [paid_by]             # any action: clear these single-value fields in EVERY document where they hold the user's id
+  action: anonymize          # delete | anonymize
+  remove: [phone]            # anonymize: these fields are removed
+  replace:                   # anonymize: these fields get a fixed value
+    buyer_name: "Erased customer"
+  pull:                      # in EVERY document of the collection: remove the user from these arrays
+    members: email           # what the array holds: email | id
+  unset:                     # in EVERY document of the collection: clear these fields where they hold the user
+    paid_by: email           # email | id
 ```
 
-| Action | Effect on documents whose `_meta.owner` is the user |
+| Part | Effect |
 |---|---|
-| `delete` | removed |
-| `anonymize` | `remove` fields deleted, `replace` fields set, `_meta.owner` cleared |
-| `keep` | untouched (`_meta.owner` keeps the old id) |
+| `action: delete` | the documents whose `_meta.owner` is the user are removed |
+| `action: anonymize` | on those documents, `remove` fields are removed, `replace` fields set, `_meta.owner` cleared |
+| `pull`, `unset` | on **every** document of the collection, whoever owns it: the user's email or id is removed from the array / cleared from the field. Exactly one identifier per field (`email` or `id`) |
 
-**Always, whatever the policy:** in every document of every collection of the realm, the user's id in `_meta.created_by` and `_meta.updated_by` is replaced by `erased`, so no id remains in document metadata. (`_meta.owner` follows the action above.)
+- **The developer chooses** per collection and per field what is kept, anonymized or deleted. The choice is in the versioned config, not made per user at the moment of erasing.
+- **`pull` and `unset` match exactly.** Emails are stored normalized (lower case), so fields matched by `email` must hold that form (the docs say so; the expenses schema already enforces it). The email is read from the user record just before it is anonymized.
+- **`_meta` is never rewritten.** `_meta.owner`, `created_by` and `updated_by` keep the user's id (the tombstone makes it a pseudonym), except that `anonymize` clears `_meta.owner` on the documents it applies to. History stays consistent and no pattern matching over `created_by` / `updated_by` is needed.
 
-**Startup checks against `schema.json`:** a required field can't be in `remove` or `unset` unless it's also in `replace`; every `replace` value must be valid for its field's schema; every `remove`, `replace`, `unset` and `pull` field must be declared; `pull` fields must be arrays of strings and `unset` fields single values (strings). Anonymized documents therefore stay valid.
+**Startup checks against `schema.json`:** every named field is declared; a required field can't be in `remove` unless it is also in `replace`, and can't be in `unset` at all (clearing it would make documents invalid: the error says to make it optional); every `replace` value is valid for its field's schema and the field is in no unique index; `pull` fields are arrays of strings without `minItems`; `unset` fields are strings. Erased documents therefore stay valid, so the job needs no validation bypass.
 
-### 5.2 Execution
+### 5.2 What an erase does
 
-- A job (`origin: backd:account.erase`) runs on a worker over every database of the realm, collection by collection, in batches; safe to repeat; resumed if a worker dies. Provisioning creates the indexes it needs (`_meta.owner`, `_meta.created_by`, `_meta.updated_by`), so large collections aren't scanned.
-- Writes are system writes recorded as `backd:erase` in `updated_by`.
-- Afterwards, if `account.on_delete` is set, that internal async function is called with `{ user_id }` (no user in `ctx`), for clean-up backd can't know about (e.g. deleting the customer at Stripe).
-- **Audit:** one record `user.erased` with counts per database and collection (deleted, anonymized, kept, pulled, unset, metadata scrubbed), never content.
+`DELETE /_admin/users/{id}` does the certain part in the request:
 
-### 5.3 Report before deleting
+1. disables the user and deletes their sign-in methods, sessions, email tokens and email jobs;
+2. turns the record into the **tombstone** (§1);
+3. queues one **erase job** (`origin: backd:account.erase`) holding the user's id and original email, and answers `202` with the job id (`backd user delete` waits for it and prints the counts).
 
-`GET /_admin/users/{id}/owned` and `backd user owned --email …`: counts per database and collection of owned documents, documents where the user appears in a `pull` or `unset` field, documents that carry the id in `_meta.created_by` or `_meta.updated_by`, plus what each policy will do.
+A worker then applies the policies of the collections that declare one, in batches:
+- Updates are atomic per document (never read-then-write), bump `_meta.version` and `updated_at`, and record `backd:erase` in `updated_by`.
+- Progress is saved per collection, so the job resumes where a stopped worker left it, and repeating it is safe.
+- Provisioning creates the indexes the policies use: `_meta.owner` where there is an action, and one on each `pull` / `unset` field. They are part of `PROVISION_MODE=verify`.
+- At the end the job clears the email from itself and writes **one audit record**, `user.erased`, with counts per database and collection (deleted, anonymized, pulled, cleared), never content.
+- A failure (a database unreachable, a document that doesn't fit) is retried; when attempts run out the job ends **failed**, visible in the jobs list, and the audit record says it needs attention. Nothing is skipped silently. Repeating `DELETE` for an erased user with an unfinished erase job resumes it.
 
-### 5.4 Retention documentation
+A realm with no policies erases the same way: the job has nothing to do and finishes at once.
 
-A docs page listing, per store, what it holds about a user and for how long: login attempts and counters (TTL), sessions, audit records (`audit.retention`), invocation history and logs (`log_retention`), jobs (`job_retention`), tokens (until expiry), backups.
+### 5.3 The other stores
+
+| Store | Holds | On erase |
+|---|---|---|
+| user record | email, roles, locale, networks, pending and previous email | tombstone |
+| sign-in methods, sessions | password hash, hashed tokens | deleted |
+| email tokens, the user's email jobs | the user id; addresses of an email change; custom emails' recipients and `data` | deleted |
+| login and email counters | hashes of the address, TTL of at most a day | expire on their own |
+| audit trail | `user:<id>` as actor or target, never addresses | left (`audit.retention`, 365 days by default); a pseudonym after the tombstone |
+| function history, async jobs, idempotency records | actor `user:<id>`; a job's input and output; a function's console output | left to `log_retention`, `job_retention` and the idempotency TTL (7 days, 24 hours, 24 hours by default) |
+| backups | everything at that moment | out of scope |
+
+The docs state that function inputs and logs can hold personal data because the developer's code decides what it writes, say which settings shorten them, and tell developers that `realm.yaml` role seeds can list a person's email (their file, not backd's).
+
+### 5.4 Report before erasing
+
+`GET /_admin/users/{id}/owned`, `backd user owned --email …` and `admin.users.owned()` in the JS client answer "what would an erase do?", **only for collections that declare a policy**:
+
+```json
+{
+  "user": { "id": "…", "status": "active | deactivated | erased" },
+  "collections": [
+    { "database": "main", "collection": "orders", "action": "anonymize", "owned": 12,
+      "remove": ["phone"], "replace": ["buyer_name"] },
+    { "database": "main", "collection": "groups", "action": null, "owned": 0,
+      "pull": { "members": 3 }, "unset": { "paid_by": 0 } }
+  ],
+  "without_policy": ["main.digests", "main.events"]
+}
+```
+
+Collections without a policy are listed by name, not counted (an erase leaves them alone, and counting them would need an owner index everywhere). The counts come from the queries the erase uses, so the preview and the result agree. It never returns content. For an erased user it answers the status `erased` with no counts.
+
+### 5.5 Retention documentation
+
+A docs page lists, per store, what it holds about a user and for how long (§5.3), plus the points above.
 
 ## 6. Endpoints (new or changed)
 
@@ -162,7 +217,9 @@ A docs page listing, per store, what it holds about a user and for how long: log
 | `GET/POST /_auth/accept-invitation` | hosted page / JSON |
 | `PATCH /_auth/me` | + `locale` |
 | `POST /_admin/users/{id}/email` | admin email change |
-| `GET /_admin/users/{id}/owned` | erasure report |
+| `DELETE /_auth/me` | now **deactivates** (§4.6) |
+| `DELETE /_admin/users/{id}` | now **erases** (§5.2); `202` with the erase job |
+| `GET /_admin/users/{id}/owned` | erasure report (§5.4) |
 | `POST /_admin/invitations` | + `send`, `redirect_to` |
 
 Hosted pages and JSON redeem endpoints follow [email-delivery.md §10](./email-delivery.md#10-links-and-hosted-pages-issue-42f). New codes: `403 email_not_verified`, `400 invalid_token`, `400 invalid_locale`, `400 invalid_redirect`.
@@ -183,7 +240,7 @@ Hosted pages and JSON redeem endpoints follow [email-delivery.md §10](./email-d
 
 ## 8. Audit events
 
-`user.email_changed` (self or admin), `user.email_change_reverted`, `user.password_reset`, `user.deleted`, `user.erased` (counts), `user.purged_unverified` (count), `invitation.sent`. Never addresses or tokens; user **ids** only.
+`user.email_changed` (self or admin), `user.email_change_reverted`, `user.password_reset`, `user.delete_account` (self-deactivation), `user.erased` (counts, or needs attention), `user.purged_unverified` (count), `invitation.sent`. Never addresses or tokens; user **ids** only.
 
 ## 9. Security considerations
 
@@ -192,12 +249,12 @@ Hosted pages and JSON redeem endpoints follow [email-delivery.md §10](./email-d
 - **Pre-registration of someone else's address:** an attacker can create an unverified account with a victim's address. The real owner is protected by the reset flow (it revokes every session, verifies the address and invalidates the old password), by `account-exists` in verify mode, and by the optional purge of unverified accounts.
 - Email change needs the current password and the new address; the old address can revert for 7 days and forces a reset.
 - Password changes revoke sessions and notify the owner.
-- Erasure policies are explicit per collection and validated against the schema; no user id remains in document metadata.
+- Erasure is an administrator's action and irreversible; policies are explicit per collection and validated against the schema. A user's id stays in document metadata as a pseudonym: the tombstone holds no identity, and anything personal in a document is for its collection's policy to remove.
 
 ## 10. Documentation
 
 - "Account lifecycle" guide: settings, each flow, emails per event, hosted pages vs own pages (GET vs POST).
-- `collection.yaml` reference and an "Erasure" page with examples (orders kept but anonymized, profiles deleted, shared documents with `pull`), plus the retention page (§5.4).
+- `collection.yaml` reference and an "Erasure" page: deactivation vs erasure stated plainly, **external clean-up (Stripe, mailing lists) is done before calling erase, in the developer's backend or runbook, while the data is still there (the hook is deferred)**, examples (orders anonymized, profiles deleted, shared documents with `pull` by email or id), and the retention page (§5.3, §5.5).
 - `realm.yaml` reference: `account:`.
 - JS client docs (4.7).
 - `api/openapi.yaml` for every endpoint and code.
@@ -210,7 +267,7 @@ Hosted pages and JSON redeem endpoints follow [email-delivery.md §10](./email-d
 
 **4.5 — generic sign-up answer:** uniform `202` in `require_verified_email` realms; `account-exists` with limits; password hashed for registered addresses; `409` elsewhere, documented. Tests including timing similarity.
 
-**4.6 — erasure:** required `collection.yaml` (startup failure tested); actions and schema checks; `pull` and `unset`; `_meta.created_by` / `updated_by` scrubbed everywhere; resumable job (killed worker test); `on_delete` hook; owned report; audit with counts; retention page.
+**4.6 — erasure:** `DELETE /_auth/me` deactivates; `DELETE /_admin/users/{id}` erases (tombstone with the anonymized unique email, other stores per §5.3); optional `collection.yaml` with startup checks against `schema.json` (collections without it untouched); `delete` / `anonymize` / `remove` / `replace`; `pull` / `unset` by `email` or `id`; indexes from the policies; resumable erase job (killed-worker test) with one audit record and a visible failure; the owned report for policy collections; docs: erasure page (with the external clean-up statement), retention page, openapi, CLI, JS client.
 
 **4.7 — JS client:** sign-up `locale`/`redirect_to`; resend; reset request and redeem; verify redeem; email change, confirm, revert; accept invitation; `me.locale`; admin `owned`, email change, invitation `send`; example app "forgot password" and "change email". Unit and integration tests.
 
@@ -226,9 +283,14 @@ Hosted pages and JSON redeem endpoints follow [email-delivery.md §10](./email-d
 - **Generic answer in every email realm:** would change `require_verified_email: false` into "sign in after sign-up"; rejected.
 - **Emails immutable / admin-only changes:** chose opt-in self-service with a revert link.
 - **Erasure settings in `rules.yaml` or `x-backd-erase` in `schema.json`:** chose `collection.yaml`.
-- **Default `keep` or `delete` for undeclared collections:** chose a required policy.
+- **A required policy for every collection / `keep` as an action:** replaced by an optional file, where no file means nothing happens (rejected the migration of every existing collection).
+- **Deleting the user record and scrubbing the id from every document's `_meta`:** replaced by a tombstone; scrubbing `created_by` / `updated_by` needed pattern matching over composite strings and new indexes, and broke the history that purchases need.
+- **Self-service erasure (a flag on `DELETE /_auth/me`, or an `account.self_erase` switch):** deferred; the developer's backend can offer the button.
+- **An `account.on_delete` hook now:** deferred (§13).
 
 ## 13. Follow-ups
 
 - 7.11 HttpOnly cookie mode could later let hosted pages sign users in safely.
 - 7.15 soft delete lives in `collection.yaml`.
+- **Erasure after deactivation in the background** (`account.erase_after`, off by default) and an opt-in self-service erase.
+- **The `account.on_delete` hook** (an internal async function for external clean-up). When it comes it runs **before** the policies, with `{ user_id, email }`, retried per its `retry`, and the policies wait for it: after them the data it needs may be gone, and a failing hook ends the erase job visibly, resumable by repeating `DELETE`. It becomes necessary when erasure becomes automatic, because nobody is then there to clean up first.
