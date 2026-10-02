@@ -59,6 +59,10 @@ type Settings struct {
 	// sources change. Local development only; serve refuses it unless
 	// HTTPAddr is bound to localhost.
 	Dev bool
+	// DevAnyAddr (BACKD_DEV_ANY_ADDR) lets dev mode run on an address that
+	// isn't localhost, for a container whose ports are published on the
+	// host's localhost only.
+	DevAnyAddr bool
 	// Deno is the deno binary dev mode bundles with; "" means "deno" on
 	// the PATH (BACKD_DEV only; `functions build` reads DENO itself).
 	Deno string
@@ -128,6 +132,13 @@ func Load(getenv func(string) string) (Settings, error) {
 		s.Dev = true
 	default:
 		errs = append(errs, fmt.Errorf("BACKD_DEV must be true or false, got %q", v))
+	}
+	switch v := strings.ToLower(getenv("BACKD_DEV_ANY_ADDR")); v {
+	case "", "false":
+	case "true":
+		s.DevAnyAddr = true
+	default:
+		errs = append(errs, fmt.Errorf("BACKD_DEV_ANY_ADDR must be true or false, got %q", v))
 	}
 	s.Deno = getenv("DENO")
 

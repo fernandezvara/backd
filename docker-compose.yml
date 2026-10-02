@@ -72,6 +72,14 @@ services:
       # Functions that declare secrets (the workshop realm's payment_webhook)
       # need the master key they are encrypted under; same dev-only rule.
       BACKD_SECRETS_KEY: local-dev-secrets-key-not-a-secret-0123456789abc
+      # Email: the workshop realm sends through its dev_only email-capture
+      # function, which stores each message in an outbox (read it in the
+      # Mailbox, /example/mailbox/). dev_only functions need dev mode, which
+      # insists on a localhost address: this container's ports are published
+      # on 127.0.0.1 only, so it says so. Links in emails point at nginx.
+      BACKD_DEV: "true"
+      BACKD_DEV_ANY_ADDR: "true"
+      BACKD_URL: https://localhost:8443
     volumes:
       - ./examples/config:/config:ro
     depends_on:

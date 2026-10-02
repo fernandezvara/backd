@@ -72,6 +72,43 @@ import { Job } from './functions.js'
  */
 
 /**
+ * A function secret's metadata, as listed: never its value.
+ * @typedef {object} SecretInfo
+ * @property {string} database     Its database scope; empty means the realm scope.
+ * @property {string} name
+ * @property {string} created_at
+ * @property {string} updated_at
+ * @property {string} updated_by   Who last set it, such as `user:<id>` or `key:<name>`.
+ */
+
+/**
+ * One function call in the invocation history: what happened and the
+ * function's own console lines, never its input or output.
+ * @typedef {object} InvocationRecord
+ * @property {string} id
+ * @property {string} at
+ * @property {string} function            `<database>/<name>`.
+ * @property {string} actor               `user:<id>`, `key:<name>`, `anonymous`, ...
+ * @property {string} mode                `sync` or `async`.
+ * @property {string} status              `ok`, `function_error`, `timeout`, `memory`, `cpu`, `crash`, `output_too_large`, `busy` or `bundle`.
+ * @property {string | null} code         The function's own error code.
+ * @property {number} duration_ms
+ * @property {string | null} request_id
+ * @property {string | null} job_id       The async job this call ran for.
+ * @property {string | null} parent_id    The invocation that called this one with `ctx.call`.
+ * @property {string | null} origin       `http`, `function`, `cron`, `admin` or `backd:<event>`.
+ * @property {{ level: string, line: string }[]} logs
+ */
+
+/**
+ * @typedef {object} InvocationsPage
+ * @property {InvocationRecord[]} items   Newest first.
+ * @property {number} limit
+ * @property {number} skip
+ * @property {boolean} has_more
+ */
+
+/**
  * @typedef {object} AuditPage
  * @property {AuditRecord[]} items    Newest first.
  * @property {number} limit
@@ -120,6 +157,10 @@ export class Admin {
     this.audit = new AdminAudit(this)
     /** The realm's async and scheduled jobs (read-only). */
     this.jobs = new AdminJobs(this)
+    /** Function secrets: set and delete their values, list their metadata. */
+    this.secrets = new AdminSecrets(this)
+    /** The realm's function invocation history (read-only). */
+    this.invocations = new AdminInvocations(this)
   }
 
   /**
@@ -346,6 +387,78 @@ class AdminAudit {
       since: time(params.since), until: time(params.until), limit: params.limit, skip: params.skip,
     }
     return (await this.admin._request({ method: 'GET', path: ['audit'], query, ...opts })).data
+  }
+}
+
+class AdminSecrets {
+  /** @param {Admin} admin */
+  constructor(admin) {
+    /** @private */
+    this.admin = admin
+  }
+
+  /**
+   * The realm's secrets: scope, name and who last changed them. Values are
+   * write-only and never returned.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<SecretInfo[]>}
+   */
+  async list(opts) {
+    return (await this.admin._request({ method: 'GET', path: ['secrets'], ...opts })).data.items
+  }
+
+  /**
+   * Creates a secret or replaces its value; functions read it as
+   * `ctx.secrets` within about a minute. Without `database` it is the
+   * realm's secret (`realm.NAME` in function.yaml); with it, that
+   * database's (`NAME`).
+   * @param {string} name   Upper-case letters, digits and `_`.
+   * @param {string} value
+   * @param {{ database?: string }} [scope]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async set(name, value, { database } = {}, opts) {
+    /** @type {Record<string, string>} */
+    const body = { value }
+    if (database) body.database = database
+    await this.admin._request({ method: 'PUT', path: ['secrets', name], body, ...opts })
+  }
+
+  /**
+   * Removes a secret's value: a function that declares it answers
+   * `secret_missing` again.
+   * @param {string} name
+   * @param {{ database?: string }} [scope]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async delete(name, { database } = {}, opts) {
+    await this.admin._request({ method: 'DELETE', path: ['secrets', name], query: { database }, ...opts })
+  }
+}
+
+class AdminInvocations {
+  /** @param {Admin} admin */
+  constructor(admin) {
+    /** @private */
+    this.admin = admin
+  }
+
+  /**
+   * A page of the function invocation history, newest first. `function` is
+   * `<database>/<name>`; `since` and `until` are dates or RFC 3339 strings.
+   * @param {{ function?: string, requestId?: string, since?: Date | string, until?: Date | string, limit?: number, skip?: number }} [params]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<InvocationsPage>}
+   */
+  async list(params = {}, opts) {
+    const time = (/** @type {Date | string | undefined} */ t) => (t instanceof Date ? t.toISOString() : t)
+    const query = {
+      function: params.function, request_id: params.requestId,
+      since: time(params.since), until: time(params.until), limit: params.limit, skip: params.skip,
+    }
+    return (await this.admin._request({ method: 'GET', path: ['invocations'], query, ...opts })).data
   }
 }
 

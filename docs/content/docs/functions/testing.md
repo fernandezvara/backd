@@ -39,7 +39,8 @@ CONFIG_DIR=./config BACKD_DEV=true HTTP_ADDR=127.0.0.1:8080 backd serve
 
 - Every second, `backd` hashes each functions project's sources; when a hash changes it runs the same `deno bundle` that `backd functions build` does and starts serving the new bundle immediately — no restart. A broken source (e.g. a syntax error) is logged and retried on the next tick, and the last good bundle keeps serving.
 - Only function code is watched. `schema.json`, `rules.yaml`, `function.yaml` and `realm.yaml` still need a restart, the same as any other config change.
-- `backd` refuses to start with `BACKD_DEV=true` unless `HTTP_ADDR` is bound to localhost (`127.0.0.1:port`, `[::1]:port` or `localhost:port`) — dev mode must never be reachable off the machine — and logs a warning while it runs, as a reminder this is a local-only, hot-reload exception.
+- `backd` refuses to start with `BACKD_DEV=true` unless `HTTP_ADDR` is bound to localhost (`127.0.0.1:port`, `[::1]:port` or `localhost:port`) — dev mode must never be reachable off the machine — and logs a warning while it runs, as a reminder this is a local-only, hot-reload exception. The one exception is a container whose ports are published on the host's `127.0.0.1` only (the local docker stack): it sets `BACKD_DEV_ANY_ADDR=true`, and `backd` logs a warning.
+- Functions with [`dev_only: true`](../reference/) run only in dev mode: without `BACKD_DEV=true`, `backd` refuses to start and names the function.
 {{< hint danger >}}
 Never set `BACKD_DEV=true` in production: it turns off the "bundles are frozen and checked at startup" guarantee the rest of the security model relies on.
 {{< /hint >}}
@@ -82,6 +83,7 @@ Deno.test("checkout charges the cart's total", async () => {
 ```
 
 - `ctx.db`/`ctx.admin.db` are backed by an in-memory store shaped like the [JS client](../../clients/js/): the same methods, and the same `NotFoundError`/`VersionMismatchError` classes on a missing document or a failed `ifMatch`.
+- `emailMessage(overrides)` builds a message in the shape a realm's [delivery function](../email/#the-delivery-function) receives as `ctx.input`; `createContext({ email: true })` gives a function `ctx.email.send`, recorded and checked like backd would (`sentEmails()` lists them), and `fakeEmail()` is that fake on its own.
 - `ctx.call` is faked per test: `const { ctx, fakeCall, calls } = createContext({ calls: ["send-receipt"] })`, then `fakeCall("send-receipt", async (input) => ({ sent: true }))`. A fake can return a value, throw `ctx.error(...)` (the caller sees the same `FunctionError` as with a real callee), return `fakeJob({ output })` for an async callee, or throw `callTimedOut()`; `calls("send-receipt")` lists what the function called, with its input and options. Calling a name the test didn't fake throws, and with `calls` set, a name outside it fails with `call_not_declared` like backd does.
 - It has no access rules (`ctx.db` here always has full access) and only a practical subset of the query language: good for testing what your function does, not a substitute for the server's own rule tests.
 - The [cookbook](../cookbook/)'s functions have tests you can copy (`order_total/index.test.ts`, `export_orders/index.test.ts`, `lib/lib.test.ts`), run in CI with `make functions-testing-test`; what the fake can't do (batch writes, `ctx.request`, rules, idempotency) is exercised by `TestWorkshopExample`, which runs every function for real.

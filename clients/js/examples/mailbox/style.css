@@ -1,0 +1,12 @@
+.mailbox { display: grid; grid-template-columns: minmax(12rem, 18rem) 1fr; gap: 1rem; align-items: start; }
+@media (max-width: 40rem) { .mailbox { grid-template-columns: 1fr; } }
+#list { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
+#list button { width: 100%; text-align: left; display: grid; gap: .1rem; }
+#list button[aria-current="true"] { outline: 2px solid currentColor; }
+#list small { opacity: .7; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: .2rem 1rem; margin: 0 0 .5rem; }
+dt { opacity: .7; }
+dd { margin: 0; overflow-wrap: anywhere; }
+.tabs { display: flex; gap: .4rem; margin-bottom: .5rem; }
+iframe { width: 100%; min-height: 22rem; border: 1px solid var(--pico-muted-border-color, #8884); background: #fff; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; }

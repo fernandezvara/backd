@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -61,5 +62,56 @@ func TestBackdURLSetting(t *testing.T) {
 	}
 	if _, err := settings.Load(env("api.acme.example")); err == nil || !strings.Contains(err.Error(), "BACKD_URL") {
 		t.Errorf("a bad BACKD_URL: %v", err)
+	}
+}
+
+// dev_only functions only run with BACKD_DEV=true.
+func TestDevOnlyFunctionsNeedDevMode(t *testing.T) {
+	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	fnDir := "acme/app/" + registry.FunctionsDir
+	root := writeConfig(t, map[string]string{
+		"acme/realm.yaml":                "",
+		fnDir + "/capture/function.yaml": "internal: true\nmode: async\ndev_only: true\n",
+		fnDir + "/capture/index.js":      "",
+	})
+	writeFuncManifest(t, filepath.Join(root, fnDir), "capture")
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = checkFunctions(reg, settings.Settings{}, log)
+	if err == nil || !strings.Contains(err.Error(), "acme/app/capture") || !strings.Contains(err.Error(), "dev_only") || !strings.Contains(err.Error(), "BACKD_DEV=true") {
+		t.Errorf("without dev mode: %v", err)
+	}
+	if err := checkFunctions(reg, settings.Settings{Dev: true}, log); err != nil {
+		t.Errorf("with dev mode: %v", err)
+	}
+	// `backd config check` only validates the config: it passes either way.
+	if err := reg.CheckBundles(); err != nil {
+		t.Errorf("config check: %v", err)
+	}
+}
+
+// A container whose ports are published on localhost only may run dev mode on
+// another address, saying so with BACKD_DEV_ANY_ADDR.
+func TestDevAnyAddr(t *testing.T) {
+	env := func(extra map[string]string) func(string) string {
+		return func(k string) string {
+			return map[string]string{"CONFIG_DIR": "/c", "MONGO_URI": "mongodb://x", "BACKD_DEV": "true"}[k] + extra[k]
+		}
+	}
+	if s, err := settings.Load(env(map[string]string{"BACKD_DEV_ANY_ADDR": "true"})); err != nil || !s.DevAnyAddr || !s.Dev {
+		t.Errorf("BACKD_DEV_ANY_ADDR=true: %+v %v", s, err)
+	}
+	if s, _ := settings.Load(env(nil)); s.DevAnyAddr {
+		t.Error("BACKD_DEV_ANY_ADDR is on by default")
+	}
+	if _, err := settings.Load(env(map[string]string{"BACKD_DEV_ANY_ADDR": "yes"})); err == nil || !strings.Contains(err.Error(), "BACKD_DEV_ANY_ADDR") {
+		t.Errorf("a bad value: %v", err)
+	}
+	// With the override the loopback check no longer stops serve (it fails later, for another reason).
+	a := &app{cfg: settings.Settings{Dev: true, DevAnyAddr: true, HTTPAddr: "0.0.0.0:8080"}, log: slog.New(slog.NewJSONHandler(io.Discard, nil)), withWorker: true}
+	if err := serve(context.Background(), a); err == nil || strings.Contains(err.Error(), "requires HTTP_ADDR bound to localhost") {
+		t.Errorf("with the override: %v", err)
 	}
 }

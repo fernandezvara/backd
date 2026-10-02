@@ -1,4 +1,4 @@
-import { callTimedOut, createContext, fakeJob, FunctionError, MemoryStore, resetIds } from './index.js'
+import { callTimedOut, createContext, emailMessage, fakeEmail, fakeJob, FunctionError, MemoryStore, resetIds } from './index.js'
 import { NotFoundError, VersionMismatchError } from '../../js/src/errors.js'
 
 // No test-framework dependency, matching the JS client's "no runtime
@@ -178,4 +178,34 @@ Deno.test('ctx.call refuses undeclared and unfaked functions', async () => {
   const free = createContext()
   free.fakeCall('anything', () => 'ok')
   assertEquals(await free.ctx.call('anything'), 'ok')
+})
+
+Deno.test('ctx.email.send records emails and refuses what backd would', async () => {
+  const none = createContext()
+  assert(none.ctx.email === undefined, 'ctx.email exists only when the function declares email')
+
+  const { ctx, sentEmails } = createContext({ email: true })
+  const job = await ctx.email.send({ to_user: 'u1', kind: 'order-shipped', data: { order_no: 7 } })
+  assertEquals(job.id, 'email-job-1')
+  assertEquals(sentEmails(), [{ to_user: 'u1', kind: 'order-shipped', data: { order_no: 7 } }])
+  await assertRejects(() => ctx.email.send({ to: [{ email: 'x@example.com' }], kind: 'k' }), TypeError)
+  await assertRejects(() => ctx.email.send({ to_user: 'u1' }), TypeError)
+  await assertRejects(() => ctx.email.send({ kind: 'k' }), TypeError)
+
+  const ext = createContext({ email: { externalRecipients: true } })
+  await ext.ctx.email.send({ to: [{ email: 'x@example.com' }], kind: 'k' })
+  assertEquals(ext.sentEmails().length, 1)
+})
+
+Deno.test('emailMessage has the delivery contract, with overrides', () => {
+  const m = emailMessage({ kind: 'reset-password', to: [{ email: 'bob@example.com', name: 'Bob' }] })
+  assertEquals(m.kind, 'reset-password')
+  assertEquals(m.to[0].name, 'Bob')
+  assertEquals(Object.keys(m).sort(), ['bcc', 'cc', 'data', 'from', 'html', 'id', 'kind', 'locale', 'reply_to', 'subject', 'text', 'to'])
+})
+
+Deno.test('fakeEmail works on its own', async () => {
+  const mail = fakeEmail()
+  await mail.send({ to_user: 'u1', kind: 'welcome' })
+  assertEquals(mail.sent().map((m) => m.kind), ['welcome'])
 })

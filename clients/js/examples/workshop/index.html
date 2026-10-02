@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>backd workshop tour</title>
+  <link rel="stylesheet" href="../blog/style.css">
+  <link rel="stylesheet" href="style.css">
+  <!-- Resolves `import … from '@backd/client'`, as a bundler would; nginx
+       serves clients/js/src at /example/client/. -->
+  <script type="importmap">{ "imports": { "@backd/client": "/example/client/index.js" } }</script>
+  <!-- The app registers its component on alpine:init, so it loads before Alpine. -->
+  <script type="module" src="app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.17.4/dist/cdn.min.js"></script>
+</head>
+<body>
+  <div class="tour" x-data="tour" x-cloak>
+    <main>
+      <header>
+        <h1>backd workshop tour</h1>
+        <p class="muted"><a href="/docs/functions/cookbook/">Cookbook</a> · <a href="../mailbox/">Mailbox</a> · <a href="../">Examples</a></p>
+      </header>
+
+      <p class="muted">
+        A guided walk through the functions of the <code>workshop</code> realm. Every call this page makes
+        appears in the inspector: the request, the answer, the function's own log lines and a <code>curl</code>
+        command that repeats it.
+      </p>
+
+      <p class="error" x-show="error" x-text="error" role="alert"></p>
+
+      <section class="card" aria-labelledby="who">
+        <h2 id="who">Who are you?</h2>
+        <p class="muted">
+          Demo accounts, created the first time you use them (password <code>dev-p4ssw0rd!</code>).
+          Staff and operator get their roles from the realm's configuration.
+        </p>
+        <div class="accounts">
+          <template x-for="a in accounts" :key="a.key">
+            <button type="button" class="account" :aria-pressed="account && account.key === a.key"
+              :disabled="busy" @click="signInAs(a)">
+              <strong x-text="a.name"></strong>
+              <small x-text="a.role"></small>
+            </button>
+          </template>
+        </div>
+        <p x-show="user" class="who">
+          Signed in as <code x-text="user && user.email"></code>
+          with roles <code x-text="user && (user.roles.length ? user.roles.join(', ') : 'none')"></code>.
+          <button type="button" class="link" @click="whoAmI" :disabled="busy">Who am I? (a call)</button>
+          <button type="button" class="link" @click="signOut" :disabled="busy">Sign out</button>
+        </p>
+        <p x-show="!user" class="muted">Not signed in.</p>
+      </section>
+
+      <section class="card" aria-labelledby="on-the-tour">
+        <h2 id="on-the-tour">On the tour</h2>
+        <ol class="outline">
+          <template x-for="s in tour" :key="s.n">
+            <li><a :href="s.id ? '#' + s.id : null" x-text="s.title"></a> <code x-text="s.fn"></code> <small class="muted" x-text="s.kind"></small></li>
+          </template>
+        </ol>
+      </section>
+
+      <!-- 1. order_total -->
+      <section class="card panel" id="orders" aria-labelledby="orders-title">
+        <h2 id="orders-title"><span class="n">1</span> A function that reads as the caller <code>order_total</code></h2>
+        <p class="goal">The tax rule belongs on the server, not in every client. The function reads the order <em>as the caller</em>, so the collection's rules still decide who may see it.</p>
+        <p class="muted" x-show="!isCustomer">Sign in as Ada or Bob to place orders.</p>
+        <div x-show="isCustomer">
+          <form class="inline-form" @submit.prevent="createOrder">
+            <label>Item <input x-model="draft.item" required maxlength="100"></label>
+            <label>Quantity <input type="number" min="1" x-model="draft.quantity" required></label>
+            <label>Price (€) <input type="number" min="0.01" step="0.01" x-model="draft.price" required></label>
+            <button type="submit" :disabled="busy">Place order</button>
+          </form>
+          <p class="muted" x-show="!orders.length">No orders yet.</p>
+          <ul class="orders">
+            <template x-for="o in orders" :key="o.id">
+              <li>
+                <div class="row">
+                  <span><strong x-text="o.item"></strong> × <span x-text="o.quantity"></span> · <span x-text="money(o.amount)"></span></span>
+                  <span class="chip" :class="'s-' + o.status" x-text="o.status"></span>
+                  <code class="id" x-text="o.id"></code>
+                </div>
+                <div class="actions">
+                  <button type="button" class="secondary" :disabled="busy" @click="orderTotal(o)">Ask the server for the total</button>
+                  <button type="button" class="secondary" :disabled="busy" @click="askAsOther(o)">Ask as the other customer</button>
+                  <button type="button" class="link danger" :disabled="busy || o.status !== 'draft'" @click="deleteOrder(o)">Delete</button>
+                </div>
+                <p class="result" x-show="totals[o.id]" :class="totals[o.id] && totals[o.id].error ? 'bad' : 'ok'">
+                  <template x-if="totals[o.id] && !totals[o.id].error"><span>subtotal <strong x-text="money(totals[o.id].subtotal)"></strong> + tax <strong x-text="money(totals[o.id].tax)"></strong> = <strong x-text="money(totals[o.id].total)"></strong></span></template>
+                  <template x-if="totals[o.id] && totals[o.id].error"><span x-text="totals[o.id].error"></span></template>
+                </p>
+              </li>
+            </template>
+          </ul>
+        </div>
+        <div class="notice">
+          <strong>What to notice</strong>
+          <ul>
+            <li>The customer can create <em>drafts</em> and nothing else: the collection's rules forbid setting any other status.</li>
+            <li>Ask for an order as the other customer: <code>404 not_found</code>, exactly as if it didn't exist. The function runs with the caller's own access.</li>
+          </ul>
+        </div>
+        <details class="code"><summary>The code</summary><pre>const db = backd.db('main')
+await db.collection('orders').create({ item, quantity, amount, status: 'draft' })
+const { subtotal, tax, total } = await db.fn('order_total', { order_id })</pre></details>
+        <p class="muted"><a href="/docs/functions/writing/">Writing a function</a> · <a href="/docs/functions/cookbook/">Cookbook</a></p>
+      </section>
+
+      <!-- 2. refund -->
+      <section class="card panel" id="refund" aria-labelledby="refund-title">
+        <h2 id="refund-title"><span class="n">2</span> A privileged, idempotent refund <code>refund</code></h2>
+        <p class="goal">Marking an order refunded is something no customer rule may allow, so it is a function with admin access, for staff only. A retried request must not refund twice.</p>
+        <p class="muted" x-show="!user">Sign in as Staff (or as a customer, to see the refusal).</p>
+        <div x-show="user">
+          <p class="muted" x-show="!known.length">Orders you place as Ada or Bob in step 1 appear here. Staff can't list customers' orders; the refund asks for an order id.</p>
+          <div class="form">
+            <label>Order
+              <select x-model="refundOrderId" @change="pickOrder">
+                <option value="">Choose an order</option>
+                <template x-for="o in known" :key="o.id"><option :value="o.id" x-text="o.owner + ' · ' + o.item + ' · ' + money(o.amount) + ' · ' + o.id"></option></template>
+              </select>
+            </label>
+            <label>Reason <input x-model="refundReason" maxlength="200"></label>
+            <label>Idempotency-Key <input x-model="refundKey" placeholder="refund-&lt;order id&gt;"></label>
+          </div>
+          <div class="actions">
+            <button type="button" :disabled="busy || !refundOrderId" @click="refund">Refund</button>
+            <button type="button" class="secondary" :disabled="busy || !refundOrderId" @click="refundAgain">Send it again (same key)</button>
+            <button type="button" class="secondary" :disabled="busy || !refundOrderId" @click="refundNewKey">Refund with a new key</button>
+            <button type="button" class="secondary" :disabled="busy || !refundOrderId" @click="refundRace">Two at once</button>
+          </div>
+          <ul class="results">
+            <template x-for="(a, i) in attempts" :key="i">
+              <li :class="a.ok ? 'ok' : 'bad'"><strong x-text="a.label"></strong>: <span x-text="a.text"></span></li>
+            </template>
+          </ul>
+          <p class="result ok" x-show="receipt">The refund queued a receipt: job <code x-text="receipt && receipt.job"></code> is <strong x-text="receipt && receipt.status"></strong><span x-show="receipt && receipt.text"> · <em x-text="receipt && receipt.text"></em></span></p>
+        </div>
+        <div class="notice">
+          <strong>What to notice</strong>
+          <ul>
+            <li>As a customer the call is refused (<code>403</code>): the function's <code>invoke</code> rule lets only staff in.</li>
+            <li>The same key again returns the <em>same</em> refund. A new key means "another refund", and the order is already refunded: <code>409 not_refundable</code>. "Two at once" shows one run and a replay.</li>
+            <li>The order change and the refund record are one transaction. The receipt is written by an <em>internal</em> function (<code>refund_receipt</code>) that has no HTTP route: <code>refund</code> queued it with <code>ctx.call</code>.</li>
+          </ul>
+        </div>
+        <details class="code"><summary>The code</summary><pre>const out = await db.fn('refund', { order_id, reason }, { idempotencyKey: `refund-${order_id}` })
+// out.receipt_job: the job refund queued for refund_receipt</pre></details>
+        <p class="muted"><a href="/docs/functions/calling/#idempotency">Idempotency</a> · <a href="/docs/functions/internal/">Internal functions</a></p>
+      </section>
+
+      <!-- 3. payment_webhook -->
+      <section class="card panel" id="webhook" aria-labelledby="webhook-title">
+        <h2 id="webhook-title"><span class="n">3</span> A webhook from a payment provider <code>payment_webhook</code></h2>
+        <p class="goal">Another service calls this URL. It has no backd session, so the function is the only check: it verifies the signature, ignores events it already handled, and marks the order paid.</p>
+        <p class="muted">This page plays the provider. It signs the exact body with the shared secret (HMAC-SHA256) and sends it, with no credentials.</p>
+        <div class="form">
+          <label>Order
+            <select x-model="hookOrderId">
+              <option value="">Choose an order</option>
+              <template x-for="o in known" :key="o.id"><option :value="o.id" x-text="o.owner + ' · ' + o.item + ' · ' + money(o.amount) + ' · ' + o.status + ' · ' + o.id"></option></template>
+            </select>
+          </label>
+          <label>Event id <span class="inline"><input x-model="hookEventId"><button type="button" class="link" @click="newEvent">New</button></span></label>
+        </div>
+        <div class="actions">
+          <button type="button" :disabled="busy || !hookOrderId" @click="sendEvent">Send the signed event</button>
+          <button type="button" class="secondary" :disabled="busy || !hookOrderId" @click="sendAgain">Send the same event again</button>
+          <button type="button" class="secondary" :disabled="busy || !hookOrderId" @click="sendWrongSignature">Sign it with the wrong secret</button>
+        </div>
+        <ul class="results">
+          <template x-for="(r, i) in hookResults" :key="i">
+            <li :class="r.ok ? 'ok' : 'bad'"><strong x-text="r.label"></strong>: <code x-text="r.status"></code> <span x-text="r.text"></span></li>
+          </template>
+        </ul>
+        <p class="muted">
+          The function reads its shared secret from backd's encrypted secrets.
+          <button type="button" class="link" :disabled="busy" @click="setSharedSecret">Set the shared secret (as the operator)</button>
+          <span x-show="secretState" x-text="secretState"></span>
+        </p>
+        <div class="notice">
+          <strong>What to notice</strong>
+          <ul>
+            <li>A wrong signature: <code>400 invalid signature</code>. The function checks it against the raw body, byte for byte.</li>
+            <li>The same event twice: <code>already processed</code>. A unique index on the event id makes a retry harmless.</li>
+            <li>With the secret unset the function answers <code>secret_missing</code> until an operator sets it.</li>
+            <li>Customers can't mark orders paid; this function can, because it declares <code>admin: true</code>. After a signed event, switch to the customer: the order is <code>paid</code>.</li>
+          </ul>
+        </div>
+        <details class="code"><summary>The code</summary><pre>const body = JSON.stringify({ id: 'evt_1', type: 'payment.succeeded', order_id })
+await fetch(`${origin}/v1/workshop/main/_func/payment_webhook`, {
+  method: 'POST',
+  headers: { 'x-signature': await signBody('whsec_test', body) },  // sha256=&lt;hmac of body&gt;
+  body,
+})</pre></details>
+        <p class="muted"><a href="/docs/functions/webhooks/">Webhooks</a> · <a href="/docs/functions/secrets/">Secrets</a></p>
+      </section>
+
+      <!-- 4. export_orders -->
+      <section class="card panel" id="export" aria-labelledby="export-title">
+        <h2 id="export-title"><span class="n">4</span> A report in the background <code>export_orders</code></h2>
+        <p class="goal">Work that may take a while, or must survive the caller leaving, is an async function: the call answers at once with a job, and a worker runs it.</p>
+        <p class="muted" x-show="!isCustomer">Sign in as Ada or Bob: the report holds that customer's orders.</p>
+        <div x-show="isCustomer">
+          <div class="actions"><button type="button" :disabled="busy" @click="startExport">Export my orders</button></div>
+          <ul class="results">
+            <template x-for="r in exportRuns" :key="r.id">
+              <li :class="r.error ? 'bad' : 'ok'">
+                Job <code x-text="r.id"></code>: <strong x-text="r.status"></strong>
+                <template x-if="r.status === 'done' && !r.error">
+                  <span> · <span x-text="r.rows"></span> orders<span x-show="r.reused"> (reused: the job ran twice)</span> · <button type="button" class="link" @click="downloadCsv(r)">Download CSV</button>
+                    <pre class="csv" x-text="r.csv"></pre></span>
+                </template>
+                <span x-show="r.error" x-text="r.error"></span>
+              </li>
+            </template>
+          </ul>
+        </div>
+        <div class="notice">
+          <strong>What to notice</strong>
+          <ul>
+            <li>The call answers <code>202</code> with a job and a <code>Location</code>. The page polls it: <em>queued → running → done</em>.</li>
+            <li>The function runs as the customer (<code>ctx.db</code>), so the report holds only their orders and only they can read it.</li>
+            <li>A job runs <em>at least once</em>. The function keys its report on the request id, so a second run returns the report it already wrote.</li>
+            <li>Rate limited: 5 exports per customer per hour.</li>
+          </ul>
+        </div>
+        <details class="code"><summary>The code</summary><pre>const job = await db.fn('export_orders', {})   // a Job handle: 202 + Location
+while ((await job.status()) !== 'done') await sleep(500)
+const { report_id, rows } = await job.wait()   // the function's output
+const report = await db.collection('reports').get(report_id)</pre></details>
+        <p class="muted"><a href="/docs/functions/jobs/">Async jobs</a></p>
+      </section>
+
+      <!-- 5. operating -->
+      <section class="card panel" id="operating" aria-labelledby="operating-title">
+        <h2 id="operating-title"><span class="n">5</span> Operating it <code>nightly_cleanup</code> <code>daily_digest</code></h2>
+        <p class="goal">Functions that run without anyone watching need to be observable: which secrets are set, which jobs ran and how often they tried, what called what, and a way to run one by hand.</p>
+        <p class="muted" x-show="!isOperator">Sign in as the Operator, an administrator of the realm.</p>
+        <div x-show="isOperator">
+          <div class="actions"><button type="button" class="secondary" :disabled="busy" @click="refreshOps">Refresh</button></div>
+
+          <h3>Secrets <small class="muted">scope and who set them, never the values</small></h3>
+          <p class="muted" x-show="ops.loaded && !ops.secrets.length">No secrets set. Set the webhook's in step 3.</p>
+          <div class="scroll"><table class="grid" x-show="ops.secrets.length">
+            <thead><tr><th>Name</th><th>Scope</th><th>Set by</th><th>Updated</th></tr></thead>
+            <tbody><template x-for="s in ops.secrets" :key="s.database + '/' + s.name">
+              <tr><td><code x-text="s.name"></code></td><td x-text="s.database ? 'database ' + s.database : 'realm'"></td><td><code x-text="s.updated_by"></code></td><td x-text="time(s.updated_at)"></td></tr>
+            </template></tbody>
+          </table></div>
+
+          <h3>Run a function by hand <small class="muted">through the admin API</small></h3>
+          <div class="actions">
+            <button type="button" :disabled="busy" @click="runByHand('nightly_cleanup', 'nightly_cleanup')">Run nightly_cleanup now</button>
+            <button type="button" class="secondary" :disabled="busy" @click="runByHand('daily_digest for today', 'daily_digest', { day: today() })">Run daily_digest for today</button>
+          </div>
+          <ul class="results">
+            <template x-for="(m, i) in manual" :key="i">
+              <li :class="m.status === 'failed' ? 'bad' : 'ok'"><strong x-text="m.label"></strong>: <span x-text="m.status"></span> <code x-text="m.text"></code></li>
+            </template>
+          </ul>
+
+          <h3>Jobs <small class="muted">async calls, scheduled runs and manual runs</small></h3>
+          <div class="actions">
+            <label class="inline"><input type="radio" value="all" x-model="jobFilter" @change="refreshOps"> all</label>
+            <label class="inline"><input type="radio" value="scheduled" x-model="jobFilter" @change="refreshOps"> scheduled runs only</label>
+          </div>
+          <p class="muted" x-show="ops.loaded && !ops.jobs.length">No jobs yet. Run a function above, or use steps 2 and 4.</p>
+          <div class="scroll"><table class="grid" x-show="ops.jobs.length">
+            <thead><tr><th>Created</th><th>Function</th><th>Status</th><th>Result</th><th>Tries</th><th>Next attempt</th></tr></thead>
+            <tbody><template x-for="j in ops.jobs" :key="j.id">
+              <tr>
+                <td x-text="time(j.created_at)"></td>
+                <td><code x-text="j.function"></code><small class="muted" x-show="j.scheduled"> cron</small></td>
+                <td x-text="j.status"></td>
+                <td x-text="j.result ? j.result.status : '-'"></td>
+                <td x-text="j.attempts"></td>
+                <td x-text="j.next_attempt_at ? time(j.next_attempt_at) : '-'"></td>
+              </tr>
+            </template></tbody>
+          </table></div>
+
+          <h3>History <small class="muted">every function call; pick one to see the calls of its request</small></h3>
+          <div class="scroll"><table class="grid" x-show="ops.history.length">
+            <thead><tr><th>Time</th><th>Function</th><th>Origin</th><th>Status</th><th>ms</th><th></th></tr></thead>
+            <tbody><template x-for="r in ops.history" :key="r.id">
+              <tr>
+                <td x-text="time(r.at)"></td>
+                <td><code x-text="r.function"></code></td>
+                <td x-text="r.origin || '-'"></td>
+                <td x-text="r.status + (r.code ? ' (' + r.code + ')' : '')"></td>
+                <td x-text="r.duration_ms"></td>
+                <td><button type="button" class="link" :disabled="busy || !r.request_id" @click="showChain(r)">Calls</button></td>
+              </tr>
+            </template></tbody>
+          </table></div>
+          <div x-show="chain" class="chain">
+            <h4>Calls of request <code x-text="chain && chain.request_id"></code></h4>
+            <ul>
+              <template x-for="r in (chain ? chain.rows : [])" :key="r.id">
+                <li :style="'margin-left:' + (r.depth * 1.5) + 'rem'">
+                  <code x-text="r.function"></code>
+                  <small class="muted"> <span x-text="r.origin"></span> · <span x-text="r.mode"></span> · <span x-text="r.status"></span> · <span x-text="r.duration_ms"></span> ms</small>
+                </li>
+              </template>
+            </ul>
+          </div>
+        </div>
+        <div class="notice">
+          <strong>What to notice</strong>
+          <ul>
+            <li><code>nightly_cleanup</code> and <code>daily_digest</code> run by themselves (03:00 and 00:00 UTC) on a worker. A run by hand goes through the admin API; <code>nightly_cleanup</code> is <em>internal</em>, so it has no HTTP route at all and this is the only way in.</li>
+            <li><em>Tries</em> above 1 means a worker was lost or the function is being retried; <em>Next attempt</em> says when a failed attempt will run again (a function's <code>retry</code>).</li>
+            <li>Pick the call of a <code>refund</code> in the history: its tree shows <code>refund_receipt</code> under it, with origin <code>function</code>. That is <code>ctx.call</code>, followed through <code>parent_id</code>.</li>
+            <li>Secrets show who set them and when, never their values.</li>
+          </ul>
+        </div>
+        <details class="code"><summary>The code</summary><pre>await backd.admin.secrets.list()                    // metadata only
+await backd.admin.jobs.list({ scheduled: true })     // cron runs, with attempts and next_attempt_at
+await backd.admin.invocations.list({ requestId })    // every call of one request, with parent_id
+const job = await backd.admin.invokeFunction('main/nightly_cleanup')   // run by hand
+await job.wait()</pre></details>
+        <p class="muted"><a href="/docs/functions/cron/">Scheduled functions</a> · <a href="/docs/functions/internal/#running-a-function-by-hand">Running a function by hand</a> · <a href="/docs/auth/admin/">Admin API</a></p>
+      </section>
+
+      <!-- 6. email -->
+      <section class="card panel" id="email" aria-labelledby="email-title">
+        <h2 id="email-title"><span class="n">6</span> Email <code>email-capture</code></h2>
+        <p class="goal">backd never sends mail itself: the realm names a delivery function that hands each message to your provider. In this realm that function only stores the messages, so you can read them.</p>
+        <p><a href="../mailbox/" target="_blank" rel="noopener">Open the Mailbox</a> to read what the realm "sent".</p>
+        <div class="notice">
+          <strong>What to notice</strong>
+          <ul>
+            <li>The message and its link are made by a worker at send time; backd stores only a hash of the token, never the message.</li>
+            <li>Emails appear in the Mailbox once account flows send them (verification and password reset are on the roadmap); the delivery path itself is already tested end to end.</li>
+          </ul>
+        </div>
+        <p class="muted"><a href="/docs/functions/email/">Email</a></p>
+      </section>
+    </main>
+
+    <aside class="inspector" aria-labelledby="inspector-title">
+      <header>
+        <h2 id="inspector-title">Inspector</h2>
+        <button type="button" class="link" @click="clearInspector" x-show="entries.length">Clear</button>
+      </header>
+      <p class="muted" x-show="!entries.length">
+        Nothing yet. Sign in as a demo account and watch the calls appear here.
+      </p>
+      <ol class="entries">
+        <template x-for="(e, i) in entries" :key="e.id">
+          <li>
+            <p class="step muted" x-show="e.step && (i === 0 || entries[i - 1].step !== e.step)" x-text="e.step"></p>
+            <button type="button" class="entry" :aria-expanded="open === e.id" @click="toggle(e)">
+              <span class="method" x-text="e.method"></span>
+              <span class="path" x-text="e.path"></span>
+              <span class="status" :class="statusClass(e)" x-text="badge(e)"></span>
+              <span class="ms muted" x-text="e.ms === null ? '' : e.ms + ' ms'"></span>
+            </button>
+            <p class="note muted" x-show="e.note" x-text="e.note"></p>
+            <div class="details" x-show="open === e.id">
+              <p class="muted" x-show="e.requestId">Request id <code x-text="e.requestId"></code></p>
+              <template x-if="e.request">
+                <div><h3>Request</h3><pre x-text="e.request"></pre></div>
+              </template>
+              <template x-if="e.response">
+                <div><h3>Answer</h3><pre x-text="e.response"></pre></div>
+              </template>
+              <p class="error" x-show="e.error" x-text="e.error"></p>
+              <template x-if="e.logs.length">
+                <div>
+                  <h3>The function's log <small class="muted" x-show="e.executorMs">(ran in <span x-text="e.executorMs"></span> ms)</small></h3>
+                  <pre><template x-for="l in e.logs"><span x-text="'[' + l.level + '] ' + l.line + '\n'"></span></template></pre>
+                </div>
+              </template>
+              <button type="button" class="link" @click="copyCurl(e)" x-text="copied === e.id ? 'Copied' : 'Copy as curl'"></button>
+            </div>
+          </li>
+        </template>
+      </ol>
+    </aside>
+  </div>
+</body>
+</html>

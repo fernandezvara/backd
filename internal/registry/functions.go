@@ -98,6 +98,7 @@ type Function struct {
 	Invoke                *rules.Rule    // nil: only API keys may invoke
 	Admin                 bool           // ctx.admin.db with full access
 	Internal              bool           // no HTTP route: only backd, scheduled runs and other functions call it
+	DevOnly               bool           // backd refuses to start with it unless BACKD_DEV=true (development helpers)
 	Calls                 []string       // functions of the same database this one may ctx.call
 	Schedule              *cron.Schedule // nil: not scheduled
 	ScheduleExpr          string
@@ -173,6 +174,7 @@ type functionDoc struct {
 	Invoke      *string  `yaml:"invoke"`
 	Admin       bool     `yaml:"admin"`
 	Internal    bool     `yaml:"internal"`
+	DevOnly     bool     `yaml:"dev_only"`
 	Calls       []string `yaml:"calls"`
 	Schedule    *string  `yaml:"schedule"`
 	Secrets     []string `yaml:"secrets"`
@@ -525,6 +527,7 @@ func loadFunction(db *Database, settings RealmSettings, name, dir string) (*Func
 	fn.Admin = doc.Admin
 
 	fn.Internal = doc.Internal
+	fn.DevOnly = doc.DevOnly
 	if fn.Internal && doc.Invoke != nil {
 		add("internal: a function with no HTTP route has no use for an invoke rule; remove one of them")
 	}

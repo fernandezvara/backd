@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
@@ -48,6 +49,8 @@ func TestWorkshopExample(t *testing.T) {
 	env := map[string]string{
 		"CONFIG_DIR": root, "MONGO_URI": uri, "LOG_LEVEL": "error", "PASSWORD_HASH_CONCURRENCY": "1",
 		"BACKD_SECRETS_KEY": "workshop-secrets-key-0123456789abcdef",
+		// email-capture is dev_only; links in emails point here.
+		"BACKD_DEV": "true", "BACKD_URL": "https://workshop.test",
 	}
 	getenv := func(k string) string { return env[k] }
 	ctx := context.Background()
@@ -56,7 +59,7 @@ func TestWorkshopExample(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		for _, db := range []string{realm + "__main", realm + "___system"} {
+		for _, db := range []string{realm + "__main", realm + "__notifications", realm + "___system"} {
 			_ = client.Database(db).Drop(ctx)
 		}
 		_ = client.Disconnect(ctx)
@@ -274,6 +277,54 @@ func TestWorkshopExample(t *testing.T) {
 		if !found {
 			t.Errorf("the receipt's parent is not the successful refund call: %v", n)
 		}
+	}
+
+	// email: backd queues a small job, the worker renders the message and the
+	// real delivery function (email-capture, on the real executor) stores it
+	// in the outbox. The message and its token are never stored by backd.
+	mailUsers := a.realmUsers()(realm)
+	profile := expect(200, "GET", base+"/_auth/me", ada, "")
+	adaID, _ := profile["id"].(string)
+	if adaID == "" {
+		t.Fatalf("me: %v", profile)
+	}
+	mailJob, qerr := mailUsers.QueueEmail(ctx, auth.EmailRequest{Kind: "verify-email", UserID: adaID, Address: "ada@example.com", RedirectTo: "https://app.example/welcome"})
+	if qerr != nil {
+		t.Fatal(qerr)
+	}
+	for w.RunOnce(ctx) {
+	}
+	if j := expect(200, "GET", base+"/_admin/jobs?function=notifications/email-capture", adminKey, ""); len(j["items"].([]any)) != 1 || j["items"].([]any)[0].(map[string]any)["status"] != "done" {
+		t.Fatalf("email job: %v", j)
+	}
+	outbox := expect(200, "GET", base+"/notifications/outbox", "", "")["items"].([]any)
+	if len(outbox) != 1 {
+		t.Fatalf("outbox: %v", outbox)
+	}
+	mail := outbox[0].(map[string]any)
+	link, _ := mail["link"].(string)
+	if mail["email_id"] != mailJob.ID || mail["kind"] != "verify-email" || mail["subject"] != "Confirm your email address for "+realm || !strings.HasPrefix(link, "https://workshop.test/v1/"+realm+"/_auth/verify-email?token=") ||
+		!strings.Contains(mail["text"].(string), link) || !strings.Contains(mail["html"].(string), `href="`+link+`"`) || mail["to"].([]any)[0] != "ada@example.com" {
+		t.Fatalf("captured email: %v", mail)
+	}
+	mailToken := strings.TrimPrefix(link, "https://workshop.test/v1/"+realm+"/_auth/verify-email?token=")
+	// The link works once, for its purpose.
+	if tk, err := mailUsers.RedeemEmailToken(ctx, mailToken, "verify-email"); err != nil || tk.UserID != adaID || tk.RedirectTo != "https://app.example/welcome" {
+		t.Errorf("redeem: %+v %v", tk, err)
+	}
+	if _, err := mailUsers.RedeemEmailToken(ctx, mailToken, "verify-email"); err == nil {
+		t.Error("a token was redeemed twice")
+	}
+	// backd's own records hold no token: not the job, not its history, not
+	// the function's logs (the executor masks it), though the function logs its work.
+	for _, path := range []string{"/_admin/jobs", "/_admin/invocations?function=notifications/email-capture", "/_admin/audit"} {
+		if _, _, raw := call("GET", base+path, adminKey, ""); strings.Contains(raw, mailToken) {
+			t.Errorf("%s contains the token", path)
+		}
+	}
+	if inv := expect(200, "GET", base+"/_admin/invocations?function=notifications/email-capture", adminKey, "")["items"].([]any); len(inv) != 1 ||
+		inv[0].(map[string]any)["origin"] != "backd:email.verify-email" || !strings.Contains(fmt.Sprint(inv[0].(map[string]any)["logs"]), "captured verify-email email for ada@example.com") {
+		t.Errorf("email invocation: %v", inv)
 	}
 
 	// cron. A draft nobody finished for 45 days (backdated in MongoDB) and

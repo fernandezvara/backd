@@ -274,3 +274,55 @@ func keys(m map[string]string) []string {
 	}
 	return out
 }
+
+// email-capture is a delivery function and the outbox it writes to; with the
+// realm pointed at it, the generated config loads.
+func TestEmailCapture(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Realm(root, "demo", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := EmailCapture(root, "demo", "notify"); err == nil || !strings.Contains(err.Error(), "backd template database") {
+		t.Errorf("without the database: %v", err)
+	}
+	if _, err := Database(root, "demo", "notify", false); err != nil {
+		t.Fatal(err)
+	}
+	files, err := EmailCapture(root, "demo", "notify")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"demo/notify/_functions/deno.json", "demo/notify/_functions/email-capture/function.yaml", "demo/notify/_functions/email-capture/index.ts",
+		"demo/notify/outbox/schema.json", "demo/notify/outbox/rules.yaml", "demo/notify/outbox/indexes.json",
+	}
+	for i, f := range files {
+		if f.Path != want[i] || !f.Created {
+			t.Errorf("file %d = %+v, want %s created", i, f, want[i])
+		}
+	}
+	if again, _ := EmailCapture(root, "demo", "notify"); again[1].Created {
+		t.Error("a second run overwrote the function")
+	}
+	index, _ := os.ReadFile(filepath.Join(root, "demo/notify/_functions/email-capture/index.ts"))
+	fnYAML, _ := os.ReadFile(filepath.Join(root, "demo/notify/_functions/email-capture/function.yaml"))
+	if !strings.Contains(string(index), `db("notify")`) || strings.Contains(string(index), "__DATABASE__") || !strings.Contains(string(fnYAML), "function: notify/email-capture") {
+		t.Errorf("the database name wasn't filled in:\n%s\n%s", index, fnYAML)
+	}
+
+	// Without email configured it loads; pointing the realm at it works too.
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatalf("the template doesn't load: %v", err)
+	}
+	fn := reg.Realms["demo"].Databases["notify"].Functions.Functions["email-capture"]
+	if !fn.Internal || !fn.DevOnly || fn.Mode != registry.ModeAsync || !fn.Admin {
+		t.Errorf("email-capture: %+v", fn)
+	}
+	realm := filepath.Join(root, "demo", "realm.yaml")
+	data, _ := os.ReadFile(realm)
+	os.WriteFile(realm, append(data, []byte("\nemail:\n  function: notify/email-capture\n  from: dev@example.com\n  public_url: http://localhost:8080\n")...), 0o644)
+	if _, err := registry.Load(root); err != nil {
+		t.Fatalf("a realm that sends through email-capture doesn't load: %v", err)
+	}
+}

@@ -57,6 +57,7 @@ make js-integration  # JavaScript client against backd + MongoDB in Docker
 make example      # the local stack on https://localhost:8443: API, docs (live reload) and example apps behind nginx
 make hack-expenses  # attack the expenses example on the running local stack
 make hack-expenses-functions  # attack the expenses-with-functions example on the running local stack
+make workshop-tour  # walk the workshop tour without a browser on the running local stack, checking each step
 ```
 
 Two differential tests guard against data leaks and failed writes, and run against the real MongoDB in `make test` and CI:

@@ -812,3 +812,28 @@ func TestAdminInvokeFunction(t *testing.T) {
 		t.Errorf("invocation origin: %+v", inv)
 	}
 }
+
+// An administrator who starts a job by hand can read it back with their own
+// session; a customer still can't read someone else's.
+func TestAdminReadsJobsOfOthers(t *testing.T) {
+	f := newRulesFixture(t)
+	rec, out := f.doH(t, "POST", "/v1/acme/app/_func/job", `{}`, bearer(f.ada))
+	if rec.Code != 202 {
+		t.Fatalf("enqueue: %d %v", rec.Code, out)
+	}
+	path := "/v1/acme/app/_jobs/" + out["id"].(string)
+	if code, _ := f.as(t, f.ada, "GET", path, ""); code != 200 {
+		t.Errorf("the owner: %d", code)
+	}
+	// Someone without an admin role gets the 404 of an unknown id.
+	if code, _ := f.as(t, f.bob, "GET", path, ""); code != 404 {
+		t.Errorf("another customer: %d", code)
+	}
+	// The `staff` role of this realm is an admin role.
+	if err := f.svc.AddRole(context.Background(), "bob@example.com", "staff"); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := f.as(t, f.bob, "GET", path, ""); code != 200 {
+		t.Errorf("a user holding an admin role: %d", code)
+	}
+}

@@ -623,7 +623,10 @@ func (f *functions) getJob(w http.ResponseWriter, r *http.Request) {
 		logger(r.Context()).Error("get job", "job_id", id, "error", err)
 		return
 	}
-	if !found || job.Database != database || !jobVisibleTo(job, caller) {
+	// An administrator (an admin API key, or a user holding an admin role) reads
+	// any job, such as the one they started by hand.
+	admin := caller.User != nil && f.docs.users(realm).Settings.IsAdmin(caller.User.User.Roles)
+	if !found || job.Database != database || !(admin || jobVisibleTo(job, caller)) {
 		notFound(w, r)
 		return
 	}

@@ -51,6 +51,7 @@ make prod-test    # end-to-end test of the production reference deployment
 make release-check  # build every release archive into dist/ without publishing
 make hack-expenses  # attack the expenses example (needs make example running)
 make hack-expenses-functions  # attack the expenses-with-functions example (needs make example running)
+make workshop-tour  # walk the workshop tour without a browser and check each step (needs make example running)
 ```
 
 Documentation lives in [`docs/`](docs/) and is built with Hugo.

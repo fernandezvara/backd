@@ -45,6 +45,13 @@ func newCLI(getenv func(string) string, stdin io.Reader, stdout, stderr io.Write
 			required(cc, "database", "the database of the function")
 			required(cc, "name", "the function to create")
 		})
+	tpl.SubCommand("email-capture").ShortHelp("add a development delivery function that stores emails in an outbox").
+		LongHelp("Adds the function email-capture to the database's _functions project, and the\ncollection outbox it writes to: instead of sending an email, it stores it (links\nincluded) so you can read it. For local development only: the function is\ndev_only, and backd refuses to start with it unless BACKD_DEV=true.").
+		Func(act("template email-capture", templateEmailCapture)).
+		Config(func(cc *cli.CommandConfig) {
+			required(cc, "realm", "the realm of the database")
+			required(cc, "database", "the database to add the function and the outbox to")
+		})
 	tpl.SubCommand("project").ShortHelp("create a complete config repository").
 		LongHelp("Creates a complete config repository at --dir (which must not exist yet): the\nrealm and sample database, a sample function with tests, Dockerfiles and a\ncompose stack for local development, and a GitHub Actions CI workflow.\nSee the generated README.md.").
 		Func(act("template project", templateProject)).

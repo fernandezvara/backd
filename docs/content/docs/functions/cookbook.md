@@ -10,11 +10,14 @@ Every recipe here is a function of the `workshop` realm ([`examples/config/works
 
 ## Run the workshop
 
+{{< live-example path="workshop/" text="the workshop tour: every recipe below as a clickable panel, with an inspector" >}}
+
 The repository's local stack serves the realm, and its `backd` runs a worker (`serve --with-worker`), so jobs and schedules work:
 
 ```sh
 make example                # docker compose up --build; the API is at https://localhost:8443
 docker compose exec backd /backd bootstrap --realm workshop --email ops@example.com   # first administrator
+# (the workshop tour already offers an operator demo account, so this is only needed to use the CLI)
 
 API=https://localhost:8443/v1/workshop
 TOKEN=$(curl -s $API/_auth/signup -H 'Content-Type: application/json' \
@@ -31,6 +34,8 @@ The `orders` rules let a customer create and edit their own *drafts* and read th
 
 ## A sync function that runs as the caller
 
+{{< live-example path="workshop/#orders" text="try it in the tour (step 1)" >}}
+
 `order_total` prices one of the caller's orders. It reads with `ctx.db`, so the orders' read rule decides what exists for this caller: someone else's order is a `404`, the same as reading it directly. The tax rate lives in one place, on the server.
 
 {{< example-file path="workshop/main/_functions/order_total/function.yaml" >}}
@@ -46,6 +51,8 @@ curl -s $API/main/_func/order_total -H "Authorization: Bearer $TOKEN" -H 'Conten
 See [Writing a function](../writing/), including the input and output schemas and why errors go through [`relay`](../writing/#errors).
 
 ## A privileged, atomic, idempotent change
+
+{{< live-example path="workshop/#refund" text="try it in the tour (step 2)" >}}
 
 `refund` is something no customer rule may allow, so it is a function with `admin: true`, restricted to staff, that changes the order and records the refund **in one transaction**. `idempotency: required` makes a retried request safe.
 
@@ -64,6 +71,8 @@ curl -s $API/main/_func/refund -H "Authorization: Bearer $STAFF_TOKEN" -H 'Conte
 Give someone the `staff` role with `backd user add-role --realm workshop --email … --role staff`. Read more: [idempotency](../calling/#idempotency), [batch writes](../writing/#privileged-changes-admin-and-batch).
 
 ## A background report
+
+{{< live-example path="workshop/#export" text="try it in the tour (step 4)" >}}
 
 `export_orders` builds a CSV of the caller's orders. As an `async` function it answers `202` with a job; a worker runs it; the report lands in `reports`, owned by the customer. Running the same job twice writes one report.
 
@@ -85,6 +94,8 @@ More on [knowing when a job finished](../jobs/#knowing-when-a-job-finished) and 
 
 ## A nightly cleanup
 
+{{< live-example path="workshop/#operating" text="run it by hand in the tour (step 5)" >}}
+
 `nightly_cleanup` runs at 03:00 UTC and deletes draft orders nobody finished in 30 days, in batches of a hundred, using `ctx.admin.db` (a scheduled run has no caller). It is [internal](../internal/): nobody can call it over HTTP. It only deletes what is already past the cutoff, so running twice is harmless.
 
 {{< example-file path="workshop/main/_functions/nightly_cleanup/function.yaml" >}}
@@ -99,6 +110,8 @@ More in [Scheduled functions](../cron/).
 
 ## A daily digest on a schedule
 
+{{< live-example path="workshop/#operating" text="run it by hand in the tour (step 5)" >}}
+
 `daily_digest` writes one `digests` document per UTC day (a unique index on `day` backs it) summarizing the day before, and can be called by hand to (re)build any day.
 
 {{< example-file path="workshop/main/_functions/daily_digest/function.yaml" >}}
@@ -108,6 +121,8 @@ More in [Scheduled functions](../cron/).
 To email the digest instead of storing it, see [Calling an outside API](../network/#calling-an-outside-api).
 
 ## A payment webhook
+
+{{< live-example path="workshop/#webhook" text="try it in the tour (step 3)" >}}
 
 `payment_webhook` is called by a payment provider, not a user. It verifies the signature of the raw body, ignores an event it already handled (the provider retries), and marks the order paid.
 
