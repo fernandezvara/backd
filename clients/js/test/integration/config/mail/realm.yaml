@@ -1,0 +1,24 @@
+# The realm of the account-flow integration tests: email goes through the
+# development function `notifications/email-capture`, which stores each
+# message in the readable `outbox` collection, where the tests find the links.
+auth: enabled
+signup: open
+
+email:
+  function: notifications/email-capture
+  from: "Tests <no-reply@mail.example>"
+  public_url: http://127.0.0.1:18080
+  allowed_redirects: [http://localhost:5173]
+  redirects:
+    verify_email: http://localhost:5173/verified
+  # The tests send many emails from one address: raise the limits that guard real use.
+  limits:
+    per_recipient: { per_kind_per_hour: 100, per_day: 1000 }
+    per_ip: { per_hour: 10000 }
+
+account:
+  allow_email_change: true
+
+roles:
+  ops:
+    admin: true

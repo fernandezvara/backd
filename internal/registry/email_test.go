@@ -46,7 +46,7 @@ const goodEmail = "email:\n  function: notify/deliver\n  from: \"Shop <no-reply@
 const goodDeliver = "internal: true\nmode: async\nsecrets: [POSTMARK_TOKEN]\n"
 
 func TestEmailSettings(t *testing.T) {
-	reg, err := Load(emailTree(t, goodEmail+"  reply_to: help@shop.example\n  locales: [en, es]\n  default_locale: en\n  limits:\n    per_recipient: {per_day: 5}\n    per_ip: {per_hour: 50}\n", goodDeliver, esTemplates(t)))
+	reg, err := Load(emailTree(t, goodEmail+"  reply_to: help@shop.example\n  locales: [en, es]\n  default_locale: en\n  limits:\n    per_recipient: {per_day: 5}\n    per_ip: {per_hour: 50}\n    per_function: {per_hour: 7, per_invocation: 3}\n    recipients_per_message: 4\n", goodDeliver, esTemplates(t)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestEmailSettings(t *testing.T) {
 		e.PublicURL != "https://api.shop.example" || e.DefaultLocale != "en" || strings.Join(e.Locales, ",") != "en,es" {
 		t.Fatalf("settings: %+v", e)
 	}
-	if e.Limits != (EmailLimits{PerKindPerHour: 3, PerDay: 5, PerIPPerHour: 50}) {
+	if e.Limits != (EmailLimits{PerKindPerHour: 3, PerDay: 5, PerIPPerHour: 50, PerFunctionPerHour: 7, PerInvocation: 3, RecipientsPerMessage: 4}) {
 		t.Errorf("limits: %+v", e.Limits)
 	}
 	if db, fn := e.DatabaseAndName(); db != "notify" || fn != "deliver" {
@@ -186,6 +186,8 @@ func TestEmailErrors(t *testing.T) {
 		{"link without token", goodEmail + "  allowed_redirects: [https://app.shop.example]\n  links:\n    reset_password: https://app.shop.example/reset\n", goodDeliver, nil, "{token}"},
 		{"link outside", goodEmail + "  allowed_redirects: [https://app.shop.example]\n  links:\n    reset_password: https://evil.example/r?t={token}\n", goodDeliver, nil, "links.reset_password"},
 		{"page missing", goodEmail + "  locales: [en, fr]\n", goodDeliver, nil, "fr.html: missing"},
+		{"function cap", goodEmail + "  limits:\n    per_function: {per_hour: 0}\n", goodDeliver, nil, "limits.per_function.per_hour: must be at least 1"},
+		{"recipients cap", goodEmail + "  limits:\n    recipients_per_message: 0\n", goodDeliver, nil, "limits.recipients_per_message"},
 		{"unknown key", goodEmail + "  smtp: x\n", goodDeliver, nil, "field smtp not found"},
 		{"template broken", goodEmail, goodDeliver, map[string]string{"shop/email/verify-email/en.txt": "{{.Link"}, "verify-email/en.txt"},
 	} {
@@ -225,5 +227,28 @@ func TestEmailTemplatesAreInTheFingerprint(t *testing.T) {
 	after, _ := reg.Fingerprint()
 	if before == after {
 		t.Error("changing a template doesn't change the config fingerprint")
+	}
+}
+
+// A function can only send email through a realm that has it.
+func TestFunctionEmailNeedsAnEmailSection(t *testing.T) {
+	files := map[string]string{
+		"shop/realm.yaml":                         "signup: open\n",
+		"shop/main/_functions/deno.json":          `{}`,
+		"shop/main/_functions/ship/function.yaml": "email: true\n",
+		"shop/main/_functions/ship/index.ts":      "",
+	}
+	if _, err := Load(writeTree(t, files)); err == nil || !strings.Contains(err.Error(), "main/ship has `email: true`, but this realm has no email section") {
+		t.Errorf("error %v", err)
+	}
+	reg, err := Load(emailTree(t, goodEmail, goodDeliver, map[string]string{
+		"shop/main/_functions/ship/function.yaml": "email: true\n",
+		"shop/main/_functions/ship/index.ts":      "",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reg.Realms["shop"].Databases["main"].Functions.Functions["ship"].Email {
+		t.Error("the function should have Email set")
 	}
 }

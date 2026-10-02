@@ -75,6 +75,8 @@ auth: enabled
 #   limits:                                # defaults shown
 #     per_recipient: { per_kind_per_hour: 3, per_day: 10 }
 #     per_ip: { per_hour: 20 }
+#     per_function: { per_hour: 200, per_invocation: 50 }   # custom emails from functions (email: true)
+#     recipients_per_message: 10
 
 # Accounts. Each setting here needs the `email:` section above.
 # account:

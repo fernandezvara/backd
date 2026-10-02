@@ -1230,6 +1230,7 @@ paths:
       parameters:
         - { name: function, in: query, description: "Only this function, as `<database>/<name>`.", schema: { type: string } }
         - { name: status, in: query, description: "Only jobs in this state.", schema: { type: string, enum: [queued, running, done] } }
+        - { name: origin, in: query, description: "Only jobs with exactly this origin, such as `function:main/ship`: the emails that function sent (count them for its sending volume).", schema: { type: string } }
         - { name: scheduled, in: query, description: "`true`: only cron runs; `false`: only calls made by callers.", schema: { type: boolean } }
         - { name: since, in: query, description: "Jobs created at or after this time.", schema: { type: string, format: date-time } }
         - { name: until, in: query, description: "Jobs created before this time.", schema: { type: string, format: date-time } }
@@ -2078,8 +2079,10 @@ components:
         never the input or the output.
       type: object
       additionalProperties: false
-      required: [id, function, status, scheduled, attempts, next_attempt_at, created_at, completed_at, result]
+      required: [id, function, status, scheduled, origin, email_kind, attempts, next_attempt_at, created_at, completed_at, result]
       properties:
+        origin: { type: string, description: "Where the job came from: `http`, `function` (a `ctx.call`), `cron`, `admin`, `backd:email.<kind>` (an email backd sends itself) or `function:<database>/<name>` (an email that function sent with `ctx.email.send`)." }
+        email_kind: { type: [string, "null"], description: "The kind of an email job (never its recipients or text); null for other jobs." }
         id: { type: string, description: "For cron runs, `cron_<database>_<function>_<yyyymmddhhmm>` (UTC)." }
         function: { type: string, description: "`<database>/<name>`." }
         status: { type: string, description: "`queued`, `running` or `done`." }

@@ -36,6 +36,7 @@
       <button type="submit" :disabled="busy" x-text="mode === 'login' ? 'Log in' : 'Create account'"></button>
       <button type="button" class="link" @click="mode = mode === 'login' ? 'signup' : 'login'"
         x-text="mode === 'login' ? 'No account? Sign up' : 'Have an account? Log in'"></button>
+      <button type="button" class="link" x-show="mode === 'login'" :disabled="busy || !email" @click="forgotPassword">Forgot your password? (enter your email first)</button>
       <p class="muted">You'll see every group that lists your email, once you have verified it.</p>
     </form>
 

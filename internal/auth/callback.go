@@ -33,6 +33,8 @@ type CallbackClaims struct {
 	Calls []string `json:"c,omitempty"`
 	Depth int      `json:"d,omitempty"`
 	Inv   string   `json:"i,omitempty"`
+	// Email says the function may send custom emails (function.yaml `email: true`).
+	Email bool `json:"m,omitempty"`
 }
 
 // ErrInvalidCallback means a callback token is malformed, forged or expired.
@@ -84,12 +86,13 @@ type FuncCaller struct {
 	Calls      []string
 	Depth      int
 	Invocation string
+	Email      bool // ctx.email.send
 	Expires    time.Time
 }
 
 // FuncCallerOf is the function behind a verified callback token.
 func FuncCallerOf(c CallbackClaims) *FuncCaller {
-	return &FuncCaller{Name: c.Realm + "/" + c.Function, Admin: c.Admin, Calls: c.Calls, Depth: c.Depth, Invocation: c.Inv, Expires: c.Expires}
+	return &FuncCaller{Name: c.Realm + "/" + c.Function, Admin: c.Admin, Calls: c.Calls, Depth: c.Depth, Invocation: c.Inv, Email: c.Email, Expires: c.Expires}
 }
 
 // CallbackCaller resolves a verified token into the caller it acts as,

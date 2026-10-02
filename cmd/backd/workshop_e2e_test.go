@@ -261,6 +261,22 @@ func TestWorkshopExample(t *testing.T) {
 		t.Errorf("receipts: %v", items)
 	}
 	expect(403, "GET", base+"/main/receipts", ada, "") // customers can't read receipts
+
+	// The refund also emailed the customer with ctx.email.send (a custom kind of
+	// the realm, to the order's owner, a user of the realm): a worker rendered
+	// the template and email-capture, on the real executor, stored it.
+	var refundMail map[string]any
+	for _, it := range expect(200, "GET", base+"/notifications/outbox", "", "")["items"].([]any) {
+		if m := it.(map[string]any); m["kind"] == "refund-issued" {
+			refundMail = m
+		}
+	}
+	if refundMail == nil || refundMail["to"].([]any)[0] != "ada@example.com" || !strings.Contains(refundMail["subject"].(string), "refund of 10.00") || !strings.Contains(refundMail["text"].(string), o1) {
+		t.Fatalf("the refund email: %v", refundMail)
+	}
+	if jobs := expect(200, "GET", base+"/_admin/jobs?origin=function:main/refund", adminKey, "")["items"].([]any); len(jobs) != 1 || jobs[0].(map[string]any)["email_kind"] != "refund-issued" || jobs[0].(map[string]any)["status"] != "done" {
+		t.Errorf("the function's email jobs: %v", jobs)
+	}
 	nested := expect(200, "GET", base+"/_admin/invocations?function=main/refund_receipt", adminKey, "")["items"].([]any)
 	if len(nested) != 1 {
 		t.Fatalf("receipt invocations: %v", nested)
@@ -340,8 +356,26 @@ func TestWorkshopExample(t *testing.T) {
 			ours = m
 		}
 	}
-	if len(inv) != 3 || ours == nil || ours["origin"] != "backd:email.verify-email" || !strings.Contains(fmt.Sprint(ours["logs"]), "captured verify-email email for ada@example.com") {
-		t.Errorf("email invocations (the three sign-ups' and ours): %v", inv)
+	if len(inv) != 4 || ours == nil || ours["origin"] != "backd:email.verify-email" || !strings.Contains(fmt.Sprint(ours["logs"]), "captured verify-email email for ada@example.com") {
+		t.Errorf("email invocations (two sign-ups', the refund's and ours): %v", inv)
+	}
+
+	// contact: the safe shape of a function that sends email. Only a verified user
+	// may call it; the recipient is fixed in the code, whatever the input says.
+	expect(403, "POST", base+"/main/_func/contact", ada, `{"message": "Where is my order?"}`) // not verified yet
+	expect(200, "PATCH", base+"/_admin/users/"+adaID, adminKey, `{"email_verified": true}`)
+	expect(400, "POST", base+"/main/_func/contact", ada, `{"message": "hi", "to": ["victim@example.org"]}`) // no other field is accepted
+	expect(200, "POST", base+"/main/_func/contact", ada, `{"message": "Where is my order?"}`)
+	for w.RunOnce(ctx) {
+	}
+	var contactMail map[string]any
+	for _, it := range expect(200, "GET", base+"/notifications/outbox", "", "")["items"].([]any) {
+		if m := it.(map[string]any); m["kind"] == "contact-message" {
+			contactMail = m
+		}
+	}
+	if contactMail == nil || contactMail["to"].([]any)[0] != "support@workshop.example" || !strings.Contains(contactMail["text"].(string), "ada@example.com wrote") || !strings.Contains(contactMail["text"].(string), "Where is my order?") {
+		t.Fatalf("the contact email: %v", contactMail)
 	}
 
 	// cron. A draft nobody finished for 45 days (backdated in MongoDB) and

@@ -44,6 +44,9 @@ services:
       BACKD_EXECUTOR_TOKEN: js-integration-executor-token-0123456789ab
       BACKD_CALLBACK_URL: http://backd:8081
       BACKD_CALLBACK_KEY: js-integration-callback-key-0123456789abcdef
+      # The mail realm delivers email through the dev-only email-capture function.
+      BACKD_DEV: "true"
+      BACKD_DEV_ANY_ADDR: "true"
     volumes:
       - ./clients/js/test/integration/config:/config:ro
     depends_on:

@@ -1,0 +1,3 @@
+{{.Data.from}} wrote on {{.Realm}}:
+
+{{.Data.message}}

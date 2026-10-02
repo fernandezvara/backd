@@ -71,6 +71,17 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
+    // "Forgot password?": backd answers the same for every address, so the
+    // message doesn't say whether this one has an account. The link opens a
+    // page of backd (it works with no app code) and sends the user back here.
+    forgotPassword() {
+      return this.run(async () => {
+        await backd.auth.requestPasswordReset({ email: this.email })
+        this.notice = `If ${this.email} has an account, we sent it a link to choose a new password.`
+        this.mode = 'login'
+      })
+    },
+
     submitAuth() {
       return this.run(async () => {
         this.notice = ''

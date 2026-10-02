@@ -281,8 +281,11 @@ func loadOne(kdir, kind, locale string) (*template, []error) {
 		return nil, errs
 	}
 	// Run each once, to catch a field that doesn't exist.
+	// A custom kind's templates print the `data` a function sends, which
+	// isn't known here: a missing key of .Data isn't an error at startup (the
+	// send fails permanently if the function leaves one out), anything else is.
 	one := &Templates{byKind: map[string]map[string]*template{kind: {locale: tpl}}}
-	if _, err := one.Render(kind, locale, sample); err != nil {
+	if _, err := one.Render(kind, locale, sample); err != nil && !(!slices.Contains(SystemKinds, kind) && strings.Contains(err.Error(), "map has no entry for key")) {
 		return nil, []error{fmt.Errorf("%s: %w", kdir, err)}
 	}
 	return tpl, nil

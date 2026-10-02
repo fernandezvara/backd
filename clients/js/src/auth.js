@@ -49,6 +49,11 @@ import { AuthenticationError, VerificationRequiredError } from './errors.js'
  * @returns {void}
  */
 
+/** A body without the fields that were not given. @param {Record<string, unknown>} fields */
+function compact(fields) {
+  return Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined))
+}
+
 /** Sign-up, login and session management: `client.auth`. */
 export class Auth {
   /** @param {Client} client */
@@ -97,6 +102,116 @@ export class Auth {
   async login({ email, password }, opts) {
     const { data } = await this.client.request({ method: 'POST', path: ['_auth', 'login'], body: { email, password }, auth: false, ...opts })
     return this.signedIn(data)
+  }
+
+  /**
+   * Asks for the verification email again. Always resolves, whatever the
+   * address is (unknown, disabled, already verified), so it can't be used to
+   * find out who is registered. `redirectTo` is where the page after the link
+   * may send the user (within the realm's `email.allowed_redirects`).
+   * @param {{ email: string, redirectTo?: string }} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async resendVerification({ email, redirectTo }, opts) {
+    await this.accepted(['_auth', 'verify-email', 'resend'], { email, redirect_to: redirectTo }, opts)
+  }
+
+  /**
+   * Verifies an address with the token of the link in the email: for apps
+   * that host their own page (`email.links` in `realm.yaml`). Starts no
+   * session. An expired, used or unknown token rejects with a
+   * `ValidationError` whose `code` is `invalid_token`.
+   * @param {string} token
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async verifyEmail(token, opts) {
+    await this.accepted(['_auth', 'verify-email'], { token }, opts)
+  }
+
+  /**
+   * Asks for a password reset email. Always resolves, whatever the address is.
+   * Rejects with a `RetryableError` once the realm's limits for reset
+   * requests (per address and per client) are reached.
+   * @param {{ email: string, redirectTo?: string }} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async requestPasswordReset({ email, redirectTo }, opts) {
+    await this.accepted(['_auth', 'reset-password', 'request'], { email, redirect_to: redirectTo }, opts)
+  }
+
+  /**
+   * Sets a new password with the token of a reset link. Ends every session of
+   * the user, verifies their address and starts no session: log in afterwards.
+   * A password the policy refuses rejects with a `ValidationError` and leaves
+   * the token usable; a bad token has the `invalid_token` code.
+   * @param {{ token: string, password: string }} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async resetPassword({ token, password }, opts) {
+    await this.accepted(['_auth', 'reset-password'], { token, password }, opts)
+  }
+
+  /**
+   * Asks to change the signed-in user's email address (realms with
+   * `account.allow_email_change`). Needs the current password. Resolves
+   * whether or not the new address is free; nothing changes until the link
+   * sent to the new address is used (see {@link Auth#confirmEmailChange}).
+   * @param {{ newEmail: string, password: string, redirectTo?: string }} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async requestEmailChange({ newEmail, password, redirectTo }, opts) {
+    await this.client.request({ method: 'POST', path: ['_auth', 'email'], body: compact({ new_email: newEmail, password, redirect_to: redirectTo }), ...opts })
+  }
+
+  /**
+   * Confirms an email change with the token sent to the new address: the
+   * address changes and every session of the user ends.
+   * @param {string} token
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async confirmEmailChange(token, opts) {
+    await this.accepted(['_auth', 'confirm-email-change'], { token }, opts)
+  }
+
+  /**
+   * Undoes an email change with the token sent to the old address: restores
+   * it, ends every session and makes the password unusable until it is reset
+   * (a reset email is sent to the restored address).
+   * @param {string} token
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async revertEmailChange(token, opts) {
+    await this.accepted(['_auth', 'revert-email-change'], { token }, opts)
+  }
+
+  /**
+   * Accepts an invitation that was emailed (admin `invitations.send`), with
+   * the token of its link: creates the account for the invited address,
+   * already verified, and starts no session. `locale` is the user's language.
+   * @param {{ token: string, password: string, locale?: string }} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async acceptInvitation({ token, password, locale }, opts) {
+    await this.accepted(['_auth', 'accept-invitation'], { token, password, locale }, opts)
+  }
+
+  /**
+   * A call that needs no session and answers with no body.
+   * @private
+   * @param {string[]} path
+   * @param {Record<string, unknown>} body
+   * @param {RequestOptions} [opts]
+   */
+  async accepted(path, body, opts) {
+    await this.client.request({ method: 'POST', path, body: compact(body), auth: false, ...opts })
   }
 
   /**

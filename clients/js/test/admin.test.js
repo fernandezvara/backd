@@ -124,6 +124,19 @@ test('invitations', async () => {
   assert.equal(m.calls[3].url.pathname, '/v1/acme/_admin/invitations/i1')
 })
 
+test('emailed invitations and an administrator\'s email change', async () => {
+  const inv = { id: 'i1', email: 'e@example.com', created_by: 'key:svc', created_at: 'x', expires_at: 'y', sent: true }
+  const m = mockFetch([{ status: 201, body: inv }, { body: { ...adminUser, email: 'ada.new@example.com', email_verified: true } }])
+  const a = adminOf(m)
+  const sent = await a.invitations.send({ email: 'e@example.com', expiresIn: '3d', redirectTo: 'https://app.example/welcome', locale: 'es' })
+  assert.equal(sent.sent, true)
+  assert.deepEqual(m.calls[0].body, { email: 'e@example.com', send: true, expires_in: '3d', redirect_to: 'https://app.example/welcome', locale: 'es' })
+  const user = await a.users.changeEmail('u1', 'ada.new@example.com')
+  assert.equal(user.email, 'ada.new@example.com')
+  assert.equal(m.calls[1].url.pathname, '/v1/acme/_admin/users/u1/email')
+  assert.deepEqual(m.calls[1].body, { email: 'ada.new@example.com' })
+})
+
 test('jobs listing', async () => {
   const job = { id: 'cron_app_nightly_202609290300', function: 'app/nightly', status: 'done', scheduled: true, attempts: 1,
     created_at: '2026-09-29T03:00:05.000Z', completed_at: '2026-09-29T03:00:09.000Z', result: { status: 'ok', code: null, duration_ms: 3800 } }

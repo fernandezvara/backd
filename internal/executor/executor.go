@@ -116,6 +116,7 @@ type Callback struct {
 	Database   string `json:"database,omitempty"` // the function's own database, for ctx.call
 	Token      string `json:"token,omitempty"`
 	AdminToken string `json:"admin_token,omitempty"`
+	Email      bool   `json:"email,omitempty"` // ctx.email.send
 }
 
 // Result is how an invocation ended.

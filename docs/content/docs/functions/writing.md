@@ -58,6 +58,7 @@ export default async function handler(ctx) {
   ctx.db("orders")     // the realm's data, as the caller (see below)
   ctx.admin.db("orders") // full access: admin: true, and always for scheduled runs
   ctx.call("send-receipt", input) // another function of this database, listed in `calls` (see Internal functions)
+  ctx.email.send({ kind, to_user, data }) // a custom email: only with `email: true` (see Email)
   ctx.admin.db("orders").batch([...]) // several writes, atomically (see below)
   throw ctx.error(409, "out_of_stock", "Not enough stock", [{ path: "items[0]", reason: "sold out" }])
 }
@@ -70,6 +71,7 @@ export default async function handler(ctx) {
 - **`ctx.error(status, code, message, details)`** makes an error for the caller: a 4xx status, a lower-case code, a message, and optional details as `[{path, reason}]`. Anything else the function throws is a `500 function_failed`.
 - Whatever the function logs with `console` goes to `backd`'s log (`"msg":"function log"`), tagged with the request ID and the function.
 
+- **`ctx.email.send()`** exists only when `function.yaml` has `email: true`. It queues an email of one of the realm's own kinds, to a user (`to_user`) or addresses (`to`, `cc`, `bcc`), and returns the job's `{ id, status }`. Anyone the function can be made to write to receives mail from your domain: read [Sending email from functions](../email/#sending-email-from-functions).
 - **`ctx.secrets`** holds the [secrets](../secrets/) the function declares, decrypted, keyed exactly as declared.
 
 ## Who is calling: sessions and identity

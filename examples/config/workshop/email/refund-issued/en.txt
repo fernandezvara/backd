@@ -1,0 +1,3 @@
+Hello,
+
+We refunded order {{.Data.order_id}}: {{.Data.amount}}.{{if .Data.reason}} Reason: {{.Data.reason}}.{{end}}

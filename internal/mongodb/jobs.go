@@ -28,13 +28,22 @@ type jobResultDoc struct {
 }
 
 type emailJobDoc struct {
-	Kind       string `bson:"kind"`
-	UserID     string `bson:"user_id"`
-	Locale     string `bson:"locale,omitempty"`
-	RedirectTo string `bson:"redirect_to,omitempty"`
-	To         string `bson:"to,omitempty"`
-	Notice     bool   `bson:"notice,omitempty"`
-	Invitation string `bson:"invitation_id,omitempty"`
+	Kind       string          `bson:"kind"`
+	UserID     string          `bson:"user_id"`
+	Locale     string          `bson:"locale,omitempty"`
+	RedirectTo string          `bson:"redirect_to,omitempty"`
+	To         string          `bson:"to,omitempty"`
+	Notice     bool            `bson:"notice,omitempty"`
+	Invitation string          `bson:"invitation_id,omitempty"`
+	Custom     *customEmailDoc `bson:"custom,omitempty"`
+}
+
+type customEmailDoc struct {
+	Function string         `bson:"function"`
+	To       []string       `bson:"to"`
+	CC       []string       `bson:"cc,omitempty"`
+	BCC      []string       `bson:"bcc,omitempty"`
+	Data     map[string]any `bson:"data,omitempty"`
 }
 
 type jobDoc struct {
@@ -124,14 +133,28 @@ func emailJobFromDoc(d *emailJobDoc) *auth.EmailJob {
 	if d == nil {
 		return nil
 	}
-	return &auth.EmailJob{Kind: d.Kind, UserID: d.UserID, Locale: d.Locale, RedirectTo: d.RedirectTo, To: d.To, Notice: d.Notice, InvitationID: d.Invitation}
+	return &auth.EmailJob{Kind: d.Kind, UserID: d.UserID, Locale: d.Locale, RedirectTo: d.RedirectTo, To: d.To, Notice: d.Notice, InvitationID: d.Invitation, Custom: customFromDoc(d.Custom)}
+}
+
+func customFromDoc(d *customEmailDoc) *auth.CustomEmail {
+	if d == nil {
+		return nil
+	}
+	return &auth.CustomEmail{Function: d.Function, To: d.To, CC: d.CC, BCC: d.BCC, Data: d.Data}
+}
+
+func customToDoc(c *auth.CustomEmail) *customEmailDoc {
+	if c == nil {
+		return nil
+	}
+	return &customEmailDoc{Function: c.Function, To: c.To, CC: c.CC, BCC: c.BCC, Data: c.Data}
 }
 
 func emailJobToDoc(e *auth.EmailJob) *emailJobDoc {
 	if e == nil {
 		return nil
 	}
-	return &emailJobDoc{Kind: e.Kind, UserID: e.UserID, Locale: e.Locale, RedirectTo: e.RedirectTo, To: e.To, Notice: e.Notice, Invitation: e.InvitationID}
+	return &emailJobDoc{Kind: e.Kind, UserID: e.UserID, Locale: e.Locale, RedirectTo: e.RedirectTo, To: e.To, Notice: e.Notice, Invitation: e.InvitationID, Custom: customToDoc(e.Custom)}
 }
 
 func jobFromDoc(d jobDoc) auth.Job {
@@ -244,7 +267,7 @@ func (s *AuthStore) RetryJob(ctx context.Context, id string, notBefore time.Time
 // ListJobs returns the jobs matching f, newest first.
 func (s *AuthStore) ListJobs(ctx context.Context, f auth.JobFilter) ([]auth.Job, bool, error) {
 	filter := bson.D{}
-	for _, c := range []struct{ key, value string }{{"database", f.Database}, {"function", f.Function}, {"status", f.Status}} {
+	for _, c := range []struct{ key, value string }{{"database", f.Database}, {"function", f.Function}, {"status", f.Status}, {"origin", f.Origin}} {
 		if c.value != "" {
 			filter = append(filter, bson.E{Key: c.key, Value: c.value})
 		}

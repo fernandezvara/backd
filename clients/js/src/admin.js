@@ -43,6 +43,11 @@ import { Job } from './functions.js'
  */
 
 /**
+ * @typedef {Invitation & { sent: true }} SentInvitation
+ * An invitation that was emailed: nobody holds its token.
+ */
+
+/**
  * An API key as the admin API lists it (never the key itself).
  * @typedef {object} APIKeyInfo
  * @property {string} name
@@ -288,6 +293,19 @@ class AdminUsers {
   }
 
   /**
+   * Changes a user's email address at once, in a realm with `email`: the new
+   * address counts as verified, the user's sessions end, the old address is
+   * sent a link to undo the change and the new one is told.
+   * @param {string} id
+   * @param {string} email
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<AdminUser>}
+   */
+  async changeEmail(id, email, opts) {
+    return (await this.admin._request({ method: 'POST', path: ['users', id, 'email'], body: { email }, ...opts })).data
+  }
+
+  /**
    * Assigns a role declared in realm.yaml.
    * @param {string} id
    * @param {string} role
@@ -507,6 +525,26 @@ class AdminInvitations {
     const body = {}
     if (email !== undefined) body.email = email
     if (expiresIn !== undefined) body.expires_in = expiresIn
+    return (await this.admin._request({ method: 'POST', path: ['invitations'], body, ...opts })).data
+  }
+
+  /**
+   * Creates an invitation and has `backd` email it to `email` (needs `email`
+   * in the realm's `realm.yaml`): the link opens a page where the person
+   * chooses a password, or your own page with `email.links.invitation` (see
+   * `auth.acceptInvitation`). There is no token to deliver. `redirectTo` is
+   * where the page after accepting may send them (within
+   * `email.allowed_redirects`); `locale` is the language of the email.
+   * @param {{ email: string, expiresIn?: string, redirectTo?: string, locale?: string }} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<SentInvitation>}
+   */
+  async send({ email, expiresIn, redirectTo, locale }, opts) {
+    /** @type {Record<string, unknown>} */
+    const body = { email, send: true }
+    if (expiresIn !== undefined) body.expires_in = expiresIn
+    if (redirectTo !== undefined) body.redirect_to = redirectTo
+    if (locale !== undefined) body.locale = locale
     return (await this.admin._request({ method: 'POST', path: ['invitations'], body, ...opts })).data
   }
 

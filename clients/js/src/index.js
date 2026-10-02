@@ -34,6 +34,7 @@ export { memoryStorage, localStorageStorage } from './storage.js'
  * @typedef {import('./admin.js').UserPage} UserPage
  * @typedef {import('./admin.js').Invitation} Invitation
  * @typedef {import('./admin.js').NewInvitation} NewInvitation
+ * @typedef {import('./admin.js').SentInvitation} SentInvitation
  * @typedef {import('./functions.js').JobData} JobData
  * @typedef {import('./functions.js').JobResult} JobResult
  */

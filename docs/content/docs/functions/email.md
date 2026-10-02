@@ -31,6 +31,8 @@ email:
   limits:                                # defaults shown
     per_recipient: { per_kind_per_hour: 3, per_day: 10 }
     per_ip: { per_hour: 20 }
+    per_function: { per_hour: 200, per_invocation: 50 }   # custom emails from functions
+    recipients_per_message: 10                            # to + cc + bcc of one ctx.email.send()
 ```
 
 - **`function`** is the delivery function. Startup fails if it doesn't exist, isn't `internal: true` or isn't `mode: async`, naming the file.
@@ -132,6 +134,44 @@ Links and tokens in a message are credentials. `backd` hides the token from the 
 - **Lifetimes:** 48 hours to verify an address (`account.tokens.verify_email`), 1 hour to reset a password (`account.tokens.reset_password`), 24 hours to confirm an email change (`account.tokens.change_email`), 7 days to undo one (`account.tokens.revert_email_change`), and as long as the invitation itself to accept one.
 - **In the job list** an email job appears with the delivery function as its `function` and `origin: backd:email.<kind>`, and its attempts, next attempt and result (the `message_id`); never a message, a link or an address.
 
+## Sending email from functions
+
+A function that declares `email: true` in its [`function.yaml`](../reference/) can send **custom emails** with `ctx.email.send()`, through the realm's templates, languages, delivery function, queue and retries:
+
+```ts
+await ctx.email.send({ kind: "order-shipped", to_user: order._meta.owner, data: { order_no: order.no } });   // a user of the realm
+await ctx.email.send({ kind: "invoice", to: [order.customer_email], cc: [accounting], data: { invoice_no: 7 } }); // addresses
+```
+
+- **`kind`** is a folder of the realm's [`email/`](#templates) (`email/order-shipped/`), with the same files and languages as the others, checked at startup. A function can't send the kinds `backd` sends itself (`verify-email`, `reset-password`, …). A template prints the function's `data` as `{{.Data.order_no}}`; if the function leaves a field out, that send fails permanently (the delivery function is never called) and shows in the job list.
+- **Recipients:** `to_user` (a realm user's id, in that user's language, which `backd` looks up) **or** `to` (addresses, in the realm's `default_locale` unless you pass a `locale`), plus optional `cc` and `bcc`. **Any recipient is allowed:** `backd` doesn't keep a list of who a function may write to. A function can't send a subject or a body of its own: the text comes from the template.
+- **It returns** `{ id, status: "queued" }`, the id of the email's job. The email is sent by a worker, like the others: a slow provider never slows the function down.
+- **Caps**, which bound what a function can do whoever the recipients are, under [`email.limits`](#configuration): messages per function per hour (`per_function.per_hour`, 200), per invocation (`per_invocation`, 50), recipients per message (`recipients_per_message`, 10), and the per-recipient limits that apply to every email. Refused attempts count, so a function that keeps trying is the one that gets stopped. Over a cap `ctx.email.send()` throws an error with `code: "email_limited"` and `retry_after` (seconds); nothing is queued, and the function decides what to answer.
+- **What `backd` keeps.** An email job from a function stores the recipients' addresses and the `data` it was given, until [job retention](../jobs/) ends (the account emails store neither). Don't put secrets in `data`. In the job list such a job has `origin: function:<database>/<name>` and its `email_kind`; filter by `origin` to see (and count) what one function sent. Addresses never appear in logs or the audit trail. Startup logs each function that can send email.
+
+{{< hint danger >}}
+**A function that sends email sends from your domain.** If anyone can call it and it takes the recipient or the text from the request, it is a spam and phishing relay: blocklists, and a suspended provider account. The caps below only bound the damage.
+{{< /hint >}}
+
+Before you ship one:
+
+- Require a verified user (`invoke: "user != nil && user.email_verified"`) and a `rate_limit`.
+- Take recipients from your own data (an order's owner), never from the input, and fix the `kind` in the code.
+- Don't print caller-written text in a template that goes to someone else, and don't put secrets in `data`.
+- Watch your provider's bounce and complaint rates. At startup `backd` warns about a function that can send email and allows anonymous callers.
+
+The safe shape, from the workshop realm: customers write to the shop's **own** mailbox. The recipient and the kind are fixed in the code, the input schema refuses any other field, only verified users may call it and only three times an hour:
+
+{{< example-file path="workshop/main/_functions/contact/function.yaml" >}}
+
+{{< example-file path="workshop/main/_functions/contact/index.ts" >}}
+
+And the refund function there emails the customer, with the recipient taken from the order:
+
+{{< example-file path="workshop/main/_functions/refund/index.ts" lines="42-50" >}}
+
+[`@backd/functions-testing`](../testing/#unit-testing-a-functions-logic) gives you `ctx.email.send` in tests, with the same refusals and caps (`createContext({ email: true })`, `sentEmails()`); test that your function ignores recipients in its input.
+
 ## Developing without a provider
 
 `backd template email-capture --realm <realm> --database <database>` adds a delivery function that **stores each email instead of sending it**: `email-capture` in the database's `_functions`, and an `outbox` collection it writes to (schema, rules and indexes included). Point the realm at it, and run `backd` in [dev mode](../testing/#dev-mode):
@@ -159,7 +199,7 @@ To unit-test your own delivery function or a function that sends email, [`@backd
 
 ## Limits
 
-So the realm can't be used to flood an address or as a relay, `backd` limits how many emails it queues: per recipient, **3 emails of one kind per hour** and **10 in all per day**, and per client address, **20 email-sending requests per hour** (the keys of `email.limits` change them). The counters live in the realm's system database, shared by every instance, with the recipient only as a hash. A request made without a signed-in user (sign-up, a password-reset request) that goes over a limit is skipped silently, so the answer reveals nothing; a signed-in user's request answers `429` with `Retry-After`.
+So the realm can't be used to flood an address or as a relay, `backd` limits how many emails it queues: per recipient, **3 emails of one kind per hour** and **10 in all per day**, and per client address, **20 email-sending requests per hour** (the keys of `email.limits` change them). The counters live in the realm's system database, shared by every instance, with the recipient only as a hash. A request made without a signed-in user (sign-up, a password-reset request) that goes over a limit is skipped silently, so the answer reveals nothing; a signed-in user's request answers `429` with `Retry-After`. Functions that [send email](#sending-email-from-functions) have caps of their own on top (per function, per invocation, per message).
 
 ## Upgrading
 
