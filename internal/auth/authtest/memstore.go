@@ -637,6 +637,16 @@ func (m *MemStore) CreateEmailToken(_ context.Context, t auth.EmailToken) error 
 	return nil
 }
 
+func (m *MemStore) GetEmailToken(_ context.Context, hash string) (auth.EmailToken, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	t, ok := m.emailTokens[hash]
+	if !ok {
+		return auth.EmailToken{}, auth.ErrInvalidToken
+	}
+	return t, nil
+}
+
 func (m *MemStore) RedeemEmailToken(_ context.Context, hash, purpose string, now time.Time) (auth.EmailToken, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

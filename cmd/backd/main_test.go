@@ -204,5 +204,8 @@ func emailLines(realm, prefix, suffix string) string {
 			b.WriteString(prefix + realm + "/email/" + kind + "/" + name + suffix + "\n")
 		}
 	}
+	for _, kind := range email.PageKinds {
+		b.WriteString(prefix + realm + "/pages/" + kind + "/en.html" + suffix + "\n")
+	}
 	return b.String()
 }

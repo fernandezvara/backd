@@ -23,7 +23,11 @@ email:
   reply_to: support@acme.example         # optional
   public_url: https://api.acme.example   # optional: backd's public address, for links
   default_locale: en
-  locales: [en]                          # every listed language needs every template
+  locales: [en]                          # every listed language needs every template and page
+  redirect_delay: 3s                     # optional: how long the result page waits
+  allowed_redirects: [https://app.acme.example, "acme://"]   # where users may be sent afterwards
+  redirects:                             # optional: where, per flow, when the request didn't say
+    verify_email: https://app.acme.example/verified
   limits:                                # defaults shown
     per_recipient: { per_kind_per_hour: 3, per_day: 10 }
     per_ip: { per_hour: 20 }
@@ -51,6 +55,24 @@ email:
 - **Required kinds** (`verify-email`, `reset-password`, `account-exists`, `password-changed`) must exist whenever the realm configures `email`; **every listed locale needs every template**, or startup fails naming the missing files.
 - Subjects and text bodies use Go's `text/template`; HTML bodies use `html/template`, which escapes what it prints. Available: `{{.Realm}}`, `{{.User.Email}}`, `{{.User.Locale}}`, `{{.Link}}`, `{{.ExpiresAt}}` and `{{.Data}}`. Templates never receive text written by whoever caused the email, so `backd` can't be used to send someone else's words.
 - Templates are parsed and test-rendered at startup (a syntax error or an unknown field stops it), held in memory, and part of the [config fingerprint](../../operations/deploying/).
+
+## Links and pages
+
+The link in an email opens a **page served by backd**, so an app only chooses where users go afterwards. The link is `public_url` + `/v1/<realm>/_auth/<flow>?token=…`, and the flows are `verify-email`, `reset-password`, `confirm-email-change`, `revert-email-change` and `accept-invitation`.
+
+- **`GET` shows the page, `POST` acts.** Opening the link only shows a form (a button, or a form with a new password) and never uses the token up, so mail scanners and link previewers that open every link can't spoil it. The token is used when the person submits the form. A session is never issued by these pages: after verifying or resetting, users sign in as usual.
+- **One error page.** A token that is expired, already used, unknown or for another flow shows the same `invalid-token` page, so the page tells nobody which case it was.
+- **Pages are templates** you own: `backd template realm` writes them to `<realm>/pages/<kind>/<locale>.html` (`verify-email`, `reset-password`, `confirm-email-change`, `revert-email-change`, `accept-invitation`, `result` and `invalid-token`). Every listed locale needs every page, and they are parsed and test-rendered at startup like the email templates. A page can use `{{.Realm}}`, `{{.Locale}}`, `{{.Action}}` (where the form posts), `{{.Token}}` (the hidden field), `{{.Error}}` and `{{.ErrorCode}}` (`password_mismatch` or `password_policy`, to say it in the page's own words), `{{.Kind}}`, `{{.Redirect}}`, `{{.DelaySeconds}}` and `{{.BackURL}}`. The page is in the language of the browser's `Accept-Language`, matched against `email.locales`.
+- **Where users go next.** After a success the `result` page waits `redirect_delay` (3 seconds by default, at most 30) and sends the user to the `redirect_to` the request stored with the token, or else to `email.redirects.<flow>` (`verify_email`, `reset_password`, `change_email`, `invitation`). Both must be within `email.allowed_redirects`: origins such as `https://app.acme.example` or an app's own scheme such as `acme://`. The address is checked when the email is requested and again when the page uses it.
+- **Your own pages instead.** `email.links.<flow>` replaces backd's address in the email with one of your app's pages, which must be within `allowed_redirects` and contain `{token}` once (`https://app.acme.example/reset?token={token}`). That page sends the token to the JSON endpoint of the same flow, `POST /v1/<realm>/_auth/<flow>` with `{"token"}` (and `{"password"}` for `reset-password` and `accept-invitation`), which answers `204`, or `400 invalid_token` for any token that doesn't work.
+
+The flows arrive with the features that use them: the pages, templates and settings above are in place, and each flow's route starts answering when its feature is released (email verification, password reset, email change, invitations).
+
+Every page, in every state, sends `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, a strict `Content-Security-Policy` (no scripts, no images, no frames, forms post only to backd) and `frame-ancestors 'none'`, loads nothing from other origins, and is served without the token in any log: the access log records the route, never the query string.
+
+{{< hint style="warning" >}}
+Your reverse proxy's own access log may record the full address, token included. Log the path without the query string; the production nginx configuration in `deploy/production` already does ([Production](../../operations/production/)).
+{{< /hint >}}
 
 ## Languages
 

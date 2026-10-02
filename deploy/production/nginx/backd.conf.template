@@ -26,8 +26,9 @@ limit_conn_zone $binary_remote_addr zone=conn:10m;
 limit_conn_status 429;
 
 # The request id nginx forwards to backd (X-Request-ID) is logged here too,
-# so an nginx line and a backd line can be matched.
-log_format edge '$remote_addr [$time_iso8601] "$request" $status $body_bytes_sent '
+# so an nginx line and a backd line can be matched. It logs the path only
+# ($uri, never $request): the links in emails carry their token in the query.
+log_format edge '$remote_addr [$time_iso8601] "$request_method $uri" $status $body_bytes_sent '
                 '$request_time rid=$request_id';
 
 server {

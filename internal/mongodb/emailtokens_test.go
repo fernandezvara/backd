@@ -22,6 +22,12 @@ func TestEmailTokensOnMongoDB(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if got, err := s.GetEmailToken(ctx, "h1"); err != nil || got.UserID != "u1" || got.Purpose != "reset-password" || !got.UsedAt.IsZero() {
+		t.Errorf("GetEmailToken: %+v, %v", got, err)
+	}
+	if _, err := s.GetEmailToken(ctx, "nope"); !errors.Is(err, auth.ErrInvalidToken) {
+		t.Errorf("GetEmailToken of an unknown hash: %v", err)
+	}
 
 	// Eight parallel redemptions of one token: exactly one succeeds.
 	var wg sync.WaitGroup

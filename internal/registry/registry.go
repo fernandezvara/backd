@@ -28,11 +28,14 @@ type Realm struct {
 	// Email holds the parsed email templates of <realm>/email/; nil when the
 	// realm doesn't configure email.
 	Email *email.Templates
+	// Pages are the hosted pages the links in emails open (<realm>/pages/);
+	// nil when the realm doesn't configure email.
+	Pages *email.Pages
 }
 
 // ReservedDirs are folders of a realm that hold something other than a
 // database: they are never read as databases.
-var ReservedDirs = []string{email.DirName, "pages"}
+var ReservedDirs = []string{email.DirName, email.PagesDirName}
 
 // Database is one application's data, stored in one MongoDB database.
 type Database struct {

@@ -51,6 +51,19 @@ func (s *Users) NewEmailToken(ctx context.Context, purpose, userID, redirectTo s
 	return token, expiresAt, err
 }
 
+// PeekEmailToken checks a token for purpose without using it, so a page can
+// show its form before the person acts. Every failure is ErrInvalidToken.
+func (s *Users) PeekEmailToken(ctx context.Context, token, purpose string) (EmailToken, error) {
+	t, err := s.Store.GetEmailToken(ctx, HashEmailToken(token))
+	if err != nil {
+		return EmailToken{}, err
+	}
+	if t.Purpose != purpose || !t.UsedAt.IsZero() || !s.now().Before(t.ExpiresAt) {
+		return EmailToken{}, ErrInvalidToken
+	}
+	return t, nil
+}
+
 // RedeemEmailToken uses a token for purpose: it hashes it, finds it, checks
 // purpose, expiry and use, and marks it used in one atomic step, so of two
 // parallel redemptions exactly one succeeds. A success also invalidates the

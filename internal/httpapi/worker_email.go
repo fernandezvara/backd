@@ -85,6 +85,10 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 			return nil, nil, false
 		}
 		data.Link = strings.TrimRight(base, "/") + "/v1/" + realm + "/_auth/" + purpose.LinkPath() + "?token=" + token
+		if own := es.Links[flowKey(purpose)]; own != "" {
+			// The app hosts this page: the link goes to it, and it posts the token as JSON.
+			data.Link = strings.Replace(own, "{token}", token, 1)
+		}
 		data.ExpiresAt = expires.UTC()
 		extra["link"] = data.Link
 		extra["expires_at"] = data.ExpiresAt.Format(time.RFC3339)

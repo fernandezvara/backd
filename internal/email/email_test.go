@@ -107,3 +107,63 @@ func TestPurposes(t *testing.T) {
 		t.Error("ValidLocale")
 	}
 }
+
+func TestPages(t *testing.T) {
+	dir := t.TempDir()
+	for _, kind := range PageKinds {
+		data, err := DefaultPage(kind)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, loc := range []string{"en", "es"} {
+			if err := os.MkdirAll(filepath.Join(dir, kind), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, kind, loc+".html"), data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	pages, errs := LoadPages(dir, []string{"en", "es"})
+	if len(errs) > 0 {
+		t.Fatalf("defaults don't load: %v", errs)
+	}
+	html, err := pages.Render(PageVerifyEmail, "es", PageData{Realm: "blog", Locale: "es", Action: "/v1/blog/_auth/verify-email", Token: `to"ken<`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(html, `action="/v1/blog/_auth/verify-email"`) || !strings.Contains(html, `name="token" value="to&#34;ken&lt;"`) || strings.Contains(html, "http://") || strings.Contains(html, "https://") {
+		t.Errorf("verify page:\n%s", html)
+	}
+	// The result page redirects (an app's own scheme survives) and the error page links back.
+	html, _ = pages.Render(PageResult, "en", PageData{Kind: PageResetPassword, Redirect: "acme://welcome", DelaySeconds: 3})
+	if !strings.Contains(html, `content="3;url=acme://welcome"`) || !strings.Contains(html, `href="acme://welcome"`) || !strings.Contains(html, "password was changed") {
+		t.Errorf("result page:\n%s", html)
+	}
+	if html, _ = pages.Render(PageResult, "en", PageData{Kind: PageVerifyEmail}); strings.Contains(html, "refresh") {
+		t.Error("a result without a redirect must not refresh")
+	}
+	if html, _ = pages.Render(PageInvalidToken, "en", PageData{BackURL: "https://app.example.com"}); !strings.Contains(html, `href="https://app.example.com"`) {
+		t.Errorf("invalid page:\n%s", html)
+	}
+	// A form error is escaped.
+	if html, _ = pages.Render(PageResetPassword, "en", PageData{Error: "<b>x</b>"}); strings.Contains(html, "<b>x</b>") {
+		t.Error("the form error isn't escaped")
+	}
+
+	// Problems name the file.
+	os.Remove(filepath.Join(dir, PageResult, "es.html"))
+	os.WriteFile(filepath.Join(dir, PageVerifyEmail, "en.html"), []byte("{{.Nope}}"), 0o644)
+	_, errs = LoadPages(dir, []string{"en", "es"})
+	var all []string
+	for _, e := range errs {
+		all = append(all, e.Error())
+	}
+	joined := strings.Join(all, "\n")
+	if !strings.Contains(joined, "result/es.html: missing") || !strings.Contains(joined, "verify-email/en.html") {
+		t.Errorf("errors: %v", all)
+	}
+	if _, errs := LoadPages(filepath.Join(t.TempDir(), "nowhere"), []string{"en"}); len(errs) != 1 || !strings.Contains(errs[0].Error(), "has no pages folder") {
+		t.Errorf("missing folder: %v", errs)
+	}
+}

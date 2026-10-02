@@ -116,7 +116,10 @@ func loadEmail(rl *Realm, realmPath string) []error {
 	}
 	tpl, terrs := email.Load(filepath.Join(realmPath, email.DirName), es.Locales)
 	rl.Email = tpl
-	return append(errs, terrs...)
+	errs = append(errs, terrs...)
+	pages, perrs := email.LoadPages(filepath.Join(realmPath, email.PagesDirName), es.Locales)
+	rl.Pages = pages
+	return append(errs, perrs...)
 }
 
 func loadDatabase(rl *Realm, name, path string) (*Database, []error) {

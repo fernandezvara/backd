@@ -32,6 +32,23 @@ func (s *AuthStore) CreateEmailToken(ctx context.Context, t auth.EmailToken) err
 	return err
 }
 
+// GetEmailToken returns a token by hash, used or not.
+func (s *AuthStore) GetEmailToken(ctx context.Context, hash string) (auth.EmailToken, error) {
+	var d emailTokenDoc
+	err := s.emailTokens().FindOne(ctx, bson.D{{Key: "_id", Value: hash}}).Decode(&d)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return auth.EmailToken{}, auth.ErrInvalidToken
+	}
+	if err != nil {
+		return auth.EmailToken{}, err
+	}
+	t := auth.EmailToken{Hash: d.ID, Purpose: d.Purpose, UserID: d.UserID, RedirectTo: d.RedirectTo, CreatedAt: d.CreatedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC()}
+	if d.UsedAt != nil {
+		t.UsedAt = d.UsedAt.UTC()
+	}
+	return t, nil
+}
+
 // RedeemEmailToken marks the token used in one update that matches only an
 // unused, unexpired token of this purpose, so two parallel redemptions can't
 // both succeed.
