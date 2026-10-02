@@ -316,6 +316,7 @@ await backd.admin.users.update(user.id, { emailVerified: true, disabled: false }
 await backd.admin.users.setPassword(user.id, newPassword)        // ends their sessions
 await backd.admin.users.addRole(user.id, 'editor')               // roles declared in realm.yaml
 await backd.admin.users.removeRole(user.id, 'editor')
+await backd.admin.users.owned(user.id)                          // what erasing them would do, per collection with a policy
 await backd.admin.users.delete(user.id)
 
 const invitation = await backd.admin.invitations.create({ email: 'eve@example.com', expiresIn: '3d' })

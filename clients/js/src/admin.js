@@ -38,6 +38,16 @@ import { Job } from './functions.js'
  */
 
 /**
+ * What erasing a user would do, for the collections that declare a policy
+ * (`collection.yaml`); the others are only named in `without_policy`.
+ * @typedef {object} OwnedReport
+ * @property {{ id: string, status: 'active' | 'deactivated' | 'erased' }} user
+ * @property {Array<{ database: string, collection: string, action: 'delete' | 'anonymize' | null, owned: number, remove?: string[], replace?: string[], pull?: Record<string, number>, unset?: Record<string, number> }>} collections
+ *   `owned` counts the documents the user owns; `pull` and `unset` count, per field, the documents that hold the user.
+ * @property {string[]} without_policy  `<database>.<collection>` of the collections an erase leaves alone.
+ */
+
+/**
  * @typedef {Invitation & { token: string }} NewInvitation
  * `token` (`bdi_…`) is returned only when the invitation is created.
  */
@@ -290,6 +300,17 @@ class AdminUsers {
    */
   async setPassword(id, password, opts) {
     await this.admin._request({ method: 'POST', path: ['users', id, 'password'], body: { password }, ...opts })
+  }
+
+  /**
+   * What erasing a user would do: counts per collection that declares a policy,
+   * and the collections an erase leaves alone. No document content.
+   * @param {string} id
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OwnedReport>}
+   */
+  async owned(id, opts) {
+    return (await this.admin._request({ method: 'GET', path: ['users', id, 'owned'], ...opts })).data
   }
 
   /**

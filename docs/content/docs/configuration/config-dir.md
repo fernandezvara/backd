@@ -132,6 +132,7 @@ on_owner_delete:
 - `pull` and `unset` reach **every** document of the collection, whoever owns it. Each field says what it holds, `email` (the user's address, in the lower-case form `backd` stores) or `id`.
 - Only realms with `auth: enabled` have users, so the file is an error in a realm with `auth: disabled`.
 - `backd` checks the policy against `schema.json` at startup, so an erase leaves every document valid: named fields must exist; a required field can't be removed or unset (make it optional, or `replace` it); `replace` values must satisfy the schema and can't be in a unique index; `pull` fields must be arrays of strings without `minItems`; `unset` fields must be strings.
+- `backd provision` creates the indexes an erase searches by, so large collections aren't scanned: `_meta.owner` when the policy has an `action`, and one on each `pull` and `unset` field (they are checked in `verify` mode like the ones in `indexes.json`). Adding a policy to an existing collection builds them at the next provision.
 - The file is part of the [config fingerprint](../../operations/deploying/). Applying a policy is an erase, which is an administrator's action.
 
 ## Errors

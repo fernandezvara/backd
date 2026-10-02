@@ -137,6 +137,18 @@ test('emailed invitations and an administrator\'s email change', async () => {
   assert.deepEqual(m.calls[1].body, { email: 'ada.new@example.com' })
 })
 
+test('owned: what erasing a user would do', async () => {
+  const report = {
+    user: { id: 'u1', status: 'active' },
+    collections: [{ database: 'main', collection: 'orders', action: 'anonymize', owned: 2, remove: ['phone'], replace: ['buyer'], pull: { members: 1 } }],
+    without_policy: ['main.digests'],
+  }
+  const m = mockFetch([{ body: report }])
+  assert.deepEqual(await adminOf(m).users.owned('u1'), report)
+  assert.equal(m.calls[0].method, 'GET')
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/users/u1/owned')
+})
+
 test('jobs listing', async () => {
   const job = { id: 'cron_app_nightly_202609290300', function: 'app/nightly', status: 'done', scheduled: true, attempts: 1,
     created_at: '2026-09-29T03:00:05.000Z', completed_at: '2026-09-29T03:00:09.000Z', result: { status: 'ok', code: null, duration_ms: 3800 } }

@@ -928,6 +928,34 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/users/{id}/owned:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    get:
+      tags: [admin]
+      summary: What erasing a user would do
+      description: |
+        A preview for an erase, **only for the collections that declare a policy**
+        (`collection.yaml`): the action, how many documents the user owns, and
+        how many documents hold the user in a `pull` or `unset` field. The
+        collections without a policy are listed by name and not counted: an erase
+        leaves them alone. Counts come from the queries the erase uses; no
+        document content is returned.
+      operationId: adminOwned
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The report.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OwnedReport" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/users/{id}/roles/{role}:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -2171,6 +2199,38 @@ components:
         last_used_at: { $ref: "#/components/schemas/Timestamp" }
         expires_at: { $ref: "#/components/schemas/Timestamp" }
         current: { type: boolean }
+
+    OwnedReport:
+      type: object
+      additionalProperties: false
+      required: [user, collections, without_policy]
+      properties:
+        user:
+          type: object
+          additionalProperties: false
+          required: [id, status]
+          properties:
+            id: { type: string }
+            status: { type: string, enum: [active, deactivated, erased] }
+        collections:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [database, collection, action, owned]
+            properties:
+              database: { type: string }
+              collection: { type: string }
+              action: { type: [string, "null"], enum: [delete, anonymize, null], description: "What happens to the documents the user owns; null keeps them (the policy only cleans up references)." }
+              owned: { type: integer, description: "Documents whose `_meta.owner` is the user (0 without an action)." }
+              remove: { type: array, items: { type: string }, description: "With `anonymize`: the fields removed." }
+              replace: { type: array, items: { type: string }, description: "With `anonymize`: the fields set to a fixed value." }
+              pull: { type: object, additionalProperties: { type: integer }, description: "Documents, per array field, that hold the user." }
+              unset: { type: object, additionalProperties: { type: integer }, description: "Documents, per field, where it holds the user." }
+        without_policy:
+          type: array
+          items: { type: string }
+          description: "`<database>.<collection>` of the collections an erase leaves alone."
 
     Invitation:
       type: object

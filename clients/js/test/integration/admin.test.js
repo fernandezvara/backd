@@ -43,6 +43,26 @@ test('admin users and roles', { skip }, async () => {
   await assert.rejects(ada.c.request({ method: 'GET', path: ['_admin', 'users'] }), ForbiddenError)
 })
 
+test('owned: a preview of what erasing a user would do', { skip }, async () => {
+  const admin = client({ apiKey }).admin
+  const ada = await user('owner')
+  const posts = ada.c.db('app').collection('posts')
+  await posts.create({ title: 'one' })
+  await posts.create({ title: 'two' })
+  await client({ apiKey }).db('app').collection('private').create({ title: 'shared', members: [ada.email, email('other')] })
+
+  const report = await admin.users.owned(ada.id)
+  assert.deepEqual(report.user, { id: ada.id, status: 'active' })
+  const byName = Object.fromEntries(report.collections.map((c) => [`${c.database}.${c.collection}`, c]))
+  assert.equal(byName['app.posts'].action, 'delete')
+  assert.equal(byName['app.posts'].owned, 2)
+  assert.equal(byName['app.private'].action, null)
+  assert.equal(byName['app.private'].pull?.members, 1)
+  assert.ok(report.without_policy.includes('app.tags'), JSON.stringify(report.without_policy))
+  assert.ok(!report.without_policy.includes('app.posts'))
+  await assert.rejects(admin.users.owned('nope'), (/** @type {any} */ e) => e.status === 404)
+})
+
 test('invitations', { skip }, async () => {
   const invite = (/** @type {Partial<import('../../src/index.js').ClientOptions>} */ o = {}) => createClient({ url, realm: 'invite', ...o })
   const admin = invite({ apiKey: inviteApiKey }).admin

@@ -67,11 +67,14 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 		"acme/app/notes/rules.yaml":    "read: user != nil\nwrite: user != nil\n",
 		"acme/app/private/schema.json": postsSchema,
 		// Functions (see functions_test.go).
-		fnDir + "echo/function.yaml":   "invoke: \"user != nil && user.email_verified\"\n",
-		fnDir + "echo/index.js":        "",
-		fnDir + "typed/function.yaml":  "invoke: \"true\"\n",
-		fnDir + "notify/function.yaml": "email: true\ninvoke: \"true\"\n",
-		fnDir + "notify/index.js":      "",
+		fnDir + "echo/function.yaml":  "invoke: \"user != nil && user.email_verified\"\n",
+		fnDir + "echo/index.js":       "",
+		fnDir + "typed/function.yaml": "invoke: \"true\"\n",
+		// A collection with an erase policy.
+		"acme/app/orders/schema.json":     `{"type": "object", "properties": {"buyer": {"type": "string"}, "phone": {"type": "string"}, "members": {"type": "array", "items": {"type": "string"}}, "paid_by": {"type": "string"}}, "additionalProperties": false}`,
+		"acme/app/orders/collection.yaml": "on_owner_delete:\n  action: anonymize\n  remove: [phone]\n  replace: {buyer: \"Erased customer\"}\n  pull: {members: email}\n  unset: {paid_by: id}\n",
+		fnDir + "notify/function.yaml":    "email: true\ninvoke: \"true\"\n",
+		fnDir + "notify/index.js":         "",
 		// A custom kind of email, for functions with `email: true`.
 		"acme/email/order-shipped/en.subject.txt": "Order {{.Data.order_no}} shipped",
 		"acme/email/order-shipped/en.txt":         "Hello {{.User.Email}}, order {{.Data.order_no}} is on its way.",

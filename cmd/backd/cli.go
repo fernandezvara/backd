@@ -211,6 +211,7 @@ func registerRemote(cfg *cli.Config) {
 	user("change-email", "change the user's email at once (needs email in realm.yaml); revokes all sessions", true, userChangeEmail, func(cc *cli.CommandConfig) {
 		required(cc, "new-email", "the new email address")
 	})
+	user("owned", "show what erasing the user would do, per collection that declares a policy", true, userOwned, nil)
 	user("verify-email", "mark the email as verified", true, userPatch(map[string]bool{"email_verified": true}, "email of %s marked as verified\n"), nil)
 	user("disable", "block sign-in and revoke all sessions", true, userPatch(map[string]bool{"disabled": true}, "%s disabled; all of their sessions were revoked\n"), nil)
 	user("enable", "allow a disabled user to sign in again", true, userPatch(map[string]bool{"disabled": false}, "%s enabled\n"), nil)

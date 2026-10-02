@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/url"
 	"os"
 	"slices"
@@ -161,6 +162,64 @@ func userDelete(c *userCtx) error {
 		return err
 	}
 	fmt.Fprintf(c.uio.stdout, "deleted %s (documents they own are kept)\n", u.Email)
+	return nil
+}
+
+// ownedReport is what GET /_admin/users/{id}/owned answers.
+type ownedReport struct {
+	User struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+	} `json:"user"`
+	Collections []struct {
+		Database   string           `json:"database"`
+		Collection string           `json:"collection"`
+		Action     *string          `json:"action"`
+		Owned      int64            `json:"owned"`
+		Remove     []string         `json:"remove"`
+		Replace    []string         `json:"replace"`
+		Pull       map[string]int64 `json:"pull"`
+		Unset      map[string]int64 `json:"unset"`
+	} `json:"collections"`
+	WithoutPolicy []string `json:"without_policy"`
+}
+
+// userOwned prints what erasing the user would do, per collection with a policy.
+func userOwned(c *userCtx) error {
+	u, err := c.find()
+	if err != nil {
+		return err
+	}
+	var report ownedReport
+	if err := c.t.call("GET", "_admin/users/"+url.PathEscape(u.ID)+"/owned", nil, nil, &report); err != nil {
+		return err
+	}
+	out := c.uio.stdout
+	fmt.Fprintf(out, "%s (id %s): %s\n", u.Email, report.User.ID, report.User.Status)
+	if len(report.Collections) == 0 {
+		fmt.Fprintln(out, "no collection declares a policy: an erase leaves every document alone")
+	}
+	for _, col := range report.Collections {
+		action := "keeps the user's documents"
+		if col.Action != nil {
+			action = fmt.Sprintf("%s: %d owned document(s)", *col.Action, col.Owned)
+			if len(col.Remove)+len(col.Replace) > 0 {
+				action += fmt.Sprintf(" (remove %s; replace %s)", strings.Join(col.Remove, ","), strings.Join(col.Replace, ","))
+			}
+		}
+		fmt.Fprintf(out, "%s.%s  %s\n", col.Database, col.Collection, action)
+		for _, kind := range []struct {
+			name   string
+			counts map[string]int64
+		}{{"pull", col.Pull}, {"unset", col.Unset}} {
+			for _, field := range slices.Sorted(maps.Keys(kind.counts)) {
+				fmt.Fprintf(out, "    %s %s: %d document(s) hold the user\n", kind.name, field, kind.counts[field])
+			}
+		}
+	}
+	if len(report.WithoutPolicy) > 0 {
+		fmt.Fprintf(out, "left alone (no policy): %s\n", strings.Join(report.WithoutPolicy, ", "))
+	}
 	return nil
 }
 

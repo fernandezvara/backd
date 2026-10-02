@@ -37,6 +37,7 @@ Paths are relative to `/v1/{realm}/_admin`. Bodies are JSON (`Content-Type: appl
 | `PATCH /users/{id}` | `{"email_verified"?: bool, "disabled"?: bool}` | `200` with the user |
 | `DELETE /users/{id}` | none | `204` |
 | `POST /users/{id}/password` | `{"password"}` | `204` |
+| `GET /users/{id}/owned` | none | `200` with [what erasing the user would do](#previewing-an-erase) |
 | `POST /users/{id}/email` | `{"email"}` | `200` with the user; [changes the address](#changing-a-users-email) |
 | `PUT /users/{id}/roles/{role}` | none | `200` with the user |
 | `DELETE /users/{id}/roles/{role}` | none | `200` with the user |
@@ -136,6 +137,27 @@ curl -X PUT https://localhost:8443/v1/blog/_admin/secrets/STRIPE_KEY \
 - `value` must not be empty; `name` must be upper-case letters, digits and `_`, starting with a letter (`400` otherwise). Setting an existing scope and name replaces its value; `GET /secrets` never includes it, only who last set it and when.
 - A change reaches running functions within about a minute (decrypted values are cached briefly); deleting one makes a function that declares it answer `500 secret_missing` again.
 - Answers `500` (`internal_error`) if the server has no `BACKD_SECRETS_KEY` configured: an operator problem, not something a request can fix.
+
+### Previewing an erase
+
+`GET /users/{id}/owned` (`backd user owned --email …`, `admin.users.owned(id)` in the JavaScript client) answers what an erase would do to a user's data, **only for the collections that declare a policy** in [`collection.yaml`](../../configuration/config-dir/#collectionyaml):
+
+```json
+{
+  "user": { "id": "dars2ql90v600434mf0g", "status": "active" },
+  "collections": [
+    { "database": "main", "collection": "orders", "action": "anonymize", "owned": 12,
+      "remove": ["phone"], "replace": ["buyer_name"] },
+    { "database": "main", "collection": "groups", "action": null, "owned": 0,
+      "pull": { "members": 3 }, "unset": { "paid_by": 0 } }
+  ],
+  "without_policy": ["main.digests", "main.events"]
+}
+```
+
+- `owned` counts the documents the user owns (`_meta.owner`); `pull` and `unset` count, per field, the documents that hold the user (by email or id, as the policy says). `status` is `active` or `deactivated`.
+- The collections **without a policy** are listed by name and not counted: an erase leaves them alone.
+- It returns counts and field names, never document content. The counts use indexes that `backd provision` creates from the policies.
 
 ### Changing a user's email
 

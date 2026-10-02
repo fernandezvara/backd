@@ -58,7 +58,7 @@ func loadRegistryWith(t *testing.T, realm, realmYAML string, files map[string]st
 	root := t.TempDir()
 	for p, s := range files {
 		file := filepath.Join(root, realm, p)
-		if filepath.Ext(p) != ".json" {
+		if ext := filepath.Ext(p); ext != ".json" && ext != ".yaml" {
 			file = filepath.Join(file, "schema.json")
 		}
 		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {

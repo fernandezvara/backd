@@ -1,0 +1,2 @@
+on_owner_delete:
+  pull: { members: email }

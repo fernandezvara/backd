@@ -563,7 +563,7 @@ func TestContract(t *testing.T) {
 	ad := admin
 	adminOps := [][3]string{
 		{"GET", "/users", ""}, {"POST", "/users", `{"email": "z@example.com"}`},
-		{"GET", "/users/" + f.bobID, ""}, {"PATCH", "/users/" + f.bobID, `{"disabled": false}`},
+		{"GET", "/users/" + f.bobID, ""}, {"GET", "/users/" + f.bobID + "/owned", ""}, {"PATCH", "/users/" + f.bobID, `{"disabled": false}`},
 		{"DELETE", "/users/" + f.bobID, ""}, {"POST", "/users/" + f.bobID + "/password", `{"password": "dev-p4ssw0rd!"}`},
 		{"PUT", "/users/" + f.bobID + "/roles/admin", ""}, {"DELETE", "/users/" + f.bobID + "/roles/admin", ""},
 		{"POST", "/users/" + f.bobID + "/email", `{"email": "z@example.com"}`},
@@ -595,6 +595,8 @@ func TestContract(t *testing.T) {
 	req("PUT", ad+"/users/"+dan+"/roles/admin", "", key, 200)
 	req("PUT", ad+"/users/"+dan+"/roles/root", "", key, 400)
 	req("PUT", ad+"/users/nope/roles/admin", "", key, 404)
+	req("GET", ad+"/users/"+dan+"/owned", "", key, 200)
+	req("GET", ad+"/users/nope/owned", "", key, 404)
 	req("DELETE", ad+"/users/"+dan+"/roles/admin", "", key, 200)
 	req("DELETE", ad+"/users/nope/roles/admin", "", key, 404)
 	inv := req("POST", ad+"/invitations", `{"email": "eve@example.com", "expires_in": "3d"}`, key, 201)

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 )
 
 // Document is a stored document in API shape: "id" (string), "_meta"
@@ -212,3 +213,31 @@ func Fetch(ctx context.Context, repo Repository, id string, filter Filter) (Docu
 	}
 	return page.Items[0], nil
 }
+
+// Eraser is what erasing a user needs of a collection's storage. Every method
+// works in batches and acts only on documents that still match, so a batch
+// that was interrupted is simply repeated: call each until it returns 0.
+// Updates are atomic per document (never read-then-write) and are system
+// writes: they bump _meta.version and _meta.updated_at, and record
+// _meta.updated_by as ErasedBy.
+type Eraser interface {
+	// CountOwned counts the documents whose _meta.owner is the user.
+	CountOwned(ctx context.Context, owner string) (int64, error)
+	// CountReferences counts the documents where field (an array of strings
+	// when array is true, else a string) holds value.
+	CountReferences(ctx context.Context, field, value string, array bool) (int64, error)
+	// DeleteOwned deletes up to limit documents the user owns.
+	DeleteOwned(ctx context.Context, owner string, limit int) (int64, error)
+	// AnonymizeOwned removes the fields in remove, sets those in replace and
+	// clears _meta.owner on up to limit documents the user owns.
+	AnonymizeOwned(ctx context.Context, owner string, remove []string, replace map[string]any, limit int, now time.Time) (int64, error)
+	// PullReference removes value from the array field of up to limit
+	// documents that contain it.
+	PullReference(ctx context.Context, field, value string, limit int, now time.Time) (int64, error)
+	// ClearReference unsets the string field of up to limit documents where
+	// it equals value.
+	ClearReference(ctx context.Context, field, value string, limit int, now time.Time) (int64, error)
+}
+
+// ErasedBy is what an erase records in _meta.updated_by.
+const ErasedBy = "backd:erase"

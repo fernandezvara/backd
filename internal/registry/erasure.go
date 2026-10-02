@@ -137,6 +137,10 @@ func loadErasure(c *Collection, settings RealmSettings, path string) error {
 			add("%s: %s is not a field of schema.json", key, field)
 			return false
 		}
+		if c.throughArray(field) {
+			add("%s: %s is inside an array, which a policy can't reach (name a field outside the array)", key, field)
+			return false
+		}
 		return true
 	}
 
@@ -198,9 +202,54 @@ func loadErasure(c *Collection, settings RealmSettings, path string) error {
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
+	for f, v := range p.Replace {
+		p.Replace[f] = normalizeYAML(v)
+	}
 	c.Erasure = p
 	c.ErasurePath = path
+	c.addErasureIndexes()
 	return nil
+}
+
+// addErasureIndexes declares the indexes an erase searches by, next to the ones
+// in indexes.json: the owner when the policy has an action, and each field that
+// holds the user (pull, unset). Without them an erase would scan the whole
+// collection. One already declared (same keys) isn't added twice.
+func (c *Collection) addErasureIndexes() {
+	fields := c.Erasure.IndexedFields()
+	if c.Erasure.Action != "" {
+		fields = append([]string{"_meta.owner"}, fields...)
+	}
+	for _, f := range fields {
+		declared := slices.ContainsFunc(c.Indexes, func(ix Index) bool {
+			return len(ix.Keys) == 1 && ix.Keys[0].Field == f && !ix.Keys[0].Desc
+		})
+		if !declared {
+			c.Indexes = append(c.Indexes, Index{Keys: []IndexKey{{Field: f}}})
+		}
+	}
+}
+
+// normalizeYAML gives a value read from YAML the types documents have: whole
+// numbers are int64.
+func normalizeYAML(v any) any {
+	switch t := v.(type) {
+	case int:
+		return int64(t)
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, e := range t {
+			out[k] = normalizeYAML(e)
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, e := range t {
+			out[i] = normalizeYAML(e)
+		}
+		return out
+	}
+	return v
 }
 
 func mapKeys[V any](m map[string]V) func(yield func(string) bool) {

@@ -36,6 +36,7 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		r.Route("/users/{id}", func(r chi.Router) {
 			r.Use(a.loadUser)
 			r.Get("/", a.getUser)
+			r.Get("/owned", a.owned)
 			r.With(json).Patch("/", a.updateUser)
 			r.Delete("/", a.deleteUser)
 			r.With(json).Post("/password", a.setPassword)
