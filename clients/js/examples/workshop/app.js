@@ -10,6 +10,7 @@
 import { createClient, localStorageStorage } from '@backd/client'
 import { createInspector } from './lib/inspector.js'
 import { exportPanel } from './panels/export.js'
+import { operatorPanel } from './panels/operator.js'
 import { ordersPanel } from './panels/orders.js'
 import { refundPanel } from './panels/refund.js'
 import { webhookPanel } from './panels/webhook.js'
@@ -30,8 +31,8 @@ const TOUR = [
   { n: 2, id: 'refund', title: 'A privileged, idempotent refund', fn: 'refund', kind: 'sync, admin, calls an internal function' },
   { n: 3, id: 'webhook', title: 'A webhook from a payment provider', fn: 'payment_webhook', kind: 'webhook, signed, deduplicated' },
   { n: 4, id: 'export', title: 'A report in the background', fn: 'export_orders', kind: 'async job' },
-  { n: 5, title: 'Operating it', fn: 'nightly_cleanup, daily_digest', kind: 'cron, history, secrets' },
-  { n: 6, title: 'Email', fn: 'email-capture', kind: 'delivery through your own function' },
+  { n: 5, id: 'operating', title: 'Operating it', fn: 'nightly_cleanup, daily_digest', kind: 'cron, history, secrets' },
+  { n: 6, id: 'email', title: 'Email', fn: 'email-capture', kind: 'delivery through your own function' },
 ]
 
 let rerender = () => {}
@@ -71,6 +72,7 @@ document.addEventListener('alpine:init', () => {
     ...refundPanel({ db, backd }),
     ...webhookPanel({ backd, fetchRaw: inspector.fetch, ACCOUNTS }),
     ...exportPanel({ db, backd }),
+    ...operatorPanel({ backd }),
     known: loadKnown(),
     accounts: ACCOUNTS,
     tour: TOUR,
@@ -142,7 +144,9 @@ document.addEventListener('alpine:init', () => {
       this.orders = []
       this.totals = {}
       this.exportRuns = []
+      this.chain = null
       if (account.role === 'customer') await this.loadOrders()
+      if (account.key === 'operator') await this.refreshOps()
     },
 
     // Remembers the orders just seen, for the refund panel.
@@ -159,6 +163,9 @@ document.addEventListener('alpine:init', () => {
 
     get isCustomer() {
       return this.account?.role === 'customer'
+    },
+    get isOperator() {
+      return this.account?.key === 'operator'
     },
     get isStaff() {
       return this.account?.key === 'staff'

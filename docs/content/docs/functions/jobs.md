@@ -182,7 +182,7 @@ For anything user-facing, don't make every client poll a job endpoint: let the j
 | `status: "queued"` for longer than a moment | No worker is running, or it can't reach the executor | Run `backd worker`, or `backd serve --with-worker` (needs `BACKD_EXECUTOR_URL`); check its log |
 | `status: "running"` for longer than `timeout` + 30 s | A worker was lost, or the executor is down or busy: the lease has to expire before a retry | Wait for the lease; look at `backd functions jobs` (`TRIES`) and the executor's health |
 | `done`, but `result.status` isn't `ok` | The function failed | `backd functions logs --function … --request-id …`; the [history](../logs/) shows the status and code |
-| `404` from `_jobs/{id}` | It isn't yours (only the caller who enqueued a job, or an API key, can read it), the id is wrong, the database in the URL is wrong, or it expired | Use the `Location` header exactly; check [retention](#storage-and-retention) |
+| `404` from `_jobs/{id}` | It isn't yours (only the caller who enqueued a job, an API key, or a user with an admin role can read it), the id is wrong, the database in the URL is wrong, or it expired | Use the `Location` header exactly; check [retention](#storage-and-retention) |
 | Two runs of the same job in the log | At-least-once delivery after a lost worker | Make the function safe to repeat, as below |
 
 ## Designing jobs that are safe to repeat
@@ -205,7 +205,7 @@ A job's **input and result are stored** in MongoDB until the job expires. Never 
 {{< /hint >}}
 
 - **Jobs are stored** in the realm's system database: one of two deliberate exceptions to "`backd` never stores a function's input or output" (the other is idempotency), because there is nowhere else to keep them until you read them.
-- **Only the caller who enqueued a job, or any API key, can read it back.** Anonymous callers get `401`; anyone else gets `404`, the same as an unknown id, so a job's existence isn't revealed. A [scheduled](../cron/) run has no caller, so only API keys read it.
+- **Only the caller who enqueued a job, any API key, or a user holding an admin role can read it back.** Anonymous callers get `401`; anyone else gets `404`, the same as an unknown id, so a job's existence isn't revealed. A [scheduled](../cron/) run has no caller, so only API keys read it.
 - **Retention:** a finished job is kept for `functions.job_retention` in `realm.yaml` (default 24 hours, minimum 1 hour). A job that never finishes is removed after 48 hours regardless. Async functions need `auth: enabled`, like `secrets` and `rate_limit`.
 - **Limits:** `max_output` is capped at 15 MiB for async functions (a result is one MongoDB document); `timeout` up to 24 hours (15 minutes by default).
 - **Concurrency:** a function's `concurrency` and `functions.max_concurrency` don't apply to jobs (they protect `serve`'s own executor calls). `WORKER_CONCURRENCY` (default 10 per worker process) and the executor's `EXECUTOR_MAX_PROCESSES` bound async load: a busy executor just leaves the job queued to be retried.

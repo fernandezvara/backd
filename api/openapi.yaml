@@ -960,7 +960,9 @@ paths:
       summary: Read an async job's status and result
       description: |
         Readable only by the job's own caller (the signed-in user who
-        enqueued it), or by any API key (roadmap F11). Anonymous callers
+        enqueued it), by any API key, or by a user holding one of the
+        realm's admin roles (roadmap F11), such as an administrator who
+        started the job by hand. Anonymous callers
         get 401; any other caller that isn't the job's own owner gets
         404, the same as an unknown job id, so a job's existence isn't
         leaked to callers who aren't allowed to see it.
