@@ -1,0 +1,26 @@
+# A delivery function for Postmark (https://postmarkapp.com): the realm's
+# `email.function` can point at it instead of email-capture, and every email
+# backd renders is sent through Postmark's HTTP API. Any HTTP-API provider is
+# one small function like this one (docs: Functions -> Cookbook -> Deliver
+# email with Postmark).
+#
+# It is not wired in this realm (the local stack uses email-capture, which
+# stores messages instead of sending them). To use it, in realm.yaml:
+#   email:
+#     function: notifications/postmark
+#     from: "Acme <no-reply@acme.example>"   # a verified sender signature or domain at Postmark
+# and set its two secrets (`backd secret set POSTMARK_TOKEN --database notifications`).
+internal: true
+mode: async
+# Nothing waits for an email, so a failing provider never breaks a request: a
+# failed attempt is tried again with a growing wait. A message Postmark refuses
+# on its merits (a bad address) is permanent and is never retried.
+retry: { attempts: 5, backoff: 30s, max_backoff: 10m }
+timeout: 1m
+# The Server API token, and the sender Postmark has verified (a sender
+# signature or a domain): both are values of this database's secrets, never
+# in the config or the logs.
+secrets: [POSTMARK_TOKEN, POSTMARK_FROM]
+# The only host it may reach: `backd` blocks every other, so a mistake in this
+# function can't send data anywhere else.
+network: [api.postmarkapp.com]

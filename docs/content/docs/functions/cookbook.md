@@ -1,6 +1,6 @@
 ---
 title: "Cookbook"
-description: "Six complete, tested recipes: a sync function as the caller, a privileged idempotent refund, a background report, a nightly cleanup, a daily digest and a payment webhook."
+description: "Seven complete, tested recipes: a sync function as the caller, a privileged idempotent refund, a background report, a nightly cleanup, a daily digest, a payment webhook and an email delivery function for Postmark."
 icon: "integration_instructions"
 weight: 565
 toc: true
@@ -132,9 +132,60 @@ To email the digest instead of storing it, see [Calling an outside API](../netwo
 
 Set its secret with `backd secret set --realm workshop --database main --name PAYMENT_WEBHOOK_SECRET`, and see [Webhooks](../webhooks/) for a `curl` that plays the provider.
 
+## Deliver email with Postmark
+
+`backd` never sends mail itself: the realm names a [delivery function](../email/#the-delivery-function) that hands each finished message to your provider. `postmark` is that function for [Postmark](https://postmarkapp.com), about forty lines, and **any HTTP-API provider is one small function like it**. It lives in the workshop realm's `notifications` database next to `email-capture` (which only stores messages, for development) and is tested without the network.
+
+{{< example-file path="workshop/notifications/_functions/postmark/function.yaml" >}}
+
+{{< example-file path="workshop/notifications/_functions/postmark/index.ts" >}}
+
+### Step by step
+
+1. **At Postmark:** create a *Server* and copy its **Server API token**. Add a *Sender Signature* (a single address) or, better, verify your **domain** (SPF and DKIM), and use an address of it as the sender. Postmark refuses mail from anything it hasn't verified.
+2. **Copy the function** into your realm's database (here `notifications/_functions/postmark/`, with a `deno.json` like the one next to it) and run `backd functions build`.
+3. **Set its two secrets**, the token and the sender (`POSTMARK_FROM` is the verified sender, such as `Acme <no-reply@acme.example>`; keep `email.from` in `realm.yaml` the same):
+
+   ```sh
+   backd secret set --realm acme --database notifications --name POSTMARK_TOKEN --url https://api.example.com
+   backd secret set --realm acme --database notifications --name POSTMARK_FROM  --url https://api.example.com
+   ```
+
+4. **Point the realm at it** in `realm.yaml`, and remove the development function from the deployment (`dev_only` makes `backd` refuse to start with it outside development):
+
+   ```yaml
+   email:
+     function: notifications/postmark
+     from: "Acme <no-reply@acme.example>"
+     public_url: https://api.acme.example
+   ```
+
+5. **Try it without sending anything.** Postmark's special token `POSTMARK_API_TEST` makes the API validate a request and answer as if it had sent it, with nothing delivered: set it as `POSTMARK_TOKEN`, sign someone up, and read the email job's result in the [job list](../jobs/). Then set the real token.
+6. **Test the function itself** with fake responses, as `index.test.ts` does (`make functions-testing-test`): the request Postmark receives, a refusal, and every kind of failure.
+
+### What `backd` does for you, and what it leaves to you
+
+- **Retries.** A failed attempt (Postmark down, rate limited, the network, a wrong token) is a plain error, so `backd` retries it as `retry` says, and the job list shows each attempt. A message Postmark refuses on its merits (`422`: a malformed or inactive address, an unknown sender) is a `4xx` error from the function, which is **permanent**: no retry.
+- **Secrets and links.** The token is a [secret](../secrets/), never in the config or the logs. Links and tokens in the message are masked in the function's logs, and the function can only reach `api.postmarkapp.com`.
+- **Duplicates.** Postmark has no idempotency key, so an attempt whose answer was lost and is retried can send the message twice. The function sends the email's id as metadata (`backd_email_id`), so a repeat is visible in Postmark's reports. Providers with a key (Resend's `Idempotency-Key`) can use `ctx.input.id`, which is the same on every retry, to drop it.
+- **Deliverability is yours:** domain authentication, bounces, complaints and suppression lists are Postmark's dashboard and your sending reputation, not `backd`'s (see [Email](../email/)).
+
+### Another provider
+
+The shape never changes: build the request from `ctx.input`, send it with `fetch`, return `{ message_id }`, throw `ctx.error(4xx, …)` when the provider refuses the message and a plain error otherwise, declare the key as a secret and the host in `network`. What differs (check the provider's current documentation for the details):
+
+| Provider | Endpoint | Authentication | Notes |
+|---|---|---|---|
+| Resend | `POST https://api.resend.com/emails` | `Authorization: Bearer <key>` | Send `Idempotency-Key: <ctx.input.id>`: a retry can't duplicate |
+| SendGrid | `POST https://api.sendgrid.com/v3/mail/send` | `Authorization: Bearer <key>` | A `202` with an empty body is the success; the message id is in a header |
+| Mailgun | `POST https://api.mailgun.net/v3/<domain>/messages` | HTTP basic: `api:<key>` | Form-encoded, not JSON; EU accounts use `api.eu.mailgun.net` |
+| Brevo | `POST https://api.brevo.com/v3/smtp/email` | `api-key: <key>` header | |
+| Amazon SES | `POST https://email.<region>.amazonaws.com/v2/email/outbound-emails` | AWS Signature V4 | Needs request signing: more code, same contract |
+
 ## What to take from these
 
 - **Run as the caller by default** (`ctx.db`); use `admin: true` deliberately, for changes a rule must not allow, and keep those functions small.
 - **Make every function that can run twice safe to run twice**: a key derived from the job, a unique index, an idempotency key.
 - **Let the data say it's done**: a report document, a status field, an event: clients look where they already look.
 - **Test the logic with Deno and the wiring for real**: the workshop has both.
+- **An email provider is one small function**: the contract is a finished message in, a message id out, a `4xx` error for what the provider refuses and a plain error for what is worth retrying.
