@@ -1,7 +1,0 @@
-Hello,
-
-Please confirm that {{.User.Email}} is your email address by opening this link:
-
-{{.Link}}
-
-The link works once and expires on {{.ExpiresAt.Format "2006-01-02 15:04"}} UTC. If you didn't create an account, you can ignore this message.

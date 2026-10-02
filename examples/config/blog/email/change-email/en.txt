@@ -1,7 +1,0 @@
-Hello,
-
-Someone asked to use {{.User.Email}} as the email address of an account on {{.Realm}}. To confirm the change, open this link:
-
-{{.Link}}
-
-The link works once and expires on {{.ExpiresAt.Format "2006-01-02 15:04"}} UTC. If it wasn't you, ignore this message.

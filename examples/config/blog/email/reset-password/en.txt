@@ -1,7 +1,0 @@
-Hello,
-
-Someone asked to reset the password of {{.User.Email}}. To choose a new one, open this link:
-
-{{.Link}}
-
-The link works once and expires on {{.ExpiresAt.Format "2006-01-02 15:04"}} UTC. If it wasn't you, ignore this message: your password stays as it is.
