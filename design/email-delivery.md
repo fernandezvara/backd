@@ -22,12 +22,12 @@ backd never talks to a mail server. Each realm names one **delivery function**: 
 | Queue | each email is a small backd **email job** (`kind`, `user_id`, `locale`, `redirect_to`); the worker calls the delivery function **directly**, so the message is never stored |
 | Tokens in links | created at send time by the worker; only the SHA-256 hash is stored |
 | Retries | a general `retry:` option for async functions; `FunctionError` (4xx) is permanent |
-| Abuse limits | per recipient (hashed) and per IP, shared via `<realm>___system`; silent for anonymous endpoints, `429` for authenticated ones |
+| Abuse limits | per recipient (hashed) and per IP, shared via `<realm>___system`; silent for anonymous endpoints, `429` for authenticated ones; custom emails add caps per function, per call and per invocation (§11) |
 | Transport | HTTP-API providers through the egress proxy; SMTP is backlog (7.32) |
 | Scope | transactional email only; deliverability (domain authentication, reputation, bounces, complaints) is the sender's responsibility, documented |
 | Links | built from `BACKD_URL`, pointing at backd's own **hosted pages**; per-kind override to app pages |
 | After the click | hosted pages redirect to the developer's URL after a short delay |
-| Custom emails | `ctx.email.send()` for functions declaring `email: true` |
+| Custom emails | `ctx.email.send()` for functions declaring `email: true`; **any recipient** (users or addresses), message text only from realm templates; bounded by caps, not by who (§12) |
 | Development | `email-capture` function, `dev_only:` key, a Mailbox app, `fakeEmail()` |
 | Not configured | a realm without `email:` behaves as today |
 
@@ -85,6 +85,8 @@ email:
   limits:                                # (defaults shown)
     per_recipient: { per_kind_per_hour: 3, per_day: 10 }
     per_ip: { per_hour: 20 }
+    per_function: { per_hour: 200, per_invocation: 50 }   # custom emails from functions (§12)
+    recipients_per_message: 10                            # to + cc + bcc of one ctx.email.send()
 ```
 
 - **`BACKD_URL`** (today CLI-only) also becomes backd's public address on `serve` and `worker`. Startup fails if a realm has `email:` and neither `BACKD_URL` nor `email.public_url` is set.
@@ -103,7 +105,7 @@ email:
   from: "Acme <no-reply@acme.example>",
   reply_to: "support@acme.example",     // or null
   to:  [{ email: "ana@example.com", name: null }],
-  cc:  [], bcc: [],                     // only custom emails with external recipients use them
+  cc:  [], bcc: [],                     // only custom emails from functions use them
   subject: "Confirm your email",
   text: "…",                            // rendered by backd
   html: "…",                            // rendered by backd
@@ -234,17 +236,24 @@ The single-use token in the form protects it like a CSRF token; nothing else is 
 - **Per recipient:** 3 emails of the same kind per hour, 10 in total per day. **Per IP:** 20 email-sending requests per hour. Configurable under `email.limits`.
 - Counters live in `<realm>___system.login_attempts` (the existing counters collection; TTL expiry), keyed `email:to:<sha256(normalized address)>` and `email:ip:<ip or IPv6 /64>` — no address is stored readable. **Accepted risk:** an unsalted hash of an address can be tested against a known address by someone who can read the database; the counters expire within a day and carry no other data.
 - **Endpoints without login** (sign-up, reset request, resend verification by email) give the same answer and **skip silently** over the limit. **Endpoints with login** answer `429` with `Retry-After`. Skipped sends are logged without the address.
-- `ctx.email.send()` counts against the per-recipient limits too.
+- `ctx.email.send()` counts against the per-recipient limits too, and has caps of its own that bound the damage of a badly guarded function, whoever the recipients are: **per function** (`per_function.per_hour`, default 200, all of its sends in the realm), **per invocation** (`per_invocation`, default 50, which stops loops) and **per message** (`recipients_per_message`, default 10, counting `to`, `cc` and `bcc`). Over a cap the call throws (§12); nothing is queued.
 
 ## 12. Custom emails from functions (issue 4.2g)
 
+*Revised 2026-10-02: the `external_recipients` flag is gone. Any function that declares `email: true` may address any recipient; the controls below bound what a badly guarded function can do instead of restricting who it may write to.*
+
 ```js
 await ctx.email.send({ to_user: order.owner, kind: 'order-shipped', data: { order_no: order.no } });
+await ctx.email.send({ to: [order.customer_email], kind: 'invoice', data: { invoice_no: order.invoice } });
 ```
 
-- Requires `email: true` in `function.yaml`; custom kinds have templates in `<realm>/email/<kind>/`, checked at startup.
-- **Recipients:** realm users only by default (`to_user`, resolved by backd, rendered in the user's locale). Arbitrary addresses (`to`, `cc`, `bcc`) require `email: { external_recipients: true }` and use `default_locale` unless a `locale` is given.
-- Goes through the same queue, delivery function, retries and per-recipient limits. Returns the job handle.
+- Requires `email: true` in `function.yaml`; custom kinds have templates in `<realm>/email/<kind>/`, checked at startup. The invocation's callback credentials carry the capability; `ctx.email.send()` calls backd on the internal listener, which checks it.
+- **Recipients: anyone.** `to_user` (a realm user's id, resolved by backd, rendered in that user's locale) **or** `to`, plus optional `cc` and `bcc`, as arrays of addresses (rendered in `default_locale` unless a `locale` is given). Limiting by recipient would forbid ordinary uses (an invoice to the address on an order, a contact form to the shop's own mailbox) and wouldn't address the real risk, which is a function that sends mail **without control**.
+- **Text: only the realm's templates.** A function chooses a `kind` and supplies `data`; it never supplies a subject or a body. `data` is free text, though, and a template that prints it is a message the caller of the function can write: that is the phishing vector (§15).
+- **Caps that don't depend on who** (§11): per recipient (shared with the account emails), per function per hour, per invocation, and recipients per message. Over a cap, `ctx.email.send()` throws an `EmailLimitError` (`code: "email_limited"`, with `retry_after`) and queues nothing: unlike account endpoints, the function has the information and decides what to answer.
+- **Visibility:** each send is an email job with `origin: function:<database>/<name>` and its `kind`, in the job list; the admin API shows send counts per function; startup logs which functions can send email. Addresses are never logged or audited.
+- **What the queue holds** differs from the account emails: with no user to look up, an email job from a function stores the recipients' addresses and the `data` it was given, for as long as jobs are retained (`functions.job_retention`). Don't put secrets in `data`. The docs say so.
+- Goes through the same queue, delivery function and retries. Returns the job handle.
 
 ## 13. Development and tests (issue 4.2d)
 
@@ -257,12 +266,14 @@ await ctx.email.send({ to_user: order.owner, kind: 'order-shipped', data: { orde
 
 - **Transactional email only:** account emails and the custom emails a function sends on an event. No attachments, newsletters, marketing or unsubscribe handling.
 - **backd sends nothing from its own servers or addresses.** The delivery function sends through the developer's own provider account and domain, so sender reputation, domain authentication (SPF, DKIM, DMARC), sending volume, bounce and complaint handling and suppression lists are the **sender's responsibility**. backd does not read bounces or complaints and has no webhook for them; the provider's dashboard and rules do that.
+- A function that sends email is **the developer's code sending from the developer's domain**: if it can be made to mail people without control (an open endpoint that takes the recipient or the text from the request), the sender can be listed as a spam source and the provider may suspend the account. backd bounds the damage (§11, §12) but can't tell a legitimate send from an abusive one. The docs say so prominently (§16).
 - What backd does to help: it limits how often one address or IP can trigger an email (§11), reports an immediate rejection by the provider as a permanent failure (no retries), and the docs say what to set up before going live (§16).
 
 ## 15. Security considerations
 
 - backd never stores a working token or link; only hashes.
-- No requester-written text in templates → no open relay.
+- **Account emails:** no requester-written text in templates → no open relay.
+- **Custom emails:** a function's `data` can carry requester-written text, and its recipients can be any address, so a function that is reachable by anyone and passes request input into `to` or `data` is an open relay and a phishing tool from the realm's sender domain. backd can't prevent that without forbidding legitimate uses; it bounds it (per function, per invocation, per message and per recipient caps, `email_limited` errors) and makes it visible (§12). The responsibility is the function author's, and the docs state it as a danger, with a checklist.
 - Per-recipient limits protect people; per-IP limits protect sender reputation and quota.
 - The delivery function is internal, has only its declared secrets and network host, and its output is masked.
 - Hosted pages: no token leaks (logs, referer, cache), no framing, no external resources, uniform errors, no sessions.
@@ -279,6 +290,7 @@ await ctx.email.send({ to_user: order.owner, kind: 'order-shipped', data: { orde
 - Security model page: tokens, hosted pages, limits.
 - `api/openapi.yaml`: every new endpoint and code (`invalid_token`, `invalid_locale`, `invalid_redirect`).
 - Why no SMTP (and that most SMTP providers also offer HTTP APIs).
+- **"Sending email from functions"**: a `danger` callout and checklist on the Email page: it is a spam relay if misused. Authenticate callers (an `invoke:` rule requiring `user.email_verified`, for example); never take the recipient from request input; never put requester-written text in `data` or print it in a template; add idempotency and rate limits to the function; use a verified sending domain and watch the provider's bounce and complaint rates; test with `email-capture`. Plus a contact-form example that shows the safe shape (fixed recipient, fixed kind).
 - **"Before you send real email"**: a short checklist stating that deliverability is the sender's responsibility: authenticate the sending domain (SPF, DKIM, DMARC), use a dedicated sender address, watch the provider's bounce and complaint rates, keep the provider's suppression list on, and test with `email-capture` first.
 
 ## 17. Acceptance criteria by issue
@@ -295,7 +307,7 @@ await ctx.email.send({ to_user: order.owner, kind: 'order-shipped', data: { orde
 
 **4.2f — hosted pages:** GET/POST pages for every token kind; security headers and log scrubbing (tested); uniform error page; redirects with `redirect_to` stored with the hash and checked against `allowed_redirects` (`400 invalid_redirect`); per-kind `links` override; JSON endpoints; page templates and localization.
 
-**4.2g — custom emails:** `ctx.email.send()`, `email: true`, `external_recipients`, custom kinds checked at startup, limits applied; tests with fakes and `email-capture`.
+**4.2g — custom emails:** `ctx.email.send()` with `email: true` and any recipient (no `external_recipients`); text only from templates; custom kinds checked at startup; caps (per function, per invocation, per message) and the per-recipient limits applied, `email_limited` thrown; jobs visible with their origin and kind, send counts per function in the admin API; `fakeEmail()` enforcing the caps; the docs' danger callout and checklist; tests with fakes and `email-capture`.
 
 ## 18. Alternatives considered
 
