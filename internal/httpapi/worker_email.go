@@ -60,7 +60,11 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 		return nil, nil, false
 	}
 	kind := job.Email.Kind
+	// The language the request asked for, else the user's own, else the default.
 	locale := job.Email.Locale
+	if locale == "" {
+		locale = svc.LocaleOf(user)
+	}
 	if !tpl.Has(kind, locale) {
 		locale = es.DefaultLocale
 	}

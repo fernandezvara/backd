@@ -29,6 +29,7 @@ type userDoc struct {
 	EmailVerified bool      `bson:"email_verified"`
 	Roles         []string  `bson:"roles"`
 	Disabled      bool      `bson:"disabled"`
+	Locale        string    `bson:"locale,omitempty"`
 	AdminNetworks []string  `bson:"admin_networks,omitempty"`
 	LoginNetworks []string  `bson:"login_networks,omitempty"`
 	CreatedAt     time.Time `bson:"created_at"`
@@ -37,7 +38,7 @@ type userDoc struct {
 
 func (d userDoc) user() auth.User {
 	return auth.User{
-		ID: d.ID, Email: d.Email, EmailVerified: d.EmailVerified, Roles: d.Roles, Disabled: d.Disabled,
+		ID: d.ID, Email: d.Email, EmailVerified: d.EmailVerified, Roles: d.Roles, Disabled: d.Disabled, Locale: d.Locale,
 		AdminNetworks: networks(d.AdminNetworks), LoginNetworks: networks(d.LoginNetworks),
 		CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC(),
 	}
@@ -81,7 +82,7 @@ func (s *AuthStore) CreateUser(ctx context.Context, u auth.User) error {
 		roles = []string{}
 	}
 	_, err := s.users().InsertOne(ctx, userDoc{
-		ID: u.ID, Email: u.Email, EmailVerified: u.EmailVerified, Roles: roles, Disabled: u.Disabled,
+		ID: u.ID, Email: u.Email, EmailVerified: u.EmailVerified, Roles: roles, Disabled: u.Disabled, Locale: u.Locale,
 		CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt,
 	})
 	if mongo.IsDuplicateKeyError(err) {
@@ -162,6 +163,9 @@ func (s *AuthStore) UpdateUser(ctx context.Context, id string, upd auth.UserUpda
 	}
 	if upd.Disabled != nil {
 		set = append(set, bson.E{Key: "disabled", Value: *upd.Disabled})
+	}
+	if upd.Locale != nil {
+		set = append(set, bson.E{Key: "locale", Value: *upd.Locale})
 	}
 	unset := bson.D{}
 	for key, n := range map[string]*registry.Networks{"admin_networks": upd.AdminNetworks, "login_networks": upd.LoginNetworks} {

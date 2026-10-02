@@ -77,6 +77,7 @@ var systemCollections = []systemCollection{
 			"email_verified": typ("bool"),
 			"roles":          map[string]any{"bsonType": "array", "items": str()},
 			"disabled":       typ("bool"),
+			"locale":         str(),
 			"admin_networks": map[string]any{"bsonType": "array", "items": str()},
 			"login_networks": map[string]any{"bsonType": "array", "items": str()},
 			"created_at":     typ("date"),

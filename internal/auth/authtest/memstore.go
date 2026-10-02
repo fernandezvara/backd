@@ -164,6 +164,9 @@ func (m *MemStore) UpdateUser(_ context.Context, id string, upd auth.UserUpdate,
 	if upd.Disabled != nil {
 		u.Disabled = *upd.Disabled
 	}
+	if upd.Locale != nil {
+		u.Locale = *upd.Locale
+	}
 	if upd.AdminNetworks != nil {
 		u.AdminNetworks = *upd.AdminNetworks
 	}

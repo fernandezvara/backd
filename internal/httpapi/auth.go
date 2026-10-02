@@ -1,9 +1,11 @@
 package httpapi
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -36,6 +38,7 @@ func (a *authAPI) routes(r chi.Router) {
 			r.Post("/logout", a.logout)
 			r.Post("/logout-all", a.logoutAll)
 			r.Get("/me", a.me)
+			r.With(json).Patch("/me", a.updateMe)
 			r.With(json).Delete("/me", a.deleteMe)
 			r.With(json).Post("/password", a.changePassword)
 			r.Get("/sessions", a.sessions)
@@ -105,23 +108,25 @@ func (a *authAPI) signup(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"email": "string", "password": "string", "invitation": "string?"})
+	f, ok := fields(w, r, obj, map[string]string{"email": "string", "password": "string", "invitation": "string?", "locale": "string?"})
 	if !ok {
 		return
 	}
 	email, password := f["email"].(string), f["password"].(string)
 	invitation, _ := f["invitation"].(string)
+	requested, _ := f["locale"].(string)
 	if _, err := registry.NormalizeEmail(email); err != nil {
 		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid sign-up request", Detail{Path: "email", Reason: "must be a valid email address"})
 		return
 	}
-	p, token, err := usersOf(r).Signup(r.Context(), email, password, invitation)
+	// The language asked for in the request comes first, then the browser's.
+	p, token, err := usersOf(r).Signup(r.Context(), email, password, invitation, append([]string{requested}, acceptLanguages(r.Header.Get("Accept-Language"))...)...)
 	if err != nil {
 		authError(w, r, err, "password")
 		return
 	}
 	setActor(r.Context(), "user:"+p.User.ID)
-	writeJSON(w, http.StatusCreated, sessionJSON(p, token))
+	writeJSON(w, http.StatusCreated, sessionJSON(p, token, usersOf(r).LocaleOf(p.User)))
 }
 
 func (a *authAPI) login(w http.ResponseWriter, r *http.Request) {
@@ -135,7 +140,7 @@ func (a *authAPI) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setActor(r.Context(), "user:"+p.User.ID)
-	writeJSON(w, http.StatusOK, sessionJSON(p, token))
+	writeJSON(w, http.StatusOK, sessionJSON(p, token, usersOf(r).LocaleOf(p.User)))
 }
 
 func (a *authAPI) logout(w http.ResponseWriter, r *http.Request) {
@@ -155,7 +160,68 @@ func (a *authAPI) logoutAll(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *authAPI) me(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, userJSON(principalOf(r).User))
+	writeJSON(w, http.StatusOK, userJSON(principalOf(r).User, usersOf(r).LocaleOf(principalOf(r).User)))
+}
+
+// updateMe handles PATCH /_auth/me: the user changes their own settings.
+// Today that is their language, which must be one the realm lists.
+func (a *authAPI) updateMe(w http.ResponseWriter, r *http.Request) {
+	obj, ok := readObject(w, r)
+	if !ok {
+		return
+	}
+	f, ok := fields(w, r, obj, map[string]string{"locale": "string?"})
+	if !ok {
+		return
+	}
+	svc := usersOf(r)
+	u := principalOf(r).User
+	if locale, ok := f["locale"].(string); ok {
+		var err error
+		u, err = svc.SetLocale(r.Context(), u.ID, locale)
+		var il *auth.InvalidLocaleError
+		if errors.As(err, &il) {
+			writeError(w, r, http.StatusBadRequest, codeInvalidLocale, "this realm doesn't offer that language", Detail{Path: "locale", Reason: il.Error()})
+			return
+		}
+		if err != nil {
+			authError(w, r, err)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, userJSON(u, svc.LocaleOf(u)))
+}
+
+// acceptLanguages parses an Accept-Language header into language tags, most
+// wanted first (by q, then in the order given), leaving out `*` and q=0.
+func acceptLanguages(header string) []string {
+	type tag struct {
+		name string
+		q    float64
+	}
+	var tags []tag
+	for _, part := range strings.Split(header, ",") {
+		name, params, _ := strings.Cut(strings.TrimSpace(part), ";")
+		name = strings.TrimSpace(name)
+		if name == "" || name == "*" {
+			continue
+		}
+		q := 1.0
+		if v, ok := strings.CutPrefix(strings.TrimSpace(params), "q="); ok {
+			if parsed, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
+				q = parsed
+			}
+		}
+		if q > 0 {
+			tags = append(tags, tag{name, q})
+		}
+	}
+	slices.SortStableFunc(tags, func(a, b tag) int { return cmp.Compare(b.q, a.q) })
+	out := make([]string, len(tags))
+	for i, t := range tags {
+		out[i] = t.name
+	}
+	return out
 }
 
 func (a *authAPI) deleteMe(w http.ResponseWriter, r *http.Request) {
@@ -278,17 +344,17 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 	}
 }
 
-func sessionJSON(p auth.Principal, token string) map[string]any {
+func sessionJSON(p auth.Principal, token, locale string) map[string]any {
 	return map[string]any{
 		"token":      token,
 		"token_type": "Bearer",
 		"session_id": p.Session.ID,
 		"expires_at": formatTime(p.Session.ExpiresAt),
-		"user":       userJSON(p.User),
+		"user":       userJSON(p.User, locale),
 	}
 }
 
-func userJSON(u auth.User) map[string]any {
+func userJSON(u auth.User, locale string) map[string]any {
 	roles := u.Roles
 	if roles == nil {
 		roles = []string{}
@@ -298,6 +364,7 @@ func userJSON(u auth.User) map[string]any {
 		"email":          u.Email,
 		"email_verified": u.EmailVerified,
 		"roles":          roles,
+		"locale":         locale,
 		"created_at":     formatTime(u.CreatedAt),
 	}
 }

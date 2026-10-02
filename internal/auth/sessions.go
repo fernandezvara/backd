@@ -79,14 +79,19 @@ func (s *Users) expiry(created, lastUsed time.Time) time.Time {
 // Signup creates a user with a password and signs them in. Realms with
 // `signup: open` accept anyone; `signup: invite` needs a valid invitation
 // token (used up by a successful sign-up); `signup: closed` refuses.
-func (s *Users) Signup(ctx context.Context, email, password, invitation string) (Principal, string, error) {
+//
+// locales are the languages the person asked for, most wanted first (the
+// request's locale, then Accept-Language); the user gets the best one the
+// realm lists, or its default, silently.
+func (s *Users) Signup(ctx context.Context, email, password, invitation string, locales ...string) (Principal, string, error) {
 	var u User
 	var err error
+	locale := s.Settings.BestLocale(locales...)
 	switch s.Settings.Signup {
 	case registry.SignupOpen:
-		u, err = s.create(ctx, email, &password)
+		u, err = s.create(ctx, email, &password, locale)
 	case registry.SignupInvite:
-		u, err = s.signupWithInvitation(ctx, email, password, invitation)
+		u, err = s.signupWithInvitation(ctx, email, password, invitation, locale)
 	default:
 		err = ErrSignupClosed
 	}

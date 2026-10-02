@@ -173,7 +173,7 @@ func (a *adminAPI) listUsers(w http.ResponseWriter, r *http.Request) {
 	page = page[:min(limit, len(page))]
 	items := make([]map[string]any, len(page))
 	for i, u := range page {
-		items[i] = adminUserJSON(u)
+		items[i] = adminUserJSON(u, usersOf(r).LocaleOf(u))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items, "limit": limit, "skip": skip, "has_more": hasMore})
 }
@@ -202,11 +202,11 @@ func (a *adminAPI) createUser(w http.ResponseWriter, r *http.Request) {
 		adminError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, adminUserJSON(u))
+	writeJSON(w, http.StatusCreated, adminUserJSON(u, usersOf(r).LocaleOf(u)))
 }
 
 func (a *adminAPI) getUser(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, adminUserJSON(adminUserOf(r)))
+	writeJSON(w, http.StatusOK, adminUserJSON(adminUserOf(r), usersOf(r).LocaleOf(adminUserOf(r))))
 }
 
 func (a *adminAPI) updateUser(w http.ResponseWriter, r *http.Request) {
@@ -362,7 +362,7 @@ func (a *adminAPI) writeUser(w http.ResponseWriter, r *http.Request, id string) 
 		adminError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, adminUserJSON(u))
+	writeJSON(w, http.StatusOK, adminUserJSON(u, usersOf(r).LocaleOf(u)))
 }
 
 // fields checks a JSON object against a spec of field name → kind
@@ -439,8 +439,8 @@ func adminError(w http.ResponseWriter, r *http.Request, err error) {
 	}
 }
 
-func adminUserJSON(u auth.User) map[string]any {
-	out := userJSON(u)
+func adminUserJSON(u auth.User, locale string) map[string]any {
+	out := userJSON(u, locale)
 	out["disabled"] = u.Disabled
 	out["admin_networks"] = u.AdminNetworks.Strings()
 	out["login_networks"] = u.LoginNetworks.Strings()
@@ -485,7 +485,7 @@ func (a *adminAPI) setNetworks(w http.ResponseWriter, r *http.Request) {
 		adminError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, adminUserJSON(u))
+	writeJSON(w, http.StatusOK, adminUserJSON(u, usersOf(r).LocaleOf(u)))
 }
 
 func apiKeyJSON(k auth.APIKey) map[string]any {

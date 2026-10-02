@@ -55,10 +55,11 @@ A web app on another origin needs that origin listed in the realm's [CORS settin
 ## Sign-up, login and sessions
 
 ```js
-const session = await backd.auth.signup({ email: 'ada@example.com', password: 'dev-p4ssw0rd!' })
+const session = await backd.auth.signup({ email: 'ada@example.com', password: 'dev-p4ssw0rd!', locale: navigator.language })
 // or: await backd.auth.login({ email, password })
 
-const me = await backd.auth.me()             // { id, email, email_verified, roles, created_at }
+const me = await backd.auth.me()             // { id, email, email_verified, roles, locale, created_at }
+await backd.auth.updateMe({ locale: 'es' })  // must be a language the realm lists, else a ValidationError (invalid_locale)
 await backd.auth.changePassword({ currentPassword, newPassword })   // other sessions end
 const sessions = await backd.auth.sessions() // [{ id, created_at, last_used_at, expires_at, current }]
 await backd.auth.revokeSession(sessions[1].id)

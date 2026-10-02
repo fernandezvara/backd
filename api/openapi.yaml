@@ -72,7 +72,18 @@ paths:
       description: |
         Realms with `signup: open` accept anyone; `signup: invite` needs a
         valid `invitation`; `signup: closed` refuses.
+
+        The new user's `locale` is the best language the realm lists for
+        what was asked: the request's `locale`, else `Accept-Language` (by
+        quality), matched exactly (`es-MX`), then by language (`es`), else the
+        realm's `default_locale`. It never fails: an unlisted language is
+        replaced by the default.
       operationId: signup
+      parameters:
+        - name: Accept-Language
+          in: header
+          description: The browser's languages, used when the body has no `locale`.
+          schema: { type: string }
       requestBody:
         required: true
         content:
@@ -85,6 +96,7 @@ paths:
                 email: { type: string, format: email }
                 password: { type: string, minLength: 8, maxLength: 128 }
                 invitation: { type: string, description: "Invitation token (`bdi_…`), for `signup: invite`." }
+                locale: { type: string, description: "The language to use for the user, such as `es` or `es-MX`; mapped silently to one the realm lists." }
       responses:
         "201": { $ref: "#/components/responses/SessionCreated" }
         "400": { $ref: "#/components/responses/Error" }
@@ -154,6 +166,35 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [auth]
+      summary: Change the user's own settings
+      description: |
+        Today the language: `locale` must be one the realm lists
+        (case ignored); any other value answers `400 invalid_locale` with
+        the allowed ones in `details`. Unlike at sign-up, an explicit change
+        is never mapped silently.
+      operationId: updateMe
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                locale: { type: string, description: "One of the realm's `email.locales`." }
+      responses:
+        "200":
+          description: The updated user.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         default: { $ref: "#/components/responses/Error" }
     delete:
@@ -1384,23 +1425,25 @@ components:
     User:
       type: object
       additionalProperties: false
-      required: [id, email, email_verified, roles, created_at]
+      required: [id, email, email_verified, roles, locale, created_at]
       properties:
         id: { type: string }
         email: { type: string }
         email_verified: { type: boolean }
         roles: { type: array, items: { type: string } }
+        locale: { type: string, description: "The user's language: one the realm lists (`email.locales`; English only without email). Used for the emails they get." }
         created_at: { $ref: "#/components/schemas/Timestamp" }
 
     AdminUser:
       type: object
       additionalProperties: false
-      required: [id, email, email_verified, roles, disabled, admin_networks, login_networks, created_at, updated_at]
+      required: [id, email, email_verified, roles, locale, disabled, admin_networks, login_networks, created_at, updated_at]
       properties:
         id: { type: string }
         email: { type: string }
         email_verified: { type: boolean }
         roles: { type: array, items: { type: string } }
+        locale: { type: string, description: "The user's language: one the realm lists (`email.locales`; English only without email). Used for the emails they get." }
         disabled: { type: boolean }
         admin_networks:
           description: CIDR networks this user's admin API requests must come from; empty means no restriction of their own.
