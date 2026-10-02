@@ -12,7 +12,7 @@ import (
 func TestIdempotencyOnMongoDB(t *testing.T) {
 	s, _ := authFixture(t)
 	ctx := context.Background()
-	t0 := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
+	t0 := time.Date(2126, 9, 29, 12, 0, 0, 0, time.UTC)
 
 	rec := auth.IdempotencyRecord{
 		ID:       auth.IdempotencyID("app", "checkout", "user:u1", "order-42"),

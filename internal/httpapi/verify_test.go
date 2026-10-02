@@ -226,3 +226,49 @@ func TestPurgeUnverified(t *testing.T) {
 		t.Error("the purge wasn't audited")
 	}
 }
+
+// In a realm that gives no session at sign-up, a registered address gets the
+// same answer as a new one, and its owner is told by email; elsewhere it is
+// still 409, because a session at sign-up can't hide who is registered.
+func TestSignupWithARegisteredAddress(t *testing.T) {
+	f, w := newVerifyFixture(t)
+	ctx := context.Background()
+	body := func(addr string) string {
+		return `{"email": "` + addr + `", "password": "dev-p4ssw0rd!"}`
+	}
+
+	if rec := f.page(t, "POST", "/v1/acme/_auth/signup", "application/json", body("ada@example.com"), ""); rec.Code != 409 {
+		t.Fatalf("a realm with sessions at sign-up: %d %s", rec.Code, rec.Body)
+	}
+
+	f.svc.Settings.Account.RequireVerifiedEmail = true
+	fresh := f.page(t, "POST", "/v1/acme/_auth/signup", "application/json", body("fresh@example.com"), "")
+	taken := f.page(t, "POST", "/v1/acme/_auth/signup", "application/json", body("Ada@Example.com"), "")
+	if fresh.Code != 202 || taken.Code != 202 || fresh.Body.String() != taken.Body.String() {
+		t.Fatalf("answers differ: %d %q / %d %q", fresh.Code, fresh.Body, taken.Code, taken.Body)
+	}
+	got := map[string]string{} // recipient → kind
+	for w.RunOnce(ctx) {
+		in := deliveredEmail(t, f.runner.last())
+		got[in.To[0].Email] = in.Kind
+	}
+	if got["fresh@example.com"] != "verify-email" || got["ada@example.com"] != "account-exists" || len(got) != 2 {
+		t.Errorf("emails: %v", got)
+	}
+	// The registered account is untouched: same password, no new session.
+	if rec := f.page(t, "POST", "/v1/acme/_auth/login", "application/json", `{"email": "ada@example.com", "password": "dev-p4ssw0rd!"}`, ""); rec.Code != 200 {
+		t.Errorf("ada can't log in any more: %d", rec.Code)
+	}
+	// A password the policy refuses is refused for everyone alike.
+	for _, addr := range []string{"fresh2@example.com", "ada@example.com"} {
+		if rec := f.page(t, "POST", "/v1/acme/_auth/signup", "application/json", `{"email": "`+addr+`", "password": "short"}`, ""); rec.Code != 400 {
+			t.Errorf("%s with a weak password: %d", addr, rec.Code)
+		}
+	}
+	// The email limits stay silent: asking again and again never changes the answer.
+	for range 6 {
+		if rec := f.page(t, "POST", "/v1/acme/_auth/signup", "application/json", body("ada@example.com"), ""); rec.Code != 202 {
+			t.Fatalf("repeated: %d", rec.Code)
+		}
+	}
+}

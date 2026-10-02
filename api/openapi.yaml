@@ -82,8 +82,13 @@ paths:
         In a realm with `email`, sign-up also asks for the `verify-email`
         message. With `account.require_verified_email: true` there is no
         session until the address is verified: the answer is `202` and the
-        user signs in after following the link. (An already registered
-        address still answers `409`.)
+        user signs in after following the link. In that mode an already
+        registered address gets the same `202` (and the owner an
+        `account-exists` email), so the answer doesn't reveal who is
+        registered; the password is hashed either way, so the time taken
+        doesn't either. Where a session is issued at sign-up, a registered
+        address answers `409 email_taken`: such a realm can't hide who is
+        registered.
       operationId: signup
       parameters:
         - name: Accept-Language

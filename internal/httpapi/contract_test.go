@@ -392,6 +392,7 @@ func TestContract(t *testing.T) {
 	req("POST", a+"/signup", `{"email": "r@example.com", "password": "dev-p4ssw0rd!", "redirect_to": "https://evil.example/"}`, nil, 400)
 	f.svc.Settings.Account.RequireVerifiedEmail = true
 	req("POST", a+"/signup", `{"email": "pending@example.com", "password": "dev-p4ssw0rd!", "redirect_to": "https://app.acme.example/welcome"}`, nil, 202)
+	req("POST", a+"/signup", `{"email": "pending@example.com", "password": "dev-p4ssw0rd!"}`, nil, 202) // registered: the same answer
 	req("POST", a+"/login", `{"email": "pending@example.com", "password": "dev-p4ssw0rd!"}`, nil, 403)
 	f.svc.Settings.Account.RequireVerifiedEmail = false
 	req("POST", a+"/verify-email/resend", `{"email": "pending@example.com"}`, nil, 202)

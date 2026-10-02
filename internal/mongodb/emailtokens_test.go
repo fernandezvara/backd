@@ -13,7 +13,7 @@ import (
 func TestEmailTokensOnMongoDB(t *testing.T) {
 	s, _ := authFixture(t)
 	ctx := context.Background()
-	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	now := time.Date(2126, 10, 1, 12, 0, 0, 0, time.UTC)
 	mk := func(hash, purpose string, ttl time.Duration) auth.EmailToken {
 		return auth.EmailToken{Hash: hash, Purpose: purpose, UserID: "u1", RedirectTo: "https://app.example/welcome", CreatedAt: now, ExpiresAt: now.Add(ttl)}
 	}
@@ -84,7 +84,7 @@ func TestEmailTokensOnMongoDB(t *testing.T) {
 func TestEmailJobOnMongoDB(t *testing.T) {
 	s, _ := authFixture(t)
 	ctx := context.Background()
-	t0 := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	t0 := time.Date(2126, 10, 1, 12, 0, 0, 0, time.UTC)
 	j := auth.Job{ID: "e1", Database: "notify", Function: "deliver", CallerActor: "backd", Origin: "backd:email.verify-email",
 		Email:     &auth.EmailJob{Kind: "verify-email", UserID: "u1", Locale: "es", RedirectTo: "https://app.example/welcome"},
 		TimeoutMS: 60000, Status: auth.JobQueued, CreatedAt: t0, ExpiresAt: t0.Add(48 * time.Hour)}
@@ -104,7 +104,7 @@ func TestEmailJobOnMongoDB(t *testing.T) {
 func TestUserLocaleOnMongoDB(t *testing.T) {
 	s, _ := authFixture(t)
 	ctx := context.Background()
-	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	now := time.Date(2126, 10, 1, 12, 0, 0, 0, time.UTC)
 	if err := s.CreateUser(ctx, auth.User{ID: "u1", Email: "ana@example.com", Roles: []string{}, Locale: "es", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}

@@ -30,6 +30,14 @@ type SignupResult struct {
 // verified before any session: then there is none (Pending).
 func (s *Users) SignUp(ctx context.Context, r SignupRequest) (SignupResult, error) {
 	u, err := s.signup(ctx, r.Email, r.Password, r.Invitation, append([]string{}, r.Locales...))
+	if errors.Is(err, ErrEmailTaken) && s.Settings.Account.RequireVerifiedEmail {
+		// No session is handed out in this realm, so the answer can be the
+		// same as for a new address: the owner is told by email instead. The
+		// password was already hashed on the way here, so the time taken
+		// doesn't tell the two cases apart either.
+		s.sendAccountExists(ctx, r)
+		return SignupResult{Pending: true}, nil
+	}
 	if err != nil {
 		return SignupResult{}, err
 	}
@@ -41,6 +49,23 @@ func (s *Users) SignUp(ctx context.Context, r SignupRequest) (SignupResult, erro
 	}
 	p, token, err := s.startSession(ctx, u)
 	return SignupResult{Principal: p, Token: token}, err
+}
+
+// sendAccountExists tells the owner of a registered address that someone
+// tried to sign up with it. Limits and failures never change the answer.
+func (s *Users) sendAccountExists(ctx context.Context, r SignupRequest) {
+	if s.Settings.Email == nil {
+		return
+	}
+	u, err := s.byEmail(ctx, r.Email)
+	if err != nil || u.Disabled {
+		return
+	}
+	_, err = s.QueueEmail(ctx, EmailRequest{Kind: email.AccountExists, UserID: u.ID, Address: u.Email, Locale: s.LocaleOf(u), ClientIP: r.ClientIP, RequestID: r.RequestID})
+	var limited *EmailLimitedError
+	if err != nil && !errors.As(err, &limited) && s.Log != nil {
+		s.Log.Error("queue the account-exists email", "error", err)
+	}
 }
 
 // sendVerification queues the verify-email message. A limit or a failure

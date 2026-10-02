@@ -14,7 +14,7 @@ import (
 func TestAuditOnMongoDB(t *testing.T) {
 	s, _ := authFixture(t)
 	ctx := context.Background()
-	t0 := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	t0 := time.Date(2126, 9, 27, 12, 0, 0, 0, time.UTC)
 	for i, r := range []auth.AuditRecord{
 		{Action: auth.AuditUserCreate, Actor: "key:ops", Target: "user:u1", Details: map[string]any{"password": true, "roles": []string{"ops"}}, RequestID: "r1", ClientIP: "192.0.2.1"},
 		{Action: auth.AuditRoleAdd, Actor: "user:u0", Target: "user:u1", Details: map[string]any{"role": "editor"}},

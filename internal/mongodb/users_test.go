@@ -13,6 +13,11 @@ import (
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
+// The clocks of these tests are fixed dates in the year 2126, not the past:
+// MongoDB's TTL monitor deletes a record whose expires_at has passed, which
+// would remove records out from under a test (an idempotency claim that was
+// "running" a moment ago) as the calendar moves on.
+
 // authFixture provisions an auth-enabled realm and returns its store.
 func authFixture(t *testing.T) (*AuthStore, string) {
 	t.Helper()
@@ -29,7 +34,7 @@ func authFixture(t *testing.T) (*AuthStore, string) {
 func TestAuthStoreUsers(t *testing.T) {
 	s, _ := authFixture(t)
 	ctx := context.Background()
-	now := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	now := time.Date(2126, 9, 26, 12, 0, 0, 0, time.UTC)
 
 	for _, email := range []string{"bob@example.com", "ada@example.com"} {
 		if err := s.CreateUser(ctx, auth.User{ID: "id-" + email[:3], Email: email, CreatedAt: now, UpdatedAt: now}); err != nil {
@@ -109,7 +114,7 @@ func TestAuthStoreUsers(t *testing.T) {
 func TestAuthStoreIdentitiesAndDelete(t *testing.T) {
 	s, _ := authFixture(t)
 	ctx := context.Background()
-	now := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	now := time.Date(2126, 9, 26, 12, 0, 0, 0, time.UTC)
 	if err := s.CreateUser(ctx, auth.User{ID: "u1", Email: "ada@example.com", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +202,7 @@ func TestUsersServiceOnMongoDB(t *testing.T) {
 func TestSessionsOnMongoDB(t *testing.T) {
 	s, _ := authFixture(t)
 	ctx := context.Background()
-	clock := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	clock := time.Date(2126, 9, 26, 12, 0, 0, 0, time.UTC)
 	svc := &auth.Users{
 		Store:  s,
 		Hasher: auth.NewHasher(1, auth.Argon2Params{Memory: 64, Time: 1, Threads: 1}),
@@ -262,7 +267,7 @@ func TestSessionsOnMongoDB(t *testing.T) {
 func TestAPIKeysOnMongoDB(t *testing.T) {
 	s, _ := authFixture(t)
 	ctx := context.Background()
-	clock := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	clock := time.Date(2126, 9, 26, 12, 0, 0, 0, time.UTC)
 	svc := &auth.Users{Store: s, Settings: registry.RealmSettings{}, Now: func() time.Time { return clock }}
 
 	_, key, err := svc.CreateAPIKey(ctx, "billing", auth.KeyOptions{})
@@ -320,7 +325,7 @@ func TestAPIKeysOnMongoDB(t *testing.T) {
 func TestLoginAttemptsOnMongoDB(t *testing.T) {
 	s, _ := authFixture(t)
 	ctx := context.Background()
-	t0 := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	t0 := time.Date(2126, 9, 26, 12, 0, 0, 0, time.UTC)
 
 	if a, err := s.LoginAttempts(ctx, "account:a@x.io"); err != nil || a.Failures != 0 {
 		t.Fatalf("no counter: %+v, %v", a, err)
@@ -362,7 +367,7 @@ func TestLoginAttemptsOnMongoDB(t *testing.T) {
 func TestIncrementCounterOnMongoDB(t *testing.T) {
 	s, _ := authFixture(t)
 	ctx := context.Background()
-	t0 := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
+	t0 := time.Date(2126, 9, 29, 12, 0, 0, 0, time.UTC)
 	window := time.Minute
 
 	var resetAt time.Time
@@ -426,7 +431,7 @@ func TestLoginThrottleAcrossInstances(t *testing.T) {
 func TestInvitationsOnMongoDB(t *testing.T) {
 	s, _ := authFixture(t)
 	ctx := context.Background()
-	now := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	now := time.Date(2126, 9, 26, 12, 0, 0, 0, time.UTC)
 	svc := &auth.Users{
 		Store: s, Hasher: auth.NewHasher(2, auth.Argon2Params{Memory: 64, Time: 1, Threads: 1}),
 		Settings: registry.RealmSettings{Signup: registry.SignupInvite, IdleTimeout: time.Hour, MaxLifetime: time.Hour, PasswordMinLength: 12},
@@ -477,7 +482,7 @@ func TestInvitationsOnMongoDB(t *testing.T) {
 func TestListUnverifiedUsersOnMongoDB(t *testing.T) {
 	s, _ := authFixture(t)
 	ctx := context.Background()
-	at := func(h int) time.Time { return time.Date(2026, 9, 26, h, 0, 0, 0, time.UTC) }
+	at := func(h int) time.Time { return time.Date(2126, 9, 26, h, 0, 0, 0, time.UTC) }
 	for i, u := range []auth.User{
 		{ID: "old-unverified", Email: "a@example.com", CreatedAt: at(1)},
 		{ID: "old-verified", Email: "b@example.com", EmailVerified: true, CreatedAt: at(2)},
