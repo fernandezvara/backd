@@ -39,7 +39,7 @@ Staff and Operator get their roles from the realm's [`realm.yaml`](../../configu
 3. **A webhook from a payment provider** (`payment_webhook`): the page plays the provider, signs the body with HMAC-SHA256 and sends it with no credentials; try a wrong signature and a repeated event. "Set the shared secret" does what the operator does with [`backd secret set`](../../functions/secrets/). See [the webhook recipe](../../functions/cookbook/#a-payment-webhook).
 4. **A report in the background** (`export_orders`): start the [async job](../../functions/jobs/), watch it go queued, running, done, and download the CSV. See [the report recipe](../../functions/cookbook/#a-background-report).
 5. **Operating it**, as the Operator: the secrets that are set (never their values), the jobs with their attempts and next attempt, the history of every call with where it came from, "run `nightly_cleanup` by hand", and the **tree of calls** of a request, which shows `refund_receipt` under `refund`. See [scheduled functions](../../functions/cron/) and [the nightly cleanup](../../functions/cookbook/#a-nightly-cleanup).
-6. **Email**: a link to the [Mailbox](../../functions/email/#developing-without-a-provider) with the emails the realm "sent". Account flows that send email are planned, so for now it shows how delivery works.
+6. **Email verification**: sign up a visitor, find the `verify-email` message in the outbox (the [Mailbox](../../functions/email/#developing-without-a-provider) shows the same), verify the address with the token from its link, and read the visitor again. This realm lets people in before they verify; the [expenses examples](../expenses/) require it.
 
 Every panel has a short **What to notice** box, the code it ran, and links to the docs.
 
