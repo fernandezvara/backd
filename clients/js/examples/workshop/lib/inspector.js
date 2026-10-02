@@ -56,6 +56,7 @@ export function curlOf({ method, url, headers, body }) {
  * @property {{ level: string, line: string }[]} logs   The function's console lines (dev mode only).
  * @property {string | null} executorMs
  * @property {string | null} error     Why the call failed, when it never got an answer.
+ * @property {string | null} note      Why an "error" answer was expected, when the app said so.
  * @property {string} curl
  */
 
@@ -68,6 +69,8 @@ export function createInspector({ fetch: inner = globalThis.fetch.bind(globalThi
   const entries = []
   /** @type {string | null} */
   let step = null
+  /** @type {{ status: number, note: string } | null} */
+  let expected = null
   let seq = 0
 
   /**
@@ -97,6 +100,7 @@ export function createInspector({ fetch: inner = globalThis.fetch.bind(globalThi
       logs: [],
       executorMs: null,
       error: null,
+      note: null,
       curl: curlOf({ method, url, headers, body }),
     }
     entries.unshift(entry)
@@ -104,6 +108,7 @@ export function createInspector({ fetch: inner = globalThis.fetch.bind(globalThi
     try {
       const res = await inner(input, init)
       entry.status = res.status
+      if (expected && res.status === expected.status) entry.note = expected.note
       entry.requestId = res.headers.get('X-Request-ID')
       const devLogs = res.headers.get('X-Backd-Dev-Logs')
       if (devLogs) {
@@ -122,6 +127,7 @@ export function createInspector({ fetch: inner = globalThis.fetch.bind(globalThi
       entry.error = e instanceof Error ? e.message : String(e)
       throw e
     } finally {
+      expected = null
       entry.ms = Math.round(now() - started)
       onChange()
     }
@@ -131,6 +137,16 @@ export function createInspector({ fetch: inner = globalThis.fetch.bind(globalThi
     entries,
     fetch: inspected,
     /** Labels the calls that follow, until the next label. */
+    /**
+     * The next call may answer `status` on purpose (for example a login that
+     * finds out an account doesn't exist yet): if it does, the entry carries
+     * the note, so the page can say it isn't a problem. Applies to one call.
+     * @param {number} status
+     * @param {string} note
+     */
+    expect(status, note) {
+      expected = { status, note }
+    },
     /** @param {string | null} label */
     step(label) {
       step = label

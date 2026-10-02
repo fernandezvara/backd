@@ -352,3 +352,53 @@ func TestSecurityHeaders(t *testing.T) {
 		t.Errorf("healthz: %v", rec.Header())
 	}
 }
+
+// A sign-up starts a session, and logging in with the same credentials right
+// after works, even many times at once: nothing makes a fresh account's first
+// login fail. (The workshop tour logs in first to find out whether a demo
+// account exists, and gets the 401 of an unknown email; it signs up after.)
+func TestLoginRightAfterSignup(t *testing.T) {
+	f := newRulesFixture(t)
+	creds := `{"email": "fresh@example.com", "password": "dev-p4ssw0rd!"}`
+	post := func(path, body string) (int, map[string]any) {
+		rec, out := f.doH(t, "POST", "/v1/acme/_auth/"+path, body, map[string]string{"Content-Type": "application/json"})
+		return rec.Code, out
+	}
+
+	// Unknown email: the 401 a probe sees, before the account exists.
+	if code, out := post("login", creds); code != 401 || out["error"].(map[string]any)["code"] != "invalid_credentials" {
+		t.Fatalf("login before sign-up: %d %v", code, out)
+	}
+	code, signup := post("signup", creds)
+	if code != 201 || signup["token"] == nil {
+		t.Fatalf("signup: %d %v", code, signup)
+	}
+	// The sign-up's own session works.
+	if code, _ := f.as(t, signup["token"].(string), "GET", "/v1/acme/_auth/me", ""); code != 200 {
+		t.Errorf("the session of the sign-up: %d", code)
+	}
+	// Logging in at once, and many at once, succeeds with a session of its own.
+	results := make(chan int, 10)
+	tokens := make(chan string, 10)
+	for i := 0; i < 10; i++ {
+		go func() {
+			code, out := post("login", creds)
+			results <- code
+			if t, ok := out["token"].(string); ok {
+				tokens <- t
+			} else {
+				tokens <- ""
+			}
+		}()
+	}
+	seen := map[string]bool{}
+	for i := 0; i < 10; i++ {
+		if code := <-results; code != 200 {
+			t.Errorf("login %d right after sign-up: %d", i, code)
+		}
+		seen[<-tokens] = true
+	}
+	if seen[""] || len(seen) != 10 {
+		t.Errorf("each login should get its own session token: %d distinct", len(seen))
+	}
+}

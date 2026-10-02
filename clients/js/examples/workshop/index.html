@@ -360,6 +360,7 @@ await job.wait()</pre></details>
               <span class="status" :class="statusClass(e)" x-text="badge(e)"></span>
               <span class="ms muted" x-text="e.ms === null ? '' : e.ms + ' ms'"></span>
             </button>
+            <p class="note muted" x-show="e.note" x-text="e.note"></p>
             <div class="details" x-show="open === e.id">
               <p class="muted" x-show="e.requestId">Request id <code x-text="e.requestId"></code></p>
               <template x-if="e.request">

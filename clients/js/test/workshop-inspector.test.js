@@ -54,6 +54,20 @@ test('dev-mode headers become the function log and its time', async () => {
   assert.equal(inspector.entries[0].executorMs, '42')
 })
 
+test('an expected refusal carries its note, once', async () => {
+  const inspector = createInspector({ fetch: fakeFetch({ status: 401, body: '{"error":{"code":"invalid_credentials"}}' }) })
+  inspector.expect(401, 'no account yet')
+  await inspector.fetch('https://x/v1/workshop/_auth/login', { method: 'POST' })
+  assert.equal(inspector.entries[0].note, 'no account yet')
+  // It applied to one call: the next 401 is a real one.
+  await inspector.fetch('https://x/v1/workshop/_auth/login', { method: 'POST' })
+  assert.equal(inspector.entries[0].note, null)
+  // A different status than expected carries no note.
+  inspector.expect(409, 'exists')
+  await inspector.fetch('https://x/v1/workshop/_auth/login', { method: 'POST' })
+  assert.equal(inspector.entries[0].note, null)
+})
+
 test('a function that logged nothing gives an empty log, not null', async () => {
   const inspector = createInspector({ fetch: fakeFetch({ headers: { 'X-Backd-Dev-Logs': 'null' } }) })
   await inspector.fetch('https://x/v1/workshop/main/_func/order_total', { method: 'POST' })

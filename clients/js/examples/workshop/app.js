@@ -59,6 +59,49 @@ function loadKnown() {
   }
 }
 
+// Demo accounts this browser already created. The page signs a new one up and
+// logs in to one it created: no call that is expected to fail, except when the
+// stack was reset since (the account is gone) or the account was made
+// elsewhere (the tour script), which the inspector then labels as expected.
+const CREATED_KEY = 'backd-workshop-tour-accounts'
+function loadCreated() {
+  try {
+    return JSON.parse(localStorage.getItem(CREATED_KEY) ?? '[]')
+  } catch {
+    return []
+  }
+}
+function markCreated(email) {
+  try {
+    localStorage.setItem(CREATED_KEY, JSON.stringify([...new Set([...loadCreated(), email])]))
+  } catch {
+    // Not remembered: the next sign-in finds out again.
+  }
+}
+
+/** Starts a session as a demo account, creating the account the first time. */
+async function enter(account) {
+  const credentials = { email: account.email, password: PASSWORD }
+  if (!loadCreated().includes(account.email)) {
+    try {
+      inspector.expect(409, 'This account already exists (made outside this page): logging in instead.')
+      await backd.auth.signup(credentials)
+      markCreated(account.email)
+      return
+    } catch (err) {
+      if (err.status !== 409) throw err
+      markCreated(account.email)
+    }
+  }
+  try {
+    inspector.expect(401, 'This account is gone (the stack was reset): signing it up again.')
+    await backd.auth.login(credentials)
+  } catch (err) {
+    if (err.status !== 401) throw err
+    await backd.auth.signup(credentials)
+  }
+}
+
 const money = (cents) => `€${(cents / 100).toFixed(2)}`
 
 function describe(err) {
@@ -133,12 +176,7 @@ document.addEventListener('alpine:init', () => {
       if (this.user) await backd.auth.logout().catch(() => {})
       this.user = null
       this.account = null
-      try {
-        await backd.auth.login({ email: account.email, password: PASSWORD })
-      } catch (err) {
-        if (err.status !== 401) throw err
-        await backd.auth.signup({ email: account.email, password: PASSWORD })
-      }
+      await enter(account)
       this.user = await backd.auth.me()
       this.account = account
       this.orders = []
@@ -209,6 +247,7 @@ document.addEventListener('alpine:init', () => {
     },
     statusClass(entry) {
       if (entry.status === null) return entry.error ? 'bad' : 'wait'
+      if (entry.note) return 'expected'
       return entry.status < 400 ? 'ok' : 'bad'
     },
   }))
