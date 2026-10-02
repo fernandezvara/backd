@@ -23,7 +23,8 @@ const (
 	AuditUserDisable     = "user.disable"
 	AuditUserEnable      = "user.enable"
 	AuditUserDelete      = "user.delete"
-	AuditAccountDelete   = "user.delete_account" // self-service
+	AuditAccountDelete   = "user.delete_account" // self-service: the account is deactivated
+	AuditUserErased      = "user.erased"         // details: job_id and counts, or needs_attention
 	AuditUserNetworks    = "user.networks"       // details: admin_networks, login_networks
 	AuditRoleAdd         = "role.add"            // details: role
 	AuditRoleRemove      = "role.remove"         // details: role

@@ -24,23 +24,24 @@ func NewAuthStore(client *mongo.Client, realm string) *AuthStore {
 }
 
 type userDoc struct {
-	ID            string    `bson:"_id"`
-	Email         string    `bson:"email"`
-	EmailVerified bool      `bson:"email_verified"`
-	PendingEmail  string    `bson:"pending_email,omitempty"`
-	PreviousEmail string    `bson:"previous_email,omitempty"`
-	Roles         []string  `bson:"roles"`
-	Disabled      bool      `bson:"disabled"`
-	Locale        string    `bson:"locale,omitempty"`
-	AdminNetworks []string  `bson:"admin_networks,omitempty"`
-	LoginNetworks []string  `bson:"login_networks,omitempty"`
-	CreatedAt     time.Time `bson:"created_at"`
-	UpdatedAt     time.Time `bson:"updated_at"`
+	ID            string     `bson:"_id"`
+	Email         string     `bson:"email"`
+	EmailVerified bool       `bson:"email_verified"`
+	ErasedAt      *time.Time `bson:"erased_at,omitempty"`
+	PendingEmail  string     `bson:"pending_email,omitempty"`
+	PreviousEmail string     `bson:"previous_email,omitempty"`
+	Roles         []string   `bson:"roles"`
+	Disabled      bool       `bson:"disabled"`
+	Locale        string     `bson:"locale,omitempty"`
+	AdminNetworks []string   `bson:"admin_networks,omitempty"`
+	LoginNetworks []string   `bson:"login_networks,omitempty"`
+	CreatedAt     time.Time  `bson:"created_at"`
+	UpdatedAt     time.Time  `bson:"updated_at"`
 }
 
 func (d userDoc) user() auth.User {
 	return auth.User{
-		ID: d.ID, Email: d.Email, EmailVerified: d.EmailVerified, PendingEmail: d.PendingEmail, PreviousEmail: d.PreviousEmail, Roles: d.Roles, Disabled: d.Disabled, Locale: d.Locale,
+		ID: d.ID, Email: d.Email, EmailVerified: d.EmailVerified, PendingEmail: d.PendingEmail, PreviousEmail: d.PreviousEmail, ErasedAt: utcOrZero(d.ErasedAt), Roles: d.Roles, Disabled: d.Disabled, Locale: d.Locale,
 		AdminNetworks: networks(d.AdminNetworks), LoginNetworks: networks(d.LoginNetworks),
 		CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC(),
 	}
@@ -200,6 +201,35 @@ func (s *AuthStore) UpdateUser(ctx context.Context, id string, upd auth.UserUpda
 		return auth.ErrEmailTaken
 	}
 	return err
+}
+
+func utcOrZero(t *time.Time) time.Time {
+	if t == nil {
+		return time.Time{}
+	}
+	return t.UTC()
+}
+
+// EraseUser turns the user into a tombstone. Sessions and sign-in methods go
+// first, like DeleteUser, so an interrupted erase never leaves credentials
+// for a user without their identity.
+func (s *AuthStore) EraseUser(ctx context.Context, id, placeholderEmail string, now time.Time) error {
+	if err := s.DeleteSessions(ctx, id); err != nil {
+		return err
+	}
+	if _, err := s.identities().DeleteMany(ctx, bson.D{{Key: "user_id", Value: id}}); err != nil {
+		return err
+	}
+	return s.updateByID(ctx, id, bson.D{
+		{Key: "$set", Value: bson.D{
+			{Key: "email", Value: placeholderEmail}, {Key: "erased_at", Value: now}, {Key: "disabled", Value: true},
+			{Key: "email_verified", Value: true}, {Key: "roles", Value: bson.A{}}, {Key: "updated_at", Value: now},
+		}},
+		{Key: "$unset", Value: bson.D{
+			{Key: "locale", Value: ""}, {Key: "pending_email", Value: ""}, {Key: "previous_email", Value: ""},
+			{Key: "admin_networks", Value: ""}, {Key: "login_networks", Value: ""},
+		}},
+	})
 }
 
 // ListUnverifiedUsers returns the oldest users that never verified their address.

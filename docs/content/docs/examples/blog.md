@@ -102,6 +102,14 @@ export default async function handler(ctx: Context) {
 - The app calls it with `backd.db('main').fn('stats')` and shows the result at the top of the page, refreshed after every write that could change a count. See the [JS client's functions guide](../../clients/js/#functions).
 - This exact function is what `backd template database --realm <realm> --database <database> --sample` and `backd template realm --realm <realm> --sample` scaffold, alongside the sample `posts` collection — try it: `backd template realm --realm demo --sample` and look in `demo/main/_functions/stats/`.
 
+## Erasing an author
+
+When an administrator [erases a user](../../auth/erasure/), their posts stay (a blog's archive keeps its articles) but stop pointing at them. `posts/collection.yaml` says how:
+
+{{< example-file path="blog/main/posts/collection.yaml" >}}
+
+The byline's email is removed, its name replaced, and `_meta.owner` cleared, so nobody can edit the posts any more. `backd user owned --realm blog --email …` previews it. `backd template database --sample` writes the same file.
+
 ## Limits
 
 What the rules above don't cover, by design or until planned features exist. The same test checks each one:

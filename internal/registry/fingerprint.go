@@ -49,7 +49,7 @@ func (r *Registry) Fingerprint() (string, error) {
 		}
 		for _, db := range rl.Databases {
 			for _, c := range db.Collections {
-				for _, f := range []string{schemaFile, indexesFile, rulesFile} {
+				for _, f := range []string{schemaFile, indexesFile, rulesFile, CollectionFile} {
 					add(filepath.Join(rl.Name, db.Name, c.Name, f))
 				}
 			}

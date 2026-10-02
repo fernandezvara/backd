@@ -58,6 +58,7 @@ type jobDoc struct {
 	ActsAsFunction bool          `bson:"acts_as_function,omitempty"`
 	Origin         string        `bson:"origin,omitempty"`
 	Email          *emailJobDoc  `bson:"email,omitempty"`
+	Erase          *eraseJobDoc  `bson:"erase,omitempty"`
 	ParentID       string        `bson:"parent_id,omitempty"`
 	Depth          int32         `bson:"depth,omitempty"`
 	Status         string        `bson:"status"`
@@ -72,6 +73,26 @@ type jobDoc struct {
 	CompletedAt    *time.Time    `bson:"completed_at,omitempty"`
 	ExpiresAt      time.Time     `bson:"expires_at"`
 	Result         *jobResultDoc `bson:"result,omitempty"`
+}
+
+type eraseJobDoc struct {
+	UserID string           `bson:"user_id"`
+	Email  string           `bson:"email,omitempty"`
+	Counts map[string]int64 `bson:"counts,omitempty"`
+}
+
+func eraseFromDoc(d *eraseJobDoc) *auth.EraseJob {
+	if d == nil {
+		return nil
+	}
+	return &auth.EraseJob{UserID: d.UserID, Email: d.Email, Counts: d.Counts}
+}
+
+func eraseToDoc(e *auth.EraseJob) *eraseJobDoc {
+	if e == nil {
+		return nil
+	}
+	return &eraseJobDoc{UserID: e.UserID, Email: e.Email, Counts: e.Counts}
 }
 
 func (s *AuthStore) jobs() *mongo.Collection { return s.db.Collection(JobsCollection) }
@@ -161,7 +182,7 @@ func jobFromDoc(d jobDoc) auth.Job {
 	j := auth.Job{
 		ID: d.ID, Database: d.Database, Function: d.Function, Input: encodeJSONAny(d.Input),
 		CallerActor: d.CallerActor, CallerUserID: d.CallerUserID, CallerKeyHash: d.CallerKeyHash, Scheduled: d.Scheduled,
-		ActsAsFunction: d.ActsAsFunction, Email: emailJobFromDoc(d.Email), Origin: d.Origin, ParentID: d.ParentID, Depth: int(d.Depth),
+		ActsAsFunction: d.ActsAsFunction, Email: emailJobFromDoc(d.Email), Erase: eraseFromDoc(d.Erase), Origin: d.Origin, ParentID: d.ParentID, Depth: int(d.Depth),
 		TimeoutMS: d.TimeoutMS, RequestID: d.RequestID,
 		Status: d.Status, Attempts: int(d.Attempts), CreatedAt: d.CreatedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC(),
 		Result: jobResultFromDoc(d.Result),
@@ -185,7 +206,7 @@ func (s *AuthStore) EnqueueJob(ctx context.Context, j auth.Job) error {
 	_, err = s.jobs().InsertOne(ctx, jobDoc{
 		ID: j.ID, Database: j.Database, Function: j.Function, Input: input,
 		CallerActor: j.CallerActor, CallerUserID: j.CallerUserID, CallerKeyHash: j.CallerKeyHash, Scheduled: j.Scheduled, Status: j.Status,
-		ActsAsFunction: j.ActsAsFunction, Email: emailJobToDoc(j.Email), Origin: j.Origin, ParentID: j.ParentID, Depth: int32(j.Depth),
+		ActsAsFunction: j.ActsAsFunction, Email: emailJobToDoc(j.Email), Erase: eraseToDoc(j.Erase), Origin: j.Origin, ParentID: j.ParentID, Depth: int32(j.Depth),
 		Attempts: 0, TimeoutMS: j.TimeoutMS, RequestID: j.RequestID,
 		CreatedAt: j.CreatedAt, ExpiresAt: j.ExpiresAt,
 	})
@@ -267,7 +288,7 @@ func (s *AuthStore) RetryJob(ctx context.Context, id string, notBefore time.Time
 // ListJobs returns the jobs matching f, newest first.
 func (s *AuthStore) ListJobs(ctx context.Context, f auth.JobFilter) ([]auth.Job, bool, error) {
 	filter := bson.D{}
-	for _, c := range []struct{ key, value string }{{"database", f.Database}, {"function", f.Function}, {"status", f.Status}, {"origin", f.Origin}} {
+	for _, c := range []struct{ key, value string }{{"database", f.Database}, {"function", f.Function}, {"status", f.Status}, {"origin", f.Origin}, {"erase.user_id", f.EraseUser}} {
 		if c.value != "" {
 			filter = append(filter, bson.E{Key: c.key, Value: c.value})
 		}
@@ -323,4 +344,38 @@ func (s *AuthStore) GetJob(ctx context.Context, id string) (auth.Job, bool, erro
 		return auth.Job{}, false, err
 	}
 	return jobFromDoc(d), true, nil
+}
+
+// DeleteEmailJobsOfUser removes the email jobs addressed to the user.
+func (s *AuthStore) DeleteEmailJobsOfUser(ctx context.Context, userID string) error {
+	_, err := s.jobs().DeleteMany(ctx, bson.D{{Key: "email.user_id", Value: userID}})
+	return err
+}
+
+// AddEraseCount adds n to one of an erase job's counters. The counters are
+// incremented, never read and written back, so two workers finishing the
+// same batch can't lose each other's counts.
+func (s *AuthStore) AddEraseCount(ctx context.Context, jobID, key string, n int64) error {
+	_, err := s.jobs().UpdateByID(ctx, jobID, bson.D{{Key: "$inc", Value: bson.D{{Key: "erase.counts." + key, Value: n}}}})
+	return err
+}
+
+// ClearEraseEmail removes the email an erase job held.
+func (s *AuthStore) ClearEraseEmail(ctx context.Context, jobID string) error {
+	_, err := s.jobs().UpdateByID(ctx, jobID, bson.D{{Key: "$unset", Value: bson.D{{Key: "erase.email", Value: ""}}}})
+	return err
+}
+
+// ReopenJob queues a job that ended with an error again.
+func (s *AuthStore) ReopenJob(ctx context.Context, id string, expiresAt time.Time) (bool, error) {
+	res, err := s.jobs().UpdateOne(ctx,
+		bson.D{{Key: "_id", Value: id}, {Key: "status", Value: auth.JobDone}, {Key: "result.status", Value: bson.D{{Key: "$ne", Value: "ok"}}}},
+		bson.D{
+			{Key: "$set", Value: bson.D{{Key: "status", Value: auth.JobQueued}, {Key: "attempts", Value: int32(0)}, {Key: "failures", Value: int32(0)}, {Key: "expires_at", Value: expiresAt}}},
+			{Key: "$unset", Value: bson.D{{Key: "result", Value: ""}, {Key: "completed_at", Value: ""}, {Key: "lease_owner", Value: ""}, {Key: "lease_expires", Value: ""}, {Key: "next_attempt_at", Value: ""}}},
+		})
+	if err != nil {
+		return false, err
+	}
+	return res.ModifiedCount == 1, nil
 }

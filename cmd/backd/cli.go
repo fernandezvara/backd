@@ -52,6 +52,14 @@ func newCLI(getenv func(string) string, stdin io.Reader, stdout, stderr io.Write
 			required(cc, "realm", "the realm of the database")
 			required(cc, "database", "the database to add the function and the outbox to")
 		})
+	tpl.SubCommand("collection-policy").ShortHelp("add a commented collection.yaml: what an erase does to a collection").
+		LongHelp("Creates <realm>/<database>/<collection>/collection.yaml, with everything commented\nout: without a policy an erase leaves the collection alone. Uncomment what you need\n(delete or anonymize the documents a user owns, remove the user from other\ndocuments' arrays and fields). See the docs, Auth -> Erasing users.").
+		Func(act("template collection-policy", templateCollectionPolicy)).
+		Config(func(cc *cli.CommandConfig) {
+			required(cc, "realm", "the realm of the collection")
+			required(cc, "database", "the database of the collection")
+			required(cc, "collection", "the collection to add the file to")
+		})
 	tpl.SubCommand("project").ShortHelp("create a complete config repository").
 		LongHelp("Creates a complete config repository at --dir (which must not exist yet): the\nrealm and sample database, a sample function with tests, Dockerfiles and a\ncompose stack for local development, and a GitHub Actions CI workflow.\nSee the generated README.md.").
 		Func(act("template project", templateProject)).
@@ -203,11 +211,13 @@ func registerRemote(cfg *cli.Config) {
 	user("change-email", "change the user's email at once (needs email in realm.yaml); revokes all sessions", true, userChangeEmail, func(cc *cli.CommandConfig) {
 		required(cc, "new-email", "the new email address")
 	})
+	user("owned", "show what erasing the user would do, per collection that declares a policy", true, userOwned, nil)
 	user("verify-email", "mark the email as verified", true, userPatch(map[string]bool{"email_verified": true}, "email of %s marked as verified\n"), nil)
 	user("disable", "block sign-in and revoke all sessions", true, userPatch(map[string]bool{"disabled": true}, "%s disabled; all of their sessions were revoked\n"), nil)
 	user("enable", "allow a disabled user to sign in again", true, userPatch(map[string]bool{"disabled": false}, "%s enabled\n"), nil)
-	user("delete", "delete the user, their sign-in methods and sessions", true, userDelete, func(cc *cli.CommandConfig) {
-		boolean(cc, "yes", "confirm the deletion")
+	user("delete", "erase the user: a tombstone, and the collections' policies applied", true, userDelete, func(cc *cli.CommandConfig) {
+		boolean(cc, "yes", "confirm the erase, which can't be undone")
+		cc.Define("wait").String().Flag("wait").Default("2m").Description("how long to wait for the erase to finish (such as 30s; 0s: don't wait)")
 	})
 	user("add-role", "assign a role declared in realm.yaml", true, func(c *userCtx) error {
 		return userRole(c, "add", str(c.cmd, "role"))

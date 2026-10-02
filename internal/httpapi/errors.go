@@ -21,6 +21,8 @@ const (
 	codeInvalidLocale    = "invalid_locale"
 	codeInvalidToken     = "invalid_token"
 	codeEmailNotDeclared = "email_not_declared"
+	codeAlreadyErased    = "already_erased"
+	codeUserErased       = "user_erased"
 	codeEmailLimited     = "email_limited"
 	codeEmailNotVerified = "email_not_verified"
 	codeInvalidRedirect  = "invalid_redirect"

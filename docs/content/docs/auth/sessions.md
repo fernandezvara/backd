@@ -64,7 +64,7 @@ All request bodies are JSON objects sent with `Content-Type: application/json`. 
 | `POST /_auth/logout-all` | yes | none | `204`; ends all of the user's sessions, including this one |
 | `GET /_auth/me` | yes | none | `200` with the user |
 | `PATCH /_auth/me` | yes | `{"locale"?}` | `200` with the user; changes the user's [language](#language) |
-| `DELETE /_auth/me` | yes | `{"password"}` | `204`; deletes the account |
+| `DELETE /_auth/me` | yes | `{"password"}` | `204`; **deactivates** the account (see [Deleting and erasing users](../erasure/)) |
 | `POST /_auth/email` | yes | `{"new_email", "password", "redirect_to"?}` | `202`; asks to [change the address](#changing-the-email-address), only in realms with `account.allow_email_change` |
 | `POST /_auth/confirm-email-change`, `POST /_auth/revert-email-change` | no | `{"token"}` | `204`; the links of an [email change](#changing-the-email-address) |
 | `POST /_auth/accept-invitation` | no | `{"token", "password", "locale"?}` | `204`; [accepts an emailed invitation](#accepting-an-invitation) |
@@ -145,7 +145,7 @@ Every user has a `locale`, the language of the emails they receive. A realm list
 - **To change it**, `PATCH /_auth/me` with `{"locale": "es"}`: the value must be a listed language (case is ignored). Anything else answers `400 invalid_locale` with the allowed languages in `details`: an explicit change is never mapped silently.
 - Users who signed up before languages existed use the realm's default.
 
-`DELETE /_auth/me` with `{"password": "…"}` deletes the account, its sign-in methods and sessions. Documents the user owns are kept. A wrong password returns `401 invalid_credentials`.
+`DELETE /_auth/me` with `{"password": "…"}` **deactivates** the account: it is disabled and every session ends, and all data is kept. A wrong password returns `401 invalid_credentials`. Deactivating is not erasing: erasing a user's data is an administrator's action (see [Deleting and erasing users](../erasure/)), and until then the account's email stays registered.
 
 ### Change password
 

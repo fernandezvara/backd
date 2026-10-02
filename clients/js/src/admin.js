@@ -18,6 +18,7 @@ import { Job } from './functions.js'
  * @property {string[]} login_networks  CIDR networks the user's login and session must be used from; empty: anywhere.
  * @property {string} created_at
  * @property {string} updated_at
+ * @property {string | null} erased_at   When the user was erased; a tombstone keeps only its id (and a placeholder email).
  */
 
 /**
@@ -35,6 +36,16 @@ import { Job } from './functions.js'
  * @property {string} created_by
  * @property {string} created_at
  * @property {string} expires_at
+ */
+
+/**
+ * What erasing a user would do, for the collections that declare a policy
+ * (`collection.yaml`); the others are only named in `without_policy`.
+ * @typedef {object} OwnedReport
+ * @property {{ id: string, status: 'active' | 'deactivated' | 'erased' }} user
+ * @property {Array<{ database: string, collection: string, action: 'delete' | 'anonymize' | null, owned: number, remove?: string[], replace?: string[], pull?: Record<string, number>, unset?: Record<string, number> }>} collections
+ *   `owned` counts the documents the user owns; `pull` and `unset` count, per field, the documents that hold the user.
+ * @property {string[]} without_policy  `<database>.<collection>` of the collections an erase leaves alone.
  */
 
 /**
@@ -272,13 +283,19 @@ class AdminUsers {
   }
 
   /**
-   * Deletes a user with their sign-in methods and sessions.
+   * Erases a user. **Irreversible.** The user becomes a tombstone at once (the
+   * id stays, the email becomes `erased-<id>@erased.invalid`, and their
+   * sessions, sign-in methods and email tokens are deleted); a worker then
+   * applies the `collection.yaml` policy of every collection that declares one.
+   * Resolves with the erase job (`origin: backd:account.erase` in
+   * `admin.jobs.list()`); the counts land in the audit trail as `user.erased`.
+   * To keep the data, deactivate with `update(id, { disabled: true })`.
    * @param {string} id
    * @param {RequestOptions} [opts]
-   * @returns {Promise<void>}
+   * @returns {Promise<{ id: string, status: 'queued' | 'running' | 'done' }>}
    */
   async delete(id, opts) {
-    await this.admin._request({ method: 'DELETE', path: ['users', id], ...opts })
+    return (await this.admin._request({ method: 'DELETE', path: ['users', id], ...opts })).data
   }
 
   /**
@@ -290,6 +307,17 @@ class AdminUsers {
    */
   async setPassword(id, password, opts) {
     await this.admin._request({ method: 'POST', path: ['users', id, 'password'], body: { password }, ...opts })
+  }
+
+  /**
+   * What erasing a user would do: counts per collection that declares a policy,
+   * and the collections an erase leaves alone. No document content.
+   * @param {string} id
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OwnedReport>}
+   */
+  async owned(id, opts) {
+    return (await this.admin._request({ method: 'GET', path: ['users', id, 'owned'], ...opts })).data
   }
 
   /**

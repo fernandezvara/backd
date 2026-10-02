@@ -79,6 +79,7 @@ func TestRealm(t *testing.T) {
 		{Path: "demo/main/_functions/deno.json", Created: true},
 		{Path: "demo/main/_functions/stats/function.yaml", Created: true},
 		{Path: "demo/main/_functions/stats/index.ts", Created: true},
+		{Path: "demo/main/posts/collection.yaml", Created: true},
 		{Path: "demo/main/posts/indexes.json", Created: true},
 		{Path: "demo/main/posts/rules.yaml", Created: true},
 		{Path: "demo/main/posts/schema.json", Created: true},
@@ -116,7 +117,7 @@ func TestDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 6 || files[5].Path != "demo/blog/posts/schema.json" || !files[5].Created {
+	if len(files) != 7 || files[6].Path != "demo/blog/posts/schema.json" || !files[6].Created {
 		t.Errorf("files = %v", files)
 	}
 	if _, err := registry.Load(root); err != nil {
@@ -133,6 +134,7 @@ func TestProject(t *testing.T) {
 	}
 	wantPaths := []string{
 		"config/shop/realm.yaml",
+		"config/shop/main/posts/collection.yaml",
 		"config/shop/main/posts/indexes.json",
 		"config/shop/main/posts/rules.yaml",
 		"config/shop/main/posts/schema.json",
@@ -327,5 +329,43 @@ func TestEmailCapture(t *testing.T) {
 	os.WriteFile(realm, append(data, []byte("\nemail:\n  function: notify/email-capture\n  from: dev@example.com\n  public_url: http://localhost:8080\n")...), 0o644)
 	if _, err := registry.Load(root); err != nil {
 		t.Fatalf("a realm that sends through email-capture doesn't load: %v", err)
+	}
+}
+
+func TestCollectionPolicy(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Realm(root, "demo", true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CollectionPolicy(root, "demo", "main", "nothing"); err == nil || !strings.Contains(err.Error(), "doesn't exist") {
+		t.Errorf("an unknown collection: %v", err)
+	}
+	// The sample's posts already have one (the blog example's).
+	if files, _ := CollectionPolicy(root, "demo", "main", "posts"); len(files) != 1 || files[0].Created {
+		t.Errorf("the sample's own policy was overwritten: %+v", files)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "demo", "main", "notes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "demo", "main", "notes", "schema.json"), []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files, err := CollectionPolicy(root, "demo", "main", "notes")
+	if err != nil || len(files) != 1 || files[0].Path != "demo/main/notes/collection.yaml" || !files[0].Created {
+		t.Fatalf("files: %+v, %v", files, err)
+	}
+	if again, _ := CollectionPolicy(root, "demo", "main", "notes"); again[0].Created {
+		t.Error("a second run overwrote the file")
+	}
+	// Everything in it is commented out: the realm still loads, with no policy.
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatalf("the generated config doesn't load: %v", err)
+	}
+	if c, _ := reg.Collection("demo", "main", "notes"); c.Erasure != nil {
+		t.Errorf("the template must declare no policy: %+v", c.Erasure)
+	}
+	if c, _ := reg.Collection("demo", "main", "posts"); c.Erasure == nil || c.Erasure.Action != registry.ErasureAnonymize {
+		t.Errorf("the sample's policy: %+v", c.Erasure)
 	}
 }

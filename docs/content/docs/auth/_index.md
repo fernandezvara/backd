@@ -19,6 +19,7 @@ Each realm with `auth: enabled` has its own pool of users and [API keys](api-key
 | [Access rules](rules/) per collection (`rules.yaml`) | available |
 | [Admin API](admin/) for server-side user management | available |
 | [Audit trail](audit/) of security-sensitive actions | available |
+| [Deactivating and erasing users](erasure/), with per-collection policies for their data | available |
 
 See the [security model](security/) for what `backd` protects, and the [hardening checklist](../operations/checklist/) before exposing a realm.
 | [Brute-force protection](sessions/#brute-force-protection) on login | available |

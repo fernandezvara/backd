@@ -255,16 +255,21 @@ func TestChangePasswordAndDeleteAccount(t *testing.T) {
 		t.Errorf("login with new password: %v", err)
 	}
 
-	if err := svc.DeleteAccount(ctx, me, "dev-p4ssw0rd!"); !errors.Is(err, ErrInvalidCredentials) {
+	if err := svc.DeactivateAccount(ctx, me, "dev-p4ssw0rd!"); !errors.Is(err, ErrInvalidCredentials) {
 		t.Errorf("delete with old password: %v", err)
 	}
-	if err := svc.DeleteAccount(ctx, me, "dev-p4ssw0rd!2"); err != nil {
+	if err := svc.DeactivateAccount(ctx, me, "dev-p4ssw0rd!2"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.Authenticate(ctx, current); !errors.Is(err, ErrUnauthenticated) {
 		t.Errorf("session survived account deletion: %v", err)
 	}
-	if _, err := store.UserByEmail(ctx, "ada@example.com"); !errors.Is(err, ErrNotFound) {
-		t.Error("user still exists")
+	// Deleting one's own account only deactivates it: the user and the email stay.
+	u, err := store.UserByEmail(ctx, "ada@example.com")
+	if err != nil || !u.Disabled || !u.ErasedAt.IsZero() {
+		t.Errorf("the user should be disabled, not erased: %+v %v", u, err)
+	}
+	if _, _, err := svc.Login(ctx, "ada@example.com", "dev-p4ssw0rd!2", ""); !errors.Is(err, ErrInvalidCredentials) {
+		t.Errorf("login after deactivation: %v", err)
 	}
 }

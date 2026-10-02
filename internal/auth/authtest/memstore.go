@@ -592,7 +592,7 @@ func (m *MemStore) ListJobs(_ context.Context, f auth.JobFilter) ([]auth.Job, bo
 	var out []auth.Job
 	for _, j := range m.jobs {
 		if (f.Database == "" || j.Database == f.Database) && (f.Function == "" || j.Function == f.Function) &&
-			(f.Status == "" || j.Status == f.Status) && (f.Origin == "" || j.Origin == f.Origin) && (f.Scheduled == nil || j.Scheduled == *f.Scheduled) &&
+			(f.Status == "" || j.Status == f.Status) && (f.Origin == "" || j.Origin == f.Origin) && (f.EraseUser == "" || (j.Erase != nil && j.Erase.UserID == f.EraseUser)) && (f.Scheduled == nil || j.Scheduled == *f.Scheduled) &&
 			(f.Since.IsZero() || !j.CreatedAt.Before(f.Since)) && (f.Until.IsZero() || j.CreatedAt.Before(f.Until)) {
 			out = append(out, j.Job)
 		}
@@ -796,4 +796,94 @@ func (m *MemStore) ReleaseIdempotency(_ context.Context, id string) error {
 	defer m.mu.Unlock()
 	delete(m.idempotency, id)
 	return nil
+}
+
+func (m *MemStore) EraseUser(_ context.Context, id, placeholderEmail string, now time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	u, ok := m.users[id]
+	if !ok {
+		return auth.ErrNotFound
+	}
+	for k, sess := range m.sessions {
+		if sess.UserID == id {
+			delete(m.sessions, k)
+		}
+	}
+	for k, i := range m.identities {
+		if i.UserID == id {
+			delete(m.identities, k)
+		}
+	}
+	u.Email, u.ErasedAt, u.Disabled, u.EmailVerified, u.Roles, u.UpdatedAt = placeholderEmail, now, true, true, []string{}, now
+	u.Locale, u.PendingEmail, u.PreviousEmail, u.AdminNetworks, u.LoginNetworks = "", "", "", nil, nil
+	m.users[id] = u
+	return nil
+}
+
+func (m *MemStore) DeleteEmailTokensOfUser(_ context.Context, userID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for h, t := range m.emailTokens {
+		if t.UserID == userID {
+			delete(m.emailTokens, h)
+		}
+	}
+	return nil
+}
+
+func (m *MemStore) DeleteEmailJobsOfUser(_ context.Context, userID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id, j := range m.jobs {
+		if j.Email != nil && j.Email.UserID == userID {
+			delete(m.jobs, id)
+		}
+	}
+	return nil
+}
+
+func (m *MemStore) AddEraseCount(_ context.Context, jobID, key string, n int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	j, ok := m.jobs[jobID]
+	if !ok || j.Erase == nil {
+		return auth.ErrNotFound
+	}
+	e := *j.Erase
+	e.Counts = map[string]int64{}
+	for k, v := range j.Erase.Counts {
+		e.Counts[k] = v
+	}
+	e.Counts[key] += n
+	j.Erase = &e
+	m.jobs[jobID] = j
+	return nil
+}
+
+func (m *MemStore) ClearEraseEmail(_ context.Context, jobID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	j, ok := m.jobs[jobID]
+	if !ok || j.Erase == nil {
+		return auth.ErrNotFound
+	}
+	e := *j.Erase
+	e.Email = ""
+	j.Erase = &e
+	m.jobs[jobID] = j
+	return nil
+}
+
+func (m *MemStore) ReopenJob(_ context.Context, id string, expiresAt time.Time) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	j, ok := m.jobs[id]
+	if !ok || j.Status != auth.JobDone || j.Result == nil || j.Result.Status == "ok" {
+		return false, nil
+	}
+	j.Status, j.Attempts, j.Failures, j.ExpiresAt = auth.JobQueued, 0, 0, expiresAt
+	j.Result, j.CompletedAt, j.NextAttemptAt, j.leaseExpires = nil, time.Time{}, time.Time{}, time.Time{}
+	m.jobs[id] = j
+	return true, nil
 }

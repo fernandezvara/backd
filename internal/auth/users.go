@@ -160,6 +160,9 @@ func (s *Users) SetDisabled(ctx context.Context, email string, disabled bool) er
 	if err != nil {
 		return err
 	}
+	if !u.ErasedAt.IsZero() {
+		return ErrUserErased // all that is left is a tombstone
+	}
 	if err := s.Store.UpdateUser(ctx, u.ID, UserUpdate{Disabled: &disabled}, s.now()); err != nil {
 		return err
 	}

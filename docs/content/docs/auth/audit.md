@@ -23,8 +23,9 @@ Each realm with `auth: enabled` keeps an **audit trail**: one record per securit
 | `user.purged_unverified` | A worker deletes accounts that never verified their address | `count`, `older_than` |
 | `function.invoke_manual` | An administrator runs a function by hand ([admin API](../admin/)) | `as` (the user's **id**, never their email, or null) |
 | `user.disable`, `user.enable` | An administrator disables or re-enables a user | |
-| `user.delete` | An administrator deletes a user | |
-| `user.delete_account` | A user deletes their own account | |
+| `user.delete` | An administrator erases a user (the tombstone is made; the data work is in the job) | `job_id` |
+| `user.erased` | The erase job finished, or failed for good | `job_id` and `counts` per `database/collection/operation`; `needs_attention` and `error` when it failed. Never content |
+| `user.delete_account` | A user deletes their own account (it is deactivated, not erased) | |
 | `user.networks` | A user's [network restrictions](../../configuration/realm/#network-restrictions) change, through the API or from `realm.yaml` | `admin_networks`, `login_networks` |
 | `role.add`, `role.remove` | A role is assigned or taken away, through the API or from `realm.yaml` seeds | `role` |
 | `apikey.create`, `apikey.revoke` | An API key is created or revoked | `role`, `networks`, `expires_at` |

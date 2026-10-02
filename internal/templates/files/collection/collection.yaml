@@ -1,0 +1,28 @@
+# What happens to this collection when an administrator erases a user
+# (`backd user delete`, docs: Auth -> Erasing users). Everything below is
+# commented out: with no `on_owner_delete`, an erase leaves this collection
+# alone and its documents keep everything, which is what you want for records
+# you must keep (purchases, invoices). Uncomment only what you need.
+#
+# on_owner_delete:
+#   # What happens to the documents the user owns (`_meta.owner` is their id):
+#   #   delete     removes them
+#   #   anonymize  applies `remove` and `replace` below, and clears the owner
+#   # Leave `action` out to keep them and only clean up references (`pull`, `unset`).
+#   action: anonymize
+#   remove: [phone]                          # anonymize: these fields are removed
+#   replace:                                 # anonymize: these fields get a fixed value
+#     buyer_name: "Erased customer"
+#
+#   # References to the user in ANY document of this collection, whoever owns it.
+#   # Each field says what it holds: `email` (the user's address, in the
+#   # normalized lower-case form backd stores) or `id`.
+#   pull:                                    # arrays of strings: the user is removed from them
+#     members: email
+#   unset:                                   # string fields: cleared where they hold the user
+#     paid_by: id
+#
+# `backd` checks all of this against schema.json when it starts: named fields
+# must exist; a required field can't be removed or unset; `replace` values must
+# satisfy the schema and can't be in a unique index; `pull` fields must be
+# arrays of strings without `minItems`.

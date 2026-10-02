@@ -162,12 +162,33 @@ func TestAdminUsers(t *testing.T) {
 		t.Errorf("remove role: %d %s", rec.Code, rec.Body)
 	}
 
-	// Delete.
-	if rec, _ = f.doH(t, "DELETE", admin+"/users/"+dan, "", key()); rec.Code != http.StatusNoContent {
-		t.Errorf("delete: %d", rec.Code)
+	// Delete is an erase: a tombstone at once, and a job that applies the policies.
+	rec, out = f.doH(t, "DELETE", admin+"/users/"+dan, "", key())
+	if rec.Code != http.StatusAccepted || out["id"] == nil || out["status"] != "queued" {
+		t.Fatalf("delete: %d %s", rec.Code, rec.Body)
 	}
-	if rec, _ = f.doH(t, "GET", admin+"/users/"+dan, "", key()); rec.Code != http.StatusNotFound {
-		t.Errorf("after delete: %d", rec.Code)
+	job := out["id"]
+	rec, out = f.doH(t, "GET", admin+"/users/"+dan, "", key())
+	if rec.Code != http.StatusOK || out["erased_at"] == nil || out["email"] != "erased-"+dan+"@erased.invalid" || out["disabled"] != true || len(out["roles"].([]any)) != 0 {
+		t.Errorf("the tombstone: %d %s", rec.Code, rec.Body)
+	}
+	// A tombstone can be read, and nothing else: it can't be enabled, given a role or a password.
+	for method, path := range map[string]string{"PATCH": "", "PUT": "/roles/admin", "POST": "/password"} {
+		body := `{"disabled": false}`
+		if method == "POST" {
+			body = `{"password": "dev-p4ssw0rd!"}`
+		}
+		if rec, _ = f.doH(t, method, admin+"/users/"+dan+path, body, key()); rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "user_erased") {
+			t.Errorf("%s on an erased user: %d %s", method, rec.Code, rec.Body)
+		}
+	}
+	// Repeating it while the job is going answers with that job.
+	if rec, out = f.doH(t, "DELETE", admin+"/users/"+dan, "", key()); rec.Code != http.StatusAccepted || out["id"] != job {
+		t.Errorf("delete again: %d %s", rec.Code, rec.Body)
+	}
+	// The email is free again.
+	if rec, _ = f.doH(t, "POST", admin+"/users", `{"email": "dan@example.com", "password": "dev-p4ssw0rd!"}`, key()); rec.Code != http.StatusCreated {
+		t.Errorf("the freed address: %d %s", rec.Code, rec.Body)
 	}
 }
 

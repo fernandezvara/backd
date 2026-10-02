@@ -36,6 +36,7 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		r.Route("/users/{id}", func(r chi.Router) {
 			r.Use(a.loadUser)
 			r.Get("/", a.getUser)
+			r.Get("/owned", a.owned)
 			r.With(json).Patch("/", a.updateUser)
 			r.Delete("/", a.deleteUser)
 			r.With(json).Post("/password", a.setPassword)
@@ -113,6 +114,12 @@ func (a *adminAPI) loadUser(next http.Handler) http.Handler {
 		u, err := usersOf(r).UserByID(r.Context(), chi.URLParam(r, "id"))
 		if err != nil {
 			adminError(w, r, err)
+			return
+		}
+		// An erased user is a tombstone: it can be read, previewed and erased
+		// again (to resume), and nothing else.
+		if !u.ErasedAt.IsZero() && r.Method != http.MethodGet && r.Method != http.MethodDelete {
+			adminError(w, r, auth.ErrUserErased)
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), adminUserKey{}, u)))
@@ -240,12 +247,16 @@ func (a *adminAPI) updateUser(w http.ResponseWriter, r *http.Request) {
 	a.writeUser(w, r, u.ID)
 }
 
+// deleteUser handles DELETE /users/{id}: it erases the user. The user is a
+// tombstone at once and their sessions and sign-in methods are gone; a worker
+// applies the collections' policies, and the answer is the job doing it.
 func (a *adminAPI) deleteUser(w http.ResponseWriter, r *http.Request) {
-	if err := usersOf(r).Delete(r.Context(), adminUserOf(r).Email); err != nil {
+	job, err := usersOf(r).Erase(r.Context(), adminUserOf(r).ID, requestID(r.Context()))
+	if err != nil {
 		adminError(w, r, err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusAccepted, map[string]any{"id": job.ID, "status": job.Status})
 }
 
 func (a *adminAPI) setPassword(w http.ResponseWriter, r *http.Request) {
@@ -498,6 +509,10 @@ func adminError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, auth.ErrNotFound):
 		writeError(w, r, http.StatusNotFound, codeNotFound, "user not found")
+	case errors.Is(err, auth.ErrUserErased):
+		writeError(w, r, http.StatusConflict, codeUserErased, "this user was erased: only a tombstone is left")
+	case errors.Is(err, auth.ErrAlreadyErased):
+		writeError(w, r, http.StatusConflict, codeAlreadyErased, err.Error())
 	case errors.Is(err, auth.ErrUndeclaredRole):
 		writeError(w, r, http.StatusBadRequest, codeValidation, err.Error(), Detail{Path: "role", Reason: "is not declared in realm.yaml"})
 	case errors.As(err, &pe):
@@ -515,6 +530,10 @@ func adminUserJSON(u auth.User, locale string) map[string]any {
 	out["admin_networks"] = u.AdminNetworks.Strings()
 	out["login_networks"] = u.LoginNetworks.Strings()
 	out["updated_at"] = formatTime(u.UpdatedAt)
+	out["erased_at"] = nil
+	if !u.ErasedAt.IsZero() {
+		out["erased_at"] = formatTime(u.ErasedAt)
+	}
 	return out
 }
 

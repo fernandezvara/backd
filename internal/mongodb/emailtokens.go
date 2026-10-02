@@ -73,6 +73,12 @@ func (s *AuthStore) RedeemEmailToken(ctx context.Context, hash, purpose string, 
 		CreatedAt: d.CreatedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC(), UsedAt: now}, nil
 }
 
+// DeleteEmailTokensOfUser removes every token of the user.
+func (s *AuthStore) DeleteEmailTokensOfUser(ctx context.Context, userID string) error {
+	_, err := s.emailTokens().DeleteMany(ctx, bson.D{{Key: "user_id", Value: userID}})
+	return err
+}
+
 // InvalidateEmailTokens marks used every unused token of the user and purpose.
 func (s *AuthStore) InvalidateEmailTokens(ctx context.Context, userID, purpose string, now time.Time) error {
 	_, err := s.emailTokens().UpdateMany(ctx,

@@ -25,7 +25,9 @@ var namePattern = regexp.MustCompile(`^[a-z0-9]+(?:[-_][a-z0-9]+)*$`)
 const maxMongoDBNameLen = 64
 
 const (
-	schemaFile  = "schema.json"
+	schemaFile = "schema.json"
+	// SchemaFile is the name of a collection's schema file.
+	SchemaFile  = schemaFile
 	indexesFile = "indexes.json"
 	rulesFile   = "rules.yaml"
 )
@@ -223,6 +225,9 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 		return nil, err
 	}
 	if err := loadRules(coll, settings, filepath.Join(dir, rulesFile)); err != nil {
+		return nil, err
+	}
+	if err := loadErasure(coll, settings, filepath.Join(dir, CollectionFile)); err != nil {
 		return nil, err
 	}
 	return coll, nil

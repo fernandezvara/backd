@@ -165,7 +165,7 @@ func TestPasswordChecksThrottled(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := svc.DeleteAccount(ctx, me, "dev-p4ssw0rd!"); retryAfter(err) != time.Second {
+	if err := svc.DeactivateAccount(ctx, me, "dev-p4ssw0rd!"); retryAfter(err) != time.Second {
 		t.Errorf("delete account after 5 wrong passwords: %v", err)
 	}
 	// The same counter guards login.

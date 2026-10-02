@@ -35,8 +35,9 @@ Paths are relative to `/v1/{realm}/_admin`. Bodies are JSON (`Content-Type: appl
 | `POST /users` | `{"email", "password"?}` | `201` with the user |
 | `GET /users/{id}` | none | `200` with the user |
 | `PATCH /users/{id}` | `{"email_verified"?: bool, "disabled"?: bool}` | `200` with the user |
-| `DELETE /users/{id}` | none | `204` |
+| `DELETE /users/{id}` | none | `202` with the erase job: [**erases** the user](../erasure/) (irreversible) |
 | `POST /users/{id}/password` | `{"password"}` | `204` |
+| `GET /users/{id}/owned` | none | `200` with [what erasing the user would do](#previewing-an-erase) |
 | `POST /users/{id}/email` | `{"email"}` | `200` with the user; [changes the address](#changing-a-users-email) |
 | `PUT /users/{id}/roles/{role}` | none | `200` with the user |
 | `DELETE /users/{id}/roles/{role}` | none | `200` with the user |
@@ -65,6 +66,7 @@ A user looks like this:
   "roles": ["editor"],
   "locale": "en",
   "disabled": false,
+  "erased_at": null,
   "admin_networks": [],
   "login_networks": ["10.20.0.0/16"],
   "created_at": "2026-09-26T12:58:18.838Z",
@@ -82,7 +84,7 @@ A user looks like this:
 - **Update:** only `email_verified` and `disabled` can change. Disabling a user ends all their sessions and blocks login. Sending `email` answers `400`: emails can't be changed through `backd`.
 - **Password:** must follow the realm's [password policy](../users/#password-policy); all of the user's sessions end, and in a realm with [email](../../functions/email/) the user gets a `password-changed` message.
 - **Roles:** only roles declared in `realm.yaml` (`400` otherwise). Like `backd user add-role`, assignments that `realm.yaml` doesn't list live only in the database, and removing a seeded one only lasts until the next startup.
-- **Delete:** removes the user, their sign-in methods and sessions. Documents they own are kept.
+- **Delete is an erase:** the user becomes a tombstone at once (the id stays, the email becomes `erased-<id>@erased.invalid`, and the sessions, sign-in methods, email tokens and queued emails are deleted), and a worker applies the collections' policies. The answer is the erase job; repeating the call for a user whose job failed resumes it, and for an erased user answers `409 already_erased`. To keep the data, disable the user instead. Everything else on an erased user answers `409 user_erased`. See [Deleting and erasing users](../erasure/).
 - Unknown user ids answer `404 not_found`.
 
 ### Network restrictions
@@ -136,6 +138,27 @@ curl -X PUT https://localhost:8443/v1/blog/_admin/secrets/STRIPE_KEY \
 - `value` must not be empty; `name` must be upper-case letters, digits and `_`, starting with a letter (`400` otherwise). Setting an existing scope and name replaces its value; `GET /secrets` never includes it, only who last set it and when.
 - A change reaches running functions within about a minute (decrypted values are cached briefly); deleting one makes a function that declares it answer `500 secret_missing` again.
 - Answers `500` (`internal_error`) if the server has no `BACKD_SECRETS_KEY` configured: an operator problem, not something a request can fix.
+
+### Previewing an erase
+
+`GET /users/{id}/owned` (`backd user owned --email …`, `admin.users.owned(id)` in the JavaScript client) answers what an erase would do to a user's data, **only for the collections that declare a policy** in [`collection.yaml`](../../configuration/config-dir/#collectionyaml):
+
+```json
+{
+  "user": { "id": "dars2ql90v600434mf0g", "status": "active" },
+  "collections": [
+    { "database": "main", "collection": "orders", "action": "anonymize", "owned": 12,
+      "remove": ["phone"], "replace": ["buyer_name"] },
+    { "database": "main", "collection": "groups", "action": null, "owned": 0,
+      "pull": { "members": 3 }, "unset": { "paid_by": 0 } }
+  ],
+  "without_policy": ["main.digests", "main.events"]
+}
+```
+
+- `owned` counts the documents the user owns (`_meta.owner`); `pull` and `unset` count, per field, the documents that hold the user (by email or id, as the policy says). `status` is `active` or `deactivated`.
+- The collections **without a policy** are listed by name and not counted: an erase leaves them alone.
+- It returns counts and field names, never document content. The counts use indexes that `backd provision` creates from the policies.
 
 ### Changing a user's email
 

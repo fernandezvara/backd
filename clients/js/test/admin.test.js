@@ -69,7 +69,7 @@ test('users', async () => {
   const m = mockFetch([
     { body: page }, { body: page }, { body: { items: [], limit: 20, skip: 0, has_more: false } },
     { body: adminUser }, { status: 201, body: adminUser }, { status: 201, body: adminUser },
-    { body: adminUser }, { status: 204 }, { status: 204 }, { body: adminUser }, { body: adminUser },
+    { body: adminUser }, { status: 204 }, { status: 202, body: { id: 'erase1', status: 'queued' } }, { body: adminUser }, { body: adminUser },
     { status: 404, body: errorBody('not_found') },
   ])
   const a = adminOf(m)
@@ -99,7 +99,7 @@ test('users', async () => {
   assert.equal(m.calls[7].url.pathname, '/v1/acme/_admin/users/u1/password')
   assert.deepEqual(m.calls[7].body, { password: 'dev-p4ssw0rd!2' })
 
-  await a.users.delete('u1')
+  assert.deepEqual(await a.users.delete('u1'), { id: 'erase1', status: 'queued' })
   assert.equal(m.calls[8].method, 'DELETE')
 
   await a.users.addRole('u1', 'admin')
@@ -135,6 +135,18 @@ test('emailed invitations and an administrator\'s email change', async () => {
   assert.equal(user.email, 'ada.new@example.com')
   assert.equal(m.calls[1].url.pathname, '/v1/acme/_admin/users/u1/email')
   assert.deepEqual(m.calls[1].body, { email: 'ada.new@example.com' })
+})
+
+test('owned: what erasing a user would do', async () => {
+  const report = {
+    user: { id: 'u1', status: 'active' },
+    collections: [{ database: 'main', collection: 'orders', action: 'anonymize', owned: 2, remove: ['phone'], replace: ['buyer'], pull: { members: 1 } }],
+    without_policy: ['main.digests'],
+  }
+  const m = mockFetch([{ body: report }])
+  assert.deepEqual(await adminOf(m).users.owned('u1'), report)
+  assert.equal(m.calls[0].method, 'GET')
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/users/u1/owned')
 })
 
 test('jobs listing', async () => {

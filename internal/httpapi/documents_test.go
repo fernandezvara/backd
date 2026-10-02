@@ -210,7 +210,9 @@ type fixture struct {
 	store *memStore
 	clock *time.Time
 	// users are the auth services of auth-enabled realms (MongoDB fixtures).
-	users map[string]*auth.Users
+	users   map[string]*auth.Users
+	reg     *registry.Registry
+	backing Store // the store the server was built with (MongoDB or memory)
 }
 
 func newFixture(t *testing.T, opts ...func(*Config)) *fixture {
@@ -243,7 +245,7 @@ func itemsRegistry(t *testing.T) *registry.Registry {
 func newFixtureWith(t *testing.T, reg *registry.Registry, store Store, opts ...func(*Config)) *fixture {
 	t.Helper()
 	clock := time.Date(2026, 9, 25, 21, 30, 0, 123456789, time.UTC)
-	f := &fixture{clock: &clock}
+	f := &fixture{clock: &clock, reg: reg, backing: store}
 	if ms, ok := store.(*memStore); ok {
 		f.store = ms
 	}

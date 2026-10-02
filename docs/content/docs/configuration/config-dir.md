@@ -16,6 +16,7 @@ $CONFIG_DIR/<realm>/
         schema.json      # required — JSON Schema draft 2020-12
         indexes.json     # optional — index declarations
         rules.yaml       # optional — access rules (see Authentication)
+        collection.yaml  # optional — what an erase does to the collection
     <database>/_functions/  # optional — server-side functions
 ```
 
@@ -42,9 +43,10 @@ backd template database --realm demo --database cms       # the demo/cms/ direct
 backd template database --realm demo --database blog --sample
 backd template function --realm demo --database blog --name stats  # a function, see Functions
 backd template email-capture --realm demo --database blog          # a development email function, see Functions -> Email
+backd template collection-policy --realm demo --database blog --collection posts   # a commented collection.yaml
 ```
 
-With `--sample`, the command adds a `posts` collection (title, body, published, optional category, author) with explanations: `schema.json`, `indexes.json` and a commented [`rules.yaml`](../../auth/rules/) (anyone reads published posts, signed-in users write posts signed with their own email, authors edit and delete their own but can't change who wrote them). `backd template realm --realm demo --sample` creates the realm plus a database named `main` holding that sample: the same database as the `blog` realm in `examples/config` (whose `realm.yaml` is adjusted for the example app).
+With `--sample`, the command adds a `posts` collection (title, body, published, optional category, author) with explanations: `schema.json`, `indexes.json` and a commented [`rules.yaml`](../../auth/rules/) (anyone reads published posts, signed-in users write posts signed with their own email, authors edit and delete their own but can't change who wrote them), and a [`collection.yaml`](#collectionyaml) that anonymizes the byline when a user is erased. `backd template realm --realm demo --sample` creates the realm plus a database named `main` holding that sample: the same database as the `blog` realm in `examples/config` (whose `realm.yaml` is adjusted for the example app).
 
 The command prints each file it created and each one it left unchanged because it already existed.
 
@@ -110,6 +112,29 @@ Indexes are created at startup by [provisioning](../../operations/). Indexes tha
 Filtering and sorting on unindexed fields works, but scans the whole collection, which is fine for a few thousand documents and slow beyond that. Add an index for every query your application runs often, and for `_meta.owner` when [rules](../../auth/rules/) restrict access to the owner.
 {{< /hint >}}
 
+## `collection.yaml`
+
+This optional file says what an administrator's **erase** does to the collection when a user is erased (`backd user delete`). **Without it, the collection is left alone**: its documents keep everything, which is what you want for records you must keep, such as purchases. `backd template collection-policy` writes a commented example.
+
+```yaml
+on_owner_delete:
+  action: anonymize          # delete | anonymize; leave it out to keep the user's documents
+  remove: [phone]            # anonymize: these fields are removed
+  replace:                   # anonymize: these fields get a fixed value
+    buyer_name: "Erased customer"
+  pull:                      # in EVERY document of the collection: remove the user from these arrays
+    members: email           # what the array holds: email | id
+  unset:                     # in EVERY document of the collection: clear these fields where they hold the user
+    paid_by: email           # email | id
+```
+
+- `action` applies to the documents the user owns (`_meta.owner` is their id). `delete` removes them; `anonymize` removes the `remove` fields, sets the `replace` fields to their fixed value and clears the owner.
+- `pull` and `unset` reach **every** document of the collection, whoever owns it. Each field says what it holds, `email` (the user's address, in the lower-case form `backd` stores) or `id`.
+- Only realms with `auth: enabled` have users, so the file is an error in a realm with `auth: disabled`.
+- `backd` checks the policy against `schema.json` at startup, so an erase leaves every document valid: named fields must exist; a required field can't be removed or unset (make it optional, or `replace` it); `replace` values must satisfy the schema and can't be in a unique index; `pull` fields must be arrays of strings without `minItems`; `unset` fields must be strings.
+- `backd provision` creates the indexes an erase searches by, so large collections aren't scanned: `_meta.owner` when the policy has an `action`, and one on each `pull` and `unset` field (they are checked in `verify` mode like the ones in `indexes.json`). Adding a policy to an existing collection builds them at the next provision.
+- The file is part of the [config fingerprint](../../operations/deploying/). Applying a policy is an erase, which is an administrator's action.
+
 ## Errors
 
 Any invalid config stops startup with a non-zero exit. Every error is reported at once, each naming the offending file or directory. Examples of invalid config:
@@ -121,4 +146,5 @@ Any invalid config stops startup with a non-zero exit. Every error is reported a
 - invalid JSON or an invalid schema;
 - a schema that declares a system field;
 - an invalid `indexes.json`;
-- an invalid [`rules.yaml`](../../auth/rules/#checks-at-startup).
+- an invalid [`rules.yaml`](../../auth/rules/#checks-at-startup);
+- an invalid [`collection.yaml`](#collectionyaml) (an unknown field, a required field removed, a value that breaks the schema).
