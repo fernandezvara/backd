@@ -65,6 +65,8 @@ func TestRunTemplate(t *testing.T) {
 		{"realm again", []string{"template", "realm", "--realm", "demo"}, 0, "exists    demo/realm.yaml (left unchanged)\n" + emailLines("demo", "exists    ", " (left unchanged)"), ""},
 		{"database with sample", []string{"template", "database", "--realm", "demo", "--database", "cms", "--sample"}, 0,
 			"database  demo/cms/\ncreated   demo/cms/_functions/deno.json\ncreated   demo/cms/_functions/stats/function.yaml\ncreated   demo/cms/_functions/stats/index.ts\ncreated   demo/cms/posts/indexes.json\ncreated   demo/cms/posts/rules.yaml\ncreated   demo/cms/posts/schema.json\n", ""},
+		{"collection policy", []string{"template", "collection-policy", "--realm", "demo", "--database", "cms", "--collection", "posts"}, 0, "created   demo/cms/posts/collection.yaml\n", ""},
+		{"collection policy of nothing", []string{"template", "collection-policy", "--realm", "demo", "--database", "cms", "--collection", "ghost"}, 1, "", "doesn't exist"},
 		{"missing realm", []string{"template", "database", "--realm", "ghost", "--database", "app"}, 1, "", "backd template realm --realm ghost"},
 		{"missing database", []string{"template", "database", "--realm", "demo"}, 2, "", "--database"},
 		{"bad kind", []string{"template", "collection", "x"}, 2, "", `unknown command "collection"`},

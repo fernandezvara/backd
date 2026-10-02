@@ -329,3 +329,28 @@ func TestEmailCapture(t *testing.T) {
 		t.Fatalf("a realm that sends through email-capture doesn't load: %v", err)
 	}
 }
+
+func TestCollectionPolicy(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Realm(root, "demo", true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CollectionPolicy(root, "demo", "main", "nothing"); err == nil || !strings.Contains(err.Error(), "doesn't exist") {
+		t.Errorf("an unknown collection: %v", err)
+	}
+	files, err := CollectionPolicy(root, "demo", "main", "posts")
+	if err != nil || len(files) != 1 || files[0].Path != "demo/main/posts/collection.yaml" || !files[0].Created {
+		t.Fatalf("files: %+v, %v", files, err)
+	}
+	if again, _ := CollectionPolicy(root, "demo", "main", "posts"); again[0].Created {
+		t.Error("a second run overwrote the file")
+	}
+	// Everything in it is commented out: the realm still loads, with no policy.
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatalf("the generated config doesn't load: %v", err)
+	}
+	if c, _ := reg.Collection("demo", "main", "posts"); c.Erasure != nil {
+		t.Errorf("the template must declare no policy: %+v", c.Erasure)
+	}
+}

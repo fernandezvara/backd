@@ -52,6 +52,14 @@ func newCLI(getenv func(string) string, stdin io.Reader, stdout, stderr io.Write
 			required(cc, "realm", "the realm of the database")
 			required(cc, "database", "the database to add the function and the outbox to")
 		})
+	tpl.SubCommand("collection-policy").ShortHelp("add a commented collection.yaml: what an erase does to a collection").
+		LongHelp("Creates <realm>/<database>/<collection>/collection.yaml, with everything commented\nout: without a policy an erase leaves the collection alone. Uncomment what you need\n(delete or anonymize the documents a user owns, remove the user from other\ndocuments' arrays and fields). See the docs, Auth -> Erasing users.").
+		Func(act("template collection-policy", templateCollectionPolicy)).
+		Config(func(cc *cli.CommandConfig) {
+			required(cc, "realm", "the realm of the collection")
+			required(cc, "database", "the database of the collection")
+			required(cc, "collection", "the collection to add the file to")
+		})
 	tpl.SubCommand("project").ShortHelp("create a complete config repository").
 		LongHelp("Creates a complete config repository at --dir (which must not exist yet): the\nrealm and sample database, a sample function with tests, Dockerfiles and a\ncompose stack for local development, and a GitHub Actions CI workflow.\nSee the generated README.md.").
 		Func(act("template project", templateProject)).

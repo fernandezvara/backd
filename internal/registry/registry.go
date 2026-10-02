@@ -59,6 +59,8 @@ type Collection struct {
 	Indexes       []Index            // declared in indexes.json
 	IndexPath     string             // path of indexes.json, when present
 	Rules         *rules.Set         // from rules.yaml; nil allows nothing
+	Erasure       *ErasurePolicy     // from collection.yaml; nil: an erase leaves the collection alone
+	ErasurePath   string             // path of collection.yaml, for error messages
 }
 
 // Index is one index declared in indexes.json.

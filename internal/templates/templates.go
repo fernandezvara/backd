@@ -259,6 +259,21 @@ func EmailCapture(configDir, realm, database string) ([]File, error) {
 	return out, nil
 }
 
+// CollectionPolicy creates <realm>/<database>/<collection>/collection.yaml, a
+// commented example of what an erase can do to the collection (everything is
+// commented out: without a policy an erase leaves the collection alone). The
+// collection must exist.
+func CollectionPolicy(configDir, realm, database, collection string) ([]File, error) {
+	if err := checkDir(configDir); err != nil {
+		return nil, err
+	}
+	dir := realm + "/" + database + "/" + collection
+	if _, err := os.Stat(filepath.Join(configDir, dir, registry.SchemaFile)); err != nil {
+		return nil, fmt.Errorf("collection %s doesn't exist in %s (it needs a %s)", dir, configDir, registry.SchemaFile)
+	}
+	return write(configDir, dir+"/"+registry.CollectionFile, "files/collection/collection.yaml")
+}
+
 // writeSample copies the embedded sample collections into dir.
 func writeSample(configDir, dir string) ([]File, error) {
 	var out []File

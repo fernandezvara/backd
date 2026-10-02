@@ -318,6 +318,16 @@ func templateEmailCapture(c *cli.CommandContext) error {
 	return err
 }
 
+func templateCollectionPolicy(c *cli.CommandContext) error {
+	dir, err := configDir(c)
+	if err != nil {
+		return err
+	}
+	files, err := templates.CollectionPolicy(dir, str(c, "realm"), str(c, "database"), str(c, "collection"))
+	printTemplateFiles(c.Stdout(), files)
+	return err
+}
+
 func templateProject(c *cli.CommandContext) error {
 	dir := str(c, "dir")
 	files, err := templates.Project(dir, str(c, "realm"))
