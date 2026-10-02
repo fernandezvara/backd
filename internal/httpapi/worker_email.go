@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"maps"
 	"strings"
 	"time"
 
@@ -53,7 +54,15 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 		invitationID            string
 		notice                  = job.Email.Notice
 	)
-	if job.Email.InvitationID != "" {
+	custom := job.Email.Custom
+	if custom != nil && job.Email.UserID == "" {
+		// A function's email to addresses: no user to look up.
+		if len(custom.To) == 0 {
+			w.fail(ctx, log, svc, job, "the email has no recipient")
+			return nil, nil, false
+		}
+		address, locale = custom.To[0], job.Email.Locale
+	} else if job.Email.InvitationID != "" {
 		// An invitation: there is no user yet, the invited address is the
 		// recipient, and the token lives as long as the invitation.
 		inv, found, err := svc.InvitationByID(ctx, job.Email.InvitationID)
@@ -102,6 +111,10 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 	}
 	data := email.Data{Realm: realm, User: email.User{Email: address, Locale: locale}, Data: map[string]any{}}
 	extra := map[string]any{}
+	if custom != nil && custom.Data != nil {
+		// What the function gave, for the template and for the delivery function.
+		data.Data, extra = custom.Data, maps.Clone(custom.Data)
+	}
 	if purpose := email.TokenPurpose(kind); purpose != "" && !notice {
 		base := es.PublicURL
 		if base == "" {
@@ -140,8 +153,22 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 		w.fail(ctx, log, svc, job, "could not render the email: "+err.Error())
 		return nil, nil, false
 	}
+	toList, ccList, bccList := []emailAddress{{Email: address}}, []emailAddress{}, []emailAddress{}
+	if custom != nil {
+		for i, a := range custom.To {
+			if i > 0 || job.Email.UserID != "" {
+				toList = append(toList, emailAddress{Email: a})
+			}
+		}
+		for _, a := range custom.CC {
+			ccList = append(ccList, emailAddress{Email: a})
+		}
+		for _, a := range custom.BCC {
+			bccList = append(bccList, emailAddress{Email: a})
+		}
+	}
 	in := emailInput{
-		ID: job.ID, Kind: kind, From: es.From, To: []emailAddress{{Email: address}}, CC: []emailAddress{}, BCC: []emailAddress{},
+		ID: job.ID, Kind: kind, From: es.From, To: toList, CC: ccList, BCC: bccList,
 		Subject: msg.Subject, Text: msg.Text, HTML: msg.HTML, Locale: locale, Data: extra,
 	}
 	if es.ReplyTo != "" {

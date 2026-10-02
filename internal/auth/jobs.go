@@ -81,6 +81,19 @@ type EmailJob struct {
 	// InvitationID is the invitation an invitation email is for (there is no
 	// user yet): the worker takes the address from it.
 	InvitationID string
+	// Custom is set on an email a function asked for with ctx.email.send. Unlike
+	// the account emails it stores what the function gave: the recipients'
+	// addresses and the data for the template, for as long as jobs are kept.
+	Custom *CustomEmail
+}
+
+// CustomEmail is what a function's email job carries.
+type CustomEmail struct {
+	Function string // <database>/<name> of the function that asked
+	To       []string
+	CC       []string
+	BCC      []string
+	Data     map[string]any
 }
 
 // JobResult is how a job's run ended: the same vocabulary as a sync
@@ -124,6 +137,7 @@ func (s *Users) EnqueueJob(ctx context.Context, j Job) (Job, error) {
 // JobFilter selects jobs to list. Zero fields match everything.
 type JobFilter struct {
 	Database, Function string    // Function is the name only; "" matches every function
+	Origin             string    // exact origin, such as function:main/ship; "" matches every one
 	Status             string    // queued, running or done
 	Scheduled          *bool     // nil: both; true: cron runs only; false: called ones only
 	Since, Until       time.Time // on created_at: from Since, before Until

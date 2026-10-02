@@ -653,6 +653,7 @@ func checkFunctions(reg *registry.Registry, cfg settings.Settings, log *slog.Log
 		}
 	}
 	warnAnonymousFunctionsWithoutRateLimit(reg, log)
+	logEmailSenders(reg, log)
 	return nil
 }
 
@@ -684,6 +685,33 @@ func firstFunctionWithSecrets(reg *registry.Registry) *registry.Function {
 // any whose invoke rule allows anonymous callers and declares no
 // rate_limit (roadmap F9): a function anyone can call for free, with no
 // per-caller limit, can be abused as a relay (e.g. one that sends email).
+// logEmailSenders lists the functions that can send email (`email: true`), one
+// line each, and warns about those anonymous callers can invoke: a function
+// like that is a way to send mail from the realm's sender address without
+// any control (docs: Functions -> Email -> Sending email from functions).
+func logEmailSenders(reg *registry.Registry, log *slog.Logger) {
+	for _, db := range reg.Databases() {
+		if db.Functions == nil {
+			continue
+		}
+		for _, name := range slices.Sorted(maps.Keys(db.Functions.Functions)) {
+			fn := db.Functions.Functions[name]
+			if !fn.Email {
+				continue
+			}
+			full := db.Realm + "/" + db.Name + "/" + name
+			log.Info("function can send email", "function", full)
+			if fn.Invoke == nil || fn.Internal {
+				continue
+			}
+			if allowed, err := fn.Invoke.Allow(rules.Values{Now: time.Now()}); allowed && err == nil {
+				log.Warn("function can send email and its invoke rule allows anonymous callers: anyone can make it send mail from this realm's sender address; require a verified user, and never take the recipient or the text from the input",
+					"function", full)
+			}
+		}
+	}
+}
+
 func warnAnonymousFunctionsWithoutRateLimit(reg *registry.Registry, log *slog.Logger) {
 	dbs := reg.Databases()
 	slices.SortFunc(dbs, func(a, b *registry.Database) int {

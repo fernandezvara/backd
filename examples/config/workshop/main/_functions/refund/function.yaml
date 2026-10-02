@@ -6,6 +6,8 @@
 # - `idempotency: required`: a retried request with the same
 #   Idempotency-Key gets the first answer back instead of refunding twice.
 admin: true
+# It emails the customer through the realm's templates and delivery function.
+email: true
 # It may call these functions of the database, and no others. refund_receipt is
 # internal and async: refund queues it and doesn't wait.
 calls: [refund_receipt]

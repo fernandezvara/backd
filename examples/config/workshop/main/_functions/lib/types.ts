@@ -40,5 +40,17 @@ export type Context = {
   admin: { db(name: string): Database };
   /** Calls a function of this database listed in `calls`: its output (sync) or a job handle (async). */
   call(name: string, input?: unknown, options?: { idempotencyKey?: string }): Promise<any>;
+  /** Present for functions with `email: true`: a custom email through the realm's templates. */
+  email: {
+    send(message: {
+      kind: string;
+      to_user?: string;
+      to?: string[];
+      cc?: string[];
+      bcc?: string[];
+      data?: Record<string, unknown>;
+      locale?: string;
+    }): Promise<{ id: string; status: string }>;
+  };
   error(status: number, code: string, message: string): Error;
 };

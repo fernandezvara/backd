@@ -865,10 +865,10 @@ func (a *adminAPI) listInvocations(w http.ResponseWriter, r *http.Request) {
 // GET .../_jobs/{id}, for the caller who enqueued a job or an API key).
 func (a *adminAPI) listJobs(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	f := auth.JobFilter{Status: q.Get("status"), Limit: defaultLimit}
+	f := auth.JobFilter{Status: q.Get("status"), Origin: q.Get("origin"), Limit: defaultLimit}
 	var details []Detail
 	for k := range q {
-		if !slices.Contains([]string{"function", "status", "scheduled", "since", "until", "limit", "skip"}, k) {
+		if !slices.Contains([]string{"function", "status", "origin", "scheduled", "since", "until", "limit", "skip"}, k) {
 			details = append(details, Detail{Path: k, Reason: "unknown query parameter"})
 		}
 	}
@@ -940,11 +940,16 @@ func jobSummaryJSON(j auth.Job) map[string]any {
 		"function":        j.Database + "/" + j.Function,
 		"status":          j.Status,
 		"scheduled":       j.Scheduled,
+		"origin":          j.Origin,
+		"email_kind":      nil,
 		"attempts":        j.Attempts,
 		"created_at":      formatTime(j.CreatedAt),
 		"completed_at":    nil,
 		"next_attempt_at": nil,
 		"result":          nil,
+	}
+	if j.Email != nil {
+		out["email_kind"] = j.Email.Kind // never the recipients or the message
 	}
 	if !j.NextAttemptAt.IsZero() && j.Status != auth.JobDone {
 		out["next_attempt_at"] = formatTime(j.NextAttemptAt)

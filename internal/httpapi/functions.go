@@ -144,6 +144,7 @@ func (f *functions) bundlePath(sha string) (string, bool) {
 func (f *functions) internalRoutes(r chi.Router) {
 	r.With(noStore).Post("/v1/{realm}/{database}/_func/{function}", f.invoke)
 	r.With(noStore).Get("/v1/{realm}/{database}/_jobs/{id}", f.getJob)
+	r.With(noStore).Post("/v1/{realm}/_email/send", f.emailSend)
 }
 
 func (f *functions) routes(r chi.Router) {
@@ -796,14 +797,14 @@ func userEnvelope(c auth.Caller) json.RawMessage {
 // callback gives the function its tokens: ctx.db acts as the caller,
 // ctx.admin.db (admin: true only) has full access as the function.
 func (f *functions) callback(realm, database, name string, fn *registry.Function, c auth.Caller, expires time.Time, invID string, depth int) *executor.Callback {
-	claims := auth.CallbackClaims{Realm: realm, Function: database + "/" + name, Expires: expires, Calls: fn.Calls, Depth: depth, Inv: invID}
+	claims := auth.CallbackClaims{Realm: realm, Function: database + "/" + name, Expires: expires, Calls: fn.Calls, Depth: depth, Inv: invID, Email: fn.Email}
 	if c.User != nil {
 		claims.UserID = c.User.User.ID
 	}
 	if c.Key != nil {
 		claims.KeyHash = c.Key.Hash
 	}
-	cb := &executor.Callback{URL: f.callbackURL, Realm: realm, Database: database, Token: auth.SignCallback(f.docs.callbackKey, claims)}
+	cb := &executor.Callback{URL: f.callbackURL, Realm: realm, Database: database, Token: auth.SignCallback(f.docs.callbackKey, claims), Email: fn.Email}
 	if fn.Admin || (c.Func != nil && c.Func.Admin) {
 		cb.AdminToken = auth.SignCallback(f.docs.callbackKey, auth.CallbackClaims{Realm: realm, Function: database + "/" + name, Admin: true, Expires: expires})
 	}

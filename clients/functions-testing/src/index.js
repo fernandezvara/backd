@@ -268,29 +268,59 @@ export class FunctionError extends Error {
  * @property {MemoryStore} [store]      Shared across several createContext calls, to seed data ctx.db reads.
  * @property {boolean} [admin]          Also give ctx.admin.db (function.yaml's admin: true).
  * @property {string[]} [calls]         function.yaml's `calls`: ctx.call refuses any other name with `call_not_declared`, as backd does.
- * @property {boolean | { externalRecipients?: boolean }} [email]  Give the function ctx.email.send (function.yaml's `email: true`); `externalRecipients` also allows `to`, `cc` and `bcc` addresses.
+ * @property {boolean | { perInvocation?: number, recipientsPerMessage?: number }} [email]  Give the function ctx.email.send (function.yaml's `email: true`); the object sets the realm's caps (`email.limits`) the fake enforces.
  */
+
+/** The kinds backd sends itself: a function can't send them. */
+const SYSTEM_EMAIL_KINDS = ['verify-email', 'reset-password', 'account-exists', 'password-changed', 'welcome', 'change-email', 'email-changed', 'invitation']
+
+/**
+ * An error `ctx.email.send` throws when one of the realm's caps is reached
+ * (`email.limits`): `code` is `email_limited` and `retry_after` is in seconds.
+ */
+export class EmailLimitError extends Error {
+  /** @param {string} message @param {number} [retryAfter] */
+  constructor(message, retryAfter = 3600) {
+    super(message)
+    this.name = 'EmailLimitError'
+    this.code = 'email_limited'
+    this.retry_after = retryAfter
+  }
+}
 
 /**
  * A fake of `ctx.email`: `send` records the email and refuses what backd
- * would (a missing `kind`, addresses without `externalRecipients`), and
- * `sent()` lists what was sent. `createContext({ email: true })` uses one.
- * @param {{ externalRecipients?: boolean }} [opts]
+ * would: a missing or system `kind`, a message that doesn't name exactly one of
+ * `to_user` and `to`, invalid addresses, more than `recipientsPerMessage`
+ * recipients, and, past `perInvocation` messages from the same context, an
+ * `EmailLimitError`. Any recipient is allowed: there is no list of who a
+ * function may write to, so a function that takes the recipient or the
+ * text from its input is a spam relay; test that yours doesn't (see the
+ * docs, Functions -> Email). `sent()` lists what was sent.
+ * `createContext({ email: true })` uses one.
+ * @param {{ perInvocation?: number, recipientsPerMessage?: number }} [opts] The realm's `email.limits` (defaults 50 and 10).
  */
-export function fakeEmail({ externalRecipients = false } = {}) {
+export function fakeEmail({ perInvocation = 50, recipientsPerMessage = 10 } = {}) {
   /** @type {Array<Record<string, any>>} */
   const sent = []
+  let attempts = 0
+  /** @param {string} message */
+  const invalid = (message) => Object.assign(new TypeError(`ctx.email.send: ${message}`), { code: 'validation_error' })
   return {
     /** @param {Record<string, any>} [msg] */
     send: async (msg = {}) => {
-      if (typeof msg.kind !== 'string' || msg.kind === '') throw new TypeError('ctx.email.send: kind is required')
-      const hasAddresses = msg.to !== undefined || msg.cc !== undefined || msg.bcc !== undefined
-      if (hasAddresses && !externalRecipients) {
-        throw new TypeError('ctx.email.send: to, cc and bcc need `email: { external_recipients: true }` in function.yaml; use to_user for a user of the realm')
-      }
-      if (!hasAddresses && typeof msg.to_user !== 'string') throw new TypeError('ctx.email.send: to_user is required')
+      if (typeof msg.kind !== 'string' || msg.kind === '') throw invalid('kind is required')
+      if (SYSTEM_EMAIL_KINDS.includes(msg.kind)) throw invalid(`${msg.kind} is a kind backd sends itself; a function sends the realm's own kinds`)
+      const hasUser = msg.to_user !== undefined
+      const hasTo = Array.isArray(msg.to) && msg.to.length > 0
+      if (hasUser === hasTo) throw invalid('give exactly one of to_user (a user\'s id) and to (addresses)')
+      if (hasUser && typeof msg.to_user !== 'string') throw invalid('to_user must be a user id')
+      const addresses = [...(msg.to ?? []), ...(msg.cc ?? []), ...(msg.bcc ?? [])]
+      if (!addresses.every((a) => typeof a === 'string' && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a))) throw invalid('to, cc and bcc are arrays of email addresses')
+      if (addresses.length + (hasUser ? 1 : 0) > recipientsPerMessage) throw invalid(`at most ${recipientsPerMessage} recipients per message`)
+      if (++attempts > perInvocation) throw new EmailLimitError(`too many emails (invocation limit of ${perInvocation})`)
       sent.push(structuredClone(msg))
-      return fakeJob({ id: `email-job-${sent.length}` })
+      return { id: `email-job-${sent.length}`, status: 'queued' }
     },
     sent: () => structuredClone(sent),
   }

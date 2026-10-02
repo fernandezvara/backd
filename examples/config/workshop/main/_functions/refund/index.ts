@@ -1,7 +1,8 @@
 // refund: mark a paid order refunded and record the refund, in one
 // transaction. `ifMatch` makes the order's patch fail if anyone changed the
 // order since we read it, which aborts the whole batch: nothing is written.
-// Afterwards it asks the internal refund_receipt function to write the receipt.
+// Afterwards it asks the internal refund_receipt function to write the receipt
+// and emails the customer, through the realm's `refund-issued` template.
 import { relay } from "../lib/relay.ts";
 import type { Context, Doc } from "../lib/types.ts";
 
@@ -38,5 +39,14 @@ export default async function handler(ctx: Context) {
   // already done, so a slow or failing receipt never undoes it. The key makes
   // a retried refund queue the same job instead of a second one.
   const job = await ctx.call("refund_receipt", { refund_id: refund.id, order_id, amount: order.amount }, { idempotencyKey: `receipt-${refund.id}` });
+  // The customer is told by email: a custom kind of the realm
+  // (email/refund-issued/), sent to the order's owner, a user of the realm. The
+  // recipient comes from the order, never from the request; a failure here
+  // (a limit, a template problem) must not undo or hide a refund that happened.
+  try {
+    await ctx.email.send({ kind: "refund-issued", to_user: order._meta.owner, data: { order_id, amount: (order.amount / 100).toFixed(2), reason: reason ?? "" } });
+  } catch (err) {
+    console.log(`the customer was not emailed: ${err instanceof Error ? err.message : err}`);
+  }
   return { refund_id: refund.id, order_id, amount: order.amount, receipt_job: job.id };
 }

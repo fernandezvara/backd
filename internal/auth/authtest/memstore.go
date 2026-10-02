@@ -592,7 +592,7 @@ func (m *MemStore) ListJobs(_ context.Context, f auth.JobFilter) ([]auth.Job, bo
 	var out []auth.Job
 	for _, j := range m.jobs {
 		if (f.Database == "" || j.Database == f.Database) && (f.Function == "" || j.Function == f.Function) &&
-			(f.Status == "" || j.Status == f.Status) && (f.Scheduled == nil || j.Scheduled == *f.Scheduled) &&
+			(f.Status == "" || j.Status == f.Status) && (f.Origin == "" || j.Origin == f.Origin) && (f.Scheduled == nil || j.Scheduled == *f.Scheduled) &&
 			(f.Since.IsZero() || !j.CreatedAt.Before(f.Since)) && (f.Until.IsZero() || j.CreatedAt.Before(f.Until)) {
 			out = append(out, j.Job)
 		}

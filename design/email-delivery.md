@@ -251,7 +251,7 @@ await ctx.email.send({ to: [order.customer_email], kind: 'invoice', data: { invo
 - **Recipients: anyone.** `to_user` (a realm user's id, resolved by backd, rendered in that user's locale) **or** `to`, plus optional `cc` and `bcc`, as arrays of addresses (rendered in `default_locale` unless a `locale` is given). Limiting by recipient would forbid ordinary uses (an invoice to the address on an order, a contact form to the shop's own mailbox) and wouldn't address the real risk, which is a function that sends mail **without control**.
 - **Text: only the realm's templates.** A function chooses a `kind` and supplies `data`; it never supplies a subject or a body. `data` is free text, though, and a template that prints it is a message the caller of the function can write: that is the phishing vector (§15).
 - **Caps that don't depend on who** (§11): per recipient (shared with the account emails), per function per hour, per invocation, and recipients per message. Over a cap, `ctx.email.send()` throws an `EmailLimitError` (`code: "email_limited"`, with `retry_after`) and queues nothing: unlike account endpoints, the function has the information and decides what to answer.
-- **Visibility:** each send is an email job with `origin: function:<database>/<name>` and its `kind`, in the job list; the admin API shows send counts per function; startup logs which functions can send email. Addresses are never logged or audited.
+- **Visibility:** each send is an email job with `origin: function:<database>/<name>` and its `kind`, in the job list (`origin` and `email_kind` fields, and an `origin` filter: count a function's sends by listing them); startup logs which functions can send email and warns about those anonymous callers can invoke. Addresses are never logged or audited.
 - **What the queue holds** differs from the account emails: with no user to look up, an email job from a function stores the recipients' addresses and the `data` it was given, for as long as jobs are retained (`functions.job_retention`). Don't put secrets in `data`. The docs say so.
 - Goes through the same queue, delivery function and retries. Returns the job handle.
 
@@ -307,7 +307,7 @@ await ctx.email.send({ to: [order.customer_email], kind: 'invoice', data: { invo
 
 **4.2f — hosted pages:** GET/POST pages for every token kind; security headers and log scrubbing (tested); uniform error page; redirects with `redirect_to` stored with the hash and checked against `allowed_redirects` (`400 invalid_redirect`); per-kind `links` override; JSON endpoints; page templates and localization.
 
-**4.2g — custom emails:** `ctx.email.send()` with `email: true` and any recipient (no `external_recipients`); text only from templates; custom kinds checked at startup; caps (per function, per invocation, per message) and the per-recipient limits applied, `email_limited` thrown; jobs visible with their origin and kind, send counts per function in the admin API; `fakeEmail()` enforcing the caps; the docs' danger callout and checklist; tests with fakes and `email-capture`.
+**4.2g — custom emails:** `ctx.email.send()` with `email: true` and any recipient (no `external_recipients`); text only from templates; custom kinds checked at startup; caps (per function, per invocation, per message) and the per-recipient limits applied, `email_limited` thrown; jobs visible with their origin and kind (and an `origin` filter); `fakeEmail()` enforcing the caps; the docs' danger callout and checklist; tests with fakes and `email-capture`.
 
 ## 18. Alternatives considered
 

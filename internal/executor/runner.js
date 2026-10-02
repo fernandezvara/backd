@@ -111,6 +111,31 @@ if (env.callback?.token) {
     }
   };
 }
+if (env.callback?.token && env.callback.email) {
+  // Sends a custom email through the realm's templates, delivery function and
+  // limits: kind (a template of the realm), data (for the template), and who
+  // gets it: to_user (a realm user's id) or to / cc / bcc (addresses). Returns
+  // { id } of the email's job. A limit (a function, an invocation, a recipient)
+  // throws an EmailLimitError with code "email_limited" and retry_after.
+  const sender = client(env.callback.token);
+  ctx.email = Object.freeze({
+    send: async (message) => {
+      try {
+        const { data } = await sender.request({ method: "POST", path: ["_email", "send"], body: message });
+        return data;
+      } catch (e) {
+        if (e && e.status === 429) {
+          const err = new Error(e.message);
+          err.name = "EmailLimitError";
+          err.code = "email_limited";
+          err.retry_after = e.retryAfter === undefined ? null : Math.ceil(e.retryAfter / 1000);
+          throw err;
+        }
+        throw e;
+      }
+    },
+  });
+}
 if (env.callback?.admin_token) {
   const admin = client(env.callback.admin_token);
   ctx.admin = Object.freeze({ db: (name) => admin.db(name) });

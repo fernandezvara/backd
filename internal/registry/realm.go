@@ -137,6 +137,10 @@ const (
 	DefaultEmailPerKindPerHour = 3
 	DefaultEmailPerDay         = 10
 	DefaultEmailPerIPPerHour   = 20
+	// The caps of custom emails from functions.
+	DefaultEmailPerFunctionPerHour   = 200
+	DefaultEmailPerInvocation        = 50
+	DefaultEmailRecipientsPerMessage = 10
 	// DefaultLocale is email.default_locale when not set.
 	DefaultLocale = "en"
 )
@@ -176,6 +180,11 @@ type EmailLimits struct {
 	PerKindPerHour int // emails of one kind to one recipient, per hour
 	PerDay         int // emails to one recipient, per day
 	PerIPPerHour   int // email-sending requests from one client address, per hour
+	// The caps of custom emails from functions (ctx.email.send), whoever the
+	// recipients are.
+	PerFunctionPerHour   int // messages one function sends, per hour
+	PerInvocation        int // messages one invocation sends
+	RecipientsPerMessage int // to, cc and bcc of one message
 }
 
 // DatabaseAndName splits Function into the database and the function name.
@@ -264,6 +273,11 @@ type emailDoc struct {
 		PerIP *struct {
 			PerHour *int `yaml:"per_hour"`
 		} `yaml:"per_ip"`
+		PerFunction *struct {
+			PerHour       *int `yaml:"per_hour"`
+			PerInvocation *int `yaml:"per_invocation"`
+		} `yaml:"per_function"`
+		RecipientsPerMessage *int `yaml:"recipients_per_message"`
 	} `yaml:"limits"`
 }
 
@@ -649,7 +663,8 @@ func NormalizeEmail(v string) (string, error) {
 func parseEmail(d *emailDoc) (*EmailSettings, []error) {
 	e := &EmailSettings{
 		Function: d.Function, From: d.From, ReplyTo: d.ReplyTo, DefaultLocale: DefaultLocale,
-		Limits: EmailLimits{PerKindPerHour: DefaultEmailPerKindPerHour, PerDay: DefaultEmailPerDay, PerIPPerHour: DefaultEmailPerIPPerHour},
+		Limits: EmailLimits{PerKindPerHour: DefaultEmailPerKindPerHour, PerDay: DefaultEmailPerDay, PerIPPerHour: DefaultEmailPerIPPerHour,
+			PerFunctionPerHour: DefaultEmailPerFunctionPerHour, PerInvocation: DefaultEmailPerInvocation, RecipientsPerMessage: DefaultEmailRecipientsPerMessage},
 	}
 	var errs []error
 	add := func(format string, args ...any) { errs = append(errs, fmt.Errorf("email."+format, args...)) }
@@ -716,6 +731,11 @@ func parseEmail(d *emailDoc) (*EmailSettings, []error) {
 		if ip := l.PerIP; ip != nil {
 			limit("per_ip.per_hour", ip.PerHour, &e.Limits.PerIPPerHour)
 		}
+		if f := l.PerFunction; f != nil {
+			limit("per_function.per_hour", f.PerHour, &e.Limits.PerFunctionPerHour)
+			limit("per_function.per_invocation", f.PerInvocation, &e.Limits.PerInvocation)
+		}
+		limit("recipients_per_message", l.RecipientsPerMessage, &e.Limits.RecipientsPerMessage)
 	}
 	errs = append(errs, parseRedirects(e, d)...)
 	return e, errs

@@ -20,6 +20,8 @@ const (
 	codeConflict         = "conflict"
 	codeInvalidLocale    = "invalid_locale"
 	codeInvalidToken     = "invalid_token"
+	codeEmailNotDeclared = "email_not_declared"
+	codeEmailLimited     = "email_limited"
 	codeEmailNotVerified = "email_not_verified"
 	codeInvalidRedirect  = "invalid_redirect"
 	codeWriteConflict    = "write_conflict"

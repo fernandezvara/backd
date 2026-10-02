@@ -1,4 +1,4 @@
-import { callTimedOut, createContext, emailMessage, fakeEmail, fakeJob, FunctionError, MemoryStore, resetIds } from './index.js'
+import { callTimedOut, createContext, EmailLimitError, emailMessage, fakeEmail, fakeJob, FunctionError, MemoryStore, resetIds } from './index.js'
 import { NotFoundError, VersionMismatchError } from '../../js/src/errors.js'
 
 // No test-framework dependency, matching the JS client's "no runtime
@@ -181,20 +181,33 @@ Deno.test('ctx.call refuses undeclared and unfaked functions', async () => {
 })
 
 Deno.test('ctx.email.send records emails and refuses what backd would', async () => {
-  const none = createContext()
+  const none = createContext({})
   assert(none.ctx.email === undefined, 'ctx.email exists only when the function declares email')
 
   const { ctx, sentEmails } = createContext({ email: true })
   const job = await ctx.email.send({ to_user: 'u1', kind: 'order-shipped', data: { order_no: 7 } })
-  assertEquals(job.id, 'email-job-1')
-  assertEquals(sentEmails(), [{ to_user: 'u1', kind: 'order-shipped', data: { order_no: 7 } }])
-  await assertRejects(() => ctx.email.send({ to: [{ email: 'x@example.com' }], kind: 'k' }), TypeError)
-  await assertRejects(() => ctx.email.send({ to_user: 'u1' }), TypeError)
-  await assertRejects(() => ctx.email.send({ kind: 'k' }), TypeError)
+  assertEquals(job, { id: 'email-job-1', status: 'queued' })
+  // Any recipient is allowed: users, and plain addresses with cc and bcc.
+  await ctx.email.send({ to: ['x@example.com'], cc: ['y@example.com'], bcc: ['z@example.com'], kind: 'order-shipped' })
+  assertEquals(sentEmails().length, 2)
+  assertEquals(sentEmails()[0], { to_user: 'u1', kind: 'order-shipped', data: { order_no: 7 } })
 
-  const ext = createContext({ email: { externalRecipients: true } })
-  await ext.ctx.email.send({ to: [{ email: 'x@example.com' }], kind: 'k' })
-  assertEquals(ext.sentEmails().length, 1)
+  await assertRejects(() => ctx.email.send({ to_user: 'u1' }), TypeError, 'kind is required')
+  await assertRejects(() => ctx.email.send({ kind: 'order-shipped' }), TypeError, 'exactly one')
+  await assertRejects(() => ctx.email.send({ kind: 'order-shipped', to_user: 'u1', to: ['x@example.com'] }), TypeError, 'exactly one')
+  await assertRejects(() => ctx.email.send({ kind: 'reset-password', to_user: 'u1' }), TypeError, 'backd sends itself')
+  await assertRejects(() => ctx.email.send({ kind: 'k', to: [{ email: 'x@example.com' }] }), TypeError, 'email addresses')
+  await assertRejects(() => ctx.email.send({ kind: 'k', to: ['nope'] }), TypeError, 'email addresses')
+})
+
+Deno.test('ctx.email.send enforces the realm\'s caps', async () => {
+  const { ctx, sentEmails } = createContext({ email: { perInvocation: 2, recipientsPerMessage: 3 } })
+  await assertRejects(() => ctx.email.send({ kind: 'k', to: ['a@example.com', 'b@example.com'], cc: ['c@example.com', 'd@example.com'] }), TypeError, 'at most 3 recipients')
+  await ctx.email.send({ kind: 'k', to: ['a@example.com'] })
+  await ctx.email.send({ kind: 'k', to: ['b@example.com'] })
+  const err = await ctx.email.send({ kind: 'k', to: ['c@example.com'] }).then(() => null, (e) => e)
+  assert(err instanceof EmailLimitError && err.code === 'email_limited' && typeof err.retry_after === 'number', 'the third message is over the invocation cap')
+  assertEquals(sentEmails().length, 2)
 })
 
 Deno.test('emailMessage has the delivery contract, with overrides', () => {
@@ -206,6 +219,6 @@ Deno.test('emailMessage has the delivery contract, with overrides', () => {
 
 Deno.test('fakeEmail works on its own', async () => {
   const mail = fakeEmail()
-  await mail.send({ to_user: 'u1', kind: 'welcome' })
-  assertEquals(mail.sent().map((m) => m.kind), ['welcome'])
+  await mail.send({ to_user: 'u1', kind: 'order-shipped' })
+  assertEquals(mail.sent().map((m) => m.kind), ['order-shipped'])
 })

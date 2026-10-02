@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -93,11 +94,21 @@ func Load(root string) (*Registry, error) {
 // its templates.
 func loadEmail(rl *Realm, realmPath string) []error {
 	es := rl.Settings.Email
-	if es == nil {
-		return nil
-	}
 	file := filepath.Join(realmPath, RealmFile)
 	var errs []error
+	if es == nil {
+		// A function can't send email through a realm that has none.
+		for _, dbName := range slices.Sorted(maps.Keys(rl.Databases)) {
+			if db := rl.Databases[dbName]; db.Functions != nil {
+				for _, name := range slices.Sorted(maps.Keys(db.Functions.Functions)) {
+					if db.Functions.Functions[name].Email {
+						errs = append(errs, fmt.Errorf("%s: %s/%s has `email: true`, but this realm has no email section (a function sends through the realm's delivery function and templates)", file, dbName, name))
+					}
+				}
+			}
+		}
+		return errs
+	}
 	dbName, fnName := es.DatabaseAndName()
 	var fn *Function
 	if db := rl.Databases[dbName]; db != nil && db.Functions != nil {

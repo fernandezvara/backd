@@ -1,0 +1,12 @@
+# Writes to the shop's own support mailbox: the safe shape of a function that
+# sends email (docs: Functions -> Email -> Sending email from functions).
+#
+# - `email: true` lets it call ctx.email.send.
+# - Only signed-in users with a verified address may call it, at most 3 times an
+#   hour: anyone else can't make it send anything.
+# - The recipient is fixed in the code (never taken from the input), the kind
+#   is fixed (its template is email/contact-message/), and the input schema
+#   refuses any other field.
+email: true
+invoke: "user != nil && user.email_verified"
+rate_limit: { per: user, limit: 3, window: 1h }
