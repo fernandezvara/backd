@@ -19,6 +19,18 @@ email:
   function: notifications/email-capture
   from: "Workshop <no-reply@workshop.example>"
   # Links point at BACKD_URL, which the local stack sets to https://localhost:8443.
+  # The tour's pages send people back to the tour after a link (redirect_to).
+  allowed_redirects: [https://localhost:8443]
+  redirects:
+    verify_email: https://localhost:8443/example/workshop/
+    reset_password: https://localhost:8443/example/workshop/
+    change_email: https://localhost:8443/example/workshop/
+    invitation: https://localhost:8443/example/workshop/
+
+# Visitors may change their own address (step 6): confirmed by the new one,
+# undone by the old one.
+account:
+  allow_email_change: true
 
 # `backd bootstrap --realm workshop --email <email>` creates the first
 # administrator; give people the staff role in `roles.staff.users` below or

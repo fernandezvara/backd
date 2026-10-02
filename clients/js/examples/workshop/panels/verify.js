@@ -14,6 +14,17 @@ export function verifyPanel({ backd, fetch, realm }) {
   const outbox = backd.db('notifications').collection('outbox')
   let visitor = null // the client of the visitor
 
+  // The message of a kind to an address, once a worker has delivered it.
+  async function waitFor(kind, address) {
+    for (let i = 0; i < 40; i++) {
+      const page = await outbox.list({ orderBy: '-_meta.created_at', limit: 50 })
+      const mail = page.items.find((m) => m.kind === kind && m.to.includes(address))
+      if (mail) return mail
+      await new Promise((r) => setTimeout(r, 500))
+    }
+    throw new Error(`no ${kind} email yet: is a worker running?`)
+  }
+
   return {
     /** @type {null | { email: string, verified: boolean, mail: null | { subject: string, link: string }, done: boolean }} */
     vf: null,
@@ -99,6 +110,63 @@ export function verifyPanel({ backd, fetch, realm }) {
         await visitor.auth.login({ email: this.vf.email, password: `${PASSWORD}2` })
         this.rs = { ...this.rs, signedIn: true }
         await this.verifyCheck()
+      })
+    },
+
+    // Changing the address: asked while signed in, confirmed at the new
+    // address, undone from the old one.
+    /** @type {null | { newEmail: string, confirmed: boolean, sessionEnded: boolean | null, undone: boolean }} */
+    ch: null,
+
+    changeAsk() {
+      return this.step('Ask to change the email address (needs the password)', async () => {
+        const newEmail = `moved-${Date.now().toString(36)}@example.com`
+        await visitor.auth.requestEmailChange({ newEmail, password: `${PASSWORD}2` })
+        this.ch = { newEmail, confirmed: false, sessionEnded: null, undone: false }
+      })
+    },
+
+    changeConfirm() {
+      return this.step('Confirm at the new address (the link sent there)', async () => {
+        const mail = await waitFor('change-email', this.ch.newEmail)
+        await visitor.auth.confirmEmailChange(new URL(mail.link).searchParams.get('token'))
+        let ended = false
+        try {
+          await visitor.auth.me()
+        } catch (err) {
+          ended = err.status === 401
+        }
+        this.ch = { ...this.ch, confirmed: true, sessionEnded: ended }
+      })
+    },
+
+    changeUndo() {
+      return this.step('Undo it from the old address (the link in email-changed)', async () => {
+        const mail = await waitFor('email-changed', this.vf.email)
+        await visitor.auth.revertEmailChange(new URL(mail.link).searchParams.get('token'))
+        this.ch = { ...this.ch, undone: true }
+      })
+    },
+
+    // An administrator emails an invitation: nobody holds its token.
+    /** @type {null | { email: string, subject: string, link: string, accepted: boolean }} */
+    inv: null,
+
+    inviteSend() {
+      return this.step('Invite someone by email (admin: invitations.send)', async () => {
+        const email = `invited-${Date.now().toString(36)}@example.com`
+        const sent = await backd.admin.invitations.send({ email, redirectTo: `${window.location.origin}/example/workshop/` })
+        const mail = await waitFor('invitation', email)
+        this.inv = { email, subject: mail.subject, link: mail.link, accepted: false, sent: sent.sent }
+      })
+    },
+
+    inviteAccept() {
+      return this.step('Accept the invitation with the token (POST /_auth/accept-invitation)', async () => {
+        const guest = createClient({ url: window.location.origin, realm, fetch, storage: memoryStorage() })
+        await guest.auth.acceptInvitation({ token: new URL(this.inv.link).searchParams.get('token'), password: PASSWORD })
+        const session = await guest.auth.login({ email: this.inv.email, password: PASSWORD })
+        this.inv = { ...this.inv, accepted: true, verified: session.user.email_verified }
       })
     },
 

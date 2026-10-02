@@ -30,7 +30,8 @@ key() {
 export BACKD_URL=http://127.0.0.1:18080
 BACKD_API_KEY=$(key itest)
 BACKD_INVITE_API_KEY=$(key invite)
-export BACKD_API_KEY BACKD_INVITE_API_KEY
+BACKD_MAIL_API_KEY=$(key mail)
+export BACKD_API_KEY BACKD_INVITE_API_KEY BACKD_MAIL_API_KEY
 
 cd clients/js
 npm run test:integration

@@ -26,6 +26,7 @@ email:
   allowed_redirects: [https://localhost:8443]
   redirects:
     verify_email: https://localhost:8443/example/expenses-without-functions/
+    reset_password: https://localhost:8443/example/expenses-without-functions/
 account:
   require_verified_email: true
 

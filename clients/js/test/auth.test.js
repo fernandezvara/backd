@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createClient, AuthenticationError, NetworkError, VerificationRequiredError, localStorageStorage, memoryStorage } from '../src/index.js'
+import { createClient, AuthenticationError, NetworkError, RetryableError, ValidationError, VerificationRequiredError, localStorageStorage, memoryStorage } from '../src/index.js'
 import { mockFetch, errorBody, session, user } from './helpers.js'
 
 /** @param {ReturnType<typeof mockFetch>} m */
@@ -219,4 +219,51 @@ test('updateMe changes the language, and an unlisted one is a validation error',
   assert.equal(m.calls[0].url.pathname, '/v1/acme/_auth/me')
   assert.deepEqual(m.calls[0].body, { locale: 'es' })
   await assert.rejects(() => c.auth.updateMe({ locale: 'fr' }), (/** @type {any} */ e) => e.code === 'invalid_locale' && e.status === 400 && e.details[0].path === 'locale')
+})
+
+test('the email flows send their bodies without a session and answer nothing', async () => {
+  const m = mockFetch([{ status: 202, body: { status: 'accepted' } }, { status: 204 }, { status: 202, body: { status: 'accepted' } }, { status: 204 }, { status: 204 }, { status: 204 }, { status: 204 }])
+  const { c, events } = clientWith(m)
+  assert.equal(await c.auth.resendVerification({ email: 'ada@example.com' }), undefined)
+  assert.equal(await c.auth.verifyEmail('tok1'), undefined)
+  await c.auth.requestPasswordReset({ email: 'ada@example.com', redirectTo: 'https://app.example/signin' })
+  await c.auth.resetPassword({ token: 'tok2', password: 'dev-p4ssw0rd!2' })
+  await c.auth.confirmEmailChange('tok3')
+  await c.auth.revertEmailChange('tok4')
+  await c.auth.acceptInvitation({ token: 'tok5', password: 'dev-p4ssw0rd!', locale: 'es' })
+  const sent = m.calls.map((call) => [call.method, call.url.pathname, call.body])
+  assert.deepEqual(sent, [
+    ['POST', '/v1/acme/_auth/verify-email/resend', { email: 'ada@example.com' }],
+    ['POST', '/v1/acme/_auth/verify-email', { token: 'tok1' }],
+    ['POST', '/v1/acme/_auth/reset-password/request', { email: 'ada@example.com', redirect_to: 'https://app.example/signin' }],
+    ['POST', '/v1/acme/_auth/reset-password', { token: 'tok2', password: 'dev-p4ssw0rd!2' }],
+    ['POST', '/v1/acme/_auth/confirm-email-change', { token: 'tok3' }],
+    ['POST', '/v1/acme/_auth/revert-email-change', { token: 'tok4' }],
+    ['POST', '/v1/acme/_auth/accept-invitation', { token: 'tok5', password: 'dev-p4ssw0rd!', locale: 'es' }],
+  ])
+  assert.ok(m.calls.every((call) => call.headers.Authorization === undefined), 'these calls carry no credentials')
+  assert.equal(await c.auth.token(), null, 'none of them starts a session')
+  assert.deepEqual(events, [])
+})
+
+test('a bad token is a validation error with the invalid_token code, and limits are retryable', async () => {
+  const m = mockFetch([
+    { status: 400, body: errorBody('invalid_token', 'invalid, expired or used token') },
+    { status: 400, body: { error: { code: 'validation_error', message: 'password does not meet the policy', request_id: 'r1', details: [{ path: 'password', reason: 'must be at least 12 characters' }] } } },
+    { status: 429, headers: { 'Retry-After': '30' }, body: errorBody('too_many_requests') },
+  ])
+  const { c } = clientWith(m)
+  await assert.rejects(c.auth.verifyEmail('nope'), (/** @type {any} */ e) => e instanceof ValidationError && e.code === 'invalid_token')
+  await assert.rejects(c.auth.resetPassword({ token: 't', password: 'short' }), (/** @type {any} */ e) => e.details[0].path === 'password')
+  await assert.rejects(c.auth.requestPasswordReset({ email: 'ada@example.com' }), (/** @type {any} */ e) => e instanceof RetryableError && e.retryAfter === 30000)
+})
+
+test('requesting an email change sends the session and the password', async () => {
+  const m = mockFetch([{ body: session('bds_1') }, { status: 202, body: { status: 'accepted' } }])
+  const { c } = clientWith(m)
+  await c.auth.login({ email: 'ada@example.com', password: 'dev-p4ssw0rd!' })
+  await c.auth.requestEmailChange({ newEmail: 'ada.new@example.com', password: 'dev-p4ssw0rd!', redirectTo: 'https://app.example/account' })
+  assert.equal(m.calls[1].url.pathname, '/v1/acme/_auth/email')
+  assert.equal(m.calls[1].headers.Authorization, 'Bearer bds_1')
+  assert.deepEqual(m.calls[1].body, { new_email: 'ada.new@example.com', password: 'dev-p4ssw0rd!', redirect_to: 'https://app.example/account' })
 })

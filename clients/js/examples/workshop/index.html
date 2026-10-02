@@ -352,12 +352,36 @@ await job.wait()</pre></details>
           <li class="ok" x-show="rs && rs.done">Password set. The visitor's session ended: <strong x-text="rs && rs.oldSessionEnded"></strong> · the address is now verified, and a <code>password-changed</code> email was sent.</li>
           <li class="ok" x-show="rs && rs.signedIn">Logged in with the new password.</li>
         </ul>
+        <h3>Change the address</h3>
+        <div class="actions">
+          <button type="button" :disabled="busy || !rs || !rs.signedIn" @click="changeAsk">9. Ask to change it</button>
+          <button type="button" :disabled="busy || !ch || ch.confirmed" @click="changeConfirm">10. Confirm at the new address</button>
+          <button type="button" :disabled="busy || !ch || !ch.confirmed || ch.undone" @click="changeUndo">11. Undo it from the old one</button>
+        </div>
+        <ul class="results" x-show="ch">
+          <li class="ok">New address <code x-text="ch && ch.newEmail"></code> (<span x-text="ch && ch.confirmed ? 'confirmed' : 'waiting for its link'"></span>)</li>
+          <li class="ok" x-show="ch && ch.confirmed">Address changed. The visitor's session ended: <strong x-text="ch && ch.sessionEnded"></strong></li>
+          <li class="ok" x-show="ch && ch.undone">Undone: the old address is back, and its password is unusable until reset (a reset email was sent to it: do steps 5 to 8 again).</li>
+        </ul>
+        <h3>Invite someone by email</h3>
+        <p class="muted" x-show="!isOperator">Sign in as the Operator (the account list above): inviting is an admin call.</p>
+        <div x-show="isOperator">
+          <div class="actions">
+            <button type="button" :disabled="busy" @click="inviteSend">Invite a new address</button>
+            <button type="button" :disabled="busy || !inv || inv.accepted" @click="inviteAccept">Accept it with a password</button>
+          </div>
+          <ul class="results" x-show="inv">
+            <li class="ok">Sent to <code x-text="inv && inv.email"></code>: <q x-text="inv && inv.subject"></q> · <a :href="inv && inv.link" target="_blank" rel="noopener">open its link</a> (a page to choose a password) · no token came back to the admin: <code x-text="inv && inv.sent"></code></li>
+            <li class="ok" x-show="inv && inv.accepted">Accepted: the account exists, verified <strong x-text="inv && inv.verified"></strong>, and no session was started by accepting.</li>
+          </ul>
+        </div>
         <div class="notice">
           <strong>What to notice</strong>
           <ul>
             <li>The visitor got a session at once and <code>email_verified</code> is <code>false</code>: this realm doesn't require verification. A realm that does (<code>account.require_verified_email</code>, as the <a href="../expenses-without-functions/">expenses examples</a> do) answers <code>202</code> without a session, and a login before verifying answers <code>403 email_not_verified</code>.</li>
             <li>The message and its link are made by a worker at send time; backd stores only a hash of the token, never the message.</li>
             <li>Asking for a reset answers <code>202</code> for any address, registered or not, so it reveals nothing. A reset ends every session, marks the address verified (the token proves the mailbox) and sends <code>password-changed</code>; it never starts a session.</li>
+            <li>Changing the address needs the session <em>and</em> the password, and changes nothing until the link sent to the <em>new</em> address is used; that ends every session. The <em>old</em> address gets a link that undoes it for 7 days. An administrator's invitation is emailed with no token anywhere: the link's token is made when the message is sent.</li>
             <li>Step 3 is what an app with its own page does: <code>POST /_auth/verify-email</code> with the token, no session issued. Step 4 shows the result, with the visitor's own session.</li>
           </ul>
         </div>

@@ -22,7 +22,8 @@ cd /path/to/your/app && npm install /path/to/backd/clients/js
 The repository includes two example apps built with this client and [Alpine.js](https://alpinejs.dev/), with no build step:
 
 - the [blog](../../examples/blog/): sign-up, public posts and private drafts, editing with `ifMatch`, and filters;
-- the [expenses example](../../examples/expenses/): data shared between users, and the limits of access rules.
+- the [expenses example](../../examples/expenses/): data shared between users, and the limits of access rules; it requires a verified email and offers "Forgot your password?";
+- the [workshop tour](../../examples/workshop-tour/), which also walks the email flows (verification, reset, change of address, emailed invitations).
 
 {{< live-example >}}
 
@@ -74,6 +75,27 @@ await backd.auth.deleteAccount({ password }) // documents the user owns are kept
 - `logout` always removes the stored token, even if the server can't be reached or already forgot the session.
 
 The endpoints behind these calls, and their rules, are described in [Sign-up, login and sessions](../../auth/sessions/).
+
+### Account flows by email
+
+In a realm with [`email`](../../functions/email/), the links in the emails open pages of `backd` that need no code. An app that wants **its own pages** points the links at them (`email.links` in `realm.yaml`) and posts the token from the link with these calls, none of which needs a session or starts one:
+
+```js
+await backd.auth.resendVerification({ email })                  // 202 whatever the address is
+await backd.auth.verifyEmail(token)                             // the token of the verification link
+await backd.auth.requestPasswordReset({ email, redirectTo })    // 202 whatever the address is
+await backd.auth.resetPassword({ token, password })             // ends every session, verifies the address
+await backd.auth.requestEmailChange({ newEmail, password })     // signed in; needs the current password
+await backd.auth.confirmEmailChange(token)                      // the link sent to the new address
+await backd.auth.revertEmailChange(token)                       // the link sent to the old one
+await backd.auth.acceptInvitation({ token, password, locale })  // an emailed invitation
+```
+
+- A token that is expired, used or unknown rejects with a `ValidationError` whose `code` is `invalid_token`; a password the policy refuses rejects with a `ValidationError` naming `password` and leaves the token usable. A reset request past the realm's limits rejects with a `RetryableError`.
+- `redirectTo` (here and in `signup`) must be within the realm's `email.allowed_redirects`: it is where the page after the link may send the user.
+- After `resetPassword`, `confirmEmailChange`, `revertEmailChange` and `acceptInvitation` the user logs in: none of them starts a session, and the first three end the sessions that exist.
+
+The rules behind each flow are in [Sign-up, login and sessions](../../auth/sessions/).
 
 ### Auth events
 
@@ -298,6 +320,8 @@ await backd.admin.users.delete(user.id)
 
 const invitation = await backd.admin.invitations.create({ email: 'eve@example.com', expiresIn: '3d' })
 sendInvitationEmail(invitation.token)                              // shown only here
+await backd.admin.invitations.send({ email: 'eve@example.com', redirectTo, locale })  // backd emails it: no token
+await backd.admin.users.changeEmail(user.id, 'new@example.com')   // at once; both addresses are told
 await backd.admin.invitations.list()
 await backd.admin.invitations.revoke(invitation.id)
 

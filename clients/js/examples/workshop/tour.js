@@ -139,7 +139,7 @@ const request = await operator.admin.invocations.list({ requestId: refundCall?.r
 const child = request.items.find((r) => r.function === 'main/refund_receipt')
 check('its receipt was called by the refund (origin function, parent_id)', child?.origin === 'function' && child.parent_id === refundCall?.id, JSON.stringify(child))
 
-heading('6. Email verification (email-capture)')
+heading('6. Email verification, password reset, email change and invitations (email-capture)')
 {
   const visitor = createClient({ url, realm: 'workshop' })
   const address = `visitor-${Date.now().toString(36)}@example.com`
@@ -181,6 +181,33 @@ heading('6. Email verification (email-capture)')
   check('the new password works, the old one does not', (await relogin.auth.login({ email: address, password: `${PASSWORD}2` })).user.email === address)
   await refused('the old password is refused', () => createClient({ url, realm: 'workshop' }).auth.login({ email: address, password: PASSWORD }), AuthenticationError, 'invalid_credentials')
   check('the reset token works once (400)', (await post(resetBody(`${PASSWORD}3`))).status === 400)
+
+  // Changing the address: password and session, confirmed by the new address, undone by the old one.
+  const waitMail = async (/** @type {string} */ kind, /** @type {string} */ to) => {
+    /** @type {any} */ let found
+    for (let i = 0; i < 40 && !found; i++) {
+      found = (await box.list({ orderBy: '-_meta.created_at', limit: 50 })).items.find((m) => m.kind === kind && m.to.includes(to))
+      if (!found) await new Promise((r) => setTimeout(r, 500))
+    }
+    return found
+  }
+  const tokenOf = (/** @type {any} */ mail) => new URL(mail?.link ?? `${url}?token=`).searchParams.get('token') ?? ''
+  const moved = `moved-${address}`
+  await refused('changing the address needs the right password', () => relogin.auth.requestEmailChange({ newEmail: moved, password: 'wrong-password-1' }), AuthenticationError, 'invalid_credentials')
+  await relogin.auth.requestEmailChange({ newEmail: moved, password: `${PASSWORD}2` })
+  await relogin.auth.confirmEmailChange(tokenOf(await waitMail('change-email', moved)))
+  await refused('confirming ended the sessions', () => relogin.auth.me(), AuthenticationError, 'unauthenticated')
+  check('the new address signs in', (await createClient({ url, realm: 'workshop' }).auth.login({ email: moved, password: `${PASSWORD}2` })).user.email === moved)
+  await createClient({ url, realm: 'workshop' }).auth.revertEmailChange(tokenOf(await waitMail('email-changed', address)))
+  await refused('after the undo the password is unusable until reset', () => createClient({ url, realm: 'workshop' }).auth.login({ email: address, password: `${PASSWORD}2` }), AuthenticationError, 'invalid_credentials')
+  check('and a reset email went to the restored address', Boolean(await waitMail('reset-password', address)))
+
+  // An emailed invitation (an admin call): no token comes back, the link makes a verified account.
+  const invited = `invited-${address}`
+  const sent = /** @type {any} */ (await operator.admin.invitations.send({ email: invited }))
+  check('an emailed invitation has no token', sent.sent === true && !('token' in sent))
+  await createClient({ url, realm: 'workshop' }).auth.acceptInvitation({ token: tokenOf(await waitMail('invitation', invited)), password: PASSWORD })
+  check('accepting creates a verified account', (await createClient({ url, realm: 'workshop' }).auth.login({ email: invited, password: PASSWORD })).user.email_verified === true)
 }
 
 console.log(failed === 0 ? '\nThe whole tour works.' : `\n${failed} check(s) failed.`)
