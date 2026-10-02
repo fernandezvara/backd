@@ -473,3 +473,27 @@ func TestInvitationsOnMongoDB(t *testing.T) {
 		t.Errorf("expired claim: %v", err)
 	}
 }
+
+func TestListUnverifiedUsersOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	at := func(h int) time.Time { return time.Date(2026, 9, 26, h, 0, 0, 0, time.UTC) }
+	for i, u := range []auth.User{
+		{ID: "old-unverified", Email: "a@example.com", CreatedAt: at(1)},
+		{ID: "old-verified", Email: "b@example.com", EmailVerified: true, CreatedAt: at(2)},
+		{ID: "older-unverified", Email: "c@example.com", CreatedAt: at(0)},
+		{ID: "young-unverified", Email: "d@example.com", CreatedAt: at(10)},
+	} {
+		u.UpdatedAt = u.CreatedAt
+		if err := s.CreateUser(ctx, u); err != nil {
+			t.Fatalf("user %d: %v", i, err)
+		}
+	}
+	got, err := s.ListUnverifiedUsers(ctx, at(5), 10)
+	if err != nil || len(got) != 2 || got[0].ID != "older-unverified" || got[1].ID != "old-unverified" {
+		t.Errorf("unverified before 05:00: %+v, %v", got, err)
+	}
+	if got, _ = s.ListUnverifiedUsers(ctx, at(5), 1); len(got) != 1 || got[0].ID != "older-unverified" {
+		t.Errorf("limit: %+v", got)
+	}
+}

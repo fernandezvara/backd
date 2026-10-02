@@ -39,7 +39,9 @@ type EmailRequest struct {
 // delivery function. It returns ErrEmailNotConfigured in a realm without
 // email, and *EmailLimitedError when a limit is reached: callers without a
 // signed-in user skip the send silently, so the answer reveals nothing;
-// callers with one answer 429.
+// callers with one answer 429. Without a UserID nothing is queued, but the
+// limits are counted all the same, so a request about an address that has no
+// account does the same work as one that has.
 func (s *Users) QueueEmail(ctx context.Context, r EmailRequest) (Job, error) {
 	e := s.Settings.Email
 	if e == nil {
@@ -74,6 +76,10 @@ func (s *Users) QueueEmail(ctx context.Context, r EmailRequest) (Job, error) {
 			}
 			return Job{}, err
 		}
+	}
+	if r.UserID == "" {
+		// Only the limits were applied: nobody gets a message.
+		return Job{}, nil
 	}
 	database, function := e.DatabaseAndName()
 	return s.EnqueueJob(ctx, Job{

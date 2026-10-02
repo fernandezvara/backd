@@ -54,8 +54,10 @@ All request bodies are JSON objects sent with `Content-Type: application/json`. 
 
 | Method and path | Needs a session | Body | Success |
 |---|---|---|---|
-| `POST /_auth/signup` | no | `{"email", "password", "invitation"?, "locale"?}` | `201` with a session |
+| `POST /_auth/signup` | no | `{"email", "password", "invitation"?, "locale"?, "redirect_to"?}` | `201` with a session, or `202` without one when the realm [requires a verified email](#email-verification) |
 | `POST /_auth/login` | no | `{"email", "password"}` | `200` with a session |
+| `POST /_auth/verify-email` | no | `{"token"}` | `204`; [verifies the address](#email-verification) |
+| `POST /_auth/verify-email/resend` | no | `{"email", "redirect_to"?}` | `202`, whatever the account |
 | `POST /_auth/logout` | yes | none | `204`; ends this session |
 | `POST /_auth/logout-all` | yes | none | `204`; ends all of the user's sessions, including this one |
 | `GET /_auth/me` | yes | none | `200` with the user |
@@ -79,7 +81,7 @@ curl -X POST https://localhost:8443/v1/blog/_auth/signup \
 - If sign-up fails for another reason (weak password, email already registered), the invitation isn't used up.
 - The email must be valid, and the password must follow the realm's [password policy](../users/#password-policy). Failures return `400 validation_error` with `details` naming `email` or `password`.
 - An email that is already registered returns `409 email_taken`.
-- The new user is signed in at once: the response carries a session.
+- The new user is signed in at once: the response carries a session, unless the realm [requires a verified email](#email-verification) (then `202`, no session). In a realm with [`email`](../../functions/email/), sign-up also sends the verification email. `redirect_to` is where the page after that link may send the user; it must be within the realm's `email.allowed_redirects` (`400 invalid_redirect`).
 
 ### Login
 
@@ -92,6 +94,17 @@ curl -X POST https://localhost:8443/v1/blog/_auth/login \
 Any failure returns the same `401 invalid_credentials`: unknown email, wrong password, a user without a password, or a disabled user. Repeated failures are slowed down (see [brute-force protection](#brute-force-protection)). Unknown emails take the same time to answer as known ones, so neither the response nor its timing reveals whether an email is registered.
 
 A user with [`login_networks`](../../configuration/realm/#network-restrictions) can only log in from those networks: elsewhere, the right password answers `401 invalid_credentials` too, and counts as a failure. Their session also only works from those networks.
+
+### Email verification
+
+In a realm with [`email`](../../functions/email/), sign-up sends a `verify-email` message whose link opens a page of `backd` with one button. Pressing it sets `email_verified` to `true` on the user, whom [rules](../rules/) see as `user.email_verified`. Opening the link only shows the button, so mail scanners can't use it up. **Verifying never starts a session**: the user signs in as usual. Apps with their own pages send the token to `POST /_auth/verify-email` instead (`204`, or `400 invalid_token` for any token that is expired, used or unknown), and point the link at them with [`email.links`](../../functions/email/#links-and-pages).
+
+- **`POST /_auth/verify-email/resend`** with `{"email"}` sends the message again. It answers `202` whatever the account is (unknown, disabled or already verified), and the [email limits](../../functions/email/#limits) count the same in every case, so it can't be used to learn who is registered.
+- **Who is verified from the start:** users created by `backd bootstrap`, by the [admin API](../admin/) or `backd user create`, and users who sign up with an [invitation](../admin/#invitations) bound to their address. Users who sign up themselves, and those whose invitation isn't bound to an address, are not.
+- **Requiring it.** With `account.require_verified_email: true` in [`realm.yaml`](../../configuration/realm/#account), sign-up answers `202 {"status": "verification_required"}` without a session, and a login with the **right password** for an unverified address answers `403 email_not_verified`. A wrong password still answers `401 invalid_credentials`, so the answer reveals nothing to someone who doesn't know the password. Users of an existing realm who are unverified when you switch this on are locked out until they use resend (or, once available, password reset). In this mode an address that is already registered still answers `409 email_taken`, so the answer to a sign-up can tell whether an address is registered.
+- **Welcome.** `account.welcome_email: true` sends the `welcome` message once the address is verified.
+- **Lifetime.** The link works for `account.tokens.verify_email` (48 hours by default).
+- **Squatters.** Anyone can sign up with someone else's address and leave it unverified. `account.purge_unverified_after` (off by default) lets a worker delete accounts that never verified after that time (except those with roles), recorded in the [audit trail](../audit/) as `user.purged_unverified` with a count. Documents such accounts created are kept, as with any deleted user.
 
 ### Brute-force protection
 
@@ -156,7 +169,10 @@ There is no self-service password reset yet, because `backd` doesn't send email.
 | 400 | `validation_error` | Missing, wrongly typed or unknown fields; invalid email; password breaks the policy |
 | 401 | `unauthenticated` | No `Authorization: Bearer` header, or the token is unknown, expired, revoked, or its user is disabled |
 | 401 | `invalid_credentials` | Wrong email or password, or wrong current password |
+| 400 | `invalid_redirect` | `redirect_to` isn't within the realm's `email.allowed_redirects` |
+| 400 | `invalid_token` | An email link's token is unknown, expired, used or for another purpose (JSON endpoints) |
 | 403 | `forbidden` | Sign-up is closed in this realm, or needs a valid invitation |
+| 403 | `email_not_verified` | The password is right but the realm requires a verified address |
 | 404 | `not_found` | Unknown realm, realm with `auth: disabled`, or a session id that isn't yours |
 | 409 | `email_taken` | Sign-up with a registered email |
 | 429 | `too_many_requests` | Too many failed logins or password checks; wait `Retry-After` seconds |

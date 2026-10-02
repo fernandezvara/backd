@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"context"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -176,6 +177,22 @@ func (m *MemStore) UpdateUser(_ context.Context, id string, upd auth.UserUpdate,
 	u.UpdatedAt = now
 	m.users[id] = u
 	return nil
+}
+
+func (m *MemStore) ListUnverifiedUsers(_ context.Context, before time.Time, limit int) ([]auth.User, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []auth.User
+	for _, u := range m.users {
+		if !u.EmailVerified && u.CreatedAt.Before(before) {
+			out = append(out, u)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
 
 func (m *MemStore) DeleteUser(_ context.Context, id string) error {

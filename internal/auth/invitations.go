@@ -129,7 +129,8 @@ func (s *Users) signupWithInvitation(ctx context.Context, email, password, token
 		restore()
 		return User{}, ErrInvalidInvitation
 	}
-	u, err := s.create(ctx, email, &password, locale)
+	// An invitation bound to an address was sent to it: its owner vouches for it.
+	u, err := s.create(ctx, email, &password, locale, inv.Email != "")
 	if err != nil {
 		restore()
 		return User{}, err

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -383,6 +384,30 @@ func TestContract(t *testing.T) {
 	f.svc.Settings.Signup = "closed"
 	req("POST", a+"/signup", `{"email": "x@example.com", "password": "dev-p4ssw0rd!"}`, nil, 403)
 	f.svc.Settings.Signup = "open"
+
+	// Email verification.
+	f.svc.Now = func() time.Time { return *f.clock }
+	verifyToken := func() string { return f.token(t, "verify-email", "") }
+	form := map[string]string{"Content-Type": "application/x-www-form-urlencoded"}
+	req("POST", a+"/signup", `{"email": "r@example.com", "password": "dev-p4ssw0rd!", "redirect_to": "https://evil.example/"}`, nil, 400)
+	f.svc.Settings.Account.RequireVerifiedEmail = true
+	req("POST", a+"/signup", `{"email": "pending@example.com", "password": "dev-p4ssw0rd!", "redirect_to": "https://app.acme.example/welcome"}`, nil, 202)
+	req("POST", a+"/login", `{"email": "pending@example.com", "password": "dev-p4ssw0rd!"}`, nil, 403)
+	f.svc.Settings.Account.RequireVerifiedEmail = false
+	req("POST", a+"/verify-email/resend", `{"email": "pending@example.com"}`, nil, 202)
+	req("POST", a+"/verify-email/resend", `{"email": "nobody@example.com", "redirect_to": "https://app.acme.example/x"}`, nil, 202)
+	req("POST", a+"/verify-email/resend", `{"email": "nope"}`, nil, 400)
+	req("POST", a+"/verify-email/resend", `{"email": "a@example.com"}`, map[string]string{"Content-Type": "text/plain"}, 415)
+	req("POST", "/v1/nope/_auth/verify-email/resend", `{"email": "a@example.com"}`, nil, 404)
+	req("GET", a+"/verify-email?token="+verifyToken(), "", nil, 200)
+	req("GET", a+"/verify-email?token=nope", "", nil, 400)
+	req("GET", "/v1/nope/_auth/verify-email?token=x", "", nil, 404)
+	req("POST", a+"/verify-email", "token="+verifyToken(), form, 200)
+	req("POST", a+"/verify-email", "token=nope", form, 400)
+	req("POST", a+"/verify-email", `{"token": "`+verifyToken()+`"}`, nil, 204)
+	req("POST", a+"/verify-email", `{"token": "nope"}`, nil, 400)
+	req("POST", a+"/verify-email", `{"token": "x"}`, map[string]string{"Content-Type": "text/plain"}, 415)
+	req("POST", "/v1/nope/_auth/verify-email", `{"token": "x"}`, nil, 404)
 
 	login := req("POST", a+"/login", `{"email": "new@example.com", "password": "dev-p4ssw0rd!"}`, nil, 200)
 	me := bearer(login["token"].(string))

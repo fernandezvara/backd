@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/fernandezvara/backd/internal/email"
 )
 
 // RealmFile is the name of the required realm settings file.
@@ -86,7 +88,32 @@ type RealmSettings struct {
 	// Email is how the realm sends email (email in realm.yaml); nil when it
 	// doesn't, and then no email is ever sent.
 	Email *EmailSettings
+	// Account is how the realm's accounts behave (account in realm.yaml).
+	Account AccountSettings
 }
+
+// AccountSettings are the account lifecycle settings of a realm.
+type AccountSettings struct {
+	// RequireVerifiedEmail: no session until the address is verified.
+	RequireVerifiedEmail bool
+	// WelcomeEmail sends the welcome email once the address is verified.
+	WelcomeEmail bool
+	// VerifyEmailTTL is how long a verification link works (account.tokens.verify_email).
+	VerifyEmailTTL time.Duration
+	// PurgeUnverifiedAfter deletes accounts that never verified; 0 is off.
+	PurgeUnverifiedAfter time.Duration
+}
+
+// TokenLifetime is how long a token of this purpose works in the realm.
+func (a AccountSettings) TokenLifetime(p email.Purpose) time.Duration {
+	if p == email.TokenPurpose(email.VerifyEmail) && a.VerifyEmailTTL > 0 {
+		return a.VerifyEmailTTL
+	}
+	return p.DefaultLifetime()
+}
+
+// DefaultVerifyEmailTTL is account.tokens.verify_email when not set.
+const DefaultVerifyEmailTTL = 48 * time.Hour
 
 // Defaults of email.limits.
 const (
@@ -180,7 +207,15 @@ type realmDoc struct {
 		Admin       bool        `yaml:"admin"`
 		Users       []roleEntry `yaml:"users"`
 	} `yaml:"roles"`
-	Email     *emailDoc `yaml:"email"`
+	Email   *emailDoc `yaml:"email"`
+	Account *struct {
+		RequireVerifiedEmail bool   `yaml:"require_verified_email"`
+		WelcomeEmail         bool   `yaml:"welcome_email"`
+		PurgeUnverifiedAfter string `yaml:"purge_unverified_after"`
+		Tokens               *struct {
+			VerifyEmail string `yaml:"verify_email"`
+		} `yaml:"tokens"`
+	} `yaml:"account"`
 	Functions *struct {
 		MaxConcurrency *int    `yaml:"max_concurrency"`
 		LogRetention   *string `yaml:"log_retention"`
@@ -429,6 +464,38 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 			var es []error
 			s.Email, es = parseEmail(e)
 			errs = append(errs, es...)
+		}
+	}
+
+	s.Account.VerifyEmailTTL = DefaultVerifyEmailTTL
+	if a := doc.Account; a != nil {
+		if !s.AuthEnabled {
+			errs = append(errs, errors.New("account: only applies when auth is enabled"))
+		} else {
+			s.Account.RequireVerifiedEmail, s.Account.WelcomeEmail = a.RequireVerifiedEmail, a.WelcomeEmail
+			for key, on := range map[string]bool{"require_verified_email": a.RequireVerifiedEmail, "welcome_email": a.WelcomeEmail, "purge_unverified_after": a.PurgeUnverifiedAfter != ""} {
+				if on && s.Email == nil {
+					errs = append(errs, fmt.Errorf("account.%s: needs an email section (the emails it sends go through its delivery function)", key))
+				}
+			}
+			dur := func(key, v string, dst *time.Duration) {
+				if v == "" {
+					return
+				}
+				d, err := ParseDuration(v)
+				switch {
+				case err != nil:
+					errs = append(errs, fmt.Errorf("account.%s: %w", key, err))
+				case d < time.Minute:
+					errs = append(errs, fmt.Errorf("account.%s: must be at least 1m, got %s", key, v))
+				default:
+					*dst = d
+				}
+			}
+			dur("purge_unverified_after", a.PurgeUnverifiedAfter, &s.Account.PurgeUnverifiedAfter)
+			if a.Tokens != nil {
+				dur("tokens.verify_email", a.Tokens.VerifyEmail, &s.Account.VerifyEmailTTL)
+			}
 		}
 	}
 

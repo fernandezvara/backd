@@ -45,7 +45,13 @@ type hostedAction struct {
 
 // hostedActions are the flows this version serves. Each of them arrives with
 // the feature it belongs to (verifying an address, resetting a password, ...).
-func hostedActions() []hostedAction { return nil }
+func hostedActions() []hostedAction {
+	return []hostedAction{
+		{Purpose: "verify-email", Page: email.PageVerifyEmail, Run: func(ctx context.Context, svc *auth.Users, in hostedInput) (auth.EmailToken, error) {
+			return svc.VerifyEmail(ctx, in.Token)
+		}},
+	}
+}
 
 // flowKey is the name a purpose has in realm.yaml (redirects.verify_email).
 func flowKey(p email.Purpose) string { return strings.ReplaceAll(string(p), "-", "_") }
@@ -221,4 +227,49 @@ func (a *authAPI) hostedPost(act hostedAction, jsonOnly func(http.Handler) http.
 			p.write(w, r, http.StatusOK, email.PageResult, d)
 		}
 	}
+}
+
+// checkRedirect answers 400 invalid_redirect unless redirectTo is empty or
+// within the realm's email.allowed_redirects.
+func (a *authAPI) checkRedirect(w http.ResponseWriter, r *http.Request, redirectTo string) bool {
+	if redirectTo == "" {
+		return true
+	}
+	if rl := a.reg.Realms[chi.URLParam(r, "realm")]; rl != nil && rl.Settings.Email != nil && rl.Settings.Email.AllowedRedirect(redirectTo) {
+		return true
+	}
+	writeError(w, r, http.StatusBadRequest, codeInvalidRedirect, "redirect_to must be an absolute URL within the realm's email.allowed_redirects", Detail{Path: "redirect_to", Reason: "is not allowed"})
+	return false
+}
+
+// resendVerification handles POST /_auth/verify-email/resend. It answers
+// 202 whatever the account is, so it can't be used to find out who is
+// registered.
+func (a *authAPI) resendVerification(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.hostedRealm(r); !ok {
+		writeError(w, r, http.StatusNotFound, codeNotFound, "resource not found")
+		return
+	}
+	obj, ok := readObject(w, r)
+	if !ok {
+		return
+	}
+	f, ok := fields(w, r, obj, map[string]string{"email": "string", "redirect_to": "string?"})
+	if !ok {
+		return
+	}
+	address, _ := f["email"].(string)
+	redirectTo, _ := f["redirect_to"].(string)
+	if _, err := registry.NormalizeEmail(address); err != nil {
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "email", Reason: "must be a valid email address"})
+		return
+	}
+	if !a.checkRedirect(w, r, redirectTo) {
+		return
+	}
+	if err := usersOf(r).ResendVerification(r.Context(), address, redirectTo, clientIP(r), requestID(r.Context())); err != nil {
+		authError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"status": "accepted"})
 }

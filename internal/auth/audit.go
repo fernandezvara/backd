@@ -17,7 +17,8 @@ const (
 	AuditUserSignup      = "user.signup"   // self-service sign-up
 	AuditUserPassword    = "user.password" // set by an administrator
 	AuditPasswordChange  = "user.password_change"
-	AuditUserVerifyEmail = "user.verify_email" // details: verified
+	AuditUserVerifyEmail = "user.verify_email"      // details: verified
+	AuditUserPurged      = "user.purged_unverified" // details: count; never addresses
 	AuditUserDisable     = "user.disable"
 	AuditUserEnable      = "user.enable"
 	AuditUserDelete      = "user.delete"
@@ -43,6 +44,8 @@ const (
 	ActorConfig = "config:realm.yaml"
 	// ActorBootstrap is `backd bootstrap`.
 	ActorBootstrap = "cli:bootstrap"
+	// ActorSystem is backd itself, in the background (purging unverified accounts).
+	ActorSystem = "system"
 	// ActorAnonymous is a caller without credentials.
 	ActorAnonymous = "anonymous"
 )

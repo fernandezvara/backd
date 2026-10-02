@@ -32,6 +32,11 @@ var (
 	ErrUnauthenticated = errors.New("invalid or expired token")
 	// ErrSignupClosed means the realm doesn't allow self sign-up.
 	ErrSignupClosed = errors.New("sign-up is not open in this realm")
+	// ErrEmailNotVerified answers a login with the right password for an
+	// address that isn't verified yet, in a realm that requires it. It is
+	// only returned after the password was checked, so it reveals nothing
+	// to someone who doesn't have it.
+	ErrEmailNotVerified = errors.New("verify your email address before signing in")
 )
 
 // Session is a signed-in session. Only a hash of its token is stored.
@@ -84,22 +89,32 @@ func (s *Users) expiry(created, lastUsed time.Time) time.Time {
 // request's locale, then Accept-Language); the user gets the best one the
 // realm lists, or its default, silently.
 func (s *Users) Signup(ctx context.Context, email, password, invitation string, locales ...string) (Principal, string, error) {
+	u, err := s.signup(ctx, email, password, invitation, locales)
+	if err != nil {
+		return Principal{}, "", err
+	}
+	return s.startSession(ctx, u)
+}
+
+// signup creates the user and records it; Signup and SignUp differ in what
+// follows.
+func (s *Users) signup(ctx context.Context, email, password, invitation string, locales []string) (User, error) {
 	var u User
 	var err error
 	locale := s.Settings.BestLocale(locales...)
 	switch s.Settings.Signup {
 	case registry.SignupOpen:
-		u, err = s.create(ctx, email, &password, locale)
+		u, err = s.create(ctx, email, &password, locale, false)
 	case registry.SignupInvite:
 		u, err = s.signupWithInvitation(ctx, email, password, invitation, locale)
 	default:
 		err = ErrSignupClosed
 	}
 	if err != nil {
-		return Principal{}, "", err
+		return User{}, err
 	}
 	s.AuditAs(ctx, userTarget(u.ID), AuditUserSignup, userTarget(u.ID), map[string]any{"invited": invitation != "", "roles": u.Roles})
-	return s.startSession(ctx, u)
+	return u, nil
 }
 
 // Login checks an email and password and starts a session. Every failure
@@ -118,6 +133,9 @@ func (s *Users) Login(ctx context.Context, email, password, ip string) (Principa
 		// like a wrong one, and counts as a failure.
 		if !u.LoginNetworks.Allows(ip) {
 			return ErrInvalidCredentials
+		}
+		if s.Settings.Account.RequireVerifiedEmail && !u.EmailVerified {
+			return ErrEmailNotVerified
 		}
 		return nil
 	})

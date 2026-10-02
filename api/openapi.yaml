@@ -78,6 +78,12 @@ paths:
         quality), matched exactly (`es-MX`), then by language (`es`), else the
         realm's `default_locale`. It never fails: an unlisted language is
         replaced by the default.
+
+        In a realm with `email`, sign-up also asks for the `verify-email`
+        message. With `account.require_verified_email: true` there is no
+        session until the address is verified: the answer is `202` and the
+        user signs in after following the link. (An already registered
+        address still answers `409`.)
       operationId: signup
       parameters:
         - name: Accept-Language
@@ -97,8 +103,21 @@ paths:
                 password: { type: string, minLength: 8, maxLength: 128 }
                 invitation: { type: string, description: "Invitation token (`bdi_…`), for `signup: invite`." }
                 locale: { type: string, description: "The language to use for the user, such as `es` or `es-MX`; mapped silently to one the realm lists." }
+                redirect_to: { type: string, description: "Where the page after the verification link may send the user: an absolute URL within the realm's `email.allowed_redirects` (`400 invalid_redirect` otherwise)." }
       responses:
         "201": { $ref: "#/components/responses/SessionCreated" }
+        "202":
+          description: >-
+            The account exists but has no session: the realm requires the
+            address to be verified first (`account.require_verified_email`).
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [verification_required] }
         "400": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
@@ -125,7 +144,123 @@ paths:
         "200": { $ref: "#/components/responses/Session" }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
+        "403":
+          description: >-
+            `email_not_verified`: the password is right, but the realm
+            requires a verified address (`account.require_verified_email`).
+            Only answered after the password was checked.
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/verify-email:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [auth]
+      summary: The page the verification link opens
+      description: |
+        The link in the `verify-email` message. Shows a page with a button;
+        it never uses the token up, so mail scanners that open links can't
+        spoil it. The page is the realm's `pages/verify-email/<locale>.html`,
+        in the language of `Accept-Language`, and is sent with
+        `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, a strict
+        `Content-Security-Policy` and `frame-ancestors 'none'`. A token that
+        is expired, used or unknown shows the same error page (`400`).
+      operationId: verifyEmailPage
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema: { type: string }
+        - name: Accept-Language
+          in: header
+          schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/HostedPage" }
+        "400": { $ref: "#/components/responses/HostedPage" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [auth]
+      summary: Verify an email address
+      description: |
+        Uses the token: the address becomes verified (and the `welcome`
+        message is sent when `account.welcome_email` is on). No session is
+        issued. The hosted page posts its form here
+        (`application/x-www-form-urlencoded`, answered with a page); an app
+        with its own pages posts JSON. A token that is expired, used,
+        unknown or for another purpose is `400 invalid_token`.
+      operationId: verifyEmail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token]
+              properties:
+                token: { type: string }
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/HostedPage" }
+        "204": { description: The address is verified. }
+        "400":
+          description: Invalid, expired or used token (`invalid_token`), or an invalid body.
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+            text/html:
+              schema: { type: string }
+        "404": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/verify-email/resend:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Ask for the verification email again
+      description: |
+        Answers `202` whether or not the address belongs to an account, or is
+        already verified, so it can't be used to find out who is registered.
+        The email limits apply (and are counted the same in every case);
+        reaching one doesn't change the answer. `404` in a realm without
+        `email`.
+      operationId: resendVerification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email]
+              properties:
+                email: { type: string }
+                redirect_to: { type: string, description: "Within the realm's `email.allowed_redirects`." }
+      responses:
+        "202":
+          description: Accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [accepted] }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_auth/logout:
@@ -1340,6 +1475,15 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    HostedPage:
+      description: A page of the realm's `pages/` folder, with no external resources.
+      headers:
+        Cache-Control: { $ref: "#/components/headers/NoStore" }
+        Referrer-Policy: { description: Always `no-referrer`., schema: { type: string } }
+        Content-Security-Policy: { description: A strict policy with `frame-ancestors 'none'`., schema: { type: string } }
+      content:
+        text/html:
+          schema: { type: string }
     Session:
       description: A new session.
       headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }

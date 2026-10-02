@@ -81,6 +81,9 @@ type Store interface {
 	RemoveRole(ctx context.Context, userID, role string, now time.Time) error
 	// UpdateUser applies upd and sets UpdatedAt to now.
 	UpdateUser(ctx context.Context, id string, upd UserUpdate, now time.Time) error
+	// ListUnverifiedUsers returns up to limit users whose address is still
+	// unverified and who were created before the given time, oldest first.
+	ListUnverifiedUsers(ctx context.Context, createdBefore time.Time, limit int) ([]User, error)
 	// DeleteUser removes the user with their identities and sessions.
 	DeleteUser(ctx context.Context, id string) error
 	// PutIdentity creates the identity, or, when one with the same provider

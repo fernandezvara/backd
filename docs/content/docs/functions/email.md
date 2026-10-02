@@ -66,7 +66,7 @@ The link in an email opens a **page served by backd**, so an app only chooses wh
 - **Where users go next.** After a success the `result` page waits `redirect_delay` (3 seconds by default, at most 30) and sends the user to the `redirect_to` the request stored with the token, or else to `email.redirects.<flow>` (`verify_email`, `reset_password`, `change_email`, `invitation`). Both must be within `email.allowed_redirects`: origins such as `https://app.acme.example` or an app's own scheme such as `acme://`. The address is checked when the email is requested and again when the page uses it.
 - **Your own pages instead.** `email.links.<flow>` replaces backd's address in the email with one of your app's pages, which must be within `allowed_redirects` and contain `{token}` once (`https://app.acme.example/reset?token={token}`). That page sends the token to the JSON endpoint of the same flow, `POST /v1/<realm>/_auth/<flow>` with `{"token"}` (and `{"password"}` for `reset-password` and `accept-invitation`), which answers `204`, or `400 invalid_token` for any token that doesn't work.
 
-The flows arrive with the features that use them: the pages, templates and settings above are in place, and each flow's route starts answering when its feature is released (email verification, password reset, email change, invitations).
+Of the flows, [email verification](../../auth/sessions/#email-verification) works today; password reset, email change and invitations arrive with their features, and each route starts answering then.
 
 Every page, in every state, sends `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, a strict `Content-Security-Policy` (no scripts, no images, no frames, forms post only to backd) and `frame-ancestors 'none'`, loads nothing from other origins, and is served without the token in any log: the access log records the route, never the query string.
 
@@ -128,7 +128,7 @@ Links and tokens in a message are credentials. `backd` hides the token from the 
 
 - **The email job holds no message.** What is queued is a small record: the kind, the user's id, the language and where the page after the link may send the user. No address, no text, no token. The worker builds the message when it runs, so the message exists only in memory and at your provider.
 - **Tokens are created at send time.** The worker creates a token of 256 random bits for the links that need one (verifying an address, resetting a password, …) and stores **only its SHA-256 hash**, with its purpose, user, expiry and use. A token is redeemed once, in one atomic step: of two parallel attempts exactly one succeeds, and a success invalidates the user's other outstanding tokens of the same purpose. Unknown, expired, used and wrong-purpose tokens are indistinguishable. A retry of the email makes a new token; an earlier one that was never delivered simply expires.
-- **Lifetimes:** 48 hours to verify an address, 1 hour to reset a password, 24 hours to confirm an email change, 7 days to undo one and to accept an invitation.
+- **Lifetimes:** 48 hours to verify an address (`account.tokens.verify_email`), 1 hour to reset a password, 24 hours to confirm an email change, 7 days to undo one and to accept an invitation.
 - **In the job list** an email job appears with the delivery function as its `function` and `origin: backd:email.<kind>`, and its attempts, next attempt and result (the `message_id`); never a message, a link or an address.
 
 ## Developing without a provider

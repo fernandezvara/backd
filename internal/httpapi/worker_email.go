@@ -79,7 +79,7 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 			w.fail(ctx, log, svc, job, "backd's public address is unknown (BACKD_URL or email.public_url)")
 			return nil, nil, false
 		}
-		token, expires, err := svc.NewEmailToken(ctx, string(purpose), user.ID, job.Email.RedirectTo, purpose.DefaultLifetime())
+		token, expires, err := svc.NewEmailToken(ctx, string(purpose), user.ID, job.Email.RedirectTo, svc.Settings.Account.TokenLifetime(purpose))
 		if err != nil {
 			log.Warn("create the email's token; leaving the job to be retried", "error", err)
 			return nil, nil, false
