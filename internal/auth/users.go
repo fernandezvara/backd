@@ -29,6 +29,9 @@ type Users struct {
 	Cache  *SecretCache
 }
 
+// Clock is the service's current time (its Now, or the real one).
+func (s *Users) Clock() time.Time { return s.now() }
+
 func (s *Users) now() time.Time {
 	if s.Now != nil {
 		return s.Now().UTC()

@@ -46,31 +46,63 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 		return nil, nil, false
 	}
 	es, tpl := rl.Settings.Email, rl.Email
-	user, err := svc.UserByID(ctx, job.Email.UserID)
-	if err != nil {
-		if err == auth.ErrNotFound {
-			w.fail(ctx, log, svc, job, "the user no longer exists")
-		} else {
-			log.Warn("find the email's user; leaving the job to be retried", "error", err)
-		}
-		return nil, nil, false
-	}
-	if user.Disabled {
-		w.fail(ctx, log, svc, job, "the user is disabled")
-		return nil, nil, false
-	}
 	kind := job.Email.Kind
-	// The language the request asked for, else the user's own, else the default.
-	locale := job.Email.Locale
-	if locale == "" {
-		locale = svc.LocaleOf(user)
+	// Who the message is for, in which language, and what its token acts on.
+	var (
+		userID, address, locale string
+		invitationID            string
+		notice                  = job.Email.Notice
+	)
+	if job.Email.InvitationID != "" {
+		// An invitation: there is no user yet, the invited address is the
+		// recipient, and the token lives as long as the invitation.
+		inv, found, err := svc.InvitationByID(ctx, job.Email.InvitationID)
+		if err != nil {
+			log.Warn("find the invitation; leaving the job to be retried", "error", err)
+			return nil, nil, false
+		}
+		if !found {
+			w.fail(ctx, log, svc, job, "the invitation was revoked or has expired")
+			return nil, nil, false
+		}
+		invitationID, address = inv.ID, inv.Email
+		locale = job.Email.Locale
+	} else {
+		user, err := svc.UserByID(ctx, job.Email.UserID)
+		if err != nil {
+			if err == auth.ErrNotFound {
+				w.fail(ctx, log, svc, job, "the user no longer exists")
+			} else {
+				log.Warn("find the email's user; leaving the job to be retried", "error", err)
+			}
+			return nil, nil, false
+		}
+		if user.Disabled {
+			w.fail(ctx, log, svc, job, "the user is disabled")
+			return nil, nil, false
+		}
+		userID, address = user.ID, user.Email
+		switch job.Email.To {
+		case "pending":
+			address = user.PendingEmail
+		case "previous":
+			address = user.PreviousEmail
+		}
+		if address == "" {
+			w.fail(ctx, log, svc, job, "there is no address to send this message to any more")
+			return nil, nil, false
+		}
+		// The language the request asked for, else the user's own, else the default.
+		if locale = job.Email.Locale; locale == "" {
+			locale = svc.LocaleOf(user)
+		}
 	}
 	if !tpl.Has(kind, locale) {
 		locale = es.DefaultLocale
 	}
-	data := email.Data{Realm: realm, User: email.User{Email: user.Email, Locale: locale}, Data: map[string]any{}}
+	data := email.Data{Realm: realm, User: email.User{Email: address, Locale: locale}, Data: map[string]any{}}
 	extra := map[string]any{}
-	if purpose := email.TokenPurpose(kind); purpose != "" {
+	if purpose := email.TokenPurpose(kind); purpose != "" && !notice {
 		base := es.PublicURL
 		if base == "" {
 			base = w.backdURL
@@ -79,7 +111,16 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 			w.fail(ctx, log, svc, job, "backd's public address is unknown (BACKD_URL or email.public_url)")
 			return nil, nil, false
 		}
-		token, expires, err := svc.NewEmailToken(ctx, string(purpose), user.ID, job.Email.RedirectTo, svc.Settings.Account.TokenLifetime(purpose))
+		spec := auth.EmailToken{Purpose: string(purpose), UserID: userID, RedirectTo: job.Email.RedirectTo, InvitationID: invitationID}
+		if job.Email.To != "" || invitationID != "" {
+			spec.Address = address // what the link acts on
+		}
+		ttl := svc.Settings.Account.TokenLifetime(purpose)
+		if invitationID != "" {
+			inv, _, _ := svc.InvitationByID(ctx, invitationID)
+			ttl = inv.ExpiresAt.Sub(svc.Clock())
+		}
+		token, expires, err := svc.NewEmailTokenFor(ctx, spec, ttl)
 		if err != nil {
 			log.Warn("create the email's token; leaving the job to be retried", "error", err)
 			return nil, nil, false
@@ -100,7 +141,7 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 		return nil, nil, false
 	}
 	in := emailInput{
-		ID: job.ID, Kind: kind, From: es.From, To: []emailAddress{{Email: user.Email}}, CC: []emailAddress{}, BCC: []emailAddress{},
+		ID: job.ID, Kind: kind, From: es.From, To: []emailAddress{{Email: address}}, CC: []emailAddress{}, BCC: []emailAddress{},
 		Subject: msg.Subject, Text: msg.Text, HTML: msg.HTML, Locale: locale, Data: extra,
 	}
 	if es.ReplyTo != "" {

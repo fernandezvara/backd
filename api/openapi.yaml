@@ -380,6 +380,228 @@ paths:
         "415": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_auth/email:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Ask to change the email address
+      description: |
+        Needs the session **and** the current password. The change applies only
+        when the new address confirms it with the link sent there; the answer is
+        `202` whether or not the address is free, so it can't be used to find
+        out who is registered. Only in a realm with `account.allow_email_change`
+        (`404` otherwise: the route doesn't exist). `429` when an email limit is
+        reached.
+      operationId: requestEmailChange
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [new_email, password]
+              properties:
+                new_email: { type: string }
+                password: { type: string, description: The current password. }
+                redirect_to: { type: string, description: "Within the realm's `email.allowed_redirects`." }
+      responses:
+        "202":
+          description: Accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [accepted] }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/confirm-email-change:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [auth]
+      summary: The page the email change confirmation link opens
+      description: |
+        The link sent to the **new** address. Shows a button naming it; opening the link never uses the token up.
+        Only in a realm with `account.allow_email_change` (`404` otherwise).
+      operationId: confirmEmailChangePage
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema: { type: string }
+        - name: Accept-Language
+          in: header
+          schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/HostedPage" }
+        "400": { $ref: "#/components/responses/HostedPage" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [auth]
+      summary: Confirm the new email address
+      description: |
+        Uses the token: the address changes and counts as verified, **every session of the user ends**, and the old address is sent `email-changed` with a link to undo it for 7 days. No session is issued. The address having been registered meanwhile, or a later request having replaced this one, is `400 invalid_token`.
+      operationId: confirmEmailChange
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token]
+              properties:
+                token: { type: string }
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/HostedPage" }
+        "204": { description: The address changed. }
+        "400":
+          description: Invalid, expired or used token (`invalid_token`), or an invalid body.
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+            text/html:
+              schema: { type: string }
+        "404": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/revert-email-change:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [auth]
+      summary: The page the undo link opens
+      description: |
+        The link sent to the **old** address after a change. Shows a button; opening it never uses the token up.
+      operationId: revertEmailChangePage
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema: { type: string }
+        - name: Accept-Language
+          in: header
+          schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/HostedPage" }
+        "400": { $ref: "#/components/responses/HostedPage" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [auth]
+      summary: Undo an email change
+      description: |
+        Uses the token: restores the previous address, ends every session, makes the current password unusable (whoever changed the address may know it) and sends a `reset-password` email to the restored address. No session is issued.
+      operationId: revertEmailChange
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token]
+              properties:
+                token: { type: string }
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/HostedPage" }
+        "204": { description: The previous address is back. }
+        "400":
+          description: Invalid, expired or used token (`invalid_token`), or an invalid body.
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+            text/html:
+              schema: { type: string }
+        "404": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/accept-invitation:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [auth]
+      summary: The page the invitation link opens
+      description: |
+        The link in an `invitation` email: a form to choose a password, showing the invited address. Opening it never uses the token up.
+      operationId: acceptInvitationPage
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema: { type: string }
+        - name: Accept-Language
+          in: header
+          schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/HostedPage" }
+        "400": { $ref: "#/components/responses/HostedPage" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [auth]
+      summary: Accept an invitation
+      description: |
+        Creates the account for the invited address with the chosen password, **already verified** (only its owner received the link), and uses up the invitation. No session is issued: the user logs in. A revoked or expired invitation, or an address registered meanwhile, is `400 invalid_token`; a password the policy refuses leaves the link usable.
+      operationId: acceptInvitation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token, password]
+              properties:
+                token: { type: string }
+                password: { type: string }
+                locale: { type: string, description: "The user's language, such as `es`; mapped to one the realm lists." }
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [token, password, password_confirm]
+              properties:
+                token: { type: string }
+                password: { type: string }
+                password_confirm: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/HostedPage" }
+        "204": { description: The account exists. }
+        "400":
+          description: Invalid, expired or used token (`invalid_token`), or an invalid body.
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+            text/html:
+              schema: { type: string }
+        "404": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_auth/logout:
     parameters: [{ $ref: "#/components/parameters/realm" }]
     post:
@@ -670,6 +892,40 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/users/{id}/email:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    post:
+      tags: [admin]
+      summary: Change a user's email address
+      description: |
+        Applies at once, in any realm with `email` (`404` without), whatever
+        `account.allow_email_change` says: the administrator vouches for the
+        address, so it counts as verified. Ends all of the user's sessions. The
+        old address is sent `email-changed` with a link to undo it for 7 days,
+        and the new one is told. Audited as `user.email_changed`.
+      operationId: adminChangeEmail
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email]
+              properties:
+                email: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/AdminUser" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_admin/users/{id}/roles/{role}:
@@ -1098,15 +1354,20 @@ paths:
               properties:
                 email: { type: string, format: email, description: "Only this email may use the invitation." }
                 expires_in: { type: string, description: "Days (`7d`) or Go duration (`12h`); default 7d, at most 90d.", examples: ["7d"] }
+                send: { type: boolean, description: "Email the invitation to `email` (required then) instead of returning a token to deliver yourself: needs `email` in `realm.yaml`, and the response has no `token`. The link opens the realm's `accept-invitation` page." }
+                redirect_to: { type: string, description: "With `send`: where the page after accepting may send the user, within `email.allowed_redirects`." }
+                locale: { type: string, description: "With `send`: the language of the email, such as `es`." }
       responses:
         "201":
-          description: The invitation, with its token (shown only here).
+          description: "The invitation, with its token (shown only here), or with `sent: true` and no token when it was emailed."
           content:
             application/json:
               schema: { $ref: "#/components/schemas/InvitationCreated" }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_admin/invitations/{id}:
@@ -1922,10 +2183,11 @@ components:
     InvitationCreated:
       type: object
       additionalProperties: false
-      required: [id, token, email, created_by, created_at, expires_at]
+      required: [id, email, created_by, created_at, expires_at]
       properties:
         id: { type: string }
-        token: { type: string, pattern: "^bdi_" }
+        token: { type: string, pattern: "^bdi_", description: Only when the invitation wasn't emailed. }
+        sent: { type: boolean, description: True when the invitation was emailed. }
         email: { type: [string, "null"] }
         created_by: { type: string }
         created_at: { $ref: "#/components/schemas/Timestamp" }

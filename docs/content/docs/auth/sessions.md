@@ -65,6 +65,9 @@ All request bodies are JSON objects sent with `Content-Type: application/json`. 
 | `GET /_auth/me` | yes | none | `200` with the user |
 | `PATCH /_auth/me` | yes | `{"locale"?}` | `200` with the user; changes the user's [language](#language) |
 | `DELETE /_auth/me` | yes | `{"password"}` | `204`; deletes the account |
+| `POST /_auth/email` | yes | `{"new_email", "password", "redirect_to"?}` | `202`; asks to [change the address](#changing-the-email-address), only in realms with `account.allow_email_change` |
+| `POST /_auth/confirm-email-change`, `POST /_auth/revert-email-change` | no | `{"token"}` | `204`; the links of an [email change](#changing-the-email-address) |
+| `POST /_auth/accept-invitation` | no | `{"token", "password", "locale"?}` | `204`; [accepts an emailed invitation](#accepting-an-invitation) |
 | `POST /_auth/password` | yes | `{"current_password", "new_password"}` | `204`; ends all other sessions |
 | `GET /_auth/sessions` | yes | none | `200` with the user's sessions |
 | `DELETE /_auth/sessions/{id}` | yes | none | `204`; ends one of the user's sessions |
@@ -164,6 +167,27 @@ The answer is always `202 {"status": "accepted"}`: for a registered address, an 
 - **The link** opens a page of `backd` with a form for the new password, twice. Opening it never uses the token up. The form shows the password policy's reason on the same page, and a refused password leaves the link usable. Apps with their own pages point the link at them with [`email.links`](../../functions/email/#links-and-pages) and post `{"token", "password"}` to `POST /_auth/reset-password` (`204`, or `400 invalid_token` for an expired, used or unknown token, `400 validation_error` for a password the policy refuses).
 - **What a reset does:** sets the password, **ends every session of the user**, marks the address **verified** (the token proves they read that mailbox, and it ends a squatter's access), and sends `password-changed`. It never starts a session: the user logs in afterwards. A token works once and for `account.tokens.reset_password` (1 hour by default).
 - **Limits.** Requests are counted per address (5 per 15 minutes) and per client address (30 per 15 minutes), for every address alike: past either, the answer is `429 too_many_requests` with `Retry-After`. The [email limits](../../functions/email/#limits) apply on top and stay silent. A realm without `email` answers `404`: there, an operator sets passwords with [`backd user set-password`](../users/).
+
+### Changing the email address
+
+In a realm with [`email`](../../functions/email/) and `account.allow_email_change: true` (off by default: then the route doesn't exist, `404`), a signed-in user changes their address:
+
+```sh
+curl -X POST https://localhost:8443/v1/blog/_auth/email \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"new_email": "ada.new@example.com", "password": "dev-p4ssw0rd!"}'
+```
+
+It needs the session **and the current password** (a wrong one counts against the account like a failed login). The answer is `202` whether or not the new address is free, so it can't be used to find out who is registered; nothing changes yet.
+
+- **Confirmation.** A link goes to the **new** address (`confirm-email-change`, valid `account.tokens.change_email`, 24 hours by default). The hosted page names the address and has one button; opening the link never uses it up. Pressing it changes the address (uniqueness is checked again: an address registered meanwhile fails like any bad link), marks it verified, **ends every session** and starts none. A newer request replaces an older, unconfirmed one.
+- **Undo.** The **old** address receives `email-changed` with a link valid `account.tokens.revert_email_change` (7 days by default). Using it restores the old address, ends every session, makes the current password unusable (whoever changed the address may know it) and sends a password reset link to the restored address. It works once, and only if no other change happened since.
+- Apps with their own pages post `{"token"}` to `POST /_auth/confirm-email-change` and `POST /_auth/revert-email-change` (`204`, or `400 invalid_token`), and point the links at them with [`email.links`](../../functions/email/#links-and-pages) (`change_email`, `revert_email_change`).
+- Audited as `user.email_changed` and `user.email_change_reverted`. An administrator can change an address without the user's involvement: see the [admin API](../admin/#changing-a-users-email).
+
+### Accepting an invitation
+
+An invitation [sent by email](../admin/#emailing-an-invitation) opens a page where the invited person chooses a password. Posting the form (or `{"token", "password", "locale"?}` to `POST /_auth/accept-invitation`, `204`) creates the account for the invited address, **already verified** (only its owner received the link), and uses up the invitation. No session is issued: the user logs in. A password the policy refuses leaves the link usable; a revoked or expired invitation, or an address registered meanwhile, is `400 invalid_token`. It works in any realm with `email`, whatever its `signup` mode.
 
 ### Sessions
 

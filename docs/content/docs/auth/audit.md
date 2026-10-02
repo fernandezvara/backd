@@ -16,7 +16,11 @@ Each realm with `auth: enabled` keeps an **audit trail**: one record per securit
 | `user.signup` | A user signs up | `invited`, `roles` |
 | `user.password` | An administrator sets a user's password | |
 | `user.password_change` | A user changes their own password | |
-| `user.verify_email` | An administrator marks an email as verified, or not | `verified` |
+| `user.verify_email` | An administrator marks an email as verified, or not; or a user verifies it with the link in their email | `verified` |
+| `user.password_reset` | A user sets a new password with a reset link | `verified_address` |
+| `user.email_changed` | A user's address changes: confirmed by the new address, or set by an administrator | `by` (`self` or `admin`) |
+| `user.email_change_reverted` | The old address undid a change | |
+| `user.purged_unverified` | A worker deletes accounts that never verified their address | `count`, `older_than` |
 | `function.invoke_manual` | An administrator runs a function by hand ([admin API](../admin/)) | `as` (the user's **id**, never their email, or null) |
 | `user.disable`, `user.enable` | An administrator disables or re-enables a user | |
 | `user.delete` | An administrator deletes a user | |
@@ -25,6 +29,7 @@ Each realm with `auth: enabled` keeps an **audit trail**: one record per securit
 | `role.add`, `role.remove` | A role is assigned or taken away, through the API or from `realm.yaml` seeds | `role` |
 | `apikey.create`, `apikey.revoke` | An API key is created or revoked | `role`, `networks`, `expires_at` |
 | `invitation.create`, `invitation.revoke` | An invitation is created or revoked | `bound_to_email` (whether it is), `expires_at` |
+| `invitation.sent` | An invitation is emailed to its address | `expires_at` |
 | `admin.login` | A user holding an admin role logs in | `session_id` |
 | `admin.refused` | An admin API request is refused by a network restriction | `reason`, `method`, `path` |
 | `realm.bootstrap` | `backd bootstrap` creates the realm's first administrator | `role` |

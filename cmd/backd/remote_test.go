@@ -137,6 +137,7 @@ roles:
 	c.expect(0, "has no password yet", "", "user", "create", "--realm", "acme", "--email", "dan@example.com", "--no-password")
 	c.expect(0, "password set for dan@example.com", "dev-p4ssw0rd!4\n", "user", "set-password", "--realm", "acme", "--email", "dan@example.com")
 	c.expect(1, "user not found: nobody@example.com", "x\n", "user", "set-password", "--realm", "acme", "--email", "nobody@example.com")
+	c.expect(1, "this realm doesn't send email", "", "user", "change-email", "--realm", "acme", "--email", "bob@example.com", "--new-email", "bob.new@example.com")
 	c.expect(0, "email of bob@example.com marked as verified", "", "user", "verify-email", "--realm", "acme", "--email", "bob@example.com")
 	c.expect(0, "dan@example.com disabled", "", "user", "disable", "--realm", "acme", "--email", "dan@example.com")
 	c.expect(0, "dan@example.com enabled", "", "user", "enable", "--realm", "acme", "--email", "dan@example.com")

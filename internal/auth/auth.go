@@ -25,6 +25,11 @@ type User struct {
 	ID            string
 	Email         string // normalized: trimmed, lowercased
 	EmailVerified bool
+	// PendingEmail is an address the user asked to change to and hasn't
+	// confirmed yet; PreviousEmail is the one before the last change, kept
+	// so the old address can be told and can undo it.
+	PendingEmail  string
+	PreviousEmail string
 	Roles         []string
 	Disabled      bool
 	// Locale is the user's language: one the realm lists (see
@@ -53,6 +58,10 @@ type Identity struct {
 
 // UserUpdate changes the set fields of a user.
 type UserUpdate struct {
+	// Email changes the address (ErrEmailTaken when another user has it).
+	Email         *string
+	PendingEmail  *string // set; an empty string clears it
+	PreviousEmail *string // set; an empty string clears it
 	EmailVerified *bool
 	Disabled      *bool
 	Locale        *string
@@ -129,6 +138,9 @@ type Store interface {
 	// ClaimInvitation atomically deletes and returns the unexpired
 	// invitation with that token hash; ErrNotFound if none.
 	ClaimInvitation(ctx context.Context, hash string, now time.Time) (Invitation, error)
+	// ClaimInvitationByID is ClaimInvitation for an invitation known by its
+	// id (one sent by email: nobody holds its own token).
+	ClaimInvitationByID(ctx context.Context, id string, now time.Time) (Invitation, error)
 	// ListInvitations returns all invitations, newest first.
 	ListInvitations(ctx context.Context) ([]Invitation, error)
 	// DeleteInvitation removes an invitation by id; ErrNotFound if none.

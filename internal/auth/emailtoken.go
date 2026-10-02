@@ -19,9 +19,15 @@ type EmailToken struct {
 	Purpose    string // verify-email, reset-password, change-email, revert-email-change or invitation
 	UserID     string
 	RedirectTo string // where the page after the link may send the user (already checked)
-	CreatedAt  time.Time
-	ExpiresAt  time.Time
-	UsedAt     time.Time // zero until redeemed
+	// Address is the address the token acts on: the new one for change-email,
+	// the previous one for revert-email-change, the invited one for an
+	// invitation. Empty for the others.
+	Address string
+	// InvitationID is the invitation an invitation token accepts (UserID is empty then).
+	InvitationID string
+	CreatedAt    time.Time
+	ExpiresAt    time.Time
+	UsedAt       time.Time // zero until redeemed
 }
 
 // ErrInvalidToken is every way a token can be refused (unknown, expired,
@@ -38,6 +44,12 @@ func HashEmailToken(token string) string {
 // valid for ttl, stores its hash, and returns the token itself. Whoever
 // receives it must not store it.
 func (s *Users) NewEmailToken(ctx context.Context, purpose, userID, redirectTo string, ttl time.Duration) (token string, expiresAt time.Time, err error) {
+	return s.NewEmailTokenFor(ctx, EmailToken{Purpose: purpose, UserID: userID, RedirectTo: redirectTo}, ttl)
+}
+
+// NewEmailTokenFor is NewEmailToken for a token that also carries an address
+// or an invitation: t's Hash, CreatedAt and ExpiresAt are filled in.
+func (s *Users) NewEmailTokenFor(ctx context.Context, t EmailToken, ttl time.Duration) (token string, expiresAt time.Time, err error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		return "", time.Time{}, err
@@ -45,9 +57,8 @@ func (s *Users) NewEmailToken(ctx context.Context, purpose, userID, redirectTo s
 	token = base64.RawURLEncoding.EncodeToString(raw)
 	now := s.now()
 	expiresAt = now.Add(ttl)
-	err = s.Store.CreateEmailToken(ctx, EmailToken{
-		Hash: HashEmailToken(token), Purpose: purpose, UserID: userID, RedirectTo: redirectTo, CreatedAt: now, ExpiresAt: expiresAt,
-	})
+	t.Hash, t.CreatedAt, t.ExpiresAt = HashEmailToken(token), now, expiresAt
+	err = s.Store.CreateEmailToken(ctx, t)
 	return token, expiresAt, err
 }
 

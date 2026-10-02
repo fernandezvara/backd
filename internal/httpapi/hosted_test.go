@@ -218,8 +218,8 @@ func TestHostedLocale(t *testing.T) {
 // have no route.
 func TestHostedRoutes(t *testing.T) {
 	f := newHostedFixture(t)
-	if rec := f.page(t, "GET", "/v1/acme/_auth/accept-invitation?token=x", "", "", ""); rec.Code != 404 {
-		t.Errorf("no action registered: %d", rec.Code)
+	if rec := f.page(t, "GET", "/v1/acme/_auth/nothing?token=x", "", "", ""); rec.Code != 404 {
+		t.Errorf("no such flow: %d", rec.Code)
 	}
 	if rec := f.page(t, "GET", "/v1/nope/_auth/verify-email?token=x", "", "", ""); rec.Code != 404 {
 		t.Errorf("unknown realm: %d", rec.Code)

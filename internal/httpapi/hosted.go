@@ -41,6 +41,8 @@ type hostedAction struct {
 	// token that doesn't work is auth.ErrInvalidToken; a password the policy
 	// refuses is *auth.PolicyError.
 	Run func(ctx context.Context, svc *auth.Users, in hostedInput) (auth.EmailToken, error)
+	// Enabled says whether the realm has this flow at all; nil: it does.
+	Enabled func(svc *auth.Users) bool
 }
 
 // hostedActions are the flows this version serves. Each of them arrives with
@@ -49,6 +51,17 @@ func hostedActions() []hostedAction {
 	return []hostedAction{
 		{Purpose: "verify-email", Page: email.PageVerifyEmail, Run: func(ctx context.Context, svc *auth.Users, in hostedInput) (auth.EmailToken, error) {
 			return svc.VerifyEmail(ctx, in.Token)
+		}},
+		{Purpose: email.TokenPurpose(email.ChangeEmail), Page: email.PageConfirmEmailChange,
+			Enabled: func(svc *auth.Users) bool { return svc.Settings.Account.AllowEmailChange },
+			Run: func(ctx context.Context, svc *auth.Users, in hostedInput) (auth.EmailToken, error) {
+				return svc.ConfirmEmailChange(ctx, in.Token)
+			}},
+		{Purpose: email.TokenPurpose(email.EmailChanged), Page: email.PageRevertEmailChange, Run: func(ctx context.Context, svc *auth.Users, in hostedInput) (auth.EmailToken, error) {
+			return svc.RevertEmailChange(ctx, in.Token)
+		}},
+		{Purpose: email.TokenPurpose(email.Invitation), Page: email.PageAcceptInvitation, Password: true, Locale: true, Run: func(ctx context.Context, svc *auth.Users, in hostedInput) (auth.EmailToken, error) {
+			return svc.AcceptInvitation(ctx, in.Token, in.Password, in.Locale)
 		}},
 		{Purpose: "reset-password", Page: email.PageResetPassword, Password: true, Run: func(ctx context.Context, svc *auth.Users, in hostedInput) (auth.EmailToken, error) {
 			return svc.ResetPassword(ctx, in.Token, in.Password)
@@ -92,6 +105,12 @@ func (a *authAPI) hostedRealm(r *http.Request) (*registry.Realm, bool) {
 	return rl, rl != nil && rl.Pages != nil && rl.Settings.Email != nil
 }
 
+// hostedFlow is hostedRealm for a flow: the realm must have it too.
+func (a *authAPI) hostedFlow(r *http.Request, act hostedAction) (*registry.Realm, bool) {
+	rl, ok := a.hostedRealm(r)
+	return rl, ok && (act.Enabled == nil || act.Enabled(usersOf(r)))
+}
+
 type hostedPage struct {
 	rl     *registry.Realm
 	act    hostedAction
@@ -99,7 +118,7 @@ type hostedPage struct {
 }
 
 func (a *authAPI) newHostedPage(r *http.Request, act hostedAction) (hostedPage, bool) {
-	rl, ok := a.hostedRealm(r)
+	rl, ok := a.hostedFlow(r, act)
 	if !ok {
 		return hostedPage{}, false
 	}
@@ -136,7 +155,8 @@ func (a *authAPI) hostedGet(act hostedAction) http.HandlerFunc {
 		}
 		d := p.data(r)
 		token := r.URL.Query().Get("token")
-		if _, err := usersOf(r).PeekEmailToken(r.Context(), token, string(act.Purpose)); err != nil {
+		tok, err := usersOf(r).PeekEmailToken(r.Context(), token, string(act.Purpose))
+		if err != nil {
 			if !errors.Is(err, auth.ErrInvalidToken) {
 				authError(w, r, err)
 				return
@@ -145,6 +165,7 @@ func (a *authAPI) hostedGet(act hostedAction) http.HandlerFunc {
 			return
 		}
 		d.Token = token
+		d.Email = tok.Address
 		p.write(w, r, http.StatusOK, act.Page, d)
 	}
 }
@@ -182,7 +203,7 @@ func (a *authAPI) hostedPost(act hostedAction, jsonOnly func(http.Handler) http.
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, ok := a.hostedRealm(r); !ok {
+		if _, ok := a.hostedFlow(r, act); !ok {
 			writeError(w, r, http.StatusNotFound, codeNotFound, "resource not found")
 			return
 		}
@@ -197,8 +218,11 @@ func (a *authAPI) hostedPost(act hostedAction, jsonOnly func(http.Handler) http.
 			return
 		}
 		d := p.data(r)
-		in := hostedInput{Token: r.PostForm.Get("token"), Password: r.PostForm.Get("password")}
+		in := hostedInput{Token: r.PostForm.Get("token"), Password: r.PostForm.Get("password"), Locale: p.locale}
 		d.Token = in.Token
+		if tok, err := usersOf(r).PeekEmailToken(r.Context(), in.Token, string(act.Purpose)); err == nil {
+			d.Email = tok.Address // for the form shown again
+		}
 		if act.Password && in.Password != r.PostForm.Get("password_confirm") {
 			d.Error, d.ErrorCode = "the passwords don't match", "password_mismatch"
 			p.write(w, r, http.StatusBadRequest, act.Page, d)
@@ -303,6 +327,39 @@ func (a *authAPI) requestPasswordReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := usersOf(r).RequestPasswordReset(r.Context(), address, redirectTo, clientIP(r), requestID(r.Context())); err != nil {
+		authError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"status": "accepted"})
+}
+
+// changeEmail handles POST /_auth/email: the signed-in user asks to change
+// their address. It needs the current password, and answers 202 whether or
+// not the new address is free; nothing changes until the new address
+// confirms. A realm that doesn't allow it has no such route.
+func (a *authAPI) changeEmail(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.hostedRealm(r); !ok || !usersOf(r).Settings.Account.AllowEmailChange {
+		writeError(w, r, http.StatusNotFound, codeNotFound, "resource not found")
+		return
+	}
+	obj, ok := readObject(w, r)
+	if !ok {
+		return
+	}
+	f, ok := fields(w, r, obj, map[string]string{"new_email": "string", "password": "string", "redirect_to": "string?"})
+	if !ok {
+		return
+	}
+	next, _ := f["new_email"].(string)
+	redirectTo, _ := f["redirect_to"].(string)
+	if _, err := registry.NormalizeEmail(next); err != nil {
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "new_email", Reason: "must be a valid email address"})
+		return
+	}
+	if !a.checkRedirect(w, r, redirectTo) {
+		return
+	}
+	if err := usersOf(r).RequestEmailChange(r.Context(), principalOf(r), f["password"].(string), next, redirectTo, clientIP(r), requestID(r.Context())); err != nil {
 		authError(w, r, err)
 		return
 	}

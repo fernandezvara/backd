@@ -31,6 +31,10 @@ type EmailRequest struct {
 	RedirectTo string // already checked against the realm's allowed redirects
 	ClientIP   string // who caused it, for the per-IP limit; "" when nobody did
 	RequestID  string
+	// To, Notice and InvitationID are the fields of the same name of EmailJob.
+	To           string
+	Notice       bool
+	InvitationID string
 }
 
 // QueueEmail applies the limits and queues an email job. The job holds the
@@ -77,7 +81,7 @@ func (s *Users) QueueEmail(ctx context.Context, r EmailRequest) (Job, error) {
 			return Job{}, err
 		}
 	}
-	if r.UserID == "" {
+	if r.UserID == "" && r.InvitationID == "" {
 		// Only the limits were applied: nobody gets a message.
 		return Job{}, nil
 	}
@@ -85,6 +89,6 @@ func (s *Users) QueueEmail(ctx context.Context, r EmailRequest) (Job, error) {
 	return s.EnqueueJob(ctx, Job{
 		Database: database, Function: function, CallerActor: "backd", Origin: "backd:email." + r.Kind,
 		TimeoutMS: e.Timeout.Milliseconds(), RequestID: r.RequestID,
-		Email: &EmailJob{Kind: r.Kind, UserID: r.UserID, Locale: r.Locale, RedirectTo: r.RedirectTo},
+		Email: &EmailJob{Kind: r.Kind, UserID: r.UserID, Locale: r.Locale, RedirectTo: r.RedirectTo, To: r.To, Notice: r.Notice, InvitationID: r.InvitationID},
 	})
 }

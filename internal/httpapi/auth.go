@@ -46,6 +46,7 @@ func (a *authAPI) routes(r chi.Router) {
 			r.With(json).Patch("/me", a.updateMe)
 			r.With(json).Delete("/me", a.deleteMe)
 			r.With(json).Post("/password", a.changePassword)
+			r.With(json).Post("/email", a.changeEmail)
 			r.Get("/sessions", a.sessions)
 			r.Delete("/sessions/{id}", a.revokeSession)
 		})
@@ -338,6 +339,7 @@ func readStrings(w http.ResponseWriter, r *http.Request, names ...string) (map[s
 func authError(w http.ResponseWriter, r *http.Request, err error, passwordField ...string) {
 	var pe *auth.PolicyError
 	var te *auth.ThrottledError
+	var el *auth.EmailLimitedError
 	switch {
 	case errors.As(err, &te):
 		secs := int((te.RetryAfter + time.Second - 1) / time.Second)
@@ -345,6 +347,11 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 		writeError(w, r, http.StatusTooManyRequests, codeTooManyRequests, "too many failed attempts; retry later")
 	case errors.Is(err, auth.ErrInvalidCredentials):
 		writeError(w, r, http.StatusUnauthorized, codeInvalidCreds, err.Error())
+	case errors.Is(err, auth.ErrSameEmail):
+		writeError(w, r, http.StatusBadRequest, codeValidation, err.Error(), Detail{Path: "new_email", Reason: "is already the address of this account"})
+	case errors.As(err, &el):
+		w.Header().Set("Retry-After", strconv.Itoa(max(int((el.RetryAfter+time.Second-1)/time.Second), 1)))
+		writeError(w, r, http.StatusTooManyRequests, codeTooManyRequests, "too many emails; retry later")
 	case errors.Is(err, auth.ErrEmailNotVerified):
 		writeError(w, r, http.StatusForbidden, codeEmailNotVerified, err.Error())
 	case errors.Is(err, auth.ErrUnauthenticated):

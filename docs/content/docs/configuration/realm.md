@@ -60,10 +60,13 @@ An empty file, or one with only comments, is valid: every key has a default.
 | `admin.allowed_networks` | none (any network) | IP addresses or CIDR networks, IPv4 or IPv6, allowed to use the [admin API](../../auth/admin/). See [Network restrictions](#network-restrictions). |
 | `email` | none (no email) | How the realm sends email: the delivery function, the sender, backd's public address for links, languages, the pages the links open, where users go afterwards, and limits. backd never sends mail itself. See [Email](../../functions/email/) |
 | `account.require_verified_email` | `false` | `true`: no session until the address is verified. See [Account](#account) |
+| `account.allow_email_change` | `false` | `true`: users may [change their own address](../../auth/sessions/#changing-the-email-address) |
 | `account.welcome_email` | `false` | `true`: send the `welcome` email once the address is verified |
 | `account.purge_unverified_after` | off | Delete accounts that never verified after this long (at least `1m`; never accounts with roles) |
 | `account.tokens.verify_email` | `48h` | How long the verification link works |
 | `account.tokens.reset_password` | `1h` | How long a [password reset](../../auth/sessions/#password-reset) link works |
+| `account.tokens.change_email` | `24h` | How long the confirmation link of an [email change](../../auth/sessions/#changing-the-email-address) works |
+| `account.tokens.revert_email_change` | `7d` | How long the link to undo one works |
 | `functions.max_concurrency` | none (unlimited) | Caps how many of the realm's [functions](../../functions/calling/#concurrency-limits) may run at once **on this `backd` instance**; with several instances, up to that many times this value run at once. |
 | `functions.log_retention` | `7d` | How long [function invocation records](../../functions/logs/) are kept, at least `1h`. |
 | `functions.job_retention` | `24h` | How long an [async job](../../functions/jobs/)'s result is kept once done, at least `1h`. |
@@ -103,13 +106,16 @@ CORS only tells browsers which pages may read responses. It isn't access control
 account:
   require_verified_email: false
   welcome_email: false
+  allow_email_change: false
   purge_unverified_after: 30d
   tokens:
     verify_email: 48h
     reset_password: 1h
+    change_email: 24h
+    revert_email_change: 7d
 ```
 
-Each of `require_verified_email`, `welcome_email` and `purge_unverified_after` needs the [`email`](../../functions/email/) section: without one, startup fails naming the key. What they do is described in [Email verification](../../auth/sessions/#email-verification).
+Each of `require_verified_email`, `welcome_email`, `allow_email_change` and `purge_unverified_after` needs the [`email`](../../functions/email/) section: without one, startup fails naming the key. What they do is described in [Email verification](../../auth/sessions/#email-verification).
 
 ## Roles
 

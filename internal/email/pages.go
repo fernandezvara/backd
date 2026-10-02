@@ -47,7 +47,7 @@ func DefaultPage(kind string) ([]byte, error) {
 
 // PageData is what a page template can use: {{.Realm}}, {{.Locale}},
 // {{.Action}} (where its form posts), {{.Token}} (the hidden field),
-// {{.Error}} and {{.ErrorCode}} (what to show on the form again), {{.Kind}} (which flow a result is for),
+// {{.Error}} and {{.ErrorCode}} (what to show on the form again), {{.Kind}} (which flow a result is for), {{.Email}} (the address the link is about),
 // {{.Redirect}} and {{.DelaySeconds}} (where the result sends the user and
 // when), {{.BackURL}} (a way back to the app on the error page).
 type PageData struct {
@@ -60,6 +60,9 @@ type PageData struct {
 	// so a template can write it in its own words.
 	ErrorCode string
 	Kind      string
+	// Email is the address the link is about: the new one for a change, the
+	// previous one for an undo, the invited one for an invitation.
+	Email string
 	// Redirect and BackURL are checked against the realm's allowed_redirects
 	// before they get here, so they may use an app's own scheme (acme://),
 	// which html/template would otherwise refuse in a link.

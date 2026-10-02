@@ -125,3 +125,73 @@ func TestUserLocaleOnMongoDB(t *testing.T) {
 		t.Errorf("after the change: %q", u.Locale)
 	}
 }
+
+func TestEmailTokenAddressAndInvitationOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Date(2126, 10, 1, 12, 0, 0, 0, time.UTC)
+	if err := s.CreateEmailToken(ctx, auth.EmailToken{Hash: "inv", Purpose: "invitation", InvitationID: "i1", Address: "new@example.com", CreatedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.RedeemEmailToken(ctx, "inv", "invitation", now)
+	if err != nil || got.Address != "new@example.com" || got.InvitationID != "i1" || got.UserID != "" {
+		t.Errorf("redeemed: %+v %v", got, err)
+	}
+	if got, err = s.GetEmailToken(ctx, "inv"); err != nil || got.Address != "new@example.com" || got.InvitationID != "i1" || got.UsedAt.IsZero() {
+		t.Errorf("get: %+v %v", got, err)
+	}
+}
+
+func TestEmailChangeStoreOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Date(2126, 10, 1, 12, 0, 0, 0, time.UTC)
+	for _, u := range []auth.User{{ID: "u1", Email: "a@example.com"}, {ID: "u2", Email: "b@example.com"}} {
+		u.CreatedAt, u.UpdatedAt = now, now
+		if err := s.CreateUser(ctx, u); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pending, previous, mine := "c@example.com", "a@example.com", "c@example.com"
+	if err := s.UpdateUser(ctx, "u1", auth.UserUpdate{PendingEmail: &pending}, now); err != nil {
+		t.Fatal(err)
+	}
+	if u, _ := s.UserByID(ctx, "u1"); u.PendingEmail != "c@example.com" {
+		t.Errorf("pending: %+v", u)
+	}
+	empty := ""
+	if err := s.UpdateUser(ctx, "u1", auth.UserUpdate{Email: &mine, PendingEmail: &empty, PreviousEmail: &previous}, now); err != nil {
+		t.Fatal(err)
+	}
+	if u, _ := s.UserByID(ctx, "u1"); u.Email != "c@example.com" || u.PendingEmail != "" || u.PreviousEmail != "a@example.com" {
+		t.Errorf("after the change: %+v", u)
+	}
+	taken := "b@example.com"
+	if err := s.UpdateUser(ctx, "u1", auth.UserUpdate{Email: &taken}, now); !errors.Is(err, auth.ErrEmailTaken) {
+		t.Errorf("a taken address: %v", err)
+	}
+}
+
+func TestClaimInvitationByIDOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Date(2126, 10, 1, 12, 0, 0, 0, time.UTC)
+	for _, inv := range []auth.Invitation{
+		{ID: "live", TokenHash: "h1", Email: "a@example.com", CreatedBy: "key:k", CreatedAt: now, ExpiresAt: now.Add(time.Hour)},
+		{ID: "old", TokenHash: "h2", Email: "b@example.com", CreatedBy: "key:k", CreatedAt: now, ExpiresAt: now.Add(-time.Minute)},
+	} {
+		if err := s.CreateInvitation(ctx, inv); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.ClaimInvitationByID(ctx, "old", now); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("an expired invitation: %v", err)
+	}
+	got, err := s.ClaimInvitationByID(ctx, "live", now)
+	if err != nil || got.Email != "a@example.com" {
+		t.Errorf("claim: %+v %v", got, err)
+	}
+	if _, err := s.ClaimInvitationByID(ctx, "live", now); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("claimed twice: %v", err)
+	}
+}

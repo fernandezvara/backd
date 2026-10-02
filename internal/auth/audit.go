@@ -29,7 +29,10 @@ const (
 	AuditRoleRemove      = "role.remove"         // details: role
 	AuditAPIKeyCreate    = "apikey.create"       // details: role, expires_at, networks
 	AuditAPIKeyRevoke    = "apikey.revoke"
-	AuditInviteCreate    = "invitation.create" // details: bound_to_email, expires_at
+	AuditEmailChanged    = "user.email_changed"         // details: by (self or admin)
+	AuditEmailReverted   = "user.email_change_reverted" // the old address undid a change
+	AuditInviteSent      = "invitation.sent"            // details: expires_at
+	AuditInviteCreate    = "invitation.create"          // details: bound_to_email, expires_at
 	AuditInviteRevoke    = "invitation.revoke"
 	AuditAdminLogin      = "admin.login"   // login of a user holding an admin role
 	AuditAdminRefused    = "admin.refused" // details: reason

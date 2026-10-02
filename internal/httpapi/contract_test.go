@@ -445,6 +445,82 @@ func TestContract(t *testing.T) {
 	req("POST", a+"/reset-password", `{"token": "x"}`, map[string]string{"Content-Type": "text/plain"}, 415)
 	req("POST", "/v1/nope/_auth/reset-password", `{"token": "x", "password": "y"}`, nil, 404)
 
+	// Email change, undo and emailed invitations.
+	cctx := context.Background()
+	f.svc.Settings.Account.AllowEmailChange = true
+	changerP, changerTok, err := f.svc.Signup(cctx, "changer@example.com", "dev-p4ssw0rd!", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	changer := bearer(changerTok)
+	req("POST", a+"/email", `{"new_email": "changer.new@example.com", "password": "dev-p4ssw0rd!", "redirect_to": "https://app.acme.example/account"}`, changer, 202)
+	req("POST", a+"/email", `{"new_email": "changer@example.com", "password": "dev-p4ssw0rd!"}`, changer, 400)
+	req("POST", a+"/email", `{"new_email": "changer.new@example.com", "password": "dev-p4ssw0rd!"}`, nil, 401)
+	req("POST", a+"/email", `{"new_email": "x@example.com", "password": "dev-p4ssw0rd!"}`, with(changer, "Content-Type", "text/plain"), 415)
+	req("POST", "/v1/nope/_auth/email", `{"new_email": "x@example.com", "password": "dev-p4ssw0rd!"}`, changer, 404)
+	req("POST", a+"/email", `{"new_email": "changer.new@example.com", "password": "dev-p4ssw0rd!"}`, changer, 202)
+	req("POST", a+"/email", `{"new_email": "changer.new@example.com", "password": "dev-p4ssw0rd!"}`, changer, 202)
+	req("POST", a+"/email", `{"new_email": "changer.new@example.com", "password": "dev-p4ssw0rd!"}`, changer, 429)
+	changeToken := func(address, purpose string) string {
+		tok, _, err := f.svc.NewEmailTokenFor(cctx, auth.EmailToken{Purpose: purpose, UserID: changerP.User.ID, Address: address}, time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tok
+	}
+	setAddresses := func(email, pending, previous string) {
+		if err := f.svc.Store.UpdateUser(cctx, changerP.User.ID, auth.UserUpdate{Email: &email, PendingEmail: &pending, PreviousEmail: &previous}, *f.clock); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setAddresses("changer@example.com", "cpending@example.com", "")
+	req("GET", a+"/confirm-email-change?token="+changeToken("cpending@example.com", "change-email"), "", nil, 200)
+	req("GET", a+"/confirm-email-change?token=nope", "", nil, 400)
+	req("GET", "/v1/nope/_auth/confirm-email-change?token=x", "", nil, 404)
+	req("POST", a+"/confirm-email-change", "token=nope", form, 400)
+	req("POST", a+"/confirm-email-change", `{"token": "nope"}`, nil, 400)
+	req("POST", a+"/confirm-email-change", "token="+changeToken("cpending@example.com", "change-email"), form, 200)
+	setAddresses("changer@example.com", "pending2@example.com", "")
+	req("POST", a+"/confirm-email-change", `{"token": "`+changeToken("pending2@example.com", "change-email")+`"}`, nil, 204)
+	req("POST", a+"/confirm-email-change", `{"token": "x"}`, map[string]string{"Content-Type": "text/plain"}, 415)
+	req("POST", "/v1/nope/_auth/confirm-email-change", `{"token": "x"}`, nil, 404)
+	setAddresses("changed@example.com", "", "changer@example.com")
+	req("GET", a+"/revert-email-change?token="+changeToken("changer@example.com", "revert-email-change"), "", nil, 200)
+	req("GET", a+"/revert-email-change?token=nope", "", nil, 400)
+	req("GET", "/v1/nope/_auth/revert-email-change?token=x", "", nil, 404)
+	req("POST", a+"/revert-email-change", "token=nope", form, 400)
+	req("POST", a+"/revert-email-change", `{"token": "nope"}`, nil, 400)
+	req("POST", a+"/revert-email-change", "token="+changeToken("changer@example.com", "revert-email-change"), form, 200)
+	setAddresses("changed@example.com", "", "changer@example.com")
+	req("POST", a+"/revert-email-change", `{"token": "`+changeToken("changer@example.com", "revert-email-change")+`"}`, nil, 204)
+	req("POST", a+"/revert-email-change", `{"token": "x"}`, map[string]string{"Content-Type": "text/plain"}, 415)
+	req("POST", "/v1/nope/_auth/revert-email-change", `{"token": "x"}`, nil, 404)
+	f.svc.Settings.Account.AllowEmailChange = false
+	req("GET", a+"/confirm-email-change?token=x", "", nil, 404)
+
+	invites := 0
+	inviteToken := func() string {
+		invites++
+		inv, err := f.svc.SendInvitation(cctx, fmt.Sprintf("invited%d@example.com", invites), 0, "test", "", "", "", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		tok, _, err := f.svc.NewEmailTokenFor(cctx, auth.EmailToken{Purpose: "invitation", InvitationID: inv.ID, Address: inv.Email}, time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tok
+	}
+	req("GET", a+"/accept-invitation?token="+inviteToken(), "", nil, 200)
+	req("GET", a+"/accept-invitation?token=nope", "", nil, 400)
+	req("GET", "/v1/nope/_auth/accept-invitation?token=x", "", nil, 404)
+	req("POST", a+"/accept-invitation", "token=nope&password=dev-p4ssw0rd!&password_confirm=dev-p4ssw0rd!", form, 400)
+	req("POST", a+"/accept-invitation", `{"token": "nope", "password": "dev-p4ssw0rd!"}`, nil, 400)
+	req("POST", a+"/accept-invitation", "token="+inviteToken()+"&password=dev-p4ssw0rd!&password_confirm=dev-p4ssw0rd!", form, 200)
+	req("POST", a+"/accept-invitation", `{"token": "`+inviteToken()+`", "password": "dev-p4ssw0rd!", "locale": "es"}`, nil, 204)
+	req("POST", a+"/accept-invitation", `{"token": "x"}`, map[string]string{"Content-Type": "text/plain"}, 415)
+	req("POST", "/v1/nope/_auth/accept-invitation", `{"token": "x", "password": "y"}`, nil, 404)
+
 	login := req("POST", a+"/login", `{"email": "new@example.com", "password": "dev-p4ssw0rd!"}`, nil, 200)
 	me := bearer(login["token"].(string))
 	req("POST", a+"/login", `{"email": "new@example.com"}`, nil, 400)
@@ -490,6 +566,7 @@ func TestContract(t *testing.T) {
 		{"GET", "/users/" + f.bobID, ""}, {"PATCH", "/users/" + f.bobID, `{"disabled": false}`},
 		{"DELETE", "/users/" + f.bobID, ""}, {"POST", "/users/" + f.bobID + "/password", `{"password": "dev-p4ssw0rd!"}`},
 		{"PUT", "/users/" + f.bobID + "/roles/admin", ""}, {"DELETE", "/users/" + f.bobID + "/roles/admin", ""},
+		{"POST", "/users/" + f.bobID + "/email", `{"email": "z@example.com"}`},
 		{"GET", "/invitations", ""}, {"POST", "/invitations", `{}`}, {"DELETE", "/invitations/x", ""},
 	}
 	for _, op := range adminOps {
@@ -523,6 +600,18 @@ func TestContract(t *testing.T) {
 	inv := req("POST", ad+"/invitations", `{"email": "eve@example.com", "expires_in": "3d"}`, key, 201)
 	req("POST", ad+"/invitations", `{}`, key, 201)
 	req("POST", ad+"/invitations", `{"expires_in": "forever"}`, key, 400)
+	req("POST", ad+"/invitations", `{"email": "sent@example.com", "send": true, "redirect_to": "https://app.acme.example/welcome", "locale": "es"}`, key, 201)
+	req("POST", ad+"/invitations", `{"send": true}`, key, 400)
+	req("POST", ad+"/invitations", `{"email": "sent2@example.com", "send": true, "redirect_to": "https://evil.example/"}`, key, 400)
+	req("POST", "/v1/nope/_admin/invitations", `{"email": "x@example.com", "send": true}`, key, 404)
+	for range 3 {
+		req("POST", ad+"/invitations", `{"email": "limit@example.com", "send": true}`, key, 201)
+	}
+	req("POST", ad+"/invitations", `{"email": "limit@example.com", "send": true}`, key, 429)
+	req("POST", ad+"/users/"+dan+"/email", `{"email": "dan.new@example.com"}`, key, 200)
+	req("POST", ad+"/users/"+dan+"/email", `{"email": "dan.new@example.com"}`, key, 400)
+	req("POST", ad+"/users/"+dan+"/email", `{"email": "ada@example.com"}`, key, 409)
+	req("POST", ad+"/users/nope/email", `{"email": "x@example.com"}`, key, 404)
 	req("GET", ad+"/invitations", "", key, 200)
 	req("DELETE", ad+"/invitations/"+inv["id"].(string), "", key, 204)
 	req("DELETE", ad+"/invitations/nope", "", key, 404)
