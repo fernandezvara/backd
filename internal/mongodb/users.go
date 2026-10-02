@@ -27,6 +27,8 @@ type userDoc struct {
 	ID            string    `bson:"_id"`
 	Email         string    `bson:"email"`
 	EmailVerified bool      `bson:"email_verified"`
+	PendingEmail  string    `bson:"pending_email,omitempty"`
+	PreviousEmail string    `bson:"previous_email,omitempty"`
 	Roles         []string  `bson:"roles"`
 	Disabled      bool      `bson:"disabled"`
 	Locale        string    `bson:"locale,omitempty"`
@@ -38,7 +40,7 @@ type userDoc struct {
 
 func (d userDoc) user() auth.User {
 	return auth.User{
-		ID: d.ID, Email: d.Email, EmailVerified: d.EmailVerified, Roles: d.Roles, Disabled: d.Disabled, Locale: d.Locale,
+		ID: d.ID, Email: d.Email, EmailVerified: d.EmailVerified, PendingEmail: d.PendingEmail, PreviousEmail: d.PreviousEmail, Roles: d.Roles, Disabled: d.Disabled, Locale: d.Locale,
 		AdminNetworks: networks(d.AdminNetworks), LoginNetworks: networks(d.LoginNetworks),
 		CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC(),
 	}
@@ -158,6 +160,19 @@ func (s *AuthStore) updateByID(ctx context.Context, id string, update bson.D) er
 
 func (s *AuthStore) UpdateUser(ctx context.Context, id string, upd auth.UserUpdate, now time.Time) error {
 	set := bson.D{{Key: "updated_at", Value: now}}
+	unset := bson.D{}
+	if upd.Email != nil {
+		set = append(set, bson.E{Key: "email", Value: *upd.Email})
+	}
+	for key, v := range map[string]*string{"pending_email": upd.PendingEmail, "previous_email": upd.PreviousEmail} {
+		switch {
+		case v == nil:
+		case *v == "":
+			unset = append(unset, bson.E{Key: key, Value: ""})
+		default:
+			set = append(set, bson.E{Key: key, Value: *v})
+		}
+	}
 	if upd.EmailVerified != nil {
 		set = append(set, bson.E{Key: "email_verified", Value: *upd.EmailVerified})
 	}
@@ -167,7 +182,6 @@ func (s *AuthStore) UpdateUser(ctx context.Context, id string, upd auth.UserUpda
 	if upd.Locale != nil {
 		set = append(set, bson.E{Key: "locale", Value: *upd.Locale})
 	}
-	unset := bson.D{}
 	for key, n := range map[string]*registry.Networks{"admin_networks": upd.AdminNetworks, "login_networks": upd.LoginNetworks} {
 		switch {
 		case n == nil:
@@ -181,7 +195,11 @@ func (s *AuthStore) UpdateUser(ctx context.Context, id string, upd auth.UserUpda
 	if len(unset) > 0 {
 		update = append(update, bson.E{Key: "$unset", Value: unset})
 	}
-	return s.updateByID(ctx, id, update)
+	err := s.updateByID(ctx, id, update)
+	if mongo.IsDuplicateKeyError(err) {
+		return auth.ErrEmailTaken
+	}
+	return err
 }
 
 // ListUnverifiedUsers returns the oldest users that never verified their address.
@@ -510,6 +528,21 @@ func (s *AuthStore) ClaimInvitation(ctx context.Context, hash string, now time.T
 	var d invitationDoc
 	err := s.invitations().FindOneAndDelete(ctx, bson.D{
 		{Key: "token_hash", Value: hash}, {Key: "expires_at", Value: bson.D{{Key: "$gt", Value: now}}},
+	}).Decode(&d)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return auth.Invitation{}, auth.ErrNotFound
+	}
+	if err != nil {
+		return auth.Invitation{}, err
+	}
+	return d.invitation(), nil
+}
+
+// ClaimInvitationByID deletes and returns an unexpired invitation by id.
+func (s *AuthStore) ClaimInvitationByID(ctx context.Context, id string, now time.Time) (auth.Invitation, error) {
+	var d invitationDoc
+	err := s.invitations().FindOneAndDelete(ctx, bson.D{
+		{Key: "_id", Value: id}, {Key: "expires_at", Value: bson.D{{Key: "$gt", Value: now}}},
 	}).Decode(&d)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return auth.Invitation{}, auth.ErrNotFound

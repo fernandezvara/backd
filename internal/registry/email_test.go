@@ -119,7 +119,7 @@ func TestEmailRedirects(t *testing.T) {
 }
 
 func TestAccountSettings(t *testing.T) {
-	realm := goodEmail + "account:\n  require_verified_email: true\n  welcome_email: true\n  purge_unverified_after: 30d\n  tokens:\n    verify_email: 12h\n    reset_password: 20m\n"
+	realm := goodEmail + "account:\n  require_verified_email: true\n  welcome_email: true\n  allow_email_change: true\n  purge_unverified_after: 30d\n  tokens:\n    verify_email: 12h\n    reset_password: 20m\n    change_email: 2h\n    revert_email_change: 3d\n"
 	reg, err := Load(emailTree(t, realm, goodDeliver, nil))
 	if err != nil {
 		t.Fatal(err)
@@ -131,6 +131,12 @@ func TestAccountSettings(t *testing.T) {
 	if got := a.TokenLifetime(email.TokenPurpose(email.VerifyEmail)); got != 12*time.Hour {
 		t.Errorf("verify lifetime %s", got)
 	}
+	if !a.AllowEmailChange || a.ChangeEmailTTL != 2*time.Hour || a.RevertEmailChangeTTL != 72*time.Hour {
+		t.Errorf("email change: %+v", a)
+	}
+	if got := a.TokenLifetime(email.TokenPurpose(email.EmailChanged)); got != 72*time.Hour {
+		t.Errorf("revert lifetime %s", got)
+	}
 	if got := a.TokenLifetime(email.TokenPurpose(email.ResetPassword)); got != 20*time.Minute {
 		t.Errorf("reset lifetime %s", got)
 	}
@@ -138,13 +144,14 @@ func TestAccountSettings(t *testing.T) {
 
 func TestAccountErrors(t *testing.T) {
 	for name, tt := range map[string]struct{ realm, want string }{
-		"gate without email":    {"signup: open\naccount:\n  require_verified_email: true\n", "account.require_verified_email: needs an email section"},
-		"welcome without email": {"signup: open\naccount:\n  welcome_email: true\n", "account.welcome_email: needs an email section"},
-		"purge without email":   {"signup: open\naccount:\n  purge_unverified_after: 30d\n", "account.purge_unverified_after: needs an email section"},
-		"bad duration":          {goodEmail + "account:\n  tokens:\n    verify_email: soon\n", "account.tokens.verify_email"},
-		"too short":             {goodEmail + "account:\n  purge_unverified_after: 1s\n", "at least 1m"},
-		"unknown key":           {goodEmail + "account:\n  allow_everything: true\n", "allow_everything"},
-		"auth disabled":         {"auth: disabled\naccount:\n  welcome_email: true\n", "account: only applies when auth is enabled"},
+		"gate without email":         {"signup: open\naccount:\n  require_verified_email: true\n", "account.require_verified_email: needs an email section"},
+		"welcome without email":      {"signup: open\naccount:\n  welcome_email: true\n", "account.welcome_email: needs an email section"},
+		"email change without email": {"signup: open\naccount:\n  allow_email_change: true\n", "account.allow_email_change: needs an email section"},
+		"purge without email":        {"signup: open\naccount:\n  purge_unverified_after: 30d\n", "account.purge_unverified_after: needs an email section"},
+		"bad duration":               {goodEmail + "account:\n  tokens:\n    verify_email: soon\n", "account.tokens.verify_email"},
+		"too short":                  {goodEmail + "account:\n  purge_unverified_after: 1s\n", "at least 1m"},
+		"unknown key":                {goodEmail + "account:\n  allow_everything: true\n", "allow_everything"},
+		"auth disabled":              {"auth: disabled\naccount:\n  welcome_email: true\n", "account: only applies when auth is enabled"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := Load(emailTree(t, tt.realm, goodDeliver, nil))

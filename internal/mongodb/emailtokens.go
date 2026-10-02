@@ -17,6 +17,8 @@ type emailTokenDoc struct {
 	Purpose    string     `bson:"purpose"`
 	UserID     string     `bson:"user_id"`
 	RedirectTo string     `bson:"redirect_to,omitempty"`
+	Address    string     `bson:"address,omitempty"`
+	Invitation string     `bson:"invitation_id,omitempty"`
 	CreatedAt  time.Time  `bson:"created_at"`
 	ExpiresAt  time.Time  `bson:"expires_at"`
 	UsedAt     *time.Time `bson:"used_at,omitempty"`
@@ -27,7 +29,7 @@ func (s *AuthStore) emailTokens() *mongo.Collection { return s.db.Collection(Ema
 // CreateEmailToken stores a token's hash.
 func (s *AuthStore) CreateEmailToken(ctx context.Context, t auth.EmailToken) error {
 	_, err := s.emailTokens().InsertOne(ctx, emailTokenDoc{
-		ID: t.Hash, Purpose: t.Purpose, UserID: t.UserID, RedirectTo: t.RedirectTo, CreatedAt: t.CreatedAt, ExpiresAt: t.ExpiresAt,
+		ID: t.Hash, Purpose: t.Purpose, UserID: t.UserID, RedirectTo: t.RedirectTo, Address: t.Address, Invitation: t.InvitationID, CreatedAt: t.CreatedAt, ExpiresAt: t.ExpiresAt,
 	})
 	return err
 }
@@ -42,7 +44,7 @@ func (s *AuthStore) GetEmailToken(ctx context.Context, hash string) (auth.EmailT
 	if err != nil {
 		return auth.EmailToken{}, err
 	}
-	t := auth.EmailToken{Hash: d.ID, Purpose: d.Purpose, UserID: d.UserID, RedirectTo: d.RedirectTo, CreatedAt: d.CreatedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC()}
+	t := auth.EmailToken{Hash: d.ID, Purpose: d.Purpose, UserID: d.UserID, RedirectTo: d.RedirectTo, Address: d.Address, InvitationID: d.Invitation, CreatedAt: d.CreatedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC()}
 	if d.UsedAt != nil {
 		t.UsedAt = d.UsedAt.UTC()
 	}
@@ -67,7 +69,7 @@ func (s *AuthStore) RedeemEmailToken(ctx context.Context, hash, purpose string, 
 	if err != nil {
 		return auth.EmailToken{}, err
 	}
-	return auth.EmailToken{Hash: d.ID, Purpose: d.Purpose, UserID: d.UserID, RedirectTo: d.RedirectTo,
+	return auth.EmailToken{Hash: d.ID, Purpose: d.Purpose, UserID: d.UserID, RedirectTo: d.RedirectTo, Address: d.Address, InvitationID: d.Invitation,
 		CreatedAt: d.CreatedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC(), UsedAt: now}, nil
 }
 

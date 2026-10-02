@@ -130,6 +130,15 @@ func userSetPassword(c *userCtx) error {
 	return nil
 }
 
+func userChangeEmail(c *userCtx) error {
+	u, err := c.onUser("POST", "/email", map[string]string{"email": str(c.cmd, "new-email")})
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(c.uio.stdout, "email changed to %s; all of their sessions were revoked, and both addresses were told (the old one can undo it for 7 days)\n", u.Email)
+	return nil
+}
+
 // userPatch returns a command that changes one field of the user and
 // prints message with the user's email.
 func userPatch(body map[string]bool, message string) func(*userCtx) error {

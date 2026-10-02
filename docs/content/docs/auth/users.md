@@ -23,6 +23,7 @@ Every command also takes `--url`, to pick the server for that command.
 | `backd user create --realm <realm> --email <email> --no-password` | Create a user without a password; they can't sign in with one until it's set |
 | `backd user list --realm <realm>` | List the realm's users |
 | `backd user set-password --realm <realm> --email <email>` | Set or replace the password, and revoke all of the user's sessions |
+| `backd user change-email --realm <realm> --email <email> --new-email <email>` | Change the user's address at once, as an administrator (needs [`email`](../../functions/email/); see [the admin API](../admin/#changing-a-users-email)) |
 | `backd user verify-email --realm <realm> --email <email>` | Mark the email as verified |
 | `backd user disable --realm <realm> --email <email>` | Block sign-in and revoke all of the user's sessions, without deleting the account |
 | `backd user enable --realm <realm> --email <email>` | Let a disabled user sign in again |

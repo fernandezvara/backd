@@ -37,10 +37,11 @@ Paths are relative to `/v1/{realm}/_admin`. Bodies are JSON (`Content-Type: appl
 | `PATCH /users/{id}` | `{"email_verified"?: bool, "disabled"?: bool}` | `200` with the user |
 | `DELETE /users/{id}` | none | `204` |
 | `POST /users/{id}/password` | `{"password"}` | `204` |
+| `POST /users/{id}/email` | `{"email"}` | `200` with the user; [changes the address](#changing-a-users-email) |
 | `PUT /users/{id}/roles/{role}` | none | `200` with the user |
 | `DELETE /users/{id}/roles/{role}` | none | `200` with the user |
 | `PUT /users/{id}/networks` | `{"admin_networks": [...], "login_networks": [...]}` | `200` with the user |
-| `POST /invitations` | `{"email"?, "expires_in"?}` | `201` with the invitation and its token |
+| `POST /invitations` | `{"email"?, "expires_in"?, "send"?, "redirect_to"?, "locale"?}` | `201` with the invitation and its token, or `sent: true` and no token when it is [emailed](#emailing-an-invitation) |
 | `GET /invitations` | none | `200` with unexpired, unused invitations |
 | `DELETE /invitations/{id}` | none | `204` |
 | `GET /apikeys` | none | `200` with the realm's API keys (never the keys themselves) |
@@ -136,6 +137,10 @@ curl -X PUT https://localhost:8443/v1/blog/_admin/secrets/STRIPE_KEY \
 - A change reaches running functions within about a minute (decrypted values are cached briefly); deleting one makes a function that declares it answer `500 secret_missing` again.
 - Answers `500` (`internal_error`) if the server has no `BACKD_SECRETS_KEY` configured: an operator problem, not something a request can fix.
 
+### Changing a user's email
+
+`POST /users/{id}/email` with `{"email": "new@example.com"}` changes the address **at once**, in any realm with [`email`](../../functions/email/) (`404` without), whatever `account.allow_email_change` says: the administrator vouches for the address, so it counts as verified. The user's sessions end, the old address is sent `email-changed` with a link to undo the change for 7 days (the undo restores the address, ends every session, makes the current password unusable and sends a password reset link to it), and the new address is told. An address another user has answers `409 email_taken`. Audited as `user.email_changed` with `by: admin`.
+
 ### Invitations
 
 In a realm with `signup: invite`, people can only sign up with an invitation. A service creates one and delivers its token, for example by email:
@@ -162,5 +167,17 @@ curl -X POST https://localhost:8443/v1/blog/_admin/invitations \
 - `expires_in` takes days (`7d`) or Go durations (`12h`): default 7 days, from 1 minute to 90 days.
 - Each invitation works once. `GET /invitations` lists those not used or expired yet (never their tokens); `DELETE /invitations/{id}` revokes one.
 - Expired and used invitations are deleted automatically.
+
+#### Emailing an invitation
+
+In a realm with [`email`](../../functions/email/), `"send": true` (with an `email`) makes `backd` email the invitation instead of returning a token to deliver yourself:
+
+```sh
+curl -X POST https://localhost:8443/v1/blog/_admin/invitations \
+  -H "Authorization: Bearer $BACKD_API_KEY" -H 'Content-Type: application/json' \
+  -d '{"email": "ada@example.com", "send": true, "redirect_to": "https://app.example.com/welcome", "locale": "es"}'
+```
+
+The answer has `"sent": true` and **no token**: nobody holds one. The message carries a link to a page of `backd` (the realm's `pages/accept-invitation`, showing the invited address) where the person chooses a password, or to your own page with [`email.links.invitation`](../../functions/email/#links-and-pages), which posts `{token, password, locale?}` to [`POST /_auth/accept-invitation`](../sessions/#accepting-an-invitation). The link works as long as the invitation does (`expires_in`) and once. `redirect_to` (within `email.allowed_redirects`) and `locale` (the email's language) only apply with `send`. A revoked invitation's link stops working. The email limits apply: past them the answer is `429` and no invitation is left behind.
 
 The access log records the caller as `key:<name>`.

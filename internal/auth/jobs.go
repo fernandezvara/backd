@@ -72,6 +72,15 @@ type EmailJob struct {
 	UserID     string
 	Locale     string
 	RedirectTo string // checked when the request was made; bound to the token the worker creates
+	// To says whose address the message goes to: "" the user's current one,
+	// "pending" the address they asked to change to, "previous" the one
+	// before the last change.
+	To string
+	// Notice marks a message that only informs: no token, no link.
+	Notice bool
+	// InvitationID is the invitation an invitation email is for (there is no
+	// user yet): the worker takes the address from it.
+	InvitationID string
 }
 
 // JobResult is how a job's run ended: the same vocabulary as a sync

@@ -39,6 +39,7 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 			r.With(json).Patch("/", a.updateUser)
 			r.Delete("/", a.deleteUser)
 			r.With(json).Post("/password", a.setPassword)
+			r.With(json).Post("/email", a.changeEmail)
 			r.Put("/roles/{role}", a.addRole)
 			r.Delete("/roles/{role}", a.removeRole)
 			r.With(json).Put("/networks", a.setNetworks)
@@ -263,6 +264,36 @@ func (a *adminAPI) setPassword(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// changeEmail handles POST /users/{id}/email: an administrator changes a
+// user's address at once. Both addresses are told, the old one with a link to
+// undo it. It needs the realm to send email.
+func (a *adminAPI) changeEmail(w http.ResponseWriter, r *http.Request) {
+	obj, ok := readObject(w, r)
+	if !ok {
+		return
+	}
+	f, ok := fields(w, r, obj, map[string]string{"email": "string"})
+	if !ok {
+		return
+	}
+	address := f["email"].(string)
+	if _, err := registry.NormalizeEmail(address); err != nil {
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "email", Reason: "must be a valid email address"})
+		return
+	}
+	u, err := usersOf(r).ChangeEmailAsAdmin(r.Context(), adminUserOf(r).ID, address)
+	switch {
+	case errors.Is(err, auth.ErrEmailNotConfigured):
+		writeError(w, r, http.StatusNotFound, codeNotFound, "this realm doesn't send email")
+	case errors.Is(err, auth.ErrSameEmail):
+		writeError(w, r, http.StatusBadRequest, codeValidation, err.Error(), Detail{Path: "email", Reason: "is already the address of this user"})
+	case err != nil:
+		adminError(w, r, err)
+	default:
+		writeJSON(w, http.StatusOK, adminUserJSON(u, usersOf(r).LocaleOf(u)))
+	}
+}
+
 func (a *adminAPI) addRole(w http.ResponseWriter, r *http.Request) {
 	if err := usersOf(r).AddRole(r.Context(), adminUserOf(r).Email, chi.URLParam(r, "role")); err != nil {
 		adminError(w, r, err)
@@ -284,7 +315,7 @@ func (a *adminAPI) createInvitation(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"email": "string?", "expires_in": "string?"})
+	f, ok := fields(w, r, obj, map[string]string{"email": "string?", "expires_in": "string?", "send": "bool?", "redirect_to": "string?", "locale": "string?"})
 	if !ok {
 		return
 	}
@@ -305,6 +336,16 @@ func (a *adminAPI) createInvitation(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	caller, _ := callerOf(r)
+	if send, _ := f["send"].(bool); send {
+		a.sendInvitation(w, r, f, email, ttl, caller.Actor())
+		return
+	}
+	for _, k := range []string{"redirect_to", "locale"} {
+		if _, given := f[k]; given {
+			writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: k, Reason: "only applies with send: true"})
+			return
+		}
+	}
 	inv, token, err := usersOf(r).CreateInvitation(r.Context(), email, ttl, caller.Actor())
 	if err != nil {
 		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "expires_in", Reason: err.Error()})
@@ -313,6 +354,35 @@ func (a *adminAPI) createInvitation(w http.ResponseWriter, r *http.Request) {
 	out := invitationJSON(inv)
 	out["token"] = token
 	writeJSON(w, http.StatusCreated, out)
+}
+
+// sendInvitation creates an invitation that backd emails to its address.
+func (a *adminAPI) sendInvitation(w http.ResponseWriter, r *http.Request, f map[string]any, address string, ttl time.Duration, createdBy string) {
+	redirectTo, _ := f["redirect_to"].(string)
+	locale, _ := f["locale"].(string)
+	rl := a.reg.Realms[chi.URLParam(r, "realm")]
+	if redirectTo != "" && (rl == nil || rl.Settings.Email == nil || !rl.Settings.Email.AllowedRedirect(redirectTo)) {
+		writeError(w, r, http.StatusBadRequest, codeInvalidRedirect, "redirect_to must be an absolute URL within the realm's email.allowed_redirects", Detail{Path: "redirect_to", Reason: "is not allowed"})
+		return
+	}
+	inv, err := usersOf(r).SendInvitation(r.Context(), address, ttl, createdBy, redirectTo, locale, clientIP(r), requestID(r.Context()))
+	switch {
+	case errors.Is(err, auth.ErrEmailNotConfigured):
+		writeError(w, r, http.StatusNotFound, codeNotFound, "this realm doesn't send email")
+	case errors.Is(err, auth.ErrInvitationNeedsAddress):
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "email", Reason: "is required to send an invitation"})
+	case err != nil:
+		var limited *auth.EmailLimitedError
+		if errors.As(err, &limited) {
+			authError(w, r, err)
+			return
+		}
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "expires_in", Reason: err.Error()})
+	default:
+		out := invitationJSON(inv)
+		out["sent"] = true
+		writeJSON(w, http.StatusCreated, out)
+	}
 }
 
 func (a *adminAPI) listInvitations(w http.ResponseWriter, r *http.Request) {

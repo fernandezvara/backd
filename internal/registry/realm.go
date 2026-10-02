@@ -100,6 +100,11 @@ type AccountSettings struct {
 	WelcomeEmail bool
 	// VerifyEmailTTL is how long a verification link works (account.tokens.verify_email).
 	VerifyEmailTTL time.Duration
+	// AllowEmailChange lets users change their own address (`POST /_auth/email`).
+	AllowEmailChange bool
+	// ChangeEmailTTL and RevertEmailChangeTTL are how long the confirmation
+	// and the undo link of an email change work.
+	ChangeEmailTTL, RevertEmailChangeTTL time.Duration
 	// ResetPasswordTTL is how long a reset link works (account.tokens.reset_password).
 	ResetPasswordTTL time.Duration
 	// PurgeUnverifiedAfter deletes accounts that never verified; 0 is off.
@@ -113,6 +118,10 @@ func (a AccountSettings) TokenLifetime(p email.Purpose) time.Duration {
 		return a.VerifyEmailTTL
 	case p == email.TokenPurpose(email.ResetPassword) && a.ResetPasswordTTL > 0:
 		return a.ResetPasswordTTL
+	case p == email.TokenPurpose(email.ChangeEmail) && a.ChangeEmailTTL > 0:
+		return a.ChangeEmailTTL
+	case p == email.TokenPurpose(email.EmailChanged) && a.RevertEmailChangeTTL > 0:
+		return a.RevertEmailChangeTTL
 	}
 	return p.DefaultLifetime()
 }
@@ -219,10 +228,13 @@ type realmDoc struct {
 	Account *struct {
 		RequireVerifiedEmail bool   `yaml:"require_verified_email"`
 		WelcomeEmail         bool   `yaml:"welcome_email"`
+		AllowEmailChange     bool   `yaml:"allow_email_change"`
 		PurgeUnverifiedAfter string `yaml:"purge_unverified_after"`
 		Tokens               *struct {
-			VerifyEmail   string `yaml:"verify_email"`
-			ResetPassword string `yaml:"reset_password"`
+			VerifyEmail       string `yaml:"verify_email"`
+			ResetPassword     string `yaml:"reset_password"`
+			ChangeEmail       string `yaml:"change_email"`
+			RevertEmailChange string `yaml:"revert_email_change"`
 		} `yaml:"tokens"`
 	} `yaml:"account"`
 	Functions *struct {
@@ -478,12 +490,14 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 
 	s.Account.VerifyEmailTTL = DefaultVerifyEmailTTL
 	s.Account.ResetPasswordTTL = DefaultResetPasswordTTL
+	s.Account.ChangeEmailTTL = 24 * time.Hour
+	s.Account.RevertEmailChangeTTL = 7 * 24 * time.Hour
 	if a := doc.Account; a != nil {
 		if !s.AuthEnabled {
 			errs = append(errs, errors.New("account: only applies when auth is enabled"))
 		} else {
-			s.Account.RequireVerifiedEmail, s.Account.WelcomeEmail = a.RequireVerifiedEmail, a.WelcomeEmail
-			for key, on := range map[string]bool{"require_verified_email": a.RequireVerifiedEmail, "welcome_email": a.WelcomeEmail, "purge_unverified_after": a.PurgeUnverifiedAfter != ""} {
+			s.Account.RequireVerifiedEmail, s.Account.WelcomeEmail, s.Account.AllowEmailChange = a.RequireVerifiedEmail, a.WelcomeEmail, a.AllowEmailChange
+			for key, on := range map[string]bool{"require_verified_email": a.RequireVerifiedEmail, "welcome_email": a.WelcomeEmail, "allow_email_change": a.AllowEmailChange, "purge_unverified_after": a.PurgeUnverifiedAfter != ""} {
 				if on && s.Email == nil {
 					errs = append(errs, fmt.Errorf("account.%s: needs an email section (the emails it sends go through its delivery function)", key))
 				}
@@ -506,6 +520,8 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 			if a.Tokens != nil {
 				dur("tokens.verify_email", a.Tokens.VerifyEmail, &s.Account.VerifyEmailTTL)
 				dur("tokens.reset_password", a.Tokens.ResetPassword, &s.Account.ResetPasswordTTL)
+				dur("tokens.change_email", a.Tokens.ChangeEmail, &s.Account.ChangeEmailTTL)
+				dur("tokens.revert_email_change", a.Tokens.RevertEmailChange, &s.Account.RevertEmailChangeTTL)
 			}
 		}
 	}

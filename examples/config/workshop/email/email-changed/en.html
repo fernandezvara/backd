@@ -1,4 +1,4 @@
 <p>Hello,</p>
-<p>The email address of your account on {{.Realm}} was changed, and this address no longer receives its messages. If it wasn't you, undo the change:</p>
+{{if .Link}}<p>The email address of your account on {{.Realm}} was changed, and this address no longer receives its messages. If it wasn't you, undo the change:</p>
 <p><a href="{{.Link}}">Undo the change</a></p>
-<p>The link works once and expires on {{.ExpiresAt.Format "2006-01-02 15:04"}} UTC.</p>
+<p>The link works once and expires on {{.ExpiresAt.Format "2006-01-02 15:04"}} UTC.</p>{{else}}<p>This address, {{.User.Email}}, is now the email address of your account on {{.Realm}}. You don't need to do anything.</p>{{end}}

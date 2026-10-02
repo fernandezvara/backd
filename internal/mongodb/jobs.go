@@ -32,6 +32,9 @@ type emailJobDoc struct {
 	UserID     string `bson:"user_id"`
 	Locale     string `bson:"locale,omitempty"`
 	RedirectTo string `bson:"redirect_to,omitempty"`
+	To         string `bson:"to,omitempty"`
+	Notice     bool   `bson:"notice,omitempty"`
+	Invitation string `bson:"invitation_id,omitempty"`
 }
 
 type jobDoc struct {
@@ -121,14 +124,14 @@ func emailJobFromDoc(d *emailJobDoc) *auth.EmailJob {
 	if d == nil {
 		return nil
 	}
-	return &auth.EmailJob{Kind: d.Kind, UserID: d.UserID, Locale: d.Locale, RedirectTo: d.RedirectTo}
+	return &auth.EmailJob{Kind: d.Kind, UserID: d.UserID, Locale: d.Locale, RedirectTo: d.RedirectTo, To: d.To, Notice: d.Notice, InvitationID: d.Invitation}
 }
 
 func emailJobToDoc(e *auth.EmailJob) *emailJobDoc {
 	if e == nil {
 		return nil
 	}
-	return &emailJobDoc{Kind: e.Kind, UserID: e.UserID, Locale: e.Locale, RedirectTo: e.RedirectTo}
+	return &emailJobDoc{Kind: e.Kind, UserID: e.UserID, Locale: e.Locale, RedirectTo: e.RedirectTo, To: e.To, Notice: e.Notice, Invitation: e.InvitationID}
 }
 
 func jobFromDoc(d jobDoc) auth.Job {

@@ -11,6 +11,8 @@ import (
 
 	"github.com/rs/xid"
 
+	"github.com/fernandezvara/backd/internal/email"
+
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -136,4 +138,89 @@ func (s *Users) signupWithInvitation(ctx context.Context, email, password, token
 		return User{}, err
 	}
 	return u, nil
+}
+
+// ErrInvitationNeedsAddress means an invitation to be sent by email has no
+// address to send it to.
+var ErrInvitationNeedsAddress = errors.New("an invitation sent by email needs an email address")
+
+// SendInvitation is CreateInvitation for an invitation that backd emails to
+// the address it is bound to: the person gets a link to a page where they
+// choose a password. Nobody holds the invitation's own token, so no token
+// is returned; the link's token is made by a worker when it sends the
+// message, and only its hash is stored. A reached email limit removes the
+// invitation again and is an *EmailLimitedError.
+func (s *Users) SendInvitation(ctx context.Context, address string, ttl time.Duration, createdBy, redirectTo, locale, ip, requestID string) (Invitation, error) {
+	if s.Settings.Email == nil {
+		return Invitation{}, ErrEmailNotConfigured
+	}
+	if address == "" {
+		return Invitation{}, ErrInvitationNeedsAddress
+	}
+	inv, _, err := s.CreateInvitation(ctx, address, ttl, createdBy)
+	if err != nil {
+		return Invitation{}, err
+	}
+	_, err = s.QueueEmail(ctx, EmailRequest{
+		Kind: email.Invitation, InvitationID: inv.ID, Address: inv.Email, Locale: s.Settings.BestLocale(locale),
+		RedirectTo: redirectTo, ClientIP: ip, RequestID: requestID,
+	})
+	if err != nil {
+		_ = s.Store.DeleteInvitation(context.WithoutCancel(ctx), inv.ID)
+		return Invitation{}, err
+	}
+	s.Audit(ctx, AuditInviteSent, "invitation:"+inv.ID, map[string]any{"expires_at": inv.ExpiresAt.Format(time.RFC3339)})
+	return inv, nil
+}
+
+// AcceptInvitation uses the link of an emailed invitation: it creates the
+// account with the chosen password and the invited address, already
+// verified (only its owner received the link). It starts no session. The
+// password is checked first, so a refused one leaves the link usable. Every
+// way the link can be wrong, or the address being registered meanwhile, is
+// ErrInvalidToken.
+func (s *Users) AcceptInvitation(ctx context.Context, token, password, locale string) (EmailToken, error) {
+	if _, err := CheckPassword(password, s.Settings.PasswordMinLength); err != nil {
+		return EmailToken{}, err
+	}
+	t, err := s.RedeemEmailToken(ctx, token, string(email.TokenPurpose(email.Invitation)))
+	if err != nil {
+		return EmailToken{}, err
+	}
+	inv, err := s.Store.ClaimInvitationByID(ctx, t.InvitationID, s.now())
+	if errors.Is(err, ErrNotFound) {
+		return EmailToken{}, ErrInvalidToken // revoked or expired
+	}
+	if err != nil {
+		return EmailToken{}, err
+	}
+	restore := func() { _ = s.Store.CreateInvitation(context.WithoutCancel(ctx), inv) }
+	if inv.Email == "" || inv.Email != t.Address {
+		restore()
+		return EmailToken{}, ErrInvalidToken
+	}
+	u, err := s.create(ctx, inv.Email, &password, locale, true)
+	if errors.Is(err, ErrEmailTaken) {
+		return EmailToken{}, ErrInvalidToken
+	}
+	if err != nil {
+		restore()
+		return EmailToken{}, err
+	}
+	s.AuditAs(ctx, userTarget(u.ID), AuditUserSignup, userTarget(u.ID), map[string]any{"invited": true, "emailed": true, "roles": u.Roles})
+	return t, nil
+}
+
+// InvitationByID returns an unexpired invitation by id.
+func (s *Users) InvitationByID(ctx context.Context, id string) (Invitation, bool, error) {
+	all, err := s.Invitations(ctx)
+	if err != nil {
+		return Invitation{}, false, err
+	}
+	for _, inv := range all {
+		if inv.ID == id {
+			return inv, true, nil
+		}
+	}
+	return Invitation{}, false, nil
 }

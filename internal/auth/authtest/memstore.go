@@ -159,6 +159,20 @@ func (m *MemStore) UpdateUser(_ context.Context, id string, upd auth.UserUpdate,
 	if !ok {
 		return auth.ErrNotFound
 	}
+	if upd.Email != nil {
+		for _, x := range m.users {
+			if x.ID != id && x.Email == *upd.Email {
+				return auth.ErrEmailTaken
+			}
+		}
+		u.Email = *upd.Email
+	}
+	if upd.PendingEmail != nil {
+		u.PendingEmail = *upd.PendingEmail
+	}
+	if upd.PreviousEmail != nil {
+		u.PreviousEmail = *upd.PreviousEmail
+	}
 	if upd.EmailVerified != nil {
 		u.EmailVerified = *upd.EmailVerified
 	}
@@ -468,6 +482,16 @@ func (m *MemStore) ClaimInvitation(_ context.Context, hash string, now time.Time
 			delete(m.invites, id)
 			return inv, nil
 		}
+	}
+	return auth.Invitation{}, auth.ErrNotFound
+}
+
+func (m *MemStore) ClaimInvitationByID(_ context.Context, id string, now time.Time) (auth.Invitation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if inv, ok := m.invites[id]; ok && now.Before(inv.ExpiresAt) {
+		delete(m.invites, id)
+		return inv, nil
 	}
 	return auth.Invitation{}, auth.ErrNotFound
 }
