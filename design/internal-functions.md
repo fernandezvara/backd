@@ -2,7 +2,7 @@
 
 - **Issues:** design 4.1c (#7) → feature 4.2a (#8)
 - **Status:** decided
-- **Related designs:** [email-delivery.md](./email-delivery.md) (first user of internal functions), [account-lifecycle.md](./account-lifecycle.md) (`account.on_delete` hook)
+- **Related designs:** [email-delivery.md](./email-delivery.md) (first user of internal functions), [account-lifecycle.md](./account-lifecycle.md) (the deferred `account.on_delete` hook, §13)
 
 ## 1. Why
 
@@ -88,11 +88,11 @@ Each rule below is an acceptance criterion.
 2. **Without a user.** When called by backd itself, by a scheduled run, or by a function whose own `ctx.user` is `null`: `ctx.user` is `null`, `ctx.db` acts as **anonymous** (rules see `user == nil`, the same semantics as an anonymous HTTP caller), and `ctx.input` is whatever the caller passed.
 3. **Admin access is the callee's own.** `ctx.admin.db` exists only if the callee declares `admin: true`. A caller's admin access is never passed down. Scheduled runs keep today's behavior (admin access always present).
 4. **Attribution.** Writes through `ctx.admin.db` are recorded as the callee (`func:<database>/<callee>`); writes through `ctx.db` as the user, or as anonymous.
-5. **Traceability.** Every nested call is its own invocation in history, with the caller's `request_id`, a `parent_id` (the caller's invocation id) and an `origin` (new fields of the invocation records, shown by the admin invocations API and `backd functions history`): `http`, `function`, `cron`, `admin`, or `backd:<event>` (e.g. `backd:email.verify-email`, `backd:account.on_delete`).
+5. **Traceability.** Every nested call is its own invocation in history, with the caller's `request_id`, a `parent_id` (the caller's invocation id) and an `origin` (new fields of the invocation records, shown by the admin invocations API and `backd functions history`): `http`, `function`, `cron`, `admin`, or `backd:<event>` (e.g. `backd:email.verify-email`, `backd:account.erase`).
 
 ## 6. Calls from backd
 
-backd itself calls internal functions for its own events: email delivery ([email-delivery.md](./email-delivery.md)) and the account clean-up hook ([account-lifecycle.md](./account-lifecycle.md)). These calls **never run in a request path**: they are queued first, and a worker makes them whatever the callee's `mode`. Account clean-up is an ordinary async job. Email is queued as an *email job* that holds no message; the worker renders the message and invokes the delivery function directly, so the message (with its token link) is never stored in a job's input. The callee has no user (`ctx.user` is `null`) and `origin` names the event.
+backd itself calls internal functions for its own events: email delivery ([email-delivery.md](./email-delivery.md)) and, later, the account clean-up hook ([account-lifecycle.md](./account-lifecycle.md), deferred). These calls **never run in a request path**: they are queued first, and a worker makes them whatever the callee's `mode`. Account clean-up is an ordinary async job. Email is queued as an *email job* that holds no message; the worker renders the message and invokes the delivery function directly, so the message (with its token link) is never stored in a job's input. The callee has no user (`ctx.user` is `null`) and `origin` names the event.
 
 ## 7. Running an internal function by hand
 
