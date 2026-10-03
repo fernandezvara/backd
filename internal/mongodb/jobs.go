@@ -450,7 +450,7 @@ func (s *AuthStore) JobStats(ctx context.Context, now time.Time) ([]metrics.JobS
 // attempts were used up, and an administrator has to repeat the erase.
 func (s *AuthStore) EraseNeedsAttention(ctx context.Context) (int64, error) {
 	return s.jobs().CountDocuments(ctx, bson.D{
-		{Key: "erase", Value: bson.D{{Key: "$exists", Value: true}}},
+		{Key: "erase.user_id", Value: bson.D{{Key: "$exists", Value: true}}}, // the sparse index holds only erase jobs
 		{Key: "status", Value: auth.JobDone},
 		{Key: "result.status", Value: bson.D{{Key: "$ne", Value: "ok"}}},
 	})

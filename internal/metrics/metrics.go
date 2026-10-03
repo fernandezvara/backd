@@ -143,6 +143,9 @@ func (m *Metrics) Handler(token string) http.Handler {
 	mux.Handle("GET /metrics", promhttp.HandlerFor(m.Registry, promhttp.HandlerOpts{
 		ErrorHandling: promhttp.ContinueOnError,
 		Timeout:       10 * time.Second,
+		// A scrape is cheap and one Prometheus asks every few seconds: more
+		// at once is something else, answered 503 rather than served.
+		MaxRequestsInFlight: 4,
 	}))
 	var want [sha256.Size]byte
 	if token != "" {

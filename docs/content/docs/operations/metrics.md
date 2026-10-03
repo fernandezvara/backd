@@ -15,7 +15,7 @@ Every `backd` process can tell [Prometheus](https://prometheus.io/) how it is do
 | `METRICS_ADDR` | empty (off) | Where this process serves `/metrics`, for example `:9090`. A listener of its own: it can't be `HTTP_ADDR` or `BACKD_INTERNAL_ADDR`. |
 | `METRICS_TOKEN` | empty | At least 32 characters. When set, every request needs `Authorization: Bearer <token>`. Needs `METRICS_ADDR`. |
 
-`backd serve`, `backd worker`, `backd executor` and `backd egress` each serve their own `/metrics` (the executor and egress read the same two variables); a process that runs both (`serve --with-worker`) serves one. The listener answers `GET /metrics` and nothing else, and it is a separate server: whatever happens to it never touches the API.
+`backd serve`, `backd worker`, `backd executor` and `backd egress` each serve their own `/metrics` (the executor and egress read the same two variables); a process that runs both (`serve --with-worker`) serves one. The listener answers `GET /metrics` and nothing else (a request without the token gets `401` whatever the path), serves at most four scrapes at once, and is a separate server: a slow or flooding scraper never slows the API. If the port can't be bound, the process refuses to start, so a mistake shows at once.
 
 ```yaml
 # prometheus.yml
