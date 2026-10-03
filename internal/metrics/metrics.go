@@ -43,6 +43,9 @@ type Metrics struct {
 	requestTime  *prometheus.HistogramVec
 	inFlight     prometheus.Gauge
 	authRefusals *prometheus.CounterVec
+
+	mongoTime *prometheus.HistogramVec
+	mongoUp   prometheus.Gauge
 }
 
 // New builds the registry with the Go runtime and process collectors, the
@@ -66,6 +69,13 @@ func New(version, commit string) *Metrics {
 			Namespace: Namespace, Name: "http_refusals_total",
 			Help: "Answers that refuse a caller: 401, 403, 429 and 503.",
 		}, []string{"status"}),
+		mongoTime: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: Namespace, Name: "mongodb_operation_duration_seconds",
+			Help: "Time MongoDB took to run a command, by command and outcome (ok, error or timeout).", Buckets: MongoBuckets,
+		}, []string{"operation", "outcome"}),
+		mongoUp: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: Namespace, Name: "mongodb_up", Help: "1 while the last check of MongoDB worked, 0 when it failed.",
+		}),
 	}
 	build := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: Namespace, Name: "build_info", Help: "The version and commit this process was built from (always 1).",
@@ -73,7 +83,7 @@ func New(version, commit string) *Metrics {
 	build.WithLabelValues(version, commit).Set(1)
 	reg.MustRegister(
 		collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
-		build, m.requests, m.requestTime, m.inFlight, m.authRefusals,
+		build, m.requests, m.requestTime, m.inFlight, m.authRefusals, m.mongoTime, m.mongoUp,
 	)
 	return m
 }

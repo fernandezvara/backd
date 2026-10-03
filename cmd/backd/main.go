@@ -99,15 +99,15 @@ func setup(ctx context.Context, getenv func(string) string, logOut io.Writer) (*
 	}
 	log.Info("config loaded", "version", version, "config_dir", cfg.ConfigDir, "fingerprint", fingerprint, "realms", len(reg.Realms), "databases", len(reg.Databases()))
 
-	client, err := mongodb.Connect(ctx, cfg.MongoURI)
+	var m *metrics.Metrics
+	if cfg.MetricsAddr != "" {
+		m = metrics.New(version, commit())
+	}
+	client, err := mongodb.Connect(ctx, cfg.MongoURI, m.MongoMonitor())
 	if err != nil {
 		return nil, err
 	}
-	a := &app{cfg: cfg, log: log, reg: reg, client: client, fingerprint: fingerprint}
-	if cfg.MetricsAddr != "" {
-		a.metrics = metrics.New(version, commit())
-	}
-	return a, nil
+	return &app{cfg: cfg, log: log, reg: reg, client: client, fingerprint: fingerprint, metrics: m}, nil
 }
 
 func (a *app) close() { _ = a.client.Disconnect(context.Background()) }
@@ -206,6 +206,7 @@ func serve(ctx context.Context, a *app) error {
 		func() error { return httpapi.Run(ctx, srv, ln, a.cfg.ShutdownTimeout, a.log) },
 	}
 	if a.metrics != nil {
+		go a.metrics.WatchMongo(ctx, func(c context.Context) error { return a.client.Ping(c, nil) }, 15*time.Second)
 		tasks = append(tasks, func() error {
 			return a.metrics.Serve(ctx, a.cfg.MetricsAddr, a.cfg.MetricsToken, a.cfg.ShutdownTimeout, a.log.With("listener", "metrics"))
 		})
@@ -268,6 +269,7 @@ func worker(ctx context.Context, a *app) error {
 	w := httpapi.NewWorker(a.handlerConfig(), workerID())
 	a.log.Info("worker ready", "version", version, "concurrency", a.cfg.WorkerConcurrency)
 	if a.metrics != nil {
+		go a.metrics.WatchMongo(ctx, func(c context.Context) error { return a.client.Ping(c, nil) }, 15*time.Second)
 		go func() {
 			if err := a.metrics.Serve(ctx, a.cfg.MetricsAddr, a.cfg.MetricsToken, a.cfg.ShutdownTimeout, a.log.With("listener", "metrics")); err != nil {
 				a.log.Error("metrics listener", "error", err)

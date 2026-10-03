@@ -41,6 +41,8 @@ All names start with `backd_`; durations are in seconds.
 | `http_request_duration_seconds` | `method`, `route` | Time to answer (histogram). |
 | `http_in_flight_requests` | | Requests being answered now. |
 | `http_refusals_total` | `status` | Answers `401`, `403`, `429` and `503`. |
+| `mongodb_operation_duration_seconds` | `operation`, `outcome` | Time MongoDB took to run each command (histogram). `operation` is the command (`find`, `insert`, `update`, `aggregate`, …, or `other`); `outcome` is `ok`, `error` or `timeout`. Measured by the driver for every database call, whatever part of backd made it. |
+| `mongodb_up` | | `1` while the last check (every 15 seconds) of MongoDB worked, `0` when it failed. |
 | `build_info` | `version`, `commit` | Always `1`. |
 
 The Go runtime (`go_*`) and process (`process_*`) metrics are included.

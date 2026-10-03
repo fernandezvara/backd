@@ -17,7 +17,7 @@
 | Access | the metrics port is private: network isolation first, plus an optional bearer token (`METRICS_TOKEN`, compared in constant time). The docs say it must not be reachable from outside, even though nothing sensitive is in it |
 | Library | `prometheus/client_golang`, with its own registry (no global default collectors that leak host details) |
 | Labels | only bounded values: route *pattern*, method, status class or code, realm, database, function name, job kind, outcome. Unknown routes collapse to one label. Never a user id, email, address, token, key name, IP, document id, query or free text |
-| Database latency | a must: a histogram for every MongoDB operation by operation name and outcome, measured where the storage and auth stores call the driver (one wrapper, not per call) |
+| Database latency | a must: a histogram for every MongoDB operation by operation name and outcome, measured with the driver's command monitor (one hook for every call; the operation is the MongoDB command name, a closed list, anything else is `other`) |
 | Jobs | queue depth and oldest-job wait by kind and realm, from the database, **cached** (refreshed every 15 s by a background loop with a timeout, never on scrape) |
 | Sessions | counters of sessions created and ended (by reason: logout, expiry, revoked, password change, disabled, erased), not a live count |
 | Password hashing | its queue depth and wait come later (separate issue) |
