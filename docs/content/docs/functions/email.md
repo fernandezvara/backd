@@ -93,7 +93,7 @@ email:
 
 ## The delivery function
 
-The delivery function receives a finished message as `ctx.input` and hands it to your provider. It must be [`internal: true`](../internal/) and `mode: async`; it typically declares the provider's key as a [secret](../secrets/) and the provider's host in [`network`](../network/).
+The delivery function receives a finished message as `ctx.input` and hands it to your provider. It must be [`internal: true`](../internal/) and `mode: async`; it typically declares the provider's key as a [secret](../secrets/) and the provider's host in [`network`](../network/). The [cookbook](../cookbook/#deliver-email-with-postmark) has a complete, tested one for Postmark, step by step, and a table of what changes for other providers.
 
 ```ts
 // ctx.input
