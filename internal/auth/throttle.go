@@ -101,6 +101,7 @@ func (s *Users) checkThrottle(ctx context.Context, ks []throttleKey) error {
 		}
 	}
 	if wait > 0 {
+		s.Metrics.RateLimited(s.Realm, "login")
 		return &ThrottledError{RetryAfter: wait}
 	}
 	return nil

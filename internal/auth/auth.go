@@ -120,8 +120,8 @@ type Store interface {
 	// ID and CreatedAt).
 	PutIdentity(ctx context.Context, id Identity) error
 	Identity(ctx context.Context, provider, subject string) (Identity, error)
-	// DeleteSessions revokes every session of the user.
-	DeleteSessions(ctx context.Context, userID string) error
+	// DeleteSessions revokes every session of the user and says how many.
+	DeleteSessions(ctx context.Context, userID string) (int64, error)
 
 	CreateSession(ctx context.Context, s Session) error
 	// SessionByTokenHash returns the session and its user; ErrNotFound if
@@ -134,8 +134,9 @@ type Store interface {
 	// DeleteSession revokes one session of the user; ErrNotFound if the
 	// user has no session with that id.
 	DeleteSession(ctx context.Context, userID, id string) error
-	// DeleteOtherSessions revokes every session of the user except keepID.
-	DeleteOtherSessions(ctx context.Context, userID, keepID string) error
+	// DeleteOtherSessions revokes every session of the user except keepID
+	// and says how many.
+	DeleteOtherSessions(ctx context.Context, userID, keepID string) (int64, error)
 
 	// CreateAPIKey stores a key; ErrKeyNameTaken if the name exists.
 	CreateAPIKey(ctx context.Context, k APIKey) error

@@ -19,7 +19,7 @@
 | Labels | only bounded values: route *pattern*, method, status class or code, realm, database, function name, job kind, outcome. Unknown routes collapse to one label. Never a user id, email, address, token, key name, IP, document id, query or free text |
 | Database latency | a must: a histogram for every MongoDB operation by operation name and outcome, measured with the driver's command monitor (one hook for every call; the operation is the MongoDB command name, a closed list, anything else is `other`) |
 | Jobs | queue depth and oldest-job wait by kind and realm, from the database, **cached** (refreshed every 15 s by a background loop with a timeout, never on scrape) |
-| Sessions | counters of sessions created and ended (by reason: logout, expiry, revoked, password change, disabled, erased), not a live count |
+| Sessions | counters of sessions created and ended (by reason; sessions that expire on their own are not counted: MongoDB removes them), not a live count |
 | Password hashing | its queue depth and wait come later (separate issue) |
 | Production reference | a Prometheus container in the stack, scraping every backd process on start, with the metrics ports on a private network; a test checks that the series exist and that the public edge doesn't serve `/metrics` |
 | Local stack | the same: the compose file starts a Prometheus configured to scrape on start |

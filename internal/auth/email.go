@@ -102,6 +102,7 @@ func (s *Users) QueueEmail(ctx context.Context, r EmailRequest) (Job, error) {
 		if err := s.RateLimit(ctx, c.key, c.limit, c.window); err != nil {
 			var te *ThrottledError
 			if errors.As(err, &te) {
+				s.Metrics.RateLimited(s.Realm, "email_"+c.scope)
 				return Job{}, &EmailLimitedError{RetryAfter: te.RetryAfter, Scope: c.scope}
 			}
 			return Job{}, err

@@ -255,7 +255,7 @@ func (m *MemStore) Identity(_ context.Context, provider, subject string) (auth.I
 	return i, nil
 }
 
-func (m *MemStore) DeleteSessions(_ context.Context, userID string) error {
+func (m *MemStore) DeleteSessions(_ context.Context, userID string) (int64, error) {
 	return m.DeleteOtherSessions(context.Background(), userID, "")
 }
 
@@ -319,15 +319,17 @@ func (m *MemStore) DeleteSession(_ context.Context, userID, id string) error {
 	return nil
 }
 
-func (m *MemStore) DeleteOtherSessions(_ context.Context, userID, keepID string) error {
+func (m *MemStore) DeleteOtherSessions(_ context.Context, userID, keepID string) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	var n int64
 	for k, s := range m.sessions {
 		if s.UserID == userID && k != keepID {
 			delete(m.sessions, k)
+			n++
 		}
 	}
-	return nil
+	return n, nil
 }
 
 func (m *MemStore) CreateAPIKey(_ context.Context, k auth.APIKey) error {

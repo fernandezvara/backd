@@ -26,6 +26,7 @@ import (
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/executor"
+	"github.com/fernandezvara/backd/internal/metrics"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/rules"
 )
@@ -83,6 +84,8 @@ type functions struct {
 	// instance (roadmap F8); nil on the internal listener, which never
 	// invokes (it only serves bundles).
 	concurrency *concurrencyLimiter
+	// metrics records calls, refusals and replays; nil turns it off.
+	metrics *metrics.Metrics
 
 	once    sync.Once
 	mu      sync.RWMutex
@@ -285,6 +288,7 @@ func (f *functions) run(w http.ResponseWriter, r *http.Request, fn *registry.Fun
 		}
 		funcKey := realm + "/" + database + "/" + name
 		if !f.concurrency.tryAcquire(funcKey, fn.Concurrency) {
+			f.metrics.FunctionRefused(realm, database+"/"+name, "concurrency")
 			f.releaseClaim(r.Context(), realm, claimID)
 			w.Header().Set("Retry-After", "1")
 			writeError(w, r, fullStatus, fullCode, "this function is at its concurrency limit on this instance; retry shortly")
@@ -293,6 +297,7 @@ func (f *functions) run(w http.ResponseWriter, r *http.Request, fn *registry.Fun
 		realmKey := "realm:" + realm
 		realmMax := f.docs.reg.Realms[realm].Settings.FunctionsMaxConcurrency
 		if !f.concurrency.tryAcquire(realmKey, realmMax) {
+			f.metrics.FunctionRefused(realm, database+"/"+name, "concurrency")
 			f.concurrency.release(funcKey, fn.Concurrency)
 			f.releaseClaim(r.Context(), realm, claimID)
 			w.Header().Set("Retry-After", "1")
@@ -341,6 +346,7 @@ func (f *functions) run(w http.ResponseWriter, r *http.Request, fn *registry.Fun
 	res, err := f.runner.Invoke(ctx, req)
 	f.logResult(r.Context(), req.Function, res, err)
 	if err != nil {
+		f.metrics.ExecutorError("unavailable")
 		f.releaseClaim(r.Context(), realm, claimID)
 		writeError(w, r, http.StatusServiceUnavailable, codeUnavailable, "the function executor is unavailable")
 		return
@@ -484,13 +490,16 @@ func (f *functions) checkIdempotency(w http.ResponseWriter, r *http.Request, fn 
 		return rec.ID, true
 	}
 	if existing.InputHash != rec.InputHash {
+		f.metrics.FunctionRefused(realm, rec.Function, "idempotency_reused")
 		writeError(w, r, http.StatusUnprocessableEntity, codeIdempotencyKeyReused, "this idempotency key was already used with different input")
 		return "", false
 	}
 	if existing.Status != auth.IdempotencyDone {
+		f.metrics.FunctionRefused(realm, rec.Function, "idempotency_conflict")
 		writeError(w, r, http.StatusConflict, codeRequestInProgress, "a call with this idempotency key is still running")
 		return "", false
 	}
+	f.metrics.FunctionReplayed(realm, rec.Function)
 	f.replayIdempotent(w, r, fn, realm, database, existing)
 	return "", false
 }
@@ -542,6 +551,8 @@ func (f *functions) checkRateLimit(w http.ResponseWriter, r *http.Request, fn *r
 	if err := f.docs.users(realm).RateLimit(r.Context(), key, fn.RateLimit.Limit, fn.RateLimit.Window); err != nil {
 		var te *auth.ThrottledError
 		if errors.As(err, &te) {
+			f.metrics.FunctionRefused(realm, database+"/"+name, "rate_limit")
+			f.metrics.RateLimited(realm, "function")
 			secs := int((te.RetryAfter + time.Second - 1) / time.Second)
 			w.Header().Set("Retry-After", strconv.Itoa(max(secs, 1)))
 			writeError(w, r, http.StatusTooManyRequests, codeTooManyRequests, "this function's rate limit was reached; retry later")
@@ -707,6 +718,7 @@ func jobResultJSON(job auth.Job) map[string]any {
 // there — the same limitation secrets and rate limits already have.
 // jobID is "" for sync calls; a worker passes it for async ones (F11).
 func (f *functions) recordInvocation(ctx context.Context, requestID, realm, database, name, mode string, caller auth.Caller, res executor.Result, jobID, invID string, meta callMeta) {
+	f.metrics.FunctionRan(realm, database+"/"+name, mode, res.Status, time.Duration(res.DurationMS)*time.Millisecond)
 	u := f.docs.users(realm)
 	if u == nil {
 		return

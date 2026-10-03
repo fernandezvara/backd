@@ -214,7 +214,7 @@ func utcOrZero(t *time.Time) time.Time {
 // first, like DeleteUser, so an interrupted erase never leaves credentials
 // for a user without their identity.
 func (s *AuthStore) EraseUser(ctx context.Context, id, placeholderEmail string, now time.Time) error {
-	if err := s.DeleteSessions(ctx, id); err != nil {
+	if _, err := s.DeleteSessions(ctx, id); err != nil {
 		return err
 	}
 	if _, err := s.identities().DeleteMany(ctx, bson.D{{Key: "user_id", Value: id}}); err != nil {
@@ -253,7 +253,7 @@ func (s *AuthStore) ListUnverifiedUsers(ctx context.Context, before time.Time, l
 // DeleteUser removes sessions and identities first, so an interrupted
 // delete never leaves credentials without their user.
 func (s *AuthStore) DeleteUser(ctx context.Context, id string) error {
-	if err := s.DeleteSessions(ctx, id); err != nil {
+	if _, err := s.DeleteSessions(ctx, id); err != nil {
 		return err
 	}
 	if _, err := s.identities().DeleteMany(ctx, bson.D{{Key: "user_id", Value: id}}); err != nil {
@@ -300,9 +300,12 @@ func (s *AuthStore) Identity(ctx context.Context, provider, subject string) (aut
 	}, nil
 }
 
-func (s *AuthStore) DeleteSessions(ctx context.Context, userID string) error {
-	_, err := s.sessions().DeleteMany(ctx, bson.D{{Key: "user_id", Value: userID}})
-	return err
+func (s *AuthStore) DeleteSessions(ctx context.Context, userID string) (int64, error) {
+	res, err := s.sessions().DeleteMany(ctx, bson.D{{Key: "user_id", Value: userID}})
+	if err != nil {
+		return 0, err
+	}
+	return res.DeletedCount, nil
 }
 
 type sessionDoc struct {
@@ -391,9 +394,12 @@ func (s *AuthStore) DeleteSession(ctx context.Context, userID, id string) error 
 	return nil
 }
 
-func (s *AuthStore) DeleteOtherSessions(ctx context.Context, userID, keepID string) error {
-	_, err := s.sessions().DeleteMany(ctx, bson.D{{Key: "user_id", Value: userID}, {Key: "_id", Value: bson.D{{Key: "$ne", Value: keepID}}}})
-	return err
+func (s *AuthStore) DeleteOtherSessions(ctx context.Context, userID, keepID string) (int64, error) {
+	res, err := s.sessions().DeleteMany(ctx, bson.D{{Key: "user_id", Value: userID}, {Key: "_id", Value: bson.D{{Key: "$ne", Value: keepID}}}})
+	if err != nil {
+		return 0, err
+	}
+	return res.DeletedCount, nil
 }
 
 // apiKeyDoc is an API key; _id is the key's hash.

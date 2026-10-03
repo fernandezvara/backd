@@ -81,7 +81,7 @@ func (s *Users) ResetPassword(ctx context.Context, token, password string) (Emai
 		}
 	}
 	s.AuditAs(ctx, userTarget(u.ID), AuditPasswordReset, userTarget(u.ID), map[string]any{"verified_address": !u.EmailVerified})
-	if err := s.Store.DeleteSessions(ctx, u.ID); err != nil {
+	if err := s.endSessions(ctx, u.ID, "password_reset"); err != nil {
 		return EmailToken{}, err
 	}
 	s.notifyPasswordChanged(ctx, u)

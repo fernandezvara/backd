@@ -44,6 +44,8 @@ type Metrics struct {
 	inFlight     prometheus.Gauge
 	authRefusals *prometheus.CounterVec
 
+	domain
+
 	mongoTime *prometheus.HistogramVec
 	mongoUp   prometheus.Gauge
 }
@@ -54,6 +56,7 @@ func New(version, commit string) *Metrics {
 	reg := prometheus.NewRegistry()
 	m := &Metrics{
 		Registry: reg,
+		domain:   newDomain(),
 		requests: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: Namespace, Name: "http_requests_total",
 			Help: "Requests answered, by method, route pattern and status code.",
@@ -85,6 +88,7 @@ func New(version, commit string) *Metrics {
 		collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		build, m.requests, m.requestTime, m.inFlight, m.authRefusals, m.mongoTime, m.mongoUp,
 	)
+	reg.MustRegister(m.domain.collectors()...)
 	return m
 }
 

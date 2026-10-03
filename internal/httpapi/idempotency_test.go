@@ -2,9 +2,12 @@ package httpapi
 
 import (
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/fernandezvara/backd/internal/executor"
+	"github.com/fernandezvara/backd/internal/metrics"
 )
 
 func idemHeaders(cred, key string) map[string]string {
@@ -184,4 +187,50 @@ func TestIdempotencyReleasedOnTransientFailure(t *testing.T) {
 	if rec.Code != 200 || out["ok"] != true {
 		t.Errorf("retry after a released claim: %d %v", rec.Code, out)
 	}
+}
+
+// TestFunctionAndSessionMetrics checks the metrics of calls, replays,
+// refusals and sessions, and that none of them carries who called.
+func TestFunctionAndSessionMetrics(t *testing.T) {
+	m := metrics.New("dev", "x")
+	f := newRulesFixture(t, func(c *Config) { c.Metrics = m })
+	f.svc.Metrics, f.svc.Realm = m, "acme"
+	const echo = "/v1/acme/app/_func/echo"
+
+	f.doH(t, "POST", echo, `{"n": 1}`, idemHeaders(f.ada, "call-1"))
+	f.doH(t, "POST", echo, `{"n": 1}`, idemHeaders(f.ada, "call-1")) // a replay
+	f.doH(t, "POST", echo, `{"n": 2}`, idemHeaders(f.ada, "call-1")) // the key with other input
+	f.doH(t, "POST", "/v1/acme/_auth/logout", ``, bearer(f.bob))     // a session ends
+
+	var body strings.Builder
+	rec := httptest.NewRecorder()
+	m.Handler("").ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	body.WriteString(rec.Body.String())
+	got := body.String()
+	for _, want := range []string{
+		`backd_function_invocations_total{function="app/echo",mode="sync",realm="acme",status="ok"} 1`,
+		`backd_function_idempotent_replays_total{function="app/echo",realm="acme"} 1`,
+		`backd_function_refusals_total{function="app/echo",realm="acme",reason="idempotency_reused"} 1`,
+		`backd_function_duration_seconds_count{function="app/echo",realm="acme"} 1`,
+		`backd_sessions_ended_total{realm="acme",reason="logout"} 1`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, grepBackd(got))
+		}
+	}
+	for _, leak := range []string{"ada@example.com", f.adaID, f.bobID, f.ada, "call-1"} {
+		if strings.Contains(got, leak) {
+			t.Errorf("the metrics contain %q", leak)
+		}
+	}
+}
+
+func grepBackd(s string) string {
+	var out []string
+	for _, l := range strings.Split(s, "\n") {
+		if strings.HasPrefix(l, "backd_") {
+			out = append(out, l)
+		}
+	}
+	return strings.Join(out, "\n")
 }
