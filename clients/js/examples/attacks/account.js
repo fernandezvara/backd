@@ -48,6 +48,8 @@ const squat = await call('/_auth/signup', { body: { email: 'erased-0000000000000
 stopped('signing up with an erased user\'s placeholder address (a squatter could block an erasure)', squat.status === 400, squat)
 const reserved = await call('/_auth/signup', { body: { email: email('x').replace('example.com', 'mail.invalid'), password } })
 stopped('signing up on any .invalid address', reserved.status === 400, reserved)
+const two = await call('/_auth/signup', { body: { email: `${email('a')},${email('b')}`, password } })
+stopped('signing up with two addresses in one (a comma-joined To header would mail both)', two.status === 400, two)
 
 console.log('\nWhat sign-up and the email flows reveal:')
 const taken = email('taken')

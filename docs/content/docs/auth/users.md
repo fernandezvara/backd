@@ -92,7 +92,7 @@ Settings made here live only in the database. If `realm.yaml` sets networks for 
 
 - Emails are trimmed and lowercased, so `Ada@Example.com` and `ada@example.com` are the same user.
 - Each email belongs to at most one user in a realm.
-- Addresses on the reserved `.invalid` domain are refused: erased users' placeholders live there.
+- Addresses on the reserved `.invalid` domain are refused (erased users' placeholders live there), and so are addresses with a comma, semicolon, colon, angle bracket, parenthesis, square bracket, quote, backslash or control character: a delivery function that joins recipients into one header must never get one address that is really two.
 - An address changes only in guarded ways: the user asks with their password and confirms through a link sent to the new address (off unless the realm sets `account.allow_email_change`, see [Sessions](../sessions/#changing-the-email-address)), or an administrator does it through the [admin API](../admin/#changing-a-users-email), which tells both addresses and offers the old one an undo link.
 
 ## Password policy
