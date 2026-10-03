@@ -86,6 +86,9 @@ jobs:
         run: npm run typecheck
       - name: Unit tests
         run: npm test
+      - name: The package, as a user installs it from npm
+        working-directory: .
+        run: scripts/check-js-package.sh
       - name: Integration tests (backd + MongoDB in Docker)
         run: ./test/integration/run.sh
 

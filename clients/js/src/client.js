@@ -85,13 +85,13 @@ export class Client {
     this.url = options.url.replace(/\/+$/, '')
     /** @readonly */
     this.realm = options.realm
-    /** @private */
+    /** @internal */
     this.apiKey = options.apiKey
-    /** @private */
+    /** @internal */
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis)
-    /** @private */
+    /** @internal */
     this.retry = options.retry ?? { attempts: 0 }
-    /** @private */
+    /** @internal */
     this.headers = options.headers ?? {}
     /** @readonly */
     this.storage = options.storage ?? memoryStorage()

@@ -27,7 +27,7 @@ toc: true
 | `internal/storage/` | Backend-neutral repository interface and query conditions |
 | `internal/mongodb/` | MongoDB specifics: connection, `$jsonSchema` validator translation, provisioner (including realm system databases), repository, auth store |
 | `api/openapi.yaml` | The [HTTP API contract](contract/) (OpenAPI 3.1) and its lint settings |
-| `clients/js/` | The [JavaScript client](../clients/js/) (`@backd/client`) |
+| `clients/js/` | The [JavaScript client](../clients/js/) (`backd-js`) |
 | `docs/` | This documentation site (Hugo + hugodoks) |
 | `examples/config/` | Sample `CONFIG_DIR` used by `docker-compose.yml`. `workshop/` is the functions cookbook: its code is what the Functions pages quote (through the `example-file` shortcode, which reads it from `examples/config/workshop`), and it is tested for real (Deno unit tests with `make functions-testing-test`, and `TestWorkshopExample`, which runs every function on MongoDB with a real executor and worker) |
 | `docker-compose.yml` | Local stack on `https://localhost:8443`: nginx in front of `backd` + MongoDB, the docs site and the example app |
@@ -41,6 +41,7 @@ toc: true
 | `docker-compose.test.yml` | Dockerized test environment |
 | `.github/workflows/ci.yml` | CI: vet, OpenAPI lint, dockerized tests, release configuration check, JavaScript client checks and integration tests, the production reference test, docs build |
 | `.github/workflows/pages.yml` | On version tags, builds this documentation site, checks its links and callouts, and publishes it to GitHub Pages (see [Releasing](#releasing)) |
+| `.github/workflows/publish-js.yml` | On `js-v*` tags, publishes the JavaScript client to npm (see [Releasing the JavaScript client](#releasing-the-javascript-client)) |
 | `.github/workflows/release.yml`, `.goreleaser.yaml` | Releases on version tags: binaries, GitHub release, container image (see [Releasing](#releasing)) |
 | `.github/dependabot.yml` | Weekly dependency updates (see [Supply chain](#supply-chain)) |
 | `docker-compose.js.yml` | Stack for the JavaScript client's integration tests |
@@ -54,6 +55,7 @@ make test         # docker compose -f docker-compose.test.yml run --rm tests
 make test-local   # plain `go test ./...` for tests without external services
 make lint-api     # lint api/openapi.yaml (needs Node)
 make js-test      # JavaScript client: type-check and unit tests (needs Node)
+make js-package     # the JavaScript client packed and installed like an npm user gets it (Node and TypeScript)
 make js-integration  # JavaScript client against backd + MongoDB in Docker
 make example      # the local stack on https://localhost:8443: API, docs (live reload) and example apps behind nginx
 make hack-expenses  # attack the expenses example on the running local stack
@@ -120,6 +122,19 @@ A second workflow, `pages.yml`, runs on the same tag and publishes this document
 The version reaches the binary through `-X main.version`, in both GoReleaser and the Dockerfile (`--build-arg VERSION`); local builds report `dev`.
 
 `make release-check` validates the configuration and builds every archive into `dist/` without publishing. CI runs `goreleaser check` and checks that the next version has release notes.
+
+### Releasing the JavaScript client
+
+The client is published to npm as [`backd-js`](https://www.npmjs.com/package/backd-js) by `.github/workflows/publish-js.yml`, on its own tags and version, independent of the server's:
+
+1. Change `version` in `clients/js/package.json` (semver; while it is 0.x, a breaking change bumps the minor) and merge it to `main`.
+2. Tag and push: `git tag js-vX.Y.Z && git push origin js-vX.Y.Z`. The tag must match the version and point at a commit on `main`; a version with a suffix, `js-v0.3.0-rc.1`, is published under the `next` dist-tag and doesn't move `latest`.
+
+The workflow type-checks, runs the unit tests, then runs `scripts/check-js-package.sh`: it packs the library, checks what the tarball holds (the library, its declarations, `README.md` and `LICENSE`; no tests or examples), installs the tarball into a fresh project and uses it from Node and from strict TypeScript. CI runs the same check on every push (`make js-package`). Then it publishes with a provenance attestation, so each version on npm links to the commit and workflow that built it.
+
+**One-time setup, on npmjs.com.** Publishing uses [trusted publishing](https://docs.npmjs.com/trusted-publishers): the workflow proves who it is to npm with GitHub's OIDC identity, so no npm token is stored in the repository. In the package's *Settings → Trusted Publisher*, choose GitHub Actions and enter the owner `fernandezvara`, the repository `backd` and the workflow filename `publish-js.yml`. For the package, set *Publishing access* to require two-factor authentication and disallow tokens.
+
+**Mistakes.** A published version can't be changed or reused. Fix it with a new version, and mark the bad one with `npm deprecate backd-js@X.Y.Z "reason, use X.Y.Z+1"`. npm allows unpublishing only in narrow cases (within 72 hours, or for packages almost nobody uses), and a version number is never reusable, so deprecating is the way to correct a release.
 
 ## Supply chain
 
