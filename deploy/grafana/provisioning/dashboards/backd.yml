@@ -1,0 +1,9 @@
+# Loads backd's dashboards from /etc/grafana/dashboards into a "backd" folder.
+apiVersion: 1
+providers:
+  - name: backd
+    folder: backd
+    type: file
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/dashboards

@@ -51,5 +51,19 @@ check('requests are counted by route pattern, unknown paths as one "unmatched"',
 const all = JSON.stringify(await query('{__name__=~"backd_.+"}'))
 check('no email address, path or token in any backd label', !/@|bd[a-z]_[A-Za-z0-9]|no\/such|someone/.test(all.replace(/"__name__":"[^"]*"/g, '')), all.slice(0, 300))
 
+console.log('\nThe stack\'s Grafana:')
+const grafana = process.env.GRAFANA_URL ?? 'http://localhost:3000'
+/** @type {any[]} */ let found = []
+for (let i = 0; i < 40; i++) {
+  try {
+    found = /** @type {any[]} */ (await (await fetch(`${grafana}/api/search?tag=backd`)).json())
+    if (found.length >= 5) break
+  } catch { /* still starting */ }
+  await new Promise((r) => setTimeout(r, 2000))
+}
+check('the five dashboards are provisioned', found.length === 5, found.map((d) => d.title))
+const health = /** @type {any} */ (await (await fetch(`${grafana}/api/datasources/uid/prometheus/health`)).json().catch(() => ({})))
+check('the Prometheus data source works', health.status === 'OK', health)
+
 console.log(unexpected === 0 ? '\nThe metrics are private and clean.' : `\n${unexpected} result(s) differ from what is expected.`)
 process.exit(unexpected === 0 ? 0 : 1)

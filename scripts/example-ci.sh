@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs the example attack scripts against the local stack, for CI and for
 # anyone who wants the same check before pushing. It starts what the scripts
-# need (MongoDB, backd with its worker, the executor, egress, Prometheus and nginx; not
+# need (MongoDB, backd with its worker, the executor, egress, Prometheus, Grafana and nginx; not
 # the docs site), runs them, prints the stack's logs when one fails and
 # always stops the stack. A script exits non-zero when an attack succeeds
 # that should be stopped, or when a known hole is closed without the
@@ -44,7 +44,7 @@ for _ in $(seq 1 60); do
 done
 mongo_ready || { echo "MongoDB didn't become ready" >&2; exit 1; }
 docker compose run --rm functions-build
-docker compose up -d --no-deps backd executor egress nginx prometheus
+docker compose up -d --no-deps backd executor egress nginx prometheus grafana
 
 ready() { curl -sf --cacert "$ca" "$origin/readyz" >/dev/null; }
 for _ in $(seq 1 120); do
@@ -70,6 +70,12 @@ for script in \
   echo "=== $script"
   node "$script" || failed+=("$script")
 done
+
+# The dashboards' queries, against the stack's own Prometheus (after the
+# scripts above, which gave it traffic to scrape).
+echo
+echo "=== scripts/check-dashboards.py"
+scripts/check-dashboards.py --prometheus http://localhost:9090 || failed+=("scripts/check-dashboards.py")
 
 if [ ${#failed[@]} -gt 0 ]; then
   echo >&2
