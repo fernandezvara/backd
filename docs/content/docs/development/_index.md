@@ -34,6 +34,7 @@ toc: true
 | `docker/` | Images and config for the local stack: the docs server (Hugo), nginx, and the certificate templates (`docker/cfd/`) |
 | `docker/certs/` | Generated, gitignored: the local CA and nginx's certificate |
 | `scripts/example.sh` | Runs the local stack for `make example` |
+| `scripts/example-ci.sh` | Starts its own local stack and runs every attack script against it, as CI does |
 | `scripts/local-certs.sh` | Creates or renews the local CA and certificate with certsfor |
 | `deploy/production/` | The [production reference deployment](../operations/production/) and its end-to-end test |
 | `Dockerfile` | Multi-stage build into a distroless image |
@@ -58,6 +59,7 @@ make example      # the local stack on https://localhost:8443: API, docs (live r
 make hack-expenses  # attack the expenses example on the running local stack
 make hack-expenses-functions  # attack the expenses-with-functions example on the running local stack
 make workshop-tour  # walk the workshop tour without a browser on the running local stack, checking each step
+make example-attacks  # start a stack of its own and run every attack script against it (CI does this); stop `make example` first
 ```
 
 Two differential tests guard against data leaks and failed writes, and run against the real MongoDB in `make test` and CI:

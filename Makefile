@@ -1,6 +1,6 @@
 COMPOSE_TEST = docker compose -f docker-compose.test.yml
 
-.PHONY: build test test-local vet lint-api js-test js-integration functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour release-check
+.PHONY: build test test-local vet lint-api js-test js-integration functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour example-attacks release-check
 
 build:
 	go build -o bin/backd ./cmd/backd
@@ -80,3 +80,8 @@ workshop-tour:
 release-check:
 	docker run --rm -v "$(CURDIR)":/src:Z -w /src docker.io/goreleaser/goreleaser:v2.18.2 check
 	docker run --rm -v "$(CURDIR)":/src:Z -w /src docker.io/goreleaser/goreleaser:v2.18.2 release --snapshot --clean --skip=publish
+
+# Starts its own local stack and runs every attack script against it (what CI
+# does); stops the stack afterwards. Stop `make example` first.
+example-attacks:
+	scripts/example-ci.sh

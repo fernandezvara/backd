@@ -649,12 +649,24 @@ func checkOrigin(o string, total int) error {
 }
 
 // NormalizeEmail trims and lowercases an email address and checks its
-// basic shape (one "@" with text on both sides, no spaces).
+// basic shape (one "@" with text on both sides, no spaces). The reserved
+// ".invalid" top-level domain (RFC 2606) is refused: it never receives mail,
+// and erased users' placeholder addresses live there, so nobody may take one.
+// Characters that delimit addresses or break a header (commas, angle
+// brackets, quotes, control characters...) are refused as well: a delivery
+// function that joins recipients with commas must never see one address
+// that is really two.
 func NormalizeEmail(v string) (string, error) {
 	e := strings.ToLower(strings.TrimSpace(v))
 	local, domain, ok := strings.Cut(e, "@")
 	if !ok || local == "" || domain == "" || strings.Contains(domain, "@") || strings.ContainsAny(e, " \t\r\n") {
 		return "", fmt.Errorf("invalid email address %q", v)
+	}
+	if len(e) > 254 || strings.ContainsFunc(e, func(r rune) bool { return r < ' ' || r == 0x7f || strings.ContainsRune(`,;:<>()[]\"`, r) }) {
+		return "", fmt.Errorf("invalid email address %q: it has characters that would split or break a message header", v)
+	}
+	if domain == "invalid" || strings.HasSuffix(domain, ".invalid") {
+		return "", fmt.Errorf("invalid email address %q: the .invalid domain is reserved", v)
 	}
 	return e, nil
 }

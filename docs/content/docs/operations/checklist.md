@@ -35,7 +35,7 @@ Go through this page before any realm faces the internet, and again after changi
 ## The edge
 
 - [ ] **TLS everywhere:** the edge terminates TLS with a trusted certificate that renews automatically, and plain HTTP only redirects. MongoDB connections use TLS too (below).
-- [ ] **Rate limits:** sign-up and login have a strict per-address limit, and the rest of `/v1/` a general one. Requests over a limit get `429`.
+- [ ] **Rate limits:** sign-up, login and the account flows (emailed links, password and address changes) have a strict per-address limit, and the rest of `/v1/` a general one. Requests over a limit get `429`.
 - [ ] **Body size:** the edge caps request bodies at `MAX_BODY_BYTES`.
 - [ ] **Client addresses:** the edge overwrites `X-Forwarded-For`, and `TRUSTED_PROXIES` names exactly the edge's addresses, never whole private ranges. `backd`'s access log shows real client addresses.
 - [ ] **Only the edge is reachable:** `backd` isn't published directly, and `/healthz` and `/readyz` aren't public.

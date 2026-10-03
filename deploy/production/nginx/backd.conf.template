@@ -10,8 +10,9 @@ server_tokens off;
 
 # Rate limits per client address ($binary_remote_addr: nginx sees clients
 # directly; see the docs if a load balancer sits in front of nginx).
-#   auth: sign-up and login, where abuse is cheap for the client and costly
-#         for the server (argon2id hashing, account creation).
+#   auth: sign-up, login and the account flows (emailed links, password and
+#         address changes), where abuse is cheap for the client and costly
+#         for the server (argon2id hashing, account creation, sent emails).
 #   func: calling a function, a baseline in front of whatever the function
 #         itself declares (concurrency limits, its own rate_limit) —
 #         functions can be expensive, and a webhook's own invoke rule must
@@ -81,8 +82,11 @@ server {
     proxy_connect_timeout 5s;
     proxy_read_timeout 60s;
 
-    # Sign-up and login: the strict limit, then the general one.
-    location ~ ^/v1/[^/]+/_auth/(signup|login)$ {
+    # Sign-up, login and the account flows (what hashes a password, sends an
+    # email or spends a token): the strict limit, then the general one. The
+    # hosted pages are opened with GET (cheap) but act with POST, so both
+    # share the zone: a mail client's link scanner won't come near the limit.
+    location ~ ^/v1/[^/]+/_auth/(signup|login|password|email|verify-email|verify-email/resend|reset-password|reset-password/request|confirm-email-change|accept-invitation)$ {
         limit_req zone=auth burst=5 nodelay;
         limit_req zone=api burst=40 nodelay;
         proxy_pass $backd;
