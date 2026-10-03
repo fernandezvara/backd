@@ -66,3 +66,14 @@ All names start with `backd_`; durations are in seconds.
 | `build_info` | `version`, `commit` | Always `1`. |
 
 The Go runtime (`go_*`) and process (`process_*`) metrics are included.
+
+## The production reference and the local stack
+
+Both run a Prometheus that scrapes every backd process on start.
+
+- The [production reference](../production/) sets `METRICS_ADDR` and a generated `METRICS_TOKEN` (`BACKD_METRICS_TOKEN` in `.env`, also written to `secrets/metrics-token` for Prometheus) on `backd`, `worker`, `executor` and `egress`. Prometheus sits on the `func` network, which has no route out, and its own web port listens only on its container's loopback: no other container can reach its UI or query API, and nginx has no route to any metrics port. Look at it with `docker compose exec prometheus wget -qO- http://127.0.0.1:9090/api/v1/targets`, or change `--web.listen-address` and give it a network of its own when you add Grafana. The reference's test checks that the edge answers `404` for `/metrics`, that a request without the token is refused, that every process is scraped and that the key series exist.
+- The local stack (`make example`) runs the same Prometheus at <http://localhost:9090>, with a fixed dev-only token. Its metrics ports aren't published.
+
+## Alert rules
+
+`deploy/production/prometheus/alerts.yml` has sample rules for Prometheus (the local stack loads the same file): a process that can't be scraped, MongoDB down or slow, a high rate of `5xx` answers, jobs that wait too long, an erase that needs an administrator, emails that fail, and an executor at its process limit. They only evaluate; connect an Alertmanager to be told. Adjust the thresholds to your traffic.

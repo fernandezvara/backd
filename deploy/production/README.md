@@ -13,7 +13,8 @@ docker compose --env-file .env up -d --build
 
 | File | Purpose |
 |---|---|
-| `compose.yaml` | The stack: mongo, provision (one-shot), backd, a worker, the functions executor and egress, nginx |
+| `compose.yaml` | The stack: mongo, provision (one-shot), backd, a worker, the functions executor and egress, Prometheus, nginx |
+| `prometheus/` | Prometheus' scrape config and the sample alert rules |
 | `nginx/backd.conf.template` | TLS, rate limits, body size, `X-Forwarded-For`, JSON errors |
 | `ops/Dockerfile` | MongoDB tools plus the backd binary, for ops jobs |
 | `ops/provision.sh`, `ops/grants.js` | `backd provision`, then per-collection grants for backd's user (and the backup user) |

@@ -5,6 +5,7 @@
 #                                      replica set's key file
 #   <dir>/secrets/tls/edge.crt, .key   a self-signed certificate for nginx:
 #                                      replace it with a real one
+#   <dir>/secrets/metrics-token        the token Prometheus scrapes with
 #   <dir>/.env                         random passwords and settings
 # <dir> defaults to this script's directory. Existing files are kept, so
 # running it again is safe. Needs openssl.
@@ -89,6 +90,21 @@ BACKD_EXECUTOR_TOKEN=$(pw)
 BACKD_CALLBACK_KEY=$(pw)
 BACKD_EGRESS_KEY=$(pw)
 BACKD_SECRETS_KEY=$(pw)
+# Metrics (docs: Operations -> Metrics): the token every backd process asks
+# for on its private metrics port, and Prometheus presents.
+BACKD_METRICS_TOKEN=$(pw)
 ENV
   echo "created $dir/.env"
+fi
+if ! grep -q '^BACKD_METRICS_TOKEN=' "$dir/.env"; then
+  # An .env from before metrics existed.
+  printf '# Metrics token (see Operations -> Metrics).\nBACKD_METRICS_TOKEN=%s\n' "$(openssl rand -hex 24)" >> "$dir/.env"
+  echo "added BACKD_METRICS_TOKEN to $dir/.env"
+fi
+if [ ! -f "$secrets/metrics-token" ]; then
+  # Prometheus reads the token from a file. It runs as uid 65534 and must
+  # read it; in production, prefer `chown 65534` and mode 600.
+  sed -n 's/^BACKD_METRICS_TOKEN=//p' "$dir/.env" | tr -d '\n' > "$secrets/metrics-token"
+  chmod 644 "$secrets/metrics-token"
+  echo "created $secrets/metrics-token"
 fi

@@ -5,6 +5,7 @@
 #   /docs/       documentation pages
 #   /example/    the JavaScript client's example apps (clients/js/examples)
 #   /v1/, /healthz, /readyz   backd's API
+#   http://localhost:9090     Prometheus (scrapes backd, the executor and egress)
 #
 #   make example             (or: scripts/local-certs.sh && docker compose up --build)
 #
@@ -80,6 +81,10 @@ services:
       BACKD_DEV: "true"
       BACKD_DEV_ANY_ADDR: "true"
       BACKD_URL: https://localhost:8443
+      # Metrics: a private port (never behind nginx) that Prometheus below
+      # scrapes with this dev-only token.
+      METRICS_ADDR: ":9090"
+      METRICS_TOKEN: local-dev-metrics-token-not-a-secret-0123456789
     volumes:
       - ./examples/config:/config:ro
     depends_on:
@@ -104,6 +109,8 @@ services:
       EXECUTOR_PROXY: http://egress:3128
       BACKD_EGRESS_KEY: local-dev-egress-key-not-a-secret-0123456789abcd
       LOG_LEVEL: info
+      METRICS_ADDR: ":9090"
+      METRICS_TOKEN: local-dev-metrics-token-not-a-secret-0123456789
     depends_on:
       - backd
 
@@ -116,8 +123,30 @@ services:
       BACKD_EGRESS_KEY: local-dev-egress-key-not-a-secret-0123456789abcd
       EGRESS_ALLOW_PRIVATE: "backd:8081"
       LOG_LEVEL: info
+      METRICS_ADDR: ":9090"
+      METRICS_TOKEN: local-dev-metrics-token-not-a-secret-0123456789
     depends_on:
       - backd
+
+  # Prometheus, scraping backd, the executor and egress on start. Open
+  # http://localhost:9090 (Grafana dashboards will read from here).
+  prometheus:
+    image: docker.io/prom/prometheus:v3.5.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=2d
+      - --web.listen-address=:9090
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/production/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      - backd
+      - executor
+      - egress
 
   docs:
     build: docker/docs
@@ -149,3 +178,4 @@ services:
 volumes:
   mongo-data:
   docs-cache:
+  prometheus-data:

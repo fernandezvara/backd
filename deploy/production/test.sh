@@ -202,6 +202,41 @@ async_job_completes() {
 }
 check "an async job still completes (the worker claims and runs it)" async_job_completes
 
+echo "--- metrics (private port, Prometheus)"
+# The edge has no route to the metrics port.
+check "the public edge doesn't serve /metrics" sh -c "[ \"\$(curl -s -o /dev/null -w '%{http_code}' --cacert '$ca' '$base/metrics')\" = 404 ]"
+# The port asks for the token: from the func network (where function
+# processes live) without it, and nothing else listens there.
+out=$(compose exec -T executor wget -S -qO- http://backd:9090/metrics 2>&1 || true)
+check "the metrics port refuses a request without the token" sh -c "echo '$out' | grep -q '401'"
+out=$(compose exec -T executor wget -qO- http://prometheus:9090/ 2>&1 || true)
+case "$out" in
+  *'<html'*|*'<title>'*|*'"status"'*) fail "Prometheus' own port isn't reachable from the func network" ;;
+  *) pass "Prometheus' own port isn't reachable from the func network" ;;
+esac
+# Prometheus: its config and rules are valid, and it scrapes every process.
+out=$(compose exec -T prometheus promtool check config /etc/prometheus/prometheus.yml 2>&1 || true)
+check "Prometheus' config and the alert rules are valid" sh -c "echo '$out' | grep -q 'SUCCESS'"
+prom() { compose exec -T prometheus wget -qO- "http://127.0.0.1:9090$1" 2>/dev/null; }
+up=0
+for _ in $(seq 1 40); do
+  up=$(prom '/api/v1/query?query=count(up%7Bjob%3D%22backd%22%7D%3D%3D1)' | sed -n 's/.*"value":\[[0-9.]*,"\([0-9]*\)".*/\1/p')
+  [ "${up:-0}" = 4 ] && break
+  sleep 3
+done
+check "Prometheus scrapes the API, worker, executor and egress (up: ${up:-0} of 4)" [ "${up:-0}" = 4 ]
+for series in backd_build_info backd_http_requests_total backd_mongodb_operation_duration_seconds_count backd_mongodb_up backd_jobs backd_function_invocations_total backd_egress_requests_total backd_executor_runs_total; do
+  n=0
+  for _ in $(seq 1 20); do
+    n=$(prom "/api/v1/query?query=count($series)" | sed -n 's/.*"value":\[[0-9.]*,"\([0-9]*\)".*/\1/p')
+    [ "${n:-0}" -gt 0 ] 2>/dev/null && break
+    sleep 3
+  done
+  check "the series $series exists" [ "${n:-0}" -gt 0 ]
+done
+out=$(prom '/api/v1/query?query=backd_http_requests_total')
+check "no email, token or identifier is in a label" sh -c "! echo '$out' | grep -Eq '@|bd[a-z]_|[0-9a-v]{20}'"
+
 echo "--- PROVISION_MODE=verify"
 mongo_as "$root_uri" 'db.getSiblingDB("blog__main").posts.dropIndexes()' >/dev/null
 # A second backd with the same settings, as after a restart.
