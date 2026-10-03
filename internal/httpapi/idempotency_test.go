@@ -3,6 +3,7 @@ package httpapi
 import (
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -218,6 +219,7 @@ func TestFunctionAndSessionMetrics(t *testing.T) {
 			t.Errorf("missing %q in:\n%s", want, grepBackd(got))
 		}
 	}
+	assertNoSensitiveMetrics(t, got)
 	for _, leak := range []string{"ada@example.com", f.adaID, f.bobID, f.ada, "call-1"} {
 		if strings.Contains(got, leak) {
 			t.Errorf("the metrics contain %q", leak)
@@ -233,4 +235,20 @@ func grepBackd(s string) string {
 		}
 	}
 	return strings.Join(out, "\n")
+}
+
+var sensitiveInMetrics = regexp.MustCompile(`@|bd[a-z]_|[0-9a-v]{20}|\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`)
+
+// assertNoSensitiveMetrics fails when the metrics text holds anything that
+// looks like an email address, a token or key, an id or an IPv4 address.
+func assertNoSensitiveMetrics(t *testing.T, body string) {
+	t.Helper()
+	for _, l := range strings.Split(body, "\n") {
+		if strings.HasPrefix(l, "#") || strings.HasPrefix(l, "go_") || strings.HasPrefix(l, "process_") {
+			continue
+		}
+		if m := sensitiveInMetrics.FindString(l); m != "" {
+			t.Errorf("a metric holds %q: %s", m, l)
+		}
+	}
 }

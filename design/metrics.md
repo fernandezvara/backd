@@ -54,8 +54,7 @@ Names start with `backd_`. Durations are seconds; histograms use fixed buckets (
 
 **Email and erasure (added to the issue's list)**
 
-- `backd_email_jobs_total{realm,kind,outcome}` (sent, retried, failed, limited).
-- `backd_erase_jobs_total{realm,outcome}` and `backd_erase_needs_attention` (a gauge: jobs failed after their attempts, from the cached job query).
+- Email and erase outcomes are `backd_jobs_completed_total` and `backd_jobs_retried_total` with `kind="email"` and `kind="erase"`; email limits are in `backd_rate_limited_total`. `backd_erase_needs_attention{realm}` is a gauge of erase jobs that failed after their attempts (from the cached job query).
 
 **Executor and egress**
 

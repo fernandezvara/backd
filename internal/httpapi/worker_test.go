@@ -4,14 +4,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/executor"
+	"github.com/fernandezvara/backd/internal/metrics"
 )
 
 func newTestWorker(t *testing.T, f *rulesFixture) *Worker {
@@ -352,5 +355,51 @@ func TestWorkerRetries(t *testing.T) {
 			t.Fatalf("attempt %d: status %v, want %s", i, got, want)
 		}
 		*f.clock = f.clock.Add(time.Hour)
+	}
+}
+
+// TestWorkerJobMetrics checks that finished jobs are counted by kind and
+// status, and that a job claimed again after its lease ran out is counted.
+func TestWorkerJobMetrics(t *testing.T) {
+	m := metrics.New("dev", "x")
+	f := newRulesFixture(t, func(c *Config) { c.Metrics = m })
+	f.svc.Metrics, f.svc.Realm = m, "acme"
+	f.svc.Now = func() time.Time { return *f.clock } // the queue's clock, so the lease can run out
+	w := newTestWorker(t, f)
+	w.fns.metrics = m
+	ctx := context.Background()
+
+	if rec, out := f.doH(t, "POST", "/v1/acme/app/_func/job", `{"n": 5}`, bearer(f.ada)); rec.Code != http.StatusAccepted {
+		t.Fatalf("enqueue: %d %v", rec.Code, out)
+	}
+	if !w.RunOnce(ctx) {
+		t.Fatal("nothing to run")
+	}
+	rec := httptest.NewRecorder()
+	m.Handler("").ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	got := rec.Body.String()
+	if !strings.Contains(got, `backd_jobs_completed_total{kind="function",realm="acme",status="ok"} 1`) {
+		t.Errorf("no completed job in:\n%s", grepBackd(got))
+	}
+
+	// A job whose worker went away: claimed a second time with no failure.
+	if rec, out := f.doH(t, "POST", "/v1/acme/app/_func/job", `{"n": 6}`, bearer(f.ada)); rec.Code != http.StatusAccepted {
+		t.Fatalf("enqueue: %d %v", rec.Code, out)
+	}
+	f.runner.set(func(executor.InvokeRequest) (executor.Result, error) {
+		return executor.Result{}, errors.New("executor down") // the lease just runs out
+	})
+	if !w.RunOnce(ctx) {
+		t.Fatal("nothing to run")
+	}
+	*f.clock = f.clock.Add(time.Hour)
+	if !w.RunOnce(ctx) {
+		t.Fatal("the job wasn't claimed again")
+	}
+	rec = httptest.NewRecorder()
+	m.Handler("").ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	assertNoSensitiveMetrics(t, rec.Body.String())
+	if !strings.Contains(rec.Body.String(), `backd_jobs_expired_leases_total{kind="function",realm="acme"} 1`) {
+		t.Errorf("no expired lease in:\n%s", grepBackd(rec.Body.String()))
 	}
 }

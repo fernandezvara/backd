@@ -81,11 +81,16 @@ func serveExecutor(getenv func(string) string, stderr io.Writer) error {
 	if v != registry.DenoVersion {
 		return fmt.Errorf("this backd runs functions with Deno %s, but %s is %s", registry.DenoVersion, deno, v)
 	}
+	m, stopMetrics, err := startMetrics(getenv, log, addr)
+	if err != nil {
+		return err
+	}
+	defer stopMetrics()
 	proxy := getenv("EXECUTOR_PROXY")
 	egressKey := getenv("BACKD_EGRESS_KEY")
 	ex, err := executor.New(executor.Config{
 		Deno: deno, Dir: dir, Token: getenv("BACKD_EXECUTOR_TOKEN"), MaxProcesses: maxProcs,
-		Proxy: proxy, EgressKey: []byte(egressKey), Log: log,
+		Proxy: proxy, EgressKey: []byte(egressKey), Log: log, Metrics: m,
 	})
 	if err != nil {
 		return fmt.Errorf("%w (BACKD_EXECUTOR_TOKEN, or with EXECUTOR_PROXY set, BACKD_EGRESS_KEY)", err)

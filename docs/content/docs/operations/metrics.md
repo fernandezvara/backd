@@ -15,7 +15,7 @@ Every `backd` process can tell [Prometheus](https://prometheus.io/) how it is do
 | `METRICS_ADDR` | empty (off) | Where this process serves `/metrics`, for example `:9090`. A listener of its own: it can't be `HTTP_ADDR` or `BACKD_INTERNAL_ADDR`. |
 | `METRICS_TOKEN` | empty | At least 32 characters. When set, every request needs `Authorization: Bearer <token>`. Needs `METRICS_ADDR`. |
 
-`backd serve` and `backd worker` each serve their own `/metrics`; a process that runs both (`serve --with-worker`) serves one. The listener answers `GET /metrics` and nothing else, and it is a separate server: whatever happens to it never touches the API.
+`backd serve`, `backd worker`, `backd executor` and `backd egress` each serve their own `/metrics` (the executor and egress read the same two variables); a process that runs both (`serve --with-worker`) serves one. The listener answers `GET /metrics` and nothing else, and it is a separate server: whatever happens to it never touches the API.
 
 ```yaml
 # prometheus.yml
@@ -51,6 +51,18 @@ All names start with `backd_`; durations are in seconds.
 | `function_refusals_total` | `realm`, `function`, `reason` | Calls refused before running: `rate_limit`, `concurrency`, `idempotency_conflict`, `idempotency_reused`. |
 | `function_idempotent_replays_total` | `realm`, `function` | Calls answered from a stored result because their `Idempotency-Key` was used before. |
 | `executor_errors_total` | `kind` | Calls that failed because the executor couldn't be used (`unavailable`). |
+| `jobs` | `realm`, `kind`, `state` | Jobs not done yet: `kind` is `function`, `schedule`, `email` or `erase`; `state` is `queued` (a worker can claim it), `running` (a worker holds its lease) or `waiting` (for a retry's delay). Refreshed every 15 seconds in the background, never when you scrape. |
+| `jobs_oldest_wait_seconds` | `realm`, `kind` | Age of the longest-waiting queued job: the number to alert on when workers fall behind. |
+| `jobs_refreshed_timestamp_seconds` | | When the job gauges were last refreshed; `0` means never. |
+| `jobs_completed_total` | `realm`, `kind`, `status` | Jobs a worker finished. Email and erase outcomes are here: `kind="email"` and `kind="erase"`, `status="ok"` or the failure's status. |
+| `jobs_retried_total` | `realm`, `kind` | Failed attempts queued again. |
+| `jobs_expired_leases_total` | `realm`, `kind` | Jobs claimed again because the worker holding them stopped answering. |
+| `erase_needs_attention` | `realm` | Erase jobs that used up their attempts and need an administrator (repeat the delete to resume). |
+| `metrics_refresh_errors_total` | | Times refreshing the job gauges failed; the last values stay. |
+| `executor_runs_total` | `status` | The executor's runs by status (`busy`: refused at its process limit). Served by `backd executor`. |
+| `executor_run_duration_seconds` | | How long they took (histogram). |
+| `executor_running` | | Function processes running now. |
+| `egress_requests_total` | `outcome` | Requests to the egress proxy: `allowed`, `denied_credentials`, `denied_host` or `denied_address`. Host names are never labels. Served by `backd egress`. |
 | `build_info` | `version`, `commit` | Always `1`. |
 
 The Go runtime (`go_*`) and process (`process_*`) metrics are included.

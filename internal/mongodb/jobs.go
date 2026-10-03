@@ -13,6 +13,7 @@ import (
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/jsonnum"
+	"github.com/fernandezvara/backd/internal/metrics"
 )
 
 type jobResultDoc struct {
@@ -378,4 +379,79 @@ func (s *AuthStore) ReopenJob(ctx context.Context, id string, expiresAt time.Tim
 		return false, err
 	}
 	return res.ModifiedCount == 1, nil
+}
+
+// JobStats summarizes the jobs that are not done, by kind and state: queued
+// (claimable now), running (holding a lease) and waiting (for a retry's delay).
+// It is the metrics refresher's query, never a scrape's.
+func (s *AuthStore) JobStats(ctx context.Context, now time.Time) ([]metrics.JobStat, error) {
+	kind := bson.D{{Key: "$switch", Value: bson.D{
+		{Key: "branches", Value: bson.A{
+			bson.D{{Key: "case", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$email", false}}}}, {Key: "then", Value: "email"}},
+			bson.D{{Key: "case", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$erase", false}}}}, {Key: "then", Value: "erase"}},
+			bson.D{{Key: "case", Value: bson.D{{Key: "$eq", Value: bson.A{bson.D{{Key: "$ifNull", Value: bson.A{"$scheduled", false}}}, true}}}}, {Key: "then", Value: "schedule"}},
+		}},
+		{Key: "default", Value: "function"},
+	}}}
+	leased := bson.D{{Key: "$gt", Value: bson.A{bson.D{{Key: "$ifNull", Value: bson.A{"$lease_expires", time.Time{}}}}, now}}}
+	state := bson.D{{Key: "$switch", Value: bson.D{
+		{Key: "branches", Value: bson.A{
+			bson.D{{Key: "case", Value: bson.D{{Key: "$and", Value: bson.A{leased, bson.D{{Key: "$ifNull", Value: bson.A{"$lease_owner", false}}}}}}}, {Key: "then", Value: "running"}},
+			bson.D{{Key: "case", Value: leased}, {Key: "then", Value: "waiting"}},
+		}},
+		{Key: "default", Value: "queued"},
+	}}}
+	cur, err := s.jobs().Aggregate(ctx, mongo.Pipeline{
+		{{Key: "$match", Value: bson.D{{Key: "status", Value: bson.D{{Key: "$ne", Value: auth.JobDone}}}}}},
+		{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: bson.D{{Key: "kind", Value: kind}, {Key: "state", Value: state}}},
+			{Key: "n", Value: bson.D{{Key: "$sum", Value: 1}}},
+			{Key: "oldest", Value: bson.D{{Key: "$min", Value: "$created_at"}}},
+		}}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var rows []struct {
+		ID struct {
+			Kind  string `bson:"kind"`
+			State string `bson:"state"`
+		} `bson:"_id"`
+		N      int64     `bson:"n"`
+		Oldest time.Time `bson:"oldest"`
+	}
+	if err := cur.All(ctx, &rows); err != nil {
+		return nil, err
+	}
+	byKind := map[string]*metrics.JobStat{}
+	for _, r := range rows {
+		st := byKind[r.ID.Kind]
+		if st == nil {
+			st = &metrics.JobStat{Kind: r.ID.Kind}
+			byKind[r.ID.Kind] = st
+		}
+		switch r.ID.State {
+		case "running":
+			st.Running = r.N
+		case "waiting":
+			st.Waiting = r.N
+		default:
+			st.Queued, st.OldestQueued = r.N, r.Oldest.UTC()
+		}
+	}
+	out := make([]metrics.JobStat, 0, len(byKind))
+	for _, st := range byKind {
+		out = append(out, *st)
+	}
+	return out, nil
+}
+
+// EraseNeedsAttention counts the erase jobs that ended in failure: their
+// attempts were used up, and an administrator has to repeat the erase.
+func (s *AuthStore) EraseNeedsAttention(ctx context.Context) (int64, error) {
+	return s.jobs().CountDocuments(ctx, bson.D{
+		{Key: "erase", Value: bson.D{{Key: "$exists", Value: true}}},
+		{Key: "status", Value: auth.JobDone},
+		{Key: "result.status", Value: bson.D{{Key: "$ne", Value: "ok"}}},
+	})
 }

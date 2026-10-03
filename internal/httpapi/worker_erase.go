@@ -56,6 +56,7 @@ func (w *Worker) runErase(ctx context.Context, log *slog.Logger, realm string, s
 		log.Error("complete the erase job", "error", err)
 		return
 	}
+	w.fns.metrics.JobFinished(svc.Realm, "erase", "ok")
 	log.Info("user erased", "user_id", e.UserID)
 }
 
@@ -141,6 +142,8 @@ func (w *Worker) eraseFailed(ctx context.Context, log *slog.Logger, svc *auth.Us
 		log.Warn("erase attempt failed; it will be tried again", "attempt", failed, "of", eraseAttempts, "retry_in", wait.String(), "error", err)
 		if rerr := svc.RetryJob(ctx, job.ID, wait); rerr != nil {
 			log.Error("queue the retry", "error", rerr)
+		} else {
+			w.fns.metrics.JobRetried(svc.Realm, "erase")
 		}
 		return
 	}
@@ -149,5 +152,7 @@ func (w *Worker) eraseFailed(ctx context.Context, log *slog.Logger, svc *auth.Us
 		map[string]any{"job_id": job.ID, "needs_attention": true, "error": err.Error()})
 	if cerr := svc.CompleteJob(ctx, job.ID, auth.JobResult{Status: executor.StatusError, Message: err.Error()}); cerr != nil {
 		log.Error("complete the failed erase job", "error", cerr)
+		return
 	}
+	w.fns.metrics.JobFinished(svc.Realm, "erase", executor.StatusError)
 }

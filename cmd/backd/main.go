@@ -207,6 +207,7 @@ func serve(ctx context.Context, a *app) error {
 	}
 	if a.metrics != nil {
 		go a.metrics.WatchMongo(ctx, func(c context.Context) error { return a.client.Ping(c, nil) }, 15*time.Second)
+		go a.metrics.WatchJobs(ctx, 15*time.Second, a.jobStats)
 		tasks = append(tasks, func() error {
 			return a.metrics.Serve(ctx, a.cfg.MetricsAddr, a.cfg.MetricsToken, a.cfg.ShutdownTimeout, a.log.With("listener", "metrics"))
 		})
@@ -270,6 +271,7 @@ func worker(ctx context.Context, a *app) error {
 	a.log.Info("worker ready", "version", version, "concurrency", a.cfg.WorkerConcurrency)
 	if a.metrics != nil {
 		go a.metrics.WatchMongo(ctx, func(c context.Context) error { return a.client.Ping(c, nil) }, 15*time.Second)
+		go a.metrics.WatchJobs(ctx, 15*time.Second, a.jobStats)
 		go func() {
 			if err := a.metrics.Serve(ctx, a.cfg.MetricsAddr, a.cfg.MetricsToken, a.cfg.ShutdownTimeout, a.log.With("listener", "metrics")); err != nil {
 				a.log.Error("metrics listener", "error", err)
@@ -782,4 +784,30 @@ func commit() string {
 		}
 	}
 	return "unknown"
+}
+
+// jobStats reads every auth realm's job queue, for the metrics refresher.
+// A realm that fails doesn't hide the others.
+func (a *app) jobStats(ctx context.Context) (map[string]metrics.RealmJobs, error) {
+	out := map[string]metrics.RealmJobs{}
+	var errs []error
+	for _, realm := range a.reg.AuthRealms() {
+		svc := a.realmUsers()(realm)
+		src, ok := svc.Store.(metrics.JobSource)
+		if !ok {
+			continue
+		}
+		stats, err := src.JobStats(ctx, time.Now())
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		attention, err := src.EraseNeedsAttention(ctx)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		out[realm] = metrics.RealmJobs{Stats: stats, NeedsAttention: attention}
+	}
+	return out, errors.Join(errs...)
 }

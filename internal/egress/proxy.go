@@ -13,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/fernandezvara/backd/internal/metrics"
 )
 
 // cgnat is the shared address space RFC 6598 reserves for carrier-grade NAT.
@@ -35,6 +37,7 @@ type Proxy struct {
 	AllowPrivate []string // host:port exceptions to the private-address block
 	Log          *slog.Logger
 	Now          func() time.Time // for tests; defaults to time.Now
+	Metrics      *metrics.Metrics // counts decisions; nil turns it off
 }
 
 func (p *Proxy) now() time.Time {
@@ -107,6 +110,7 @@ func (p *Proxy) Handler() http.Handler {
 
 		token, ok := proxyToken(r)
 		if !ok {
+			p.Metrics.EgressRequest("denied_credentials")
 			log.Warn("egress refused: no credentials")
 			w.Header().Set("Proxy-Authenticate", `Basic realm="backd-egress"`)
 			http.Error(w, "egress refused: credentials required", http.StatusProxyAuthRequired)
@@ -114,22 +118,26 @@ func (p *Proxy) Handler() http.Handler {
 		}
 		claims, err := Verify(p.Key, token, p.now())
 		if err != nil {
+			p.Metrics.EgressRequest("denied_credentials")
 			log.Warn("egress refused: invalid credentials", "error", err)
 			http.Error(w, "egress refused: invalid credentials", http.StatusProxyAuthRequired)
 			return
 		}
 		if !claims.Allows(hostport) {
+			p.Metrics.EgressRequest("denied_host")
 			log.Warn("egress refused: host not in this invocation's allowlist")
 			http.Error(w, "egress refused: host not allowed", http.StatusForbidden)
 			return
 		}
 		conn, err := p.dial(r.Context(), hostport)
 		if err != nil {
+			p.Metrics.EgressRequest("denied_address")
 			log.Warn("egress refused: address blocked", "error", err)
 			http.Error(w, "egress refused", http.StatusForbidden)
 			return
 		}
 
+		p.Metrics.EgressRequest("allowed")
 		if r.Method == http.MethodConnect {
 			p.tunnel(w, conn)
 			return

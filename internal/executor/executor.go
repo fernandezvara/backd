@@ -35,6 +35,7 @@ import (
 
 	jsclient "github.com/fernandezvara/backd/clients/js"
 	"github.com/fernandezvara/backd/internal/egress"
+	"github.com/fernandezvara/backd/internal/metrics"
 )
 
 //go:embed runner.js
@@ -168,8 +169,10 @@ type Config struct {
 	// beyond what --allow-net itself permits on this host.
 	Proxy     string
 	EgressKey []byte
-	Log       *slog.Logger
-	HTTP      *http.Client // for bundle fetches
+	// Metrics counts runs; nil turns it off.
+	Metrics *metrics.Metrics
+	Log     *slog.Logger
+	HTTP    *http.Client // for bundle fetches
 }
 
 // Executor runs invocations.
@@ -280,6 +283,9 @@ func (e *Executor) Invoke(ctx context.Context, req InvokeRequest) Result {
 	start := time.Now()
 	res := e.invoke(ctx, req)
 	res.DurationMS = time.Since(start).Milliseconds()
+	if res.Status != StatusBusy { // busy was counted when it was refused
+		e.cfg.Metrics.ExecutorFinished(res.Status, time.Since(start), true)
+	}
 	attrs := []any{"function", req.Function, "status", res.Status, "duration_ms", res.DurationMS, "request_id", req.Envelope.RequestID}
 	if res.Message != "" && res.Status != StatusOK {
 		attrs = append(attrs, "message", res.Message)
@@ -293,8 +299,10 @@ func (e *Executor) invoke(ctx context.Context, req InvokeRequest) Result {
 	case e.slots <- struct{}{}:
 		defer func() { <-e.slots }()
 	default:
+		e.cfg.Metrics.ExecutorFinished(StatusBusy, 0, false)
 		return Result{Status: StatusBusy, Message: fmt.Sprintf("the executor runs its maximum of %d functions", e.cfg.MaxProcesses)}
 	}
+	e.cfg.Metrics.ExecutorStarted()
 	bundle, err := e.bundle(ctx, req.Bundle)
 	if err != nil {
 		return Result{Status: StatusBundle, Message: err.Error()}
