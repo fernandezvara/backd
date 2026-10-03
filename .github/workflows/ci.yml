@@ -96,6 +96,19 @@ jobs:
       - name: Test the production reference deployment
         run: deploy/production/test.sh
 
+  example-attacks:
+    # The examples' attack scripts against the local stack: fails when an
+    # attack that must be stopped succeeds, or when a documented hole closes
+    # without the docs and the script's expectations being updated.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Run the attack scripts
+        run: scripts/example-ci.sh
+
   docs:
     runs-on: ubuntu-latest
     steps:
