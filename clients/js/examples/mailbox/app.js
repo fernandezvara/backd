@@ -3,7 +3,7 @@
 // included, so verification and password reset can be clicked through by
 // hand. Local development only: the outbox is readable by anyone.
 //   /example/mailbox/?realm=workshop&database=notifications
-import { createClient } from '@backd/client'
+import { createClient } from 'backd-js'
 
 const params = new URLSearchParams(window.location.search)
 const realm = params.get('realm') ?? 'workshop'

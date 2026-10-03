@@ -47,7 +47,7 @@ server {
     location = /readyz  { proxy_pass $backd; include /etc/nginx/proxy.inc; }
     location /v1/       { proxy_pass $backd; include /etc/nginx/proxy.inc; }
 
-    # The example app and the client library it imports (@backd/client).
+    # The example app and the client library it imports (backd-js).
     location = /example { return 301 /example/; }
     location /example/client/ {
         alias /srv/client/;

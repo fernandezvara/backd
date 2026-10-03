@@ -1,10 +1,24 @@
 {
-  "name": "@backd/client",
-  "version": "0.1.0",
+  "name": "backd-js",
+  "version": "0.2.0",
   "description": "JavaScript client for backd: auth, sessions and data for browsers, Node and edge runtimes.",
+  "keywords": [
+    "backd",
+    "client",
+    "sdk",
+    "rest",
+    "mongodb",
+    "auth",
+    "fetch",
+    "esm"
+  ],
+  "homepage": "https://fernandezvara.github.io/backd/docs/clients/js/",
+  "bugs": {
+    "url": "https://github.com/fernandezvara/backd/issues"
+  },
+  "author": "Antonio Fdez.",
   "license": "MIT",
   "type": "module",
-  "private": true,
   "exports": {
     ".": {
       "types": "./types/index.d.ts",
@@ -25,7 +39,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "build:types": "tsc -p tsconfig.build.json",
     "prepare": "npm run build:types",
-    "test:integration": "node --test --test-concurrency=1 \"test/integration/*.test.js\""
+    "test:integration": "node --test --test-concurrency=1 \"test/integration/*.test.js\"",
+    "prepublishOnly": "npm run typecheck && npm test"
   },
   "repository": {
     "type": "git",
@@ -35,5 +50,9 @@
   "devDependencies": {
     "@types/node": "^26.6.3",
     "typescript": "^7.0.2"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }

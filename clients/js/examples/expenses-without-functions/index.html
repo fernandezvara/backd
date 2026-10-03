@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Expenses without functions · backd example</title>
   <link rel="stylesheet" href="style.css">
-  <!-- Resolves `import … from '@backd/client'`; nginx serves clients/js/src
+  <!-- Resolves `import … from 'backd-js'`; nginx serves clients/js/src
        at /example/client/. -->
-  <script type="importmap">{ "imports": { "@backd/client": "/example/client/index.js" } }</script>
+  <script type="importmap">{ "imports": { "backd-js": "/example/client/index.js" } }</script>
   <!-- The app registers its component on alpine:init, so it loads before Alpine. -->
   <script type="module" src="app.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.17.4/dist/cdn.min.js"></script>

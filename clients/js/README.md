@@ -1,11 +1,13 @@
-# @backd/client
+# backd-js
 
 JavaScript client for [backd](https://github.com/fernandezvara/backd): sign-up, login and sessions, collections with access rules, and the admin API. Plain ES modules with TypeScript declarations, no dependencies, no build step. Runs in browsers, Node 20+, Deno, Bun and edge runtimes.
 
-> Not published to npm yet. Install it from this repository: `npm install /path/to/backd/clients/js`.
+```sh
+npm install backd-js
+```
 
 ```js
-import { createClient, localStorageStorage } from '@backd/client'
+import { createClient, localStorageStorage } from 'backd-js'
 
 const backd = createClient({ url: 'https://localhost:8443', realm: 'blog', storage: localStorageStorage() })
 
@@ -31,7 +33,7 @@ const user = await admin.users.find('ada@example.com')
 make example          # from the repository root; then open https://localhost:8443/example/
 ```
 
-nginx serves the examples, the API and the docs on one origin, so the examples need no CORS settings. They import `@backd/client` through an import map.
+nginx serves the examples, the API and the docs on one origin, so the examples need no CORS settings. They import `backd-js` through an import map.
 
 ## Documentation
 

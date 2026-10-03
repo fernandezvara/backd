@@ -30,7 +30,7 @@ The app is plain JavaScript with [Alpine.js](https://alpinejs.dev/) and the [Jav
 | `index.html`, `style.css` | The page |
 
 - The page, the API and these docs are served by nginx on one origin, `https://localhost:8443`, so the app calls the API with `url: window.location.origin` and needs no [CORS settings](../../configuration/realm/#cors).
-- The page imports `@backd/client` through an [import map](https://developer.mozilla.org/docs/Web/HTML/Element/script/type/importmap), as an app built with a bundler would.
+- The page imports `backd-js` through an [import map](https://developer.mozilla.org/docs/Web/HTML/Element/script/type/importmap), as an app built with a bundler would.
 - The session survives reloads because the app keeps it in `localStorage`.
 
 ## Data model

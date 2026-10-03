@@ -1,13 +1,13 @@
 // The workshop tour: a guided walk through what the workshop realm's
 // functions do (docs: Functions -> Cookbook). One page, Alpine.js and
-// @backd/client, no build step. Every call the app makes shows up in the
+// backd-js, no build step. Every call the app makes shows up in the
 // inspector on the right, with the request, the answer, the function's own
 // log lines and a curl command that repeats it.
 //
 // The realm's configuration is examples/config/workshop; the demo accounts
 // below get their roles from its realm.yaml. They exist only in the local
 // stack, with a fixed password: never do this in a real realm.
-import { createClient, localStorageStorage } from '@backd/client'
+import { createClient, localStorageStorage } from 'backd-js'
 import { createInspector } from './lib/inspector.js'
 import { exportPanel } from './panels/export.js'
 import { operatorPanel } from './panels/operator.js'

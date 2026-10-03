@@ -1,13 +1,13 @@
 // Expenses with functions: the same app as expenses-without-functions,
 // with holes 1-4 closed by server-side functions instead of client-trusted
-// copies. Alpine.js + @backd/client, no build step.
+// copies. Alpine.js + backd-js, no build step.
 //
 // Compare this file with ../expenses-without-functions/app.js: groups
 // didn't change at all (no holes there); only how expenses are created,
 // read, settled and totaled did. See the docs page "Expenses with
 // functions" for what changed and why, and examples/config/
 // expenses-with-functions for the rules and the functions themselves.
-import { createClient, localStorageStorage, VerificationRequiredError, VersionMismatchError } from '@backd/client'
+import { createClient, localStorageStorage, VerificationRequiredError, VersionMismatchError } from 'backd-js'
 import { toCents } from './ledger.js'
 
 const backd = createClient({
