@@ -3,6 +3,13 @@
 version: 2
 project_name: backd
 
+# The JavaScript client has its own tags (js-vX.Y.Z, publish-js.yml). They are
+# not releases of backd: without this, the release notes would start at the
+# latest js- tag instead of the previous backd release.
+git:
+  ignore_tags:
+    - "js-*"
+
 before:
   hooks:
     - go mod download
