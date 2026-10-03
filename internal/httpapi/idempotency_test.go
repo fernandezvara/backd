@@ -247,7 +247,12 @@ func assertNoSensitiveMetrics(t *testing.T, body string) {
 		if strings.HasPrefix(l, "#") || strings.HasPrefix(l, "go_") || strings.HasPrefix(l, "process_") {
 			continue
 		}
-		if m := sensitiveInMetrics.FindString(l); m != "" {
+		// Only the labels: a sample's value (0.00012070100000000001) is a number.
+		labels := l
+		if i := strings.LastIndex(l, "}"); i >= 0 {
+			labels = l[:i+1]
+		}
+		if m := sensitiveInMetrics.FindString(labels); m != "" {
 			t.Errorf("a metric holds %q: %s", m, l)
 		}
 	}
