@@ -118,7 +118,7 @@ The workflow then:
 - builds and pushes the multi-arch container image `ghcr.io/fernandezvara/backd:vX.Y.Z` with Docker Buildx, plus `latest` for versions without a pre-release suffix (a tag such as `v1.0.0-rc.1` is a pre-release and doesn't move `latest`), with SBOM and provenance attestations;
 - signs the image with cosign, keyless: the signature is tied to this repository's release workflow through GitHub's OIDC identity.
 
-A second workflow, `pages.yml`, runs on the same tag and publishes this documentation site to GitHub Pages, so the site always shows the latest tagged version. It needs *Settings → Pages → Source: GitHub Actions* set once in the repository.
+A second workflow, `pages.yml`, runs on the same tag and publishes this documentation site to GitHub Pages, so the site always shows the latest tagged version. It needs *Settings → Pages → Source: GitHub Actions* set once in the repository. To publish a documentation fix between releases, run it by hand: *Actions → pages → Run workflow*, on `main`.
 
 The version reaches the binary through `-X main.version`, in both GoReleaser and the Dockerfile (`--build-arg VERSION`); local builds report `dev`.
 
