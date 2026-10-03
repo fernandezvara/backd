@@ -92,7 +92,8 @@ Settings made here live only in the database. If `realm.yaml` sets networks for 
 
 - Emails are trimmed and lowercased, so `Ada@Example.com` and `ada@example.com` are the same user.
 - Each email belongs to at most one user in a realm.
-- Emails can't be changed through `backd`: no command or endpoint does it. Changing a user's email would let anyone holding their session take over the account. If an operator really must change one, they do it directly in the realm's system database, keeping it trimmed, lowercased and unique.
+- Addresses on the reserved `.invalid` domain are refused: erased users' placeholders live there.
+- An address changes only in guarded ways: the user asks with their password and confirms through a link sent to the new address (off unless the realm sets `account.allow_email_change`, see [Sessions](../sessions/#changing-the-email-address)), or an administrator does it through the [admin API](../admin/#changing-a-users-email), which tells both addresses and offers the old one an undo link.
 
 ## Password policy
 
