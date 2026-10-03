@@ -71,7 +71,7 @@ export class Database {
    * @param {string} name
    */
   constructor(client, name) {
-    /** @private */
+    /** @internal */
     this.client = client
     /** @readonly */
     this.name = name
@@ -148,9 +148,9 @@ export class Collection {
    * @param {string} name
    */
   constructor(client, database, name) {
-    /** @private */
+    /** @internal */
     this.client = client
-    /** @private */
+    /** @internal */
     this.path = [database, name]
   }
 

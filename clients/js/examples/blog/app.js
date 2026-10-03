@@ -1,10 +1,10 @@
-// The blog example: Alpine.js + @backd/client, no build step.
+// The blog example: Alpine.js + backd-js, no build step.
 // Everyone sees published posts; signed-in users also see their drafts,
 // and can edit, publish, unpublish or delete their own posts. Posts show who
 // wrote them and their category; clicking an author or a category lists
 // only those posts (both filters combine). The rules that
 // decide all this live in examples/config/blog/main/posts/rules.yaml.
-import { createClient, localStorageStorage, VersionMismatchError } from '@backd/client'
+import { createClient, localStorageStorage, VersionMismatchError } from 'backd-js'
 
 const backd = createClient({
   // The page and the API share one origin (nginx in docker-compose.yml),

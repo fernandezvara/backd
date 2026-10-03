@@ -1,6 +1,6 @@
 COMPOSE_TEST = docker compose -f docker-compose.test.yml
 
-.PHONY: build test test-local vet lint-api js-test js-integration functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour example-attacks release-check
+.PHONY: build test test-local vet lint-api js-test js-package js-integration functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour example-attacks release-check
 
 build:
 	go build -o bin/backd ./cmd/backd
@@ -20,6 +20,12 @@ vet:
 # JavaScript client: type-check and unit tests (needs Node).
 js-test:
 	cd clients/js && npm ci --silent && npm run typecheck && npm test
+
+# The JavaScript client packed and installed the way npm users get it, used from
+# Node and TypeScript (needs Node; see scripts/check-js-package.sh).
+js-package:
+	cd clients/js && npm ci --silent
+	scripts/check-js-package.sh
 
 # JavaScript client against a real backd + MongoDB (docker-compose.js.yml).
 js-integration:

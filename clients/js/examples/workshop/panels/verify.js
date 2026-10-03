@@ -5,7 +5,7 @@
 // verify-email message, a worker renders it and email-capture stores it in
 // the outbox, and the link in it verifies the address. The visitor has its
 // own client with no stored session, so the tour's signed-in account stays.
-import { createClient, memoryStorage } from '@backd/client'
+import { createClient, memoryStorage } from 'backd-js'
 
 const PASSWORD = 'dev-p4ssw0rd!'
 

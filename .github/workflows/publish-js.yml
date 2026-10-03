@@ -1,0 +1,65 @@
+name: Publish JavaScript client
+
+# Publishes clients/js to npm (package "backd-js") when a js- tag is pushed:
+#   1. set "version" in clients/js/package.json, merge it
+#   2. git tag js-v0.2.0 && git push origin js-v0.2.0
+# The tag must match the version, and point at a commit on main. A version with
+# a suffix (js-v0.3.0-rc.1) is published under the "next" dist-tag, so
+# `npm install backd-js` keeps getting the latest stable one.
+#
+# Publishing uses npm trusted publishing (OIDC): no npm token is stored in the
+# repository. Set it up once on npmjs.com (package backd-js -> Settings ->
+# Trusted Publisher: GitHub Actions, repository fernandezvara/backd, workflow
+# filename publish-js.yml). The package gets a provenance attestation.
+# See the docs page Development -> Releasing.
+on:
+  push:
+    tags: ["js-v[0-9]+.[0-9]+.[0-9]+", "js-v[0-9]+.[0-9]+.[0-9]+-*"]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # trusted publishing and the provenance attestation
+    defaults:
+      run:
+        working-directory: clients/js
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: The tag points at a commit on main
+        working-directory: .
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: A recent npm (trusted publishing needs 11.5.1 or later)
+        run: npm install -g npm@^11.5.1
+      - run: npm ci
+      - name: The tag matches the version in package.json
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "js-v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "tag $GITHUB_REF_NAME doesn't match package.json version $version" >&2
+            exit 1
+          fi
+      - name: Type-check
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: The package, as a user installs it
+        working-directory: .
+        run: scripts/check-js-package.sh
+      - name: Publish
+        run: |
+          case "$GITHUB_REF_NAME" in
+            *-*) tag=next ;;
+            *) tag=latest ;;
+          esac
+          npm publish --access public --provenance --tag "$tag"

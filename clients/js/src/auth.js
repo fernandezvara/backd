@@ -58,9 +58,9 @@ function compact(fields) {
 export class Auth {
   /** @param {Client} client */
   constructor(client) {
-    /** @private */
+    /** @internal */
     this.client = client
-    /** @private @type {Set<AuthListener>} */
+    /** @internal */
     this.listeners = new Set()
   }
 
@@ -205,7 +205,7 @@ export class Auth {
 
   /**
    * A call that needs no session and answers with no body.
-   * @private
+   * @internal
    * @param {string[]} path
    * @param {Record<string, unknown>} body
    * @param {RequestOptions} [opts]
@@ -329,7 +329,7 @@ export class Auth {
   }
 
   /**
-   * @private
+   * @internal
    * @param {Session} session
    * @returns {Promise<Session>}
    */
@@ -340,7 +340,7 @@ export class Auth {
   }
 
   /**
-   * @private
+   * @internal
    * @param {AuthEvent} event
    */
   async signedOut(event) {
@@ -357,7 +357,7 @@ export class Auth {
   }
 
   /**
-   * @private
+   * @internal
    * @param {AuthEvent} event
    * @param {Session | null} session
    */

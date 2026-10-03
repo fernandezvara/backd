@@ -10,7 +10,7 @@ The [functions cookbook](../../functions/cookbook/) explains each function of th
 
 {{< live-example path="workshop/" text="open the workshop tour" >}}
 
-It is part of the local stack (`make example`, then <https://localhost:8443/example/workshop/>). The page is plain JavaScript on [`@backd/client`](../../clients/js/), with no build step, in `clients/js/examples/workshop`; the realm is `examples/config/workshop`.
+It is part of the local stack (`make example`, then <https://localhost:8443/example/workshop/>). The page is plain JavaScript on [`backd-js`](../../clients/js/), with no build step, in `clients/js/examples/workshop`; the realm is `examples/config/workshop`.
 
 ## The inspector
 

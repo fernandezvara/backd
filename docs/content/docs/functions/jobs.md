@@ -112,7 +112,7 @@ Poll every second or two, with a limit on how long you are willing to wait. The 
 ### Wait in the JavaScript client
 
 ```js
-import { JobTimeoutError } from '@backd/client'
+import { JobTimeoutError } from 'backd-js'
 
 const job = await backd.db('main').fn('export_orders', {})   // returns at once with a Job handle
 await job.status()                                           // 'queued', 'running' or 'done'

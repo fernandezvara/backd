@@ -1,21 +1,22 @@
 ---
 title: "JavaScript client"
-description: "@backd/client: auth, sessions, collections and the admin API from browsers, Node and edge runtimes."
+description: "backd-js: auth, sessions, collections and the admin API from browsers, Node and edge runtimes."
 icon: "javascript"
 weight: 610
 toc: true
 ---
 
-`@backd/client` is a small JavaScript library for `backd`. It is plain ES modules with no dependencies and no build step, and it runs wherever `fetch` does: browsers, Node 20+, Deno, Bun and edge runtimes. It ships TypeScript declarations, so editors autocomplete it in JavaScript and TypeScript projects alike.
+`backd-js` is a small JavaScript library for `backd`. It is plain ES modules with no dependencies and no build step, and it runs wherever `fetch` does: browsers, Node 20+, Deno, Bun and edge runtimes. It ships TypeScript declarations, so editors autocomplete it in JavaScript and TypeScript projects alike.
 
 ## Install
 
-The package isn't published to npm yet. Use it from a checkout of the repository, or import `clients/js/src/index.js` directly in a browser with an import map, as the [example app](#example-app) does:
-
 ```sh
-cd clients/js && npm install        # also builds the type declarations
-cd /path/to/your/app && npm install /path/to/backd/clients/js
+npm install backd-js
 ```
+
+It has no dependencies, needs no build step and works with any bundler. Without one, import it in a browser with an [import map](https://developer.mozilla.org/docs/Web/HTML/Element/script/type/importmap) pointing at the package's `src/index.js` (from a CDN such as `https://cdn.jsdelivr.net/npm/backd-js/src/index.js`, or from your own server), as the [example app](#example-app) does.
+
+The client is versioned on its own, apart from the server. Versions of `backd-js` before 0.2 were an unrelated, older library.
 
 ## Example app
 
@@ -32,7 +33,7 @@ The repository includes two example apps built with this client and [Alpine.js](
 ## Create a client
 
 ```js
-import { createClient } from '@backd/client'
+import { createClient } from 'backd-js'
 
 const backd = createClient({
   url: 'https://localhost:8443',
@@ -147,7 +148,7 @@ With TypeScript (or JSDoc), describe a collection's fields for typed documents:
 
 ```js
 /** @typedef {{ title: string, published?: boolean }} Post */
-/** @type {import('@backd/client').Collection<Post>} */
+/** @type {import('backd-js').Collection<Post>} */
 const posts = backd.db('main').collection('posts')
 ```
 
@@ -156,7 +157,7 @@ const posts = backd.db('main').collection('posts')
 Every write increases `_meta.version`. Pass the version you read as `ifMatch`, and the write fails with a `VersionMismatchError` if someone changed the document in between:
 
 ```js
-import { VersionMismatchError } from '@backd/client'
+import { VersionMismatchError } from 'backd-js'
 
 const post = await posts.get(id)
 try {
@@ -200,7 +201,7 @@ const receipt = await backd.db('shop').fn('checkout', { cart: 'c1' })
 An `async` function instead returns a `Job` handle, without waiting for it to finish:
 
 ```js
-import { Job, JobTimeoutError } from '@backd/client'
+import { Job, JobTimeoutError } from 'backd-js'
 
 const job = await backd.db('shop').fn('reconcile', {})
 job.id            // "d3c9ljp8hc2g00b6s1m0"
@@ -231,7 +232,7 @@ await backd.db('shop').fn('charge', { amount: 1250 }, { idempotencyKey: `order-$
 By default the token is kept in memory: it is gone after a reload, and nothing on the page can read it from storage. To keep users signed in across reloads, choose a storage:
 
 ```js
-import { createClient, localStorageStorage } from '@backd/client'
+import { createClient, localStorageStorage } from 'backd-js'
 
 const backd = createClient({ url, realm, storage: localStorageStorage() })
 ```
@@ -270,7 +271,7 @@ Every answer that isn't 2xx throws a `BackdError`, or one of its subclasses:
 Each error has `status`, `code`, `message`, `details` (`[{ path, reason }]`, for example the fields that failed validation) and `requestId`, which matches `backd`'s logs.
 
 ```js
-import { AuthenticationError, ValidationError } from '@backd/client'
+import { AuthenticationError, ValidationError } from 'backd-js'
 
 try {
   await backd.auth.login({ email, password })

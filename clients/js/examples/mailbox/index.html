@@ -6,8 +6,8 @@
   <title>backd mailbox</title>
   <link rel="stylesheet" href="../blog/style.css">
   <link rel="stylesheet" href="style.css">
-  <!-- Resolves `import … from '@backd/client'`; nginx serves clients/js/src at /example/client/. -->
-  <script type="importmap">{ "imports": { "@backd/client": "/example/client/index.js" } }</script>
+  <!-- Resolves `import … from 'backd-js'`; nginx serves clients/js/src at /example/client/. -->
+  <script type="importmap">{ "imports": { "backd-js": "/example/client/index.js" } }</script>
   <script type="module" src="app.js"></script>
 </head>
 <body>

@@ -59,15 +59,15 @@ export class Job {
    * @param {JobData} data
    */
   constructor(client, database, data) {
-    /** @private */
+    /** @internal */
     this.client = client
-    /** @private */
+    /** @internal */
     this.database = database
     /** @readonly */
     this.id = data.id
     /** @readonly The function this job runs, as `<database>/<name>`. */
     this.function = data.function
-    /** @private @type {JobData} */
+    /** @internal */
     this.data = data
   }
 
@@ -107,7 +107,7 @@ export class Job {
   }
 
   /**
-   * @private
+   * @internal
    * @param {RequestOptions} [opts]
    * @returns {Promise<JobData>}
    */

@@ -1,11 +1,11 @@
 // Expenses without functions: groups share expenses, and every member
-// sees who owes whom. Alpine.js + @backd/client, no build step.
+// sees who owes whom. Alpine.js + backd-js, no build step.
 //
 // Everything the server enforces lives in examples/config/expenses: read
 // its rules.yaml files. What they can't enforce is done here, in the
 // browser, where any user can bypass it: see the docs page "Expenses
 // without functions" and hack.js next to this file.
-import { createClient, localStorageStorage, VerificationRequiredError, VersionMismatchError, ForbiddenError } from '@backd/client'
+import { createClient, localStorageStorage, VerificationRequiredError, VersionMismatchError, ForbiddenError } from 'backd-js'
 import { balances, settlementPlan, toCents } from './ledger.js'
 
 const backd = createClient({

@@ -162,7 +162,7 @@ import { Job } from './functions.js'
 export class Admin {
   /** @param {Client} client */
   constructor(client) {
-    /** @private */
+    /** @internal */
     this.client = client
     /** Users and their roles. */
     this.users = new AdminUsers(this)
@@ -220,7 +220,7 @@ export class Admin {
 class AdminUsers {
   /** @param {Admin} admin */
   constructor(admin) {
-    /** @private */
+    /** @internal */
     this.admin = admin
   }
 
@@ -373,7 +373,7 @@ class AdminUsers {
 class AdminAPIKeys {
   /** @param {Admin} admin */
   constructor(admin) {
-    /** @private */
+    /** @internal */
     this.admin = admin
   }
 
@@ -416,7 +416,7 @@ class AdminAPIKeys {
 class AdminAudit {
   /** @param {Admin} admin */
   constructor(admin) {
-    /** @private */
+    /** @internal */
     this.admin = admin
   }
 
@@ -440,7 +440,7 @@ class AdminAudit {
 class AdminSecrets {
   /** @param {Admin} admin */
   constructor(admin) {
-    /** @private */
+    /** @internal */
     this.admin = admin
   }
 
@@ -488,7 +488,7 @@ class AdminSecrets {
 class AdminInvocations {
   /** @param {Admin} admin */
   constructor(admin) {
-    /** @private */
+    /** @internal */
     this.admin = admin
   }
 
@@ -512,7 +512,7 @@ class AdminInvocations {
 class AdminJobs {
   /** @param {Admin} admin */
   constructor(admin) {
-    /** @private */
+    /** @internal */
     this.admin = admin
   }
 
@@ -538,7 +538,7 @@ class AdminJobs {
 class AdminInvitations {
   /** @param {Admin} admin */
   constructor(admin) {
-    /** @private */
+    /** @internal */
     this.admin = admin
   }
 
