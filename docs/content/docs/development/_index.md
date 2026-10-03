@@ -34,6 +34,7 @@ toc: true
 | `docker/` | Images and config for the local stack: the docs server (Hugo), nginx, and the certificate templates (`docker/cfd/`) |
 | `docker/certs/` | Generated, gitignored: the local CA and nginx's certificate |
 | `scripts/example.sh` | Runs the local stack for `make example` |
+| `scripts/check-dashboards.py` | Checks the Grafana dashboards: valid, only documented metrics, a panel for every alert (and, with `--prometheus`, every query) |
 | `scripts/example-ci.sh` | Starts its own local stack and runs every attack script against it, as CI does |
 | `scripts/local-certs.sh` | Creates or renews the local CA and certificate with certsfor |
 | `deploy/production/` | The [production reference deployment](../operations/production/) and its end-to-end test |

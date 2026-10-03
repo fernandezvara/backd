@@ -1,0 +1,13 @@
+# The Prometheus data source the dashboards use (uid "prometheus"). The URL is
+# the local stack's; point it at your Prometheus in another deployment.
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 15s

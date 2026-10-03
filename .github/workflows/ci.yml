@@ -128,3 +128,5 @@ jobs:
         run: scripts/check-docs-links.py
       - name: Check the docs callouts
         run: scripts/check-docs-callouts.py
+      - name: Check the Grafana dashboards
+        run: scripts/check-dashboards.py

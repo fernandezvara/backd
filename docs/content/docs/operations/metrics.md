@@ -77,3 +77,23 @@ Both run a Prometheus that scrapes every backd process on start.
 ## Alert rules
 
 `deploy/production/prometheus/alerts.yml` has sample rules for Prometheus (the local stack loads the same file): a process that can't be scraped, MongoDB down or slow, a high rate of `5xx` answers, jobs that wait too long, an erase that needs an administrator, emails that fail, and an executor at its process limit. They only evaluate; connect an Alertmanager to be told. Adjust the thresholds to your traffic.
+
+## Dashboards
+
+Five [Grafana](https://grafana.com/) dashboards are in `deploy/grafana/dashboards/`, ready to import:
+
+| Dashboard | Shows |
+|---|---|
+| **backd / API** | Requests per second by route, the share of `5xx` answers, latency (p50, p95, p99), requests in flight and refusals (`401`, `403`, `429`, `503`). A `Route` variable filters it. |
+| **backd / MongoDB** | Whether MongoDB is reachable, command latency, rate, errors and timeouts, by command. |
+| **backd / Accounts and limits** | Sessions started and ended by reason, what the limits stop (login, functions, email), email and erase jobs by outcome, and erases that need attention. A `Realm` variable filters it. |
+| **backd / Functions and jobs** | Function runs by status and their duration, refusals, replays, the job queues by kind and state with the oldest wait, retries and expired leases, executor runs and egress decisions. `Realm` and `Function` variables. |
+| **backd / Processes** | Which processes are up, the versions running, memory, CPU, file descriptors and the Go runtime. A `Role` variable (`api`, `worker`, `executor`, `egress`) filters it. |
+
+Each alert rule has a panel that shows what it watches: its description says `Alert <name>`, and the panels that have a threshold draw it as a line.
+
+**In the local stack** (`make example`) Grafana runs at <http://localhost:3000>, with no login (it only listens on your machine), the Prometheus data source and these dashboards already loaded, in the `backd` folder.
+
+**In your own Grafana:** add a Prometheus data source with the uid `prometheus` (the dashboards refer to it), then import the files, or point a [file provider](https://grafana.com/docs/grafana/latest/administration/provisioning/#dashboards) at the folder (`deploy/grafana/provisioning/` has both). The panels use the `role` label that the scrape configuration in `deploy/production/prometheus/prometheus.yml` adds to each target; keep it. The [production reference](../production/) doesn't run Grafana, and its Prometheus' web port listens only on its container's loopback. To connect Grafana, change `--web.listen-address` and put Prometheus and Grafana on a network of their own that nothing else (and no function process) shares.
+
+`scripts/check-dashboards.py` checks the files in CI: valid JSON, every metric they use is in this page, and every alert has its panel; in the local stack's test it also runs every query against Prometheus.
