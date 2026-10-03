@@ -9,6 +9,7 @@ import (
 
 	"github.com/rs/xid"
 
+	"github.com/fernandezvara/backd/internal/metrics"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -27,6 +28,9 @@ type Users struct {
 	// across every realm's Users (NewSecretCache); nil disables caching.
 	Cipher *SecretCipher
 	Cache  *SecretCache
+
+	// Metrics counts sessions and limits; nil turns it off.
+	Metrics *metrics.Metrics
 }
 
 // Clock is the service's current time (its Now, or the real one).
@@ -101,7 +105,7 @@ func (s *Users) SetPassword(ctx context.Context, email, password string) error {
 		return err
 	}
 	s.Audit(ctx, AuditUserPassword, userTarget(u.ID), nil)
-	if err := s.Store.DeleteSessions(ctx, u.ID); err != nil {
+	if err := s.endSessions(ctx, u.ID, "password_set"); err != nil {
 		return err
 	}
 	s.notifyPasswordChanged(ctx, u)
@@ -172,7 +176,7 @@ func (s *Users) SetDisabled(ctx context.Context, email string, disabled bool) er
 		s.Audit(ctx, AuditUserEnable, userTarget(u.ID), nil)
 	}
 	if disabled {
-		return s.Store.DeleteSessions(ctx, u.ID)
+		return s.endSessions(ctx, u.ID, "disabled")
 	}
 	return nil
 }
@@ -184,6 +188,7 @@ func (s *Users) Delete(ctx context.Context, email string) error {
 	if err != nil {
 		return err
 	}
+	s.countSessions(ctx, u.ID, "deleted")
 	if err := s.Store.DeleteUser(ctx, u.ID); err != nil {
 		return err
 	}

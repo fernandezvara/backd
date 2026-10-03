@@ -9,6 +9,7 @@ import (
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/executor"
+	"github.com/fernandezvara/backd/internal/metrics"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -50,7 +51,7 @@ func NewWorker(cfg Config, id string) *Worker {
 		log = slog.New(slog.DiscardHandler)
 	}
 	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, users: users, callbackKey: cfg.CallbackKey}
-	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, log: log}
+	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, log: log, metrics: cfg.Metrics}
 	return &Worker{id: id, fns: fns, reg: cfg.Registry, backdURL: cfg.BackdURL, log: log, lastScheduled: map[string]time.Time{}, lastPurge: map[string]time.Time{}}
 }
 
@@ -192,6 +193,9 @@ func (w *Worker) RunOnce(ctx context.Context) bool {
 		if !found {
 			continue
 		}
+		if job.Attempts > job.Failures+1 {
+			w.fns.metrics.JobLeaseExpired(realm, jobKind(job)) // claimed again without a failure: its worker went away
+		}
 		w.runJob(ctx, realm, svc, job)
 		return true
 	}
@@ -300,6 +304,8 @@ func (w *Worker) execute(ctx context.Context, log *slog.Logger, realm string, sv
 			log.Warn("attempt failed; it will be tried again", "attempt", failed, "of", rp.Attempts, "status", res.Status, "retry_in", wait.String())
 			if err := svc.RetryJob(ctx, job.ID, wait); err != nil {
 				log.Error("queue the retry", "error", err)
+			} else {
+				w.fns.metrics.JobRetried(svc.Realm, jobKind(job))
 			}
 			return
 		}
@@ -307,8 +313,13 @@ func (w *Worker) execute(ctx context.Context, log *slog.Logger, realm string, sv
 	}
 	if err := svc.CompleteJob(ctx, job.ID, jobResultFromExecutor(res)); err != nil {
 		log.Error("complete job", "error", err)
+		return
 	}
+	w.fns.metrics.JobFinished(svc.Realm, jobKind(job), res.Status)
 }
+
+// jobKind is the job's kind as the metrics name it.
+func jobKind(j auth.Job) string { return metrics.JobKind(j.Email != nil, j.Erase != nil, j.Scheduled) }
 
 // retryableStatus says whether an attempt that ended this way may succeed
 // when repeated: the function threw, ran out of time or resources, or its
@@ -330,7 +341,9 @@ func (w *Worker) fail(ctx context.Context, log *slog.Logger, svc *auth.Users, jo
 	res := auth.JobResult{Status: executor.StatusError, Message: message}
 	if err := svc.CompleteJob(ctx, job.ID, res); err != nil {
 		log.Error("complete failed job", "error", err)
+		return
 	}
+	w.fns.metrics.JobFinished(svc.Realm, jobKind(job), res.Status)
 }
 
 // callerFor reconstructs the caller that enqueued job, fetching the

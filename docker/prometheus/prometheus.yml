@@ -1,0 +1,21 @@
+# The local stack's Prometheus (docker-compose.yml): scrapes backd (which runs
+# its worker too here), the executor and egress, with the dev-only token the
+# compose file gives them. The same alert rules as the production reference.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: backd
+    authorization:
+      credentials: local-dev-metrics-token-not-a-secret-0123456789
+    static_configs:
+      - targets: ["backd:9090"]
+        labels: { role: api }
+      - targets: ["executor:9090"]
+        labels: { role: executor }
+      - targets: ["egress:9090"]
+        labels: { role: egress }

@@ -17,6 +17,7 @@ import (
 	"github.com/rs/xid"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/metrics"
 )
 
 type ctxKey int
@@ -109,6 +110,34 @@ func accessLog(next http.Handler) http.Handler {
 		}
 		logger(r.Context()).Info("request", attrs...)
 	})
+}
+
+// requestMetrics counts and times every request by method, route pattern and
+// status. The pattern is read after routing; a request no route matched is
+// one label, whatever its path.
+func requestMetrics(m *metrics.Metrics) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		if m == nil {
+			return next
+		}
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+			m.RequestStarted()
+			defer func() {
+				route := ""
+				if rc := chi.RouteContext(r.Context()); rc != nil {
+					route = rc.RoutePattern()
+				}
+				status := ww.Status()
+				if status == 0 {
+					status = http.StatusOK
+				}
+				m.RequestDone(r.Method, route, status, time.Since(start))
+			}()
+			next.ServeHTTP(ww, r)
+		})
+	}
 }
 
 // limitBody caps request bodies at max bytes. Declared lengths over the

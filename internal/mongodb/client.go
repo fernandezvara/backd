@@ -7,14 +7,20 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/event"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 // Connect opens a client and checks the server is reachable and part of a
-// replica set (or a sharded cluster).
-func Connect(ctx context.Context, uri string) (*mongo.Client, error) {
-	client, err := mongo.Connect(options.Client().ApplyURI(uri))
+// replica set (or a sharded cluster). A monitor, when given, sees every
+// command the driver sends (backd's database latency metrics).
+func Connect(ctx context.Context, uri string, monitor ...*event.CommandMonitor) (*mongo.Client, error) {
+	opts := options.Client().ApplyURI(uri)
+	if len(monitor) > 0 && monitor[0] != nil {
+		opts.SetMonitor(monitor[0])
+	}
+	client, err := mongo.Connect(opts)
 	if err != nil {
 		return nil, fmt.Errorf("mongodb: %w", err)
 	}

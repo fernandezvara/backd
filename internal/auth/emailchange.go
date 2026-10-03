@@ -129,7 +129,7 @@ func (s *Users) RevertEmailChange(ctx context.Context, token string) (EmailToken
 	if err := s.putPassword(ctx, u.ID, hash, now); err != nil {
 		return EmailToken{}, err
 	}
-	if err := s.Store.DeleteSessions(ctx, u.ID); err != nil {
+	if err := s.endSessions(ctx, u.ID, "email_reverted"); err != nil {
 		return EmailToken{}, err
 	}
 	s.AuditAs(ctx, userTarget(u.ID), AuditEmailReverted, userTarget(u.ID), nil)
@@ -195,7 +195,7 @@ func (s *Users) applyEmailChange(ctx context.Context, u User, next string) error
 			return err
 		}
 	}
-	return s.Store.DeleteSessions(ctx, u.ID)
+	return s.endSessions(ctx, u.ID, "email_changed")
 }
 
 // queueEmailChanged tells the old address (with the link to undo the change)

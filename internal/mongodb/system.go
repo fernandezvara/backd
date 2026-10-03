@@ -245,6 +245,9 @@ var systemCollections = []systemCollection{
 			{keys: bson.D{{Key: "status", Value: 1}, {Key: "lease_expires", Value: 1}, {Key: "created_at", Value: 1}}},
 			// Listing a function's jobs, newest first (GET _admin/jobs).
 			{keys: bson.D{{Key: "database", Value: 1}, {Key: "function", Value: 1}, {Key: "created_at", Value: -1}}},
+			// The erase jobs only (the metrics refresher counts the failed ones
+			// without scanning every finished job).
+			{keys: bson.D{{Key: "erase.user_id", Value: 1}}, sparse: true},
 			{keys: bson.D{{Key: "expires_at", Value: 1}}, ttl: true},
 		},
 	},

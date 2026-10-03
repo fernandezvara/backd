@@ -40,6 +40,7 @@ Go through this page before any realm faces the internet, and again after changi
 - [ ] **Client addresses:** the edge overwrites `X-Forwarded-For`, and `TRUSTED_PROXIES` names exactly the edge's addresses, never whole private ranges. `backd`'s access log shows real client addresses.
 - [ ] **Only the edge is reachable:** `backd` isn't published directly, and `/healthz` and `/readyz` aren't public.
 - [ ] **The admin API** is only reachable from your operators' network: `admin.allowed_networks` in each `realm.yaml` (and `admin_networks` per admin where useful), plus `ADMIN_ALLOW_FROM` at the edge in the reference.
+- [ ] **The [metrics](../metrics/) port is private** (`METRICS_ADDR` is never published or proxied, and `METRICS_TOKEN` is set if anything but Prometheus can reach it).
 - [ ] **API keys of services with fixed addresses are pinned** to them with `--networks`.
 
 ## MongoDB

@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/metrics"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -54,6 +55,8 @@ type Config struct {
 	// Dev rereads function bundle manifests on every call instead of once
 	// (BACKD_DEV), so a background rebuild is served without a restart.
 	Dev bool
+	// Metrics records what the API does; nil turns it off.
+	Metrics *metrics.Metrics
 }
 
 // DefaultOpTimeout is the per-request storage deadline when none is configured.
@@ -69,7 +72,7 @@ func NewHandler(cfg Config) http.Handler {
 		maxBody = DefaultMaxBodyBytes
 	}
 	r := chi.NewRouter()
-	r.Use(withRequestID(cfg.Log), withTrustedProxies(cfg.TrustedProxies), accessLog, recoverer, securityHeaders, cors(cfg.Registry), limitBody(maxBody))
+	r.Use(withRequestID(cfg.Log), withTrustedProxies(cfg.TrustedProxies), requestMetrics(cfg.Metrics), accessLog, recoverer, securityHeaders, cors(cfg.Registry), limitBody(maxBody))
 	r.NotFound(notFound)
 	r.MethodNotAllowed(methodNotAllowed)
 
@@ -106,7 +109,7 @@ func NewHandler(cfg Config) http.Handler {
 	authRoutes := &authAPI{users: users, reg: cfg.Registry, actions: hostedActions(), opTimeout: opTimeout}
 	authRoutes.routes(r)
 	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users, callbackKey: cfg.CallbackKey}
-	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, executorToken: cfg.ExecutorToken, log: cfg.Log, dev: cfg.Dev, concurrency: limiterFor(cfg.Registry)}
+	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, executorToken: cfg.ExecutorToken, log: cfg.Log, dev: cfg.Dev, concurrency: limiterFor(cfg.Registry), metrics: cfg.Metrics}
 	(&adminAPI{users: users, reg: cfg.Registry, fns: fns}).routes(r, authRoutes.resolveRealm, withTimeout(opTimeout))
 	fns.routes(r)
 	docs.routes(r)
@@ -135,7 +138,7 @@ func NewInternalHandler(cfg Config) http.Handler {
 		users = func(string) *auth.Users { return nil }
 	}
 	r := chi.NewRouter()
-	r.Use(withRequestID(cfg.Log), accessLog, recoverer, securityHeaders, limitBody(maxBody))
+	r.Use(withRequestID(cfg.Log), requestMetrics(cfg.Metrics), accessLog, recoverer, securityHeaders, limitBody(maxBody))
 	r.NotFound(notFound)
 	r.MethodNotAllowed(methodNotAllowed)
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -143,7 +146,7 @@ func NewInternalHandler(cfg Config) http.Handler {
 	})
 	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users,
 		internal: true, callbackKey: cfg.CallbackKey}
-	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, executorToken: cfg.ExecutorToken, log: cfg.Log, dev: cfg.Dev, concurrency: limiterFor(cfg.Registry)}
+	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, executorToken: cfg.ExecutorToken, log: cfg.Log, dev: cfg.Dev, concurrency: limiterFor(cfg.Registry), metrics: cfg.Metrics}
 	r.Get("/_internal/functions/{sha256}", fns.bundle)
 	fns.internalRoutes(r)
 	docs.routes(r)

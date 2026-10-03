@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fernandezvara/backd/internal/metrics"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -148,5 +149,39 @@ func TestRecoverer(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), `"panic":"boom"`) {
 		t.Errorf("panic not logged: %s", logs.String())
+	}
+}
+
+func TestRequestMetricsByRoutePattern(t *testing.T) {
+	m := metrics.New("dev", "x")
+	h := NewHandler(Config{Log: slog.New(slog.NewJSONHandler(&strings.Builder{}, nil)), Ready: func(context.Context) error { return nil }, Metrics: m})
+	do(h, "GET", "/healthz", nil)
+	do(h, "GET", "/no/such/thing/for-user-ada@example.com", nil)
+	do(h, "GET", "/v1/realm/db/coll/some-document-id", nil)
+	mfs, err := m.Registry.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var routes []string
+	for _, mf := range mfs {
+		if mf.GetName() != "backd_http_requests_total" {
+			continue
+		}
+		for _, s := range mf.GetMetric() {
+			for _, l := range s.GetLabel() {
+				if l.GetName() == "route" {
+					routes = append(routes, l.GetValue())
+				}
+			}
+		}
+	}
+	got := strings.Join(routes, " ")
+	if !strings.Contains(got, "/healthz") || !strings.Contains(got, "unmatched") {
+		t.Errorf("routes = %q", got)
+	}
+	for _, leak := range []string{"ada@example.com", "no/such", "some-document-id"} {
+		if strings.Contains(got, leak) {
+			t.Errorf("a request path leaked into a label: %q", got)
+		}
 	}
 }

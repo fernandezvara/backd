@@ -153,6 +153,10 @@ services:
       BACKD_CALLBACK_KEY: ${BACKD_CALLBACK_KEY:?run ./setup.sh}
       BACKD_SECRETS_KEY: ${BACKD_SECRETS_KEY:?run ./setup.sh}
       LOG_LEVEL: info
+      # The private metrics port (docs: Operations -> Metrics); only
+      # Prometheus, on `func`, has the token.
+      METRICS_ADDR: ":9090"
+      METRICS_TOKEN: ${BACKD_METRICS_TOKEN:?run ./setup.sh}
     volumes: *tls
     networks: [edge, data, func]
     depends_on:
@@ -187,6 +191,10 @@ services:
       BACKD_CALLBACK_KEY: ${BACKD_CALLBACK_KEY:?run ./setup.sh}
       BACKD_SECRETS_KEY: ${BACKD_SECRETS_KEY:?run ./setup.sh}
       LOG_LEVEL: info
+      # The private metrics port (docs: Operations -> Metrics); only
+      # Prometheus, on `func`, has the token.
+      METRICS_ADDR: ":9090"
+      METRICS_TOKEN: ${BACKD_METRICS_TOKEN:?run ./setup.sh}
     volumes: *tls
     networks: [data, func]
     depends_on:
@@ -219,6 +227,8 @@ services:
       EXECUTOR_PROXY: http://egress:3128
       BACKD_EGRESS_KEY: ${BACKD_EGRESS_KEY:?run ./setup.sh}
       LOG_LEVEL: info
+      METRICS_ADDR: ":9090"
+      METRICS_TOKEN: ${BACKD_METRICS_TOKEN:?run ./setup.sh}
     extra_hosts:
       # A declared function host resolving to MongoDB's real address on
       # this deployment's data network: proves layer 3 with no route at
@@ -248,6 +258,8 @@ services:
       BACKD_EGRESS_KEY: ${BACKD_EGRESS_KEY:?run ./setup.sh}
       EGRESS_ALLOW_PRIVATE: "backd:8081"
       LOG_LEVEL: info
+      METRICS_ADDR: ":9090"
+      METRICS_TOKEN: ${BACKD_METRICS_TOKEN:?run ./setup.sh}
     extra_hosts:
       - mongo-data.internal.test:172.30.90.10
     networks: [func, uplink]
@@ -257,6 +269,33 @@ services:
     security_opt: ["no-new-privileges:true"]
     cpus: 1
     mem_limit: 128m
+    restart: unless-stopped
+
+  # Scrapes every backd process's private metrics port and evaluates the
+  # alert rules (docs: Operations -> Metrics). On `func` only: it has no
+  # route out, and its own web port listens on its loopback, so no other
+  # container (a function process, say) can reach the UI or the query API.
+  # To use it from Grafana, change --web.listen-address and put them on a
+  # network of their own.
+  prometheus:
+    image: docker.io/prom/prometheus:v3.5.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.listen-address=127.0.0.1:9090
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ${SECRETS_DIR:-./secrets}/metrics-token:/etc/prometheus/metrics-token:ro
+      - prometheus-data:/prometheus
+    networks: [func]
+    depends_on: [backd, worker, executor, egress]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 1
+    mem_limit: 512m
     restart: unless-stopped
 
   nginx:
@@ -306,3 +345,4 @@ networks:
 
 volumes:
   mongo-data:
+  prometheus-data:

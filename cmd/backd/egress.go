@@ -56,7 +56,12 @@ func serveEgress(getenv func(string) string, stderr io.Writer) error {
 			allowPrivate = append(allowPrivate, v)
 		}
 	}
-	p := &egress.Proxy{Key: []byte(key), AllowPrivate: allowPrivate, Log: log}
+	m, stopMetrics, err := startMetrics(getenv, log, addr)
+	if err != nil {
+		return err
+	}
+	defer stopMetrics()
+	p := &egress.Proxy{Key: []byte(key), AllowPrivate: allowPrivate, Log: log, Metrics: m}
 	log.Info("egress ready", "version", version, "allow_private", allowPrivate)
 
 	srv := &http.Server{Handler: p.Handler(), ReadHeaderTimeout: 10 * time.Second}

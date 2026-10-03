@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/netip"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -69,6 +71,35 @@ type Settings struct {
 	// WorkerConcurrency caps how many async jobs one worker process runs
 	// at once (WORKER_CONCURRENCY, roadmap F11); default 10.
 	WorkerConcurrency int
+	// MetricsAddr (METRICS_ADDR) is where a process serves /metrics; empty
+	// means it doesn't. MetricsToken (METRICS_TOKEN) makes it ask for that
+	// bearer token. The port must be private (design/metrics.md).
+	MetricsAddr  string
+	MetricsToken string
+}
+
+// LoadMetrics reads METRICS_ADDR and METRICS_TOKEN, shared by every backd
+// command that can serve /metrics. reserved are the addresses the process
+// serves other things on: metrics must have a listener of their own.
+func LoadMetrics(getenv func(string) string, reserved ...string) (addr, token string, err error) {
+	addr = strings.TrimSpace(getenv("METRICS_ADDR"))
+	token = getenv("METRICS_TOKEN")
+	switch {
+	case addr == "" && token != "":
+		return "", "", errors.New("METRICS_TOKEN needs METRICS_ADDR: there is no metrics listener to protect")
+	case addr == "":
+		return "", "", nil
+	}
+	if _, port, perr := net.SplitHostPort(addr); perr != nil || port == "" || port == "0" {
+		return "", "", fmt.Errorf("METRICS_ADDR must be host:port or :port, got %q", addr)
+	}
+	if slices.Contains(reserved, addr) {
+		return "", "", fmt.Errorf("METRICS_ADDR %q is an address this process serves something else on: metrics have their own listener, which must stay private", addr)
+	}
+	if token != "" && len(token) < minSecretLen {
+		return "", "", fmt.Errorf("METRICS_TOKEN must be at least %d characters", minSecretLen)
+	}
+	return addr, token, nil
 }
 
 // minSecretLen is the minimum length of the executor token and callback key.
@@ -175,6 +206,12 @@ func Load(getenv func(string) string) (Settings, error) {
 		} else {
 			s.WorkerConcurrency = n
 		}
+	}
+
+	var merr error
+	s.MetricsAddr, s.MetricsToken, merr = LoadMetrics(getenv, s.HTTPAddr, s.InternalAddr)
+	if merr != nil {
+		errs = append(errs, merr)
 	}
 
 	secretsKey, err := LoadKeyMaterial(getenv, "BACKD_SECRETS_KEY")

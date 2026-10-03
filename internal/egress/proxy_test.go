@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/fernandezvara/backd/internal/metrics"
 )
 
 func TestBlockedAddresses(t *testing.T) {
@@ -221,5 +223,39 @@ func TestExpiredTokenRefused(t *testing.T) {
 	}
 	if res.StatusCode != http.StatusProxyAuthRequired {
 		t.Fatalf("status %d, want 407", res.StatusCode)
+	}
+}
+
+// TestEgressMetrics counts each decision, and puts no host name in a label.
+func TestEgressMetrics(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("hi")) }))
+	defer target.Close()
+	targetHost := strings.TrimPrefix(target.URL, "http://")
+	key := []byte(testKey)
+	m := metrics.New("dev", "x")
+	proxy := httptest.NewServer((&Proxy{Key: key, AllowPrivate: []string{targetHost}, Metrics: m}).Handler())
+	defer proxy.Close()
+
+	get := func(c *http.Client) {
+		res, err := c.Get(target.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+	}
+	exp := time.Now().Add(time.Minute)
+	get(client(proxy.URL, Sign(key, Claims{Hosts: []string{targetHost}, Expires: exp})))               // allowed
+	get(client(proxy.URL, Sign(key, Claims{Hosts: []string{"somewhere-else.example"}, Expires: exp}))) // denied_host
+	get(&http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(mustParse(proxy.URL))}})          // denied_credentials
+	rec := httptest.NewRecorder()
+	m.Handler("").ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	body := rec.Body.String()
+	for _, want := range []string{`backd_egress_requests_total{outcome="allowed"} 1`, `backd_egress_requests_total{outcome="denied_host"} 1`, `backd_egress_requests_total{outcome="denied_credentials"} 1`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	if strings.Contains(body, targetHost) || strings.Contains(body, "somewhere-else") {
+		t.Error("a host name is in the metrics")
 	}
 }

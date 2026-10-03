@@ -26,6 +26,9 @@ It uses Docker Compose, but each part maps directly onto other platforms: a Kube
                                        ▲
                                        │  func net
                                     worker (claims and runs async jobs)
+                                       ▲
+                                       │  func net: scrapes each :9090
+                                    prometheus (metrics, alert rules)
 ```
 
 - **nginx** is the only thing reachable from outside. It terminates TLS, redirects HTTP to HTTPS, rate-limits requests, caps body sizes and sets the client address that `backd` sees. Its access log (`edge` format) records the path without the query string, because the links in [emails](../../functions/email/#links-and-pages) carry their token there.
@@ -191,6 +194,7 @@ The stack runs [functions](../../functions/) with the network placement the [sec
 - **`executor`** runs one Deno process per function call. It's on its own network, `func`, whose only other member is `backd`; it has no route to `data` (MongoDB) or the internet at all — not even for a raw TCP connection that bypasses `backd egress` entirely (layer 3). Read-only filesystem, no Linux capabilities, a tmpfs for its bundle cache.
 - **`egress`** is `func`'s only way out: it also joins `uplink` (a network with a route to the internet) and bridges the two, refusing loopback, private, link-local (cloud metadata), CGNAT, multicast and unspecified addresses (layer 2). `backd`'s own address (`EGRESS_ALLOW_PRIVATE`) is its one exception, so functions can still reach `backd` through it.
 - **`worker`** claims and runs [async jobs](../../functions/jobs/), as its own deployment (scale it independently of `backd`) rather than folded in with `serve --with-worker` — the [local stack](#try-it) uses the smaller, folded-in form instead, since it's a single-user convenience, not a hardened deployment.
+- **`prometheus`** scrapes the private [metrics](../metrics/) port of `backd`, `worker`, `executor` and `egress` (each asks for `METRICS_TOKEN`, which function processes never have) and evaluates the sample alert rules. It is on `func`, which has no route out, and its own web port listens on its container's loopback, so function processes can't reach it. Nothing about metrics is reachable from the internet.
 - **`data`** gets a fixed subnet so MongoDB has a known address: not for functions to reach (they can't — that's the whole point), but so this deployment's own test (`test.sh`) can declare it in a function's `network:` allowlist and prove layer 3 refuses it anyway, from a real function call (`functions/netprobe`, a function-only realm that exists solely for this).
 
 Sizing (`compose.yaml`'s `executor` service): `EXECUTOR_MAX_PROCESSES` functions running at once, each using its declared `memory` (128 MiB by default) plus about 130 MiB of overhead — size `mem_limit` for that total, and `pids_limit` for about 5 pids per running function (Deno's `--single-threaded` mode; see [Running the executor](../../functions/running/#running-the-executor)). The reference ships modest defaults (10 processes); raise `EXECUTOR_MAX_PROCESSES`, `mem_limit` and `pids_limit` together for more load, and consider `WORKER_CONCURRENCY` (unset here, default 10) if async jobs need more headroom than sync calls.

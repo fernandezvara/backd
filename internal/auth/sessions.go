@@ -209,6 +209,7 @@ func (s *Users) startSession(ctx context.Context, u User) (Principal, string, er
 	if err := s.Store.CreateSession(ctx, sess); err != nil {
 		return Principal{}, "", err
 	}
+	s.Metrics.SessionStarted(s.Realm)
 	return Principal{User: u, Session: sess}, token, nil
 }
 
@@ -239,14 +240,48 @@ func (s *Users) Authenticate(ctx context.Context, token string) (Principal, erro
 	return Principal{User: u, Session: sess}, nil
 }
 
+// endSessions ends every session of a user and counts them under reason.
+func (s *Users) endSessions(ctx context.Context, userID, reason string) error {
+	n, err := s.Store.DeleteSessions(ctx, userID)
+	s.Metrics.SessionsEnded(s.Realm, reason, n)
+	return err
+}
+
+// endOtherSessions is endSessions without the session keepID.
+func (s *Users) endOtherSessions(ctx context.Context, userID, keepID, reason string) error {
+	n, err := s.Store.DeleteOtherSessions(ctx, userID, keepID)
+	s.Metrics.SessionsEnded(s.Realm, reason, n)
+	return err
+}
+
+// endSession ends one session and counts it under reason.
+func (s *Users) endSession(ctx context.Context, userID, id, reason string) error {
+	err := s.Store.DeleteSession(ctx, userID, id)
+	if err == nil {
+		s.Metrics.SessionsEnded(s.Realm, reason, 1)
+	}
+	return err
+}
+
+// countSessions counts a user's sessions before something that ends them
+// without saying how many (deleting or erasing the user).
+func (s *Users) countSessions(ctx context.Context, userID, reason string) {
+	if s.Metrics == nil {
+		return
+	}
+	if all, err := s.Store.ListSessions(ctx, userID); err == nil {
+		s.Metrics.SessionsEnded(s.Realm, reason, int64(len(all)))
+	}
+}
+
 // Logout ends the caller's session.
 func (s *Users) Logout(ctx context.Context, p Principal) error {
-	return s.Store.DeleteSession(ctx, p.User.ID, p.Session.ID)
+	return s.endSession(ctx, p.User.ID, p.Session.ID, "logout")
 }
 
 // LogoutAll ends every session of the caller, including the current one.
 func (s *Users) LogoutAll(ctx context.Context, p Principal) error {
-	return s.Store.DeleteSessions(ctx, p.User.ID)
+	return s.endSessions(ctx, p.User.ID, "logout_all")
 }
 
 // Sessions lists the caller's unexpired sessions, newest first.
@@ -268,7 +303,7 @@ func (s *Users) Sessions(ctx context.Context, p Principal) ([]Session, error) {
 // RevokeSession ends one of the caller's sessions; ErrNotFound if the
 // caller has no session with that id.
 func (s *Users) RevokeSession(ctx context.Context, p Principal, id string) error {
-	return s.Store.DeleteSession(ctx, p.User.ID, id)
+	return s.endSession(ctx, p.User.ID, id, "revoked")
 }
 
 // ChangePassword replaces the caller's password after checking the
@@ -285,7 +320,7 @@ func (s *Users) ChangePassword(ctx context.Context, p Principal, current, next s
 		return err
 	}
 	s.Audit(ctx, AuditPasswordChange, userTarget(p.User.ID), nil)
-	if err := s.Store.DeleteOtherSessions(ctx, p.User.ID, p.Session.ID); err != nil {
+	if err := s.endOtherSessions(ctx, p.User.ID, p.Session.ID, "password_changed"); err != nil {
 		return err
 	}
 	s.notifyPasswordChanged(ctx, p.User)

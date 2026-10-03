@@ -219,3 +219,68 @@ func TestRetryJobOnMongoDB(t *testing.T) {
 		t.Errorf("a done job was retried: %+v", j)
 	}
 }
+
+func TestJobStatsOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	t0 := time.Date(2126, 9, 29, 12, 0, 0, 0, time.UTC)
+	mk := func(id string, at time.Time, edit func(*auth.Job)) {
+		j := auth.Job{ID: id, Database: "app", Function: "f", CallerActor: "anonymous", TimeoutMS: 60000, Status: auth.JobQueued, CreatedAt: at, ExpiresAt: t0.Add(48 * time.Hour)}
+		if edit != nil {
+			edit(&j)
+		}
+		if err := s.EnqueueJob(ctx, j); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("f1", t0, nil)
+	mk("f2", t0.Add(time.Minute), nil)
+	mk("s1", t0, func(j *auth.Job) { j.Scheduled = true })
+	mk("e1", t0, func(j *auth.Job) { j.Email = &auth.EmailJob{Kind: "verify-email", UserID: "u"} })
+	mk("x1", t0, func(j *auth.Job) { j.Erase = &auth.EraseJob{UserID: "u"} })
+	mk("x2", t0, func(j *auth.Job) { j.Erase = &auth.EraseJob{UserID: "v"} })
+
+	// f1 is claimed (running); e1 failed once and waits for its retry.
+	if c, found, err := s.ClaimJob(ctx, "w", t0.Add(2*time.Minute), 30*time.Second); err != nil || !found {
+		t.Fatalf("claim: %v %v", found, err)
+	} else if c.ID != "f1" && c.ID != "s1" && c.ID != "e1" && c.ID != "x1" && c.ID != "x2" {
+		t.Fatalf("claimed %s", c.ID)
+	}
+	now := t0.Add(3 * time.Minute)
+	stats, err := s.JobStats(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	total := map[string]int64{}
+	for _, st := range stats {
+		total["queued"] += st.Queued
+		total["running"] += st.Running
+		total["waiting"] += st.Waiting
+		if st.Queued > 0 && st.OldestQueued.IsZero() {
+			t.Errorf("%s: queued without an oldest", st.Kind)
+		}
+	}
+	if total["queued"] != 5 || total["running"] != 1 || total["waiting"] != 0 {
+		t.Errorf("totals = %v (%+v)", total, stats)
+	}
+	var kinds []string
+	for _, st := range stats {
+		kinds = append(kinds, st.Kind)
+	}
+	for _, want := range []string{"function", "schedule", "email", "erase"} {
+		if !strings.Contains(strings.Join(kinds, ","), want) {
+			t.Errorf("no %s in %v", want, kinds)
+		}
+	}
+
+	// A failed erase needs attention; a finished one does not.
+	if err := s.CompleteJob(ctx, "x1", auth.JobResult{Status: "error", Message: "boom"}, now, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CompleteJob(ctx, "x2", auth.JobResult{Status: "ok"}, now, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.EraseNeedsAttention(ctx); err != nil || n != 1 {
+		t.Errorf("needs attention = %d, %v", n, err)
+	}
+}

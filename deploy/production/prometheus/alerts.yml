@@ -1,0 +1,62 @@
+# Sample alert rules for backd's metrics (docs: Operations -> Metrics). They
+# only evaluate here; send them somewhere with an Alertmanager. Adjust the
+# thresholds to your traffic.
+groups:
+  - name: backd
+    rules:
+      - alert: BackdDown
+        expr: up{job="backd"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.role }} ({{ $labels.instance }}) can't be scraped"
+
+      - alert: BackdMongoDown
+        expr: backd_mongodb_up == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.role }} can't reach MongoDB"
+
+      - alert: BackdHighErrorRate
+        expr: |
+          sum(rate(backd_http_requests_total{status=~"5.."}[5m]))
+            / sum(rate(backd_http_requests_total[5m])) > 0.05
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "More than 5% of requests answer 5xx"
+
+      - alert: BackdMongoSlow
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(backd_mongodb_operation_duration_seconds_bucket[5m]))) > 0.5
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "95% of MongoDB commands take over half a second"
+
+      - alert: BackdJobsStuck
+        expr: backd_jobs_oldest_wait_seconds > 300
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "A {{ $labels.kind }} job has waited over 5 minutes in {{ $labels.realm }}: is a worker running?"
+
+      - alert: BackdEraseNeedsAttention
+        expr: backd_erase_needs_attention > 0
+        for: 1m
+        labels: { severity: warning }
+        annotations:
+          summary: "An erase in {{ $labels.realm }} used up its attempts: repeat the delete to resume it"
+
+      - alert: BackdEmailFailing
+        expr: sum by (realm) (increase(backd_jobs_completed_total{kind="email",status!="ok"}[1h])) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "Emails fail to send in {{ $labels.realm }}: check the delivery function"
+
+      - alert: BackdExecutorBusy
+        expr: increase(backd_executor_runs_total{status="busy"}[5m]) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "The executor refused calls at its process limit"

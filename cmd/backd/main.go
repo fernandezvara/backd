@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"syscall"
@@ -24,6 +25,7 @@ import (
 	"github.com/fernandezvara/backd/internal/executor"
 	"github.com/fernandezvara/backd/internal/functions"
 	"github.com/fernandezvara/backd/internal/httpapi"
+	"github.com/fernandezvara/backd/internal/metrics"
 	"github.com/fernandezvara/backd/internal/mongodb"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/rules"
@@ -73,6 +75,8 @@ type app struct {
 	fingerprint  string                   // of CONFIG_DIR (registry.Fingerprint)
 	// withWorker runs the worker role in this process too (serve --with-worker).
 	withWorker bool
+	// metrics records what this process does; nil when METRICS_ADDR is unset.
+	metrics *metrics.Metrics
 }
 
 func setup(ctx context.Context, getenv func(string) string, logOut io.Writer) (*app, error) {
@@ -95,11 +99,15 @@ func setup(ctx context.Context, getenv func(string) string, logOut io.Writer) (*
 	}
 	log.Info("config loaded", "version", version, "config_dir", cfg.ConfigDir, "fingerprint", fingerprint, "realms", len(reg.Realms), "databases", len(reg.Databases()))
 
-	client, err := mongodb.Connect(ctx, cfg.MongoURI)
+	var m *metrics.Metrics
+	if cfg.MetricsAddr != "" {
+		m = metrics.New(version, commit())
+	}
+	client, err := mongodb.Connect(ctx, cfg.MongoURI, m.MongoMonitor())
 	if err != nil {
 		return nil, err
 	}
-	return &app{cfg: cfg, log: log, reg: reg, client: client, fingerprint: fingerprint}, nil
+	return &app{cfg: cfg, log: log, reg: reg, client: client, fingerprint: fingerprint, metrics: m}, nil
 }
 
 func (a *app) close() { _ = a.client.Disconnect(context.Background()) }
@@ -188,7 +196,7 @@ func serve(ctx context.Context, a *app) error {
 		}, devWatchInterval)
 	}
 	needsInternal := a.hasFunctions() && a.cfg.ExecutorURL != ""
-	if !needsInternal && !a.withWorker {
+	if !needsInternal && !a.withWorker && a.metrics == nil {
 		return httpapi.Run(ctx, srv, ln, a.cfg.ShutdownTimeout, a.log)
 	}
 
@@ -196,6 +204,13 @@ func serve(ctx context.Context, a *app) error {
 	defer cancel()
 	tasks := []func() error{
 		func() error { return httpapi.Run(ctx, srv, ln, a.cfg.ShutdownTimeout, a.log) },
+	}
+	if a.metrics != nil {
+		go a.metrics.WatchMongo(ctx, func(c context.Context) error { return a.client.Ping(c, nil) }, 15*time.Second)
+		go a.metrics.WatchJobs(ctx, 15*time.Second, a.jobStats)
+		tasks = append(tasks, func() error {
+			return a.metrics.Serve(ctx, a.cfg.MetricsAddr, a.cfg.MetricsToken, a.cfg.ShutdownTimeout, a.log.With("listener", "metrics"))
+		})
 	}
 	if needsInternal {
 		// The internal listener, for the executor and functions calling back.
@@ -254,6 +269,15 @@ func worker(ctx context.Context, a *app) error {
 	defer stop()
 	w := httpapi.NewWorker(a.handlerConfig(), workerID())
 	a.log.Info("worker ready", "version", version, "concurrency", a.cfg.WorkerConcurrency)
+	if a.metrics != nil {
+		go a.metrics.WatchMongo(ctx, func(c context.Context) error { return a.client.Ping(c, nil) }, 15*time.Second)
+		go a.metrics.WatchJobs(ctx, 15*time.Second, a.jobStats)
+		go func() {
+			if err := a.metrics.Serve(ctx, a.cfg.MetricsAddr, a.cfg.MetricsToken, a.cfg.ShutdownTimeout, a.log.With("listener", "metrics")); err != nil {
+				a.log.Error("metrics listener", "error", err)
+			}
+		}()
+	}
 	w.Run(ctx, a.cfg.WorkerConcurrency)
 	return nil
 }
@@ -426,6 +450,7 @@ func (a *app) handlerConfig() httpapi.Config {
 		TrustedProxies:    a.cfg.TrustedProxies,
 		ConfigFingerprint: a.fingerprint,
 		Dev:               a.cfg.Dev,
+		Metrics:           a.metrics,
 	}
 }
 
@@ -515,7 +540,7 @@ func (a *app) realmUsers() func(string) *auth.Users {
 	services := map[string]*auth.Users{}
 	for name, rl := range a.reg.Realms {
 		if rl.Settings.AuthEnabled {
-			services[name] = &auth.Users{Store: mongodb.NewAuthStore(a.client, name), Hasher: hasher, Settings: rl.Settings, Realm: name, Log: a.log, Cipher: cipher, Cache: cache}
+			services[name] = &auth.Users{Store: mongodb.NewAuthStore(a.client, name), Hasher: hasher, Settings: rl.Settings, Realm: name, Log: a.log, Cipher: cipher, Cache: cache, Metrics: a.metrics}
 		}
 	}
 	a.userServices = func(realm string) *auth.Users { return services[realm] }
@@ -746,4 +771,43 @@ func warnAnonymousFunctionsWithoutRateLimit(reg *registry.Registry, log *slog.Lo
 			}
 		}
 	}
+}
+
+// commit is the VCS revision the binary was built from ("unknown" when the
+// build has none, such as a container build without .git).
+func commit() string {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, s := range info.Settings {
+			if s.Key == "vcs.revision" && s.Value != "" {
+				return s.Value[:min(len(s.Value), 12)]
+			}
+		}
+	}
+	return "unknown"
+}
+
+// jobStats reads every auth realm's job queue, for the metrics refresher.
+// A realm that fails doesn't hide the others.
+func (a *app) jobStats(ctx context.Context) (map[string]metrics.RealmJobs, error) {
+	out := map[string]metrics.RealmJobs{}
+	var errs []error
+	for _, realm := range a.reg.AuthRealms() {
+		svc := a.realmUsers()(realm)
+		src, ok := svc.Store.(metrics.JobSource)
+		if !ok {
+			continue
+		}
+		stats, err := src.JobStats(ctx, time.Now())
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		attention, err := src.EraseNeedsAttention(ctx)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		out[realm] = metrics.RealmJobs{Stats: stats, NeedsAttention: attention}
+	}
+	return out, errors.Join(errs...)
 }

@@ -41,7 +41,7 @@ func (s *Users) DeactivateAccount(ctx context.Context, p Principal, password str
 	if err := s.Store.UpdateUser(ctx, p.User.ID, UserUpdate{Disabled: &disabled}, s.now()); err != nil {
 		return err
 	}
-	if err := s.Store.DeleteSessions(ctx, p.User.ID); err != nil {
+	if err := s.endSessions(ctx, p.User.ID, "deactivated"); err != nil {
 		return err
 	}
 	s.Audit(ctx, AuditAccountDelete, userTarget(p.User.ID), nil)
@@ -94,6 +94,7 @@ func (s *Users) Erase(ctx context.Context, id, requestID string) (Job, error) {
 	if err != nil {
 		return Job{}, err
 	}
+	s.countSessions(ctx, id, "erased")
 	if err := s.Store.EraseUser(ctx, id, ErasedEmail(id), s.now()); err != nil {
 		return Job{}, err
 	}
