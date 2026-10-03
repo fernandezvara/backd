@@ -3,9 +3,12 @@ name: pages
 # Tag a release (v*) to publish the documentation site to GitHub Pages: the
 # site always shows the most recently tagged version.
 # Requires repo Settings → Pages → Source: "GitHub Actions".
+# To publish a docs fix between releases, run it by hand (Actions → pages → Run
+# workflow, on main): it publishes main's documentation.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: read
