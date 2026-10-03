@@ -39,6 +39,6 @@ Realms with `auth: disabled` are open to anyone who can reach `backd`: never exp
 
 - **v0.2.0** added users, single sign-on per realm, access rules and secure administration. See [upgrading to v0.2.0](operations/#upgrading-to-v020).
 - **v0.3.0** adds server-side functions, the flag-based command line, listing of jobs, and this documentation's Functions section. See the [release notes](https://github.com/fernandezvara/backd/releases) for what changed and what breaks.
-- Coming next: email verification and self-service password reset, metrics. Not built yet.
+- **v0.4.0** adds email (verification, password reset, address changes and invitations, through a delivery function you write or the Postmark example), hosted pages for the emailed links, custom emails from functions, erasure (deactivate by default, erase on request), Prometheus metrics with Grafana dashboards, the example attack scripts that CI runs, and the JavaScript client on npm (`backd-js`). See [upgrading to v0.4.0](operations/#upgrading-to-v040).
 
 `backd` has no installed base yet: until a stable release is declared, breaking changes are allowed and are listed in the [release notes](https://github.com/fernandezvara/backd/releases).

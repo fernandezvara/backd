@@ -133,6 +133,17 @@ blog__main.posts
 shop__orders.items
 ```
 
+### Upgrading to v0.4.0
+
+v0.4.0 adds [email flows](../functions/email/), [erasure](../auth/erasure/), [metrics](metrics/) and the npm client. Configuration that worked on v0.3.0 still loads and nothing new is required, but two behaviors change, so read the first two items.
+
+1. **Deleting a user means something else.** `DELETE /_auth/me` (a user deleting their own account) now **deactivates** it: the account is disabled and its sessions end, but the data and the email address are kept, and an administrator can reactivate it. `DELETE /_admin/users/{id}` and `backd user delete` now **erase**: the user becomes a tombstone (`erased-<id>@erased.invalid`, so the real address is free again) and a worker applies the `collection.yaml` policy of each collection that declares one; they answer `202` with an erase job, and `backd user delete` waits for it. Before, both removed the user and left every document alone. To get that effect now, declare no policy: an erase without policies leaves the documents as they are. A worker must be running (`backd worker`, or `serve --with-worker`); see [Deleting and erasing users](../auth/erasure/).
+2. **Provision before rolling out**, as always: each realm's system database gains collections and indexes (email tokens, an index of erase jobs), and `PROVISION_MODE=verify` refuses to start without them. The worker now claims jobs in every realm with authentication, not only those with functions.
+3. **Some addresses are refused.** Addresses on the reserved `.invalid` domain, with a comma, semicolon, colon, angle bracket, parenthesis, square bracket, quote or backslash, or longer than 254 characters no longer pass, at sign-up and when looked up. An existing account with such an address can't sign in by email until an administrator changes the address in the database. Ordinary addresses are not affected.
+4. **If you copied the [production reference](production/)**: the stricter rate-limit zone now covers password reset, verification, invitations and address changes (`nginx/backd.conf.template`), and it gained a Prometheus. Run its `setup.sh` again: it adds `BACKD_METRICS_TOKEN` to your `.env` and `secrets/metrics-token`.
+5. **The JavaScript client is on npm as `backd-js`** (`npm install backd-js`). It was never published as `@backd/client`: if you installed it from a checkout, change the import. Versions of `backd-js` before 0.2 were an unrelated, older library.
+6. **Metrics, email and the `account` settings are all off by default.** Turn them on when you want them: `METRICS_ADDR`, the `email` section of `realm.yaml` and `account.*`.
+
 ### Upgrading to v0.2.0
 
 v0.2.0 adds users and access rules and is a breaking release: every realm needs a [`realm.yaml`](../configuration/realm/), and authentication is on by default. To keep an existing realm working as before on a private network, give it a `realm.yaml` with `auth: disabled`; to protect it, provision it and give server-side clients [API keys](../auth/api-keys/).
