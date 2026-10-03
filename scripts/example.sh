@@ -79,6 +79,7 @@ cat <<MSG
   $origin/example/    the example apps (clients/js/examples): blog, expenses
   $origin/v1/…        backd's API (realms: blog, shop)
   http://localhost:9090/ Prometheus, scraping backd, the executor and egress
+  http://localhost:3000/ Grafana, with backd's dashboards
   http://localhost:8080/ redirects to $origin/
 
   After changing examples/config: docker compose restart backd
