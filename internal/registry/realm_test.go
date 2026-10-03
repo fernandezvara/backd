@@ -239,7 +239,7 @@ func TestNormalizeEmail(t *testing.T) {
 	if got, err := NormalizeEmail("  Jane.Doe@Example.COM "); err != nil || got != "jane.doe@example.com" {
 		t.Errorf("got %q, %v", got, err)
 	}
-	for _, in := range []string{"", "jane", "@example.com", "jane@", "a@b@c", "ja ne@x.io"} {
+	for _, in := range []string{"", "jane", "@example.com", "jane@", "a@b@c", "ja ne@x.io", "erased-abc@erased.invalid", "x@INVALID", "x@mail.Invalid"} {
 		if _, err := NormalizeEmail(in); err == nil {
 			t.Errorf("NormalizeEmail(%q): expected error", in)
 		}
