@@ -70,13 +70,13 @@ Replace `secrets/tls/edge.crt` and `edge.key` with a real certificate, for examp
 
 | Zone | Applies to | Rate | Burst |
 |---|---|---|---|
-| `auth` | `POST /v1/{realm}/_auth/signup` and `/_auth/login` | 10 per minute | 5 |
+| `auth` | `/v1/{realm}/_auth/` `signup`, `login`, `password`, `email` and the emailed-link flows (`verify-email`, `verify-email/resend`, `reset-password`, `reset-password/request`, `confirm-email-change`, `accept-invitation`) | 10 per minute | 5 |
 | `api` | everything under `/v1/` (including the two above) | 20 per second | 40 |
 | `conn` | open connections | 20 at a time | – |
 
 Requests over a limit get `429` with `Retry-After: 60` and the same error envelope as `backd` (`"code": "too_many_requests"`), so clients handle both alike.
 
-Signup and login get the strictest limit because each one costs the server a 64 MiB argon2id hash, and sign-up creates an account. With `signup: open`, this limit is your main defence against sign-up spam; consider `signup: invite` if you don't need open registration.
+Signup, login and the account flows get the strictest limit because each one costs the server a 64 MiB argon2id hash, sends an email or creates an account. (The hosted pages of the emailed links share it: opening a link and submitting its form are two requests.) With `signup: open`, this limit is your main defence against sign-up spam; consider `signup: invite` if you don't need open registration.
 
 Tune the numbers in `nginx/backd.conf.template` to your traffic:
 

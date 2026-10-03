@@ -120,6 +120,10 @@ sleep 7 # let the auth bucket refill a little
 codes=$(flood login '{"email":"nobody@example.com","password":"wrong password"}')
 echo "     login:  $codes"
 check "login floods get 429" sh -c "echo '$codes' | grep -q ' 429'"
+sleep 7
+codes=$(flood reset-password/request '{"email":"nobody@example.com"}')
+echo "     reset:  $codes"
+check "password-reset (emailing) floods get 429" sh -c "echo '$codes' | grep -q ' 429'"
 check "429 uses backd's error envelope with Retry-After" \
   sh -c "curl -si --cacert '$ca' -X POST -H 'Content-Type: application/json' -d '{}' '$api/_auth/login' | tr -d '\r' | grep -q '^retry-after: 60' && \
          curl -s --cacert '$ca' -X POST -H 'Content-Type: application/json' -d '{}' '$api/_auth/login' | grep -q '\"code\":\"too_many_requests\"'"
