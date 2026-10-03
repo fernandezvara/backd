@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/metrics"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -54,6 +55,8 @@ type Config struct {
 	// Dev rereads function bundle manifests on every call instead of once
 	// (BACKD_DEV), so a background rebuild is served without a restart.
 	Dev bool
+	// Metrics records what the API does; nil turns it off.
+	Metrics *metrics.Metrics
 }
 
 // DefaultOpTimeout is the per-request storage deadline when none is configured.
@@ -69,7 +72,7 @@ func NewHandler(cfg Config) http.Handler {
 		maxBody = DefaultMaxBodyBytes
 	}
 	r := chi.NewRouter()
-	r.Use(withRequestID(cfg.Log), withTrustedProxies(cfg.TrustedProxies), accessLog, recoverer, securityHeaders, cors(cfg.Registry), limitBody(maxBody))
+	r.Use(withRequestID(cfg.Log), withTrustedProxies(cfg.TrustedProxies), requestMetrics(cfg.Metrics), accessLog, recoverer, securityHeaders, cors(cfg.Registry), limitBody(maxBody))
 	r.NotFound(notFound)
 	r.MethodNotAllowed(methodNotAllowed)
 
@@ -135,7 +138,7 @@ func NewInternalHandler(cfg Config) http.Handler {
 		users = func(string) *auth.Users { return nil }
 	}
 	r := chi.NewRouter()
-	r.Use(withRequestID(cfg.Log), accessLog, recoverer, securityHeaders, limitBody(maxBody))
+	r.Use(withRequestID(cfg.Log), requestMetrics(cfg.Metrics), accessLog, recoverer, securityHeaders, limitBody(maxBody))
 	r.NotFound(notFound)
 	r.MethodNotAllowed(methodNotAllowed)
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {

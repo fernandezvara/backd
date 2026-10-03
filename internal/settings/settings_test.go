@@ -149,3 +149,36 @@ func maps(a, b map[string]string) map[string]string {
 	}
 	return m
 }
+
+func TestLoadMetrics(t *testing.T) {
+	base := map[string]string{"CONFIG_DIR": "/cfg", "MONGO_URI": "mongodb://m"}
+	with := func(kv ...string) func(string) string {
+		m := map[string]string{}
+		for k, v := range base {
+			m[k] = v
+		}
+		for i := 0; i < len(kv); i += 2 {
+			m[kv[i]] = kv[i+1]
+		}
+		return env(m)
+	}
+	token := strings.Repeat("t", 32)
+	if s, err := Load(with()); err != nil || s.MetricsAddr != "" {
+		t.Errorf("default: %+v, %v", s, err)
+	}
+	if s, err := Load(with("METRICS_ADDR", ":9090", "METRICS_TOKEN", token)); err != nil || s.MetricsAddr != ":9090" || s.MetricsToken != token {
+		t.Errorf("on: %+v, %v", s, err)
+	}
+	for name, e := range map[string]func(string) string{
+		"token alone":    with("METRICS_TOKEN", token),
+		"no port":        with("METRICS_ADDR", "localhost"),
+		"port 0":         with("METRICS_ADDR", ":0"),
+		"the public one": with("METRICS_ADDR", ":8080"),
+		"the internal":   with("METRICS_ADDR", ":8081"),
+		"short token":    with("METRICS_ADDR", ":9090", "METRICS_TOKEN", "short"),
+	} {
+		if _, err := Load(e); err == nil || !strings.Contains(err.Error(), "METRICS_") {
+			t.Errorf("%s: err = %v", name, err)
+		}
+	}
+}

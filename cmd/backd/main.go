@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"syscall"
@@ -24,6 +25,7 @@ import (
 	"github.com/fernandezvara/backd/internal/executor"
 	"github.com/fernandezvara/backd/internal/functions"
 	"github.com/fernandezvara/backd/internal/httpapi"
+	"github.com/fernandezvara/backd/internal/metrics"
 	"github.com/fernandezvara/backd/internal/mongodb"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/rules"
@@ -73,6 +75,8 @@ type app struct {
 	fingerprint  string                   // of CONFIG_DIR (registry.Fingerprint)
 	// withWorker runs the worker role in this process too (serve --with-worker).
 	withWorker bool
+	// metrics records what this process does; nil when METRICS_ADDR is unset.
+	metrics *metrics.Metrics
 }
 
 func setup(ctx context.Context, getenv func(string) string, logOut io.Writer) (*app, error) {
@@ -99,7 +103,11 @@ func setup(ctx context.Context, getenv func(string) string, logOut io.Writer) (*
 	if err != nil {
 		return nil, err
 	}
-	return &app{cfg: cfg, log: log, reg: reg, client: client, fingerprint: fingerprint}, nil
+	a := &app{cfg: cfg, log: log, reg: reg, client: client, fingerprint: fingerprint}
+	if cfg.MetricsAddr != "" {
+		a.metrics = metrics.New(version, commit())
+	}
+	return a, nil
 }
 
 func (a *app) close() { _ = a.client.Disconnect(context.Background()) }
@@ -188,7 +196,7 @@ func serve(ctx context.Context, a *app) error {
 		}, devWatchInterval)
 	}
 	needsInternal := a.hasFunctions() && a.cfg.ExecutorURL != ""
-	if !needsInternal && !a.withWorker {
+	if !needsInternal && !a.withWorker && a.metrics == nil {
 		return httpapi.Run(ctx, srv, ln, a.cfg.ShutdownTimeout, a.log)
 	}
 
@@ -196,6 +204,11 @@ func serve(ctx context.Context, a *app) error {
 	defer cancel()
 	tasks := []func() error{
 		func() error { return httpapi.Run(ctx, srv, ln, a.cfg.ShutdownTimeout, a.log) },
+	}
+	if a.metrics != nil {
+		tasks = append(tasks, func() error {
+			return a.metrics.Serve(ctx, a.cfg.MetricsAddr, a.cfg.MetricsToken, a.cfg.ShutdownTimeout, a.log.With("listener", "metrics"))
+		})
 	}
 	if needsInternal {
 		// The internal listener, for the executor and functions calling back.
@@ -254,6 +267,13 @@ func worker(ctx context.Context, a *app) error {
 	defer stop()
 	w := httpapi.NewWorker(a.handlerConfig(), workerID())
 	a.log.Info("worker ready", "version", version, "concurrency", a.cfg.WorkerConcurrency)
+	if a.metrics != nil {
+		go func() {
+			if err := a.metrics.Serve(ctx, a.cfg.MetricsAddr, a.cfg.MetricsToken, a.cfg.ShutdownTimeout, a.log.With("listener", "metrics")); err != nil {
+				a.log.Error("metrics listener", "error", err)
+			}
+		}()
+	}
 	w.Run(ctx, a.cfg.WorkerConcurrency)
 	return nil
 }
@@ -426,6 +446,7 @@ func (a *app) handlerConfig() httpapi.Config {
 		TrustedProxies:    a.cfg.TrustedProxies,
 		ConfigFingerprint: a.fingerprint,
 		Dev:               a.cfg.Dev,
+		Metrics:           a.metrics,
 	}
 }
 
@@ -746,4 +767,17 @@ func warnAnonymousFunctionsWithoutRateLimit(reg *registry.Registry, log *slog.Lo
 			}
 		}
 	}
+}
+
+// commit is the VCS revision the binary was built from ("unknown" when the
+// build has none, such as a container build without .git).
+func commit() string {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, s := range info.Settings {
+			if s.Key == "vcs.revision" && s.Value != "" {
+				return s.Value[:min(len(s.Value), 12)]
+			}
+		}
+	}
+	return "unknown"
 }
