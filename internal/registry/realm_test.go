@@ -147,6 +147,11 @@ func TestRealmSettingsErrors(t *testing.T) {
 		{"bad duration", "sessions:\n  idle_timeout: 3 weeks", []string{"sessions.idle_timeout: invalid duration"}},
 		{"too short", "sessions:\n  idle_timeout: 10s", []string{"must be at least 1m0s"}},
 		{"idle beyond max", "sessions:\n  idle_timeout: 100d", []string{"idle_timeout (2400h0m0s) must not exceed max_lifetime"}},
+		{"admin idle beyond idle", "sessions:\n  idle_timeout: 1d\n  admin_idle_timeout: 2d", []string{"admin_idle_timeout (48h0m0s) must not exceed idle_timeout (24h0m0s)"}},
+		{"admin max beyond max", "sessions:\n  max_lifetime: 10d\n  admin_max_lifetime: 20d", []string{"admin_max_lifetime (480h0m0s) must not exceed max_lifetime (240h0m0s)"}},
+		{"admin idle beyond admin max", "sessions:\n  admin_idle_timeout: 20d\n  admin_max_lifetime: 10d", []string{"admin_idle_timeout (480h0m0s) must not exceed admin_max_lifetime (240h0m0s)"}},
+		{"admin idle beyond the regular max", "sessions:\n  max_lifetime: 40d\n  admin_max_lifetime: 3d\n  admin_idle_timeout: 5d", []string{"admin_idle_timeout (120h0m0s) must not exceed admin_max_lifetime (72h0m0s)"}},
+		{"admin too short", "sessions:\n  admin_idle_timeout: 10s", []string{"sessions.admin_idle_timeout: must be at least 1m0s"}},
 		{"password too short", "password:\n  min_length: 6", []string{"password.min_length: must be between 8 and 128"}},
 		{"password too long", "password:\n  min_length: 200", []string{"between 8 and 128"}},
 		{"origin with path", "cors:\n  origins: ['https://a.example/app']", []string{"cors.origins[0]: invalid origin"}},
@@ -360,5 +365,29 @@ func TestNetworks(t *testing.T) {
 	wide, _ := ParseNetworks([]string{"0.0.0.0/0"})
 	if !inner.Within(n) || wide.Within(n) || !wide.Within(nil) {
 		t.Error("Within")
+	}
+}
+
+func TestAdminSessionLimits(t *testing.T) {
+	load := func(yaml string) RealmSettings {
+		t.Helper()
+		s, errs := parseRealmSettings([]byte(yaml))
+		if len(errs) > 0 {
+			t.Fatal(errs)
+		}
+		return s
+	}
+	// Unset: 0, meaning the regular limits.
+	if s := load("signup: open\n"); s.AdminIdleTimeout != 0 || s.AdminMaxLifetime != 0 {
+		t.Errorf("unset admin limits = %v, %v", s.AdminIdleTimeout, s.AdminMaxLifetime)
+	}
+	// One or both set; the other stays the regular one.
+	s := load("sessions:\n  admin_idle_timeout: 30m\n")
+	if s.AdminIdleTimeout != 30*time.Minute || s.AdminMaxLifetime != 0 {
+		t.Errorf("only admin_idle_timeout: %v, %v", s.AdminIdleTimeout, s.AdminMaxLifetime)
+	}
+	s = load("sessions:\n  idle_timeout: 7d\n  max_lifetime: 30d\n  admin_idle_timeout: 1h\n  admin_max_lifetime: 12h\n")
+	if s.AdminIdleTimeout != time.Hour || s.AdminMaxLifetime != 12*time.Hour || s.IdleTimeout != 7*24*time.Hour {
+		t.Errorf("both set: %+v", s)
 	}
 }

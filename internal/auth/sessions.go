@@ -71,11 +71,22 @@ func HashToken(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// expiry is when a session expires: after the idle timeout since its last
-// use, but never later than its maximum lifetime.
-func (s *Users) expiry(created, lastUsed time.Time) time.Time {
-	idle := lastUsed.Add(s.Settings.IdleTimeout)
-	if max := created.Add(s.Settings.MaxLifetime); max.Before(idle) {
+// expiry is when a user's session expires: after the idle timeout since its
+// last use, but never later than its maximum lifetime. Users who hold an
+// admin role have their own (shorter) limits, judged by the roles they hold
+// now: a promotion shortens their sessions from the next request on.
+func (s *Users) expiry(u User, created, lastUsed time.Time) time.Time {
+	idleTimeout, maxLifetime := s.Settings.IdleTimeout, s.Settings.MaxLifetime
+	if s.Settings.IsAdmin(u.Roles) {
+		if d := s.Settings.AdminIdleTimeout; d > 0 {
+			idleTimeout = d
+		}
+		if d := s.Settings.AdminMaxLifetime; d > 0 {
+			maxLifetime = d
+		}
+	}
+	idle := lastUsed.Add(idleTimeout)
+	if max := created.Add(maxLifetime); max.Before(idle) {
 		return max
 	}
 	return idle
@@ -205,7 +216,7 @@ func (s *Users) startSession(ctx context.Context, u User) (Principal, string, er
 	}
 	now := s.now()
 	sess := Session{ID: xid.New().String(), UserID: u.ID, TokenHash: HashToken(token), CreatedAt: now, LastUsedAt: now}
-	sess.ExpiresAt = s.expiry(now, now)
+	sess.ExpiresAt = s.expiry(u, now, now)
 	if err := s.Store.CreateSession(ctx, sess); err != nil {
 		return Principal{}, "", err
 	}
@@ -227,12 +238,14 @@ func (s *Users) Authenticate(ctx context.Context, token string) (Principal, erro
 		return Principal{}, err
 	}
 	now := s.now()
-	if !now.Before(sess.ExpiresAt) || u.Disabled {
+	// The stored expiry was set at the last write; the user's roles may have
+	// changed since, so the limits are applied again.
+	if !now.Before(sess.ExpiresAt) || !now.Before(s.expiry(u, sess.CreatedAt, sess.LastUsedAt)) || u.Disabled {
 		return Principal{}, ErrUnauthenticated
 	}
 	if now.Sub(sess.LastUsedAt) >= touchInterval {
 		sess.LastUsedAt = now
-		sess.ExpiresAt = s.expiry(sess.CreatedAt, now)
+		sess.ExpiresAt = s.expiry(u, sess.CreatedAt, now)
 		if err := s.Store.TouchSession(ctx, sess.ID, sess.LastUsedAt, sess.ExpiresAt); err != nil {
 			return Principal{}, err
 		}

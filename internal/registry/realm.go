@@ -55,10 +55,16 @@ const (
 // RealmSettings are the realm-level settings from realm.yaml, with
 // defaults applied.
 type RealmSettings struct {
-	AuthEnabled       bool
-	Signup            string
-	IdleTimeout       time.Duration
-	MaxLifetime       time.Duration
+	AuthEnabled bool
+	Signup      string
+	IdleTimeout time.Duration
+	MaxLifetime time.Duration
+	// AdminIdleTimeout and AdminMaxLifetime are the limits of the sessions of
+	// users who hold an admin role (sessions.admin_idle_timeout and
+	// sessions.admin_max_lifetime). 0 means the regular limit; set, they never
+	// exceed it.
+	AdminIdleTimeout  time.Duration
+	AdminMaxLifetime  time.Duration
 	PasswordMinLength int
 	CORSOrigins       []string
 	Roles             map[string]Role
@@ -213,8 +219,10 @@ type realmDoc struct {
 	Auth     *string `yaml:"auth"`
 	Signup   *string `yaml:"signup"`
 	Sessions *struct {
-		IdleTimeout *string `yaml:"idle_timeout"`
-		MaxLifetime *string `yaml:"max_lifetime"`
+		IdleTimeout      *string `yaml:"idle_timeout"`
+		MaxLifetime      *string `yaml:"max_lifetime"`
+		AdminIdleTimeout *string `yaml:"admin_idle_timeout"`
+		AdminMaxLifetime *string `yaml:"admin_max_lifetime"`
 	} `yaml:"sessions"`
 	Password *struct {
 		MinLength *int `yaml:"min_length"`
@@ -334,6 +342,14 @@ func (s RealmSettings) AdminRoles() []string {
 	return out
 }
 
+// cmpDuration is d, or fallback when d is unset (0).
+func cmpDuration(d, fallback time.Duration) time.Duration {
+	if d > 0 {
+		return d
+	}
+	return fallback
+}
+
 // IsAdmin reports whether roles include an admin role of the realm.
 func (s RealmSettings) IsAdmin(roles []string) bool {
 	for _, r := range roles {
@@ -420,6 +436,22 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 	}
 	if s.IdleTimeout > s.MaxLifetime {
 		errs = append(errs, fmt.Errorf("sessions: idle_timeout (%s) must not exceed max_lifetime (%s)", s.IdleTimeout, s.MaxLifetime))
+	}
+	// Admin sessions: unset (0) means the regular limits; set, they only
+	// shorten them.
+	if ss := doc.Sessions; ss != nil && (ss.AdminIdleTimeout != nil || ss.AdminMaxLifetime != nil) {
+		errs = appendDuration(errs, "sessions.admin_idle_timeout", ss.AdminIdleTimeout, &s.AdminIdleTimeout)
+		errs = appendDuration(errs, "sessions.admin_max_lifetime", ss.AdminMaxLifetime, &s.AdminMaxLifetime)
+		idle, max := cmpDuration(s.AdminIdleTimeout, s.IdleTimeout), cmpDuration(s.AdminMaxLifetime, s.MaxLifetime)
+		if idle > s.IdleTimeout {
+			errs = append(errs, fmt.Errorf("sessions.admin_idle_timeout (%s) must not exceed idle_timeout (%s): it is for shortening admin sessions", idle, s.IdleTimeout))
+		}
+		if max > s.MaxLifetime {
+			errs = append(errs, fmt.Errorf("sessions.admin_max_lifetime (%s) must not exceed max_lifetime (%s): it is for shortening admin sessions", max, s.MaxLifetime))
+		}
+		if idle > max {
+			errs = append(errs, fmt.Errorf("sessions: admin_idle_timeout (%s) must not exceed admin_max_lifetime (%s)", idle, max))
+		}
 	}
 
 	if a := doc.Audit; a != nil && a.Retention != nil {
