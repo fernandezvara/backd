@@ -1,0 +1,11 @@
+# A webhook: a partner feed pushes assets into the shelf. The sender has no
+# session, so invoke allows anonymous calls and the function itself is the
+# only check — it verifies the signature before anything else.
+#
+# `admin: true` because creating assets is a member's right, not a stranger's.
+# The signing secret is set with
+#   backd secret set --realm shelf --database main --name IMPORT_WEBHOOK_SECRET
+mode: webhook
+invoke: "true"
+admin: true
+secrets: [IMPORT_WEBHOOK_SECRET]

@@ -1,0 +1,10 @@
+{
+  "$comment": "The feed's events the import webhook has already handled (chapter 11). The unique index on event_id is what makes a retried delivery harmless.",
+  "type": "object",
+  "properties": {
+    "event_id": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "asset_id": { "type": "string", "maxLength": 100 }
+  },
+  "required": ["event_id"],
+  "additionalProperties": false
+}
