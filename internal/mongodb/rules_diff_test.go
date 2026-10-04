@@ -86,14 +86,15 @@ var diffRules = []string{
 // diffUsers are the callers: anonymous, users with and without roles.
 // Documents are owned by u1..u4 or nobody, and list some of them as members.
 var diffUsers = map[string]*rules.User{
-	"anonymous":   nil,
-	"u1 (a)":      {ID: "u1", Email: "Madrid", Roles: []string{"a"}},
-	"u2 (admin)":  {ID: "u2", Email: "Oslo", Roles: []string{"admin"}},
-	"u3":          {ID: "u3", Email: "ada@example.com"},
-	"u4 (editor)": {ID: "u4", Email: "bob@example.com", Roles: []string{"editor"}},
+	"anonymous":    nil,
+	"u1 (a)":       {ID: "u1", Email: "Madrid", Roles: []string{"a"}},
+	"u2 (admin)":   {ID: "u2", Email: "Oslo", Roles: []string{"admin"}},
+	"u3":           {ID: "u3", Email: "ada@example.com"},
+	"u4 (editor)":  {ID: "u4", Email: "bob@example.com", Roles: []string{"editor"}},
+	"u5 (curator)": {ID: "u5", Email: "cy@example.com", Roles: []string{"curator"}},
 }
 
-var diffRoles = []string{"admin", "a", "editor", "staff"}
+var diffRoles = []string{"admin", "a", "editor", "staff", "curator"}
 
 func diffFixture(t *testing.T) (*registry.Collection, *Repository) {
 	t.Helper()
@@ -106,7 +107,7 @@ func provisionOne(t *testing.T, schema string) (*registry.Collection, *Repositor
 	t.Helper()
 	client := testClient(t)
 	realm := testRealm(t, client)
-	reg := loadRegistryWith(t, realm, "roles:\n  admin: {}\n  a: {}\n  editor: {}\n  staff: {}\n", map[string]string{"app/items": schema})
+	reg := loadRegistryWith(t, realm, "roles:\n  admin: {}\n  a: {}\n  editor: {}\n  staff: {}\n  curator: {}\n", map[string]string{"app/items": schema})
 	log, _ := testLogger()
 	if err := (&Provisioner{Client: client, Registry: reg, Log: log}).Apply(context.Background()); err != nil {
 		t.Fatal(err)

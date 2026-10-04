@@ -71,7 +71,8 @@ type docGen struct {
 
 var (
 	stringPool = []string{`""`, `"a"`, `"ES"`, `"abc"`, `"news"`, `"ñandú ☃"`, `"u1"`, `"u2"`, `"u3"`,
-		`"ada@example.com"`, `"bob@example.com"`, `"cy@example.com"`, `"not an email"`, `"INV-000123"`, `"INV-12"`, `"active"`, `"EUR"`}
+		`"ada@example.com"`, `"bob@example.com"`, `"cy@example.com"`, `"not an email"`, `"INV-000123"`, `"INV-12"`, `"active"`, `"EUR"`,
+		`"559cca164c904a83a18c6358"`} // the last is 24 characters, for schemas with a minLength like a share token
 	integerPool = []string{`0`, `1`, `3`, `-1`, `1.0`, `1e2`, `-0`, `7.0e0`, `9007199254740993`,
 		`9223372036854775807`, `-9223372036854775808`, `9223372036854775808`, `1e30`}
 	numberPool = append(slices.Clone(integerPool), `0.5`, `1.5`, `2.25`, `-1e308`, `1e-3`, `2.5`)
