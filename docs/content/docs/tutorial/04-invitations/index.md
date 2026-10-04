@@ -21,7 +21,7 @@ and `docker compose restart backd`. Existing accounts keep working — this only
 curl -i -X POST http://localhost:8080/v1/shelf/_auth/signup \
   -H 'Content-Type: application/json' \
   -d '{"email":"newbie@example.com","password":"a-long-enough-password"}'
-# HTTP/1.1 403 Forbidden    {"error":{"code":"forbidden", …}}
+# HTTP/1.1 403 Forbidden    {"error":{"code":"forbidden","message":"sign-up requires an invitation", …}}
 ```
 
 A wrong, used, expired or mismatched token gets the same `403` — the answer never says which, so it can't be used to probe.

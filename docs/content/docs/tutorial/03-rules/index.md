@@ -51,7 +51,7 @@ delete: user != nil && document._meta.owner == user.id
 docker compose restart backd
 ```
 
-You need a second member to be the victim. In a private window sign up as another address (say `ana@shelf.example` — the realm is still open) and create an asset; or sign in as the member you created in chapter 2 and use the curator as the "other" user. Then, as one member, call the API with your session. A session is a token: sign in by hand and keep it in a variable —
+You need an asset that belongs to somebody else and that you can see: a *published* one (a draft of another member is invisible to you, so you couldn't even try). Any member can still set `published_at` (that is the hole below), so sign in as `curator@shelf.example` (same login call as below), create an asset with a `published_at` through the app's API calls or `curl`, and copy its `id`. Then, as the operator or your member, call the API with your session. A session is a token: sign in by hand and keep it in a variable —
 
 ```sh
 TOKEN=$(curl -s http://localhost:8080/v1/shelf/_auth/login \
@@ -64,7 +64,7 @@ curl -i -X PATCH http://localhost:8080/v1/shelf/main/assets/<their-asset-id> \
   -d '{"title":"hacked"}'
 ```
 
-The `PATCH` answers `403` — `document._meta.owner == user.id` refuses it. Listing assets shows published ones plus your own drafts; another member's drafts are invisible.
+The `PATCH` answers `403` — `document._meta.owner == user.id` refuses it. Try the same on the id of somebody else's **draft** and it answers `404`: the `read` rule hides it, so for you it doesn't exist. Listing assets shows published ones plus your own drafts.
 
 ## The hole
 
@@ -85,7 +85,7 @@ The my-assets **Edit** now works, and every write carries `If-Match` with the ve
 
 ## You should see
 
-- Anonymous `GET` on assets answers `401`; a member's `patch` on another's asset answers `403`.
+- Anonymous `GET` on assets answers `401`; a member's `patch` on another's published asset answers `403` (`404` on a draft they can't see).
 - Your drafts appear under **My assets** but not in the gallery; a published one appears in both.
 - **Edit** saves; **Delete** asks and removes.
 - Editing the same asset in two tabs: the second save shows the version-mismatch message.
