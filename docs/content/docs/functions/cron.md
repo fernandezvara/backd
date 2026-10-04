@@ -84,7 +84,7 @@ Runs go through the async queue, so schedules fire **only while at least one [wo
 ```yaml
 # compose.yaml: a dedicated worker, next to the API (env as in the production reference)
   worker:
-    image: ghcr.io/fernandezvara/backd:v0.5.0
+    image: ghcr.io/fernandezvara/backd:v0.6.0
     command: ["worker"]
     environment:
       CONFIG_DIR: /config

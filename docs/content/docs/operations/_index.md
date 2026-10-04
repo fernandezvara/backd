@@ -133,6 +133,19 @@ blog__main.posts
 shop__orders.items
 ```
 
+### Upgrading to v0.6.0
+
+v0.6.0 adds [soft delete](../configuration/config-dir/#soft-delete), [admin rights per role](../auth/admin/#admin-rights), [`Prefer: respond-async`](../functions/calling/#asking-for-a-job-prefer-respond-async) and [`login_throttle`](../configuration/realm/#keys). Configuration that worked on v0.5.0 still loads and behaves the same; each new feature is off until you use it. What to check:
+
+1. **Provision before rolling out**, as always. A collection with `soft_delete` gets its unique indexes rebuilt with `_meta.deleted_at` as the last key and, with a `retention`, a TTL index on `_meta.purge_at`; `PROVISION_MODE=verify` refuses to start until `backd provision` has created them. Collections that don't opt in are untouched.
+2. **Turning soft delete on for a collection that already has a unique index:** the old index stays (`backd` never drops one) and also covers deleted documents, so a deleted document's values stay taken until you drop it. `backd provision` warns about it by name; drop it once the new index exists.
+3. **Admin roles:** `admin: true` is what it was. A role can now list areas (`users`, `invitations`, `apikeys`, `secrets`, `audit`, `functions`) and an administrator can no longer hand out, or change a user who holds, rights they don't have themselves; admin API keys are created and revoked only by full administrators. Keep one role with `admin: true`: `backd bootstrap` needs it, and startup warns when a realm has none.
+4. **`restore` and `purge` are new rule keys** for collections that soft-delete. They are denied unless declared and `write` doesn't cover them; declaring one in a collection without `soft_delete` stops startup. `backd rules test` fixtures take `restore` and `purge` assertions and `_meta.deleted_at`.
+5. **Two query parameters are now meaningful:** `deleted` on list and get, and `purge` on `DELETE`. On a collection that doesn't soft-delete they still answer `400`, with a message that says so.
+6. **`Prefer: respond-async` is per call.** Nothing changes for callers who don't send it. Browser apps on another origin can now send `Idempotency-Key` and `Prefer` and read `Preference-Applied` and `Idempotent-Replayed`: the CORS allow and expose lists lacked them.
+7. **`login_throttle`** is optional; the defaults are the values the throttle always had.
+8. **The JavaScript client is 0.5.0** (`npm install backd-js@latest`): `deleted`, `purge` and `restore` on collections, `respondAsync` on `fn()`. It works with a v0.5.0 server for everything that existed before.
+
 ### Upgrading to v0.5.0
 
 v0.5.0 adds [cursor pagination](../api/querying/), [API key scopes](../auth/api-keys/), [session cookies](../auth/sessions/), [`Idempotency-Key` on creates](../api/documents/), [dates stored as dates](../configuration/config-dir/#dates) and `backd rules test`. Configuration that worked on v0.4.0 still loads; every new feature is off until you use it. What to check:
