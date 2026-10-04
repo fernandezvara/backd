@@ -1,0 +1,283 @@
+<!doctype html>
+<!--
+  Shelf — static snapshot (step 0 of the tutorial).
+
+  Every view the app will have, hard-coded. There is no JavaScript in this
+  file: each chapter of the tutorial replaces one static section with live
+  Alpine.js bindings. `view:` comments mark the seams.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shelf — your team's asset library</title>
+  <link rel="stylesheet" href="lib/pico.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Top bar (ch1): the nav the app always shows. -->
+  <nav class="container-fluid">
+    <ul>
+      <li><strong class="brand">Shelf App</strong></li>
+    </ul>
+    <ul>
+      <li><a href="#gallery" aria-current="page">Gallery</a></li>
+      <li><a href="#mine">My assets</a></li>
+      <li><a href="#notifications">Notifications <mark class="badge">3</mark></a></li>
+      <li><a href="#admin">Admin</a></li>
+      <li><a href="#auth" role="button" class="outline">Sign in</a></li>
+      <li><button id="theme-toggle" class="secondary outline sm" title="Toggle dark/light" aria-label="Toggle dark/light">◐</button></li>
+    </ul>
+  </nav>
+
+  <main class="container">
+
+    <!-- view: gallery (ch1) — public, paginated, filterable. -->
+    <section id="gallery">
+      <hgroup>
+        <h2>Gallery</h2>
+        <p>Everything the workspace has published.</p>
+      </hgroup>
+
+      <form class="toolbar" role="search">
+        <input type="search" placeholder="Filter by tag…" aria-label="Filter by tag">
+        <select aria-label="Sort">
+          <option>Newest first</option>
+          <option>Oldest first</option>
+          <option>Title A–Z</option>
+        </select>
+      </form>
+
+      <div class="grid">
+        <article>
+          <header>
+            <strong>The backd handbook</strong>
+            <span class="kind">link</span>
+          </header>
+          <p>Our internal guide to realms, rules and functions — start here.</p>
+          <footer>
+            <span class="muted">by ana@shelf.example · 2026-09-12</span>
+            <span class="tags"><a href="#">docs</a> <a href="#">onboarding</a></span>
+            <button class="secondary outline sm">Share</button>
+          </footer>
+        </article>
+
+        <article>
+          <header>
+            <strong>Deploy checklist</strong>
+            <span class="kind">note</span>
+          </header>
+          <p>Steps we run before every production deploy of the storefront.</p>
+          <footer>
+            <span class="muted">by bruno@shelf.example · 2026-09-08</span>
+            <span class="tags"><a href="#">ops</a></span>
+            <button class="secondary outline sm">Share</button>
+          </footer>
+        </article>
+
+        <article>
+          <header>
+            <strong>Vendor security review</strong>
+            <span class="kind">link</span>
+          </header>
+          <p>Questionnaire answers from the last audit, for the next one.</p>
+          <footer>
+            <span class="muted">by ana@shelf.example · 2026-08-30</span>
+            <span class="tags"><a href="#">security</a> <a href="#">vendor</a></span>
+            <button class="secondary outline sm">Share</button>
+          </footer>
+        </article>
+      </div>
+
+      <footer class="pager">
+        <button class="secondary sm" disabled>← Newer</button>
+        <span class="muted">Page 1</span>
+        <button class="secondary sm">Older →</button>
+      </footer>
+    </section>
+
+    <!-- view: share dialog (ch5) — expiring public link for one asset. -->
+    <section id="share">
+      <h3>Share “The backd handbook”</h3>
+      <article>
+        <p>Anyone with this link can read the asset until it expires.</p>
+        <fieldset role="group">
+          <input readonly value="https://shelf.example/s/xK7f2QpLmN9v">
+          <button class="secondary">Copy</button>
+        </fieldset>
+        <label>Expires
+          <select>
+            <option>in 7 days</option>
+            <option>in 30 days</option>
+            <option>never</option>
+          </select>
+        </label>
+        <footer>
+          <button>Create link</button>
+          <button class="secondary">Close</button>
+        </footer>
+      </article>
+      <p class="muted">Active links: <code>/s/xK7f2QpLmN9v</code> (expires 2026-10-01) <button class="link danger sm">revoke</button></p>
+    </section>
+
+    <!-- view: my assets (ch2→ch5) — own items, drafts and published. -->
+    <section id="mine">
+      <hgroup>
+        <h2>My assets</h2>
+        <p>Yours, whether published or not.</p>
+      </hgroup>
+
+      <article>
+        <header>
+          <strong>New asset</strong>
+        </header>
+        <form>
+          <div class="grid">
+            <label>Title <input placeholder="What is it?"></label>
+            <label>Kind
+              <select><option>link</option><option>note</option></select>
+            </label>
+          </div>
+          <label>URL <input type="url" placeholder="https://…"></label>
+          <label>Notes <textarea rows="3" placeholder="Why should the team care?"></textarea></label>
+          <label>Tags <input placeholder="comma, separated, tags"></label>
+          <footer>
+            <button type="button">Save draft</button>
+            <button type="button" class="secondary">Save &amp; publish</button>
+          </footer>
+        </form>
+      </article>
+
+      <article>
+        <header>
+          <strong>Reading list: auth in depth</strong>
+          <span class="badge draft">draft</span>
+        </header>
+        <p>Five links on sessions, tokens and rules, in the order to read them.</p>
+        <footer>
+          <span class="muted">updated 2026-09-20</span>
+          <span>
+            <button class="link sm">Edit</button>
+            <button class="link sm">Publish</button>
+            <button class="link danger sm">Delete</button>
+          </span>
+        </footer>
+      </article>
+
+      <article>
+        <header>
+          <strong>The backd handbook</strong>
+          <span class="badge pub">published</span>
+        </header>
+        <p>Our internal guide to realms, rules and functions — start here.</p>
+        <footer>
+          <span class="muted">published 2026-09-12</span>
+          <span>
+            <button class="link sm">Edit</button>
+            <button class="link danger sm">Unpublish</button>
+          </span>
+        </footer>
+      </article>
+    </section>
+
+    <!-- view: notifications (ch7→ch8) — what publish and digest create. -->
+    <section id="notifications">
+      <hgroup>
+        <h2>Notifications</h2>
+        <p>What happened since your last visit.</p>
+      </hgroup>
+      <article>
+        <ul class="notif">
+          <li class="unread"><strong>bruno@shelf.example</strong> published <em>Deploy checklist</em> <span class="muted">· 2 h ago</span></li>
+          <li class="unread">Your daily digest is ready — 4 new assets <span class="muted">· 8 h ago</span></li>
+          <li class="unread"><strong>carla@shelf.example</strong> invited you to curate <em>security</em> <span class="muted">· 1 d ago</span></li>
+          <li><strong>ana@shelf.example</strong> published <em>Vendor security review</em> <span class="muted">· 5 d ago</span></li>
+        </ul>
+      </article>
+    </section>
+
+    <!-- view: admin (ch12) — audit feed and operator tools. -->
+    <section id="admin">
+      <hgroup>
+        <h2>Admin</h2>
+        <p>Operators only: audit trail, users, runs by hand.</p>
+      </hgroup>
+      <article>
+        <header><strong>Audit trail</strong></header>
+        <table>
+          <thead><tr><th>When</th><th>Actor</th><th>Event</th><th>Target</th></tr></thead>
+          <tbody>
+            <tr><td>2026-09-21 09:41</td><td>operator@…</td><td><code>user.invite</code></td><td>carla@…</td></tr>
+            <tr><td>2026-09-20 18:02</td><td>operator@…</td><td><code>function.invoke_manual</code></td><td>main/digest</td></tr>
+            <tr><td>2026-09-20 07:15</td><td>operator@…</td><td><code>apikey.create</code></td><td>ci-reader</td></tr>
+            <tr><td>2026-09-19 12:33</td><td>ana@…</td><td><code>user.email_change</code></td><td>ana@…</td></tr>
+          </tbody>
+        </table>
+      </article>
+      <article>
+        <header><strong>Run by hand</strong></header>
+        <p class="muted">Admin-only: invoke any function, internal included.</p>
+        <fieldset role="group">
+          <select><option>digest</option><option>cleanup</option></select>
+          <button class="secondary">Invoke</button>
+        </fieldset>
+      </article>
+    </section>
+
+    <!-- view: auth (ch2) — sign in / up, plus the account page pieces. -->
+    <section id="auth">
+      <hgroup>
+        <h2>Sign in</h2>
+        <p>Or <a href="#signup">create an account</a>.</p>
+      </hgroup>
+      <article class="narrow">
+        <form>
+          <label>Email <input type="email" required></label>
+          <label>Password <input type="password" required></label>
+          <button type="button">Sign in</button>
+          <p class="muted"><a href="#reset">Forgot your password?</a></p>
+        </form>
+      </article>
+
+      <article class="narrow" id="verify">
+        <p><mark>Check your inbox</mark> — we sent a verification link to <strong>you@shelf.example</strong>.</p>
+      </article>
+
+      <article class="narrow" id="account">
+        <header><strong>Account</strong></header>
+        <p class="muted">Signed in as ana@shelf.example · role: member</p>
+        <form>
+          <label>Change email <input type="email" placeholder="new@address"></label>
+          <button type="button" class="secondary">Send confirmation</button>
+        </form>
+        <form>
+          <label>Change password <input type="password" placeholder="new password"></label>
+          <button type="button" class="secondary">Change password</button>
+        </form>
+        <hr>
+        <button type="button" class="contrast outline danger-zone">Delete my account</button>
+        <p class="muted">Deactivates your account; your assets follow the collection's erasure policy.</p>
+      </article>
+    </section>
+
+  </main>
+
+  <footer class="container">
+    <p class="muted">Shelf — a <a href="https://github.com/fernandezvara/backd">backd</a> tutorial app. Static snapshot: nothing here works yet.</p>
+  </footer>
+  <script>
+    // Snapshot only: this is the one piece of working UI (Pico reads
+    // data-theme on <html>). Chapters rebind it to Alpine state.
+    const root = document.documentElement;
+    root.dataset.theme = localStorage.getItem('shelf-theme') || '';
+    document.getElementById('theme-toggle').onclick = () => {
+      const dark = root.dataset.theme !== 'dark';
+      root.dataset.theme = dark ? 'dark' : 'light';
+      localStorage.setItem('shelf-theme', root.dataset.theme);
+    };
+  </script>
+
+
+</body>
+</html>

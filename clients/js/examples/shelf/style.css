@@ -1,0 +1,61 @@
+/* Shelf — small additions on top of PicoCSS. Pico styles the elements;
+   these cover the app-specific bits: badges, tags, the nav badge,
+   notifications and the pager. */
+
+.brand { font-size: 1.1rem; }
+
+/* Small buttons and quiet actions. */
+.sm { padding: .15rem .55rem; font-size: .85rem; }
+button.link, .link {
+  background: none; border: 0; color: var(--pico-primary);
+  padding: 0 .3rem; cursor: pointer; font-size: .85rem;
+}
+button.link.danger, .link.danger { color: var(--pico-del-color, #d93526); }
+
+/* Muted secondary text. */
+.muted { color: var(--pico-muted-color); font-size: .85rem; }
+
+/* Card headers: title left, kind/badges right. */
+article > header { display: flex; justify-content: space-between; align-items: center; }
+article > footer { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .5rem; }
+
+/* Asset kind marker. */
+.kind {
+  font-size: .75rem; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--pico-muted-color); border: 1px solid var(--pico-muted-border-color);
+  border-radius: 1rem; padding: .1rem .6rem;
+}
+
+/* State badges on My assets / nav. */
+.badge {
+  font-size: .75rem; border-radius: 1rem; padding: .1rem .6rem;
+}
+.badge.draft { background: var(--pico-mark-background-color); color: var(--pico-mark-color); }
+.badge.pub { background: var(--pico-ins-color); color: var(--pico-primary-inverse); }
+nav .badge { vertical-align: super; }
+
+/* Tag links sit flush. */
+.tags a { font-size: .85rem; margin-right: .4rem; }
+
+/* Gallery toolbar: filter + sort on one row. */
+.toolbar { display: flex; gap: .75rem; }
+.toolbar input { flex: 2; }
+.toolbar select { flex: 1; }
+
+/* Pager under the gallery. */
+.pager { display: flex; justify-content: center; align-items: baseline; gap: 1rem; }
+
+/* Notification list: unread rows stand out. */
+.notif { list-style: none; padding-left: 0; margin: 0; }
+.notif li { padding: .5rem 0; border-bottom: 1px solid var(--pico-muted-border-color); }
+.notif li:last-child { border-bottom: 0; }
+.notif li.unread { border-left: 3px solid var(--pico-primary); padding-left: .75rem; }
+
+/* Auth forms and notices stay narrow. */
+.narrow { max-width: 26rem; }
+
+/* Account deletion stays visibly dangerous but quiet. */
+.danger-zone { border-color: var(--pico-del-color, #d93526); color: var(--pico-del-color, #d93526); }
+
+/* Sections are stacked in the snapshot; chapters will toggle them. */
+main > section { margin-bottom: 3rem; }
