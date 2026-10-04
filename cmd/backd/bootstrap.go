@@ -43,7 +43,7 @@ func bootstrap(ctx context.Context, users *auth.Users, realm, email, role string
 	case role == "":
 		role = roles[0]
 	case !slices.Contains(roles, role):
-		return fmt.Errorf("%q isn't a role with `admin: true` in %s/realm.yaml; those are: %s", role, realm, strings.Join(roles, ", "))
+		return fmt.Errorf("%q isn't an admin role (one with `admin: true`) of %s/realm.yaml; those are: %s", role, realm, strings.Join(roles, ", "))
 	}
 	existing, err := users.List(ctx)
 	if err != nil {
