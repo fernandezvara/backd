@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/fernandezvara/backd/internal/jsonnum"
+	"github.com/fernandezvara/backd/internal/registry"
 )
 
 // Omission records a JSON Schema keyword that has no MongoDB $jsonSchema
@@ -128,9 +129,19 @@ func translateObject(s map[string]any, path string, om *[]Omission) map[string]a
 			out[k] = list
 		case k == "exclusiveMinimum", k == "exclusiveMaximum":
 			// handled below, after the plain bounds are known
-		case annotations[k]:
+		case annotations[k], k == registry.StoreKeyword:
+		case k == "format" && s[registry.StoreKeyword] == registry.StoreDate:
+			// A date-time stored as a date: the type below says it.
 		default:
 			*om = append(*om, Omission{Path: pointerOrRoot(path), Keyword: k})
+		}
+	}
+	if s[registry.StoreKeyword] == registry.StoreDate {
+		// Stored as a BSON Date: the type is date (or null), and the text
+		// keywords (checked absent at startup) have no meaning.
+		out["bsonType"] = "date"
+		if t, _ := s["type"].([]any); slices.Contains(t, any("null")) {
+			out["bsonType"] = []any{"date", "null"}
 		}
 	}
 	exclusiveBound(s, out, "exclusiveMinimum", "minimum", func(a, b float64) bool { return a >= b })

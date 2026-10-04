@@ -91,6 +91,11 @@ func (ix Index) String() string {
 // and indexed in addition to the schema's fields.
 var SystemFields = []string{"id", "_meta.created_at", "_meta.updated_at", "_meta.version", "_meta.owner", "_meta.created_by", "_meta.updated_by"}
 
+// DateField reports whether path is stored as a BSON Date.
+func (c *Collection) DateField(path string) bool {
+	return c.Fields[path].Date
+}
+
 // IsKnownField reports whether path is a system field or declared in the schema.
 func (c *Collection) IsKnownField(path string) bool {
 	if slices.Contains(SystemFields, path) {
@@ -134,6 +139,10 @@ func (c *Collection) throughArray(path string) bool {
 type Field struct {
 	Types     []string // JSON Schema types; empty when the schema doesn't constrain it
 	ItemTypes []string // for arrays: the types of the items, when declared
+	// Date marks a field stored as a BSON Date (x-backd-store: date in
+	// schema.json): clients send and read RFC 3339 strings, queries compare
+	// dates.
+	Date bool
 }
 
 // Has reports whether the field's declared types include t. An
