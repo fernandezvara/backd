@@ -52,6 +52,7 @@ make release-check  # build every release archive into dist/ without publishing
 make hack-expenses  # attack the expenses example (needs make example running)
 make hack-expenses-functions  # attack the expenses-with-functions example (needs make example running)
 make workshop-tour  # walk the workshop tour without a browser and check each step (needs make example running)
+make shelf-tour     # replay the Shelf tutorial's checks against the tutorial's own stack
 ```
 
 Documentation lives in [`docs/`](docs/) and is built with Hugo.

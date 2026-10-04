@@ -1,0 +1,5 @@
+[
+  { "fields": ["-published_at"] },
+  { "fields": ["tags", "-published_at"] },
+  { "fields": ["_meta.owner", "-published_at"] }
+]

@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "properties": {
+    "asset_id":   { "type": "string", "minLength": 1 },
+    "expires_in": { "enum": ["week", "month", "never"] }
+  },
+  "required": ["asset_id"],
+  "additionalProperties": false
+}

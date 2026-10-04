@@ -1,0 +1,9 @@
+# /s/{token}: resolves a share link for anyone holding it. Anonymous callers
+# land here (invoke: "true") — they never touch the shares collection itself,
+# and a rate limit makes token guessing expensive.
+admin: true
+invoke: "true"
+rate_limit:
+  per: ip
+  limit: 60
+  window: 1m

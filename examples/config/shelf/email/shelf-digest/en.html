@@ -1,0 +1,12 @@
+<!doctype html>
+<html>
+<body>
+  <p>Hello,</p>
+  <p>{{.Data.count}} asset{{if gt .Data.count 1.0}}s{{end}} published on <strong>{{.Realm}}</strong> since {{.Data.since}}:</p>
+  <ul>
+    {{range .Data.assets}}<li>{{.}}</li>
+    {{end}}
+  </ul>
+  <p>Open the gallery to read them.</p>
+</body>
+</html>

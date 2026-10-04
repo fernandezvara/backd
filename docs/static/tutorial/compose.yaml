@@ -1,0 +1,99 @@
+# The tutorial's local stack: released backd images over MongoDB, with the
+# executor and egress for the function chapters, behind nginx on one origin.
+#
+#   docker compose up -d        http://localhost:8080  → the app
+#   docker compose down -v      resets the data
+#
+# Expected layout next to this file:
+#   config/    the realms you write (chapter 1 creates config/shelf/realm.yaml)
+#   app/       the Shelf app (the snapshot you downloaded)
+#   client/    the backd-js source you downloaded
+services:
+  mongo:
+    image: docker.io/library/mongo:8.2
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "try { rs.status() } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo:27017'}]}) } if (!db.hello().isWritablePrimary) quit(1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # Bundles every realm's functions before backd starts (backd refuses stale
+  # or missing bundles). Does nothing until chapter 5 adds the first function.
+  functions-build:
+    image: ghcr.io/fernandezvara/backd-executor:latest   # backd plus the pinned Deno
+    entrypoint: ["/usr/local/bin/backd"]
+    command: ["functions", "build"]
+    user: root
+    environment:
+      CONFIG_DIR: /config
+    volumes:
+      - ./config:/config
+
+  backd:
+    image: ghcr.io/fernandezvara/backd:latest
+    command: ["serve", "--with-worker"]
+    environment:
+      CONFIG_DIR: /config
+      MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      LOG_LEVEL: info
+      TRUSTED_PROXIES: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7
+      # Functions: the executor runs each call in its own Deno process;
+      # --with-worker runs async jobs inside backd for a smaller stack.
+      # These tokens are dev-only, fixed, and never real secrets: this
+      # stack is for localhost, never the internet.
+      BACKD_INTERNAL_ADDR: ":8081"
+      BACKD_EXECUTOR_URL: http://executor:9100
+      BACKD_EXECUTOR_TOKEN: local-dev-executor-token-not-a-secret-0123456789
+      BACKD_CALLBACK_URL: http://backd:8081
+      BACKD_CALLBACK_KEY: local-dev-callback-key-not-a-secret-0123456789ab
+      BACKD_SECRETS_KEY: local-dev-secrets-key-not-a-secret-0123456789abc
+      # Dev mode enables dev_only functions (the email-capture in chapter 10).
+      # Links in emails point at nginx.
+      BACKD_DEV: "true"
+      BACKD_DEV_ANY_ADDR: "true"
+      BACKD_URL: http://localhost:8080
+    volumes:
+      - ./config:/config:ro
+    depends_on:
+      mongo:
+        condition: service_healthy
+      functions-build:
+        condition: service_completed_successfully
+    stop_grace_period: 20s
+
+  executor:
+    image: ghcr.io/fernandezvara/backd-executor:latest
+    environment:
+      BACKD_EXECUTOR_TOKEN: local-dev-executor-token-not-a-secret-0123456789
+      EXECUTOR_PROXY: http://egress:3128
+      BACKD_EGRESS_KEY: local-dev-egress-key-not-a-secret-0123456789abcd
+    depends_on:
+      - backd
+
+  egress:
+    image: ghcr.io/fernandezvara/backd:latest
+    command: ["egress"]
+    environment:
+      BACKD_EGRESS_KEY: local-dev-egress-key-not-a-secret-0123456789abcd
+      EGRESS_ALLOW_PRIVATE: "backd:8081"
+    depends_on:
+      - backd
+
+  # One origin for the app and the API: the app is served at / and talks to
+  # /v1 on the same host, exactly like the tutorial's final deployment.
+  nginx:
+    image: docker.io/library/nginx:1.29-alpine
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./app:/srv/app:ro
+      - ./client:/srv/client:ro
+    depends_on:
+      - backd
+
+volumes:
+  mongo-data:

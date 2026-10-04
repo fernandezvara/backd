@@ -1,0 +1,6 @@
+# Any member mints an expiring public link for a published asset: the token
+# is generated server-side and the asset is checked — the two things the
+# collection's rules couldn't say (the HOLE comments, closed here).
+admin: true
+invoke: "user != nil"
+idempotency: required

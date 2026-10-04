@@ -1,0 +1,4 @@
+# Erasure policy (docs: Auth -> Deleting and erasing users): share links a
+# member created die with the member.
+on_owner_delete:
+  action: delete

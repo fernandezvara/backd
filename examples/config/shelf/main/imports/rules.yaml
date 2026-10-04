@@ -1,0 +1,3 @@
+# Only the import function writes events. Admins may read the list (it's a
+# record of what the feed delivered); nobody else needs it.
+read: user != nil && hasRole(user, 'admin')

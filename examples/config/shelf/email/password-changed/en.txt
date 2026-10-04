@@ -1,0 +1,3 @@
+Hello,
+
+The password of {{.User.Email}} on {{.Realm}} was just changed. If it was you, nothing else is needed. If it wasn't, reset your password now and contact the people who run this service.

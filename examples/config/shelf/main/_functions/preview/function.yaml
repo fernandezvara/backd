@@ -1,0 +1,6 @@
+# Fetches a link's title and description for the new-asset form. This is the
+# first function that reaches outside: `network` is the whole allowlist —
+# api.microlink.io answers, every other host is refused at the egress. It
+# touches no collection, so no `admin:` either.
+invoke: "user != nil"
+network: [api.microlink.io]

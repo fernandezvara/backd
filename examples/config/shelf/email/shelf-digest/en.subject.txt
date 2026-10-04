@@ -1,0 +1,1 @@
+{{.Data.count}} new on {{.Realm}} since {{.Data.since}}

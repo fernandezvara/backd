@@ -1,6 +1,6 @@
 COMPOSE_TEST = docker compose -f docker-compose.test.yml
 
-.PHONY: build test test-local vet lint-api js-test js-package js-integration functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour example-attacks release-check
+.PHONY: build test test-local vet lint-api js-test js-package js-integration functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour example-attacks release-check
 
 build:
 	go build -o bin/backd ./cmd/backd
@@ -35,7 +35,7 @@ js-integration:
 # @backd/functions-testing's own tests (needs Deno; the dockerized test
 # image already has it).
 functions-testing-test:
-	$(COMPOSE_TEST) run --rm --build --entrypoint deno tests test clients/functions-testing/src/ examples/config/workshop/main/_functions/ examples/config/workshop/notifications/_functions/
+	$(COMPOSE_TEST) run --rm --build --entrypoint deno tests test clients/functions-testing/src/ examples/config/workshop/main/_functions/ examples/config/workshop/notifications/_functions/ examples/config/shelf/main/_functions/
 	$(COMPOSE_TEST) down -v
 
 # Lint api/openapi.yaml (needs Node). The Go contract tests check the server against it.
@@ -80,6 +80,13 @@ hack-expenses-functions:
 # async report, and what an operator can see and do.
 workshop-tour:
 	NODE_EXTRA_CA_CERTS=docker/certs/ca.crt node clients/js/examples/workshop/tour.js
+
+# Replays the shelf tutorial's claims (clients/js/examples/shelf) without a
+# browser on the running tutorial stack (its compose file, BACKD_URL
+# http://localhost:8080). On a fresh stack it bootstraps the operator through
+# `docker compose exec backd` — run it where that project is up.
+shelf-tour:
+	node clients/js/examples/shelf/tour.js
 
 # Checks the release configuration and builds every release artifact into
 # dist/, without publishing (the release workflow runs on version tags).

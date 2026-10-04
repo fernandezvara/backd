@@ -1,0 +1,43 @@
+# The "shelf" realm: a team asset library — the application the Tutorial
+# builds, chapter by chapter (docs: Tutorial). The files here are its final
+# state; each chapter says what to add or change.
+#
+# Chapter 2 turns auth on; chapter 4 closes the door: new members sign up
+# only with an invitation (signup: invite). The seeded addresses below gain
+# their roles when they sign up — demo users like these belong in local
+# stacks only. `backd bootstrap --realm shelf --email <email>` creates the
+# first administrator on a fresh database.
+auth: enabled
+signup: invite
+
+# Chapter 10 wires email: the invitation a member sends, the verification
+# and reset flows, and the digest. In the local stack the delivery function
+# is email-capture — messages land in the mail/outbox collection (read it in
+# the app's Admin view) instead of being sent; BACKD_DEV=true is required.
+# For real delivery, point `function` at mail/postmark and set its secrets.
+email:
+  function: mail/email-capture
+  from: "Shelf <no-reply@shelf.example>"
+  # Where hosted pages may send people afterwards — the app itself.
+  allowed_redirects: [http://localhost:8080]
+  redirects:
+    verify_email: http://localhost:8080/
+    reset_password: http://localhost:8080/
+    change_email: http://localhost:8080/
+    invitation: http://localhost:8080/
+
+# Members may change their own address (the account page wires it): the new
+# address confirms, the old one can undo.
+account:
+  allow_email_change: true
+
+roles:
+  admin:
+    description: "Operators: users, invitations and API keys"
+    admin: true
+    users:
+      - operator@shelf.example
+  curator:
+    description: Publishes assets and manages share links (chapter 5)
+    users:
+      - curator@shelf.example

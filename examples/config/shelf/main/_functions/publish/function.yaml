@@ -1,0 +1,14 @@
+# Curators publish a member's draft: published_at becomes the server's now —
+# a field the rules forbid clients to write (see the HOLE comment in
+# assets/rules.yaml, closed here).
+#
+# - `admin: true` gives ctx.admin.db, full access recorded as this function.
+# - Only curators may call it (API keys always may).
+# - `idempotency: required`: a retried request with the same Idempotency-Key
+#   gets the first answer back instead of publishing twice.
+admin: true
+invoke: "user != nil && hasRole(user, 'curator')"
+idempotency: required
+# It may call these functions of the database, and no others: notify is
+# internal, so `POST _func/notify` answers 404 and the graph is closed.
+calls: [notify]

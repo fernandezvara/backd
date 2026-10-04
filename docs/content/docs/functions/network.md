@@ -24,7 +24,7 @@ const res = await fetch("https://api.mailer.example/v1/send", {
   headers: { "content-type": "application/json", authorization: `Bearer ${ctx.secrets.MAILER_KEY}` },
   body: JSON.stringify({ to: "ops@example.com", subject: `Digest ${day}`, text: `${orders} orders, ${revenue / 100} in revenue` }),
 });
-if (!res.ok) throw ctx.error(502, "mailer_failed", `the mail provider answered ${res.status}`);
+if (!res.ok) throw ctx.error(424, "mailer_failed", `the mail provider answered ${res.status}`);
 ```
 
 - A request to any host not in `network` fails, and so does one to a private, loopback or link-local address, even for a declared host name that resolves to one.

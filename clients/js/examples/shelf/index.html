@@ -1,0 +1,447 @@
+<!doctype html>
+<!--
+  Shelf — static snapshot (step 0 of the tutorial).
+
+  Every view the app will have, hard-coded. There is no JavaScript in this
+  file: each chapter of the tutorial replaces one static section with live
+  Alpine.js bindings. `view:` comments mark the seams.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shelf — your team's asset library</title>
+  <link rel="stylesheet" href="lib/pico.min.css">
+  <link rel="stylesheet" href="style.css">
+  <!-- Resolves `import … from 'backd-js'`, as a bundler would; the stack
+       serves the client source at /example/client/. -->
+  <script type="importmap">{ "imports": { "backd-js": "/example/client/index.js" } }</script>
+  <!-- The app registers its component on alpine:init, so it loads before Alpine. -->
+  <script type="module" src="app.js"></script>
+  <script defer src="lib/alpine.min.js"></script>
+</head>
+<body x-data="shelf">
+
+  <!-- Top bar (ch1): the nav the app always shows. -->
+  <nav class="container-fluid">
+    <ul>
+      <li><strong class="brand">Shelf App</strong></li>
+    </ul>
+    <ul>
+      <li><a href="#gallery" :aria-current="view === 'gallery' ? 'page' : null">Gallery</a></li>
+      <li><a href="#mine" :aria-current="view === 'mine' ? 'page' : null">My assets</a></li>
+      <li x-show="isCurator"><a href="#review" :aria-current="view === 'review' ? 'page' : null">Review <mark class="badge" x-show="drafts.length" x-text="drafts.length"></mark></a></li>
+      <li><a href="#notifications" :aria-current="view === 'notifications' ? 'page' : null">Notifications <mark class="badge" x-show="unreadCount" x-text="unreadCount"></mark></a></li>
+      <li><a href="#admin" :aria-current="view === 'admin' ? 'page' : null">Admin</a></li>
+      <li x-show="!user"><a href="#auth" role="button" class="outline">Sign in</a></li>
+      <template x-if="user">
+        <li><a href="#account" class="muted" x-text="user?.email"></a>
+          <button class="link" @click="logout" :disabled="busy">Log out</button></li>
+      </template>
+      <li><button id="theme-toggle" class="secondary outline sm" title="Toggle dark/light" aria-label="Toggle dark/light">◐</button></li>
+    </ul>
+  </nav>
+
+  <main class="container" x-cloak :class="{ publiclink: sharedDoc || shareErr }">
+
+    <p class="error" x-show="error" x-text="error" role="alert"></p>
+
+    <!-- view: shared asset (ch5) — what ?s=<token> shows a stranger. -->
+    <section id="shared-view" x-show="sharedDoc || shareErr">
+      <article>
+        <p x-show="shareErr" class="error" x-text="shareErr"></p>
+        <template x-if="sharedDoc">
+          <div>
+            <header>
+              <strong x-text="sharedDoc?.title"></strong>
+              <span class="kind" x-text="sharedDoc?.kind"></span>
+            </header>
+            <p>
+              <a x-show="sharedDoc?.url" :href="sharedDoc?.url" x-text="sharedDoc?.url"></a>
+              <span x-text="sharedDoc?.body"></span>
+            </p>
+            <footer>
+              <span class="tags">
+                <template x-for="t in sharedDoc?.tags ?? []" :key="t">
+                  <code x-text="t"></code>
+                </template>
+              </span>
+              <span class="muted" x-text="sharedDoc?.published_at ? 'shared · published ' + new Date(sharedDoc.published_at).toLocaleDateString() : ''"></span>
+            </footer>
+          </div>
+        </template>
+      </article>
+      <p class="muted"><a href="/">Shelf</a> — a team asset library.</p>
+    </section>
+
+    <!-- view: gallery (ch1, wired) — public, paginated, filterable. -->
+    <section id="gallery" x-show="view === 'gallery'">
+      <hgroup>
+        <h2>Gallery</h2>
+        <p>Everything the workspace has published.</p>
+      </hgroup>
+
+      <form class="toolbar" role="search" @submit.prevent>
+        <input type="search" placeholder="Filter by tag…" aria-label="Filter by tag"
+               x-model="tag" @input.debounce.400ms="refilter">
+        <select aria-label="Sort" x-model="sort" @change="refilter">
+          <option value="-published_at">Newest first</option>
+          <option value="published_at">Oldest first</option>
+          <option value="title">Title A–Z</option>
+        </select>
+      </form>
+
+      <article x-show="!user && !open">
+        <p><a href="#auth">Sign in or sign up</a> to see the gallery.</p>
+      </article>
+      <p class="muted" x-show="(user || open) && !busy && assets.length === 0">Nothing published yet.</p>
+      <div class="grid" x-show="user || open">
+        <template x-for="asset in assets" :key="asset.id">
+          <article>
+            <header>
+              <strong x-text="asset.title"></strong>
+              <span class="kind" x-text="asset.kind"></span>
+            </header>
+            <p>
+              <a x-show="asset.url" :href="asset.url" x-text="asset.url"></a>
+              <span x-text="asset.body"></span>
+            </p>
+            <footer>
+              <span class="muted" x-text="(asset.published_at ? new Date(asset.published_at).toLocaleDateString() : 'draft') + (byline(asset) ? ' · ' + byline(asset) : '')"></span>
+              <span class="tags">
+                <template x-for="t in asset.tags ?? []" :key="t">
+                  <a href="#" @click.prevent="tag = t; refilter()" x-text="t"></a>
+                </template>
+              </span>
+              <button class="secondary outline sm" @click="startShare(asset)">Share</button>
+            </footer>
+          </article>
+        </template>
+      </div>
+
+      <footer class="pager">
+        <button class="secondary sm" x-show="hasMore" @click="load" :disabled="busy">Load more</button>
+      </footer>
+    </section>
+
+    <!-- view: share dialog (ch5, wired) — expiring public link for one asset. -->
+    <section id="share" x-show="sharing">
+      <h3>Share “<span x-text="sharing?.title"></span>”</h3>
+      <article>
+        <p>Anyone with this link can read the asset until it expires.</p>
+        <form @submit.prevent="createShare">
+          <fieldset role="group">
+            <select x-model="shareExpiry" aria-label="Expires">
+              <option value="week">in 7 days</option>
+              <option value="month">in 30 days</option>
+              <option value="never">never</option>
+            </select>
+            <button type="submit" :disabled="busy">New link</button>
+          </fieldset>
+        </form>
+        <template x-if="shareLink">
+          <fieldset role="group">
+            <input readonly :value="shareLink">
+            <button class="secondary" @click="navigator.clipboard?.writeText(shareLink)">Copy</button>
+          </fieldset>
+        </template>
+      </article>
+      <article x-show="myShares.length">
+        <header><strong>My active links</strong></header>
+        <ul class="notif">
+          <template x-for="s in myShares" :key="s.id">
+            <li>
+              <code x-text="'/s/' + s.token"></code>
+              <span class="muted" x-text="s.expires_at ? 'expires ' + new Date(s.expires_at).toLocaleDateString() : 'never expires'"></span>
+              <button class="link danger sm" @click="revokeShare(s)">revoke</button>
+            </li>
+          </template>
+        </ul>
+      </article>
+    </section>
+
+    <!-- view: my assets (ch2→ch5) — own items, drafts and published. -->
+    <section id="mine" x-show="view === 'mine'">
+      <hgroup>
+        <h2>My assets</h2>
+        <p>Yours, whether published or not.</p>
+      </hgroup>
+
+      <article>
+        <header>
+          <strong>New asset</strong>
+        </header>
+        <form @submit.prevent="create">
+          <div class="grid">
+            <label>Title <input placeholder="What is it?" x-model="draft.title" required></label>
+            <label>Kind
+              <select x-model="draft.kind"><option value="link">link</option><option value="note">note</option></select>
+            </label>
+          </div>
+          <label x-show="draft.kind === 'link'">URL
+            <fieldset role="group">
+              <input type="url" placeholder="https://…" x-model="draft.url">
+              <button type="button" class="secondary" @click="fetchPreview" :disabled="busy || !draft.url">Preview</button>
+            </fieldset>
+          </label>
+          <label>Notes <textarea rows="3" placeholder="Why should the team care?" x-model="draft.body"></textarea></label>
+          <label>Tags <input placeholder="comma, separated, tags" x-model="draft.tags"></label>
+          <footer>
+            <button type="submit" :disabled="busy">Save draft</button>
+          </footer>
+        </form>
+      </article>
+
+      <p class="muted" x-show="!user">Sign in to see your assets.</p>
+      <template x-for="asset in mine" :key="asset.id">
+        <article>
+          <template x-if="editing?.id === asset.id">
+            <form @submit.prevent="saveEdit" @keydown.escape="editing = null">
+              <label>Title <input x-model="editing.title" required></label>
+              <label>URL <input type="url" x-model="editing.url" x-show="asset.kind === 'link'"></label>
+              <label>Notes <textarea rows="3" x-model="editing.body"></textarea></label>
+              <label>Tags <input x-model="editing.tags"></label>
+              <footer>
+                <button type="submit" :disabled="busy">Save</button>
+                <button type="button" class="link" @click="editing = null" :disabled="busy">Cancel</button>
+              </footer>
+            </form>
+          </template>
+          <template x-if="editing?.id !== asset.id">
+            <div>
+              <header>
+                <strong x-text="asset.title"></strong>
+                <span class="badge" :class="asset.published_at ? 'pub' : 'draft'"
+                      x-text="asset.published_at ? 'published' : 'draft'"></span>
+              </header>
+              <p x-text="asset.body"></p>
+              <footer>
+                <span class="muted" x-text="asset.published_at ? 'published ' + new Date(asset.published_at).toLocaleDateString() : 'draft'"></span>
+                <span>
+                  <button class="link sm" @click="startEdit(asset)" :disabled="busy || editing !== null">Edit</button>
+                  <button class="link sm" x-show="isCurator && !asset.published_at" @click="publish(asset)" :disabled="busy">Publish</button>
+                  <button class="link sm" x-show="asset.published_at" @click="startShare(asset)">Share</button>
+                  <button class="link danger sm" @click="remove(asset)" :disabled="busy">Delete</button>
+                </span>
+              </footer>
+            </div>
+          </template>
+        </article>
+      </template>
+    </section>
+
+    <!-- view: review (ch5, curators) — every member's unpublished assets. -->
+    <section id="review" x-show="view === 'review' && isCurator">
+      <hgroup>
+        <h2>Drafts to review</h2>
+        <p>Unpublished assets of every member — publish what is ready.</p>
+      </hgroup>
+      <p class="muted" x-show="drafts.length === 0">Nothing waiting.</p>
+      <template x-for="asset in drafts" :key="asset.id">
+        <article>
+          <header>
+            <strong x-text="asset.title"></strong>
+            <span class="badge draft" x-text="asset.kind"></span>
+          </header>
+          <p x-show="asset.url"><a :href="asset.url" x-text="asset.url" rel="noopener"></a></p>
+          <p x-text="asset.body"></p>
+          <footer>
+            <span class="muted" x-text="(asset._meta.owner ? 'by a member' : 'imported (no owner)') + ' · ' + new Date(asset._meta.created_at).toLocaleDateString()"></span>
+            <button class="link sm" @click="publish(asset)" :disabled="busy">Publish</button>
+          </footer>
+        </article>
+      </template>
+    </section>
+
+    <!-- view: notifications (ch7, wired) — what publish and digest create. -->
+    <section id="notifications" x-show="view === 'notifications'">
+      <hgroup>
+        <h2>Notifications</h2>
+        <p>What happened since your last visit.</p>
+      </hgroup>
+      <p class="muted" x-show="!user">Sign in to see notifications.</p>
+      <p class="muted" x-show="user && !notifs.length">Nothing yet — publish an asset as a curator.</p>
+      <article x-show="user && notifs.length">
+        <ul class="notif">
+          <template x-for="n in notifs" :key="n.id">
+            <li :class="{ unread: !n.read_at }">
+              <code x-text="n.kind"></code> — <span x-text="n.text"></span>
+              <span class="muted" x-text="new Date(n._meta.created_at).toLocaleString()"></span>
+            </li>
+          </template>
+        </ul>
+        <footer><button class="link sm" @click="markAllRead" :disabled="!unreadCount">Mark all read</button></footer>
+      </article>
+    </section>
+
+    <!-- view: admin (ch12) — audit feed and operator tools. -->
+    <section id="admin" x-show="view === 'admin'">
+      <hgroup>
+        <h2>Admin</h2>
+        <p>Operators only: audit trail, users, runs by hand.</p>
+      </hgroup>
+      <!-- view: audit trail (ch12, wired) — who did what, newest first. -->
+      <article x-show="isAdmin">
+        <header><strong>Audit trail</strong> <button class="link sm" @click="loadAudit">refresh</button></header>
+        <table x-show="audit.length">
+          <thead><tr><th>When</th><th>Actor</th><th>Event</th><th>Target</th></tr></thead>
+          <tbody>
+            <template x-for="e in audit" :key="e.id">
+              <tr>
+                <td x-text="new Date(e.at).toLocaleString()"></td>
+                <td x-text="e.actor"></td>
+                <td><code x-text="e.action"></code></td>
+                <td x-text="e.target ?? ''"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <p class="muted" x-show="!audit.length">Nothing yet — invites, keys and function runs land here.</p>
+      </article>
+
+      <!-- view: API keys (ch12, wired) — one key per service, expiring. -->
+      <article x-show="isAdmin">
+        <header><strong>API keys</strong></header>
+        <form @submit.prevent="createKey">
+          <fieldset role="group">
+            <input x-model="newKeyName" placeholder="ci-reader" required>
+            <button type="submit" :disabled="busy">Create read:main key</button>
+          </fieldset>
+        </form>
+        <template x-if="newKey">
+          <p>Shown once — copy it now:
+            <fieldset role="group">
+              <input readonly :value="newKey.key">
+              <button class="secondary" @click="navigator.clipboard?.writeText(newKey.key)">Copy</button>
+            </fieldset>
+          </p>
+        </template>
+        <ul class="notif" x-show="apiKeys.length">
+          <template x-for="k in apiKeys" :key="k.name">
+            <li>
+              <code x-text="k.name"></code> <span class="muted" x-text="k.prefix + '…' + (k.expires_at ? ' · expires ' + new Date(k.expires_at).toLocaleDateString() : ' · no expiry')"></span>
+              <button class="link danger sm" @click="revokeKey(k.name)">revoke</button>
+            </li>
+          </template>
+        </ul>
+      </article>
+      <!-- view: invitations (ch4, wired) — operators only. -->
+      <article x-show="isAdmin">
+        <header><strong>Invite a member</strong></header>
+        <form @submit.prevent="createInvite">
+          <fieldset role="group">
+            <input type="email" x-model="inviteEmail" placeholder="new-member@example.com">
+            <button type="submit" :disabled="busy">Invite</button>
+          </fieldset>
+          <label><input type="checkbox" x-model="inviteSend"> email the invitation (lands in the mailbox below; untick to get a link to hand over)</label>
+        </form>
+        <template x-if="inviteLink">
+          <p>Send this link — it works once:
+            <fieldset role="group">
+              <input readonly :value="inviteLink">
+              <button class="secondary" @click="navigator.clipboard?.writeText(inviteLink)">Copy</button>
+            </fieldset>
+          </p>
+        </template>
+        <ul class="notif" x-show="pendingInvites.length">
+          <template x-for="inv in pendingInvites" :key="inv.id">
+            <li>
+              <code x-text="inv.email ?? 'any address'"></code>
+              <span class="muted" x-text="' · expires ' + new Date(inv.expires_at).toLocaleDateString()"></span>
+              <button class="link danger sm" @click="revokeInvite(inv.id)">revoke</button>
+            </li>
+          </template>
+        </ul>
+      </article>
+
+      <article x-show="isAdmin">
+        <header><strong>Run by hand</strong></header>
+        <p class="muted">Admin-only: invoke any function, internal included.</p>
+        <fieldset role="group">
+          <select x-model="fnName"><option value="digest">digest</option><option value="cleanup">cleanup</option></select>
+          <button class="secondary" @click="runFunction" :disabled="busy">Invoke</button>
+        </fieldset>
+        <p x-show="jobId"><code x-text="jobId"></code> — <strong x-text="jobStatus"></strong></p>
+        <pre x-show="jobResult" x-text="JSON.stringify(jobResult, null, 2)"></pre>
+      </article>
+
+      <!-- view: mailbox (ch10) — the emails email-capture stored instead of sending. -->
+      <article x-show="isAdmin">
+        <header><strong>Mailbox</strong> <button class="link sm" @click="loadMailbox">refresh</button></header>
+        <p class="muted">What email-capture stored instead of sending (dev only).</p>
+        <ul class="notif">
+          <template x-for="m in mailbox" :key="m.id">
+            <li>
+              <code x-text="m.kind"></code> → <span x-text="(m.to ?? []).join(', ')"></span> —
+              <span x-text="m.subject"></span>
+              <a x-show="m.link" :href="m.link">open link</a>
+              <span class="muted" x-text="new Date(m._meta.created_at).toLocaleString()"></span>
+            </li>
+          </template>
+        </ul>
+      </article>
+    </section>
+
+    <!-- view: auth (ch2, wired) — sign in / up, plus the account page. -->
+    <section id="auth" x-show="view === 'auth' && !user">
+      <hgroup>
+        <h2 x-text="mode === 'login' ? 'Sign in' : 'Sign up'"></h2>
+        <p x-show="mode === 'login'">Or <a href="#" @click.prevent="mode = 'signup'">create an account</a>.</p>
+        <p x-show="mode === 'signup'">Or <a href="#" @click.prevent="mode = 'login'">sign in</a>.</p>
+      </hgroup>
+      <article class="narrow">
+        <form @submit.prevent="submitAuth">
+          <label>Email <input type="email" x-model="email" required autocomplete="email"></label>
+          <label x-show="mode === 'signup'">Invitation token
+            <input x-model="invitation" required placeholder="bdi_… from your operator"></label>
+          <label>Password <input type="password" x-model="password" required minlength="12"
+                               :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"></label>
+          <button type="submit" :disabled="busy" x-text="mode === 'login' ? 'Sign in' : 'Create account'"></button>
+          <p class="muted" x-show="mode === 'login'"><a href="#" @click.prevent="requestReset" :disabled="busy || !email">Forgot your password?</a></p>
+          <p class="muted" x-show="accountMsg" x-text="accountMsg"></p>
+        </form>
+      </article>
+    </section>
+
+    <section id="account" x-show="view === 'account' && user">
+      <hgroup>
+        <h2>Account</h2>
+        <p x-text="user?.email"></p>
+      </hgroup>
+      <article class="narrow">
+        <p class="muted" x-show="accountMsg" x-text="accountMsg"></p>
+        <form @submit.prevent="requestEmailChange">
+          <label>Change email <input type="email" placeholder="new@address" x-model="newEmail"></label>
+          <button type="submit" class="secondary" :disabled="busy || !newEmail || !pwd.current">Send confirmation</button>
+        </form>
+        <form @submit.prevent="changePassword">
+          <label>Current password <input type="password" x-model="pwd.current" required autocomplete="current-password"></label>
+          <label>New password <input type="password" x-model="pwd.next" required minlength="12" autocomplete="new-password"></label>
+          <button type="submit" class="secondary" :disabled="busy">Change password</button>
+        </form>
+        <hr>
+        <button type="button" class="contrast outline danger-zone" @click="deleteAccount" :disabled="busy">Delete my account</button>
+        <p class="muted">Deactivates your account; your assets follow the collection's erasure policy.</p>
+      </article>
+    </section>
+
+  </main>
+
+  <footer class="container">
+    <p class="muted">Shelf — a <a href="https://github.com/fernandezvara/backd">backd</a> tutorial app. Views go live chapter by chapter.</p>
+  </footer>
+  <script>
+    // Snapshot only: this is the one piece of working UI (Pico reads
+    // data-theme on <html>). Chapters rebind it to Alpine state.
+    const root = document.documentElement;
+    root.dataset.theme = localStorage.getItem('shelf-theme') || '';
+    document.getElementById('theme-toggle').onclick = () => {
+      const dark = root.dataset.theme !== 'dark';
+      root.dataset.theme = dark ? 'dark' : 'light';
+      localStorage.setItem('shelf-theme', root.dataset.theme);
+    };
+  </script>
+
+
+</body>
+</html>

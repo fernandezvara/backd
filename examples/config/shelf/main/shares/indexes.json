@@ -1,0 +1,4 @@
+[
+  { "fields": ["token"], "unique": true },
+  { "fields": ["expires_at"] }
+]
