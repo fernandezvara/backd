@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -61,7 +62,7 @@ roles:
 		PasswordMinLength: 16,
 		CORSOrigins:       []string{"https://app.example.com", "http://localhost:5173"},
 		Roles: map[string]Role{
-			"admin":  {Description: "Back office", Admin: true, Users: []string{"ops@example.com", "lead@example.com"}},
+			"admin":  {Description: "Back office", Admin: AllRights, Users: []string{"ops@example.com", "lead@example.com"}},
 			"editor": {},
 		},
 		UserNetworks:   map[string]UserNetworks{},
@@ -405,6 +406,77 @@ func TestSessionCookieSettings(t *testing.T) {
 		s, errs := parseRealmSettings([]byte(yaml))
 		if len(errs) > 0 || s.Cookie != want {
 			t.Errorf("%q: %+v %v, want %+v", yaml, s.Cookie, errs, want)
+		}
+	}
+}
+
+func TestAdminRightsInRealmYAML(t *testing.T) {
+	s, errs := parseRealmSettings([]byte(`
+roles:
+  root:
+    admin: true
+  support:
+    admin: [users, invitations]
+  keeper:
+    admin: [apikeys, secrets]
+  auditor:
+    admin: [audit]
+  nobody:
+    admin: false
+  editor: {}
+`))
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	want := map[string]AdminRights{
+		"root": AllRights, "support": RightUsers | RightInvitations, "keeper": RightAPIKeys | RightSecrets,
+		"auditor": RightAudit, "nobody": 0, "editor": 0,
+	}
+	for name, r := range want {
+		if got := s.Roles[name].Admin; got != r {
+			t.Errorf("role %s: rights %v, want %v", name, got, r)
+		}
+	}
+	if got := s.AdminRoles(); !reflect.DeepEqual(got, []string{"auditor", "keeper", "root", "support"}) {
+		t.Errorf("AdminRoles = %v (every role that opens something)", got)
+	}
+	if got := s.FullAdminRoles(); !reflect.DeepEqual(got, []string{"root"}) {
+		t.Errorf("FullAdminRoles = %v", got)
+	}
+	// Roles add up; an unknown role adds nothing.
+	got := s.AdminRights([]string{"support", "keeper", "ghost"})
+	if got != RightUsers|RightInvitations|RightAPIKeys|RightSecrets || got.Has(RightAudit) || !got.Has(RightUsers|RightSecrets) {
+		t.Errorf("AdminRights(support, keeper) = %v", got)
+	}
+	if got := s.AdminRights(nil); got.Any() {
+		t.Errorf("no roles opened %v", got)
+	}
+}
+
+func TestAdminRightsErrors(t *testing.T) {
+	for name, tc := range map[string]struct{ yaml, want string }{
+		"unknown area":  {"roles:\n  a:\n    admin: [users, billing]\n", `unknown admin area "billing" (want users, invitations, apikeys, secrets, audit, functions)`},
+		"empty list":    {"roles:\n  a:\n    admin: []\n", "admin: [] opens nothing"},
+		"listed twice":  {"roles:\n  a:\n    admin: [audit, audit]\n", `"audit" is listed twice`},
+		"not a boolean": {"roles:\n  a:\n    admin: sometimes\n", "admin must be true, false or a list of areas"},
+		"a mapping":     {"roles:\n  a:\n    admin: {users: true}\n", "admin must be true, false or a list of areas"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, errs := parseRealmSettings([]byte(tc.yaml))
+			if len(errs) == 0 || !strings.Contains(errors.Join(errs...).Error(), tc.want) {
+				t.Errorf("errors = %v, want one containing %q", errs, tc.want)
+			}
+		})
+	}
+}
+
+func TestAdminRightsNames(t *testing.T) {
+	for r, want := range map[AdminRights]string{
+		0: "none", AllRights: "all", RightUsers: "users",
+		RightSecrets | RightAPIKeys: "apikeys, secrets", RightFunctions | RightAudit | RightUsers: "users, audit, functions",
+	} {
+		if got := r.String(); got != want {
+			t.Errorf("%08b: %q, want %q", r, got, want)
 		}
 	}
 }
