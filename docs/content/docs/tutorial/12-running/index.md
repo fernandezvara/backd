@@ -11,7 +11,7 @@ The shelf works. The last chapter is about *operating* it: who acts without a se
 
 (This chapter needs the Admin view, so sign in as `operator@shelf.example`.)
 
-Sessions are for people; **API keys are for machines** — a CI job that reads the gallery, a monitor that calls a function. In the Admin view, *Create read:main key* makes one scoped to read-only on `main`, expiring in 90 days:
+Sessions are for people; **API keys are for machines** — a CI job that reads the gallery, a monitor that calls a function. In the Admin view, type a name (say `ci-reader`) and press *Create read:main key*: it makes one scoped to read-only on `main`, expiring in 90 days:
 
 ```js
 backd.admin.apiKeys.create({ name: 'ci-reader', expiresIn: '90d', scopes: ['read:main'] })

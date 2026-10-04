@@ -18,7 +18,7 @@ Cron expressions work too (`"0 7 * * *"`, always UTC). A scheduled run has **no 
 
 That's also why `digest`'s input schema accepts `null` and the code defaults `since_days` — the scheduled run sends nothing.
 
-Add that line to `digest/function.yaml` and rebuild. Backd then runs it by itself in the background process (`--with-worker` is in the tutorial's compose file); there is nothing else to start.
+Add that line to `digest/function.yaml` and rebuild. To watch the clock without waiting a day, set `schedule: "* * * * *"` for a minute: `docker compose logs backd` shows `scheduled job queued` and the digest's own `function log` line at the next minute mark — then put `@daily` back. Backd then runs it by itself in the background process (`--with-worker` is in the tutorial's compose file); there is nothing else to start.
 
 ## cleanup
 

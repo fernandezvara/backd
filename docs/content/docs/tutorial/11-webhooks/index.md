@@ -39,7 +39,7 @@ curl -s -X PUT http://localhost:8080/v1/shelf/_admin/secrets/IMPORT_WEBHOOK_SECR
   -d '{"database":"main","value":"dev-secret"}'     # 204
 ```
 
-Then run the fake feed, which signs like a real provider. It is a small Node script (Node 20 or newer; or run it in a container with `docker run --rm --network host -v "$PWD/app":/a:Z docker.io/library/node:22 node /a/push.js …`):
+(Pushing before the secret exists answers `500 secret_missing` — the function declares it in `secrets:` and backd refuses to run it without.) Then run the fake feed, which signs like a real provider. It is a small Node script (Node 20 or newer; or run it in a container with `docker run --rm --network host -v "$PWD/app":/a:Z docker.io/library/node:22 node /a/push.js …`):
 
 ```sh
 curl -fsSL https://fernandezvara.github.io/backd/tutorial/app/push.js -o app/push.js
