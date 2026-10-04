@@ -46,7 +46,7 @@ Paths are relative to `/v1/{realm}/_admin`. Bodies are JSON (`Content-Type: appl
 | `GET /invitations` | none | `200` with unexpired, unused invitations |
 | `DELETE /invitations/{id}` | none | `204` |
 | `GET /apikeys` | none | `200` with the realm's API keys (never the keys themselves) |
-| `POST /apikeys` | `{"name", "role"?, "expires_in"?, "networks"?}` | `201` with the key, shown only here |
+| `POST /apikeys` | `{"name", "role"?, "expires_in"?, "networks"?, "scopes"?}` | `201` with the key, shown only here |
 | `DELETE /apikeys/{name}` | none | `204`; the key stops working at once |
 | `GET /secrets` | none | `200` with the realm's [secrets](../../functions/secrets/)' metadata (never their values) |
 | `PUT /secrets/{name}` | `{"value", "database"?}` | `204`; creates or replaces the value |
@@ -98,7 +98,7 @@ The same operations as [`backd apikey`](../api-keys/), over HTTP:
 ```sh
 curl -X POST https://localhost:8443/v1/blog/_admin/apikeys \
   -H "Authorization: Bearer $BACKD_API_KEY" -H 'Content-Type: application/json' \
-  -d '{"name": "billing-2026q4", "role": "data", "expires_in": "90d", "networks": ["203.0.113.0/24"]}'
+  -d '{"name": "billing-2026q4", "role": "data", "expires_in": "90d", "networks": ["203.0.113.0/24"], "scopes": ["read:main/posts"]}'
 ```
 
 ```json
@@ -107,6 +107,7 @@ curl -X POST https://localhost:8443/v1/blog/_admin/apikeys \
   "role": "data",
   "prefix": "bdk_7VeQ1h",
   "networks": ["203.0.113.0/24"],
+  "scopes": ["read:main/posts"],
   "created_at": "2026-09-27T10:00:00.000Z",
   "last_used_at": null,
   "expires_at": "2026-12-26T10:00:00.000Z",
@@ -115,8 +116,8 @@ curl -X POST https://localhost:8443/v1/blog/_admin/apikeys \
 ```
 
 - `key` is shown only in this response; `backd` stores just its hash.
-- `role` is `data` (default) or `admin`; `expires_in` takes days or Go durations, and without it the key never expires; `networks` [pins the key](../api-keys/#network-restrictions).
-- A name that's already used answers `409 conflict`. `GET /apikeys` lists name, role, first characters, networks, creation, last use and expiry.
+- `role` is `data` (default) or `admin`; `expires_in` takes days or Go durations, and without it the key never expires; `networks` [pins the key](../api-keys/#network-restrictions); `scopes` (up to 32 grants such as `read:main/posts`) [limit what a data key reaches](../api-keys/#scopes) and must name databases, collections and functions the realm has.
+- A name that's already used answers `409 conflict`. `GET /apikeys` lists name, role, first characters, scopes (empty: everything), networks, creation, last use and expiry.
 
 ### Secrets
 

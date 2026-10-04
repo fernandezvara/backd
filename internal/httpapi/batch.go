@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/xid"
 
+	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/jsonnum"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/rules"
@@ -100,6 +101,10 @@ func (d *documents) batch(w http.ResponseWriter, r *http.Request) {
 	for i, raw := range rawOps {
 		op, ok := d.parseBatchOp(w, r, realm, database, i, raw)
 		if !ok {
+			return
+		}
+		// Every operation of a batch writes.
+		if hasAuth && !scopeAllows(w, r, caller, auth.ScopeWrite, database, op.collection.Name) {
 			return
 		}
 		ops[i] = op

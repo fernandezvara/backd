@@ -138,6 +138,17 @@ test('API keys and network restrictions through the admin API', { skip }, async 
   await admin.apiKeys.revoke(name)
   await assert.rejects(svc.db('app').collection('posts').list(), AuthenticationError)
 
+  // A scoped key reaches only what it was made for.
+  const scoped = await admin.apiKeys.create({ name: name + '-ro', scopes: ['read:app/posts'], expiresIn: '1d' })
+  assert.deepEqual(scoped.scopes, ['read:app/posts'])
+  const ro = client({ apiKey: scoped.key })
+  await ro.db('app').collection('posts').list()
+  await assert.rejects(ro.db('app').collection('tags').list(), ForbiddenError)
+  await assert.rejects(ro.db('app').collection('posts').create({ title: 'nope' }), ForbiddenError)
+  assert.deepEqual((await admin.apiKeys.list()).find((k) => k.name === name + '-ro')?.scopes, ['read:app/posts'])
+  await assert.rejects(admin.apiKeys.create({ name: name + '-bad', scopes: ['read:nope'] }), (/** @type {any} */ e) => e.status === 400)
+  await admin.apiKeys.revoke(name + '-ro')
+
   // Both are in the audit trail, newest first, without the key.
   const trail = await admin.audit.list({ target: 'key:' + name })
   assert.deepEqual(trail.items.map((r) => r.action), ['apikey.revoke', 'apikey.create'])

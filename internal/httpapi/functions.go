@@ -173,6 +173,9 @@ func (f *functions) invoke(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !f.docs.internal && hasAuth && !scopeAllows(w, r, caller, auth.ScopeCall, database, name) {
+		return
+	}
 	meta := callMeta{Origin: originHTTP}
 	if f.docs.internal {
 		// A function calling another: the callee must be declared in the
@@ -638,7 +641,9 @@ func (f *functions) getJob(w http.ResponseWriter, r *http.Request) {
 	// An administrator (an admin API key, or a user holding an admin role) reads
 	// any job, such as the one they started by hand.
 	admin := caller.User != nil && f.docs.users(realm).Settings.IsAdmin(caller.User.User.Roles)
-	if !found || job.Database != database || !(admin || jobVisibleTo(job, caller)) {
+	// A scoped key reads the jobs of the functions it may call, and no others.
+	scoped := caller.Key != nil && !caller.Key.Scopes.Allows(auth.ScopeCall, job.Database, job.Function)
+	if !found || job.Database != database || scoped || !(admin || jobVisibleTo(job, caller)) {
 		notFound(w, r)
 		return
 	}

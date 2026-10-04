@@ -431,10 +431,25 @@ type apiKeyDoc struct {
 	Name       string     `bson:"name"`
 	Role       string     `bson:"role"`
 	Networks   []string   `bson:"networks,omitempty"`
+	Scopes     []string   `bson:"scopes,omitempty"`
 	Prefix     string     `bson:"prefix"`
 	CreatedAt  time.Time  `bson:"created_at"`
 	LastUsedAt *time.Time `bson:"last_used_at,omitempty"`
 	ExpiresAt  *time.Time `bson:"expires_at,omitempty"`
+}
+
+// scopes reads a key's stored grants. A grant that doesn't parse (the document
+// was edited by hand) leaves the key with a scope that allows nothing: failing
+// closed, never open.
+func scopes(stored []string) auth.Scopes {
+	if len(stored) == 0 {
+		return nil
+	}
+	s, err := auth.ParseScopes(stored)
+	if err != nil {
+		return auth.Scopes{{Op: "invalid"}}
+	}
+	return s
 }
 
 func (d apiKeyDoc) key() auth.APIKey {
@@ -445,12 +460,12 @@ func (d apiKeyDoc) key() auth.APIKey {
 		u := t.UTC()
 		return &u
 	}
-	return auth.APIKey{Name: d.Name, Role: auth.KeyRole(d.Role), Networks: networks(d.Networks), Prefix: d.Prefix, Hash: d.Hash, CreatedAt: d.CreatedAt.UTC(), LastUsedAt: utc(d.LastUsedAt), ExpiresAt: utc(d.ExpiresAt)}
+	return auth.APIKey{Name: d.Name, Role: auth.KeyRole(d.Role), Networks: networks(d.Networks), Scopes: scopes(d.Scopes), Prefix: d.Prefix, Hash: d.Hash, CreatedAt: d.CreatedAt.UTC(), LastUsedAt: utc(d.LastUsedAt), ExpiresAt: utc(d.ExpiresAt)}
 }
 
 func (s *AuthStore) CreateAPIKey(ctx context.Context, k auth.APIKey) error {
 	_, err := s.apiKeys().InsertOne(ctx, apiKeyDoc{
-		Hash: k.Hash, Name: k.Name, Role: string(k.Role), Networks: k.Networks.Strings(), Prefix: k.Prefix, CreatedAt: k.CreatedAt, LastUsedAt: k.LastUsedAt, ExpiresAt: k.ExpiresAt,
+		Hash: k.Hash, Name: k.Name, Role: string(k.Role), Networks: k.Networks.Strings(), Scopes: k.Scopes.Strings(), Prefix: k.Prefix, CreatedAt: k.CreatedAt, LastUsedAt: k.LastUsedAt, ExpiresAt: k.ExpiresAt,
 	})
 	if mongo.IsDuplicateKeyError(err) {
 		return auth.ErrKeyNameTaken

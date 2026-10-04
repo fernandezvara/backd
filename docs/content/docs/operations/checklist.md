@@ -30,6 +30,7 @@ Go through this page before any realm faces the internet, and again after changi
 - [ ] **Every API key has an expiry** (`backd apikey create … --expires 90d`), is used by one service, lives in a secret store, and is rotated before it expires. See the [expiry and rotation policy](../../auth/api-keys/#expiry-and-rotation-policy). Startup warns about keys without an expiry.
 - [ ] **API keys never reach browsers or mobile apps.**
 - [ ] **Admin sessions are short:** `sessions.admin_idle_timeout` and `sessions.admin_max_lifetime` in each realm's `realm.yaml` (for example `1h` and `12h`), so a stolen administrator's session is worth little. See [Sessions](../../auth/sessions/#sessions-and-tokens).
+- [ ] **Keys are scoped to what their service does** (`--scopes read:main/posts,call:main/contact`): a leaked key then exposes that and nothing more. See [Scopes](../../auth/api-keys/#scopes).
 - [ ] **Services use `data` keys**; `admin` keys (`--role admin`) exist only for management tooling.
 - [ ] **Secrets** (MongoDB passwords, TLS keys, the CA key, `.env`) are outside version control and readable only by the services that need them.
 

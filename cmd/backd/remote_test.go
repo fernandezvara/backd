@@ -189,6 +189,16 @@ roles:
 	c.expect(0, `API key "billing" revoked`, "", "apikey", "revoke", "--realm", "acme", "--name", "billing")
 	c.expect(1, `no API key named "billing"`, "", "apikey", "revoke", "--realm", "acme", "--name", "billing")
 	c.expect(0, "Warning: it never expires", "", "apikey", "create", "--realm", "acme", "--name", "forever")
+	// Scopes: validated before the request, checked against the realm by the
+	// server, and listed.
+	c.expect(0, "It reaches only: read:app/notes, write:app", "", "apikey", "create", "--realm", "acme", "--name", "narrow", "--scopes", "read:app/notes,write:app", "--expires", "1d")
+	c.expect(2, "--scopes: invalid scope", "", "apikey", "create", "--realm", "acme", "--name", "bad", "--scopes", "everything")
+	c.expect(1, "the realm has no database nope", "", "apikey", "create", "--realm", "acme", "--name", "bad", "--scopes", "read:nope")
+	out = c.expect(0, "SCOPES", "", "apikey", "list", "--realm", "acme")
+	if !strings.Contains(out, "read:app/notes,write:app") || !strings.Contains(out, "all") {
+		t.Errorf("apikey list with scopes:\n%s", out)
+	}
+
 	c.expect(0, "(role data)", "", "apikey", "create", "--realm", "acme", "--name", "pinned", "--networks", "10.0.0.0/8,192.0.2.7", "--expires", "1d")
 	_, adminKey, _ := c.run("", "apikey", "create", "--realm", "acme", "--name", "tooling", "--role", "admin", "--expires", "1d")
 	out = c.expect(0, "ROLE", "", "apikey", "list", "--realm", "acme")

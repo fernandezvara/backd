@@ -1098,6 +1098,15 @@ paths:
                 role: { enum: [data, admin], description: "Default data." }
                 expires_in: { type: string, description: "Days (`90d`) or Go duration (`12h`); default: never.", examples: ["90d"] }
                 networks: { type: array, items: { type: string }, description: "IP addresses or CIDR networks the key may be used from." }
+                scopes:
+                  type: array
+                  maxItems: 32
+                  items: { type: string, examples: ["read:blog/posts", "write:orders", "call:main/export"] }
+                  description: >-
+                    What a data key reaches; none means everything. Each grant is `read`, `write` or `call`,
+                    optionally followed by `:<database>` or `:<database>/<collection or function>`. `write` means
+                    create, update and delete (not read); `call` also lets the key read the jobs of the functions
+                    it may call. Anything not granted answers `403`. Not for admin keys.
       responses:
         "201":
           description: The key, shown only here.
@@ -2060,12 +2069,13 @@ components:
     APIKey:
       type: object
       additionalProperties: false
-      required: [name, role, prefix, networks, created_at, last_used_at, expires_at]
+      required: [name, role, prefix, networks, scopes, created_at, last_used_at, expires_at]
       properties:
         name: { type: string }
         role: { enum: [data, admin] }
         prefix: { type: string, description: "The first characters of the key, to recognize it.", pattern: "^bdk_" }
         networks: { type: array, items: { type: string }, description: "Where the key may be used from; empty means anywhere." }
+        scopes: { type: array, items: { type: string }, description: "What the key reaches (see the create request); empty means everything." }
         created_at: { $ref: "#/components/schemas/Timestamp" }
         last_used_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
         expires_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
@@ -2074,12 +2084,13 @@ components:
       description: An API key as listed, plus the key itself, shown only here.
       type: object
       additionalProperties: false
-      required: [name, role, prefix, networks, created_at, last_used_at, expires_at, key]
+      required: [name, role, prefix, networks, scopes, created_at, last_used_at, expires_at, key]
       properties:
         name: { type: string }
         role: { enum: [data, admin] }
         prefix: { type: string, pattern: "^bdk_" }
         networks: { type: array, items: { type: string } }
+        scopes: { type: array, items: { type: string } }
         created_at: { $ref: "#/components/schemas/Timestamp" }
         last_used_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
         expires_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
