@@ -134,6 +134,29 @@ func (s *AuthStore) ListUsers(ctx context.Context) ([]auth.User, error) {
 	return out, nil
 }
 
+func (s *AuthStore) ListUsersPage(ctx context.Context, after string, skip, limit int) ([]auth.User, bool, error) {
+	filter := bson.D{}
+	if after != "" {
+		filter = bson.D{{Key: "email", Value: bson.D{{Key: "$gt", Value: after}}}}
+	}
+	opts := options.Find().SetSort(bson.D{{Key: "email", Value: 1}}).SetSkip(int64(skip)).SetLimit(int64(limit) + 1)
+	cur, err := s.users().Find(ctx, filter, opts)
+	if err != nil {
+		return nil, false, err
+	}
+	var docs []userDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, false, err
+	}
+	hasMore := len(docs) > limit
+	docs = docs[:min(limit, len(docs))]
+	out := make([]auth.User, len(docs))
+	for i, d := range docs {
+		out[i] = d.user()
+	}
+	return out, hasMore, nil
+}
+
 func (s *AuthStore) AddRoles(ctx context.Context, userID string, roles []string, now time.Time) error {
 	return s.updateByID(ctx, userID, bson.D{
 		{Key: "$addToSet", Value: bson.D{{Key: "roles", Value: bson.D{{Key: "$each", Value: roles}}}}},

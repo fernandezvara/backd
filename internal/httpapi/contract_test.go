@@ -579,6 +579,12 @@ func TestContract(t *testing.T) {
 	}
 	json := func(h map[string]string) map[string]string { return with(h, "Content-Type", "application/json") }
 	req("GET", ad+"/users?limit=2", "", key, 200)
+	if page := req("GET", ad+"/users?limit=1", "", key, 200); page["has_more"] == true && page["next_cursor"] != nil {
+		req("GET", ad+"/users?limit=1&after="+page["next_cursor"].(string), "", key, 200)
+	} else {
+		t.Errorf("a first page of users has a next_cursor: %v", page)
+	}
+	req("GET", ad+"/users?after=a@example.com&skip=1", "", key, 400)
 	req("GET", ad+"/users?limit=0", "", key, 400)
 	created := req("POST", ad+"/users", `{"email": "dan@example.com", "password": "dev-p4ssw0rd!"}`, key, 201)
 	dan := created["id"].(string)

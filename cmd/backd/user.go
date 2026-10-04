@@ -98,12 +98,16 @@ func userCreate(c *userCtx) error {
 func userList(c *userCtx) error {
 	tw := tabwriter.NewWriter(c.uio.stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "EMAIL\tID\tVERIFIED\tDISABLED\tROLES\tCREATED")
-	for skip := 0; ; {
+	for after := ""; ; {
 		var page struct {
-			Items   []adminUser
-			HasMore bool `json:"has_more"`
+			Items      []adminUser
+			HasMore    bool   `json:"has_more"`
+			NextCursor string `json:"next_cursor"`
 		}
-		q := url.Values{"limit": {"100"}, "skip": {fmt.Sprint(skip)}}
+		q := url.Values{"limit": {"100"}}
+		if after != "" {
+			q.Set("after", after)
+		}
 		if err := c.t.call("GET", "_admin/users", q, nil, &page); err != nil {
 			return err
 		}
@@ -111,10 +115,10 @@ func userList(c *userCtx) error {
 			fmt.Fprintf(tw, "%s\t%s\t%t\t%t\t%s\t%s\n", x.Email, x.ID, x.EmailVerified, x.Disabled,
 				strings.Join(x.Roles, ","), x.CreatedAt)
 		}
-		if !page.HasMore {
+		if !page.HasMore || page.NextCursor == "" {
 			break
 		}
-		skip += len(page.Items)
+		after = page.NextCursor
 	}
 	return tw.Flush()
 }

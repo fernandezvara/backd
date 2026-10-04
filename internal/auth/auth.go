@@ -87,6 +87,11 @@ type Store interface {
 	// UserByID returns the user with that id; ErrNotFound if none.
 	UserByID(ctx context.Context, id string) (User, error)
 	ListUsers(ctx context.Context) ([]User, error)
+	// ListUsersPage returns one page of users sorted by email: the users whose
+	// email sorts after `after` (all when empty), skipping skip of them, at most
+	// limit; hasMore says whether more follow. Emails are unique, so `after` is
+	// an exact position. It never reads more than the page.
+	ListUsersPage(ctx context.Context, after string, skip, limit int) (users []User, hasMore bool, err error)
 	// AddRoles adds roles the user doesn't have yet, setting UpdatedAt.
 	AddRoles(ctx context.Context, userID string, roles []string, now time.Time) error
 	// RemoveRole removes a role from the user, setting UpdatedAt.

@@ -153,6 +153,19 @@ func (m *MemStore) ListUsers(context.Context) ([]auth.User, error) {
 	return out, nil
 }
 
+func (m *MemStore) ListUsersPage(ctx context.Context, after string, skip, limit int) ([]auth.User, bool, error) {
+	all, _ := m.ListUsers(ctx)
+	var rest []auth.User
+	for _, u := range all {
+		if after == "" || u.Email > after {
+			rest = append(rest, u)
+		}
+	}
+	rest = rest[min(skip, len(rest)):]
+	hasMore := len(rest) > limit
+	return rest[:min(limit, len(rest))], hasMore, nil
+}
+
 func (m *MemStore) UpdateUser(_ context.Context, id string, upd auth.UserUpdate, now time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -224,3 +224,11 @@ test('invocations listing', async () => {
   assert.equal(q.get('since'), '2026-10-01T00:00:00.000Z')
   assert.equal(q.get('limit'), '5')
 })
+
+test('users.list passes after and returns next_cursor', async () => {
+  const m = mockFetch([{ body: { items: [], limit: 2, skip: 0, has_more: true, next_cursor: 'b@example.com' } }])
+  const page = await adminOf(m).users.list({ limit: 2, after: 'a@example.com' })
+  assert.equal(m.calls[0].url.searchParams.get('after'), 'a@example.com')
+  assert.equal(m.calls[0].url.searchParams.get('skip'), null)
+  assert.equal(page.next_cursor, 'b@example.com')
+})

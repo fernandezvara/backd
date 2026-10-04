@@ -133,7 +133,7 @@ func (a *adminAPI) listUsers(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	var details []Detail
 	for k := range q {
-		if k != "email" && k != "limit" && k != "skip" {
+		if k != "email" && k != "limit" && k != "skip" && k != "after" {
 			details = append(details, Detail{Path: k, Reason: "unknown query parameter"})
 		}
 	}
@@ -152,6 +152,15 @@ func (a *adminAPI) listUsers(w http.ResponseWriter, r *http.Request) {
 		}
 		skip = n
 	}
+	after := strings.ToLower(strings.TrimSpace(q.Get("after"))) // emails are stored trimmed and lowercased
+	if q.Has("after") {
+		if q.Has("skip") {
+			details = append(details, Detail{Path: "after", Reason: "can't be combined with skip: a cursor already says where the page starts"})
+		}
+		if after == "" {
+			details = append(details, Detail{Path: "after", Reason: "must not be empty: use the next_cursor of a previous page"})
+		}
+	}
 	if len(details) > 0 {
 		sort.Slice(details, func(i, j int) bool { return details[i].Path < details[j].Path })
 		writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid query parameters", details...)
@@ -159,6 +168,7 @@ func (a *adminAPI) listUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var users []auth.User
+	hasMore, listed := false, false
 	if email := q.Get("email"); email != "" {
 		// Exact lookup, e.g. to turn an email into an id for member lists.
 		u, err := svc.Find(r.Context(), email)
@@ -169,21 +179,28 @@ func (a *adminAPI) listUsers(w http.ResponseWriter, r *http.Request) {
 			adminError(w, r, err)
 			return
 		}
+		page := users[min(skip, len(users)):]
+		hasMore = len(page) > limit
+		users = page[:min(limit, len(page))]
 	} else {
+		// One page from the database: never the whole collection.
 		var err error
-		if users, err = svc.List(r.Context()); err != nil {
+		if users, hasMore, err = svc.ListPage(r.Context(), after, skip, limit); err != nil {
 			adminError(w, r, err)
 			return
 		}
+		listed = true
 	}
-	page := users[min(skip, len(users)):]
-	hasMore := len(page) > limit
-	page = page[:min(limit, len(page))]
-	items := make([]map[string]any, len(page))
-	for i, u := range page {
+	items := make([]map[string]any, len(users))
+	for i, u := range users {
 		items[i] = adminUserJSON(u, usersOf(r).LocaleOf(u))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items, "limit": limit, "skip": skip, "has_more": hasMore})
+	resp := map[string]any{"items": items, "limit": limit, "skip": skip, "has_more": hasMore}
+	if listed && hasMore && len(users) > 0 {
+		// Emails are unique and the list is sorted by them: the last one is the position.
+		resp["next_cursor"] = users[len(users)-1].Email
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (a *adminAPI) createUser(w http.ResponseWriter, r *http.Request) {

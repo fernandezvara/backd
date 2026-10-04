@@ -31,7 +31,7 @@ Paths are relative to `/v1/{realm}/_admin`. Bodies are JSON (`Content-Type: appl
 
 | Method and path | Body | Success |
 |---|---|---|
-| `GET /users` | none; query `limit` (1–100, default 20), `skip`, `email` | `200` with a page of users |
+| `GET /users` | none; query `limit` (1–100, default 20), `skip` or `after`, `email` | `200` with a page of users, sorted by email, read from the database a page at a time; `next_cursor` (the last email) while `has_more`: send it as `after` for the next page |
 | `POST /users` | `{"email", "password"?}` | `201` with the user |
 | `GET /users/{id}` | none | `200` with the user |
 | `PATCH /users/{id}` | `{"email_verified"?: bool, "disabled"?: bool}` | `200` with the user |
