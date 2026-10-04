@@ -1,4 +1,5 @@
 import { AuthenticationError, VerificationRequiredError } from './errors.js'
+import { COOKIE_SESSION } from './storage.js'
 
 /**
  * @typedef {import('./client.js').Client} Client
@@ -19,8 +20,9 @@ import { AuthenticationError, VerificationRequiredError } from './errors.js'
 /**
  * A new session.
  * @typedef {object} Session
- * @property {string} token       Session token (`bds_…`); already stored by the client.
- * @property {'Bearer'} token_type
+ * @property {string} [token]     Session token (`bds_…`); already stored by the client. Absent with `cookies: true`:
+ *   the session is in an HttpOnly cookie, out of reach of scripts.
+ * @property {'Bearer'} [token_type]
  * @property {string} session_id
  * @property {string} expires_at  RFC3339; pushed forward as the session is used.
  * @property {User} user
@@ -81,8 +83,9 @@ export class Auth {
    * @returns {Promise<Session>}
    */
   async signup({ email, password, invitation, locale, redirectTo }, opts) {
-    /** @type {Record<string, string>} */
+    /** @type {Record<string, string | boolean>} */
     const body = { email, password }
+    if (this.client.cookies) body.cookie = true
     if (invitation) body.invitation = invitation
     if (locale) body.locale = locale
     if (redirectTo) body.redirect_to = redirectTo
@@ -100,7 +103,8 @@ export class Auth {
    * @returns {Promise<Session>}
    */
   async login({ email, password }, opts) {
-    const { data } = await this.client.request({ method: 'POST', path: ['_auth', 'login'], body: { email, password }, auth: false, ...opts })
+    const body = this.client.cookies ? { email, password, cookie: true } : { email, password }
+    const { data } = await this.client.request({ method: 'POST', path: ['_auth', 'login'], body, auth: false, ...opts })
     return this.signedIn(data)
   }
 
@@ -311,11 +315,23 @@ export class Auth {
   }
 
   /**
-   * The stored session token, if any.
+   * The stored session token, if any. Always null with `cookies: true`: the
+   * token is in a cookie that scripts can't read.
    * @returns {Promise<string | null>}
    */
   async token() {
-    return (await this.client.storage.get()) ?? null
+    const token = (await this.client.storage.get()) ?? null
+    return token === COOKIE_SESSION ? null : token
+  }
+
+  /**
+   * Whether this client believes it is signed in: it holds a token, or (with
+   * `cookies: true`) it signed in and hasn't signed out or been refused since.
+   * A page that has just loaded knows nothing: ask the server with {@link Auth#me}.
+   * @returns {Promise<boolean>}
+   */
+  async hasSession() {
+    return Boolean(await this.client.storage.get())
   }
 
   /**
@@ -334,7 +350,7 @@ export class Auth {
    * @returns {Promise<Session>}
    */
   async signedIn(session) {
-    await this.client.storage.set(session.token)
+    await this.client.storage.set(session.token ?? COOKIE_SESSION)
     this.emit('SIGNED_IN', session)
     return session
   }

@@ -2,7 +2,7 @@ import { Admin } from './admin.js'
 import { Auth } from './auth.js'
 import { Database } from './data.js'
 import { NetworkError, RetryableError, errorFromResponse } from './errors.js'
-import { memoryStorage } from './storage.js'
+import { COOKIE_SESSION, memoryStorage } from './storage.js'
 
 /**
  * @typedef {import('./storage.js').TokenStorage} TokenStorage
@@ -23,6 +23,9 @@ import { memoryStorage } from './storage.js'
  * @property {string} [apiKey]            Server-side only: an API key (`bdk_…`). Full access to the realm.
  * @property {boolean} [dangerouslyAllowBrowser] Allow `apiKey` in a browser. Anyone who loads the page gets the key.
  * @property {TokenStorage} [storage]     Where the session token lives; memory by default.
+ * @property {boolean} [cookies]          Browser apps: keep the session in an HttpOnly cookie that scripts can't read,
+ *   instead of a token. The realm must enable `sessions.cookie` and list the app's origin in `cors.origins`; the
+ *   app's page (or the API) must be on a site the cookie's SameSite setting allows. The admin API doesn't take cookies.
  * @property {RetryOptions} [retry]       Retries for 429/503; off by default.
  * @property {typeof fetch} [fetch]       A fetch implementation; the global one by default.
  * @property {Record<string, string>} [headers] Extra headers for every request.
@@ -81,10 +84,15 @@ export class Client {
           '`dangerouslyAllowBrowser: true` if you really mean it.',
       )
     }
+    if (options.cookies && options.apiKey) {
+      throw new TypeError('createClient: `cookies` is for sessions in a browser; an API key is sent in a header')
+    }
     /** @readonly */
     this.url = options.url.replace(/\/+$/, '')
     /** @readonly */
     this.realm = options.realm
+    /** @internal */
+    this.cookies = Boolean(options.cookies)
     /** @internal */
     this.apiKey = options.apiKey
     /** @internal */
@@ -138,7 +146,7 @@ export class Client {
       } else {
         const token = await this.storage.get()
         if (token) {
-          headers.Authorization = 'Bearer ' + token
+          if (token !== COOKIE_SESSION) headers.Authorization = 'Bearer ' + token // a cookie session is sent by the browser
           sentSession = true
         }
       }
@@ -156,6 +164,7 @@ export class Client {
           headers,
           body: req.body === undefined ? undefined : JSON.stringify(req.body),
           signal: req.signal,
+          credentials: this.cookies ? 'include' : undefined,
         })
       } catch (cause) {
         throw new NetworkError({

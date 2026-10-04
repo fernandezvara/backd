@@ -152,6 +152,8 @@ func TestRealmSettingsErrors(t *testing.T) {
 		{"admin idle beyond admin max", "sessions:\n  admin_idle_timeout: 20d\n  admin_max_lifetime: 10d", []string{"admin_idle_timeout (480h0m0s) must not exceed admin_max_lifetime (240h0m0s)"}},
 		{"admin idle beyond the regular max", "sessions:\n  max_lifetime: 40d\n  admin_max_lifetime: 3d\n  admin_idle_timeout: 5d", []string{"admin_idle_timeout (120h0m0s) must not exceed admin_max_lifetime (72h0m0s)"}},
 		{"admin too short", "sessions:\n  admin_idle_timeout: 10s", []string{"sessions.admin_idle_timeout: must be at least 1m0s"}},
+		{"cookie same_site", "sessions:\n  cookie:\n    enabled: true\n    same_site: sometimes", []string{`sessions.cookie.same_site: must be lax, strict or none, got "sometimes"`}},
+		{"cookie with a wildcard origin", "sessions:\n  cookie:\n    enabled: true\ncors:\n  origins: ['*']", []string{"cookies can't be used with cors.origins: ['*']"}},
 		{"password too short", "password:\n  min_length: 6", []string{"password.min_length: must be between 8 and 128"}},
 		{"password too long", "password:\n  min_length: 200", []string{"between 8 and 128"}},
 		{"origin with path", "cors:\n  origins: ['https://a.example/app']", []string{"cors.origins[0]: invalid origin"}},
@@ -389,5 +391,20 @@ func TestAdminSessionLimits(t *testing.T) {
 	s = load("sessions:\n  idle_timeout: 7d\n  max_lifetime: 30d\n  admin_idle_timeout: 1h\n  admin_max_lifetime: 12h\n")
 	if s.AdminIdleTimeout != time.Hour || s.AdminMaxLifetime != 12*time.Hour || s.IdleTimeout != 7*24*time.Hour {
 		t.Errorf("both set: %+v", s)
+	}
+}
+
+func TestSessionCookieSettings(t *testing.T) {
+	for yaml, want := range map[string]CookieSettings{
+		"": {},
+		"sessions:\n  cookie:\n    enabled: false\n":                                                                  {SameSite: "lax"},
+		"sessions:\n  cookie:\n    enabled: true\ncors:\n  origins: [https://app.example.com]\n":                      {Enabled: true, SameSite: "lax"},
+		"sessions:\n  cookie:\n    enabled: true\n    same_site: Strict\n":                                            {Enabled: true, SameSite: "strict"},
+		"sessions:\n  cookie:\n    enabled: true\n    same_site: none\ncors:\n  origins: [https://app.example.com]\n": {Enabled: true, SameSite: "none"},
+	} {
+		s, errs := parseRealmSettings([]byte(yaml))
+		if len(errs) > 0 || s.Cookie != want {
+			t.Errorf("%q: %+v %v, want %+v", yaml, s.Cookie, errs, want)
+		}
 	}
 }

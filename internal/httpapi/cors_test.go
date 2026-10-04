@@ -126,12 +126,12 @@ func TestCachingHeaders(t *testing.T) {
 		wantVary           string
 		wantCache          string
 	}{
-		{"anonymous data", "GET", "/v1/shop/orders/items", nil, "Origin, Authorization", ""},
-		{"data with credentials", "GET", "/v1/shop/orders/items", map[string]string{"Authorization": "Bearer x"}, "Origin, Authorization", "private, no-cache"},
-		{"one document with credentials", "GET", "/v1/shop/orders/items/nope", map[string]string{"Authorization": "Bearer x"}, "Origin, Authorization", "private, no-cache"},
-		{"an origin that isn't allowed", "GET", "/v1/web/app/items", map[string]string{"Origin": "https://evil.example"}, "Origin, Authorization", ""},
-		{"an allowed origin", "GET", "/v1/web/app/items", map[string]string{"Origin": "https://app.example.com"}, "Origin, Authorization", ""},
-		{"unknown collection", "GET", "/v1/shop/orders/nope", nil, "Origin, Authorization", ""},
+		{"anonymous data", "GET", "/v1/shop/orders/items", nil, "Origin, Authorization, Cookie", ""},
+		{"data with credentials", "GET", "/v1/shop/orders/items", map[string]string{"Authorization": "Bearer x"}, "Origin, Authorization, Cookie", "private, no-cache"},
+		{"one document with credentials", "GET", "/v1/shop/orders/items/nope", map[string]string{"Authorization": "Bearer x"}, "Origin, Authorization, Cookie", "private, no-cache"},
+		{"an origin that isn't allowed", "GET", "/v1/web/app/items", map[string]string{"Origin": "https://evil.example"}, "Origin, Authorization, Cookie", ""},
+		{"an allowed origin", "GET", "/v1/web/app/items", map[string]string{"Origin": "https://app.example.com"}, "Origin, Authorization, Cookie", ""},
+		{"unknown collection", "GET", "/v1/shop/orders/nope", nil, "Origin, Authorization, Cookie", ""},
 		{"preflight from an origin that isn't allowed", "OPTIONS", "/v1/web/app/items",
 			map[string]string{"Origin": "https://evil.example", "Access-Control-Request-Method": "GET"}, "Origin", ""},
 		{"preflight from an allowed origin", "OPTIONS", "/v1/web/app/items",

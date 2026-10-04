@@ -53,6 +53,8 @@ An empty file, or one with only comments, is valid: every key has a default.
 | `signup` | `closed` | Who can create accounts: `open` (anyone), `invite` (needs an [invitation](../../auth/admin/#invitations)), `closed` (only operators, with the CLI or the admin API). |
 | `sessions.idle_timeout` | `30d` | A session expires after this long without use. |
 | `sessions.max_lifetime` | `90d` | A session never lives longer than this. Must be at least `idle_timeout`. |
+| `sessions.cookie.enabled` | `false` | `true`: browser apps can keep a session in an HttpOnly cookie, when their login asks for one. Needs explicit `cors.origins` (no `*`). See [Session cookies](../../auth/sessions/#session-cookies) |
+| `sessions.cookie.same_site` | `lax` | `lax`, `strict` or `none` (an app on another site than the API) |
 | `sessions.admin_idle_timeout` | `idle_timeout` | The idle timeout for users who hold an [admin role](#roles). Can only shorten `idle_timeout`. |
 | `sessions.admin_max_lifetime` | `max_lifetime` | The longest an admin's session lives. Can only shorten `max_lifetime`; must be at least `admin_idle_timeout`. |
 | `password.min_length` | `12` | Minimum password length, from 8 to 128. |
@@ -92,7 +94,7 @@ cors:
 - Preflight requests (`OPTIONS`) from a listed origin get `204` with the allowed methods (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`) and request headers (`Authorization`, `Content-Type`, `If-Match`, `X-Request-ID`). The answer may be cached for 10 minutes.
 - Every response under `/v1/` carries `Vary: Origin`, so caches keep answers for different origins apart (see [Caching](../../api/#caching)).
 - Responses to listed origins, errors included, carry `Access-Control-Allow-Origin` and expose `ETag`, `Location`, `Retry-After`, `WWW-Authenticate` and `X-Request-ID`.
-- Credentials travel in the `Authorization` header, never in cookies, so responses don't allow credentials.
+- Credentials travel in the `Authorization` header, so responses don't allow credentials, except in a realm with [session cookies](../../auth/sessions/#session-cookies) (`sessions.cookie`): there, responses to the listed origins carry `Access-Control-Allow-Credentials: true`, and a wildcard origin is refused.
 - `X-Backd-On-Behalf-Of` isn't allowed from browsers: only server-side services with API keys may use it.
 - `*` allows any origin. That's reasonable for public, read-only data; for apps with users, list the origins explicitly.
 

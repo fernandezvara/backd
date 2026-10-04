@@ -524,6 +524,12 @@ func TestContract(t *testing.T) {
 	login := req("POST", a+"/login", `{"email": "new@example.com", "password": "dev-p4ssw0rd!"}`, nil, 200)
 	me := bearer(login["token"].(string))
 	req("POST", a+"/login", `{"email": "new@example.com"}`, nil, 400)
+	// A session in a cookie: the answer has no token; without an allowed origin it is refused.
+	cookieLogin := `{"email": "new@example.com", "password": "dev-p4ssw0rd!", "cookie": true}`
+	if out := req("POST", a+"/login", cookieLogin, map[string]string{"Origin": "https://app.acme.example"}, 200); out["token"] != nil {
+		t.Errorf("a cookie login returned a token: %v", out)
+	}
+	req("POST", a+"/login", cookieLogin, nil, 403)
 	for range 5 {
 		req("POST", a+"/login", `{"email": "victim@example.com", "password": "dev-p4ssw0rd!0"}`, nil, 401)
 	}

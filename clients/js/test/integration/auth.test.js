@@ -11,7 +11,7 @@ test('sign-up, me, sessions, logout', { skip }, async () => {
   c.auth.onAuthChange((e) => events.push(e))
   const address = email('ada')
   const s = await c.auth.signup({ email: address.toUpperCase(), password })
-  assert.match(s.token, /^bds_/)
+  assert.match(String(s.token), /^bds_/)
   assert.equal(s.user.email, address)
   assert.deepEqual(await c.auth.me(), s.user)
 

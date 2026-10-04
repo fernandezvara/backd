@@ -220,8 +220,8 @@ func securityHeaders(next http.Handler) http.Handler {
 // never store them, and browsers revalidate before reusing them.
 func dataCaching(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		addVary(w.Header(), "Authorization")
-		if r.Header.Get("Authorization") != "" {
+		addVary(w.Header(), "Authorization", "Cookie") // a realm with session cookies authenticates by Cookie
+		if r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != "" {
 			w.Header().Set("Cache-Control", "private, no-cache")
 		}
 		next.ServeHTTP(w, r)

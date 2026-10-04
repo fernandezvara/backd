@@ -60,7 +60,7 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 	t.Helper()
 	root := t.TempDir()
 	for p, content := range map[string]string{
-		"acme/realm.yaml":              "signup: open\nroles:\n  admin: {}\n  staff:\n    admin: true\nemail:\n  function: app/deliver\n  from: \"Acme <no-reply@acme.example>\"\n  public_url: https://api.acme.example\n  locales: [en, es]\n  allowed_redirects: [https://app.acme.example]\n  redirects:\n    verify_email: https://app.acme.example/verified\n  links:\n    change_email: https://app.acme.example/confirm?token={token}\n",
+		"acme/realm.yaml":              "signup: open\nsessions:\n  cookie:\n    enabled: true\ncors:\n  origins: [https://app.acme.example]\nroles:\n  admin: {}\n  staff:\n    admin: true\nemail:\n  function: app/deliver\n  from: \"Acme <no-reply@acme.example>\"\n  public_url: https://api.acme.example\n  locales: [en, es]\n  allowed_redirects: [https://app.acme.example]\n  redirects:\n    verify_email: https://app.acme.example/verified\n  links:\n    change_email: https://app.acme.example/confirm?token={token}\n",
 		"acme/app/posts/schema.json":   postsSchema,
 		"acme/app/posts/rules.yaml":    postsRules,
 		"acme/app/notes/schema.json":   postsSchema,

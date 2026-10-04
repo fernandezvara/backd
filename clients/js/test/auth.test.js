@@ -267,3 +267,50 @@ test('requesting an email change sends the session and the password', async () =
   assert.equal(m.calls[1].headers.Authorization, 'Bearer bds_1')
   assert.deepEqual(m.calls[1].body, { new_email: 'ada.new@example.com', password: 'dev-p4ssw0rd!', redirect_to: 'https://app.example/account' })
 })
+
+test('cookies: true keeps the session in a cookie, out of the client', async () => {
+  const sessionNoToken = { session_id: 's1', expires_at: '2026-10-01T00:00:00.000Z', user }
+  const m = mockFetch([
+    { body: sessionNoToken },                       // login
+    { body: user },                                 // me
+    { status: 401, body: errorBody('unauthenticated') }, // a later request the server refuses
+    { body: sessionNoToken },                       // login again
+    { status: 204 },                                // logout
+  ])
+  const { c, events } = clientWith(m, { cookies: true })
+  const s = await c.auth.login({ email: 'ada@example.com', password: 'dev-p4ssw0rd!' })
+  assert.deepEqual(m.calls[0].body, { email: 'ada@example.com', password: 'dev-p4ssw0rd!', cookie: true })
+  assert.equal(m.calls[0].credentials, 'include')
+  assert.equal(s.token, undefined)
+  assert.equal(await c.auth.token(), null, 'there is no token for scripts to read')
+  assert.equal(await c.auth.hasSession(), true)
+
+  await c.auth.me()
+  assert.equal(m.calls[1].headers.Authorization, undefined, 'the browser sends the cookie, not the client')
+  assert.equal(m.calls[1].credentials, 'include')
+
+  // A refusal while a session was believed to exist ends it.
+  await assert.rejects(c.auth.me(), AuthenticationError)
+  assert.equal(await c.auth.hasSession(), false)
+  assert.deepEqual(events.map((e) => e[0]), ['SIGNED_IN', 'SESSION_EXPIRED'])
+
+  await c.auth.login({ email: 'ada@example.com', password: 'dev-p4ssw0rd!' })
+  await c.auth.logout()
+  assert.equal(await c.auth.hasSession(), false)
+  assert.equal(m.calls[4].credentials, 'include')
+})
+
+test('cookies: sign-up asks for a cookie too; an API key and cookies do not mix; without the option nothing changes', async () => {
+  const m = mockFetch([{ status: 201, body: { session_id: 's1', expires_at: '2026-10-01T00:00:00.000Z', user } }, { body: session('bds_1') }])
+  const { c } = clientWith(m, { cookies: true })
+  await c.auth.signup({ email: 'ada@example.com', password: 'dev-p4ssw0rd!' })
+  assert.equal(m.calls[0].body.cookie, true)
+
+  assert.throws(() => createClient({ url: 'http://api.test', realm: 'acme', apiKey: 'bdk_x', cookies: true, fetch: m.fetch }), /cookies/)
+
+  const plain = clientWith(m).c
+  await plain.auth.login({ email: 'ada@example.com', password: 'dev-p4ssw0rd!' })
+  assert.equal(m.calls[1].body.cookie, undefined)
+  assert.equal(m.calls[1].credentials, undefined)
+  assert.equal(await plain.auth.hasSession(), true)
+})

@@ -75,14 +75,21 @@ func principalOf(r *http.Request) auth.Principal {
 // from the path, so a token from another realm is simply unknown here.
 func (a *authAPI) requireSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token, ok := bearerToken(r)
-		if !ok {
+		svc := usersOf(r)
+		token, src, headerOK := credentialOf(r, svc.Settings)
+		if !headerOK || src == noCredential {
 			unauthenticated(w, r, false, "authentication required")
 			return
 		}
-		p, err := usersOf(r).Authenticate(r.Context(), token)
+		p, err := svc.Authenticate(r.Context(), token)
 		if err != nil {
+			if src == fromCookie {
+				clearSessionCookie(w, r, svc.Settings)
+			}
 			authError(w, r, err)
+			return
+		}
+		if src == fromCookie && !csrfCheck(w, r, svc.Settings) {
 			return
 		}
 		if !allowedFrom(w, r, auth.Caller{User: &p}) {
@@ -114,7 +121,12 @@ func (a *authAPI) signup(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"email": "string", "password": "string", "invitation": "string?", "locale": "string?", "redirect_to": "string?"})
+	f, ok := fields(w, r, obj, map[string]string{"email": "string", "password": "string", "invitation": "string?", "locale": "string?", "redirect_to": "string?", "cookie": "bool?"})
+	if !ok {
+		return
+	}
+	asked, _ := f["cookie"].(bool)
+	useCookie, ok := askedForCookie(w, r, usersOf(r).Settings, asked)
 	if !ok {
 		return
 	}
@@ -145,20 +157,37 @@ func (a *authAPI) signup(w http.ResponseWriter, r *http.Request) {
 	}
 	p, token := res.Principal, res.Token
 	setActor(r.Context(), "user:"+p.User.ID)
+	if useCookie {
+		setSessionCookie(w, r, usersOf(r), p, token)
+		token = "" // the token stays in the cookie, out of the response
+	}
 	writeJSON(w, http.StatusCreated, sessionJSON(p, token, usersOf(r).LocaleOf(p.User)))
 }
 
 func (a *authAPI) login(w http.ResponseWriter, r *http.Request) {
-	f, ok := readStrings(w, r, "email", "password")
+	obj, ok := readObject(w, r)
 	if !ok {
 		return
 	}
-	p, token, err := usersOf(r).Login(r.Context(), f["email"], f["password"], clientIP(r))
+	f, ok := fields(w, r, obj, map[string]string{"email": "string", "password": "string", "cookie": "bool?"})
+	if !ok {
+		return
+	}
+	asked, _ := f["cookie"].(bool)
+	useCookie, ok := askedForCookie(w, r, usersOf(r).Settings, asked)
+	if !ok {
+		return
+	}
+	p, token, err := usersOf(r).Login(r.Context(), f["email"].(string), f["password"].(string), clientIP(r))
 	if err != nil {
 		authError(w, r, err)
 		return
 	}
 	setActor(r.Context(), "user:"+p.User.ID)
+	if useCookie {
+		setSessionCookie(w, r, usersOf(r), p, token)
+		token = ""
+	}
 	writeJSON(w, http.StatusOK, sessionJSON(p, token, usersOf(r).LocaleOf(p.User)))
 }
 
@@ -167,6 +196,7 @@ func (a *authAPI) logout(w http.ResponseWriter, r *http.Request) {
 		authError(w, r, err)
 		return
 	}
+	forgetCookie(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -175,6 +205,7 @@ func (a *authAPI) logoutAll(w http.ResponseWriter, r *http.Request) {
 		authError(w, r, err)
 		return
 	}
+	forgetCookie(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -252,6 +283,7 @@ func (a *authAPI) deleteMe(w http.ResponseWriter, r *http.Request) {
 		authError(w, r, err)
 		return
 	}
+	forgetCookie(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -371,14 +403,19 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 	}
 }
 
+// sessionJSON is the answer to a login or sign-up. With no token (the session
+// went into a cookie) the response doesn't have the token fields at all.
 func sessionJSON(p auth.Principal, token, locale string) map[string]any {
-	return map[string]any{
-		"token":      token,
-		"token_type": "Bearer",
+	out := map[string]any{
 		"session_id": p.Session.ID,
 		"expires_at": formatTime(p.Session.ExpiresAt),
 		"user":       userJSON(p.User, locale),
 	}
+	if token != "" {
+		out["token"] = token
+		out["token_type"] = "Bearer"
+	}
+	return out
 }
 
 func userJSON(u auth.User, locale string) map[string]any {
