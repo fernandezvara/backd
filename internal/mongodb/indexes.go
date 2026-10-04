@@ -3,6 +3,7 @@ package mongodb
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -109,6 +110,11 @@ func compareIndexes(c *registry.Collection, existing []existingIndex) indexState
 					"index %q (%s) has unique=%t, indexes.json declares unique=%t; drop it manually to change it",
 					e.name, ix, e.unique, ix.Unique))
 			}
+			if e.ttl != ix.TTL {
+				st.mismatched = append(st.mismatched, fmt.Sprintf(
+					"index %q (%s) has ttl=%t, but the collection's soft_delete.retention needs ttl=%t; drop it manually to change it",
+					e.name, ix, e.ttl, ix.TTL))
+			}
 		}
 		if !found {
 			st.missing = append(st.missing, ix)
@@ -134,7 +140,12 @@ func (p *Provisioner) applyIndexes(ctx context.Context, c *registry.Collection, 
 		return fmt.Errorf("%s.%s: %s", c.MongoDatabase, c.Name, strings.Join(st.mismatched, "; "))
 	}
 	for _, ix := range st.missing {
-		model := mongo.IndexModel{Keys: indexKeys(ix), Options: options.Index().SetUnique(ix.Unique)}
+		opts := options.Index().SetUnique(ix.Unique)
+		if ix.TTL {
+			// A document goes when the date in its key (purge_at) has passed.
+			opts.SetExpireAfterSeconds(0)
+		}
+		model := mongo.IndexModel{Keys: indexKeys(ix), Options: opts}
 		name, err := coll.Indexes().CreateOne(ctx, model)
 		if err != nil {
 			return fmt.Errorf("create index (%s) on %s.%s: %w", ix, c.MongoDatabase, c.Name, err)
@@ -162,6 +173,13 @@ func (p *Provisioner) verifyIndexes(ctx context.Context, c *registry.Collection,
 
 func (p *Provisioner) warnUndeclaredIndexes(c *registry.Collection, undeclared []existingIndex) {
 	for _, e := range undeclared {
+		if c.SoftDelete != nil && e.unique && slices.ContainsFunc(c.Indexes, func(ix registry.Index) bool {
+			return ix.Unique && declaredKeys(ix) == e.keys+","+mongoField(registry.MetaDeletedAt)+":1"
+		}) {
+			p.Log.Warn("a unique index from before soft_delete also covers deleted documents, so a deleted document's values can't be reused; backd keeps it, drop it once the collection's new unique index exists",
+				"database", c.MongoDatabase, "collection", c.Name, "index", e.name)
+			continue
+		}
 		p.Log.Warn("index exists in MongoDB but not in indexes.json; it is kept",
 			"database", c.MongoDatabase, "collection", c.Name, "index", e.name)
 	}
