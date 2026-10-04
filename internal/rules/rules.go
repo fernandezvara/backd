@@ -29,13 +29,19 @@ const (
 	Create Op = "create"
 	Update Op = "update"
 	Delete Op = "delete"
+	// Restore and Purge are the operations of a collection that soft-deletes
+	// (collection.yaml): restore decides who may read the deleted documents
+	// and bring them back, purge who may remove them for good. Neither is
+	// covered by `write`: they are denied unless declared.
+	Restore Op = "restore"
+	Purge   Op = "purge"
 	// Invoke is a function's invoke rule (function.yaml): it decides who
 	// may call the function and sees only `user`.
 	Invoke Op = "invoke"
 )
 
 // Ops lists the operations in a fixed order.
-var Ops = []Op{Read, Create, Update, Delete}
+var Ops = []Op{Read, Create, Update, Delete, Restore, Purge}
 
 // User is the signed-in user as rules see it; nil for anonymous callers.
 type User struct {
@@ -122,14 +128,14 @@ func Parse(data []byte, schema Schema) (*Set, []error) {
 	var errs []error
 	for k := range doc {
 		if k != "write" && !slices.Contains(Ops, Op(k)) {
-			errs = append(errs, fmt.Errorf("unknown key %q: want read, create, update, delete or write", k))
+			errs = append(errs, fmt.Errorf("unknown key %q: want read, create, update, delete, restore, purge or write", k))
 		}
 	}
 	s := &Set{rules: map[Op]*Rule{}}
 	for _, op := range Ops {
 		key := string(op)
 		src, ok := doc[key]
-		if !ok && op != Read {
+		if !ok && (op == Create || op == Update || op == Delete) {
 			key, src, ok = "write", doc["write"], doc["write"] != ""
 		}
 		if !ok {
@@ -199,7 +205,7 @@ func compile(op Op, key, src string, schema Schema) (*Rule, error) {
 	if err := check(r, schema); err != nil {
 		return nil, fmt.Errorf("%s: %w", where, err)
 	}
-	if op == Read {
+	if op == Read || op == Restore {
 		if err := r.prepareFilter(); err != nil {
 			return nil, fmt.Errorf("%s: %w", where, err)
 		}

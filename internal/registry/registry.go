@@ -61,12 +61,16 @@ type Collection struct {
 	Rules         *rules.Set         // from rules.yaml; nil allows nothing
 	Erasure       *ErasurePolicy     // from collection.yaml; nil: an erase leaves the collection alone
 	ErasurePath   string             // path of collection.yaml, for error messages
+	SoftDelete    *SoftDelete        // from collection.yaml; nil: DELETE removes the document
 }
 
 // Index is one index declared in indexes.json.
 type Index struct {
 	Keys   []IndexKey
 	Unique bool
+	// TTL makes MongoDB delete a document when the date its single key holds
+	// has passed (soft_delete.retention's purge_at).
+	TTL bool
 }
 
 // IndexKey is one field of an index, in API terms (e.g. "id", "address.city").
@@ -89,7 +93,7 @@ func (ix Index) String() string {
 
 // SystemFields are the server-owned fields that can be queried, sorted
 // and indexed in addition to the schema's fields.
-var SystemFields = []string{"id", "_meta.created_at", "_meta.updated_at", "_meta.version", "_meta.owner", "_meta.created_by", "_meta.updated_by"}
+var SystemFields = []string{"id", "_meta.created_at", "_meta.updated_at", "_meta.version", "_meta.owner", "_meta.created_by", "_meta.updated_by", MetaDeletedAt, MetaDeletedBy, MetaPurgeAt}
 
 // DateField reports whether path is stored as a BSON Date.
 func (c *Collection) DateField(path string) bool {
