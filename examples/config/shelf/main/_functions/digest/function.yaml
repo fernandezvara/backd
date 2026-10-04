@@ -10,6 +10,9 @@ calls: [notify]
 # Chapter 9: it also runs itself — a scheduled run has no caller and no
 # input (ctx.user is null, ctx.input is null, ctx.admin.db is always there).
 schedule: "@daily"
+# Chapter 10: it may also send email — ctx.email.send queues the realm's
+# `shelf-digest` template, one per member.
+email: true
 retry:
   attempts: 3
   backoff: 5s

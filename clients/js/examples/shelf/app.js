@@ -17,6 +17,7 @@ const assets = main.collection('assets')
 const shares = main.collection('shares')
 const notifications = main.collection('notifications')
 const members = main.collection('members')
+const outbox = backd.db('mail').collection('outbox')
 
 document.addEventListener('alpine:init', () => {
   Alpine.data('shelf', () => ({
@@ -29,8 +30,11 @@ document.addEventListener('alpine:init', () => {
 
     // Admin: invitations pending, and the token of the one just created.
     inviteEmail: '',
+    inviteSend: true, // chapter 10: email the invitation, or show the link
     inviteLink: null,
     pendingInvites: [],
+    mailbox: [],
+    newEmail: '',
 
     // My assets and the account page.
     mine: [],
@@ -110,6 +114,7 @@ document.addEventListener('alpine:init', () => {
         await this.loadInvites()
         await this.loadNotifs()
         await this.ensureMember()
+        await this.loadMailbox()
       } catch (e) {
         this.error = e.message
       } finally {
@@ -244,20 +249,37 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    async invite() {
+    async createInvite() {
       this.busy = true
       this.error = null
       this.inviteLink = null
       try {
-        const inv = await backd.admin.invitations.create({ email: this.inviteEmail || undefined })
-        // The token exists only in this response — build the link to hand over.
-        this.inviteLink = `${location.origin}/?token=${inv.token}`
+        if (this.inviteSend && this.inviteEmail) {
+          // Chapter 10: backd emails the invitation — the mail lands in the
+          // dev outbox below.
+          await backd.admin.invitations.send({ email: this.inviteEmail, redirectTo: location.origin + '/' })
+          this.accountMsg = `Invitation emailed to ${this.inviteEmail} — check the mailbox.`
+          await this.loadMailbox()
+        } else {
+          const inv = await backd.admin.invitations.create({ email: this.inviteEmail || undefined })
+          this.inviteLink = `${location.origin}/?token=${inv.token}`
+        }
         this.inviteEmail = ''
         await this.loadInvites()
       } catch (e) {
         this.error = e.message
       } finally {
         this.busy = false
+      }
+    },
+
+    async loadMailbox() {
+      if (!this.isAdmin) return
+      try {
+        const page = await outbox.list({ orderBy: '-_meta.created_at', limit: 20 })
+        this.mailbox = page.items
+      } catch (e) {
+        this.error = e.message
       }
     },
 
@@ -430,6 +452,34 @@ document.addEventListener('alpine:init', () => {
         }
         await this.loadNotifs()
         await this.loadShares()
+      } catch (e) {
+        this.error = e.message
+      } finally {
+        this.busy = false
+      }
+    },
+
+    async requestReset() {
+      this.busy = true
+      this.error = null
+      try {
+        await backd.auth.requestPasswordReset({ email: this.email })
+        this.accountMsg = 'If that address has an account, a reset email is on its way — see the mailbox.'
+      } catch (e) {
+        this.error = e.message
+      } finally {
+        this.busy = false
+      }
+    },
+
+    async requestEmailChange() {
+      this.busy = true
+      this.accountMsg = null
+      try {
+        await backd.auth.requestEmailChange({ newEmail: this.newEmail, password: this.pwd.current })
+        this.newEmail = ''
+        this.accountMsg = 'Check the new address — a confirmation email was sent (the mailbox in dev).'
+        await this.loadMailbox()
       } catch (e) {
         this.error = e.message
       } finally {

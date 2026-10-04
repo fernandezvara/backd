@@ -271,12 +271,12 @@
       <!-- view: invitations (ch4, wired) — operators only. -->
       <article x-show="isAdmin">
         <header><strong>Invite a member</strong></header>
-        <form @submit.prevent="invite">
+        <form @submit.prevent="createInvite">
           <fieldset role="group">
             <input type="email" x-model="inviteEmail" placeholder="new-member@example.com">
             <button type="submit" :disabled="busy">Invite</button>
           </fieldset>
-          <p class="muted">Leave the email empty to make a link anyone can use once.</p>
+          <label><input type="checkbox" x-model="inviteSend"> email the invitation (lands in the mailbox below; untick to get a link to hand over)</label>
         </form>
         <template x-if="inviteLink">
           <p>Send this link — it works once:
@@ -307,6 +307,22 @@
         <p x-show="jobId"><code x-text="jobId"></code> — <strong x-text="jobStatus"></strong></p>
         <pre x-show="jobResult" x-text="JSON.stringify(jobResult, null, 2)"></pre>
       </article>
+
+      <!-- view: mailbox (ch10) — the emails email-capture stored instead of sending. -->
+      <article x-show="isAdmin">
+        <header><strong>Mailbox</strong> <button class="link sm" @click="loadMailbox">refresh</button></header>
+        <p class="muted">What email-capture stored instead of sending (dev only).</p>
+        <ul class="notif">
+          <template x-for="m in mailbox" :key="m.id">
+            <li>
+              <code x-text="m.kind"></code> → <span x-text="(m.to ?? []).join(', ')"></span> —
+              <span x-text="m.subject"></span>
+              <a x-show="m.link" :href="m.link">open link</a>
+              <span class="muted" x-text="new Date(m._meta.created_at).toLocaleString()"></span>
+            </li>
+          </template>
+        </ul>
+      </article>
     </section>
 
     <!-- view: auth (ch2, wired) — sign in / up, plus the account page. -->
@@ -324,7 +340,8 @@
           <label>Password <input type="password" x-model="password" required minlength="12"
                                :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"></label>
           <button type="submit" :disabled="busy" x-text="mode === 'login' ? 'Sign in' : 'Create account'"></button>
-          <p class="muted"><a href="#reset">Forgot your password?</a> <em>(works from chapter 10)</em></p>
+          <p class="muted" x-show="mode === 'login'"><a href="#" @click.prevent="requestReset" :disabled="busy || !email">Forgot your password?</a></p>
+          <p class="muted" x-show="accountMsg" x-text="accountMsg"></p>
         </form>
       </article>
     </section>
@@ -336,9 +353,9 @@
       </hgroup>
       <article class="narrow">
         <p class="muted" x-show="accountMsg" x-text="accountMsg"></p>
-        <form @submit.prevent>
-          <label>Change email <input type="email" placeholder="new@address" disabled></label>
-          <button type="button" class="secondary" disabled title="Needs email: chapter 10">Send confirmation</button>
+        <form @submit.prevent="requestEmailChange">
+          <label>Change email <input type="email" placeholder="new@address" x-model="newEmail"></label>
+          <button type="submit" class="secondary" :disabled="busy || !newEmail || !pwd.current">Send confirmation</button>
         </form>
         <form @submit.prevent="changePassword">
           <label>Current password <input type="password" x-model="pwd.current" required autocomplete="current-password"></label>

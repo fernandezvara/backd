@@ -1,0 +1,3 @@
+Hello,
+
+Someone tried to create an account on {{.Realm}} with {{.User.Email}}, but you already have one. If it was you, sign in, or reset your password if you forgot it. If it wasn't you, you don't need to do anything.

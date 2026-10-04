@@ -1,0 +1,7 @@
+Hello,
+
+{{.Data.count}} asset{{if gt .Data.count 1.0}}s{{end}} published on {{.Realm}} since {{.Data.since}}:
+
+{{range .Data.assets}}- {{.}}
+{{end}}
+Open the gallery to read them.

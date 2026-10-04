@@ -28,6 +28,13 @@ export default async function handler(ctx: Context) {
       kind: "digest",
       text,
     });
+    // Chapter 10: the same news by email — the realm's shelf-digest
+    // template, in the member's language, through email-capture in dev.
+    await ctx.email.send({
+      kind: "shelf-digest",
+      to_user: member.user_id as string,
+      data: { count: page.items.length, since: since.slice(0, 10), assets: page.items.map((a) => a.title) },
+    });
     notified++;
   }
   console.log(`digest: ${page.items.length} assets, ${notified} members notified`);
