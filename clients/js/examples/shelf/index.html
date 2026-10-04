@@ -32,7 +32,11 @@
       <li><a href="#mine">My assets</a></li>
       <li><a href="#notifications">Notifications <mark class="badge">3</mark></a></li>
       <li><a href="#admin">Admin</a></li>
-      <li><a href="#auth" role="button" class="outline">Sign in</a></li>
+      <li x-show="!user"><a href="#auth" role="button" class="outline">Sign in</a></li>
+      <template x-if="user">
+        <li><a href="#account" class="muted" x-text="user?.email"></a>
+          <button class="link" @click="logout" :disabled="busy">Log out</button></li>
+      </template>
       <li><button id="theme-toggle" class="secondary outline sm" title="Toggle dark/light" aria-label="Toggle dark/light">◐</button></li>
     </ul>
   </nav>
@@ -58,8 +62,11 @@
         </select>
       </form>
 
-      <p class="muted" x-show="!busy && assets.length === 0">Nothing published yet.</p>
-      <div class="grid">
+      <article x-show="!user">
+        <p><a href="#auth">Sign in or sign up</a> to see the gallery.</p>
+      </article>
+      <p class="muted" x-show="user && !busy && assets.length === 0">Nothing published yet.</p>
+      <div class="grid" x-show="user">
         <template x-for="asset in assets" :key="asset.id">
           <article>
             <header>
@@ -139,36 +146,25 @@
         </form>
       </article>
 
-      <article>
-        <header>
-          <strong>Reading list: auth in depth</strong>
-          <span class="badge draft">draft</span>
-        </header>
-        <p>Five links on sessions, tokens and rules, in the order to read them.</p>
-        <footer>
-          <span class="muted">updated 2026-09-20</span>
-          <span>
-            <button class="link sm">Edit</button>
-            <button class="link sm">Publish</button>
-            <button class="link danger sm">Delete</button>
-          </span>
-        </footer>
-      </article>
-
-      <article>
-        <header>
-          <strong>The backd handbook</strong>
-          <span class="badge pub">published</span>
-        </header>
-        <p>Our internal guide to realms, rules and functions — start here.</p>
-        <footer>
-          <span class="muted">published 2026-09-12</span>
-          <span>
-            <button class="link sm">Edit</button>
-            <button class="link danger sm">Unpublish</button>
-          </span>
-        </footer>
-      </article>
+      <p class="muted" x-show="!user">Sign in to see your assets.</p>
+      <template x-for="asset in mine" :key="asset.id">
+        <article>
+          <header>
+            <strong x-text="asset.title"></strong>
+            <span class="badge" :class="asset.published_at ? 'pub' : 'draft'"
+                  x-text="asset.published_at ? 'published' : 'draft'"></span>
+          </header>
+          <p x-text="asset.body"></p>
+          <footer>
+            <span class="muted" x-text="asset.published_at ? 'published ' + new Date(asset.published_at).toLocaleDateString() : 'draft'"></span>
+            <span>
+              <button class="link sm" disabled title="Chapter 3 wires this">Edit</button>
+              <button class="link sm" disabled title="Chapter 5 wires this">Publish</button>
+              <button class="link danger sm" disabled title="Chapter 3 wires this">Delete</button>
+            </span>
+          </footer>
+        </article>
+      </template>
     </section>
 
     <!-- view: notifications (ch7→ch8) — what publish and digest create. -->
@@ -215,38 +211,42 @@
       </article>
     </section>
 
-    <!-- view: auth (ch2) — sign in / up, plus the account page pieces. -->
-    <section id="auth">
+    <!-- view: auth (ch2, wired) — sign in / up, plus the account page. -->
+    <section id="auth" x-show="!user">
       <hgroup>
-        <h2>Sign in</h2>
-        <p>Or <a href="#signup">create an account</a>.</p>
+        <h2 x-text="mode === 'login' ? 'Sign in' : 'Sign up'"></h2>
+        <p x-show="mode === 'login'">Or <a href="#" @click.prevent="mode = 'signup'">create an account</a>.</p>
+        <p x-show="mode === 'signup'">Or <a href="#" @click.prevent="mode = 'login'">sign in</a>.</p>
       </hgroup>
       <article class="narrow">
-        <form>
-          <label>Email <input type="email" required></label>
-          <label>Password <input type="password" required></label>
-          <button type="button">Sign in</button>
-          <p class="muted"><a href="#reset">Forgot your password?</a></p>
+        <form @submit.prevent="submitAuth">
+          <label>Email <input type="email" x-model="email" required autocomplete="email"></label>
+          <label>Password <input type="password" x-model="password" required minlength="12"
+                               :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"></label>
+          <button type="submit" :disabled="busy" x-text="mode === 'login' ? 'Sign in' : 'Create account'"></button>
+          <p class="muted"><a href="#reset">Forgot your password?</a> <em>(works from chapter 10)</em></p>
         </form>
       </article>
+    </section>
 
-      <article class="narrow" id="verify">
-        <p><mark>Check your inbox</mark> — we sent a verification link to <strong>you@shelf.example</strong>.</p>
-      </article>
-
-      <article class="narrow" id="account">
-        <header><strong>Account</strong></header>
-        <p class="muted">Signed in as ana@shelf.example · role: member</p>
-        <form>
-          <label>Change email <input type="email" placeholder="new@address"></label>
-          <button type="button" class="secondary">Send confirmation</button>
+    <section id="account" x-show="user">
+      <hgroup>
+        <h2>Account</h2>
+        <p x-text="user?.email"></p>
+      </hgroup>
+      <article class="narrow">
+        <p class="muted" x-show="accountMsg" x-text="accountMsg"></p>
+        <form @submit.prevent>
+          <label>Change email <input type="email" placeholder="new@address" disabled></label>
+          <button type="button" class="secondary" disabled title="Needs email: chapter 10">Send confirmation</button>
         </form>
-        <form>
-          <label>Change password <input type="password" placeholder="new password"></label>
-          <button type="button" class="secondary">Change password</button>
+        <form @submit.prevent="changePassword">
+          <label>Current password <input type="password" x-model="pwd.current" required autocomplete="current-password"></label>
+          <label>New password <input type="password" x-model="pwd.next" required minlength="12" autocomplete="new-password"></label>
+          <button type="submit" class="secondary" :disabled="busy">Change password</button>
         </form>
         <hr>
-        <button type="button" class="contrast outline danger-zone">Delete my account</button>
+        <button type="button" class="contrast outline danger-zone" @click="deleteAccount" :disabled="busy">Delete my account</button>
         <p class="muted">Deactivates your account; your assets follow the collection's erasure policy.</p>
       </article>
     </section>
@@ -254,7 +254,7 @@
   </main>
 
   <footer class="container">
-    <p class="muted">Shelf — a <a href="https://github.com/fernandezvara/backd">backd</a> tutorial app. Static snapshot: nothing here works yet.</p>
+    <p class="muted">Shelf — a <a href="https://github.com/fernandezvara/backd">backd</a> tutorial app. Views go live chapter by chapter.</p>
   </footer>
   <script>
     // Snapshot only: this is the one piece of working UI (Pico reads

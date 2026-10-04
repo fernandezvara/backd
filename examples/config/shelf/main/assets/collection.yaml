@@ -1,0 +1,9 @@
+# What happens to this collection when an administrator erases a user
+# (`backd user delete`, docs: Auth -> Deleting and erasing users). Chapter 2
+# adds this with the account page's "delete my account" button: self-service
+# deletion only deactivates; an erase is admin-run and applies this policy.
+#
+# A member's assets go with them: the library keeps what the team shared, not
+# one person's shelf.
+on_owner_delete:
+  action: delete

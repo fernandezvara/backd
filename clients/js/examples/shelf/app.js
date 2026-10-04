@@ -1,14 +1,31 @@
 // Shelf — the tutorial app (docs: Tutorial).
 //
-// Chapter 1 wires the public gallery and the "new asset" form to the realm;
-// every later chapter replaces one more static section with live bindings.
-import { createClient } from 'backd-js'
+// Chapter 2 adds authentication: sign up, sign in, sessions that survive a
+// reload, "my assets" and the account page (password change, delete account).
+import { createClient, localStorageStorage } from 'backd-js'
 
-const backd = createClient({ url: window.location.origin, realm: 'shelf' })
+const backd = createClient({
+  url: window.location.origin,
+  realm: 'shelf',
+  // Sessions survive reloads. In a real app, guard against XSS before
+  // trusting localStorage (or use cookie sessions).
+  storage: localStorageStorage('shelf'),
+})
 const assets = backd.db('main').collection('assets')
 
 document.addEventListener('alpine:init', () => {
   Alpine.data('shelf', () => ({
+    // Session: null while signed out.
+    user: null,
+    mode: 'login', // login | signup
+    email: '',
+    password: '',
+
+    // My assets and the account page.
+    mine: [],
+    pwd: { current: '', next: '' },
+    accountMsg: null,
+
     // Gallery state: the page of published assets, the tag filter and the
     // cursor that continues the list.
     assets: [],
@@ -23,6 +40,40 @@ document.addEventListener('alpine:init', () => {
     draft: { title: '', kind: 'link', url: '', body: '', tags: '' },
 
     async init() {
+      try {
+        this.user = await backd.auth.me()
+      } catch {
+        this.user = null
+      }
+      await this.refilter()
+      if (this.user) await this.loadMine()
+    },
+
+    // --- session -----------------------------------------------------------
+
+    async submitAuth() {
+      this.busy = true
+      this.error = null
+      try {
+        const credentials = { email: this.email, password: this.password }
+        const session = this.mode === 'signup'
+          ? await backd.auth.signup(credentials)
+          : await backd.auth.login(credentials)
+        this.user = session.user
+        this.password = ''
+        await this.refilter()
+        await this.loadMine()
+      } catch (e) {
+        this.error = e.message
+      } finally {
+        this.busy = false
+      }
+    },
+
+    async logout() {
+      await backd.auth.logout().catch(() => {})
+      this.user = null
+      this.mine = []
       await this.refilter()
     },
 
@@ -32,6 +83,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     async load() {
+      if (!this.user) return
       this.busy = true
       this.error = null
       try {
@@ -74,6 +126,55 @@ document.addEventListener('alpine:init', () => {
         await assets.create(doc)
         this.draft = { title: '', kind: 'link', url: '', body: '', tags: '' }
         await this.refilter()
+        await this.loadMine()
+      } catch (e) {
+        this.error = e.message
+      } finally {
+        this.busy = false
+      }
+    },
+
+    // --- my assets & account -------------------------------------------------
+
+    async loadMine() {
+      if (!this.user) return
+      try {
+        const page = await assets.list({
+          where: { '_meta.owner': this.user.id },
+          orderBy: '-published_at',
+          limit: 50,
+        })
+        this.mine = page.items
+      } catch (e) {
+        this.error = e.message
+      }
+    },
+
+    async changePassword() {
+      this.busy = true
+      this.accountMsg = null
+      try {
+        await backd.auth.changePassword({
+          currentPassword: this.pwd.current,
+          newPassword: this.pwd.next,
+        })
+        this.pwd = { current: '', next: '' }
+        this.accountMsg = 'Password changed.'
+      } catch (e) {
+        this.accountMsg = e.message
+      } finally {
+        this.busy = false
+      }
+    },
+
+    async deleteAccount() {
+      if (!confirm('Deactivate your account? Your assets follow the collection\'s erasure policy.')) return
+      const password = prompt('Confirm with your password:')
+      if (!password) return
+      this.busy = true
+      try {
+        await backd.auth.deleteAccount({ password })
+        await this.logout()
       } catch (e) {
         this.error = e.message
       } finally {

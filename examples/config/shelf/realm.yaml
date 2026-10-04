@@ -2,7 +2,20 @@
 # builds, chapter by chapter (docs: Tutorial). The files here are its final
 # state; each chapter says what to add or change.
 #
-# Chapter 1 starts the realm with auth disabled so the gallery is public on
-# localhost. Never expose a realm like this: anyone who can reach backd can
-# read and modify its data. Chapter 2 turns authentication on.
-auth: disabled
+# Chapter 2: anyone may sign up (signup: open); signing in with the seeded
+# addresses below grants the demo roles — demo users like these belong in
+# local stacks only. `backd bootstrap --realm shelf --email <email>` creates
+# the first administrator on a fresh database.
+auth: enabled
+signup: open
+
+roles:
+  admin:
+    description: "Operators: users, invitations and API keys"
+    admin: true
+    users:
+      - operator@shelf.example
+  curator:
+    description: Publishes assets and manages share links (chapter 5)
+    users:
+      - curator@shelf.example
