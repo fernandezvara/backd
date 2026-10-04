@@ -1,0 +1,17 @@
+{{- /*
+  The files of a tutorial chapter as a download loop, so a reader who fell
+  behind (or prefers not to type) can fetch them. Paths are relative to
+  examples/config/shelf and are served under /tutorial/config/shelf/.
+
+    {{< tutorial-files "main/notifications/schema.json main/notifications/rules.yaml" >}}
+
+  The files are checked to exist at build time.
+*/ -}}
+{{- $paths := split (.Get 0) " " -}}
+{{- range $paths -}}
+  {{- if not (resources.Get (printf "examples/shelf/%s" .)) }}{{ errorf "tutorial-files: examples/config/shelf/%s not found (%s)" . $.Position }}{{ end -}}
+{{- end -}}
+{{- $base := "https://fernandezvara.github.io/backd/tutorial/config/shelf" -}}
+{{- $code := printf "for f in %s; do\n  mkdir -p \"config/shelf/$(dirname \"$f\")\"\n  curl -fsSL \"%s/$f\" -o \"config/shelf/$f\"\ndone" (delimit $paths " ") $base -}}
+<p class="hd-example-path"><code>fetch the chapter's files</code> (optional — the listings above are the same files)</p>
+{{ transform.Highlight $code "sh" "" }}
