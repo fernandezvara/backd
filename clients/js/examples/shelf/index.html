@@ -90,11 +90,11 @@
         </select>
       </form>
 
-      <article x-show="!user">
+      <article x-show="!user && !open">
         <p><a href="#auth">Sign in or sign up</a> to see the gallery.</p>
       </article>
-      <p class="muted" x-show="user && !busy && assets.length === 0">Nothing published yet.</p>
-      <div class="grid" x-show="user">
+      <p class="muted" x-show="(user || open) && !busy && assets.length === 0">Nothing published yet.</p>
+      <div class="grid" x-show="user || open">
         <template x-for="asset in assets" :key="asset.id">
           <article>
             <header>

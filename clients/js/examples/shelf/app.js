@@ -3,7 +3,7 @@
 // Chapter 5 adds the first functions: curators `publish` drafts, members
 // mint `share` links, and `?s=<token>` resolves one publicly through
 // `share-open` — the holes the rules chapter left, closed.
-import { createClient, localStorageStorage, VersionMismatchError } from 'backd-js'
+import { createClient, localStorageStorage, NotFoundError, VersionMismatchError } from 'backd-js'
 
 const backd = createClient({
   url: window.location.origin,
@@ -25,6 +25,9 @@ document.addEventListener('alpine:init', () => {
   Alpine.data('shelf', () => ({
     // Session: null while signed out.
     user: null,
+    // A realm with `auth: disabled` (chapter 1) has no accounts: the gallery
+    // is open to everyone, and the other views stay empty.
+    open: false,
     // The one section showing; the nav's #links move between them.
     view: 'gallery',
     mode: 'login', // login | signup
@@ -98,8 +101,9 @@ document.addEventListener('alpine:init', () => {
       if (s) await this.openShare(s)
       try {
         this.user = await backd.auth.me()
-      } catch {
+      } catch (e) {
         this.user = null
+        this.open = e instanceof NotFoundError
       }
       await this.refilter()
       if (this.user) await Promise.all([this.loadMine(), this.loadInvites(), this.loadShares(), this.loadNotifs(), this.ensureMember(), this.loadAdmin()])
@@ -156,7 +160,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     async load() {
-      if (!this.user) return
+      if (!this.user && !this.open) return
       this.busy = true
       this.error = null
       try {

@@ -67,10 +67,10 @@ curl -s http://localhost:8080/v1/shelf/main/assets \
   -d '{"title":"The backd handbook","kind":"link","url":"https://fernandezvara.github.io/backd/","tags":["docs","onboarding"],"published_at":"2026-09-12T09:00:00Z"}'
 
 curl -s 'http://localhost:8080/v1/shelf/main/assets?order_by=-published_at&limit=5'
-curl -s 'http://localhost:8080/v1/shelf/main/assets?where={"tags":"docs"}'
+curl -s -G http://localhost:8080/v1/shelf/main/assets --data-urlencode 'where={"tags":"docs"}'
 ```
 
-Add a few more documents so the gallery has something to page: the second `curl` shows `items`, `has_more` and `next_cursor` — the cursor the app will follow ([Querying](../../api/querying/)).
+Repeat the first `curl` with other titles and `"tags":["docs"]` (four or five documents is enough) so the gallery has something to show; the page size in the app is 9, so paging needs more: the second `curl` shows `items`, `has_more` and `next_cursor` — the cursor the app will follow ([Querying](../../api/querying/)).
 
 ## The gallery
 
@@ -85,14 +85,14 @@ const assets = backd.db('main').collection('assets')
 
 One Alpine component lists assets with `where`/`orderBy`/`after` and creates them from the form. The tag input re-fetches on change (`{"tags": tag}` matches array membership), the sort select switches between `-published_at`, `published_at` and `title`, and the pager is a **Load more** button that passes `next_cursor` as `after` — the cursor keeps the list stable while documents change under it. The source is [in the repository](https://github.com/fernandezvara/backd/tree/main/clients/js/examples/shelf/app.js), and it reads top to bottom if you want to see how each chapter's feature is called.
 
-Open `http://localhost:8080` (the **New asset** form needs no sign-in while `auth: disabled`).
+Open `http://localhost:8080`: while the realm has `auth: disabled`, the gallery is open to everyone and shows what you created with `curl`.
 
 ## You should see
 
 - `http://localhost:8080` shows the gallery with the assets you created by curl.
-- **New asset** adds a card to the list; the date reads today's. (Sections that need accounts or functions — My assets, Notifications, Admin — are inert or error until their chapters.)
+- (The **New asset** form lives in *My assets*, which needs an account — chapter 2 — and saves drafts, which the gallery doesn't list; the *Share* buttons need chapter 5. Notifications and Admin wait for their chapters too.)
 - Typing `docs` in the tag filter shows only matching assets; picking **Title A–Z** re-sorts.
-- With more than a page of assets, **Load more** appends the next page.
-- A document that breaks the schema (e.g. `{"kind":"video"}`) is refused with `422` and field-level errors — try it with curl.
+- With more than 9 published assets, **Load more** appends the next page.
+- A document that breaks the schema (e.g. `{"kind":"video"}`) is refused with `400 validation_error` and field-level errors — try it with curl.
 
 Next: [chapter 2](../02-members/) turns authentication on and the gallery gains owners.
