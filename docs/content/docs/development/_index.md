@@ -39,13 +39,13 @@ toc: true
 | `scripts/local-certs.sh` | Creates or renews the local CA and certificate with certsfor |
 | `deploy/production/` | The [production reference deployment](../operations/production/) and its end-to-end test |
 | `Dockerfile` | Multi-stage build into a distroless image |
-| `docker-compose.test.yml` | Dockerized test environment |
+| `docker-compose.test.yml` | Dockerized test environment (project `backd-test`) |
 | `.github/workflows/ci.yml` | CI: vet, OpenAPI lint, dockerized tests, release configuration check, JavaScript client checks and integration tests, the production reference test, docs build |
 | `.github/workflows/pages.yml` | On version tags, builds this documentation site, checks its links and callouts, and publishes it to GitHub Pages (see [Releasing](#releasing)) |
 | `.github/workflows/publish-js.yml` | On `js-v*` tags, publishes the JavaScript client to npm (see [Releasing the JavaScript client](#releasing-the-javascript-client)) |
 | `.github/workflows/release.yml`, `.goreleaser.yaml` | Releases on version tags: binaries, GitHub release, container image (see [Releasing](#releasing)) |
 | `.github/dependabot.yml` | Weekly dependency updates (see [Supply chain](#supply-chain)) |
-| `docker-compose.js.yml` | Stack for the JavaScript client's integration tests |
+| `docker-compose.js.yml` | Stack for the JavaScript client's integration tests (project `backd-js-test`) |
 
 ## Testing
 

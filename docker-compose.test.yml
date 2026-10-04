@@ -1,4 +1,8 @@
 # Dockerized test environment. Run with: make test
+#
+# Its own project name, so running it never touches the local stack
+# (docker-compose.yml, `make example`) or the JS integration stack.
+name: backd-test
 services:
   # A single-node replica set (backd refuses standalone servers). The health
   # check initiates it on first start and passes once it is the primary.

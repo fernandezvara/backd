@@ -1,0 +1,42 @@
+# Tests for rules.yaml (`backd rules test`): members see and edit their
+# groups, only the creator deletes one.
+users:
+  ada:   { id: u1, email: ada@example.com }
+  bob:   { id: u2, email: bob@example.com }
+  carl:  { id: u3, email: carl@example.com }
+  dana:  { id: u4, email: dana@example.com, email_verified: false }   # a member whose address isn't verified
+
+documents:
+  trip: { name: Trip, currency: EUR, members: [ada@example.com, bob@example.com, dana@example.com], _meta: { owner: u1 } }
+
+tests:
+  - name: only members read a group, and only with a verified address
+    as: ada
+    read: { allow: [trip] }
+  - as: bob
+    read: { allow: [trip] }
+  - as: carl
+    read: { deny: [trip] }
+  - as: dana
+    read: { deny: [trip] }
+  - as: anonymous
+    read: { deny: [trip] }
+
+  - name: members invite and remove others, never themselves, and the currency stays
+    as: bob
+    update:
+      - { document: trip, patch: { members: [ada@example.com, bob@example.com, dana@example.com, carl@example.com] }, expect: allow }
+      - { document: trip, patch: { members: [ada@example.com, dana@example.com] }, expect: deny }
+      - { document: trip, patch: { currency: USD }, expect: deny }
+    delete: { deny: [trip] }
+
+  - name: the creator deletes, and creates a group they belong to
+    as: ada
+    delete: { allow: [trip] }
+    create:
+      - { data: { name: New, currency: EUR, members: [ada@example.com] }, expect: allow }
+      - { data: { name: Not mine, currency: EUR, members: [bob@example.com] }, expect: deny }
+
+  - name: nobody else deletes
+    as: carl
+    delete: { deny: [trip] }

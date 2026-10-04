@@ -337,6 +337,25 @@ func compare(t *testing.T, repo *Repository, r *rules.Rule, break_ func(storage.
 				got = append(got, id)
 			}
 		}
+		// storage.Match, which `backd rules test` evaluates read rules with, must
+		// list exactly what MongoDB lists, including the cases expr can't decide.
+		var inMemory []string
+		for id, d := range docs {
+			ok, err := storage.Match(d, f)
+			if err != nil {
+				t.Fatalf("%s as %s: storage.Match: %v", src, name, err)
+			}
+			if ok {
+				inMemory = append(inMemory, id)
+			}
+		}
+		slices.Sort(inMemory)
+		sortedMongo := slices.Clone(ids0)
+		slices.Sort(sortedMongo)
+		if !slices.Equal(inMemory, sortedMongo) {
+			mismatches = append(mismatches, fmt.Sprintf("storage.Match %s as %s: in memory %d documents, MongoDB lists %d\n  only in memory: %v\n  only in MongoDB: %v",
+				src, name, len(inMemory), len(sortedMongo), diff(inMemory, sortedMongo), diff(sortedMongo, inMemory)))
+		}
 		slices.Sort(want)
 		slices.Sort(got)
 		if !slices.Equal(got, want) {

@@ -16,6 +16,7 @@ $CONFIG_DIR/<realm>/
         schema.json      # required — JSON Schema draft 2020-12
         indexes.json     # optional — index declarations
         rules.yaml       # optional — access rules (see Authentication)
+        rules.test.yaml  # optional — tests of the rules (`backd rules test`)
         collection.yaml  # optional — what an erase does to the collection
     <database>/_functions/  # optional — server-side functions
 ```

@@ -81,6 +81,7 @@ func TestRealm(t *testing.T) {
 		{Path: "demo/main/_functions/stats/index.ts", Created: true},
 		{Path: "demo/main/posts/collection.yaml", Created: true},
 		{Path: "demo/main/posts/indexes.json", Created: true},
+		{Path: "demo/main/posts/rules.test.yaml", Created: true},
 		{Path: "demo/main/posts/rules.yaml", Created: true},
 		{Path: "demo/main/posts/schema.json", Created: true},
 	}...)
@@ -117,7 +118,7 @@ func TestDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 7 || files[6].Path != "demo/blog/posts/schema.json" || !files[6].Created {
+	if len(files) != 8 || files[7].Path != "demo/blog/posts/schema.json" || !files[7].Created {
 		t.Errorf("files = %v", files)
 	}
 	if _, err := registry.Load(root); err != nil {
@@ -136,6 +137,7 @@ func TestProject(t *testing.T) {
 		"config/shop/realm.yaml",
 		"config/shop/main/posts/collection.yaml",
 		"config/shop/main/posts/indexes.json",
+		"config/shop/main/posts/rules.test.yaml",
 		"config/shop/main/posts/rules.yaml",
 		"config/shop/main/posts/schema.json",
 		"config/shop/main/_functions/deno.json",

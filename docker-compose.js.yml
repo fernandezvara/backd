@@ -2,6 +2,10 @@
 # running both the serve and worker roles) + a real functions executor +
 # MongoDB with the config in clients/js/test/integration/config.
 # Run with `make js-integration`.
+#
+# Its own project name, so running it never touches the local stack
+# (docker-compose.yml, `make example`) or the unit tests' (docker-compose.test.yml).
+name: backd-js-test
 services:
   mongo:
     image: docker.io/library/mongo:8.2

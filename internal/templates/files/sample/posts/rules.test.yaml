@@ -1,0 +1,36 @@
+# Tests for rules.yaml, run by `backd rules test` (no database needed):
+# named callers, stored documents, and what each may do. A change to the
+# rules that opens or closes something by accident fails here.
+now: 2026-10-04T12:00:00Z
+
+users:                                # "anonymous" always exists
+  ada: { id: u1, email: ada@example.com }
+  bob: { id: u2, email: bob@example.com }
+
+documents:                            # as stored: _meta.owner is who created it
+  adas_draft:     { title: Draft, published: false, author: { email: ada@example.com }, _meta: { owner: u1 } }
+  adas_published: { title: Hello, published: true, author: { email: ada@example.com }, _meta: { owner: u1 } }
+  bobs_draft:     { title: Secret, published: false, author: { email: bob@example.com }, _meta: { owner: u2 } }
+
+tests:
+  - name: anyone reads published posts
+    as: anonymous
+    read:   { allow: [adas_published], deny: [adas_draft, bobs_draft] }
+    create: [ { data: { title: Spam }, expect: deny } ]
+    delete: { deny: [adas_published] }
+
+  - name: authors see their drafts and nobody else's
+    as: ada
+    read: { allow: [adas_draft, adas_published], deny: [bobs_draft] }
+
+  - name: writing
+    as: ada
+    create:
+      - { data: { title: New, author: { email: ada@example.com } }, expect: allow }
+      - { data: { title: Impersonated, author: { email: bob@example.com } }, expect: deny }
+      - { data: { title: No author }, expect: deny }
+    update:
+      - { document: adas_draft, patch: { published: true }, expect: allow }
+      - { document: adas_draft, patch: { author: { email: bob@example.com } }, expect: deny }
+      - { document: bobs_draft, patch: { title: Mine now }, expect: deny }   # not even readable: a 404
+    delete: { allow: [adas_draft, adas_published], deny: [bobs_draft] }
