@@ -107,7 +107,7 @@
               <span x-text="asset.body"></span>
             </p>
             <footer>
-              <span class="muted" x-text="asset.published_at ? new Date(asset.published_at).toLocaleDateString() : 'draft'"></span>
+              <span class="muted" x-text="(asset.published_at ? new Date(asset.published_at).toLocaleDateString() : 'draft') + (byline(asset) ? ' · ' + byline(asset) : '')"></span>
               <span class="tags">
                 <template x-for="t in asset.tags ?? []" :key="t">
                   <a href="#" @click.prevent="tag = t; refilter()" x-text="t"></a>

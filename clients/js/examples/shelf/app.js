@@ -51,6 +51,9 @@ document.addEventListener('alpine:init', () => {
     mine: [],
     // Curators: every member's unpublished assets, oldest first (chapter 5).
     drafts: [],
+    // user id -> email, from the members directory (chapter 8): lets a card
+    // say who published it. Empty until that chapter exists.
+    names: {},
     editing: null, // { id, version, title, url, body, tags } — the card being edited
     pwd: { current: '', next: '' },
     accountMsg: null,
@@ -109,6 +112,7 @@ document.addEventListener('alpine:init', () => {
       }
       await this.refilter()
       if (this.user) await Promise.all([this.loadMine(), this.loadDrafts(), this.loadInvites(), this.loadShares(), this.loadNotifs(), this.ensureMember(), this.loadAdmin()])
+      if (this.user) await this.loadNames()
       this.syncView()
     },
 
@@ -140,6 +144,7 @@ document.addEventListener('alpine:init', () => {
         await this.loadInvites()
         await this.loadNotifs()
         await this.ensureMember()
+        await this.loadNames()
         await this.loadAdmin()
         window.location.hash = '#mine'
       } catch (e) {
@@ -516,6 +521,24 @@ document.addEventListener('alpine:init', () => {
 
     // The digest needs a member list; users live in the system database a
     // function can't read — so the app upserts a member doc on sign-in.
+    async loadNames() {
+      try {
+        const page = await members.list({ limit: 100 })
+        this.names = Object.fromEntries(page.items.map((m) => [m.user_id, m.email]))
+      } catch {
+        // no members collection yet (before chapter 8): cards just say nothing.
+        // (One page of 100 is plenty for a demo; a real app would look up the
+        // ids on screen with `where: { user_id: { $in: [...] } }`.)
+      }
+    },
+
+    // "published by …" for an asset whose publish function stamped
+    // `published_by` (the optional schema step of chapter 7); '' otherwise.
+    byline(asset) {
+      const who = asset.published_by && this.names[asset.published_by]
+      return who ? `published by ${who}` : ''
+    },
+
     async ensureMember() {
       if (!this.user) return
       try {
