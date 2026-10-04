@@ -1,3 +1,12 @@
+# Soft delete (docs: Configuration -> collection.yaml). With it, DELETE marks a
+# document deleted instead of removing it: nothing reads it, it can be restored
+# (POST /{id}/restore) or purged (DELETE /{id}?purge=true) under the `restore`
+# and `purge` rules, and its unique values are free again. `retention` removes
+# deleted documents for good after that long (leave it out to keep them).
+#
+# soft_delete:
+#   retention: 30d
+#
 # What happens to this collection when an administrator erases a user
 # (`backd user delete`, docs: Auth -> Erasing users). Everything below is
 # commented out: with no `on_owner_delete`, an erase leaves this collection

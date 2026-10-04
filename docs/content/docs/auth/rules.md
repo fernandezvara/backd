@@ -46,8 +46,10 @@ delete: hasRole(user, 'admin')
 | `read` | Listing documents and fetching one |
 | `create` | `POST` |
 | `update` | `PUT` and `PATCH` |
-| `delete` | `DELETE` |
-| `write` | Shorthand used for `create`, `update` and `delete` when they aren't set |
+| `delete` | `DELETE` (and, in a collection with [soft delete](../../api/documents/#soft-delete), the soft delete) |
+| `restore` | Soft-deleted collections only: reading the trash (`deleted=only\|include`) and `POST …/restore`. Like `read`, it becomes a database filter, so it follows the same limits |
+| `purge` | Soft-deleted collections only: `DELETE …?purge=true`. Evaluated on the stored document, like `delete` |
+| `write` | Shorthand used for `create`, `update` and `delete` when they aren't set; it doesn't cover `restore` or `purge` |
 
 Anything not allowed is denied: an operation without a rule (and no `write` to fall back on) is forbidden for users and anonymous callers. A collection without `rules.yaml` is only reachable with API keys.
 
@@ -180,7 +182,7 @@ At `LOG_LEVEL=debug`, every denial is logged (`"msg":"access denied"`) with the 
 
 ## Testing rules
 
-`backd rules test` checks your rules without MongoDB and without starting `backd`. It reads a fixture, `rules.test.yaml`, next to each `rules.yaml`: named callers, stored documents, and for each caller which documents they may read, create, update and delete. It prints what fails and exits non-zero, so it fits a CI step before packaging. It needs only `CONFIG_DIR`.
+`backd rules test` checks your rules without MongoDB and without starting `backd`. It reads a fixture, `rules.test.yaml`, next to each `rules.yaml`: named callers, stored documents, and for each caller which documents they may read, create, update, delete, restore and purge. It prints what fails and exits non-zero, so it fits a CI step before packaging. It needs only `CONFIG_DIR`.
 
 ```yaml
 # rules.test.yaml
@@ -207,9 +209,9 @@ tests:
       - { document: draft, data: { title: Whole, status: x }, expect: deny }  # the complete new document, as PUT sends it
 ```
 
-- `read` and `delete` list document names under `allow` and `deny`; `create` takes `data` (the body) with `expect: allow` or `deny`; `update` takes a `document` and either `patch` or `data`, with `expect`.
+- `read`, `delete`, `restore` and `purge` list document names under `allow` and `deny` (`restore` and `purge` are for [soft-deleting](../../configuration/config-dir/#soft-delete) collections; a fixture document is in the trash when its `_meta` has `deleted_at`, and a trashed document is seen through the read and restore rules both); `create` takes `data` (the body) with `expect: allow` or `deny`; `update` takes a `document` and either `patch` or `data`, with `expect`.
 - The decisions are the server's. A `read` rule becomes the same database filter, evaluated the way MongoDB does (a missing field, an array, `null`); `update` and `delete` first need the stored document to be readable, so a document the caller can't read is a denial there too (the server answers `404`); a rule that fails while being evaluated denies. A document or body that breaks `schema.json` is a mistake in the fixture, reported as such: the server would answer `400` before it asked the rules.
-- Stored documents get `_meta.owner: null` and `created_at` and `updated_at` equal to `now`, unless the fixture sets `_meta` (`owner`, `created_by`, `updated_by`, `version`, `created_at`, `updated_at`). Their `id` is their name, unless they have an `id`.
+- Stored documents get `_meta.owner: null` and `created_at` and `updated_at` equal to `now`, unless the fixture sets `_meta` (`owner`, `created_by`, `updated_by`, `version`, `created_at`, `updated_at`, `deleted_at`, `deleted_by`, `purge_at`). Their `id` is their name, unless they have an `id`.
 - Output lists failures with what the rules decided and why; `--verbose` also lists what passes, `--collection realm/database/collection` (or a prefix) runs some collections, and collections with a `rules.yaml` and no fixture are listed. `--strict` fails when there are any.
 
 API keys bypass rules, so there is nothing to test for them; what the tests don't cover is the HTTP layer (statuses, `where` filters combined with the rule), which the server's own tests do.

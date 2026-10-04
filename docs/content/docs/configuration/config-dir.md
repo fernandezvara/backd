@@ -131,7 +131,7 @@ Filtering and sorting on unindexed fields works, but scans the whole collection,
 
 ## `collection.yaml`
 
-This optional file says what an administrator's **erase** does to the collection when a user is erased (`backd user delete`). **Without it, the collection is left alone**: its documents keep everything, which is what you want for records you must keep, such as purchases. `backd template collection-policy` writes a commented example.
+This optional file says whether the collection keeps deleted documents recoverable ([`soft_delete`](#soft-delete)) and what an administrator's **erase** does to the collection when a user is erased (`backd user delete`). **Without it, the collection is left alone**: its documents keep everything, which is what you want for records you must keep, such as purchases. `backd template collection-policy` writes a commented example.
 
 ```yaml
 on_owner_delete:
@@ -151,6 +151,24 @@ on_owner_delete:
 - `backd` checks the policy against `schema.json` at startup, so an erase leaves every document valid: named fields must exist; a required field can't be removed or unset (make it optional, or `replace` it); `replace` values must satisfy the schema and can't be in a unique index; `pull` fields must be arrays of strings without `minItems`; `unset` fields must be strings.
 - `backd provision` creates the indexes an erase searches by, so large collections aren't scanned: `_meta.owner` when the policy has an `action`, and one on each `pull` and `unset` field (they are checked in `verify` mode like the ones in `indexes.json`). Adding a policy to an existing collection builds them at the next provision.
 - The file is part of the [config fingerprint](../../operations/deploying/). Applying a policy is an erase, which is an administrator's action.
+
+### Soft delete
+
+By default `DELETE` removes a document for good. A collection can keep deleted documents recoverable instead:
+
+```yaml
+soft_delete:
+  retention: 30d     # optional: remove them for good this long after the delete
+```
+
+`soft_delete: true` is the same without a retention. What changes in a collection that soft-deletes:
+
+- **`DELETE` marks the document** (`_meta.deleted_at`, `deleted_by` and, with a retention, `purge_at`, at the next version) instead of removing it. No read, list, count, write or batch sees it; a unique value it held is free for a new document at once.
+- **The trash is a separate view**: `?deleted=only|include` on list and get, `POST /{id}/restore`, and `DELETE /{id}?purge=true`, each under its own rule (`restore` and `purge` in [`rules.yaml`](../../auth/rules/#operations), denied unless declared). See [Soft delete](../../api/documents/#soft-delete).
+- **A retention is MongoDB's TTL index**: `backd provision` creates it on `_meta.purge_at` and MongoDB removes the documents in the background, within about a minute of that time. Without a retention a deleted document stays until it is purged by hand.
+- **Unique indexes** from `indexes.json` get `_meta.deleted_at` as their last key, so live documents stay unique among themselves, a deleted one never clashes with anything, and documents that existed before count as live. Turning `soft_delete` on for a collection that already has a unique index builds the new index next to the old one, and `backd provision` warns about the old one: it also covers deleted documents, so **drop it** once the new one exists (`db.<collection>.dropIndex("<name>")`) or a deleted document's values stay taken. `backd` never drops an index itself.
+- **Erasing a user** still deletes, anonymizes and clears documents that are in the trash: it works on everything the user owns.
+- It doesn't need users: a realm with `auth: disabled` can soft-delete, though it has no rules to restrict the trash.
 
 ## Errors
 
