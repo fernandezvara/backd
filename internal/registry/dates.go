@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"maps"
 	"strings"
 	"time"
 )
@@ -27,9 +28,7 @@ func (c *Collection) DatesToStorage(doc map[string]any) map[string]any {
 
 func cloneMap(m map[string]any) map[string]any {
 	out := make(map[string]any, len(m))
-	for k, v := range m {
-		out[k] = v
-	}
+	maps.Copy(out, m)
 	return out
 }
 

@@ -71,6 +71,7 @@ Realm, database and collection names must match `^[a-z0-9]+(?:[-_][a-z0-9]+)*$`:
 
 - Must be a valid JSON Schema object. `$schema` may be omitted and is then treated as draft 2020-12. Any other draft is rejected.
 - `format` keywords are asserted: for example, `"format": "email"` rejects values that aren't email addresses.
+- A `date-time` string can be stored as a real date: add `"x-backd-store": "date"` to its property (see [Dates](#dates)).
 - Must not declare or require `id`, `_id` or `_meta`. These are system-owned fields that `backd` adds to every document, and clients can never set them.
 
 Example, `shop/orders/items/schema.json`:
@@ -87,6 +88,21 @@ Example, `shop/orders/items/schema.json`:
   "additionalProperties": false
 }
 ```
+
+### Dates
+
+By default a `format: date-time` property is text: MongoDB stores the string, and comparing or sorting it as time only works when every value has the same form. Add `x-backd-store` to store it as a **BSON Date** instead, so queries, sorting and index ranges compare instants:
+
+```json
+"starts_at": { "type": "string", "format": "date-time", "x-backd-store": "date" },
+"ends_at":   { "type": ["string", "null"], "format": "date-time", "x-backd-store": "date" }
+```
+
+- **Clients don't change.** They still send and read RFC 3339 strings, and the schema still validates them. In `where`, `$eq`, `$ne`, `$in`, `$gt`, `$gte`, `$lt`, `$lte` and `$between` take RFC 3339 strings in any offset and compare instants (`{"starts_at": {"$gte": "2026-09-01T00:00:00+02:00"}}`); text operators (`$like`, `$startsWith`…) are refused on them; `order_by` and [cursors](../../api/querying/#paging-with-a-cursor) work.
+- **Precision.** MongoDB keeps dates in UTC to the millisecond, so `2026-09-01T14:00:00.123456+02:00` reads back as `2026-09-01T12:00:00.123Z`, like `_meta` timestamps.
+- **Where it is allowed.** On a property (at the top or nested in objects) whose type is `string`, or `["string", "null"]`, with `"format": "date-time"` and none of `pattern`, `minLength`, `maxLength`, `enum` or `const`. Not inside arrays, `$defs`, or `allOf`/`anyOf`/`oneOf`/`not`: startup names the place and stops. The database validator then says `bsonType: date` for the field.
+- **Rules** see these fields as times: they compare with `now` (`document.starts_at > now`, `data.ends_at > data.starts_at`) and with `nil`, never with text, which `backd` refuses at startup.
+- **Existing data.** Turning this on for a field that already holds text doesn't convert it. Documents written before keep the text until they are written again (an update converts the field), and queries by date skip them until then. Convert them in one go with `mongosh`, for example `db.items.updateMany({starts_at: {$type: "string"}}, [{$set: {starts_at: {$toDate: "$starts_at"}}}])`, when you [provision](../../operations/deploying/) the new schema. The validator uses `validationLevel: moderate`, so documents that don't conform yet stay readable until they are written.
 
 ## `indexes.json`
 

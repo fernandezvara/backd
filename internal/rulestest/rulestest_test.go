@@ -17,6 +17,11 @@ const schema = `{"type":"object","properties":{
 // that declares the roles admin and staff.
 func collection(t *testing.T, rulesSrc string) *registry.Collection {
 	t.Helper()
+	return collectionWith(t, schema, rulesSrc)
+}
+
+func collectionWith(t *testing.T, schemaSrc, rulesSrc string) *registry.Collection {
+	t.Helper()
 	root := t.TempDir()
 	dir := filepath.Join(root, "acme", "app", "posts")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -24,7 +29,7 @@ func collection(t *testing.T, rulesSrc string) *registry.Collection {
 	}
 	for p, content := range map[string]string{
 		filepath.Join(root, "acme", "realm.yaml"): "roles:\n  admin: {}\n  staff: {}\n",
-		filepath.Join(dir, "schema.json"):         schema,
+		filepath.Join(dir, "schema.json"):         schemaSrc,
 		filepath.Join(dir, "rules.yaml"):          rulesSrc,
 	} {
 		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
@@ -211,5 +216,39 @@ func TestRunFixtureProblems(t *testing.T) {
 		if !strings.Contains(strings.Join(all, "\n"), tt.want) {
 			t.Errorf("%s: problems %q, want one with %q", name, all, tt.want)
 		}
+	}
+}
+
+// A field stored as a date is a time in the rules, as on the server.
+func TestRunWithDateFields(t *testing.T) {
+	c := collectionWith(t, `{"type":"object","properties":{"title":{"type":"string"},
+	  "starts_at":{"type":"string","format":"date-time","x-backd-store":"date"}},"required":["title"]}`,
+		"read: document.starts_at <= now\ncreate: user != nil && data.starts_at > now\n")
+	checks, problems := Run(c, roles, []byte(`
+now: 2026-10-04T12:00:00Z
+users: { ada: { id: u1, email: ada@example.com } }
+documents:
+  past:   { title: Past, starts_at: "2026-10-04T13:00:00+02:00" }   # 11:00 UTC
+  future: { title: Future, starts_at: "2026-10-04T15:00:00+02:00" } # 13:00 UTC
+tests:
+  - read: { allow: [past], deny: [future] }
+  - as: ada
+    create:
+      - { data: { title: A, starts_at: "2026-10-05T00:00:00Z" }, expect: allow }
+      - { data: { title: B, starts_at: "2026-10-03T00:00:00Z" }, expect: deny }
+  - name: a later time moves the clock
+    now: 2026-10-04T14:00:00Z
+    read: { allow: [past, future] }
+`))
+	if len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	for _, ch := range checks {
+		if !ch.Pass {
+			t.Errorf("%s: %s", ch.What, ch.Detail)
+		}
+	}
+	if len(checks) != 6 {
+		t.Errorf("%d assertions ran", len(checks))
 	}
 }
