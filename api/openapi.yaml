@@ -32,7 +32,8 @@ tags:
       User, role and invitation management with an API key, or the session of a
       user whose admin role opens the area (users, invitations, apikeys,
       secrets, audit, functions, data). A request for an area the roles don't open
-      answers 403 naming it. A read-only level (`admin: read`) reads every area,
+      answers 403 naming it. The admin data route (`/_admin/data/…`) serves the
+      data operations past the collections' rules to the `data` area. A read-only level (`admin: read`) reads every area,
       users and data only when `admin.read_access` grants them, and every change
       answers 403.
   - name: documents
@@ -1941,6 +1942,259 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "412": { $ref: "#/components/responses/VersionMismatch" }
+        default: { $ref: "#/components/responses/Error" }
+
+  # The admin data route: the data routes' operations for administrators (the
+  # `data` admin area), past the collections' rules. Writes are audited.
+
+  /v1/{realm}/_admin/data/{database}/{collection}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+    get:
+      tags: [admin]
+      summary: Admin data, list documents
+      description: |
+        Every document of the collection, whatever its access rules say. A
+        read-only administrator needs `admin.read_access.data`; `deleted=only|include`
+        shows the trash of a collection with `soft_delete`.
+      operationId: adminListDocuments
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - name: where
+          in: query
+          description: >-
+            JSON filter, e.g. `{"price":{"$lt":20}}`. Keys combine with AND;
+            `$or` and `$and` take an array of such objects, e.g.
+            `{"$or":[{"title":{"$icontains":"go"}},{"body":{"$icontains":"go"}}]}`.
+          schema: { type: string }
+        - name: order_by
+          in: query
+          description: Comma-separated fields; `-` prefix for descending.
+          schema: { type: string }
+        - { $ref: "#/components/parameters/limit" }
+        - { $ref: "#/components/parameters/skip" }
+        - name: after
+          in: query
+          description: >-
+            The `next_cursor` of the previous page: continues the list after it,
+            with the same `where` and `order_by`. Stable when documents change
+            between requests and as fast on the last page as on the first, unlike
+            `skip`. Can't be combined with `skip`. For the default order it is
+            the id of the last document you saw. Refused (`400 invalid_query`,
+            on `after`) for another `order_by` than the cursor's, for a cursor
+            that isn't one, and for an `order_by` on arrays, objects or fields of
+            mixed types, which no cursor can follow.
+          schema: { type: string, maxLength: 2048 }
+        - name: count
+          in: query
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: A page of documents.
+          headers:
+            Vary: { $ref: "#/components/headers/DataVary" }
+            Cache-Control: { $ref: "#/components/headers/DataCacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DocumentList" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [admin]
+      summary: Admin data, create a document
+      operationId: adminCreateDocument
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKeyDocuments"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DocumentBody" }
+      responses:
+        "201":
+          description: The created document (or, for a replayed `Idempotency-Key`, the document as it was created).
+          headers:
+            Idempotent-Replayed: { description: "`true` when this is the remembered answer of an earlier request with the same `Idempotency-Key`.", schema: { const: "true" } }
+            ETag: { $ref: "#/components/headers/ETag" }
+            Vary: { $ref: "#/components/headers/DataVary" }
+            Cache-Control: { $ref: "#/components/headers/DataCacheControl" }
+            Location:
+              required: true
+              description: Path of the new document.
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Document" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/{realm}/_admin/data/{database}/{collection}/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+      - { $ref: "#/components/parameters/id" }
+    get:
+      tags: [admin]
+      summary: Admin data, get a document
+      operationId: adminGetDocument
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters: [{ $ref: "#/components/parameters/deleted" }]
+      responses:
+        "200": { $ref: "#/components/responses/Document" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      tags: [admin]
+      summary: Admin data, replace a document
+      operationId: adminReplaceDocument
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters: [{ $ref: "#/components/parameters/ifMatch" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DocumentBody" }
+      responses:
+        "200": { $ref: "#/components/responses/Document" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/VersionMismatch" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [admin]
+      summary: Admin data, update a document (JSON Merge Patch)
+      operationId: adminPatchDocument
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters: [{ $ref: "#/components/parameters/ifMatch" }]
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: { $ref: "#/components/schemas/DocumentBody" }
+      responses:
+        "200": { $ref: "#/components/responses/Document" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/VersionMismatch" }
+        "415": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      summary: Admin data, delete a document
+      description: |
+        In a collection with `soft_delete` (collection.yaml) the document is
+        marked deleted instead of removed: no read, write or batch sees it, and
+        it can be restored (`POST …/restore`) or, with `purge=true`, removed for
+        good under the `purge` rule.
+      operationId: adminDeleteDocument
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/ifMatch" }
+        - name: purge
+          in: query
+          description: >-
+            `true` removes the document for good, deleted or not, in a
+            collection with `soft_delete`. Needs the `purge` rule.
+          schema: { type: string, enum: ["true"] }
+      responses:
+        "204":
+          description: Document deleted (or, in a collection with `soft_delete`, marked deleted).
+          headers:
+            Vary: { $ref: "#/components/headers/DataVary" }
+            Cache-Control: { $ref: "#/components/headers/DataCacheControl" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/VersionMismatch" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/{realm}/_admin/data/{database}/{collection}/{id}/restore:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+      - { $ref: "#/components/parameters/id" }
+    post:
+      tags: [admin]
+      summary: Admin data, restore a soft-deleted document
+      description: |
+        Brings a deleted document back, as it was, at the next version. Only in
+        a collection with `soft_delete`, and only for callers the `restore`
+        rule lets see the document. The document must be valid against the
+        schema as it is now (`400` otherwise), and its unique values must still
+        be free (`409` otherwise).
+      operationId: adminRestoreDocument
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters: [{ $ref: "#/components/parameters/ifMatch" }]
+      responses:
+        "200": { $ref: "#/components/responses/Document" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/VersionMismatch" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/{realm}/_admin/data/{database}/_batch:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+    post:
+      tags: [admin]
+      summary: Admin data, write several documents atomically
+      description: |
+        Creates, replaces, patches and deletes documents across the
+        database's collections in one MongoDB transaction: either every
+        operation applies, or none does. Each operation is validated
+        against its collection's schema.json and, for callers whose
+        access rules apply (not API keys or admin functions), checked
+        against the create/update/delete rule exactly like a single
+        write. The first operation that fails aborts the whole batch;
+        its index is in the error's `details` (e.g. `{"path": "1", ...}`).
+      operationId: adminBatchWrite
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKeyDocuments"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BatchRequest" }
+      responses:
+        "200":
+          description: One result per operation, in the same order (the remembered ones again for a replayed `Idempotency-Key`).
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+            Idempotent-Replayed: { description: "`true` when this is the remembered answer of an earlier request with the same `Idempotency-Key`.", schema: { const: "true" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BatchResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
 components:

@@ -895,6 +895,82 @@ func TestContract(t *testing.T) {
 	f.store.fail = nil
 	req("POST", b, `{"operations": [{"op": "patch", "collection": "posts", "id": "`+batchID+`", "patch": {"title": "y"}, "if_match": "\"999\""}]}`, ada, 412)
 
+	// The admin data route: the same operations, past the rules, for an admin.
+	{
+		const adm = "/v1/acme/_admin/data/app"
+		ap := adm + "/posts"
+		adoc := req("POST", ap, `{"title": "hello", "published": true}`, key, 201)
+		aid := ap + "/" + adoc["id"].(string)
+		req("POST", ap, `{"published": true}`, key, 400)
+		req("POST", ap, `{"title": "x"}`, nil, 401)
+		req("POST", ap, `{"title": "x"}`, ada, 403)
+		req("POST", adm+"/nope", `{"title": "x"}`, key, 404)
+		req("POST", ap, `{"title": "x"}`, with(key, "Content-Type", "text/plain"), 415)
+		akeyed := with(key, "Idempotency-Key", "contract-admin-key")
+		req("POST", ap, `{"title": "keyed"}`, akeyed, 201)
+		req("POST", ap, `{"title": "keyed"}`, akeyed, 201)
+		req("POST", ap, `{"title": "keyed, another"}`, akeyed, 422)
+		f.store.fail = errConflictForContract
+		req("POST", ap, `{"title": "x"}`, key, 409)
+		f.store.fail = nil
+
+		req("GET", ap+"?count=true", "", key, 200)
+		req("GET", ap+"?where={bad", "", key, 400)
+		req("GET", ap, "", nil, 401)
+		req("GET", ap, "", ada, 403)
+		req("GET", adm+"/nope", "", key, 404)
+		req("GET", aid, "", key, 200)
+		req("GET", aid, "", nil, 401)
+		req("GET", aid, "", ada, 403)
+		req("GET", ap+"/nope", "", key, 404)
+
+		for _, m := range []string{"PUT", "PATCH"} {
+			body := `{"title": "hello", "published": true}`
+			req(m, aid, body, key, 200)
+			req(m, aid, `{"title": 5}`, key, 400)
+			req(m, aid, body, nil, 401)
+			req(m, aid, body, ada, 403)
+			req(m, ap+"/nope", body, key, 404)
+			req(m, aid, body, with(key, "If-Match", `"999"`), 412)
+			f.store.fail = errConflictForContract
+			req(m, aid, body, key, 409)
+			f.store.fail = nil
+		}
+		req("PATCH", aid, `{"title": "x"}`, with(key, "Content-Type", "application/json"), 415)
+		req("DELETE", aid, "", with(key, "If-Match", "3"), 400)
+		req("DELETE", aid, "", nil, 401)
+		req("DELETE", aid, "", ada, 403)
+		req("DELETE", aid, "", with(key, "If-Match", `"999"`), 412)
+		req("DELETE", aid, "", key, 204)
+		req("DELETE", aid, "", key, 404)
+
+		// The trash of a collection that soft-deletes, and restore.
+		bid := req("POST", adm+"/bin", `{"title": "t"}`, key, 201)["id"].(string)
+		req("DELETE", adm+"/bin/"+bid, "", key, 204)
+		req("GET", adm+"/bin?deleted=only", "", key, 200)
+		req("POST", adm+"/bin/nope/restore", "", key, 404)
+		req("POST", adm+"/bin/"+bid+"/restore", "", nil, 401)
+		req("POST", adm+"/bin/"+bid+"/restore", "", ada, 403)
+		req("POST", adm+"/bin/"+bid+"/restore", "", with(key, "If-Match", "bad"), 400)
+		req("POST", adm+"/bin/"+bid+"/restore", "", with(key, "If-Match", `"99"`), 412)
+		req("POST", adm+"/bin/"+bid+"/restore", "", key, 200)
+
+		ab := adm + "/_batch"
+		abOK := req("POST", ab, `{"operations": [{"op": "create", "collection": "posts", "document": {"title": "batch"}}]}`, key, 200)
+		abID := abOK["results"].([]any)[0].(map[string]any)["id"].(string)
+		abKey := with(key, "Idempotency-Key", "contract-admin-batch")
+		req("POST", ab, `{"operations": [{"op": "create", "collection": "posts", "document": {"title": "kb"}}]}`, abKey, 200)
+		req("POST", ab, `{"operations": [{"op": "create", "collection": "posts", "document": {"title": "other"}}]}`, abKey, 422)
+		req("POST", ab, `{"operations": [{"op": "create", "collection": "posts"}]}`, key, 400)
+		req("POST", ab, `{"operations": [{"op": "create", "collection": "posts", "document": {"title": "x"}}]}`, nil, 401)
+		req("POST", ab, `{"operations": [{"op": "create", "collection": "posts", "document": {"title": "x"}}]}`, ada, 403)
+		req("POST", ab, `{"operations": [{"op": "create", "collection": "nope", "document": {}}]}`, key, 404)
+		f.store.fail = errConflictForContract
+		req("POST", ab, `{"operations": [{"op": "create", "collection": "posts", "document": {"title": "x"}}]}`, key, 409)
+		f.store.fail = nil
+		req("POST", ab, `{"operations": [{"op": "patch", "collection": "posts", "id": "`+abID+`", "patch": {"title": "y"}, "if_match": "\"999\""}]}`, key, 412)
+	}
+
 	c.verify(t, router)
 }
 

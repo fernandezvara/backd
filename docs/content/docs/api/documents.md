@@ -260,6 +260,10 @@ A collection with [`soft_delete`](../../configuration/config-dir/#soft-delete) k
 - **`DELETE /{collection}/{id}?purge=true`** removes a document for good, deleted or not, under the `purge` rule; the caller must also see it (the `read` rule, and for a deleted one the `restore` rule). A collection without a retention keeps deleted documents until someone purges them.
 - Callers outside the rules, API keys, see and restore everything; the rules decide for everyone else, and without a `restore` or `purge` rule nobody else may.
 
+## Fixing data as an administrator
+
+The [admin API](../../auth/admin/#data) serves these same operations past the collections' rules, at `/v1/{realm}/_admin/data/{database}/{collection}`, for administrators who hold the `data` area. Writes there are audited and documents they create have no owner.
+
 ## Schema changes
 
 After `schema.json` changes, existing documents are returned as they are, even if they no longer match. Every write must produce a document that is valid against the **current** schema.

@@ -62,6 +62,18 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		r.With(fns).Get("/invocations", a.listInvocations)
 		r.With(fns).Get("/jobs", a.listJobs)
 		r.With(fns, json).Post("/functions/{database}/{name}/invoke", a.fns.adminInvoke)
+
+		// The admin data route: the data routes' operations, past the
+		// collections' rules, for administrators who hold the data area.
+		docs := a.fns.docs
+		r.Route("/data/{database}", func(r chi.Router) {
+			r.Use(a.need(registry.RightData), flagAdminData)
+			r.With(json).Post("/_batch", docs.batch)
+			r.Route("/{collection}", func(r chi.Router) {
+				r.Use(dataCaching, docs.resolveCollection)
+				docs.mountDocuments(r)
+			})
+		})
 	})
 }
 
@@ -1267,4 +1279,11 @@ func (a *adminAPI) whoami(w http.ResponseWriter, r *http.Request) {
 		out["key"] = caller.Key.Name
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// flagAdminData marks the request as made through the admin data route.
+func flagAdminData(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), adminDataKey{}, true)))
+	})
 }

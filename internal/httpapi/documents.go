@@ -61,17 +61,44 @@ type documents struct {
 func (d *documents) routes(r chi.Router) {
 	r.Route("/v1/{realm}/{database}/{collection}", func(r chi.Router) {
 		r.Use(dataCaching, d.resolveCollection, withTimeout(d.opTimeout), d.authorize)
-		json := requireContentType("application/json")
-		mergePatch := requireContentType("application/merge-patch+json")
-		r.With(json).Post("/", d.create)
-		r.Get("/", d.list)
-		r.Get("/{id}", d.get)
-		r.With(json).Put("/{id}", d.replace)
-		r.With(mergePatch).Patch("/{id}", d.patch)
-		r.Delete("/{id}", d.delete)
-		r.Post("/{id}/restore", d.restore)
+		d.mountDocuments(r)
 	})
 	r.With(noStore, withTimeout(d.opTimeout), requireContentType("application/json")).Post("/v1/{realm}/{database}/_batch", d.batch)
+}
+
+// mountDocuments registers the document operations of one collection: the
+// data routes, and the admin data route (which brings its own authentication).
+func (d *documents) mountDocuments(r chi.Router) {
+	json := requireContentType("application/json")
+	mergePatch := requireContentType("application/merge-patch+json")
+	r.With(json).Post("/", d.create)
+	r.Get("/", d.list)
+	r.Get("/{id}", d.get)
+	r.With(json).Put("/{id}", d.replace)
+	r.With(mergePatch).Patch("/{id}", d.patch)
+	r.Delete("/{id}", d.delete)
+	r.Post("/{id}/restore", d.restore)
+}
+
+// The admin data route (/_admin/data/…) serves the same operations to an
+// administrator, past the collections' rules: the request is flagged, so the
+// documents are read and written unruled, a created document has no owner, and
+// each write is audited (database, collection and id, never content).
+type adminDataKey struct{}
+
+func adminData(r *http.Request) bool {
+	v, _ := r.Context().Value(adminDataKey{}).(bool)
+	return v
+}
+
+// auditData records a write made through the admin data route.
+func (d *documents) auditData(r *http.Request, action string, c *registry.Collection, id string) {
+	if !adminData(r) {
+		return
+	}
+	if svc := d.users(c.Realm); svc != nil {
+		svc.Audit(r.Context(), action, "doc:"+c.Database+"/"+c.Name+"/"+id, map[string]any{"database": c.Database, "collection": c.Name, "id": id})
+	}
 }
 
 // resolveCollection looks up the collection in the registry, or answers 404.
@@ -133,6 +160,7 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Location", r.URL.JoinPath(url.PathEscape(doc["id"].(string))).Path)
 	out := render(doc)
+	d.auditData(r, auth.AuditDataCreate, c, doc["id"].(string))
 	claim.complete(r.Context(), http.StatusCreated, out)
 	w.Header().Set("ETag", etag(version(doc)))
 	writeJSON(w, http.StatusCreated, out)
@@ -343,6 +371,7 @@ func (d *documents) write(w http.ResponseWriter, r *http.Request, c *registry.Co
 		err = repo.Replace(r.Context(), fields, read)
 		switch {
 		case err == nil:
+			d.auditData(r, auth.AuditDataUpdate, c, fields["id"].(string))
 			writeDocument(w, http.StatusOK, fields)
 			return
 		case errors.Is(err, storage.ErrVersionMismatch) && cond.specific():
@@ -400,6 +429,7 @@ func (d *documents) delete(w http.ResponseWriter, r *http.Request) {
 			storageError(w, r, err)
 			return
 		}
+		d.auditData(r, auth.AuditDataDelete, c, id)
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -425,6 +455,7 @@ func (d *documents) delete(w http.ResponseWriter, r *http.Request) {
 		}
 		switch err := repo.Delete(r.Context(), id, &read); {
 		case err == nil:
+			d.auditData(r, auth.AuditDataDelete, c, id)
 			w.WriteHeader(http.StatusNoContent)
 			return
 		case errors.Is(err, storage.ErrVersionMismatch) && cond.specific():
@@ -658,6 +689,7 @@ func (d *documents) softDelete(w http.ResponseWriter, r *http.Request, c *regist
 		}
 		switch err := repo.Replace(r.Context(), d.deletedDocument(r, c, current), read); {
 		case err == nil:
+			d.auditData(r, auth.AuditDataDelete, c, id)
 			w.WriteHeader(http.StatusNoContent)
 			return
 		case errors.Is(err, storage.ErrVersionMismatch) && cond.specific():
@@ -715,6 +747,7 @@ func (d *documents) purge(w http.ResponseWriter, r *http.Request, c *registry.Co
 		}
 		switch err := repo.Delete(r.Context(), id, &read); {
 		case err == nil:
+			d.auditData(r, auth.AuditDataPurge, c, id)
 			w.WriteHeader(http.StatusNoContent)
 			return
 		case errors.Is(err, storage.ErrVersionMismatch) && cond.specific():
@@ -774,6 +807,7 @@ func (d *documents) restore(w http.ResponseWriter, r *http.Request) {
 		restored := d.restoredDocument(r, current)
 		switch err := repo.Replace(r.Context(), restored, read); {
 		case err == nil:
+			d.auditData(r, auth.AuditDataRestore, c, id)
 			w.Header().Set("ETag", etag(version(restored)))
 			writeJSON(w, http.StatusOK, render(restored))
 			return

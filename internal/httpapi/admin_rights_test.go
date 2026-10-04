@@ -296,7 +296,7 @@ func TestAdminReadLevelNoEscalation(t *testing.T) {
 // usual envelope, with any credential, and nothing else changes.
 func TestAdminAPISwitchedOff(t *testing.T) {
 	f := newRulesFixture(t, func(c *Config) { c.DisableAdminAPI = true })
-	for _, p := range []string{"/users", "/whoami", "/audit", "/apikeys", "/secrets", "/invitations", "/jobs", "/users/" + f.adaID} {
+	for _, p := range []string{"/users", "/whoami", "/audit", "/apikeys", "/secrets", "/invitations", "/jobs", "/users/" + f.adaID, "/data/app/posts"} {
 		for name, hdr := range map[string]map[string]string{"admin key": bearer(f.key), "a user": bearer(f.ada), "nobody": nil} {
 			rec, out := f.doH(t, "GET", admin+p, "", hdr)
 			if rec.Code != http.StatusNotFound || errCode(out) != "not_found" {

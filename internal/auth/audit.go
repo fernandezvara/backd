@@ -38,9 +38,16 @@ const (
 	AuditAdminLogin      = "admin.login"   // login of a user holding an admin role
 	AuditAdminRefused    = "admin.refused" // details: reason
 	AuditBootstrap       = "realm.bootstrap"
-	AuditSecretSet       = "secret.set"        // details: database ("": realm scope); never the value
-	AuditSecretDelete    = "secret.delete"     // details: database
-	AuditSecretsRotated  = "secret.rotate_key" // by backd secret rotate-key; details: count
+	// The admin data route (documents written past the collections' rules);
+	// the target is database/collection/id, never content.
+	AuditDataCreate     = "data.create"
+	AuditDataUpdate     = "data.update"
+	AuditDataDelete     = "data.delete"
+	AuditDataRestore    = "data.restore"
+	AuditDataPurge      = "data.purge"
+	AuditSecretSet      = "secret.set"        // details: database ("": realm scope); never the value
+	AuditSecretDelete   = "secret.delete"     // details: database
+	AuditSecretsRotated = "secret.rotate_key" // by backd secret rotate-key; details: count
 )
 
 // Actors that aren't a credential.

@@ -196,6 +196,15 @@ curl -X PUT https://localhost:8443/v1/blog/_admin/secrets/STRIPE_KEY \
 
 `POST /users/{id}/email` with `{"email": "new@example.com"}` changes the address **at once**, in any realm with [`email`](../../functions/email/) (`404` without), whatever `account.allow_email_change` says: the administrator vouches for the address, so it counts as verified. The user's sessions end, the old address is sent `email-changed` with a link to undo the change for 7 days (the undo restores the address, ends every session, makes the current password unusable and sends a password reset link to it), and the new address is told. An address another user has answers `409 email_taken`. Audited as `user.email_changed` with `by: admin`.
 
+### Data
+
+`/v1/{realm}/_admin/data/{database}/{collection}[/{id}]` (and `/data/{database}/_batch`) serve the [data routes](../../api/documents/)' operations to an administrator **past the collection's rules**: list, get, create, `PUT`, `PATCH`, `DELETE` (soft or hard as the collection decides, with `?purge=true` and `…/restore` for a [soft-deleting](../../configuration/config-dir/#soft-delete) one), and the `deleted` and `where` parameters of the data routes. Everything else is the same: the schema validates every write, `_meta.version`, `ETag` and `If-Match` work, errors have the same shape. It needs the `data` [area](#admin-rights): `admin: true` and an admin key have it, an area list has it only if it names `data`, and a read-only administrator reads only when `admin.read_access.data` is `true` (every change answers `403`).
+
+- A document created here has **no owner** (`_meta.owner` is `null`): the administrator didn't create it for themselves. `created_by` and `updated_by` record who did, `user:<id>` or `key:<name>`.
+- **Writes are audited**, never their content: `data.create`, `data.update`, `data.delete`, `data.restore` and `data.purge`, with the actor and the target `doc:<database>/<collection>/<id>`. Reads are not in the audit trail; they carry the actor in the access log.
+- The normal data routes are unchanged: an administrator using an app is bound by its rules there.
+- With `BACKD_ADMIN_API=false` the route doesn't exist (`404`).
+
 ### Invitations
 
 In a realm with `signup: invite`, people can only sign up with an invitation. A service creates one and delivers its token, for example by email:
