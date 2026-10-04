@@ -58,6 +58,10 @@ An empty file, or one with only comments, is valid: every key has a default.
 | `sessions.admin_idle_timeout` | `idle_timeout` | The idle timeout for users who hold an [admin role](#roles). Can only shorten `idle_timeout`. |
 | `sessions.admin_max_lifetime` | `max_lifetime` | The longest an admin's session lives. Can only shorten `max_lifetime`; must be at least `admin_idle_timeout`. |
 | `password.min_length` | `12` | Minimum password length, from 8 to 128. |
+| `login_throttle.account_threshold` | `5` | Failed logins an email address gets before each new attempt must wait (1 or more). See [Brute-force protection](../../auth/sessions/#brute-force-protection). |
+| `login_throttle.ip_threshold` | `50` | The same per client address (an IPv6 `/64`), higher because a network can hide many people. |
+| `login_throttle.window` | `15m` | How long a failure counts: a counter expires this long after its last failure. At least `1m`. |
+| `login_throttle.max_delay` | `15m` | The longest anyone waits; the wait starts at 1 second and doubles with each failure. At least `1s`, and not more than `window`. |
 | `cors.origins` | none (CORS off) | Browser origins allowed to call this realm, as `scheme://host[:port]`. `*` allows any origin and must be the only entry. See [CORS](#cors). |
 | `roles` | none | Roles that access rules can check. See below. |
 | `audit.retention` | `365d` | How long [audit records](../../auth/audit/) are kept, at least `1d`. |
@@ -77,7 +81,7 @@ An empty file, or one with only comments, is valid: every key has a default.
 
 Durations are a whole number of days (`30d`) or Go durations (`12h`, `90m`), with a minimum of one minute.
 
-`signup`, `sessions`, `password`, `roles`, `admin`, `audit`, `email`, `account`, `functions.log_retention` and `functions.job_retention` only apply when `auth` is `enabled`. Setting them in a realm with `auth: disabled` is an error, so a realm can't carry settings that do nothing. `cors` and `functions.max_concurrency` apply either way.
+`signup`, `sessions`, `password`, `login_throttle`, `roles`, `admin`, `audit`, `email`, `account`, `functions.log_retention` and `functions.job_retention` only apply when `auth` is `enabled`. Setting them in a realm with `auth: disabled` is an error, so a realm can't carry settings that do nothing. `cors` and `functions.max_concurrency` apply either way.
 
 ## CORS
 

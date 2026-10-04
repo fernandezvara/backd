@@ -25,6 +25,16 @@ auth: enabled
 # password:
 #   min_length: 12
 
+# How failed logins are slowed down, per account and per client address:
+# past a threshold each new attempt waits twice as long as the last, up to
+# max_delay (never more than window). Values shown are the defaults. There
+# is no lockout, and it can be tuned but not turned off.
+# login_throttle:
+#   account_threshold: 5
+#   ip_threshold: 50
+#   window: 15m
+#   max_delay: 15m
+
 # How long the audit trail keeps its records (at least 1d). They hold user
 # ids and client addresses: personal data in many jurisdictions.
 # audit:
