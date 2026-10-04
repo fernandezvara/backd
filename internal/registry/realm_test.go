@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -406,5 +407,50 @@ func TestSessionCookieSettings(t *testing.T) {
 		if len(errs) > 0 || s.Cookie != want {
 			t.Errorf("%q: %+v %v, want %+v", yaml, s.Cookie, errs, want)
 		}
+	}
+}
+
+func TestLoginThrottleSettings(t *testing.T) {
+	// Left out: the values the throttle always had.
+	s, errs := parseRealmSettings([]byte("signup: open\n"))
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	want := LoginThrottle{AccountThreshold: 5, IPThreshold: 50, Window: 15 * time.Minute, MaxDelay: 15 * time.Minute}
+	if got := s.Throttle(); got != want {
+		t.Errorf("defaults = %+v, want %+v", got, want)
+	}
+	// Set, in whole or in part.
+	s, errs = parseRealmSettings([]byte("login_throttle:\n  account_threshold: 3\n  window: 1h\n  max_delay: 30m\n"))
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	want = LoginThrottle{AccountThreshold: 3, IPThreshold: 50, Window: time.Hour, MaxDelay: 30 * time.Minute}
+	if got := s.Throttle(); got != want {
+		t.Errorf("settings = %+v, want %+v", got, want)
+	}
+	// A realm built without parsing (the zero value) gets the defaults too.
+	if got := (RealmSettings{}).Throttle(); got.AccountThreshold != 5 || got.MaxDelay != 15*time.Minute {
+		t.Errorf("zero settings = %+v", got)
+	}
+}
+
+func TestLoginThrottleErrors(t *testing.T) {
+	for name, tc := range map[string]struct{ yaml, want string }{
+		"zero threshold":    {"login_throttle:\n  account_threshold: 0\n", "login_throttle.account_threshold: must be at least 1"},
+		"negative ip":       {"login_throttle:\n  ip_threshold: -5\n", "login_throttle.ip_threshold: must be at least 1"},
+		"short window":      {"login_throttle:\n  window: 10s\n", "login_throttle.window: must be at least 1m0s"},
+		"zero max delay":    {"login_throttle:\n  max_delay: 0s\n", "login_throttle.max_delay: must be at least 1s"},
+		"delay past window": {"login_throttle:\n  window: 10m\n  max_delay: 1h\n", "max_delay (1h0m0s) must not exceed window (10m0s)"},
+		"not a duration":    {"login_throttle:\n  window: soon\n", "login_throttle.window"},
+		"unknown key":       {"login_throttle:\n  lockout: true\n", "lockout"},
+		"auth disabled":     {"auth: disabled\nlogin_throttle:\n  window: 1h\n", "login_throttle: only applies when auth is enabled"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, errs := parseRealmSettings([]byte(tc.yaml))
+			if len(errs) == 0 || !strings.Contains(errors.Join(errs...).Error(), tc.want) {
+				t.Errorf("errors = %v, want one containing %q", errs, tc.want)
+			}
+		})
 	}
 }
