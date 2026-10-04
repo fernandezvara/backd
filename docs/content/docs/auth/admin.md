@@ -14,6 +14,7 @@ Every request needs one of the realm's [API keys](../api-keys/) with the `admin`
 |---|---|
 | API key with the `admin` role | Allowed |
 | Session of a user holding an admin role (`admin: true` in `realm.yaml`) | Allowed |
+| Session of a user whose admin role opens only some [areas](#admin-rights) | Allowed for those areas; `403 forbidden` naming the missing one for the rest |
 | API key with the `data` role | `403 forbidden` |
 | None, or an invalid key | `401 unauthenticated` |
 | Session of a user without an admin role | `403 forbidden` |
@@ -24,6 +25,29 @@ Never call these endpoints from a browser or a mobile app with an API key: the k
 {{< /hint >}}
 
 Requests from outside the realm's `admin.allowed_networks`, or outside an admin user's own `admin_networks`, answer `404 not_found` (see [network restrictions](../../configuration/realm/#network-restrictions)).
+
+## Admin rights
+
+An admin role can open the whole admin API (`admin: true`) or only some of its areas (`admin: [users, invitations]`), so that the person who invites teammates doesn't also hold the secrets and the keys. A user's roles add up, and an admin API key always opens every area.
+
+| Area | Endpoints |
+|---|---|
+| `users` | `/users` and everything under `/users/{id}`: reading, disabling, erasing, passwords, addresses, roles and networks |
+| `invitations` | `/invitations` |
+| `apikeys` | `/apikeys` |
+| `secrets` | `/secrets` |
+| `audit` | `GET /audit` |
+| `functions` | `POST /functions/{database}/{name}/invoke`, `GET /invocations` and `GET /jobs`; and reading any job through the data API |
+
+A request for an area the roles don't open answers `403 forbidden` with the missing area in the message, and is recorded in the [audit trail](../audit/) as `admin.refused` with the reason, the method and the path.
+
+An administrator can't use these endpoints to end up holding more than they started with:
+
+- **A role is granted or taken away only by someone who holds everything it opens.** `support` (`users`, `invitations`) can give `support` or a role that is no admin role, but not `staff` (`admin: true`), and not `keeper` (`apikeys`, `secrets`) either.
+- **A user who holds admin rights the caller doesn't can be read, and nothing more:** changing their password or address, disabling, erasing, re-roling them or setting their networks answers `403`, since each would be a way to become them.
+- **Admin API keys are created and revoked only by full administrators** (`admin: true` or an admin key), because such a key opens every area. Data keys follow the `apikeys` area.
+
+Keep one role with `admin: true`, held by the people who recover the realm: `backd bootstrap` needs it for the first administrator, and startup warns when a realm has none.
 
 ## Endpoints
 
