@@ -9,15 +9,41 @@ Until now every signed-in member could do anything to anything. `rules.yaml` giv
 
 ## The assets rules
 
-{{< example-file path="shelf/main/assets/rules.yaml" >}}
+Create `config/shelf/main/assets/rules.yaml`:
+
+```yaml
+# Everyone in the workspace reads published assets; a member also reads
+# their own drafts.
+read: >
+  user != nil
+  && (document.published_at != nil || document._meta.owner == user.id)
+
+# Members write their own assets. HOLE: published_at is the client's word —
+# any member can publish, and pick the date.
+create: user != nil
+update: user != nil && document._meta.owner == user.id
+delete: user != nil && document._meta.owner == user.id
+```
 
 Three names carry the context: `user` (the caller, or `nil` when anonymous — always check `user != nil` first), `document` (the stored asset), `data` (the asset being written). `changed()` lists the fields a write touches, and `hasRole(user, 'curator')` checks a `realm.yaml` role. The full language is in [Access rules](../../auth/rules/).
 
 ## The shares rules
 
-{{< example-file path="shelf/main/shares/rules.yaml" >}}
+And `config/shelf/main/shares/rules.yaml`:
 
-`read` is deliberately narrow: nobody lists share links — not members, certainly not anonymous callers. Chapter 5 resolves `GET /s/{token}` through a function instead.
+```yaml
+# Share links are private to their creator. The public /s/{token} lookup
+# happens through a function (chapter 5) — nobody lists this collection.
+read: user != nil && document._meta.owner == user.id
+
+# HOLE: asset_id is the client's word — nothing checks the caller owns the
+# asset or that it exists; and a token is any string of 16+ characters, so a
+# client could pick a guessable one.
+create: user != nil
+delete: user != nil && document._meta.owner == user.id
+```
+
+`read` is deliberately narrow: nobody lists share links — not members, certainly not anonymous callers. Chapter 5 resolves `GET /s/{token}` through a function instead. (These are the chapter's versions; chapter 5 replaces both files. The repository's `rules.yaml` files are their final state.)
 
 ## Apply and try to break it
 
@@ -25,19 +51,24 @@ Three names carry the context: `user` (the caller, or `nil` when anonymous — a
 docker compose restart backd
 ```
 
-Signed in as one member, in the browser console:
+You need a second member to be the victim. In a private window sign up as another address (say `ana@shelf.example` — the realm is still open) and create an asset; or sign in as the member you created in chapter 2 and use the curator as the "other" user. Then, as one member, call the API with your session. A session is a token: sign in by hand and keep it in a variable —
 
-```js
-const assets = Alpine.$data(document.querySelector('main')).assets
-// …or with the client directly, using your session:
-await backd.db('main').collection('assets').patch('other-members-asset-id', { title: 'hacked' })
+```sh
+TOKEN=$(curl -s http://localhost:8080/v1/shelf/_auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"<your member address>","password":"<your password>"}' | sed 's/.*"token":"\([^"]*\)".*/\1/')
+
+# the other member's asset id: copy it from the app, or list as them
+curl -i -X PATCH http://localhost:8080/v1/shelf/main/assets/<their-asset-id> \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/merge-patch+json' \
+  -d '{"title":"hacked"}'
 ```
 
-`patch` on somebody else's asset answers `403` — `document._meta.owner == user.id` refuses it. Listing assets shows published ones plus your own drafts; another member's drafts are invisible.
+The `PATCH` answers `403` — `document._meta.owner == user.id` refuses it. Listing assets shows published ones plus your own drafts; another member's drafts are invisible.
 
 ## The hole
 
-Both files carry `HOLE` comments. On `assets`:
+Both files carry `HOLE` comments (a comment that marks exactly where a rule can't say what you mean). On `assets`:
 
 - **Any member can publish** — `create` and `update` don't touch `published_at`, so a client can set it, or backdate it.
 - Rules decide *who* may write; they can't say "a curator, at the server's now" — that needs `admin: true` code, chapter 5.

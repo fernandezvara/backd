@@ -9,6 +9,8 @@ The shelf works. The last chapter is about *operating* it: who acts without a se
 
 ## API keys
 
+(This chapter needs the Admin view, so sign in as `operator@shelf.example`.)
+
 Sessions are for people; **API keys are for machines** — a CI job that reads the gallery, a monitor that calls a function. In the Admin view, *Create read:main key* makes one scoped to read-only on `main`, expiring in 90 days:
 
 ```js
@@ -29,7 +31,8 @@ This tutorial ran on a dev stack: `BACKD_DEV` on, `email-capture` storing mail, 
 
 - Swap `email.function` to `mail/postmark` (or your provider), set its secrets — and `email-capture`'s `dev_only` already guards you: `backd` won't start with it outside dev mode.
 - Set real function secrets (`IMPORT_WEBHOOK_SECRET`, Postmark's) — `dev-secret` signs nothing an attacker can't forge.
-- Remove the seeded `roles.*.users` demo accounts; bootstrap your own admin.
+- Remove the seeded `roles.*.users` demo accounts and create your own administrator with `backd bootstrap` (chapter 4). Removing a seed from `realm.yaml` does **not** take the role away from the account that already has it — remove it from that user with the admin API (`DELETE /_admin/users/{id}/roles/{role}`, see [Admin API](../../auth/admin/)).
+- Replace `signup: invite` only if you mean to; it is the right setting for a team library.
 - Give every API key a scope and an expiry — the app already creates them that way.
 - Review each `rules.yaml` and run `backd rules test` in CI.
 

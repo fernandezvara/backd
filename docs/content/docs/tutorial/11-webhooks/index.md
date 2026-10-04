@@ -23,14 +23,27 @@ Three steps, in order:
 - **Dedupe by the sender's own event id** — providers retry until they get a 2xx, so "already processed" is a normal answer. The unique index on `imports.event_id` makes the second delivery a cheap 409.
 - **Then, and only then, act** — fields are whitelisted out of the untrusted JSON, and the asset lands as a **draft**: `published_at` is the publish function's alone, even for a trusted feed ([Webhooks](../../functions/webhooks/)).
 
+Create the function and the `imports` collection (a record of event ids already handled), plus the shared helper:
+
+{{< tutorial-files "main/_functions/import/function.yaml main/_functions/import/index.ts main/_functions/lib/signature.ts main/_functions/lib/signature.test.ts main/imports/schema.json main/imports/indexes.json main/imports/rules.yaml" >}}
+
+Rebuild and restart as before.
+
 ## Feeding it
 
-```sh
-# set the shared secret once
-backd secret set --realm shelf --database main --name IMPORT_WEBHOOK_SECRET
+Set the shared secret once — secrets are written through the admin API (the operator's `$OP` from chapter 4), never kept in `config/`:
 
-# then the fake feed — it signs like a real provider
-node clients/js/examples/shelf/push.js http://localhost:8080 <secret> "Title" https://example.com
+```sh
+curl -s -X PUT http://localhost:8080/v1/shelf/_admin/secrets/IMPORT_WEBHOOK_SECRET \
+  -H "Authorization: Bearer $OP" -H 'Content-Type: application/json' \
+  -d '{"database":"main","value":"dev-secret"}'     # 204
+```
+
+Then run the fake feed, which signs like a real provider. It is a small Node script (Node 20 or newer; or run it in a container with `docker run --rm --network host -v "$PWD/app":/a:Z docker.io/library/node:22 node /a/push.js …`):
+
+```sh
+curl -fsSL https://fernandezvara.github.io/backd/tutorial/app/push.js -o app/push.js
+node app/push.js http://localhost:8080 dev-secret "Title" https://example.com
 ```
 
 `push.js` computes `sha256=<hmac>` over the body and POSTs — what any provider does, minus the account.

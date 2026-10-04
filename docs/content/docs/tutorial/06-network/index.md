@@ -30,10 +30,15 @@ The egress does the sandboxing, so the handler is ordinary `fetch`. `ctx.error` 
 
 ## Try it
 
+Create the four files (the listings above; or fetch them) and rebuild:
+
+{{< tutorial-files "main/_functions/preview/function.yaml main/_functions/preview/index.ts main/_functions/preview/input.schema.json main/_functions/preview/index.test.ts" >}}
+
 ```sh
 docker compose run --rm functions-build && docker compose restart backd
-deno test examples/config/shelf/main/_functions/   # or `make functions-testing-test` on a checkout
 ```
+
+The tests run as in chapter 5 (`docker run … deno test config/shelf/main/_functions/preview/`).
 
 In the app, the **New asset** URL field gains a **Preview** button: paste a link, click — title and notes fill from the page's metadata. The client call is `db.fn('preview', { url })`, same as chapter 5.
 

@@ -11,20 +11,9 @@ A collection, a schema, and a page that lists documents. No users yet: anyone on
 `auth: disabled` means anyone who can reach backd can read and modify its data. Keep this stack on localhost — chapter 2 turns authentication on and [the checklist](../../operations/checklist/) is what you run before anything faces the internet.
 {{< /hint >}}
 
-## Bring the stack up
-
-From the starter folder (`compose.yaml`, `nginx.conf`, `app/`, `client/`, `config/` — see [the overview](../)):
-
-```sh
-docker compose up -d
-curl -s http://localhost:8080/readyz
-```
-
-`readyz` answers once MongoDB has become a replica set and backd is serving. `docker compose logs -f backd` follows the API.
-
 ## The realm
 
-Realms, databases and collections are directories under `config/`. Create `config/shelf/realm.yaml`:
+A **realm** is one application's world: its users, roles and settings. A **database** inside it groups collections (`main` here), and a **collection** holds documents — the vocabulary the URLs use: `/v1/{realm}/{database}/{collection}`. They are directories under `config/`. Create `config/shelf/realm.yaml`:
 
 ```yaml
 auth: disabled
@@ -34,7 +23,7 @@ That is the whole file for now — every key is optional. Chapter 2 turns authen
 
 ## The collections
 
-A collection is a directory inside a database: `config/shelf/main/assets/`. `schema.json` says what a document may contain:
+Create the directories (`mkdir -p config/shelf/main/assets config/shelf/main/shares`) — a collection is a directory inside a database: `config/shelf/main/assets/`. `schema.json` says what a document may contain:
 
 {{< example-file path="shelf/main/assets/schema.json" >}}
 
@@ -53,18 +42,22 @@ And the indexes — `indexes.json` per collection, `-` means descending:
 
 {{< example-file path="shelf/main/shares/indexes.json" >}}
 
-The unique index on `token` makes a duplicate share slug a `409 conflict` instead of a data bug.
+The unique index on `token` makes a duplicate share slug a `409 conflict` instead of a data bug. (`created_by` in the shares schema is filled by the `share` function of chapter 5; nothing writes it yet.)
 
-## Apply the config
+{{< tutorial-files "main/assets/schema.json main/assets/indexes.json main/shares/schema.json main/shares/indexes.json" >}}
 
-backd reads `config/` at startup:
+## Start the stack
+
+Everything is in place under `config/`, so bring the stack up from the starter folder (`compose.yaml`, `nginx.conf`, `app/`, `client/`, `config/` — see [the overview](../)). The first run pulls the images and takes a minute or two:
 
 ```sh
-docker compose restart backd
+docker compose up -d
 curl -s http://localhost:8080/readyz
 ```
 
-A typo fails startup and the log names the file and line — `docker compose logs backd` shows it.
+`readyz` answers once MongoDB has become a replica set and backd is serving; until then it refuses the connection or answers `503`, so repeat it every few seconds. `docker compose logs -f backd` follows the API. If port 8080 is taken, change the left side of `"127.0.0.1:8080:80"` in `compose.yaml` and use that port in every URL.
+
+backd reads `config/` **at startup**, so every change to a file under `config/` needs `docker compose restart backd` (chapter 5 adds one more command for functions). A typo fails startup and the log names the file and line — `docker compose logs backd` shows it.
 
 ## Try the API by hand
 
@@ -79,29 +72,25 @@ curl -s 'http://localhost:8080/v1/shelf/main/assets?where={"tags":"docs"}'
 
 Add a few more documents so the gallery has something to page: the second `curl` shows `items`, `has_more` and `next_cursor` — the cursor the app will follow ([Querying](../../api/querying/)).
 
-## Wire the gallery
+## The gallery
 
-The snapshot you downloaded is static: every view is placeholder markup. This chapter replaces the gallery and the new-asset form with live bindings. In `app/index.html` the `<head>` gains three lines — the importmap for `backd-js`, the app's module, and Alpine:
+The app you downloaded is the **finished Shelf app**, written once for all twelve chapters: a gallery, a form, my assets, notifications, an Admin view and an account page. You don't edit it; each chapter gives the *backend* what one more part of it needs, and that part comes alive. Until then the part reports an error (the Admin view says it needs a signed-in admin, notifications find no collection) — expected, not a mistake of yours.
 
-```html
-<script type="importmap">{ "imports": { "backd-js": "/example/client/index.js" } }</script>
-<script type="module" src="app.js"></script>
-<script defer src="lib/alpine.min.js"></script>
-```
-
-`app/app.js` is the whole chapter's JavaScript: one Alpine component that lists assets with `where`/`orderBy`/`after`, and creates them from the form:
+What this chapter's backend already lights up, in `app/app.js`:
 
 ```js
 const backd = createClient({ url: window.location.origin, realm: 'shelf' })
 const assets = backd.db('main').collection('assets')
 ```
 
-The gallery card template becomes a `x-for` over `assets`, the tag input binds `tag` and re-fetches on change (`{"tags": tag}` matches array membership), the sort select switches between `-published_at`, `published_at` and `title`, and the pager is a **Load more** button that passes `next_cursor` as `after` — the cursor keeps the list stable while documents change under it. The finished file is what [the repo keeps](https://github.com/fernandezvara/backd/tree/main/clients/js/examples/shelf/app.js); copy it if you get stuck.
+One Alpine component lists assets with `where`/`orderBy`/`after` and creates them from the form. The tag input re-fetches on change (`{"tags": tag}` matches array membership), the sort select switches between `-published_at`, `published_at` and `title`, and the pager is a **Load more** button that passes `next_cursor` as `after` — the cursor keeps the list stable while documents change under it. The source is [in the repository](https://github.com/fernandezvara/backd/tree/main/clients/js/examples/shelf/app.js), and it reads top to bottom if you want to see how each chapter's feature is called.
+
+Open `http://localhost:8080` (the **New asset** form needs no sign-in while `auth: disabled`).
 
 ## You should see
 
 - `http://localhost:8080` shows the gallery with the assets you created by curl.
-- **New asset** adds a card to the list; the date reads today's.
+- **New asset** adds a card to the list; the date reads today's. (Sections that need accounts or functions — My assets, Notifications, Admin — are inert or error until their chapters.)
 - Typing `docs` in the tag filter shows only matching assets; picking **Title A–Z** re-sorts.
 - With more than a page of assets, **Load more** appends the next page.
 - A document that breaks the schema (e.g. `{"kind":"video"}`) is refused with `422` and field-level errors — try it with curl.

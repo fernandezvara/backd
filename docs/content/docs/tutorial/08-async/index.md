@@ -9,20 +9,67 @@ Fanning a notification out to every member doesn't belong inside an HTTP request
 
 ## The function
 
-{{< example-file path="shelf/main/_functions/digest/function.yaml" >}}
+Create `config/shelf/main/_functions/digest/`. This chapter's `function.yaml`:
+
+```yaml
+mode: async
+admin: true
+invoke: "user != nil && hasRole(user, 'admin')"
+calls: [notify]
+retry:
+  attempts: 3
+  backoff: 5s
+  max_backoff: 1m
+```
+
+(The repository's file also has `schedule:` and `email: true` — chapters 9 and 10 add them.)
 
 - **`mode: async`** — `db.fn('digest', …)` returns a `Job`, not the output.
 - **`retry:`** — a failed attempt is repeated: three tries, the wait doubling between them (`5s`, `10s`, capped at `1m`). A function that fails deterministically (its own `ctx.error`) is *not* retried — only crashes and timeouts.
 - **`invoke:`** — only an `admin` user (or an API key) may run it by hand; chapter 9 runs it on a schedule instead.
 - **`calls: [notify]`** — the fan-out from chapter 7.
 
-{{< example-file path="shelf/main/_functions/digest/index.ts" >}}
+```ts
+import type { Context, Doc } from "../lib/types.ts";
+
+export default async function handler(ctx: Context) {
+  const sinceDays = (ctx.input as { since_days?: number } | null)?.since_days ?? 7;
+  const db = ctx.admin.db("main");
+  const since = new Date(Date.now() - sinceDays * 86_400_000).toISOString();
+
+  const page = await db.collection("assets").list({
+    where: { published_at: { $gte: since } },
+    orderBy: "published_at",
+    limit: 100,
+  });
+  if (page.items.length === 0) {
+    return { since_days: sinceDays, notified: 0, skipped: true };
+  }
+
+  const titles = page.items.map((a) => `“${a.title}”`).join(", ");
+  const text = `${page.items.length} published since ${since.slice(0, 10)}: ${titles}`;
+
+  let notified = 0;
+  for await (const member of db.collection("members").iterate()) {
+    await ctx.call("notify", { to_user: member.user_id, kind: "digest", text });
+    notified++;
+  }
+  console.log(`digest: ${page.items.length} assets, ${notified} members notified`);
+  return { since_days: sinceDays, assets: page.items.length, notified, skipped: false };
+}
+```
+
+`input.schema.json` and the `members` collection (next section) come from the fetch below. The `digest` test in the repository also asserts the emails of chapter 10, so it passes after that chapter.
 
 ## Members in business data
 
 The digest needs "every member" — but realm users live in the **system database**, which functions can't read (it holds credentials, sessions, tokens). The honest pattern: keep a small `members` directory in business data; the app upserts its own row on sign-in, rules let anyone read it:
 
 {{< example-file path="shelf/main/members/rules.yaml" >}}
+
+{{< tutorial-files "main/_functions/digest/input.schema.json main/members/collection.yaml main/members/schema.json main/members/indexes.json main/members/rules.yaml" >}}
+
+Rebuild and restart (`docker compose run --rm functions-build && docker compose restart backd`).
 
 ## Watching a job
 

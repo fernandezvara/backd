@@ -18,6 +18,8 @@ Cron expressions work too (`"0 7 * * *"`, always UTC). A scheduled run has **no 
 
 That's also why `digest`'s input schema accepts `null` and the code defaults `since_days` — the scheduled run sends nothing.
 
+Add that line to `digest/function.yaml` and rebuild. Backd then runs it by itself in the background process (`--with-worker` is in the tutorial's compose file); there is nothing else to start.
+
 ## cleanup
 
 Expired share links are litter; notifications read a month ago are stale. Nobody should click "clean" — the clock does it:
@@ -28,13 +30,22 @@ Expired share links are litter; notifications read a month ago are stale. Nobody
 
 {{< example-file path="shelf/main/_functions/cleanup/index.ts" >}}
 
+{{< tutorial-files "main/_functions/cleanup/function.yaml main/_functions/cleanup/index.ts main/_functions/cleanup/index.test.ts" >}}
+
 ## Running by hand
 
-You don't wait for the clock to know it works: `backd functions invoke --function shelf/main/cleanup` runs an internal function as its schedule would — the answer is a job to watch. The app does the same from the Admin view: `backd.admin.invokeFunction('main/cleanup')`, and its result (or job) under **Run by hand**. That's the second invoke path in this tutorial: `db.fn` for functions with a route and an `invoke` rule; `admin.invokeFunction` for everything else — invoke rules and `rate_limit` don't apply, so guard it to admins in the UI.
+You don't wait for the clock to know it works. The admin API runs any function by hand, internal ones included, as its schedule would — with the operator's `$OP` session from chapter 4 (the CLI form, `backd functions invoke --function shelf/main/cleanup`, does the same from a machine with a stored login):
+
+```sh
+curl -s -X POST http://localhost:8080/v1/shelf/_admin/functions/main/cleanup/invoke \
+  -H "Authorization: Bearer $OP" -H 'Content-Type: application/json' -d '{}'
+# 202 {"id":"…","status":"queued", …}  — a job
+```
+ The app does the same from the Admin view: `backd.admin.invokeFunction('main/cleanup')`, and its result (or job) under **Run by hand**. That's the second invoke path in this tutorial: `db.fn` for functions with a route and an `invoke` rule; `admin.invokeFunction` for everything else — invoke rules and `rate_limit` don't apply, so guard it to admins in the UI.
 
 ## You should see
 
-- `backd functions invoke --function shelf/main/cleanup` answers with a job; expired shares and month-old read notifications are gone.
+- The `invoke` call above answers with a job; expired shares and month-old read notifications are gone.
 - **Run by hand** in the app runs either function and shows the job or result — `cleanup` included, despite having no HTTP route.
 - `docker compose logs backd | grep "function log"` the morning after shows the scheduled digest ran itself.
 - `deno test` covers cleanup's keep/delete split.

@@ -37,7 +37,7 @@ roles:
 docker compose restart backd
 ```
 
-Open `http://localhost:8080` and **sign up** (any password of 12 or more characters; the demo stack sends no email yet, so nothing needs verifying until chapter 10) as each of:
+Open `http://localhost:8080` and **sign up** (any password of 12 or more characters; the demo stack sends no email yet and `account.require_verified_email` is off, so nothing needs verifying — the `verify-email` and `welcome` messages only appear once chapter 10 wires email) as each of:
 
 | Email | Why you need it |
 |---|---|
@@ -62,7 +62,9 @@ The app's **Sign in** button now does something: `backd.auth.signup()` or `.logi
 
 {{< example-file path="shelf/main/assets/collection.yaml" >}}
 
-`action: delete` says a member's assets — and their share links — go with them. The blog example shows the alternative (`anonymize`).
+`action: delete` says a member's assets — and their share links — go with them. The blog example shows the alternative (`anonymize`). Create it (and the same file for `shares`) with the other files of this chapter, then restart:
+
+{{< tutorial-files "main/assets/collection.yaml main/shares/collection.yaml" >}}
 
 ## You should see
 

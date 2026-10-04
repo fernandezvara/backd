@@ -9,8 +9,9 @@ Invitations emailed themselves? Not yet — chapter 4 handed you a token to pass
 
 ## The realm side
 
+Add to `config/shelf/realm.yaml` (keeping `auth`, `signup` and `roles` as they are):
+
 ```yaml
-# realm.yaml
 email:
   function: mail/email-capture
   from: "Shelf <no-reply@shelf.example>"
@@ -25,12 +26,16 @@ account:
   allow_email_change: true
 ```
 
-- **`function:`** — one function (in the new `mail` database) delivers every email `backd` renders. `email-capture` stores them in the `mail/outbox` collection instead of sending — `dev_only: true`, it only runs under `BACKD_DEV` ([Email](../../functions/email/)).
+- **`function:`** — one function (in the new `mail` database) delivers every email `backd` renders. `email-capture` stores them in the `mail/outbox` collection instead of sending — `dev_only: true`, it only runs under `BACKD_DEV`, which the tutorial's `compose.yaml` sets (a real deployment doesn't, and `backd` then refuses to start with it configured) ([Email](../../functions/email/)).
 - **Templates** — `email/<kind>/<locale>.{subject.txt,txt,html}`, one folder per kind `backd` sends (verify-email, reset-password, invitation, welcome, account-exists, change-email, email-changed, password-changed) plus custom kinds like `shelf-digest`. Every locale you list needs every kind — startup fails naming what's missing.
 - **Pages** — `pages/<kind>/<locale>.html`: the hosted pages the email links open. `GET` shows a form, `POST` consumes the token — mail scanners can never spend your links.
 - **`allowed_redirects` / `redirects`** — after a flow's page, the reader lands back at the app, and only at origins you list.
 
-`backd template realm --realm shelf` writes all of `email/` and `pages/` for you, and `backd template email-capture --realm shelf --database mail` writes the delivery function and `outbox`. For real delivery, `mail/_functions/postmark/` is the swap — `email.function: mail/postmark`, plus its two secrets (`POSTMARK_TOKEN`, `POSTMARK_FROM`) and a verified sender.
+On a checkout, `backd template realm --realm shelf` writes all of `email/` and `pages/` for you, and `backd template email-capture --realm shelf --database mail` the delivery function and `outbox`; the tutorial's `config/` is mounted read-only into the container, so fetch the finished files instead:
+
+{{< tutorial-files "email/account-exists/en.html email/account-exists/en.subject.txt email/account-exists/en.txt email/change-email/en.html email/change-email/en.subject.txt email/change-email/en.txt email/email-changed/en.html email/email-changed/en.subject.txt email/email-changed/en.txt email/invitation/en.html email/invitation/en.subject.txt email/invitation/en.txt email/password-changed/en.html email/password-changed/en.subject.txt email/password-changed/en.txt email/reset-password/en.html email/reset-password/en.subject.txt email/reset-password/en.txt email/shelf-digest/en.html email/shelf-digest/en.subject.txt email/shelf-digest/en.txt email/verify-email/en.html email/verify-email/en.subject.txt email/verify-email/en.txt email/welcome/en.html email/welcome/en.subject.txt email/welcome/en.txt pages/accept-invitation/en.html pages/confirm-email-change/en.html pages/invalid-token/en.html pages/reset-password/en.html pages/result/en.html pages/revert-email-change/en.html pages/verify-email/en.html mail/_functions/deno.json mail/_functions/email-capture/function.yaml mail/_functions/email-capture/index.ts mail/_functions/email-capture/index.test.ts mail/outbox/schema.json mail/outbox/indexes.json mail/outbox/rules.yaml main/_functions/digest/function.yaml main/_functions/digest/index.ts main/_functions/digest/index.test.ts" >}}
+
+(That last group replaces `digest/` with its finished version: chapter 9's `schedule:` plus `email: true`, and the `ctx.email.send` call shown below.) Rebuild and restart: `docker compose run --rm functions-build && docker compose restart backd`. For real delivery, `mail/_functions/postmark/` is the swap — `email.function: mail/postmark`, plus its two secrets (`POSTMARK_TOKEN`, `POSTMARK_FROM`) and a verified sender.
 
 ## A kind of your own: shelf-digest
 
