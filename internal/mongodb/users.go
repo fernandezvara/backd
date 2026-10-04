@@ -509,6 +509,29 @@ func (s *AuthStore) RecordLoginFailure(ctx context.Context, key string, at, expi
 	return err
 }
 
+// AcquireLoginLock stores the lock as a document of the attempts collection
+// (so it also expires by TTL if a process dies holding it). The upsert only
+// matches a lock whose lease ended, or inserts one: against a live lock it
+// would insert a second document with the same _id, which fails as a
+// duplicate key.
+func (s *AuthStore) AcquireLoginLock(ctx context.Context, key, owner string, now, until time.Time) (bool, error) {
+	filter := bson.D{{Key: "_id", Value: "lock:" + key}, {Key: "expires_at", Value: bson.D{{Key: "$lte", Value: now}}}}
+	update := bson.D{{Key: "$set", Value: bson.D{
+		{Key: "owner", Value: owner}, {Key: "expires_at", Value: until},
+		{Key: "failures", Value: int32(0)}, {Key: "last_failure_at", Value: now},
+	}}}
+	_, err := s.attempts().UpdateOne(ctx, filter, update, options.UpdateOne().SetUpsert(true))
+	if mongo.IsDuplicateKeyError(err) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+func (s *AuthStore) ReleaseLoginLock(ctx context.Context, key, owner string) error {
+	_, err := s.attempts().DeleteOne(ctx, bson.D{{Key: "_id", Value: "lock:" + key}, {Key: "owner", Value: owner}})
+	return err
+}
+
 func (s *AuthStore) ClearLoginAttempts(ctx context.Context, key string) error {
 	_, err := s.attempts().DeleteOne(ctx, bson.D{{Key: "_id", Value: key}})
 	return err

@@ -22,6 +22,7 @@ type MemStore struct {
 	sessions    map[string]auth.Session  // id → session
 	keys        map[string]auth.APIKey   // hash → key
 	attempts    map[string]memAttempts
+	loginLocks  map[string]memLock
 	invites     map[string]auth.Invitation // id → invitation
 	audit       []auth.AuditRecord
 	secrets     map[string]auth.Secret // "database\x00name" → secret
@@ -389,6 +390,11 @@ func (m *MemStore) TouchAPIKey(_ context.Context, hash string, at time.Time) err
 	return nil
 }
 
+type memLock struct {
+	owner string
+	until time.Time
+}
+
 type memAttempts struct {
 	auth.Attempts
 	expires time.Time
@@ -412,6 +418,29 @@ func (m *MemStore) RecordLoginFailure(_ context.Context, key string, at, expires
 	a.Failures++
 	a.LastFailureAt, a.expires = at, expires
 	m.attempts[key] = a
+	return nil
+}
+
+// AcquireLoginLock and ReleaseLoginLock keep the locks apart from the counters.
+func (m *MemStore) AcquireLoginLock(_ context.Context, key, owner string, now, until time.Time) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if l, held := m.loginLocks[key]; held && now.Before(l.until) {
+		return false, nil
+	}
+	if m.loginLocks == nil {
+		m.loginLocks = map[string]memLock{}
+	}
+	m.loginLocks[key] = memLock{owner: owner, until: until}
+	return true, nil
+}
+
+func (m *MemStore) ReleaseLoginLock(_ context.Context, key, owner string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.loginLocks[key].owner == owner {
+		delete(m.loginLocks, key)
+	}
 	return nil
 }
 

@@ -174,6 +174,13 @@ type Store interface {
 	RecordLoginFailure(ctx context.Context, key string, at, expires time.Time) error
 	// ClearLoginAttempts deletes key's counter.
 	ClearLoginAttempts(ctx context.Context, key string) error
+	// AcquireLoginLock takes the lock of key for owner until the given time,
+	// atomically: it is free when nobody holds it or its lease ended at or
+	// before now. false means another owner holds it. The lock serializes the
+	// password checks of one account across every instance.
+	AcquireLoginLock(ctx context.Context, key, owner string, now, until time.Time) (bool, error)
+	// ReleaseLoginLock frees the lock if owner still holds it.
+	ReleaseLoginLock(ctx context.Context, key, owner string) error
 
 	// IncrementCounter atomically increments key's counter (creating it,
 	// or restarting it at 1 if its window has already ended) and returns

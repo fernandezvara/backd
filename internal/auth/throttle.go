@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/xid"
+
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -120,12 +122,22 @@ func (s *Users) recordFailure(ctx context.Context, ks []throttleKey) error {
 // it refuses to run while they must wait, counts ErrInvalidCredentials
 // as a failure, and clears the account counter on success.
 //
-// Checks for one account run one at a time in this process, so parallel
-// requests can't all pass the throttle before any failure is recorded.
+// Checks for one account run one at a time, across every instance: first a
+// lock in this process (cheap, and it keeps waiters off the database), then a
+// lock in the store. Without them parallel requests could all pass the
+// throttle before any failure is recorded, and N instances would allow N
+// guesses per delay instead of one.
 func (s *Users) throttled(ctx context.Context, email, ip string, check func() error) error {
 	if k := accountKey(email); k != "" {
-		unlock := accountLocks.lock(k)
-		defer unlock()
+		if !s.noLocalLock {
+			unlock := accountLocks.lock(k)
+			defer unlock()
+		}
+		release, err := s.lockLogin(ctx, k)
+		if err != nil {
+			return err
+		}
+		defer release()
 	}
 	ks := keys(email, ip)
 	if err := s.checkThrottle(ctx, ks); err != nil {
@@ -145,6 +157,46 @@ func (s *Users) throttled(ctx context.Context, email, ip string, check func() er
 		}
 	}
 	return err
+}
+
+const (
+	// loginLockLease is how long a held lock stays valid if its process dies:
+	// longer than a password check can take (it may queue for a hash slot).
+	loginLockLease = 30 * time.Second
+	// loginLockWait is how long a check waits for the lock before the caller
+	// is told to retry; loginLockPoll is how often it looks.
+	loginLockWait = 5 * time.Second
+	loginLockPoll = 25 * time.Millisecond
+)
+
+// lockLogin takes the account's lock in the store, waiting for the check
+// that holds it. It gives up after loginLockWait with a *ThrottledError: an
+// account under a parallel flood answers "retry shortly", never a guess.
+func (s *Users) lockLogin(ctx context.Context, key string) (release func(), err error) {
+	owner := xid.New().String()
+	deadline := time.Now().Add(loginLockWait)
+	for {
+		now := time.Now() // wall clock: the lease is shared by instances, not the service's test clock
+		ok, err := s.Store.AcquireLoginLock(ctx, key, owner, now, now.Add(loginLockLease))
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			return func() {
+				// The caller may be gone (its context ended); the lock must still be freed.
+				_ = s.Store.ReleaseLoginLock(context.WithoutCancel(ctx), key, owner)
+			}, nil
+		}
+		if time.Now().After(deadline) {
+			s.Metrics.RateLimited(s.Realm, "login")
+			return nil, &ThrottledError{RetryAfter: time.Second}
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(loginLockPoll):
+		}
+	}
 }
 
 // keyedMutex hands out one mutex per key, dropping it when unused.

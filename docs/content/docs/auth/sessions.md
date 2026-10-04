@@ -126,6 +126,7 @@ Failed attempts are counted per account and per client address. Past a threshold
 - Unregistered emails are counted like registered ones, so the answers don't reveal which emails exist.
 - Wrong current passwords in `POST /_auth/password` and `DELETE /_auth/me` count against the account too, so a stolen session can't be used to guess the password.
 - Counters are stored in the realm's system database, so all `backd` instances share them. They are deleted automatically 15 minutes after the last failure.
+- Password checks for one account run **one at a time across all instances**: each takes a short lock kept in the system database (which expires by itself after 30 seconds if its instance dies). Parallel attempts can't all pass before a failure is counted, so many instances allow no more guesses than one. If the lock stays busy for 5 seconds the attempt gets `429` with `Retry-After: 1`.
 
 Behind a reverse proxy or load balancer, set [`TRUSTED_PROXIES`](../../operations/#client-addresses-behind-a-proxy) so that `backd` counts real client addresses rather than the proxy's.
 

@@ -31,6 +31,10 @@ type Users struct {
 
 	// Metrics counts sessions and limits; nil turns it off.
 	Metrics *metrics.Metrics
+
+	// noLocalLock skips the in-process lock of password checks, so a test with
+	// several Users on one store can show that the store's lock alone holds.
+	noLocalLock bool
 }
 
 // Clock is the service's current time (its Now, or the real one).
