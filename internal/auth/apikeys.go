@@ -51,6 +51,7 @@ type KeyOptions struct {
 	TTL      time.Duration     // 0: never expires
 	Role     KeyRole           // "" means data
 	Networks registry.Networks // where the key may be used from; empty: anywhere
+	Scopes   Scopes            // what a data key reaches; empty: everything
 }
 
 // APIKey is a realm API key for server-side callers. Only a hash of the
@@ -59,6 +60,7 @@ type APIKey struct {
 	Name       string
 	Role       KeyRole           // "" (stored before roles existed) counts as data
 	Networks   registry.Networks // where the key may be used from; empty: anywhere
+	Scopes     Scopes            // what the key reaches; empty: everything
 	Prefix     string            // first characters of the key, for recognizing it
 	Hash       string
 	CreatedAt  time.Time
@@ -86,13 +88,16 @@ func (s *Users) CreateAPIKey(ctx context.Context, name string, opts KeyOptions) 
 	if ttl < 0 {
 		return APIKey{}, "", errors.New("expiry must be positive")
 	}
+	if role == KeyRoleAdmin && opts.Scopes.Limited() {
+		return APIKey{}, "", errors.New("scopes limit data keys: an admin key reaches the admin API, which scopes don't cover")
+	}
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return APIKey{}, "", err
 	}
 	key := APIKeyPrefix + base64.RawURLEncoding.EncodeToString(b)
 	now := s.now()
-	k := APIKey{Name: name, Role: role, Networks: opts.Networks, Prefix: key[:displayLen], Hash: HashToken(key), CreatedAt: now}
+	k := APIKey{Name: name, Role: role, Networks: opts.Networks, Scopes: opts.Scopes, Prefix: key[:displayLen], Hash: HashToken(key), CreatedAt: now}
 	if ttl > 0 {
 		exp := now.Add(ttl)
 		k.ExpiresAt = &exp
@@ -100,7 +105,7 @@ func (s *Users) CreateAPIKey(ctx context.Context, name string, opts KeyOptions) 
 	if err := s.Store.CreateAPIKey(ctx, k); err != nil {
 		return APIKey{}, "", err
 	}
-	details := map[string]any{"role": string(k.Role), "networks": k.Networks.Strings()}
+	details := map[string]any{"role": string(k.Role), "networks": k.Networks.Strings(), "scopes": k.Scopes.Strings()}
 	if k.ExpiresAt != nil {
 		details["expires_at"] = k.ExpiresAt.Format(time.RFC3339)
 	}

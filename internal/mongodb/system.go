@@ -127,6 +127,7 @@ var systemCollections = []systemCollection{
 			"name":         str(),
 			"role":         map[string]any{"enum": bson.A{"data", "admin"}},
 			"networks":     map[string]any{"bsonType": "array", "items": str()},
+			"scopes":       map[string]any{"bsonType": "array", "items": str()},
 			"prefix":       str(),
 			"created_at":   typ("date"),
 			"last_used_at": typ("date"),

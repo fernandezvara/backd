@@ -67,8 +67,28 @@ func (d *documents) authorize(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		op := auth.ScopeWrite
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			op = auth.ScopeRead
+		}
+		if !scopeAllows(w, r, caller, op, c.Database, c.Name) {
+			return
+		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), callerKey{}, caller)))
 	})
+}
+
+// scopeAllows answers 403 and returns false when the caller is an API key
+// whose scopes don't grant op on database/name (a collection or a function).
+// Keys without scopes, users and functions pass: scopes only narrow keys.
+func scopeAllows(w http.ResponseWriter, r *http.Request, caller auth.Caller, op auth.ScopeOp, database, name string) bool {
+	if caller.Key == nil || caller.Key.Scopes.Allows(op, database, name) {
+		return true
+	}
+	logger(r.Context()).Debug("API key scope refused", "key", caller.Key.Name, "operation", string(op), "target", database+"/"+name)
+	verb := map[auth.ScopeOp]string{auth.ScopeRead: "read", auth.ScopeWrite: "write", auth.ScopeCall: "call"}[op]
+	writeError(w, r, http.StatusForbidden, codeForbidden, "this API key's scopes don't allow you to "+verb+" "+database+"/"+name)
+	return false
 }
 
 // identify resolves who calls realm: hasAuth is false in realms with auth

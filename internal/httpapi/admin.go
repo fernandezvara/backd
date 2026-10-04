@@ -611,6 +611,7 @@ func apiKeyJSON(k auth.APIKey) map[string]any {
 		"role":         string(role),
 		"prefix":       k.Prefix,
 		"networks":     k.Networks.Strings(),
+		"scopes":       k.Scopes.Strings(),
 		"created_at":   formatTime(k.CreatedAt),
 		"last_used_at": lastUsed,
 		"expires_at":   expires,
@@ -636,7 +637,7 @@ func (a *adminAPI) createAPIKey(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"name": "string", "role": "string?", "expires_in": "string?", "networks": "strings?"})
+	f, ok := fields(w, r, obj, map[string]string{"name": "string", "role": "string?", "expires_in": "string?", "networks": "strings?", "scopes": "strings?"})
 	if !ok {
 		return
 	}
@@ -662,8 +663,16 @@ func (a *adminAPI) createAPIKey(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if list, ok := f["scopes"].([]string); ok {
+		if opts.Scopes, ok = a.scopesField(w, r, list); !ok {
+			return
+		}
+	}
 	k, key, err := usersOf(r).CreateAPIKey(r.Context(), f["name"].(string), opts)
 	switch {
+	case err != nil && strings.HasPrefix(err.Error(), "scopes limit data keys"):
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "scopes", Reason: err.Error()})
+		return
 	case errors.Is(err, auth.ErrKeyNameTaken):
 		writeError(w, r, http.StatusConflict, codeConflict, err.Error(), Detail{Path: "name", Reason: "must be unique"})
 		return
@@ -677,6 +686,71 @@ func (a *adminAPI) createAPIKey(w http.ResponseWriter, r *http.Request) {
 	out := apiKeyJSON(k)
 	out["key"] = key
 	writeJSON(w, http.StatusCreated, out)
+}
+
+// scopesField parses the scopes of a new key and checks that each names
+// something the realm has, so a typo can't make a key quietly useless (or, for
+// a key meant to be narrow, quietly pointing at nothing).
+func (a *adminAPI) scopesField(w http.ResponseWriter, r *http.Request, list []string) (auth.Scopes, bool) {
+	realm := chi.URLParam(r, "realm")
+	var details []Detail
+	var out auth.Scopes
+	for i, s := range list {
+		path := "scopes[" + strconv.Itoa(i) + "]"
+		sc, err := auth.ParseScope(s)
+		if err != nil {
+			details = append(details, Detail{Path: path, Reason: err.Error()})
+			continue
+		}
+		if reason := a.scopeTarget(realm, sc); reason != "" {
+			details = append(details, Detail{Path: path, Reason: reason})
+			continue
+		}
+		if !slices.Contains(out, sc) {
+			out = append(out, sc)
+		}
+	}
+	if len(list) > auth.MaxScopes {
+		details = append(details, Detail{Path: "scopes", Reason: "at most " + strconv.Itoa(auth.MaxScopes) + " scopes per key"})
+	}
+	if len(details) > 0 {
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", details...)
+		return nil, false
+	}
+	return out, true
+}
+
+// scopeTarget says why a grant names nothing the realm has ("" when it does).
+func (a *adminAPI) scopeTarget(realm string, sc auth.Scope) string {
+	if sc.Database == "" {
+		return ""
+	}
+	rl := a.reg.Realms[realm]
+	db := rl.Databases[sc.Database]
+	switch {
+	case db == nil:
+		return "the realm has no database " + sc.Database
+	case sc.Op == auth.ScopeCall && sc.Name == "":
+		if db.Functions == nil {
+			return "the database " + sc.Database + " has no functions"
+		}
+	case sc.Op == auth.ScopeCall:
+		fn := (*registry.Function)(nil)
+		if db.Functions != nil {
+			fn = db.Functions.Functions[sc.Name]
+		}
+		switch {
+		case fn == nil:
+			return "the database " + sc.Database + " has no function " + sc.Name
+		case fn.Internal:
+			return sc.Name + " is an internal function: it has no HTTP route to call"
+		}
+	case sc.Name != "":
+		if _, ok := db.Collections[sc.Name]; !ok {
+			return "the database " + sc.Database + " has no collection " + sc.Name
+		}
+	}
+	return ""
 }
 
 func (a *adminAPI) revokeAPIKey(w http.ResponseWriter, r *http.Request) {

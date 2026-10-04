@@ -662,3 +662,36 @@ func TestListUsersPageOnMongoDB(t *testing.T) {
 		t.Errorf("after bb = %v", emails(page))
 	}
 }
+
+func TestAPIKeyScopesOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	svc := &auth.Users{Store: s, Settings: registry.RealmSettings{}}
+	scopes, _ := auth.ParseScopes([]string{"read:blog", "write:blog/posts", "call:main/export"})
+	_, key, err := svc.CreateAPIKey(ctx, "scoped", auth.KeyOptions{Scopes: scopes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := svc.CreateAPIKey(ctx, "plain", auth.KeyOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	k, err := svc.AuthenticateKey(ctx, key)
+	if err != nil || !reflect.DeepEqual(k.Scopes.Strings(), []string{"read:blog", "write:blog/posts", "call:main/export"}) {
+		t.Fatalf("scopes after a round trip: %v, %v", k.Scopes, err)
+	}
+	if !k.Scopes.Allows(auth.ScopeRead, "blog", "comments") || k.Scopes.Allows(auth.ScopeWrite, "blog", "comments") {
+		t.Error("the stored scopes don't decide as they were made")
+	}
+	list, _ := svc.ListAPIKeys(ctx)
+	if len(list) != 2 || list[0].Name != "plain" || list[0].Scopes.Limited() || !list[1].Scopes.Limited() {
+		t.Errorf("list = %+v", list)
+	}
+	// A grant edited into something unparsable fails closed: the key reaches nothing.
+	if _, err := s.apiKeys().UpdateOne(ctx, bson.D{{Key: "name", Value: "scoped"}}, bson.D{{Key: "$set", Value: bson.D{{Key: "scopes", Value: bson.A{"read:BLOG"}}}}}); err != nil {
+		t.Fatal(err)
+	}
+	k, err = svc.AuthenticateKey(ctx, key)
+	if err != nil || !k.Scopes.Limited() || k.Scopes.Allows(auth.ScopeRead, "blog", "posts") {
+		t.Errorf("an unparsable grant should allow nothing: %+v, %v", k.Scopes, err)
+	}
+}

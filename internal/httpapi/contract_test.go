@@ -778,6 +778,9 @@ func TestContract(t *testing.T) {
 	req("POST", p, `{"published": true}`, ada, 400)
 	req("POST", p, `{"title": "x"}`, nil, 401)
 	req("POST", p, `{"title": "x"}`, carl, 403)
+	readOnly := f.scoped(t, "contract-ro", "read:app/posts")
+	req("GET", p, "", bearer(readOnly), 200)
+	req("POST", p, `{"title": "x"}`, bearer(readOnly), 403) // outside the key's scopes
 	req("POST", "/v1/acme/app/nope", `{"title": "x"}`, key, 404)
 	req("POST", p, `{"title": "x"}`, with(key, "Content-Type", "text/plain"), 415)
 	f.store.fail = errConflictForContract
