@@ -17,6 +17,7 @@ Realms with `auth: disabled` are open to anyone who can reach `backd`: never exp
 | I want to… | Go to |
 |---|---|
 | Try it in a few minutes | [Getting started](getting-started/) |
+| Build a whole app, chapter by chapter | [Tutorial](tutorial/) |
 | Describe my data: schemas, indexes, realms | [Configuration](configuration/) |
 | Read, write and query documents | [HTTP API](api/) and the [JavaScript client](clients/js/) |
 | Control who can do what: users, sessions, API keys, rules, administration | [Authentication](auth/) |

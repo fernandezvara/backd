@@ -16,5 +16,6 @@ The repository includes example configurations under `examples/config`, and exam
 | [Workshop tour](workshop-tour/) | `workshop` | A guided walk through the cookbook's functions with an inspector that shows every call the page makes: request, answer, the function's own log and a `curl` command. Demo accounts for a customer, staff and an operator |
 | [Mailbox](../functions/email/#developing-without-a-provider) | `workshop` | The emails the workshop realm would send, captured by its `email-capture` function instead of delivered, with working links: a small app to read them. Local development only |
 | [Expenses with functions](expenses-with-functions/) | `expenses-with-functions` | The same app, same layout, with those holes closed by five functions — compared side by side with what changed and why |
+| [Shelf (the Tutorial)](../tutorial/) | `shelf` | A team asset library built chapter by chapter: realms, auth, rules, invitations, functions of every mode, jobs, email, a signed webhook, API keys and audit — `tour.js` is its regression test |
 
 `make example` serves the configurations and the applications on `https://localhost:8443`, with an index of the applications at `/example/` (see [Getting started](../getting-started/)).
