@@ -74,6 +74,9 @@ func lookup(fields map[string]registry.Field, path string) (field, bool) {
 		return f, true
 	}
 	f, ok := fields[path]
+	if ok && f.Date {
+		return field{Field: f, kind: kindDate}, true // stored as a date: compared as dates
+	}
 	return field{Field: f}, ok
 }
 
@@ -325,6 +328,9 @@ func cmpOr(a, b string) string {
 func equalityValue(f field, v any) (any, string) {
 	switch f.kind {
 	case kindDate:
+		if v == nil && len(f.Types) > 0 && f.Has("null") {
+			return nil, "" // a nullable date field can be compared with null
+		}
 		return dateValue(v)
 	case kindID:
 		if _, ok := v.(string); !ok {

@@ -233,3 +233,42 @@ func TestParseCount(t *testing.T) {
 		t.Error("ParseCount(yes) accepted")
 	}
 }
+
+func TestParseWhereOnDateFields(t *testing.T) {
+	dateFields := map[string]registry.Field{
+		"starts_at": {Types: []string{"string"}, Date: true},
+		"ends_at":   {Types: []string{"string", "null"}, Date: true},
+		"note":      {Types: []string{"string"}}, // a date-time left as text
+	}
+	at := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	got, err := ParseWhere(`{"starts_at": {"$gte": "2026-09-01T14:00:00+02:00", "$lt": "2026-10-01T00:00:00Z"}, "ends_at": null}`, dateFields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := storage.And{
+		cond("ends_at", storage.OpEq, nil),
+		cond("starts_at", storage.OpGte, at), // any offset, compared in UTC
+		cond("starts_at", storage.OpLt, time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)),
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %#v\nwant %#v", got, want)
+	}
+	if got, err := ParseWhere(`{"starts_at": {"$between": ["2026-01-01T00:00:00Z", "2026-02-01T00:00:00Z"]}, "ends_at": {"$in": ["2026-01-01T00:00:00Z", null]}}`, dateFields); err != nil || got == nil {
+		t.Errorf("between and in: %v %v", got, err)
+	}
+	for _, bad := range []string{
+		`{"starts_at": "yesterday"}`,        // not RFC 3339
+		`{"starts_at": 5}`,                  // not a string
+		`{"starts_at": null}`,               // not nullable
+		`{"starts_at": {"$like": "2026%"}}`, // text operators are for text
+		`{"starts_at": {"$startsWith": "2026"}}`,
+	} {
+		if _, err := ParseWhere(bad, dateFields); err == nil {
+			t.Errorf("%s was accepted", bad)
+		}
+	}
+	// Left as text it is still text: strings compare as strings.
+	if got, err := ParseWhere(`{"note": {"$startsWith": "2026"}}`, dateFields); err != nil || got == nil {
+		t.Errorf("text: %v %v", got, err)
+	}
+}
