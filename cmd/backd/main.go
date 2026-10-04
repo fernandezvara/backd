@@ -646,6 +646,8 @@ func (a *app) syncRoles(ctx context.Context) error {
 		switch {
 		case len(rl.Settings.AdminRoles()) == 0:
 			a.log.Warn("realm declares no admin role (admin: true in realm.yaml): only existing admin API keys can manage it, and `backd bootstrap` can't create an administrator", "realm", rl.Name)
+		case len(rl.Settings.FullAdminRoles()) == 0:
+			a.log.Warn("no role of the realm has admin: true: nobody can manage roles and API keys beyond the areas their own role opens, and `backd bootstrap` can't create an administrator", "realm", rl.Name)
 		case rep.Admins == 0:
 			a.log.Warn("no user holds an admin role of the realm, in realm.yaml or the database: create the first administrator with `backd bootstrap`", "realm", rl.Name)
 		}

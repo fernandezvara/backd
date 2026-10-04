@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"maps"
 	"net/http"
 	"slices"
@@ -31,10 +32,12 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 	r.Route("/v1/{realm}/_admin", func(r chi.Router) {
 		r.Use(noStore, resolveRealm, timeout, a.requireAdmin)
 		json := requireContentType("application/json")
-		r.Get("/users", a.listUsers)
-		r.With(json).Post("/users", a.createUser)
+		users, invites, keys := a.need(registry.RightUsers), a.need(registry.RightInvitations), a.need(registry.RightAPIKeys)
+		secrets, audit, fns := a.need(registry.RightSecrets), a.need(registry.RightAudit), a.need(registry.RightFunctions)
+		r.With(users).Get("/users", a.listUsers)
+		r.With(users, json).Post("/users", a.createUser)
 		r.Route("/users/{id}", func(r chi.Router) {
-			r.Use(a.loadUser)
+			r.Use(users, a.loadUser, a.guardTarget)
 			r.Get("/", a.getUser)
 			r.Get("/owned", a.owned)
 			r.With(json).Patch("/", a.updateUser)
@@ -45,19 +48,19 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 			r.Delete("/roles/{role}", a.removeRole)
 			r.With(json).Put("/networks", a.setNetworks)
 		})
-		r.Get("/invitations", a.listInvitations)
-		r.With(json).Post("/invitations", a.createInvitation)
-		r.Delete("/invitations/{id}", a.revokeInvitation)
-		r.Get("/apikeys", a.listAPIKeys)
-		r.With(json).Post("/apikeys", a.createAPIKey)
-		r.Delete("/apikeys/{name}", a.revokeAPIKey)
-		r.Get("/secrets", a.listSecrets)
-		r.With(json).Put("/secrets/{name}", a.setSecret)
-		r.Delete("/secrets/{name}", a.deleteSecret)
-		r.Get("/audit", a.listAudit)
-		r.Get("/invocations", a.listInvocations)
-		r.Get("/jobs", a.listJobs)
-		r.With(json).Post("/functions/{database}/{name}/invoke", a.fns.adminInvoke)
+		r.With(invites).Get("/invitations", a.listInvitations)
+		r.With(invites, json).Post("/invitations", a.createInvitation)
+		r.With(invites).Delete("/invitations/{id}", a.revokeInvitation)
+		r.With(keys).Get("/apikeys", a.listAPIKeys)
+		r.With(keys, json).Post("/apikeys", a.createAPIKey)
+		r.With(keys).Delete("/apikeys/{name}", a.revokeAPIKey)
+		r.With(secrets).Get("/secrets", a.listSecrets)
+		r.With(secrets, json).Put("/secrets/{name}", a.setSecret)
+		r.With(secrets).Delete("/secrets/{name}", a.deleteSecret)
+		r.With(audit).Get("/audit", a.listAudit)
+		r.With(fns).Get("/invocations", a.listInvocations)
+		r.With(fns).Get("/jobs", a.listJobs)
+		r.With(fns, json).Post("/functions/{database}/{name}/invoke", a.fns.adminInvoke)
 	})
 }
 
@@ -90,14 +93,15 @@ func (a *adminAPI) requireAdmin(next http.Handler) http.Handler {
 		if !allowedFrom(w, r, caller) {
 			return
 		}
-		allowed := false
+		// An admin API key opens every area; a user opens what their roles do.
+		var rights registry.AdminRights
 		switch {
-		case caller.Key != nil:
-			allowed = caller.Key.IsAdmin()
-		case caller.User != nil:
-			allowed = usersOf(r).Settings.IsAdmin(caller.User.User.Roles)
+		case caller.Key != nil && caller.Key.IsAdmin():
+			rights = registry.AllRights
+		case caller.User != nil && caller.Key == nil:
+			rights = usersOf(r).Settings.AdminRights(caller.User.User.Roles)
 		}
-		if !allowed {
+		if !rights.Any() {
 			writeError(w, r, http.StatusForbidden, codeForbidden, "admin endpoints need an admin API key or the session of a user with an admin role")
 			return
 		}
@@ -105,7 +109,55 @@ func (a *adminAPI) requireAdmin(next http.Handler) http.Handler {
 			adminRefused(w, r, "outside the user's admin_networks")
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), callerKey{}, caller)))
+		ctx := context.WithValue(r.Context(), callerKey{}, caller)
+		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, adminRightsKey{}, rights)))
+	})
+}
+
+type adminRightsKey struct{}
+
+// adminRightsOf is what the admin caller of this request may administer.
+func adminRightsOf(r *http.Request) registry.AdminRights {
+	rights, _ := r.Context().Value(adminRightsKey{}).(registry.AdminRights)
+	return rights
+}
+
+// need admits callers whose roles open an area of the admin API.
+func (a *adminAPI) need(right registry.AdminRights) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if have := adminRightsOf(r); !have.Has(right) {
+				rightRefused(w, r, fmt.Sprintf("this endpoint needs the %q admin right; your roles open: %s", right, have))
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// rightRefused answers an authenticated administrator who asks for more than
+// their roles open, and audits it. Unlike a refusal by network, the caller is
+// known to be an administrator, so the answer says what was missing.
+func rightRefused(w http.ResponseWriter, r *http.Request, reason string) {
+	logger(r.Context()).Warn("admin request refused by rights", "realm", chi.URLParam(r, "realm"), "reason", reason)
+	usersOf(r).Audit(r.Context(), auth.AuditAdminRefused, "", map[string]any{"reason": reason, "method": r.Method, "path": r.URL.Path})
+	writeError(w, r, http.StatusForbidden, codeForbidden, reason)
+}
+
+// guardTarget keeps an administrator from changing a user who holds admin
+// rights they don't hold themselves: setting that user's password or address,
+// disabling, erasing or re-roling them would otherwise be a way to become
+// them. Reading is always allowed.
+func (a *adminAPI) guardTarget(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			held := usersOf(r).Settings.AdminRights(adminUserOf(r).Roles)
+			if have := adminRightsOf(r); !have.Has(held) {
+				rightRefused(w, r, fmt.Sprintf("this user holds admin rights you don't (%s); you hold: %s", held, have))
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 
@@ -322,7 +374,23 @@ func (a *adminAPI) changeEmail(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// roleWithinRights refuses (and answers) a change of a role that opens admin
+// areas the caller doesn't hold: nobody hands out, or takes away, more than
+// they have.
+func (a *adminAPI) roleWithinRights(w http.ResponseWriter, r *http.Request) bool {
+	role := chi.URLParam(r, "role")
+	granted := usersOf(r).Settings.Roles[role].Admin
+	if have := adminRightsOf(r); !have.Has(granted) {
+		rightRefused(w, r, fmt.Sprintf("the role %q opens admin rights you don't hold (%s); you hold: %s", role, granted, have))
+		return false
+	}
+	return true
+}
+
 func (a *adminAPI) addRole(w http.ResponseWriter, r *http.Request) {
+	if !a.roleWithinRights(w, r) {
+		return
+	}
 	if err := usersOf(r).AddRole(r.Context(), adminUserOf(r).Email, chi.URLParam(r, "role")); err != nil {
 		adminError(w, r, err)
 		return
@@ -331,6 +399,9 @@ func (a *adminAPI) addRole(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *adminAPI) removeRole(w http.ResponseWriter, r *http.Request) {
+	if !a.roleWithinRights(w, r) {
+		return
+	}
 	if err := usersOf(r).RemoveRole(r.Context(), adminUserOf(r).Email, chi.URLParam(r, "role")); err != nil {
 		adminError(w, r, err)
 		return
@@ -650,6 +721,10 @@ func (a *adminAPI) createAPIKey(w http.ResponseWriter, r *http.Request) {
 		}
 		opts.Role = role
 	}
+	if opts.Role == auth.KeyRoleAdmin && adminRightsOf(r) != registry.AllRights {
+		rightRefused(w, r, fmt.Sprintf("an admin API key opens every area; you hold: %s", adminRightsOf(r)))
+		return
+	}
 	if s, ok := f["expires_in"].(string); ok {
 		d, err := registry.ParseDuration(s)
 		if err != nil || d <= 0 {
@@ -754,6 +829,20 @@ func (a *adminAPI) scopeTarget(realm string, sc auth.Scope) string {
 }
 
 func (a *adminAPI) revokeAPIKey(w http.ResponseWriter, r *http.Request) {
+	// An admin key opens every area, so revoking one takes every area too.
+	if have := adminRightsOf(r); have != registry.AllRights {
+		keys, err := usersOf(r).ListAPIKeys(r.Context())
+		if err != nil {
+			adminError(w, r, err)
+			return
+		}
+		for _, k := range keys {
+			if k.Name == chi.URLParam(r, "name") && k.IsAdmin() {
+				rightRefused(w, r, fmt.Sprintf("an admin API key opens every area; you hold: %s", have))
+				return
+			}
+		}
+	}
 	err := usersOf(r).RevokeAPIKey(r.Context(), chi.URLParam(r, "name"))
 	if errors.Is(err, auth.ErrKeyNotFound) {
 		writeError(w, r, http.StatusNotFound, codeNotFound, "API key not found")

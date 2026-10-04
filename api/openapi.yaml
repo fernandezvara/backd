@@ -28,7 +28,11 @@ tags:
   - name: auth
     description: "Sign-up, login and sessions of a realm with `auth: enabled`."
   - name: admin
-    description: User, role and invitation management with an API key.
+    description: >-
+      User, role and invitation management with an API key, or the session of a
+      user whose admin role opens the area (users, invitations, apikeys,
+      secrets, audit, functions). A request for an area the roles don't open
+      answers 403 naming it.
   - name: documents
     description: CRUD and queries on any configured collection.
   - name: functions

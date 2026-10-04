@@ -32,7 +32,7 @@ Each realm with `auth: enabled` keeps an **audit trail**: one record per securit
 | `invitation.create`, `invitation.revoke` | An invitation is created or revoked | `bound_to_email` (whether it is), `expires_at` |
 | `invitation.sent` | An invitation is emailed to its address | `expires_at` |
 | `admin.login` | A user holding an admin role logs in | `session_id` |
-| `admin.refused` | An admin API request is refused by a network restriction | `reason`, `method`, `path` |
+| `admin.refused` | An admin API request is refused: by a network restriction, or because the administrator's roles don't open the [area](../admin/#admin-rights) or hold the rights of the user or role involved | `reason`, `method`, `path` |
 | `realm.bootstrap` | `backd bootstrap` creates the realm's first administrator | `role` |
 
 Failed logins aren't recorded here: they are [throttled](../sessions/#brute-force-protection) and counted, and every request is in the access log.
