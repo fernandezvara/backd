@@ -123,7 +123,10 @@ const page = await posts.list({
   skip: 0,
   count: true,
 })
-// { items: [...], limit: 20, skip: 0, has_more: true, total: 42 }
+// { items: [...], limit: 20, skip: 0, has_more: true, next_cursor: '…', total: 42 }
+
+// The next page: pass the cursor back, with the same where and orderBy
+const next = await posts.list({ where: { published: true }, orderBy: '-_meta.created_at', limit: 20, after: page.next_cursor })
 
 // Alternatives with $or (see Querying)
 await posts.list({ where: { $or: [{ title: { $icontains: 'go' } }, { body: { $icontains: 'go' } }] } })
@@ -142,7 +145,7 @@ await posts.delete(id)
 - `where` and `orderBy` use `backd`'s [query language](../../api/querying/) as it is: the client only serializes them.
 - Documents come back as the API returns them: your fields plus `id` and `_meta` (`created_at`, `updated_at`, `version`, and in realms with authentication `owner`, `created_by`, `updated_by`).
 - What a user sees and may change is decided by the collection's [access rules](../../auth/rules/). A document they can't read answers `NotFoundError`; an operation they can't do answers `ForbiddenError`, or `AuthenticationError` when they aren't signed in.
-- `iterate` fetches pages by offset. Documents created or deleted while it runs can be skipped or repeated.
+- `iterate` follows each page's `next_cursor`, so documents created, changed or deleted while it runs never shift a page, and the end is as fast as the start. A cursor can't follow an `orderBy` on arrays, objects or fields of mixed types: `iterate` then fetches by offset (`skip`), where documents created or deleted meanwhile can be skipped or repeated. `after` can't be combined with `skip`; see [paging with a cursor](../../api/querying/#paging-with-a-cursor).
 
 With TypeScript (or JSDoc), describe a collection's fields for typed documents:
 

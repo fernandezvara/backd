@@ -30,6 +30,8 @@ import { Job } from './functions.js'
  * @property {string | string[]} [orderBy]  Fields, `-` prefix for descending, e.g. `'-_meta.created_at'`.
  * @property {number} [limit]               1–100; default 20.
  * @property {number} [skip]
+ * @property {string} [after]               The `next_cursor` of the previous page: continues the list after it
+ *   (same `where` and `orderBy`). Can't be combined with `skip`.
  * @property {boolean} [count]              Also return `total`.
  */
 
@@ -41,7 +43,9 @@ import { Job } from './functions.js'
  * @property {number} limit
  * @property {number} skip
  * @property {boolean} has_more
- * @property {number} [total]   With `count: true`.
+ * @property {string} [next_cursor]   With `has_more`: pass it as `after` to get the next page. Absent when the
+ *   `orderBy` can't be followed by a cursor (arrays, objects, mixed types): use `skip` then.
+ * @property {number} [total]   With `count: true`; counts the whole list, not what is after `after`.
  */
 
 /**
@@ -167,19 +171,29 @@ export class Collection {
 
   /**
    * Every matching document, fetching pages as needed:
-   * `for await (const doc of posts.iterate({ where }))`. Pages are
-   * fetched by offset, so documents created or deleted meanwhile can be
-   * skipped or repeated.
+   * `for await (const doc of posts.iterate({ where }))`. Pages follow a
+   * cursor (`next_cursor`), so documents created, changed or deleted
+   * meanwhile never shift a page, and it is as fast at the end as at the
+   * start. An `orderBy` on arrays, objects or mixed types has no cursor:
+   * those lists are fetched by offset instead, where documents created or
+   * deleted meanwhile can be skipped or repeated.
    * @param {Omit<ListParams, 'skip' | 'count'>} [params] `limit` is the page size (default 100).
    * @param {RequestOptions} [opts]
    * @returns {AsyncGenerator<Doc<T>, void, undefined>}
    */
   async *iterate(params = {}, opts) {
     const limit = params.limit ?? 100
+    let after = params.after
     for (let skip = 0; ; skip += limit) {
-      const page = await this.list({ ...params, limit, skip }, opts)
+      // With a cursor the next request carries it; without one, the offset.
+      const page = await this.list(after === undefined ? { ...params, limit, skip } : { ...params, limit, after }, opts)
       yield* page.items
       if (!page.has_more) return
+      if (page.next_cursor === undefined) {
+        if (after !== undefined) throw new Error('backd: the list has no next_cursor to continue after')
+      } else {
+        after = page.next_cursor
+      }
     }
   }
 
@@ -255,6 +269,7 @@ function listQuery(p) {
     order_by: Array.isArray(p.orderBy) ? p.orderBy.join(',') : p.orderBy,
     limit: p.limit,
     skip: p.skip,
+    after: p.after,
     count: p.count || undefined,
   }
 }

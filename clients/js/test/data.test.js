@@ -51,6 +51,34 @@ test('iterate walks every page', async () => {
   assert.equal(empty.calls[0].url.searchParams.get('limit'), '100')
 })
 
+test('iterate follows the cursor of each page', async () => {
+  const m = mockFetch([
+    { body: { items: [doc('a'), doc('b')], limit: 2, skip: 0, has_more: true, next_cursor: 'c-1' } },
+    { body: { items: [doc('c'), doc('d')], limit: 2, skip: 0, has_more: true, next_cursor: 'c-2' } },
+    { body: { items: [doc('e')], limit: 2, skip: 0, has_more: false } },
+  ])
+  /** @type {string[]} */
+  const ids = []
+  for await (const d of posts(m).iterate({ orderBy: '-title', limit: 2 })) ids.push(d.id)
+  assert.deepEqual(ids, ['a', 'b', 'c', 'd', 'e'])
+  assert.deepEqual(m.calls.map((c) => c.url.searchParams.get('after')), [null, 'c-1', 'c-2'])
+  assert.deepEqual(m.calls.map((c) => c.url.searchParams.get('skip')), ['0', null, null], 'a cursor replaces the offset')
+  assert.equal(m.calls[2].url.searchParams.get('order_by'), '-title')
+
+  // Starting from a cursor, and a list a cursor can't follow stays on offsets.
+  const from = mockFetch([{ body: { items: [doc('z')], limit: 100, skip: 0, has_more: false } }])
+  for await (const _ of posts(from).iterate({ after: 'start' })) void _
+  assert.equal(from.calls[0].url.searchParams.get('after'), 'start')
+  assert.equal(from.calls[0].url.searchParams.get('skip'), null)
+})
+
+test('list passes after and returns next_cursor', async () => {
+  const m = mockFetch([{ body: { items: [doc('a')], limit: 1, skip: 0, has_more: true, next_cursor: 'abc' } }])
+  const page = await posts(m).list({ limit: 1, after: 'prev' })
+  assert.equal(m.calls[0].url.searchParams.get('after'), 'prev')
+  assert.equal(page.next_cursor, 'abc')
+})
+
 test('get, create, replace, patch and delete', async () => {
   const m = mockFetch([{ body: doc('a') }, { status: 201, body: doc('b') }, { body: doc('a') }, { body: doc('a') }, { status: 204 }])
   const c = posts(m)

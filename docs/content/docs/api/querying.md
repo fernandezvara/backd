@@ -14,6 +14,7 @@ The list endpoint, `GET /v1/{realm}/{database}/{collection}`, accepts these quer
 | `order_by` | `id` | Comma-separated fields; prefix a field with `-` for descending |
 | `limit` | `20` | Page size, `1`–`100` |
 | `skip` | `0` | Number of documents to skip |
+| `after` | none | The `next_cursor` of the previous page: continues the list after it (see [Paging with a cursor](#paging-with-a-cursor)). Can't be combined with `skip` |
 | `count` | `false` | `true` adds `total`, the number of documents matching `where` |
 
 Each parameter may appear at most once. Any other parameter returns `400 invalid_query`.
@@ -23,7 +24,7 @@ GET /v1/shop/orders/items?where={"status":"active","price":{"$between":[10,20]}}
 ```
 
 ```json
-{ "items": [ ... ], "limit": 10, "skip": 0, "has_more": true, "total": 134 }
+{ "items": [ ... ], "limit": 10, "skip": 0, "has_more": true, "next_cursor": "…", "total": 134 }
 ```
 
 The example is shown unencoded for readability.
@@ -149,8 +150,24 @@ Invalid queries return `400 invalid_query`, with one detail per problem:
 - `order_by=-age,name` sorts by `age` descending, then `name` ascending.
 - `id` ascending is always added as a final tiebreaker unless `order_by` already includes `id`, so pages are stable. Since ids are time-sortable, the default order is creation order.
 - `has_more` is `true` when documents exist beyond this page.
-- Pagination uses offsets (`skip`), so deep pages get slower and can shift if data changes between requests.
+- `skip` pages by offset, so deep pages get slower and can shift if data changes between requests. A [cursor](#paging-with-a-cursor) doesn't have those problems.
+
+### Paging with a cursor
+
+When `has_more` is `true`, the answer has a `next_cursor`. Send it as `after`, with the same `where` and `order_by`, to get the next page:
+
+```http
+GET /v1/shop/orders/items?order_by=-price,name&limit=50
+GET /v1/shop/orders/items?order_by=-price,name&limit=50&after=eyJvIjoi…
+```
+
+- A cursor is a position, not a reading of the document it came from: it keeps working if that document is edited or deleted meanwhile, so a loop that processes and deletes documents is safe, and documents added or removed elsewhere never shift a page. Each page costs the same however far you are, if the order is [indexed](../../configuration/config-dir/#indexesjson).
+- **Treat it as opaque.** For the default order (`id` ascending) it is just the `id` of the last document, so `after=<id>` continues after any document you know. For any other order it is an encoded position that only continues the same `order_by`: another `order_by`, a made-up value or `skip` answers `400 invalid_query` on `after`.
+- Equal values and missing or `null` values are handled: documents with the same sort value are told apart by `id`, and `null` or missing values sort first, as in a normal list.
+- It follows `order_by` fields that hold one kind of scalar value (strings, numbers, booleans, dates, ids). For fields that hold arrays, objects or several types there is no `next_cursor`, and `after` is refused: page those with `skip`.
+- It never shows more than the first page would: `where` and the [read rules](../../auth/rules/) apply to everything after the cursor. `count=true` still counts the whole list, not what is left.
+- The `audit`, `jobs` and `invocations` lists of the admin API still page with `skip`.
 
 {{< hint style="tip" title="Best practice" >}}
-Filter first, page second. A narrow `where` plus a small `limit` is fast; walking thousands of pages with `skip` is not. Every field you filter or sort by should be covered by an [index](../../configuration/config-dir/#indexesjson), or MongoDB scans the whole collection. To read everything, use the client's `iterate()`.
+Filter first, page second. A narrow `where` plus a small `limit` is fast; walking thousands of pages with `skip` is not; use a cursor. Every field you filter or sort by should be covered by an [index](../../configuration/config-dir/#indexesjson), or MongoDB scans the whole collection. To read everything, use the client's `iterate()`.
 {{< /hint >}}

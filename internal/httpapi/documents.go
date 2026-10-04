@@ -148,7 +148,10 @@ type listResponse struct {
 	Limit   int              `json:"limit"`
 	Skip    int              `json:"skip"`
 	HasMore bool             `json:"has_more"`
-	Total   *int64           `json:"total,omitempty"`
+	// NextCursor continues the list (`after`): set when HasMore, unless the
+	// order_by can't be followed by a cursor (arrays, objects, mixed types).
+	NextCursor string `json:"next_cursor,omitempty"`
+	Total      *int64 `json:"total,omitempty"`
 }
 
 func (d *documents) list(w http.ResponseWriter, r *http.Request) {
@@ -172,10 +175,15 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 	for _, doc := range page.Items {
 		resp.Items = append(resp.Items, render(doc))
 	}
+	if page.HasMore && len(page.Items) > 0 {
+		if ok, _ := query.Cursorable(q.Sort, c.Fields); ok {
+			resp.NextCursor = query.EncodeCursor(q.Sort, page.Items[len(page.Items)-1])
+		}
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
-var listParams = map[string]bool{"where": true, "order_by": true, "limit": true, "skip": true, "count": true}
+var listParams = map[string]bool{"where": true, "order_by": true, "limit": true, "skip": true, "after": true, "count": true}
 
 func parseListQuery(v url.Values, fields map[string]registry.Field) (storage.Query, []Detail) {
 	q := storage.Query{Limit: defaultLimit}
@@ -219,6 +227,17 @@ func parseListQuery(v url.Values, fields map[string]registry.Field) (storage.Que
 			details = append(details, Detail{Path: "skip", Reason: "must be a non-negative integer"})
 		}
 		q.Skip = n
+	}
+	if cursor := v.Get("after"); v.Has("after") {
+		switch {
+		case v.Has("skip"):
+			details = append(details, Detail{Path: "after", Reason: "can't be combined with skip: a cursor already says where the page starts"})
+		case q.Sort != nil:
+			var err error
+			if q.After, err = query.ParseCursor(cursor, q.Sort, fields); err != nil {
+				addErr(err)
+			}
+		}
 	}
 	return q, details
 }

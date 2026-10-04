@@ -145,7 +145,7 @@ GET /v1/shop/orders/items?limit=10&skip=20
 { "items": [ ... ], "limit": 10, "skip": 20, "has_more": true }
 ```
 
-By default documents are ordered by `id`, which is creation order. The endpoint also supports filtering (`where`), sorting (`order_by`) and counting (`count`). See [Querying](../querying/).
+By default documents are ordered by `id`, which is creation order. The endpoint also supports filtering (`where`), sorting (`order_by`), counting (`count`) and paging with a cursor (`after`, from the `next_cursor` of the previous page). See [Querying](../querying/).
 
 ## Replace (PUT)
 

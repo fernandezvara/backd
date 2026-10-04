@@ -122,7 +122,7 @@ Prefer `ctx.db` to `ctx.admin.db` whenever the caller's own rights are enough: t
 | Call | Does |
 |---|---|
 | `get(id)` | one document (throws a not-found error if the caller can't read it) |
-| `list({ where, orderBy, limit, skip })` | one page: `{ items, has_more }`; `limit` is 1–100 |
+| `list({ where, orderBy, limit, skip, after })` | one page: `{ items, has_more, next_cursor }`; `limit` is 1–100; pass `next_cursor` back as `after` for the next page |
 | `iterate({ where, orderBy })` | every match, page by page: `for await (const doc of collection.iterate({ … }))` |
 | `create(doc)`, `patch(id, patch)`, `replace(id, doc)`, `delete(id)` | one write; `patch(id, patch, { ifMatch: doc._meta.version })` fails if someone changed the document meanwhile |
 | `db.batch([{ op, collection, … }])` | up to 100 writes across collections in one transaction: all or none |

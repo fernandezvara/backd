@@ -85,6 +85,16 @@ test('pagination and iterate', { skip }, async () => {
   const all = []
   for await (const d of posts.iterate({ where: { status: tag }, orderBy: '-title', limit: 2 })) all.push(d.title)
   assert.deepEqual(all, ['t4', 't3', 't2', 't1', 't0'])
+
+  // A cursor continues the same list, and survives its anchor being deleted.
+  const query = { where: { status: tag }, orderBy: 'title', limit: 2 }
+  const p1 = await posts.list(query)
+  assert.ok(p1.next_cursor)
+  await client({ apiKey }).db('app').collection('posts').delete(p1.items[1].id) // the last document of the page (only staff and keys delete)
+  const p2 = await posts.list({ ...query, after: p1.next_cursor })
+  assert.deepEqual(p2.items.map((d) => d.title), ['t2', 't3'])
+  await assert.rejects(posts.list({ ...query, after: p1.next_cursor, skip: 1 }), (/** @type {any} */ e) => e instanceof ValidationError || e.status === 400)
+  await assert.rejects(posts.list({ where: { status: tag }, orderBy: '-title', after: p1.next_cursor }), (/** @type {any} */ e) => e.status === 400)
 })
 
 test('validation, unique values and missing collections', { skip }, async () => {
