@@ -35,6 +35,10 @@ document.addEventListener('alpine:init', () => {
     pendingInvites: [],
     mailbox: [],
     newEmail: '',
+    audit: [],
+    apiKeys: [],
+    newKeyName: '',
+    newKey: null,
 
     // My assets and the account page.
     mine: [],
@@ -92,7 +96,7 @@ document.addEventListener('alpine:init', () => {
         this.user = null
       }
       await this.refilter()
-      if (this.user) await Promise.all([this.loadMine(), this.loadInvites(), this.loadShares(), this.loadNotifs(), this.ensureMember()])
+      if (this.user) await Promise.all([this.loadMine(), this.loadInvites(), this.loadShares(), this.loadNotifs(), this.ensureMember(), this.loadAdmin()])
     },
 
     // --- session -----------------------------------------------------------
@@ -114,7 +118,7 @@ document.addEventListener('alpine:init', () => {
         await this.loadInvites()
         await this.loadNotifs()
         await this.ensureMember()
-        await this.loadMailbox()
+        await this.loadAdmin()
       } catch (e) {
         this.error = e.message
       } finally {
@@ -271,6 +275,56 @@ document.addEventListener('alpine:init', () => {
       } finally {
         this.busy = false
       }
+    },
+
+    async loadAdmin() {
+      if (!this.isAdmin) return
+      await Promise.all([this.loadMailbox(), this.loadAudit(), this.loadKeys()])
+    },
+
+    async loadAudit() {
+      if (!this.isAdmin) return
+      try {
+        const page = await backd.admin.audit.list({ limit: 20 })
+        this.audit = page.items
+      } catch (e) {
+        this.error = e.message
+      }
+    },
+
+    async loadKeys() {
+      if (!this.isAdmin) return
+      try {
+        this.apiKeys = await backd.admin.keys.list()
+      } catch (e) {
+        this.error = e.message
+      }
+    },
+
+    async createKey() {
+      this.busy = true
+      this.error = null
+      this.newKey = null
+      try {
+        // Read-only on this database; 90 days, rotated before it expires.
+        const key = await backd.admin.keys.create({ name: this.newKeyName, expiresIn: '90d', scopes: ['read:main'] })
+        this.newKey = key // the key shows once — copy it now
+        void key
+        this.newKeyName = ''
+        await this.loadKeys()
+        await this.loadAudit()
+      } catch (e) {
+        this.error = e.message
+      } finally {
+        this.busy = false
+      }
+    },
+
+    async revokeKey(name) {
+      if (!confirm(`Revoke the key "${name}"? It stops working at once.`)) return
+      await backd.admin.keys.revoke(name).catch((e) => { this.error = e.message })
+      await this.loadKeys()
+      await this.loadAudit()
     },
 
     async loadMailbox() {

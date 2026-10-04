@@ -58,7 +58,7 @@ Working on a `backd` checkout instead? The same files live in the repository: `e
 | 9 | [On a schedule](09-schedules/) | cron schedules, `cleanup` |
 | 10 | [Email for real](10-email/) | delivery function, templates, the Mailbox |
 | 11 | [Being called by the internet](11-webhooks/) | the `import` webhook |
-| 12 | Running it | API keys, audit feed, the hardening checklist |
+| 12 | [Running it](12-running/) | API keys, audit feed, the hardening checklist |
 
 Later chapters (not written yet) add file management: uploads, thumbnails, share links to files — the schema already reserves `assets.file` for them.
 

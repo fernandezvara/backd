@@ -256,17 +256,50 @@
         <h2>Admin</h2>
         <p>Operators only: audit trail, users, runs by hand.</p>
       </hgroup>
-      <article>
-        <header><strong>Audit trail</strong></header>
-        <table>
+      <!-- view: audit trail (ch12, wired) — who did what, newest first. -->
+      <article x-show="isAdmin">
+        <header><strong>Audit trail</strong> <button class="link sm" @click="loadAudit">refresh</button></header>
+        <table x-show="audit.length">
           <thead><tr><th>When</th><th>Actor</th><th>Event</th><th>Target</th></tr></thead>
           <tbody>
-            <tr><td>2026-09-21 09:41</td><td>operator@…</td><td><code>user.invite</code></td><td>carla@…</td></tr>
-            <tr><td>2026-09-20 18:02</td><td>operator@…</td><td><code>function.invoke_manual</code></td><td>main/digest</td></tr>
-            <tr><td>2026-09-20 07:15</td><td>operator@…</td><td><code>apikey.create</code></td><td>ci-reader</td></tr>
-            <tr><td>2026-09-19 12:33</td><td>ana@…</td><td><code>user.email_change</code></td><td>ana@…</td></tr>
+            <template x-for="e in audit" :key="e.id">
+              <tr>
+                <td x-text="new Date(e.at).toLocaleString()"></td>
+                <td x-text="e.actor"></td>
+                <td><code x-text="e.action"></code></td>
+                <td x-text="e.target ?? ''"></td>
+              </tr>
+            </template>
           </tbody>
         </table>
+        <p class="muted" x-show="!audit.length">Nothing yet — invites, keys and function runs land here.</p>
+      </article>
+
+      <!-- view: API keys (ch12, wired) — one key per service, expiring. -->
+      <article x-show="isAdmin">
+        <header><strong>API keys</strong></header>
+        <form @submit.prevent="createKey">
+          <fieldset role="group">
+            <input x-model="newKeyName" placeholder="ci-reader" required>
+            <button type="submit" :disabled="busy">Create read:main key</button>
+          </fieldset>
+        </form>
+        <template x-if="newKey">
+          <p>Shown once — copy it now:
+            <fieldset role="group">
+              <input readonly :value="newKey.key">
+              <button class="secondary" @click="navigator.clipboard?.writeText(newKey.key)">Copy</button>
+            </fieldset>
+          </p>
+        </template>
+        <ul class="notif" x-show="apiKeys.length">
+          <template x-for="k in apiKeys" :key="k.name">
+            <li>
+              <code x-text="k.name"></code> <span class="muted" x-text="k.prefix + '…' + (k.expires_at ? ' · expires ' + new Date(k.expires_at).toLocaleDateString() : ' · no expiry')"></span>
+              <button class="link danger sm" @click="revokeKey(k.name)">revoke</button>
+            </li>
+          </template>
+        </ul>
       </article>
       <!-- view: invitations (ch4, wired) — operators only. -->
       <article x-show="isAdmin">
