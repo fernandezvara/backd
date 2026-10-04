@@ -3,8 +3,12 @@
 # tests against them, and tears everything down.
 set -euo pipefail
 cd "$(dirname "$0")/../../../.."
-compose() { docker compose -f docker-compose.js.yml "$@"; }
-trap 'compose down -v >/dev/null 2>&1 || true' EXIT
+root=$(pwd)
+# An absolute path: the script changes directory below, and the teardown at
+# exit must still find the file.
+compose() { docker compose -f "$root/docker-compose.js.yml" "$@"; }
+trap 'compose down -v >/dev/null 2>&1 || echo "could not tear the stack down: docker compose -f docker-compose.js.yml down -v" >&2' EXIT
+compose down -v >/dev/null 2>&1 || true # a stack left by an earlier run would hold the ports
 
 compose up -d --build
 for _ in $(seq 1 90); do
