@@ -132,7 +132,14 @@ const digestNotifs = (await main(member).collection('notifications').list({ wher
 check('the member got the in-app digest', digestNotifs.length >= 1, JSON.stringify(digestNotifs))
 // email-capture is the delivery function in the dev stack: the digest mail
 // lands in mail/outbox, which admins may read.
-const mails = (await operator.db('mail').collection('outbox').list({ where: { kind: 'shelf-digest', to: MEMBER }, limit: 5 })).items
+// The digest job queues each mail and the worker delivers it afterwards, so
+// the mail can arrive a moment after the job is done: wait for it.
+let mails = []
+for (let i = 0; i < 100; i++) {
+  mails = (await operator.db('mail').collection('outbox').list({ where: { kind: 'shelf-digest', to: MEMBER }, limit: 5 })).items
+  if (mails.some((m) => m.to.includes(MEMBER))) break
+  await new Promise((r) => setTimeout(r, 100))
+}
 check('the digest mail is in the dev mailbox', mails.some((m) => m.to.includes(MEMBER)), JSON.stringify(mails))
 
 heading('The import webhook (ch11)')
