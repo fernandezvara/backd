@@ -87,7 +87,7 @@ Working on a `backd` checkout instead? The same files live in the repository: `e
 | 4 | [Invitations](04-invitations/) | closing sign-up; one-time invitation links |
 | 5 | [The first function](05-first-function/) | `publish`, `admin: true`, idempotency, share links |
 | 6 | [Reaching the outside](06-network/) | `preview` and the `network:` allowlist |
-| 7 | [Functions calling functions](07-calls/) | `notify` as an internal function, `ctx.call` |
+| 7 | [Functions calling functions](07-calls/) | `notify` as an internal function, `ctx.call`; optional: a schema change |
 | 8 | [Work that takes time](08-async/) | `digest` as an async job, `retry:` |
 | 9 | [On a schedule](09-schedules/) | cron schedules, `cleanup` |
 | 10 | [Email for real](10-email/) | delivery function, templates, the Mailbox |

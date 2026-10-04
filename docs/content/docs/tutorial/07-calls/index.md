@@ -76,6 +76,38 @@ const [call] = calls("notify")
 
 The app's Notifications section is live: your own notifications newest-first, the nav badge counts unread, **Mark all read** is a batch of `patch(id, { read_at })` — the one field the rules allow a client to write.
 
+## Optional: a schema that grows
+
+Publishing now has a second consumer — the owner, who gets a notification — and soon a third: someone will ask *who* published an asset. That is a new field, and a good moment to see how `backd` treats a schema change. Skip this section if you like; nothing later depends on it (and the repository's finished `examples/config/shelf` does not include it).
+
+**1. Declare the field.** In `config/shelf/main/assets/schema.json`, add one property next to `published_at` (do not add it to `required`):
+
+```json
+"published_by": { "type": ["string", "null"], "description": "User id of the curator who published it, stamped by publish." },
+```
+
+**2. Keep clients away from it.** The rule that stops members writing `published_at` has to cover the new field too, or any member could name any curator. In `assets/rules.yaml`:
+
+```yaml
+create: user != nil && data.published_at == nil && data.published_by == nil
+update: >
+  user != nil && document._meta.owner == user.id
+  && !('published_at' in changed()) && !('published_by' in changed())
+```
+
+**3. Stamp it.** In `publish/index.ts`, the patch becomes:
+
+```ts
+await db.collection("assets").patch(asset_id, { published_at, published_by: ctx.user?.id ?? null });
+```
+
+Rebuild and restart (`docker compose run --rm functions-build && docker compose restart backd`). The log now says `collection validator updated` for `assets`: at startup `backd` compared `schema.json` with the database's validator and applied the difference. Check what it did:
+
+- Assets published **before** the change are untouched: they come back without `published_by`, and editing them still works. A new optional field never breaks old documents.
+- Publish a draft and read it back: `published_by` is the curator's id. Try to set it from a member session (`PATCH` with `{"published_by": "someone"}`) and the rule answers `403`.
+
+That is the safe kind of change: **adding an optional field**. The unsafe kind — making something required that old documents lack — turns those documents read-only until they are migrated, because every write is validated against the *current* schema; [Schema changes](../../api/documents/#schema-changes) describes it, and in production the new schema is applied as a deploy step with [`backd provision`](../../operations/deploying/) rather than at startup.
+
 ## You should see
 
 - `POST /_func/notify` answers `404` even signed in — internal means no route.
