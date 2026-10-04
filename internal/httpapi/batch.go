@@ -317,6 +317,12 @@ func (d *documents) applyBatchOp(ctx context.Context, r *http.Request, a access,
 		if err := checkWrite(a, op.collection, rules.Delete, current, nil); err != nil {
 			return nil, err
 		}
+		if op.collection.SoftDelete != nil {
+			if err := repo.Replace(ctx, d.deletedDocument(r, op.collection, current), read); err != nil {
+				return nil, err
+			}
+			return map[string]any{"id": op.id}, nil
+		}
 		if err := repo.Delete(ctx, op.id, &read); err != nil {
 			return nil, err
 		}
@@ -327,6 +333,11 @@ func (d *documents) applyBatchOp(ctx context.Context, r *http.Request, a access,
 // checkReadFilter is readFilter without writing an HTTP response: batch
 // folds a denial into its own per-operation error instead.
 func checkReadFilter(a access, c *registry.Collection) (storage.Filter, error) {
+	f, err := checkReadable(a, c)
+	return hideDeleted(c, f), err
+}
+
+func checkReadable(a access, c *registry.Collection) (storage.Filter, error) {
 	if !a.ruled {
 		return nil, nil
 	}

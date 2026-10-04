@@ -66,6 +66,14 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 		"acme/app/notes/schema.json":   postsSchema,
 		"acme/app/notes/rules.yaml":    "read: user != nil\nwrite: user != nil\n",
 		"acme/app/private/schema.json": postsSchema,
+		// A collection that soft-deletes (see soft_delete_test.go).
+		// …and one that soft-deletes without a restore rule (nobody sees its trash).
+		"acme/app/archive/schema.json":     postsSchema,
+		"acme/app/archive/collection.yaml": "soft_delete: true\n",
+		"acme/app/archive/rules.yaml":      "read: user != nil\ncreate: user != nil\ndelete: user != nil\n",
+		"acme/app/bin/schema.json":         postsSchema,
+		"acme/app/bin/collection.yaml":     "soft_delete:\n  retention: 7d\n",
+		"acme/app/bin/rules.yaml":          "read: user != nil\ncreate: user != nil\nupdate: user != nil && document._meta.owner == user.id\ndelete: user != nil && document._meta.owner == user.id\nrestore: user != nil && (document._meta.owner == user.id || hasRole(user, 'staff'))\npurge: hasRole(user, 'staff')\n",
 		// Functions (see functions_test.go).
 		fnDir + "echo/function.yaml":  "invoke: \"user != nil && user.email_verified\"\n",
 		fnDir + "echo/index.js":       "",
