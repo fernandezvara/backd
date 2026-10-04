@@ -90,8 +90,10 @@ type Store interface {
 	// ListUsersPage returns one page of users sorted by email: the users whose
 	// email sorts after `after` (all when empty), skipping skip of them, at most
 	// limit; hasMore says whether more follow. Emails are unique, so `after` is
-	// an exact position. It never reads more than the page.
-	ListUsersPage(ctx context.Context, after string, skip, limit int) (users []User, hasMore bool, err error)
+	// an exact position. It never reads more than the page. A non-empty contains
+	// keeps the users whose email holds it (emails are stored lower-case, so
+	// pass it lower-case): a scan of the email index, not of the documents.
+	ListUsersPage(ctx context.Context, contains, after string, skip, limit int) (users []User, hasMore bool, err error)
 	// AddRoles adds roles the user doesn't have yet, setting UpdatedAt.
 	AddRoles(ctx context.Context, userID string, roles []string, now time.Time) error
 	// RemoveRole removes a role from the user, setting UpdatedAt.

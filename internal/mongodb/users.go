@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/fernandezvara/backd/internal/registry"
+	"regexp"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -134,10 +135,19 @@ func (s *AuthStore) ListUsers(ctx context.Context) ([]auth.User, error) {
 	return out, nil
 }
 
-func (s *AuthStore) ListUsersPage(ctx context.Context, after string, skip, limit int) ([]auth.User, bool, error) {
-	filter := bson.D{}
+func (s *AuthStore) ListUsersPage(ctx context.Context, contains, after string, skip, limit int) ([]auth.User, bool, error) {
+	email := bson.D{}
 	if after != "" {
-		filter = bson.D{{Key: "email", Value: bson.D{{Key: "$gt", Value: after}}}}
+		email = append(email, bson.E{Key: "$gt", Value: after})
+	}
+	if contains != "" {
+		// Emails are stored lower-case, so the match is case-sensitive on a
+		// lower-cased text and can walk the email index instead of the documents.
+		email = append(email, bson.E{Key: "$regex", Value: regexp.QuoteMeta(contains)})
+	}
+	filter := bson.D{}
+	if len(email) > 0 {
+		filter = bson.D{{Key: "email", Value: email}}
 	}
 	opts := options.Find().SetSort(bson.D{{Key: "email", Value: 1}}).SetSkip(int64(skip)).SetLimit(int64(limit) + 1)
 	cur, err := s.users().Find(ctx, filter, opts)

@@ -455,11 +455,11 @@ roles:
 
 func TestAdminRightsErrors(t *testing.T) {
 	for name, tc := range map[string]struct{ yaml, want string }{
-		"unknown area":  {"roles:\n  a:\n    admin: [users, billing]\n", `unknown admin area "billing" (want users, invitations, apikeys, secrets, audit, functions)`},
+		"unknown area":  {"roles:\n  a:\n    admin: [users, billing]\n", `unknown admin area "billing" (want users, invitations, apikeys, secrets, audit, functions, data, config, or read)`},
 		"empty list":    {"roles:\n  a:\n    admin: []\n", "admin: [] opens nothing"},
 		"listed twice":  {"roles:\n  a:\n    admin: [audit, audit]\n", `"audit" is listed twice`},
-		"not a boolean": {"roles:\n  a:\n    admin: sometimes\n", "admin must be true, false or a list of areas"},
-		"a mapping":     {"roles:\n  a:\n    admin: {users: true}\n", "admin must be true, false or a list of areas"},
+		"not a boolean": {"roles:\n  a:\n    admin: sometimes\n", "admin must be true, false, read or a list of areas"},
+		"a mapping":     {"roles:\n  a:\n    admin: {users: true}\n", "admin must be true, false, read or a list of areas"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, errs := parseRealmSettings([]byte(tc.yaml))
@@ -470,10 +470,73 @@ func TestAdminRightsErrors(t *testing.T) {
 	}
 }
 
+func TestAdminReadLevel(t *testing.T) {
+	s, errs := parseRealmSettings([]byte(`
+admin:
+  read_access: { users: true }
+roles:
+  root:    { admin: true }
+  viewer:  { admin: read }
+  lookout: { admin: [read, secrets] }
+  keeper:  { admin: [secrets, data] }
+`))
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	if got := s.Roles["viewer"]; got.Admin != 0 || !got.AdminRead {
+		t.Errorf("viewer: %+v", got)
+	}
+	if got := s.Roles["lookout"]; got.Admin != RightSecrets || !got.AdminRead {
+		t.Errorf("lookout: %+v", got)
+	}
+	if got := s.AdminRoles(); !reflect.DeepEqual(got, []string{"keeper", "lookout", "root", "viewer"}) {
+		t.Errorf("a read-only role is an admin role too: %v", got)
+	}
+	if got := s.FullAdminRoles(); !reflect.DeepEqual(got, []string{"root"}) {
+		t.Errorf("only admin: true can recover a realm: %v", got)
+	}
+	for roles, want := range map[string]bool{"viewer": true, "editor": false, "": false} {
+		if got := s.IsAdmin(strings.Split(roles, ",")); got != want {
+			t.Errorf("IsAdmin(%q) = %v", roles, got)
+		}
+	}
+	// read_access.users is on, .data is off.
+	viewer := s.AdminAccess([]string{"viewer"})
+	if !viewer.CanRead(s, RightAudit|RightSecrets|RightUsers) || viewer.CanRead(s, RightData) || viewer.CanWrite(RightAudit) {
+		t.Errorf("viewer access: %+v", viewer)
+	}
+	lookout := s.AdminAccess([]string{"lookout"})
+	if !lookout.CanWrite(RightSecrets) || lookout.CanWrite(RightAudit) || !lookout.CanRead(s, RightAudit) {
+		t.Errorf("lookout access: %+v", lookout)
+	}
+	// What a role changes it may read, whatever read_access says.
+	keeper := s.AdminAccess([]string{"keeper"})
+	if !keeper.CanRead(s, RightData) || keeper.CanRead(s, RightAudit) {
+		t.Errorf("keeper reads what it changes and nothing else: %+v", keeper)
+	}
+	// Covering: more access covers less; the read level is covered by a full
+	// administrator and by another read level, not by a narrow writer.
+	full, narrow := s.AdminAccess([]string{"root"}), s.AdminAccess([]string{"keeper"})
+	for _, tc := range []struct {
+		a, b AdminAccess
+		want bool
+	}{{full, viewer, true}, {viewer, viewer, true}, {viewer, narrow, false}, {narrow, viewer, false}, {lookout, viewer, true}, {lookout, narrow, false}, {lookout, lookout, true}, {narrow, lookout, false}, {full, lookout, true}} {
+		if got := tc.a.Covers(tc.b); got != tc.want {
+			t.Errorf("%v covers %v = %v, want %v", tc.a, tc.b, got, tc.want)
+		}
+	}
+	// With read_access left out nobody reads users or data by reading alone.
+	none, _ := parseRealmSettings([]byte("roles:\n  viewer: { admin: read }\n"))
+	v := none.AdminAccess([]string{"viewer"})
+	if v.CanRead(none, RightUsers) || v.CanRead(none, RightData) || !v.CanRead(none, RightAudit|RightFunctions|RightAPIKeys|RightSecrets|RightInvitations) {
+		t.Errorf("default read_access: %+v", v)
+	}
+}
+
 func TestAdminRightsNames(t *testing.T) {
 	for r, want := range map[AdminRights]string{
 		0: "none", AllRights: "all", RightUsers: "users",
-		RightSecrets | RightAPIKeys: "apikeys, secrets", RightFunctions | RightAudit | RightUsers: "users, audit, functions",
+		RightSecrets | RightAPIKeys: "apikeys, secrets", RightFunctions | RightAudit | RightUsers: "users, audit, functions", RightData | RightUsers: "users, data",
 	} {
 		if got := r.String(); got != want {
 			t.Errorf("%08b: %q, want %q", r, got, want)

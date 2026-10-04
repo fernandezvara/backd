@@ -20,9 +20,11 @@ const (
 	RightSecrets                             // secrets
 	RightAudit                               // the audit trail
 	RightFunctions                           // running functions by hand, their invocations and every job
+	RightData                                // the admin data route: documents, past their collections' rules
+	RightConfig                              // the read-only view of the realm's configuration
 
 	// AllRights is `admin: true`.
-	AllRights = RightUsers | RightInvitations | RightAPIKeys | RightSecrets | RightAudit | RightFunctions
+	AllRights = RightUsers | RightInvitations | RightAPIKeys | RightSecrets | RightAudit | RightFunctions | RightData | RightConfig
 )
 
 // rightNames are the names realm.yaml and the docs use, in a fixed order.
@@ -36,6 +38,8 @@ var rightNames = []struct {
 	{"secrets", RightSecrets},
 	{"audit", RightAudit},
 	{"functions", RightFunctions},
+	{"data", RightData},
+	{"config", RightConfig},
 }
 
 // Any reports whether r opens anything: whether holding it makes someone an
@@ -87,16 +91,27 @@ func rightNameList() string {
 	return strings.Join(names, ", ")
 }
 
-// adminDoc is a role's `admin:` in realm.yaml: true, false, or a list of
-// the areas the role may administer.
-type adminDoc struct{ Rights AdminRights }
+// adminDoc is a role's `admin:` in realm.yaml: true (every area, to change),
+// false, `read` (every area, to read only), or a list of areas, which may
+// include `read` too: `[read, secrets]` reads everything and changes secrets.
+type adminDoc struct {
+	Rights AdminRights // areas it may change
+	Read   bool        // may read every area (subject to admin.read_access for users and data)
+}
+
+const adminReadKeyword = "read"
 
 func (a *adminDoc) UnmarshalYAML(n *yaml.Node) error {
+	usage := fmt.Sprintf("admin must be true, false, read or a list of areas (%s, or read)", rightNameList())
 	switch n.Kind {
 	case yaml.ScalarNode:
+		if n.Value == adminReadKeyword {
+			a.Read = true
+			return nil
+		}
 		var all bool
 		if err := n.Decode(&all); err != nil {
-			return fmt.Errorf("line %d: admin must be true, false or a list of areas (%s)", n.Line, rightNameList())
+			return fmt.Errorf("line %d: %s", n.Line, usage)
 		}
 		if all {
 			a.Rights = AllRights
@@ -107,9 +122,16 @@ func (a *adminDoc) UnmarshalYAML(n *yaml.Node) error {
 			return fmt.Errorf("line %d: admin: [] opens nothing; write admin: false (or leave it out)", n.Line)
 		}
 		for _, item := range n.Content {
+			if item.Kind == yaml.ScalarNode && item.Value == adminReadKeyword {
+				if a.Read {
+					return fmt.Errorf("line %d: admin area %q is listed twice", item.Line, item.Value)
+				}
+				a.Read = true
+				continue
+			}
 			right, ok := RightNamed(item.Value)
 			if item.Kind != yaml.ScalarNode || !ok {
-				return fmt.Errorf("line %d: unknown admin area %q (want %s)", item.Line, item.Value, rightNameList())
+				return fmt.Errorf("line %d: unknown admin area %q (want %s, or read)", item.Line, item.Value, rightNameList())
 			}
 			if a.Rights.Has(right) {
 				return fmt.Errorf("line %d: admin area %q is listed twice", item.Line, item.Value)
@@ -118,15 +140,84 @@ func (a *adminDoc) UnmarshalYAML(n *yaml.Node) error {
 		}
 		return nil
 	}
-	return fmt.Errorf("line %d: admin must be true, false or a list of areas (%s)", n.Line, rightNameList())
+	return fmt.Errorf("line %d: %s", n.Line, usage)
 }
 
-// AdminRights is what the roles hold together: the union of the rights of
-// each role that opens any.
+// AdminAccess is what a user's admin roles let them do in the admin API:
+// change some areas, and/or read every area (a read-only level, `admin:
+// read`). Roles add up.
+type AdminAccess struct {
+	Write   AdminRights
+	ReadAll bool
+}
+
+// Any reports whether the access makes someone an administrator at all.
+func (a AdminAccess) Any() bool { return a.Write.Any() || a.ReadAll }
+
+// Full reports whether it is `admin: true`: every area, to change.
+func (a AdminAccess) Full() bool { return a.Write == AllRights }
+
+// CanWrite reports whether the areas in want may be changed.
+func (a AdminAccess) CanWrite(want AdminRights) bool { return a.Write.Has(want) }
+
+// CanRead reports whether the areas in want may be read: what the access
+// changes it reads too; a read-only level reads every area except users and
+// data, which realm.yaml's admin.read_access has to grant.
+func (a AdminAccess) CanRead(s RealmSettings, want AdminRights) bool {
+	have := a.Write
+	if a.ReadAll {
+		have |= AllRights
+		if !s.ReadAccess.Users {
+			have &^= RightUsers
+			have |= a.Write & RightUsers
+		}
+		if !s.ReadAccess.Data {
+			have &^= RightData
+			have |= a.Write & RightData
+		}
+	}
+	return have.Has(want)
+}
+
+// Covers reports whether a can do everything b can: nobody hands out, or
+// changes someone who holds, more than they have.
+func (a AdminAccess) Covers(b AdminAccess) bool {
+	return a.Write.Has(b.Write) && (a.ReadAll || a.Full() || !b.ReadAll)
+}
+
+// String describes the access, for messages.
+func (a AdminAccess) String() string {
+	switch {
+	case a.Full():
+		return "all"
+	case a.ReadAll && !a.Write.Any():
+		return "read"
+	case a.ReadAll:
+		return "read, " + a.Write.String()
+	}
+	return a.Write.String()
+}
+
+// ReadAccess is realm.yaml's admin.read_access: what read-only administrators
+// may see beyond operations. Users and data hold personal data, so a realm
+// opts in.
+type ReadAccess struct {
+	Users bool
+	Data  bool
+}
+
+// AdminRights is what the roles let a user change together: the union of the
+// areas each role opens.
 func (s RealmSettings) AdminRights(roles []string) AdminRights {
-	var out AdminRights
+	return s.AdminAccess(roles).Write
+}
+
+// AdminAccess is what the roles let a user do in the admin API, added up.
+func (s RealmSettings) AdminAccess(roles []string) AdminAccess {
+	var out AdminAccess
 	for _, r := range roles {
-		out |= s.Roles[r].Admin
+		out.Write |= s.Roles[r].Admin
+		out.ReadAll = out.ReadAll || s.Roles[r].AdminRead
 	}
 	return out
 }

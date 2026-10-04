@@ -669,7 +669,7 @@ func (f *functions) getJob(w http.ResponseWriter, r *http.Request) {
 	}
 	// An administrator (an admin API key, or a user holding an admin role) reads
 	// any job, such as the one they started by hand.
-	admin := caller.User != nil && f.docs.users(realm).Settings.AdminRights(caller.User.User.Roles).Has(registry.RightFunctions)
+	admin := caller.User != nil && f.docs.users(realm).Settings.AdminAccess(caller.User.User.Roles).CanRead(f.docs.users(realm).Settings, registry.RightFunctions)
 	// A scoped key reads the jobs of the functions it may call, and no others.
 	scoped := caller.Key != nil && !caller.Key.Scopes.Allows(auth.ScopeCall, job.Database, job.Function)
 	if !found || job.Database != database || scoped || !(admin || jobVisibleTo(job, caller)) {

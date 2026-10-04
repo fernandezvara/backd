@@ -61,6 +61,13 @@ type Settings struct {
 	// sources change. Local development only; serve refuses it unless
 	// HTTPAddr is bound to localhost.
 	Dev bool
+	// DisableAdminAPI is BACKD_ADMIN_API=false: this instance serves no
+	// /_admin route at all (they answer 404 like any unknown route), for public
+	// instances when an internal one has the admin API.
+	DisableAdminAPI bool
+	// AdminUI is BACKD_ADMIN_UI=true: this instance serves the admin web
+	// interface. It needs the admin API on the same instance.
+	AdminUI bool
 	// DevAnyAddr (BACKD_DEV_ANY_ADDR) lets dev mode run on an address that
 	// isn't localhost, for a container whose ports are published on the
 	// host's localhost only.
@@ -163,6 +170,23 @@ func Load(getenv func(string) string) (Settings, error) {
 		s.Dev = true
 	default:
 		errs = append(errs, fmt.Errorf("BACKD_DEV must be true or false, got %q", v))
+	}
+	switch v := strings.ToLower(getenv("BACKD_ADMIN_API")); v {
+	case "", "true":
+	case "false":
+		s.DisableAdminAPI = true
+	default:
+		errs = append(errs, fmt.Errorf("BACKD_ADMIN_API must be true or false, got %q", v))
+	}
+	switch v := strings.ToLower(getenv("BACKD_ADMIN_UI")); v {
+	case "", "false":
+	case "true":
+		s.AdminUI = true
+	default:
+		errs = append(errs, fmt.Errorf("BACKD_ADMIN_UI must be true or false, got %q", v))
+	}
+	if s.AdminUI && s.DisableAdminAPI {
+		errs = append(errs, errors.New("BACKD_ADMIN_UI=true needs the admin API on the same instance, but BACKD_ADMIN_API=false: turn the UI off here, or serve it from the internal instance that has the admin API"))
 	}
 	switch v := strings.ToLower(getenv("BACKD_DEV_ANY_ADDR")); v {
 	case "", "false":

@@ -26,6 +26,7 @@ const (
 	AuditAccountDelete   = "user.delete_account" // self-service: the account is deactivated
 	AuditUserErased      = "user.erased"         // details: job_id and counts, or needs_attention
 	AuditUserNetworks    = "user.networks"       // details: admin_networks, login_networks
+	AuditSessionRevoke   = "session.revoke"      // by an administrator; details: session
 	AuditRoleAdd         = "role.add"            // details: role
 	AuditRoleRemove      = "role.remove"         // details: role
 	AuditAPIKeyCreate    = "apikey.create"       // details: role, expires_at, networks
@@ -38,9 +39,16 @@ const (
 	AuditAdminLogin      = "admin.login"   // login of a user holding an admin role
 	AuditAdminRefused    = "admin.refused" // details: reason
 	AuditBootstrap       = "realm.bootstrap"
-	AuditSecretSet       = "secret.set"        // details: database ("": realm scope); never the value
-	AuditSecretDelete    = "secret.delete"     // details: database
-	AuditSecretsRotated  = "secret.rotate_key" // by backd secret rotate-key; details: count
+	// The admin data route (documents written past the collections' rules);
+	// the target is database/collection/id, never content.
+	AuditDataCreate     = "data.create"
+	AuditDataUpdate     = "data.update"
+	AuditDataDelete     = "data.delete"
+	AuditDataRestore    = "data.restore"
+	AuditDataPurge      = "data.purge"
+	AuditSecretSet      = "secret.set"        // details: database ("": realm scope); never the value
+	AuditSecretDelete   = "secret.delete"     // details: database
+	AuditSecretsRotated = "secret.rotate_key" // by backd secret rotate-key; details: count
 )
 
 // Actors that aren't a credential.

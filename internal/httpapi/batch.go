@@ -88,12 +88,18 @@ func (d *documents) batch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	caller, hasAuth, ok := d.identify(w, r, realm)
-	if !ok {
-		return
-	}
-	if hasAuth {
-		r = r.WithContext(context.WithValue(r.Context(), callerKey{}, caller))
+	var caller auth.Caller
+	hasAuth := true
+	if adminData(r) {
+		caller, _ = callerOf(r) // authenticated by the admin API already
+	} else {
+		var ok bool
+		if caller, hasAuth, ok = d.identify(w, r, realm); !ok {
+			return
+		}
+		if hasAuth {
+			r = r.WithContext(context.WithValue(r.Context(), callerKey{}, caller))
+		}
 	}
 	a := d.accessFor(r)
 	claim, ok := d.claimKey(w, r, "_batch", body) // Idempotency-Key, if the request has one
@@ -133,6 +139,12 @@ func (d *documents) batch(w http.ResponseWriter, r *http.Request) {
 	rendered := make([]map[string]any, len(results))
 	for i, doc := range results {
 		rendered[i] = render(doc)
+		id, _ := doc["id"].(string)
+		action := map[string]string{"create": auth.AuditDataCreate, "delete": auth.AuditDataDelete}[ops[i].kind]
+		if action == "" {
+			action = auth.AuditDataUpdate
+		}
+		d.auditData(r, action, ops[i].collection, id)
 	}
 	answer := map[string]any{"results": rendered}
 	claim.complete(r.Context(), http.StatusOK, answer)

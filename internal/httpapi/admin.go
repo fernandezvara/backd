@@ -21,9 +21,10 @@ import (
 // adminAPI serves /v1/{realm}/_admin/…: user management for server-side
 // services holding one of the realm's API keys.
 type adminAPI struct {
-	users func(realm string) *auth.Users
-	reg   *registry.Registry
-	fns   *functions // runs functions by hand (see adminInvoke)
+	users       func(realm string) *auth.Users
+	reg         *registry.Registry
+	fns         *functions // runs functions by hand (see adminInvoke)
+	fingerprint string     // the config this instance runs (readyz shows it too)
 }
 
 type adminUserKey struct{}
@@ -32,6 +33,8 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 	r.Route("/v1/{realm}/_admin", func(r chi.Router) {
 		r.Use(noStore, resolveRealm, timeout, a.requireAdmin)
 		json := requireContentType("application/json")
+		r.Get("/whoami", a.whoami)
+		r.With(a.need(registry.RightConfig)).Get("/config", a.config)
 		users, invites, keys := a.need(registry.RightUsers), a.need(registry.RightInvitations), a.need(registry.RightAPIKeys)
 		secrets, audit, fns := a.need(registry.RightSecrets), a.need(registry.RightAudit), a.need(registry.RightFunctions)
 		r.With(users).Get("/users", a.listUsers)
@@ -40,6 +43,8 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 			r.Use(users, a.loadUser, a.guardTarget)
 			r.Get("/", a.getUser)
 			r.Get("/owned", a.owned)
+			r.Get("/sessions", a.userSessions)
+			r.Delete("/sessions/{session_id}", a.revokeUserSession)
 			r.With(json).Patch("/", a.updateUser)
 			r.Delete("/", a.deleteUser)
 			r.With(json).Post("/password", a.setPassword)
@@ -61,6 +66,18 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		r.With(fns).Get("/invocations", a.listInvocations)
 		r.With(fns).Get("/jobs", a.listJobs)
 		r.With(fns, json).Post("/functions/{database}/{name}/invoke", a.fns.adminInvoke)
+
+		// The admin data route: the data routes' operations, past the
+		// collections' rules, for administrators who hold the data area.
+		docs := a.fns.docs
+		r.Route("/data/{database}", func(r chi.Router) {
+			r.Use(a.need(registry.RightData), flagAdminData)
+			r.With(json).Post("/_batch", docs.batch)
+			r.Route("/{collection}", func(r chi.Router) {
+				r.Use(dataCaching, docs.resolveCollection)
+				docs.mountDocuments(r)
+			})
+		})
 	})
 }
 
@@ -94,14 +111,14 @@ func (a *adminAPI) requireAdmin(next http.Handler) http.Handler {
 			return
 		}
 		// An admin API key opens every area; a user opens what their roles do.
-		var rights registry.AdminRights
+		var access registry.AdminAccess
 		switch {
 		case caller.Key != nil && caller.Key.IsAdmin():
-			rights = registry.AllRights
+			access = registry.AdminAccess{Write: registry.AllRights}
 		case caller.User != nil && caller.Key == nil:
-			rights = usersOf(r).Settings.AdminRights(caller.User.User.Roles)
+			access = usersOf(r).Settings.AdminAccess(caller.User.User.Roles)
 		}
-		if !rights.Any() {
+		if !access.Any() {
 			writeError(w, r, http.StatusForbidden, codeForbidden, "admin endpoints need an admin API key or the session of a user with an admin role")
 			return
 		}
@@ -110,23 +127,33 @@ func (a *adminAPI) requireAdmin(next http.Handler) http.Handler {
 			return
 		}
 		ctx := context.WithValue(r.Context(), callerKey{}, caller)
-		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, adminRightsKey{}, rights)))
+		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, adminAccessKey{}, access)))
 	})
 }
 
-type adminRightsKey struct{}
+type adminAccessKey struct{}
 
-// adminRightsOf is what the admin caller of this request may administer.
-func adminRightsOf(r *http.Request) registry.AdminRights {
-	rights, _ := r.Context().Value(adminRightsKey{}).(registry.AdminRights)
-	return rights
+// adminAccessOf is what the admin caller of this request may do.
+func adminAccessOf(r *http.Request) registry.AdminAccess {
+	access, _ := r.Context().Value(adminAccessKey{}).(registry.AdminAccess)
+	return access
 }
 
-// need admits callers whose roles open an area of the admin API.
+// need admits callers whose roles open an area of the admin API: a request
+// that reads needs to read it (a read-only level reads), anything else needs
+// to be allowed to change it.
 func (a *adminAPI) need(right registry.AdminRights) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if have := adminRightsOf(r); !have.Has(right) {
+			have := adminAccessOf(r)
+			settings := usersOf(r).Settings
+			switch {
+			case safeMethod(r.Method) && have.CanRead(settings, right):
+			case !safeMethod(r.Method) && have.CanWrite(right):
+			case !safeMethod(r.Method) && have.CanRead(settings, right):
+				rightRefused(w, r, fmt.Sprintf("your roles can read the %q admin area but not change it", right))
+				return
+			default:
 				rightRefused(w, r, fmt.Sprintf("this endpoint needs the %q admin right; your roles open: %s", right, have))
 				return
 			}
@@ -151,8 +178,8 @@ func rightRefused(w http.ResponseWriter, r *http.Request, reason string) {
 func (a *adminAPI) guardTarget(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			held := usersOf(r).Settings.AdminRights(adminUserOf(r).Roles)
-			if have := adminRightsOf(r); !have.Has(held) {
+			held := usersOf(r).Settings.AdminAccess(adminUserOf(r).Roles)
+			if have := adminAccessOf(r); !have.Covers(held) {
 				rightRefused(w, r, fmt.Sprintf("this user holds admin rights you don't (%s); you hold: %s", held, have))
 				return
 			}
@@ -185,7 +212,7 @@ func (a *adminAPI) listUsers(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	var details []Detail
 	for k := range q {
-		if k != "email" && k != "limit" && k != "skip" && k != "after" {
+		if k != "email" && k != "q" && k != "limit" && k != "skip" && k != "after" {
 			details = append(details, Detail{Path: k, Reason: "unknown query parameter"})
 		}
 	}
@@ -213,6 +240,13 @@ func (a *adminAPI) listUsers(w http.ResponseWriter, r *http.Request) {
 			details = append(details, Detail{Path: "after", Reason: "must not be empty: use the next_cursor of a previous page"})
 		}
 	}
+	search := strings.ToLower(strings.TrimSpace(q.Get("q")))
+	if q.Has("q") && search == "" {
+		details = append(details, Detail{Path: "q", Reason: "must not be empty"})
+	}
+	if q.Has("q") && q.Has("email") {
+		details = append(details, Detail{Path: "q", Reason: "can't be combined with email: email is an exact lookup"})
+	}
 	if len(details) > 0 {
 		sort.Slice(details, func(i, j int) bool { return details[i].Path < details[j].Path })
 		writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid query parameters", details...)
@@ -237,7 +271,7 @@ func (a *adminAPI) listUsers(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// One page from the database: never the whole collection.
 		var err error
-		if users, hasMore, err = svc.ListPage(r.Context(), after, skip, limit); err != nil {
+		if users, hasMore, err = svc.ListPage(r.Context(), search, after, skip, limit); err != nil {
 			adminError(w, r, err)
 			return
 		}
@@ -379,8 +413,9 @@ func (a *adminAPI) changeEmail(w http.ResponseWriter, r *http.Request) {
 // they have.
 func (a *adminAPI) roleWithinRights(w http.ResponseWriter, r *http.Request) bool {
 	role := chi.URLParam(r, "role")
-	granted := usersOf(r).Settings.Roles[role].Admin
-	if have := adminRightsOf(r); !have.Has(granted) {
+	def := usersOf(r).Settings.Roles[role]
+	granted := registry.AdminAccess{Write: def.Admin, ReadAll: def.AdminRead}
+	if have := adminAccessOf(r); !have.Covers(granted) {
 		rightRefused(w, r, fmt.Sprintf("the role %q opens admin rights you don't hold (%s); you hold: %s", role, granted, have))
 		return false
 	}
@@ -721,8 +756,8 @@ func (a *adminAPI) createAPIKey(w http.ResponseWriter, r *http.Request) {
 		}
 		opts.Role = role
 	}
-	if opts.Role == auth.KeyRoleAdmin && adminRightsOf(r) != registry.AllRights {
-		rightRefused(w, r, fmt.Sprintf("an admin API key opens every area; you hold: %s", adminRightsOf(r)))
+	if opts.Role == auth.KeyRoleAdmin && !adminAccessOf(r).Full() {
+		rightRefused(w, r, fmt.Sprintf("an admin API key opens every area; you hold: %s", adminAccessOf(r)))
 		return
 	}
 	if s, ok := f["expires_in"].(string); ok {
@@ -830,7 +865,7 @@ func (a *adminAPI) scopeTarget(realm string, sc auth.Scope) string {
 
 func (a *adminAPI) revokeAPIKey(w http.ResponseWriter, r *http.Request) {
 	// An admin key opens every area, so revoking one takes every area too.
-	if have := adminRightsOf(r); have != registry.AllRights {
+	if have := adminAccessOf(r); !have.Full() {
 		keys, err := usersOf(r).ListAPIKeys(r.Context())
 		if err != nil {
 			adminError(w, r, err)
@@ -1216,4 +1251,85 @@ func auditJSON(rec auth.AuditRecord) map[string]any {
 		}
 	}
 	return out
+}
+
+// whoami answers what the signed-in administrator may do, so a client (the
+// admin UI) shows only what the server would allow: the level, the areas they
+// may change, the areas they may read and what realm.yaml grants read-only
+// administrators beyond operations.
+func (a *adminAPI) whoami(w http.ResponseWriter, r *http.Request) {
+	access, settings := adminAccessOf(r), usersOf(r).Settings
+	var read registry.AdminRights
+	for _, right := range []registry.AdminRights{registry.RightUsers, registry.RightInvitations, registry.RightAPIKeys, registry.RightSecrets, registry.RightAudit, registry.RightFunctions, registry.RightData} {
+		if access.CanRead(settings, right) {
+			read |= right
+		}
+	}
+	level := "custom"
+	switch {
+	case access.Full():
+		level = "full"
+	case access.ReadAll && !access.Write.Any():
+		level = "read"
+	}
+	names := func(r registry.AdminRights) []string {
+		if n := r.Names(); n != nil {
+			return n
+		}
+		return []string{}
+	}
+	out := map[string]any{
+		"level":       level,
+		"write":       names(access.Write),
+		"read":        names(read),
+		"read_access": map[string]any{"users": settings.ReadAccess.Users, "data": settings.ReadAccess.Data},
+	}
+	if caller, ok := callerOf(r); ok && caller.User != nil {
+		out["user"] = map[string]any{"id": caller.User.User.ID, "email": caller.User.User.Email, "roles": caller.User.User.Roles}
+	} else if ok && caller.Key != nil {
+		out["key"] = caller.Key.Name
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// flagAdminData marks the request as made through the admin data route.
+func flagAdminData(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), adminDataKey{}, true)))
+	})
+}
+
+// userSessions answers GET /users/{id}/sessions: the user's unexpired sessions,
+// newest first.
+func (a *adminAPI) userSessions(w http.ResponseWriter, r *http.Request) {
+	list, err := usersOf(r).UserSessions(r.Context(), adminUserOf(r).ID)
+	if err != nil {
+		adminError(w, r, err)
+		return
+	}
+	items := make([]map[string]any, len(list))
+	for i, s := range list {
+		items[i] = map[string]any{
+			"id":           s.ID,
+			"created_at":   formatTime(s.CreatedAt),
+			"last_used_at": formatTime(s.LastUsedAt),
+			"expires_at":   formatTime(s.ExpiresAt),
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+// revokeUserSession answers DELETE /users/{id}/sessions/{session_id}: it ends
+// one session of the user, and is audited.
+func (a *adminAPI) revokeUserSession(w http.ResponseWriter, r *http.Request) {
+	err := usersOf(r).RevokeUserSession(r.Context(), adminUserOf(r).ID, chi.URLParam(r, "session_id"))
+	if errors.Is(err, auth.ErrNotFound) {
+		writeError(w, r, http.StatusNotFound, codeNotFound, "session not found")
+		return
+	}
+	if err != nil {
+		adminError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

@@ -182,3 +182,38 @@ func TestLoadMetrics(t *testing.T) {
 		}
 	}
 }
+
+func TestAdminSwitches(t *testing.T) {
+	base := map[string]string{"CONFIG_DIR": "/cfg", "MONGO_URI": "mongodb://m"}
+	load := func(extra map[string]string) (Settings, error) { return Load(env(maps(base, extra))) }
+
+	// Defaults: the admin API on, the UI off.
+	s, err := load(nil)
+	if err != nil || s.DisableAdminAPI || s.AdminUI {
+		t.Fatalf("defaults: %+v %v", s, err)
+	}
+	for _, tc := range []struct {
+		env     map[string]string
+		api, ui bool // want DisableAdminAPI, AdminUI
+	}{
+		{map[string]string{"BACKD_ADMIN_API": "false"}, true, false},
+		{map[string]string{"BACKD_ADMIN_API": "TRUE"}, false, false},
+		{map[string]string{"BACKD_ADMIN_UI": "true"}, false, true},
+		{map[string]string{"BACKD_ADMIN_UI": "true", "BACKD_ADMIN_API": "true"}, false, true},
+		{map[string]string{"BACKD_ADMIN_API": "false", "BACKD_ADMIN_UI": "false"}, true, false},
+	} {
+		s, err := load(tc.env)
+		if err != nil || s.DisableAdminAPI != tc.api || s.AdminUI != tc.ui {
+			t.Errorf("%v: DisableAdminAPI=%v AdminUI=%v err=%v", tc.env, s.DisableAdminAPI, s.AdminUI, err)
+		}
+	}
+	// The UI is served by an instance that has the admin API.
+	if _, err := load(map[string]string{"BACKD_ADMIN_UI": "true", "BACKD_ADMIN_API": "false"}); err == nil || !strings.Contains(err.Error(), "BACKD_ADMIN_UI=true needs the admin API") {
+		t.Errorf("UI without the admin API: %v", err)
+	}
+	for _, name := range []string{"BACKD_ADMIN_API", "BACKD_ADMIN_UI"} {
+		if _, err := load(map[string]string{name: "maybe"}); err == nil || !strings.Contains(err.Error(), name+" must be true or false") {
+			t.Errorf("%s=maybe: %v", name, err)
+		}
+	}
+}

@@ -71,6 +71,8 @@ server {
     error_page 502 503 504 = @unavailable;
 
     set $backd http://backd:8080;
+    # The internal instance, the only one with the admin API.
+    set $backd_admin http://backd-admin:8080;
 
     # Headers for backd. X-Forwarded-For is overwritten, never appended:
     # nginx is the edge, so anything a client sent in it is a lie.
@@ -109,7 +111,7 @@ server {
         deny all;
         error_page 403 = @not_found;
         limit_req zone=api burst=40 nodelay;
-        proxy_pass $backd;
+        proxy_pass $backd_admin;
     }
 
     location /v1/ {

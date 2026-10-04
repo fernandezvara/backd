@@ -19,6 +19,31 @@
 # that declare outbound hosts. A dedicated worker runs async jobs.
 name: backd-production
 
+# What every API instance shares (the public one and the internal one).
+x-backd-environment: &backd-environment
+    CONFIG_DIR: /config
+    MONGO_URI: "mongodb://backd:${BACKD_APP_PASSWORD}@mongo:27017/?replicaSet=rs0&authSource=admin&tls=true&tlsCAFile=/etc/backd/tls/ca.pem"
+    # Refuse to start if MongoDB differs from the config; never change it.
+    PROVISION_MODE: verify
+    # Exactly nginx's address: X-Forwarded-For is believed from nothing else.
+    TRUSTED_PROXIES: ${PROXY_IP:-172.30.80.10}
+    # nginx's client_max_body_size matches this.
+    MAX_BODY_BYTES: "1048576"
+    # Functions: the executor and worker (docs: Functions ->
+    # "Running in production").
+    BACKD_INTERNAL_ADDR: ":8081"
+    BACKD_EXECUTOR_URL: http://executor:9100
+    BACKD_EXECUTOR_TOKEN: ${BACKD_EXECUTOR_TOKEN:?run ./setup.sh}
+    BACKD_CALLBACK_URL: http://backd:8081
+    BACKD_CALLBACK_KEY: ${BACKD_CALLBACK_KEY:?run ./setup.sh}
+    BACKD_SECRETS_KEY: ${BACKD_SECRETS_KEY:?run ./setup.sh}
+    LOG_LEVEL: info
+    # The private metrics port (docs: Operations -> Metrics); only
+    # Prometheus, on `func`, has the token.
+    METRICS_ADDR: ":9090"
+    METRICS_TOKEN: ${BACKD_METRICS_TOKEN:?run ./setup.sh}
+
+
 services:
   mongo:
     image: docker.io/library/mongo:8.2
@@ -136,27 +161,10 @@ services:
     # Shared with the worker job (below), so `up --build` updates it too.
     image: backd-app
     environment:
-      CONFIG_DIR: /config
-      MONGO_URI: "mongodb://backd:${BACKD_APP_PASSWORD}@mongo:27017/?replicaSet=rs0&authSource=admin&tls=true&tlsCAFile=/etc/backd/tls/ca.pem"
-      # Refuse to start if MongoDB differs from the config; never change it.
-      PROVISION_MODE: verify
-      # Exactly nginx's address: X-Forwarded-For is believed from nothing else.
-      TRUSTED_PROXIES: ${PROXY_IP:-172.30.80.10}
-      # nginx's client_max_body_size matches this.
-      MAX_BODY_BYTES: "1048576"
-      # Functions: the executor and worker (docs: Functions ->
-      # "Running in production").
-      BACKD_INTERNAL_ADDR: ":8081"
-      BACKD_EXECUTOR_URL: http://executor:9100
-      BACKD_EXECUTOR_TOKEN: ${BACKD_EXECUTOR_TOKEN:?run ./setup.sh}
-      BACKD_CALLBACK_URL: http://backd:8081
-      BACKD_CALLBACK_KEY: ${BACKD_CALLBACK_KEY:?run ./setup.sh}
-      BACKD_SECRETS_KEY: ${BACKD_SECRETS_KEY:?run ./setup.sh}
-      LOG_LEVEL: info
-      # The private metrics port (docs: Operations -> Metrics); only
-      # Prometheus, on `func`, has the token.
-      METRICS_ADDR: ":9090"
-      METRICS_TOKEN: ${BACKD_METRICS_TOKEN:?run ./setup.sh}
+      <<: *backd-environment
+      # A public instance serves no admin API (docs: Production deployment ->
+      # the public/internal split); backd-admin below is the one that does.
+      BACKD_ADMIN_API: "false"
     volumes: *tls
     networks: [edge, data, func]
     depends_on:
@@ -170,6 +178,31 @@ services:
     cpus: 2
     mem_limit: 512m
     # Longer than SHUTDOWN_TIMEOUT (15s) so in-flight requests can drain.
+    stop_grace_period: 20s
+    restart: unless-stopped
+
+  # The internal instance: the same image and database, with the admin API
+  # (and, when enabled, the admin UI) that the public one doesn't serve.
+  # nginx sends only /v1/{realm}/_admin here, and only from ADMIN_ALLOW_FROM;
+  # the CLI's BACKD_URL points at it.
+  backd-admin:
+    image: backd-app
+    pull_policy: never
+    environment:
+      <<: *backd-environment
+      BACKD_ADMIN_API: "true"
+      # Manual function invocations call back to this instance.
+      BACKD_CALLBACK_URL: http://backd-admin:8081
+    volumes: *tls
+    networks: [edge, data, func]
+    depends_on:
+      provision:
+        condition: service_completed_successfully
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 1
+    mem_limit: 512m
     stop_grace_period: 20s
     restart: unless-stopped
 
@@ -316,7 +349,7 @@ services:
     networks:
       edge:
         ipv4_address: ${PROXY_IP:-172.30.80.10}
-    depends_on: [backd]
+    depends_on: [backd, backd-admin]
     restart: unless-stopped
 
 networks:

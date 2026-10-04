@@ -29,7 +29,7 @@ func stampCreate(r *http.Request, meta map[string]any) {
 		return
 	}
 	var owner any
-	if c.User != nil {
+	if c.User != nil && !adminData(r) { // an administrator fixing data doesn't own it
 		owner = c.User.User.ID
 	}
 	meta["owner"] = owner
@@ -201,7 +201,7 @@ type access struct {
 // accessFor returns how rules apply to the request.
 func (d *documents) accessFor(r *http.Request) access {
 	caller, ok := callerOf(r)
-	if !ok || caller.BypassesRules() {
+	if !ok || caller.BypassesRules() || adminData(r) {
 		return access{}
 	}
 	a := access{ruled: true, caller: caller, values: rules.Values{Now: d.now().UTC()}}

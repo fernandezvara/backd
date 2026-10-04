@@ -32,6 +32,7 @@ It uses Docker Compose, but each part maps directly onto other platforms: a Kube
 ```
 
 - **nginx** is the only thing reachable from outside. It terminates TLS, redirects HTTP to HTTPS, rate-limits requests, caps body sizes and sets the client address that `backd` sees. Its access log (`edge` format) records the path without the query string, because the links in [emails](../../functions/email/#links-and-pages) carry their token there.
+- **backd-admin** is the same image and database as backd, with the admin API turned on (`BACKD_ADMIN_API=true`) and the public instance's turned off. nginx sends only `/v1/{realm}/_admin` to it, and only from `ADMIN_ALLOW_FROM`; the CLI's `BACKD_URL` points at it. See [Admin API](#admin-api).
 - **backd** runs with `PROVISION_MODE=verify` as a MongoDB user that can only read and write documents. It has a read-only filesystem, no Linux capabilities and CPU and memory limits.
 - **MongoDB** requires TLS and authentication, and sits on an internal network with no published ports.
 - A **provision job** runs before `backd` with admin credentials: it creates collections, validators and indexes, and grants `backd`'s user access to exactly the collections the config uses.
@@ -89,7 +90,9 @@ Tune the numbers in `nginx/backd.conf.template` to your traffic:
 
 ## Admin API
 
-The [admin API](../../auth/admin/) (`/v1/{realm}/_admin`) always needs an API key. As a second layer, nginx can also restrict where it may be called from. Set `ADMIN_ALLOW_FROM` in `.env` to the one IP address or network your operators or back-office services use:
+What isn't served can't be attacked, so this reference splits the instances: the **public** `backd` runs with `BACKD_ADMIN_API=false` and serves no `/_admin` route at all (they answer `404` like any unknown route, even to someone who reaches it directly), and `backd-admin` is a second instance of the same image on the same database with the admin API on. nginx sends `/v1/{realm}/_admin` to it and nothing else; everything else goes to the public instance. The CLI and the admin UI use the internal instance: the operations container's `BACKD_URL` is `http://backd-admin:8080`. If you don't need the admin API on the internet-facing path, give a public instance `BACKD_ADMIN_API=false` and keep one instance with it on a private network.
+
+The [admin API](../../auth/admin/) always needs an API key or an admin session. As a second layer, nginx can also restrict where it may be called from. Set `ADMIN_ALLOW_FROM` in `.env` to the one IP address or network your operators or back-office services use:
 
 ```sh
 ADMIN_ALLOW_FROM=203.0.113.0/24
@@ -174,10 +177,10 @@ backd login --realm blog --url https://api.example.com --email ops@example.com
 backd apikey create --realm blog --name billing-2026q4 --expires 90d
 ```
 
-Or use the ops image, which has the CLI and reaches `backd` directly on the internal network (the credentials file lives in the throwaway container, so log in and work in one run):
+Or use the ops image, which has the CLI and reaches the internal instance (`backd-admin`) directly (the credentials file lives in the throwaway container, so log in and work in one run):
 
 ```sh
-docker compose --env-file .env run --rm -it --no-deps -e BACKD_URL=http://backd:8080 provision \
+docker compose --env-file .env run --rm -it --no-deps -e BACKD_URL=http://backd-admin:8080 provision \
   sh -c 'backd login --realm blog --email ops@example.com && backd apikey create --realm blog --name billing-2026q4 --expires 90d'
 ```
 
