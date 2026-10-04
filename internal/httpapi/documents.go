@@ -69,6 +69,7 @@ func (d *documents) routes(r chi.Router) {
 		r.With(json).Put("/{id}", d.replace)
 		r.With(mergePatch).Patch("/{id}", d.patch)
 		r.Delete("/{id}", d.delete)
+		r.Post("/{id}/restore", d.restore)
 	})
 	r.With(noStore, withTimeout(d.opTimeout), requireContentType("application/json")).Post("/v1/{realm}/{database}/_batch", d.batch)
 }
@@ -139,7 +140,11 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 
 func (d *documents) get(w http.ResponseWriter, r *http.Request) {
 	c, repo := d.collection(r)
-	filter, ok := readFilter(w, r, d.accessFor(r), c)
+	view, ok := parseTrash(w, r, c)
+	if !ok {
+		return
+	}
+	filter, ok := viewFilter(w, r, d.accessFor(r), c, view)
 	if !ok {
 		return
 	}
@@ -169,7 +174,11 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid query parameters", details...)
 		return
 	}
-	filter, ok := readFilter(w, r, d.accessFor(r), c)
+	view, ok := parseTrash(w, r, c)
+	if !ok {
+		return
+	}
+	filter, ok := viewFilter(w, r, d.accessFor(r), c, view)
 	if !ok {
 		return
 	}
@@ -191,7 +200,7 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-var listParams = map[string]bool{"where": true, "order_by": true, "limit": true, "skip": true, "after": true, "count": true}
+var listParams = map[string]bool{"where": true, "order_by": true, "limit": true, "skip": true, "after": true, "count": true, "deleted": true}
 
 func parseListQuery(v url.Values, fields map[string]registry.Field) (storage.Query, []Detail) {
 	q := storage.Query{Limit: defaultLimit}
@@ -366,6 +375,14 @@ func backoff(ctx context.Context, attempt int) bool {
 func (d *documents) delete(w http.ResponseWriter, r *http.Request) {
 	c, repo := d.collection(r)
 	id := chi.URLParam(r, "id")
+	if r.URL.Query().Has("purge") {
+		d.purge(w, r, c, repo)
+		return
+	}
+	if c.SoftDelete != nil {
+		d.softDelete(w, r, c, repo)
+		return
+	}
 	cond, err := parseIfMatch(r.Header.Values("If-Match"))
 	if err != nil {
 		writeError(w, r, http.StatusBadRequest, codeInvalidHeader, err.Error())
@@ -570,4 +587,205 @@ func storageError(w http.ResponseWriter, r *http.Request, err error) {
 		logger(r.Context()).Error("storage error", "error", err)
 		writeError(w, r, http.StatusInternalServerError, codeInternal, "internal error")
 	}
+}
+
+// deletedDocument is current marked deleted: the same fields, the next
+// version, and when, by whom and (with a retention) until when it is kept.
+func (d *documents) deletedDocument(r *http.Request, c *registry.Collection, current map[string]any) map[string]any {
+	now := d.timestamp()
+	stored, _ := current["_meta"].(map[string]any)
+	meta := map[string]any{"created_at": stored["created_at"], "updated_at": now, "version": version(current) + 1}
+	stampUpdate(r, stored, meta)
+	meta["deleted_at"] = now
+	if caller, ok := callerOf(r); ok {
+		meta["deleted_by"] = caller.Subject()
+	}
+	if c.SoftDelete.Retention > 0 {
+		meta["purge_at"] = now.Add(c.SoftDelete.Retention)
+	}
+	return withMeta(current, meta)
+}
+
+// restoredDocument is current without its deletion marks, at the next version.
+func (d *documents) restoredDocument(r *http.Request, current map[string]any) map[string]any {
+	stored, _ := current["_meta"].(map[string]any)
+	meta := map[string]any{"created_at": stored["created_at"], "updated_at": d.timestamp(), "version": version(current) + 1}
+	stampUpdate(r, stored, meta) // keeps owner and created_by; the deletion marks are not copied
+	return withMeta(current, meta)
+}
+
+// withMeta is the user fields and id of doc with a new _meta.
+func withMeta(doc, meta map[string]any) map[string]any {
+	out := make(map[string]any, len(doc))
+	for k, v := range doc {
+		out[k] = v
+	}
+	out["_meta"] = meta
+	return out
+}
+
+// softDelete handles DELETE on a collection that soft-deletes: the document
+// stays, marked deleted, and nobody sees it until it is restored or purged.
+func (d *documents) softDelete(w http.ResponseWriter, r *http.Request, c *registry.Collection, repo storage.Repository) {
+	id := chi.URLParam(r, "id")
+	cond, err := parseIfMatch(r.Header.Values("If-Match"))
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, codeInvalidHeader, err.Error())
+		return
+	}
+	a := d.accessFor(r)
+	filter, ok := readFilter(w, r, a, c)
+	if !ok {
+		return
+	}
+	for attempt := range maxWriteAttempts {
+		if attempt > 0 && !backoff(r.Context(), attempt) {
+			storageError(w, r, r.Context().Err())
+			return
+		}
+		current, err := storage.Fetch(r.Context(), repo, id, filter)
+		if err != nil {
+			storageError(w, r, err)
+			return
+		}
+		read := version(current)
+		if !cond.matches(read) {
+			versionMismatch(w, r, read)
+			return
+		}
+		if !allowWrite(w, r, a, c, rules.Delete, current, nil) {
+			return
+		}
+		switch err := repo.Replace(r.Context(), d.deletedDocument(r, c, current), read); {
+		case err == nil:
+			w.WriteHeader(http.StatusNoContent)
+			return
+		case errors.Is(err, storage.ErrVersionMismatch) && cond.specific():
+			writeError(w, r, http.StatusPreconditionFailed, codeVersionMismatch, "document was modified concurrently; If-Match no longer matches")
+			return
+		case errors.Is(err, storage.ErrVersionMismatch):
+			logger(r.Context()).Debug("delete conflict, retrying", "id", id, "version", read)
+		default:
+			storageError(w, r, err)
+			return
+		}
+	}
+	writeError(w, r, http.StatusConflict, codeWriteConflict, "document is being modified concurrently; retry the request")
+}
+
+// purge handles DELETE ?purge=true: the document is removed for good, deleted
+// or not. It needs the purge rule (and the restore rule to see the trash).
+func (d *documents) purge(w http.ResponseWriter, r *http.Request, c *registry.Collection, repo storage.Repository) {
+	if c.SoftDelete == nil {
+		writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid query parameters", Detail{Path: "purge", Reason: "this collection doesn't soft-delete (see soft_delete in collection.yaml)"})
+		return
+	}
+	if v := r.URL.Query().Get("purge"); v != "true" {
+		writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid query parameters", Detail{Path: "purge", Reason: "must be true"})
+		return
+	}
+	id := chi.URLParam(r, "id")
+	cond, err := parseIfMatch(r.Header.Values("If-Match"))
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, codeInvalidHeader, err.Error())
+		return
+	}
+	a := d.accessFor(r)
+	filter, ok := viewFilter(w, r, a, c, viewAll)
+	if !ok {
+		return
+	}
+	for attempt := range maxWriteAttempts {
+		if attempt > 0 && !backoff(r.Context(), attempt) {
+			storageError(w, r, r.Context().Err())
+			return
+		}
+		current, err := storage.Fetch(r.Context(), repo, id, filter)
+		if err != nil {
+			storageError(w, r, err)
+			return
+		}
+		read := version(current)
+		if !cond.matches(read) {
+			versionMismatch(w, r, read)
+			return
+		}
+		if !allowWrite(w, r, a, c, rules.Purge, current, nil) {
+			return
+		}
+		switch err := repo.Delete(r.Context(), id, &read); {
+		case err == nil:
+			w.WriteHeader(http.StatusNoContent)
+			return
+		case errors.Is(err, storage.ErrVersionMismatch) && cond.specific():
+			writeError(w, r, http.StatusPreconditionFailed, codeVersionMismatch, "document was modified concurrently; If-Match no longer matches")
+			return
+		case errors.Is(err, storage.ErrVersionMismatch):
+			logger(r.Context()).Debug("purge conflict, retrying", "id", id, "version", read)
+		default:
+			storageError(w, r, err)
+			return
+		}
+	}
+	writeError(w, r, http.StatusConflict, codeWriteConflict, "document is being modified concurrently; retry the request")
+}
+
+// restore handles POST /{id}/restore: a deleted document comes back, as it
+// was, at the next version. It has to be valid against the schema as it is
+// now, and its unique values must still be free.
+func (d *documents) restore(w http.ResponseWriter, r *http.Request) {
+	c, repo := d.collection(r)
+	if c.SoftDelete == nil {
+		notFound(w, r)
+		return
+	}
+	id := chi.URLParam(r, "id")
+	cond, err := parseIfMatch(r.Header.Values("If-Match"))
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, codeInvalidHeader, err.Error())
+		return
+	}
+	a := d.accessFor(r)
+	filter, ok := viewFilter(w, r, a, c, viewTrash)
+	if !ok {
+		return
+	}
+	for attempt := range maxWriteAttempts {
+		if attempt > 0 && !backoff(r.Context(), attempt) {
+			storageError(w, r, r.Context().Err())
+			return
+		}
+		current, err := storage.Fetch(r.Context(), repo, id, filter)
+		if err != nil {
+			storageError(w, r, err)
+			return
+		}
+		read := version(current)
+		if !cond.matches(read) {
+			versionMismatch(w, r, read)
+			return
+		}
+		if !allowWrite(w, r, a, c, rules.Restore, current, nil) {
+			return
+		}
+		if !validate(w, r, c, timesToStrings(userFields(current)).(map[string]any)) {
+			return
+		}
+		restored := d.restoredDocument(r, current)
+		switch err := repo.Replace(r.Context(), restored, read); {
+		case err == nil:
+			w.Header().Set("ETag", etag(version(restored)))
+			writeJSON(w, http.StatusOK, render(restored))
+			return
+		case errors.Is(err, storage.ErrVersionMismatch) && cond.specific():
+			writeError(w, r, http.StatusPreconditionFailed, codeVersionMismatch, "document was modified concurrently; If-Match no longer matches")
+			return
+		case errors.Is(err, storage.ErrVersionMismatch):
+			logger(r.Context()).Debug("restore conflict, retrying", "id", id, "version", read)
+		default:
+			storageError(w, r, err)
+			return
+		}
+	}
+	writeError(w, r, http.StatusConflict, codeWriteConflict, "document is being modified concurrently; retry the request")
 }

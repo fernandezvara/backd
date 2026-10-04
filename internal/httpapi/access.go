@@ -229,6 +229,13 @@ func deny(w http.ResponseWriter, r *http.Request, a access, c *registry.Collecti
 // when unrestricted. It answers the request and returns false when the
 // caller may read nothing at all.
 func readFilter(w http.ResponseWriter, r *http.Request, a access, c *registry.Collection) (storage.Filter, bool) {
+	f, ok := readableFilter(w, r, a, c)
+	return hideDeleted(c, f), ok
+}
+
+// readableFilter is the read rule as a filter, before soft-deleted documents
+// are taken out (see hideDeleted).
+func readableFilter(w http.ResponseWriter, r *http.Request, a access, c *registry.Collection) (storage.Filter, bool) {
 	if !a.ruled {
 		return nil, true
 	}
@@ -275,4 +282,113 @@ func allowWrite(w http.ResponseWriter, r *http.Request, a access, c *registry.Co
 		return false
 	}
 	return true
+}
+
+// Soft delete (collection.yaml): DELETE marks a document with
+// _meta.deleted_at instead of removing it. Reads, writes and batches never see
+// a marked document; the trash is reached only through `deleted=only|include`,
+// restore and purge, each under its own rule.
+var (
+	liveCondition  = storage.Condition{Field: registry.MetaDeletedAt, Op: storage.OpIsNull, Value: true}
+	trashCondition = storage.Condition{Field: registry.MetaDeletedAt, Op: storage.OpIsNull, Value: false}
+)
+
+// and combines filters, skipping nil (which matches everything).
+func and(fs ...storage.Filter) storage.Filter {
+	var out storage.And
+	for _, f := range fs {
+		if f != nil {
+			out = append(out, f)
+		}
+	}
+	return storage.Simplify(out)
+}
+
+// hideDeleted narrows a read filter to the documents that are not deleted, for
+// a collection that soft-deletes; other collections are left alone.
+func hideDeleted(c *registry.Collection, f storage.Filter) storage.Filter {
+	if c.SoftDelete == nil {
+		return f
+	}
+	return and(f, liveCondition)
+}
+
+// trashView says which documents a read asks for.
+type trashView int
+
+const (
+	viewLive  trashView = iota // not deleted (the default)
+	viewTrash                  // only the deleted ones (deleted=only)
+	viewAll                    // both (deleted=include)
+)
+
+// parseTrash reads the `deleted` query parameter.
+func parseTrash(w http.ResponseWriter, r *http.Request, c *registry.Collection) (trashView, bool) {
+	q := r.URL.Query()
+	if !q.Has("deleted") {
+		return viewLive, true
+	}
+	var view trashView
+	switch q.Get("deleted") {
+	case "only":
+		view = viewTrash
+	case "include":
+		view = viewAll
+	default:
+		writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid query parameters", Detail{Path: "deleted", Reason: "must be only or include"})
+		return 0, false
+	}
+	if c.SoftDelete == nil {
+		writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid query parameters", Detail{Path: "deleted", Reason: "this collection doesn't soft-delete (see soft_delete in collection.yaml)"})
+		return 0, false
+	}
+	return view, true
+}
+
+// restoreFilter is the restore rule as a filter: which deleted documents the
+// caller may see and bring back. Without a rule nobody may (callers outside
+// the rules, like API keys, see them all).
+func restoreFilter(w http.ResponseWriter, r *http.Request, a access, c *registry.Collection) (storage.Filter, bool) {
+	if !a.ruled {
+		return nil, true
+	}
+	rule := c.Rules.For(rules.Restore)
+	if rule == nil {
+		deny(w, r, a, c, rules.Restore, "no restore rule")
+		return nil, false
+	}
+	f, err := rule.Filter(a.values)
+	if err != nil {
+		deny(w, r, a, c, rules.Restore, "rule error: "+err.Error())
+		return nil, false
+	}
+	if f == storage.Const(false) {
+		deny(w, r, a, c, rules.Restore, "rule restore is false")
+		return nil, false
+	}
+	if f == storage.Const(true) {
+		return nil, true
+	}
+	return f, true
+}
+
+// viewFilter is the access filter of a read in the given view. The trash needs
+// the read rule and the restore rule both.
+func viewFilter(w http.ResponseWriter, r *http.Request, a access, c *registry.Collection, view trashView) (storage.Filter, bool) {
+	if view == viewLive {
+		return readFilter(w, r, a, c)
+	}
+	readable, ok := readableFilter(w, r, a, c)
+	if !ok {
+		return nil, false
+	}
+	restorable, ok := restoreFilter(w, r, a, c)
+	if !ok {
+		return nil, false
+	}
+	deleted := and(readable, restorable, trashCondition)
+	if view == viewTrash {
+		return deleted, true
+	}
+	return storage.Simplify(storage.Or{and(readable, liveCondition), deleted}), true
 }

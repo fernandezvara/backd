@@ -158,3 +158,46 @@ test('batch: atomic writes across collections, and a version mismatch aborts the
     ['batched'],
   )
 })
+
+test('soft delete: the trash, restore, purge and a unique value that is free again', { skip }, async () => {
+  const ada = await user('ada')
+  const bob = await user('bob')
+  /** @param {import('../../src/index.js').Client} c */
+  const bin = (c) => c.db('app').collection('bin')
+  const slug = 'sd-' + Math.random().toString(36).slice(2)
+
+  const first = await bin(ada.c).create({ title: 'first', slug })
+  await assert.rejects(bin(ada.c).create({ title: 'clash', slug }), ConflictError, 'live documents stay unique')
+
+  await bin(ada.c).delete(first.id)
+  await assert.rejects(bin(ada.c).get(first.id), NotFoundError, 'a deleted document is gone for every read')
+  assert.equal((await bin(ada.c).list({ where: { slug } })).items.length, 0)
+
+  // The trash: marks, and only for who the restore rule lets see it.
+  const trashed = await bin(ada.c).get(first.id, { deleted: 'only' })
+  assert.equal(trashed._meta.deleted_by, 'user:' + ada.id)
+  assert.ok(trashed._meta.deleted_at && trashed._meta.purge_at)
+  assert.equal(trashed._meta.version, 2)
+  assert.deepEqual((await bin(ada.c).list({ where: { slug }, deleted: 'only' })).items.map((d) => d.id), [first.id])
+  assert.deepEqual((await bin(bob.c).list({ where: { slug }, deleted: 'only' })).items, [])
+  await assert.rejects(bin(bob.c).restore(first.id), NotFoundError)
+
+  // The value is free while the document is in the trash…
+  const second = await bin(ada.c).create({ title: 'second', slug })
+  // …so restoring the first would clash with it.
+  await assert.rejects(bin(ada.c).restore(first.id), ConflictError)
+  await bin(ada.c).delete(second.id)
+  const back = await bin(ada.c).restore(first.id, { ifMatch: 2 })
+  assert.equal(back.title, 'first')
+  assert.equal(back._meta.version, 3)
+  assert.equal(back._meta.deleted_at, undefined)
+  assert.equal((await bin(ada.c).get(first.id)).slug, slug)
+
+  // Purge has its own rule: an owner can't, an API key (outside the rules) can.
+  await bin(ada.c).delete(first.id)
+  await assert.rejects(bin(ada.c).delete(first.id, { purge: true }), ForbiddenError)
+  const keyed = client({ apiKey })
+  await bin(keyed).delete(first.id, { purge: true })
+  await assert.rejects(bin(keyed).get(first.id, { deleted: 'include' }), NotFoundError)
+  await bin(keyed).delete(second.id, { purge: true })
+})

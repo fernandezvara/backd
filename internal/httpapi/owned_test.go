@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 )
@@ -59,7 +60,7 @@ func TestOwnedReport(t *testing.T) {
 		t.Errorf("replace: %v", rp)
 	}
 	without := out["without_policy"].([]any)
-	if len(without) == 0 || without[0] != "app.notes" {
+	if !slices.Contains(without, "app.notes") {
 		t.Errorf("without_policy: %v", without)
 	}
 	for _, n := range without {

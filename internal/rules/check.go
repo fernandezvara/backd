@@ -33,7 +33,7 @@ func check(r *Rule, schema Schema) error {
 					add("`document` is not available on create (use `data`)")
 				}
 			case "data":
-				if r.Op == Read || r.Op == Delete {
+				if r.Op == Read || r.Op == Delete || r.Op == Restore || r.Op == Purge {
 					add("`data` is only available on create and update")
 				}
 			case "changed":
@@ -111,8 +111,9 @@ func check(r *Rule, schema Schema) error {
 		}
 	})
 
-	// Read rules become database filters.
-	if r.Op == Read {
+	// Read rules become database filters, and so do restore rules (they decide
+	// which deleted documents a list shows).
+	if r.Op == Read || r.Op == Restore {
 		if err := filterable(r.tree, schema); err != nil {
 			errs = append(errs, err)
 		}
