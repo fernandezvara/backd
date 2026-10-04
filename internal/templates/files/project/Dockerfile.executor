@@ -4,7 +4,7 @@
 # publishes its own executor image (planned, roadmap F15), drop this file
 # and use `image: ghcr.io/fernandezvara/backd-executor:v${BACKD_VERSION}`
 # in compose.yaml instead.
-ARG BACKD_VERSION=0.4.0
+ARG BACKD_VERSION=0.5.0
 FROM ghcr.io/fernandezvara/backd:v${BACKD_VERSION} AS backd
 
 # Keep this in sync with the backd version above (its registry.DenoVersion).

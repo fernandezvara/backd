@@ -4,7 +4,7 @@ on:
     branches: [main]
     tags: ["v*"]
 env:
-  BACKD_VERSION: 0.4.0
+  BACKD_VERSION: 0.5.0
   IMAGE: ghcr.io/CHANGE_ME/backd-config # your org/repo, lower-case
 jobs:
   build:
@@ -23,6 +23,9 @@ jobs:
       - run: backd functions build
         env: { CONFIG_DIR: ./config }
       - run: backd config check
+        env: { CONFIG_DIR: ./config }
+      - name: Test the access rules (no database needed)
+        run: backd rules test
         env: { CONFIG_DIR: ./config }
       - uses: docker/login-action@v3
         with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }

@@ -133,6 +133,20 @@ blog__main.posts
 shop__orders.items
 ```
 
+### Upgrading to v0.5.0
+
+v0.5.0 adds [cursor pagination](../api/querying/), [API key scopes](../auth/api-keys/), [session cookies](../auth/sessions/), [`Idempotency-Key` on creates](../api/documents/), [dates stored as dates](../configuration/config-dir/#dates) and `backd rules test`. Configuration that worked on v0.4.0 still loads; every new feature is off until you use it. What to check:
+
+1. **Provision before rolling out**, as always: the `api_keys` collection of each realm's system database gains the `scopes` field in its validator, and each collection with a field marked `"x-backd-store": "date"` gets `bsonType: date` for it. `PROVISION_MODE=verify` refuses to start until `backd provision` has run.
+2. **API key scopes are opt-in.** Existing keys have no scopes and keep full access. A key created with `scopes` can only do what they grant (`read`, `write` or `call`, on everything, a database or a collection or function), and answers `403` otherwise.
+3. **`x-backd-store: date` does not convert existing data.** Documents written before keep text in that field until they are written again, and date queries skip them until then; the [dates section](../configuration/config-dir/#dates) has a `mongosh` one-liner to convert in one go.
+4. **Session cookies are opt-in per realm and per login** (`sessions.cookie.enabled`, then `"cookie": true` on the login). A cookie login turns on an origin check for writes that carry only the cookie, so list your app's origin in `cors.origins`.
+5. **`Idempotency-Key` on creates needs authentication.** A create or batch with the header answers `400` for anonymous callers and in realms with `auth: disabled`; without the header nothing changes. Answers are kept for 24 hours in the realm's existing `idempotency` collection.
+6. **The admin user list is cut by MongoDB now** (`GET /_admin/users` returns `next_cursor`, with `after` to continue; `skip` still works). The command line and the JavaScript client already follow it; a script that read the whole list in one call must follow `next_cursor` for realms with more users than one page.
+7. **Two limits are stricter, one is new.** The login throttle now serializes the password checks of an account across instances, and answers `429` with `Retry-After: 1` if it waits more than 5 seconds for the lock. `sessions.admin_idle_timeout` and `sessions.admin_max_lifetime` (unset: nothing changes) shorten the sessions of users who hold an admin role. See the [hardening checklist](checklist/).
+8. **The JavaScript client is 0.4.0** (`npm install backd-js@latest`): `after` and `iterate` follow cursors, `cookies: true`, `scopes` when creating keys, and `idempotencyKey` on `create` and `batch` (keyed requests are retried by the client). It is versioned apart from the server, and works with a v0.4.0 server for everything that existed before.
+9. **If you copied the template CI** (`backd template project`), add a step `backd rules test` (with `CONFIG_DIR: ./config`) after `backd config check`, as the template now does: it checks your access rules against the cases in each `rules.test.yaml`, with no database.
+
 ### Upgrading to v0.4.0
 
 v0.4.0 adds [email flows](../functions/email/), [erasure](../auth/erasure/), [metrics](metrics/) and the npm client. Configuration that worked on v0.3.0 still loads and nothing new is required, but two behaviors change, so read the first two items.

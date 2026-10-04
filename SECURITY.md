@@ -20,7 +20,7 @@ Only the latest release gets security fixes.
 Release archives come with `checksums.txt` and an SPDX SBOM each. The container image `ghcr.io/fernandezvara/backd` is scanned before publishing, carries SBOM and provenance attestations, and is signed with cosign (keyless, GitHub OIDC):
 
 ```sh
-cosign verify ghcr.io/fernandezvara/backd:v0.4.0 \
+cosign verify ghcr.io/fernandezvara/backd:v0.5.0 \
   --certificate-identity-regexp '^https://github.com/fernandezvara/backd/\.github/workflows/release\.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```

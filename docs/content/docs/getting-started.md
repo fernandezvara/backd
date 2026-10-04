@@ -141,7 +141,7 @@ Each release is checked and verifiable:
 - the image is scanned for known vulnerabilities before it's published, carries SBOM and provenance attestations, and is signed with [cosign](https://docs.sigstore.dev/) using GitHub's identity (no keys to manage). Verify it with:
 
 ```sh
-cosign verify ghcr.io/fernandezvara/backd:v0.4.0 \
+cosign verify ghcr.io/fernandezvara/backd:v0.5.0 \
   --certificate-identity-regexp '^https://github.com/fernandezvara/backd/\.github/workflows/release\.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
