@@ -217,12 +217,41 @@
           </tbody>
         </table>
       </article>
+      <!-- view: invitations (ch4, wired) — operators only. -->
+      <article x-show="isAdmin">
+        <header><strong>Invite a member</strong></header>
+        <form @submit.prevent="invite">
+          <fieldset role="group">
+            <input type="email" x-model="inviteEmail" placeholder="new-member@example.com">
+            <button type="submit" :disabled="busy">Invite</button>
+          </fieldset>
+          <p class="muted">Leave the email empty to make a link anyone can use once.</p>
+        </form>
+        <template x-if="inviteLink">
+          <p>Send this link — it works once:
+            <fieldset role="group">
+              <input readonly :value="inviteLink">
+              <button class="secondary" @click="navigator.clipboard?.writeText(inviteLink)">Copy</button>
+            </fieldset>
+          </p>
+        </template>
+        <ul class="notif" x-show="pendingInvites.length">
+          <template x-for="inv in pendingInvites" :key="inv.id">
+            <li>
+              <code x-text="inv.email ?? 'any address'"></code>
+              <span class="muted" x-text="' · expires ' + new Date(inv.expires_at).toLocaleDateString()"></span>
+              <button class="link danger sm" @click="revokeInvite(inv.id)">revoke</button>
+            </li>
+          </template>
+        </ul>
+      </article>
+
       <article>
         <header><strong>Run by hand</strong></header>
         <p class="muted">Admin-only: invoke any function, internal included.</p>
         <fieldset role="group">
           <select><option>digest</option><option>cleanup</option></select>
-          <button class="secondary">Invoke</button>
+          <button class="secondary" disabled title="Chapter 12 wires this">Invoke</button>
         </fieldset>
       </article>
     </section>
@@ -237,6 +266,8 @@
       <article class="narrow">
         <form @submit.prevent="submitAuth">
           <label>Email <input type="email" x-model="email" required autocomplete="email"></label>
+          <label x-show="mode === 'signup'">Invitation token
+            <input x-model="invitation" required placeholder="bdi_… from your operator"></label>
           <label>Password <input type="password" x-model="password" required minlength="12"
                                :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"></label>
           <button type="submit" :disabled="busy" x-text="mode === 'login' ? 'Sign in' : 'Create account'"></button>

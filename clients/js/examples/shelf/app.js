@@ -1,8 +1,8 @@
 // Shelf — the tutorial app (docs: Tutorial).
 //
-// Chapter 3 adds rules and editing: my-assets entries can be edited and
-// deleted, and every write carries If-Match — a 412 means somebody else
-// wrote first.
+// Chapter 4 closes the door (signup: invite): new members arrive by
+// invitation. Operators create them from the admin view; the invitee signs
+// up with the token — emailed, once chapter 10 configures delivery.
 import { createClient, localStorageStorage, VersionMismatchError } from 'backd-js'
 
 const backd = createClient({
@@ -21,6 +21,12 @@ document.addEventListener('alpine:init', () => {
     mode: 'login', // login | signup
     email: '',
     password: '',
+    invitation: '', // signup: invite — the token the operator hands over
+
+    // Admin: invitations pending, and the token of the one just created.
+    inviteEmail: '',
+    inviteLink: null,
+    pendingInvites: [],
 
     // My assets and the account page.
     mine: [],
@@ -42,13 +48,19 @@ document.addEventListener('alpine:init', () => {
     draft: { title: '', kind: 'link', url: '', body: '', tags: '' },
 
     async init() {
+      // An invitation link (?token=…) preselects the sign-up form.
+      const token = new URLSearchParams(window.location.search).get('token')
+      if (token) {
+        this.invitation = token
+        this.mode = 'signup'
+      }
       try {
         this.user = await backd.auth.me()
       } catch {
         this.user = null
       }
       await this.refilter()
-      if (this.user) await this.loadMine()
+      if (this.user) await Promise.all([this.loadMine(), this.loadInvites()])
     },
 
     // --- session -----------------------------------------------------------
@@ -58,13 +70,16 @@ document.addEventListener('alpine:init', () => {
       this.error = null
       try {
         const credentials = { email: this.email, password: this.password }
+        if (this.mode === 'signup' && this.invitation) credentials.invitation = this.invitation
         const session = this.mode === 'signup'
           ? await backd.auth.signup(credentials)
           : await backd.auth.login(credentials)
         this.user = session.user
         this.password = ''
+        this.invitation = ''
         await this.refilter()
         await this.loadMine()
+        await this.loadInvites()
       } catch (e) {
         this.error = e.message
       } finally {
@@ -184,6 +199,41 @@ document.addEventListener('alpine:init', () => {
       } finally {
         this.busy = false
       }
+    },
+
+    get isAdmin() {
+      return (this.user?.roles ?? []).includes('admin')
+    },
+
+    async loadInvites() {
+      if (!this.isAdmin) return
+      try {
+        this.pendingInvites = await backd.admin.invitations.list()
+      } catch {
+        this.pendingInvites = []
+      }
+    },
+
+    async invite() {
+      this.busy = true
+      this.error = null
+      this.inviteLink = null
+      try {
+        const inv = await backd.admin.invitations.create({ email: this.inviteEmail || undefined })
+        // The token exists only in this response — build the link to hand over.
+        this.inviteLink = `${location.origin}/?token=${inv.token}`
+        this.inviteEmail = ''
+        await this.loadInvites()
+      } catch (e) {
+        this.error = e.message
+      } finally {
+        this.busy = false
+      }
+    },
+
+    async revokeInvite(id) {
+      await backd.admin.invitations.revoke(id).catch((e) => { this.error = e.message })
+      await this.loadInvites()
     },
 
     async remove(asset) {
