@@ -86,6 +86,9 @@ type RealmSettings struct {
 	// AdminNetworks restricts every admin API request (admin.allowed_networks);
 	// empty means unrestricted.
 	AdminNetworks Networks
+	// ReadAccess is what read-only administrators (`admin: read`) may see
+	// beyond operations (admin.read_access).
+	ReadAccess ReadAccess
 	// UserNetworks are the network restrictions realm.yaml sets per user
 	// email (in a role's user entries).
 	UserNetworks map[string]UserNetworks
@@ -226,6 +229,8 @@ type Role struct {
 	// Admin is what the sessions of users holding the role may do in the
 	// admin API: AllRights for `admin: true`, some areas for a list, none.
 	Admin AdminRights
+	// AdminRead is `admin: read` (alone or in a list): every area may be read.
+	AdminRead bool
 	// Users are seed assignments: normalized (trimmed, lowercased) emails.
 	Users []string
 }
@@ -253,6 +258,10 @@ type realmDoc struct {
 	} `yaml:"cors"`
 	Admin *struct {
 		AllowedNetworks []string `yaml:"allowed_networks"`
+		ReadAccess      *struct {
+			Users bool `yaml:"users"`
+			Data  bool `yaml:"data"`
+		} `yaml:"read_access"`
 	} `yaml:"admin"`
 	Audit *struct {
 		Retention *string `yaml:"retention"`
@@ -355,7 +364,7 @@ func (e *roleEntry) UnmarshalYAML(n *yaml.Node) error {
 func (s RealmSettings) AdminRoles() []string {
 	var out []string
 	for name, r := range s.Roles {
-		if r.Admin.Any() {
+		if r.Admin.Any() || r.AdminRead {
 			out = append(out, name)
 		}
 	}
@@ -374,7 +383,7 @@ func cmpDuration(d, fallback time.Duration) time.Duration {
 // IsAdmin reports whether roles include an admin role of the realm.
 func (s RealmSettings) IsAdmin(roles []string) bool {
 	for _, r := range roles {
-		if s.Roles[r].Admin.Any() {
+		if role := s.Roles[r]; role.Admin.Any() || role.AdminRead {
 			return true
 		}
 	}
@@ -624,6 +633,9 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 			errs = append(errs, fmt.Errorf("admin.allowed_networks: %w", err))
 		}
 		s.AdminNetworks = nets
+		if ra := a.ReadAccess; ra != nil {
+			s.ReadAccess = ReadAccess{Users: ra.Users, Data: ra.Data}
+		}
 	}
 
 	s.UserNetworks = map[string]UserNetworks{}
@@ -637,6 +649,7 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 		if r != nil {
 			role.Description = r.Description
 			role.Admin = r.Admin.Rights
+			role.AdminRead = r.Admin.Read
 			for i, u := range r.Users {
 				email, err := NormalizeEmail(u.Email)
 				if err != nil {

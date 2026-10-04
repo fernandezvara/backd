@@ -666,6 +666,9 @@ func TestContract(t *testing.T) {
 	req("POST", ad+"/apikeys", `{"name": "x", "role": "root"}`, key, 400)
 	req("POST", ad+"/apikeys", `{"name": "x"}`, nil, 401)
 	req("POST", ad+"/apikeys", `{"name": "x"}`, ada, 403)
+	req("GET", ad+"/whoami", "", key, 200)
+	req("GET", ad+"/whoami", "", nil, 401)
+	req("GET", ad+"/whoami", "", ada, 403)
 	req("DELETE", ad+"/apikeys/contract", "", key, 204)
 	req("DELETE", ad+"/apikeys/contract", "", key, 404)
 	// The audit trail holds the key's creation and revocation, with details.

@@ -13,7 +13,7 @@ import (
 func (f *rulesFixture) bobHolds(t *testing.T, roles ...string) {
 	t.Helper()
 	ctx := context.Background()
-	for _, r := range []string{"staff", "support", "keeper", "auditor", "runner"} {
+	for _, r := range []string{"staff", "support", "keeper", "auditor", "runner", "viewer", "lookout"} {
 		_ = f.svc.RemoveRole(ctx, "bob@example.com", r)
 	}
 	for _, r := range roles {
@@ -177,5 +177,117 @@ func TestAdminRightsNoEscalation(t *testing.T) {
 	}
 	if rec, _ := f.doH(t, "DELETE", admin+"/apikeys/root", "", bearer(f.bob)); rec.Code != http.StatusNoContent {
 		t.Errorf("a full administrator revoking one: %d", rec.Code)
+	}
+}
+
+// `admin: read` reads every area (users and data only when realm.yaml's
+// admin.read_access grants them) and changes nothing; `[read, secrets]` also
+// changes secrets. The server answers each cell.
+func TestAdminReadOnlyLevel(t *testing.T) {
+	f := newRulesFixture(t)
+	reads := []struct{ area, path string }{
+		{"users", "/users"}, {"invitations", "/invitations"}, {"apikeys", "/apikeys"},
+		{"secrets", "/secrets"}, {"audit", "/audit"}, {"functions", "/jobs"},
+	}
+	f.bobHolds(t, "viewer")
+	for _, e := range reads {
+		rec, out := f.doH(t, "GET", admin+e.path, "", bearer(f.bob))
+		wantRefused := e.area == "users" // read_access.users is off
+		if (rec.Code == http.StatusForbidden) != wantRefused {
+			t.Errorf("viewer reads %s: %d %v (users stay closed until read_access grants them)", e.area, rec.Code, out)
+		}
+	}
+	f.svc.Settings.ReadAccess.Users = true
+	if rec, out := f.doH(t, "GET", admin+"/users", "", bearer(f.bob)); rec.Code != http.StatusOK {
+		t.Errorf("viewer reads users with read_access.users: %d %v", rec.Code, out)
+	}
+	if rec, out := f.doH(t, "GET", admin+"/users/"+f.adaID, "", bearer(f.bob)); rec.Code != http.StatusOK {
+		t.Errorf("viewer reads a user: %d %v", rec.Code, out)
+	}
+
+	// Every change is refused, and says why.
+	for _, c := range []struct{ method, path, body string }{
+		{"POST", "/users", `{"email":"new@example.com"}`},
+		{"PATCH", "/users/" + f.adaID, `{"disabled":true}`},
+		{"DELETE", "/users/" + f.adaID, ""},
+		{"PUT", "/users/" + f.adaID + "/roles/admin", ""},
+		{"POST", "/invitations", `{}`},
+		{"POST", "/apikeys", `{"name":"x"}`},
+		{"PUT", "/secrets/KEY", `{"value":"v"}`},
+		{"DELETE", "/secrets/KEY", ""},
+		{"POST", "/functions/app/echo/invoke", `{}`},
+	} {
+		rec, out := f.doH(t, c.method, admin+c.path, c.body, jsonHdr(f.bob))
+		msg, _ := out["error"].(map[string]any)["message"].(string)
+		if rec.Code != http.StatusForbidden || !strings.Contains(msg, "can read") {
+			t.Errorf("viewer %s %s: %d %q, want a refusal that says it can read but not change", c.method, c.path, rec.Code, msg)
+		}
+	}
+
+	// whoami: what a client should offer.
+	rec, out := f.doH(t, "GET", admin+"/whoami", "", bearer(f.bob))
+	if rec.Code != http.StatusOK || out["level"] != "read" || len(out["write"].([]any)) != 0 {
+		t.Fatalf("whoami as a viewer: %d %v", rec.Code, out)
+	}
+	if ra := out["read_access"].(map[string]any); ra["users"] != true || ra["data"] != false {
+		t.Errorf("read_access: %v", ra)
+	}
+	if read := out["read"].([]any); len(read) != 6 || strings.Contains(strings.Join(anyStrings(read), ","), "data") {
+		t.Errorf("a viewer reads six areas, not data: %v", read)
+	}
+	f.bobHolds(t, "lookout")
+	_, out = f.doH(t, "GET", admin+"/whoami", "", bearer(f.bob))
+	if out["level"] != "custom" || strings.Join(anyStrings(out["write"].([]any)), ",") != "secrets" {
+		t.Errorf("whoami as [read, secrets]: %v", out)
+	}
+	if rec, out := f.doH(t, "DELETE", admin+"/secrets/NOPE", "", jsonHdr(f.bob)); rec.Code != http.StatusNotFound {
+		t.Errorf("[read, secrets] reaches the secrets endpoint (404 for a name that isn't set): %d %v", rec.Code, out)
+	}
+	if rec, _ := f.doH(t, "POST", admin+"/invitations", `{}`, jsonHdr(f.bob)); rec.Code != http.StatusForbidden {
+		t.Errorf("[read, secrets] creates an invitation: %d", rec.Code)
+	}
+	for _, c := range []struct {
+		cred string
+		want string
+	}{{f.key, "full"}} {
+		if _, out := f.doH(t, "GET", admin+"/whoami", "", bearer(c.cred)); out["level"] != c.want || out["key"] == nil {
+			t.Errorf("whoami as an admin key: %v", out)
+		}
+	}
+	// A plain user or a data key is no administrator, whoami included.
+	if rec, _ := f.doH(t, "GET", admin+"/whoami", "", bearer(f.ada)); rec.Code != http.StatusForbidden {
+		t.Errorf("whoami as a plain user: %d", rec.Code)
+	}
+}
+
+func anyStrings(in []any) []string {
+	out := make([]string, len(in))
+	for i, v := range in {
+		out[i] = v.(string)
+	}
+	return out
+}
+
+// Nobody grants, or takes away, more than they hold: that includes the read
+// level.
+func TestAdminReadLevelNoEscalation(t *testing.T) {
+	f := newRulesFixture(t)
+	f.bobHolds(t, "support") // users and invitations, to change; nothing else to read
+	if rec, out := f.doH(t, "PUT", admin+"/users/"+f.adaID+"/roles/viewer", "", bearer(f.bob)); rec.Code != http.StatusForbidden {
+		t.Errorf("support granting viewer (reads everything): %d %v", rec.Code, out)
+	}
+	f.bobHolds(t, "lookout") // reads everything, changes secrets
+	if rec, out := f.doH(t, "PUT", admin+"/users/"+f.adaID+"/roles/viewer", "", bearer(f.bob)); rec.Code != http.StatusForbidden {
+		// reading is covered, but changing users isn't allowed to a reader at all
+		t.Errorf("a reader granting a role: %d %v", rec.Code, out)
+	}
+	f.bobHolds(t, "staff")
+	if rec, out := f.doH(t, "PUT", admin+"/users/"+f.adaID+"/roles/viewer", "", bearer(f.bob)); rec.Code != http.StatusOK {
+		t.Errorf("a full administrator granting viewer: %d %v", rec.Code, out)
+	}
+	// A viewer user can't be changed by a narrower administrator.
+	f.bobHolds(t, "support")
+	if rec, _ := f.doH(t, "POST", admin+"/users/"+f.adaID+"/password", `{"password":"a long enough password"}`, jsonHdr(f.bob)); rec.Code != http.StatusForbidden {
+		t.Errorf("support changing a viewer's password: %d", rec.Code)
 	}
 }

@@ -28,7 +28,7 @@ Requests from outside the realm's `admin.allowed_networks`, or outside an admin 
 
 ## Admin rights
 
-An admin role can open the whole admin API (`admin: true`) or only some of its areas (`admin: [users, invitations]`), so that the person who invites teammates doesn't also hold the secrets and the keys. A user's roles add up, and an admin API key always opens every area.
+An admin role can open the whole admin API (`admin: true`), only some of its areas (`admin: [users, invitations]`), or all of it **to read** (`admin: read`), so that the person who invites teammates doesn't also hold the secrets and the keys, and developers can look without being able to change anything. A user's roles add up, and an admin API key always opens every area.
 
 | Area | Endpoints |
 |---|---|
@@ -38,12 +38,19 @@ An admin role can open the whole admin API (`admin: true`) or only some of its a
 | `secrets` | `/secrets` |
 | `audit` | `GET /audit` |
 | `functions` | `POST /functions/{database}/{name}/invoke`, `GET /invocations` and `GET /jobs`; and reading any job through the data API |
+| `data` | the admin data route (documents past their collections' rules) |
+
+### The read-only level
+
+`admin: read` reads every area and changes none: every `GET` under `/_admin` answers, every other method answers `403` ("can read the area but not change it"). Two areas hold personal data, so a realm opts in: **users** and **data** are read-only-visible only with `admin.read_access.users` and `admin.read_access.data` set to `true` in [`realm.yaml`](../../configuration/realm/#keys). API keys are listed (never the keys) and secrets by name (never a value). A list may add `read` to a few writable areas: `admin: [read, secrets]` reads everything and changes secrets. The same rules apply to every credential: network restrictions, session limits for administrators, and the audit trail of refusals.
+
+`GET /whoami` tells a client what the signed-in administrator may do (`level`: `full`, `read` or `custom`; the areas it may `write` and `read`; `read_access`), so an interface offers only what the server would allow.
 
 A request for an area the roles don't open answers `403 forbidden` with the missing area in the message, and is recorded in the [audit trail](../audit/) as `admin.refused` with the reason, the method and the path.
 
 An administrator can't use these endpoints to end up holding more than they started with:
 
-- **A role is granted or taken away only by someone who holds everything it opens.** `support` (`users`, `invitations`) can give `support` or a role that is no admin role, but not `staff` (`admin: true`), and not `keeper` (`apikeys`, `secrets`) either.
+- **A role is granted or taken away only by someone who holds everything it opens,** reading included: giving `admin: read` (every area to read) takes a caller who can read every area. `support` (`users`, `invitations`) can give `support` or a role that is no admin role, but not `staff` (`admin: true`), and not `keeper` (`apikeys`, `secrets`) either.
 - **A user who holds admin rights the caller doesn't can be read, and nothing more:** changing their password or address, disabling, erasing, re-roling them or setting their networks answers `403`, since each would be a way to become them.
 - **Admin API keys are created and revoked only by full administrators** (`admin: true` or an admin key), because such a key opens every area. Data keys follow the `apikeys` area.
 

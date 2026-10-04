@@ -110,7 +110,8 @@ auth: enabled
 # admin API, and `backd bootstrap` gives it to the realm's first
 # administrator. Keep at least one: without it, nobody can manage the realm.
 # A list opens only some areas (users, invitations, apikeys, secrets, audit,
-# functions): `admin: [users, invitations]`.
+# functions, data): `admin: [users, invitations]`. `admin: read` is a
+# read-only level (admin.read_access decides whether it sees users and data).
 roles:
   admin:
     description: Manages users, invitations and API keys

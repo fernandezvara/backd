@@ -31,8 +31,10 @@ tags:
     description: >-
       User, role and invitation management with an API key, or the session of a
       user whose admin role opens the area (users, invitations, apikeys,
-      secrets, audit, functions). A request for an area the roles don't open
-      answers 403 naming it.
+      secrets, audit, functions, data). A request for an area the roles don't open
+      answers 403 naming it. A read-only level (`admin: read`) reads every area,
+      users and data only when `admin.read_access` grants them, and every change
+      answers 403.
   - name: documents
     description: CRUD and queries on any configured collection.
   - name: functions
@@ -1222,6 +1224,54 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/whoami:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [admin]
+      summary: What the signed-in administrator may do
+      description: |
+        The level of the credential and the admin areas it may change and may read, so a
+        client (the admin UI) offers only what the server would allow. Areas are `users`,
+        `invitations`, `apikeys`, `secrets`, `audit`, `functions` and `data`; `all` stands
+        for every one. An admin key is `full`; a user's `level` is `full` (`admin: true`),
+        `read` (only `admin: read`) or `custom` (a list of areas, perhaps with `read`).
+        `read_access` is what `admin.read_access` in `realm.yaml` grants read-only
+        administrators beyond operations.
+      operationId: adminWhoami
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The caller's admin access.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [level, write, read, read_access]
+                properties:
+                  level: { type: string, enum: [full, read, custom] }
+                  write: { type: array, items: { type: string }, description: "Areas it may change." }
+                  read: { type: array, items: { type: string }, description: "Areas it may read, what read_access grants included." }
+                  read_access:
+                    type: object
+                    additionalProperties: false
+                    required: [users, data]
+                    properties:
+                      users: { type: boolean }
+                      data: { type: boolean }
+                  user:
+                    type: object
+                    additionalProperties: false
+                    required: [id, email, roles]
+                    properties:
+                      id: { type: string }
+                      email: { type: string }
+                      roles: { type: array, items: { type: string } }
+                  key: { type: string, description: "The admin API key's name." }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_admin/audit:
