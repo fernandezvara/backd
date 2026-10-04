@@ -252,3 +252,73 @@ tests:
 		t.Errorf("%d assertions ran", len(checks))
 	}
 }
+
+// A collection that soft-deletes (collection.yaml) and declares restore and
+// purge rules.
+func softCollection(t *testing.T, rulesSrc string) *registry.Collection {
+	t.Helper()
+	root := t.TempDir()
+	dir := filepath.Join(root, "acme", "app", "posts")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for p, content := range map[string]string{
+		filepath.Join(root, "acme", "realm.yaml"): "roles:\n  admin: {}\n  staff: {}\n",
+		filepath.Join(dir, "schema.json"):         schema,
+		filepath.Join(dir, "rules.yaml"):          rulesSrc,
+		filepath.Join(dir, "collection.yaml"):     "soft_delete: true\n",
+	} {
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := reg.Collection("acme", "app", "posts")
+	return c
+}
+
+func TestRunRestoreAndPurge(t *testing.T) {
+	c := softCollection(t, `
+read: user != nil
+delete: user != nil && document._meta.owner == user.id
+restore: user != nil && (document._meta.owner == user.id || hasRole(user, 'staff'))
+purge: hasRole(user, 'admin')
+`)
+	checks, problems := Run(c, roles, []byte(`
+users:
+  ada:  { id: u1, email: ada@example.com }
+  bob:  { id: u2, email: bob@example.com }
+  sam:  { id: u3, email: sam@example.com, roles: [staff] }
+  boss: { id: u4, email: boss@example.com, roles: [admin] }
+documents:
+  live:    { title: Live, _meta: { owner: u1 } }
+  trashed: { title: Trashed, _meta: { owner: u1, deleted_at: "2026-10-01T00:00:00Z", deleted_by: "user:u1", purge_at: "2026-10-08T00:00:00Z" } }
+tests:
+  - as: ada
+    restore: { allow: [trashed], deny: [live] }   # a live document can't be restored
+    purge:   { deny: [trashed, live] }
+  - as: bob
+    restore: { deny: [trashed] }
+  - as: sam
+    restore: { allow: [trashed] }
+  - as: boss
+    restore: { deny: [trashed] }       # an admin who can't see the trash can't restore
+    purge:   { deny: [trashed] }       # …nor purge from it
+  - as: sam
+    purge: { deny: [trashed, live] }
+`))
+	if len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	for _, ch := range checks {
+		if !ch.Pass {
+			t.Errorf("%s: %s", ch.What, ch.Detail)
+		}
+	}
+	if len(checks) != 10 {
+		t.Errorf("%d assertions ran, want 10", len(checks))
+	}
+}
