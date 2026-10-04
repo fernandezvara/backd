@@ -30,7 +30,7 @@
     <ul>
       <li><a href="#gallery" aria-current="page">Gallery</a></li>
       <li><a href="#mine">My assets</a></li>
-      <li><a href="#notifications">Notifications <mark class="badge">3</mark></a></li>
+      <li><a href="#notifications">Notifications <mark class="badge" x-show="unreadCount" x-text="unreadCount"></mark></a></li>
       <li><a href="#admin">Admin</a></li>
       <li x-show="!user"><a href="#auth" role="button" class="outline">Sign in</a></li>
       <template x-if="user">
@@ -229,19 +229,24 @@
       </template>
     </section>
 
-    <!-- view: notifications (ch7→ch8) — what publish and digest create. -->
+    <!-- view: notifications (ch7, wired) — what publish and digest create. -->
     <section id="notifications">
       <hgroup>
         <h2>Notifications</h2>
         <p>What happened since your last visit.</p>
       </hgroup>
-      <article>
+      <p class="muted" x-show="!user">Sign in to see notifications.</p>
+      <p class="muted" x-show="user && !notifs.length">Nothing yet — publish an asset as a curator.</p>
+      <article x-show="user && notifs.length">
         <ul class="notif">
-          <li class="unread"><strong>bruno@shelf.example</strong> published <em>Deploy checklist</em> <span class="muted">· 2 h ago</span></li>
-          <li class="unread">Your daily digest is ready — 4 new assets <span class="muted">· 8 h ago</span></li>
-          <li class="unread"><strong>carla@shelf.example</strong> invited you to curate <em>security</em> <span class="muted">· 1 d ago</span></li>
-          <li><strong>ana@shelf.example</strong> published <em>Vendor security review</em> <span class="muted">· 5 d ago</span></li>
+          <template x-for="n in notifs" :key="n.id">
+            <li :class="{ unread: !n.read_at }">
+              <code x-text="n.kind"></code> — <span x-text="n.text"></span>
+              <span class="muted" x-text="new Date(n._meta.created_at).toLocaleString()"></span>
+            </li>
+          </template>
         </ul>
+        <footer><button class="link sm" @click="markAllRead" :disabled="!unreadCount">Mark all read</button></footer>
       </article>
     </section>
 

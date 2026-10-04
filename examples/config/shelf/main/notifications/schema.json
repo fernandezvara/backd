@@ -1,0 +1,12 @@
+{
+  "$comment": "In-app notifications, created only by functions (chapter 7: notify is internal). A member reads their own and marks them read — read_at is the only field a client may write.",
+  "type": "object",
+  "properties": {
+    "to_user":  { "type": "string", "minLength": 1, "description": "The user id this notification belongs to." },
+    "kind":     { "type": "string", "minLength": 1, "description": "asset.published, digest.sent, … — the app's vocabulary." },
+    "text":     { "type": "string", "minLength": 1 },
+    "asset_id": { "type": "string", "description": "The asset the notification is about, when it is about one." },
+    "read_at":  { "type": ["string", "null"], "format": "date-time", "x-backd-store": "date", "description": "null while unread." }
+  },
+  "required": ["to_user", "kind", "text"]
+}

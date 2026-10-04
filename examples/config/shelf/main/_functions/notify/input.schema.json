@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "properties": {
+    "to_user":  { "type": "string", "minLength": 1 },
+    "kind":     { "type": "string", "minLength": 1 },
+    "text":     { "type": "string", "minLength": 1 },
+    "asset_id": { "type": "string", "minLength": 1 }
+  },
+  "required": ["to_user", "kind", "text"],
+  "additionalProperties": false
+}

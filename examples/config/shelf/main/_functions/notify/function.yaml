@@ -1,0 +1,5 @@
+# Writes in-app notifications — internal: true means no HTTP route at all:
+# other functions (publish now; digest and cleanup later) and admin invokes
+# are the only callers.
+internal: true
+admin: true

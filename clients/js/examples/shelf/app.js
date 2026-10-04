@@ -15,6 +15,7 @@ const backd = createClient({
 const main = backd.db('main')
 const assets = main.collection('assets')
 const shares = main.collection('shares')
+const notifications = main.collection('notifications')
 
 document.addEventListener('alpine:init', () => {
   Alpine.data('shelf', () => ({
@@ -35,6 +36,10 @@ document.addEventListener('alpine:init', () => {
     editing: null, // { id, version, title, url, body, tags } — the card being edited
     pwd: { current: '', next: '' },
     accountMsg: null,
+
+    // Notifications: mine, newest first (functions write them; I can only
+    // flip read_at — the rules say so).
+    notifs: [],
 
     // Shares: the asset being shared, the minted link, my active links, and
     // the public ?s=<token> view.
@@ -75,7 +80,7 @@ document.addEventListener('alpine:init', () => {
         this.user = null
       }
       await this.refilter()
-      if (this.user) await Promise.all([this.loadMine(), this.loadInvites(), this.loadShares()])
+      if (this.user) await Promise.all([this.loadMine(), this.loadInvites(), this.loadShares(), this.loadNotifs()])
     },
 
     // --- session -----------------------------------------------------------
@@ -95,6 +100,7 @@ document.addEventListener('alpine:init', () => {
         await this.refilter()
         await this.loadMine()
         await this.loadInvites()
+        await this.loadNotifs()
       } catch (e) {
         this.error = e.message
       } finally {
@@ -283,6 +289,7 @@ document.addEventListener('alpine:init', () => {
         await main.fn('publish', { asset_id: asset.id }, { idempotencyKey: `publish-${asset.id}` })
         await this.refilter()
         await this.loadMine()
+        await this.loadNotifs()
       } catch (e) {
         this.error = e.message
       } finally {
@@ -348,6 +355,32 @@ document.addEventListener('alpine:init', () => {
       } finally {
         this.busy = false
       }
+    },
+
+    get unreadCount() {
+      return this.notifs.filter((n) => !n.read_at).length
+    },
+
+    async loadNotifs() {
+      if (!this.user) return
+      try {
+        const page = await notifications.list({
+          where: { to_user: this.user.id },
+          orderBy: '-_meta.created_at',
+          limit: 50,
+        })
+        this.notifs = page.items
+      } catch (e) {
+        this.error = e.message
+      }
+    },
+
+    async markAllRead() {
+      const now = new Date().toISOString()
+      for (const n of this.notifs.filter((n) => !n.read_at)) {
+        await notifications.patch(n.id, { read_at: now }).catch((e) => { this.error = e.message })
+      }
+      await this.loadNotifs()
     },
 
     async changePassword() {

@@ -53,7 +53,7 @@ Working on a `backd` checkout instead? The same files live in the repository: `e
 | 4 | [Invitations](04-invitations/) | inviting teammates by email |
 | 5 | [The first function](05-first-function/) | `publish`, `admin: true`, idempotency, share links |
 | 6 | [Reaching the outside](06-network/) | `preview` and the `network:` allowlist |
-| 7 | Functions calling functions | `notify` as an internal function, `ctx.call` |
+| 7 | [Functions calling functions](07-calls/) | `notify` as an internal function, `ctx.call` |
 | 8 | Work that takes time | `digest` as an async job, `retry:` |
 | 9 | On a schedule | cron schedules, `cleanup` |
 | 10 | Email for real | delivery function, templates, the Mailbox |

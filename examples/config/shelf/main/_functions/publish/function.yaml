@@ -9,3 +9,6 @@
 admin: true
 invoke: "user != nil && hasRole(user, 'curator')"
 idempotency: required
+# It may call these functions of the database, and no others: notify is
+# internal, so `POST _func/notify` answers 404 and the graph is closed.
+calls: [notify]

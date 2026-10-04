@@ -26,5 +26,20 @@ export default async function handler(ctx: Context) {
   }
 
   console.log(`published ${asset_id} at ${published_at} (requested by ${ctx.user?.email ?? "api-key"})`);
+
+  // The owner is told — as an afterthought: a failing notification must
+  // not undo or hide a publish that already happened.
+  if (asset._meta?.owner) {
+    try {
+      await ctx.call("notify", {
+        to_user: asset._meta.owner,
+        kind: "asset.published",
+        text: `“${asset.title}” was published`,
+        asset_id,
+      });
+    } catch (err) {
+      console.log(`the notification was not written: ${err instanceof Error ? err.message : err}`);
+    }
+  }
   return { asset_id, published_at };
 }
