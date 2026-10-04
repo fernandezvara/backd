@@ -1,8 +1,9 @@
 // Shelf — the tutorial app (docs: Tutorial).
 //
-// Chapter 2 adds authentication: sign up, sign in, sessions that survive a
-// reload, "my assets" and the account page (password change, delete account).
-import { createClient, localStorageStorage } from 'backd-js'
+// Chapter 3 adds rules and editing: my-assets entries can be edited and
+// deleted, and every write carries If-Match — a 412 means somebody else
+// wrote first.
+import { createClient, localStorageStorage, VersionMismatchError } from 'backd-js'
 
 const backd = createClient({
   url: window.location.origin,
@@ -23,6 +24,7 @@ document.addEventListener('alpine:init', () => {
 
     // My assets and the account page.
     mine: [],
+    editing: null, // { id, version, title, url, body, tags } — the card being edited
     pwd: { current: '', next: '' },
     accountMsg: null,
 
@@ -147,6 +149,57 @@ document.addEventListener('alpine:init', () => {
         this.mine = page.items
       } catch (e) {
         this.error = e.message
+      }
+    },
+
+    startEdit(asset) {
+      this.editing = {
+        id: asset.id,
+        version: asset._meta?.version,
+        title: asset.title,
+        url: asset.url ?? '',
+        body: asset.body ?? '',
+        tags: (asset.tags ?? []).join(', '),
+      }
+    },
+
+    async saveEdit() {
+      if (!this.editing) return
+      this.busy = true
+      this.error = null
+      try {
+        const patch = { title: this.editing.title, body: this.editing.body }
+        const tags = this.editing.tags.split(',').map((t) => t.trim()).filter(Boolean)
+        patch.tags = tags
+        if (this.editing.url) patch.url = this.editing.url
+        // If-Match: the write is conditional on the version we read.
+        await assets.patch(this.editing.id, patch, { ifMatch: this.editing.version })
+        this.editing = null
+        await this.refilter()
+        await this.loadMine()
+      } catch (e) {
+        this.error = e instanceof VersionMismatchError
+          ? 'Someone else changed this asset first — reload and try again.'
+          : e.message
+      } finally {
+        this.busy = false
+      }
+    },
+
+    async remove(asset) {
+      if (!confirm(`Delete "${asset.title}"?`)) return
+      this.busy = true
+      this.error = null
+      try {
+        await assets.delete(asset.id, { ifMatch: asset._meta?.version })
+        await this.refilter()
+        await this.loadMine()
+      } catch (e) {
+        this.error = e instanceof VersionMismatchError
+          ? 'Someone else changed this asset first — reload and try again.'
+          : e.message
+      } finally {
+        this.busy = false
       }
     },
 

@@ -1,0 +1,10 @@
+# rules.yaml: share links are private to their creator. The public /s/{token}
+# lookup happens through a function (chapter 5) — nobody, not even anonymous
+# readers, gets to list this collection.
+read: user != nil && document._meta.owner == user.id
+
+# HOLE: asset_id is the client's word — nothing checks the caller owns the
+# asset or that it exists; and a token is any string ≥ 16 chars, so a client
+# could pick a guessable one. The share function closes this in chapter 5.
+create: user != nil
+delete: user != nil && document._meta.owner == user.id

@@ -149,20 +149,36 @@
       <p class="muted" x-show="!user">Sign in to see your assets.</p>
       <template x-for="asset in mine" :key="asset.id">
         <article>
-          <header>
-            <strong x-text="asset.title"></strong>
-            <span class="badge" :class="asset.published_at ? 'pub' : 'draft'"
-                  x-text="asset.published_at ? 'published' : 'draft'"></span>
-          </header>
-          <p x-text="asset.body"></p>
-          <footer>
-            <span class="muted" x-text="asset.published_at ? 'published ' + new Date(asset.published_at).toLocaleDateString() : 'draft'"></span>
-            <span>
-              <button class="link sm" disabled title="Chapter 3 wires this">Edit</button>
-              <button class="link sm" disabled title="Chapter 5 wires this">Publish</button>
-              <button class="link danger sm" disabled title="Chapter 3 wires this">Delete</button>
-            </span>
-          </footer>
+          <template x-if="editing?.id === asset.id">
+            <form @submit.prevent="saveEdit" @keydown.escape="editing = null">
+              <label>Title <input x-model="editing.title" required></label>
+              <label>URL <input type="url" x-model="editing.url" x-show="asset.kind === 'link'"></label>
+              <label>Notes <textarea rows="3" x-model="editing.body"></textarea></label>
+              <label>Tags <input x-model="editing.tags"></label>
+              <footer>
+                <button type="submit" :disabled="busy">Save</button>
+                <button type="button" class="link" @click="editing = null" :disabled="busy">Cancel</button>
+              </footer>
+            </form>
+          </template>
+          <template x-if="editing?.id !== asset.id">
+            <div>
+              <header>
+                <strong x-text="asset.title"></strong>
+                <span class="badge" :class="asset.published_at ? 'pub' : 'draft'"
+                      x-text="asset.published_at ? 'published' : 'draft'"></span>
+              </header>
+              <p x-text="asset.body"></p>
+              <footer>
+                <span class="muted" x-text="asset.published_at ? 'published ' + new Date(asset.published_at).toLocaleDateString() : 'draft'"></span>
+                <span>
+                  <button class="link sm" @click="startEdit(asset)" :disabled="busy || editing !== null">Edit</button>
+                  <button class="link sm" disabled title="Chapter 5 wires this">Publish</button>
+                  <button class="link danger sm" @click="remove(asset)" :disabled="busy">Delete</button>
+                </span>
+              </footer>
+            </div>
+          </template>
         </article>
       </template>
     </section>
