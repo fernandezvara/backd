@@ -712,6 +712,8 @@ func TestContract(t *testing.T) {
 	req("POST", fn+"echo", `{"n": 1}`, carl, 403)
 	req("POST", fn+"typed", `{"n": "x"}`, ada, 400)
 	jobOut := req("POST", fn+"job", `{}`, ada, 202)
+	// A sync function as a job, when the caller prefers it.
+	req("POST", fn+"echo", `{"n": 1}`, with(ada, "Prefer", "respond-async"), 202)
 	req("GET", "/v1/acme/app/_jobs/"+jobOut["id"].(string), "", ada, 200)
 	req("GET", "/v1/acme/app/_jobs/"+jobOut["id"].(string), "", nil, 401)
 	req("GET", "/v1/acme/app/_jobs/"+jobOut["id"].(string), "", bearer(f.bob), 404)

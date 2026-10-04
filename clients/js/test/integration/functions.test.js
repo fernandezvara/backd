@@ -43,3 +43,25 @@ test('an Idempotency-Key replays the stored response instead of running again', 
   const second = await ada.c.db('app').fn('echo', { n: 5 }, { idempotencyKey: key })
   assert.deepEqual(first, second)
 })
+
+test('respondAsync runs a sync function as a job, once, with its own error as the result', { skip }, async () => {
+  const ada = await user('ada')
+  const db = ada.c.db('app')
+
+  const job = await db.fn('echo', { n: 5 }, { respondAsync: true })
+  assert.ok(job instanceof Job, 'a sync function called with respondAsync answers with a Job')
+  assert.equal(job.function, 'app/echo')
+  assert.deepEqual(await job.wait({ pollIntervalMs: 100, timeoutMs: 30000 }), { doubled: 10 })
+
+  const failing = await db.fn('echo', { n: 1, fail: true }, { respondAsync: true })
+  assert.ok(failing instanceof Job)
+  await assert.rejects(
+    failing.wait({ pollIntervalMs: 100, timeoutMs: 30000 }),
+    (/** @type {any} */ err) => err instanceof ConflictError && err.code === 'out_of_stock',
+  )
+
+  // The same key replays the job it first made, whatever the second call prefers.
+  const first = await db.fn('echo', { n: 6 }, { respondAsync: true, idempotencyKey: 'prefer-' + job.id })
+  const again = /** @type {Job} */ (await db.fn('echo', { n: 6 }, { respondAsync: true, idempotencyKey: 'prefer-' + job.id }))
+  assert.equal(/** @type {Job} */ (first).id, again.id)
+})

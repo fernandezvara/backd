@@ -16,8 +16,8 @@ const (
 	corsMethods = "GET, POST, PUT, PATCH, DELETE"
 	// X-Backd-On-Behalf-Of is left out on purpose: only server-side API
 	// keys may use it.
-	corsAllowHeaders  = "Authorization, Content-Type, If-Match, X-Request-ID"
-	corsExposeHeaders = "ETag, Location, Retry-After, WWW-Authenticate, X-Request-ID"
+	corsAllowHeaders  = "Authorization, Content-Type, If-Match, Idempotency-Key, Prefer, X-Request-ID"
+	corsExposeHeaders = "ETag, Idempotent-Replayed, Location, Preference-Applied, Retry-After, WWW-Authenticate, X-Request-ID"
 	corsMaxAge        = "600"
 )
 

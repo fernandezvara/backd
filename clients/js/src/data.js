@@ -143,16 +143,23 @@ export class Database {
    * as a `BackdError` with that status and code — for `async`, only
    * once `job.wait()` resolves, not from this call itself.
    *
+   * With `respondAsync: true` (`Prefer: respond-async`) a `sync` function
+   * is queued as a job too, and this resolves with its `Job` instead of the
+   * output: for calls that can take long, or that nobody waits for. It
+   * runs once, with the function's own limits.
+   *
    * `webhook` functions can't be called through this method: their
    * caller is whatever service sends the webhook, never this client.
    * @param {string} name
    * @param {unknown} [input] Any JSON value; omitted is sent as `null`.
-   * @param {RequestOptions & { idempotencyKey?: string }} [opts]
+   * @param {RequestOptions & { idempotencyKey?: string, respondAsync?: boolean }} [opts]
    * @returns {Promise<unknown | Job>}
    */
   async fn(name, input, opts = {}) {
-    const { idempotencyKey, headers, ...rest } = opts
-    const reqHeaders = idempotencyKey === undefined ? headers : { ...headers, 'Idempotency-Key': idempotencyKey }
+    const { idempotencyKey, respondAsync, headers, ...rest } = opts
+    const reqHeaders = { ...headers }
+    if (idempotencyKey !== undefined) reqHeaders['Idempotency-Key'] = idempotencyKey
+    if (respondAsync) reqHeaders.Prefer = 'respond-async'
     const { status, data } = await this.client.request({
       method: 'POST',
       path: [this.name, '_func', name],

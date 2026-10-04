@@ -129,3 +129,16 @@ test('job.wait gives up after its own timeoutMs, leaving the job alone', async (
   })
   assert.equal(m.remaining(), 0)
 })
+
+test('respondAsync asks for a job with Prefer: respond-async', async () => {
+  const job = { id: 'j1', function: 'main/slow', status: 'queued', attempts: 0, created_at: '2026-09-26T12:00:00.000Z', result: null }
+  const m = mockFetch([{ status: 202, body: job }, { body: { n: 2 } }])
+  const db = createClient({ url: 'http://api.test', realm: 'blog', fetch: m.fetch }).db('main')
+  const queued = await db.fn('slow', { n: 1 }, { respondAsync: true, idempotencyKey: 'k1' })
+  assert.ok(queued instanceof Job, 'a sync function called with respondAsync resolves to a Job')
+  assert.equal(m.calls[0].headers.Prefer, 'respond-async')
+  assert.equal(m.calls[0].headers['Idempotency-Key'], 'k1')
+  // Without it, no preference is sent and the output comes back directly.
+  assert.deepEqual(await db.fn('slow', { n: 1 }), { n: 2 })
+  assert.equal(m.calls[1].headers.Prefer, undefined)
+})
