@@ -30,8 +30,12 @@ func bootstrapAction(c *cli.CommandContext) error {
 }
 
 func bootstrap(ctx context.Context, users *auth.Users, realm, email, role string, uio userIO) error {
-	roles := users.Settings.AdminRoles()
+	// The first administrator holds every area (`admin: true`): a role that
+	// opens only some can't manage the others, so it can't recover a realm.
+	roles := users.Settings.FullAdminRoles()
 	switch {
+	case len(roles) == 0 && len(users.Settings.AdminRoles()) > 0:
+		return fmt.Errorf("%s/realm.yaml has admin roles that open only some areas (%s); the first administrator needs a role with `admin: true`", realm, strings.Join(users.Settings.AdminRoles(), ", "))
 	case len(roles) == 0:
 		return fmt.Errorf("%s/realm.yaml declares no admin role: add one with `admin: true` under roles", realm)
 	case role == "" && len(roles) > 1:
@@ -39,7 +43,7 @@ func bootstrap(ctx context.Context, users *auth.Users, realm, email, role string
 	case role == "":
 		role = roles[0]
 	case !slices.Contains(roles, role):
-		return fmt.Errorf("%q isn't an admin role of %s/realm.yaml; admin roles: %s", role, realm, strings.Join(roles, ", "))
+		return fmt.Errorf("%q isn't a role with `admin: true` in %s/realm.yaml; those are: %s", role, realm, strings.Join(roles, ", "))
 	}
 	existing, err := users.List(ctx)
 	if err != nil {
