@@ -78,8 +78,11 @@ type RealmSettings struct {
 	// their login asks for it (sessions.cookie).
 	Cookie            CookieSettings
 	PasswordMinLength int
-	CORSOrigins       []string
-	Roles             map[string]Role
+	// LoginThrottle is login_throttle; read it through Throttle(), which
+	// fills in the defaults.
+	LoginThrottle LoginThrottle
+	CORSOrigins   []string
+	Roles         map[string]Role
 	// AdminNetworks restricts every admin API request (admin.allowed_networks);
 	// empty means unrestricted.
 	AdminNetworks Networks
@@ -244,7 +247,8 @@ type realmDoc struct {
 	Password *struct {
 		MinLength *int `yaml:"min_length"`
 	} `yaml:"password"`
-	CORS *struct {
+	LoginThrottle *loginThrottleDoc `yaml:"login_throttle"`
+	CORS          *struct {
 		Origins []string `yaml:"origins"`
 	} `yaml:"cors"`
 	Admin *struct {
@@ -429,13 +433,17 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 			set bool
 		}{
 			{"signup", doc.Signup != nil}, {"sessions", doc.Sessions != nil},
-			{"password", doc.Password != nil}, {"roles", len(doc.Roles) > 0}, {"admin", doc.Admin != nil},
+			{"password", doc.Password != nil}, {"login_throttle", doc.LoginThrottle != nil}, {"roles", len(doc.Roles) > 0}, {"admin", doc.Admin != nil},
 			{"audit", doc.Audit != nil},
 		} {
 			if k.set {
 				errs = append(errs, fmt.Errorf("%s: only applies when auth is enabled", k.key))
 			}
 		}
+	}
+
+	if doc.LoginThrottle != nil {
+		errs = append(errs, doc.LoginThrottle.apply(&s)...)
 	}
 
 	if doc.Signup != nil {

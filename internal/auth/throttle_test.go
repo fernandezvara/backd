@@ -11,6 +11,7 @@ import (
 
 	. "github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/auth/authtest"
+	"github.com/fernandezvara/backd/internal/registry"
 )
 
 func TestIPKey(t *testing.T) {
@@ -259,5 +260,49 @@ func TestLoginLockLease(t *testing.T) {
 	}
 	if ok, _ := store.AcquireLoginLock(ctx, "account:b", "one", now, now.Add(time.Second)); !ok {
 		t.Error("another account's lock was held")
+	}
+}
+
+// A realm's login_throttle replaces the defaults: its thresholds, its window
+// and its longest wait.
+func TestLoginThrottleConfigured(t *testing.T) {
+	ctx := context.Background()
+	store := authtest.NewMemStore()
+	clock := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	svc := newUsers(store, &clock)
+	svc.Settings.LoginThrottle = registry.LoginThrottle{AccountThreshold: 3, IPThreshold: 10, Window: 2 * time.Minute, MaxDelay: 10 * time.Second}
+	if _, err := svc.Create(ctx, "ada@example.com", ptr("dev-p4ssw0rd!")); err != nil {
+		t.Fatal(err)
+	}
+
+	// Two failures are free; the third starts the backoff.
+	failLogins(t, svc, "ada@example.com", "203.0.113.1", 3)
+	if _, _, err := svc.Login(ctx, "ada@example.com", "dev-p4ssw0rd!", "203.0.113.1"); retryAfter(err) != time.Second {
+		t.Errorf("after 3 failures: %v, want a 1s wait (threshold 3)", err)
+	}
+
+	// The wait stops growing at max_delay, not at the default 15m.
+	for range 12 {
+		clock = clock.Add(11 * time.Second)
+		failLogins(t, svc, "ada@example.com", "203.0.113.1", 1)
+	}
+	if _, _, err := svc.Login(ctx, "ada@example.com", "x", "203.0.113.1"); retryAfter(err) != 10*time.Second {
+		t.Errorf("wait after many failures = %v, want the configured 10s cap", retryAfter(err))
+	}
+
+	// The window is 2 minutes: older failures don't count.
+	failLogins(t, svc, "bob@example.com", "203.0.113.3", 2)
+	clock = clock.Add(3 * time.Minute)
+	failLogins(t, svc, "bob@example.com", "203.0.113.3", 2)
+	if _, _, err := svc.Login(ctx, "bob@example.com", "x", "203.0.113.3"); !errors.Is(err, ErrInvalidCredentials) {
+		t.Errorf("failures older than the window still counted: %v", err)
+	}
+
+	// The address threshold is 10: ten failures across accounts block it.
+	for i := range 10 {
+		failLogins(t, svc, fmt.Sprintf("user%d@example.com", i), "198.51.100.9", 1)
+	}
+	if _, _, err := svc.Login(ctx, "ada@example.com", "dev-p4ssw0rd!", "198.51.100.9"); retryAfter(err) != time.Second {
+		t.Errorf("from the busy address: %v", err)
 	}
 }

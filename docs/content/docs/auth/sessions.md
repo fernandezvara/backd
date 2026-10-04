@@ -145,12 +145,23 @@ Failed attempts are counted per account and per client address. Past a threshold
 | Per email address | 5 failures within 15 minutes | wait 1 second, doubling with each further failure, up to 15 minutes |
 | Per client address (IPv4 address, or IPv6 `/64` network) | 50 failures within 15 minutes | the same growing wait |
 
+Those are the defaults. A realm tunes them with [`login_throttle`](../../configuration/realm/#keys) in `realm.yaml`: `account_threshold`, `ip_threshold`, `window` (how long a failure counts) and `max_delay` (the longest wait, never more than the window). For example, a realm of a few known users can be stricter:
+
+```yaml
+login_throttle:
+  account_threshold: 3
+  window: 1h
+  max_delay: 1h
+```
+
+The throttle can be tuned but not turned off, and there is still no lockout: whatever the settings, waiting is always enough.
+
 - There is no lockout: after the wait, the right password always works. Nobody can lock another user out permanently.
 - Attempts refused with `429` don't count, so waiting as told is always enough.
 - A successful login clears the email's counter, but not the address's.
 - Unregistered emails are counted like registered ones, so the answers don't reveal which emails exist.
 - Wrong current passwords in `POST /_auth/password` and `DELETE /_auth/me` count against the account too, so a stolen session can't be used to guess the password.
-- Counters are stored in the realm's system database, so all `backd` instances share them. They are deleted automatically 15 minutes after the last failure.
+- Counters are stored in the realm's system database, so all `backd` instances share them. They are deleted automatically one `window` (15 minutes by default) after the last failure.
 - Password checks for one account run **one at a time across all instances**: each takes a short lock kept in the system database (which expires by itself after 30 seconds if its instance dies). Parallel attempts can't all pass before a failure is counted, so many instances allow no more guesses than one. If the lock stays busy for 5 seconds the attempt gets `429` with `Retry-After: 1`.
 
 Behind a reverse proxy or load balancer, set [`TRUSTED_PROXIES`](../../operations/#client-addresses-behind-a-proxy) so that `backd` counts real client addresses rather than the proxy's.

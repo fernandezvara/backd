@@ -16,12 +16,9 @@ import (
 // Login throttling: failures are counted per account and per client IP
 // in a sliding window. Past a threshold, each new attempt must wait an
 // exponentially growing delay. There is no lockout: waiting always works.
-const (
-	accountThreshold = 5
-	ipThreshold      = 50
-	attemptWindow    = 15 * time.Minute
-	maxDelay         = 15 * time.Minute
-)
+// The thresholds, the window and the longest delay are the realm's
+// login_throttle (registry.LoginThrottle); the defaults are the values this
+// feature had before they were configurable.
 
 // Attempts is the failure counter of one key ("account:<email>" or "ip:<addr>").
 type Attempts struct {
@@ -37,7 +34,7 @@ func (e *ThrottledError) Error() string {
 }
 
 // delay is how long to wait after the last failure, given the count.
-func delay(failures, threshold int) time.Duration {
+func delay(failures, threshold int, maxDelay time.Duration) time.Duration {
 	if failures < threshold {
 		return 0
 	}
@@ -78,13 +75,13 @@ type throttleKey struct {
 	threshold int
 }
 
-func keys(email, ip string) []throttleKey {
+func keys(t registry.LoginThrottle, email, ip string) []throttleKey {
 	var out []throttleKey
 	if k := accountKey(email); k != "" {
-		out = append(out, throttleKey{k, accountThreshold})
+		out = append(out, throttleKey{k, t.AccountThreshold})
 	}
 	if k := IPKey(ip); k != "" {
-		out = append(out, throttleKey{k, ipThreshold})
+		out = append(out, throttleKey{k, t.IPThreshold})
 	}
 	return out
 }
@@ -98,7 +95,7 @@ func (s *Users) checkThrottle(ctx context.Context, ks []throttleKey) error {
 		if err != nil {
 			return err
 		}
-		if w := a.LastFailureAt.Add(delay(a.Failures, k.threshold)).Sub(now); w > wait {
+		if w := a.LastFailureAt.Add(delay(a.Failures, k.threshold, s.Settings.Throttle().MaxDelay)).Sub(now); w > wait {
 			wait = w
 		}
 	}
@@ -113,7 +110,7 @@ func (s *Users) recordFailure(ctx context.Context, ks []throttleKey) error {
 	now := s.now()
 	var errs []error
 	for _, k := range ks {
-		errs = append(errs, s.Store.RecordLoginFailure(ctx, k.key, now, now.Add(attemptWindow)))
+		errs = append(errs, s.Store.RecordLoginFailure(ctx, k.key, now, now.Add(s.Settings.Throttle().Window)))
 	}
 	return errors.Join(errs...)
 }
@@ -139,7 +136,7 @@ func (s *Users) throttled(ctx context.Context, email, ip string, check func() er
 		}
 		defer release()
 	}
-	ks := keys(email, ip)
+	ks := keys(s.Settings.Throttle(), email, ip)
 	if err := s.checkThrottle(ctx, ks); err != nil {
 		return err
 	}
