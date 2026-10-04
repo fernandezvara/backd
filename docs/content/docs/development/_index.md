@@ -40,7 +40,7 @@ toc: true
 | `deploy/production/` | The [production reference deployment](../operations/production/) and its end-to-end test |
 | `Dockerfile` | Multi-stage build into a distroless image |
 | `docker-compose.test.yml` | Dockerized test environment (project `backd-test`) |
-| `.github/workflows/ci.yml` | CI: vet, OpenAPI lint, dockerized tests, release configuration check, JavaScript client checks and integration tests, the production reference test, docs build |
+| `.github/workflows/ci.yml` | CI: vet, OpenAPI lint, dockerized tests, release configuration check, JavaScript client checks and integration tests, the production reference test, the tutorial replayed against a stack built from the checkout (`make shelf-tour-ci`), docs build |
 | `.github/workflows/pages.yml` | On version tags, builds this documentation site, checks its links and callouts, and publishes it to GitHub Pages (see [Releasing](#releasing)) |
 | `.github/workflows/publish-js.yml` | On `js-v*` tags, publishes the JavaScript client to npm (see [Releasing the JavaScript client](#releasing-the-javascript-client)) |
 | `.github/workflows/release.yml`, `.goreleaser.yaml` | Releases on version tags: binaries, GitHub release, container image (see [Releasing](#releasing)) |
