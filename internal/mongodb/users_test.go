@@ -623,3 +623,42 @@ func TestEraseJobOnMongoDB(t *testing.T) {
 		t.Error("the email job should be gone")
 	}
 }
+
+func TestListUsersPageOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Date(2126, 9, 26, 12, 0, 0, 0, time.UTC)
+	for _, email := range []string{"d@example.com", "a@example.com", "c@example.com", "b@example.com", "e@example.com"} {
+		if err := s.CreateUser(ctx, auth.User{ID: "id-" + email[:1], Email: email, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	emails := func(us []auth.User) []string {
+		var out []string
+		for _, u := range us {
+			out = append(out, u.Email)
+		}
+		return out
+	}
+	page, more, err := s.ListUsersPage(ctx, "", 0, 2)
+	if err != nil || !more || !reflect.DeepEqual(emails(page), []string{"a@example.com", "b@example.com"}) {
+		t.Errorf("first page = %v %v %v", emails(page), more, err)
+	}
+	page, more, _ = s.ListUsersPage(ctx, "b@example.com", 0, 2)
+	if !more || !reflect.DeepEqual(emails(page), []string{"c@example.com", "d@example.com"}) {
+		t.Errorf("after b = %v %v", emails(page), more)
+	}
+	page, more, _ = s.ListUsersPage(ctx, "d@example.com", 0, 2)
+	if more || !reflect.DeepEqual(emails(page), []string{"e@example.com"}) {
+		t.Errorf("last page = %v %v", emails(page), more)
+	}
+	page, more, _ = s.ListUsersPage(ctx, "", 3, 5)
+	if more || !reflect.DeepEqual(emails(page), []string{"d@example.com", "e@example.com"}) {
+		t.Errorf("skip 3 = %v %v", emails(page), more)
+	}
+	// An address that isn't a user's still gives a position.
+	page, _, _ = s.ListUsersPage(ctx, "bb@example.com", 0, 1)
+	if !reflect.DeepEqual(emails(page), []string{"c@example.com"}) {
+		t.Errorf("after bb = %v", emails(page))
+	}
+}

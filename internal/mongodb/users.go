@@ -134,6 +134,29 @@ func (s *AuthStore) ListUsers(ctx context.Context) ([]auth.User, error) {
 	return out, nil
 }
 
+func (s *AuthStore) ListUsersPage(ctx context.Context, after string, skip, limit int) ([]auth.User, bool, error) {
+	filter := bson.D{}
+	if after != "" {
+		filter = bson.D{{Key: "email", Value: bson.D{{Key: "$gt", Value: after}}}}
+	}
+	opts := options.Find().SetSort(bson.D{{Key: "email", Value: 1}}).SetSkip(int64(skip)).SetLimit(int64(limit) + 1)
+	cur, err := s.users().Find(ctx, filter, opts)
+	if err != nil {
+		return nil, false, err
+	}
+	var docs []userDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, false, err
+	}
+	hasMore := len(docs) > limit
+	docs = docs[:min(limit, len(docs))]
+	out := make([]auth.User, len(docs))
+	for i, d := range docs {
+		out[i] = d.user()
+	}
+	return out, hasMore, nil
+}
+
 func (s *AuthStore) AddRoles(ctx context.Context, userID string, roles []string, now time.Time) error {
 	return s.updateByID(ctx, userID, bson.D{
 		{Key: "$addToSet", Value: bson.D{{Key: "roles", Value: bson.D{{Key: "$each", Value: roles}}}}},
@@ -506,6 +529,29 @@ func (s *AuthStore) RecordLoginFailure(ctx context.Context, key string, at, expi
 		{Key: "expires_at", Value: expires},
 	}}}}
 	_, err := s.attempts().UpdateOne(ctx, bson.D{{Key: "_id", Value: key}}, pipeline, options.UpdateOne().SetUpsert(true))
+	return err
+}
+
+// AcquireLoginLock stores the lock as a document of the attempts collection
+// (so it also expires by TTL if a process dies holding it). The upsert only
+// matches a lock whose lease ended, or inserts one: against a live lock it
+// would insert a second document with the same _id, which fails as a
+// duplicate key.
+func (s *AuthStore) AcquireLoginLock(ctx context.Context, key, owner string, now, until time.Time) (bool, error) {
+	filter := bson.D{{Key: "_id", Value: "lock:" + key}, {Key: "expires_at", Value: bson.D{{Key: "$lte", Value: now}}}}
+	update := bson.D{{Key: "$set", Value: bson.D{
+		{Key: "owner", Value: owner}, {Key: "expires_at", Value: until},
+		{Key: "failures", Value: int32(0)}, {Key: "last_failure_at", Value: now},
+	}}}
+	_, err := s.attempts().UpdateOne(ctx, filter, update, options.UpdateOne().SetUpsert(true))
+	if mongo.IsDuplicateKeyError(err) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+func (s *AuthStore) ReleaseLoginLock(ctx context.Context, key, owner string) error {
+	_, err := s.attempts().DeleteOne(ctx, bson.D{{Key: "_id", Value: "lock:" + key}, {Key: "owner", Value: owner}})
 	return err
 }
 

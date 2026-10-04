@@ -87,6 +87,11 @@ type Store interface {
 	// UserByID returns the user with that id; ErrNotFound if none.
 	UserByID(ctx context.Context, id string) (User, error)
 	ListUsers(ctx context.Context) ([]User, error)
+	// ListUsersPage returns one page of users sorted by email: the users whose
+	// email sorts after `after` (all when empty), skipping skip of them, at most
+	// limit; hasMore says whether more follow. Emails are unique, so `after` is
+	// an exact position. It never reads more than the page.
+	ListUsersPage(ctx context.Context, after string, skip, limit int) (users []User, hasMore bool, err error)
 	// AddRoles adds roles the user doesn't have yet, setting UpdatedAt.
 	AddRoles(ctx context.Context, userID string, roles []string, now time.Time) error
 	// RemoveRole removes a role from the user, setting UpdatedAt.
@@ -174,6 +179,13 @@ type Store interface {
 	RecordLoginFailure(ctx context.Context, key string, at, expires time.Time) error
 	// ClearLoginAttempts deletes key's counter.
 	ClearLoginAttempts(ctx context.Context, key string) error
+	// AcquireLoginLock takes the lock of key for owner until the given time,
+	// atomically: it is free when nobody holds it or its lease ended at or
+	// before now. false means another owner holds it. The lock serializes the
+	// password checks of one account across every instance.
+	AcquireLoginLock(ctx context.Context, key, owner string, now, until time.Time) (bool, error)
+	// ReleaseLoginLock frees the lock if owner still holds it.
+	ReleaseLoginLock(ctx context.Context, key, owner string) error
 
 	// IncrementCounter atomically increments key's counter (creating it,
 	// or restarting it at 1 if its window has already ended) and returns

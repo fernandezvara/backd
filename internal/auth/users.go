@@ -31,6 +31,10 @@ type Users struct {
 
 	// Metrics counts sessions and limits; nil turns it off.
 	Metrics *metrics.Metrics
+
+	// noLocalLock skips the in-process lock of password checks, so a test with
+	// several Users on one store can show that the store's lock alone holds.
+	noLocalLock bool
 }
 
 // Clock is the service's current time (its Now, or the real one).
@@ -206,6 +210,11 @@ func (s *Users) Find(ctx context.Context, email string) (User, error) { return s
 
 // List returns every user of the realm.
 func (s *Users) List(ctx context.Context) ([]User, error) { return s.Store.ListUsers(ctx) }
+
+// ListPage is List for one page, sorted by email; see Store.ListUsersPage.
+func (s *Users) ListPage(ctx context.Context, after string, skip, limit int) ([]User, bool, error) {
+	return s.Store.ListUsersPage(ctx, after, skip, limit)
+}
 
 func (s *Users) byEmail(ctx context.Context, email string) (User, error) {
 	e, err := registry.NormalizeEmail(email)

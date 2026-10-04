@@ -27,6 +27,7 @@ import { Job } from './functions.js'
  * @property {number} limit
  * @property {number} skip
  * @property {boolean} has_more
+ * @property {string} [next_cursor]   With `has_more`: pass it as `after` for the next page.
  */
 
 /**
@@ -225,13 +226,14 @@ class AdminUsers {
   }
 
   /**
-   * A page of users, sorted by email.
-   * @param {{ limit?: number, skip?: number }} [params]
+   * A page of users, sorted by email. `after` is the `next_cursor` of the
+   * previous page (not combinable with `skip`).
+   * @param {{ limit?: number, skip?: number, after?: string }} [params]
    * @param {RequestOptions} [opts]
    * @returns {Promise<UserPage>}
    */
   async list(params = {}, opts) {
-    return (await this.admin._request({ method: 'GET', path: ['users'], query: { limit: params.limit, skip: params.skip }, ...opts })).data
+    return (await this.admin._request({ method: 'GET', path: ['users'], query: { limit: params.limit, skip: params.skip, after: params.after }, ...opts })).data
   }
 
   /**

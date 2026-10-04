@@ -273,3 +273,94 @@ func TestChangePasswordAndDeleteAccount(t *testing.T) {
 		t.Errorf("login after deactivation: %v", err)
 	}
 }
+
+// Sessions of users who hold an admin role have their own, shorter limits,
+// judged by the roles they hold now.
+func TestAdminSessionLimits(t *testing.T) {
+	ctx := context.Background()
+	store := authtest.NewMemStore()
+	start := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	clock := start
+	svc := newUsers(store, &clock)
+	svc.Settings.IdleTimeout, svc.Settings.MaxLifetime = time.Hour, 3*time.Hour
+	svc.Settings.AdminIdleTimeout, svc.Settings.AdminMaxLifetime = 10*time.Minute, time.Hour
+	svc.Settings.Roles = map[string]registry.Role{"admin": {Admin: true}, "editor": {}}
+
+	login := func(email string) (Principal, string) {
+		t.Helper()
+		clock = start
+		if _, err := svc.Create(ctx, email, ptr("dev-p4ssw0rd!")); err != nil {
+			t.Fatal(err)
+		}
+		p, token, err := svc.Login(ctx, email, "dev-p4ssw0rd!", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p, token
+	}
+	alive := func(token string, at time.Duration) bool {
+		t.Helper()
+		clock = start.Add(at)
+		_, err := svc.Authenticate(ctx, token)
+		if err != nil && !errors.Is(err, ErrUnauthenticated) {
+			t.Fatal(err)
+		}
+		return err == nil
+	}
+
+	// A user without an admin role keeps the regular limits, an editor too.
+	_, plain := login("plain@example.com")
+	if !alive(plain, 50*time.Minute) || alive(plain, 111*time.Minute) {
+		t.Error("a regular session should live 1h idle")
+	}
+
+	// An admin: 10 minutes idle…
+	p, admin := login("admin@example.com")
+	if err := svc.AddRole(ctx, "admin@example.com", "admin"); err != nil {
+		t.Fatal(err)
+	}
+	clock = start
+	if s, _ := store.Session(p.Session.ID); !s.ExpiresAt.Equal(start.Add(time.Hour)) {
+		t.Fatalf("stored expiry %v: set at login, before the role", s.ExpiresAt) // the role came later
+	}
+	if alive(admin, 11*time.Minute) {
+		t.Error("an admin session lived past 10 minutes idle (the role was granted after login)")
+	}
+	// …and a new login as an admin stores the short expiry.
+	clock = start
+	p2, admin2, err := svc.Login(ctx, "admin@example.com", "dev-p4ssw0rd!", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p2.Session.ExpiresAt.Equal(start.Add(10 * time.Minute)) {
+		t.Errorf("admin session expires %v, want 10 minutes", p2.Session.ExpiresAt)
+	}
+	// Used every 8 minutes it slides, but never past the admin's absolute 1h.
+	for _, m := range []int{8, 16, 24, 32, 40, 48, 56} {
+		if !alive(admin2, time.Duration(m)*time.Minute) {
+			t.Fatalf("an admin session in use ended at %d minutes", m)
+		}
+	}
+	if alive(admin2, 61*time.Minute) {
+		t.Error("an admin session outlived the admin max_lifetime")
+	}
+
+	// Demoted: the regular limits apply again to what is stored.
+	if err := svc.RemoveRole(ctx, "admin@example.com", "admin"); err != nil {
+		t.Fatal(err)
+	}
+	clock = start
+	_, again, _ := svc.Login(ctx, "admin@example.com", "dev-p4ssw0rd!", "")
+	if !alive(again, 50*time.Minute) {
+		t.Error("a user who is no longer an admin should have the regular limits")
+	}
+
+	// A role that isn't an admin role changes nothing.
+	_, ed := login("editor@example.com")
+	if err := svc.AddRole(ctx, "editor@example.com", "editor"); err != nil {
+		t.Fatal(err)
+	}
+	if !alive(ed, 50*time.Minute) {
+		t.Error("a non-admin role shortened a session")
+	}
+}

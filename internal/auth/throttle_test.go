@@ -203,3 +203,61 @@ func TestLoginThrottleParallel(t *testing.T) {
 		t.Errorf("%d checked, %d throttled; want 5 and 5", invalid.Load(), throttled.Load())
 	}
 }
+
+// Instances don't share a process, only the store: with the in-process lock
+// out of the picture (each Users here stands for an instance), the store's lock
+// alone keeps parallel guesses at the threshold, as one instance would.
+func TestLoginThrottleParallelAcrossInstances(t *testing.T) {
+	ctx := context.Background()
+	store := authtest.NewMemStore()
+	clock := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	var wg sync.WaitGroup
+	var invalid, throttled atomic.Int32
+	for i := range 4 {
+		svc := newUsers(store, &clock)
+		svc.DisableLocalLock()
+		for range 5 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, _, err := svc.Login(ctx, "ada@example.com", "dev-p4ssw0rd!0", "")
+				switch {
+				case errors.Is(err, ErrInvalidCredentials):
+					invalid.Add(1)
+				case retryAfter(err) > 0:
+					throttled.Add(1)
+				default:
+					t.Errorf("instance %d: %v", i, err)
+				}
+			}()
+		}
+	}
+	wg.Wait()
+	if invalid.Load() != AccountThreshold || throttled.Load() != 20-AccountThreshold {
+		t.Errorf("%d passwords were checked, %d attempts throttled; want %d and %d", invalid.Load(), throttled.Load(), AccountThreshold, 20-AccountThreshold)
+	}
+}
+
+// A lock whose holder died stops blocking when its lease ends, and a lock is
+// only released by its owner.
+func TestLoginLockLease(t *testing.T) {
+	ctx := context.Background()
+	store := authtest.NewMemStore()
+	now := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	if ok, _ := store.AcquireLoginLock(ctx, "account:a", "one", now, now.Add(30*time.Second)); !ok {
+		t.Fatal("a free lock wasn't acquired")
+	}
+	if ok, _ := store.AcquireLoginLock(ctx, "account:a", "two", now.Add(time.Second), now.Add(31*time.Second)); ok {
+		t.Error("a held lock was acquired")
+	}
+	_ = store.ReleaseLoginLock(ctx, "account:a", "two") // not the owner
+	if ok, _ := store.AcquireLoginLock(ctx, "account:a", "two", now.Add(2*time.Second), now.Add(32*time.Second)); ok {
+		t.Error("another owner released the lock")
+	}
+	if ok, _ := store.AcquireLoginLock(ctx, "account:a", "two", now.Add(31*time.Second), now.Add(61*time.Second)); !ok {
+		t.Error("a lock whose lease ended wasn't acquired")
+	}
+	if ok, _ := store.AcquireLoginLock(ctx, "account:b", "one", now, now.Add(time.Second)); !ok {
+		t.Error("another account's lock was held")
+	}
+}

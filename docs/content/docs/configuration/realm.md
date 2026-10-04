@@ -53,6 +53,8 @@ An empty file, or one with only comments, is valid: every key has a default.
 | `signup` | `closed` | Who can create accounts: `open` (anyone), `invite` (needs an [invitation](../../auth/admin/#invitations)), `closed` (only operators, with the CLI or the admin API). |
 | `sessions.idle_timeout` | `30d` | A session expires after this long without use. |
 | `sessions.max_lifetime` | `90d` | A session never lives longer than this. Must be at least `idle_timeout`. |
+| `sessions.admin_idle_timeout` | `idle_timeout` | The idle timeout for users who hold an [admin role](#roles). Can only shorten `idle_timeout`. |
+| `sessions.admin_max_lifetime` | `max_lifetime` | The longest an admin's session lives. Can only shorten `max_lifetime`; must be at least `admin_idle_timeout`. |
 | `password.min_length` | `12` | Minimum password length, from 8 to 128. |
 | `cors.origins` | none (CORS off) | Browser origins allowed to call this realm, as `scheme://host[:port]`. `*` allows any origin and must be the only entry. See [CORS](#cors). |
 | `roles` | none | Roles that access rules can check. See below. |

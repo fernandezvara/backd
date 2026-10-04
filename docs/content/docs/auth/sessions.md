@@ -46,6 +46,7 @@ Authorization: Bearer bds_mxamh1_afbN3BMzfXqDWhxYpXKF58FhWQ4r9eaLc9ew
 A token stored where any script on the page can read it (`localStorage`, a global variable) is stolen by any cross-site-scripting bug. Keep it in memory (the [JavaScript client](../../clients/js/#token-storage) does by default), send a strict Content-Security-Policy, and never put tokens in URLs or logs.
 {{< /hint >}}
 - A session **expires after `sessions.idle_timeout` without use** (default 30 days), and **never lives longer than `sessions.max_lifetime`** (default 90 days), both set in [`realm.yaml`](../../configuration/realm/). Each use pushes the idle expiry forward, recorded at most once a minute. `expires_at` in responses reflects the latest value.
+- **Admins can have shorter sessions.** A session of a user who holds an [admin role](../../configuration/realm/#roles) uses `sessions.admin_idle_timeout` and `sessions.admin_max_lifetime` when they are set (for example `1h` and `12h`), and they can only shorten the regular limits. The limits follow the roles the user holds now: granting an admin role shortens their existing sessions from the next request, and taking it away restores the regular limits for sessions started afterwards. They apply to the command line too (`backd login` sessions end sooner, and you log in again); API keys have their own [expiry](../api-keys/).
 - Sessions end immediately on logout, when revoked, when the password changes (other sessions only), when the user is disabled or deleted, or when an operator sets a new password with `backd user set-password`.
 
 ## Endpoints
@@ -126,6 +127,7 @@ Failed attempts are counted per account and per client address. Past a threshold
 - Unregistered emails are counted like registered ones, so the answers don't reveal which emails exist.
 - Wrong current passwords in `POST /_auth/password` and `DELETE /_auth/me` count against the account too, so a stolen session can't be used to guess the password.
 - Counters are stored in the realm's system database, so all `backd` instances share them. They are deleted automatically 15 minutes after the last failure.
+- Password checks for one account run **one at a time across all instances**: each takes a short lock kept in the system database (which expires by itself after 30 seconds if its instance dies). Parallel attempts can't all pass before a failure is counted, so many instances allow no more guesses than one. If the lock stays busy for 5 seconds the attempt gets `429` with `Retry-After: 1`.
 
 Behind a reverse proxy or load balancer, set [`TRUSTED_PROXIES`](../../operations/#client-addresses-behind-a-proxy) so that `backd` counts real client addresses rather than the proxy's.
 

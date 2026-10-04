@@ -775,9 +775,15 @@ paths:
           schema: { type: string }
         - { $ref: "#/components/parameters/limit" }
         - { $ref: "#/components/parameters/skip" }
+        - name: after
+          in: query
+          description: >-
+            The `next_cursor` of the previous page (the last email of it): lists
+            the users whose email sorts after it. Can't be combined with `skip`.
+          schema: { type: string }
       responses:
         "200":
-          description: A page of users, sorted by email.
+          description: A page of users, sorted by email, read from the database one page at a time.
           content:
             application/json:
               schema:
@@ -789,6 +795,7 @@ paths:
                   limit: { type: integer }
                   skip: { type: integer }
                   has_more: { type: boolean }
+                  next_cursor: { type: string, description: "Present when `has_more` and the list isn't an exact `email` lookup: pass it as `after`." }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }

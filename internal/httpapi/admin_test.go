@@ -5,6 +5,7 @@ import (
 	"github.com/fernandezvara/backd/internal/auth"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -82,6 +83,35 @@ func TestAdminUsers(t *testing.T) {
 	rec, out := f.doH(t, "GET", admin+"/users?limit=2", "", key())
 	if items, _ := out["items"].([]any); rec.Code != http.StatusOK || len(items) != 2 || out["has_more"] != true {
 		t.Errorf("list: %d %v", rec.Code, out)
+	}
+	// Pages follow next_cursor (the last email) without ever listing the rest.
+	first, _ := out["items"].([]any)
+	last := first[len(first)-1].(map[string]any)["email"].(string)
+	if out["next_cursor"] != last {
+		t.Errorf("next_cursor = %v, want the last email %q", out["next_cursor"], last)
+	}
+	var emails []string
+	for _, it := range first {
+		emails = append(emails, it.(map[string]any)["email"].(string))
+	}
+	for cursor := last; cursor != ""; {
+		rec, out = f.doH(t, "GET", admin+"/users?limit=2&after="+strings.ToUpper(cursor), "", key()) // case doesn't matter
+		items, _ := out["items"].([]any)
+		if rec.Code != http.StatusOK || len(items) == 0 {
+			t.Fatalf("page after %s: %d %v", cursor, rec.Code, out)
+		}
+		for _, it := range items {
+			emails = append(emails, it.(map[string]any)["email"].(string))
+		}
+		cursor, _ = out["next_cursor"].(string)
+	}
+	if !slices.IsSorted(emails) || len(slices.Compact(slices.Clone(emails))) != len(emails) || len(emails) < 3 {
+		t.Errorf("walking the pages gave %v", emails)
+	}
+	for _, q := range []string{"after=a@example.com&skip=1", "after="} {
+		if rec, _ = f.doH(t, "GET", admin+"/users?"+q, "", key()); rec.Code != http.StatusBadRequest {
+			t.Errorf("?%s: %d", q, rec.Code)
+		}
 	}
 	rec, out = f.doH(t, "GET", admin+"/users?email=BOB@example.com", "", key())
 	if items, _ := out["items"].([]any); rec.Code != http.StatusOK || len(items) != 1 || items[0].(map[string]any)["id"] != f.bobID {
