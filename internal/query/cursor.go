@@ -83,6 +83,10 @@ func sortSpec(sort []storage.SortField) string {
 // EncodeCursor makes the cursor that continues after doc in this sort. The sort
 // must be Cursorable.
 func EncodeCursor(sort []storage.SortField, doc storage.Document) string {
+	if plainID(sort) {
+		id, _ := doc["id"].(string)
+		return id
+	}
 	p := cursorPayload{Order: sortSpec(sort), Values: make([]any, len(sort))}
 	for i, s := range sort {
 		v := valueAt(doc, s.Field)
@@ -93,6 +97,12 @@ func EncodeCursor(sort []storage.SortField, doc storage.Document) string {
 	}
 	data, _ := json.Marshal(p)
 	return base64.RawURLEncoding.EncodeToString(data)
+}
+
+// plainID says whether the sort is the default one, by id ascending: its cursor
+// is just the id of the last document, which a client can also make by hand.
+func plainID(sort []storage.SortField) bool {
+	return len(sort) == 1 && sort[0].Field == "id" && !sort[0].Desc
 }
 
 // valueAt reads a dot path ("address.city", "_meta.created_at") from a
@@ -123,6 +133,12 @@ func ParseCursor(cursor string, sort []storage.SortField, fields map[string]regi
 	}
 	if len(cursor) > maxCursorBytes {
 		return bad("is not a cursor of this API (too long)")
+	}
+	if plainID(sort) {
+		if cursor == "" {
+			return bad("must not be empty")
+		}
+		return storage.Condition{Field: "id", Op: storage.OpGt, Value: cursor}, nil
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(cursor)
 	if err != nil {

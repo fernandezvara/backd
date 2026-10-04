@@ -136,3 +136,21 @@ func TestParseCursorRefusals(t *testing.T) {
 		t.Errorf("array sort: %v", err)
 	}
 }
+
+func TestCursorOfTheDefaultOrderIsTheID(t *testing.T) {
+	sort := sortOf(t, "")
+	if c := EncodeCursor(sort, storage.Document{"id": "abc123"}); c != "abc123" {
+		t.Errorf("cursor = %q, want the id", c)
+	}
+	f, err := ParseCursor("abc123", sort, cursorFields)
+	if want := (storage.Condition{Field: "id", Op: storage.OpGt, Value: "abc123"}); err != nil || f != want {
+		t.Errorf("filter = %#v, %v", f, err)
+	}
+	if _, err := ParseCursor("", sort, cursorFields); err == nil {
+		t.Error("an empty cursor was accepted")
+	}
+	// Any other order wants an opaque cursor, not an id.
+	if _, err := ParseCursor("abc123", sortOf(t, "-id"), cursorFields); err == nil {
+		t.Error("an id was accepted as the cursor of another order")
+	}
+}

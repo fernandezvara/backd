@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -138,16 +139,19 @@ func (r *memRepo) List(_ context.Context, q storage.Query) (storage.Page, error)
 	}
 	r.s.lastQuery = q
 	var ids []string
+	var counted int64
 	for id, doc := range r.coll() {
 		if (q.Filter == nil || matches(doc, q.Filter)) && (q.Access == nil || matches(doc, q.Access)) {
-			ids = append(ids, id)
+			counted++
+			if q.After == nil || matches(doc, q.After) {
+				ids = append(ids, id)
+			}
 		}
 	}
 	sortStrings(ids)
 	var page storage.Page
 	if q.Count {
-		n := int64(len(ids))
-		page.Total = &n
+		page.Total = &counted // the cursor narrows the page, not the total
 	}
 	for i := q.Skip; i < len(ids); i++ {
 		if len(page.Items) == q.Limit {
@@ -417,6 +421,83 @@ func TestList(t *testing.T) {
 		rec, out := f.do(t, "GET", items+"?"+q, "")
 		if code, _ := errorOf(out); rec.Code != http.StatusBadRequest || code != codeInvalidQuery {
 			t.Errorf("?%s = %d %s", q, rec.Code, rec.Body)
+		}
+	}
+}
+
+func TestListCursor(t *testing.T) {
+	f := newFixture(t)
+	var ids []string
+	for i := range 25 {
+		_, b := f.do(t, "POST", items, fmt.Sprintf(`{"name": "n%02d", "age": %d}`, i, i%4))
+		ids = append(ids, b["id"].(string))
+	}
+
+	// The default order: next_cursor is the last id, and walks the whole list.
+	_, page := f.do(t, "GET", items+"?limit=10", "")
+	if page["next_cursor"] != ids[9] || page["has_more"] != true {
+		t.Fatalf("first page: next_cursor %v, has_more %v", page["next_cursor"], page["has_more"])
+	}
+	var got []string
+	for next := ""; ; {
+		path := items + "?limit=10"
+		if next != "" {
+			path += "&after=" + next
+		}
+		_, page = f.do(t, "GET", path, "")
+		for _, d := range page["items"].([]any) {
+			got = append(got, d.(map[string]any)["id"].(string))
+		}
+		if page["has_more"] != true {
+			if _, ok := page["next_cursor"]; ok {
+				t.Error("next_cursor on the last page")
+			}
+			break
+		}
+		next = page["next_cursor"].(string)
+	}
+	if strings.Join(got, ",") != strings.Join(ids, ",") {
+		t.Errorf("walking with cursors: %v\nwant %v", got, ids)
+	}
+	// By hand: any id continues after it.
+	_, page = f.do(t, "GET", items+"?limit=3&after="+ids[20], "")
+	if list := page["items"].([]any); len(list) != 3 || list[0].(map[string]any)["id"] != ids[21] {
+		t.Errorf("after an id: %v", page)
+	}
+	// The count is of the whole list, not of what is left.
+	_, page = f.do(t, "GET", items+"?limit=2&after="+ids[20]+"&count=true", "")
+	if page["total"] != float64(25) {
+		t.Errorf("total with after = %v, want 25", page["total"])
+	}
+
+	// Another order: an opaque cursor that only continues the same order_by.
+	_, page = f.do(t, "GET", items+"?limit=5&order_by=-age,name", "")
+	cursor, _ := page["next_cursor"].(string)
+	if cursor == "" || cursor == ids[4] {
+		t.Fatalf("an opaque cursor was expected: %v", page["next_cursor"])
+	}
+	if got := f.store.lastQuery.Sort; len(got) != 3 || !got[0].Desc {
+		t.Errorf("sort = %+v", got)
+	}
+	rec, _ := f.do(t, "GET", items+"?limit=5&order_by=-age,name&after="+cursor, "")
+	if rec.Code != http.StatusOK || f.store.lastQuery.After == nil {
+		t.Errorf("continuing the order: %d, after %v", rec.Code, f.store.lastQuery.After)
+	}
+
+	// Refusals: each names the after parameter.
+	for name, q := range map[string]string{
+		"with skip":       "after=" + ids[1] + "&skip=1",
+		"another order":   "order_by=age&after=" + cursor,
+		"not a cursor":    "order_by=-age&after=hello",
+		"empty":           "after=",
+		"an object order": "order_by=address&after=" + cursor,
+		"given twice":     "after=a&after=b",
+	} {
+		rec, out := f.do(t, "GET", items+"?"+q, "")
+		code, _ := errorOf(out)
+		details, _ := out["error"].(map[string]any)["details"].([]any)
+		if rec.Code != http.StatusBadRequest || code != codeInvalidQuery || len(details) == 0 || details[0].(map[string]any)["path"] != "after" {
+			t.Errorf("%s: %d %s", name, rec.Code, rec.Body)
 		}
 	}
 }

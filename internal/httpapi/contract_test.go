@@ -780,6 +780,14 @@ func TestContract(t *testing.T) {
 
 	req("GET", p+"?count=true", "", nil, 200)
 	req("GET", p+"?where={bad", "", nil, 400)
+	req("POST", p, `{"title": "second", "published": true}`, ada, 201)
+	if first := req("GET", p+"?limit=1&order_by=title", "", nil, 200); first["next_cursor"] == nil || first["has_more"] != true {
+		t.Errorf("a first page has a next_cursor: %v", first)
+	} else {
+		req("GET", p+"?limit=1&order_by=title&after="+first["next_cursor"].(string), "", nil, 200)
+	}
+	req("GET", p+"?after=x&skip=1", "", nil, 400)
+	req("GET", p+"?order_by=title&after=nope", "", nil, 400)
 	req("GET", priv, "", nil, 401)
 	req("GET", priv, "", ada, 403)
 	req("GET", "/v1/acme/app/nope", "", nil, 404)
