@@ -177,7 +177,12 @@
               <select x-model="draft.kind"><option value="link">link</option><option value="note">note</option></select>
             </label>
           </div>
-          <label>URL <input type="url" placeholder="https://…" x-model="draft.url" x-show="draft.kind === 'link'"></label>
+          <label x-show="draft.kind === 'link'">URL
+            <fieldset role="group">
+              <input type="url" placeholder="https://…" x-model="draft.url">
+              <button type="button" class="secondary" @click="fetchPreview" :disabled="busy || !draft.url">Preview</button>
+            </fieldset>
+          </label>
           <label>Notes <textarea rows="3" placeholder="Why should the team care?" x-model="draft.body"></textarea></label>
           <label>Tags <input placeholder="comma, separated, tags" x-model="draft.tags"></label>
           <footer>

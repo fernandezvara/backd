@@ -335,6 +335,21 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
+    async fetchPreview() {
+      if (!this.draft.url) return
+      this.busy = true
+      this.error = null
+      try {
+        const p = await main.fn('preview', { url: this.draft.url })
+        if (p.title && !this.draft.title) this.draft.title = p.title
+        if (p.description && !this.draft.body) this.draft.body = p.description
+      } catch (e) {
+        this.error = e.message
+      } finally {
+        this.busy = false
+      }
+    },
+
     async changePassword() {
       this.busy = true
       this.accountMsg = null
