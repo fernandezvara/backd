@@ -159,14 +159,23 @@ class FakeCollection {
   }
 
   /**
-   * @returns {Promise<{ items: any[], limit: number, skip: number, has_more: boolean, total?: number }>}
+   * The fake's `after` is the offset of the next page (its `next_cursor`):
+   * enough to exercise a function that pages with cursors, not the real
+   * cursor's position semantics.
+   * @returns {Promise<{ items: any[], limit: number, skip: number, has_more: boolean, next_cursor?: string, total?: number }>}
    */
-  async list({ where, orderBy, limit = 20, skip = 0, count } = {}) {
+  async list({ where, orderBy, limit = 20, skip = 0, after, count } = {}) {
+    if (after !== undefined) {
+      if (skip) throw new Error('after can\'t be combined with skip')
+      skip = Number(after)
+      if (!Number.isInteger(skip) || skip < 0) throw new Error('after is not a cursor of this fake: use the next_cursor of a previous page')
+    }
     let items = [...this.map.values()].filter(matchWhere(where))
     if (orderBy) items = sortBy(items, orderBy)
     const page = items.slice(skip, skip + limit)
-    /** @type {{ items: any[], limit: number, skip: number, has_more: boolean, total?: number }} */
+    /** @type {{ items: any[], limit: number, skip: number, has_more: boolean, next_cursor?: string, total?: number }} */
     const out = { items: page, limit, skip, has_more: skip + limit < items.length }
+    if (out.has_more) out.next_cursor = String(skip + limit)
     if (count) out.total = items.length
     return out
   }

@@ -110,6 +110,12 @@ Deno.test('ctx.db: list filters with where, orders, paginates', async () => {
   const page = await c.list({ orderBy: '-qty', limit: 2 })
   assertEquals(page.items.map((d) => d.item), ['d', 'c'])
   assertEquals(page.has_more, true)
+  // The next page by cursor (the fake's cursor is an offset).
+  assertEquals(typeof page.next_cursor, 'string')
+  const next = await c.list({ orderBy: '-qty', limit: 2, after: page.next_cursor })
+  assertEquals(next.items.map((d) => d.item), ['b', 'a'])
+  assertEquals(next.has_more, false)
+  assertEquals('next_cursor' in next, false)
 
   const counted = await c.list({ count: true })
   assertEquals(counted.total, 4)
