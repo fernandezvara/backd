@@ -301,7 +301,7 @@
         <header><strong>Run by hand</strong></header>
         <p class="muted">Admin-only: invoke any function, internal included.</p>
         <fieldset role="group">
-          <select x-model="fnName"><option value="digest">digest</option><option value="cleanup">cleanup (chapter 9)</option></select>
+          <select x-model="fnName"><option value="digest">digest</option><option value="cleanup">cleanup</option></select>
           <button class="secondary" @click="runFunction" :disabled="busy">Invoke</button>
         </fieldset>
         <p x-show="jobId"><code x-text="jobId"></code> — <strong x-text="jobStatus"></strong></p>

@@ -1,0 +1,12 @@
+# Deletes expired share links and read notifications older than a month.
+#
+# `internal: true`: nobody can call it over HTTP — the schedule, and admin
+# invokes run by hand, are its only triggers. Both give it ctx.admin.db:
+# a scheduled run has no caller and always gets it; `admin: true` is for
+# HTTP callers, so it isn't set here.
+#
+#   backd functions invoke --function shelf/main/cleanup
+internal: true
+mode: async
+schedule: "0 3 * * *"   # every day at 03:00 UTC
+timeout: 10m

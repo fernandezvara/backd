@@ -296,6 +296,7 @@ document.addEventListener('alpine:init', () => {
         // The key makes a double-click (or a retry) answer the first call's
         // result instead of publishing twice.
         await main.fn('publish', { asset_id: asset.id }, { idempotencyKey: `publish-${asset.id}` })
+        // publish is sync — no job to poll.
         await this.refilter()
         await this.loadMine()
         await this.loadNotifs()
@@ -413,13 +414,22 @@ document.addEventListener('alpine:init', () => {
       this.error = null
       this.jobId = this.jobStatus = this.jobResult = null
       try {
-        const job = await main.fn(this.fnName, this.fnName === 'digest' ? { since_days: 7 } : {})
-        this.jobId = job.id
-        while ((this.jobStatus = await job.status()) !== 'done') {
-          await new Promise((r) => setTimeout(r, 500))
+        // Admin invoke: works for internal functions too (no HTTP route).
+        const input = this.fnName === 'digest' ? { since_days: 7 } : {}
+        const out = await backd.admin.invokeFunction(`main/${this.fnName}`, { input })
+        if (out && typeof out.status === 'function') {
+          // Async: a Job — poll until done.
+          this.jobId = out.id
+          while ((this.jobStatus = await out.status()) !== 'done') {
+            await new Promise((r) => setTimeout(r, 500))
+          }
+          this.jobResult = out.data?.result
+        } else {
+          this.jobStatus = 'done'
+          this.jobResult = out
         }
-        this.jobResult = job.data?.result
         await this.loadNotifs()
+        await this.loadShares()
       } catch (e) {
         this.error = e.message
       } finally {
