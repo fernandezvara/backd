@@ -188,3 +188,64 @@ func TestRepositoryReplaceLegacyDocument(t *testing.T) {
 		t.Errorf("Replace legacy with version 0 = %v", err)
 	}
 }
+
+// A document marked deleted (soft_delete) is found by the filters the HTTP
+// layer uses to hide it or to show only the trash; the marks are dates and the
+// TTL index's purge_at is one too.
+func TestRepositoryDeletedMarks(t *testing.T) {
+	repo := testRepository(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	mark := func(fields map[string]any) storage.Document {
+		d := newDoc(fields)
+		d["_meta"].(map[string]any)["deleted_at"] = now
+		d["_meta"].(map[string]any)["deleted_by"] = "user:u1"
+		d["_meta"].(map[string]any)["purge_at"] = now.Add(7 * 24 * time.Hour)
+		return d
+	}
+	for _, d := range []storage.Document{newDoc(map[string]any{"name": "live"}), mark(map[string]any{"name": "gone"}), newDoc(map[string]any{"name": "also live"})} {
+		if err := repo.Create(ctx, d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	names := func(access storage.Filter) []string {
+		t.Helper()
+		page, err := repo.List(ctx, storage.Query{Access: access, Limit: 10, Sort: []storage.SortField{{Field: "name"}, {Field: "id"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, d := range page.Items {
+			out = append(out, d["name"].(string))
+		}
+		return out
+	}
+	live := storage.Condition{Field: "_meta.deleted_at", Op: storage.OpIsNull, Value: true}
+	trash := storage.Condition{Field: "_meta.deleted_at", Op: storage.OpIsNull, Value: false}
+	if got := names(live); !reflect.DeepEqual(got, []string{"also live", "live"}) {
+		t.Errorf("live: %v", got)
+	}
+	if got := names(trash); !reflect.DeepEqual(got, []string{"gone"}) {
+		t.Errorf("trash: %v", got)
+	}
+	if got := names(storage.Or{live, trash}); len(got) != 3 {
+		t.Errorf("both: %v", got)
+	}
+	// A deletion time compares like any date, and Fetch sees a marked document
+	// only through the trash filter.
+	if got := names(storage.Condition{Field: "_meta.deleted_at", Op: storage.OpGte, Value: now.Add(-time.Minute)}); !reflect.DeepEqual(got, []string{"gone"}) {
+		t.Errorf("deleted since a minute ago: %v", got)
+	}
+	page, _ := repo.List(ctx, storage.Query{Access: trash, Limit: 1})
+	id := page.Items[0]["id"].(string)
+	meta := page.Items[0]["_meta"].(map[string]any)
+	if meta["deleted_by"] != "user:u1" || !meta["purge_at"].(time.Time).Equal(now.Add(7*24*time.Hour)) {
+		t.Errorf("marks didn't round-trip: %v", meta)
+	}
+	if _, err := storage.Fetch(ctx, repo, id, live); !errors.Is(err, storage.ErrNotFound) {
+		t.Errorf("a deleted document through the live filter: %v", err)
+	}
+	if _, err := storage.Fetch(ctx, repo, id, trash); err != nil {
+		t.Errorf("through the trash filter: %v", err)
+	}
+}

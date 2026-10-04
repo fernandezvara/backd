@@ -1,0 +1,2 @@
+soft_delete:
+  retention: 7d

@@ -174,3 +174,32 @@ test('create and batch take an idempotencyKey, and keyed requests are retried', 
   assert.equal(m.calls.length, 5)
   assert.equal(m.calls[4].headers['Idempotency-Key'], undefined)
 })
+
+test('soft delete: deleted on list and get, purge on delete, and restore', async () => {
+  const gone = doc('a', { _meta: { ...meta, deleted_at: '2026-09-27T09:00:00.000Z', deleted_by: 'user:u1', purge_at: '2026-10-04T09:00:00.000Z' } })
+  const m = mockFetch([
+    { body: { items: [gone], limit: 20, skip: 0, has_more: false } },
+    { body: gone },
+    { status: 204 },
+    { status: 204 },
+    { body: doc('a', { title: 'back' }) },
+  ])
+  const c = posts(m)
+  assert.equal((await c.list({ deleted: 'only' })).items[0]._meta.deleted_by, 'user:u1')
+  assert.equal(m.calls[0].url.searchParams.get('deleted'), 'only')
+
+  assert.equal((await c.get('a', { deleted: 'include' }))._meta.purge_at, '2026-10-04T09:00:00.000Z')
+  assert.equal(m.calls[1].url.searchParams.get('deleted'), 'include')
+
+  await c.delete('a')
+  assert.equal(m.calls[2].url.search, '', 'a plain delete sends no parameters')
+  await c.delete('a', { purge: true, ifMatch: 2 })
+  assert.equal(m.calls[3].url.searchParams.get('purge'), 'true')
+  assert.equal(m.calls[3].headers['If-Match'], '"2"')
+
+  const back = await c.restore('a', { ifMatch: 3 })
+  assert.equal(back.title, 'back')
+  assert.equal(m.calls[4].method, 'POST')
+  assert.equal(m.calls[4].url.pathname, '/v1/blog/main/posts/a/restore')
+  assert.equal(m.calls[4].headers['If-Match'], '"3"')
+})
