@@ -95,9 +95,9 @@ cors:
 ```
 
 - The list applies to every route of the realm: data, `/_auth` and `/_admin`.
-- Preflight requests (`OPTIONS`) from a listed origin get `204` with the allowed methods (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`) and request headers (`Authorization`, `Content-Type`, `If-Match`, `X-Request-ID`). The answer may be cached for 10 minutes.
+- Preflight requests (`OPTIONS`) from a listed origin get `204` with the allowed methods (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`) and request headers (`Authorization`, `Content-Type`, `If-Match`, `Idempotency-Key`, `Prefer`, `X-Request-ID`). The answer may be cached for 10 minutes.
 - Every response under `/v1/` carries `Vary: Origin`, so caches keep answers for different origins apart (see [Caching](../../api/#caching)).
-- Responses to listed origins, errors included, carry `Access-Control-Allow-Origin` and expose `ETag`, `Location`, `Retry-After`, `WWW-Authenticate` and `X-Request-ID`.
+- Responses to listed origins, errors included, carry `Access-Control-Allow-Origin` and expose `ETag`, `Idempotent-Replayed`, `Location`, `Preference-Applied`, `Retry-After`, `WWW-Authenticate` and `X-Request-ID`.
 - Credentials travel in the `Authorization` header, so responses don't allow credentials, except in a realm with [session cookies](../../auth/sessions/#session-cookies) (`sessions.cookie`): there, responses to the listed origins carry `Access-Control-Allow-Credentials: true`, and a wildcard origin is refused.
 - `X-Backd-On-Behalf-Of` isn't allowed from browsers: only server-side services with API keys may use it.
 - `*` allows any origin. That's reasonable for public, read-only data; for apps with users, list the origins explicitly.

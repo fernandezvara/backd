@@ -62,6 +62,31 @@ const { total } = await backd.db('main').fn('order_total', { order_id: id })
 - `backd functions invoke` needs `--function <realm>/<database>/<name>`, prints the output (and, when the server runs with `BACKD_DEV=true`, the function's logs and timing), and `--as <email>` calls on a user's behalf with an admin API key.
 - **On behalf of a user.** An API key may add `X-Backd-On-Behalf-Of: <user id>` to call as that user: their `invoke` rule and their access rules apply. See [API keys](../../auth/api-keys/#acting-on-behalf-of-a-user).
 
+## Asking for a job: `Prefer: respond-async`
+
+A `sync` function answers when it is done. A caller that would rather not wait (the call can be slow, or nobody needs the answer yet) asks for a [job](../jobs/) instead, with the standard `Prefer` header:
+
+```sh
+curl -i -X POST https://api.example.com/v1/shop/orders/_func/checkout \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H 'Prefer: respond-async' -d '{"cart": "c1"}'
+# → 202 Accepted
+#   Preference-Applied: respond-async
+#   Location: /v1/shop/orders/_jobs/d3c9ljp8hc2g00b6s1m0
+#   {"id": "d3c9ljp8hc2g00b6s1m0", "function": "orders/checkout", "status": "queued", …}
+```
+
+Nothing changes for callers who don't send it, so it is safe to adopt one call at a time, and nothing has to be declared in `function.yaml`.
+
+- The call is **checked first**, as any call: the `invoke` rule, a key's scopes, the input schema, [idempotency](#idempotency) and the [rate limit](#rate-limits) all answer before anything is queued.
+- The job is read and finished like an `async` function's: poll `Location` (see [Jobs](../jobs/#knowing-when-a-job-finished)), with a [worker](../running/#running-the-worker) running. Its result is the function's output or its own error, and the function keeps its own limits (its `timeout` and `max_output` as a `sync` function).
+- It **runs once**: `retry` is a setting of `async` functions, so a failure ends the job. Concurrency limits of the function don't apply while it waits in the queue, only the worker's.
+- With an `Idempotency-Key`, a repeated call replays **whatever the first call was**, the answer or the job, whatever the second one asks for.
+- **Ignored where a job makes no sense:** a `webhook` function (its sender waits for the function's own response), a function called by another function with `ctx.call` (it needs the answer), and a realm without `auth: enabled` (there is nowhere to keep a job). The call is answered inline, without `Preference-Applied`.
+- An `async` function is always a job; sending the header only gets `Preference-Applied` back.
+
+The JavaScript client sends it with `fn(name, input, { respondAsync: true })` and resolves to a `Job`.
+
 ## Concurrency limits
 
 Two limits, both enforced by `backd` before it asks the executor to run anything:

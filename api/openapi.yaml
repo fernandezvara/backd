@@ -1517,6 +1517,18 @@ paths:
         collide on the same client-chosen key. `function.yaml`'s
         `idempotency: required` refuses calls with no key (`400`).
 
+        `Prefer: respond-async` (RFC 7240) asks for a job instead of the
+        answer: a `sync` function is queued like an `async` one and
+        answers 202 with the job, and the response carries
+        `Preference-Applied: respond-async`. The call is checked first
+        (rule, scopes, input schema, idempotency, rate limit), runs once
+        (no retries: `retry` is for `async` functions) and its result is
+        the job's, with the `sync` function's own limits. A `webhook`
+        function ignores it, and so does a realm without `auth: enabled`
+        (there is nowhere to keep a job): the call is answered inline.
+        With an `Idempotency-Key`, the key replays whatever the first
+        call was, an answer or a job.
+
         A function with `internal: true` has no HTTP route: it answers
         `404`, like a function that doesn't exist, to every caller,
         whatever their credentials.
@@ -1529,6 +1541,12 @@ paths:
             1-200 characters of letters, digits, `.`, `_`, `:` or `-`.
             Passed to the function as `ctx.idempotencyKey`.
           schema: { type: string }
+        - name: Prefer
+          in: header
+          description: >-
+            `respond-async` queues a `sync` function as a job and answers
+            202 (see the description). Other preferences are ignored.
+          schema: { type: string, example: respond-async }
       requestBody:
         description: The input, any JSON value (an empty body is `null`).
         content:
@@ -1552,10 +1570,12 @@ paths:
               schema: {}
         "202":
           description: >-
-            An `async` function was queued (roadmap F11); poll `Location`
+            An `async` function was queued (roadmap F11), or a `sync` one
+            because the call said `Prefer: respond-async`; poll `Location`
             for its result.
           headers:
             Location: { description: "`/v1/{realm}/{database}/_jobs/{id}`.", schema: { type: string } }
+            Preference-Applied: { description: "`respond-async`, when the call asked for it.", schema: { type: string, enum: [respond-async] } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Job" }

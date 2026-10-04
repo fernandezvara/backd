@@ -239,6 +239,29 @@ func (f *functions) invoke(w http.ResponseWriter, r *http.Request) {
 	f.run(w, r, fn, realm, database, name, caller, meta, input, webhook, hashInput)
 }
 
+// prefersAsync reports whether the request carries `Prefer: respond-async`
+// (RFC 7240): the caller would rather get a job to poll than wait for the
+// answer. Preferences are a comma-separated list, with optional parameters.
+func prefersAsync(r *http.Request) bool {
+	for _, line := range r.Header.Values("Prefer") {
+		for _, pref := range strings.Split(line, ",") {
+			token, _, _ := strings.Cut(pref, ";")
+			if strings.EqualFold(strings.TrimSpace(token), "respond-async") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// asJob reports whether a call to a sync function becomes a job because the
+// caller asked for it. Only a call over HTTP is: a function waiting for a
+// nested call needs the answer, and a webhook sender expects the function's own
+// response. A job needs the realm's system database.
+func (f *functions) asJob(r *http.Request, fn *registry.Function, realm string, meta callMeta) bool {
+	return fn.Mode == registry.ModeSync && meta.Origin == originHTTP && prefersAsync(r) && f.docs.users(realm) != nil
+}
+
 // run does what follows the checks of a call: idempotency, rate limit, then
 // the executor (sync) or the queue (async), and the answer. hashInput is
 // what the idempotency key is bound to.
@@ -253,7 +276,10 @@ func (f *functions) run(w http.ResponseWriter, r *http.Request, fn *registry.Fun
 		f.releaseClaim(r.Context(), realm, claimID)
 		return
 	}
-	if fn.Mode == registry.ModeAsync {
+	if fn.Mode == registry.ModeAsync || f.asJob(r, fn, realm, meta) {
+		if prefersAsync(r) {
+			w.Header().Set("Preference-Applied", "respond-async")
+		}
 		f.enqueue(w, r, fn, realm, database, name, caller, input, claimID, meta)
 		return
 	}
@@ -511,7 +537,9 @@ func (f *functions) checkIdempotency(w http.ResponseWriter, r *http.Request, fn 
 // replayIdempotent answers a repeated Idempotency-Key with the stored
 // outcome of its first call, without running the function again.
 func (f *functions) replayIdempotent(w http.ResponseWriter, r *http.Request, fn *registry.Function, realm, database string, rec auth.IdempotencyRecord) {
-	if fn.Mode == registry.ModeAsync {
+	// A call that was queued, whether the function is async or the caller asked
+	// for a job, replays as that job.
+	if fn.Mode == registry.ModeAsync || rec.JobID != "" {
 		job, found, err := f.docs.users(realm).GetJob(r.Context(), rec.JobID)
 		if err != nil || !found {
 			writeError(w, r, http.StatusInternalServerError, codeInternal, "could not read the job this idempotency key belongs to")

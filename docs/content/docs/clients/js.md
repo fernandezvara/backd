@@ -243,13 +243,20 @@ const output = await job.wait({ pollIntervalMs: 500, timeoutMs: 30_000 })
 
 An administrator can also run a function by hand, internal ones included, with `backd.admin.invokeFunction('<database>/<name>', { input, as, idempotencyKey })` (see [Internal functions](../../functions/internal/#running-a-function-by-hand)); it returns the output or a `Job`, like `db.fn()`.
 
+A `sync` function can be started as a job by the caller, with `respondAsync: true` (sends `Prefer: respond-async`, see [Calling functions](../../functions/calling/#asking-for-a-job-prefer-respond-async)): the call resolves to a `Job`, and `job.wait()` gives the output or throws the function's error, exactly as above.
+
+```js
+const job = await backd.db('shop').fn('checkout', { cart: 'c1' }, { respondAsync: true })
+const receipt = await job.wait()
+```
+
 An `Idempotency-Key` makes a retried call safe (see [Idempotency](../../functions/calling/#idempotency)):
 
 ```js
 await backd.db('shop').fn('charge', { amount: 1250 }, { idempotencyKey: `order-${orderId}-charge` })
 ```
 
-`fn`'s third argument also accepts `{ retry, signal, headers }`, same as [collections calls](#retries). `webhook` functions aren't called through `fn` — they're invoked by the sender, not the client.
+`fn`'s third argument also accepts `{ idempotencyKey, respondAsync, retry, signal, headers }`, same as [collections calls](#retries). `webhook` functions aren't called through `fn` — they're invoked by the sender, not the client.
 
 ## Token storage
 

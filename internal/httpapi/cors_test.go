@@ -55,6 +55,21 @@ func TestCORSPreflight(t *testing.T) {
 		h.Get("Access-Control-Allow-Credentials") != "" || !strings.Contains(strings.Join(h.Values("Vary"), ","), "Origin") {
 		t.Errorf("allowed preflight: %d %v", rec.Code, h)
 	}
+	// Browser apps send Idempotency-Key and Prefer and read the answers about them.
+	for _, name := range []string{"Idempotency-Key", "Prefer", "If-Match"} {
+		if !strings.Contains(h.Get("Access-Control-Allow-Headers"), name) {
+			t.Errorf("preflight doesn't allow %s: %v", name, h.Get("Access-Control-Allow-Headers"))
+		}
+	}
+	actual := httptest.NewRequest("GET", "/v1/web/app/items", nil)
+	actual.Header.Set("Origin", "https://app.example.com")
+	arec := httptest.NewRecorder()
+	f.h.ServeHTTP(arec, actual)
+	for _, name := range []string{"ETag", "Location", "Idempotent-Replayed", "Preference-Applied"} {
+		if !strings.Contains(arec.Header().Get("Access-Control-Expose-Headers"), name) {
+			t.Errorf("responses don't expose %s: %v", name, arec.Header().Get("Access-Control-Expose-Headers"))
+		}
+	}
 	// Auth routes of the realm too.
 	if rec := preflight("/v1/web/_auth/login", "http://localhost:5173"); rec.Header().Get("Access-Control-Allow-Origin") != "http://localhost:5173" {
 		t.Errorf("_auth preflight: %v", rec.Header())
