@@ -92,6 +92,16 @@ func (s *Users) expiry(u User, created, lastUsed time.Time) time.Time {
 	return idle
 }
 
+// MaxSessionExpiry is the latest a session started at created can last for
+// this user: the absolute limit, whatever the idle timeout slides to.
+func (s *Users) MaxSessionExpiry(u User, created time.Time) time.Time {
+	maxLifetime := s.Settings.MaxLifetime
+	if d := s.Settings.AdminMaxLifetime; d > 0 && s.Settings.IsAdmin(u.Roles) {
+		maxLifetime = d
+	}
+	return created.Add(maxLifetime)
+}
+
 // Signup creates a user with a password and signs them in. Realms with
 // `signup: open` accept anyone; `signup: invite` needs a valid invitation
 // token (used up by a successful sign-up); `signup: closed` refuses.

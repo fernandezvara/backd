@@ -109,6 +109,7 @@ paths:
                 invitation: { type: string, description: "Invitation token (`bdi_…`), for `signup: invite`." }
                 locale: { type: string, description: "The language to use for the user, such as `es` or `es-MX`; mapped silently to one the realm lists." }
                 redirect_to: { type: string, description: "Where the page after the verification link may send the user: an absolute URL within the realm's `email.allowed_redirects` (`400 invalid_redirect` otherwise)." }
+                cookie: { type: boolean, description: "Keep the session in an HttpOnly cookie, as for login." }
       responses:
         "201": { $ref: "#/components/responses/SessionCreated" }
         "202":
@@ -145,6 +146,12 @@ paths:
               properties:
                 email: { type: string }
                 password: { type: string }
+                cookie:
+                  type: boolean
+                  description: >-
+                    Keep the session in an HttpOnly cookie (`__Secure-backd_session`, path `/v1/{realm}`) instead of
+                    returning the token. Only in realms with `sessions.cookie.enabled`, and only from this API's own
+                    origin or one of the realm's `cors.origins` (`403` otherwise). The response then has no `token`.
       responses:
         "200": { $ref: "#/components/responses/Session" }
         "400": { $ref: "#/components/responses/Error" }
@@ -1878,7 +1885,7 @@ components:
       required: true
       description: >-
         Document responses depend on the caller and the origin, so caches
-        must key them on both.
+        must key them on both (and on the session cookie, in realms that use one).
       schema: { type: string, pattern: "Origin.*Authorization" }
     DataCacheControl:
       description: >-
@@ -2242,7 +2249,10 @@ components:
     Session:
       type: object
       additionalProperties: false
-      required: [token, token_type, session_id, expires_at, user]
+      required: [session_id, expires_at, user]
+      description: >-
+        `token` and `token_type` are absent when the session went into a cookie
+        (the request asked for `cookie: true`).
       properties:
         token: { type: string, pattern: "^bds_" }
         token_type: { const: Bearer }

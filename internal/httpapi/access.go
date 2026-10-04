@@ -119,9 +119,22 @@ func (d *documents) identify(w http.ResponseWriter, r *http.Request, realm strin
 	if svc == nil {
 		return caller, false, true
 	}
+	// No Authorization header: a realm with cookies takes the session cookie.
+	fromCookieJar := false
+	if credential == "" {
+		if token, src, _ := credentialOf(r, svc.Settings); src == fromCookie {
+			credential, fromCookieJar = token, true
+		}
+	}
 	caller, err := svc.Identify(r.Context(), credential)
 	if err != nil {
+		if fromCookieJar {
+			clearSessionCookie(w, r, svc.Settings) // the session is gone: stop sending it
+		}
 		authError(w, r, err)
+		return caller, true, false
+	}
+	if fromCookieJar && !csrfCheck(w, r, svc.Settings) {
 		return caller, true, false
 	}
 	if !allowedFrom(w, r, caller) {

@@ -9,8 +9,9 @@ import (
 )
 
 // CORS: browsers may call a realm's routes from the origins listed in its
-// realm.yaml. Credentials travel in the Authorization header, never in
-// cookies, so responses don't allow credentials.
+// realm.yaml. Credentials travel in the Authorization header; only a realm
+// that turns on session cookies (sessions.cookie) also allows credentials,
+// and only to the origins it lists (never to a wildcard).
 const (
 	corsMethods = "GET, POST, PUT, PATCH, DELETE"
 	// X-Backd-On-Behalf-Of is left out on purpose: only server-side API
@@ -40,6 +41,9 @@ func cors(reg *registry.Registry) func(http.Handler) http.Handler {
 				h := w.Header()
 				h.Set("Access-Control-Allow-Origin", allowed)
 				h.Set("Access-Control-Expose-Headers", corsExposeHeaders)
+				if corsCredentials(reg, r.URL.Path, allowed) {
+					h.Set("Access-Control-Allow-Credentials", "true") // a realm with session cookies, for its listed origins only
+				}
 			}
 			if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
 				// Preflight: never reaches the routes. Without an allowed

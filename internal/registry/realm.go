@@ -52,6 +52,15 @@ const (
 	minSessionTimeout = time.Minute
 )
 
+// CookieSettings are the realm's session cookies.
+type CookieSettings struct {
+	Enabled bool
+	// SameSite is lax (default), strict or none. none is for apps on another
+	// site than the API (another registrable domain); lax and strict also work
+	// for an app on a sibling subdomain.
+	SameSite string
+}
+
 // RealmSettings are the realm-level settings from realm.yaml, with
 // defaults applied.
 type RealmSettings struct {
@@ -63,8 +72,11 @@ type RealmSettings struct {
 	// users who hold an admin role (sessions.admin_idle_timeout and
 	// sessions.admin_max_lifetime). 0 means the regular limit; set, they never
 	// exceed it.
-	AdminIdleTimeout  time.Duration
-	AdminMaxLifetime  time.Duration
+	AdminIdleTimeout time.Duration
+	AdminMaxLifetime time.Duration
+	// Cookie lets browser apps keep a session in an HttpOnly cookie, when
+	// their login asks for it (sessions.cookie).
+	Cookie            CookieSettings
 	PasswordMinLength int
 	CORSOrigins       []string
 	Roles             map[string]Role
@@ -223,6 +235,10 @@ type realmDoc struct {
 		MaxLifetime      *string `yaml:"max_lifetime"`
 		AdminIdleTimeout *string `yaml:"admin_idle_timeout"`
 		AdminMaxLifetime *string `yaml:"admin_max_lifetime"`
+		Cookie           *struct {
+			Enabled  *bool   `yaml:"enabled"`
+			SameSite *string `yaml:"same_site"`
+		} `yaml:"cookie"`
 	} `yaml:"sessions"`
 	Password *struct {
 		MinLength *int `yaml:"min_length"`
@@ -482,6 +498,27 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 				continue
 			}
 			s.CORSOrigins = append(s.CORSOrigins, strings.TrimSuffix(o, "/"))
+		}
+	}
+
+	if ss := doc.Sessions; ss != nil && ss.Cookie != nil {
+		c := ss.Cookie
+		s.Cookie.SameSite = "lax"
+		if c.SameSite != nil {
+			switch v := strings.ToLower(*c.SameSite); v {
+			case "lax", "strict", "none":
+				s.Cookie.SameSite = v
+			default:
+				errs = append(errs, fmt.Errorf("sessions.cookie.same_site: must be lax, strict or none, got %q", *c.SameSite))
+			}
+		}
+		if c.Enabled != nil && *c.Enabled {
+			s.Cookie.Enabled = true
+			// A cookie is sent by the browser on its own: which sites may use it
+			// must be said, not guessed.
+			if slices.Contains(s.CORSOrigins, "*") {
+				errs = append(errs, errors.New("sessions.cookie: cookies can't be used with cors.origins: ['*']; list the origins of your apps"))
+			}
 		}
 	}
 
