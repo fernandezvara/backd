@@ -105,6 +105,12 @@ check "from the allowed address, requests reach backd (401 without a key)" [ "$c
 check "from elsewhere, the admin API answers 404 in backd's envelope" \
   sh -c "curl -s -w ' %{http_code}' --cacert '$ca' '$api/_admin/users' | tr -d '\n' | grep -q '\"code\":\"not_found\".* 404$'"
 check "other routes are unaffected" [ "$(status "$api/main/posts")" = 200 ]
+# The split: the public instance has no admin API at all, whoever asks;
+# the internal one does (and needs a key).
+code=$(compose exec -T probe curl -s -o /dev/null -w '%{http_code}' http://backd:8080/v1/blog/_admin/users 2>/dev/null)
+check "the public instance answers 404 for the admin API, even directly" [ "$code" = 404 ]
+code=$(compose exec -T probe curl -s -o /dev/null -w '%{http_code}' http://backd-admin:8080/v1/blog/_admin/users 2>/dev/null)
+check "the internal instance serves it (401 without a key)" [ "$code" = 401 ]
 
 echo "--- rate limits"
 flood() { # flood <path> <body>: prints the status codes of 20 quick requests
@@ -161,7 +167,7 @@ check "bootstrap refuses once the realm has an administrator" bootstrap_refused
 # admin_cli runs backd commands in the ops image as ops@example.com: logs
 # in, then runs the given script. $DRILL_PASSWORD is passed through.
 admin_cli() {
-  compose run --rm -T --no-deps -e BACKD_URL=http://backd:8080 -e BACKD_CREDENTIALS=/tmp/credentials \
+  compose run --rm -T --no-deps -e BACKD_URL=http://backd-admin:8080 -e BACKD_CREDENTIALS=/tmp/credentials \
     -e DRILL_PASSWORD="${DRILL_PASSWORD:-}" provision sh -c \
     "printf 'dev-p4ssw0rd!\n' | backd login --realm blog --email ops@example.com >/dev/null && $1"
 }
@@ -179,7 +185,7 @@ echo "--- functions: executor, egress and worker (network placement, F4)"
 # a real function in this stack's own topology (docs: Configuration ->
 # Functions -> "Egress: the network allowlist, completed").
 printf 'dev-p4ssw0rd!5\n' | compose exec -T backd /backd bootstrap --realm netprobe --email np@example.com >/dev/null 2>&1
-netprobe_key=$(compose run --rm -T --no-deps -e BACKD_URL=http://backd:8080 -e BACKD_CREDENTIALS=/tmp/np-credentials provision sh -c \
+netprobe_key=$(compose run --rm -T --no-deps -e BACKD_URL=http://backd-admin:8080 -e BACKD_CREDENTIALS=/tmp/np-credentials provision sh -c \
   "printf 'dev-p4ssw0rd!5\n' | backd login --realm netprobe --email np@example.com >/dev/null && backd apikey create --realm netprobe --name probe --expires 1d" \
   2>/dev/null | grep -o 'bdk_[A-Za-z0-9_-]*')
 resp=$(curl -s --cacert "$ca" -X POST -H "Authorization: Bearer $netprobe_key" -H 'Content-Type: application/json' -d '{}' "$base/v1/netprobe/app/_func/network_probe")

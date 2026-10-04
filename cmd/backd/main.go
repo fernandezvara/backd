@@ -151,6 +151,12 @@ func serve(ctx context.Context, a *app) error {
 		}
 		a.log.Warn("BACKD_DEV_ANY_ADDR=true: dev mode on an address that isn't localhost; make sure nothing but this machine can reach it", "addr", a.cfg.HTTPAddr)
 	}
+	if a.cfg.DisableAdminAPI {
+		a.log.Info("BACKD_ADMIN_API=false: this instance serves no admin API; use the instance that does (the CLI's BACKD_URL, the admin UI)")
+	}
+	if a.cfg.AdminUI {
+		a.log.Warn("BACKD_ADMIN_UI=true, but this build has no admin UI yet: nothing is served at /_ui/")
+	}
 	if a.withWorker && a.cfg.ExecutorURL == "" {
 		return errors.New("--with-worker requires BACKD_EXECUTOR_URL")
 	}
@@ -450,6 +456,7 @@ func (a *app) handlerConfig() httpapi.Config {
 		TrustedProxies:    a.cfg.TrustedProxies,
 		ConfigFingerprint: a.fingerprint,
 		Dev:               a.cfg.Dev,
+		DisableAdminAPI:   a.cfg.DisableAdminAPI,
 		Metrics:           a.metrics,
 	}
 }

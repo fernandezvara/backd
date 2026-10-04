@@ -291,3 +291,27 @@ func TestAdminReadLevelNoEscalation(t *testing.T) {
 		t.Errorf("support changing a viewer's password: %d", rec.Code)
 	}
 }
+
+// BACKD_ADMIN_API=false leaves every admin route out: they answer 404 in the
+// usual envelope, with any credential, and nothing else changes.
+func TestAdminAPISwitchedOff(t *testing.T) {
+	f := newRulesFixture(t, func(c *Config) { c.DisableAdminAPI = true })
+	for _, p := range []string{"/users", "/whoami", "/audit", "/apikeys", "/secrets", "/invitations", "/jobs", "/users/" + f.adaID} {
+		for name, hdr := range map[string]map[string]string{"admin key": bearer(f.key), "a user": bearer(f.ada), "nobody": nil} {
+			rec, out := f.doH(t, "GET", admin+p, "", hdr)
+			if rec.Code != http.StatusNotFound || errCode(out) != "not_found" {
+				t.Errorf("%s GET %s: %d %v, want a plain 404", name, p, rec.Code, out)
+			}
+		}
+	}
+	if rec, _ := f.doH(t, "POST", admin+"/users", `{"email":"x@example.com"}`, jsonHdr(f.key)); rec.Code != http.StatusNotFound {
+		t.Errorf("a change answers 404 too: %d", rec.Code)
+	}
+	// Everything else is untouched.
+	if rec, out := f.doH(t, "GET", posts, "", bearer(f.key)); rec.Code != http.StatusOK {
+		t.Errorf("data route: %d %v", rec.Code, out)
+	}
+	if rec, out := f.doH(t, "POST", "/v1/acme/app/_func/echo", `{"n":1}`, jsonHdr(f.ada)); rec.Code != http.StatusOK {
+		t.Errorf("function call: %d %v", rec.Code, out)
+	}
+}
