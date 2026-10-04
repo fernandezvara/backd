@@ -1,0 +1,10 @@
+{
+  "$comment": "A member directory in business data (chapter 8): the realm's users live in the system database, which functions can't read — so the app upserts one document per member on sign-in, and functions like digest iterate this to reach everyone.",
+  "type": "object",
+  "properties": {
+    "user_id": { "type": "string", "minLength": 1, "description": "The user's id, from ctx.user or auth.me()." },
+    "email":   { "type": "string", "format": "email" },
+    "name":    { "type": "string", "description": "Display name, set from the account page (later chapters)." }
+  },
+  "required": ["user_id", "email"]
+}

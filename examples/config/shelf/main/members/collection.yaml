@@ -1,0 +1,4 @@
+# Data a user owns — gone when the user is erased (see "Deleting and
+# erasing users" in the auth docs).
+on_owner_delete:
+  action: delete

@@ -16,6 +16,7 @@ const main = backd.db('main')
 const assets = main.collection('assets')
 const shares = main.collection('shares')
 const notifications = main.collection('notifications')
+const members = main.collection('members')
 
 document.addEventListener('alpine:init', () => {
   Alpine.data('shelf', () => ({
@@ -40,6 +41,13 @@ document.addEventListener('alpine:init', () => {
     // Notifications: mine, newest first (functions write them; I can only
     // flip read_at — the rules say so).
     notifs: [],
+
+    // Admin "run by hand": digest runs as an async job — the call answers
+    // with a job, and its status is polled.
+    fnName: 'digest',
+    jobId: null,
+    jobStatus: null,
+    jobResult: null,
 
     // Shares: the asset being shared, the minted link, my active links, and
     // the public ?s=<token> view.
@@ -80,7 +88,7 @@ document.addEventListener('alpine:init', () => {
         this.user = null
       }
       await this.refilter()
-      if (this.user) await Promise.all([this.loadMine(), this.loadInvites(), this.loadShares(), this.loadNotifs()])
+      if (this.user) await Promise.all([this.loadMine(), this.loadInvites(), this.loadShares(), this.loadNotifs(), this.ensureMember()])
     },
 
     // --- session -----------------------------------------------------------
@@ -101,6 +109,7 @@ document.addEventListener('alpine:init', () => {
         await this.loadMine()
         await this.loadInvites()
         await this.loadNotifs()
+        await this.ensureMember()
       } catch (e) {
         this.error = e.message
       } finally {
@@ -381,6 +390,41 @@ document.addEventListener('alpine:init', () => {
         await notifications.patch(n.id, { read_at: now }).catch((e) => { this.error = e.message })
       }
       await this.loadNotifs()
+    },
+
+    // The digest needs a member list; users live in the system database a
+    // function can't read — so the app upserts a member doc on sign-in.
+    async ensureMember() {
+      if (!this.user) return
+      try {
+        const page = await members.list({ where: { user_id: this.user.id }, limit: 1 })
+        if (page.items.length === 0) {
+          await members.create({ user_id: this.user.id, email: this.user.email })
+        } else if (page.items[0].email !== this.user.email) {
+          await members.patch(page.items[0].id, { email: this.user.email })
+        }
+      } catch (e) {
+        this.error = e.message
+      }
+    },
+
+    async runFunction() {
+      this.busy = true
+      this.error = null
+      this.jobId = this.jobStatus = this.jobResult = null
+      try {
+        const job = await main.fn(this.fnName, this.fnName === 'digest' ? { since_days: 7 } : {})
+        this.jobId = job.id
+        while ((this.jobStatus = await job.status()) !== 'done') {
+          await new Promise((r) => setTimeout(r, 500))
+        }
+        this.jobResult = job.data?.result
+        await this.loadNotifs()
+      } catch (e) {
+        this.error = e.message
+      } finally {
+        this.busy = false
+      }
     },
 
     async changePassword() {
