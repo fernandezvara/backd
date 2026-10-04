@@ -87,6 +87,17 @@ func newCLI(getenv func(string) string, stdin io.Reader, stdout, stderr io.Write
 		Func(act("config fingerprint", configFingerprint)).
 		Config(func(*cli.CommandConfig) {})
 
+	rl := cfg.Command("rules").ShortHelp("test the access rules of CONFIG_DIR").
+		LongHelp("Needs only CONFIG_DIR, no database.")
+	rl.SubCommand("test").ShortHelp("run every collection's rules.test.yaml against its rules.yaml").
+		LongHelp("Runs the fixture next to each collection's rules.yaml (rules.test.yaml): named\ncallers and stored documents, and per operation which of them are allowed or\ndenied. The decisions are the server's: read rules become the database filter,\nevaluated the way MongoDB does; an update or delete first needs the document to\nbe readable. Prints the failures and exits non-zero when an assertion fails or\na fixture is wrong, for CI. Collections with rules and no fixture are listed;\n--strict makes them fail.").
+		Func(act("rules test", rulesTest)).
+		Config(func(cc *cli.CommandConfig) {
+			optional(cc, "collection", "only this collection, or a prefix: realm, realm/database or realm/database/collection")
+			boolean(cc, "verbose", "also print the assertions that pass")
+			boolean(cc, "strict", "fail when a collection with rules.yaml has no rules.test.yaml")
+		})
+
 	cfg.Command("bootstrap").ShortHelp("create a realm's first administrator").
 		LongHelp("Creates a realm's first administrator: a user holding an admin role (one with\nadmin: true in realm.yaml), with the password read from the terminal without\necho, or as the first line of standard input when it isn't a terminal.\n\nIt refuses when a user of the realm already holds an admin role, or the email\nis already registered: from then on, administrators log in (`backd login`) and\nmanage users through the admin API.\n\nUnlike user and apikey, bootstrap writes to MongoDB directly, so it needs the\nserver's CONFIG_DIR and MONGO_URI, and a provisioned realm: run it where backd\nruns, for example\n  docker compose exec backd /backd bootstrap --realm <realm> --email <email>").
 		Func(act("bootstrap", bootstrapAction)).

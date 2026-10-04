@@ -177,3 +177,39 @@ At `LOG_LEVEL=debug`, every denial is logged (`"msg":"access denied"`) with the 
 - uses `now` other than to compare with a `_meta` timestamp;
 - has a `read` rule that can't be a database filter, or that compares an array field or a field without a declared type;
 - exists in a realm with `auth: disabled`.
+
+## Testing rules
+
+`backd rules test` checks your rules without MongoDB and without starting `backd`. It reads a fixture, `rules.test.yaml`, next to each `rules.yaml`: named callers, stored documents, and for each caller which documents they may read, create, update and delete. It prints what fails and exits non-zero, so it fits a CI step before packaging. It needs only `CONFIG_DIR`.
+
+```yaml
+# rules.test.yaml
+now: 2026-10-04T12:00:00Z            # optional: what `now` is in the rules (default 2026-01-01)
+
+users:                               # callers; "anonymous" always exists
+  ada: { id: u1, email: ada@example.com }               # email_verified defaults to true
+  bob: { id: u2, email: bob@example.com, roles: [staff] }   # roles must be declared in realm.yaml
+
+documents:                           # stored documents, by name
+  draft:     { title: Draft, published: false, _meta: { owner: u1 } }
+  published: { title: Hello, published: true, _meta: { owner: u2 } }
+
+tests:
+  - name: anyone reads published posts   # optional
+    as: anonymous                        # a user above; default anonymous
+    read:   { allow: [published], deny: [draft] }
+    create: [ { data: { title: Spam }, expect: deny } ]
+    delete: { deny: [published] }
+
+  - as: ada
+    update:
+      - { document: draft, patch: { published: true }, expect: allow }       # a merge patch, as PATCH sends it
+      - { document: draft, data: { title: Whole, status: x }, expect: deny }  # the complete new document, as PUT sends it
+```
+
+- `read` and `delete` list document names under `allow` and `deny`; `create` takes `data` (the body) with `expect: allow` or `deny`; `update` takes a `document` and either `patch` or `data`, with `expect`.
+- The decisions are the server's. A `read` rule becomes the same database filter, evaluated the way MongoDB does (a missing field, an array, `null`); `update` and `delete` first need the stored document to be readable, so a document the caller can't read is a denial there too (the server answers `404`); a rule that fails while being evaluated denies. A document or body that breaks `schema.json` is a mistake in the fixture, reported as such: the server would answer `400` before it asked the rules.
+- Stored documents get `_meta.owner: null` and `created_at` and `updated_at` equal to `now`, unless the fixture sets `_meta` (`owner`, `created_by`, `updated_by`, `version`, `created_at`, `updated_at`). Their `id` is their name, unless they have an `id`.
+- Output lists failures with what the rules decided and why; `--verbose` also lists what passes, `--collection realm/database/collection` (or a prefix) runs some collections, and collections with a `rules.yaml` and no fixture are listed. `--strict` fails when there are any.
+
+API keys bypass rules, so there is nothing to test for them; what the tests don't cover is the HTTP layer (statuses, `where` filters combined with the rule), which the server's own tests do.

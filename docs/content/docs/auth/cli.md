@@ -21,7 +21,7 @@ Two commands write to MongoDB directly instead: `backd bootstrap`, which creates
 | Command | Works on | Needs |
 |---|---|---|
 | `backd serve`, `backd provision` | MongoDB and `CONFIG_DIR` | `CONFIG_DIR`, `MONGO_URI` |
-| `backd template`, `backd databases` | `CONFIG_DIR` | `CONFIG_DIR` |
+| `backd template`, `backd databases`, `backd rules test` | `CONFIG_DIR` | `CONFIG_DIR` |
 | `backd functions build\|types` | `CONFIG_DIR` | `CONFIG_DIR` (`build` also needs Deno) |
 | `backd bootstrap --realm <realm> --email <email>` | MongoDB, once per realm | `CONFIG_DIR`, `MONGO_URI`, a provisioned realm |
 | `backd login`, `backd logout`, `backd whoami` | A running `backd` | Its URL |
