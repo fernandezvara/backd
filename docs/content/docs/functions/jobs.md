@@ -33,6 +33,8 @@ curl -X POST https://api.example.com/v1/workshop/main/_func/export_orders \
 # Location: /v1/workshop/main/_jobs/d3c9ljp8hc2g00b6s1m0
 ```
 
+A `sync` function can be started as a job too, by the caller, with [`Prefer: respond-async`](../calling/#asking-for-a-job-prefer-respond-async).
+
 The call only enqueues the job: `400`, `401`, `403` and `429` (a [rate limit](../calling/#rate-limits)) still apply at that point, exactly as for `sync`, and the function never runs inline. Keep the `id` (or the `Location` header): it is how you find out what happened.
 
 {{< hint warning >}}
