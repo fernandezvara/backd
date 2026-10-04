@@ -65,7 +65,7 @@ The helpers, the two other functions of this chapter and their tests (the finish
 
 ## The dev loop
 
-Functions are bundled before backd starts — a change is one command away (`functions-build` is the compose service that does it; it runs inside the same image as backd, so nothing to install):
+Functions run as **TypeScript in a Deno process with no permissions** (no disk, no network unless `network:` says so) — one process per call, started by the executor container, so a function can only do what its `function.yaml` and the `ctx` it is handed allow ([how they run](../../functions/writing/)). backd runs the bundled JavaScript, so the sources are bundled before it starts. `functions-build` is the compose service that does it — it uses the executor image, so there is nothing to install. backd refuses to start with stale or missing bundles, so after editing a function you run the build and restart:
 
 ```sh
 docker compose run --rm functions-build && docker compose restart backd
@@ -114,14 +114,14 @@ has no `create`/`update` rule at all (functions write, nobody else), and `create
 
 ## What the app does with it
 
-- **Save draft** replaces *Save & publish* — members can no longer set `published_at` (try it: a `POST` with the field answers `403`).
+- The new-asset form saves **drafts** — members can no longer set `published_at` (try it: a `POST` with the field answers `403`); publishing is what curators do.
 - A curator gets a **Review** view (with a count of waiting drafts): every member's unpublished assets, oldest first, each with **Publish** — one `db.fn('publish', …)` call. A curator also sees **Publish** on their own drafts in My assets.
 - **Share** on any published asset mints a link with an expiry; **My active links** lists and revokes them.
 - `/?s=<token>` — the link, opened in a private window — shows the asset through `share-open`, no sign-in.
 
 ## You should see
 
-- `deno test` (or `make functions-testing-test`) passes the three functions' tests.
+- The `share` and `share-open` tests pass (`publish`'s waits for chapter 7).
 - `POST …/_func/publish` as a member answers `403`; as `curator@shelf.example`, `200` and the draft gains `published_at`.
 - The curator's **Review** view lists a member's draft (a plain member's *My assets* never shows someone else's); publishing it from there moves it to the gallery.
 - Two calls with the same `Idempotency-Key` return the same answer; without the header, `400`.

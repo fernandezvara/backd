@@ -51,7 +51,7 @@ Do it **now**. Once chapter 4 sets `signup: invite`, a new address can't sign up
 
 ## Signing in
 
-The app's **Sign in** button now does something: `backd.auth.signup()` or `.login()` returns a session the client keeps in `localStorage` (`storage: localStorageStorage('shelf')` — it survives reloads). `backd.auth.me()` on load restores it.
+The app's **Sign in** button now does something: `backd.auth.signup()` or `.login()` returns a session the client keeps in `localStorage` (`storage: localStorageStorage('shelf')` — it survives reloads). `backd.auth.me()` on load restores it. A token in `localStorage` is readable by any script on the page, so a real app guards against XSS — or uses HttpOnly [session cookies](../../auth/sessions/#sessions-and-tokens), which the client supports with `cookies: true`.
 
 ## What the app gains
 

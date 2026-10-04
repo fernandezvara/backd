@@ -47,6 +47,6 @@ In the app, the **New asset** URL field gains a **Preview** button: paste a link
 - `deno test` passes the fetch-stub tests.
 - **Preview** on `https://fernandezvara.github.io/backd/` fills title and notes.
 - A `preview` call for a page that fails answers `424 preview_failed`, not a stack trace.
-- `docker compose logs egress` shows the call go through — and any edit to `index.ts` fetching a different host gets refused, allowlist or not.
+- **See the allowlist work:** change the `fetch` URL in `preview/index.ts` to another host (say `https://example.com/`), rebuild, restart and call it: the answer is `500 function_failed`, and `docker compose logs backd` shows `NotCapable: Requires net access to "example.com:443"` — the function's code can say anything, the allowlist in `function.yaml` decides. Put it back and rebuild.
 
 Next: chapter 7 — functions calling functions: `notify` becomes an `internal:` building block.

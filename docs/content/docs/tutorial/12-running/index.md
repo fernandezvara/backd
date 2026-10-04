@@ -32,7 +32,7 @@ This tutorial ran on a dev stack: `BACKD_DEV` on, `email-capture` storing mail, 
 - Swap `email.function` to `mail/postmark` (or your provider), set its secrets — and `email-capture`'s `dev_only` already guards you: `backd` won't start with it outside dev mode.
 - Set real function secrets (`IMPORT_WEBHOOK_SECRET`, Postmark's) — `dev-secret` signs nothing an attacker can't forge.
 - Remove the seeded `roles.*.users` demo accounts and create your own administrator with `backd bootstrap` (chapter 4). Removing a seed from `realm.yaml` does **not** take the role away from the account that already has it — remove it from that user with the admin API (`DELETE /_admin/users/{id}/roles/{role}`, see [Admin API](../../auth/admin/)).
-- Replace `signup: invite` only if you mean to; it is the right setting for a team library.
+- Keep `signup: invite`: it is the right setting for a team library. Anything else puts the door back.
 - Give every API key a scope and an expiry — the app already creates them that way.
 - Review each `rules.yaml` and run `backd rules test` in CI.
 
@@ -42,4 +42,32 @@ This tutorial ran on a dev stack: `BACKD_DEV` on, `email-capture` storing mail, 
 - A new key authenticates `GET /v1/shelf/main/assets` but not a write — `403`, scoped.
 - Revoking the key fails the same read with `401`, and `apikey.revoke` is in the feed.
 
-That's the tutorial — the tour (`tour.js` in the repo root) walks a fresh clone through all of it against a live stack, and `make shelf-tour` replays it.
+## What Shelf is now
+
+| Collection | Who reads | Who writes |
+|---|---|---|
+| `assets` | members: published + their own drafts; curators: every draft | members create/edit/delete their own drafts; `publish` stamps `published_at` |
+| `shares` | the creator | only `share` creates; the creator deletes |
+| `notifications` | the recipient (may set `read_at`) | only `notify` |
+| `members` | every member | each member their own row |
+| `imports` | nobody | only `import` |
+| `mail/outbox` | anyone (dev only) | only `email-capture` |
+
+| Function | Mode | Who calls it |
+|---|---|---|
+| `publish` | sync | curators (idempotency key required) |
+| `share` | sync | any member (idempotency key required) |
+| `share-open` | sync | anyone, rate-limited |
+| `preview` | sync, `network:` | any member |
+| `notify` | sync, internal | other functions only |
+| `digest` | async, scheduled daily, sends email | operators, and the schedule |
+| `cleanup` | async, internal, scheduled 03:00 UTC | the schedule, or by hand |
+| `import` | webhook | the signed feed |
+
+## Where next
+
+- **Deploy it:** [Deploying](../../operations/deploying/) and [Production](../../operations/production/) (TLS, separate networks for the executor and egress, secrets), then the [checklist](../../operations/checklist/) above.
+- **Operate it:** [Backups](../../operations/backup/), [Metrics](../../operations/metrics/) (Prometheus, with dashboards in the repository), and the [audit](../../auth/audit/) feed you saw.
+- **Go deeper on functions:** the [cookbook](../../functions/cookbook/) (payments, exports, retries) and [Testing functions](../../functions/testing/).
+- **Use it from your own app:** the [JavaScript client](../../clients/js/) and the [API reference](../../api/) (`api/openapi.yaml`).
+- **Test the tutorial itself:** on a checkout, `make shelf-tour` replays everything in this tutorial against a running stack (`clients/js/examples/shelf/tour.js`).

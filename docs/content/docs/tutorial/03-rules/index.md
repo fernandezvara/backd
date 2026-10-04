@@ -79,6 +79,8 @@ On `shares`: `asset_id` is never checked against an asset you own, and `token` i
 The `HOLE` comments copy the style of the [expenses example](../../examples/): rules do their best, and the comment marks exactly where a function must take over. Write them in your own rules — they are the design review you'll thank yourself for.
 {{< /hint >}}
 
+Rules are code, so they can be tested without a stack: `backd rules test` runs a file of cases (a user, a document, the operation, the expected answer) in CI — see [Testing rules](../../auth/rules/#testing-rules). The tutorial stops at trying them by hand.
+
 ## Conflict-free edits
 
 The my-assets **Edit** now works, and every write carries `If-Match` with the version it read (`_meta.version` — it increases on every write). Two tabs editing the same asset: the second save answers `412 version_mismatch` and the app says someone wrote first — nobody silently overwrites anybody. See [Documents](../../api/documents/).

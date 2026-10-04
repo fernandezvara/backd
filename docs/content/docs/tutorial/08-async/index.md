@@ -81,7 +81,15 @@ while ((status = await job.status()) !== 'done') await sleep(500)
 job.data.result   // { status: 'ok', output: { notified: 4, … } }
 ```
 
-`job.status()` polls `GET _jobs/{id}` — `queued`, `running`, `done`; `job.wait()` does the loop for you, and `job.data.result` is either `{ status: 'ok', output }` or the failure (`function_error`, `timeout`, …) with its code ([Jobs](../../functions/jobs/)). The Admin view's **Run by hand** wires exactly this: select `digest`, watch the status flip, read the output.
+`await job.wait()` returns the function's output once the job is done; `job.status()` polls `GET _jobs/{id}` — `queued`, `running`, `done`; `job.wait()` does the loop for you, and `job.data.result` is either `{ status: 'ok', output }` or the failure (`function_error`, `timeout`, …) with its code ([Jobs](../../functions/jobs/)). The Admin view's **Run by hand** wires exactly this: select `digest`, watch the status flip, read the output.
+
+Note that `members` fills as people **sign in** with the new app code: sign in once with each of your three accounts now (the accounts of chapter 2 have no row yet), or the digest has nobody to notify. To run it without the app, as the operator:
+
+```sh
+curl -s -X POST http://localhost:8080/v1/shelf/main/_func/digest \
+  -H "Authorization: Bearer $OP" -H 'Content-Type: application/json' -d '{"since_days": 7}'
+# 202 {"id":"…","status":"queued"}  — poll GET /v1/shelf/main/_jobs/<id> with the same header
+```
 
 ## You should see
 

@@ -20,10 +20,29 @@ You do **not** need a `backd` checkout: the app, the client and the released con
 ## What you need
 
 - **Docker** with Compose v2 (`docker compose version` prints a version) and free ports **8080** (the app and the API); the first start downloads about 1 GB of images.
-- A text editor and a terminal. **curl** for the API examples; **Node 20 or newer** only for chapter 11's feed script (optional).
+- A text editor and a terminal with a **POSIX shell** (macOS, Linux, or WSL on Windows — the examples use `curl`, `sed` and `$VARIABLES`). **Node 20 or newer** only for chapter 11's feed script (optional).
 - This tutorial's stack is a *separate* thing from the backd documentation you are reading: the docs may be at `https://localhost:8443` or on GitHub Pages, the tutorial's app is always **`http://localhost:8080`**.
 
 To start over at any point: `docker compose down -v` (deletes the database), then `up -d` again.
+
+## What runs, and what you edit
+
+`docker compose up -d` starts five containers. You only ever edit files on your side of them:
+
+| Container | What it does | You touch |
+|---|---|---|
+| `backd` | the API: documents, sign-in, rules, functions' entry point, jobs and schedules (`serve --with-worker`) | `config/` (mounted read-only) |
+| `mongo` | MongoDB, a one-node replica set | nothing — its data lives in a volume (`down -v` deletes it) |
+| `executor` | runs each function call in its own Deno process | nothing |
+| `egress` | the only way out for functions that declare `network:` (chapter 6) | nothing |
+| `nginx` | serves the app at `/` and the client at `/example/client/`, proxies `/v1` to backd — one origin for both | `app/` if you change the app |
+| `functions-build` | a one-shot job that bundles the functions' TypeScript before backd starts | run again after editing a function |
+
+## Conventions
+
+- `<angle brackets>` in a command are values you substitute. `$TOKEN` is a session token from `POST /_auth/login` (chapter 3 shows how); `$OP` is the operator's (chapter 4).
+- A `config/` path is relative to your starter folder: `config/shelf/main/assets/schema.json` is the `assets` collection of the `main` database in the `shelf` realm.
+- Rules, `realm.yaml` and schemas are read **at startup**: `docker compose restart backd` after changing them. Function code (and its `function.yaml`) is bundled by `functions-build`: run it, then restart.
 
 ## The starter
 
@@ -65,7 +84,7 @@ Working on a `backd` checkout instead? The same files live in the repository: `e
 | 1 | [An empty shelf](01-empty-shelf/) | the `shelf` realm, the `assets` and `shares` collections, dates, indexes, a public gallery with filters and cursor paging |
 | 2 | [Members](02-members/) | sign-up, sessions, roles, the account page |
 | 3 | [Who may touch what](03-rules/) | `rules.yaml`, ownership, optimistic concurrency |
-| 4 | [Invitations](04-invitations/) | inviting teammates by email |
+| 4 | [Invitations](04-invitations/) | closing sign-up; one-time invitation links |
 | 5 | [The first function](05-first-function/) | `publish`, `admin: true`, idempotency, share links |
 | 6 | [Reaching the outside](06-network/) | `preview` and the `network:` allowlist |
 | 7 | [Functions calling functions](07-calls/) | `notify` as an internal function, `ctx.call` |
@@ -83,4 +102,11 @@ From chapter 2 on you use three accounts, all created in chapter 2 while sign-up
 
 ## How a chapter reads
 
-Each chapter is a diff on the state the previous one left: the files to create or change (quoted from the same files the repository runs and tests; a **fetch** block lists them as a download loop when you'd rather not type), the commands to run, and a **"you should see"** list at the end — if every line holds, the chapter worked. When a command surprises you, the troubleshooting notes point at the log line that explains it.
+Each chapter is a diff on the state the previous one left: the files to create or change (quoted from the same files the repository runs and tests; a **fetch** block lists them as a download loop when you'd rather not type), the commands to run, and a **"you should see"** list at the end — if every line holds, the chapter worked. 
+## When something is off
+
+- `curl -s http://localhost:8080/readyz` answers once MongoDB is a replica set and backd serves; for a minute after `up` it may not. `docker compose ps` shows which container is down.
+- `docker compose logs backd` is the first place to look. A bad config file fails startup and the log names the file and line; every request is logged with its `request_id`, which also appears in every error body.
+- An error body is `{"error": {"code", "message", "details"}}`, and the status says what kind: **401** not signed in or the session ended (log in again; sessions last 30 days); **403** signed in but a rule or an `invoke` expression refuses it; **404** the thing doesn't exist *or you may not read it*; **400** invalid input, with the failing fields in `details`; **409** a unique index or an already-used value; **412** the document changed since you read it; **503** a function call while the executor is still starting.
+- A function change that does nothing: run `docker compose run --rm functions-build` (it prints one `bundled …` line per function; a TypeScript error stops here) and `docker compose restart backd`; `docker compose logs backd` shows the function's `console.log` lines and, when a call fails, its error.
+- Start over: `docker compose down -v`, then `up -d` — and sign up the three accounts again (chapter 2).
