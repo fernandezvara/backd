@@ -34,7 +34,7 @@ while ((status = await job.status()) !== 'done') await sleep(500)
 job.data.result   // { status: 'ok', output: { notified: 4, … } }
 ```
 
-`job.status()` polls `GET _jobs/{id}` — `queued`, `running`, `done`; `job.wait()` does the loop for you, and `job.data.result` is either `{ status: 'ok', output }` or the failure (`function_error`, `timeout`, …) with its code ([Jobs](../../../functions/jobs/)). The Admin view's **Run by hand** wires exactly this: select `digest`, watch the status flip, read the output.
+`job.status()` polls `GET _jobs/{id}` — `queued`, `running`, `done`; `job.wait()` does the loop for you, and `job.data.result` is either `{ status: 'ok', output }` or the failure (`function_error`, `timeout`, …) with its code ([Jobs](../../functions/jobs/)). The Admin view's **Run by hand** wires exactly this: select `digest`, watch the status flip, read the output.
 
 ## You should see
 

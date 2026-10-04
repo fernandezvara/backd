@@ -14,7 +14,7 @@ Some work shouldn't wait for a person: the morning digest, the nightly sweep. On
 schedule: "@daily"
 ```
 
-Cron expressions work too (`"0 7 * * *"`, always UTC). A scheduled run has **no caller**: `ctx.user` is `null`, `ctx.input` is `null`, `ctx.db` acts as an anonymous caller — and `ctx.admin.db` is *always* available, recorded as `func:shelf/main/digest`. Review a scheduled function as if it declared `admin: true` ([Cron](../../../functions/cron/)).
+Cron expressions work too (`"0 7 * * *"`, always UTC). A scheduled run has **no caller**: `ctx.user` is `null`, `ctx.input` is `null`, `ctx.db` acts as an anonymous caller — and `ctx.admin.db` is *always* available, recorded as `func:shelf/main/digest`. Review a scheduled function as if it declared `admin: true` ([Cron](../../functions/cron/)).
 
 That's also why `digest`'s input schema accepts `null` and the code defaults `since_days` — the scheduled run sends nothing.
 

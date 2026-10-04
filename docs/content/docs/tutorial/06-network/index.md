@@ -15,7 +15,7 @@ Pasting a link into the new-asset form is a chore; `preview` fetches the page's 
 
 Two things to notice:
 
-- `network: [api.microlink.io]` is the **whole** allowlist — a fetch to any other host is refused at the egress, whatever the code says ([Outbound network](../../../functions/network/)).
+- `network: [api.microlink.io]` is the **whole** allowlist — a fetch to any other host is refused at the egress, whatever the code says ([Outbound network](../../functions/network/)).
 - **No `admin:`** — the function touches no collection, so it gets no database access at all. Declare only what the function needs.
 
 {{< example-file path="shelf/main/_functions/preview/index.ts" >}}

@@ -14,7 +14,7 @@ Replace `config/shelf/realm.yaml`:
 {{< example-file path="shelf/realm.yaml" >}}
 
 - **`auth: enabled`** — users, sessions and roles exist; anonymous callers get `401`.
-- **`signup: open`** — anyone may create an account ([alternatives](../../../auth/users/): `invite`, `closed`).
+- **`signup: open`** — anyone may create an account ([alternatives](../../auth/users/): `invite`, `closed`).
 - **`roles:`** — `admin` is the operator role (`admin: true` grants the admin API); `curator` matters from chapter 5. The `users:` lists are **seed assignments**: the first time `curator@shelf.example` signs up, the role attaches. A shortcut for local stacks — never keep seeded users in a real realm.
 
 `backd bootstrap --realm shelf --email you@example.com` is the other way to get a first admin, and what a fresh deployment uses.
@@ -34,7 +34,7 @@ Sign up twice: once as yourself, once as `curator@shelf.example` — both work b
 - **Nav state**: `backd.auth.me()` at load; sign-in button ↔ email + log out.
 - **My assets**: `assets.list({ where: { "_meta.owner": user.id } })` — `_meta` fields are queryable like any other.
 - **Account page**: `backd.auth.changePassword()` works now; email change and password reset are visible but disabled — they need the email stack of chapter 10.
-- **Delete my account**: `backd.auth.deleteAccount()` *deactivates* — your email stays registered, your documents stay. Actual erasure is an admin action that applies each collection's policy ([Deleting and erasing users](../../../auth/erasure/)):
+- **Delete my account**: `backd.auth.deleteAccount()` *deactivates* — your email stays registered, your documents stay. Actual erasure is an admin action that applies each collection's policy ([Deleting and erasing users](../../auth/erasure/)):
 
 {{< example-file path="shelf/main/assets/collection.yaml" >}}
 

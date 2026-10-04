@@ -25,7 +25,7 @@ account:
   allow_email_change: true
 ```
 
-- **`function:`** — one function (in the new `mail` database) delivers every email `backd` renders. `email-capture` stores them in the `mail/outbox` collection instead of sending — `dev_only: true`, it only runs under `BACKD_DEV` ([Email](../../../functions/email/)).
+- **`function:`** — one function (in the new `mail` database) delivers every email `backd` renders. `email-capture` stores them in the `mail/outbox` collection instead of sending — `dev_only: true`, it only runs under `BACKD_DEV` ([Email](../../functions/email/)).
 - **Templates** — `email/<kind>/<locale>.{subject.txt,txt,html}`, one folder per kind `backd` sends (verify-email, reset-password, invitation, welcome, account-exists, change-email, email-changed, password-changed) plus custom kinds like `shelf-digest`. Every locale you list needs every kind — startup fails naming what's missing.
 - **Pages** — `pages/<kind>/<locale>.html`: the hosted pages the email links open. `GET` shows a form, `POST` consumes the token — mail scanners can never spend your links.
 - **`allowed_redirects` / `redirects`** — after a flow's page, the reader lands back at the app, and only at origins you list.
@@ -44,7 +44,7 @@ await ctx.email.send({
 })
 ```
 
-The template prints `{{.Data.count}}`, `{{range .Data.assets}}` — a function supplies **data, never text**: nobody can make your realm send words you didn't write ([Sending email from functions](../../../functions/email/#sending-email-from-functions)).
+The template prints `{{.Data.count}}`, `{{range .Data.assets}}` — a function supplies **data, never text**: nobody can make your realm send words you didn't write ([Sending email from functions](../../functions/email/#sending-email-from-functions)).
 
 ## What changes in the app
 

@@ -30,7 +30,7 @@ There is deliberately no `create` rule — nobody may write a notification direc
 calls: [notify]
 ```
 
-`ctx.call` is checked against that list: call something undeclared and the answer is `call_not_declared`; the graph can't cycle or nest deeper than 4 ([Internal functions](../../../functions/internal/)). In the handler it's an `await` like any other — and deliberately *last*, wrapped in try/catch: a failing notification must not undo a publish that already happened.
+`ctx.call` is checked against that list: call something undeclared and the answer is `call_not_declared`; the graph can't cycle or nest deeper than 4 ([Internal functions](../../functions/internal/)). In the handler it's an `await` like any other — and deliberately *last*, wrapped in try/catch: a failing notification must not undo a publish that already happened.
 
 ## Testing the call
 

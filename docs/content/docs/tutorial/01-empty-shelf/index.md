@@ -8,12 +8,12 @@ toc: true
 A collection, a schema, and a page that lists documents. No users yet: anyone on localhost can read and write, which is exactly what you want while the shape of the data settles.
 
 {{< hint warning >}}
-`auth: disabled` means anyone who can reach backd can read and modify its data. Keep this stack on localhost — chapter 2 turns authentication on and [the checklist](../../../operations/checklist/) is what you run before anything faces the internet.
+`auth: disabled` means anyone who can reach backd can read and modify its data. Keep this stack on localhost — chapter 2 turns authentication on and [the checklist](../../operations/checklist/) is what you run before anything faces the internet.
 {{< /hint >}}
 
 ## Bring the stack up
 
-From the starter folder (`compose.yaml`, `nginx.conf`, `app/`, `client/`, `config/` — see [the overview](../../)):
+From the starter folder (`compose.yaml`, `nginx.conf`, `app/`, `client/`, `config/` — see [the overview](../)):
 
 ```sh
 docker compose up -d
@@ -38,7 +38,7 @@ A collection is a directory inside a database: `config/shelf/main/assets/`. `sch
 
 Two things worth noticing:
 
-- **`x-backd-store: "date"`** on `published_at`: the API still accepts and returns RFC 3339 strings, but MongoDB stores a real date, so filters and sorting compare instants ([Dates](../../../configuration/config-dir/#dates)).
+- **`x-backd-store: "date"`** on `published_at`: the API still accepts and returns RFC 3339 strings, but MongoDB stores a real date, so filters and sorting compare instants ([Dates](../../configuration/config-dir/#dates)).
 - **`file`** is declared but unused — it reserves the field for the file-management chapters.
 
 `shares` holds the public links (chapter 5 creates them):
@@ -75,7 +75,7 @@ curl -s 'http://localhost:8080/v1/shelf/main/assets?order_by=-published_at&limit
 curl -s 'http://localhost:8080/v1/shelf/main/assets?where={"tags":"docs"}'
 ```
 
-Add a few more documents so the gallery has something to page: the second `curl` shows `items`, `has_more` and `next_cursor` — the cursor the app will follow ([Querying](../../../api/querying/)).
+Add a few more documents so the gallery has something to page: the second `curl` shows `items`, `has_more` and `next_cursor` — the cursor the app will follow ([Querying](../../api/querying/)).
 
 ## Wire the gallery
 
@@ -104,4 +104,4 @@ The gallery card template becomes a `x-for` over `assets`, the tag input binds `
 - With more than a page of assets, **Load more** appends the next page.
 - A document that breaks the schema (e.g. `{"kind":"video"}`) is refused with `422` and field-level errors — try it with curl.
 
-Next: [chapter 2](02-members/) turns authentication on and the gallery gains owners.
+Next: [chapter 2](../02-members/) turns authentication on and the gallery gains owners.

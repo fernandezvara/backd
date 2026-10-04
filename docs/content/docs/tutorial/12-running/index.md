@@ -15,17 +15,17 @@ Sessions are for people; **API keys are for machines** — a CI job that reads t
 backd.admin.keys.create({ name: 'ci-reader', expiresIn: '90d', scopes: ['read:main'] })
 ```
 
-The full key (`bdk_…`) shows **once**, in the creation response — store it in a secret store; `backd` keeps only its prefix. `scopes` limit what a key reaches (`read`, `write`, `call`, optionally `:database` or `:database/name`); `revoke` stops it at once ([API keys](../../../auth/api-keys/)). With a key, an unattended script uses the same client: `createClient({ url, realm, apiKey })` — no signup, no session.
+The full key (`bdk_…`) shows **once**, in the creation response — store it in a secret store; `backd` keeps only its prefix. `scopes` limit what a key reaches (`read`, `write`, `call`, optionally `:database` or `:database/name`); `revoke` stops it at once ([API keys](../../auth/api-keys/)). With a key, an unattended script uses the same client: `createClient({ url, realm, apiKey })` — no signup, no session.
 
 ## The audit trail
 
-Every admin-visible act is recorded — invites created and sent, keys created and revoked, functions invoked by hand, logins, erasures. `backd.admin.audit.list()` pages it newest first; the Admin view shows who (`user:<id>`, `key:<name>`, `cli:bootstrap`), what (`apikey.create`, `function.invoke_manual`, …) and the target. It never holds secrets or email bodies ([Audit](../../../auth/audit/)).
+Every admin-visible act is recorded — invites created and sent, keys created and revoked, functions invoked by hand, logins, erasures. `backd.admin.audit.list()` pages it newest first; the Admin view shows who (`user:<id>`, `key:<name>`, `cli:bootstrap`), what (`apikey.create`, `function.invoke_manual`, …) and the target. It never holds secrets or email bodies ([Audit](../../auth/audit/)).
 
 Try it: create a key, revoke it, refresh the feed — `apikey.create` and `apikey.revoke` both appear, attributed to you.
 
 ## Before the internet sees it
 
-This tutorial ran on a dev stack: `BACKD_DEV` on, `email-capture` storing mail, demo accounts in `realm.yaml`, `dev-secret` webhook keys, `localhost` redirects. The [hardening checklist](../../../operations/checklist/) is the page to walk before a realm goes real — for this app specifically:
+This tutorial ran on a dev stack: `BACKD_DEV` on, `email-capture` storing mail, demo accounts in `realm.yaml`, `dev-secret` webhook keys, `localhost` redirects. The [hardening checklist](../../operations/checklist/) is the page to walk before a realm goes real — for this app specifically:
 
 - Swap `email.function` to `mail/postmark` (or your provider), set its secrets — and `email-capture`'s `dev_only` already guards you: `backd` won't start with it outside dev mode.
 - Set real function secrets (`IMPORT_WEBHOOK_SECRET`, Postmark's) — `dev-secret` signs nothing an attacker can't forge.

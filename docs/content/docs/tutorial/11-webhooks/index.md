@@ -21,7 +21,7 @@ Three steps, in order:
 
 - **Verify the sender against the exact bytes it signed** — `x-signature: sha256=<hex>` is an HMAC of the raw body (`lib/signature.ts`, the same file the workshop uses).
 - **Dedupe by the sender's own event id** — providers retry until they get a 2xx, so "already processed" is a normal answer. The unique index on `imports.event_id` makes the second delivery a cheap 409.
-- **Then, and only then, act** — fields are whitelisted out of the untrusted JSON, and the asset lands as a **draft**: `published_at` is the publish function's alone, even for a trusted feed ([Webhooks](../../../functions/webhooks/)).
+- **Then, and only then, act** — fields are whitelisted out of the untrusted JSON, and the asset lands as a **draft**: `published_at` is the publish function's alone, even for a trusted feed ([Webhooks](../../functions/webhooks/)).
 
 ## Feeding it
 

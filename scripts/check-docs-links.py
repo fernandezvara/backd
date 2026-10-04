@@ -29,8 +29,14 @@ class Page(html.parser.HTMLParser):
             self.links.append(a["href"])
 
 
+# Files served as downloads (the tutorial's app and config), not documentation:
+# their {{.Link}} placeholders and app-absolute paths are not links of this site.
+DOWNLOADS = os.path.join(ROOT, "tutorial")
+
 pages = {}
 for dirpath, _, files in os.walk(ROOT):
+    if dirpath == DOWNLOADS or dirpath.startswith(DOWNLOADS + os.sep):
+        continue
     for f in files:
         if f.endswith(".html"):
             path = os.path.join(dirpath, f)

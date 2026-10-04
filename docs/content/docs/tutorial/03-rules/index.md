@@ -11,7 +11,7 @@ Until now every signed-in member could do anything to anything. `rules.yaml` giv
 
 {{< example-file path="shelf/main/assets/rules.yaml" >}}
 
-Three names carry the context: `user` (the caller, or `nil` when anonymous — always check `user != nil` first), `document` (the stored asset), `data` (the asset being written). `changed()` lists the fields a write touches, and `hasRole(user, 'curator')` checks a `realm.yaml` role. The full language is in [Access rules](../../../auth/rules/).
+Three names carry the context: `user` (the caller, or `nil` when anonymous — always check `user != nil` first), `document` (the stored asset), `data` (the asset being written). `changed()` lists the fields a write touches, and `hasRole(user, 'curator')` checks a `realm.yaml` role. The full language is in [Access rules](../../auth/rules/).
 
 ## The shares rules
 
@@ -44,13 +44,13 @@ Both files carry `HOLE` comments. On `assets`:
 
 On `shares`: `asset_id` is never checked against an asset you own, and `token` is any ≥16-char string — a client could mint `aaaaaaaaaaaaaaaa`. Also closed by the chapter-5 `share` function.
 
-{{< hint info >}}
-The `HOLE` comments copy the style of the [expenses example](../../../examples/): rules do their best, and the comment marks exactly where a function must take over. Write them in your own rules — they are the design review you'll thank yourself for.
+{{< hint note >}}
+The `HOLE` comments copy the style of the [expenses example](../../examples/): rules do their best, and the comment marks exactly where a function must take over. Write them in your own rules — they are the design review you'll thank yourself for.
 {{< /hint >}}
 
 ## Conflict-free edits
 
-The my-assets **Edit** now works, and every write carries `If-Match` with the version it read (`_meta.version` — it increases on every write). Two tabs editing the same asset: the second save answers `412 version_mismatch` and the app says someone wrote first — nobody silently overwrites anybody. See [Documents](../../../api/documents/).
+The my-assets **Edit** now works, and every write carries `If-Match` with the version it read (`_meta.version` — it increases on every write). Two tabs editing the same asset: the second save answers `412 version_mismatch` and the app says someone wrote first — nobody silently overwrites anybody. See [Documents](../../api/documents/).
 
 ## You should see
 
