@@ -46,6 +46,7 @@ const backd = createClient({
 | `url` | required | Base URL of `backd` |
 | `realm` | required | The realm to talk to |
 | `storage` | memory | Where the session token is kept (see [Token storage](#token-storage)) |
+| `cookies` | `false` | Browser apps: keep the session in an HttpOnly cookie, out of scripts' reach (see [Session cookies](#session-cookies)) |
 | `retry` | off | `{ attempts, maxDelayMs }` for `429` and `503` answers (see [Retries](#retries)) |
 | `headers` | none | Extra headers for every request |
 | `fetch` | global `fetch` | A custom `fetch` implementation |
@@ -244,6 +245,8 @@ const backd = createClient({ url, realm, storage: localStorageStorage() })
 Any script running on the page can read `localStorage`, so an app that stores tokens there must protect itself against cross-site scripting (a strict Content-Security-Policy, no untrusted HTML). The default in-memory storage is safer; you trade it for staying signed in across reloads.
 {{< /hint >}}
 
+Or keep no token in the page at all, with [session cookies](#session-cookies).
+
 Any object with `get()`, `set(token)` and `remove()` works as storage, and the methods may be async, for example to use a mobile app's secure storage:
 
 ```js
@@ -255,6 +258,25 @@ const storage = {
 ```
 
 `await backd.auth.token()` returns the stored token, or `null`.
+
+
+## Session cookies
+
+In a realm that enables [`sessions.cookie`](../../auth/sessions/#session-cookies), a browser app can keep the session in an HttpOnly cookie instead of a token, so even an injected script can't steal it:
+
+```js
+const backd = createClient({ url: 'https://api.example.com', realm: 'blog', cookies: true })
+
+await backd.auth.login({ email, password })   // asks for a cookie: the answer has no token
+await backd.auth.me()                         // the browser sends the cookie; the client sends no Authorization header
+await backd.auth.hasSession()                 // what this page believes; after a reload, ask the server with me()
+await backd.auth.logout()                     // also clears the cookie
+```
+
+- `cookies: true` makes `login` and `signup` ask for a cookie and every request send credentials (`fetch(..., { credentials: 'include' })`). `auth.token()` is `null`: there is no token for scripts to read.
+- The realm must list your app's origin in `cors.origins` (no wildcard), and the API must be on a site that the cookie's `same_site` setting reaches: the same site as the app by default (`app.example.com` with `api.example.com`).
+- The client keeps only a hint that a session exists (in the `storage` you choose, default memory). If the server stops accepting the cookie, the next request signs the client out (`SESSION_EXPIRED`), as with tokens.
+- Not combined with `apiKey`, and not for the admin API, which needs an `Authorization` header (see [Sessions](../../auth/sessions/#session-cookies)).
 
 ## Errors
 

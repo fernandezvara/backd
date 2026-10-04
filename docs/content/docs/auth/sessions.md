@@ -39,15 +39,39 @@ Authorization: Bearer bds_mxamh1_afbN3BMzfXqDWhxYpXKF58FhWQ4r9eaLc9ew
 
 - Tokens are random (256 bits) and start with `bds_`. `backd` stores only a SHA-256 hash of each token, never the token itself, and never logs it.
 - A token belongs to one realm. It is recognized on every database of that realm and unknown (`401`) in any other realm.
-- Tokens are only accepted in the `Authorization` header. There are no cookies, so there is nothing to protect against cross-site request forgery.
+- Tokens are accepted in the `Authorization` header. A realm can also accept a [session cookie](#session-cookies), which brings the protections against cross-site request forgery described there; without it there are no cookies, so nothing to forge.
 - Browser apps on another origin need that origin listed in the realm's [CORS settings](../../configuration/realm/#cors).
 
 {{< hint warning >}}
-A token stored where any script on the page can read it (`localStorage`, a global variable) is stolen by any cross-site-scripting bug. Keep it in memory (the [JavaScript client](../../clients/js/#token-storage) does by default), send a strict Content-Security-Policy, and never put tokens in URLs or logs.
+A token stored where any script on the page can read it (`localStorage`, a global variable) is stolen by any cross-site-scripting bug. Keep it in memory (the [JavaScript client](../../clients/js/#token-storage) does by default), send a strict Content-Security-Policy, and never put tokens in URLs or logs. Or keep no token in the page at all, with a [session cookie](#session-cookies).
+
 {{< /hint >}}
+
 - A session **expires after `sessions.idle_timeout` without use** (default 30 days), and **never lives longer than `sessions.max_lifetime`** (default 90 days), both set in [`realm.yaml`](../../configuration/realm/). Each use pushes the idle expiry forward, recorded at most once a minute. `expires_at` in responses reflects the latest value.
 - **Admins can have shorter sessions.** A session of a user who holds an [admin role](../../configuration/realm/#roles) uses `sessions.admin_idle_timeout` and `sessions.admin_max_lifetime` when they are set (for example `1h` and `12h`), and they can only shorten the regular limits. The limits follow the roles the user holds now: granting an admin role shortens their existing sessions from the next request, and taking it away restores the regular limits for sessions started afterwards. They apply to the command line too (`backd login` sessions end sooner, and you log in again); API keys have their own [expiry](../api-keys/).
 - Sessions end immediately on logout, when revoked, when the password changes (other sessions only), when the user is disabled or deleted, or when an operator sets a new password with `backd user set-password`.
+
+### Session cookies
+
+A browser app can have its session in an **HttpOnly cookie**: scripts on the page, including injected ones, can't read it. A realm turns this on, and each login chooses:
+
+```yaml
+# realm.yaml
+sessions:
+  cookie:
+    enabled: true
+    same_site: lax        # lax (default), strict or none
+cors:
+  origins: [https://app.example.com]   # the app's origin; a wildcard is refused when cookies are on
+```
+
+- `POST /_auth/login` and `/_auth/signup` with `"cookie": true` answer with `Set-Cookie: __Secure-backd_session=bds_…; Path=/v1/<realm>; HttpOnly; Secure; SameSite=Lax; Max-Age=…` and a body **without** `token` and `token_type`. Without `cookie`, the same realm answers with the token as before, so the command line, servers and tests are unaffected.
+- The browser sends the cookie to `/v1/<realm>/…` on its own (the app's `fetch` needs `credentials: 'include'`; the [JavaScript client](../../clients/js/#session-cookies) does it with `cookies: true`). A request with an `Authorization` header uses the header, whatever cookies it carries.
+- `Max-Age` is the longest the session can live; `backd` ends it earlier when the [idle timeout](#sessions-and-tokens) says so. A request with a cookie the server refuses answers `401` and clears the cookie. Logout, logout everywhere and deactivating the account clear it too.
+- **CSRF.** Because the browser sends the cookie by itself, a request that changes anything (anything but `GET`, `HEAD` and `OPTIONS`) and carries only the cookie is refused with `403` unless its `Origin` is this API's own origin or one of the realm's `cors.origins`. A login or sign-up asking for a cookie is checked the same way, so another site can't sign a visitor in to an account of its choosing. "This API's own origin" is compared with the `Host` the request arrives with, so a proxy must forward the original `Host` (with its port, if not 443); otherwise list the app's origin in `cors.origins`. Together with `SameSite=Lax` and the JSON-only bodies, a page of another site can neither send a state-changing request nor read an answer.
+- **CORS.** Responses to the listed origins carry `Access-Control-Allow-Credentials: true`; other origins get none. Responses vary on `Cookie` and are `private`.
+- **SameSite.** `lax` (default) and `strict` suit an app on the same site as the API (the same registrable domain: `app.example.com` and `api.example.com`, or one origin behind a proxy). Use `none` only when the app is on another site, and rely on the origin check then. Cookies need HTTPS (`Secure`); browsers also accept `localhost`.
+- **The admin API never takes cookies**: it needs an `Authorization` header (an admin key, or a session token from a login without `cookie`). A page that signs in with a cookie can't call it.
 
 ## Endpoints
 

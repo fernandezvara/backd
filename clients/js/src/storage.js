@@ -7,6 +7,13 @@
  */
 
 /**
+ * What the client stores, instead of a token, when the session lives in an
+ * HttpOnly cookie (`cookies: true`): a hint that there is a session, with
+ * nothing secret in it.
+ */
+export const COOKIE_SESSION = 'cookie-session'
+
+/**
  * Keeps the token in memory: it is lost on reload, and scripts on the page
  * can't read it from storage. The default.
  * @returns {TokenStorage}

@@ -4,7 +4,7 @@
  * @param {Array<{ status?: number, body?: unknown, headers?: Record<string, string> } | Error>} answers
  */
 export function mockFetch(answers) {
-  /** @type {Array<{ url: URL, method: string, headers: Record<string, string>, body: any }>} */
+  /** @type {Array<{ url: URL, method: string, headers: Record<string, string>, body: any, credentials?: string }>} */
   const calls = []
   const queue = [...answers]
   /**
@@ -19,6 +19,7 @@ export function mockFetch(answers) {
       method: init.method ?? 'GET',
       headers: /** @type {Record<string, string>} */ (init.headers ?? {}),
       body: typeof init.body === 'string' ? JSON.parse(init.body) : undefined,
+      credentials: init.credentials,
     })
     const next = queue.shift()
     if (!next) throw new Error('unexpected request: ' + (init.method ?? 'GET') + ' ' + url.pathname)

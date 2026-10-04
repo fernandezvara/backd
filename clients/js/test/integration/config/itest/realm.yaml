@@ -1,4 +1,7 @@
 signup: open
+sessions:
+  cookie:
+    enabled: true
 roles:
   admin: {}
   ops:
