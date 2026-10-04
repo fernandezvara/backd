@@ -97,6 +97,19 @@ test('pagination and iterate', { skip }, async () => {
   await assert.rejects(posts.list({ where: { status: tag }, orderBy: '-title', after: p1.next_cursor }), (/** @type {any} */ e) => e.status === 400)
 })
 
+test('a create with an idempotency key happens once', { skip }, async () => {
+  const { c } = await user('idem')
+  const posts = c.db('app').collection('posts')
+  const key = 'k-' + Math.random().toString(36).slice(2)
+  const first = await posts.create({ title: 'once' }, { idempotencyKey: key })
+  const again = await posts.create({ title: 'once' }, { idempotencyKey: key })
+  assert.equal(again.id, first.id)
+  assert.equal((await posts.list({ where: { title: 'once' } })).items.length, 1)
+  await assert.rejects(posts.create({ title: 'different' }, { idempotencyKey: key }), (/** @type {any} */ e) => e.status === 422 && e.code === 'idempotency_key_reused')
+  const batch = await c.db('app').batch([{ op: 'create', collection: 'posts', document: { title: 'b' } }], { idempotencyKey: key + '-b' })
+  assert.deepEqual(await c.db('app').batch([{ op: 'create', collection: 'posts', document: { title: 'b' } }], { idempotencyKey: key + '-b' }), batch)
+})
+
 test('validation, unique values and missing collections', { skip }, async () => {
   const { c } = await user('errs')
   const posts = c.db('app').collection('posts')

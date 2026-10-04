@@ -153,7 +153,8 @@ export class Client {
     }
 
     const retry = req.retry ?? this.retry
-    const safe = req.method === 'GET' || Object.keys(headers).some((h) => h.toLowerCase() === 'if-match')
+    // Safe to repeat: reads, writes conditional on a version, and requests the server deduplicates by key.
+    const safe = req.method === 'GET' || Object.keys(headers).some((h) => ['if-match', 'idempotency-key'].includes(h.toLowerCase()))
     const attempts = safe ? Math.max(0, retry.attempts) : 0
     for (let attempt = 0; ; attempt++) {
       /** @type {Response} */

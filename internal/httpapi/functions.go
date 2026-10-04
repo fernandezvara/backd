@@ -503,6 +503,7 @@ func (f *functions) checkIdempotency(w http.ResponseWriter, r *http.Request, fn 
 		return "", false
 	}
 	f.metrics.FunctionReplayed(realm, rec.Function)
+	w.Header().Set("Idempotent-Replayed", "true")
 	f.replayIdempotent(w, r, fn, realm, database, existing)
 	return "", false
 }

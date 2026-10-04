@@ -30,6 +30,7 @@ export { memoryStorage, localStorageStorage } from './storage.js'
  * @typedef {import('./data.js').Meta} Meta
  * @typedef {import('./data.js').ListParams} ListParams
  * @typedef {import('./data.js').WriteOptions} WriteOptions
+ * @typedef {import('./data.js').CreateOptions} CreateOptions
  * @typedef {import('./admin.js').AdminUser} AdminUser
  * @typedef {import('./admin.js').UserPage} UserPage
  * @typedef {import('./admin.js').Invitation} Invitation

@@ -90,3 +90,28 @@ func TestIdempotencyOnMongoDB(t *testing.T) {
 		t.Fatalf("claim after release: %+v %v %v", reclaimed, ok, err)
 	}
 }
+
+// A created document is remembered as a result and comes back as it was.
+func TestIdempotentDocumentAnswerOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	t0 := time.Date(2126, 9, 29, 12, 0, 0, 0, time.UTC)
+	rec := auth.IdempotencyRecord{
+		ID: auth.IdempotencyID("doc:app", "posts", "user:u1", "k"), Function: "app/posts", CallerActor: "user:u1",
+		InputHash: "h", Mode: "sync", Status: auth.IdempotencyRunning, CreatedAt: t0, ExpiresAt: t0.Add(24 * time.Hour),
+	}
+	if _, ok, err := s.ClaimIdempotency(ctx, rec); err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	const answer = `{"_meta":{"created_at":"2126-09-29T12:00:00.123Z","version":1},"author":{"email":"a@example.com"},"id":"x1","price":19.5,"tags":["a","b"],"title":"once","unset":null}`
+	if err := s.CompleteIdempotency(ctx, rec.ID, &auth.JobResult{Status: "ok", Output: json.RawMessage(answer), HTTPStatus: 201}, "", t0, t0.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := s.ClaimIdempotency(ctx, rec)
+	if err != nil || ok || got.Status != auth.IdempotencyDone || got.Result == nil || got.Result.HTTPStatus != 201 {
+		t.Fatalf("claim of a done key: %+v %v %v", got, ok, err)
+	}
+	if string(got.Result.Output) != answer {
+		t.Errorf("the answer changed:\n got %s\nwant %s", got.Result.Output, answer)
+	}
+}

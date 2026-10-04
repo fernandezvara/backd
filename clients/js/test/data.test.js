@@ -152,3 +152,25 @@ test('writes with ifMatch are retried; without, they are not', async () => {
   await assert.rejects(c.patch('a', { t: 1 }))
   assert.equal(m.calls.length, 3)
 })
+
+test('create and batch take an idempotencyKey, and keyed requests are retried', async () => {
+  const busy = { status: 503, body: errorBody('unavailable'), headers: { 'Retry-After': '0' } }
+  const m = mockFetch([{ status: 201, body: doc('a') }, busy, { status: 201, body: doc('b') }, { body: { results: [doc('c')] } }, busy])
+  const c = createClient({ url: 'http://api.test', realm: 'blog', fetch: m.fetch, retry: { attempts: 1 } }).db('main')
+  await c.collection('posts').create({ title: 'x' }, { idempotencyKey: 'order-1' })
+  assert.equal(m.calls[0].headers['Idempotency-Key'], 'order-1')
+
+  // The server deduplicates by key, so the client may repeat the request after a 503.
+  const created = await c.collection('posts').create({ title: 'y' }, { idempotencyKey: 'order-2' })
+  assert.equal(created.id, 'b')
+  assert.equal(m.calls.length, 3)
+  assert.equal(m.calls[2].headers['Idempotency-Key'], 'order-2')
+
+  await c.batch([{ op: 'create', collection: 'posts', document: { title: 'z' } }], { idempotencyKey: 'batch-1' })
+  assert.equal(m.calls[3].headers['Idempotency-Key'], 'batch-1')
+
+  // Without a key a create is not repeated: it might have taken effect.
+  await assert.rejects(c.collection('posts').create({ title: 'w' }), (/** @type {any} */ e) => e.status === 503)
+  assert.equal(m.calls.length, 5)
+  assert.equal(m.calls[4].headers['Idempotency-Key'], undefined)
+})
