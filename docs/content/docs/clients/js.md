@@ -335,7 +335,7 @@ await backd.admin.secrets.set('STRIPE_KEY', value, { database: 'main' })   // om
 await backd.admin.secrets.delete('STRIPE_KEY', { database: 'main' })
 const history = await backd.admin.invocations.list({ function: 'main/refund', limit: 20 })   // function calls, with origin and parent_id
 
-const created = await backd.admin.apiKeys.create({ name: 'billing', role: 'data', expiresIn: '90d', networks: ['203.0.113.0/24'] })
+const created = await backd.admin.apiKeys.create({ name: 'billing', role: 'data', expiresIn: '90d', networks: ['203.0.113.0/24'], scopes: ['read:main/posts'] })
 storeSecret(created.key)                                           // shown only here
 await backd.admin.apiKeys.list()                                   // never the keys themselves
 await backd.admin.apiKeys.revoke('billing')

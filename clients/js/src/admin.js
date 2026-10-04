@@ -66,6 +66,7 @@ import { Job } from './functions.js'
  * @property {'data' | 'admin'} role
  * @property {string} prefix          First characters of the key.
  * @property {string[]} networks      Where it may be used from; empty: anywhere.
+ * @property {string[]} scopes        What it reaches (`read:blog/posts`, `call:main/export`…); empty: everything.
  * @property {string} created_at
  * @property {string | null} last_used_at
  * @property {string | null} expires_at
@@ -390,17 +391,20 @@ class AdminAPIKeys {
 
   /**
    * Creates a key; store its `key` now, it is never shown again.
-   * @param {{ name: string, role?: 'data' | 'admin', expiresIn?: string, networks?: string[] }} input
-   *   `role` defaults to data; `expiresIn`: days (`90d`) or Go durations (`12h`).
+   * @param {{ name: string, role?: 'data' | 'admin', expiresIn?: string, networks?: string[], scopes?: string[] }} input
+   *   `role` defaults to data; `expiresIn`: days (`90d`) or Go durations (`12h`). `scopes` limit what a
+   *   data key reaches: `read`, `write` or `call`, optionally followed by `:<database>` or
+   *   `:<database>/<collection or function>`; none means everything.
    * @param {RequestOptions} [opts]
    * @returns {Promise<NewAPIKey>}
    */
-  async create({ name, role, expiresIn, networks }, opts) {
+  async create({ name, role, expiresIn, networks, scopes }, opts) {
     /** @type {Record<string, unknown>} */
     const body = { name }
     if (role !== undefined) body.role = role
     if (expiresIn !== undefined) body.expires_in = expiresIn
     if (networks !== undefined) body.networks = networks
+    if (scopes !== undefined) body.scopes = scopes
     return (await this.admin._request({ method: 'POST', path: ['apikeys'], body, ...opts })).data
   }
 

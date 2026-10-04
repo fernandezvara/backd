@@ -244,13 +244,14 @@ func registerRemote(cfg *cli.Config) {
 	k := cfg.Command("apikey").ShortHelp("manage a realm's API keys").
 		LongHelp(adminAPINote + "\n\nAPI keys give server-side services full access to their realm's data.\nStore them as secrets.")
 	k.SubCommand("create").ShortHelp("create an API key and print it once").
-		LongHelp("--role data (default) reaches data routes; admin also reaches the admin API.\n--expires takes days (\"90d\") or Go durations (\"12h\"); default: never (not\nrecommended: startup warns about such keys). --networks limits where the key\nmay be used from.").
+		LongHelp("--role data (default) reaches data routes; admin also reaches the admin API.\n--expires takes days (\"90d\") or Go durations (\"12h\"); default: never (not\nrecommended: startup warns about such keys). --networks limits where the key\nmay be used from. --scopes limits what a data key reaches, so a leaked key exposes\nonly that: comma-separated grants read, write or call, each optionally followed by\n:<database> or :<database>/<collection or function>, for example\n--scopes read:blog/posts,call:main/contact. Without scopes the key reaches everything.").
 		Func(act("apikey create", apikeyCreate)).Config(func(cc *cli.CommandConfig) {
 		remote(cc)
 		required(cc, "name", "the key's name")
 		cc.Define("role").String().Flag("role").Default("data").OneOf("data", "admin").Description("data (reaches data routes) or admin (also reaches the admin API)")
 		optional(cc, "expires", "how long the key is valid, such as 90d or 12h")
 		optional(cc, "networks", "where the key may be used from: comma-separated IP addresses or CIDR networks")
+		optional(cc, "scopes", "what a data key reaches: comma-separated grants such as read:blog/posts,write:blog,call:main/export (default: everything)")
 	})
 	k.SubCommand("list").ShortHelp("list the realm's API keys (never the keys themselves)").
 		Func(act("apikey list", apikeyList)).Config(remote)

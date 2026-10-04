@@ -38,8 +38,8 @@ test('API keys and networks', async () => {
   assert.equal(created.key, 'bdk_secret')
   assert.equal(m.calls[1].method, 'POST')
   assert.deepEqual(m.calls[1].body, { name: 'billing', role: 'admin', expires_in: '90d', networks: ['10.0.0.0/8'] })
-  await a.apiKeys.create({ name: 'plain' })
-  assert.deepEqual(m.calls[2].body, { name: 'plain' })
+  await a.apiKeys.create({ name: 'plain', scopes: ['read:blog/posts', 'call:main/export'] })
+  assert.deepEqual(m.calls[2].body, { name: 'plain', scopes: ['read:blog/posts', 'call:main/export'] })
 
   await a.apiKeys.revoke('billing')
   assert.equal(m.calls[3].method, 'DELETE')

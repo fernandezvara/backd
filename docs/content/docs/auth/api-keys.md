@@ -35,8 +35,9 @@ Keys are managed by the realm's administrators, with `backd apikey` (after [`bac
 | `backd apikey create --realm <realm> --name <name>` | Create a `data` key that never expires, and print it (with a warning: prefer `--expires`) |
 | `backd apikey create --realm <realm> --name <name> --role admin` | Create an `admin` key, for the [admin API](../admin/) |
 | `backd apikey create --realm <realm> --name <name> --networks 10.0.0.0/8,192.0.2.7` | Create a key that works only from those networks |
+| `backd apikey create --realm <realm> --name <name> --scopes read:blog/posts,call:main/contact` | Create a key that reaches only what the [scopes](#scopes) grant |
 | `backd apikey create --realm <realm> --name <name> --expires 90d` | Create a key that stops working after 90 days (days or Go durations such as `12h`) |
-| `backd apikey list --realm <realm>` | List keys: name, role, first characters, networks, creation, last use and expiry |
+| `backd apikey list --realm <realm>` | List keys: name, role, first characters, scopes, networks, creation, last use and expiry |
 | `backd apikey revoke --realm <realm> --name <name>` | Delete the key; it stops working at once |
 
 ```sh
@@ -46,8 +47,8 @@ backd apikey create --realm blog --name publisher --expires 90d
 # API key "publisher" (role data) created. Store it now as a secret: it can't be shown again. It expires at …
 
 backd apikey list --realm blog
-# NAME       ROLE  KEY          CREATED               LAST USED             EXPIRES
-# publisher  data  bdk_7VeQ1h…  2026-09-26T15:22:52Z  -                     2026-12-25T15:22:52Z
+# NAME       ROLE  KEY          SCOPES  NETWORKS  CREATED               LAST USED  EXPIRES
+# publisher  data  bdk_7VeQ1h…  all     -         2026-09-26T15:22:52Z  -          2026-12-25T15:22:52Z
 ```
 
 - The key is printed **once**, on standard output, so scripts can capture it.
@@ -77,6 +78,34 @@ At startup, `backd serve` helps enforce this. For each realm it logs:
 - an `INFO` line listing expired keys that are still stored (they are already refused; revoke them to tidy up).
 
 The lines include key names only, never keys or hashes. `backd` checks only at startup, so for long-running services, schedule `backd apikey list` (for example weekly) and alert on the `EXPIRES` column.
+
+## Scopes
+
+A key without scopes reaches everything its role allows. **Scopes narrow a `data` key to what it was made for**, so a leaked key exposes that and nothing else. They are set when the key is created, with `--scopes` (comma-separated) or `scopes` in the [admin API](../admin/#api-keys), and `apikey list` shows them (`all` when there are none).
+
+A grant is `read`, `write` or `call`, optionally followed by a target:
+
+| Grant | Gives |
+|---|---|
+| `read` | reading (list and get) every collection |
+| `read:blog` | reading the collections of the database `blog` |
+| `write:blog/posts` | creating, updating and deleting in the collection `blog/posts` (including [batches](../../api/documents/#batch-writes)); `write` doesn't include reading |
+| `call` | calling every [function](../../functions/calling/) |
+| `call:main` | calling the functions of the database `main` |
+| `call:main/export` | calling that function, and reading the [jobs](../../functions/jobs/) of that function |
+
+```sh
+# A website's key: reads the published posts, receives the contact form, nothing else.
+backd apikey create --realm blog --name website --expires 90d \
+  --scopes read:main/posts,call:main/contact_form
+```
+
+- **Anything not granted answers `403 forbidden`**, naming the target. On the data routes, in batches, on function calls and on job reads, whatever the access rules say (keys bypass the rules, scopes don't).
+- **Functions are separate on purpose.** A function can do more than the key that calls it (it has its own admin access), so a scoped key calls a function only with a `call` grant. While the function runs, the data calls it makes *as the caller* stay within the key's scopes too.
+- **Acting on behalf of a user** doesn't widen a key: both the user's rules and the key's scopes apply.
+- Scopes are for `data` keys. An `admin` key reaches the admin API, which scopes don't cover, so creating one with scopes is refused; finer administrator rights are a separate feature.
+- A grant must name something the realm has: a typo (`read:blogs`) is refused when the key is created, not discovered when it fails.
+- Keys made before scopes existed have none, and keep working as before.
 
 ## Network restrictions
 

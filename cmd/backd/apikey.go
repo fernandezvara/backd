@@ -9,6 +9,7 @@ import (
 
 	"github.com/fernandezvara/cli"
 
+	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -18,6 +19,7 @@ type apiKey struct {
 	Role       string   `json:"role"`
 	Prefix     string   `json:"prefix"`
 	Networks   []string `json:"networks"`
+	Scopes     []string `json:"scopes"`
 	CreatedAt  string   `json:"created_at"`
 	LastUsedAt *string  `json:"last_used_at"`
 	ExpiresAt  *string  `json:"expires_at"`
@@ -40,6 +42,13 @@ func keyOptions(c *cli.CommandContext, body map[string]any) error {
 		}
 		body["networks"] = nets.Strings()
 	}
+	if v := str(c, "scopes"); v != "" {
+		grants := strings.Split(v, ",")
+		if _, err := auth.ParseScopes(grants); err != nil {
+			return usageErr(fmt.Errorf("--scopes: %w", err))
+		}
+		body["scopes"] = grants
+	}
 	return nil
 }
 
@@ -59,6 +68,9 @@ func apikeyCreate(c *cli.CommandContext) error {
 	uio := ioOf(c)
 	fmt.Fprintln(uio.stdout, k.Key)
 	msg := fmt.Sprintf("API key %q (role %s) created. Store it now as a secret: it can't be shown again.", k.Name, k.Role)
+	if len(k.Scopes) > 0 {
+		msg += " It reaches only: " + strings.Join(k.Scopes, ", ") + "."
+	}
 	if k.ExpiresAt != nil {
 		msg += " It expires at " + *k.ExpiresAt + "."
 	} else {
@@ -78,13 +90,16 @@ func apikeyList(c *cli.CommandContext) error {
 		return err
 	}
 	tw := tabwriter.NewWriter(c.Stdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tROLE\tKEY\tNETWORKS\tCREATED\tLAST USED\tEXPIRES")
+	fmt.Fprintln(tw, "NAME\tROLE\tKEY\tSCOPES\tNETWORKS\tCREATED\tLAST USED\tEXPIRES")
 	for _, k := range page.Items {
-		nets := strings.Join(k.Networks, ",")
+		nets, scopes := strings.Join(k.Networks, ","), strings.Join(k.Scopes, ",")
 		if nets == "" {
 			nets = "-"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s…\t%s\t%s\t%s\t%s\n", k.Name, k.Role, k.Prefix, nets, k.CreatedAt, orDash(k.LastUsedAt), orDash(k.ExpiresAt))
+		if scopes == "" {
+			scopes = "all" // no scopes: full access
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s…\t%s\t%s\t%s\t%s\t%s\n", k.Name, k.Role, k.Prefix, scopes, nets, k.CreatedAt, orDash(k.LastUsedAt), orDash(k.ExpiresAt))
 	}
 	return tw.Flush()
 }
