@@ -26,9 +26,11 @@ curl -s http://localhost:8080/readyz
 
 Realms, databases and collections are directories under `config/`. Create `config/shelf/realm.yaml`:
 
-{{< example-file path="shelf/realm.yaml" >}}
+```yaml
+auth: disabled
+```
 
-`auth: disabled` is the whole file for now — every key is optional.
+That is the whole file for now — every key is optional. Chapter 2 turns authentication on and creates the first accounts; the repository's finished `realm.yaml` is the *last* chapter's state, so don't copy it yet.
 
 ## The collections
 

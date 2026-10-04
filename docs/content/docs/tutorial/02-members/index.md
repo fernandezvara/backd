@@ -11,23 +11,47 @@ Chapter 1's realm was open to anyone on localhost. Now members sign up and sign 
 
 Replace `config/shelf/realm.yaml`:
 
-{{< example-file path="shelf/realm.yaml" >}}
+```yaml
+auth: enabled
+signup: open
+
+roles:
+  admin:
+    description: "Operators: users, invitations and API keys"
+    admin: true
+    users:
+      - operator@shelf.example
+  curator:
+    description: Publishes assets and manages share links (chapter 5)
+    users:
+      - curator@shelf.example
+```
 
 - **`auth: enabled`** — users, sessions and roles exist; anonymous callers get `401`.
-- **`signup: open`** — anyone may create an account ([alternatives](../../auth/users/): `invite`, `closed`).
-- **`roles:`** — `admin` is the operator role (`admin: true` grants the admin API); `curator` matters from chapter 5. The `users:` lists are **seed assignments**: the first time `curator@shelf.example` signs up, the role attaches. A shortcut for local stacks — never keep seeded users in a real realm.
+- **`signup: open`** — anyone may create an account ([alternatives](../../auth/users/): `invite`, `closed`). It is open **only for this chapter and the next**: chapter 4 closes it, and from then on every new member needs an invitation — which only an existing administrator can create.
+- **`roles:`** — `admin` is the operator role (`admin: true` grants the admin API); `curator` matters from chapter 5. The `users:` lists are **seed assignments**: when someone signs up with a listed address, the role attaches. A shortcut for local stacks — never keep seeded users in a real realm.
 
-`backd bootstrap --realm shelf --email you@example.com` is the other way to get a first admin, and what a fresh deployment uses.
-
-## Apply and sign up
+## Apply, and create the three accounts
 
 ```sh
 docker compose restart backd
 ```
 
-The app's **Sign in** button now does something: `backd.auth.signup()` or `.login()` returns a session the client keeps in `localStorage` (`storage: localStorageStorage('shelf')` — it survives reloads). `backd.auth.me()` on load restores it.
+Open `http://localhost:8080` and **sign up** (any password of 12 or more characters; the demo stack sends no email yet, so nothing needs verifying until chapter 10) as each of:
 
-Sign up twice: once as yourself, once as `curator@shelf.example` — both work because `signup: open`; the seeded address silently gains its role. (Any password ≥ 12 characters; the demo stack doesn't send email yet, so verification is skipped until chapter 10.)
+| Email | Why you need it |
+|---|---|
+| `operator@shelf.example` | the **administrator**: chapter 4 invites with it, chapters 10 and 12 use the Admin view |
+| `curator@shelf.example` | the **curator**: publishes assets from chapter 5 on |
+| your own address | a plain **member**, to see what the rules refuse |
+
+Do it **now**. Once chapter 4 sets `signup: invite`, a new address can't sign up without an invitation, and nobody can create an invitation without an administrator — so an operator who hasn't signed up yet would lock you out ([the way back](../04-invitations/#locked-out) is `backd bootstrap`, but it is easier not to need it). Log out between accounts (**Log out** in the nav), or use a private window for each.
+
+`backd bootstrap --realm shelf --email you@example.com` is how a *real* deployment creates its first admin, and the way out of that lock-out.
+
+## Signing in
+
+The app's **Sign in** button now does something: `backd.auth.signup()` or `.login()` returns a session the client keeps in `localStorage` (`storage: localStorageStorage('shelf')` — it survives reloads). `backd.auth.me()` on load restores it.
 
 ## What the app gains
 
@@ -44,7 +68,7 @@ Sign up twice: once as yourself, once as `curator@shelf.example` — both work b
 
 - `GET /v1/shelf/main/assets` without a session answers `401` — the chapter-1 curl now needs a sign-in first.
 - Signing up and reloading keeps you signed in; **Log out** ends it.
-- `curator@shelf.example` and `operator@shelf.example` sign in with any password ≥ 12 chars on first use.
+- `operator@shelf.example` and `curator@shelf.example` exist, with the password you chose, next to your own account — and the operator's session has `roles: ["admin"]` (`backd.auth.me()`).
 - **My assets** lists only what you created; the account page changes your password and the new one signs in.
 - Deleting your account signs you out; signing up again with the same address says it's taken (deactivated, not gone).
 

@@ -15,6 +15,16 @@ signup: invite
 
 Existing accounts keep working — this only governs **new** sign-ups. From now on `POST /_auth/signup` without a valid `invitation` token answers `403`.
 
+## Locked out?
+
+If you skipped chapter 2's accounts, nobody holds the `admin` role and nobody can invite. Create the operator where `backd` runs — it asks for a password and refuses when an administrator already exists:
+
+```sh
+docker compose exec backd /backd bootstrap --realm shelf --email operator@shelf.example
+```
+
+([Create the first administrator](../../auth/cli/) has the details.)
+
 ## Invite someone
 
 Only admins manage invitations. Sign in as `operator@shelf.example` (it seeds the `admin` role) — the app's Admin view now shows **Invite a member**:
