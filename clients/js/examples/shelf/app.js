@@ -1,8 +1,8 @@
 // Shelf — the tutorial app (docs: Tutorial).
 //
-// Chapter 4 closes the door (signup: invite): new members arrive by
-// invitation. Operators create them from the admin view; the invitee signs
-// up with the token — emailed, once chapter 10 configures delivery.
+// Chapter 5 adds the first functions: curators `publish` drafts, members
+// mint `share` links, and `?s=<token>` resolves one publicly through
+// `share-open` — the holes the rules chapter left, closed.
 import { createClient, localStorageStorage, VersionMismatchError } from 'backd-js'
 
 const backd = createClient({
@@ -12,7 +12,9 @@ const backd = createClient({
   // trusting localStorage (or use cookie sessions).
   storage: localStorageStorage('shelf'),
 })
-const assets = backd.db('main').collection('assets')
+const main = backd.db('main')
+const assets = main.collection('assets')
+const shares = main.collection('shares')
 
 document.addEventListener('alpine:init', () => {
   Alpine.data('shelf', () => ({
@@ -34,6 +36,15 @@ document.addEventListener('alpine:init', () => {
     pwd: { current: '', next: '' },
     accountMsg: null,
 
+    // Shares: the asset being shared, the minted link, my active links, and
+    // the public ?s=<token> view.
+    sharing: null,
+    shareExpiry: 'week',
+    shareLink: null,
+    myShares: [],
+    sharedDoc: null,
+    shareErr: null,
+
     // Gallery state: the page of published assets, the tag filter and the
     // cursor that continues the list.
     assets: [],
@@ -49,18 +60,22 @@ document.addEventListener('alpine:init', () => {
 
     async init() {
       // An invitation link (?token=…) preselects the sign-up form.
-      const token = new URLSearchParams(window.location.search).get('token')
+      const params = new URLSearchParams(window.location.search)
+      const token = params.get('token')
       if (token) {
         this.invitation = token
         this.mode = 'signup'
       }
+      // ?s=<token> is the public share view — no session needed.
+      const s = params.get('s')
+      if (s) await this.openShare(s)
       try {
         this.user = await backd.auth.me()
       } catch {
         this.user = null
       }
       await this.refilter()
-      if (this.user) await Promise.all([this.loadMine(), this.loadInvites()])
+      if (this.user) await Promise.all([this.loadMine(), this.loadInvites(), this.loadShares()])
     },
 
     // --- session -----------------------------------------------------------
@@ -131,10 +146,10 @@ document.addEventListener('alpine:init', () => {
       this.busy = true
       this.error = null
       try {
+        // Chapter 5: members save drafts; published_at belongs to publish().
         const doc = {
           title: this.draft.title,
           kind: this.draft.kind,
-          published_at: new Date().toISOString(),
         }
         if (this.draft.url) doc.url = this.draft.url
         if (this.draft.body) doc.body = this.draft.body
@@ -250,6 +265,73 @@ document.addEventListener('alpine:init', () => {
           : e.message
       } finally {
         this.busy = false
+      }
+    },
+
+    // --- functions (chapter 5) -----------------------------------------------
+
+    get isCurator() {
+      return (this.user?.roles ?? []).includes('curator')
+    },
+
+    async publish(asset) {
+      this.busy = true
+      this.error = null
+      try {
+        // The key makes a double-click (or a retry) answer the first call's
+        // result instead of publishing twice.
+        await main.fn('publish', { asset_id: asset.id }, { idempotencyKey: `publish-${asset.id}` })
+        await this.refilter()
+        await this.loadMine()
+      } catch (e) {
+        this.error = e.message
+      } finally {
+        this.busy = false
+      }
+    },
+
+    startShare(asset) {
+      this.sharing = asset
+      this.shareLink = null
+      location.hash = 'share'
+    },
+
+    async createShare() {
+      if (!this.sharing) return
+      this.busy = true
+      this.error = null
+      try {
+        const out = await main.fn('share', { asset_id: this.sharing.id, expires_in: this.shareExpiry },
+          { idempotencyKey: crypto.randomUUID() })
+        this.shareLink = `${location.origin}/?s=${out.token}`
+        await this.loadShares()
+      } catch (e) {
+        this.error = e.message
+      } finally {
+        this.busy = false
+      }
+    },
+
+    async loadShares() {
+      if (!this.user) return
+      try {
+        const page = await shares.list({ where: { created_by: this.user.id }, orderBy: '-_meta.created_at', limit: 50 })
+        this.myShares = page.items
+      } catch (e) {
+        this.error = e.message
+      }
+    },
+
+    async revokeShare(share) {
+      await shares.delete(share.id).catch((e) => { this.error = e.message })
+      await this.loadShares()
+    },
+
+    async openShare(token) {
+      try {
+        this.sharedDoc = await main.fn('share-open', { token })
+      } catch (e) {
+        this.shareErr = e.message
       }
     },
 

@@ -41,9 +41,37 @@
     </ul>
   </nav>
 
-  <main class="container" x-data="shelf" x-cloak>
+  <main class="container" x-data="shelf" x-cloak :class="{ publiclink: sharedDoc || shareErr }">
 
     <p class="error" x-show="error" x-text="error" role="alert"></p>
+
+    <!-- view: shared asset (ch5) — what ?s=<token> shows a stranger. -->
+    <section id="shared-view" x-show="sharedDoc || shareErr">
+      <article>
+        <p x-show="shareErr" class="error" x-text="shareErr"></p>
+        <template x-if="sharedDoc">
+          <div>
+            <header>
+              <strong x-text="sharedDoc?.title"></strong>
+              <span class="kind" x-text="sharedDoc?.kind"></span>
+            </header>
+            <p>
+              <a x-show="sharedDoc?.url" :href="sharedDoc?.url" x-text="sharedDoc?.url"></a>
+              <span x-text="sharedDoc?.body"></span>
+            </p>
+            <footer>
+              <span class="tags">
+                <template x-for="t in sharedDoc?.tags ?? []" :key="t">
+                  <code x-text="t"></code>
+                </template>
+              </span>
+              <span class="muted" x-text="sharedDoc?.published_at ? 'shared · published ' + new Date(sharedDoc.published_at).toLocaleDateString() : ''"></span>
+            </footer>
+          </div>
+        </template>
+      </article>
+      <p class="muted"><a href="/">Shelf</a> — a team asset library.</p>
+    </section>
 
     <!-- view: gallery (ch1, wired) — public, paginated, filterable. -->
     <section id="gallery">
@@ -84,7 +112,7 @@
                   <a href="#" @click.prevent="tag = t; refilter()" x-text="t"></a>
                 </template>
               </span>
-              <button class="secondary outline sm" disabled title="Chapter 5 wires this">Share</button>
+              <button class="secondary outline sm" @click="startShare(asset)">Share</button>
             </footer>
           </article>
         </template>
@@ -95,28 +123,40 @@
       </footer>
     </section>
 
-    <!-- view: share dialog (ch5) — expiring public link for one asset. -->
-    <section id="share">
-      <h3>Share “The backd handbook”</h3>
+    <!-- view: share dialog (ch5, wired) — expiring public link for one asset. -->
+    <section id="share" x-show="sharing">
+      <h3>Share “<span x-text="sharing?.title"></span>”</h3>
       <article>
         <p>Anyone with this link can read the asset until it expires.</p>
-        <fieldset role="group">
-          <input readonly value="https://shelf.example/s/xK7f2QpLmN9v">
-          <button class="secondary">Copy</button>
-        </fieldset>
-        <label>Expires
-          <select>
-            <option>in 7 days</option>
-            <option>in 30 days</option>
-            <option>never</option>
-          </select>
-        </label>
-        <footer>
-          <button>Create link</button>
-          <button class="secondary">Close</button>
-        </footer>
+        <form @submit.prevent="createShare">
+          <fieldset role="group">
+            <select x-model="shareExpiry" aria-label="Expires">
+              <option value="week">in 7 days</option>
+              <option value="month">in 30 days</option>
+              <option value="never">never</option>
+            </select>
+            <button type="submit" :disabled="busy">New link</button>
+          </fieldset>
+        </form>
+        <template x-if="shareLink">
+          <fieldset role="group">
+            <input readonly :value="shareLink">
+            <button class="secondary" @click="navigator.clipboard?.writeText(shareLink)">Copy</button>
+          </fieldset>
+        </template>
       </article>
-      <p class="muted">Active links: <code>/s/xK7f2QpLmN9v</code> (expires 2026-10-01) <button class="link danger sm">revoke</button></p>
+      <article x-show="myShares.length">
+        <header><strong>My active links</strong></header>
+        <ul class="notif">
+          <template x-for="s in myShares" :key="s.id">
+            <li>
+              <code x-text="'/s/' + s.token"></code>
+              <span class="muted" x-text="s.expires_at ? 'expires ' + new Date(s.expires_at).toLocaleDateString() : 'never expires'"></span>
+              <button class="link danger sm" @click="revokeShare(s)">revoke</button>
+            </li>
+          </template>
+        </ul>
+      </article>
     </section>
 
     <!-- view: my assets (ch2→ch5) — own items, drafts and published. -->
@@ -141,7 +181,7 @@
           <label>Notes <textarea rows="3" placeholder="Why should the team care?" x-model="draft.body"></textarea></label>
           <label>Tags <input placeholder="comma, separated, tags" x-model="draft.tags"></label>
           <footer>
-            <button type="submit" :disabled="busy">Save &amp; publish</button>
+            <button type="submit" :disabled="busy">Save draft</button>
           </footer>
         </form>
       </article>
@@ -173,7 +213,8 @@
                 <span class="muted" x-text="asset.published_at ? 'published ' + new Date(asset.published_at).toLocaleDateString() : 'draft'"></span>
                 <span>
                   <button class="link sm" @click="startEdit(asset)" :disabled="busy || editing !== null">Edit</button>
-                  <button class="link sm" disabled title="Chapter 5 wires this">Publish</button>
+                  <button class="link sm" x-show="isCurator && !asset.published_at" @click="publish(asset)" :disabled="busy">Publish</button>
+                  <button class="link sm" x-show="asset.published_at" @click="startShare(asset)">Share</button>
                   <button class="link danger sm" @click="remove(asset)" :disabled="busy">Delete</button>
                 </span>
               </footer>

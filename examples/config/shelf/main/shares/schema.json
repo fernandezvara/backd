@@ -4,7 +4,8 @@
   "properties": {
     "asset_id":   { "type": "string", "minLength": 1, "description": "The asset this link exposes." },
     "token":      { "type": "string", "minLength": 16, "description": "Random, unguessable; the public URL is /s/{token}." },
-    "expires_at": { "type": ["string", "null"], "format": "date-time", "x-backd-store": "date", "description": "null means the link never expires." }
+    "expires_at": { "type": ["string", "null"], "format": "date-time", "x-backd-store": "date", "description": "null means the link never expires." },
+    "created_by": { "type": ["string", "null"], "description": "User id of who minted the link (the share function writes as admin, so _meta.owner isn't it)." }
   },
   "required": ["asset_id", "token"]
 }

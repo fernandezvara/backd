@@ -51,7 +51,7 @@ Working on a `backd` checkout instead? The same files live in the repository: `e
 | 2 | [Members](02-members/) | sign-up, sessions, roles, the account page |
 | 3 | [Who may touch what](03-rules/) | `rules.yaml`, ownership, optimistic concurrency |
 | 4 | [Invitations](04-invitations/) | inviting teammates by email |
-| 5 | The first function | `publish`, `admin: true`, idempotency, share links |
+| 5 | [The first function](05-first-function/) | `publish`, `admin: true`, idempotency, share links |
 | 6 | Reaching the outside | `preview` and the `network:` allowlist |
 | 7 | Functions calling functions | `notify` as an internal function, `ctx.call` |
 | 8 | Work that takes time | `digest` as an async job, `retry:` |

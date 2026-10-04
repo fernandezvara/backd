@@ -12,10 +12,11 @@ read: >
   user != nil
   && (document.published_at != nil || document._meta.owner == user.id)
 
-# Members write their own assets. HOLE: published_at is the client's word —
-# any member can publish, and pick the date. Rules decide who may write;
-# they can't say "a curator, at the server's now". Chapter 5 closes this:
-# publishing becomes the publish function's job.
-create: user != nil
-update: user != nil && document._meta.owner == user.id
+# Members write their own assets — as drafts. published_at stays off-limits
+# to clients: only the publish function stamps it, as admin (chapter 5
+# closed the HOLE that lived here).
+create: user != nil && data.published_at == nil
+update: >
+  user != nil && document._meta.owner == user.id
+  && !('published_at' in changed())
 delete: user != nil && document._meta.owner == user.id

@@ -63,6 +63,11 @@ main > section { margin-bottom: 3rem; }
 /* Alpine: hide the app until it initializes. */
 [x-cloak] { display: none !important; }
 
+/* ?s=<token>: the public share view replaces the app. */
+main.publiclink > section:not(#shared-view),
+main.publiclink > .error { display: none !important; }
+main.publiclink #shared-view { display: block !important; }
+
 /* API errors surface once, above the views. */
 .error {
   background: var(--pico-del-background, #fdd);
