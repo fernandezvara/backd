@@ -19,7 +19,7 @@ const notifications = main.collection('notifications')
 const members = main.collection('members')
 const outbox = backd.db('mail').collection('outbox')
 
-const VIEWS = ['gallery', 'mine', 'notifications', 'admin', 'auth', 'account']
+const VIEWS = ['gallery', 'mine', 'review', 'notifications', 'admin', 'auth', 'account']
 
 document.addEventListener('alpine:init', () => {
   Alpine.data('shelf', () => ({
@@ -49,6 +49,8 @@ document.addEventListener('alpine:init', () => {
 
     // My assets and the account page.
     mine: [],
+    // Curators: every member's unpublished assets, oldest first (chapter 5).
+    drafts: [],
     editing: null, // { id, version, title, url, body, tags } — the card being edited
     pwd: { current: '', next: '' },
     accountMsg: null,
@@ -106,7 +108,7 @@ document.addEventListener('alpine:init', () => {
         this.open = e instanceof NotFoundError
       }
       await this.refilter()
-      if (this.user) await Promise.all([this.loadMine(), this.loadInvites(), this.loadShares(), this.loadNotifs(), this.ensureMember(), this.loadAdmin()])
+      if (this.user) await Promise.all([this.loadMine(), this.loadDrafts(), this.loadInvites(), this.loadShares(), this.loadNotifs(), this.ensureMember(), this.loadAdmin()])
       this.syncView()
     },
 
@@ -134,6 +136,7 @@ document.addEventListener('alpine:init', () => {
         this.invitation = ''
         await this.refilter()
         await this.loadMine()
+        await this.loadDrafts()
         await this.loadInvites()
         await this.loadNotifs()
         await this.ensureMember()
@@ -150,13 +153,18 @@ document.addEventListener('alpine:init', () => {
       await backd.auth.logout().catch(() => {})
       this.user = null
       this.mine = []
+      this.drafts = []
       window.location.hash = '#gallery'
       await this.refilter()
     },
 
     // `{"tags": "docs"}` finds documents whose tags array contains "docs".
+    // The gallery shows what is published — the rules also let a member see
+    // their own drafts and a curator everyone's, so the filter is ours to add.
     where() {
-      return this.tag ? { tags: this.tag } : {}
+      const where = { published_at: { $ne: null } }
+      if (this.tag) where.tags = this.tag
+      return where
     },
 
     async load() {
@@ -222,6 +230,21 @@ document.addEventListener('alpine:init', () => {
           limit: 50,
         })
         this.mine = page.items
+      } catch (e) {
+        this.error = e.message
+      }
+    },
+
+    // A curator's review queue: unpublished assets of every member (the
+    // assets `read` rule allows it for the curator role), oldest first.
+    async loadDrafts() {
+      if (!this.user || !this.isCurator) {
+        this.drafts = []
+        return
+      }
+      try {
+        const page = await assets.list({ where: { published_at: null }, orderBy: '_meta.created_at', limit: 50 })
+        this.drafts = page.items
       } catch (e) {
         this.error = e.message
       }
@@ -396,6 +419,7 @@ document.addEventListener('alpine:init', () => {
         // publish is sync — no job to poll.
         await this.refilter()
         await this.loadMine()
+        await this.loadDrafts()
         await this.loadNotifs()
       } catch (e) {
         this.error = e.message

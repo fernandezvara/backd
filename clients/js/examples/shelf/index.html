@@ -30,6 +30,7 @@
     <ul>
       <li><a href="#gallery" :aria-current="view === 'gallery' ? 'page' : null">Gallery</a></li>
       <li><a href="#mine" :aria-current="view === 'mine' ? 'page' : null">My assets</a></li>
+      <li x-show="isCurator"><a href="#review" :aria-current="view === 'review' ? 'page' : null">Review <mark class="badge" x-show="drafts.length" x-text="drafts.length"></mark></a></li>
       <li><a href="#notifications" :aria-current="view === 'notifications' ? 'page' : null">Notifications <mark class="badge" x-show="unreadCount" x-text="unreadCount"></mark></a></li>
       <li><a href="#admin" :aria-current="view === 'admin' ? 'page' : null">Admin</a></li>
       <li x-show="!user"><a href="#auth" role="button" class="outline">Sign in</a></li>
@@ -225,6 +226,29 @@
               </footer>
             </div>
           </template>
+        </article>
+      </template>
+    </section>
+
+    <!-- view: review (ch5, curators) — every member's unpublished assets. -->
+    <section id="review" x-show="view === 'review' && isCurator">
+      <hgroup>
+        <h2>Drafts to review</h2>
+        <p>Unpublished assets of every member — publish what is ready.</p>
+      </hgroup>
+      <p class="muted" x-show="drafts.length === 0">Nothing waiting.</p>
+      <template x-for="asset in drafts" :key="asset.id">
+        <article>
+          <header>
+            <strong x-text="asset.title"></strong>
+            <span class="badge draft" x-text="asset.kind"></span>
+          </header>
+          <p x-show="asset.url"><a :href="asset.url" x-text="asset.url" rel="noopener"></a></p>
+          <p x-text="asset.body"></p>
+          <footer>
+            <span class="muted" x-text="(asset._meta.owner ? 'by a member' : 'imported (no owner)') + ' · ' + new Date(asset._meta.created_at).toLocaleDateString()"></span>
+            <button class="link sm" @click="publish(asset)" :disabled="busy">Publish</button>
+          </footer>
         </article>
       </template>
     </section>

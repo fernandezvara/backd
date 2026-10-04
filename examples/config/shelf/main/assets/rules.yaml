@@ -7,10 +7,13 @@
 # `data` the asset being written; `changed()` the fields a write touches.
 
 # Everyone in the workspace reads published assets; a member also reads
-# their own drafts.
+# their own drafts, and a curator reads every draft — including the ones
+# nobody owns, like what the import webhook (chapter 11) lands — because
+# publishing them is the curator's job.
 read: >
   user != nil
-  && (document.published_at != nil || document._meta.owner == user.id)
+  && (document.published_at != nil || document._meta.owner == user.id
+      || hasRole(user, 'curator'))
 
 # Members write their own assets — as drafts. published_at stays off-limits
 # to clients: only the publish function stamps it, as admin (chapter 5

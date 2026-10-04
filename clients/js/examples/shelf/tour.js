@@ -95,6 +95,8 @@ await refused('signup without an invitation is refused', () => createClient({ ur
 
 heading('Drafts, the gallery and publish (ch1, ch3, ch5)')
 const draft = await main(member).collection('assets').create({ title: 'The backd handbook', kind: 'link', url: 'https://example.com/handbook' })
+const queue = (await main(curator).collection('assets').list({ where: { published_at: null }, orderBy: '-_meta.created_at', limit: 50 })).items
+check("the curator's review queue lists a member's draft", queue.some((a) => a.id === draft.id))
 await refused('a member may not stamp published_at', () => main(member).collection('assets').create({ title: 'x', kind: 'note', published_at: new Date().toISOString() }), ForbiddenError, '')
 await refused('the gallery needs a sign-in (rules: read needs a user)', () => main(anonymous).collection('assets').list(), AuthenticationError, 'unauthenticated')
 await refused('a member may not publish (curators only)', () => main(member).fn('publish', { asset_id: draft.id }), ForbiddenError, '')
@@ -142,7 +144,7 @@ async function webhook(/** @type {string} */ body, /** @type {string} */ secret 
   return { status: res.status, text: (await res.text()).trim() }
 }
 const eventId = `feed-tour-${Date.now().toString(36)}`
-const body = JSON.stringify({ event_id: eventId, title: 'Pushed by the tour', url: 'https://example.com/pushed' })
+const body = JSON.stringify({ event_id: eventId, title: `Pushed by the tour ${eventId}`, url: 'https://example.com/pushed' })
 // The function reads its secret within about a minute of it being set.
 let first = await webhook(body)
 for (let i = 0; i < 70 && first.status === 500; i++) {
@@ -150,14 +152,15 @@ for (let i = 0; i < 70 && first.status === 500; i++) {
   first = await webhook(body)
 }
 check('a signed push lands a draft (200 ok)', first.status === 200 && first.text === 'ok', JSON.stringify(first))
-// The draft belongs to nobody (a webhook has no user), so no member sees it:
-// an API key, which bypasses rules, is how the tour looks.
-const peek = /** @type {any} */ (await operator.admin.apiKeys.create({ name: `peek-${eventId}`, expiresIn: '1h', scopes: ['read:main'] }))
-const imported = (await createClient({ url, realm: 'shelf', apiKey: peek.key }).db('main').collection('assets').list({ where: { title: 'Pushed by the tour' } })).items[0]
-await operator.admin.apiKeys.revoke(`peek-${eventId}`)
-check('the asset exists and stays a draft', imported !== undefined && !imported.published_at, JSON.stringify(imported))
+// The draft belongs to nobody (a webhook has no user): the curator's read
+// rule (chapter 5) is what lets the Review view list it.
+const reviewQueue = (await main(curator).collection('assets').list({ where: { published_at: null }, orderBy: '-_meta.created_at', limit: 50 })).items
+const imported = reviewQueue.find((a) => a.title === `Pushed by the tour ${eventId}`)
+check('a plain member does not see an imported draft', (await main(member).collection('assets').list({ where: { title: `Pushed by the tour ${eventId}` } })).items.length === 0)
+check('the curator sees it in the review queue, still a draft', imported !== undefined && !imported.published_at, JSON.stringify(imported))
 const again = await webhook(body)
-check('the same event again is ignored (200 already processed)', again.status === 200 && again.text === 'already processed', JSON.stringify(again))
+const copies = (await main(curator).collection('assets').list({ where: { title: `Pushed by the tour ${eventId}` } })).items.length
+check('the same event again is ignored (200 already processed), and makes no second asset', again.status === 200 && again.text === 'already processed' && copies === 1, JSON.stringify({ again, copies }))
 const wrong = await webhook(JSON.stringify({ event_id: `${eventId}-x`, title: 'forged' }), 'not-the-secret')
 check('a wrong signature is refused (400 invalid signature)', wrong.status === 400 && wrong.text === 'invalid signature', JSON.stringify(wrong))
 

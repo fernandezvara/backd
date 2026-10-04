@@ -104,9 +104,9 @@ Two more close the second hole:
 
 The collections' rules tighten to match. Replace both files:
 
-{{< example-file path="shelf/main/assets/rules.yaml" lines="11-22" >}}
+{{< example-file path="shelf/main/assets/rules.yaml" lines="8-25" >}}
 
-`assets` now refuses `published_at` in client writes. And `shares`:
+`assets` now refuses `published_at` in client writes — and, since a curator can't publish what they can't see, the `read` rule gains `hasRole(user, 'curator')`: curators read every draft, members still read only their own. And `shares`:
 
 {{< example-file path="shelf/main/shares/rules.yaml" >}}
 
@@ -115,7 +115,7 @@ has no `create`/`update` rule at all (functions write, nobody else), and `create
 ## What the app does with it
 
 - **Save draft** replaces *Save & publish* — members can no longer set `published_at` (try it: a `POST` with the field answers `403`).
-- A curator sees **Publish** on drafts in My assets — one `db.fn('publish', …)` call.
+- A curator gets a **Review** view (with a count of waiting drafts): every member's unpublished assets, oldest first, each with **Publish** — one `db.fn('publish', …)` call. A curator also sees **Publish** on their own drafts in My assets.
 - **Share** on any published asset mints a link with an expiry; **My active links** lists and revokes them.
 - `/?s=<token>` — the link, opened in a private window — shows the asset through `share-open`, no sign-in.
 
@@ -123,6 +123,7 @@ has no `create`/`update` rule at all (functions write, nobody else), and `create
 
 - `deno test` (or `make functions-testing-test`) passes the three functions' tests.
 - `POST …/_func/publish` as a member answers `403`; as `curator@shelf.example`, `200` and the draft gains `published_at`.
+- The curator's **Review** view lists a member's draft (a plain member's *My assets* never shows someone else's); publishing it from there moves it to the gallery.
 - Two calls with the same `Idempotency-Key` return the same answer; without the header, `400`.
 - A share link resolves at `/?s=<token>`; a made-up token answers 404; a member's `POST` on `shares` answers `403`, and a `GET` lists only that member's own links.
 - `docker compose logs backd` shows the function's `console.log` line per publish.

@@ -22,20 +22,24 @@ export default async function handler(ctx: Context) {
     return { status: 422, body: "need event_id and title" };
   }
 
-  // 3. Deduplicate by the feed's own event id: the unique index on
-  //    imports.event_id refuses a second insert with a 409.
+  // 3. Deduplicate by the feed's own event id: record the event FIRST. The
+  //    unique index on imports.event_id refuses a second insert with a 409,
+  //    so a retried delivery stops here — before it can make a second asset.
   const db = ctx.admin.db("main");
+  let record;
   try {
-    const doc: Record<string, unknown> = { title: event.title, kind: event.kind === "note" ? "note" : "link" };
-    if (event.url) doc.url = event.url;
-    if (event.body) doc.body = event.body;
-    doc.tags = [...(event.tags ?? []), "imported"];
-    const asset = await db.collection("assets").create(doc);
-    await db.collection("imports").create({ event_id: event.event_id, asset_id: asset.id });
+    record = await db.collection("imports").create({ event_id: event.event_id });
   } catch (err) {
     if ((err as { status?: number }).status === 409) return { status: 200, body: "already processed" };
     throw err;
   }
+
+  const doc: Record<string, unknown> = { title: event.title, kind: event.kind === "note" ? "note" : "link" };
+  if (event.url) doc.url = event.url;
+  if (event.body) doc.body = event.body;
+  doc.tags = [...(event.tags ?? []), "imported"];
+  const asset = await db.collection("assets").create(doc);
+  await db.collection("imports").patch(record.id, { asset_id: asset.id });
 
   return { status: 200, body: "ok" };
 }
