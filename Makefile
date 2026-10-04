@@ -1,6 +1,6 @@
 COMPOSE_TEST = docker compose -f docker-compose.test.yml
 
-.PHONY: build test test-local vet lint-api js-test js-package js-integration functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour example-attacks release-check
+.PHONY: build test test-local vet lint-api js-test js-package js-integration functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour shelf-tour-ci example-attacks release-check
 
 build:
 	go build -o bin/backd ./cmd/backd
@@ -87,6 +87,11 @@ workshop-tour:
 # `docker compose exec backd` — run it where that project is up.
 shelf-tour:
 	node clients/js/examples/shelf/tour.js
+
+# The whole tutorial, from a starter folder built out of this checkout with
+# locally built images (what CI runs). Needs port 8080 free.
+shelf-tour-ci:
+	scripts/shelf-tour-ci.sh
 
 # Checks the release configuration and builds every release artifact into
 # dist/, without publishing (the release workflow runs on version tags).

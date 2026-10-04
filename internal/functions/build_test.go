@@ -205,14 +205,29 @@ func TestWatch(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	var logged []string
 	var mu sync.Mutex
-	go Watch(ctx, load(), Options{Deno: bin, Log: func(f string, a ...any) {
-		mu.Lock()
-		logged = append(logged, fmt.Sprintf(f, a...))
-		mu.Unlock()
-	}}, 20*time.Millisecond)
+	watching := make(chan struct{})
+	go func() {
+		defer close(watching)
+		Watch(ctx, load(), Options{Deno: bin, Log: func(f string, a ...any) {
+			mu.Lock()
+			logged = append(logged, fmt.Sprintf(f, a...))
+			mu.Unlock()
+		}}, 20*time.Millisecond)
+	}()
+	// The loop retries a broken source on every tick, so a build may be in
+	// flight when the test ends. Wait for Watch to return (cancelling stops
+	// the build) before the temp dir is removed, or the removal races with
+	// the build writing into it.
+	defer func() {
+		cancel()
+		select {
+		case <-watching:
+		case <-time.After(10 * time.Second):
+			t.Error("Watch didn't return after its context was cancelled")
+		}
+	}()
 
 	// Watch shouldn't rebuild sources that haven't changed.
 	time.Sleep(80 * time.Millisecond)

@@ -70,4 +70,4 @@ This tutorial ran on a dev stack: `BACKD_DEV` on, `email-capture` storing mail, 
 - **Operate it:** [Backups](../../operations/backup/), [Metrics](../../operations/metrics/) (Prometheus, with dashboards in the repository), and the [audit](../../auth/audit/) feed you saw.
 - **Go deeper on functions:** the [cookbook](../../functions/cookbook/) (payments, exports, retries) and [Testing functions](../../functions/testing/).
 - **Use it from your own app:** the [JavaScript client](../../clients/js/) and the [API reference](../../api/) (`api/openapi.yaml`).
-- **Test the tutorial itself:** on a checkout, `make shelf-tour` replays everything in this tutorial against a running stack (`clients/js/examples/shelf/tour.js`).
+- **Test the tutorial itself:** on a checkout, `make shelf-tour` replays everything in this tutorial against a running stack (`clients/js/examples/shelf/tour.js`), and `make shelf-tour-ci` builds the starter folder and the images from the checkout first — the check CI runs on every push, so this tutorial cannot drift from `backd` unnoticed.

@@ -112,6 +112,19 @@ jobs:
       - name: Run the attack scripts
         run: scripts/example-ci.sh
 
+  shelf-tour:
+    # The Tutorial, replayed: a starter folder built from this checkout (images
+    # built here, not the released ones), the stack brought up as the
+    # tutorial says, and every chapter's claims checked against it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Replay the tutorial
+        run: scripts/shelf-tour-ci.sh
+
   docs:
     runs-on: ubuntu-latest
     steps:
