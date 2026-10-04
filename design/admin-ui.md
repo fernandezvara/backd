@@ -2,7 +2,7 @@
 
 - **Issues:** to be created (proposed 9.1–9.12, backlog 7.37–7.39)
 - **Status:** decided in the design interview of 2026-10-04 (replaces the preliminary version)
-- **Related:** the admin API (`/v1/{realm}/_admin/*`), `@backd/client`, the secure-administration decisions (admin roles, network restrictions, audit), [file-storage.md](./file-storage.md), [internal-functions.md](./internal-functions.md)
+- **Related:** the admin API (`/v1/{realm}/_admin/*`), `backd-js`, the secure-administration decisions (admin roles, network restrictions, audit), [file-storage.md](./file-storage.md), [internal-functions.md](./internal-functions.md)
 
 Details marked *(proposed)* were filled in while writing and were not discussed in the interview.
 
@@ -26,7 +26,7 @@ A web interface for **realm administrators** and **developers** to operate a rea
 | Data access | a dedicated `/_admin/data/...` route bypassing rules: full admins read/write, read-only admins read (if granted); writes audited |
 | Hosting | assets **embedded** in the backd binary, served at `/_ui/`, `BACKD_ADMIN_UI=true` (default off); the same build also published as static files |
 | Instance exposure | `BACKD_ADMIN_API=true\|false` (default true); public instances can omit `/_admin` entirely |
-| Code | TypeScript, Vue 3, Vite, Vue Router, Pinia; API only through `@backd/client` |
+| Code | TypeScript, Vue 3, Vite, Vue Router, Pinia; API only through `backd-js` |
 | Components | in-house set on Tailwind CSS with accessible unstyled primitives (Headless UI or Radix Vue) |
 | Forms | own JSON Schema renderer for backd's subset, JSON editor fallback |
 | Sessions | token in memory; opt-in `sessionStorage` per tab; idle timeout revokes server-side |
