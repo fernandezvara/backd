@@ -107,6 +107,11 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	claim, ok := d.claimKey(w, r, c.Name, body) // Idempotency-Key, if the request has one
+	if !ok {
+		return
+	}
+	defer claim.release(r.Context())
 	stripSystemFields(body)
 	if !validate(w, r, c, body) {
 		return
@@ -126,7 +131,10 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Location", r.URL.JoinPath(url.PathEscape(doc["id"].(string))).Path)
-	writeDocument(w, http.StatusCreated, doc)
+	out := render(doc)
+	claim.complete(r.Context(), http.StatusCreated, out)
+	w.Header().Set("ETag", etag(version(doc)))
+	writeJSON(w, http.StatusCreated, out)
 }
 
 func (d *documents) get(w http.ResponseWriter, r *http.Request) {

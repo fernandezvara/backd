@@ -784,6 +784,11 @@ func TestContract(t *testing.T) {
 	req("POST", p, `{"published": true}`, ada, 400)
 	req("POST", p, `{"title": "x"}`, nil, 401)
 	req("POST", p, `{"title": "x"}`, carl, 403)
+	// An idempotent create, and its replay.
+	keyed := with(ada, "Idempotency-Key", "contract-key")
+	req("POST", p, `{"title": "keyed"}`, keyed, 201)
+	req("POST", p, `{"title": "keyed"}`, keyed, 201)
+	req("POST", p, `{"title": "keyed, another"}`, keyed, 422)
 	readOnly := f.scoped(t, "contract-ro", "read:app/posts")
 	req("GET", p, "", bearer(readOnly), 200)
 	req("POST", p, `{"title": "x"}`, bearer(readOnly), 403) // outside the key's scopes
@@ -849,6 +854,10 @@ func TestContract(t *testing.T) {
 	b := "/v1/acme/app/_batch"
 	batchOK := req("POST", b, `{"operations": [{"op": "create", "collection": "posts", "document": {"title": "batch"}}]}`, ada, 200)
 	batchID := batchOK["results"].([]any)[0].(map[string]any)["id"].(string)
+	batchKey := with(ada, "Idempotency-Key", "contract-batch")
+	req("POST", b, `{"operations": [{"op": "create", "collection": "posts", "document": {"title": "kb"}}]}`, batchKey, 200)
+	req("POST", b, `{"operations": [{"op": "create", "collection": "posts", "document": {"title": "kb"}}]}`, batchKey, 200)
+	req("POST", b, `{"operations": [{"op": "create", "collection": "posts", "document": {"title": "other"}}]}`, batchKey, 422)
 	req("POST", b, `{"operations": [{"op": "create", "collection": "posts"}]}`, ada, 400)
 	req("POST", b, `{"operations": [{"op": "create", "collection": "posts", "document": {"title": "x"}}]}`, nil, 401)
 	req("POST", b, `{"operations": [{"op": "create", "collection": "posts", "document": {"title": "x"}}]}`, carl, 403)

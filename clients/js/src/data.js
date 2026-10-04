@@ -55,6 +55,15 @@ import { Job } from './functions.js'
  */
 
 /**
+ * Options for creates and batches. `idempotencyKey` makes a retry safe: the
+ * server remembers the answer of the first request with a key for 24 hours and
+ * returns it again for the same key and body, instead of creating a second
+ * document. The client also retries such a request itself after a network
+ * error, `429` or `503` (see `retry`).
+ * @typedef {RequestOptions & { idempotencyKey?: string }} CreateOptions
+ */
+
+/**
  * One write for `db.batch(...)`, applied atomically with the others.
  * `create` and `replace` need `document`; `patch` needs `patch` (a JSON
  * Merge Patch). `replace`, `patch` and `delete` need `id`, and accept
@@ -99,14 +108,14 @@ export class Database {
    * mismatch (`ifMatch`) is a `VersionMismatchError`, same as a single
    * write.
    * @param {BatchOperation[]} operations
-   * @param {RequestOptions} [opts]
+   * @param {CreateOptions} [opts]
    * @returns {Promise<(Doc | { id: string })[]>} one entry per operation, in order
    */
   async batch(operations, opts) {
     const body = {
       operations: operations.map(({ ifMatch, ...op }) => (ifMatch === undefined ? op : { ...op, if_match: ifMatchValue(ifMatch) })),
     }
-    const { data } = await this.client.request({ method: 'POST', path: [this.name, '_batch'], body, ...opts })
+    const { data } = await this.client.request({ method: 'POST', path: [this.name, '_batch'], body, ...keyed(opts) })
     return data.results
   }
 
@@ -208,13 +217,15 @@ export class Collection {
   }
 
   /**
-   * Creates a document. `id` and `_meta` are set by the server.
+   * Creates a document. `id` and `_meta` are set by the server. With an
+   * `idempotencyKey`, a repeated request returns the document created by the
+   * first one.
    * @param {T} doc
-   * @param {RequestOptions} [opts]
+   * @param {CreateOptions} [opts]
    * @returns {Promise<Doc<T>>}
    */
   async create(doc, opts) {
-    return (await this.client.request({ method: 'POST', path: this.path, body: doc, ...opts })).data
+    return (await this.client.request({ method: 'POST', path: this.path, body: doc, ...keyed(opts) })).data
   }
 
   /**
@@ -272,6 +283,16 @@ function listQuery(p) {
     after: p.after,
     count: p.count || undefined,
   }
+}
+
+/**
+ * Turns `idempotencyKey` into an Idempotency-Key header.
+ * @param {CreateOptions} [opts]
+ * @returns {RequestOptions}
+ */
+function keyed(opts = {}) {
+  const { idempotencyKey, ...rest } = opts
+  return idempotencyKey === undefined ? rest : { ...rest, headers: { ...rest.headers, 'Idempotency-Key': idempotencyKey } }
 }
 
 /**

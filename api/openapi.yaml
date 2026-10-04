@@ -1633,6 +1633,8 @@ paths:
         its index is in the error's `details` (e.g. `{"path": "1", ...}`).
       operationId: batchWrite
       security: [{}, { session: [] }, { apiKey: [] }]
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKeyDocuments"
       requestBody:
         required: true
         content:
@@ -1640,8 +1642,10 @@ paths:
             schema: { $ref: "#/components/schemas/BatchRequest" }
       responses:
         "200":
-          description: One result per operation, in the same order.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          description: One result per operation, in the same order (the remembered ones again for a replayed `Idempotency-Key`).
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+            Idempotent-Replayed: { description: "`true` when this is the remembered answer of an earlier request with the same `Idempotency-Key`.", schema: { const: "true" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/BatchResponse" }
@@ -1651,6 +1655,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "412": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/{database}/{collection}:
@@ -1714,6 +1719,8 @@ paths:
       summary: Create a document
       operationId: createDocument
       security: [{}, { session: [] }, { apiKey: [] }]
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKeyDocuments"
       requestBody:
         required: true
         content:
@@ -1721,8 +1728,9 @@ paths:
             schema: { $ref: "#/components/schemas/DocumentBody" }
       responses:
         "201":
-          description: The created document.
+          description: The created document (or, for a replayed `Idempotency-Key`, the document as it was created).
           headers:
+            Idempotent-Replayed: { description: "`true` when this is the remembered answer of an earlier request with the same `Idempotency-Key`.", schema: { const: "true" } }
             ETag: { $ref: "#/components/headers/ETag" }
             Vary: { $ref: "#/components/headers/DataVary" }
             Cache-Control: { $ref: "#/components/headers/DataCacheControl" }
@@ -1739,6 +1747,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "415": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/{database}/{collection}/{id}:
@@ -1867,6 +1876,16 @@ components:
       name: skip
       in: query
       schema: { type: integer, minimum: 0, default: 0 }
+    idempotencyKeyDocuments:
+      name: Idempotency-Key
+      in: header
+      description: >-
+        Makes a retried create safe: 1-200 characters of letters, digits, `.`, `_`, `:` or `-`. The first request
+        with a key runs and its answer is remembered for 24 hours (only if it succeeds); the same key with the
+        same body returns that answer again, with `Idempotent-Replayed: true`; with another body it answers
+        `422 idempotency_key_reused`; while the first is still running, `409 request_in_progress`. Needs a signed-in
+        user or an API key (`400` for anonymous callers) and a realm with authentication enabled.
+      schema: { type: string }
     ifMatch:
       name: If-Match
       in: header

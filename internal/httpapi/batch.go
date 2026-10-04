@@ -96,6 +96,11 @@ func (d *documents) batch(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(context.WithValue(r.Context(), callerKey{}, caller))
 	}
 	a := d.accessFor(r)
+	claim, ok := d.claimKey(w, r, "_batch", body) // Idempotency-Key, if the request has one
+	if !ok {
+		return
+	}
+	defer claim.release(r.Context())
 
 	ops := make([]batchOp, len(rawOps))
 	for i, raw := range rawOps {
@@ -129,7 +134,9 @@ func (d *documents) batch(w http.ResponseWriter, r *http.Request) {
 	for i, doc := range results {
 		rendered[i] = render(doc)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"results": rendered})
+	answer := map[string]any{"results": rendered}
+	claim.complete(r.Context(), http.StatusOK, answer)
+	writeJSON(w, http.StatusOK, answer)
 }
 
 // databaseExists reports whether database is configured in realm.

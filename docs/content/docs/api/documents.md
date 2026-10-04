@@ -66,6 +66,24 @@ Content-Type: application/json
 
 The body is validated against the collection's `schema.json`. The response is `201 Created` with the stored document and a `Location` header pointing at it.
 
+### Safe retries with `Idempotency-Key`
+
+A create whose answer is lost (a timeout, a dropped connection) can't be retried blindly: it may have worked, and the retry would make a second document. Send an `Idempotency-Key` and retry with the same one:
+
+```http
+POST /v1/shop/orders/items
+Idempotency-Key: order-42
+```
+
+It is the mechanism of [function calls](../../functions/calling/#idempotency), applied to creates and to [batches](#batch-writes):
+
+- The first request with a key runs, and its answer is remembered for **24 hours**. The same key with the same body returns that answer again, `201` with the document **as it was created** (even if it was changed or deleted since), with `Idempotent-Replayed: true`. Two bodies with the same content, in any key order or spacing, are the same body.
+- The same key with **another body** answers `422 idempotency_key_reused`. The same key while the first request is **still running** answers `409 request_in_progress`: wait and retry.
+- **Only a success is remembered.** A request that fails (invalid body, refused by the rules, a unique conflict) created nothing, so the key stays free for the corrected retry.
+- A key is private to the **collection** and the **caller**: another user, or an API key, can use the same string without meeting it. 1–200 characters of letters, digits, `.`, `_`, `:` and `-`; anything else is `400`.
+- It needs a **signed-in user or an API key** (anonymous callers all look alike, so they could read each other's answers) and a **realm with authentication enabled** (it is where keys are kept): otherwise `400`, rather than ignoring a promise of safety.
+- If backd stores the document but fails to store the answer, the key stays "running" for its 24 hours: a retry is told `409` rather than creating a duplicate.
+
 ## Validation errors
 
 A document that fails its schema returns `400 validation_error` with one detail per failing field, using dot paths for nested fields:
@@ -177,6 +195,8 @@ Merge Patch can't set a field to a literal `null`: in a patch, `null` means "rem
 Deletes are permanent. The response is `204 No Content`, or `404` if the document doesn't exist.
 
 ## Batch writes
+
+A batch accepts an [`Idempotency-Key`](#safe-retries-with-idempotency-key) too: a retry returns the original `results`.
 
 `POST /v1/{realm}/{database}/_batch` creates, replaces, patches and deletes documents across the database's collections in **one MongoDB transaction**: either every operation applies, or none does.
 

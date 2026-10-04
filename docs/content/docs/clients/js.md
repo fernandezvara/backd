@@ -174,6 +174,14 @@ try {
 
 `ifMatch` also accepts `'*'` (the document must exist) or a raw header value. Writes with `ifMatch` are safe to [retry](#retries).
 
+### Safe retries of creates
+
+`create()` and `db.batch()` take an `idempotencyKey`. The server remembers the first answer for 24 hours and returns it for the same key and body, so a retry never makes a second document (see [Safe retries](../../api/documents/#safe-retries-with-idempotency-key)). A request with a key is also retried by the client itself after a network error, `429` or `503`, when `retry` is on:
+
+```js
+const order = await orders.create(draft, { idempotencyKey: 'checkout-' + cartId })
+```
+
 {{< hint style="tip" title="Best practice" >}}
 Pass `ifMatch` for every update that depends on what the user saw: edit forms, counters, toggles. Without it, `replace` is last-write-wins and silently overwrites a change made after you read the document.
 {{< /hint >}}
