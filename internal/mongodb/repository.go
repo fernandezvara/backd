@@ -65,11 +65,23 @@ func (r *Repository) List(ctx context.Context, q storage.Query) (storage.Page, e
 	if err != nil {
 		return storage.Page{}, err
 	}
+	find := filter
+	if q.After != nil {
+		after, err := buildTree(storage.Simplify(q.After))
+		if err != nil {
+			return storage.Page{}, err
+		}
+		if len(find) == 0 {
+			find = after
+		} else {
+			find = bson.D{{Key: "$and", Value: bson.A{find, after}}}
+		}
+	}
 	opts := options.Find().
 		SetSort(buildSort(q.Sort)).
 		SetSkip(int64(q.Skip)).
 		SetLimit(int64(q.Limit) + 1) // one extra to compute HasMore
-	cur, err := r.coll.Find(ctx, filter, opts)
+	cur, err := r.coll.Find(ctx, find, opts)
 	if err != nil {
 		return storage.Page{}, mapError(err)
 	}

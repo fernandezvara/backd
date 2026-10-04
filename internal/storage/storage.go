@@ -26,6 +26,9 @@ type Query struct {
 	// Access restricts the query to documents the caller may read
 	// (from access rules); nil means no restriction.
 	Access Filter
+	// After restricts the page to the documents positioned after a cursor in
+	// Sort (query.ParseCursor builds it). It narrows the page, not the Total.
+	After Filter
 }
 
 // Page is one page of a list query.
