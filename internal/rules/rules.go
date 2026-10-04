@@ -60,6 +60,9 @@ type Schema struct {
 	// ArrayField reports whether a document path is declared as an array
 	// (and not reached through another array), for `value in document.path`.
 	ArrayField func(path string) bool
+	// DateField reports whether a path is stored as a date (x-backd-store:
+	// date): its value is a time in rules, comparable with `now`. May be nil.
+	DateField func(path string) bool
 	// Roles are the role names declared in realm.yaml.
 	Roles []string
 }

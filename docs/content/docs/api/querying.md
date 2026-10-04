@@ -113,7 +113,7 @@ Values are checked against the field's schema type:
 - a string for an `integer` field is rejected;
 - `1.5` for an `integer` field is rejected;
 - `null` is only accepted for fields whose type includes `null` (use `$isNull` otherwise);
-- `_meta.created_at` and `_meta.updated_at` take RFC3339 timestamps and are compared as dates, for example `{"_meta.created_at": {"$gte": "2026-09-01T00:00:00Z"}}`.
+- `_meta.created_at` and `_meta.updated_at` take RFC3339 timestamps and are compared as dates, for example `{"_meta.created_at": {"$gte": "2026-09-01T00:00:00Z"}}`. So do the fields the schema [stores as dates](../../configuration/config-dir/#dates) (`x-backd-store`), in any offset; text operators are refused on them.
 
 ### Limits
 

@@ -64,7 +64,7 @@ YAML reads a value starting with `'`, `!`, `[` or `{` specially, so quote such r
 | `user` | all | The signed-in user: `user.id`, `user.email`, `user.email_verified`, `user.roles`. `nil` for anonymous callers |
 | `document` | read, update, delete | The stored document, including `document.id` and `document._meta.*` |
 | `data` | create, update | The document being written: the request body on create, the complete result on update |
-| `now` | all | The current time, only for comparing with `document._meta.created_at` or `document._meta.updated_at` |
+| `now` | all | The current time, only for comparing with a timestamp: `document._meta.created_at`, `document._meta.updated_at`, or a field the schema [stores as a date](../../configuration/config-dir/#dates) |
 | `hasRole(user, 'a', 'b', …)` | all | True if the user has any of the roles; false for anonymous callers |
 | `changed()` | update | The top-level fields whose value differs between `document` and `data` |
 
@@ -174,7 +174,7 @@ At `LOG_LEVEL=debug`, every denial is logged (`"msg":"access denied"`) with the 
 - uses `document` on create, `data` on read or delete, or `changed()` outside update (a `write` rule is checked for each operation it covers);
 - uses an undeclared role, or a role name that isn't a string literal;
 - uses a `user` field without a guard;
-- uses `now` other than to compare with a `_meta` timestamp;
+- uses `now` other than to compare with a timestamp (a `_meta` timestamp or a field stored as a date), or compares a field stored as a date with text or a `user` field;
 - has a `read` rule that can't be a database filter, or that compares an array field or a field without a declared type;
 - exists in a realm with `auth: disabled`.
 

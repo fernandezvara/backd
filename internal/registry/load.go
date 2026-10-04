@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -194,6 +195,9 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 	if err := checkSchema(raw); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
+	if errs := checkStore(raw); len(errs) > 0 {
+		return nil, fmt.Errorf("%s: %w", path, errors.Join(errs...))
+	}
 
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -251,6 +255,7 @@ func loadRules(c *Collection, settings RealmSettings, path string) error {
 		DataField:     func(p string) bool { _, ok := c.Fields[p]; return ok },
 		ScalarField:   c.ScalarField,
 		ArrayField:    c.ArrayField,
+		DateField:     c.DateField,
 		Roles:         roles,
 	})
 	if err != nil {
@@ -294,13 +299,77 @@ func isReserved(name string) bool {
 	return false
 }
 
+// StoreKeyword is the schema.json keyword, on a property, that picks how its
+// value is stored. The only choice is StoreDate: a `format: date-time` string
+// is stored as a BSON Date, so queries and sorting compare dates.
+const (
+	StoreKeyword = "x-backd-store"
+	StoreDate    = "date"
+)
+
+// checkStore enforces where StoreKeyword may appear and what it needs: a
+// declared property (not inside an array, and not in a $defs, allOf...) whose
+// type is a string, perhaps null, with format date-time, and no string keywords
+// that mean nothing for a date.
+func checkStore(raw map[string]any) []error {
+	var errs []error
+	var walk func(node any, pointer string)
+	supported := regexp.MustCompile(`^(/properties/[^/]+)+$`)
+	walk = func(node any, pointer string) {
+		switch n := node.(type) {
+		case map[string]any:
+			if v, has := n[StoreKeyword]; has {
+				switch {
+				case v != StoreDate:
+					errs = append(errs, fmt.Errorf("%s: %s must be %q, got %v", pointer, StoreKeyword, StoreDate, v))
+				case !supported.MatchString(pointer):
+					errs = append(errs, fmt.Errorf("%s: %s is for a declared property (properties, nested in objects); not inside arrays, $defs or allOf/anyOf/oneOf/not", pointer, StoreKeyword))
+				default:
+					errs = append(errs, checkDateProperty(pointer, n)...)
+				}
+			}
+			for k, v := range n {
+				walk(v, pointer+"/"+escapePointer(k))
+			}
+		case []any:
+			for i, v := range n {
+				walk(v, pointer+"/"+strconv.Itoa(i))
+			}
+		}
+	}
+	walk(raw, "")
+	slices.SortFunc(errs, func(a, b error) int { return strings.Compare(a.Error(), b.Error()) })
+	return errs
+}
+
+func checkDateProperty(pointer string, n map[string]any) []error {
+	var errs []error
+	types := schemaTypes(n)
+	if len(types) == 0 || !slices.Contains(types, "string") || slices.ContainsFunc(types, func(t string) bool { return t != "string" && t != "null" }) {
+		errs = append(errs, fmt.Errorf("%s: %s: %s needs type string (or [string, null])", pointer, StoreDate, StoreKeyword))
+	}
+	if n["format"] != "date-time" {
+		errs = append(errs, fmt.Errorf(`%s: %s: %s needs "format": "date-time"`, pointer, StoreDate, StoreKeyword))
+	}
+	for _, k := range []string{"pattern", "minLength", "maxLength", "enum", "const"} {
+		if _, has := n[k]; has {
+			errs = append(errs, fmt.Errorf("%s: %s can't be combined with %q: the value is stored as a date, not as text", pointer, StoreKeyword, k))
+		}
+	}
+	return errs
+}
+
+func escapePointer(s string) string {
+	return strings.NewReplacer("~", "~0", "/", "~1").Replace(s)
+}
+
 // fieldIndex maps each declared property (nested via dot paths) to its
 // types. Properties of objects inside arrays are included under the
 // array's path, matching MongoDB's dot notation (e.g. "lines.sku").
 func fieldIndex(schema map[string]any) map[string]Field {
 	out := map[string]Field{}
-	var walk func(prefix string, s map[string]any)
-	walk = func(prefix string, s map[string]any) {
+	var walk func(prefix string, s map[string]any, inItems bool)
+	walk = func(prefix string, s map[string]any, inItems bool) {
 		props, _ := s["properties"].(map[string]any)
 		for name, v := range props {
 			ps, _ := v.(map[string]any)
@@ -308,7 +377,7 @@ func fieldIndex(schema map[string]any) map[string]Field {
 			if prefix != "" {
 				path = prefix + "." + name
 			}
-			f := Field{Types: schemaTypes(ps)}
+			f := Field{Types: schemaTypes(ps), Date: !inItems && ps[StoreKeyword] == StoreDate}
 			items, _ := ps["items"].(map[string]any)
 			if items != nil {
 				f.ItemTypes = schemaTypes(items)
@@ -316,13 +385,13 @@ func fieldIndex(schema map[string]any) map[string]Field {
 			if _, exists := out[path]; !exists {
 				out[path] = f
 			}
-			walk(path, ps)
+			walk(path, ps, inItems)
 			if items != nil {
-				walk(path, items)
+				walk(path, items, true)
 			}
 		}
 	}
-	walk("", schema)
+	walk("", schema, false)
 	return out
 }
 

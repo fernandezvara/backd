@@ -140,3 +140,25 @@ func TestValidatorDoesNotModifyInput(t *testing.T) {
 		t.Errorf("input modified: %v", schema)
 	}
 }
+
+func TestValidatorStoresDatesAsDates(t *testing.T) {
+	schema := decode(t, `{"type": "object", "properties": {
+	  "starts_at": {"type": "string", "format": "date-time", "x-backd-store": "date"},
+	  "ends_at":   {"type": ["string", "null"], "format": "date-time", "x-backd-store": "date", "description": "optional"},
+	  "note":      {"type": "string", "format": "date-time"}}}`)
+	got, om := Validator(schema)
+	props := got["$jsonSchema"].(map[string]any)["properties"].(map[string]any)
+	if !reflect.DeepEqual(props["starts_at"], map[string]any{"bsonType": "date"}) {
+		t.Errorf("starts_at = %v", props["starts_at"])
+	}
+	if !reflect.DeepEqual(props["ends_at"], map[string]any{"bsonType": []any{"date", "null"}}) {
+		t.Errorf("ends_at = %v", props["ends_at"])
+	}
+	// A date-time left as text is still a string, and its format is reported as left out.
+	if !reflect.DeepEqual(props["note"], map[string]any{"bsonType": []any{"string"}}) {
+		t.Errorf("note = %v", props["note"])
+	}
+	if len(om) != 1 || om[0].Path != "/properties/note" || om[0].Keyword != "format" {
+		t.Errorf("omissions = %+v", om)
+	}
+}

@@ -136,6 +136,14 @@ func TestLoadErrors(t *testing.T) {
 		{"declares _meta", map[string]string{"shop/db/items/schema.json": `{"properties": {"_meta": {}}}`}, []string{`"_meta" is system-owned`}},
 		{"declares id", map[string]string{"shop/db/items/schema.json": `{"properties": {"id": {}}}`}, []string{`"id" is system-owned`}},
 		{"requires _id", map[string]string{"shop/db/items/schema.json": `{"required": ["_id"]}`}, []string{`"_id" is system-owned`}},
+		{"store date, wrong value", map[string]string{"shop/db/items/schema.json": `{"properties": {"at": {"type": "string", "format": "date-time", "x-backd-store": "datetime"}}}`}, []string{`x-backd-store must be "date"`}},
+		{"store date on a number", map[string]string{"shop/db/items/schema.json": `{"properties": {"at": {"type": "integer", "format": "date-time", "x-backd-store": "date"}}}`}, []string{"/properties/at", "needs type string"}},
+		{"store date without a type", map[string]string{"shop/db/items/schema.json": `{"properties": {"at": {"format": "date-time", "x-backd-store": "date"}}}`}, []string{"needs type string"}},
+		{"store date without format", map[string]string{"shop/db/items/schema.json": `{"properties": {"at": {"type": "string", "x-backd-store": "date"}}}`}, []string{`needs "format": "date-time"`}},
+		{"store date with text keywords", map[string]string{"shop/db/items/schema.json": `{"properties": {"at": {"type": "string", "format": "date-time", "x-backd-store": "date", "pattern": "^2", "maxLength": 30}}}`}, []string{`can't be combined with "maxLength"`, `can't be combined with "pattern"`}},
+		{"store date in an array", map[string]string{"shop/db/items/schema.json": `{"properties": {"ats": {"type": "array", "items": {"type": "string", "format": "date-time", "x-backd-store": "date"}}}}`}, []string{"/properties/ats/items", "not inside arrays"}},
+		{"store date in an object in an array", map[string]string{"shop/db/items/schema.json": `{"properties": {"lines": {"type": "array", "items": {"type": "object", "properties": {"at": {"type": "string", "format": "date-time", "x-backd-store": "date"}}}}}}`}, []string{"not inside arrays"}},
+		{"store date under anyOf", map[string]string{"shop/db/items/schema.json": `{"properties": {"at": {"anyOf": [{"type": "string", "format": "date-time", "x-backd-store": "date"}]}}}`}, []string{"not inside arrays"}},
 		{"reports all errors", map[string]string{
 			"shop/db/a/schema.json": `{`,
 			"shop/db/b/schema.json": `{"properties": {"id": {}}}`,
@@ -218,5 +226,31 @@ func TestLoadIndexesErrors(t *testing.T) {
 				t.Errorf("error = %v, want it to mention indexes.json and %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestDateFields(t *testing.T) {
+	reg, err := Load(writeTree(t, map[string]string{"shop/db/items/schema.json": `{
+	  "type": "object",
+	  "properties": {
+	    "starts_at": {"type": "string", "format": "date-time", "x-backd-store": "date"},
+	    "ends_at":   {"type": ["string", "null"], "format": "date-time", "x-backd-store": "date"},
+	    "note":      {"type": "string", "format": "date-time"},
+	    "event":     {"type": "object", "properties": {"at": {"type": "string", "format": "date-time", "x-backd-store": "date"}}},
+	    "lines":     {"type": "array", "items": {"type": "object", "properties": {"at": {"type": "string", "format": "date-time"}}}}
+	  }
+	}`}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := reg.Collection("shop", "db", "items")
+	for path, want := range map[string]bool{"starts_at": true, "ends_at": true, "event.at": true, "note": false, "lines.at": false, "event": false, "nope": false} {
+		if got := c.DateField(path); got != want {
+			t.Errorf("DateField(%q) = %v, want %v", path, got, want)
+		}
+	}
+	// And the value is still validated as an RFC 3339 string.
+	if err := c.Schema.Validate(map[string]any{"starts_at": "yesterday"}); err == nil {
+		t.Error("a date that isn't RFC 3339 passed the schema")
 	}
 }

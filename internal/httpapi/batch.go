@@ -203,9 +203,9 @@ func (d *documents) parseBatchOp(w http.ResponseWriter, r *http.Request, realm, 
 			return batchOp{}, false
 		}
 		if kind == "create" {
-			op.fields = jsonnum.Normalize(doc).(map[string]any)
+			op.fields = c.DatesToStorage(jsonnum.Normalize(doc).(map[string]any))
 		} else {
-			op.fields = jsonnum.Normalize(userFields(doc)).(map[string]any)
+			op.fields = c.DatesToStorage(jsonnum.Normalize(userFields(doc)).(map[string]any))
 		}
 	case "patch":
 		patch, ok := m["patch"].(map[string]any)
@@ -288,11 +288,11 @@ func (d *documents) applyBatchOp(ctx context.Context, r *http.Request, a access,
 		return fields, nil
 
 	case "patch":
-		merged := mergePatch(deepCopy(userFields(current)), deepCopy(op.patch))
+		merged := mergePatch(timesToStrings(userFields(current)).(map[string]any), deepCopy(op.patch))
 		if err := op.collection.Schema.Validate(merged); err != nil {
 			return nil, &patchValidationErr{err: err}
 		}
-		fields := jsonnum.Normalize(merged).(map[string]any)
+		fields := op.collection.DatesToStorage(jsonnum.Normalize(merged).(map[string]any))
 		if err := checkWrite(a, op.collection, rules.Update, current, fields); err != nil {
 			return nil, err
 		}

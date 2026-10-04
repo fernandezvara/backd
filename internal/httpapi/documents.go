@@ -111,7 +111,7 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 	if !validate(w, r, c, body) {
 		return
 	}
-	doc := jsonnum.Normalize(body).(map[string]any)
+	doc := c.DatesToStorage(jsonnum.Normalize(body).(map[string]any))
 	if !allowWrite(w, r, d.accessFor(r), c, rules.Create, nil, doc) {
 		return
 	}
@@ -253,7 +253,7 @@ func (d *documents) replace(w http.ResponseWriter, r *http.Request) {
 		if !validate(w, r, c, body) {
 			return nil, false
 		}
-		return jsonnum.Normalize(userFields(body)).(map[string]any), true
+		return c.DatesToStorage(jsonnum.Normalize(userFields(body)).(map[string]any)), true
 	})
 }
 
@@ -267,11 +267,11 @@ func (d *documents) patch(w http.ResponseWriter, r *http.Request) {
 	d.write(w, r, c, repo, func(current map[string]any) (map[string]any, bool) {
 		// Deep copies: merging must not modify the stored document, which the
 		// update rule (changed()) compares against.
-		merged := mergePatch(deepCopy(userFields(current)), deepCopy(patch))
+		merged := mergePatch(timesToStrings(userFields(current)).(map[string]any), deepCopy(patch))
 		if !validate(w, r, c, merged) {
 			return nil, false
 		}
-		return jsonnum.Normalize(merged).(map[string]any), true
+		return c.DatesToStorage(jsonnum.Normalize(merged).(map[string]any)), true
 	})
 }
 
@@ -530,15 +530,9 @@ func render(doc map[string]any) map[string]any {
 	for k, v := range doc {
 		out[k] = v
 	}
-	if meta, ok := doc["_meta"].(map[string]any); ok {
-		m := make(map[string]any, len(meta))
-		for k, v := range meta {
-			if t, ok := v.(time.Time); ok {
-				v = t.UTC().Format(timeFormat)
-			}
-			m[k] = v
-		}
-		out["_meta"] = m
+	// Every time becomes text: _meta's timestamps, and the fields stored as dates.
+	for k, v := range out {
+		out[k] = timesToStrings(v)
 	}
 	return out
 }
