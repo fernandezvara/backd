@@ -31,7 +31,7 @@ tags:
     description: >-
       User, role and invitation management with an API key, or the session of a
       user whose admin role opens the area (users, invitations, apikeys,
-      secrets, audit, functions, data). A request for an area the roles don't open
+      secrets, audit, functions, data, config). A request for an area the roles don't open
       answers 403 naming it. The admin data route (`/_admin/data/…`) serves the
       data operations past the collections' rules to the `data` area. A read-only level (`admin: read`) reads every area,
       users and data only when `admin.read_access` grants them, and every change
@@ -787,6 +787,13 @@ paths:
           in: query
           description: Exact email (case-insensitive); returns zero or one user.
           schema: { type: string }
+        - name: q
+          in: query
+          description: >-
+            Users whose email contains this text (case-insensitive, plain text, not a
+            pattern), paged in MongoDB with `limit` and `after` like the list. Can't be
+            combined with `email`.
+          schema: { type: string }
         - { $ref: "#/components/parameters/limit" }
         - { $ref: "#/components/parameters/skip" }
         - { $ref: "#/components/parameters/deleted" }
@@ -1003,6 +1010,63 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OwnedReport" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/users/{id}/sessions:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    get:
+      tags: [admin]
+      summary: A user's sessions
+      description: The user's unexpired sessions, newest first. Never a token. Needs the `users` area.
+      operationId: adminUserSessions
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The sessions.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [id, created_at, last_used_at, expires_at]
+                      properties:
+                        id: { type: string }
+                        created_at: { $ref: "#/components/schemas/Timestamp" }
+                        last_used_at: { $ref: "#/components/schemas/Timestamp" }
+                        expires_at: { $ref: "#/components/schemas/Timestamp" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/users/{id}/sessions/{session_id}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+      - { name: session_id, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [admin]
+      summary: End a user's session
+      description: The token stops working at once. Audited as `session.revoke`. Needs the `users` area to change.
+      operationId: adminRevokeUserSession
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "204":
+          description: Session ended.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -1227,6 +1291,50 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/config:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [admin]
+      summary: The realm's configuration, read-only
+      description: |
+        What this instance runs for the realm, from the files it loaded: realm settings
+        (defaults applied; seeded user emails only for whoever may read users),
+        every database's collections (schema, indexes, rules, `collection.yaml` policy) and
+        functions (`function.yaml`, secrets by name only), the email templates and hosted
+        pages found on disk, the configuration warnings and the config fingerprint. Each
+        item carries the file it came from, relative to the config directory. Nothing here
+        can be changed through the API: configuration is a reviewed, versioned artifact.
+        Needs the `config` area (a read-only administrator reads it).
+      operationId: adminConfig
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The configuration.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [realm, fingerprint, file, settings, databases, templates, warnings]
+                properties:
+                  realm: { type: string }
+                  fingerprint: { type: string }
+                  file: { type: string }
+                  settings: { type: object }
+                  databases: { type: object }
+                  templates: { type: object }
+                  warnings:
+                    type: array
+                    items:
+                      type: object
+                      required: [code, message]
+                      properties:
+                        code: { type: string }
+                        message: { type: string }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/whoami:
     parameters: [{ $ref: "#/components/parameters/realm" }]
     get:
@@ -1235,7 +1343,7 @@ paths:
       description: |
         The level of the credential and the admin areas it may change and may read, so a
         client (the admin UI) offers only what the server would allow. Areas are `users`,
-        `invitations`, `apikeys`, `secrets`, `audit`, `functions` and `data`; `all` stands
+        `invitations`, `apikeys`, `secrets`, `audit`, `functions`, `data` and `config`; `all` stands
         for every one. An admin key is `full`; a user's `level` is `full` (`admin: true`),
         `read` (only `admin: read`) or `custom` (a list of areas, perhaps with `read`).
         `read_access` is what `admin.read_access` in `realm.yaml` grants read-only

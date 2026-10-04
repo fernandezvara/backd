@@ -39,6 +39,7 @@ An admin role can open the whole admin API (`admin: true`), only some of its are
 | `audit` | `GET /audit` |
 | `functions` | `POST /functions/{database}/{name}/invoke`, `GET /invocations` and `GET /jobs`; and reading any job through the data API |
 | `data` | the admin data route (documents past their collections' rules) |
+| `config` | `GET /config`, the read-only view of the realm's configuration |
 
 ### The read-only level
 
@@ -62,17 +63,21 @@ Paths are relative to `/v1/{realm}/_admin`. Bodies are JSON (`Content-Type: appl
 
 | Method and path | Body | Success |
 |---|---|---|
-| `GET /users` | none; query `limit` (1–100, default 20), `skip` or `after`, `email` | `200` with a page of users, sorted by email, read from the database a page at a time; `next_cursor` (the last email) while `has_more`: send it as `after` for the next page |
+| `GET /users` | none; query `limit` (1–100, default 20), `skip` or `after`, `email` (exact), `q` (search) | `200` with a page of users, sorted by email, read from the database a page at a time; `next_cursor` (the last email) while `has_more`: send it as `after` for the next page |
 | `POST /users` | `{"email", "password"?}` | `201` with the user |
 | `GET /users/{id}` | none | `200` with the user |
 | `PATCH /users/{id}` | `{"email_verified"?: bool, "disabled"?: bool}` | `200` with the user |
 | `DELETE /users/{id}` | none | `202` with the erase job: [**erases** the user](../erasure/) (irreversible) |
+| `GET /users/{id}/sessions` | none | `200` with the user's unexpired sessions, newest first (`id`, `created_at`, `last_used_at`, `expires_at`; never a token) |
+| `DELETE /users/{id}/sessions/{session_id}` | none | `204`; the session's token stops working at once; audited as `session.revoke`. `404` for an unknown session |
 | `POST /users/{id}/password` | `{"password"}` | `204` |
 | `GET /users/{id}/owned` | none | `200` with [what erasing the user would do](#previewing-an-erase) |
 | `POST /users/{id}/email` | `{"email"}` | `200` with the user; [changes the address](#changing-a-users-email) |
 | `PUT /users/{id}/roles/{role}` | none | `200` with the user |
 | `DELETE /users/{id}/roles/{role}` | none | `200` with the user |
 | `PUT /users/{id}/networks` | `{"admin_networks": [...], "login_networks": [...]}` | `200` with the user |
+| `GET /whoami` | none | `200` with what this credential may do: `level`, the areas it may `write` and `read`, and `read_access` (see [the read-only level](#the-read-only-level)) |
+| `GET /config` | none | `200` with the realm's [configuration](#configuration), read-only |
 | `POST /invitations` | `{"email"?, "expires_in"?, "send"?, "redirect_to"?, "locale"?}` | `201` with the invitation and its token, or `sent: true` and no token when it is [emailed](#emailing-an-invitation) |
 | `GET /invitations` | none | `200` with unexpired, unused invitations |
 | `DELETE /invitations/{id}` | none | `204` |
@@ -195,6 +200,12 @@ curl -X PUT https://localhost:8443/v1/blog/_admin/secrets/STRIPE_KEY \
 ### Changing a user's email
 
 `POST /users/{id}/email` with `{"email": "new@example.com"}` changes the address **at once**, in any realm with [`email`](../../functions/email/) (`404` without), whatever `account.allow_email_change` says: the administrator vouches for the address, so it counts as verified. The user's sessions end, the old address is sent `email-changed` with a link to undo the change for 7 days (the undo restores the address, ends every session, makes the current password unusable and sends a password reset link to it), and the new address is told. An address another user has answers `409 email_taken`. Audited as `user.email_changed` with `by: admin`.
+
+### Configuration
+
+`GET /v1/{realm}/_admin/config` shows what this instance runs for the realm, read from the files it loaded, so an operator can check what is live without logging into the host: the realm's settings (defaults applied), every database's collections (schema, indexes, rules, the `collection.yaml` policy) and functions (`function.yaml`: mode, limits, `calls`, `network`, secrets **by name only**), the email templates and hosted pages found on disk, the **configuration fingerprint** (the same `/readyz` shows) and a list of warnings (authentication disabled, no administrator role, an admin API reachable from any network, open sign-up, the development delivery function). Each item carries the file it came from, relative to the config directory. Seeded user emails show only to callers who may read users. It needs the `config` [area](#admin-rights), which a read-only administrator has.
+
+Nothing here can be changed through the API: configuration is a reviewed, versioned artifact, and a change goes through your repository and a deploy.
 
 ### Data
 

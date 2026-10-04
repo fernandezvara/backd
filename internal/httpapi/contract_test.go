@@ -666,6 +666,27 @@ func TestContract(t *testing.T) {
 	req("POST", ad+"/apikeys", `{"name": "x", "role": "root"}`, key, 400)
 	req("POST", ad+"/apikeys", `{"name": "x"}`, nil, 401)
 	req("POST", ad+"/apikeys", `{"name": "x"}`, ada, 403)
+	req("GET", ad+"/config", "", key, 200)
+	req("GET", ad+"/config", "", nil, 401)
+	req("GET", ad+"/config", "", ada, 403)
+	req("GET", ad+"/users?q=ada", "", key, 200)
+	req("GET", ad+"/users?q=", "", key, 400)
+	// A user made for the purpose, so ending its session disturbs nobody else.
+	temp, err := f.svc.Create(context.Background(), "sessions-contract@example.com", ptrString("dev-p4ssw0rd!"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := f.svc.Login(context.Background(), temp.Email, "dev-p4ssw0rd!", "203.0.113.50"); err != nil {
+		t.Fatal(err)
+	}
+	sessList := req("GET", ad+"/users/"+temp.ID+"/sessions", "", key, 200)
+	req("GET", ad+"/users/"+temp.ID+"/sessions", "", nil, 401)
+	req("GET", ad+"/users/"+temp.ID+"/sessions", "", ada, 403)
+	req("GET", ad+"/users/nope/sessions", "", key, 404)
+	req("DELETE", ad+"/users/"+temp.ID+"/sessions/nope", "", key, 404)
+	req("DELETE", ad+"/users/"+temp.ID+"/sessions/x", "", nil, 401)
+	req("DELETE", ad+"/users/"+temp.ID+"/sessions/x", "", ada, 403)
+	req("DELETE", ad+"/users/"+temp.ID+"/sessions/"+sessList["items"].([]any)[0].(map[string]any)["id"].(string), "", key, 204)
 	req("GET", ad+"/whoami", "", key, 200)
 	req("GET", ad+"/whoami", "", nil, 401)
 	req("GET", ad+"/whoami", "", ada, 403)
@@ -1024,3 +1045,5 @@ func TestContractDetectsViolations(t *testing.T) {
 		}
 	}
 }
+
+func ptrString(s string) *string { return &s }

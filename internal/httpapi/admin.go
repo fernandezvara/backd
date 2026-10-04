@@ -21,9 +21,10 @@ import (
 // adminAPI serves /v1/{realm}/_admin/…: user management for server-side
 // services holding one of the realm's API keys.
 type adminAPI struct {
-	users func(realm string) *auth.Users
-	reg   *registry.Registry
-	fns   *functions // runs functions by hand (see adminInvoke)
+	users       func(realm string) *auth.Users
+	reg         *registry.Registry
+	fns         *functions // runs functions by hand (see adminInvoke)
+	fingerprint string     // the config this instance runs (readyz shows it too)
 }
 
 type adminUserKey struct{}
@@ -33,6 +34,7 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		r.Use(noStore, resolveRealm, timeout, a.requireAdmin)
 		json := requireContentType("application/json")
 		r.Get("/whoami", a.whoami)
+		r.With(a.need(registry.RightConfig)).Get("/config", a.config)
 		users, invites, keys := a.need(registry.RightUsers), a.need(registry.RightInvitations), a.need(registry.RightAPIKeys)
 		secrets, audit, fns := a.need(registry.RightSecrets), a.need(registry.RightAudit), a.need(registry.RightFunctions)
 		r.With(users).Get("/users", a.listUsers)
@@ -41,6 +43,8 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 			r.Use(users, a.loadUser, a.guardTarget)
 			r.Get("/", a.getUser)
 			r.Get("/owned", a.owned)
+			r.Get("/sessions", a.userSessions)
+			r.Delete("/sessions/{session_id}", a.revokeUserSession)
 			r.With(json).Patch("/", a.updateUser)
 			r.Delete("/", a.deleteUser)
 			r.With(json).Post("/password", a.setPassword)
@@ -208,7 +212,7 @@ func (a *adminAPI) listUsers(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	var details []Detail
 	for k := range q {
-		if k != "email" && k != "limit" && k != "skip" && k != "after" {
+		if k != "email" && k != "q" && k != "limit" && k != "skip" && k != "after" {
 			details = append(details, Detail{Path: k, Reason: "unknown query parameter"})
 		}
 	}
@@ -236,6 +240,13 @@ func (a *adminAPI) listUsers(w http.ResponseWriter, r *http.Request) {
 			details = append(details, Detail{Path: "after", Reason: "must not be empty: use the next_cursor of a previous page"})
 		}
 	}
+	search := strings.ToLower(strings.TrimSpace(q.Get("q")))
+	if q.Has("q") && search == "" {
+		details = append(details, Detail{Path: "q", Reason: "must not be empty"})
+	}
+	if q.Has("q") && q.Has("email") {
+		details = append(details, Detail{Path: "q", Reason: "can't be combined with email: email is an exact lookup"})
+	}
 	if len(details) > 0 {
 		sort.Slice(details, func(i, j int) bool { return details[i].Path < details[j].Path })
 		writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid query parameters", details...)
@@ -260,7 +271,7 @@ func (a *adminAPI) listUsers(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// One page from the database: never the whole collection.
 		var err error
-		if users, hasMore, err = svc.ListPage(r.Context(), after, skip, limit); err != nil {
+		if users, hasMore, err = svc.ListPage(r.Context(), search, after, skip, limit); err != nil {
 			adminError(w, r, err)
 			return
 		}
@@ -1286,4 +1297,39 @@ func flagAdminData(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), adminDataKey{}, true)))
 	})
+}
+
+// userSessions answers GET /users/{id}/sessions: the user's unexpired sessions,
+// newest first.
+func (a *adminAPI) userSessions(w http.ResponseWriter, r *http.Request) {
+	list, err := usersOf(r).UserSessions(r.Context(), adminUserOf(r).ID)
+	if err != nil {
+		adminError(w, r, err)
+		return
+	}
+	items := make([]map[string]any, len(list))
+	for i, s := range list {
+		items[i] = map[string]any{
+			"id":           s.ID,
+			"created_at":   formatTime(s.CreatedAt),
+			"last_used_at": formatTime(s.LastUsedAt),
+			"expires_at":   formatTime(s.ExpiresAt),
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+// revokeUserSession answers DELETE /users/{id}/sessions/{session_id}: it ends
+// one session of the user, and is audited.
+func (a *adminAPI) revokeUserSession(w http.ResponseWriter, r *http.Request) {
+	err := usersOf(r).RevokeUserSession(r.Context(), adminUserOf(r).ID, chi.URLParam(r, "session_id"))
+	if errors.Is(err, auth.ErrNotFound) {
+		writeError(w, r, http.StatusNotFound, codeNotFound, "session not found")
+		return
+	}
+	if err != nil {
+		adminError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

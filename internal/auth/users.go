@@ -212,8 +212,8 @@ func (s *Users) Find(ctx context.Context, email string) (User, error) { return s
 func (s *Users) List(ctx context.Context) ([]User, error) { return s.Store.ListUsers(ctx) }
 
 // ListPage is List for one page, sorted by email; see Store.ListUsersPage.
-func (s *Users) ListPage(ctx context.Context, after string, skip, limit int) ([]User, bool, error) {
-	return s.Store.ListUsersPage(ctx, after, skip, limit)
+func (s *Users) ListPage(ctx context.Context, contains, after string, skip, limit int) ([]User, bool, error) {
+	return s.Store.ListUsersPage(ctx, contains, after, skip, limit)
 }
 
 func (s *Users) byEmail(ctx context.Context, email string) (User, error) {

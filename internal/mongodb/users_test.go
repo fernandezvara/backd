@@ -640,26 +640,42 @@ func TestListUsersPageOnMongoDB(t *testing.T) {
 		}
 		return out
 	}
-	page, more, err := s.ListUsersPage(ctx, "", 0, 2)
+	page, more, err := s.ListUsersPage(ctx, "", "", 0, 2)
 	if err != nil || !more || !reflect.DeepEqual(emails(page), []string{"a@example.com", "b@example.com"}) {
 		t.Errorf("first page = %v %v %v", emails(page), more, err)
 	}
-	page, more, _ = s.ListUsersPage(ctx, "b@example.com", 0, 2)
+	page, more, _ = s.ListUsersPage(ctx, "", "b@example.com", 0, 2)
 	if !more || !reflect.DeepEqual(emails(page), []string{"c@example.com", "d@example.com"}) {
 		t.Errorf("after b = %v %v", emails(page), more)
 	}
-	page, more, _ = s.ListUsersPage(ctx, "d@example.com", 0, 2)
+	page, more, _ = s.ListUsersPage(ctx, "", "d@example.com", 0, 2)
 	if more || !reflect.DeepEqual(emails(page), []string{"e@example.com"}) {
 		t.Errorf("last page = %v %v", emails(page), more)
 	}
-	page, more, _ = s.ListUsersPage(ctx, "", 3, 5)
+	page, more, _ = s.ListUsersPage(ctx, "", "", 3, 5)
 	if more || !reflect.DeepEqual(emails(page), []string{"d@example.com", "e@example.com"}) {
 		t.Errorf("skip 3 = %v %v", emails(page), more)
 	}
 	// An address that isn't a user's still gives a position.
-	page, _, _ = s.ListUsersPage(ctx, "bb@example.com", 0, 1)
+	page, _, _ = s.ListUsersPage(ctx, "", "bb@example.com", 0, 1)
 	if !reflect.DeepEqual(emails(page), []string{"c@example.com"}) {
 		t.Errorf("after bb = %v", emails(page))
+	}
+	// A search keeps the users whose email holds the text, paged like the list;
+	// the text is plain (a dot is a dot), and a position works inside it.
+	page, more, _ = s.ListUsersPage(ctx, "@example.", "", 0, 3)
+	if !more || !reflect.DeepEqual(emails(page), []string{"a@example.com", "b@example.com", "c@example.com"}) {
+		t.Errorf("search = %v %v", emails(page), more)
+	}
+	page, more, _ = s.ListUsersPage(ctx, "@example.", "c@example.com", 0, 3)
+	if more || !reflect.DeepEqual(emails(page), []string{"d@example.com", "e@example.com"}) {
+		t.Errorf("search after c = %v %v", emails(page), more)
+	}
+	if page, _, _ = s.ListUsersPage(ctx, "d@", "", 0, 5); !reflect.DeepEqual(emails(page), []string{"d@example.com"}) {
+		t.Errorf("search d@ = %v", emails(page))
+	}
+	if page, _, _ = s.ListUsersPage(ctx, "a.e", "", 0, 5); len(page) != 0 {
+		t.Errorf("search a.e must not treat the dot as a pattern: %v", emails(page))
 	}
 }
 

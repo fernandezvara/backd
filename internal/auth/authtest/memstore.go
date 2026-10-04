@@ -153,10 +153,13 @@ func (m *MemStore) ListUsers(context.Context) ([]auth.User, error) {
 	return out, nil
 }
 
-func (m *MemStore) ListUsersPage(ctx context.Context, after string, skip, limit int) ([]auth.User, bool, error) {
+func (m *MemStore) ListUsersPage(ctx context.Context, contains, after string, skip, limit int) ([]auth.User, bool, error) {
 	all, _ := m.ListUsers(ctx)
 	var rest []auth.User
 	for _, u := range all {
+		if contains != "" && !strings.Contains(u.Email, contains) {
+			continue
+		}
 		if after == "" || u.Email > after {
 			rest = append(rest, u)
 		}

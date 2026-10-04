@@ -323,6 +323,22 @@ func (s *Users) Sessions(ctx context.Context, p Principal) ([]Session, error) {
 	return out, nil
 }
 
+// UserSessions lists a user's unexpired sessions, newest first (an
+// administrator's view of someone else's).
+func (s *Users) UserSessions(ctx context.Context, userID string) ([]Session, error) {
+	return s.Sessions(ctx, Principal{User: User{ID: userID}})
+}
+
+// RevokeUserSession ends one session of a user, on an administrator's say-so;
+// ErrNotFound if the user has no session with that id.
+func (s *Users) RevokeUserSession(ctx context.Context, userID, id string) error {
+	if err := s.endSession(ctx, userID, id, "admin_revoked"); err != nil {
+		return err
+	}
+	s.Audit(ctx, AuditSessionRevoke, userTarget(userID), map[string]any{"session": id})
+	return nil
+}
+
 // RevokeSession ends one of the caller's sessions; ErrNotFound if the
 // caller has no session with that id.
 func (s *Users) RevokeSession(ctx context.Context, p Principal, id string) error {

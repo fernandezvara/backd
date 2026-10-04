@@ -21,9 +21,10 @@ const (
 	RightAudit                               // the audit trail
 	RightFunctions                           // running functions by hand, their invocations and every job
 	RightData                                // the admin data route: documents, past their collections' rules
+	RightConfig                              // the read-only view of the realm's configuration
 
 	// AllRights is `admin: true`.
-	AllRights = RightUsers | RightInvitations | RightAPIKeys | RightSecrets | RightAudit | RightFunctions | RightData
+	AllRights = RightUsers | RightInvitations | RightAPIKeys | RightSecrets | RightAudit | RightFunctions | RightData | RightConfig
 )
 
 // rightNames are the names realm.yaml and the docs use, in a fixed order.
@@ -38,6 +39,7 @@ var rightNames = []struct {
 	{"audit", RightAudit},
 	{"functions", RightFunctions},
 	{"data", RightData},
+	{"config", RightConfig},
 }
 
 // Any reports whether r opens anything: whether holding it makes someone an

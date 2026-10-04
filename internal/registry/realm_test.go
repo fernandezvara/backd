@@ -455,7 +455,7 @@ roles:
 
 func TestAdminRightsErrors(t *testing.T) {
 	for name, tc := range map[string]struct{ yaml, want string }{
-		"unknown area":  {"roles:\n  a:\n    admin: [users, billing]\n", `unknown admin area "billing" (want users, invitations, apikeys, secrets, audit, functions, data, or read)`},
+		"unknown area":  {"roles:\n  a:\n    admin: [users, billing]\n", `unknown admin area "billing" (want users, invitations, apikeys, secrets, audit, functions, data, config, or read)`},
 		"empty list":    {"roles:\n  a:\n    admin: []\n", "admin: [] opens nothing"},
 		"listed twice":  {"roles:\n  a:\n    admin: [audit, audit]\n", `"audit" is listed twice`},
 		"not a boolean": {"roles:\n  a:\n    admin: sometimes\n", "admin must be true, false, read or a list of areas"},

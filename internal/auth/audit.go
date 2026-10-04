@@ -26,6 +26,7 @@ const (
 	AuditAccountDelete   = "user.delete_account" // self-service: the account is deactivated
 	AuditUserErased      = "user.erased"         // details: job_id and counts, or needs_attention
 	AuditUserNetworks    = "user.networks"       // details: admin_networks, login_networks
+	AuditSessionRevoke   = "session.revoke"      // by an administrator; details: session
 	AuditRoleAdd         = "role.add"            // details: role
 	AuditRoleRemove      = "role.remove"         // details: role
 	AuditAPIKeyCreate    = "apikey.create"       // details: role, expires_at, networks
