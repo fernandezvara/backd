@@ -262,7 +262,7 @@ func (r *runner) userFields(fields map[string]any) (map[string]any, error) {
 	if out == nil {
 		out = map[string]any{}
 	}
-	return out, nil
+	return r.c.DatesToStorage(out), nil // fields stored as dates are times, as the rules see them
 }
 
 func firstLine(err error) string {

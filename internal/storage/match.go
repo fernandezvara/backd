@@ -10,7 +10,7 @@ import (
 
 // Match evaluates a filter against a document held in memory, with the
 // semantics MongoDB gives the same filter, for the operators access rules
-// produce (eq, ne, in, nin, the comparisons and isNull):
+// produce (eq, ne, in, nin, the comparisons and isNull), and between:
 //
 //   - a missing field is null: it equals nil, is not equal to anything else,
 //     and an ordering comparison with it matches nothing;
@@ -19,8 +19,8 @@ import (
 //     comparison only matches values of its own kind (numbers, strings,
 //     dates), never across kinds.
 //
-// It lets rules be tested without a database. The other operators (text
-// matching, between) are for the query language, and report an error.
+// It lets rules be tested without a database. Between (inclusive) is also
+// understood; the text operators belong to the query language and report an error.
 func Match(doc Document, f Filter) (bool, error) {
 	switch f := f.(type) {
 	case Const:
@@ -93,6 +93,19 @@ func matchCondition(doc Document, c Condition) (bool, error) {
 			}
 		}
 		return found == (c.Op == OpIn), nil
+	case OpBetween:
+		bounds, ok := c.Value.([]any)
+		if !ok || len(bounds) != 2 {
+			return false, fmt.Errorf("%s: $between needs [min, max]", c.Field)
+		}
+		for _, x := range elements(v) {
+			lo, ok1 := compareValues(x, bounds[0])
+			hi, ok2 := compareValues(x, bounds[1])
+			if ok1 && ok2 && lo >= 0 && hi <= 0 {
+				return true, nil
+			}
+		}
+		return false, nil
 	case OpLt, OpLte, OpGt, OpGte:
 		// On an array, any element may satisfy the comparison.
 		for _, x := range elements(v) {

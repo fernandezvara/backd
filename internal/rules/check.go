@@ -71,7 +71,7 @@ func check(r *Rule, schema Schema) error {
 		add("%s needs a guard for anonymous callers, e.g. `user != nil && %s`", n.String(), n.String())
 	})
 
-	// now only compares with _meta timestamps.
+	// now only compares with timestamps: _meta's, and fields stored as dates.
 	allowed := map[ast.Node]bool{}
 	walk(r.tree, func(n ast.Node) {
 		b, ok := n.(*ast.BinaryNode)
@@ -79,14 +79,35 @@ func check(r *Rule, schema Schema) error {
 			return
 		}
 		for _, sides := range [][2]ast.Node{{b.Left, b.Right}, {b.Right, b.Left}} {
-			if isMetaTimestamp(sides[0]) && !refs(sides[1], "document") {
+			if isTimestamp(sides[0], schema) && !refs(sides[1], "document") && !refs(sides[1], "data") {
 				walk(sides[1], func(m ast.Node) { allowed[m] = true })
 			}
 		}
 	})
 	walk(r.tree, func(n ast.Node) {
 		if id, ok := n.(*ast.IdentifierNode); ok && id.Value == "now" && !allowed[n] {
-			add("`now` can only be compared with document._meta.created_at or document._meta.updated_at")
+			add("`now` can only be compared with a timestamp: document._meta.created_at, document._meta.updated_at, or a field stored as a date (x-backd-store: date)")
+		}
+	})
+
+	// A field stored as a date is a time in rules: it compares with `now`, nil
+	// or another date, never with text, which the database would not match the
+	// way the rule says.
+	walk(r.tree, func(n ast.Node) {
+		b, ok := n.(*ast.BinaryNode)
+		if !ok || !(comparisons[b.Operator] || b.Operator == "in") {
+			return
+		}
+		for i, sides := range [][2]ast.Node{{b.Left, b.Right}, {b.Right, b.Left}} {
+			p, ok := dateFieldPath(sides[0], schema)
+			if !ok || (b.Operator == "in" && i == 1) {
+				continue
+			}
+			other := sides[1]
+			if b.Operator != "in" && (isNil(other) || refs(other, "now") && !refs(other, "user") || isTimestamp(other, schema)) {
+				continue
+			}
+			add("%s is stored as a date: compare it with `now` (for example `now - duration('24h')`), with nil or with another date, not with text or user fields", p)
 		}
 	})
 
@@ -293,6 +314,28 @@ func isUserField(n ast.Node, field string) bool {
 func isMetaTimestamp(n ast.Node) bool {
 	p, ok := docPath(n)
 	return ok && (p == "_meta.created_at" || p == "_meta.updated_at")
+}
+
+// dateFieldPath returns the display path ("document.starts_at") of a member
+// chain on a field stored as a date.
+func dateFieldPath(n ast.Node, schema Schema) (string, bool) {
+	if schema.DateField == nil {
+		return "", false
+	}
+	root, path, ok := memberPath(n)
+	if !ok || path == "" || (root != "document" && root != "data") || !schema.DateField(path) {
+		return "", false
+	}
+	return root + "." + path, true
+}
+
+// isTimestamp reports whether n is a time: a _meta timestamp or a field stored as a date.
+func isTimestamp(n ast.Node, schema Schema) bool {
+	if isMetaTimestamp(n) {
+		return true
+	}
+	_, ok := dateFieldPath(n, schema)
+	return ok
 }
 
 func isIdent(n ast.Node, name string) bool {

@@ -255,6 +255,7 @@ func loadRules(c *Collection, settings RealmSettings, path string) error {
 		DataField:     func(p string) bool { _, ok := c.Fields[p]; return ok },
 		ScalarField:   c.ScalarField,
 		ArrayField:    c.ArrayField,
+		DateField:     c.DateField,
 		Roles:         roles,
 	})
 	if err != nil {

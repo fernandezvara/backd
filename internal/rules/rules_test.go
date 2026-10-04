@@ -168,3 +168,40 @@ delete: hasRole(user, 'admin')
 		t.Error(errs)
 	}
 }
+
+func TestRulesOnDateFields(t *testing.T) {
+	schema := testSchema
+	schema.DocumentField = func(p string) bool {
+		return p == "starts_at" || p == "ends_at" || p == "title" || strings.HasPrefix(p, "_meta.")
+	}
+	schema.DataField = func(p string) bool { return p == "starts_at" || p == "ends_at" || p == "title" }
+	schema.ScalarField = func(p string) bool {
+		return p == "starts_at" || p == "ends_at" || p == "title" || strings.HasPrefix(p, "_meta.")
+	}
+	schema.DateField = func(p string) bool { return p == "starts_at" || p == "ends_at" }
+	for _, ok := range []string{
+		`read: document.starts_at <= now`,
+		`read: document.starts_at > now - duration('24h') || document.ends_at == nil`,
+		`read: "document.ends_at != nil && now < document.ends_at"`,
+		`create: user != nil && data.starts_at > now`,
+		`create: user != nil && data.ends_at > data.starts_at`,
+		`update: user != nil && document.starts_at > now && !('starts_at' in changed())`,
+	} {
+		if _, errs := Parse([]byte(ok+"\n"), schema); len(errs) > 0 {
+			t.Errorf("%q: %v", ok, errs)
+		}
+	}
+	for src, want := range map[string]string{
+		`read: "document.starts_at > '2026-01-01T00:00:00Z'"`:    "stored as a date",
+		`read: "document.starts_at == 'yesterday'"`:              "stored as a date",
+		`read: "document.starts_at in ['2026-01-01T00:00:00Z']"`: "stored as a date",
+		`read: "user != nil && document.starts_at > user.email"`: "stored as a date",
+		`create: "data.starts_at < '2030-01-01T00:00:00Z'"`:      "stored as a date",
+		`read: document.title == 'x' || now > document.title`:    "`now` can only be compared with a timestamp",
+	} {
+		_, errs := Parse([]byte(src+"\n"), schema)
+		if len(errs) == 0 || !strings.Contains(errs[0].Error(), want) {
+			t.Errorf("%q: %v, want an error with %q", src, errs, want)
+		}
+	}
+}
