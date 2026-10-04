@@ -96,11 +96,11 @@ await refused('signup without an invitation is refused', () => createClient({ ur
 heading('Drafts, the gallery and publish (ch1, ch3, ch5)')
 const draft = await main(member).collection('assets').create({ title: 'The backd handbook', kind: 'link', url: 'https://example.com/handbook' })
 await refused('a member may not stamp published_at', () => main(member).collection('assets').create({ title: 'x', kind: 'note', published_at: new Date().toISOString() }), ForbiddenError, '')
-check('the gallery (anonymous) shows nothing of the draft', (await main(anonymous).collection('assets').list({ where: { published_at: { $ne: null } } })).items.every((a) => a.published_at))
+await refused('the gallery needs a sign-in (rules: read needs a user)', () => main(anonymous).collection('assets').list(), AuthenticationError, 'unauthenticated')
 await refused('a member may not publish (curators only)', () => main(member).fn('publish', { asset_id: draft.id }), ForbiddenError, '')
 const pub = /** @type {any} */ (await main(curator).fn('publish', { asset_id: draft.id }, { idempotencyKey: `publish-${draft.id}` }))
 check('the curator published it', typeof pub.published_at === 'string')
-check('it is in the public gallery now', (await main(anonymous).collection('assets').get(draft.id)).published_at === pub.published_at)
+check('it is in the gallery for every signed-in member now', (await main(member).collection('assets').get(draft.id)).published_at === pub.published_at)
 
 heading('Notifications and the call chain (ch7)')
 await refused('notify has no HTTP route — it is internal', () => main(member).fn('notify', { to_user: 'x', kind: 'x', text: 'x' }), NotFoundError, 'not_found')
@@ -109,11 +109,13 @@ const published = notifs.items.find((n) => n.kind === 'asset.published' && n.ass
 check('publish notified the owner', published !== undefined && !published.read_at, JSON.stringify(notifs.items))
 
 heading('Share links (ch5)')
-const share = /** @type {any} */ (await main(member).fn('share', { asset_id: draft.id, expires_in: 'week' }))
-check('the member minted a link', typeof share.token === 'string' && share.url.includes(share.token), JSON.stringify(share))
+const share = /** @type {any} */ (await main(member).fn('share', { asset_id: draft.id, expires_in: 'week' }, { idempotencyKey: `share-${draft.id}-${Date.now()}` }))
+check('the member minted a link', typeof share.token === 'string' && share.token.length >= 16, JSON.stringify(share))
 const opened = /** @type {any} */ (await main(anonymous).fn('share-open', { token: share.token }))
-check('a stranger resolves it publicly', opened.asset?.id === draft.id, JSON.stringify(opened))
-await main(member).collection('shares').delete(share.id)
+check('a stranger resolves it publicly', opened.title === draft.title && opened.kind === draft.kind && !('_meta' in opened), JSON.stringify(opened))
+const mine = (await main(member).collection('shares').list()).items.find((s) => s.token === share.token)
+check('the member lists only their own link', mine !== undefined, '')
+await main(member).collection('shares').delete(mine.id)
 await refused('a revoked link is gone', () => main(anonymous).fn('share-open', { token: share.token }), NotFoundError, '')
 
 heading('The digest as a job, with email (ch8, ch9, ch10)')
@@ -123,12 +125,12 @@ const myDir = await main(member).collection('members').list({ where: { user_id: 
 if (myDir.items.length === 0) await main(member).collection('members').create({ user_id: me.id, email: MEMBER })
 const job = /** @type {any} */ (await operator.admin.invokeFunction('main/digest', { input: { since_days: 7 } }))
 const result = /** @type {any} */ (await job.wait({ pollIntervalMs: 300, timeoutMs: 90000 }))
-check('the digest job ran and notified', result.status === 'ok' && result.output.notified >= 1, JSON.stringify(result))
+check('the digest job ran and notified', result.notified >= 1, JSON.stringify(result))
 const digestNotifs = (await main(member).collection('notifications').list({ where: { to_user: me.id, kind: 'digest' } })).items
 check('the member got the in-app digest', digestNotifs.length >= 1, JSON.stringify(digestNotifs))
 // email-capture is the delivery function in the dev stack: the digest mail
 // lands in mail/outbox, which admins may read.
-const mails = (await operator.db('mail').collection('outbox').list({ where: { kind: 'shelf-digest' }, limit: 5 })).items
+const mails = (await operator.db('mail').collection('outbox').list({ where: { kind: 'shelf-digest', to: MEMBER }, limit: 5 })).items
 check('the digest mail is in the dev mailbox', mails.some((m) => m.to.includes(MEMBER)), JSON.stringify(mails))
 
 heading('The import webhook (ch11)')
@@ -148,7 +150,11 @@ for (let i = 0; i < 70 && first.status === 500; i++) {
   first = await webhook(body)
 }
 check('a signed push lands a draft (200 ok)', first.status === 200 && first.text === 'ok', JSON.stringify(first))
-const imported = (await main(operator).collection('assets').list({ where: { title: 'Pushed by the tour' } })).items[0]
+// The draft belongs to nobody (a webhook has no user), so no member sees it:
+// an API key, which bypasses rules, is how the tour looks.
+const peek = /** @type {any} */ (await operator.admin.apiKeys.create({ name: `peek-${eventId}`, expiresIn: '1h', scopes: ['read:main'] }))
+const imported = (await createClient({ url, realm: 'shelf', apiKey: peek.key }).db('main').collection('assets').list({ where: { title: 'Pushed by the tour' } })).items[0]
+await operator.admin.apiKeys.revoke(`peek-${eventId}`)
 check('the asset exists and stays a draft', imported !== undefined && !imported.published_at, JSON.stringify(imported))
 const again = await webhook(body)
 check('the same event again is ignored (200 already processed)', again.status === 200 && again.text === 'already processed', JSON.stringify(again))
@@ -157,12 +163,12 @@ check('a wrong signature is refused (400 invalid signature)', wrong.status === 4
 
 heading('API keys and the audit trail (ch12)')
 const keyName = `tour-${Date.now().toString(36)}`
-const key = /** @type {any} */ (await operator.admin.keys.create({ name: keyName, expiresIn: '90d', scopes: ['read:main'] }))
+const key = /** @type {any} */ (await operator.admin.apiKeys.create({ name: keyName, expiresIn: '90d', scopes: ['read:main'] }))
 check('the key is shown once, prefixed bdk_', key.key.startsWith('bdk_'))
 const keyed = createClient({ url, realm: 'shelf', apiKey: key.key })
 check('the key reads the collection it is scoped to', (await keyed.db('main').collection('assets').list({ limit: 1 })).items.length >= 0)
 await refused('a read-scoped key may not write', () => keyed.db('main').collection('assets').create({ title: 'x', kind: 'note' }), ForbiddenError, '')
-await operator.admin.keys.revoke(keyName)
+await operator.admin.apiKeys.revoke(keyName)
 await refused('a revoked key is dead at once', () => keyed.db('main').collection('assets').list(), AuthenticationError, '')
 const audit = await operator.admin.audit.list({ limit: 30 })
 check('the trail records the key', audit.items.some((e) => e.action === 'apikey.create' && e.target === `key:${keyName}`), JSON.stringify(audit.items[0]))
@@ -171,7 +177,7 @@ check('the trail records the hand-run digest', audit.items.some((e) => e.action.
 heading('cleanup by hand (ch9)')
 const sweep = /** @type {any} */ (await operator.admin.invokeFunction('main/cleanup'))
 const swept = /** @type {any} */ (await sweep.wait({ pollIntervalMs: 300, timeoutMs: 90000 }))
-check('cleanup runs and reports', swept.status === 'ok' && typeof swept.output.shares === 'number' && typeof swept.output.notifications === 'number', JSON.stringify(swept))
+check('cleanup runs and reports', typeof swept.shares === 'number' && typeof swept.notifications === 'number', JSON.stringify(swept))
 
 console.log(`\n${failed === 0 ? 'All checks passed.' : `${failed} check(s) failed.`}`)
 process.exit(failed === 0 ? 0 : 1)

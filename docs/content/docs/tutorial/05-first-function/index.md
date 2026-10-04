@@ -71,7 +71,7 @@ Functions are bundled before backd starts — a change is one command away (`fun
 docker compose run --rm functions-build && docker compose restart backd
 ```
 
-Then call it as the curator (sign in as in chapter 3 and use that `TOKEN`): `POST /v1/shelf/main/_func/publish` with `{"asset_id": "…"}` and an `Idempotency-Key` header — or from the client, `db.fn('publish', { asset_id }, { idempotencyKey })`. A function answers errors with the code it chose (`403` for a member, `409 already_published`), never a stack trace.
+Then call it as the curator (log in as in chapter 3, with `curator@shelf.example`, and use that token): `POST /v1/shelf/main/_func/publish` with `{"asset_id": "…"}` and an `Idempotency-Key` header — or from the client, `db.fn('publish', { asset_id }, { idempotencyKey })`. A function answers errors with the code it chose (`403` for a member, `409 already_published`), never a stack trace.
 
 ## Tested without a stack
 
@@ -79,15 +79,17 @@ Then call it as the curator (sign in as in chapter 3 and use that `TOKEN`): `POS
 
 {{< example-file path="shelf/main/_functions/publish/index.test.ts" >}}
 
-Testing is optional, and the tests are plain files in the repository layout, so they import the fake context by a relative path. To run them from your project folder, put it where they expect it (a `clients/functions-testing/` folder **next to** your project folder) and run Deno in a container, so nothing needs installing:
+Testing is optional, and the tests are plain files in the repository layout, so they import the fake context by a relative path. To run them from your project folder, put the two files it needs where they expect them (a `clients/` folder **next to** your project folder) and run Deno from the executor image you already have — it carries the Deno version backd runs functions with, so nothing needs installing:
 
 ```sh
-mkdir -p ../clients/functions-testing/src
+mkdir -p ../clients/functions-testing/src ../clients/js/src
 curl -fsSL https://fernandezvara.github.io/backd/tutorial/functions-testing/index.js \
   -o ../clients/functions-testing/src/index.js
+curl -fsSL https://fernandezvara.github.io/backd/tutorial/client/errors.js \
+  -o ../clients/js/src/errors.js
 
-docker run --rm -v "$(dirname "$PWD")":/w:Z -w "/w/$(basename "$PWD")" \
-  docker.io/denoland/deno:2 test config/shelf/main/_functions/
+docker run --rm --entrypoint deno -v "$(dirname "$PWD")":/w:Z -w "/w/$(basename "$PWD")" \
+  ghcr.io/fernandezvara/backd-executor:latest test config/shelf/main/_functions/
 ```
 
 (With Deno installed locally, `deno test config/shelf/main/_functions/` does the same; on a checkout it is `make functions-testing-test`.) The `share` tests pass now; the `publish` test shown is the finished one, which also asserts the `notify` call chapter 7 adds — save it with chapter 7.
@@ -98,7 +100,7 @@ Two more close the second hole:
 
 {{< example-file path="shelf/main/_functions/share/function.yaml" >}}
 
-`share` checks the asset exists and is published, mints a 24-character token, stamps `created_by` — nothing the client sent decides any of it. `share-open` is the other side: `invoke: "true"` lets strangers call it, `rate_limit` keeps guessing expensive, and it returns a *projection* — title, kind, url, body, tags — never the shares row, never `_meta`.
+`share` checks the asset exists and is published, mints a 24-character token, stamps `created_by` — nothing the client sent decides any of it. `share` also requires an `Idempotency-Key` (a retry must not mint a second link), and it answers `409 not_published` for a draft. `share-open` is the other side: `invoke: "true"` lets strangers call it, `rate_limit` keeps guessing expensive, and it returns a *projection* — title, kind, url, body, tags — never the shares row, never `_meta`.
 
 The collections' rules tighten to match. Replace both files:
 
@@ -122,7 +124,7 @@ has no `create`/`update` rule at all (functions write, nobody else), and `create
 - `deno test` (or `make functions-testing-test`) passes the three functions' tests.
 - `POST …/_func/publish` as a member answers `403`; as `curator@shelf.example`, `200` and the draft gains `published_at`.
 - Two calls with the same `Idempotency-Key` return the same answer; without the header, `400`.
-- A share link resolves at `/?s=<token>`; a made-up token answers 404, and direct `GET`/`POST` on `shares` as a member answers `403`.
+- A share link resolves at `/?s=<token>`; a made-up token answers 404; a member's `POST` on `shares` answers `403`, and a `GET` lists only that member's own links.
 - `docker compose logs backd` shows the function's `console.log` line per publish.
 
 Next: chapter 6 — `preview` reaches the network, behind an allowlist.

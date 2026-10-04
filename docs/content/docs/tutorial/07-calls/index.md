@@ -81,6 +81,6 @@ The app's Notifications section is live: your own notifications newest-first, th
 - `POST /_func/notify` answers `404` even signed in — internal means no route.
 - Publishing a draft (as the curator) lands `asset.published` in the owner's notifications — and the badge counts it.
 - `deno test` covers `notify` itself and `publish`'s call to it.
-- Removing `calls: [notify]` from `publish/function.yaml` fails `functions build` with `call_not_declared`-style validation — the graph is checked at startup, not at runtime.
+- Removing `calls: [notify]` from `publish/function.yaml` does not break publishing — the call sits in a `try/catch` — but the function log says `this function didn't declare main/notify in its \`calls\`` and no notification is written: the graph is enforced when the call is made.
 
 Next: chapter 8 — `digest` runs as an async job, with `retry:` and a pollable status.

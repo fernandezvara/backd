@@ -53,7 +53,7 @@ The template prints `{{.Data.count}}`, `{{range .Data.assets}}` — a function s
 
 ## What changes in the app
 
-- **Invite a member** gains *email the invitation* — `invitations.send` queues the `invitation` template; the mail lands in the **Mailbox** below (the dev outbox, readable by admins).
+- **Invite a member** gains *email the invitation* — `invitations.send` queues the `invitation` template; the mail lands in the **Mailbox** below (the dev outbox: its rule is `read: "true"`, so anyone can read it — which is why `email-capture` only runs in dev).
 - **Forgot your password?** works — a reset email, a hosted page, and the link never spent by a scanner.
 - The **account page** offers *Change email* (`account.allow_email_change`) — the new address confirms, the old one can undo.
 - **Mailbox** (Admin view) lists captured emails — open the verify/reset/accept link right there.

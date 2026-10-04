@@ -316,7 +316,7 @@ document.addEventListener('alpine:init', () => {
     async loadKeys() {
       if (!this.isAdmin) return
       try {
-        this.apiKeys = await backd.admin.keys.list()
+        this.apiKeys = await backd.admin.apiKeys.list()
       } catch (e) {
         this.error = e.message
       }
@@ -328,7 +328,7 @@ document.addEventListener('alpine:init', () => {
       this.newKey = null
       try {
         // Read-only on this database; 90 days, rotated before it expires.
-        const key = await backd.admin.keys.create({ name: this.newKeyName, expiresIn: '90d', scopes: ['read:main'] })
+        const key = await backd.admin.apiKeys.create({ name: this.newKeyName, expiresIn: '90d', scopes: ['read:main'] })
         this.newKey = key // the key shows once — copy it now
         void key
         this.newKeyName = ''
@@ -343,7 +343,7 @@ document.addEventListener('alpine:init', () => {
 
     async revokeKey(name) {
       if (!confirm(`Revoke the key "${name}"? It stops working at once.`)) return
-      await backd.admin.keys.revoke(name).catch((e) => { this.error = e.message })
+      await backd.admin.apiKeys.revoke(name).catch((e) => { this.error = e.message })
       await this.loadKeys()
       await this.loadAudit()
     },

@@ -54,7 +54,7 @@ node app/push.js http://localhost:8080 dev-secret "Title" https://example.com
 
 ## You should see
 
-- `node push.js …` answers `200 ok` — a new draft appears in My assets for curators to publish.
+- `node push.js …` answers `200 ok` — a new draft lands in `assets`. A webhook has no user, so the draft has **no owner** and the rules (`published_at != nil || owner == user.id`) show it to no member: read it with an API key (chapter 12 makes one) — `GET /v1/shelf/main/assets?where={"tags":"imported"}` — or give the feed an owner and curators a read rule, which is the natural next exercise.
 - The same `event_id` sent twice answers `200 already processed` — one `imports` doc, one asset.
 - A wrong `x-signature` answers `400 invalid signature`; missing `event_id`/`title`, `422`.
 - `deno test` covers the signature round-trip.

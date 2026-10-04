@@ -39,7 +39,7 @@ You don't wait for the clock to know it works. The admin API runs any function b
 ```sh
 curl -s -X POST http://localhost:8080/v1/shelf/_admin/functions/main/cleanup/invoke \
   -H "Authorization: Bearer $OP" -H 'Content-Type: application/json' -d '{}'
-# 202 {"id":"…","status":"queued", …}  — a job
+# 202 {"id":"…","status":"queued", …}  — a job; poll GET /v1/shelf/main/_jobs/<id> (same $OP) until "status":"done"
 ```
  The app does the same from the Admin view: `backd.admin.invokeFunction('main/cleanup')`, and its result (or job) under **Run by hand**. That's the second invoke path in this tutorial: `db.fn` for functions with a route and an `invoke` rule; `admin.invokeFunction` for everything else — invoke rules and `rate_limit` don't apply, so guard it to admins in the UI.
 

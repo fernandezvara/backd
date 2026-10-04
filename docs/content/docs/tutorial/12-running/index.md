@@ -14,7 +14,7 @@ The shelf works. The last chapter is about *operating* it: who acts without a se
 Sessions are for people; **API keys are for machines** — a CI job that reads the gallery, a monitor that calls a function. In the Admin view, *Create read:main key* makes one scoped to read-only on `main`, expiring in 90 days:
 
 ```js
-backd.admin.keys.create({ name: 'ci-reader', expiresIn: '90d', scopes: ['read:main'] })
+backd.admin.apiKeys.create({ name: 'ci-reader', expiresIn: '90d', scopes: ['read:main'] })
 ```
 
 The full key (`bdk_…`) shows **once**, in the creation response — store it in a secret store; `backd` keeps only its prefix. `scopes` limit what a key reaches (`read`, `write`, `call`, optionally `:database` or `:database/name`); `revoke` stops it at once ([API keys](../../auth/api-keys/)). With a key, an unattended script uses the same client: `createClient({ url, realm, apiKey })` — no signup, no session.

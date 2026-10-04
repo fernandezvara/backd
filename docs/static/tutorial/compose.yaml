@@ -23,7 +23,8 @@ services:
   # Bundles every realm's functions before backd starts (backd refuses stale
   # or missing bundles). Does nothing until chapter 5 adds the first function.
   functions-build:
-    image: ghcr.io/fernandezvara/backd:latest
+    image: ghcr.io/fernandezvara/backd-executor:latest   # backd plus the pinned Deno
+    entrypoint: ["/usr/local/bin/backd"]
     command: ["functions", "build"]
     user: root
     environment:

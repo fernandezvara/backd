@@ -46,7 +46,7 @@ In the app, the **New asset** URL field gains a **Preview** button: paste a link
 
 - `deno test` passes the fetch-stub tests.
 - **Preview** on `https://fernandezvara.github.io/backd/` fills title and notes.
-- A `preview` call for a page that fails answers `502 preview_failed`, not a stack trace.
+- A `preview` call for a page that fails answers `424 preview_failed`, not a stack trace.
 - `docker compose logs egress` shows the call go through — and any edit to `index.ts` fetching a different host gets refused, allowlist or not.
 
 Next: chapter 7 — functions calling functions: `notify` becomes an `internal:` building block.
