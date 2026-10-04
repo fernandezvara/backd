@@ -20,7 +20,7 @@
   <script type="module" src="app.js"></script>
   <script defer src="lib/alpine.min.js"></script>
 </head>
-<body>
+<body x-data="shelf">
 
   <!-- Top bar (ch1): the nav the app always shows. -->
   <nav class="container-fluid">
@@ -28,10 +28,10 @@
       <li><strong class="brand">Shelf App</strong></li>
     </ul>
     <ul>
-      <li><a href="#gallery" aria-current="page">Gallery</a></li>
-      <li><a href="#mine">My assets</a></li>
-      <li><a href="#notifications">Notifications <mark class="badge" x-show="unreadCount" x-text="unreadCount"></mark></a></li>
-      <li><a href="#admin">Admin</a></li>
+      <li><a href="#gallery" :aria-current="view === 'gallery' ? 'page' : null">Gallery</a></li>
+      <li><a href="#mine" :aria-current="view === 'mine' ? 'page' : null">My assets</a></li>
+      <li><a href="#notifications" :aria-current="view === 'notifications' ? 'page' : null">Notifications <mark class="badge" x-show="unreadCount" x-text="unreadCount"></mark></a></li>
+      <li><a href="#admin" :aria-current="view === 'admin' ? 'page' : null">Admin</a></li>
       <li x-show="!user"><a href="#auth" role="button" class="outline">Sign in</a></li>
       <template x-if="user">
         <li><a href="#account" class="muted" x-text="user?.email"></a>
@@ -41,7 +41,7 @@
     </ul>
   </nav>
 
-  <main class="container" x-data="shelf" x-cloak :class="{ publiclink: sharedDoc || shareErr }">
+  <main class="container" x-cloak :class="{ publiclink: sharedDoc || shareErr }">
 
     <p class="error" x-show="error" x-text="error" role="alert"></p>
 
@@ -74,7 +74,7 @@
     </section>
 
     <!-- view: gallery (ch1, wired) — public, paginated, filterable. -->
-    <section id="gallery">
+    <section id="gallery" x-show="view === 'gallery'">
       <hgroup>
         <h2>Gallery</h2>
         <p>Everything the workspace has published.</p>
@@ -160,7 +160,7 @@
     </section>
 
     <!-- view: my assets (ch2→ch5) — own items, drafts and published. -->
-    <section id="mine">
+    <section id="mine" x-show="view === 'mine'">
       <hgroup>
         <h2>My assets</h2>
         <p>Yours, whether published or not.</p>
@@ -230,7 +230,7 @@
     </section>
 
     <!-- view: notifications (ch7, wired) — what publish and digest create. -->
-    <section id="notifications">
+    <section id="notifications" x-show="view === 'notifications'">
       <hgroup>
         <h2>Notifications</h2>
         <p>What happened since your last visit.</p>
@@ -251,7 +251,7 @@
     </section>
 
     <!-- view: admin (ch12) — audit feed and operator tools. -->
-    <section id="admin">
+    <section id="admin" x-show="view === 'admin'">
       <hgroup>
         <h2>Admin</h2>
         <p>Operators only: audit trail, users, runs by hand.</p>
@@ -359,7 +359,7 @@
     </section>
 
     <!-- view: auth (ch2, wired) — sign in / up, plus the account page. -->
-    <section id="auth" x-show="!user">
+    <section id="auth" x-show="view === 'auth' && !user">
       <hgroup>
         <h2 x-text="mode === 'login' ? 'Sign in' : 'Sign up'"></h2>
         <p x-show="mode === 'login'">Or <a href="#" @click.prevent="mode = 'signup'">create an account</a>.</p>
@@ -379,7 +379,7 @@
       </article>
     </section>
 
-    <section id="account" x-show="user">
+    <section id="account" x-show="view === 'account' && user">
       <hgroup>
         <h2>Account</h2>
         <p x-text="user?.email"></p>

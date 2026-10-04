@@ -19,10 +19,14 @@ const notifications = main.collection('notifications')
 const members = main.collection('members')
 const outbox = backd.db('mail').collection('outbox')
 
+const VIEWS = ['gallery', 'mine', 'notifications', 'admin', 'auth', 'account']
+
 document.addEventListener('alpine:init', () => {
   Alpine.data('shelf', () => ({
     // Session: null while signed out.
     user: null,
+    // The one section showing; the nav's #links move between them.
+    view: 'gallery',
     mode: 'login', // login | signup
     email: '',
     password: '',
@@ -80,12 +84,14 @@ document.addEventListener('alpine:init', () => {
     draft: { title: '', kind: 'link', url: '', body: '', tags: '' },
 
     async init() {
+      window.addEventListener('hashchange', () => this.syncView())
       // An invitation link (?token=…) preselects the sign-up form.
       const params = new URLSearchParams(window.location.search)
       const token = params.get('token')
       if (token) {
         this.invitation = token
         this.mode = 'signup'
+        window.location.hash = '#auth'
       }
       // ?s=<token> is the public share view — no session needed.
       const s = params.get('s')
@@ -97,6 +103,15 @@ document.addEventListener('alpine:init', () => {
       }
       await this.refilter()
       if (this.user) await Promise.all([this.loadMine(), this.loadInvites(), this.loadShares(), this.loadNotifs(), this.ensureMember(), this.loadAdmin()])
+      this.syncView()
+    },
+
+    syncView() {
+      let v = window.location.hash.slice(1)
+      if (!VIEWS.includes(v)) v = 'gallery'
+      if (v === 'auth' && this.user) v = 'gallery'
+      if (v === 'account' && !this.user) v = 'gallery'
+      this.view = v
     },
 
     // --- session -----------------------------------------------------------
@@ -119,6 +134,7 @@ document.addEventListener('alpine:init', () => {
         await this.loadNotifs()
         await this.ensureMember()
         await this.loadAdmin()
+        window.location.hash = '#mine'
       } catch (e) {
         this.error = e.message
       } finally {
@@ -130,6 +146,7 @@ document.addEventListener('alpine:init', () => {
       await backd.auth.logout().catch(() => {})
       this.user = null
       this.mine = []
+      window.location.hash = '#gallery'
       await this.refilter()
     },
 
