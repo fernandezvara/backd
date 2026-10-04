@@ -49,6 +49,23 @@ enableGitInfo = true
     target = "assets/examples/blog"
     includeFiles = ["**.yaml", "**.json"]
     excludeFiles = ["**/.build/**"]
+  [[module.mounts]]
+    source = "../examples/config/shelf"
+    target = "assets/examples/shelf"
+    includeFiles = ["**.ts", "**.yaml", "**.json"]
+    excludeFiles = ["**/.build/**"]
+  # The tutorial's downloads: the same files the repo runs, served under
+  # /tutorial/ so readers never need a backd checkout.
+  [[module.mounts]]
+    source = "../examples/config/shelf"
+    target = "static/tutorial/config/shelf"
+    excludeFiles = ["**/.build/**"]
+  [[module.mounts]]
+    source = "../clients/js/examples/shelf"
+    target = "static/tutorial/app"
+  [[module.mounts]]
+    source = "../clients/js/src"
+    target = "static/tutorial/client"
 
 # Hugo does not merge outputs from a theme: the search index is ours to enable.
 [outputs]

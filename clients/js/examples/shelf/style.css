@@ -59,3 +59,14 @@ nav .badge { vertical-align: super; }
 
 /* Sections are stacked in the snapshot; chapters will toggle them. */
 main > section { margin-bottom: 3rem; }
+
+/* Alpine: hide the app until it initializes. */
+[x-cloak] { display: none !important; }
+
+/* API errors surface once, above the views. */
+.error {
+  background: var(--pico-del-background, #fdd);
+  border: 1px solid var(--pico-del-color, #d93526);
+  border-radius: var(--pico-border-radius);
+  padding: .6rem .8rem;
+}

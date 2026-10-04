@@ -1,0 +1,22 @@
+{
+  "$comment": "Assets the workspace saves: links and notes. Every document must match this JSON Schema (draft 2020-12); backd adds id and _meta itself.",
+  "type": "object",
+  "properties": {
+    "title": { "type": "string", "minLength": 1, "maxLength": 200, "description": "What the asset is called. Required." },
+    "kind":  { "enum": ["link", "note"], "description": "A URL worth keeping, or a written note." },
+    "url":   { "type": "string", "format": "uri", "description": "The link, for kind \"link\"." },
+    "body":  { "type": "string", "description": "Why the team should care." },
+    "tags":  {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1, "maxLength": 40 },
+      "maxItems": 12,
+      "description": "Free-form labels; where={\"tags\":\"docs\"} finds documents whose array contains the value."
+    },
+    "published_at": {
+      "type": ["string", "null"], "format": "date-time", "x-backd-store": "date",
+      "description": "null while a draft. Stored as a BSON date so filters, ranges and sorting compare instants."
+    },
+    "file": { "type": "object", "description": "Reserved for file management, a later tutorial chapter." }
+  },
+  "required": ["title", "kind"]
+}

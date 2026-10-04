@@ -13,6 +13,12 @@
   <title>Shelf — your team's asset library</title>
   <link rel="stylesheet" href="lib/pico.min.css">
   <link rel="stylesheet" href="style.css">
+  <!-- Resolves `import … from 'backd-js'`, as a bundler would; the stack
+       serves the client source at /example/client/. -->
+  <script type="importmap">{ "imports": { "backd-js": "/example/client/index.js" } }</script>
+  <!-- The app registers its component on alpine:init, so it loads before Alpine. -->
+  <script type="module" src="app.js"></script>
+  <script defer src="lib/alpine.min.js"></script>
 </head>
 <body>
 
@@ -31,69 +37,54 @@
     </ul>
   </nav>
 
-  <main class="container">
+  <main class="container" x-data="shelf" x-cloak>
 
-    <!-- view: gallery (ch1) — public, paginated, filterable. -->
+    <p class="error" x-show="error" x-text="error" role="alert"></p>
+
+    <!-- view: gallery (ch1, wired) — public, paginated, filterable. -->
     <section id="gallery">
       <hgroup>
         <h2>Gallery</h2>
         <p>Everything the workspace has published.</p>
       </hgroup>
 
-      <form class="toolbar" role="search">
-        <input type="search" placeholder="Filter by tag…" aria-label="Filter by tag">
-        <select aria-label="Sort">
-          <option>Newest first</option>
-          <option>Oldest first</option>
-          <option>Title A–Z</option>
+      <form class="toolbar" role="search" @submit.prevent>
+        <input type="search" placeholder="Filter by tag…" aria-label="Filter by tag"
+               x-model="tag" @input.debounce.400ms="refilter">
+        <select aria-label="Sort" x-model="sort" @change="refilter">
+          <option value="-published_at">Newest first</option>
+          <option value="published_at">Oldest first</option>
+          <option value="title">Title A–Z</option>
         </select>
       </form>
 
+      <p class="muted" x-show="!busy && assets.length === 0">Nothing published yet.</p>
       <div class="grid">
-        <article>
-          <header>
-            <strong>The backd handbook</strong>
-            <span class="kind">link</span>
-          </header>
-          <p>Our internal guide to realms, rules and functions — start here.</p>
-          <footer>
-            <span class="muted">by ana@shelf.example · 2026-09-12</span>
-            <span class="tags"><a href="#">docs</a> <a href="#">onboarding</a></span>
-            <button class="secondary outline sm">Share</button>
-          </footer>
-        </article>
-
-        <article>
-          <header>
-            <strong>Deploy checklist</strong>
-            <span class="kind">note</span>
-          </header>
-          <p>Steps we run before every production deploy of the storefront.</p>
-          <footer>
-            <span class="muted">by bruno@shelf.example · 2026-09-08</span>
-            <span class="tags"><a href="#">ops</a></span>
-            <button class="secondary outline sm">Share</button>
-          </footer>
-        </article>
-
-        <article>
-          <header>
-            <strong>Vendor security review</strong>
-            <span class="kind">link</span>
-          </header>
-          <p>Questionnaire answers from the last audit, for the next one.</p>
-          <footer>
-            <span class="muted">by ana@shelf.example · 2026-08-30</span>
-            <span class="tags"><a href="#">security</a> <a href="#">vendor</a></span>
-            <button class="secondary outline sm">Share</button>
-          </footer>
-        </article>
+        <template x-for="asset in assets" :key="asset.id">
+          <article>
+            <header>
+              <strong x-text="asset.title"></strong>
+              <span class="kind" x-text="asset.kind"></span>
+            </header>
+            <p>
+              <a x-show="asset.url" :href="asset.url" x-text="asset.url"></a>
+              <span x-text="asset.body"></span>
+            </p>
+            <footer>
+              <span class="muted" x-text="asset.published_at ? new Date(asset.published_at).toLocaleDateString() : 'draft'"></span>
+              <span class="tags">
+                <template x-for="t in asset.tags ?? []" :key="t">
+                  <a href="#" @click.prevent="tag = t; refilter()" x-text="t"></a>
+                </template>
+              </span>
+              <button class="secondary outline sm" disabled title="Chapter 5 wires this">Share</button>
+            </footer>
+          </article>
+        </template>
       </div>
 
       <footer class="pager">
-        <button class="secondary sm" disabled>← Newer</button>
-        <span class="muted">Page 1</span>
-        <button class="secondary sm">Older →</button>
+        <button class="secondary sm" x-show="hasMore" @click="load" :disabled="busy">Load more</button>
       </footer>
     </section>
 
@@ -132,19 +123,18 @@
         <header>
           <strong>New asset</strong>
         </header>
-        <form>
+        <form @submit.prevent="create">
           <div class="grid">
-            <label>Title <input placeholder="What is it?"></label>
+            <label>Title <input placeholder="What is it?" x-model="draft.title" required></label>
             <label>Kind
-              <select><option>link</option><option>note</option></select>
+              <select x-model="draft.kind"><option value="link">link</option><option value="note">note</option></select>
             </label>
           </div>
-          <label>URL <input type="url" placeholder="https://…"></label>
-          <label>Notes <textarea rows="3" placeholder="Why should the team care?"></textarea></label>
-          <label>Tags <input placeholder="comma, separated, tags"></label>
+          <label>URL <input type="url" placeholder="https://…" x-model="draft.url" x-show="draft.kind === 'link'"></label>
+          <label>Notes <textarea rows="3" placeholder="Why should the team care?" x-model="draft.body"></textarea></label>
+          <label>Tags <input placeholder="comma, separated, tags" x-model="draft.tags"></label>
           <footer>
-            <button type="button">Save draft</button>
-            <button type="button" class="secondary">Save &amp; publish</button>
+            <button type="submit" :disabled="busy">Save &amp; publish</button>
           </footer>
         </form>
       </article>
