@@ -361,6 +361,29 @@ func TestContract(t *testing.T) {
 		return out
 	}
 
+	// Soft delete: delete, trash views, restore and purge.
+	{
+		const b = "/v1/acme/app/bin"
+		id := req("POST", b, `{"title":"b"}`, ada, 201)["id"].(string)
+		req("DELETE", b+"/"+id, "", ada, 204)
+		req("GET", b+"?deleted=only", "", ada, 200)
+		req("GET", b+"/"+id+"?deleted=only", "", ada, 200)
+		req("GET", b+"?deleted=bogus", "", ada, 400)
+		req("DELETE", b+"/"+id+"?purge=maybe", "", ada, 400)
+		req("DELETE", b+"/"+id+"?purge=true", "", ada, 403)
+		req("POST", b+"/nope/restore", "", ada, 404)
+		req("POST", b+"/"+id+"/restore", "", nil, 401)
+		req("POST", b+"/"+id+"/restore", "", with(ada, "If-Match", "bad"), 400)
+		req("POST", b+"/"+id+"/restore", "", with(ada, "If-Match", `"9"`), 412)
+		req("POST", b+"/"+id+"/restore", "", ada, 200)
+		// No restore rule: its trash is closed.
+		const a = "/v1/acme/app/archive"
+		aid := req("POST", a, `{"title":"a"}`, ada, 201)["id"].(string)
+		req("DELETE", a+"/"+aid, "", ada, 204)
+		req("GET", a+"?deleted=only", "", ada, 403)
+		req("POST", a+"/"+aid+"/restore", "", ada, 403)
+	}
+
 	// Health.
 	req("GET", "/healthz", "", nil, 200)
 	req("GET", "/readyz", "", nil, 200)

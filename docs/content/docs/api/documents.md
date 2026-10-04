@@ -192,7 +192,7 @@ Merge Patch can't set a field to a literal `null`: in a patch, `null` means "rem
 
 ## Delete
 
-Deletes are permanent. The response is `204 No Content`, or `404` if the document doesn't exist.
+Deletes are permanent unless the collection [soft-deletes](#soft-delete). The response is `204 No Content`, or `404` if the document doesn't exist (or, in a collection that soft-deletes, is already deleted). `If-Match` works as for any write.
 
 ## Batch writes
 
@@ -245,6 +245,20 @@ Content-Type: application/json
 {{< hint note >}}
 Unlike PUT and PATCH, a batch **never retries a version mismatch itself**: read, batch with `if_match`, and on `412` re-read and build the batch again. For the order-and-stock example above, re-read the stock document's current version and quantity, then send a new batch with the decremented amount.
 {{< /hint >}}
+
+## Soft delete
+
+A collection with [`soft_delete`](../../configuration/config-dir/#soft-delete) keeps deleted documents recoverable. `DELETE` answers the same `204`, but the document stays, marked in `_meta`:
+
+```json
+"_meta": { "version": 2, "deleted_at": "2026-10-04T09:00:00Z", "deleted_by": "user:d2fjps30h2ipb32i2hg0", "purge_at": "2026-11-03T09:00:00Z" }
+```
+
+- **Everywhere else it is gone**: get, list, count, `PUT`, `PATCH`, `DELETE` and batches answer as if it didn't exist, and its unique values are free again.
+- **The trash** is read with `deleted=only` (just the deleted ones) or `deleted=include` (both) on `GET /{collection}` and `GET /{collection}/{id}`. It needs the `read` rule **and** the `restore` rule to allow the document, so who may restore decides who may look. Anything else for `deleted`, or the parameter on a collection that doesn't soft-delete, is `400 invalid_query`. The marks are queryable: `where={"_meta.deleted_at":{"$gte":"2026-10-01T00:00:00Z"}}`.
+- **`POST /{collection}/{id}/restore`** brings a deleted document back, as it was, at the next version (`200` with the document). It needs the `restore` rule, honours `If-Match`, and re-checks the document against the schema as it is now (`400` if it no longer fits) and its unique values (`409` if a live document took them meanwhile). A document that isn't in the trash is `404`.
+- **`DELETE /{collection}/{id}?purge=true`** removes a document for good, deleted or not, under the `purge` rule; the caller must also see it (the `read` rule, and for a deleted one the `restore` rule). A collection without a retention keeps deleted documents until someone purges them.
+- Callers outside the rules, API keys, see and restore everything; the rules decide for everyone else, and without a `restore` or `purge` rule nobody else may.
 
 ## Schema changes
 

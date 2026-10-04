@@ -15,6 +15,9 @@ import { Job } from './functions.js'
  * @property {string | null} [owner]  Id of the user who created it (realms with auth enabled).
  * @property {string} [created_by] `user:<id>`, `key:<name>` or `anonymous`.
  * @property {string} [updated_by] `user:<id>`, `key:<name>` or `anonymous`.
+ * @property {string} [deleted_at] RFC3339 timestamp; only on soft-deleted documents (collections with `soft_delete`).
+ * @property {string} [deleted_by] Who deleted it, like `updated_by`.
+ * @property {string} [purge_at]   RFC3339 timestamp: when it is removed for good (`soft_delete.retention`).
  */
 
 /**
@@ -33,6 +36,8 @@ import { Job } from './functions.js'
  * @property {string} [after]               The `next_cursor` of the previous page: continues the list after it
  *   (same `where` and `orderBy`). Can't be combined with `skip`.
  * @property {boolean} [count]              Also return `total`.
+ * @property {'only' | 'include'} [deleted] In a collection with `soft_delete`: `'only'` lists the deleted documents
+ *   (the trash), `'include'` both. Needs the `restore` rule besides `read`.
  */
 
 /**
@@ -52,6 +57,17 @@ import { Job } from './functions.js'
  * Options for writes. `ifMatch` makes the write fail with a
  * VersionMismatchError unless the document is still at that version.
  * @typedef {RequestOptions & { ifMatch?: number | string }} WriteOptions
+ */
+
+/**
+ * Options for `get`. `deleted` reads a soft-deleted document (see `ListParams`).
+ * @typedef {RequestOptions & { deleted?: 'only' | 'include' }} GetOptions
+ */
+
+/**
+ * Options for `delete`. `purge` removes the document for good instead of
+ * soft-deleting it (a collection with `soft_delete`, under the `purge` rule).
+ * @typedef {WriteOptions & { purge?: boolean }} DeleteOptions
  */
 
 /**
@@ -208,12 +224,14 @@ export class Collection {
 
   /**
    * One document; NotFoundError if it doesn't exist or the caller may not read it.
+   * A soft-deleted document is only found with `deleted: 'only'` or `'include'`.
    * @param {string} id
-   * @param {RequestOptions} [opts]
+   * @param {GetOptions} [opts]
    * @returns {Promise<Doc<T>>}
    */
-  async get(id, opts) {
-    return (await this.client.request({ method: 'GET', path: [...this.path, id], ...opts })).data
+  async get(id, opts = {}) {
+    const { deleted, ...rest } = opts
+    return (await this.client.request({ method: 'GET', path: [...this.path, id], query: { deleted }, ...rest })).data
   }
 
   /**
@@ -260,13 +278,26 @@ export class Collection {
   }
 
   /**
-   * Deletes a document.
+   * Deletes a document. In a collection with `soft_delete` it is marked deleted
+   * and can be restored; `purge: true` removes it for good.
    * @param {string} id
-   * @param {WriteOptions} [opts]
+   * @param {DeleteOptions} [opts]
    * @returns {Promise<void>}
    */
   async delete(id, opts = {}) {
-    await this.client.request({ method: 'DELETE', path: [...this.path, id], ...write(opts) })
+    const { purge, ...rest } = opts
+    await this.client.request({ method: 'DELETE', path: [...this.path, id], query: { purge: purge || undefined }, ...write(rest) })
+  }
+
+  /**
+   * Brings a soft-deleted document back, as it was, at the next version.
+   * NotFoundError if it isn't in the trash or the caller may not see it there.
+   * @param {string} id
+   * @param {WriteOptions} [opts]
+   * @returns {Promise<Doc<T>>}
+   */
+  async restore(id, opts = {}) {
+    return (await this.client.request({ method: 'POST', path: [...this.path, id, 'restore'], ...write(opts) })).data
   }
 }
 
@@ -282,6 +313,7 @@ function listQuery(p) {
     skip: p.skip,
     after: p.after,
     count: p.count || undefined,
+    deleted: p.deleted,
   }
 }
 

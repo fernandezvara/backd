@@ -72,13 +72,18 @@ type UserDef struct {
 
 // Test groups the assertions of one caller.
 type Test struct {
-	Name   string   `yaml:"name"`
-	As     string   `yaml:"as"` // a user of the fixture; default anonymous
-	Now    string   `yaml:"now"`
-	Read   *Docs    `yaml:"read"`
-	Delete *Docs    `yaml:"delete"`
-	Create []Create `yaml:"create"`
-	Update []Update `yaml:"update"`
+	Name   string `yaml:"name"`
+	As     string `yaml:"as"` // a user of the fixture; default anonymous
+	Now    string `yaml:"now"`
+	Read   *Docs  `yaml:"read"`
+	Delete *Docs  `yaml:"delete"`
+	// Restore and Purge are for collections that soft-delete: which deleted
+	// (_meta.deleted_at) documents the caller may see in the trash and
+	// restore, and which they may purge.
+	Restore *Docs    `yaml:"restore"`
+	Purge   *Docs    `yaml:"purge"`
+	Create  []Create `yaml:"create"`
+	Update  []Update `yaml:"update"`
 }
 
 // Docs names stored documents the caller may or may not act on.
@@ -186,7 +191,7 @@ func (r *runner) load(f File) {
 	}
 }
 
-var metaKeys = []string{"owner", "created_by", "updated_by", "version", "created_at", "updated_at"}
+var metaKeys = []string{"owner", "created_by", "updated_by", "version", "created_at", "updated_at", "deleted_at", "deleted_by", "purge_at"}
 
 // stored builds a stored document: the user fields (checked against the
 // schema, as the server does when it writes them) and the system fields.
@@ -216,7 +221,7 @@ func (r *runner) stored(name string, def map[string]any) (map[string]any, error)
 			return nil, fmt.Errorf("_meta.%s is not a field (use %s)", k, strings.Join(metaKeys, ", "))
 		}
 		switch k {
-		case "created_at", "updated_at":
+		case "created_at", "updated_at", "deleted_at", "purge_at":
 			s, _ := v.(string)
 			if t, err := time.Parse(time.RFC3339, s); err == nil {
 				v = t.UTC()
@@ -311,8 +316,8 @@ func (r *runner) run(i int, t Test) {
 		}
 		now = parsed.UTC()
 	}
-	if t.Read == nil && t.Delete == nil && len(t.Create) == 0 && len(t.Update) == 0 {
-		r.problem("%s: no assertions: add read, create, update or delete", where)
+	if t.Read == nil && t.Delete == nil && t.Restore == nil && t.Purge == nil && len(t.Create) == 0 && len(t.Update) == 0 {
+		r.problem("%s: no assertions: add read, create, update, delete, restore or purge", where)
 	}
 	add := func(what string, want string, d decision) {
 		c := Check{Test: name, What: what, Pass: (want == "allow") == d.allow}
@@ -331,7 +336,7 @@ func (r *runner) run(i int, t Test) {
 	for _, g := range []struct {
 		op   rules.Op
 		docs *Docs
-	}{{rules.Read, t.Read}, {rules.Delete, t.Delete}} {
+	}{{rules.Read, t.Read}, {rules.Delete, t.Delete}, {rules.Restore, t.Restore}, {rules.Purge, t.Purge}} {
 		if g.docs == nil {
 			continue
 		}
@@ -344,10 +349,15 @@ func (r *runner) run(i int, t Test) {
 				if !ok {
 					continue
 				}
-				verb := map[rules.Op]string{rules.Read: "reads", rules.Delete: "deletes"}[g.op]
-				if g.op == rules.Read {
+				verb := map[rules.Op]string{rules.Read: "reads", rules.Delete: "deletes", rules.Restore: "restores", rules.Purge: "purges"}[g.op]
+				switch g.op {
+				case rules.Read:
 					add(fmt.Sprintf("%s %s %s", as, verb, n), side.want, r.read(user, now, d))
-				} else {
+				case rules.Restore:
+					add(fmt.Sprintf("%s %s %s", as, verb, n), side.want, r.restore(user, now, d))
+				case rules.Purge:
+					add(fmt.Sprintf("%s %s %s", as, verb, n), side.want, r.purge(user, now, d))
+				default:
 					add(fmt.Sprintf("%s %s %s", as, verb, n), side.want, r.write(user, now, rules.Delete, d, nil))
 				}
 			}
@@ -451,6 +461,75 @@ func (r *runner) read(user *rules.User, now time.Time, doc map[string]any) decis
 		return decision{true, "rule " + rule.Key + " matches the document"}
 	}
 	return decision{false, "rule " + rule.Key + " does not match the document: the server answers 404"}
+}
+
+// restore decides who sees a deleted document in the trash and may restore it:
+// the read rule and the restore rule must both match it, and the document has
+// to be in the trash (a live document can't be restored).
+func (r *runner) restore(user *rules.User, now time.Time, doc map[string]any) decision {
+	if !r.deleted(doc) {
+		return decision{false, "the document is not deleted (give it _meta.deleted_at in the fixture)"}
+	}
+	if d := r.read(user, now, doc); !d.allow {
+		return decision{false, "the caller can't read the document: " + d.why}
+	}
+	return r.filterRule(user, now, rules.Restore, doc)
+}
+
+// purge decides who may remove a document for good: they must see it (a live
+// one by the read rule, a deleted one by the read and restore rules too) and
+// the purge rule must allow it.
+func (r *runner) purge(user *rules.User, now time.Time, doc map[string]any) decision {
+	seen := r.read(user, now, doc)
+	if seen.allow && r.deleted(doc) {
+		seen = r.filterRule(user, now, rules.Restore, doc)
+	}
+	if !seen.allow {
+		return decision{false, "the caller can't see the document: " + seen.why}
+	}
+	rule := r.c.Rules.For(rules.Purge)
+	if rule == nil {
+		return decision{false, "no purge rule"}
+	}
+	ok, err := rule.Allow(rules.Values{User: user, Document: doc, Now: now})
+	switch {
+	case err != nil:
+		return decision{false, "rule " + rule.Key + " failed: " + err.Error()}
+	case ok:
+		return decision{true, "rule " + rule.Key + " is true"}
+	}
+	return decision{false, "rule " + rule.Key + " is false"}
+}
+
+func (r *runner) deleted(doc map[string]any) bool {
+	meta, _ := doc["_meta"].(map[string]any)
+	_, ok := meta["deleted_at"]
+	return ok
+}
+
+// filterRule evaluates a filter-style rule (read, restore) against a document.
+func (r *runner) filterRule(user *rules.User, now time.Time, op rules.Op, doc map[string]any) decision {
+	rule := r.c.Rules.For(op)
+	if rule == nil {
+		return decision{false, "no " + string(op) + " rule"}
+	}
+	f, err := rule.Filter(rules.Values{User: user, Now: now})
+	switch {
+	case err != nil:
+		return decision{false, string(op) + " rule error: " + err.Error()}
+	case f == storage.Const(false):
+		return decision{false, "rule " + rule.Key + " is false for this caller"}
+	case f == storage.Const(true):
+		return decision{true, "rule " + rule.Key + " is true for this caller"}
+	}
+	ok, err := storage.Match(doc, f)
+	switch {
+	case err != nil:
+		return decision{false, string(op) + " rule error: " + err.Error()}
+	case ok:
+		return decision{true, "rule " + rule.Key + " matches the document"}
+	}
+	return decision{false, "rule " + rule.Key + " does not match the document"}
 }
 
 // write decides create, update and delete. Update and delete need the stored

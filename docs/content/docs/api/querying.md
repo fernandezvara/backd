@@ -16,6 +16,7 @@ The list endpoint, `GET /v1/{realm}/{database}/{collection}`, accepts these quer
 | `skip` | `0` | Number of documents to skip |
 | `after` | none | The `next_cursor` of the previous page: continues the list after it (see [Paging with a cursor](#paging-with-a-cursor)). Can't be combined with `skip` |
 | `count` | `false` | `true` adds `total`, the number of documents matching `where` |
+| `deleted` | none | In a collection with [soft delete](../documents/#soft-delete): `only` lists the deleted documents (the trash), `include` both. Needs the `restore` rule besides `read` |
 
 Each parameter may appear at most once. Any other parameter returns `400 invalid_query`.
 

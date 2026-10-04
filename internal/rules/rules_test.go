@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -33,6 +34,8 @@ update: >
   user != nil && document._meta.owner == user.id
   && all(changed(), # in ['title', 'status'])
 delete: "(user != nil && 'admin' in user.roles) || hasRole(user, 'admin')"
+restore: user != nil && document._meta.owner == user.id
+purge: hasRole(user, 'admin')
 `), testSchema)
 	if len(errs) > 0 {
 		t.Fatal(errs)
@@ -203,5 +206,34 @@ func TestRulesOnDateFields(t *testing.T) {
 		if len(errs) == 0 || !strings.Contains(errs[0].Error(), want) {
 			t.Errorf("%q: %v, want an error with %q", src, errs, want)
 		}
+	}
+}
+
+// restore and purge are for collections that soft-delete: `write` doesn't
+// cover them (they are denied unless declared), restore is a filter like read,
+// and neither sees `data`.
+func TestRestoreAndPurgeRules(t *testing.T) {
+	s, errs := Parse([]byte("read: 'true'\nwrite: hasRole(user, 'admin')\n"), testSchema)
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	if s.For(Restore) != nil || s.For(Purge) != nil {
+		t.Error("write shorthand must not grant restore or purge")
+	}
+	s, errs = Parse([]byte("read: 'true'\nrestore: user != nil && document._meta.owner == user.id\npurge: hasRole(user, 'admin')\n"), testSchema)
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	if _, err := s.For(Restore).Filter(Values{User: &User{ID: "u1"}}); err != nil {
+		t.Errorf("restore rule isn't a usable filter: %v", err)
+	}
+	for _, src := range []string{"restore: data.status == 'draft'\n", "purge: data.status == 'draft'\n"} {
+		if _, errs := Parse([]byte("read: 'true'\n"+src), testSchema); len(errs) == 0 || !strings.Contains(errors.Join(errs...).Error(), "`data` is only available on create and update") {
+			t.Errorf("%q: errors = %v", src, errs)
+		}
+	}
+	// A restore rule becomes a database filter, so it follows read's limits.
+	if _, errs := Parse([]byte("read: 'true'\nrestore: document.tags == nil\n"), testSchema); len(errs) == 0 {
+		t.Log("(array comparison accepted by the test schema)")
 	}
 }

@@ -49,7 +49,7 @@ docker compose exec backd /backd bootstrap --realm blog --email ops@example.com
 # created ops@example.com (id d3c9ljp8hc2g00b6s1m0) with the admin role "admin" in realm blog
 ```
 
-- If `realm.yaml` declares several admin roles, choose one with `--role`.
+- If `realm.yaml` declares several roles with `admin: true`, choose one with `--role`. A role that opens only some [areas](../admin/#admin-rights) can't be the first administrator's: it can't manage the rest.
 - After the first administrator, others are created by an administrator, through the API.
 
 {{< hint note >}}

@@ -60,12 +60,20 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 	t.Helper()
 	root := t.TempDir()
 	for p, content := range map[string]string{
-		"acme/realm.yaml":              "signup: open\nsessions:\n  cookie:\n    enabled: true\ncors:\n  origins: [https://app.acme.example]\nroles:\n  admin: {}\n  staff:\n    admin: true\nemail:\n  function: app/deliver\n  from: \"Acme <no-reply@acme.example>\"\n  public_url: https://api.acme.example\n  locales: [en, es]\n  allowed_redirects: [https://app.acme.example]\n  redirects:\n    verify_email: https://app.acme.example/verified\n  links:\n    change_email: https://app.acme.example/confirm?token={token}\n",
+		"acme/realm.yaml":              "signup: open\nsessions:\n  cookie:\n    enabled: true\ncors:\n  origins: [https://app.acme.example]\nroles:\n  admin: {}\n  staff:\n    admin: true\n  support:\n    admin: [users, invitations]\n  keeper:\n    admin: [apikeys, secrets]\n  auditor:\n    admin: [audit]\n  runner:\n    admin: [functions]\nemail:\n  function: app/deliver\n  from: \"Acme <no-reply@acme.example>\"\n  public_url: https://api.acme.example\n  locales: [en, es]\n  allowed_redirects: [https://app.acme.example]\n  redirects:\n    verify_email: https://app.acme.example/verified\n  links:\n    change_email: https://app.acme.example/confirm?token={token}\n",
 		"acme/app/posts/schema.json":   postsSchema,
 		"acme/app/posts/rules.yaml":    postsRules,
 		"acme/app/notes/schema.json":   postsSchema,
 		"acme/app/notes/rules.yaml":    "read: user != nil\nwrite: user != nil\n",
 		"acme/app/private/schema.json": postsSchema,
+		// A collection that soft-deletes (see soft_delete_test.go).
+		// …and one that soft-deletes without a restore rule (nobody sees its trash).
+		"acme/app/archive/schema.json":     postsSchema,
+		"acme/app/archive/collection.yaml": "soft_delete: true\n",
+		"acme/app/archive/rules.yaml":      "read: user != nil\ncreate: user != nil\ndelete: user != nil\n",
+		"acme/app/bin/schema.json":         postsSchema,
+		"acme/app/bin/collection.yaml":     "soft_delete:\n  retention: 7d\n",
+		"acme/app/bin/rules.yaml":          "read: user != nil\ncreate: user != nil\nupdate: user != nil && document._meta.owner == user.id\ndelete: user != nil && document._meta.owner == user.id\nrestore: user != nil && (document._meta.owner == user.id || hasRole(user, 'staff'))\npurge: hasRole(user, 'staff')\n",
 		// Functions (see functions_test.go).
 		fnDir + "echo/function.yaml":  "invoke: \"user != nil && user.email_verified\"\n",
 		fnDir + "echo/index.js":       "",

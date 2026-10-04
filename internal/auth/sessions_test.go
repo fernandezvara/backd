@@ -284,7 +284,7 @@ func TestAdminSessionLimits(t *testing.T) {
 	svc := newUsers(store, &clock)
 	svc.Settings.IdleTimeout, svc.Settings.MaxLifetime = time.Hour, 3*time.Hour
 	svc.Settings.AdminIdleTimeout, svc.Settings.AdminMaxLifetime = 10*time.Minute, time.Hour
-	svc.Settings.Roles = map[string]registry.Role{"admin": {Admin: true}, "editor": {}}
+	svc.Settings.Roles = map[string]registry.Role{"admin": {Admin: registry.AllRights}, "editor": {}}
 
 	login := func(email string) (Principal, string) {
 		t.Helper()

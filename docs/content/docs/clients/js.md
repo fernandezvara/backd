@@ -174,6 +174,18 @@ try {
 
 `ifMatch` also accepts `'*'` (the document must exist) or a raw header value. Writes with `ifMatch` are safe to [retry](#retries).
 
+### The trash
+
+In a collection that [soft-deletes](../../api/documents/#soft-delete), `delete` marks the document instead of removing it, and the trash has its own calls:
+
+```js
+await posts.delete(id)                                  // hidden from every read, restorable
+const trash = await posts.list({ deleted: 'only' })     // 'include' for both; needs the restore rule
+const gone = await posts.get(id, { deleted: 'only' })   // gone._meta.deleted_at, deleted_by, purge_at
+const back = await posts.restore(id, { ifMatch: gone._meta.version })  // ConflictError if a live document took its unique value
+await posts.delete(id, { purge: true })                 // for good, under the purge rule
+```
+
 ### Safe retries of creates
 
 `create()` and `db.batch()` take an `idempotencyKey`. The server remembers the first answer for 24 hours and returns it for the same key and body, so a retry never makes a second document (see [Safe retries](../../api/documents/#safe-retries-with-idempotency-key)). A request with a key is also retried by the client itself after a network error, `429` or `503`, when `retry` is on:

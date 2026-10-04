@@ -80,6 +80,7 @@ func (p *ErasurePolicy) IndexedFields() []string {
 }
 
 type erasureDoc struct {
+	SoftDelete    *softDeleteDoc `yaml:"soft_delete"`
 	OnOwnerDelete *struct {
 		Action  string            `yaml:"action"`
 		Remove  []string          `yaml:"remove"`
@@ -99,18 +100,23 @@ func loadErasure(c *Collection, settings RealmSettings, path string) error {
 	if err != nil {
 		return fmt.Errorf("%s: %w", path, err)
 	}
-	if !settings.AuthEnabled {
-		return fmt.Errorf("%s: a data policy for an erased user only applies when the realm has auth enabled (realm.yaml has `auth: disabled`: it has no users)", path)
-	}
 	var doc erasureDoc
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 	if err := dec.Decode(&doc); err != nil && !errors.Is(err, io.EOF) {
 		return fmt.Errorf("%s: invalid YAML: %w", path, err)
 	}
+	sd, err := doc.SoftDelete.settings(path)
+	if err != nil {
+		return err
+	}
+	c.SoftDelete = sd
 	d := doc.OnOwnerDelete
 	if d == nil {
 		return nil
+	}
+	if !settings.AuthEnabled {
+		return fmt.Errorf("%s: a data policy for an erased user only applies when the realm has auth enabled (realm.yaml has `auth: disabled`: it has no users)", path)
 	}
 	p := &ErasurePolicy{Action: d.Action, Remove: d.Remove, Replace: d.Replace, Pull: d.Pull, Unset: d.Unset}
 	var errs []error

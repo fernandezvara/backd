@@ -234,6 +234,14 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 	if err := loadErasure(coll, settings, filepath.Join(dir, CollectionFile)); err != nil {
 		return nil, err
 	}
+	if coll.SoftDelete == nil && coll.Rules != nil {
+		for _, op := range []rules.Op{rules.Restore, rules.Purge} {
+			if coll.Rules.For(op) != nil {
+				return nil, fmt.Errorf("%s: a %s rule only applies to a collection that soft-deletes; add `soft_delete: true` to %s", filepath.Join(dir, rulesFile), op, filepath.Join(dir, CollectionFile))
+			}
+		}
+	}
+	coll.addSoftDeleteIndexes()
 	return coll, nil
 }
 

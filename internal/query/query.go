@@ -67,6 +67,10 @@ var systemFields = map[string]field{
 	"_meta.owner":      {Field: registry.Field{Types: []string{"string", "null"}}},
 	"_meta.created_by": {Field: registry.Field{Types: []string{"string"}}},
 	"_meta.updated_by": {Field: registry.Field{Types: []string{"string"}}},
+	// Only soft-deleted documents have these (soft_delete in collection.yaml).
+	"_meta.deleted_at": {kind: kindDate},
+	"_meta.deleted_by": {Field: registry.Field{Types: []string{"string"}}},
+	"_meta.purge_at":   {kind: kindDate},
 }
 
 func lookup(fields map[string]registry.Field, path string) (field, bool) {

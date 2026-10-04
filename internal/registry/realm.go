@@ -223,8 +223,9 @@ type UserNetworks struct {
 // Role is a role declared in realm.yaml.
 type Role struct {
 	Description string
-	// Admin roles let the sessions of users holding them use the admin API.
-	Admin bool
+	// Admin is what the sessions of users holding the role may do in the
+	// admin API: AllRights for `admin: true`, some areas for a list, none.
+	Admin AdminRights
 	// Users are seed assignments: normalized (trimmed, lowercased) emails.
 	Users []string
 }
@@ -258,7 +259,7 @@ type realmDoc struct {
 	} `yaml:"audit"`
 	Roles map[string]*struct {
 		Description string      `yaml:"description"`
-		Admin       bool        `yaml:"admin"`
+		Admin       adminDoc    `yaml:"admin"`
 		Users       []roleEntry `yaml:"users"`
 	} `yaml:"roles"`
 	Email   *emailDoc `yaml:"email"`
@@ -349,12 +350,12 @@ func (e *roleEntry) UnmarshalYAML(n *yaml.Node) error {
 	return fmt.Errorf("line %d: a role's user entry must be an email or an object with an email", n.Line)
 }
 
-// AdminRoles returns the names of the roles declared with admin: true,
-// sorted.
+// AdminRoles returns the names of the roles that open any part of the admin
+// API (admin: true, or a list of areas), sorted.
 func (s RealmSettings) AdminRoles() []string {
 	var out []string
 	for name, r := range s.Roles {
-		if r.Admin {
+		if r.Admin.Any() {
 			out = append(out, name)
 		}
 	}
@@ -373,7 +374,7 @@ func cmpDuration(d, fallback time.Duration) time.Duration {
 // IsAdmin reports whether roles include an admin role of the realm.
 func (s RealmSettings) IsAdmin(roles []string) bool {
 	for _, r := range roles {
-		if s.Roles[r].Admin {
+		if s.Roles[r].Admin.Any() {
 			return true
 		}
 	}
@@ -635,7 +636,7 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 		role := Role{}
 		if r != nil {
 			role.Description = r.Description
-			role.Admin = r.Admin
+			role.Admin = r.Admin.Rights
 			for i, u := range r.Users {
 				email, err := NormalizeEmail(u.Email)
 				if err != nil {

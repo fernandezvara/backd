@@ -28,7 +28,11 @@ tags:
   - name: auth
     description: "Sign-up, login and sessions of a realm with `auth: enabled`."
   - name: admin
-    description: User, role and invitation management with an API key.
+    description: >-
+      User, role and invitation management with an API key, or the session of a
+      user whose admin role opens the area (users, invitations, apikeys,
+      secrets, audit, functions). A request for an area the roles don't open
+      answers 403 naming it.
   - name: documents
     description: CRUD and queries on any configured collection.
   - name: functions
@@ -782,6 +786,7 @@ paths:
           schema: { type: string }
         - { $ref: "#/components/parameters/limit" }
         - { $ref: "#/components/parameters/skip" }
+        - { $ref: "#/components/parameters/deleted" }
         - name: after
           in: query
           description: >-
@@ -1761,6 +1766,7 @@ paths:
       summary: Get a document
       operationId: getDocument
       security: [{}, { session: [] }, { apiKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/deleted" }]
       responses:
         "200": { $ref: "#/components/responses/Document" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
@@ -1811,12 +1817,24 @@ paths:
     delete:
       tags: [documents]
       summary: Delete a document
+      description: |
+        In a collection with `soft_delete` (collection.yaml) the document is
+        marked deleted instead of removed: no read, write or batch sees it, and
+        it can be restored (`POST …/restore`) or, with `purge=true`, removed for
+        good under the `purge` rule.
       operationId: deleteDocument
       security: [{}, { session: [] }, { apiKey: [] }]
-      parameters: [{ $ref: "#/components/parameters/ifMatch" }]
+      parameters:
+        - { $ref: "#/components/parameters/ifMatch" }
+        - name: purge
+          in: query
+          description: >-
+            `true` removes the document for good, deleted or not, in a
+            collection with `soft_delete`. Needs the `purge` rule.
+          schema: { type: string, enum: ["true"] }
       responses:
         "204":
-          description: Document deleted.
+          description: Document deleted (or, in a collection with `soft_delete`, marked deleted).
           headers:
             Vary: { $ref: "#/components/headers/DataVary" }
             Cache-Control: { $ref: "#/components/headers/DataCacheControl" }
@@ -1825,6 +1843,33 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/VersionMismatch" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/{database}/{collection}/{id}/restore:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+      - { $ref: "#/components/parameters/id" }
+    post:
+      tags: [documents]
+      summary: Restore a soft-deleted document
+      description: |
+        Brings a deleted document back, as it was, at the next version. Only in
+        a collection with `soft_delete`, and only for callers the `restore`
+        rule lets see the document. The document must be valid against the
+        schema as it is now (`400` otherwise), and its unique values must still
+        be free (`409` otherwise).
+      operationId: restoreDocument
+      security: [{}, { session: [] }, { apiKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/ifMatch" }]
+      responses:
+        "200": { $ref: "#/components/responses/Document" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
         "412": { $ref: "#/components/responses/VersionMismatch" }
         default: { $ref: "#/components/responses/Error" }
 
@@ -1891,6 +1936,15 @@ components:
       in: header
       description: '`"<version>"`, a list of them, or `*`. The write fails with 412 unless the current version matches.'
       schema: { type: string }
+    deleted:
+      name: deleted
+      in: query
+      description: >-
+        In a collection with `soft_delete`, `only` returns the deleted documents
+        (the trash) and `include` both. It needs the `restore` rule, besides the
+        `read` rule. Anything else is `400`, and so is any value on a collection
+        that doesn't soft-delete.
+      schema: { type: string, enum: [only, include] }
 
   headers:
     ETag:
@@ -2361,6 +2415,13 @@ components:
         owner: { type: [string, "null"] }
         created_by: { type: string }
         updated_by: { type: string }
+        deleted_at:
+          allOf: [{ $ref: "#/components/schemas/Timestamp" }]
+          description: When a soft-deleted document was deleted. Only in the trash (`deleted=only|include`) of a collection with `soft_delete`.
+        deleted_by: { type: string, description: "Who deleted it, e.g. `user:<id>` or `key:<name>`." }
+        purge_at:
+          allOf: [{ $ref: "#/components/schemas/Timestamp" }]
+          description: When a soft-deleted document is removed for good (`soft_delete.retention`).
 
     Document:
       type: object

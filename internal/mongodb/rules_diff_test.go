@@ -94,7 +94,7 @@ var diffUsers = map[string]*rules.User{
 	"u5 (curator)": {ID: "u5", Email: "cy@example.com", Roles: []string{"curator"}},
 }
 
-var diffRoles = []string{"admin", "a", "editor", "staff", "curator"}
+var diffRoles = []string{"admin", "a", "editor", "staff", "curator", "ops"}
 
 func diffFixture(t *testing.T) (*registry.Collection, *Repository) {
 	t.Helper()
@@ -107,7 +107,7 @@ func provisionOne(t *testing.T, schema string) (*registry.Collection, *Repositor
 	t.Helper()
 	client := testClient(t)
 	realm := testRealm(t, client)
-	reg := loadRegistryWith(t, realm, "roles:\n  admin: {}\n  a: {}\n  editor: {}\n  staff: {}\n  curator: {}\n", map[string]string{"app/items": schema})
+	reg := loadRegistryWith(t, realm, "roles:\n  admin: {}\n  a: {}\n  editor: {}\n  staff: {}\n  curator: {}\n  ops: {}\n", map[string]string{"app/items": schema})
 	log, _ := testLogger()
 	if err := (&Provisioner{Client: client, Registry: reg, Log: log}).Apply(context.Background()); err != nil {
 		t.Fatal(err)
