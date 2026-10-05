@@ -21,7 +21,7 @@ func TestLoadDefaults(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	want := Settings{ConfigDir: "/cfg", MongoURI: "mongodb://m", HTTPAddr: ":8080", ProvisionMode: ProvisionApply, LogLevel: slog.LevelInfo, MaxBodyBytes: 1 << 20,
-		MongoOpTimeout: 10 * time.Second, ShutdownTimeout: 15 * time.Second, InternalAddr: ":8081", WorkerConcurrency: 10}
+		MongoOpTimeout: 10 * time.Second, ShutdownTimeout: 15 * time.Second, AdminUIIdle: 30 * time.Minute, InternalAddr: ":8081", WorkerConcurrency: 10}
 	if !reflect.DeepEqual(s, want) {
 		t.Errorf("got %+v, want %+v", s, want)
 	}
@@ -205,6 +205,18 @@ func TestAdminSwitches(t *testing.T) {
 		s, err := load(tc.env)
 		if err != nil || s.DisableAdminAPI != tc.api || s.AdminUI != tc.ui {
 			t.Errorf("%v: DisableAdminAPI=%v AdminUI=%v err=%v", tc.env, s.DisableAdminAPI, s.AdminUI, err)
+		}
+	}
+	// The idle timeout: 30 minutes unless set, and a positive duration.
+	if s.AdminUIIdle != 30*time.Minute {
+		t.Errorf("default idle = %v", s.AdminUIIdle)
+	}
+	if s, err := load(map[string]string{"BACKD_ADMIN_UI_IDLE": "5m"}); err != nil || s.AdminUIIdle != 5*time.Minute {
+		t.Errorf("idle 5m: %v %v", s.AdminUIIdle, err)
+	}
+	for _, v := range []string{"0", "soon", "-1m"} {
+		if _, err := load(map[string]string{"BACKD_ADMIN_UI_IDLE": v}); err == nil || !strings.Contains(err.Error(), "BACKD_ADMIN_UI_IDLE") {
+			t.Errorf("idle %q: %v", v, err)
 		}
 	}
 	// The UI is served by an instance that has the admin API.

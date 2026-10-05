@@ -68,6 +68,9 @@ type Settings struct {
 	// AdminUI is BACKD_ADMIN_UI=true: this instance serves the admin web
 	// interface. It needs the admin API on the same instance.
 	AdminUI bool
+	// AdminUIIdle is BACKD_ADMIN_UI_IDLE: how long the admin UI may sit
+	// untouched before it signs out and revokes its session (default 30m).
+	AdminUIIdle time.Duration
 	// DevAnyAddr (BACKD_DEV_ANY_ADDR) lets dev mode run on an address that
 	// isn't localhost, for a container whose ports are published on the
 	// host's localhost only.
@@ -184,6 +187,11 @@ func Load(getenv func(string) string) (Settings, error) {
 		s.AdminUI = true
 	default:
 		errs = append(errs, fmt.Errorf("BACKD_ADMIN_UI must be true or false, got %q", v))
+	}
+	if idle, derr := duration(getenv, "BACKD_ADMIN_UI_IDLE", "30m", false); derr != nil {
+		errs = append(errs, derr)
+	} else {
+		s.AdminUIIdle = idle
 	}
 	if s.AdminUI && s.DisableAdminAPI {
 		errs = append(errs, errors.New("BACKD_ADMIN_UI=true needs the admin API on the same instance, but BACKD_ADMIN_API=false: turn the UI off here, or serve it from the internal instance that has the admin API"))
