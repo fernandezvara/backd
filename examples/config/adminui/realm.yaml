@@ -1,0 +1,22 @@
+# The admin UI's own test realm: Playwright (ui/admin/e2e) signs in to it at
+# /_ui/r/adminui/ with one user per admin level. Local stacks and CI only:
+# the passwords are the documented development one.
+auth: enabled
+signup: open
+
+roles:
+  admin:
+    description: Full administrator
+    admin: true
+    users:
+      - admin@adminui.example
+  viewer:
+    description: Read-only administrator (operations only)
+    admin: read
+    users:
+      - viewer@adminui.example
+  support:
+    description: Manages users and invitations, reads nothing else
+    admin: [users, invitations]
+    users:
+      - support@adminui.example

@@ -1,6 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { NotAdminError, useSession } from './session'
+import { expandAreas, NotAdminError, useSession } from './session'
 
 interface Call {
   method: string
@@ -95,4 +95,10 @@ test('a user with no admin role is not signed in, and their session is ended', a
   await expect(s.signIn('acme', 'bob@example.com', 'dev-p4ssw0rd!', false)).rejects.toBeInstanceOf(NotAdminError)
   expect(s.signedIn).toBe(false)
   expect(calls.some((c) => c.path === '/v1/acme/_auth/logout')).toBe(true)
+})
+
+test('"all" stands for every area', () => {
+  expect(expandAreas(['all'])).toHaveLength(8)
+  expect(expandAreas(['audit', 'users'])).toEqual(['users', 'audit'])
+  expect(expandAreas([])).toEqual([])
 })

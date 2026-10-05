@@ -8,8 +8,8 @@ const { t } = useI18n()
 const session = useSession()
 
 // Only what whoami says: the server enforces it, the interface reflects it.
-const readable = computed(() => session.access?.read ?? [])
-const writable = computed(() => session.access?.write ?? [])
+const readable = computed(() => session.readable)
+const writable = computed(() => session.writable)
 const who = computed(() => session.email || t('home.key', { name: session.access?.key ?? '' }))
 const areaName = (a: string) => t(`areas.${a}`)
 </script>

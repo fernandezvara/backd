@@ -9,6 +9,14 @@ export type EndReason = 'signed-out' | 'idle' | 'expired'
 /** Admin areas, as `whoami` names them. */
 export type Area = 'users' | 'invitations' | 'apikeys' | 'secrets' | 'audit' | 'functions' | 'data' | 'config'
 
+export const AREAS: readonly Area[] = ['users', 'invitations', 'apikeys', 'secrets', 'audit', 'functions', 'data', 'config']
+
+/** whoami's `all` stands for every area. */
+export function expandAreas(names: readonly string[]): Area[] {
+  if (names.includes('all')) return [...AREAS]
+  return AREAS.filter((a) => names.includes(a))
+}
+
 const tabKey = (realm: string) => `backd-admin:${realm}`
 
 function tabStorage(realm: string): TokenStorage {
@@ -44,8 +52,10 @@ export const useSession = defineStore('session', () => {
   const email = computed(() => access.value?.user?.email ?? '')
 
   /** Whether the signed-in level may read an area (changing implies reading). */
-  const canRead = (area: Area) => !!access.value && (access.value.read.includes(area) || access.value.write.includes(area))
-  const canWrite = (area: Area) => !!access.value && access.value.write.includes(area)
+  const writable = computed(() => expandAreas(access.value?.write ?? []))
+  const readable = computed(() => expandAreas([...(access.value?.read ?? []), ...(access.value?.write ?? [])]))
+  const canRead = (area: Area) => readable.value.includes(area)
+  const canWrite = (area: Area) => writable.value.includes(area)
 
   function begin(forRealm: string, keepInTab: boolean) {
     realm.value = forRealm
@@ -117,5 +127,5 @@ export const useSession = defineStore('session', () => {
     idleSeconds.value = n
   }
 
-  return { realm, client, access, ended, signedIn, email, idleSeconds, canRead, canWrite, signIn, restore, signOut, expired, setIdleSeconds }
+  return { realm, client, access, ended, signedIn, email, idleSeconds, readable, writable, canRead, canWrite, signIn, restore, signOut, expired, setIdleSeconds }
 })
