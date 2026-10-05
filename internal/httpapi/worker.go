@@ -135,6 +135,7 @@ func (w *Worker) EnqueueDue(ctx context.Context) {
 		if svc == nil {
 			continue
 		}
+		var states map[string]auth.ScheduleState // read once a tick, and only if something is scheduled
 		for dbName, db := range w.reg.Realms[realm].Databases {
 			if db.Functions == nil {
 				continue
@@ -149,6 +150,19 @@ func (w *Worker) EnqueueDue(ctx context.Context) {
 				}
 				key := realm + "/" + dbName + "/" + name
 				if w.lastScheduled[key].Equal(at) {
+					continue
+				}
+				if states == nil {
+					var err error
+					if states, err = svc.ScheduleStates(ctx); err != nil {
+						w.log.Error("read schedule states", "realm", realm, "error", err)
+						break // try again next tick rather than run what may be paused
+					}
+				}
+				// A paused function gets no run, and a run due while it was paused
+				// is not made up when it is resumed.
+				if st, ok := states[dbName+"/"+name]; ok && (st.Paused || at.Before(st.ChangedAt.Truncate(time.Minute))) {
+					w.lastScheduled[key] = at
 					continue
 				}
 				job := auth.Job{Database: dbName, Function: name, TimeoutMS: fn.Timeout.Milliseconds(), RequestID: "cron"}

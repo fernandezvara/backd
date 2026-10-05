@@ -253,6 +253,10 @@ type Store interface {
 	// go through cleanly instead of being stuck "running" forever.
 	ReleaseIdempotency(ctx context.Context, id string) error
 
+	// SetScheduleState stores a scheduled function's state, replacing any.
+	SetScheduleState(ctx context.Context, st ScheduleState) error
+	// ListScheduleStates returns every stored state.
+	ListScheduleStates(ctx context.Context) ([]ScheduleState, error)
 	// UpsertSecret creates or replaces the secret at (database, name),
 	// keeping its original CreatedAt on an update.
 	UpsertSecret(ctx context.Context, s Secret) error

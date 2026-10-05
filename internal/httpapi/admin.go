@@ -68,6 +68,9 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		r.With(fns).Get("/jobs", a.listJobs)
 		r.With(fns).Post("/jobs/{id}/cancel", a.cancelJob)
 		r.With(fns).Post("/jobs/{id}/rerun", a.rerunJob)
+		r.With(fns).Get("/schedules", a.listSchedules)
+		r.With(fns).Post("/functions/{database}/{name}/pause", a.pauseSchedule(true))
+		r.With(fns).Post("/functions/{database}/{name}/resume", a.pauseSchedule(false))
 		r.With(fns, json).Post("/functions/{database}/{name}/invoke", a.fns.adminInvoke)
 
 		// The admin data route: the data routes' operations, past the
@@ -1410,4 +1413,75 @@ func (a *adminAPI) revokeUserSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// scheduleJSON is one scheduled function with its runtime state.
+func scheduleJSON(database, name string, fn *registry.Function, st auth.ScheduleState, known bool) map[string]any {
+	out := map[string]any{
+		"function": database + "/" + name, "schedule": fn.ScheduleExpr, "timezone": fn.Timezone, "overlap": fn.Overlap,
+		"paused": st.Paused, "changed_at": nil, "changed_by": nil,
+	}
+	if known {
+		out["changed_at"], out["changed_by"] = st.ChangedAt.UTC().Format(time.RFC3339Nano), st.ChangedBy
+	}
+	return out
+}
+
+// listSchedules answers GET /v1/{realm}/_admin/schedules: every scheduled
+// function of the realm with whether it is paused, sorted by function.
+func (a *adminAPI) listSchedules(w http.ResponseWriter, r *http.Request) {
+	states, err := usersOf(r).ScheduleStates(r.Context())
+	if err != nil {
+		adminError(w, r, err)
+		return
+	}
+	items := []map[string]any{}
+	for dbName, db := range a.reg.Realms[chi.URLParam(r, "realm")].Databases {
+		if db.Functions == nil {
+			continue
+		}
+		for name, fn := range db.Functions.Functions {
+			if fn.Schedule != nil {
+				st, known := states[dbName+"/"+name]
+				items = append(items, scheduleJSON(dbName, name, fn, st, known))
+			}
+		}
+	}
+	slices.SortFunc(items, func(x, y map[string]any) int { return strings.Compare(x["function"].(string), y["function"].(string)) })
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+// pauseSchedule answers POST .../functions/{database}/{name}/pause (paused) and
+// .../resume: a paused schedule creates no runs until it is resumed, and the
+// state survives restarts. 200 with the schedule (also when it already was in
+// that state); 404 for an unknown function; 409 for one with no schedule.
+func (a *adminAPI) pauseSchedule(paused bool) http.HandlerFunc {
+	action := auth.AuditScheduleResume
+	if paused {
+		action = auth.AuditSchedulePause
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		realm, database, name := chi.URLParam(r, "realm"), chi.URLParam(r, "database"), chi.URLParam(r, "name")
+		fn := a.fns.lookup(realm, database, name)
+		if fn == nil {
+			writeError(w, r, http.StatusNotFound, codeNotFound, "function not found")
+			return
+		}
+		if fn.Schedule == nil {
+			writeError(w, r, http.StatusConflict, codeConflict, "the function has no schedule")
+			return
+		}
+		svc := usersOf(r)
+		caller, _ := callerOf(r)
+		before, _ := svc.ScheduleStates(r.Context())
+		st, err := svc.SetSchedulePaused(r.Context(), database, name, paused, caller.Actor())
+		if err != nil {
+			adminError(w, r, err)
+			return
+		}
+		if paused != before[database+"/"+name].Paused { // a change, not a repeat
+			svc.Audit(r.Context(), action, "schedule:"+database+"/"+name, nil)
+		}
+		writeJSON(w, http.StatusOK, scheduleJSON(database, name, fn, st, true))
+	}
 }

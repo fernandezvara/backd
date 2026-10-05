@@ -191,3 +191,70 @@ func TestAdminCancelAndRerunJobs(t *testing.T) {
 		t.Errorf("rerun audit: %+v", records)
 	}
 }
+
+// A paused schedule creates no runs, a resume doesn't make up the runs it
+// missed, and the state is listed, audited and kept in the realm's database.
+func TestAdminPauseAndResumeASchedule(t *testing.T) {
+	f := newRulesFixture(t)
+	w := newTestWorker(t, f)
+	ctx := context.Background()
+	f.svc.Now = func() time.Time { return *f.clock } // the state's timestamps follow the test's clock
+	*f.clock = time.Date(2026, 9, 29, 2, 0, 0, 0, time.UTC)
+	_, adminKey, err := f.svc.CreateAPIKey(ctx, "sched-admin", auth.KeyOptions{Role: auth.KeyRoleAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := bearer(adminKey)
+	pause, resume := admin+"/functions/app/nightly/pause", admin+"/functions/app/nightly/resume"
+	nightlyRuns := func() int {
+		jobs, _, _ := f.svc.Jobs(ctx, auth.JobFilter{Database: "app", Function: "nightly"})
+		return len(jobs)
+	}
+
+	rec, got := f.doH(t, "POST", pause, "", key)
+	if rec.Code != http.StatusOK || got["function"] != "app/nightly" || got["paused"] != true || got["schedule"] != "0 3 * * *" || got["changed_by"] == nil {
+		t.Fatalf("pause: %d %v", rec.Code, got)
+	}
+	f.doH(t, "POST", pause, "", key) // pausing again changes nothing
+
+	*f.clock = time.Date(2026, 9, 29, 3, 0, 20, 0, time.UTC)
+	w.EnqueueDue(ctx)
+	if n := nightlyRuns(); n != 0 {
+		t.Fatalf("a paused schedule created %d runs", n)
+	}
+
+	rec, list := f.doH(t, "GET", admin+"/schedules", "", key)
+	var listed []any
+	if rec.Code == http.StatusOK {
+		listed = list["items"].([]any)
+	}
+	if len(listed) != 1 || listed[0].(map[string]any)["function"] != "app/nightly" || listed[0].(map[string]any)["paused"] != true {
+		t.Fatalf("schedules: %d %v", rec.Code, list)
+	}
+
+	// Resumed two minutes after the run was due: that run is not made up.
+	*f.clock = f.clock.Add(2 * time.Minute)
+	if rec, got := f.doH(t, "POST", resume, "", key); rec.Code != http.StatusOK || got["paused"] != false {
+		t.Fatalf("resume: %d %v", rec.Code, got)
+	}
+	w.EnqueueDue(ctx)
+	if n := nightlyRuns(); n != 0 {
+		t.Fatalf("a resume made up %d missed runs", n)
+	}
+	*f.clock = time.Date(2026, 9, 30, 3, 0, 5, 0, time.UTC)
+	w.EnqueueDue(ctx)
+	if n := nightlyRuns(); n != 1 {
+		t.Fatalf("after the resume: %d runs, want the next day's", n)
+	}
+
+	// Pausing and resuming were audited once each (the repeated pause was no change).
+	if a := f.auditActions(t, "schedule."); len(a) != 2 || a[0]["target"] != "schedule:app/nightly" {
+		t.Errorf("audit: %v", a)
+	}
+	if rec, _ := f.doH(t, "POST", admin+"/functions/app/echo/pause", "", key); rec.Code != http.StatusConflict {
+		t.Errorf("an unscheduled function: %d", rec.Code)
+	}
+	if rec, _ := f.doH(t, "POST", admin+"/functions/app/ghost/pause", "", key); rec.Code != http.StatusNotFound {
+		t.Errorf("an unknown function: %d", rec.Code)
+	}
+}

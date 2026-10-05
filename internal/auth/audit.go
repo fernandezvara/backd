@@ -48,8 +48,12 @@ const (
 	AuditDataPurge   = "data.purge"
 	// A job cancelled or re-run by an administrator; the target is job:<id>,
 	// details: function (and, for a re-run, the new job's id).
-	AuditJobCancel      = "job.cancel"
-	AuditJobRerun       = "job.rerun"
+	AuditJobCancel = "job.cancel"
+	AuditJobRerun  = "job.rerun"
+	// A scheduled function paused or resumed by an administrator; the target is
+	// schedule:<database>/<function>.
+	AuditSchedulePause  = "schedule.pause"
+	AuditScheduleResume = "schedule.resume"
 	AuditSecretSet      = "secret.set"        // details: database ("": realm scope); never the value
 	AuditSecretDelete   = "secret.delete"     // details: database
 	AuditSecretsRotated = "secret.rotate_key" // by backd secret rotate-key; details: count
