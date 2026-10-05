@@ -232,8 +232,8 @@ func TestAdminReadOnlyLevel(t *testing.T) {
 	if ra := out["read_access"].(map[string]any); ra["users"] != true || ra["data"] != false {
 		t.Errorf("read_access: %v", ra)
 	}
-	if read := out["read"].([]any); len(read) != 6 || strings.Contains(strings.Join(anyStrings(read), ","), "data") {
-		t.Errorf("a viewer reads six areas, not data: %v", read)
+	if read := out["read"].([]any); len(read) != 7 || strings.Contains(strings.Join(anyStrings(read), ","), "data") || !strings.Contains(strings.Join(anyStrings(read), ","), "config") {
+		t.Errorf("a viewer reads seven areas (the configuration included), not data: %v", read)
 	}
 	f.bobHolds(t, "lookout")
 	_, out = f.doH(t, "GET", admin+"/whoami", "", bearer(f.bob))
@@ -313,5 +313,26 @@ func TestAdminAPISwitchedOff(t *testing.T) {
 	}
 	if rec, out := f.doH(t, "POST", "/v1/acme/app/_func/echo", `{"n":1}`, jsonHdr(f.ada)); rec.Code != http.StatusOK {
 		t.Errorf("function call: %d %v", rec.Code, out)
+	}
+}
+
+// Without a UI handler /_ui/ is an unknown route; with one, it is mounted
+// next to the API without touching it.
+func TestAdminUIMount(t *testing.T) {
+	off := newRulesFixture(t)
+	if rec, _ := off.doH(t, "GET", "/_ui/", "", nil); rec.Code != http.StatusNotFound {
+		t.Errorf("no UI: %d", rec.Code)
+	}
+	on := newRulesFixture(t, func(c *Config) {
+		c.UI = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(r.URL.Path)) })
+	})
+	if rec, _ := on.doH(t, "GET", "/_ui", "", nil); rec.Code != http.StatusMovedPermanently || rec.Header().Get("Location") != "/_ui/" {
+		t.Errorf("/_ui: %d %s", rec.Code, rec.Header().Get("Location"))
+	}
+	if rec, _ := on.doH(t, "GET", "/_ui/r/acme/users", "", nil); rec.Code != http.StatusOK || rec.Body.String() != "/_ui/r/acme/users" {
+		t.Errorf("deep link: %d %q", rec.Code, rec.Body.String())
+	}
+	if rec, _ := on.doH(t, "GET", posts, "", bearer(on.key)); rec.Code != http.StatusOK {
+		t.Errorf("API next to the UI: %d", rec.Code)
 	}
 }

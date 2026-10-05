@@ -81,6 +81,10 @@ services:
       # on 127.0.0.1 only, so it says so. Links in emails point at nginx.
       BACKD_DEV: "true"
       BACKD_DEV_ANY_ADDR: "true"
+      # The admin web interface, at https://localhost:8443/_ui/ (sign in to
+      # the adminui realm: admin@adminui.example, password dev-p4ssw0rd!, once
+      # you have signed that user up; the e2e tests in ui/admin do).
+      BACKD_ADMIN_UI: "true"
       BACKD_URL: https://localhost:8443
       # Metrics: a private port (never behind nginx) that Prometheus below
       # scrapes with this dev-only token.

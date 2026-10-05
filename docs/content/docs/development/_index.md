@@ -28,6 +28,7 @@ toc: true
 | `internal/mongodb/` | MongoDB specifics: connection, `$jsonSchema` validator translation, provisioner (including realm system databases), repository, auth store |
 | `api/openapi.yaml` | The [HTTP API contract](contract/) (OpenAPI 3.1) and its lint settings |
 | `clients/js/` | The [JavaScript client](../clients/js/) (`backd-js`) |
+| `ui/admin/` | The [admin UI](../auth/admin-ui/): TypeScript, Vue 3, Vite, Vue Router, Pinia and Tailwind. `npm run build` writes into `internal/adminui/dist`, which `internal/adminui` embeds (a Go build without it still works) |
 | `docs/` | This documentation site (Hugo + hugodoks) |
 | `examples/config/` | Sample `CONFIG_DIR` used by `docker-compose.yml`. `workshop/` is the functions cookbook: its code is what the Functions pages quote (through the `example-file` shortcode, which reads it from `examples/config/workshop`), and it is tested for real (Deno unit tests with `make functions-testing-test`, and `TestWorkshopExample`, which runs every function on MongoDB with a real executor and worker) |
 | `docker-compose.yml` | Local stack on `https://localhost:8443`: nginx in front of `backd` + MongoDB, the docs site and the example app |
@@ -58,6 +59,9 @@ make lint-api     # lint api/openapi.yaml (needs Node)
 make js-test      # JavaScript client: type-check and unit tests (needs Node)
 make js-package     # the JavaScript client packed and installed like an npm user gets it (Node and TypeScript)
 make js-integration  # JavaScript client against backd + MongoDB in Docker
+make ui           # build the admin UI into internal/adminui/dist, where the Go build embeds it (needs Node)
+make ui-test      # admin UI: type-check, lint (v-html is an error), Vitest
+make ui-e2e       # admin UI: Playwright against a stack of its own (CSP violations and requests to other origins fail it; axe checks the views)
 make example      # the local stack on https://localhost:8443: API, docs (live reload) and example apps behind nginx
 make hack-expenses  # attack the expenses example on the running local stack
 make hack-expenses-functions  # attack the expenses-with-functions example on the running local stack
@@ -99,6 +103,7 @@ GitHub Actions runs on every push and pull request:
 - `go vet`, a check of the compose files, the OpenAPI lint, the dockerized test suite, and a check of the release configuration;
 - supply chain: `govulncheck`, and a Trivy scan of the image;
 - the JavaScript client: type-check, unit tests and integration tests against `backd` and MongoDB;
+- the admin UI: type-check, lint, unit tests, build and `npm audit` of what ships in the bundle, and its Playwright tests against the example stack (the Go jobs build the UI first, so the binary embeds it);
 - the [production reference](../operations/production/) test (`deploy/production/test.sh`);
 - a build of this documentation site.
 
@@ -114,6 +119,7 @@ The workflow then:
 
 - builds the binaries with [GoReleaser](https://goreleaser.com/) (`.goreleaser.yaml`): Linux, macOS and Windows on amd64 and arm64, as archives with `LICENSE` and `README.md`, plus `checksums.txt`;
 - adds an SPDX SBOM for each archive, made with Syft;
+- embeds the admin UI in the binaries (it is built first) and attaches the same build as `admin-ui_vX.Y.Z.tar.gz` to the release;
 - creates the GitHub release with those files and generated notes;
 - builds the image and scans it with Trivy, and stops if it finds a critical or high vulnerability that has a fix;
 - builds and pushes the multi-arch container image `ghcr.io/fernandezvara/backd:vX.Y.Z` with Docker Buildx, plus `latest` for versions without a pre-release suffix (a tag such as `v1.0.0-rc.1` is a pre-release and doesn't move `latest`), with SBOM and provenance attestations;

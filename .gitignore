@@ -25,3 +25,7 @@
 
 # Private Claude Code instructions (imports ~/.claude/projects/backd.md)
 /CLAUDE.local.md
+
+# Admin UI build output: embedded by internal/adminui (npm run build in ui/admin)
+/internal/adminui/dist/*
+!/internal/adminui/dist/.gitkeep

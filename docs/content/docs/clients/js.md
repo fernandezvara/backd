@@ -362,7 +362,7 @@ A client with an API key with the `admin` role (`backd apikey create --realm <re
 const backd = createClient({ url, realm: 'blog', apiKey: process.env.BACKD_API_KEY })
 
 const ada = await backd.admin.users.find('ada@example.com')      // or null
-const page = await backd.admin.users.list({ limit: 50, skip: 0 })
+const page = await backd.admin.users.list({ limit: 50, skip: 0 })   // q: 'ada' searches emails
 const user = await backd.admin.users.create({ email: 'bob@example.com', password })  // password optional
 await backd.admin.users.get(user.id)
 await backd.admin.users.update(user.id, { emailVerified: true, disabled: false })
@@ -370,6 +370,8 @@ await backd.admin.users.setPassword(user.id, newPassword)        // ends their s
 await backd.admin.users.addRole(user.id, 'editor')               // roles declared in realm.yaml
 await backd.admin.users.removeRole(user.id, 'editor')
 await backd.admin.users.owned(user.id)                          // what erasing them would do, per collection with a policy
+await backd.admin.users.sessions(user.id)                        // unexpired sessions, never a token
+await backd.admin.users.revokeSession(user.id, sessionId)
 await backd.admin.users.delete(user.id)                         // ERASES them (irreversible): a tombstone, and the collections' policies; resolves with the erase job
 
 const invitation = await backd.admin.invitations.create({ email: 'eve@example.com', expiresIn: '3d' })
@@ -379,6 +381,8 @@ await backd.admin.users.changeEmail(user.id, 'new@example.com')   // at once; bo
 await backd.admin.invitations.list()
 await backd.admin.invitations.revoke(invitation.id)
 
+const access = await backd.admin.whoami()                         // level, areas it may read and change
+const config = await backd.admin.config()                         // what this instance runs for the realm, read-only
 const secrets = await backd.admin.secrets.list()                  // scope, name, who set it; never the values
 await backd.admin.secrets.set('STRIPE_KEY', value, { database: 'main' })   // omit database for a realm secret
 await backd.admin.secrets.delete('STRIPE_KEY', { database: 'main' })

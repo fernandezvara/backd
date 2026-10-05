@@ -1260,7 +1260,7 @@ func auditJSON(rec auth.AuditRecord) map[string]any {
 func (a *adminAPI) whoami(w http.ResponseWriter, r *http.Request) {
 	access, settings := adminAccessOf(r), usersOf(r).Settings
 	var read registry.AdminRights
-	for _, right := range []registry.AdminRights{registry.RightUsers, registry.RightInvitations, registry.RightAPIKeys, registry.RightSecrets, registry.RightAudit, registry.RightFunctions, registry.RightData} {
+	for _, right := range []registry.AdminRights{registry.RightUsers, registry.RightInvitations, registry.RightAPIKeys, registry.RightSecrets, registry.RightAudit, registry.RightFunctions, registry.RightData, registry.RightConfig} {
 		if access.CanRead(settings, right) {
 			read |= right
 		}

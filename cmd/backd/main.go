@@ -21,6 +21,7 @@ import (
 	"github.com/fernandezvara/cli"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
+	"github.com/fernandezvara/backd/internal/adminui"
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/executor"
 	"github.com/fernandezvara/backd/internal/functions"
@@ -154,8 +155,8 @@ func serve(ctx context.Context, a *app) error {
 	if a.cfg.DisableAdminAPI {
 		a.log.Info("BACKD_ADMIN_API=false: this instance serves no admin API; use the instance that does (the CLI's BACKD_URL, the admin UI)")
 	}
-	if a.cfg.AdminUI {
-		a.log.Warn("BACKD_ADMIN_UI=true, but this build has no admin UI yet: nothing is served at /_ui/")
+	if a.cfg.AdminUI && adminui.Handler(a.cfg.AdminUIIdle) == nil {
+		a.log.Warn("BACKD_ADMIN_UI=true, but this build has no admin UI assets: nothing is served at /_ui/ (build ui/admin before the Go build)")
 	}
 	if a.withWorker && a.cfg.ExecutorURL == "" {
 		return errors.New("--with-worker requires BACKD_EXECUTOR_URL")
@@ -436,6 +437,10 @@ func (a *app) internalHandler() http.Handler {
 }
 
 func (a *app) handlerConfig() httpapi.Config {
+	var ui http.Handler
+	if a.cfg.AdminUI {
+		ui = adminui.Handler(a.cfg.AdminUIIdle)
+	}
 	var runner httpapi.FunctionRunner
 	if a.cfg.ExecutorURL != "" {
 		runner = a.executor()
@@ -457,6 +462,7 @@ func (a *app) handlerConfig() httpapi.Config {
 		ConfigFingerprint: a.fingerprint,
 		Dev:               a.cfg.Dev,
 		DisableAdminAPI:   a.cfg.DisableAdminAPI,
+		UI:                ui,
 		Metrics:           a.metrics,
 	}
 }

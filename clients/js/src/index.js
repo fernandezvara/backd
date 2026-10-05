@@ -34,6 +34,9 @@ export { memoryStorage, localStorageStorage } from './storage.js'
  * @typedef {import('./data.js').DeleteOptions} DeleteOptions
  * @typedef {import('./data.js').CreateOptions} CreateOptions
  * @typedef {import('./admin.js').AdminUser} AdminUser
+ * @typedef {import('./admin.js').AdminAccess} AdminAccess
+ * @typedef {import('./admin.js').AdminConfig} AdminConfig
+ * @typedef {import('./admin.js').UserSession} UserSession
  * @typedef {import('./admin.js').UserPage} UserPage
  * @typedef {import('./admin.js').Invitation} Invitation
  * @typedef {import('./admin.js').NewInvitation} NewInvitation

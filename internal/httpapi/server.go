@@ -58,6 +58,8 @@ type Config struct {
 	// DisableAdminAPI leaves every /v1/{realm}/_admin route out: they answer
 	// 404 like any route that doesn't exist (BACKD_ADMIN_API=false).
 	DisableAdminAPI bool
+	// UI, when set, is served at /_ui/ (the admin web interface).
+	UI http.Handler
 	// Metrics records what the API does; nil turns it off.
 	Metrics *metrics.Metrics
 }
@@ -115,6 +117,10 @@ func NewHandler(cfg Config) http.Handler {
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, executorToken: cfg.ExecutorToken, log: cfg.Log, dev: cfg.Dev, concurrency: limiterFor(cfg.Registry), metrics: cfg.Metrics}
 	if !cfg.DisableAdminAPI {
 		(&adminAPI{users: users, reg: cfg.Registry, fns: fns, fingerprint: cfg.ConfigFingerprint}).routes(r, authRoutes.resolveRealm, withTimeout(opTimeout))
+	}
+	if cfg.UI != nil {
+		r.Handle("/_ui", http.RedirectHandler("/_ui/", http.StatusMovedPermanently))
+		r.Handle("/_ui/*", cfg.UI)
 	}
 	fns.routes(r)
 	docs.routes(r)

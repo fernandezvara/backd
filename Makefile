@@ -1,6 +1,6 @@
 COMPOSE_TEST = docker compose -f docker-compose.test.yml
 
-.PHONY: build test test-local vet lint-api js-test js-package js-integration functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour shelf-tour-ci example-attacks release-check
+.PHONY: build ui ui-test ui-e2e test test-local vet lint-api js-test js-package js-integration functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour shelf-tour-ci example-attacks release-check
 
 build:
 	go build -o bin/backd ./cmd/backd
@@ -37,6 +37,20 @@ js-integration:
 functions-testing-test:
 	$(COMPOSE_TEST) run --rm --build --entrypoint deno tests test clients/functions-testing/src/ examples/config/workshop/main/_functions/ examples/config/workshop/notifications/_functions/ examples/config/shelf/main/_functions/
 	$(COMPOSE_TEST) down -v
+
+# The admin UI (ui/admin): build it into internal/adminui/dist, where the Go
+# build embeds it (a Go build without it still works; /_ui/ answers 404).
+ui:
+	cd clients/js && npm ci && cd ../../ui/admin && npm ci && npm run build
+
+# Type-check, lint and unit-test the admin UI.
+ui-test:
+	cd clients/js && npm ci && cd ../../ui/admin && npm ci && npm run typecheck && npm run lint && npm test
+
+# The admin UI's Playwright tests against the local example stack, brought up
+# for the run (needs Docker; ports 8443 and 8080 free).
+ui-e2e:
+	scripts/ui-e2e.sh
 
 # Lint api/openapi.yaml (needs Node). The Go contract tests check the server against it.
 lint-api:
