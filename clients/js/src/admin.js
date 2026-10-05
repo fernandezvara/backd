@@ -178,10 +178,11 @@ import { Job } from './functions.js'
  * @property {boolean} scheduled             True for a cron run.
  * @property {string} origin                 `http`, `function`, `cron`, `admin`, `backd:email.<kind>` or `function:<database>/<name>`.
  * @property {string | null} email_kind      The kind of an email job, never its recipients.
+ * @property {string | null} rerun_of        The finished job an administrator re-ran to make this one.
  * @property {number} attempts               More than 1 after a worker was lost mid-run.
  * @property {string} created_at
  * @property {string | null} completed_at
- * @property {{ status: string, code: string | null, duration_ms: number } | null} result   Null until `done`.
+ * @property {{ status: string, code: string | null, duration_ms: number } | null} result   Null until `done`; `status` is `cancelled` for a cancelled job.
  */
 
 /**
@@ -635,6 +636,33 @@ class AdminJobs {
       since: time(params.since), until: time(params.until), limit: params.limit, skip: params.skip,
     }
     return (await this.admin._request({ method: 'GET', path: ['jobs'], query, ...opts })).data
+  }
+
+  /**
+   * Cancels a queued, retry-waiting or running function job: it is `done` at
+   * once with the result `cancelled`, and a worker running it stops the run
+   * (what the function already did stays done). Rejects with a
+   * `ConflictError` when it has already finished or isn't a function's job.
+   * @param {string} id
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<JobSummary>}
+   */
+  async cancel(id, opts) {
+    return (await this.admin._request({ method: 'POST', path: ['jobs', id, 'cancel'], ...opts })).data
+  }
+
+  /**
+   * Queues a finished function job again (a cancelled one included) as a new
+   * job with the same function, input and caller; the original keeps its
+   * result. Resolves with the new job (`rerun_of` names the original).
+   * Rejects with a `ConflictError` while the job hasn't finished, or when it
+   * isn't a function's job or its function no longer exists.
+   * @param {string} id
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<JobSummary>}
+   */
+  async rerun(id, opts) {
+    return (await this.admin._request({ method: 'POST', path: ['jobs', id, 'rerun'], ...opts })).data
   }
 }
 
