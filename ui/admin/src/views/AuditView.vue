@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import type { AuditRecord } from 'backd-js'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
+import PagerBar from '@/components/PagerBar.vue'
 import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
 import { errorText, formatDate } from '@/lib/format'
@@ -54,13 +55,11 @@ function clear() {
   Object.assign(filters, { action: '', actor: '', target: '', since: '', until: '' })
   apply()
 }
-function page(delta: number) {
+function page(delta: -1 | 1) {
   skip.value = Math.max(0, skip.value + delta * PAGE)
   void load()
 }
 onMounted(load)
-
-const range = computed(() => ({ from: records.value.length ? skip.value + 1 : 0, to: skip.value + records.value.length }))
 
 // "user:<id>" links to the user's page for a level that may read users.
 const userId = (ref: string | null) => (ref && ref.startsWith('user:') && session.canRead('users') ? ref.slice(5) : null)
@@ -128,9 +127,5 @@ const detailsText = (r: AuditRecord) => (Object.keys(r.details ?? {}).length ? J
     </table>
   </div>
 
-  <div class="mt-3 flex items-center gap-3">
-    <AppButton variant="secondary" :disabled="skip === 0 || loading" @click="page(-1)">{{ t('common.previous') }}</AppButton>
-    <AppButton variant="secondary" :disabled="!hasMore || loading" @click="page(1)">{{ t('common.next') }}</AppButton>
-    <span v-if="records.length" class="text-sm text-slate-600 dark:text-slate-400">{{ t('audit.page', { from: range.from, to: range.to }) }}</span>
-  </div>
+  <PagerBar :skip="skip" :count="records.length" :has-more="hasMore" :loading="loading" @page="page" />
 </template>

@@ -1,0 +1,5 @@
+# A scheduled function: it appears in the Functions page with its schedule.
+internal: true
+mode: async
+schedule: "0 3 * * *"
+timeout: 1m

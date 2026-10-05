@@ -20,6 +20,9 @@ export const routes: RouteRecordRaw[] = [
   { path: '/r/:realm/apikeys', name: 'apikeys', component: () => import('@/views/ApiKeysView.vue'), props: true, meta: { auth: true, area: 'apikeys' as const } },
   { path: '/r/:realm/secrets', name: 'secrets', component: () => import('@/views/SecretsView.vue'), props: true, meta: { auth: true, area: 'secrets' as const } },
   { path: '/r/:realm/audit', name: 'audit', component: () => import('@/views/AuditView.vue'), props: true, meta: { auth: true, area: 'audit' as const } },
+  { path: '/r/:realm/functions', name: 'functions', component: () => import('@/views/FunctionsView.vue'), props: true, meta: { auth: true, area: 'functions' as const } },
+  { path: '/r/:realm/functions/history', name: 'functions-history', component: () => import('@/views/InvocationsView.vue'), props: true, meta: { auth: true, area: 'functions' as const } },
+  { path: '/r/:realm/functions/jobs', name: 'functions-jobs', component: () => import('@/views/JobsView.vue'), props: true, meta: { auth: true, area: 'functions' as const } },
   { path: '/r/:realm', name: 'home', component: () => import('@/views/HomeView.vue'), props: true, meta: { auth: true } },
   { path: '/:rest(.*)*', name: 'not-found', component: () => import('@/views/NotFoundView.vue') },
 ]

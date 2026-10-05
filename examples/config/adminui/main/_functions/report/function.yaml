@@ -1,0 +1,4 @@
+# An async function for the admin UI's tests: running it queues a job.
+internal: true
+mode: async
+timeout: 30s

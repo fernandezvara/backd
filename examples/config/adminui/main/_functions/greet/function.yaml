@@ -1,0 +1,5 @@
+# A sync function for the admin UI's tests: internal, so only an
+# administrator can run it (by hand, from the Functions page or the CLI).
+internal: true
+mode: sync
+timeout: 10s
