@@ -110,6 +110,7 @@ Poll every second or two, with a limit on how long you are willing to wait. The 
 | `timeout` | It didn't finish within its `timeout`; it was stopped | `http_status: 504`, `code: function_timeout` |
 | `output_too_large` | Its output exceeds `max_output` | `code: invalid_output` |
 | `cancelled` | An administrator [cancelled the job](#cancelling-and-re-running-a-job) | `message` |
+| `skipped` | A [scheduled run](../cron/#skipping-a-run-while-the-previous-one-is-going) that didn't happen because the function's previous job hadn't finished (`overlap: skip`); never run | `message` |
 | anything else (`memory`, `cpu`, `crash`, …) | It failed | `http_status: 500`, `code: function_failed`; the stack trace is in `backd`'s log |
 
 ### Wait in the JavaScript client
