@@ -1,0 +1,21 @@
+{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string", "minLength": 1, "maxLength": 80, "description": "What the product is called." },
+    "sku": { "type": "string", "pattern": "^[A-Z]{3}-[0-9]{3}$", "description": "Like ABC-123." },
+    "price": { "type": "number", "minimum": 0 },
+    "stock": { "type": "integer", "minimum": 0 },
+    "kind": { "enum": ["tool", "toy", "book"] },
+    "published": { "type": "boolean" },
+    "contact": { "type": "string", "format": "email" },
+    "released": { "type": "string", "format": "date-time", "x-backd-store": "date" },
+    "tags": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "dims": {
+      "type": "object",
+      "properties": { "width": { "type": "number" }, "height": { "type": "number" } },
+      "required": ["width"]
+    },
+    "extra": { "oneOf": [{ "type": "string" }, { "type": "number" }], "description": "Either a string or a number." }
+  },
+  "required": ["name"]
+}
