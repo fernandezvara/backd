@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useId } from 'vue'
 
+defineOptions({ inheritAttrs: false })
 defineProps<{ label: string; type?: string; autocomplete?: string; error?: string; help?: string; required?: boolean }>()
 const model = defineModel<string>({ default: '' })
 const id = useId()
@@ -15,6 +16,7 @@ const id = useId()
       :type="type ?? 'text'"
       :autocomplete="autocomplete"
       :required="required"
+      v-bind="$attrs"
       :aria-invalid="error ? true : undefined"
       :aria-describedby="error ? `${id}-error` : help ? `${id}-help` : undefined"
       class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900"

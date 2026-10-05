@@ -8,7 +8,20 @@
     "confirm": "Confirm",
     "signOut": "Sign out",
     "loading": "Loading…",
-    "none": "None"
+    "none": "None",
+    "dismiss": "Dismiss",
+    "save": "Save",
+    "create": "Create",
+    "delete": "Delete",
+    "revoke": "Revoke",
+    "back": "Back",
+    "retry": "Try again",
+    "search": "Search",
+    "yes": "Yes",
+    "no": "No",
+    "never": "Never",
+    "loadMore": "Load more",
+    "unexpected": "Something went wrong."
   },
   "theme": {
     "label": "Theme",
@@ -54,7 +67,11 @@
     "canRead": "Can read",
     "canWrite": "Can change",
     "nothing": "Nothing",
-    "key": "an API key ({name})"
+    "key": "an API key ({name})",
+    "links": {
+      "users": "Manage users",
+      "invitations": "Manage invitations"
+    }
   },
   "areas": {
     "users": "Users",
@@ -74,5 +91,143 @@
     "title": "Page not found",
     "body": "There is nothing at this address.",
     "home": "Back to the start"
+  },
+  "nav": {
+    "label": "Main",
+    "overview": "Overview",
+    "users": "Users",
+    "invitations": "Invitations"
+  },
+  "users": {
+    "title": "Users",
+    "search": "Search by email",
+    "searchHelp": "Finds emails containing the text.",
+    "empty": "No users found.",
+    "count": "{n} shown",
+    "email": "Email",
+    "status": "Status",
+    "roles": "Roles",
+    "created": "Created",
+    "active": "Active",
+    "disabled": "Disabled",
+    "erased": "Erased",
+    "unverified": "Unverified",
+    "verified": "Verified",
+    "noRoles": "No roles",
+    "create": {
+      "title": "Create user",
+      "open": "Create user",
+      "password": "Password",
+      "passwordHelp": "Optional. Without one the user can't sign in until a password is set.",
+      "done": "Created {email}."
+    },
+    "loadFailed": "The users could not be loaded."
+  },
+  "user": {
+    "loadFailed": "The user could not be loaded.",
+    "back": "All users",
+    "locale": "Language",
+    "emailVerified": "Email",
+    "status": "Status",
+    "created": "Created",
+    "updated": "Updated",
+    "adminNetworks": "Admin networks",
+    "loginNetworks": "Login networks",
+    "anywhere": "Anywhere",
+    "id": "ID",
+    "disable": "Disable",
+    "enable": "Enable",
+    "disabledDone": "{email} is disabled and signed out.",
+    "enabledDone": "{email} is enabled.",
+    "verify": "Mark email verified",
+    "verifiedDone": "{email} is marked verified.",
+    "password": {
+      "open": "Set password",
+      "title": "Set password",
+      "label": "New password",
+      "help": "Ends all of the user's sessions.",
+      "done": "Password changed; sessions ended."
+    },
+    "email": {
+      "open": "Change email",
+      "title": "Change email",
+      "label": "New email",
+      "help": "Takes effect at once; both addresses are told.",
+      "done": "Email changed to {email}."
+    },
+    "erase": {
+      "open": "Delete user",
+      "title": "Delete {email}",
+      "body": "Erasing a user is irreversible: the account becomes a tombstone, their sign-ins and sessions are deleted, and each collection's policy is applied to what they own.",
+      "loadingReport": "Checking what they own…",
+      "reportFailed": "What the user owns could not be checked.",
+      "owned": "{collection}: {owned} owned, policy {action}",
+      "policyNone": "none",
+      "withoutPolicy": "Collections without a policy are left alone: {names}",
+      "none": "The user owns nothing under a policy.",
+      "done": "{email} is being erased.",
+      "action": "Erase user",
+      "deactivateHint": "To keep the data, disable the user instead."
+    },
+    "roles": {
+      "title": "Roles",
+      "none": "No roles.",
+      "add": "Add role",
+      "pick": "Role",
+      "remove": "Remove {role}",
+      "dbOnly": "only in the database",
+      "dbOnlyHelp": "This assignment is not listed in realm.yaml: it lives only in the database, and a rebuilt realm would not have it.",
+      "added": "{role} added.",
+      "removed": "{role} removed.",
+      "unlisted": "Name of a role declared in realm.yaml"
+    },
+    "sessions": {
+      "title": "Sessions",
+      "none": "No active sessions.",
+      "created": "Created",
+      "lastUsed": "Last used",
+      "expires": "Expires",
+      "revoke": "Revoke",
+      "revoked": "Session revoked.",
+      "loadFailed": "The sessions could not be loaded."
+    },
+    "networks": {
+      "title": "Networks"
+    }
+  },
+  "invitations": {
+    "title": "Invitations",
+    "empty": "No pending invitations.",
+    "email": "For",
+    "anyone": "Anyone",
+    "createdBy": "Created by",
+    "created": "Created",
+    "expires": "Expires",
+    "create": {
+      "open": "Create invitation",
+      "title": "Create invitation",
+      "email": "Email",
+      "emailHelp": "Optional. With one, only that address can use it.",
+      "expires": "Expires in",
+      "expiresHelp": "Days (7d) or hours (12h). Empty: the default.",
+      "done": "Invitation created.",
+      "tokenTitle": "Invitation token",
+      "tokenBody": "Copy it now: it is shown only this once.",
+      "tokenLabel": "Token",
+      "close": "Done"
+    },
+    "send": {
+      "open": "Email an invitation",
+      "title": "Email an invitation",
+      "email": "Email",
+      "done": "Invitation emailed to {email}."
+    },
+    "revoke": {
+      "title": "Revoke invitation",
+      "action": "Revoke invitation",
+      "done": "Invitation revoked.",
+      "expected": "revoke"
+    },
+    "loadFailed": "The invitations could not be loaded."
   }
 }

@@ -2,6 +2,7 @@
 import { watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppShell from '@/components/AppShell.vue'
+import ToastHost from '@/components/ToastHost.vue'
 import { useSession } from '@/stores/session'
 
 const route = useRoute()
@@ -25,4 +26,5 @@ watch(
     <RouterView />
   </AppShell>
   <RouterView v-else />
+  <ToastHost />
 </template>

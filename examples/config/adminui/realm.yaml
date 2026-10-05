@@ -4,7 +4,15 @@
 auth: enabled
 signup: open
 
+# Read-only administrators may read users too (they never get a control that
+# changes anything).
+admin:
+  read_access:
+    users: true
+
 roles:
+  editor:
+    description: A plain role, for the role picker
   admin:
     description: Full administrator
     admin: true

@@ -29,7 +29,7 @@ test('the read-only administrator can change nothing', async ({ page, signIn }) 
   await expect(page.getByTestId('level')).toHaveText('Read-only')
   await expect(page.getByTestId('can-write')).toHaveText('Nothing')
   await expect(page.getByTestId('can-read')).toContainText('Configuration')
-  await expect(page.getByTestId('can-read')).not.toContainText('Users')
+  await expect(page.getByTestId('can-read')).toContainText('Users') // the realm's admin.read_access.users
   await expect(page.getByTestId('can-read')).not.toContainText('Data')
 })
 
