@@ -27,7 +27,7 @@ Use a scheduled function when the work must happen **because time passed**, whet
 
 ## Schedule expressions
 
-Five fields, `minute hour day-of-month month day-of-week`, in **UTC**:
+Five fields, `minute hour day-of-month month day-of-week`, in **UTC** unless the function sets a [`timezone`](#time-zones):
 
 | Field | Values | Also |
 |---|---|---|
@@ -49,9 +49,28 @@ Each field takes `*`, a number, a range (`9-17`), a list (`1,15`) or a step (`*/
 | `0 9 1 * *` | on the 1st of the month at 09:00 UTC |
 | `0 0 * * 0` | Sundays at 00:00 UTC |
 
-{{< hint note >}}
-Schedules are **always UTC**, with no time zones and no seconds. If you need 09:00 in Madrid, write the UTC hour that is right now, and revisit it when the clocks change.
-{{< /hint >}}
+There are no seconds: the smallest step is a minute.
+
+## Time zones
+
+A schedule is read in UTC by default. Add `timezone`, an [IANA name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) such as `Europe/Madrid` or `America/New_York`, and the same fields mean wall-clock time there:
+
+```yaml
+mode: async
+schedule: "0 9 * * mon-fri"   # 09:00 in Madrid, in winter and in summer
+timezone: Europe/Madrid
+```
+
+`timezone` needs `schedule`. An unknown name stops `backd` at startup and names the file; `Local` is not accepted. The zone database is built into `backd`, so it works in any image. Everything outside the schedule stays UTC: the [job id](#how-runs-are-created), `created_at` and every timestamp in the job list and the history.
+
+When the clocks change, the usual cron rules apply:
+
+| The clocks… | A schedule with a fixed hour (`30 2 * * *`) | A schedule that matches every hour (`*/15 * * * *`, `@hourly`) |
+|---|---|---|
+| **go forward** (a local hour does not exist) | A time inside the gap runs **once, right after it**: `30 2 * * *` runs at 03:00 that day | Runs on, the gap simply has no runs |
+| **go back** (a local hour happens twice) | Runs **once**, at the first occurrence | Runs through both hours |
+
+So a daily job in a zone with daylight saving runs exactly once a day, and an hourly one every real hour. A schedule at `0 12 * * *` is unaffected twice a year except that its UTC time moves by an hour.
 
 ## Another example: a daily digest
 
