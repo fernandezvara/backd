@@ -175,6 +175,8 @@ import { Job } from './functions.js'
  * @property {string} function               `<database>/<name>`.
  * @property {'queued' | 'running' | 'done'} status
  * @property {boolean} scheduled             True for a cron run.
+ * @property {string} origin                 `http`, `function`, `cron`, `admin`, `backd:email.<kind>` or `function:<database>/<name>`.
+ * @property {string | null} email_kind      The kind of an email job, never its recipients.
  * @property {number} attempts               More than 1 after a worker was lost mid-run.
  * @property {string} created_at
  * @property {string | null} completed_at
@@ -599,16 +601,17 @@ class AdminJobs {
   /**
    * A page of jobs, newest first: their state and outcome, never their
    * input or output (read one job in full with `Job.status()`/`wait()`).
-   * `function` is `<database>/<name>`; `since` and `until` are dates or
-   * RFC 3339 strings, on the job's creation time.
-   * @param {{ function?: string, status?: 'queued' | 'running' | 'done', scheduled?: boolean, since?: Date | string, until?: Date | string, limit?: number, skip?: number }} [params]
+   * `function` is `<database>/<name>`; `origin` is exact (such as
+   * `function:main/ship`); `since` and `until` are dates or RFC 3339
+   * strings, on the job's creation time.
+   * @param {{ function?: string, status?: 'queued' | 'running' | 'done', origin?: string, scheduled?: boolean, since?: Date | string, until?: Date | string, limit?: number, skip?: number }} [params]
    * @param {RequestOptions} [opts]
    * @returns {Promise<JobsPage>}
    */
   async list(params = {}, opts) {
     const time = (/** @type {Date | string | undefined} */ t) => (t instanceof Date ? t.toISOString() : t)
     const query = {
-      function: params.function, status: params.status, scheduled: params.scheduled,
+      function: params.function, status: params.status, origin: params.origin, scheduled: params.scheduled,
       since: time(params.since), until: time(params.until), limit: params.limit, skip: params.skip,
     }
     return (await this.admin._request({ method: 'GET', path: ['jobs'], query, ...opts })).data
