@@ -290,3 +290,19 @@ test('jobs can be cancelled and re-run', async () => {
   assert.equal(m.calls[1].url.pathname, '/v1/acme/_admin/jobs/j1/rerun')
   await assert.rejects(a.jobs.cancel('j1'), ConflictError)
 })
+
+test('schedules can be listed, paused and resumed', async () => {
+  const nightly = { function: 'app/nightly', schedule: '0 3 * * *', timezone: 'UTC', overlap: 'allow', paused: false, changed_at: null, changed_by: null }
+  const m = mockFetch([{ body: { items: [nightly] } }, { body: { ...nightly, paused: true, changed_at: '2026-10-05T10:00:00Z', changed_by: 'key:ops' } }, { body: nightly }, { status: 409, body: errorBody('conflict', 'the function has no schedule') }])
+  const a = adminOf(m)
+  assert.deepEqual((await a.schedules.list()).map((s) => s.function), ['app/nightly'])
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/schedules')
+  const paused = await a.schedules.pause('app/nightly')
+  assert.equal(paused.paused, true)
+  assert.equal(m.calls[1].method, 'POST')
+  assert.equal(m.calls[1].url.pathname, '/v1/acme/_admin/functions/app/nightly/pause')
+  assert.equal((await a.schedules.resume('app/nightly')).paused, false)
+  assert.equal(m.calls[2].url.pathname, '/v1/acme/_admin/functions/app/nightly/resume')
+  await assert.rejects(a.schedules.pause('app/plain'), ConflictError)
+  await assert.rejects(a.schedules.pause('nightly'), TypeError)
+})

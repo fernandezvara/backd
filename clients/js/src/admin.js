@@ -186,6 +186,18 @@ import { Job } from './functions.js'
  */
 
 /**
+ * A scheduled function and whether its schedule is paused.
+ * @typedef {object} Schedule
+ * @property {string} function        `<database>/<name>`.
+ * @property {string} schedule        The cron expression.
+ * @property {string} timezone        The IANA time zone it is read in (`UTC` by default).
+ * @property {'allow' | 'skip'} overlap
+ * @property {boolean} paused
+ * @property {string | null} changed_at   When it was last paused or resumed; null if never.
+ * @property {string | null} changed_by   The actor that did, such as `key:ops`; null if never.
+ */
+
+/**
  * @typedef {object} JobsPage
  * @property {JobSummary[]} items    Newest first.
  * @property {number} limit
@@ -212,6 +224,8 @@ export class Admin {
     this.audit = new AdminAudit(this)
     /** The realm's async and scheduled jobs (read-only). */
     this.jobs = new AdminJobs(this)
+    /** The realm's schedules: list them, pause and resume them. */
+    this.schedules = new AdminSchedules(this)
     /** Function secrets: set and delete their values, list their metadata. */
     this.secrets = new AdminSecrets(this)
     /** The realm's function invocation history (read-only). */
@@ -663,6 +677,60 @@ class AdminJobs {
    */
   async rerun(id, opts) {
     return (await this.admin._request({ method: 'POST', path: ['jobs', id, 'rerun'], ...opts })).data
+  }
+}
+
+class AdminSchedules {
+  /** @param {Admin} admin */
+  constructor(admin) {
+    /** @internal */
+    this.admin = admin
+  }
+
+  /**
+   * Every scheduled function of the realm with whether it is paused, sorted
+   * by function.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<Schedule[]>}
+   */
+  async list(opts) {
+    return (await this.admin._request({ method: 'GET', path: ['schedules'], ...opts })).data.items
+  }
+
+  /**
+   * Stops a function's schedule creating runs until it is resumed (runs
+   * already queued or running are not touched). The state survives restarts.
+   * `fn` is `<database>/<name>`. Rejects with a `ConflictError` for a function
+   * with no schedule and a `NotFoundError` for an unknown one.
+   * @param {string} fn
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<Schedule>}
+   */
+  async pause(fn, opts) {
+    return this.#set(fn, 'pause', opts)
+  }
+
+  /**
+   * Lets a paused schedule create runs again; the runs due while it was
+   * paused are not made up.
+   * @param {string} fn
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<Schedule>}
+   */
+  async resume(fn, opts) {
+    return this.#set(fn, 'resume', opts)
+  }
+
+  /**
+   * @param {string} fn
+   * @param {'pause' | 'resume'} op
+   * @param {RequestOptions | undefined} opts
+   * @returns {Promise<Schedule>}
+   */
+  async #set(fn, op, opts) {
+    const [database, name, ...rest] = fn.split('/')
+    if (!database || !name || rest.length > 0) throw new TypeError(`schedules.${op}: the function must be "<database>/<name>"`)
+    return (await this.admin._request({ method: 'POST', path: ['functions', database, name, op], ...opts })).data
   }
 }
 
