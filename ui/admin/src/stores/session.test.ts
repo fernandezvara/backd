@@ -102,3 +102,24 @@ test('"all" stands for every area', () => {
   expect(expandAreas(['audit', 'users'])).toEqual(['users', 'audit'])
   expect(expandAreas([])).toEqual([])
 })
+
+test('closing or reloading the page revokes a session that lives only in memory', async () => {
+  const s = useSession()
+  await s.signIn('acme', 'ada@example.com', 'dev-p4ssw0rd!', false)
+  calls.length = 0
+  const hide = (persisted: boolean) => window.dispatchEvent(Object.assign(new Event('pagehide'), { persisted }))
+  hide(true) // kept in the back/forward cache: still alive
+  expect(calls).toEqual([])
+  hide(false)
+  expect(calls.find((c) => c.path === '/v1/acme/_auth/logout')?.auth).toBe('Bearer bds_tok')
+  await s.signOut()
+})
+
+test('a tab that opted in keeps its session across a reload', async () => {
+  const s = useSession()
+  await s.signIn('acme', 'ada@example.com', 'dev-p4ssw0rd!', true)
+  calls.length = 0
+  window.dispatchEvent(Object.assign(new Event('pagehide'), { persisted: false }))
+  expect(calls).toEqual([])
+  await s.signOut()
+})

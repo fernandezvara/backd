@@ -27,9 +27,14 @@ function tabStorage(realm: string): TokenStorage {
   }
 }
 
-function memoryStore(): TokenStorage {
+interface MemoryStore extends TokenStorage {
+  /** The token right now, synchronously (a closing page can't wait). */
+  peek: () => string | null
+}
+
+function memoryStore(): MemoryStore {
   let token: string | null = null
-  return { get: () => token, set: (t) => void (token = t), remove: () => void (token = null) }
+  return { get: () => token, set: (t) => void (token = t), remove: () => void (token = null), peek: () => token }
 }
 
 /** Why a sign-in didn't end up as an administrator. */
@@ -47,6 +52,7 @@ export const useSession = defineStore('session', () => {
   const ended = ref<EndReason | null>(null)
   const idleSeconds = ref(DEFAULT_IDLE_SECONDS)
   let idle: IdleWatch | null = null
+  let memory: MemoryStore | null = null
 
   const signedIn = computed(() => access.value !== null)
   const email = computed(() => access.value?.user?.email ?? '')
@@ -59,10 +65,11 @@ export const useSession = defineStore('session', () => {
 
   function begin(forRealm: string, keepInTab: boolean) {
     realm.value = forRealm
+    memory = keepInTab ? null : memoryStore()
     client.value = createClient({
       url: window.location.origin,
       realm: forRealm,
-      storage: keepInTab ? tabStorage(forRealm) : memoryStore(),
+      storage: memory ?? tabStorage(forRealm),
     })
     // The server refusing the token (expired, revoked elsewhere, user disabled).
     client.value.auth.onAuthChange((event) => {
@@ -122,6 +129,23 @@ export const useSession = defineStore('session', () => {
   function expired() {
     if (signedIn.value) void signOut('expired')
   }
+
+  /**
+   * A page that closes or reloads loses a token that lives only in memory,
+   * and the session would live on in the server until its idle timeout: end
+   * it instead. (A tab that opted in keeps its token across a reload, so its
+   * session is left alone.)
+   */
+  function revokeOnExit(event: PageTransitionEvent) {
+    const token = memory?.peek()
+    if (event.persisted || !token || !signedIn.value) return
+    void fetch(`${window.location.origin}/v1/${encodeURIComponent(realm.value)}/_auth/logout`, {
+      method: 'POST',
+      keepalive: true,
+      headers: { Authorization: `Bearer ${token}` },
+    }).catch(() => {})
+  }
+  window.addEventListener('pagehide', revokeOnExit)
 
   function setIdleSeconds(n: number) {
     idleSeconds.value = n

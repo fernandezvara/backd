@@ -7,6 +7,7 @@ import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
 import TextField from '@/components/TextField.vue'
 import ThemeSwitch from '@/components/ThemeSwitch.vue'
+import { safeNext } from '@/lib/redirect'
 import { NotAdminError, useSession } from '@/stores/session'
 
 const props = defineProps<{ realm: string }>()
@@ -21,11 +22,8 @@ const keep = ref(false)
 const busy = ref(false)
 const error = ref('')
 
-// Only paths inside this app are followed after signing in.
-function next(): string {
-  const n = route.query.next
-  return typeof n === 'string' && n.startsWith(`/r/${props.realm}`) ? n : `/r/${props.realm}`
-}
+// Only the realm's own pages are followed after signing in.
+const next = () => safeNext(route.query.next, props.realm)
 
 async function submit() {
   busy.value = true

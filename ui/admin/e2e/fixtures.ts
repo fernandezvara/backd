@@ -29,7 +29,7 @@ export const test = base.extend<{ guard: void; signIn: (who: keyof typeof users,
         if (/content security policy|Refused to/i.test(msg.text())) consoleCSP.push(msg.text())
       })
       await use()
-      const seen = await page.evaluate(() => window.__violations).catch(() => [] as string[])
+      const seen = (await page.evaluate(() => window.__violations).catch(() => [] as string[])) ?? [] // a test that never opened a page has none
       expect(seen, 'CSP violations in the page').toEqual([])
       expect(consoleCSP, 'CSP messages in the console').toEqual([])
       expect(foreign, 'requests to another origin').toEqual([])
