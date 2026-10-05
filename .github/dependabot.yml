@@ -15,6 +15,12 @@ updates:
     directory: /clients/js
     schedule: { interval: weekly }
     groups: { js: { patterns: ["*"] } }
+  - package-ecosystem: npm
+    # The admin UI is embedded in the binary and holds the admin token in the
+    # browser: its dependencies get the same weekly look as the rest.
+    directory: /ui/admin
+    schedule: { interval: weekly }
+    groups: { admin-ui: { patterns: ["*"] } }
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
