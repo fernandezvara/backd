@@ -12,6 +12,8 @@ The interface is bundled in the `backd` binary and the release images. Nothing i
 
 ## Switching it on
 
+{{< screenshot src="admin-ui/signin.png" alt="The sign-in page: the realm is always shown, with the email, password and the opt-in to keep the session in this tab" >}}
+
 It is off by default. Set `BACKD_ADMIN_UI=true` on the instance that should serve it:
 
 ```sh
@@ -29,11 +31,17 @@ The UI needs the admin API on the same instance: `BACKD_ADMIN_UI=true` with `BAC
 
 ## Who sees what
 
+{{< screenshot src="admin-ui/overview.png" alt="The overview of a full administrator: the realm in the header, the level, and the areas the account may read and change" >}}
+
 Signing in needs a user with one of the realm's [admin roles](../admin/#admin-rights); a user without one is refused, and their session is ended at once. After sign-in the UI asks the server what the account may do (`GET /_admin/whoami`) and shows only that: a read-only administrator sees no buttons that change anything, and `admin.read_access` decides whether they see users and data. The server enforces every permission anyway; the interface only avoids offering what would be refused.
 
 The overview page lists the level (full, read-only or custom) and the areas the account may read and change.
 
 ## Users and invitations
+
+{{< screenshot src="admin-ui/users.png" alt="The users list with search, status and roles" >}}
+
+{{< screenshot src="admin-ui/user.png" alt="A user: status, roles with the only-in-the-database warning, networks and sessions" >}}
 
 The **Users** page lists the realm's users, a page at a time, and searches by email as you type. Opening a user shows their status, whether the address is verified, the roles they hold, their networks and their active sessions (never a token). With the `users` area an administrator can also:
 
@@ -49,6 +57,10 @@ A read-only level sees the Users page only when the realm's `admin.read_access.u
 
 ## API keys, secrets and audit
 
+{{< screenshot src="admin-ui/apikeys.png" alt="The API keys: role, prefix, scopes, networks, expiry and last use" >}}
+
+{{< screenshot src="admin-ui/audit.png" alt="The audit trail with its filters" >}}
+
 **API keys** lists every key with its role, prefix, scopes, networks, expiry and last use, never the key. *Create API key* takes a name, a role (`data` or `admin`), an optional expiry (`90d`, `12h`), networks and scopes; the key is shown **once**, in a dialog, and is gone from the page when you close it. *Revoke* asks for the key's name to be typed. An admin key can use the whole admin API, so create one only for a server you trust, and remember the [escalation rules](../admin/#admin-rights): you can't hand out more than you hold.
 
 **Secrets** lists the names, scopes (the realm or one database), when each was last set and by whom. Values are **write-only**, as in the API: the form takes a value, sends it and forgets it, and nothing in the interface can show it again. Setting a name again replaces the value; deleting asks for the name to be typed, and a function that declares the secret answers `secret_missing` until it is set again. Functions only see secrets when the instance has `BACKD_SECRETS_KEY`.
@@ -59,6 +71,10 @@ A read-only level reads all three without the buttons that create, revoke, set o
 
 ## Functions
 
+{{< screenshot src="admin-ui/functions.png" alt="The function definitions of a database, with a button to run each by hand" >}}
+
+{{< screenshot src="admin-ui/history.png" alt="The invocation history, with the warning that logs hold whatever functions print" >}}
+
 The **Functions** area has three pages.
 
 - **Definitions** lists, per database, every function with its mode, schedule, flags (internal, admin only, email delivery, dev only), limits (timeout, memory, maximum output, concurrency), `calls`, `secrets` and `network`, retry and rate limit, `invoke` rule, and the `function.yaml` it comes from. It reads the realm's configuration, so a level without the `config` area sees a note instead.
@@ -68,6 +84,8 @@ The **Functions** area has three pages.
 An administrator with the `functions` area can **run a function by hand**, internal ones included: choose it, give an input as JSON and optionally an email to run as (without one there is no user). A sync function's output is shown on the page; an async one answers with its job, which the Jobs page follows. The function's `invoke` rule and rate limit don't apply, and every run is [audited](../audit/). Read-only levels read all three pages and get no way to run anything. Cancelling and re-running a job will join once the platform has them.
 
 ## Configuration
+
+{{< screenshot src="admin-ui/config.png" alt="A collection in the configuration view: its schema, indexes, rules and policy, each with its source file" >}}
 
 The **Configuration** area shows what this instance runs for the realm, read from the files it loaded through `GET /_admin/config`. It is read-only by design: configuration is a reviewed, versioned artifact, so the interface never edits it. Change the files, review and deploy them; *Reload* fetches what the instance runs now.
 
@@ -80,11 +98,15 @@ The functions' definitions are on the Functions page. Reading the configuration 
 
 ## Data
 
+{{< screenshot src="admin-ui/query.png" alt="The data browser with the query builder: a condition on the name, and the matching documents" >}}
+
+{{< screenshot src="admin-ui/document.png" alt="A document as a form drawn from the collection's schema" >}}
+
 The **Data** area browses and fixes documents through the [admin data route](../admin/#data), which serves them **past the collection's access rules**: an administrator sees and changes what an app's own users couldn't. Every change is audited (never its content), and a document created here has no owner.
 
 - **Databases and collections** come from the configuration (a level without the `config` area types the names). A collection that keeps a trash says so.
 - **Browsing:** a table with the collection's first scalar fields, the update time and version, paged (20, 50 or 100 a page) with the total, and a *JSON* view of the same page. The **query builder** offers the fields the schema declares (nested ones by dot path, plus `id` and `_meta`), and for each type only the operators backd's query language accepts: text operators for strings, comparisons and ranges for numbers and dates, `is one of` for enums. Values are checked in the browser (a number must be a number, a date a date) before anything is sent. Sorting is by any of those fields, and *Raw where (JSON)* takes the API's own query language for anything the builder can't say.
-- **Forms:** creating and editing use a form drawn from the collection's JSON Schema: objects, arrays (add, remove, reorder), strings with their formats (`email`, `date`, `date-time`, `uri`) and length limits, numbers with their limits, booleans, enums, required markers and descriptions. `id` and `_meta` are shown, never edited. Whatever a form can't draw faithfully, such as `oneOf`, `anyOf`, `if`/`then`, a recursive `$ref` or a free-form object, becomes a **JSON editor for that field**, and a schema that can't be a form at all is edited as JSON as a whole. Fields the schema doesn't declare are kept as they are. The server's validation messages appear next to the field they are about, and in a list at the top.
+- **Forms:** creating and editing use a form drawn from the collection's JSON Schema: objects, arrays (add, remove, reorder), strings with their formats (`email`, `date`, `date-time`, `uri`) and length limits, numbers with their limits, booleans, enums, required markers and descriptions. `id` and `_meta` are shown, never edited. Fields appear in alphabetical order: the configuration API returns a schema's properties sorted by name, not in the order the file declares them. Whatever a form can't draw faithfully, such as `oneOf`, `anyOf`, `if`/`then`, a recursive `$ref` or a free-form object, becomes a **JSON editor for that field**, and a schema that can't be a form at all is edited as JSON as a whole. Fields the schema doesn't declare are kept as they are. The server's validation messages appear next to the field they are about, and in a list at the top.
 - **Concurrent edits:** a save sends the version you read (`If-Match`). If someone changed the document meanwhile, the page says so and offers the newer version to read; you can **load it** (dropping your edit) or **keep your changes** on top of it and save again.
 - **Deleting:** it asks for the document's id to be typed. In a collection with `soft_delete` the document goes to the **trash**: browse it with the *Trash* switch, *Restore* a document, or *Delete for good* (also typed). Elsewhere a delete is final.
 
@@ -92,14 +114,36 @@ A read-only level browses only when the realm's `admin.read_access.data` allows 
 
 ## Sessions
 
-- **The token lives in memory.** Reloading the page signs out. *Keep me signed in in this tab* stores the session in the tab's `sessionStorage` until the tab closes; the UI never uses `localStorage` for it. Leave it off on shared computers.
-- **Idle timeout.** After `BACKD_ADMIN_UI_IDLE` without a click, key press or scroll the UI signs out and revokes the session on the server, so a token someone copied stops working too.
+- **The token lives in memory.** Reloading or closing the page signs out, and the page **revokes the session on the server as it goes**, so nothing is left behind. *Keep me signed in in this tab* stores the session in the tab's `sessionStorage` instead, so a reload keeps it; the UI never uses `localStorage` for it. Leave it off on shared computers.
+- **Idle timeout.** After `BACKD_ADMIN_UI_IDLE` without a click, key press or scroll the UI signs out and revokes the session on the server, so a token someone copied stops working too. This timer lives in the page: the realm's `sessions.admin_idle_timeout` and `sessions.admin_max_lifetime` are the limits the server enforces, so set both.
 - **Sign out revokes.** *Sign out* ends the session on the server, not only in the page.
 - **Administrator sessions only.** API keys are never entered in a browser.
 
 ## Security
 
-The page is served with a strict `Content-Security-Policy`: scripts and styles only from `/_ui/` itself, no `unsafe-inline`, no `unsafe-eval`, requests only to the same origin (`connect-src 'self'`) and `frame-ancestors 'none'`, plus `X-Content-Type-Options`, `Referrer-Policy` and the other usual headers. Hashed assets are cached for a year; `index.html` is never cached, so a new release reaches users at once. Everything the UI shows from your data (documents, log lines, file names, user agents) is rendered as text, never as markup.
+The page is served with a strict `Content-Security-Policy`: scripts and styles only from `/_ui/` itself, no `unsafe-inline`, no `unsafe-eval`, requests only to the same origin (`connect-src 'self'`), `frame-ancestors 'none'`, and `require-trusted-types-for 'script'`, which makes the browser refuse every way of turning text into markup, plus `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` and the other usual headers. Hashed assets are cached for a year; `index.html` is never cached, so a new release reaches users at once. Everything the UI shows from your data (documents, log lines, file names, user agents) is rendered as text, never as markup, and the lint rule `vue/no-v-html` is an error. The Playwright suite fails on any CSP violation and on any request to another origin.
+
+### Security review
+
+The UI and the endpoints added for it were reviewed before being recommended for production. What was found:
+
+| Finding | Outcome |
+|---|---|
+| The CSP didn't use Trusted Types, so an injected script could still write markup | **Fixed:** `require-trusted-types-for 'script'`; a test proves the browser refuses `innerHTML` |
+| A token held only in memory was lost on reload or close, leaving its session alive on the server until the idle timeout | **Fixed:** the page revokes it as it leaves (a tab that opted in to `sessionStorage` keeps its session across a reload) |
+| The page asked for before sign-in was followed by prefix, so `/r/other…` passed | **Fixed:** only the realm's own pages, with no dot segments |
+| `GET /_admin/users?q=` had no length limit | **Fixed:** at most 254 characters, an email's own limit |
+| `ui/admin` had no weekly dependency updates | **Fixed:** Dependabot covers it, next to `npm audit` of what ships in the bundle in CI |
+| Reads through the data route are not in the audit trail | **By design:** writes are audited without their content; reads carry the actor in the access log |
+| The server's `admin: read` and area levels | **Verified:** a test makes every change as each level and expects `403` whatever the interface offers |
+
+What remains, to know about:
+
+- **The admin token is readable by any script that runs in the page.** The CSP, Trusted Types, the lint rule and the absence of markup sinks make that hard, but a flaw in a dependency would be enough, which is why sessions are short: set `sessions.admin_idle_timeout` and `admin_max_lifetime` for realms with administrators, and `BACKD_ADMIN_UI_IDLE` to match. A tab that opted in to *keep me signed in* exposes its token to the same scripts for as long as it lives.
+- **Same-origin neighbours.** `sessionStorage` is per origin: another web app served from the same origin as the UI, with a script injection of its own, could read a token kept in the tab. Serve the UI on its own origin, such as an internal admin host: the internal `backd-admin` instance of the [production reference](../../operations/production/#admin-api)'s split is the natural place.
+- **A closed tab with *keep me signed in*** can't revoke its session (the page may only be reloading), so the session lives until the server's idle timeout or maximum lifetime.
+- **Build tooling.** `npm audit` of the development tools reports a denial-of-service in a glob library with no fix available. It runs at build time on our own files and never ships, so CI gates on the dependencies that ship in the bundle.
+- **Personal data.** Logs, audit records, users and documents can hold personal data: levels are granted by area, and `admin.read_access.users` and `.data` stay `false` unless someone needs them.
 
 ## Public and internal instances
 
