@@ -168,6 +168,9 @@ func TestFunctionErrors(t *testing.T) {
 		{"schedule needs async", fn("schedule: \"* * * * *\"\n"), "schedule: needs mode: async"},
 		{"schedule syntax", fn("mode: async\nschedule: \"61 * * * *\"\n"), "schedule: minute"},
 		{"schedule fields", fn("mode: async\nschedule: \"* * * *\"\n"), "schedule: want 5 fields"},
+		{"timezone needs schedule", fn("mode: async\ntimezone: Europe/Madrid\n"), "timezone: only applies to a scheduled function"},
+		{"timezone unknown", fn("mode: async\nschedule: \"* * * * *\"\ntimezone: Mars/Olympus\n"), `timezone: "Mars/Olympus" is not an IANA time zone name`},
+		{"timezone Local", fn("mode: async\nschedule: \"* * * * *\"\ntimezone: Local\n"), `timezone: "Local" is not an IANA`},
 		{"overlap value", fn("mode: async\nschedule: \"* * * * *\"\noverlap: queue\n"), `overlap: must be allow or skip, got "queue"`},
 		{"overlap needs schedule", fn("mode: async\noverlap: skip\n"), "overlap: only applies to a scheduled function"},
 		{"async timeout cap", fn("mode: async\ntimeout: 25h\n"), "between 1s and 24h0m0s for async functions"},
@@ -346,6 +349,27 @@ func TestScheduledFunction(t *testing.T) {
 	f := reg.Realms["shop"].Databases["app"].Functions.Functions["nightly"]
 	if f.Schedule == nil || f.ScheduleExpr != "0 3 * * *" || f.Overlap != OverlapAllow {
 		t.Fatalf("nightly = %+v", f)
+	}
+}
+
+func TestScheduledFunctionTimezone(t *testing.T) {
+	root := functionTree(t, map[string]string{
+		fnPrefix + "morning/function.yaml": "mode: async\nschedule: \"0 9 * * *\"\ntimezone: Europe/Madrid\n",
+		fnPrefix + "morning/index.js":      "export default () => 1;\n",
+		fnPrefix + "utc/function.yaml":     "mode: async\nschedule: \"0 9 * * *\"\n",
+		fnPrefix + "utc/index.js":          "export default () => 1;\n",
+	})
+	reg, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fns := reg.Realms["shop"].Databases["app"].Functions.Functions
+	at := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	if got, _ := fns["morning"].Schedule.Prev(at); fns["morning"].Timezone != "Europe/Madrid" || got.Hour() != 7 {
+		t.Errorf("morning: %s at %v", fns["morning"].Timezone, got)
+	}
+	if got, _ := fns["utc"].Schedule.Prev(at); fns["utc"].Timezone != "UTC" || got.Hour() != 9 {
+		t.Errorf("utc: %s at %v", fns["utc"].Timezone, got)
 	}
 }
 
