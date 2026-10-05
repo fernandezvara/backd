@@ -26,6 +26,8 @@ Never call these endpoints from a browser or a mobile app with an API key: the k
 
 Requests from outside the realm's `admin.allowed_networks`, or outside an admin user's own `admin_networks`, answer `404 not_found` (see [network restrictions](../../configuration/realm/#network-restrictions)).
 
+The [Admin UI](../admin-ui/) is a web interface to this API, for administrators who prefer a browser.
+
 ## Admin rights
 
 An admin role can open the whole admin API (`admin: true`), only some of its areas (`admin: [users, invitations]`), or all of it **to read** (`admin: read`), so that the person who invites teammates doesn't also hold the secrets and the keys, and developers can look without being able to change anything. A user's roles add up, and an admin API key always opens every area.
