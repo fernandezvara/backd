@@ -81,7 +81,9 @@ The **Functions** area has three pages.
 - **History** is the [invocation history](../../functions/logs/): when, which function, mode, status and code, duration, origin and actor, with the request id, job and parent invocation and the function's log lines under *Details*. Logs hold whatever functions print, so the page says so and shows them as plain text only.
 - **Jobs** lists async and scheduled [jobs](../../functions/jobs/) with their state, origin, attempts and result, filtered by function, status, origin, scheduled runs and time. Inputs and outputs of jobs are never listed.
 
-An administrator with the `functions` area can **run a function by hand**, internal ones included: choose it, give an input as JSON and optionally an email to run as (without one there is no user). A sync function's output is shown on the page; an async one answers with its job, which the Jobs page follows. The function's `invoke` rule and rate limit don't apply, and every run is [audited](../audit/). Read-only levels read all three pages and get no way to run anything. Cancelling and re-running a job will join once the platform has them.
+An administrator with the `functions` area can **run a function by hand**, internal ones included: choose it, give an input as JSON and optionally an email to run as (without one there is no user). A sync function's output is shown on the page; an async one answers with its job, which the Jobs page follows. The function's `invoke` rule and rate limit don't apply, and every run is [audited](../audit/). Read-only levels read all three pages and get no way to run anything.
+
+On the Jobs page an administrator with the `functions` area can also **cancel** a job that is queued, retrying or running (it ends at once with the result `cancelled`, and a worker running it stops the run) and **re-run** a finished one, which queues a new job with the same function, input and caller and shows "Re-run of …" back to the original. See [Cancelling and re-running a job](../../functions/jobs/#cancelling-and-re-running-a-job).
 
 ## Configuration
 

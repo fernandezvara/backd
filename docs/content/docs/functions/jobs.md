@@ -109,6 +109,7 @@ Poll every second or two, with a limit on how long you are willing to wait. The 
 | `function_error` | It threw `ctx.error(...)` | `http_status`, `code`, `message`, `details` |
 | `timeout` | It didn't finish within its `timeout`; it was stopped | `http_status: 504`, `code: function_timeout` |
 | `output_too_large` | Its output exceeds `max_output` | `code: invalid_output` |
+| `cancelled` | An administrator [cancelled the job](#cancelling-and-re-running-a-job) | `message` |
 | anything else (`memory`, `cpu`, `crash`, …) | It failed | `http_status: 500`, `code: function_failed`; the stack trace is in `backd`'s log |
 
 ### Wait in the JavaScript client
@@ -147,6 +148,21 @@ backd functions jobs --realm workshop --status running    # what is being worked
 
 It shows each job's state, how many times a worker started it (`TRIES` above 1 means a worker was lost, the executor was unavailable, or the function is being [retried](#retrying-a-failed-job); `NEXT ATTEMPT` says when) and how it ended, but never its input or output. It needs an admin API key or a session of a user with an admin role ([the admin API](../../auth/admin/)).
 
+## Cancelling and re-running a job
+
+An administrator can end a job that hasn't finished, and queue a finished one again, with the admin API (`POST /_admin/jobs/{id}/cancel` and `…/rerun`), `backd functions cancel` and `backd functions rerun`, `client.admin.jobs.cancel()` and `.rerun()`, or the Jobs page of the [admin UI](../../auth/admin-ui/#functions). Both need the `functions` [area](../../auth/admin/#admin-rights), are [audited](../../auth/audit/) (`job.cancel`, `job.rerun`) and apply to function jobs only: backd's own emails and erasures are neither cancelled nor re-run by hand.
+
+```sh
+backd functions cancel --realm workshop --job d3c9ljp8hc2g00b6s1m0
+# cancelled d3c9ljp8hc2g00b6s1m0 (main/export_orders)
+
+backd functions rerun --realm workshop --job d3c9ljp8hc2g00b6s1m0
+# queued as d3c9lq98hc2g00b6s1n0 (main/export_orders)
+```
+
+- **Cancel** ends a `queued` job (one waiting for a [retry](#retrying-a-failed-job) too) or a `running` one at once: it is `done`, with the result `cancelled`, and nobody claims it again. A worker that is running it looks every couple of seconds, notices, and stops the run (the executor kills the process); the attempt shows in the [history](../logs/) as `cancelled`. **What the function already did stays done**, as when a worker is lost, so a function that changes things must be [safe to repeat](#designing-jobs-that-are-safe-to-repeat). A job that has already finished answers `409`.
+- **Re-run** queues a **new job** for a finished one (any result, a cancelled one included): the same function, the same stored input and the same caller, so it behaves as the first run did (a scheduled run's re-run acts as the function, like the run). It has its own id, `origin: admin` and `rerun_of` naming the original, which keeps its own result. A job that hasn't finished, or whose function no longer exists, answers `409`. The input is the one stored with the job, so a re-run is only possible until the job [expires](#storage-and-retention).
+
 ### Have the function say so
 
 {{< hint style="tip" title="Best practice" >}}
@@ -182,6 +198,7 @@ For anything user-facing, don't make every client poll a job endpoint: let the j
 | You see | Most likely | What to do |
 |---|---|---|
 | `status: "queued"` for longer than a moment | No worker is running, or it can't reach the executor | Run `backd worker`, or `backd serve --with-worker` (needs `BACKD_EXECUTOR_URL`); check its log |
+| A job you no longer want | It is queued, retrying or running | [Cancel it](#cancelling-and-re-running-a-job) |
 | `status: "running"` for longer than `timeout` + 30 s | A worker was lost, or the executor is down or busy: the lease has to expire before a retry | Wait for the lease; look at `backd functions jobs` (`TRIES`) and the executor's health |
 | `done`, but `result.status` isn't `ok` | The function failed | `backd functions logs --function … --request-id …`; the [history](../logs/) shows the status and code |
 | `404` from `_jobs/{id}` | It isn't yours (only the caller who enqueued a job, an API key, or a user with an admin role can read it), the id is wrong, the database in the URL is wrong, or it expired | Use the `Location` header exactly; check [retention](#storage-and-retention) |

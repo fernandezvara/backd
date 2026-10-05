@@ -22,6 +22,7 @@ Each realm with `auth: enabled` keeps an **audit trail**: one record per securit
 | `user.email_change_reverted` | The old address undid a change | |
 | `user.purged_unverified` | A worker deletes accounts that never verified their address | `count`, `older_than` |
 | `function.invoke_manual` | An administrator runs a function by hand ([admin API](../admin/)) | `as` (the user's **id**, never their email, or null) |
+| `job.cancel`, `job.rerun` | An administrator cancels a job, or queues a finished one again ([admin API](../admin/)); the target is `job:<id>` | `function`; for a re-run also `new_job` |
 | `user.disable`, `user.enable` | An administrator disables or re-enables a user | |
 | `user.delete` | An administrator erases a user (the tombstone is made; the data work is in the job) | `job_id` |
 | `user.erased` | The erase job finished, or failed for good | `job_id` and `counts` per `database/collection/operation`; `needs_attention` and `error` when it failed. Never content |
