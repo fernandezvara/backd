@@ -23,7 +23,7 @@ Use a scheduled function when the work must happen **because time passed**, whet
 | An async job started by the client | A person or app action starts the work (an export button) |
 | A `sync` function | The caller needs the answer now |
 | A webhook | Another service tells you when something happened |
-| An external scheduler (system cron, CI, a cloud scheduler) calling a function with an API key | You need per-timezone schedules, more than minute resolution, non-overlap guarantees, or a schedule that changes without redeploying |
+| An external scheduler (system cron, CI, a cloud scheduler) calling a function with an API key | You need per-timezone schedules, more than minute resolution, or a schedule that changes without redeploying |
 
 ## Schedule expressions
 
@@ -75,6 +75,23 @@ curl -X POST https://api.example.com/v1/workshop/main/_func/daily_digest \
 - **A failed run can be retried**: `retry` works as for any [async job](../jobs/#retrying-a-failed-job). The run keeps its id; later minutes don't start a second one.
 - **It can still be called by hand** through its `invoke` rule, like any async function; that run has a caller and its own input. Administrators can also [run it by hand](../internal/#running-a-function-by-hand) as its schedule would run it.
 
+## Skipping a run while the previous one is going
+
+Add `overlap: skip` to `function.yaml` and a scheduled time that arrives while the function still has a job that hasn't finished (queued, waiting for a [retry](../jobs/#retrying-a-failed-job), or running) doesn't run:
+
+```yaml
+mode: async
+schedule: "*/5 * * * *"
+overlap: skip
+```
+
+The skipped time is not lost from view: it appears in the job list as a job that is already `done`, with the result `skipped` and a message naming the run that was still going. No worker claims it, so there is no history record and no output. `backd functions jobs --scheduled` and the Jobs page show it like any other run, and it is [kept for the usual retention](../jobs/#storage-and-retention).
+
+- **The guard looks at every job of the function**, not only its scheduled ones: a run started by hand or [re-run](../jobs/#cancelling-and-re-running-a-job) while one is going also makes the next scheduled time skip.
+- **A skipped time is not made up later.** The next time runs normally once nothing is unfinished; there is no backlog.
+- **Without `overlap`** (or with `overlap: allow`, the default) every scheduled time runs, even when the previous run is still going.
+- **It is checked when the run is created**, by whichever worker gets there first, so with several workers it is a guard against overlap in the ordinary case, not a lock: a run can still start between the check and a manual call.
+
 ## A worker must be running
 
 {{< hint warning >}}
@@ -103,7 +120,7 @@ Runs go through the async queue, so schedules fire **only while at least one [wo
 - **Changing a schedule** means editing `function.yaml`, rebuilding and redeploying (the config fingerprint changes, so `PROVISION_MODE=verify` instances need the new config). To stop a schedule, remove the `schedule` key the same way. There is no runtime pause.
 
 {{< hint warning >}}
-**Runs can overlap.** Nothing stops the 03:00 run from still going at 03:05 (or 04:00, for an hourly schedule): each scheduled time is its own job. Keep `timeout` shorter than the interval, and make the function safe to run twice at once: work in small batches with a natural key (as `nightly_cleanup` deletes only what is already past its cutoff), or write a marker document first and skip if it exists.
+**Runs can overlap by default.** Nothing stops the 03:00 run from still going at 03:05 (or 04:00, for an hourly schedule): each scheduled time is its own job. Either [skip the overlapping run](#skipping-a-run-while-the-previous-one-is-going) with `overlap: skip`, or keep `timeout` shorter than the interval and make the function safe to run twice at once: work in small batches with a natural key (as `nightly_cleanup` deletes only what is already past its cutoff), or write a marker document first and skip if it exists.
 {{< /hint >}}
 
 ## Checking that a run happened and finished

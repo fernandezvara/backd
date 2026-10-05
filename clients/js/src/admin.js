@@ -182,7 +182,7 @@ import { Job } from './functions.js'
  * @property {number} attempts               More than 1 after a worker was lost mid-run.
  * @property {string} created_at
  * @property {string | null} completed_at
- * @property {{ status: string, code: string | null, duration_ms: number } | null} result   Null until `done`; `status` is `cancelled` for a cancelled job.
+ * @property {{ status: string, code: string | null, duration_ms: number } | null} result   Null until `done`; `status` is `cancelled` for a cancelled job and `skipped` for a scheduled run that did not happen because the previous one had not finished.
  */
 
 /**

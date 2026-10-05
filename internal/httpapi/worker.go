@@ -152,13 +152,16 @@ func (w *Worker) EnqueueDue(ctx context.Context) {
 					continue
 				}
 				job := auth.Job{Database: dbName, Function: name, TimeoutMS: fn.Timeout.Milliseconds(), RequestID: "cron"}
-				created, err := svc.EnqueueScheduledJob(ctx, job, at)
+				queued, created, err := svc.EnqueueScheduledJob(ctx, job, at, fn.Overlap == registry.OverlapSkip)
 				if err != nil {
 					w.log.Error("enqueue scheduled job", "function", key, "error", err)
 					continue
 				}
 				w.lastScheduled[key] = at
-				if created {
+				switch {
+				case created && queued.Result != nil:
+					w.log.Info("scheduled run skipped, the previous one hasn't finished", "function", key, "scheduled_at", at.Format(time.RFC3339), "job_id", queued.ID)
+				case created:
 					w.log.Info("scheduled job queued", "function", key, "scheduled_at", at.Format(time.RFC3339))
 				}
 			}

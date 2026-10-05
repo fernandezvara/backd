@@ -2771,7 +2771,7 @@ components:
               additionalProperties: false
               required: [status, code, duration_ms]
               properties:
-                status: { type: string, description: "`ok`, `function_error`, `timeout`, `output_too_large`, `error` or `cancelled` (an administrator cancelled the job)." }
+                status: { type: string, description: "`ok`, `function_error`, `timeout`, `output_too_large`, `error`, `cancelled` (an administrator cancelled the job) or `skipped` (a scheduled run that did not happen because the previous one had not finished)." }
                 code: { type: [string, "null"], description: "The error code, when the job did not end `ok`." }
                 duration_ms: { type: integer }
     Job:

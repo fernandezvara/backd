@@ -379,6 +379,7 @@
     },
     "noneValue": "Ninguno",
     "noSchedule": "Sin programar",
+    "overlapSkip": "Omite una ejecución mientras la anterior sigue en marcha",
     "admin": "solo administración",
     "email": "envío de correo",
     "devOnly": "solo desarrollo",

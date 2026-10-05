@@ -135,6 +135,10 @@ func (s *Users) jobRetention() time.Duration {
 	return registry.DefaultJobRetention
 }
 
+// ResultSkipped is the result status of a scheduled run that didn't happen
+// because the function's previous run hadn't finished (overlap: skip).
+const ResultSkipped = "skipped"
+
 // ResultCancelled is the result status of a job an administrator cancelled.
 const ResultCancelled = "cancelled"
 
@@ -240,8 +244,13 @@ var ErrJobExists = errors.New("job already exists")
 // EnqueueScheduledJob enqueues the run of a scheduled function for
 // scheduledAt, under an id derived from the function and that time, so
 // however many workers try, exactly one job is created (roadmap F18).
-// It returns false when the run already exists.
-func (s *Users) EnqueueScheduledJob(ctx context.Context, j Job, scheduledAt time.Time) (bool, error) {
+// It returns the job, and false when the run already exists.
+//
+// With skipOverlap, a function that still has an unfinished job (queued,
+// waiting for a retry, or running) doesn't get a new run: the scheduled time is
+// recorded as a job that is done at once with the result "skipped", so the job
+// list shows it and no worker claims it.
+func (s *Users) EnqueueScheduledJob(ctx context.Context, j Job, scheduledAt time.Time, skipOverlap bool) (Job, bool, error) {
 	now := s.now()
 	j.ID = ScheduledJobID(j.Database, j.Function, scheduledAt)
 	j.Status = JobQueued
@@ -249,11 +258,37 @@ func (s *Users) EnqueueScheduledJob(ctx context.Context, j Job, scheduledAt time
 	j.CallerActor = "cron"
 	j.CreatedAt = now
 	j.ExpiresAt = now.Add(pendingJobTTL)
+	if skipOverlap {
+		active, err := s.activeJob(ctx, j.Database, j.Function)
+		if err != nil {
+			return Job{}, false, err
+		}
+		if active != "" {
+			j.Status = JobDone
+			j.CompletedAt = now
+			j.ExpiresAt = now.Add(s.jobRetention())
+			j.Result = &JobResult{Status: ResultSkipped, Message: "skipped: the previous run (" + active + ") hasn't finished"}
+		}
+	}
 	err := s.Store.EnqueueJob(ctx, j)
 	if errors.Is(err, ErrJobExists) {
-		return false, nil
+		return j, false, nil
 	}
-	return err == nil, err
+	return j, err == nil, err
+}
+
+// activeJob returns the id of a job of the function that hasn't finished, or "".
+func (s *Users) activeJob(ctx context.Context, database, function string) (string, error) {
+	for _, status := range []string{JobRunning, JobQueued} {
+		jobs, _, err := s.Store.ListJobs(ctx, JobFilter{Database: database, Function: function, Status: status, Limit: 1})
+		if err != nil {
+			return "", err
+		}
+		if len(jobs) > 0 {
+			return jobs[0].ID, nil
+		}
+	}
+	return "", nil
 }
 
 // ScheduledJobID is the deterministic id of a scheduled run.

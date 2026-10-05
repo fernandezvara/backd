@@ -103,6 +103,7 @@ type Function struct {
 	Calls                 []string       // functions of the same database this one may ctx.call
 	Schedule              *cron.Schedule // nil: not scheduled
 	ScheduleExpr          string
+	Overlap               string // allow (default) or skip: what a scheduled time does while the previous run hasn't finished
 	Secrets               []SecretRef
 	Network               []string // hosts (host or host:port) the function may reach
 	InputSchema           *jsonschema.Schema
@@ -179,9 +180,16 @@ type functionDoc struct {
 	Email       bool     `yaml:"email"`
 	Calls       []string `yaml:"calls"`
 	Schedule    *string  `yaml:"schedule"`
+	Overlap     *string  `yaml:"overlap"`
 	Secrets     []string `yaml:"secrets"`
 	Network     []string `yaml:"network"`
 }
+
+// What a scheduled time does while the function's previous run hasn't finished.
+const (
+	OverlapAllow = "allow"
+	OverlapSkip  = "skip"
+)
 
 var (
 	secretPattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
@@ -561,6 +569,20 @@ func loadFunction(db *Database, settings RealmSettings, name, dir string) (*Func
 			} else {
 				fn.Schedule, fn.ScheduleExpr = sch, strings.TrimSpace(*doc.Schedule)
 			}
+		}
+	}
+
+	if doc.Schedule != nil {
+		fn.Overlap = OverlapAllow
+	}
+	if doc.Overlap != nil {
+		switch {
+		case *doc.Overlap != OverlapAllow && *doc.Overlap != OverlapSkip:
+			add("overlap: must be %s or %s, got %q", OverlapAllow, OverlapSkip, *doc.Overlap)
+		case doc.Schedule == nil:
+			add("overlap: only applies to a scheduled function (add schedule)")
+		default:
+			fn.Overlap = *doc.Overlap
 		}
 	}
 
