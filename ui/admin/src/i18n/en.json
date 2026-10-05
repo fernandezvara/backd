@@ -515,5 +515,26 @@
       "noneEmail": "No email templates.",
       "nonePages": "No hosted pages."
     }
+  },
+  "data": {
+    "form": {
+      "required": "required",
+      "invalidJson": "This isn't valid JSON.",
+      "minLength": "at least {n} characters",
+      "maxLength": "at most {n} characters",
+      "minimum": "minimum {n}",
+      "maximum": "maximum {n}",
+      "exclusiveMinimum": "more than {n}",
+      "exclusiveMaximum": "less than {n}",
+      "pattern": "pattern {p}",
+      "add": "Add {name}",
+      "remove": "Remove",
+      "addItem": "Add to {name}",
+      "removeItem": "Remove {name}",
+      "moveUp": "Move {name} up",
+      "moveDown": "Move {name} down",
+      "noItems": "No items.",
+      "jsonFallback": "A form can't draw this field ({reason}): edit it as JSON."
+    }
   }
 }
