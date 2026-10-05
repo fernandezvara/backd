@@ -188,7 +188,7 @@ func functionConfig(fn *registry.Function, rel func(string) string) map[string]a
 		"name": fn.Name, "file": rel(filepath.Join(fn.Dir, "function.yaml")), "entry": fn.Entry,
 		"mode": fn.Mode, "internal": fn.Internal, "admin": fn.Admin, "email": fn.Email, "dev_only": fn.DevOnly,
 		"timeout": dur(fn.Timeout), "memory": fn.Memory, "max_output": fn.MaxOutput, "concurrency": fn.Concurrency,
-		"idempotency": fn.Idempotency, "schedule": fn.ScheduleExpr,
+		"idempotency": fn.Idempotency, "schedule": fn.ScheduleExpr, "overlap": fn.Overlap,
 		"calls": orStrings(fn.Calls), "secrets": secrets, "network": orStrings(fn.Network),
 	}
 	if fn.Invoke != nil {

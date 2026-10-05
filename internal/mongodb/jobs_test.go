@@ -285,6 +285,27 @@ func TestJobStatsOnMongoDB(t *testing.T) {
 	}
 }
 
+func TestEnqueueFinishedJobOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	t0 := time.Date(2126, 10, 5, 12, 0, 0, 0, time.UTC)
+	err := s.EnqueueJob(ctx, auth.Job{
+		ID: "skipped1", Database: "app", Function: "report", Scheduled: true, Status: auth.JobDone, TimeoutMS: 1000,
+		CreatedAt: t0, CompletedAt: t0, ExpiresAt: t0.Add(24 * time.Hour),
+		Result: &auth.JobResult{Status: auth.ResultSkipped, Message: "skipped: the previous run hasn't finished"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, found, _ := s.GetJob(ctx, "skipped1")
+	if !found || got.Status != auth.JobDone || got.Result == nil || got.Result.Status != auth.ResultSkipped || !got.CompletedAt.Equal(t0) {
+		t.Errorf("stored: %+v %v", got, found)
+	}
+	if _, found, _ := s.ClaimJob(ctx, "w1", t0.Add(time.Minute), 30*time.Second); found {
+		t.Error("a job enqueued done was claimed")
+	}
+}
+
 func TestCancelJobOnMongoDB(t *testing.T) {
 	s, _ := authFixture(t)
 	ctx := context.Background()

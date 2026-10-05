@@ -168,6 +168,8 @@ func TestFunctionErrors(t *testing.T) {
 		{"schedule needs async", fn("schedule: \"* * * * *\"\n"), "schedule: needs mode: async"},
 		{"schedule syntax", fn("mode: async\nschedule: \"61 * * * *\"\n"), "schedule: minute"},
 		{"schedule fields", fn("mode: async\nschedule: \"* * * *\"\n"), "schedule: want 5 fields"},
+		{"overlap value", fn("mode: async\nschedule: \"* * * * *\"\noverlap: queue\n"), `overlap: must be allow or skip, got "queue"`},
+		{"overlap needs schedule", fn("mode: async\noverlap: skip\n"), "overlap: only applies to a scheduled function"},
 		{"async timeout cap", fn("mode: async\ntimeout: 25h\n"), "between 1s and 24h0m0s for async functions"},
 		{"timeout too short", fn("timeout: 500ms\n"), "timeout: must be between 1s"},
 		{"bad duration", fn("timeout: soon\n"), "timeout: invalid duration"},
@@ -342,8 +344,22 @@ func TestScheduledFunction(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := reg.Realms["shop"].Databases["app"].Functions.Functions["nightly"]
-	if f.Schedule == nil || f.ScheduleExpr != "0 3 * * *" {
+	if f.Schedule == nil || f.ScheduleExpr != "0 3 * * *" || f.Overlap != OverlapAllow {
 		t.Fatalf("nightly = %+v", f)
+	}
+}
+
+func TestScheduledFunctionOverlap(t *testing.T) {
+	root := functionTree(t, map[string]string{
+		fnPrefix + "sync/function.yaml": "mode: async\nschedule: \"* * * * *\"\noverlap: skip\n",
+		fnPrefix + "sync/index.js":      "export default () => 1;\n",
+	})
+	reg, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reg.Realms["shop"].Databases["app"].Functions.Functions["sync"].Overlap; got != OverlapSkip {
+		t.Fatalf("overlap = %q", got)
 	}
 }
 

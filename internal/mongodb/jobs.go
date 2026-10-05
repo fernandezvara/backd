@@ -205,12 +205,20 @@ func (s *AuthStore) EnqueueJob(ctx context.Context, j auth.Job) error {
 	if err != nil {
 		return err
 	}
+	result, err := jobResultToDoc(j.Result)
+	if err != nil {
+		return err
+	}
+	var completed *time.Time
+	if !j.CompletedAt.IsZero() {
+		completed = &j.CompletedAt
+	}
 	_, err = s.jobs().InsertOne(ctx, jobDoc{
 		ID: j.ID, Database: j.Database, Function: j.Function, Input: input,
 		CallerActor: j.CallerActor, CallerUserID: j.CallerUserID, CallerKeyHash: j.CallerKeyHash, Scheduled: j.Scheduled, Status: j.Status,
 		ActsAsFunction: j.ActsAsFunction, Email: emailJobToDoc(j.Email), Erase: eraseToDoc(j.Erase), Origin: j.Origin, ParentID: j.ParentID, RerunOf: j.RerunOf, Depth: int32(j.Depth),
 		Attempts: 0, TimeoutMS: j.TimeoutMS, RequestID: j.RequestID,
-		CreatedAt: j.CreatedAt, ExpiresAt: j.ExpiresAt,
+		CreatedAt: j.CreatedAt, CompletedAt: completed, ExpiresAt: j.ExpiresAt, Result: result,
 	})
 	if mongo.IsDuplicateKeyError(err) {
 		return auth.ErrJobExists

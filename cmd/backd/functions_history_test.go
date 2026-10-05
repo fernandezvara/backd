@@ -121,7 +121,7 @@ func TestFunctionsJobs(t *testing.T) {
 	if _, err := svc.EnqueueJob(ctx, auth.Job{Database: "app", Function: "export", CallerActor: "user:u1", TimeoutMS: 1000}); err != nil {
 		t.Fatal(err)
 	}
-	if created, err := svc.EnqueueScheduledJob(ctx, auth.Job{Database: "app", Function: "nightly", TimeoutMS: 1000}, now.Truncate(time.Minute)); err != nil || !created {
+	if _, created, err := svc.EnqueueScheduledJob(ctx, auth.Job{Database: "app", Function: "nightly", TimeoutMS: 1000}, now.Truncate(time.Minute), false); err != nil || !created {
 		t.Fatalf("scheduled job: %v %v", created, err)
 	}
 	if err := svc.CompleteJob(ctx, auth.ScheduledJobID("app", "nightly", now.Truncate(time.Minute)), auth.JobResult{Status: "ok", DurationMS: 42}); err != nil {

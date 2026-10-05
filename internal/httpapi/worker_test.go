@@ -15,6 +15,7 @@ import (
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/executor"
 	"github.com/fernandezvara/backd/internal/metrics"
+	"github.com/fernandezvara/backd/internal/registry"
 )
 
 func newTestWorker(t *testing.T, f *rulesFixture) *Worker {
@@ -235,6 +236,56 @@ func TestWorkerRunsScheduledFunction(t *testing.T) {
 	w1.EnqueueDue(ctx)
 	if w1.RunOnce(ctx) {
 		t.Error("a run missed by 20 minutes was replayed")
+	}
+}
+
+// TestWorkerSkipsAnOverlappingScheduledRun proves overlap: skip: while the
+// function's previous run hasn't finished, its next scheduled time is recorded
+// as a job done with the result "skipped", which no worker runs; by default
+// every time gets a run of its own.
+func TestWorkerSkipsAnOverlappingScheduledRun(t *testing.T) {
+	f := newRulesFixture(t)
+	w := newTestWorker(t, f)
+	ctx := context.Background()
+	nightly := f.reg.Realms["acme"].Databases["app"].Functions.Functions["nightly"]
+	day := func(d int) time.Time { return time.Date(2026, 9, d, 3, 0, 5, 0, time.UTC) }
+	job := func(d int) auth.Job {
+		j, ok, err := f.svc.GetJob(ctx, auth.ScheduledJobID("app", "nightly", day(d).Truncate(time.Minute)))
+		if err != nil || !ok {
+			t.Fatalf("no job on the %dth (%v)", d, err)
+		}
+		return j
+	}
+
+	// Overlap is allowed by default: the 29th runs although the 28th is queued.
+	*f.clock = day(28)
+	w.EnqueueDue(ctx)
+	*f.clock = day(29)
+	w.EnqueueDue(ctx)
+	if job(28).Status != auth.JobQueued || job(29).Status != auth.JobQueued {
+		t.Fatalf("by default: %+v, %+v", job(28), job(29))
+	}
+
+	// With skip, the 31st is recorded but not run.
+	nightly.Overlap = registry.OverlapSkip
+	*f.clock = day(30)
+	w.EnqueueDue(ctx)
+	skipped := job(30)
+	if skipped.Status != auth.JobDone || skipped.Result == nil || skipped.Result.Status != auth.ResultSkipped || !skipped.Scheduled || skipped.CompletedAt.IsZero() || !strings.Contains(skipped.Result.Message, job(29).ID) {
+		t.Errorf("the overlapping run: %+v result %+v", skipped, skipped.Result)
+	}
+	if !w.RunOnce(ctx) || !w.RunOnce(ctx) {
+		t.Fatal("the two queued runs were not claimed")
+	}
+	if w.RunOnce(ctx) {
+		t.Error("the skipped run was claimed")
+	}
+
+	// Once the earlier runs are done, the next time runs again.
+	*f.clock = time.Date(2026, 10, 1, 3, 0, 5, 0, time.UTC)
+	w.EnqueueDue(ctx)
+	if j, _, _ := f.svc.GetJob(ctx, auth.ScheduledJobID("app", "nightly", f.clock.Truncate(time.Minute))); j.Status != auth.JobQueued {
+		t.Errorf("the run after the previous ones finished: %+v", j)
 	}
 }
 
