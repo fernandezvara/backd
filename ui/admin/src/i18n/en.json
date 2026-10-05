@@ -379,6 +379,7 @@
     },
     "noneValue": "None",
     "noSchedule": "Not scheduled",
+    "overlapSkip": "Skips a run while the previous one is going",
     "admin": "admin only",
     "email": "email delivery",
     "devOnly": "dev only",

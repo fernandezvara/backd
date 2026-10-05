@@ -28,6 +28,7 @@ interface FunctionConfig {
   concurrency: number
   idempotency: string
   schedule: string
+  overlap: string
   calls: string[]
   secrets: string[]
   network: string[]
@@ -140,7 +141,7 @@ async function run() {
         </div>
         <dl class="mt-3 grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 text-sm">
           <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.schedule') }}</dt>
-          <dd class="font-mono text-xs">{{ f.schedule || t('functions.noSchedule') }}</dd>
+          <dd class="font-mono text-xs">{{ f.schedule || t('functions.noSchedule') }}<span v-if="f.schedule && f.overlap === 'skip'" class="font-sans text-slate-600 dark:text-slate-400"> · {{ t('functions.overlapSkip') }}</span></dd>
           <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.limits') }}</dt>
           <dd>{{ t('functions.timeout') }} {{ prettyDuration(f.timeout) }} · {{ t('functions.memory') }} {{ bytes(f.memory) }} · {{ t('functions.maxOutput') }} {{ bytes(f.max_output) }} · {{ t('functions.concurrency') }} {{ f.concurrency }}</dd>
           <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.calls') }}</dt>

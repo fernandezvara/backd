@@ -166,7 +166,7 @@ const resultText = (j: JobSummary) => (j.result ? `${j.result.status}${j.result.
           <td class="px-3 py-2" :class="j.attempts > 1 ? 'font-semibold' : ''">{{ j.attempts }}</td>
           <td class="px-3 py-2 whitespace-nowrap">{{ formatDate(j.created_at) }}</td>
           <td class="px-3 py-2 whitespace-nowrap">{{ j.completed_at ? formatDate(j.completed_at) : '—' }}</td>
-          <td class="px-3 py-2" :class="j.result && j.result.status !== 'ok' ? 'font-semibold text-red-800 dark:text-red-300' : ''">{{ resultText(j) }}</td>
+          <td class="px-3 py-2" :class="j.result && j.result.status !== 'ok' && j.result.status !== 'skipped' ? 'font-semibold text-red-800 dark:text-red-300' : ''">{{ resultText(j) }}</td>
           <td v-if="canWrite" class="px-3 py-2 text-right whitespace-nowrap">
             <button v-if="canCancel(j)" type="button" class="underline" :aria-label="`${t('jobs.cancel.open')} ${j.id}`" @click="ask('cancel', j)">{{ t('jobs.cancel.open') }}</button>
             <button v-if="canRerun(j)" type="button" class="underline" :aria-label="`${t('jobs.rerun.open')} ${j.id}`" @click="ask('rerun', j)">{{ t('jobs.rerun.open') }}</button>
