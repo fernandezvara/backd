@@ -207,6 +207,10 @@ func (a *adminAPI) loadUser(next http.Handler) http.Handler {
 
 func adminUserOf(r *http.Request) auth.User { return r.Context().Value(adminUserKey{}).(auth.User) }
 
+// maxUserSearch bounds the text a user search looks for: an email is never
+// longer, and a longer pattern is work for the database for nothing.
+const maxUserSearch = 254
+
 func (a *adminAPI) listUsers(w http.ResponseWriter, r *http.Request) {
 	svc := usersOf(r)
 	q := r.URL.Query()
@@ -243,6 +247,9 @@ func (a *adminAPI) listUsers(w http.ResponseWriter, r *http.Request) {
 	search := strings.ToLower(strings.TrimSpace(q.Get("q")))
 	if q.Has("q") && search == "" {
 		details = append(details, Detail{Path: "q", Reason: "must not be empty"})
+	}
+	if len([]rune(search)) > maxUserSearch {
+		details = append(details, Detail{Path: "q", Reason: "must be at most " + strconv.Itoa(maxUserSearch) + " characters"})
 	}
 	if q.Has("q") && q.Has("email") {
 		details = append(details, Detail{Path: "q", Reason: "can't be combined with email: email is an exact lookup"})

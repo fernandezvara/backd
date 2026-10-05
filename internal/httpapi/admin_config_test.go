@@ -115,6 +115,9 @@ func TestAdminUserSearch(t *testing.T) {
 	if got := emails("?q=.*"); got != "" { // not a pattern
 		t.Errorf("a search is text, not a regular expression: %q", got)
 	}
+	if got := emails("?q=" + strings.Repeat("a", 254)); got != "" { // an email's own length is the limit
+		t.Errorf("a search of the longest length: %q", got)
+	}
 	// Paging follows the search.
 	_, first := f.doH(t, "GET", admin+"/users?q=%40example.com&limit=1", "", bearer(f.key))
 	cursor, _ := first["next_cursor"].(string)
@@ -125,7 +128,7 @@ func TestAdminUserSearch(t *testing.T) {
 	if len(next["items"].([]any)) != 1 || next["items"].([]any)[0].(map[string]any)["email"] == first["items"].([]any)[0].(map[string]any)["email"] {
 		t.Errorf("the next page of a search: %v", next)
 	}
-	for _, q := range []string{"?q=", "?q=ada&email=ada@example.com"} {
+	for _, q := range []string{"?q=", "?q=ada&email=ada@example.com", "?q=" + strings.Repeat("a", 255)} {
 		if rec, out := f.doH(t, "GET", admin+"/users"+q, "", bearer(f.key)); rec.Code != http.StatusBadRequest || errCode(out) != "invalid_query" {
 			t.Errorf("%s: %d %v", q, rec.Code, out)
 		}
