@@ -5,6 +5,7 @@ import (
 	"github.com/rs/xid"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/fernandezvara/backd/internal/auth"
@@ -29,6 +30,9 @@ type Worker struct {
 	// backdURL is backd's public address, for the links in emails.
 	backdURL string
 	log      *slog.Logger
+	// cancelPoll is how often a running job is checked for cancellation (zero:
+	// cancelPollInterval); tests shorten it.
+	cancelPoll time.Duration
 
 	lastScheduled map[string]time.Time // only touched by the schedule loop
 	lastPurge     map[string]time.Time // realm → last purge of unverified accounts; same
@@ -283,7 +287,17 @@ func (w *Worker) execute(ctx context.Context, log *slog.Logger, realm string, sv
 	}
 	rctx, cancel := context.WithTimeout(ctx, fn.Timeout+10*time.Second)
 	defer cancel()
+	cancelled := w.watchCancellation(rctx, svc, job.ID, cancel)
+	started := time.Now()
 	res, err := w.fns.runner.Invoke(rctx, req)
+	if cancelled.Load() {
+		// An administrator cancelled the job: it is done already, with its
+		// result. The run was stopped (the executor kills the process when the
+		// request ends); only the attempt is recorded.
+		log.Info("the job was cancelled while it ran; its run was stopped")
+		w.fns.recordInvocation(ctx, job.RequestID, realm, job.Database, job.Function, registry.ModeAsync, caller, executor.Result{Status: executor.StatusCancelled, DurationMS: time.Since(started).Milliseconds()}, job.ID, invID, meta)
+		return
+	}
 	w.fns.logResult(ctx, req.Function, res, err)
 	if err != nil {
 		log.Warn("executor unreachable; leaving the job to be retried", "error", err)
@@ -316,6 +330,40 @@ func (w *Worker) execute(ctx context.Context, log *slog.Logger, realm string, sv
 		return
 	}
 	w.fns.metrics.JobFinished(svc.Realm, jobKind(job), res.Status)
+}
+
+// cancelPollInterval is how often a worker looks whether the job it is running
+// was cancelled meanwhile.
+const cancelPollInterval = 2 * time.Second
+
+// watchCancellation stops a run when its job is found done: an administrator
+// cancelled it (nothing else finishes a job this worker is running). It calls
+// cancel, which ends the executor request and so the process, and reports that
+// it did. It stops when ctx ends, which is when the run does.
+func (w *Worker) watchCancellation(ctx context.Context, svc *auth.Users, jobID string, cancel context.CancelFunc) *atomic.Bool {
+	var cancelled atomic.Bool
+	interval := w.cancelPoll
+	if interval <= 0 {
+		interval = cancelPollInterval
+	}
+	go func() {
+		t := time.NewTicker(interval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				j, found, err := svc.Store.GetJob(ctx, jobID)
+				if err == nil && (!found || j.Status == auth.JobDone) {
+					cancelled.Store(true)
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	return &cancelled
 }
 
 // jobKind is the job's kind as the metrics name it.

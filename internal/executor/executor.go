@@ -53,6 +53,7 @@ const (
 	StatusOutputTooBig  = "output_too_large" // more than max_output
 	StatusBusy          = "busy"             // the executor is at its process limit
 	StatusBundle        = "bundle"           // the bundle couldn't be fetched or verified
+	StatusCancelled     = "cancelled"        // an administrator cancelled the job while it ran (the worker stopped the run)
 )
 
 const (
