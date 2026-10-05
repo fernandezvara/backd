@@ -786,7 +786,7 @@ func TestContract(t *testing.T) {
 	req("POST", run+"echo/invoke", `{}`, with(ada, "Content-Type", "application/json"), 403)
 	// Cancelling and re-running jobs.
 	jobs := ad + "/jobs/"
-	req("POST", jobs+jobID+"/rerun", ``, key, 409)  // still queued
+	req("POST", jobs+jobID+"/rerun", ``, key, 409) // still queued
 	req("POST", jobs+jobID+"/cancel", ``, key, 200)
 	req("POST", jobs+jobID+"/cancel", ``, key, 409) // already finished
 	req("POST", jobs+"nope/cancel", ``, key, 404)
