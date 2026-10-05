@@ -1,7 +1,7 @@
 # Design: admin UI
 
 - **Issues:** to be created (proposed 9.1–9.12, backlog 7.37–7.39)
-- **Status:** decided in the design interview of 2026-10-04 (replaces the preliminary version)
+- **Status:** decided
 - **Related:** the admin API (`/v1/{realm}/_admin/*`), `backd-js`, the secure-administration decisions (admin roles, network restrictions, audit), [file-storage.md](./file-storage.md), [internal-functions.md](./internal-functions.md)
 
 Details marked *(proposed)* were filled in while writing and were not discussed in the interview.
