@@ -103,6 +103,7 @@ type Function struct {
 	Calls                 []string       // functions of the same database this one may ctx.call
 	Schedule              *cron.Schedule // nil: not scheduled
 	ScheduleExpr          string
+	Timezone              string // IANA name the schedule is read in; "UTC" unless set. Empty when not scheduled
 	Overlap               string // allow (default) or skip: what a scheduled time does while the previous run hasn't finished
 	Secrets               []SecretRef
 	Network               []string // hosts (host or host:port) the function may reach
@@ -180,6 +181,7 @@ type functionDoc struct {
 	Email       bool     `yaml:"email"`
 	Calls       []string `yaml:"calls"`
 	Schedule    *string  `yaml:"schedule"`
+	Timezone    *string  `yaml:"timezone"`
 	Overlap     *string  `yaml:"overlap"`
 	Secrets     []string `yaml:"secrets"`
 	Network     []string `yaml:"network"`
@@ -567,8 +569,18 @@ func loadFunction(db *Database, settings RealmSettings, name, dir string) (*Func
 			if err != nil {
 				add("schedule: %v", err)
 			} else {
-				fn.Schedule, fn.ScheduleExpr = sch, strings.TrimSpace(*doc.Schedule)
+				fn.Schedule, fn.ScheduleExpr, fn.Timezone = sch, strings.TrimSpace(*doc.Schedule), "UTC"
 			}
+		}
+	}
+	if doc.Timezone != nil {
+		switch loc, err := time.LoadLocation(*doc.Timezone); {
+		case doc.Schedule == nil:
+			add("timezone: only applies to a scheduled function (add schedule)")
+		case *doc.Timezone == "" || *doc.Timezone == "Local" || err != nil:
+			add("timezone: %q is not an IANA time zone name such as Europe/Madrid or UTC", *doc.Timezone)
+		case fn.Schedule != nil:
+			fn.Schedule, fn.Timezone = fn.Schedule.In(loc), *doc.Timezone
 		}
 	}
 

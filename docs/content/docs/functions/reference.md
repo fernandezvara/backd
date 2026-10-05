@@ -27,6 +27,7 @@ Every key is optional. `backd` reads the file strictly: an unknown key or an inv
 | `calls` | none | The functions of the same database this one lists as callable (see [Internal functions](../internal/#declaring-which-functions-it-may-call)); startup rejects unknown names, cycles and chains longer than 4 functions |
 | `retry` | none | Tries a failed `async` function again: `{attempts, backoff, max_backoff}` (see [Retrying a failed job](../jobs/#retrying-a-failed-job)). A single attempt unless `attempts` is above 1 |
 | `schedule` | none | A cron expression: the function [runs on a schedule](../cron/). Needs `mode: async` and at least one running [worker](../running/#running-the-worker) |
+| `timezone` | `UTC` | For a scheduled function: the IANA time zone the [schedule](../cron/#time-zones) is read in, such as `Europe/Madrid`. Daylight saving changes are handled (documented there). Needs `schedule` |
 | `overlap` | `allow` | For a scheduled function: `skip` doesn't run a scheduled time while the function's previous job hasn't finished, and records the time as a [`skipped`](../cron/#skipping-a-run-while-the-previous-one-is-going) job. Needs `schedule` |
 | `secrets` | none | Secrets the function may read: `NAME` (its own database's) or `realm.NAME` (the realm's). Names are upper-case letters, digits and `_` |
 | `network` | none | Hosts the function may call: `host` or `host:port`, lower case, no scheme, path or wildcard. Without a list, a function can only call `backd` |

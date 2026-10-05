@@ -1,5 +1,5 @@
 // Package cron parses five-field cron expressions and computes their
-// schedule, always in UTC.
+// schedule, in UTC or in a time zone.
 package cron
 
 import (
@@ -7,12 +7,33 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	_ "time/tzdata" // zone names must work in images without a zoneinfo database
 )
 
 // Schedule is a parsed cron expression.
 type Schedule struct {
 	minute, hour, dom, month, dow uint64 // bit sets
 	domStar, dowStar              bool
+	loc                           *time.Location // nil: UTC
+}
+
+// In returns the schedule read in loc: its fields are wall-clock times there.
+//
+// Daylight saving follows the usual cron rules. When the clocks go forward,
+// a time that doesn't exist that day runs once, right after the gap. When they
+// go back, a schedule with fixed hours runs once for a repeated time, at its
+// first occurrence; one that matches every hour runs throughout.
+func (s *Schedule) In(loc *time.Location) *Schedule {
+	c := *s
+	c.loc = loc
+	return &c
+}
+
+func (s *Schedule) location() *time.Location {
+	if s.loc == nil {
+		return time.UTC
+	}
+	return s.loc
 }
 
 type field struct {
@@ -133,23 +154,73 @@ func (s *Schedule) matches(t time.Time) bool {
 		s.month&(1<<uint(t.Month())) != 0 && s.matchesDay(t)
 }
 
-// Prev returns the latest scheduled time at or before t (UTC, minute
+const allHours = 1<<24 - 1
+
+func offset(t time.Time, loc *time.Location) time.Duration {
+	_, sec := t.In(loc).Zone()
+	return time.Duration(sec) * time.Second
+}
+
+// wall is t's wall-clock reading in loc as a UTC time, so the field
+// matchers can read it.
+func wall(t time.Time, loc *time.Location) time.Time {
+	return t.Add(offset(t, loc)).UTC()
+}
+
+// repeated reports whether t is the second time its wall-clock reading
+// shows, because the clocks went back.
+func repeated(t time.Time, loc *time.Location) bool {
+	o := offset(t, loc)
+	for _, d := range []time.Duration{30 * time.Minute, time.Hour, 2 * time.Hour} {
+		if offset(t.Add(-d), loc)-o == d {
+			return true
+		}
+	}
+	return false
+}
+
+// fires reports whether the schedule runs at the instant t (a whole minute).
+func (s *Schedule) fires(t time.Time) bool {
+	loc := s.location()
+	if s.matches(wall(t, loc)) {
+		return s.hour == allHours || !repeated(t, loc)
+	}
+	// t is the first minute after a gap (the clocks went forward): run once
+	// if a time inside it was due.
+	if prev := t.Add(-time.Minute); offset(t, loc) > offset(prev, loc) {
+		for w, end := wall(prev, loc).Add(time.Minute), wall(t, loc); w.Before(end); w = w.Add(time.Minute) {
+			if s.matches(w) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// Prev returns the latest scheduled time at or before t (minute
 // resolution), or false if none exists within about eight years back.
 func (s *Schedule) Prev(t time.Time) (time.Time, bool) {
+	loc := s.location()
 	t = t.UTC().Truncate(time.Minute)
 	for i := 0; i < 8*366*24*60; i++ {
-		if s.matches(t) {
-			return t, true
+		if s.fires(t) {
+			return t.UTC(), true
 		}
-		// Skip whole days or hours that cannot match.
+		// Skip whole days or hours that cannot match, unless the clocks
+		// change in between.
+		w := wall(t, loc)
+		var start time.Time
 		switch {
-		case s.month&(1<<uint(t.Month())) == 0 || !s.matchesDay(t):
-			t = time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC).Add(-time.Minute)
-		case s.hour&(1<<uint(t.Hour())) == 0:
-			t = t.Truncate(time.Hour).Add(-time.Minute)
-		default:
-			t = t.Add(-time.Minute)
+		case s.month&(1<<uint(w.Month())) == 0 || !s.matchesDay(w):
+			start = time.Date(w.Year(), w.Month(), w.Day(), 0, 0, 0, 0, loc)
+		case s.hour&(1<<uint(w.Hour())) == 0:
+			start = time.Date(w.Year(), w.Month(), w.Day(), w.Hour(), 0, 0, 0, loc)
 		}
+		if target := start.Add(-time.Minute); !start.IsZero() && target.Before(t) && offset(target, loc) == offset(t, loc) {
+			t = target
+			continue
+		}
+		t = t.Add(-time.Minute)
 	}
 	return time.Time{}, false
 }
