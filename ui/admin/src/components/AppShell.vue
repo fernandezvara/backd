@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSession } from '@/stores/session'
 import AppButton from './AppButton.vue'
@@ -8,6 +9,12 @@ import ThemeSwitch from './ThemeSwitch.vue'
 const { t } = useI18n()
 const session = useSession()
 const router = useRouter()
+
+const links = computed(() => [
+  { name: 'home', label: t('nav.overview'), show: true },
+  { name: 'users', label: t('nav.users'), show: session.canRead('users') },
+  { name: 'invitations', label: t('nav.invitations'), show: session.canRead('invitations') },
+].filter((l) => l.show))
 
 async function signOut() {
   const realm = session.realm
@@ -31,6 +38,20 @@ async function signOut() {
       </div>
     </div>
   </header>
+  <nav :aria-label="t('nav.label')" class="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+    <ul class="mx-auto flex max-w-6xl gap-1 px-4">
+      <li v-for="link in links" :key="link.name">
+        <RouterLink
+          :to="{ name: link.name, params: { realm: session.realm } }"
+          class="block border-b-2 border-transparent px-3 py-2 text-sm"
+          :active-class="link.name === 'home' ? '' : 'border-brand-700 font-semibold'"
+          exact-active-class="border-brand-700 font-semibold"
+        >
+          {{ link.label }}
+        </RouterLink>
+      </li>
+    </ul>
+  </nav>
   <main id="main" class="mx-auto max-w-6xl px-4 py-6">
     <slot />
   </main>
