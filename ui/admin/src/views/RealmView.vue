@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import AppButton from '@/components/AppButton.vue'
 import TextField from '@/components/TextField.vue'
+import LocaleSwitch from '@/components/LocaleSwitch.vue'
 import ThemeSwitch from '@/components/ThemeSwitch.vue'
 import { validRealm } from '@/lib/realm'
 
@@ -23,7 +24,10 @@ function open() {
   <main class="mx-auto max-w-sm space-y-6 px-4 py-16">
     <div class="flex items-center justify-between">
       <h1 class="text-xl font-semibold">{{ t('realm.choose') }}</h1>
-      <ThemeSwitch />
+      <div class="flex gap-2">
+        <LocaleSwitch />
+        <ThemeSwitch />
+      </div>
     </div>
     <p class="text-sm text-slate-600 dark:text-slate-400">{{ t('realm.chooseHelp') }}</p>
     <form class="space-y-4" @submit.prevent="open">

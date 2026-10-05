@@ -6,6 +6,7 @@ import { useRoute, useRouter } from 'vue-router'
 import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
 import TextField from '@/components/TextField.vue'
+import LocaleSwitch from '@/components/LocaleSwitch.vue'
 import ThemeSwitch from '@/components/ThemeSwitch.vue'
 import { safeNext } from '@/lib/redirect'
 import { NotAdminError, useSession } from '@/stores/session'
@@ -45,7 +46,10 @@ async function submit() {
   <main class="mx-auto max-w-sm space-y-6 px-4 py-16">
     <div class="flex items-center justify-between">
       <span class="font-semibold">{{ t('app.name') }}</span>
-      <ThemeSwitch />
+      <div class="flex gap-2">
+        <LocaleSwitch />
+        <ThemeSwitch />
+      </div>
     </div>
     <div class="rounded-md bg-brand-50 px-3 py-2 text-brand-800 dark:bg-brand-800 dark:text-brand-50" data-testid="realm-badge">
       <span class="text-xs uppercase tracking-wide">{{ t('realm.label') }}</span>

@@ -5,6 +5,9 @@ test('dates', () => {
   expect(formatDate(null)).toBe('—')
   expect(formatDate('not a date')).toBe('not a date')
   expect(formatDate('2026-10-01T10:00:00.000Z')).toMatch(/2026/)
+  // The interface's language decides the month's name.
+  expect(formatDate('2026-10-01T10:00:00.000Z', 'en')).toMatch(/Oct/)
+  expect(formatDate('2026-10-01T10:00:00.000Z', 'es')).toMatch(/oct/)
 })
 
 test('error text prefers the server message', () => {

@@ -1,11 +1,21 @@
-// Dates and numbers follow the browser's locale; nothing here is translated.
+import { i18n } from '@/i18n'
 
-const date = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+// Dates follow the interface's language; nothing else here is translated.
 
-export function formatDate(value: string | null | undefined): string {
+// One formatter per language, made when first needed.
+const formatters = new Map<string, Intl.DateTimeFormat>()
+
+/** A date in the interface's current language (the one chosen, or the browser's). */
+export function formatDate(value: string | null | undefined, locale: string = i18n.global.locale.value): string {
   if (!value) return '—'
   const d = new Date(value)
-  return Number.isNaN(d.getTime()) ? value : date.format(d)
+  if (Number.isNaN(d.getTime())) return value
+  let f = formatters.get(locale)
+  if (!f) {
+    f = new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' })
+    formatters.set(locale, f)
+  }
+  return f.format(d)
 }
 
 /** The server's own words for what went wrong, or a fallback. */

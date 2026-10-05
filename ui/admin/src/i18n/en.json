@@ -7,7 +7,7 @@
     "cancel": "Cancel",
     "confirm": "Confirm",
     "signOut": "Sign out",
-    "loading": "Loading…",
+    "loading": "Loading...",
     "none": "None",
     "dismiss": "Dismiss",
     "save": "Save",
@@ -42,6 +42,10 @@
     "light": "Light",
     "dark": "Dark"
   },
+  "language": {
+    "label": "Language",
+    "auto": "Automatic"
+  },
   "realm": {
     "label": "Realm",
     "current": "Realm {name}",
@@ -57,7 +61,7 @@
     "keep": "Keep me signed in in this tab",
     "keepHelp": "Stores the session in this tab until it closes. Leave it off on shared computers.",
     "submit": "Sign in",
-    "submitting": "Signing in…",
+    "submitting": "Signing in...",
     "otherRealm": "Another realm",
     "failed": "The email or password is wrong, or sign-in is temporarily blocked.",
     "notAdmin": "This account is not an administrator of this realm.",
@@ -178,7 +182,7 @@
       "open": "Delete user",
       "title": "Delete {email}",
       "body": "Erasing a user is irreversible: the account becomes a tombstone, their sign-ins and sessions are deleted, and each collection's policy is applied to what they own.",
-      "loadingReport": "Checking what they own…",
+      "loadingReport": "Checking what they own...",
       "reportFailed": "What the user owns could not be checked.",
       "owned": "{collection}: {owned} owned, policy {action}",
       "policyNone": "none",
@@ -339,7 +343,7 @@
     "loadFailed": "The audit trail could not be loaded."
   },
   "pager": {
-    "showing": "Showing {from}–{to}"
+    "showing": "Showing {from}-{to}"
   },
   "functions": {
     "title": "Functions",
@@ -398,7 +402,7 @@
       "output": "Output",
       "job": "An async job was queued: {id}",
       "seeJob": "See the job",
-      "running": "Running…"
+      "running": "Running..."
     },
     "loadFailed": "The function definitions could not be loaded."
   },
@@ -455,7 +459,7 @@
       "templates": "Templates"
     },
     "loadFailed": "The configuration could not be loaded.",
-    "loading": "Loading the configuration…",
+    "loading": "Loading the configuration...",
     "fingerprint": "Config fingerprint",
     "fingerprintHelp": "Changes whenever any configuration file changes: compare it across instances to see they run the same files.",
     "realmFile": "Realm file",

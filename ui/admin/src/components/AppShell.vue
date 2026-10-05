@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSession } from '@/stores/session'
 import AppButton from './AppButton.vue'
+import LocaleSwitch from './LocaleSwitch.vue'
 import ThemeSwitch from './ThemeSwitch.vue'
 
 const { t } = useI18n()
@@ -39,6 +40,7 @@ async function signOut() {
       </span>
       <div class="ml-auto flex items-center gap-3">
         <span v-if="session.email" class="text-sm text-slate-600 dark:text-slate-300">{{ session.email }}</span>
+        <LocaleSwitch />
         <ThemeSwitch />
         <AppButton variant="secondary" @click="signOut">{{ t('common.signOut') }}</AppButton>
       </div>
