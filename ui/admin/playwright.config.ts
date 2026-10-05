@@ -13,6 +13,8 @@ export default defineConfig({
   globalSetup: './e2e/global-setup.ts',
   use: {
     baseURL: process.env.E2E_URL ?? 'http://localhost:8080',
+    // The local stack's certificate comes from a local CA.
+    ignoreHTTPSErrors: true,
     trace: 'retain-on-failure',
     launchOptions: process.env.PLAYWRIGHT_CHROMIUM ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM } : {},
   },

@@ -24,8 +24,11 @@ func get(t *testing.T, h http.Handler, method, path string) *httptest.ResponseRe
 	return w
 }
 
+// Whether this build embeds the UI depends on whether ui/admin was built
+// first, so the rule is tested on an empty directory: nothing to serve, no
+// handler (and /_ui/ stays an unknown route).
 func TestNoAssetsNoHandler(t *testing.T) {
-	if Handler(time.Minute) != nil {
+	if newHandler(fstest.MapFS{".gitkeep": {}}, time.Minute) != nil {
 		t.Fatal("a build without assets must serve nothing")
 	}
 }
