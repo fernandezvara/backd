@@ -382,6 +382,7 @@ await backd.admin.invitations.list()
 await backd.admin.invitations.revoke(invitation.id)
 
 const access = await backd.admin.whoami()                         // level, areas it may read and change
+const posts = backd.admin.data('blog', 'posts')                  // the admin data route: list/get/create/replace/patch/delete/restore, past the rules
 const config = await backd.admin.config()                         // what this instance runs for the realm, read-only
 const secrets = await backd.admin.secrets.list()                  // scope, name, who set it; never the values
 await backd.admin.secrets.set('STRIPE_KEY', value, { database: 'main' })   // omit database for a realm secret
