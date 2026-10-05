@@ -33,7 +33,8 @@
     "from": "From",
     "to": "To",
     "anyStatus": "Any",
-    "result": "Result"
+    "result": "Result",
+    "reload": "Reload"
   },
   "theme": {
     "label": "Theme",
@@ -112,7 +113,8 @@
     "apikeys": "API keys",
     "secrets": "Secrets",
     "audit": "Audit",
-    "functions": "Functions"
+    "functions": "Functions",
+    "config": "Configuration"
   },
   "users": {
     "title": "Users",
@@ -440,5 +442,78 @@
     "noResult": "—",
     "email": "email: {kind}",
     "loadFailed": "The jobs could not be loaded."
+  },
+  "config": {
+    "title": "Configuration",
+    "help": "What this instance runs for the realm, read from its files. Configuration is a reviewed, versioned artifact: it is shown here and never edited here.",
+    "tabs": {
+      "label": "Configuration sections",
+      "overview": "Overview",
+      "settings": "Settings",
+      "collections": "Collections",
+      "templates": "Templates"
+    },
+    "loadFailed": "The configuration could not be loaded.",
+    "loading": "Loading the configuration…",
+    "fingerprint": "Config fingerprint",
+    "fingerprintHelp": "Changes whenever any configuration file changes: compare it across instances to see they run the same files.",
+    "realmFile": "Realm file",
+    "realm": "Realm",
+    "warnings": {
+      "title": "Startup warnings",
+      "none": "No warnings."
+    },
+    "settings": {
+      "title": "Realm settings",
+      "setting": "Setting",
+      "value": "Value",
+      "empty": "(empty)",
+      "list": "(none)",
+      "file": "Defined in {file}",
+      "secretNote": "Secrets are referenced by name only; their values are never part of the configuration."
+    },
+    "roles": {
+      "title": "Roles",
+      "name": "Role",
+      "description": "Description",
+      "admin": "Admin access",
+      "seeded": "Seeded users",
+      "none": "No roles are declared."
+    },
+    "collections": {
+      "title": "Collections",
+      "none": "No collections.",
+      "database": "Database {name}",
+      "schema": "Schema",
+      "indexes": "Indexes",
+      "noIndexes": "No indexes beyond the defaults.",
+      "unique": "unique",
+      "ttl": "expires",
+      "rules": "Rules",
+      "noRules": "No rules: only API keys reach this collection.",
+      "policy": "Policy",
+      "noPolicy": "No collection policy.",
+      "source": "File",
+      "from": "from {key}",
+      "softDelete": "Soft delete, kept for {retention}",
+      "onOwnerDelete": "When an owner is erased: {action}",
+      "remove": "remove",
+      "replace": "replace",
+      "pull": "pull",
+      "unset": "unset",
+      "expand": "Show",
+      "functionsLink": "Functions of this database are on the Functions page."
+    },
+    "templates": {
+      "title": "Templates",
+      "email": "Email templates",
+      "pages": "Hosted pages",
+      "kind": "Kind",
+      "languages": "Languages",
+      "files": "Files",
+      "none": "None found on disk.",
+      "noneEmail": "No email templates.",
+      "nonePages": "No hosted pages."
+    }
   }
 }

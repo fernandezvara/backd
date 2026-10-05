@@ -1,0 +1,4 @@
+[
+  { "fields": ["pinned", "-_meta.created_at"] },
+  { "fields": ["_meta.owner"] }
+]

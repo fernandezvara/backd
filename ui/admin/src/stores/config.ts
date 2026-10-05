@@ -1,6 +1,7 @@
 import type { AdminConfig } from 'backd-js'
 import { defineStore } from 'pinia'
-import { computed, shallowRef, watch } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
+import { errorText } from '@/lib/format'
 import { useSession } from './session'
 
 /**
@@ -15,18 +16,26 @@ export const useRealmConfig = defineStore('realm-config', () => {
   let forRealm = ''
   let loading: Promise<void> | null = null
 
-  async function load() {
+  const error = ref('')
+  const busy = ref(false)
+
+  async function load(force = false) {
     if (!session.client || !session.canRead('config')) return
-    if (config.value && forRealm === session.realm) return
+    if (!force && config.value && forRealm === session.realm) return
+    busy.value = true
+    error.value = ''
     loading ??= session.client.admin
       .config()
       .then((c) => {
         config.value = c
         forRealm = session.realm
       })
-      .catch(() => {})
+      .catch((e: unknown) => {
+        error.value = errorText(e, '')
+      })
       .finally(() => {
         loading = null
+        busy.value = false
       })
     await loading
   }
@@ -41,11 +50,12 @@ export const useRealmConfig = defineStore('realm-config', () => {
 
   function reset() {
     config.value = null
+    error.value = ''
     forRealm = ''
   }
   // What one administrator may read is not for the next one.
   watch(() => session.signedIn, (signedIn) => {
     if (!signedIn) reset()
   })
-  return { config, sendsEmail, roles, databases, load, reset }
+  return { config, error, busy, sendsEmail, roles, databases, load, reset }
 })

@@ -8,7 +8,7 @@ import FormDialog from '@/components/FormDialog.vue'
 import FunctionsTabs from '@/components/FunctionsTabs.vue'
 import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
-import { errorText } from '@/lib/format'
+import { errorText, prettyDuration } from '@/lib/format'
 import { useRealmConfig } from '@/stores/config'
 import { useSession } from '@/stores/session'
 import { useToasts } from '@/stores/toasts'
@@ -142,7 +142,7 @@ async function run() {
           <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.schedule') }}</dt>
           <dd class="font-mono text-xs">{{ f.schedule || t('functions.noSchedule') }}</dd>
           <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.limits') }}</dt>
-          <dd>{{ t('functions.timeout') }} {{ f.timeout }} · {{ t('functions.memory') }} {{ bytes(f.memory) }} · {{ t('functions.maxOutput') }} {{ bytes(f.max_output) }} · {{ t('functions.concurrency') }} {{ f.concurrency }}</dd>
+          <dd>{{ t('functions.timeout') }} {{ prettyDuration(f.timeout) }} · {{ t('functions.memory') }} {{ bytes(f.memory) }} · {{ t('functions.maxOutput') }} {{ bytes(f.max_output) }} · {{ t('functions.concurrency') }} {{ f.concurrency }}</dd>
           <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.calls') }}</dt>
           <dd class="font-mono text-xs">{{ list(f.calls) }}</dd>
           <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.secrets') }}</dt>
@@ -151,11 +151,11 @@ async function run() {
           <dd class="font-mono text-xs">{{ list(f.network) }}</dd>
           <template v-if="f.retry">
             <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.retry') }}</dt>
-            <dd>{{ t('functions.retryText', { attempts: f.retry.attempts, backoff: f.retry.backoff }) }}</dd>
+            <dd>{{ t('functions.retryText', { attempts: f.retry.attempts, backoff: prettyDuration(f.retry.backoff) }) }}</dd>
           </template>
           <template v-if="f.rate_limit">
             <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.rateLimit') }}</dt>
-            <dd>{{ t('functions.rateText', { limit: f.rate_limit.limit, per: f.rate_limit.per, window: f.rate_limit.window }) }}</dd>
+            <dd>{{ t('functions.rateText', { limit: f.rate_limit.limit, per: f.rate_limit.per, window: prettyDuration(f.rate_limit.window) }) }}</dd>
           </template>
           <template v-if="f.invoke">
             <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.invokeRule') }}</dt>

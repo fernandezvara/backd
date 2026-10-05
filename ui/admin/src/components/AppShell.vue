@@ -18,6 +18,7 @@ const links = computed(() => [
   { name: 'functions', label: t('nav.functions'), show: session.canRead('functions') },
   { name: 'secrets', label: t('nav.secrets'), show: session.canRead('secrets') },
   { name: 'audit', label: t('nav.audit'), show: session.canRead('audit') },
+  { name: 'config', label: t('nav.config'), show: session.canRead('config') },
 ].filter((l) => l.show))
 
 async function signOut() {
