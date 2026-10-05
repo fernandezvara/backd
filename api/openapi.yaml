@@ -791,9 +791,9 @@ paths:
           in: query
           description: >-
             Users whose email contains this text (case-insensitive, plain text, not a
-            pattern), paged in MongoDB with `limit` and `after` like the list. Can't be
-            combined with `email`.
-          schema: { type: string }
+            pattern, at most 254 characters), paged in MongoDB with `limit` and `after` like
+            the list. Can't be combined with `email`.
+          schema: { type: string, maxLength: 254 }
         - { $ref: "#/components/parameters/limit" }
         - { $ref: "#/components/parameters/skip" }
         - { $ref: "#/components/parameters/deleted" }
