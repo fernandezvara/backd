@@ -14,6 +14,9 @@ const links = computed(() => [
   { name: 'home', label: t('nav.overview'), show: true },
   { name: 'users', label: t('nav.users'), show: session.canRead('users') },
   { name: 'invitations', label: t('nav.invitations'), show: session.canRead('invitations') },
+  { name: 'apikeys', label: t('nav.apikeys'), show: session.canRead('apikeys') },
+  { name: 'secrets', label: t('nav.secrets'), show: session.canRead('secrets') },
+  { name: 'audit', label: t('nav.audit'), show: session.canRead('audit') },
 ].filter((l) => l.show))
 
 async function signOut() {

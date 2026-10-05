@@ -12,3 +12,11 @@ export function formatDate(value: string | null | undefined): string {
 export function errorText(e: unknown, fallback: string): string {
   return e instanceof Error && e.message ? e.message : fallback
 }
+
+/** "a, b ,,c" → ["a", "b", "c"]. */
+export function parseList(value: string): string[] {
+  return value
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
