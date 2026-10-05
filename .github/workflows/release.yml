@@ -30,8 +30,10 @@ jobs:
       # The binaries embed the admin UI; the same build ships as static files.
       - name: Build the admin UI
         run: make ui
+      # Outside the checkout: GoReleaser refuses to run on a dirty tree, and a
+      # new file in it would be one.
       - name: Pack the admin UI as static files
-        run: tar -C internal/adminui/dist --exclude=.gitkeep -czf admin-ui_${{ github.ref_name }}.tar.gz .
+        run: tar -C internal/adminui/dist --exclude=.gitkeep -czf "${{ runner.temp }}/admin-ui_${{ github.ref_name }}.tar.gz" .
       - name: Install Syft (SBOMs)
         uses: anchore/sbom-action/download-syft@v0
         with:
@@ -44,7 +46,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Add the static admin UI to the release
-        run: gh release upload "${{ github.ref_name }}" "admin-ui_${{ github.ref_name }}.tar.gz"
+        run: gh release upload "${{ github.ref_name }}" "${{ runner.temp }}/admin-ui_${{ github.ref_name }}.tar.gz"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
