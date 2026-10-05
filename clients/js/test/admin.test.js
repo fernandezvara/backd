@@ -232,3 +232,22 @@ test('users.list passes after and returns next_cursor', async () => {
   assert.equal(m.calls[0].url.searchParams.get('skip'), null)
   assert.equal(page.next_cursor, 'b@example.com')
 })
+
+test('whoami, config, user search and sessions', async () => {
+  const access = { level: 'read', write: [], read: ['config', 'functions'], read_access: { users: false, data: false }, user: { id: 'u1', email: 'ada@example.com', roles: ['support'] } }
+  const config = { realm: 'acme', fingerprint: 'abc', file: 'acme/realm.yaml', settings: {}, databases: {}, templates: {}, warnings: [] }
+  const session = { id: 's1', created_at: '2026-10-01T10:00:00.000Z', last_used_at: '2026-10-01T10:00:00.000Z', expires_at: '2026-10-08T10:00:00.000Z' }
+  const m = mockFetch([{ body: access }, { body: config }, { body: { items: [adminUser], limit: 20, skip: 0, has_more: false } }, { body: { items: [session] } }, { status: 204 }])
+  const a = adminOf(m)
+  assert.deepEqual(await a.whoami(), access)
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/whoami')
+  assert.deepEqual(await a.config(), config)
+  assert.equal(m.calls[1].url.pathname, '/v1/acme/_admin/config')
+  await a.users.list({ q: 'ada' })
+  assert.equal(m.calls[2].url.searchParams.get('q'), 'ada')
+  assert.deepEqual(await a.users.sessions('u1'), [session])
+  assert.equal(m.calls[3].url.pathname, '/v1/acme/_admin/users/u1/sessions')
+  await a.users.revokeSession('u1', 's1')
+  assert.equal(m.calls[4].method, 'DELETE')
+  assert.equal(m.calls[4].url.pathname, '/v1/acme/_admin/users/u1/sessions/s1')
+})

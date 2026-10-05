@@ -22,6 +22,38 @@ import { Job } from './functions.js'
  */
 
 /**
+ * What the signed-in administrator may do (`GET /_admin/whoami`).
+ * @typedef {object} AdminAccess
+ * @property {'full' | 'read' | 'custom'} level
+ * @property {string[]} write   Areas it may change.
+ * @property {string[]} read    Areas it may read, what `read_access` grants included.
+ * @property {{ users: boolean, data: boolean }} read_access
+ * @property {{ id: string, email: string, roles: string[] }} [user]
+ * @property {string} [key]     The admin API key's name.
+ */
+
+/**
+ * The realm's configuration as this instance runs it (`GET /_admin/config`).
+ * @typedef {object} AdminConfig
+ * @property {string} realm
+ * @property {string} fingerprint
+ * @property {string} file
+ * @property {Record<string, any>} settings
+ * @property {Record<string, any>} databases
+ * @property {Record<string, any>} templates
+ * @property {{ code: string, message: string }[]} warnings
+ */
+
+/**
+ * A session of a user: never its token.
+ * @typedef {object} UserSession
+ * @property {string} id
+ * @property {string} created_at
+ * @property {string} last_used_at
+ * @property {string} expires_at
+ */
+
+/**
  * @typedef {object} UserPage
  * @property {AdminUser[]} items
  * @property {number} limit
@@ -183,6 +215,26 @@ export class Admin {
   }
 
   /**
+   * What the signed-in administrator may do: the level and the areas it may
+   * change and read. A client shows only what this allows; the server
+   * enforces it anyway.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<AdminAccess>}
+   */
+  async whoami(opts) {
+    return (await this._request({ method: 'GET', path: ['whoami'], ...opts })).data
+  }
+
+  /**
+   * The realm's configuration as this instance runs it, read-only.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<AdminConfig>}
+   */
+  async config(opts) {
+    return (await this._request({ method: 'GET', path: ['config'], ...opts })).data
+  }
+
+  /**
    * Runs a function by hand, internal ones included: to re-run a clean-up
    * that failed, or to test a scheduled function. `function` is
    * `<database>/<name>`. With `as` (a user's email) the function runs with
@@ -229,12 +281,34 @@ class AdminUsers {
   /**
    * A page of users, sorted by email. `after` is the `next_cursor` of the
    * previous page (not combinable with `skip`).
-   * @param {{ limit?: number, skip?: number, after?: string }} [params]
+   * With `q`, only users whose email contains it (case-insensitive).
+   * @param {{ limit?: number, skip?: number, after?: string, q?: string }} [params]
    * @param {RequestOptions} [opts]
    * @returns {Promise<UserPage>}
    */
   async list(params = {}, opts) {
-    return (await this.admin._request({ method: 'GET', path: ['users'], query: { limit: params.limit, skip: params.skip, after: params.after }, ...opts })).data
+    return (await this.admin._request({ method: 'GET', path: ['users'], query: { limit: params.limit, skip: params.skip, after: params.after, q: params.q }, ...opts })).data
+  }
+
+  /**
+   * The user's unexpired sessions, newest first.
+   * @param {string} id
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<UserSession[]>}
+   */
+  async sessions(id, opts) {
+    return (await this.admin._request({ method: 'GET', path: ['users', id, 'sessions'], ...opts })).data.items
+  }
+
+  /**
+   * Ends one of a user's sessions: its token stops working at once.
+   * @param {string} id
+   * @param {string} sessionId
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async revokeSession(id, sessionId, opts) {
+    await this.admin._request({ method: 'DELETE', path: ['users', id, 'sessions', sessionId], ...opts })
   }
 
   /**
