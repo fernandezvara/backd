@@ -125,25 +125,19 @@ The page is served with a strict `Content-Security-Policy`: scripts and styles o
 
 ### Security review
 
-The UI and the endpoints added for it were reviewed before being recommended for production. What was found:
+The interface and the endpoints added for it were reviewed before being recommended for production: the headers and the CSP, how the page renders data, how it holds the session, the data route's audit, and what each level can do. The Playwright suite repeats the important checks on every run: no CSP violation, no request to another origin, the security headers on every `/_ui/` response, and the server refusing every change from the read-only and custom levels, whatever the interface offers.
 
-| Finding | Outcome |
-|---|---|
-| The CSP didn't use Trusted Types, so an injected script could still write markup | **Fixed:** `require-trusted-types-for 'script'`; a test proves the browser refuses `innerHTML` |
-| A token held only in memory was lost on reload or close, leaving its session alive on the server until the idle timeout | **Fixed:** the page revokes it as it leaves (a tab that opted in to `sessionStorage` keeps its session across a reload) |
-| The page asked for before sign-in was followed by prefix, so `/r/other…` passed | **Fixed:** only the realm's own pages, with no dot segments |
-| `GET /_admin/users?q=` had no length limit | **Fixed:** at most 254 characters, an email's own limit |
-| `ui/admin` had no weekly dependency updates | **Fixed:** Dependabot covers it, next to `npm audit` of what ships in the bundle in CI |
-| Reads through the data route are not in the audit trail | **By design:** writes are audited without their content; reads carry the actor in the access log |
-| The server's `admin: read` and area levels | **Verified:** a test makes every change as each level and expects `403` whatever the interface offers |
+A few behaviours are worth knowing when you decide how to run it.
 
-What remains, to know about:
+**The token and the idle timeout.** The administrator's token lives in the page's memory. If the page closes or reloads, the token is gone, so the page ends the session on the server as it leaves instead of leaving it to expire. While the page stays open, the session ends after `BACKD_ADMIN_UI_IDLE` of inactivity, and the page revokes it on the server too. That timer runs in the page. The limits the server enforces are the realm's `sessions.admin_idle_timeout` and `admin_max_lifetime`, so set those as well. A tab that opted in to *keep me signed in* stores its token in `sessionStorage` instead, so a reload keeps the session. Such a tab can't tell a reload from a close, so after a close the session lives until the server's idle timeout or maximum lifetime.
 
-- **The admin token is readable by any script that runs in the page.** The CSP, Trusted Types, the lint rule and the absence of markup sinks make that hard, but a flaw in a dependency would be enough, which is why sessions are short: set `sessions.admin_idle_timeout` and `admin_max_lifetime` for realms with administrators, and `BACKD_ADMIN_UI_IDLE` to match. A tab that opted in to *keep me signed in* exposes its token to the same scripts for as long as it lives.
-- **Same-origin neighbours.** `sessionStorage` is per origin: another web app served from the same origin as the UI, with a script injection of its own, could read a token kept in the tab. Serve the UI on its own origin, such as an internal admin host: the internal `backd-admin` instance of the [production reference](../../operations/production/#admin-api)'s split is the natural place.
-- **A closed tab with *keep me signed in*** can't revoke its session (the page may only be reloading), so the session lives until the server's idle timeout or maximum lifetime.
-- **Build tooling.** `npm audit` of the development tools reports a denial-of-service in a glob library with no fix available. It runs at build time on our own files and never ships, so CI gates on the dependencies that ship in the bundle.
-- **Personal data.** Logs, audit records, users and documents can hold personal data: levels are granted by area, and `admin.read_access.users` and `.data` stay `false` unless someone needs them.
+**Reads are not in the audit trail.** Writes through the data route are audited (`data.create`, `data.update`, `data.delete`, `data.restore`, `data.purge`) with the actor and the target, never the content. Reading documents, users or logs in the interface leaves no audit record; the actor appears in the access log. If you need to know who looked at personal data, keep that log, and grant `admin.read_access.users` and `.data` only to those who need them.
+
+**What the review can't remove.**
+
+- The token is readable by any script that runs in the page. The strict CSP, Trusted Types, the lint rule against `v-html` and the absence of markup sinks make that hard, but a flaw in a dependency would be enough. That is why admin sessions should be short.
+- `sessionStorage` is per origin. Another web app served from the same origin as the UI, with a script injection of its own, could read a token kept in the tab. Serve the UI on its own origin, such as an internal admin host.
+- The development tools' `npm audit` reports a denial-of-service in a glob library with no fix available. It runs at build time on our own files and never ships, so CI gates on the dependencies that ship in the bundle.
 
 ## Public and internal instances
 
