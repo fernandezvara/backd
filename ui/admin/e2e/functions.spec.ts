@@ -13,6 +13,27 @@ test('definitions show each function with its schedule, mode and limits', async 
   await expect(greet).toContainText('adminui/main/_functions/greet/function.yaml')
 })
 
+test('a schedule can be paused and resumed, and the state is kept', async ({ page, signIn }) => {
+  await signIn('admin')
+  await page.getByRole('link', { name: 'Functions' }).click()
+  const nightly = page.getByTestId('fn-main-nightly')
+  await expect(nightly).not.toContainText('Paused')
+
+  await nightly.getByRole('button', { name: 'Pause' }).click()
+  await expect(page.getByText('Schedule of main/nightly paused.')).toBeVisible()
+  await expect(nightly).toContainText('Paused')
+
+  // The state is the server's: it survives a reload.
+  await page.reload()
+  await expect(page.getByTestId('fn-main-nightly')).toContainText('Paused')
+
+  await page.getByTestId('fn-main-nightly').getByRole('button', { name: 'Resume' }).click()
+  await expect(page.getByText('Schedule of main/nightly resumed.')).toBeVisible()
+  await expect(page.getByTestId('fn-main-nightly')).not.toContainText('Paused')
+  // An unscheduled function has no such button.
+  await expect(page.getByTestId('fn-main-greet').getByRole('button', { name: 'Pause' })).toHaveCount(0)
+})
+
 test('running by hand: a sync function answers, an async one queues a job, and both are recorded', async ({ page, signIn }) => {
   await signIn('admin')
   await page.getByRole('link', { name: 'Functions' }).click()
@@ -149,9 +170,11 @@ test('a running job is cancelled, and a finished one re-run', async ({ page, sig
   await expect(first).toContainText('cancelled')
 })
 
-test('a read-only administrator sees jobs with no way to cancel or re-run', async ({ page, signIn }) => {
+test('a read-only administrator sees jobs and schedules with no way to cancel, re-run or pause', async ({ page, signIn }) => {
   await signIn('viewer', { keep: true })
   await page.getByRole('link', { name: 'Functions' }).click()
+  await expect(page.getByTestId('fn-main-nightly')).toContainText('0 3 * * *')
+  await expect(page.getByRole('button', { name: /^(Pause|Resume)$/ })).toHaveCount(0)
   await page.getByRole('link', { name: 'Jobs' }).click()
   await expect(page.getByTestId('jobs-table')).toBeVisible()
   await expect(page.getByRole('button', { name: /^(Cancel|Re-run)/ })).toHaveCount(0)
