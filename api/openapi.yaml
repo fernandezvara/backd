@@ -1500,6 +1500,76 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/jobs/{id}/cancel:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    post:
+      tags: [admin]
+      summary: Cancel a job
+      description: |
+        Ends a queued, retry-waiting or running function job at once: it is `done`
+        with the result `cancelled`, so no worker claims it, and a worker that is
+        running it notices within a few seconds and stops the run (the executor kills
+        the process). What the function already did stays done, as when a worker is
+        lost. The job keeps its input, so it can be re-run. Audited as `job.cancel`
+        (target `job:<id>`). Needs the `functions` area. backd's own jobs (emails,
+        erasures) can't be cancelled.
+      operationId: adminCancelJob
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The job, now done and cancelled.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobSummary" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: The job has already finished, or isn't a function's.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/jobs/{id}/rerun:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    post:
+      tags: [admin]
+      summary: Re-run a finished job
+      description: |
+        Queues a new job for a finished function job (any result, a cancelled one
+        included): the same function, the same input and the same caller, so it
+        behaves as the first run did (a scheduled run's re-run acts as the function,
+        like the run). The new job has its own id, `origin: admin` and `rerun_of`
+        naming the original, which keeps its own result. A worker must be running
+        for it to run. Audited as `job.rerun` (target `job:<id>`, details
+        `new_job`). Needs the `functions` area. backd's own jobs can't be re-run.
+      operationId: adminRerunJob
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "202":
+          description: The new job, queued.
+          headers:
+            Location: { schema: { type: string }, description: "`/v1/{realm}/{database}/_jobs/{id}` of the new job." }
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobSummary" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: The job hasn't finished, isn't a function's, or its function no longer exists.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/functions/{database}/{name}/invoke:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -2655,7 +2725,7 @@ components:
         mode: { type: string, description: "`sync` or `async`; `webhook` planned." }
         status:
           type: string
-          description: "`ok`, `function_error`, `timeout`, `memory`, `cpu`, `crash`, `output_too_large`, `busy` or `bundle`."
+          description: "`ok`, `function_error`, `timeout`, `memory`, `cpu`, `crash`, `output_too_large`, `busy`, `bundle` or `cancelled` (the job was cancelled while the attempt ran)."
           examples: [ok]
         code: { type: [string, "null"], description: "The function's own error code, when status is `function_error`." }
         duration_ms: { type: integer }
@@ -2680,10 +2750,11 @@ components:
         never the input or the output.
       type: object
       additionalProperties: false
-      required: [id, function, status, scheduled, origin, email_kind, attempts, next_attempt_at, created_at, completed_at, result]
+      required: [id, function, status, scheduled, origin, email_kind, rerun_of, attempts, next_attempt_at, created_at, completed_at, result]
       properties:
         origin: { type: string, description: "Where the job came from: `http`, `function` (a `ctx.call`), `cron`, `admin`, `backd:email.<kind>` (an email backd sends itself) or `function:<database>/<name>` (an email that function sent with `ctx.email.send`)." }
         email_kind: { type: [string, "null"], description: "The kind of an email job (never its recipients or text); null for other jobs." }
+        rerun_of: { type: [string, "null"], description: "The finished job an administrator re-ran to make this one; null otherwise." }
         id: { type: string, description: "For cron runs, `cron_<database>_<function>_<yyyymmddhhmm>` (UTC)." }
         function: { type: string, description: "`<database>/<name>`." }
         status: { type: string, description: "`queued`, `running` or `done`." }
@@ -2700,7 +2771,7 @@ components:
               additionalProperties: false
               required: [status, code, duration_ms]
               properties:
-                status: { type: string, description: "`ok`, `function_error`, `timeout`, `output_too_large` or `error`." }
+                status: { type: string, description: "`ok`, `function_error`, `timeout`, `output_too_large`, `error` or `cancelled` (an administrator cancelled the job)." }
                 code: { type: [string, "null"], description: "The error code, when the job did not end `ok`." }
                 duration_ms: { type: integer }
     Job:
@@ -2725,7 +2796,7 @@ components:
           properties:
             status:
               type: string
-              description: "`ok`, `function_error`, `timeout`, `memory`, `cpu`, `crash`, `output_too_large` or `bundle`."
+              description: "`ok`, `function_error`, `timeout`, `memory`, `cpu`, `crash`, `output_too_large`, `bundle` or `cancelled`."
             output: { description: "The function's output, when status is `ok`." }
             http_status:
               type: integer

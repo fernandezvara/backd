@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/executor"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -65,6 +66,8 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		r.With(audit).Get("/audit", a.listAudit)
 		r.With(fns).Get("/invocations", a.listInvocations)
 		r.With(fns).Get("/jobs", a.listJobs)
+		r.With(fns).Post("/jobs/{id}/cancel", a.cancelJob)
+		r.With(fns).Post("/jobs/{id}/rerun", a.rerunJob)
 		r.With(fns, json).Post("/functions/{database}/{name}/invoke", a.fns.adminInvoke)
 
 		// The admin data route: the data routes' operations, past the
@@ -1173,6 +1176,70 @@ func (a *adminAPI) listJobs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": items, "limit": f.Limit, "skip": f.Skip, "has_more": more})
 }
 
+// jobError answers the errors of cancelling and re-running a job.
+func jobError(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, auth.ErrNotFound):
+		writeError(w, r, http.StatusNotFound, codeNotFound, "job not found")
+	case errors.Is(err, auth.ErrJobFinished), errors.Is(err, auth.ErrJobNotFinished), errors.Is(err, auth.ErrJobNotFunction):
+		writeError(w, r, http.StatusConflict, codeConflict, err.Error())
+	default:
+		adminError(w, r, err)
+	}
+}
+
+// cancelJob answers POST /v1/{realm}/_admin/jobs/{id}/cancel: a queued or running
+// function job is done at once with the result "cancelled" (a worker running
+// it stops the run). 409 when it has already finished.
+func (a *adminAPI) cancelJob(w http.ResponseWriter, r *http.Request) {
+	svc := usersOf(r)
+	id := chi.URLParam(r, "id")
+	j, err := svc.CancelJob(r.Context(), id)
+	if err != nil {
+		jobError(w, r, err)
+		return
+	}
+	svc.Audit(r.Context(), auth.AuditJobCancel, "job:"+id, map[string]any{"function": j.Database + "/" + j.Function})
+	a.fns.metrics.JobFinished(chi.URLParam(r, "realm"), jobKind(j), executor.StatusCancelled)
+	writeJSON(w, http.StatusOK, jobSummaryJSON(j))
+}
+
+// rerunJob answers POST /v1/{realm}/_admin/jobs/{id}/rerun: a finished function
+// job is queued again as a new job with the same function, input and caller.
+// 202 with the new job; 409 when the job hasn't finished, isn't a function's, or
+// its function no longer exists.
+func (a *adminAPI) rerunJob(w http.ResponseWriter, r *http.Request) {
+	svc := usersOf(r)
+	id := chi.URLParam(r, "id")
+	old, found, err := svc.Store.GetJob(r.Context(), id)
+	if err != nil {
+		adminError(w, r, err)
+		return
+	}
+	if !found {
+		jobError(w, r, auth.ErrNotFound)
+		return
+	}
+	if old.Email != nil || old.Erase != nil {
+		jobError(w, r, auth.ErrJobNotFunction)
+		return
+	}
+	realm := chi.URLParam(r, "realm")
+	fn := a.fns.lookup(realm, old.Database, old.Function)
+	if fn == nil {
+		writeError(w, r, http.StatusConflict, codeConflict, "the job's function no longer exists")
+		return
+	}
+	j, err := svc.RerunJob(r.Context(), id, fn.Timeout.Milliseconds())
+	if err != nil {
+		jobError(w, r, err)
+		return
+	}
+	svc.Audit(r.Context(), auth.AuditJobRerun, "job:"+id, map[string]any{"function": j.Database + "/" + j.Function, "new_job": j.ID})
+	w.Header().Set("Location", "/v1/"+realm+"/"+j.Database+"/_jobs/"+j.ID)
+	writeJSON(w, http.StatusAccepted, jobSummaryJSON(j))
+}
+
 // jobSummaryJSON is a job as the admin listing shows it: state and how it
 // ended, never its input or output.
 func jobSummaryJSON(j auth.Job) map[string]any {
@@ -1183,6 +1250,7 @@ func jobSummaryJSON(j auth.Job) map[string]any {
 		"scheduled":       j.Scheduled,
 		"origin":          j.Origin,
 		"email_kind":      nil,
+		"rerun_of":        nil,
 		"attempts":        j.Attempts,
 		"created_at":      formatTime(j.CreatedAt),
 		"completed_at":    nil,
@@ -1191,6 +1259,9 @@ func jobSummaryJSON(j auth.Job) map[string]any {
 	}
 	if j.Email != nil {
 		out["email_kind"] = j.Email.Kind // never the recipients or the message
+	}
+	if j.RerunOf != "" {
+		out["rerun_of"] = j.RerunOf
 	}
 	if !j.NextAttemptAt.IsZero() && j.Status != auth.JobDone {
 		out["next_attempt_at"] = formatTime(j.NextAttemptAt)
