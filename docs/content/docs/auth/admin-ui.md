@@ -112,6 +112,12 @@ The **Data** area browses and fixes documents through the [admin data route](../
 
 A read-only level browses only when the realm's `admin.read_access.data` allows it, and then every form is read-only with no button that changes anything. Files stored in documents arrive with the file storage phase.
 
+## Language and theme
+
+The interface speaks **English** and **Spanish**. It follows the browser's preferred languages (the first one it has a translation for, English otherwise) until you pick one with the language switch next to the theme switch; the choice is kept in this browser, and *Automatic* goes back to following it. Dates are written in the language shown. Light and dark themes follow the system and can be switched by hand.
+
+What the interface *shows from your system* is not translated: messages the server sends (a validation error, a refused change), the names in your configuration, audit actions and function logs stay as they are. The word typed to confirm a destructive action is the one shown in the dialog, in the language shown.
+
 ## Sessions
 
 - **The token lives in memory.** Reloading or closing the page signs out, and the page **revokes the session on the server as it goes**, so nothing is left behind. *Keep me signed in in this tab* stores the session in the tab's `sessionStorage` instead, so a reload keeps it; the UI never uses `localStorage` for it. Leave it off on shared computers.
