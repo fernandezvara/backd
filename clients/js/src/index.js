@@ -47,6 +47,10 @@ export { memoryStorage, localStorageStorage } from './storage.js'
  * @typedef {import('./admin.js').SecretInfo} SecretInfo
  * @typedef {import('./admin.js').AuditRecord} AuditRecord
  * @typedef {import('./admin.js').AuditPage} AuditPage
+ * @typedef {import('./admin.js').InvocationRecord} InvocationRecord
+ * @typedef {import('./admin.js').InvocationsPage} InvocationsPage
+ * @typedef {import('./admin.js').JobSummary} JobSummary
+ * @typedef {import('./admin.js').JobsPage} JobsPage
  * @typedef {import('./functions.js').JobData} JobData
  * @typedef {import('./functions.js').JobResult} JobResult
  */

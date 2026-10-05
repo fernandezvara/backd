@@ -28,7 +28,12 @@
     "copy": "Copy",
     "copied": "Copied.",
     "allRealm": "Realm",
-    "details": "Details"
+    "details": "Details",
+    "filter": "Filter",
+    "from": "From",
+    "to": "To",
+    "anyStatus": "Any",
+    "result": "Result"
   },
   "theme": {
     "label": "Theme",
@@ -106,7 +111,8 @@
     "invitations": "Invitations",
     "apikeys": "API keys",
     "secrets": "Secrets",
-    "audit": "Audit"
+    "audit": "Audit",
+    "functions": "Functions"
   },
   "users": {
     "title": "Users",
@@ -327,7 +333,112 @@
     "ip": "From IP",
     "details": "Details",
     "noDetails": "No details",
-    "page": "Showing {from}–{to}",
     "loadFailed": "The audit trail could not be loaded."
+  },
+  "pager": {
+    "showing": "Showing {from}–{to}"
+  },
+  "functions": {
+    "title": "Functions",
+    "tabs": {
+      "label": "Functions sections",
+      "definitions": "Definitions",
+      "history": "History",
+      "jobs": "Jobs"
+    },
+    "needConfig": "Reading function definitions needs the configuration area, which this level doesn't have. History and jobs are still available.",
+    "none": "No database of this realm has functions.",
+    "database": "Database {name}",
+    "file": "Defined in {file}",
+    "mode": "Mode",
+    "schedule": "Schedule",
+    "internal": "Internal",
+    "limits": "Limits",
+    "timeout": "Timeout",
+    "memory": "Memory",
+    "maxOutput": "Max output",
+    "concurrency": "Concurrency",
+    "calls": "Calls",
+    "secrets": "Secrets",
+    "network": "Network",
+    "retry": "Retry",
+    "rateLimit": "Rate limit",
+    "invokeRule": "Invoke rule",
+    "idempotency": "Idempotency",
+    "flags": "Flags",
+    "modes": {
+      "sync": "sync",
+      "async": "async"
+    },
+    "noneValue": "None",
+    "noSchedule": "Not scheduled",
+    "admin": "admin only",
+    "email": "email delivery",
+    "devOnly": "dev only",
+    "retryText": "{attempts} attempts, backoff {backoff}",
+    "rateText": "{limit} per {per} every {window}",
+    "invoke": {
+      "open": "Run a function",
+      "title": "Run a function by hand",
+      "function": "Function",
+      "functionText": "Function (database/name)",
+      "input": "Input (JSON)",
+      "inputHelp": "Empty sends null.",
+      "as": "Run as (email)",
+      "asHelp": "Optional. Without it the function runs with no user.",
+      "key": "Idempotency key",
+      "keyHelp": "Optional.",
+      "submit": "Run",
+      "invalidJson": "The input isn't valid JSON.",
+      "help": "Runs internal functions too. The function's invoke rule and rate limit don't apply, and every run is audited.",
+      "outputTitle": "Last run: {function}",
+      "output": "Output",
+      "job": "An async job was queued: {id}",
+      "seeJob": "See the job",
+      "running": "Running…"
+    },
+    "loadFailed": "The function definitions could not be loaded."
+  },
+  "history": {
+    "title": "Invocation history",
+    "warning": "Logs hold whatever the functions printed. Treat them as sensitive: they are shown here as plain text.",
+    "empty": "No invocations match.",
+    "function": "Function",
+    "requestId": "Request id",
+    "time": "Time",
+    "mode": "Mode",
+    "status": "Status",
+    "code": "Code",
+    "duration": "Duration",
+    "origin": "Origin",
+    "actor": "Actor",
+    "logs": "Logs",
+    "noLogs": "No log lines",
+    "job": "Job",
+    "parent": "Called by invocation",
+    "ms": "{n} ms",
+    "loadFailed": "The invocation history could not be loaded."
+  },
+  "jobs": {
+    "title": "Jobs",
+    "empty": "No jobs match.",
+    "id": "Job",
+    "function": "Function",
+    "status": "Status",
+    "statuses": {
+      "queued": "queued",
+      "running": "running",
+      "done": "done"
+    },
+    "origin": "Origin",
+    "scheduled": "Scheduled runs only",
+    "attempts": "Attempts",
+    "created": "Created",
+    "completed": "Completed",
+    "result": "Result",
+    "pending": "Not finished",
+    "noResult": "—",
+    "email": "email: {kind}",
+    "loadFailed": "The jobs could not be loaded."
   }
 }

@@ -96,21 +96,22 @@ test('erasing shows what the user owns and asks for the email', async ({ page, s
 })
 
 test('invitations: create shows the token once, revoke needs the word', async ({ page, signIn }) => {
+  const email = fresh()
   await signIn('admin')
   await page.getByRole('link', { name: 'Invitations' }).click()
   await expect(page.getByRole('button', { name: 'Email an invitation' })).toHaveCount(0) // no email in this realm
   await page.getByRole('button', { name: 'Create invitation' }).click()
-  await page.getByRole('dialog').getByLabel('Email').fill(fresh())
+  await page.getByRole('dialog').getByLabel('Email').fill(email)
   await page.getByRole('dialog').getByRole('button', { name: 'Create' }).click()
   await expect(page.getByTestId('invitation-token')).toHaveValue(/^bdi_/)
   await page.getByRole('dialog').getByRole('button', { name: 'Done' }).click()
-  await expect(page.getByTestId('invitations-table').getByRole('row')).not.toHaveCount(2)
+  const row = page.getByTestId('invitations-table').getByRole('row', { name: new RegExp(email) })
+  await expect(row).toHaveCount(1)
 
-  const rows = await page.getByTestId('invitations-table').getByRole('row').count()
-  await page.getByTestId('invitations-table').getByRole('button', { name: 'Revoke' }).first().click()
+  await row.getByRole('button', { name: 'Revoke' }).click()
   await page.getByRole('dialog').getByLabel('Type revoke to confirm').fill('revoke')
   await page.getByRole('dialog').getByRole('button', { name: 'Revoke invitation' }).click()
-  await expect(page.getByTestId('invitations-table').getByRole('row')).toHaveCount(rows - 1)
+  await expect(row).toHaveCount(0)
 })
 
 test('a read-only administrator sees users with no control that changes anything', async ({ page, signIn }) => {

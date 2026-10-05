@@ -159,10 +159,11 @@ test('jobs listing', async () => {
   assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/jobs')
   assert.equal(m.calls[0].method, 'GET')
 
-  await a.jobs.list({ function: 'app/nightly', status: 'done', scheduled: true, since: new Date('2026-09-29T00:00:00Z'), limit: 5 })
+  await a.jobs.list({ function: 'app/nightly', status: 'done', origin: 'cron', scheduled: true, since: new Date('2026-09-29T00:00:00Z'), limit: 5 })
   const q = m.calls[1].url.searchParams
   assert.equal(q.get('function'), 'app/nightly')
   assert.equal(q.get('status'), 'done')
+  assert.equal(q.get('origin'), 'cron')
   assert.equal(q.get('scheduled'), 'true')
   assert.equal(q.get('since'), '2026-09-29T00:00:00.000Z')
   assert.equal(q.get('limit'), '5')
