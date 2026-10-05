@@ -96,6 +96,10 @@ MONGO_TEST_URI='mongodb://localhost:27018/?replicaSet=rs0' go test ./...
 MongoDB 8.0 (and the current `latest` image) refuses to start on Linux kernel 6.19 or newer ([SERVER-121912](https://jira.mongodb.org/browse/SERVER-121912)). Use 8.2.
 {{< /hint >}}
 
+## Translating the admin UI
+
+Every string of the [admin UI](../auth/admin-ui/) is in `ui/admin/src/i18n/en.json`; `es.json` is its Spanish translation, with the same keys and the same `{placeholders}`. A new string goes into `en.json` first and into every other file in the same change: a Vitest check (`npm test` in `ui/admin`, `make ui-test`) fails when a key is missing from one file, when a message uses different placeholders than its English original, or when a translation was left identical to English without being listed as a name or technical word. To add a language, add its file, its code and its own name to `ui/admin/src/i18n/locale.ts` and `i18n/index.ts`, and translate the keys; the language switch and the browser detection pick it up from there.
+
 ## Continuous integration
 
 GitHub Actions runs on every push and pull request:

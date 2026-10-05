@@ -70,7 +70,7 @@ test('the query builder offers only what the schema allows, and filters', async 
   await page.getByRole('button', { name: 'Apply' }).click()
   await expect(page.getByTestId('docs-table').locator('tbody tr').first()).toContainText('Seed Bulk 45')
   await page.getByLabel('Write the query as JSON').check()
-  await page.locator('#raw-where').fill('{"kind":"book"}')
+  await page.locator('#raw-where').fill('{"kind":"book","name":{"$startsWith":"Seed "}}') // the form test makes books too, so a rerun on the same data finds more
   await page.getByRole('button', { name: 'Apply' }).click()
   await expect(page.getByTestId('docs-table')).toContainText('Seed Novel')
   await expect(page.getByTestId('total')).toHaveText('1 documents')
