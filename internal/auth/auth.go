@@ -217,6 +217,10 @@ type Store interface {
 	// CompleteJob records a job's result; expiresAt starts its retention
 	// countdown (MongoDB removes it once past).
 	CompleteJob(ctx context.Context, id string, result JobResult, completedAt, expiresAt time.Time) error
+	// CancelJob ends a job that isn't done yet with the given result (status
+	// "cancelled"), clearing its lease. It reports whether it did: false when
+	// the job was already done (or is unknown).
+	CancelJob(ctx context.Context, id string, result JobResult, completedAt, expiresAt time.Time) (bool, error)
 	// ListJobs returns the jobs matching f, newest first, and whether
 	// more follow.
 	ListJobs(ctx context.Context, f JobFilter) ([]Job, bool, error)

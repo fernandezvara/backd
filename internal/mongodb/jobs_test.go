@@ -284,3 +284,49 @@ func TestJobStatsOnMongoDB(t *testing.T) {
 		t.Errorf("needs attention = %d, %v", n, err)
 	}
 }
+
+func TestCancelJobOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	t0 := time.Date(2126, 10, 5, 12, 0, 0, 0, time.UTC)
+	for _, id := range []string{"c0", "c1", "c2"} {
+		if err := s.EnqueueJob(ctx, auth.Job{ID: id, Database: "app", Function: "report", Status: auth.JobQueued, TimeoutMS: 1000, CreatedAt: t0, ExpiresAt: t0.Add(48 * time.Hour), RerunOf: "orig"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cancelled := auth.JobResult{Status: auth.ResultCancelled, Message: "cancelled by an administrator"}
+
+	// A queued job: done, with the result, never claimable again.
+	if ok, err := s.CancelJob(ctx, "c0", cancelled, t0.Add(time.Minute), t0.Add(25*time.Hour)); err != nil || !ok {
+		t.Fatalf("cancel queued: %v %v", ok, err)
+	}
+	got, _, _ := s.GetJob(ctx, "c0")
+	if got.Status != auth.JobDone || got.Result == nil || got.Result.Status != auth.ResultCancelled || got.CompletedAt.IsZero() || got.RerunOf != "orig" {
+		t.Errorf("after cancel: %+v", got)
+	}
+	// A running job loses its lease, and the worker's late result can't overwrite it.
+	claimed, found, _ := s.ClaimJob(ctx, "w1", t0.Add(2*time.Minute), 30*time.Second)
+	if !found || claimed.ID != "c1" {
+		t.Fatalf("claim: %+v %v", claimed, found)
+	}
+	if ok, _ := s.CancelJob(ctx, "c1", cancelled, t0.Add(3*time.Minute), t0.Add(25*time.Hour)); !ok {
+		t.Fatal("cancel running")
+	}
+	if err := s.CompleteJob(ctx, "c1", auth.JobResult{Status: "ok"}, t0.Add(4*time.Minute), t0.Add(26*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := s.GetJob(ctx, "c1"); got.Result.Status != auth.ResultCancelled {
+		t.Errorf("a late completion overwrote the cancellation: %+v", got.Result)
+	}
+	// Once done (or unknown), there is nothing to cancel, and nothing changes.
+	if ok, err := s.CancelJob(ctx, "c1", cancelled, t0, t0); err != nil || ok {
+		t.Errorf("cancel a done job: %v %v", ok, err)
+	}
+	if ok, err := s.CancelJob(ctx, "nope", cancelled, t0, t0); err != nil || ok {
+		t.Errorf("cancel an unknown job: %v %v", ok, err)
+	}
+	// The one left is still claimable.
+	if next, found, _ := s.ClaimJob(ctx, "w1", t0.Add(5*time.Minute), 30*time.Second); !found || next.ID != "c2" {
+		t.Errorf("the next claim: %+v %v", next, found)
+	}
+}

@@ -800,6 +800,23 @@ func (m *MemStore) CompleteJob(_ context.Context, id string, result auth.JobResu
 	return nil
 }
 
+func (m *MemStore) CancelJob(_ context.Context, id string, result auth.JobResult, completedAt, expiresAt time.Time) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	j, ok := m.jobs[id]
+	if !ok || j.Status == auth.JobDone {
+		return false, nil
+	}
+	j.Status = auth.JobDone
+	j.CompletedAt = completedAt
+	j.ExpiresAt = expiresAt
+	j.leaseExpires = time.Time{}
+	r := result
+	j.Result = &r
+	m.jobs[id] = j
+	return true, nil
+}
+
 func (m *MemStore) GetJob(_ context.Context, id string) (auth.Job, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
