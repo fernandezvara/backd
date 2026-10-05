@@ -1,0 +1,5 @@
+# Erasing a user deletes the notes they own.
+on_owner_delete:
+  action: delete
+soft_delete:
+  retention: 30d

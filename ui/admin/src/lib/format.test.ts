@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { errorText, formatDate, parseList } from './format'
+import { errorText, formatDate, parseList, prettyDuration } from './format'
 
 test('dates', () => {
   expect(formatDate(null)).toBe('—')
@@ -15,4 +15,14 @@ test('error text prefers the server message', () => {
 test('comma lists', () => {
   expect(parseList('a, b ,,c')).toEqual(['a', 'b', 'c'])
   expect(parseList('')).toEqual([])
+})
+
+test('durations', () => {
+  expect(prettyDuration('720h0m0s')).toBe('30d')
+  expect(prettyDuration('10m0s')).toBe('10m')
+  expect(prettyDuration('1h30m0s')).toBe('1h30m')
+  expect(prettyDuration('36h0m0s')).toBe('1d12h')
+  expect(prettyDuration('10s')).toBe('10s')
+  expect(prettyDuration('0s')).toBe('0s')
+  expect(prettyDuration('soon')).toBe('soon')
 })

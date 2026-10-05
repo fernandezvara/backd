@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "properties": {
+    "title": { "type": "string", "minLength": 1, "description": "The note's title." },
+    "body": { "type": "string", "description": "The note's text." },
+    "pinned": { "type": "boolean" }
+  },
+  "required": ["title"]
+}

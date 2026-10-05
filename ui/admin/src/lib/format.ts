@@ -20,3 +20,18 @@ export function parseList(value: string): string[] {
     .map((s) => s.trim())
     .filter(Boolean)
 }
+
+/** Go durations as the server prints them ("720h0m0s", "1m0s") in the shortest readable form ("30d", "1m"). */
+export function prettyDuration(value: string): string {
+  const m = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s)?$/.exec(value)
+  if (!m || !value) return value
+  const hours = Number(m[1] ?? 0)
+  const minutes = Number(m[2] ?? 0)
+  const seconds = Number(m[3] ?? 0)
+  const parts: string[] = []
+  if (hours >= 24) parts.push(`${Math.floor(hours / 24)}d`)
+  if (hours % 24) parts.push(`${hours % 24}h`)
+  if (minutes) parts.push(`${minutes}m`)
+  if (seconds) parts.push(`${seconds}s`)
+  return parts.length ? parts.join('') : '0s'
+}

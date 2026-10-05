@@ -67,6 +67,17 @@ The **Functions** area has three pages.
 
 An administrator with the `functions` area can **run a function by hand**, internal ones included: choose it, give an input as JSON and optionally an email to run as (without one there is no user). A sync function's output is shown on the page; an async one answers with its job, which the Jobs page follows. The function's `invoke` rule and rate limit don't apply, and every run is [audited](../audit/). Read-only levels read all three pages and get no way to run anything. Cancelling and re-running a job will join once the platform has them.
 
+## Configuration
+
+The **Configuration** area shows what this instance runs for the realm, read from the files it loaded through `GET /_admin/config`. It is read-only by design: configuration is a reviewed, versioned artifact, so the interface never edits it. Change the files, review and deploy them; *Reload* fetches what the instance runs now.
+
+- **Overview:** the realm, its `realm.yaml` file, the **config fingerprint** (it changes whenever any configuration file changes, so comparing it across instances shows whether they run the same files) and the **startup warnings** (an admin API open to any network, open sign-up, no administrators and the like).
+- **Settings:** every realm setting with its default applied, one row per setting with its dotted path, and the roles with their description, admin access and seeded users. Secrets appear as names only, never values, and the seeded emails show only to a level that may read users.
+- **Collections:** for each database and collection, the JSON Schema (in a scrollable block, however large), the indexes, each operation's access rule and which rule file it came from, and the collection policy (soft delete, what happens when an owner is erased). Every item names its source file, relative to the configuration directory.
+- **Templates:** the email templates and hosted pages found on disk, by kind and language.
+
+The functions' definitions are on the Functions page. Reading the configuration needs the `config` area, which every read-only level has.
+
 ## Sessions
 
 - **The token lives in memory.** Reloading the page signs out. *Keep me signed in in this tab* stores the session in the tab's `sessionStorage` until the tab closes; the UI never uses `localStorage` for it. Leave it off on shared computers.
