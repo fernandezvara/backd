@@ -46,3 +46,33 @@ func TestParseErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestPrevInATimeZone(t *testing.T) {
+	madrid, err := time.LoadLocation("Europe/Madrid") // clocks: forward 2026-03-29 01:00 UTC, back 2026-10-25 01:00 UTC
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct{ name, expr, now, want string }{
+		{"summer", "0 9 * * *", "2026-07-01 12:00", "2026-07-01 07:00"},
+		{"winter", "0 9 * * *", "2026-01-10 12:00", "2026-01-10 08:00"},
+		{"before the day's time", "0 9 * * *", "2026-07-01 06:59", "2026-06-30 07:00"},
+		{"across the change", "0 12 * * *", "2026-03-30 09:00", "2026-03-29 10:00"},
+		{"the day before a gap", "30 2 * * *", "2026-03-29 00:30", "2026-03-28 01:30"},
+		{"a time in the gap runs after it", "30 2 * * *", "2026-03-29 05:00", "2026-03-29 01:00"},
+		{"a repeated time runs once, the first", "30 2 * * *", "2026-10-25 05:00", "2026-10-25 00:30"},
+		{"the first of the repeated times", "30 2 * * *", "2026-10-25 01:00", "2026-10-25 00:30"},
+		{"every hour runs through the repeat", "30 * * * *", "2026-10-25 01:45", "2026-10-25 01:30"},
+		{"a time after the repeat", "0 3 * * *", "2026-10-25 12:00", "2026-10-25 02:00"},
+		{"weekday in local time", "0 0 * * mon", "2026-09-29 12:00", "2026-09-27 22:00"}, // Monday 00:00 CEST
+	}
+	for _, c := range cases {
+		s, err := Parse(c.expr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, ok := s.In(madrid).Prev(at(c.now))
+		if !ok || !got.Equal(at(c.want)) {
+			t.Errorf("%s: %s at %s: got %v %v, want %s", c.name, c.expr, c.now, got, ok, c.want)
+		}
+	}
+}
