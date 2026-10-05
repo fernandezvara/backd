@@ -232,8 +232,8 @@ func TestAdminReadOnlyLevel(t *testing.T) {
 	if ra := out["read_access"].(map[string]any); ra["users"] != true || ra["data"] != false {
 		t.Errorf("read_access: %v", ra)
 	}
-	if read := out["read"].([]any); len(read) != 6 || strings.Contains(strings.Join(anyStrings(read), ","), "data") {
-		t.Errorf("a viewer reads six areas, not data: %v", read)
+	if read := out["read"].([]any); len(read) != 7 || strings.Contains(strings.Join(anyStrings(read), ","), "data") || !strings.Contains(strings.Join(anyStrings(read), ","), "config") {
+		t.Errorf("a viewer reads seven areas (the configuration included), not data: %v", read)
 	}
 	f.bobHolds(t, "lookout")
 	_, out = f.doH(t, "GET", admin+"/whoami", "", bearer(f.bob))
