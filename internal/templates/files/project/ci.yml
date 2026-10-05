@@ -4,7 +4,7 @@ on:
     branches: [main]
     tags: ["v*"]
 env:
-  BACKD_VERSION: 0.6.0
+  BACKD_VERSION: 0.7.0
   IMAGE: ghcr.io/CHANGE_ME/backd-config # your org/repo, lower-case
 jobs:
   build:

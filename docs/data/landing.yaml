@@ -7,7 +7,7 @@ sections:
     weight: 10
     template: hero
 
-    badge: "v0.6.0 · soft delete, admin rights per role, jobs on request and a tunable login throttle"
+    badge: "v0.7.0 · the admin web interface, a read-only admin level and an audited admin data route"
 
     title: "backd"
     subtitle: "A **config-driven** REST backend over MongoDB. Declare realms, databases and collections as files on disk, and get a **schema-validated**, **queryable** document API. Add **server-side functions** for the logic clients can't be trusted with: background jobs, cron schedules and webhooks included."
