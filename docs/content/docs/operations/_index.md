@@ -133,6 +133,18 @@ blog__main.posts
 shop__orders.items
 ```
 
+### Upgrading to v0.7.0
+
+v0.7.0 adds the [admin web interface](../auth/admin-ui/), a [read-only admin level](../auth/admin/#the-read-only-level) with `admin.read_access`, an audited [admin data route](../auth/admin/#data), a read-only [configuration view](../auth/admin/#configuration) in the admin API, and a switch that turns the admin API off per instance. Configuration that worked on v0.6.0 still loads; the interface is off until you switch it on. What to check:
+
+1. **`admin: true` and admin API keys now reach documents.** The new [admin data route](../auth/admin/#data) (`/v1/{realm}/_admin/data/…`) lists, reads and changes documents **past the collection's access rules**, and it belongs to every `admin: true` role and every admin API key. Writes are audited without their content; reads are not (they carry the actor in the access log). Before upgrading, look at who holds those roles and keys: give people who don't need documents an area list (`admin: [users, invitations]`), which doesn't include the new `data` area, and keep admin keys to the tooling that needs them.
+2. **Two new areas.** An area list can now also name `data` and `config`; a role that lists areas and doesn't name them doesn't get them. `config` shows what the instance runs for the realm (`GET /_admin/config`) and every read-only level has it.
+3. **The read-only level is new.** `admin: read` (or `[read, secrets]`) reads every area except users and data, which a realm opts in to with `admin.read_access.users` and `admin.read_access.data` (both `false` by default). `GET /_admin/whoami` tells a client what the signed-in level may do.
+4. **The admin API can be switched off per instance:** `BACKD_ADMIN_API=false` leaves every `/_admin` route out (`404`). The [production reference](production/#admin-api) now splits a public `backd` (no admin API) from an internal `backd-admin`, and the CLI's `BACKD_URL` points at the internal one: if you built on `deploy/production`, compare your compose file with it.
+5. **The admin web interface is off by default.** `BACKD_ADMIN_UI=true` serves it at `/_ui/` from an instance that also has the admin API (the combination with `BACKD_ADMIN_API=false` stops startup); `BACKD_ADMIN_UI_IDLE` (default `30m`) signs an idle administrator out. Release images and binaries embed it; a binary built from source needs `make ui` (Node) first, and without it `/_ui/` answers `404` and startup warns. Serve it only from the internal instance, and read its [security review](../auth/admin-ui/#security-review) and the [hardening checklist](checklist/) first.
+6. **Smaller changes:** `GET /_admin/users` takes `q` (a search of at most 254 characters), `GET /_admin/users/{id}/sessions` and `DELETE …/sessions/{session_id}` list and end a user's sessions. The example stack serves `/_ui/` and has an `adminui` realm for it.
+7. **The JavaScript client is 0.6.0** (`npm install backd-js@latest`): `admin.whoami()`, `admin.config()`, `admin.data(database, collection)`, `admin.users.sessions()` and `revokeSession()`, the `q` search on `admin.users.list()` and the `origin` filter on `admin.jobs.list()`. It works with a v0.6.0 server for everything that existed before.
+
 ### Upgrading to v0.6.0
 
 v0.6.0 adds [soft delete](../configuration/config-dir/#soft-delete), [admin rights per role](../auth/admin/#admin-rights), [`Prefer: respond-async`](../functions/calling/#asking-for-a-job-prefer-respond-async) and [`login_throttle`](../configuration/realm/#keys). Configuration that worked on v0.5.0 still loads and behaves the same; each new feature is off until you use it. What to check:
