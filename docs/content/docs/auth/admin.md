@@ -41,7 +41,7 @@ An admin role can open the whole admin API (`admin: true`), only some of its are
 | `audit` | `GET /audit` |
 | `functions` | `POST /jobs/{id}/cancel` | none | `200` with the job, now `done` with the result `cancelled`: a queued, retrying or running function job ends at once and a worker running it stops the run. `409` when it has already finished or isn't a function's job. Audited. See [Cancelling and re-running a job](../../functions/jobs/#cancelling-and-re-running-a-job) |
 | `POST /jobs/{id}/rerun` | none | `202` with a new job (`rerun_of` names the original) for a finished function job: the same function, input and caller. `409` while it hasn't finished, or when it isn't a function's job or its function no longer exists. Audited |
-| `POST /functions/{database}/{name}/invoke`, `GET /invocations`, `GET /jobs`, and `POST /jobs/{id}/cancel` and `…/rerun`; and reading any job through the data API |
+| `POST /functions/{database}/{name}/invoke`, `GET /invocations`, `GET /jobs`, `POST /jobs/{id}/cancel` and `…/rerun`, `GET /schedules`, and `POST /functions/{database}/{name}/pause` and `…/resume`; and reading any job through the data API |
 | `data` | the admin data route (documents past their collections' rules) |
 | `config` | `GET /config`, the read-only view of the realm's configuration |
 
@@ -93,6 +93,8 @@ Paths are relative to `/v1/{realm}/_admin`. Bodies are JSON (`Content-Type: appl
 | `DELETE /secrets/{name}` | none; query `database`? | `204` |
 | `GET /audit` | none; query `action`, `actor`, `target`, `since`, `until` (RFC 3339), `limit`, `skip` | `200` with a page of [audit records](../audit/), newest first |
 | `GET /jobs` | none; query `function` (`<database>/<name>`), `status` (`queued`, `running`, `done`), `origin` (such as `function:main/ship`, the emails that function sent), `scheduled` (`true` for cron runs), `since`, `until` (RFC 3339, on the creation time), `limit`, `skip` | `200` with a page of [jobs](../../functions/jobs/), newest first: `id`, `function`, `status`, `scheduled`, `origin`, `email_kind` (the kind of an email job, never its recipients), `attempts`, `created_at`, `completed_at` and `result` (`status`, `code`, `duration_ms`), never a job's input or output. `backd functions jobs` is its CLI |
+| `GET /schedules` | none | `200` with the realm's scheduled functions: `function`, `schedule`, `timezone`, `overlap`, `paused`, and when and by whom it was last paused or resumed. See [Pausing a schedule](../../functions/cron/#pausing-a-schedule) |
+| `POST /functions/{database}/{name}/pause` and `/resume` | none | `200` with the schedule. A paused schedule creates no runs, and a resume doesn't make up the missed ones; the state is stored and survives restarts. `409` for a function with no schedule. Audited |
 | `POST /functions/{database}/{name}/invoke` | `{"input"?, "as"?}`; header `Idempotency-Key`? | Runs any function by hand, internal ones included, as the user `as` (an email) or with no user; answers like `_func` (`200` with the output, or `202` with a job). Audited. See [Internal functions](../../functions/internal/#running-a-function-by-hand) |
 | `GET /invocations` | none; query `function`, `request_id`, `since`, `until` (RFC 3339), `limit`, `skip` | `200` with a page of [function invocation records](../../functions/logs/), newest first |
 

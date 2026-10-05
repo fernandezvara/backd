@@ -111,6 +111,24 @@ The skipped time is not lost from view: it appears in the job list as a job that
 - **Without `overlap`** (or with `overlap: allow`, the default) every scheduled time runs, even when the previous run is still going.
 - **It is checked when the run is created**, by whichever worker gets there first, so with several workers it is a guard against overlap in the ordinary case, not a lock: a run can still start between the check and a manual call.
 
+## Pausing a schedule
+
+An administrator with the `functions` [area](../../auth/admin/#admin-rights) can stop a schedule for a while and start it again, with no change to `function.yaml` and no redeploy:
+
+```bash
+backd functions pause    --function workshop/main/nightly_cleanup
+backd functions schedules --realm workshop        # which schedules exist, and which are paused
+backd functions resume   --function workshop/main/nightly_cleanup
+```
+
+The same is available as `POST /_admin/functions/{database}/{name}/pause` and `/resume`, `GET /_admin/schedules`, `client.admin.schedules.pause('main/nightly_cleanup')`, `.resume()` and `.list()`, and as a **Pause** button on the Functions page of the [admin UI](../../auth/admin-ui/#functions), which also marks a paused schedule. Pausing and resuming are [audited](../../auth/audit/) (`schedule.pause`, `schedule.resume`).
+
+- **While paused, no run is created.** Runs that are already queued or running are not touched (cancel them [if you want them gone](../jobs/#cancelling-and-re-running-a-job)), and the function can still be called or [run by hand](../internal/#running-a-function-by-hand).
+- **A resume doesn't make up what was missed.** The next scheduled time after the resume runs; a time that fell inside the pause never does, even if the pause ended seconds later.
+- **The state is stored in the realm's database**, not in an instance: it survives restarts and redeploys and applies to every instance and worker at once, within a worker's 15-second check. Changing the schedule in `function.yaml` keeps it paused.
+- **Pausing a paused schedule (or resuming a running one) changes nothing** and isn't audited twice. Only a function with a `schedule` can be paused: any other answers `409`.
+- **It adds a system collection** (`schedules`) to the realm's system database: run `backd provision` (or start with `PROVISION_MODE=apply`) after upgrading, as for any new system collection.
+
 ## A worker must be running
 
 {{< hint warning >}}
@@ -136,7 +154,7 @@ Runs go through the async queue, so schedules fire **only while at least one [wo
 
 - **Exactly one run per scheduled time, across any number of workers, with no leader.** Every worker checks the schedules every 15 seconds and tries to create the job of a due run. The job's id comes from the function and the scheduled minute, `cron_<database>_<function>_<yyyymmddhhmm>` (UTC), and the database accepts only one job with that id: one worker wins, the rest find it exists. Adding or losing workers needs no configuration.
 - **Missed runs are skipped, not replayed.** A run is created only within 5 minutes after its scheduled time. If every worker was down for longer, that run doesn't happen. A run that *was* created but whose worker died is picked up by another when its lease expires, like any job.
-- **Changing a schedule** means editing `function.yaml`, rebuilding and redeploying (the config fingerprint changes, so `PROVISION_MODE=verify` instances need the new config). To stop a schedule, remove the `schedule` key the same way. There is no runtime pause.
+- **Changing a schedule** means editing `function.yaml`, rebuilding and redeploying (the config fingerprint changes, so `PROVISION_MODE=verify` instances need the new config). To stop a schedule for good, remove the `schedule` key the same way; to stop it for a while, [pause it](#pausing-a-schedule), with no redeploy.
 
 {{< hint warning >}}
 **Runs can overlap by default.** Nothing stops the 03:00 run from still going at 03:05 (or 04:00, for an hourly schedule): each scheduled time is its own job. Either [skip the overlapping run](#skipping-a-run-while-the-previous-one-is-going) with `overlap: skip`, or keep `timeout` shorter than the interval and make the function safe to run twice at once: work in small batches with a natural key (as `nightly_cleanup` deletes only what is already past its cutoff), or write a marker document first and skip if it exists.

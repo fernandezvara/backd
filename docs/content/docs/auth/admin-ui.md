@@ -77,7 +77,7 @@ A read-only level reads all three without the buttons that create, revoke, set o
 
 The **Functions** area has three pages.
 
-- **Definitions** lists, per database, every function with its mode, schedule, flags (internal, admin only, email delivery, dev only), limits (timeout, memory, maximum output, concurrency), `calls`, `secrets` and `network`, retry and rate limit, `invoke` rule, and the `function.yaml` it comes from. It reads the realm's configuration, so a level without the `config` area sees a note instead.
+- **Definitions** lists, per database, every function with its mode, schedule, flags (internal, admin only, email delivery, dev only), limits (timeout, memory, maximum output, concurrency), `calls`, `secrets` and `network`, retry and rate limit, `invoke` rule, and the `function.yaml` it comes from. A scheduled function also shows its time zone, whether it skips overlapping runs and whether it is **paused**; with the `functions` write right, a **Pause** or **Resume** button changes that. It reads the realm's configuration, so a level without the `config` area sees a note instead.
 - **History** is the [invocation history](../../functions/logs/): when, which function, mode, status and code, duration, origin and actor, with the request id, job and parent invocation and the function's log lines under *Details*. Logs hold whatever functions print, so the page says so and shows them as plain text only.
 - **Jobs** lists async and scheduled [jobs](../../functions/jobs/) with their state, origin, attempts and result, filtered by function, status, origin, scheduled runs and time. Inputs and outputs of jobs are never listed.
 
