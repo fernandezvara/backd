@@ -1,0 +1,4 @@
+# An async function that takes a while: the admin UI's tests cancel it while it runs.
+internal: true
+mode: async
+timeout: 1m

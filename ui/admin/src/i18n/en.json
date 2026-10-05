@@ -446,7 +446,23 @@
     "pending": "Not finished",
     "noResult": "—",
     "email": "email: {kind}",
-    "loadFailed": "The jobs could not be loaded."
+    "loadFailed": "The jobs could not be loaded.",
+    "actions": "Actions",
+    "cancel": {
+      "open": "Cancel",
+      "title": "Cancel this job?",
+      "body": "The job ends now with the result \"cancelled\". If a worker is running it, the run is stopped within a few seconds; what the function already did stays done.",
+      "action": "Cancel the job",
+      "done": "Job cancelled."
+    },
+    "rerun": {
+      "open": "Re-run",
+      "title": "Re-run this job?",
+      "body": "A new job is queued with the same function, input and caller. The original keeps its result.",
+      "action": "Re-run",
+      "done": "Queued as job {id}."
+    },
+    "rerunOf": "Re-run of {id}"
   },
   "config": {
     "title": "Configuration",

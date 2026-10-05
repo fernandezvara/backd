@@ -96,3 +96,63 @@ test('the functions views have no accessibility violations', async ({ page, sign
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
   }
 })
+
+test('a running job is cancelled, and a finished one re-run', async ({ page, signIn }) => {
+  await signIn('admin', { keep: true })
+  await page.getByRole('link', { name: 'Functions' }).click()
+
+  // Start a slow job by hand and wait until a worker is running it.
+  await page.getByTestId('fn-main-slow').getByRole('button', { name: 'Run' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Run', exact: true }).click()
+  await page.getByRole('link', { name: 'See the job' }).click()
+  await expect(page).toHaveURL(/functions\/jobs/)
+  const row = page.getByTestId('jobs-table').locator('tbody tr').first()
+  await expect(row).toContainText('main/slow')
+  await expect(async () => {
+    await page.getByRole('button', { name: 'Filter' }).click()
+    await expect(row).toContainText('running')
+  }).toPass({ timeout: 30_000 })
+
+  // Cancel it: done at once, with the result cancelled.
+  const jobId = (await row.locator('td').first().innerText()).trim()
+  await row.getByRole('button', { name: `Cancel ${jobId}` }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel the job' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Job cancelled.' })).toBeVisible()
+  await expect(row).toContainText('done')
+  await expect(row).toContainText('cancelled')
+  await expect(row.getByRole('button', { name: /^Cancel/ })).toHaveCount(0)
+
+  // The worker stops the run: its attempt is recorded as cancelled, long before the function would have ended.
+  await page.getByRole('link', { name: 'History' }).click()
+  await page.getByRole('textbox', { name: 'Function' }).fill('main/slow')
+  await expect(async () => {
+    await page.getByRole('button', { name: 'Filter' }).click()
+    await expect(page.getByTestId('history-table').locator('tbody tr').first()).toContainText('cancelled', { timeout: 2000 })
+  }).toPass({ timeout: 20_000 })
+
+  // Re-run a finished job (the cancelled one itself): a new job that links back.
+  await page.getByRole('link', { name: 'Jobs' }).click()
+  await page.getByRole('textbox', { name: 'Function' }).fill('main/slow')
+  await page.getByRole('button', { name: 'Filter' }).click()
+  await page.getByRole('button', { name: `Re-run ${jobId}` }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Re-run', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Queued as job' })).toBeVisible()
+  const first = page.getByTestId('jobs-table').locator('tbody tr').first()
+  await expect(first).toContainText(`Re-run of ${jobId}`)
+  await expect(first).toContainText('admin')
+  // Don't leave it running for the next tests.
+  await expect(async () => {
+    await page.getByRole('button', { name: 'Filter' }).click()
+    await first.getByRole('button', { name: /^Cancel/ }).click({ timeout: 2000 })
+  }).toPass({ timeout: 20_000 })
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel the job' }).click()
+  await expect(first).toContainText('cancelled')
+})
+
+test('a read-only administrator sees jobs with no way to cancel or re-run', async ({ page, signIn }) => {
+  await signIn('viewer', { keep: true })
+  await page.getByRole('link', { name: 'Functions' }).click()
+  await page.getByRole('link', { name: 'Jobs' }).click()
+  await expect(page.getByTestId('jobs-table')).toBeVisible()
+  await expect(page.getByRole('button', { name: /^(Cancel|Re-run)/ })).toHaveCount(0)
+})

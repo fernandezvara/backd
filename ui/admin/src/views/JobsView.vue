@@ -1,20 +1,26 @@
 <script setup lang="ts">
 import type { JobSummary } from 'backd-js'
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
 import FunctionsTabs from '@/components/FunctionsTabs.vue'
 import PagerBar from '@/components/PagerBar.vue'
+import FormDialog from '@/components/FormDialog.vue'
 import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
 import { errorText, formatDate } from '@/lib/format'
+import { useSession } from '@/stores/session'
+import { useToasts } from '@/stores/toasts'
 
 defineProps<{ realm: string }>()
 const { t } = useI18n()
 const admin = useAdmin()
 const route = useRoute()
+const session = useSession()
+const toasts = useToasts()
+const canWrite = computed(() => session.canWrite('functions'))
 
 const PAGE = 50
 const filters = reactive({
@@ -69,6 +75,42 @@ function page(delta: -1 | 1) {
 }
 onMounted(load)
 
+// Cancel and re-run: only function jobs (not backd's own emails and erasures).
+const isFunctionJob = (j: JobSummary) => j.email_kind === null && !j.origin.startsWith('backd:')
+const canCancel = (j: JobSummary) => isFunctionJob(j) && j.status !== 'done'
+const canRerun = (j: JobSummary) => isFunctionJob(j) && j.status === 'done'
+
+const asking = ref<'cancel' | 'rerun' | null>(null)
+const target = ref<JobSummary>()
+const acting = ref(false)
+const dialogOpen = computed({ get: () => asking.value !== null, set: (v) => { if (!v) asking.value = null } })
+function ask(kind: 'cancel' | 'rerun', j: JobSummary) {
+  target.value = j
+  asking.value = kind
+}
+async function act() {
+  const j = target.value!
+  const kind = asking.value!
+  acting.value = true
+  try {
+    if (kind === 'cancel') {
+      await admin.jobs.cancel(j.id)
+      toasts.push(t('jobs.cancel.done'))
+    } else {
+      const made = await admin.jobs.rerun(j.id)
+      toasts.push(t('jobs.rerun.done', { id: made.id }))
+    }
+    asking.value = null
+    await load()
+  } catch (e) {
+    toasts.push(errorText(e, t('common.unexpected')), 'error')
+    asking.value = null
+    await load()
+  } finally {
+    acting.value = false
+  }
+}
+
 const resultText = (j: JobSummary) => (j.result ? `${j.result.status}${j.result.code ? ` · ${j.result.code}` : ''} · ${t('history.ms', { n: j.result.duration_ms })}` : t('jobs.pending'))
 </script>
 
@@ -109,6 +151,7 @@ const resultText = (j: JobSummary) => (j.result ? `${j.result.status}${j.result.
           <th scope="col" class="px-3 py-2">{{ t('jobs.created') }}</th>
           <th scope="col" class="px-3 py-2">{{ t('jobs.completed') }}</th>
           <th scope="col" class="px-3 py-2">{{ t('jobs.result') }}</th>
+          <th v-if="canWrite" scope="col" class="px-3 py-2"><span class="sr-only">{{ t('jobs.actions') }}</span></th>
         </tr>
       </thead>
       <tbody>
@@ -116,18 +159,29 @@ const resultText = (j: JobSummary) => (j.result ? `${j.result.status}${j.result.
           <td class="px-3 py-2 font-mono text-xs break-all">{{ j.id }}</td>
           <td class="px-3 py-2 font-mono text-xs">{{ j.function }}</td>
           <td class="px-3 py-2">{{ t(`jobs.statuses.${j.status}`) }}</td>
-          <td class="px-3 py-2 font-mono text-xs">{{ j.origin }}<span v-if="j.email_kind"> · {{ t('jobs.email', { kind: j.email_kind }) }}</span></td>
+          <td class="px-3 py-2 font-mono text-xs">
+            {{ j.origin }}<span v-if="j.email_kind"> · {{ t('jobs.email', { kind: j.email_kind }) }}</span>
+            <span v-if="j.rerun_of" class="block text-slate-600 dark:text-slate-400">{{ t('jobs.rerunOf', { id: j.rerun_of }) }}</span>
+          </td>
           <td class="px-3 py-2" :class="j.attempts > 1 ? 'font-semibold' : ''">{{ j.attempts }}</td>
           <td class="px-3 py-2 whitespace-nowrap">{{ formatDate(j.created_at) }}</td>
           <td class="px-3 py-2 whitespace-nowrap">{{ j.completed_at ? formatDate(j.completed_at) : '—' }}</td>
           <td class="px-3 py-2" :class="j.result && j.result.status !== 'ok' ? 'font-semibold text-red-800 dark:text-red-300' : ''">{{ resultText(j) }}</td>
+          <td v-if="canWrite" class="px-3 py-2 text-right whitespace-nowrap">
+            <button v-if="canCancel(j)" type="button" class="underline" :aria-label="`${t('jobs.cancel.open')} ${j.id}`" @click="ask('cancel', j)">{{ t('jobs.cancel.open') }}</button>
+            <button v-if="canRerun(j)" type="button" class="underline" :aria-label="`${t('jobs.rerun.open')} ${j.id}`" @click="ask('rerun', j)">{{ t('jobs.rerun.open') }}</button>
+          </td>
         </tr>
         <tr v-if="!jobs.length && !loading">
-          <td colspan="8" class="px-3 py-6 text-center text-slate-600 dark:text-slate-400">{{ t('jobs.empty') }}</td>
+          <td :colspan="canWrite ? 9 : 8" class="px-3 py-6 text-center text-slate-600 dark:text-slate-400">{{ t('jobs.empty') }}</td>
         </tr>
       </tbody>
     </table>
   </div>
+
+  <FormDialog v-model:open="dialogOpen" :title="asking === 'cancel' ? t('jobs.cancel.title') : t('jobs.rerun.title')" :description="asking === 'cancel' ? t('jobs.cancel.body') : t('jobs.rerun.body')" :submit="asking === 'cancel' ? t('jobs.cancel.action') : t('jobs.rerun.action')" :busy="acting" @submit="act">
+    <p v-if="target" class="font-mono text-xs break-all">{{ target.function }} · {{ target.id }}</p>
+  </FormDialog>
 
   <PagerBar :skip="skip" :count="jobs.length" :has-more="hasMore" :loading="loading" @page="page" />
 </template>

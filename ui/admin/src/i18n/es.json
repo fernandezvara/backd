@@ -446,7 +446,23 @@
     "pending": "Sin terminar",
     "noResult": "—",
     "email": "correo: {kind}",
-    "loadFailed": "No se han podido cargar los trabajos."
+    "loadFailed": "No se han podido cargar los trabajos.",
+    "actions": "Acciones",
+    "cancel": {
+      "open": "Cancelar",
+      "title": "¿Cancelar este trabajo?",
+      "body": "El trabajo termina ahora con el resultado \"cancelled\". Si un worker lo está ejecutando, la ejecución se detiene en unos segundos; lo que la función ya hizo queda hecho.",
+      "action": "Cancelar el trabajo",
+      "done": "Trabajo cancelado."
+    },
+    "rerun": {
+      "open": "Volver a ejecutar",
+      "title": "¿Volver a ejecutar este trabajo?",
+      "body": "Se pone en cola un trabajo nuevo con la misma función, entrada y origen de la llamada. El original conserva su resultado.",
+      "action": "Volver a ejecutar",
+      "done": "Puesto en cola como trabajo {id}."
+    },
+    "rerunOf": "Repetición de {id}"
   },
   "config": {
     "title": "Configuración",
