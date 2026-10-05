@@ -33,6 +33,20 @@ Signing in needs a user with one of the realm's [admin roles](../admin/#admin-ri
 
 The overview page lists the level (full, read-only or custom) and the areas the account may read and change.
 
+## Users and invitations
+
+The **Users** page lists the realm's users, a page at a time, and searches by email as you type. Opening a user shows their status, whether the address is verified, the roles they hold, their networks and their active sessions (never a token). With the `users` area an administrator can also:
+
+- **create** a user, with or without a password (without one they can't sign in until a password is set);
+- **disable** or **enable** them (disabling ends their sessions), mark the address **verified**, **set a password** (which ends their sessions) and **change the email** (offered only when the realm sends email, because both addresses are told);
+- **add and remove roles**, from the roles `realm.yaml` declares. An assignment that `realm.yaml` doesn't list for that user is marked *only in the database*: a rebuilt realm wouldn't have it. Reading which roles are declared and seeded needs the `config` area; without it the role is typed by name and the server checks it;
+- **revoke a session**: its token stops working at once;
+- **delete** the user: the dialog first shows what they own in every collection with a [policy](../erasure/), and asks for the user's email to be typed before it erases. Erasing is irreversible; disabling keeps the data.
+
+**Invitations** lists the pending ones (who they are for, who created them, when they expire). Creating one shows its token once, to copy; *Email an invitation* has backd send it (offered only when the realm sends email); *Revoke* asks for the word to be typed.
+
+A read-only level sees the Users page only when the realm's `admin.read_access.users` grants it, and then without any control that changes something. The same holds for every area: a control appears only when `whoami` says the level may use it.
+
 ## Sessions
 
 - **The token lives in memory.** Reloading the page signs out. *Keep me signed in in this tab* stores the session in the tab's `sessionStorage` until the tab closes; the UI never uses `localStorage` for it. Leave it off on shared computers.
