@@ -1,0 +1,4 @@
+[
+  { "fields": ["name"] },
+  { "fields": ["kind", "-_meta.created_at"] }
+]

@@ -23,7 +23,10 @@ watch(
 
 <template>
   <AppShell v-if="session.signedIn && route.meta.auth">
-    <RouterView />
+    <!-- Keyed by address: a document that was just created (new → its own page) loads afresh. -->
+    <RouterView v-slot="{ Component, route: current }">
+      <component :is="Component" :key="current.fullPath" />
+    </RouterView>
   </AppShell>
   <RouterView v-else />
   <ToastHost />

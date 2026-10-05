@@ -30,7 +30,7 @@ test('the read-only administrator can change nothing', async ({ page, signIn }) 
   await expect(page.getByTestId('can-write')).toHaveText('Nothing')
   await expect(page.getByTestId('can-read')).toContainText('Configuration')
   await expect(page.getByTestId('can-read')).toContainText('Users') // the realm's admin.read_access.users
-  await expect(page.getByTestId('can-read')).not.toContainText('Data')
+  await expect(page.getByTestId('can-read')).toContainText('Data') // and admin.read_access.data
 })
 
 test('a custom level shows only its areas', async ({ page, signIn }) => {

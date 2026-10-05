@@ -9,6 +9,7 @@ signup: open
 admin:
   read_access:
     users: true
+    data: true
 
 roles:
   editor:

@@ -252,3 +252,27 @@ test('whoami, config, user search and sessions', async () => {
   assert.equal(m.calls[4].method, 'DELETE')
   assert.equal(m.calls[4].url.pathname, '/v1/acme/_admin/users/u1/sessions/s1')
 })
+
+test('data goes through the admin data route', async () => {
+  const doc = { id: 'p1', title: 'Hello', _meta: { created_at: '2026-10-01T00:00:00.000Z', updated_at: '2026-10-01T00:00:00.000Z', version: 1 } }
+  const m = mockFetch([
+    { body: { items: [doc], limit: 20, skip: 0, has_more: false } }, { body: doc }, { status: 201, body: doc }, { body: { ...doc, _meta: { ...doc._meta, version: 2 } } },
+    { status: 204 }, { body: doc },
+  ])
+  const posts = adminOf(m).data('blog', 'posts')
+  await posts.list({ where: { title: 'Hello' }, deleted: 'include' })
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/data/blog/posts')
+  assert.equal(m.calls[0].url.searchParams.get('deleted'), 'include')
+  await posts.get('p1')
+  assert.equal(m.calls[1].url.pathname, '/v1/acme/_admin/data/blog/posts/p1')
+  await posts.create({ title: 'Hello' })
+  assert.equal(m.calls[2].method, 'POST')
+  assert.equal(m.calls[2].url.pathname, '/v1/acme/_admin/data/blog/posts')
+  await posts.replace('p1', { title: 'Hi' }, { ifMatch: 1 })
+  assert.equal(m.calls[3].method, 'PUT')
+  assert.equal(m.calls[3].headers['If-Match'], '"1"')
+  await posts.delete('p1', { purge: true })
+  assert.equal(m.calls[4].url.searchParams.get('purge'), 'true')
+  await posts.restore('p1')
+  assert.equal(m.calls[5].url.pathname, '/v1/acme/_admin/data/blog/posts/p1/restore')
+})

@@ -43,6 +43,8 @@ export const test = base.extend<{ guard: void; signIn: (who: keyof typeof users,
       await page.getByLabel('Password').fill(PASSWORD)
       if (opts?.keep) await page.getByLabel('Keep me signed in in this tab').check()
       await page.getByRole('button', { name: 'Sign in' }).click()
+      // Signed in once the shell is there: a full page load before this would drop the session.
+      await page.getByRole('button', { name: 'Sign out' }).waitFor()
     })
   },
 })

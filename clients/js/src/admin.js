@@ -1,3 +1,4 @@
+import { Collection } from './data.js'
 import { Job } from './functions.js'
 
 /**
@@ -214,6 +215,25 @@ export class Admin {
     this.secrets = new AdminSecrets(this)
     /** The realm's function invocation history (read-only). */
     this.invocations = new AdminInvocations(this)
+  }
+
+  /**
+   * A collection through the admin data route (`/_admin/data/...`): the
+   * same operations as `client.db(...).collection(...)` (list, get, create,
+   * replace, patch, delete with `purge`, restore, `deleted` and `where`),
+   * served past the collection's rules to an administrator with the `data`
+   * area (a read-only administrator reads only with `admin.read_access.data`).
+   * The schema still validates every write, `ifMatch` works, and writes are
+   * audited. A document created here has no owner.
+   * @template {object} [T=Record<string, any>]
+   * @param {string} database
+   * @param {string} collection
+   * @returns {Collection<T>}
+   */
+  data(database, collection) {
+    const c = /** @type {Collection<T>} */ (new Collection(this.client, database, collection))
+    c.path = ['_admin', 'data', database, collection]
+    return c
   }
 
   /**

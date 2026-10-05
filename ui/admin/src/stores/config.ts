@@ -48,6 +48,13 @@ export const useRealmConfig = defineStore('realm-config', () => {
   /** The realm's databases (null: not known). */
   const databases = computed(() => (config.value ? Object.keys(config.value.databases).sort() : null))
 
+  /** A collection's schema and whether it keeps a trash, from the configuration (null: not known). */
+  function collectionInfo(database: string, name: string): { schema: Record<string, unknown>; softDelete: boolean } | null {
+    const dbs = config.value?.databases as Record<string, { collections?: { name: string; schema: Record<string, unknown>; policy?: { soft_delete?: unknown } }[] }> | undefined
+    const c = dbs?.[database]?.collections?.find((x) => x.name === name)
+    return c ? { schema: c.schema, softDelete: !!c.policy?.soft_delete } : null
+  }
+
   function reset() {
     config.value = null
     error.value = ''
@@ -57,5 +64,5 @@ export const useRealmConfig = defineStore('realm-config', () => {
   watch(() => session.signedIn, (signedIn) => {
     if (!signedIn) reset()
   })
-  return { config, error, busy, sendsEmail, roles, databases, load, reset }
+  return { config, error, busy, sendsEmail, roles, databases, collectionInfo, load, reset }
 })

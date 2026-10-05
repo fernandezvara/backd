@@ -15,6 +15,7 @@ const links = computed(() => [
   { name: 'users', label: t('nav.users'), show: session.canRead('users') },
   { name: 'invitations', label: t('nav.invitations'), show: session.canRead('invitations') },
   { name: 'apikeys', label: t('nav.apikeys'), show: session.canRead('apikeys') },
+  { name: 'data', label: t('nav.data'), show: session.canRead('data') },
   { name: 'functions', label: t('nav.functions'), show: session.canRead('functions') },
   { name: 'secrets', label: t('nav.secrets'), show: session.canRead('secrets') },
   { name: 'audit', label: t('nav.audit'), show: session.canRead('audit') },
