@@ -69,7 +69,7 @@ func TestSecurityHeaders(t *testing.T) {
 	for _, p := range []string{"/_ui/", "/_ui/assets/app-abc.js", "/_ui/nothing.png"} {
 		hd := get(t, h, "GET", p).Header()
 		csp := hd.Get("Content-Security-Policy")
-		for _, want := range []string{"default-src 'none'", "connect-src 'self'", "frame-ancestors 'none'"} {
+		for _, want := range []string{"default-src 'none'", "connect-src 'self'", "frame-ancestors 'none'", "require-trusted-types-for 'script'"} {
 			if !strings.Contains(csp, want) {
 				t.Errorf("%s: CSP %q lacks %s", p, csp, want)
 			}

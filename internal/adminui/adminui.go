@@ -24,7 +24,7 @@ const Prefix = "/_ui"
 // csp lets the page load only its own scripts, styles and images, and talk
 // only to this origin. No inline script or style, no eval.
 const csp = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; " +
-	"connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+	"connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; require-trusted-types-for 'script'"
 
 // Handler serves the embedded interface, or returns nil when this build has
 // no assets. idle is the sign-out timeout handed to the page.
