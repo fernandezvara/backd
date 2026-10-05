@@ -14,9 +14,13 @@ test('definitions show each function with its schedule, mode and limits', async 
 })
 
 test('a schedule can be paused and resumed, and the state is kept', async ({ page, signIn }) => {
-  await signIn('admin')
+  await signIn('admin', { keep: true }) // the token must outlive the reload below
   await page.getByRole('link', { name: 'Functions' }).click()
   const nightly = page.getByTestId('fn-main-nightly')
+  // The state is the server's, so a retry may find the schedule paused: start running.
+  const resume = nightly.getByRole('button', { name: 'Resume' })
+  if (await resume.isVisible()) await resume.click()
+  await expect(nightly.getByRole('button', { name: 'Pause' })).toBeVisible()
   await expect(nightly).not.toContainText('Paused')
 
   await nightly.getByRole('button', { name: 'Pause' }).click()
