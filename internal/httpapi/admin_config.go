@@ -197,6 +197,9 @@ func functionConfig(fn *registry.Function, rel func(string) string) map[string]a
 	if fn.RateLimit != nil {
 		out["rate_limit"] = map[string]any{"per": fn.RateLimit.Per, "limit": fn.RateLimit.Limit, "window": dur(fn.RateLimit.Window)}
 	}
+	if fn.OnComplete != nil {
+		out["on_complete"] = map[string]any{"function": fn.OnComplete.Function, "on": orStrings(fn.OnComplete.On)}
+	}
 	if fn.Retry != nil {
 		out["retry"] = map[string]any{"attempts": fn.Retry.Attempts, "backoff": dur(fn.Retry.Backoff), "max_backoff": dur(fn.Retry.MaxBackoff)}
 	}

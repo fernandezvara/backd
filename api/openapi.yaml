@@ -2830,7 +2830,7 @@ components:
         request_id: { type: [string, "null"] }
         job_id: { type: [string, "null"], description: "The async job this call ran for (roadmap F11); null for sync calls." }
         parent_id: { type: [string, "null"], description: "The invocation that called this one with `ctx.call`; null otherwise." }
-        origin: { type: [string, "null"], description: "What started the call: `http`, `function` (`ctx.call`), `cron`, `admin`, or `backd:<event>`. Null for records made before origins were recorded." }
+        origin: { type: [string, "null"], description: "What started the call: `http`, `function` (`ctx.call`), `cron`, `admin`, `on_complete:<database>/<name>` (the notification of that function's job ending), or `backd:<event>`. Null for records made before origins were recorded." }
         logs:
           type: array
           description: "The function's captured console output, already masked of any declared secrets."
@@ -2862,7 +2862,7 @@ components:
       additionalProperties: false
       required: [id, function, status, scheduled, origin, email_kind, rerun_of, attempts, next_attempt_at, created_at, completed_at, result]
       properties:
-        origin: { type: string, description: "Where the job came from: `http`, `function` (a `ctx.call`), `cron`, `admin`, `backd:email.<kind>` (an email backd sends itself) or `function:<database>/<name>` (an email that function sent with `ctx.email.send`)." }
+        origin: { type: string, description: "Where the job came from: `http`, `function` (a `ctx.call`), `cron`, `admin`, `on_complete:<database>/<name>` (the notification a function's `on_complete` queues when its job ends), `backd:email.<kind>` (an email backd sends itself) or `function:<database>/<name>` (an email that function sent with `ctx.email.send`)." }
         email_kind: { type: [string, "null"], description: "The kind of an email job (never its recipients or text); null for other jobs." }
         rerun_of: { type: [string, "null"], description: "The finished job an administrator re-ran to make this one; null otherwise." }
         id: { type: string, description: "For cron runs, `cron_<database>_<function>_<yyyymmddhhmm>` (UTC)." }

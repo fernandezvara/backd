@@ -148,7 +148,7 @@ import { Job } from './functions.js'
  * @property {string | null} request_id
  * @property {string | null} job_id       The async job this call ran for.
  * @property {string | null} parent_id    The invocation that called this one with `ctx.call`.
- * @property {string | null} origin       `http`, `function`, `cron`, `admin` or `backd:<event>`.
+ * @property {string | null} origin       `http`, `function`, `cron`, `admin`, `on_complete:<database>/<name>` or `backd:<event>`.
  * @property {{ level: string, line: string }[]} logs
  */
 
@@ -176,7 +176,7 @@ import { Job } from './functions.js'
  * @property {string} function               `<database>/<name>`.
  * @property {'queued' | 'running' | 'done'} status
  * @property {boolean} scheduled             True for a cron run.
- * @property {string} origin                 `http`, `function`, `cron`, `admin`, `backd:email.<kind>` or `function:<database>/<name>`.
+ * @property {string} origin                 `http`, `function`, `cron`, `admin`, `on_complete:<database>/<name>`, `backd:email.<kind>` or `function:<database>/<name>`.
  * @property {string | null} email_kind      The kind of an email job, never its recipients.
  * @property {string | null} rerun_of        The finished job an administrator re-ran to make this one.
  * @property {number} attempts               More than 1 after a worker was lost mid-run.

@@ -1204,6 +1204,7 @@ func (a *adminAPI) cancelJob(w http.ResponseWriter, r *http.Request) {
 	}
 	svc.Audit(r.Context(), auth.AuditJobCancel, "job:"+id, map[string]any{"function": j.Database + "/" + j.Function})
 	a.fns.metrics.JobFinished(chi.URLParam(r, "realm"), jobKind(j), executor.StatusCancelled)
+	a.fns.notifyCompletion(r.Context(), a.fns.log, svc, j, *j.Result)
 	writeJSON(w, http.StatusOK, jobSummaryJSON(j))
 }
 

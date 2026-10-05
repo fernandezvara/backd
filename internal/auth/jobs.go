@@ -291,6 +291,29 @@ func (s *Users) activeJob(ctx context.Context, database, function string) (strin
 	return "", nil
 }
 
+// CompletionJobID is the deterministic id of the notification of a job's end.
+func CompletionJobID(jobID string) string { return "complete_" + jobID }
+
+// EnqueueCompletionJob queues the notification of a job's end (on_complete): a
+// job of function target in the same database, with input as its input, run with
+// no caller (it has whatever its own function.yaml gives it). Its id comes from
+// the finished job, so a second attempt to queue it for the same job does
+// nothing; it returns false then. timeoutMS is the target's timeout.
+func (s *Users) EnqueueCompletionJob(ctx context.Context, finished Job, target string, timeoutMS int64, input json.RawMessage) (Job, bool, error) {
+	now := s.now()
+	j := Job{
+		ID: CompletionJobID(finished.ID), Database: finished.Database, Function: target, Input: input,
+		CallerActor: "on_complete", Origin: "on_complete:" + finished.Database + "/" + finished.Function,
+		TimeoutMS: timeoutMS, RequestID: finished.RequestID, Status: JobQueued,
+		CreatedAt: now, ExpiresAt: now.Add(pendingJobTTL),
+	}
+	err := s.Store.EnqueueJob(ctx, j)
+	if errors.Is(err, ErrJobExists) {
+		return j, false, nil
+	}
+	return j, err == nil, err
+}
+
 // ScheduledJobID is the deterministic id of a scheduled run.
 func ScheduledJobID(database, function string, scheduledAt time.Time) string {
 	return "cron_" + database + "_" + function + "_" + scheduledAt.UTC().Format("200601021504")
