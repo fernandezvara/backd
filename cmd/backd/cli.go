@@ -328,6 +328,10 @@ func registerRemote(cfg *cli.Config) {
 		limit(cc)
 		boolean(cc, "json", "one JSON object per line")
 	})
+	scheduleFlags := func(cc *cli.CommandConfig) {
+		fnFlag(cc)
+		boolean(cc, "json", "print the schedule as JSON")
+	}
 	jobFlags := func(cc *cli.CommandConfig) {
 		required(cc, "realm", "the realm the job belongs to")
 		required(cc, "job", "the job's id (see `backd functions jobs`)")
@@ -340,6 +344,19 @@ func registerRemote(cfg *cli.Config) {
 	fn.SubCommand("rerun").ShortHelp("queue a finished job again").
 		LongHelp("Queues a new job for a finished function job (any result, a cancelled one included):\nthe same function, input and caller, as a job of its own (the original keeps its\nresult). Prints the new job's id; follow it with `backd functions jobs`. A worker must\nbe running for it to run. Refused while the job is queued or running. Audited as\njob.rerun. " + adminAPINote).
 		Func(act("functions rerun", functionsRerun)).Config(jobFlags)
+	fn.SubCommand("schedules").ShortHelp("list the realm's schedules and whether each is paused").
+		LongHelp("Lists every scheduled function of a realm: its cron expression, time zone,\noverlap setting and whether an administrator paused it (see `backd functions pause`).\n" + adminAPINote).
+		Func(act("functions schedules", functionsSchedules)).Config(func(cc *cli.CommandConfig) {
+		required(cc, "realm", "the realm to list")
+		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+		boolean(cc, "json", "one JSON object per line")
+	})
+	fn.SubCommand("pause").ShortHelp("stop a function's schedule creating runs").
+		LongHelp("Pauses the function's cron schedule: no run is created until it is resumed. Runs\nalready queued or running are not touched, and the function can still be called by\nhand. The state is stored in the realm's database, so it survives restarts and\napplies to every instance. Pausing a paused schedule changes nothing. Audited as\nschedule.pause. " + adminAPINote).
+		Func(act("functions pause", functionsPause)).Config(scheduleFlags)
+	fn.SubCommand("resume").ShortHelp("let a paused schedule create runs again").
+		LongHelp("Resumes a paused cron schedule. The runs that fell due while it was paused are not\nmade up: the next scheduled time runs. Audited as schedule.resume. " + adminAPINote).
+		Func(act("functions resume", functionsResume)).Config(scheduleFlags)
 	fn.SubCommand("logs").ShortHelp("print the function's own console output for its recent calls").
 		LongHelp("Prints the function's own console output for its recent calls (already masked of\nany declared secrets), oldest first within each call. " + adminAPINote).
 		Func(act("functions logs", functionsLogs)).Config(func(cc *cli.CommandConfig) {

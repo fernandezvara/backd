@@ -232,3 +232,56 @@ func TestFunctionsCancelAndRerun(t *testing.T) {
 	waiting, _ := svc.EnqueueJob(ctx, auth.Job{Database: "app", Function: "export", TimeoutMS: 1000})
 	c.expect(1, "hasn't finished", "", append([]string{"functions", "rerun", "--job", waiting.ID}, base...)...)
 }
+
+func TestFunctionsPauseAndResume(t *testing.T) {
+	root := writeConfig(t, map[string]string{
+		"acme/realm.yaml":                           "roles:\n  ops:\n    admin: true\n",
+		"acme/app/notes/schema.json":                `{}`,
+		"acme/app/_functions/nightly/function.yaml": "mode: async\nschedule: \"0 3 * * *\"\ntimezone: Europe/Madrid\n",
+		"acme/app/_functions/nightly/index.ts":      "export default () => ({});\n",
+		"acme/app/_functions/plain/function.yaml":   "mode: async\n",
+		"acme/app/_functions/plain/index.ts":        "export default () => ({});\n",
+	})
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &auth.Users{
+		Store:    authtest.NewMemStore(),
+		Hasher:   auth.NewHasher(2, auth.Argon2Params{Memory: 64, Time: 1, Threads: 1}),
+		Settings: reg.Realms["acme"].Settings,
+	}
+	_, apiKey, err := svc.CreateAPIKey(context.Background(), "cli", auth.KeyOptions{Role: auth.KeyRoleAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(httpapi.NewHandler(httpapi.Config{
+		Log:           slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		Registry:      reg,
+		Ready:         func(context.Context) error { return nil },
+		ExecutorToken: "test-executor-token-0123456789ab",
+		Users: func(realm string) *auth.Users {
+			if realm == "acme" {
+				return svc
+			}
+			return nil
+		},
+	}))
+	defer srv.Close()
+	c := &cliEnv{t: t, env: map[string]string{
+		"BACKD_CREDENTIALS": filepath.Join(t.TempDir(), "backd", "credentials"),
+		"BACKD_API_KEY":     apiKey,
+	}}
+	fn := []string{"--function", "acme/app/nightly", "--url", srv.URL}
+
+	c.expect(0, "running", "", "functions", "schedules", "--realm", "acme", "--url", srv.URL)
+	c.expect(0, `app/nightly: schedule "0 3 * * *" is paused`, "", append([]string{"functions", "pause"}, fn...)...)
+	out := c.expect(0, "paused", "", "functions", "schedules", "--realm", "acme", "--url", srv.URL)
+	if !strings.Contains(out, "Europe/Madrid") || strings.Contains(out, "plain") {
+		t.Errorf("schedules: %q", out)
+	}
+	c.expect(0, `"paused":true`, "", append([]string{"functions", "pause", "--json"}, fn...)...)
+	c.expect(0, "is running", "", append([]string{"functions", "resume"}, fn...)...)
+	c.expect(1, "no schedule", "", "functions", "pause", "--function", "acme/app/plain", "--url", srv.URL)
+	c.expect(1, "not found", "", "functions", "pause", "--function", "acme/app/ghost", "--url", srv.URL)
+}
