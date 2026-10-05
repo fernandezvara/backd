@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { errorText, formatDate } from './format'
+import { errorText, formatDate, parseList } from './format'
 
 test('dates', () => {
   expect(formatDate(null)).toBe('—')
@@ -10,4 +10,9 @@ test('dates', () => {
 test('error text prefers the server message', () => {
   expect(errorText(new Error('email already used'), 'x')).toBe('email already used')
   expect(errorText('boom', 'fallback')).toBe('fallback')
+})
+
+test('comma lists', () => {
+  expect(parseList('a, b ,,c')).toEqual(['a', 'b', 'c'])
+  expect(parseList('')).toEqual([])
 })

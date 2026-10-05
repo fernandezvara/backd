@@ -36,6 +36,9 @@ export const useRealmConfig = defineStore('realm-config', () => {
   /** The roles declared in realm.yaml, with the emails seeded into them (null: not shown to this level). */
   const roles = computed(() => (config.value?.settings.roles ?? null) as Record<string, { seeded_emails?: string[] }> | null)
 
+  /** The realm's databases (null: not known). */
+  const databases = computed(() => (config.value ? Object.keys(config.value.databases).sort() : null))
+
   function reset() {
     config.value = null
     forRealm = ''
@@ -44,5 +47,5 @@ export const useRealmConfig = defineStore('realm-config', () => {
   watch(() => session.signedIn, (signedIn) => {
     if (!signedIn) reset()
   })
-  return { config, sendsEmail, roles, load, reset }
+  return { config, sendsEmail, roles, databases, load, reset }
 })

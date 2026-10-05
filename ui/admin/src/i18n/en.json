@@ -21,7 +21,14 @@
     "no": "No",
     "never": "Never",
     "loadMore": "Load more",
-    "unexpected": "Something went wrong."
+    "unexpected": "Something went wrong.",
+    "previous": "Previous",
+    "next": "Next",
+    "reset": "Clear",
+    "copy": "Copy",
+    "copied": "Copied.",
+    "allRealm": "Realm",
+    "details": "Details"
   },
   "theme": {
     "label": "Theme",
@@ -96,7 +103,10 @@
     "label": "Main",
     "overview": "Overview",
     "users": "Users",
-    "invitations": "Invitations"
+    "invitations": "Invitations",
+    "apikeys": "API keys",
+    "secrets": "Secrets",
+    "audit": "Audit"
   },
   "users": {
     "title": "Users",
@@ -229,5 +239,95 @@
       "expected": "revoke"
     },
     "loadFailed": "The invitations could not be loaded."
+  },
+  "apikeys": {
+    "title": "API keys",
+    "empty": "No API keys.",
+    "name": "Name",
+    "role": "Role",
+    "prefix": "Prefix",
+    "scopes": "Scopes",
+    "networks": "Networks",
+    "expires": "Expires",
+    "lastUsed": "Last used",
+    "everything": "Everything",
+    "anywhere": "Anywhere",
+    "never": "Never",
+    "roles": {
+      "data": "data",
+      "admin": "admin"
+    },
+    "create": {
+      "open": "Create API key",
+      "title": "Create API key",
+      "name": "Name",
+      "nameHelp": "Lowercase letters, digits, - and _.",
+      "role": "Role",
+      "roleHelp": "An admin key can use the admin API: give it only to servers you trust.",
+      "expires": "Expires in",
+      "expiresHelp": "Days (90d) or hours (12h). Empty: never.",
+      "networks": "Allowed networks",
+      "networksHelp": "Comma-separated CIDR networks. Empty: anywhere.",
+      "scopes": "Scopes",
+      "scopesHelp": "Comma-separated, such as read:blog/posts. Empty: everything the role reaches.",
+      "done": "API key {name} created.",
+      "keyTitle": "Copy the API key",
+      "keyBody": "This is the only time the key is shown. Store it somewhere safe now.",
+      "keyLabel": "API key",
+      "close": "I have copied it"
+    },
+    "revoke": {
+      "title": "Revoke {name}",
+      "body": "Anything using this key stops working at once.",
+      "action": "Revoke key",
+      "done": "API key {name} revoked."
+    },
+    "loadFailed": "The API keys could not be loaded."
+  },
+  "secrets": {
+    "title": "Secrets",
+    "help": "Values are write-only: they are never shown, here or in the API. Setting a secret again replaces its value.",
+    "empty": "No secrets are set.",
+    "name": "Name",
+    "scope": "Scope",
+    "updated": "Updated",
+    "updatedBy": "Updated by",
+    "realmScope": "Realm (every database)",
+    "set": {
+      "open": "Set a secret",
+      "title": "Set a secret",
+      "name": "Name",
+      "nameHelp": "Upper-case letters, digits and _.",
+      "value": "Value",
+      "valueHelp": "Write-only. It is encrypted and never shown again.",
+      "scope": "Scope",
+      "databaseName": "Database",
+      "done": "Secret {name} set."
+    },
+    "delete": {
+      "title": "Delete {name}",
+      "body": "A function that declares this secret answers secret_missing until it is set again.",
+      "action": "Delete secret",
+      "done": "Secret {name} deleted."
+    },
+    "loadFailed": "The secrets could not be loaded."
+  },
+  "audit": {
+    "title": "Audit trail",
+    "help": "Newest first. Records never hold secrets or emails; the actor and the target are ids and names.",
+    "empty": "No records match.",
+    "action": "Action",
+    "actor": "Actor",
+    "target": "Target",
+    "since": "From",
+    "until": "To",
+    "filter": "Filter",
+    "time": "Time",
+    "request": "Request",
+    "ip": "From IP",
+    "details": "Details",
+    "noDetails": "No details",
+    "page": "Showing {from}–{to}",
+    "loadFailed": "The audit trail could not be loaded."
   }
 }
