@@ -1,0 +1,13 @@
+{{- /*
+  A screenshot of the admin UI, made by the Playwright suite
+  (`E2E_SCREENSHOTS=1 make ui-e2e` writes docs/static/admin-ui/*.png).
+
+    {{< screenshot src="admin-ui/users.png" alt="The users list" >}}
+
+  src  relative to docs/static/
+  alt  what the picture shows (required: it is the text for readers who can't see it)
+*/ -}}
+<figure>
+  <img src="{{ .Get "src" | relURL }}" alt="{{ .Get "alt" }}" loading="lazy" style="max-width:100%;height:auto;border:1px solid #cbd5e1;border-radius:6px">
+  {{- with .Get "alt" }}<figcaption>{{ . }}</figcaption>{{ end }}
+</figure>

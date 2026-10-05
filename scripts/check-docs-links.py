@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Checks the built docs site (docs/public): every internal link resolves to a
-page, and every #anchor to an id on it.
+page, every #anchor to an id on it, and every image to a file.
 
     hugo --source docs --minify && scripts/check-docs-links.py [docs/public]
 
@@ -19,7 +19,7 @@ BASE = "/backd/"  # baseURL's path in docs/hugo.toml
 class Page(html.parser.HTMLParser):
     def __init__(self):
         super().__init__()
-        self.ids, self.links = set(), []
+        self.ids, self.links, self.images = set(), [], []
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
@@ -27,6 +27,8 @@ class Page(html.parser.HTMLParser):
             self.ids.add(a["id"])
         if tag == "a" and a.get("href"):
             self.links.append(a["href"])
+        if tag == "img" and a.get("src"):
+            self.images.append(a["src"])
 
 
 # Files served as downloads (the tutorial's app and config), not documentation:
@@ -78,6 +80,13 @@ for path, page in pages.items():
             bad.append((path, href, "no such page"))
         elif fragment and target in pages and urllib.parse.unquote(fragment) not in pages[target].ids:
             bad.append((path, href, "no such anchor"))
+
+# Images (the admin UI's screenshots) must exist too.
+for path, page in pages.items():
+    for src in page.images:
+        r = resolve(path, src)
+        if r is not None and (r[0] == "outside" or not os.path.isfile(r[0])):
+            bad.append((path, src, "no such image"))
 
 for path, href, why in sorted(bad):
     print(f"{os.path.relpath(path, ROOT)}: {href}: {why}")
