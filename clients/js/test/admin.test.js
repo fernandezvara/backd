@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createClient, NotFoundError } from '../src/index.js'
+import { ConflictError, createClient, NotFoundError } from '../src/index.js'
 import { mockFetch, errorBody } from './helpers.js'
 
 const adminUser = {
@@ -275,4 +275,18 @@ test('data goes through the admin data route', async () => {
   assert.equal(m.calls[4].url.searchParams.get('purge'), 'true')
   await posts.restore('p1')
   assert.equal(m.calls[5].url.pathname, '/v1/acme/_admin/data/blog/posts/p1/restore')
+})
+
+test('jobs can be cancelled and re-run', async () => {
+  const job = { id: 'j1', function: 'app/report', status: 'done', scheduled: false, origin: 'http', email_kind: null, rerun_of: null, attempts: 1, next_attempt_at: null, created_at: '2026-10-05T10:00:00.000Z', completed_at: '2026-10-05T10:00:01.000Z', result: { status: 'cancelled', code: null, duration_ms: 0 } }
+  const again = { ...job, id: 'j2', status: 'queued', origin: 'admin', rerun_of: 'j1', completed_at: null, result: null }
+  const m = mockFetch([{ body: job }, { status: 202, body: again }, { status: 409, body: errorBody('conflict', 'the job has already finished') }])
+  const a = adminOf(m)
+  assert.equal((await a.jobs.cancel('j1')).result?.status, 'cancelled')
+  assert.equal(m.calls[0].method, 'POST')
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/jobs/j1/cancel')
+  const second = await a.jobs.rerun('j1')
+  assert.equal(second.rerun_of, 'j1')
+  assert.equal(m.calls[1].url.pathname, '/v1/acme/_admin/jobs/j1/rerun')
+  await assert.rejects(a.jobs.cancel('j1'), ConflictError)
 })

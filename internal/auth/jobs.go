@@ -48,6 +48,7 @@ type Job struct {
 	ActsAsFunction bool   // run as the function itself, with full access (a scheduled function run by hand)
 	Origin         string // http, function (ctx.call), cron, admin or backd:<event>
 	ParentID       string // the invocation that queued it with ctx.call; empty otherwise
+	RerunOf        string // the finished job an administrator re-ran to make this one; empty otherwise
 	Depth          int    // nested calls above it
 	// Email is set on an email job: backd's own request to send a message, which
 	// a worker renders and hands to the realm's delivery function. It holds no
@@ -132,6 +133,75 @@ func (s *Users) jobRetention() time.Duration {
 		return s.Settings.FunctionsJobRetention
 	}
 	return registry.DefaultJobRetention
+}
+
+// ResultCancelled is the result status of a job an administrator cancelled.
+const ResultCancelled = "cancelled"
+
+var (
+	// ErrJobFinished means the job is done: there is nothing left to cancel.
+	ErrJobFinished = errors.New("the job has already finished")
+	// ErrJobNotFinished means a job can't be re-run while it may still run.
+	ErrJobNotFinished = errors.New("the job hasn't finished: cancel it, or wait for it to end")
+	// ErrJobNotFunction means the job isn't a function call: backd's own
+	// emails and erasures are not cancelled or re-run by hand.
+	ErrJobNotFunction = errors.New("only a function's job can be cancelled or re-run")
+)
+
+// CancelJob ends a queued or running function job: it is done, with the
+// result "cancelled", at once. A worker running it notices and stops the run
+// (what the function already did stays done). ErrJobFinished if it ended
+// first, ErrNotFound if there is no such job.
+func (s *Users) CancelJob(ctx context.Context, id string) (Job, error) {
+	j, found, err := s.Store.GetJob(ctx, id)
+	if err != nil {
+		return Job{}, err
+	}
+	if !found {
+		return Job{}, ErrNotFound
+	}
+	if j.Email != nil || j.Erase != nil {
+		return Job{}, ErrJobNotFunction
+	}
+	if j.Status == JobDone {
+		return Job{}, ErrJobFinished
+	}
+	now := s.now()
+	cancelled, err := s.Store.CancelJob(ctx, id, JobResult{Status: ResultCancelled, Message: "cancelled by an administrator"}, now, now.Add(s.jobRetention()))
+	if err != nil {
+		return Job{}, err
+	}
+	if !cancelled {
+		return Job{}, ErrJobFinished // it ended between the read and the update
+	}
+	j, _, err = s.Store.GetJob(ctx, id)
+	return j, err
+}
+
+// RerunJob queues a new job for a finished function job: the same function,
+// input and caller, as a job of its own (RerunOf says which). timeoutMS is the
+// function's timeout now, for the new job's lease.
+func (s *Users) RerunJob(ctx context.Context, id string, timeoutMS int64) (Job, error) {
+	j, found, err := s.Store.GetJob(ctx, id)
+	if err != nil {
+		return Job{}, err
+	}
+	if !found {
+		return Job{}, ErrNotFound
+	}
+	if j.Email != nil || j.Erase != nil {
+		return Job{}, ErrJobNotFunction
+	}
+	if j.Status != JobDone {
+		return Job{}, ErrJobNotFinished
+	}
+	return s.EnqueueJob(ctx, Job{
+		Database: j.Database, Function: j.Function, Input: j.Input,
+		CallerActor: j.CallerActor, CallerUserID: j.CallerUserID, CallerKeyHash: j.CallerKeyHash,
+		// A scheduled run acted as the function itself; its re-run isn't a cron run, but acts the same.
+		ActsAsFunction: j.ActsAsFunction || j.Scheduled,
+		Origin:         "admin", RerunOf: j.ID, TimeoutMS: timeoutMS,
+	})
 }
 
 // EnqueueJob stores a new job, queued for a worker to claim, and returns

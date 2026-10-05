@@ -776,7 +776,7 @@ func TestContract(t *testing.T) {
 	// Running functions by hand (internal ones included).
 	run := ad + "/functions/app/"
 	f.runner.set(nil)
-	req("POST", run+"cleanup/invoke", `{"input": {"n": 1}}`, key, 202)
+	jobID := req("POST", run+"cleanup/invoke", `{"input": {"n": 1}}`, key, 202)["id"].(string)
 	req("POST", run+"echo/invoke", `{"input": {"n": 1}, "as": "ada@example.com"}`, key, 200)
 	req("POST", run+"echo/invoke", `{"as": "nobody@example.com"}`, key, 404)
 	req("POST", run+"nothing_here/invoke", `{}`, key, 404)
@@ -784,6 +784,18 @@ func TestContract(t *testing.T) {
 	req("POST", run+"typed/invoke", `{"input": {"n": "x"}}`, key, 400)
 	req("POST", run+"echo/invoke", `{}`, nil, 401)
 	req("POST", run+"echo/invoke", `{}`, with(ada, "Content-Type", "application/json"), 403)
+	// Cancelling and re-running jobs.
+	jobs := ad + "/jobs/"
+	req("POST", jobs+jobID+"/rerun", ``, key, 409) // still queued
+	req("POST", jobs+jobID+"/cancel", ``, key, 200)
+	req("POST", jobs+jobID+"/cancel", ``, key, 409) // already finished
+	req("POST", jobs+"nope/cancel", ``, key, 404)
+	req("POST", jobs+"nope/rerun", ``, key, 404)
+	req("POST", jobs+jobID+"/cancel", ``, nil, 401)
+	req("POST", jobs+jobID+"/rerun", ``, nil, 401)
+	req("POST", jobs+jobID+"/cancel", ``, ada, 403)
+	req("POST", jobs+jobID+"/rerun", ``, ada, 403)
+	req("POST", jobs+jobID+"/rerun", ``, key, 202)
 	if _, _, err := f.svc.Signup(context.Background(), "gone@example.com", "dev-p4ssw0rd!", ""); err != nil {
 		t.Fatal(err)
 	}

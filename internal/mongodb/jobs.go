@@ -61,6 +61,7 @@ type jobDoc struct {
 	Email          *emailJobDoc  `bson:"email,omitempty"`
 	Erase          *eraseJobDoc  `bson:"erase,omitempty"`
 	ParentID       string        `bson:"parent_id,omitempty"`
+	RerunOf        string        `bson:"rerun_of,omitempty"`
 	Depth          int32         `bson:"depth,omitempty"`
 	Status         string        `bson:"status"`
 	Attempts       int32         `bson:"attempts"`
@@ -183,7 +184,7 @@ func jobFromDoc(d jobDoc) auth.Job {
 	j := auth.Job{
 		ID: d.ID, Database: d.Database, Function: d.Function, Input: encodeJSONAny(d.Input),
 		CallerActor: d.CallerActor, CallerUserID: d.CallerUserID, CallerKeyHash: d.CallerKeyHash, Scheduled: d.Scheduled,
-		ActsAsFunction: d.ActsAsFunction, Email: emailJobFromDoc(d.Email), Erase: eraseFromDoc(d.Erase), Origin: d.Origin, ParentID: d.ParentID, Depth: int(d.Depth),
+		ActsAsFunction: d.ActsAsFunction, Email: emailJobFromDoc(d.Email), Erase: eraseFromDoc(d.Erase), Origin: d.Origin, ParentID: d.ParentID, RerunOf: d.RerunOf, Depth: int(d.Depth),
 		TimeoutMS: d.TimeoutMS, RequestID: d.RequestID,
 		Status: d.Status, Attempts: int(d.Attempts), CreatedAt: d.CreatedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC(),
 		Result: jobResultFromDoc(d.Result),
@@ -207,7 +208,7 @@ func (s *AuthStore) EnqueueJob(ctx context.Context, j auth.Job) error {
 	_, err = s.jobs().InsertOne(ctx, jobDoc{
 		ID: j.ID, Database: j.Database, Function: j.Function, Input: input,
 		CallerActor: j.CallerActor, CallerUserID: j.CallerUserID, CallerKeyHash: j.CallerKeyHash, Scheduled: j.Scheduled, Status: j.Status,
-		ActsAsFunction: j.ActsAsFunction, Email: emailJobToDoc(j.Email), Erase: eraseToDoc(j.Erase), Origin: j.Origin, ParentID: j.ParentID, Depth: int32(j.Depth),
+		ActsAsFunction: j.ActsAsFunction, Email: emailJobToDoc(j.Email), Erase: eraseToDoc(j.Erase), Origin: j.Origin, ParentID: j.ParentID, RerunOf: j.RerunOf, Depth: int32(j.Depth),
 		Attempts: 0, TimeoutMS: j.TimeoutMS, RequestID: j.RequestID,
 		CreatedAt: j.CreatedAt, ExpiresAt: j.ExpiresAt,
 	})
@@ -267,6 +268,31 @@ func (s *AuthStore) CompleteJob(ctx context.Context, id string, result auth.JobR
 		{Key: "result", Value: doc},
 	}}})
 	return err
+}
+
+// CancelJob ends a job that isn't done with a result, clearing its lease so
+// no worker claims it again; a worker running it is told by finding it done.
+// It reports whether the job changed: the filter only matches a job that is not
+// done, so a result already recorded is never overwritten.
+func (s *AuthStore) CancelJob(ctx context.Context, id string, result auth.JobResult, completedAt, expiresAt time.Time) (bool, error) {
+	doc, err := jobResultToDoc(&result)
+	if err != nil {
+		return false, err
+	}
+	filter := bson.D{{Key: "_id", Value: id}, {Key: "status", Value: bson.D{{Key: "$ne", Value: auth.JobDone}}}}
+	res, err := s.jobs().UpdateOne(ctx, filter, bson.D{
+		{Key: "$set", Value: bson.D{
+			{Key: "status", Value: auth.JobDone},
+			{Key: "completed_at", Value: completedAt},
+			{Key: "expires_at", Value: expiresAt},
+			{Key: "result", Value: doc},
+		}},
+		{Key: "$unset", Value: bson.D{{Key: "lease_owner", Value: ""}, {Key: "lease_expires", Value: ""}, {Key: "next_attempt_at", Value: ""}}},
+	})
+	if err != nil {
+		return false, err
+	}
+	return res.ModifiedCount == 1, nil
 }
 
 // RetryJob counts a failed attempt and queues the job again: its lease runs

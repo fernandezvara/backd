@@ -167,3 +167,68 @@ func TestFunctionsJobs(t *testing.T) {
 	c.expect(2, "give --function", "", "functions", "jobs", "--url", srv.URL)
 	c.expect(2, "--status", "", "functions", "jobs", "--realm", "acme", "--status", "paused", "--url", srv.URL)
 }
+
+func TestFunctionsCancelAndRerun(t *testing.T) {
+	root := writeConfig(t, map[string]string{
+		"acme/realm.yaml":                          "roles:\n  ops:\n    admin: true\n",
+		"acme/app/notes/schema.json":               `{}`,
+		"acme/app/_functions/export/function.yaml": "mode: async\n",
+		"acme/app/_functions/export/index.ts":      "export default () => ({});\n",
+	})
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	svc := &auth.Users{
+		Store:    authtest.NewMemStore(),
+		Hasher:   auth.NewHasher(2, auth.Argon2Params{Memory: 64, Time: 1, Threads: 1}),
+		Settings: reg.Realms["acme"].Settings,
+		Now:      func() time.Time { return now },
+	}
+	_, apiKey, err := svc.CreateAPIKey(ctx, "cli", auth.KeyOptions{Role: auth.KeyRoleAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := svc.EnqueueJob(ctx, auth.Job{Database: "app", Function: "export", CallerActor: "user:u1", TimeoutMS: 1000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(httpapi.NewHandler(httpapi.Config{
+		Log:           slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		Registry:      reg,
+		Ready:         func(context.Context) error { return nil },
+		ExecutorToken: "test-executor-token-0123456789ab",
+		Now:           func() time.Time { return now },
+		Users: func(realm string) *auth.Users {
+			if realm == "acme" {
+				return svc
+			}
+			return nil
+		},
+	}))
+	defer srv.Close()
+	c := &cliEnv{t: t, env: map[string]string{
+		"BACKD_CREDENTIALS": filepath.Join(t.TempDir(), "backd", "credentials"),
+		"BACKD_API_KEY":     apiKey,
+	}}
+	base := []string{"--realm", "acme", "--url", srv.URL}
+
+	c.expect(2, "--job", "", append([]string{"functions", "cancel"}, base...)...)
+	c.expect(0, "cancelled "+job.ID+" (app/export)", "", append([]string{"functions", "cancel", "--job", job.ID}, base...)...)
+	c.expect(1, "already finished", "", append([]string{"functions", "cancel", "--job", job.ID}, base...)...)
+	c.expect(1, "not found", "", append([]string{"functions", "cancel", "--job", "nope"}, base...)...)
+
+	out := c.expect(0, "queued as ", "", append([]string{"functions", "rerun", "--job", job.ID}, base...)...)
+	if newID := strings.Fields(out)[2]; newID == job.ID || len(newID) < 10 {
+		t.Errorf("the new job's id: %q", out)
+	}
+	out = c.expect(0, `"rerun_of":"`+job.ID+`"`, "", append([]string{"functions", "rerun", "--job", job.ID, "--json"}, base...)...)
+	if !strings.Contains(out, `"status":"queued"`) {
+		t.Errorf("--json: %q", out)
+	}
+	// A job that hasn't finished can't be re-run.
+	waiting, _ := svc.EnqueueJob(ctx, auth.Job{Database: "app", Function: "export", TimeoutMS: 1000})
+	c.expect(1, "hasn't finished", "", append([]string{"functions", "rerun", "--job", waiting.ID}, base...)...)
+}

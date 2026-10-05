@@ -328,6 +328,18 @@ func registerRemote(cfg *cli.Config) {
 		limit(cc)
 		boolean(cc, "json", "one JSON object per line")
 	})
+	jobFlags := func(cc *cli.CommandConfig) {
+		required(cc, "realm", "the realm the job belongs to")
+		required(cc, "job", "the job's id (see `backd functions jobs`)")
+		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+		boolean(cc, "json", "print the job as JSON")
+	}
+	fn.SubCommand("cancel").ShortHelp("cancel a queued or running job").
+		LongHelp("Ends a queued, retry-waiting or running function job at once: it is done with the\nresult \"cancelled\". A worker that is running it stops the run within a few seconds\n(what the function already did stays done). The job keeps its input, so it can be\nre-run. Refused when it has already finished. Audited as job.cancel. " + adminAPINote).
+		Func(act("functions cancel", functionsCancel)).Config(jobFlags)
+	fn.SubCommand("rerun").ShortHelp("queue a finished job again").
+		LongHelp("Queues a new job for a finished function job (any result, a cancelled one included):\nthe same function, input and caller, as a job of its own (the original keeps its\nresult). Prints the new job's id; follow it with `backd functions jobs`. A worker must\nbe running for it to run. Refused while the job is queued or running. Audited as\njob.rerun. " + adminAPINote).
+		Func(act("functions rerun", functionsRerun)).Config(jobFlags)
 	fn.SubCommand("logs").ShortHelp("print the function's own console output for its recent calls").
 		LongHelp("Prints the function's own console output for its recent calls (already masked of\nany declared secrets), oldest first within each call. " + adminAPINote).
 		Func(act("functions logs", functionsLogs)).Config(func(cc *cli.CommandConfig) {

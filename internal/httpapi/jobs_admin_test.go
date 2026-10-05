@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
 	"time"
@@ -95,5 +96,98 @@ func TestAdminJobsListing(t *testing.T) {
 	}
 	if rec, _ := f.doH(t, "GET", "/v1/acme/_admin/jobs", "", bearer(f.ada)); rec.Code != http.StatusForbidden {
 		t.Errorf("non-admin user: %d", rec.Code)
+	}
+}
+
+// Cancel and re-run (roadmap f1): an administrator ends a job that hasn't
+// finished, and queues a finished function job again; both are audited, both
+// need the functions area, and neither touches backd's own jobs.
+func TestAdminCancelAndRerunJobs(t *testing.T) {
+	f := newRulesFixture(t)
+	w := newTestWorker(t, f)
+	ctx := context.Background()
+	_, adminKey, err := f.svc.CreateAPIKey(ctx, "jobs-admin", auth.KeyOptions{Role: auth.KeyRoleAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := bearer(adminKey)
+	jobs := admin + "/jobs/"
+
+	rec, out := f.doH(t, "POST", "/v1/acme/app/_func/job", `{"day": "2026-10-01"}`, bearer(f.ada))
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("enqueue: %d %v", rec.Code, out)
+	}
+	id := out["id"].(string)
+
+	// A queued job is cancelled at once; the answer is the job as the listing shows it.
+	rec, got := f.doH(t, "POST", jobs+id+"/cancel", "", key)
+	res, _ := got["result"].(map[string]any)
+	if rec.Code != http.StatusOK || got["status"] != "done" || res["status"] != "cancelled" || got["completed_at"] == nil {
+		t.Fatalf("cancel: %d %v", rec.Code, got)
+	}
+	if w.RunOnce(ctx) {
+		t.Error("a worker claimed a cancelled job")
+	}
+	// Twice, unknown, and not a thing to cancel any more: refusals say why.
+	if rec, got := f.doH(t, "POST", jobs+id+"/cancel", "", key); rec.Code != http.StatusConflict || errCode(got) != "conflict" {
+		t.Errorf("cancel again: %d %v", rec.Code, got)
+	}
+	if rec, got := f.doH(t, "POST", jobs+"nope/cancel", "", key); rec.Code != http.StatusNotFound || errCode(got) != "not_found" {
+		t.Errorf("cancel unknown: %d %v", rec.Code, got)
+	}
+
+	// Re-run: a new job, same function, input and caller; the original keeps its result.
+	rec, again := f.doH(t, "POST", jobs+id+"/rerun", "", key)
+	newID, _ := again["id"].(string)
+	if rec.Code != http.StatusAccepted || newID == "" || newID == id || again["status"] != "queued" || again["rerun_of"] != id || again["origin"] != "admin" {
+		t.Fatalf("rerun: %d %v", rec.Code, again)
+	}
+	if rec.Header().Get("Location") != "/v1/acme/app/_jobs/"+newID {
+		t.Errorf("Location = %q", rec.Header().Get("Location"))
+	}
+	if !w.RunOnce(ctx) {
+		t.Fatal("the re-run wasn't claimed")
+	}
+	req := f.runner.last()
+	if string(req.Envelope.Input) != `{"day": "2026-10-01"}` {
+		t.Errorf("the re-run's input: %s", req.Envelope.Input)
+	}
+	var user map[string]any
+	_ = json.Unmarshal(req.Envelope.User, &user)
+	if user["id"] != f.adaID {
+		t.Errorf("the re-run acts as the original caller: %v", user)
+	}
+	// Its own result is stored, readable by that caller; the cancelled one stays cancelled.
+	if code, out := f.as(t, f.ada, "GET", "/v1/acme/app/_jobs/"+newID, ""); code != 200 || out["status"] != "done" || out["result"].(map[string]any)["status"] != "ok" {
+		t.Errorf("the re-run's result: %d %v", code, out)
+	}
+	if code, out := f.as(t, f.ada, "GET", "/v1/acme/app/_jobs/"+id, ""); code != 200 || out["result"].(map[string]any)["status"] != "cancelled" {
+		t.Errorf("the original: %d %v", code, out)
+	}
+	// A job still waiting can't be re-run.
+	_, pending := f.doH(t, "POST", "/v1/acme/app/_func/job", `{}`, bearer(f.ada))
+	if rec, got := f.doH(t, "POST", jobs+pending["id"].(string)+"/rerun", "", key); rec.Code != http.StatusConflict || errCode(got) != "conflict" {
+		t.Errorf("rerun an unfinished job: %d %v", rec.Code, got)
+	}
+
+	// backd's own jobs (emails, erasures) are neither cancelled nor re-run.
+	mail, err := f.svc.EnqueueJob(ctx, auth.Job{Email: &auth.EmailJob{Kind: "welcome", UserID: f.adaID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, op := range []string{"cancel", "rerun"} {
+		if rec, got := f.doH(t, "POST", jobs+mail.ID+"/"+op, "", key); rec.Code != http.StatusConflict {
+			t.Errorf("%s an email job: %d %v", op, rec.Code, got)
+		}
+	}
+
+	// The audit trail records who, never any input.
+	records, _, _ := f.svc.AuditTrail(ctx, auth.AuditFilter{Action: auth.AuditJobCancel})
+	if len(records) != 1 || records[0].Target != "job:"+id || records[0].Actor != "key:jobs-admin" {
+		t.Errorf("cancel audit: %+v", records)
+	}
+	records, _, _ = f.svc.AuditTrail(ctx, auth.AuditFilter{Action: auth.AuditJobRerun})
+	if len(records) != 1 || records[0].Details["new_job"] != newID || records[0].Details["function"] != "app/job" {
+		t.Errorf("rerun audit: %+v", records)
 	}
 }

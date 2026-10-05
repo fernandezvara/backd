@@ -219,6 +219,7 @@ type jobRecord struct {
 	Function    string  `json:"function"`
 	Status      string  `json:"status"`
 	Scheduled   bool    `json:"scheduled"`
+	RerunOf     *string `json:"rerun_of"`
 	Attempts    int     `json:"attempts"`
 	NextAttempt *string `json:"next_attempt_at"`
 	CreatedAt   string  `json:"created_at"`
@@ -296,6 +297,30 @@ func functionsJobs(c *cli.CommandContext) error {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\t%t\t%s\n", j.CreatedAt, j.Function, j.Status, result, code, duration, j.Attempts, next, j.Scheduled, j.ID)
 	}
 	return tw.Flush()
+}
+
+// functionsCancel handles `backd functions cancel`: ends a job that hasn't
+// finished.
+func functionsCancel(c *cli.CommandContext) error { return jobControl(c, "cancel", "cancelled") }
+
+// functionsRerun handles `backd functions rerun`: queues a finished job again.
+func functionsRerun(c *cli.CommandContext) error { return jobControl(c, "rerun", "queued as") }
+
+// jobControl posts to _admin/jobs/{id}/{op} and prints the job the answer names.
+func jobControl(c *cli.CommandContext, op, verb string) error {
+	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	if err != nil {
+		return err
+	}
+	var job jobRecord
+	if err := t.call("POST", "_admin/jobs/"+url.PathEscape(str(c, "job"))+"/"+op, nil, nil, &job); err != nil {
+		return err
+	}
+	if flag(c, "json") {
+		return encodeJSONLines(c.Stdout(), []jobRecord{job})
+	}
+	fmt.Fprintf(c.Stdout(), "%s %s (%s)\n", verb, job.ID, job.Function)
+	return nil
 }
 
 // functionsLogs handles `backd functions logs`.

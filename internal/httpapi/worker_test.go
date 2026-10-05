@@ -403,3 +403,59 @@ func TestWorkerJobMetrics(t *testing.T) {
 		t.Errorf("no expired lease in:\n%s", grepBackd(rec.Body.String()))
 	}
 }
+
+// untilCancelledRunner runs until its request ends, like the executor's client does:
+// a cancelled context ends the call (and the real executor kills the process).
+type untilCancelledRunner struct{ started chan struct{} }
+
+func (b *untilCancelledRunner) Invoke(ctx context.Context, _ executor.InvokeRequest) (executor.Result, error) {
+	b.started <- struct{}{}
+	<-ctx.Done()
+	return executor.Result{}, ctx.Err()
+}
+
+// TestWorkerStopsACancelledJob proves cancelling a running job ends its run:
+// the job is done with the result "cancelled" at once, the worker notices and
+// stops the executor call, and neither a retry nor a late result overwrites it.
+func TestWorkerStopsACancelledJob(t *testing.T) {
+	f := newRulesFixture(t)
+	runner := &untilCancelledRunner{started: make(chan struct{}, 1)}
+	w := newTestWorker(t, f)
+	w.fns.runner = runner
+	w.cancelPoll = 10 * time.Millisecond
+	ctx := context.Background()
+
+	rec, out := f.doH(t, "POST", "/v1/acme/app/_func/job", `{"n": 1}`, bearer(f.ada))
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("enqueue: %d %v", rec.Code, out)
+	}
+	id := out["id"].(string)
+
+	ran := make(chan bool, 1)
+	go func() { ran <- w.RunOnce(ctx) }()
+	select {
+	case <-runner.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the run never started")
+	}
+	if _, err := f.svc.CancelJob(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ran:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the worker kept running a cancelled job")
+	}
+
+	code, got := f.as(t, f.ada, "GET", "/v1/acme/app/_jobs/"+id, "")
+	if code != 200 || got["status"] != "done" || got["result"].(map[string]any)["status"] != "cancelled" {
+		t.Errorf("the job: %d %v", code, got)
+	}
+	recs, _, _ := f.svc.Invocations(ctx, auth.InvocationFilter{Function: "app/job"})
+	if len(recs) != 1 || recs[0].Status != executor.StatusCancelled || recs[0].JobID != id {
+		t.Errorf("the attempt's record: %+v", recs)
+	}
+	if w.RunOnce(ctx) {
+		t.Error("a cancelled job was claimed again")
+	}
+}

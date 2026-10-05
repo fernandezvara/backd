@@ -41,11 +41,15 @@ const (
 	AuditBootstrap       = "realm.bootstrap"
 	// The admin data route (documents written past the collections' rules);
 	// the target is database/collection/id, never content.
-	AuditDataCreate     = "data.create"
-	AuditDataUpdate     = "data.update"
-	AuditDataDelete     = "data.delete"
-	AuditDataRestore    = "data.restore"
-	AuditDataPurge      = "data.purge"
+	AuditDataCreate  = "data.create"
+	AuditDataUpdate  = "data.update"
+	AuditDataDelete  = "data.delete"
+	AuditDataRestore = "data.restore"
+	AuditDataPurge   = "data.purge"
+	// A job cancelled or re-run by an administrator; the target is job:<id>,
+	// details: function (and, for a re-run, the new job's id).
+	AuditJobCancel      = "job.cancel"
+	AuditJobRerun       = "job.rerun"
 	AuditSecretSet      = "secret.set"        // details: database ("": realm scope); never the value
 	AuditSecretDelete   = "secret.delete"     // details: database
 	AuditSecretsRotated = "secret.rotate_key" // by backd secret rotate-key; details: count

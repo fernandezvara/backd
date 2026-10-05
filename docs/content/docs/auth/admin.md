@@ -39,7 +39,9 @@ An admin role can open the whole admin API (`admin: true`), only some of its are
 | `apikeys` | `/apikeys` |
 | `secrets` | `/secrets` |
 | `audit` | `GET /audit` |
-| `functions` | `POST /functions/{database}/{name}/invoke`, `GET /invocations` and `GET /jobs`; and reading any job through the data API |
+| `functions` | `POST /jobs/{id}/cancel` | none | `200` with the job, now `done` with the result `cancelled`: a queued, retrying or running function job ends at once and a worker running it stops the run. `409` when it has already finished or isn't a function's job. Audited. See [Cancelling and re-running a job](../../functions/jobs/#cancelling-and-re-running-a-job) |
+| `POST /jobs/{id}/rerun` | none | `202` with a new job (`rerun_of` names the original) for a finished function job: the same function, input and caller. `409` while it hasn't finished, or when it isn't a function's job or its function no longer exists. Audited |
+| `POST /functions/{database}/{name}/invoke`, `GET /invocations`, `GET /jobs`, and `POST /jobs/{id}/cancel` and `…/rerun`; and reading any job through the data API |
 | `data` | the admin data route (documents past their collections' rules) |
 | `config` | `GET /config`, the read-only view of the realm's configuration |
 
