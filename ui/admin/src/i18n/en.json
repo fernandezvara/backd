@@ -1,0 +1,78 @@
+{
+  "app": {
+    "name": "backd admin",
+    "skip": "Skip to content"
+  },
+  "common": {
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "signOut": "Sign out",
+    "loading": "Loading…",
+    "none": "None"
+  },
+  "theme": {
+    "label": "Theme",
+    "system": "System",
+    "light": "Light",
+    "dark": "Dark"
+  },
+  "realm": {
+    "label": "Realm",
+    "current": "Realm {name}",
+    "choose": "Choose a realm",
+    "chooseHelp": "Every administrator signs in to one realm at a time. Enter the realm's name.",
+    "open": "Continue",
+    "invalid": "A realm name has lowercase letters, digits, - and _ only."
+  },
+  "signIn": {
+    "title": "Sign in to {realm}",
+    "email": "Email",
+    "password": "Password",
+    "keep": "Keep me signed in in this tab",
+    "keepHelp": "Stores the session in this tab until it closes. Leave it off on shared computers.",
+    "submit": "Sign in",
+    "submitting": "Signing in…",
+    "otherRealm": "Another realm",
+    "failed": "The email or password is wrong, or sign-in is temporarily blocked.",
+    "notAdmin": "This account is not an administrator of this realm.",
+    "unreachable": "The server could not be reached.",
+    "ended": {
+      "signed-out": "You signed out.",
+      "idle": "You were signed out after a period of inactivity.",
+      "expired": "Your session ended. Sign in again."
+    }
+  },
+  "home": {
+    "title": "Overview",
+    "signedInAs": "Signed in as {who}",
+    "level": "Access level",
+    "levels": {
+      "full": "Full administrator",
+      "read": "Read-only",
+      "custom": "Custom"
+    },
+    "canRead": "Can read",
+    "canWrite": "Can change",
+    "nothing": "Nothing",
+    "key": "an API key ({name})"
+  },
+  "areas": {
+    "users": "Users",
+    "invitations": "Invitations",
+    "apikeys": "API keys",
+    "secrets": "Secrets",
+    "audit": "Audit",
+    "functions": "Functions and jobs",
+    "data": "Data",
+    "config": "Configuration"
+  },
+  "confirm": {
+    "type": "Type {text} to confirm",
+    "mismatch": "The text doesn't match."
+  },
+  "notFound": {
+    "title": "Page not found",
+    "body": "There is nothing at this address.",
+    "home": "Back to the start"
+  }
+}
