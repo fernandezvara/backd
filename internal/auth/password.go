@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
@@ -59,6 +60,7 @@ const (
 type Hasher struct {
 	Params Argon2Params
 	slots  chan struct{}
+	hashes atomic.Uint64
 }
 
 // NewHasher returns a Hasher running at most concurrency hashes at once
@@ -69,6 +71,10 @@ func NewHasher(concurrency int, params Argon2Params) *Hasher {
 	}
 	return &Hasher{Params: params, slots: make(chan struct{}, concurrency)}
 }
+
+// Hashes is how many passwords this Hasher has hashed (Verify doesn't count).
+// Tests use it to show that a code path hashes, instead of timing it.
+func (h *Hasher) Hashes() uint64 { return h.hashes.Load() }
 
 // Concurrency is how many hashes may run at once.
 func (h *Hasher) Concurrency() int { return cap(h.slots) }
@@ -94,6 +100,7 @@ func (h *Hasher) Hash(ctx context.Context, password string) (string, error) {
 		return "", err
 	}
 	defer h.release()
+	h.hashes.Add(1)
 	p := h.Params
 	key := argon2.IDKey([]byte(password), salt, p.Time, p.Memory, p.Threads, keyLen)
 	b64 := base64.RawStdEncoding
