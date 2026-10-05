@@ -47,6 +47,16 @@ The **Users** page lists the realm's users, a page at a time, and searches by em
 
 A read-only level sees the Users page only when the realm's `admin.read_access.users` grants it, and then without any control that changes something. The same holds for every area: a control appears only when `whoami` says the level may use it.
 
+## API keys, secrets and audit
+
+**API keys** lists every key with its role, prefix, scopes, networks, expiry and last use, never the key. *Create API key* takes a name, a role (`data` or `admin`), an optional expiry (`90d`, `12h`), networks and scopes; the key is shown **once**, in a dialog, and is gone from the page when you close it. *Revoke* asks for the key's name to be typed. An admin key can use the whole admin API, so create one only for a server you trust, and remember the [escalation rules](../admin/#admin-rights): you can't hand out more than you hold.
+
+**Secrets** lists the names, scopes (the realm or one database), when each was last set and by whom. Values are **write-only**, as in the API: the form takes a value, sends it and forgets it, and nothing in the interface can show it again. Setting a name again replaces the value; deleting asks for the name to be typed, and a function that declares the secret answers `secret_missing` until it is set again. Functions only see secrets when the instance has `BACKD_SECRETS_KEY`.
+
+**Audit** shows the [audit trail](../audit/) newest first, fifty records a page, filtered by action, actor, target and a time range. Each record's details, request id and client address open under *Details*, as plain text; an actor or a target that is a user links to the user's page when the level may read users.
+
+A read-only level reads all three without the buttons that create, revoke, set or delete; a custom level that lacks an area doesn't get its page at all.
+
 ## Sessions
 
 - **The token lives in memory.** Reloading the page signs out. *Keep me signed in in this tab* stores the session in the tab's `sessionStorage` until the tab closes; the UI never uses `localStorage` for it. Leave it off on shared computers.
