@@ -351,3 +351,37 @@ func TestCancelJobOnMongoDB(t *testing.T) {
 		t.Errorf("the next claim: %+v %v", next, found)
 	}
 }
+
+func TestScheduleStatesOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	t0 := time.Date(2126, 10, 5, 12, 0, 0, 0, time.UTC)
+	if got, err := s.ListScheduleStates(ctx); err != nil || len(got) != 0 {
+		t.Fatalf("empty: %v %v", got, err)
+	}
+	for _, st := range []auth.ScheduleState{
+		{Database: "app", Function: "nightly", Paused: true, ChangedAt: t0, ChangedBy: "key:ops"},
+		{Database: "app", Function: "nightly", Paused: false, ChangedAt: t0.Add(time.Hour), ChangedBy: "user:u1"}, // replaces
+		{Database: "app", Function: "digest", Paused: true, ChangedAt: t0},
+	} {
+		if err := s.SetScheduleState(ctx, st); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.ListScheduleStates(ctx)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("list: %v %v", got, err)
+	}
+	for _, st := range got {
+		switch st.Function {
+		case "nightly":
+			if st.Paused || !st.ChangedAt.Equal(t0.Add(time.Hour)) || st.ChangedBy != "user:u1" || st.Database != "app" {
+				t.Errorf("nightly: %+v", st)
+			}
+		case "digest":
+			if !st.Paused {
+				t.Errorf("digest: %+v", st)
+			}
+		}
+	}
+}

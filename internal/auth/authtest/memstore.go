@@ -26,6 +26,7 @@ type MemStore struct {
 	invites     map[string]auth.Invitation // id → invitation
 	audit       []auth.AuditRecord
 	secrets     map[string]auth.Secret // "database\x00name" → secret
+	schedules   map[string]auth.ScheduleState
 	invocations []auth.InvocationRecord
 	emailTokens map[string]auth.EmailToken
 	jobs        map[string]memJob                 // id → job
@@ -36,7 +37,7 @@ type MemStore struct {
 
 // NewMemStore returns an empty store.
 func NewMemStore() *MemStore {
-	return &MemStore{users: map[string]auth.User{}, identities: map[string]auth.Identity{}, sessions: map[string]auth.Session{}, keys: map[string]auth.APIKey{}, attempts: map[string]memAttempts{}, invites: map[string]auth.Invitation{}, secrets: map[string]auth.Secret{}, jobs: map[string]memJob{}, idempotency: map[string]auth.IdempotencyRecord{}}
+	return &MemStore{users: map[string]auth.User{}, identities: map[string]auth.Identity{}, sessions: map[string]auth.Session{}, keys: map[string]auth.APIKey{}, attempts: map[string]memAttempts{}, invites: map[string]auth.Invitation{}, secrets: map[string]auth.Secret{}, schedules: map[string]auth.ScheduleState{}, jobs: map[string]memJob{}, idempotency: map[string]auth.IdempotencyRecord{}}
 }
 
 func secretKey(database, name string) string { return database + "\x00" + name }
@@ -950,4 +951,21 @@ func (m *MemStore) ReopenJob(_ context.Context, id string, expiresAt time.Time) 
 	j.Result, j.CompletedAt, j.NextAttemptAt, j.leaseExpires = nil, time.Time{}, time.Time{}, time.Time{}
 	m.jobs[id] = j
 	return true, nil
+}
+
+func (m *MemStore) SetScheduleState(_ context.Context, st auth.ScheduleState) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.schedules[st.Database+"/"+st.Function] = st
+	return nil
+}
+
+func (m *MemStore) ListScheduleStates(context.Context) ([]auth.ScheduleState, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]auth.ScheduleState, 0, len(m.schedules))
+	for _, st := range m.schedules {
+		out = append(out, st)
+	}
+	return out, nil
 }

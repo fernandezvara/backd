@@ -323,6 +323,72 @@ func jobControl(c *cli.CommandContext, op, verb string) error {
 	return nil
 }
 
+// scheduleRecord mirrors what GET _admin/schedules returns.
+type scheduleRecord struct {
+	Function  string  `json:"function"`
+	Schedule  string  `json:"schedule"`
+	Timezone  string  `json:"timezone"`
+	Overlap   string  `json:"overlap"`
+	Paused    bool    `json:"paused"`
+	ChangedAt *string `json:"changed_at"`
+	ChangedBy *string `json:"changed_by"`
+}
+
+// functionsSchedules handles `backd functions schedules`.
+func functionsSchedules(c *cli.CommandContext) error {
+	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	if err != nil {
+		return err
+	}
+	var out struct{ Items []scheduleRecord }
+	if err := t.call("GET", "_admin/schedules", nil, nil, &out); err != nil {
+		return err
+	}
+	if flag(c, "json") {
+		return encodeJSONLines(c.Stdout(), out.Items)
+	}
+	tw := tabwriter.NewWriter(c.Stdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "FUNCTION\tSCHEDULE\tTIMEZONE\tOVERLAP\tSTATE\tCHANGED\tBY")
+	for _, s := range out.Items {
+		state, changed, by := "running", "-", "-"
+		if s.Paused {
+			state = "paused"
+		}
+		if s.ChangedAt != nil {
+			changed = *s.ChangedAt
+		}
+		if s.ChangedBy != nil {
+			by = *s.ChangedBy
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", s.Function, s.Schedule, s.Timezone, s.Overlap, state, changed, by)
+	}
+	return tw.Flush()
+}
+
+func functionsPause(c *cli.CommandContext) error  { return scheduleControl(c, "pause") }
+func functionsResume(c *cli.CommandContext) error { return scheduleControl(c, "resume") }
+
+// scheduleControl posts to _admin/functions/{database}/{name}/{op}.
+func scheduleControl(c *cli.CommandContext, op string) error {
+	t, database, name, err := functionTarget(c)
+	if err != nil {
+		return err
+	}
+	var s scheduleRecord
+	if err := t.call("POST", "_admin/functions/"+url.PathEscape(database)+"/"+url.PathEscape(name)+"/"+op, nil, nil, &s); err != nil {
+		return err
+	}
+	if flag(c, "json") {
+		return encodeJSONLines(c.Stdout(), []scheduleRecord{s})
+	}
+	state := "running"
+	if s.Paused {
+		state = "paused"
+	}
+	fmt.Fprintf(c.Stdout(), "%s: schedule %q is %s\n", s.Function, s.Schedule, state)
+	return nil
+}
+
 // functionsLogs handles `backd functions logs`.
 func functionsLogs(c *cli.CommandContext) error {
 	q := url.Values{}

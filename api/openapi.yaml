@@ -1570,6 +1570,104 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/schedules:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+    get:
+      tags: [admin]
+      summary: List the realm's schedules
+      description: |
+        Every scheduled function of the realm with its schedule, time zone and
+        overlap setting, and whether an administrator paused it, sorted by
+        function. Needs the `functions` area (read is enough).
+      operationId: adminListSchedules
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The schedules.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Schedule" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/functions/{database}/{name}/pause:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { name: name, in: path, required: true, description: The function's name., schema: { type: string } }
+    post:
+      tags: [admin]
+      summary: Pause a function's schedule
+      description: |
+        A paused schedule creates no runs until it is resumed; runs already queued
+        or running are not touched, and the function can still be called by hand.
+        The state is stored in the realm's database, so it survives restarts and
+        applies to every instance. Pausing a paused schedule changes nothing.
+        Audited as `schedule.pause` (target `schedule:<database>/<function>`).
+        Needs the `functions` area.
+      operationId: adminPauseSchedule
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The schedule, now paused.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Schedule" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: The function has no schedule.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/functions/{database}/{name}/resume:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { name: name, in: path, required: true, description: The function's name., schema: { type: string } }
+    post:
+      tags: [admin]
+      summary: Resume a function's schedule
+      description: |
+        Lets a paused schedule create runs again. The runs that fell due while it
+        was paused are not made up: the next scheduled time after the resume runs.
+        Resuming a schedule that isn't paused changes nothing. Audited as
+        `schedule.resume`. Needs the `functions` area.
+      operationId: adminResumeSchedule
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The schedule, running.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Schedule" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: The function has no schedule.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/functions/{database}/{name}/invoke:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -2743,6 +2841,18 @@ components:
             properties:
               level: { type: string }
               line: { type: string }
+
+    Schedule:
+      type: object
+      required: [function, schedule, timezone, overlap, paused, changed_at, changed_by]
+      properties:
+        function: { type: string, description: "`<database>/<name>`." }
+        schedule: { type: string, description: The cron expression. }
+        timezone: { type: string, description: "The IANA time zone it is read in (`UTC` by default)." }
+        overlap: { type: string, enum: [allow, skip] }
+        paused: { type: boolean }
+        changed_at: { type: [string, "null"], format: date-time, description: When it was last paused or resumed; null if never. }
+        changed_by: { type: [string, "null"], description: "The actor that did (`key:<name>` or `user:<id>`); null if never." }
 
     JobSummary:
       description: |

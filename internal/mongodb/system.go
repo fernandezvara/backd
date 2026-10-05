@@ -35,6 +35,9 @@ const (
 	// IdempotencyCollection ties an Idempotency-Key to its outcome
 	// (roadmap F12), scoped to the function and the caller.
 	IdempotencyCollection = "idempotency"
+	// SchedulesCollection holds the runtime state of scheduled functions:
+	// whether an administrator paused one.
+	SchedulesCollection = "schedules"
 	// EmailTokensCollection holds the hashes of the tokens sent in emails.
 	EmailTokensCollection = "email_tokens"
 )
@@ -251,6 +254,16 @@ var systemCollections = []systemCollection{
 			{keys: bson.D{{Key: "erase.user_id", Value: 1}}, sparse: true},
 			{keys: bson.D{{Key: "expires_at", Value: 1}}, ttl: true},
 		},
+	},
+	{
+		// _id is "<database>/<function>".
+		name: SchedulesCollection,
+		validator: jsonSchema([]string{"_id", "paused", "changed_at"}, map[string]any{
+			"_id":        str(),
+			"paused":     typ("bool"),
+			"changed_at": typ("date"),
+			"changed_by": str(),
+		}),
 	},
 	{
 		name: EmailTokensCollection,

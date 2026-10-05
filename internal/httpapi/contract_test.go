@@ -784,6 +784,20 @@ func TestContract(t *testing.T) {
 	req("POST", run+"typed/invoke", `{"input": {"n": "x"}}`, key, 400)
 	req("POST", run+"echo/invoke", `{}`, nil, 401)
 	req("POST", run+"echo/invoke", `{}`, with(ada, "Content-Type", "application/json"), 403)
+	// Pausing and resuming schedules.
+	req("GET", ad+"/schedules", "", key, 200)
+	req("GET", ad+"/schedules", "", nil, 401)
+	req("GET", ad+"/schedules", "", ada, 403)
+	req("POST", run+"nightly/pause", ``, key, 200)
+	req("POST", run+"nightly/resume", ``, key, 200)
+	req("POST", run+"echo/pause", ``, key, 409) // not scheduled
+	req("POST", run+"nothing_here/pause", ``, key, 404)
+	req("POST", run+"nightly/pause", ``, nil, 401)
+	req("POST", run+"nightly/pause", ``, ada, 403)
+	req("POST", run+"nightly/resume", ``, nil, 401)
+	req("POST", run+"nightly/resume", ``, ada, 403)
+	req("POST", run+"echo/resume", ``, key, 409)
+	req("POST", run+"nothing_here/resume", ``, key, 404)
 	// Cancelling and re-running jobs.
 	jobs := ad + "/jobs/"
 	req("POST", jobs+jobID+"/rerun", ``, key, 409) // still queued
