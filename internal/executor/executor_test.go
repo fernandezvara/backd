@@ -286,6 +286,78 @@ func TestInvokeBundlesAndCallbacks(t *testing.T) {
 	f.mu.Unlock()
 }
 
+// ctx.step and ctx.progress: the steps come back with the result, closed by how
+// the run ended; for a job's attempt they are also pushed live, coalesced.
+func TestInvokeSteps(t *testing.T) {
+	f := newFixture(t)
+	stepPuts := func() int {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		n := 0
+		for _, c := range f.calls {
+			if c.Method == "PUT" && c.URL.Path == "/v1/shop/_job/steps" {
+				n++
+			}
+		}
+		return n
+	}
+
+	// A sync call: steps in the result only; the runner closes the last as done.
+	res := f.invoke(f.request(`export default (ctx) => {
+		ctx.step("load", { total: 10, message: "reading" });
+		ctx.progress(4);
+		ctx.step("save");
+		return 1;
+	};`))
+	if res.Status != StatusOK || len(res.Steps) != 2 || res.Steps[0].Status != "done" || res.Steps[0].Current != 4 || res.Steps[0].Total == nil || *res.Steps[0].Total != 10 || res.Steps[1].Status != "done" || res.Steps[1].EndedAt == nil {
+		t.Fatalf("steps: %+v", res)
+	}
+	if stepPuts() != 0 {
+		t.Error("a sync call pushed steps live")
+	}
+
+	// A function error closes the current step as failed.
+	res = f.invoke(f.request(`export default (ctx) => { ctx.step("check"); throw ctx.error(422, "bad", "no"); };`))
+	if res.Status != StatusFunctionError || len(res.Steps) != 1 || res.Steps[0].Status != "failed" {
+		t.Errorf("function error: %+v", res)
+	}
+
+	// A job's attempt: thousands of updates make a handful of live writes, and
+	// the last values arrive with the result.
+	req := f.request(`export default async (ctx) => {
+		ctx.step("count", { total: 5000 });
+		for (let i = 1; i <= 5000; i++) ctx.progress(i);
+		return "done";
+	};`)
+	req.Envelope.Callback = &Callback{URL: f.backd.URL, Realm: "shop", Token: "bdf_job", Progress: true}
+	res = f.invoke(req)
+	if res.Status != StatusOK || len(res.Steps) != 1 || res.Steps[0].Current != 5000 {
+		t.Fatalf("job attempt: %+v", res)
+	}
+	if n := stepPuts(); n < 1 || n > 4 {
+		t.Errorf("%d live writes for 5000 updates", n)
+	}
+	f.mu.Lock()
+	last := f.calls[len(f.calls)-1]
+	f.mu.Unlock()
+	if last.Header.Get("Authorization") != "Bearer bdf_job" {
+		t.Errorf("the live write used %q", last.Header.Get("Authorization"))
+	}
+
+	// A killed run sends no result, but what it pushed live was kept by backd.
+	before := stepPuts()
+	req = f.request(`export default async (ctx) => { ctx.step("stuck"); await new Promise((r) => setTimeout(r, 60000)); };`)
+	req.TimeoutMS = 1500
+	req.Envelope.Callback = &Callback{URL: f.backd.URL, Realm: "shop", Token: "bdf_job", Progress: true}
+	res = f.invoke(req)
+	if res.Status != StatusTimeout || len(res.Steps) != 0 {
+		t.Errorf("killed run: %+v", res)
+	}
+	if stepPuts() <= before {
+		t.Error("the step was not pushed before the kill")
+	}
+}
+
 func TestHandler(t *testing.T) {
 	f := newFixture(t)
 	srv := httptest.NewServer(f.ex.Handler())
