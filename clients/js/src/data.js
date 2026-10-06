@@ -1,4 +1,4 @@
-import { Files } from './files.js'
+import { Files, downloadFile, fileField, fileUrl, prepareUpload, uploadFile } from './files.js'
 import { Job } from './functions.js'
 
 /**
@@ -37,6 +37,7 @@ import { Job } from './functions.js'
  * @property {string} [after]               The `next_cursor` of the previous page: continues the list after it
  *   (same `where` and `orderBy`). Can't be combined with `skip`.
  * @property {boolean} [count]              Also return `total`.
+ * @property {boolean} [fileLinks]          Add `url` and `expires_at` to every file of every document.
  * @property {'only' | 'include'} [deleted] In a collection with `soft_delete`: `'only'` lists the deleted documents
  *   (the trash), `'include'` both. Needs the `restore` rule besides `read`.
  */
@@ -62,7 +63,9 @@ import { Job } from './functions.js'
 
 /**
  * Options for `get`. `deleted` reads a soft-deleted document (see `ListParams`).
- * @typedef {RequestOptions & { deleted?: 'only' | 'include' }} GetOptions
+ * `fileLinks` adds `url` and `expires_at` to every file the document holds: for content shown right
+ * away (a gallery, a preview). They expire; for a download button, `downloadFile` gets a fresh link.
+ * @typedef {RequestOptions & { deleted?: 'only' | 'include', fileLinks?: boolean }} GetOptions
  */
 
 /**
@@ -238,8 +241,8 @@ export class Collection {
    * @returns {Promise<Doc<T>>}
    */
   async get(id, opts = {}) {
-    const { deleted, ...rest } = opts
-    return (await this.client.request({ method: 'GET', path: [...this.path, id], query: { deleted }, ...rest })).data
+    const { deleted, fileLinks, ...rest } = opts
+    return (await this.client.request({ method: 'GET', path: [...this.path, id], query: { deleted, file_links: fileLinks || undefined }, ...rest })).data
   }
 
   /**
@@ -311,6 +314,82 @@ export class Collection {
   }
 
   /**
+   * How a file field takes files: `upload` (`proxy` or `direct`), `max_size`, `types`, `multiple`
+   * and `max_files`. Asked once and remembered.
+   * @param {string} field
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<import('./files.js').FileField>}
+   */
+  fileField(field, opts) {
+    return fileField(this.client, this.path, field, opts)
+  }
+
+  /**
+   * Uploads a file into a document's file field, whichever way the field takes it (through
+   * backd, or straight to the bucket), reporting the bytes sent to `onProgress`. Resolves with
+   * the updated document.
+   * @param {string} id
+   * @param {string} field
+   * @param {Blob | File | Uint8Array | ArrayBuffer | string} file
+   * @param {import('./files.js').UploadOptions} [opts]
+   * @returns {Promise<Doc<T>>}
+   */
+  uploadFile(id, field, file, opts) {
+    return /** @type {Promise<Doc<T>>} */ (uploadFile(this.client, this.path, id, field, file, opts))
+  }
+
+  /**
+   * Uploads a file for a document that doesn't exist yet. Name the result in the field when
+   * creating it: `create({ title, receipts: [up.ref] })` (`up.ref` is `{ upload, token }`).
+   * @param {string} field
+   * @param {Blob | File | Uint8Array | ArrayBuffer | string} file
+   * @param {import('./files.js').UploadOptions} [opts]
+   * @returns {Promise<import('./files.js').PreparedUpload>}
+   */
+  prepareUpload(field, file, opts) {
+    return prepareUpload(this.client, this.path, field, file, opts)
+  }
+
+  /**
+   * A link to a file, to show or open: `{ url, expiresAt }`. It works without credentials until
+   * it expires, so fetch it when it is needed.
+   * @param {string} id
+   * @param {string} field
+   * @param {string} fileId
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ url: string, expiresAt: string }>}
+   */
+  fileUrl(id, field, fileId, opts) {
+    return fileUrl(this.client, this.path, id, field, fileId, opts)
+  }
+
+  /**
+   * Starts a download in the browser: a fresh link, opened with `location.assign`; the browser
+   * saves the file and stays on the page. Throws outside a browser: use `fileUrl`.
+   * @param {string} id
+   * @param {string} field
+   * @param {string} fileId
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ url: string, expiresAt: string }>}
+   */
+  downloadFile(id, field, fileId, opts) {
+    return downloadFile(this.client, this.path, id, field, fileId, opts)
+  }
+
+  /**
+   * Removes one file from a document. Resolves with the updated document.
+   * @param {string} id
+   * @param {string} field
+   * @param {string} fileId
+   * @param {WriteOptions} [opts]
+   * @returns {Promise<Doc<T>>}
+   */
+  async deleteFile(id, field, fileId, opts) {
+    if (typeof fileId !== 'string' || fileId === '') throw new TypeError('deleteFile: the id of the file to remove is required (files(id, field).delete() clears the field)')
+    return /** @type {Promise<Doc<T>>} */ (this.files(id, field).delete(fileId, opts))
+  }
+
+  /**
    * Brings a soft-deleted document back, as it was, at the next version.
    * NotFoundError if it isn't in the trash or the caller may not see it there.
    * @param {string} id
@@ -335,6 +414,7 @@ function listQuery(p) {
     after: p.after,
     count: p.count || undefined,
     deleted: p.deleted,
+    file_links: p.fileLinks || undefined,
   }
 }
 

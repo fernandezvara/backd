@@ -635,3 +635,30 @@ func TestAnAbandonedUploadIsCleanedUp(t *testing.T) {
 		t.Errorf("after the retry: %+v %v", f.deletions(), f.s3.Keys())
 	}
 }
+
+// An app asks how a field takes files before it sends one.
+func TestFileFieldInfo(t *testing.T) {
+	f := newFilesFixture(t)
+	for field, want := range map[string]map[string]any{
+		"avatar":   {"upload": "proxy", "download": "presigned", "multiple": false, "max_files": float64(1), "max_size": float64(4096)},
+		"receipts": {"upload": "proxy", "multiple": true, "max_files": float64(2), "max_size": float64(8192)},
+		"manual":   {"download": "proxy"},
+	} {
+		rec, out := f.doRaw(t, "GET", "/v1/acme/app/library/_files/"+field, nil, map[string]string{"Authorization": "Bearer " + f.ada})
+		if rec.Code != 200 || out["name"] != field {
+			t.Fatalf("%s: %d %v", field, rec.Code, out)
+		}
+		for k, v := range want {
+			if out[k] != v {
+				t.Errorf("%s.%s = %v, want %v", field, k, out[k], v)
+			}
+		}
+	}
+	_, out := f.doRaw(t, "GET", "/v1/acme/app/library/_files/avatar", nil, nil)
+	if types, _ := out["types"].([]any); len(types) != 3 {
+		t.Errorf("types: %v", out["types"])
+	}
+	if rec, _ := f.doRaw(t, "GET", "/v1/acme/app/library/_files/nope", nil, nil); rec.Code != 404 {
+		t.Errorf("an unknown field: %d", rec.Code)
+	}
+}

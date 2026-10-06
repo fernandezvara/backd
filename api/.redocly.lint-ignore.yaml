@@ -11,3 +11,7 @@ openapi.yaml:
     - '#/paths/~1v1~1{realm}~1{database}~1{collection}~1_files~1{field}~1uploads'
     - '#/paths/~1v1~1{realm}~1_admin~1data~1{database}~1{collection}~1{id}'
     - '#/paths/~1v1~1{realm}~1_admin~1data~1{database}~1{collection}~1{id}~1_files~1{field}'
+    - '#/paths/~1v1~1{realm}~1{database}~1{collection}~1_files~1{field}'
+    - '#/paths/~1v1~1{realm}~1_admin~1data~1{database}~1{collection}~1_files~1{field}'
+    - '#/paths/~1v1~1{realm}~1_admin~1data~1{database}~1{collection}~1{id}~1restore'
+    - '#/paths/~1v1~1{realm}~1{database}~1{collection}~1{id}~1restore'

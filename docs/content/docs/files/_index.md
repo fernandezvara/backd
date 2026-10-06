@@ -9,8 +9,10 @@ toc: true
 `backd` itself stores no files. A realm that wants documents to carry files (an avatar, receipts, attachments) **brings its own S3-compatible storage**, from a closed list of providers: [AWS S3](aws-s3/), [MinIO](minio/), [Cloudflare R2](cloudflare-r2/) and [DigitalOcean Spaces](digitalocean-spaces/). The bucket stays private: files are only ever reached through `backd`, under the same access rules as the document they belong to.
 
 {{< hint note >}}
-**What is available.** A realm [connects its storage](storage/); collections declare [file fields](file-fields/); documents take [uploads and downloads](transfers/) through backd, under the document's [rules](rules/). [Creating a document together with its files](transfers/#creating-a-document-with-its-files) works through pending uploads. [Uploads straight to the bucket](transfers/#direct-uploads) work too. [Erasure, usage totals and reconcile](maintenance/) keep the storage consistent with the documents. [Functions](../functions/files/) read and write files with `files(id, field)`, as the JavaScript client does. Helpers for pending and direct uploads in the client, and the example app, are the next steps of the Files roadmap.
+**What is available.** Everything below, from [connecting storage](storage/) to [files in apps](apps/). The Shelf tutorial chapters that use it are the next step of the Files roadmap.
 {{< /hint >}}
+
+Pages: [connecting storage](storage/), [file fields](file-fields/), [uploads and downloads](transfers/), [rules for files](rules/), [keeping storage tidy](maintenance/), [files in apps](apps/), and [files in functions](../functions/files/).
 
 ## The ideas
 

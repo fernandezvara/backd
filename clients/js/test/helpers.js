@@ -4,7 +4,7 @@
  * @param {Array<{ status?: number, body?: unknown, bytes?: string, headers?: Record<string, string> } | Error>} answers
  */
 export function mockFetch(answers) {
-  /** @type {Array<{ url: URL, method: string, headers: Record<string, string>, body: any, rawBody?: Uint8Array, credentials?: string }>} */
+  /** @type {Array<{ url: URL, method: string, headers: Record<string, string>, body: any, rawBody?: Uint8Array, blob?: Blob, credentials?: string }>} */
   const calls = []
   const queue = [...answers]
   /**
@@ -20,6 +20,7 @@ export function mockFetch(answers) {
       headers: /** @type {Record<string, string>} */ (init.headers ?? {}),
       body: typeof init.body === 'string' ? JSON.parse(init.body) : undefined,
       rawBody: init.body instanceof Uint8Array ? init.body : undefined,
+      blob: typeof Blob !== 'undefined' && init.body instanceof Blob ? init.body : undefined,
       credentials: init.credentials,
     })
     const next = queue.shift()

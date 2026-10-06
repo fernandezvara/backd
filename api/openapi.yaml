@@ -2498,6 +2498,64 @@ paths:
         "412": { $ref: "#/components/responses/VersionMismatch" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/{database}/{collection}/_files/{field}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+      - { $ref: "#/components/parameters/fileField" }
+    get:
+      tags: [documents]
+      summary: How a file field takes files
+      description: |
+        The field's configuration, nothing about any document: how it takes uploads
+        (`proxy` or `direct`), how it serves downloads, whether it holds several files,
+        and the limits a file is checked against. An app uses it to choose between a proxy
+        and a direct upload and to refuse a file before sending it. `max_size` is the
+        field's, and for a proxy field also within `BACKD_MAX_UPLOAD_BYTES`.
+      operationId: getFileField
+      security: [{}, { session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: The field.
+          headers:
+            Cache-Control: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FileFieldInfo" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/data/{database}/{collection}/_files/{field}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+      - { $ref: "#/components/parameters/fileField" }
+    get:
+      tags: [admin]
+      summary: How a file field takes files
+      description: |
+        The field's configuration, nothing about any document: how it takes uploads
+        (`proxy` or `direct`), how it serves downloads, whether it holds several files,
+        and the limits a file is checked against. An app uses it to choose between a proxy
+        and a direct upload and to refuse a file before sending it. `max_size` is the
+        field's, and for a proxy field also within `BACKD_MAX_UPLOAD_BYTES`.
+      operationId: adminGetFileField
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The field.
+          headers:
+            Cache-Control: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FileFieldInfo" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/{database}/{collection}/_files/{field}/uploads:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -4314,6 +4372,19 @@ components:
         orphan_bytes: { type: integer }
         deleted: { type: integer }
         failed: { type: array, items: { type: string } }
+
+    FileFieldInfo:
+      type: object
+      additionalProperties: false
+      required: [name, upload, download, multiple, max_files, max_size, types]
+      properties:
+        name: { type: string }
+        upload: { type: string, enum: [proxy, direct] }
+        download: { type: string, enum: [presigned, proxy] }
+        multiple: { type: boolean }
+        max_files: { type: integer, minimum: 1, description: "1 for a field that holds one file." }
+        max_size: { type: integer, description: Bytes per file. }
+        types: { type: array, items: { type: string }, description: "Allowed content types; empty allows any." }
 
     DirectUploadStart:
       type: object

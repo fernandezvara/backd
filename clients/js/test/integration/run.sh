@@ -35,7 +35,18 @@ export BACKD_URL=http://127.0.0.1:18080
 BACKD_API_KEY=$(key itest)
 BACKD_INVITE_API_KEY=$(key invite)
 BACKD_MAIL_API_KEY=$(key mail)
-export BACKD_API_KEY BACKD_INVITE_API_KEY BACKD_MAIL_API_KEY
+BACKD_FILES_API_KEY=$(key files)
+# The files realm's storage keys are secrets (MinIO's root user, dev-only).
+for pair in STORAGE_ACCESS_KEY=backd-js STORAGE_SECRET_KEY='dev-p4ssw0rd!'; do
+  printf '%s\n' "${pair#*=}" | compose exec -T backd /backd secret set --realm files --name "${pair%%=*}" --url http://localhost:8080 >/dev/null
+done
+# The bucket is made by minio-setup, which may still be at it: wait until the storage works.
+for _ in $(seq 1 60); do
+  compose exec -T backd /backd storage check --realm files --url http://localhost:8080 >/dev/null 2>&1 && break
+  sleep 1
+done
+compose exec -T backd /backd storage check --realm files --url http://localhost:8080 >/dev/null || { compose exec -T backd /backd storage check --realm files --url http://localhost:8080; exit 1; }
+export BACKD_API_KEY BACKD_INVITE_API_KEY BACKD_MAIL_API_KEY BACKD_FILES_API_KEY
 
 cd clients/js
 npm run test:integration
