@@ -2,6 +2,7 @@ export { createClient, Client } from './client.js'
 export { Auth } from './auth.js'
 export { Database, Collection, ifMatchValue } from './data.js'
 export { Admin } from './admin.js'
+export { Files } from './files.js'
 export { Job, JobTimeoutError } from './functions.js'
 export {
   BackdError,
@@ -33,6 +34,10 @@ export { memoryStorage, localStorageStorage } from './storage.js'
  * @typedef {import('./data.js').GetOptions} GetOptions
  * @typedef {import('./data.js').DeleteOptions} DeleteOptions
  * @typedef {import('./data.js').CreateOptions} CreateOptions
+ * @typedef {import('./files.js').FileDetails} FileDetails
+ * @typedef {import('./files.js').FileContent} FileContent
+ * @typedef {import('./files.js').FileLink} FileLink
+ * @typedef {import('./files.js').PutOptions} PutOptions
  * @typedef {import('./admin.js').AdminUser} AdminUser
  * @typedef {import('./admin.js').AdminAccess} AdminAccess
  * @typedef {import('./admin.js').AdminConfig} AdminConfig

@@ -1,3 +1,4 @@
+import { Files } from './files.js'
 import { Job } from './functions.js'
 
 /**
@@ -294,6 +295,19 @@ export class Collection {
   async delete(id, opts = {}) {
     const { purge, ...rest } = opts
     await this.client.request({ method: 'DELETE', path: [...this.path, id], query: { purge: purge || undefined }, ...write(rest) })
+  }
+
+  /**
+   * The files a document holds in a file field (`files:` in collection.yaml): `get`, `put`,
+   * `delete` and `link`. They are the `_files` routes of the API, under the caller's own
+   * rules (the `update` rule for `put` and `delete`, `read` for `get` and `link`); in a
+   * function, `ctx.admin.db` skips them.
+   * @param {string} id        The document.
+   * @param {string} field     The file field.
+   * @returns {Files}
+   */
+  files(id, field) {
+    return new Files(this.client, this.path, id, field)
   }
 
   /**

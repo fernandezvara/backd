@@ -447,6 +447,20 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
+// errNoPublicURL: a backd-signed link made on the internal listener (for a function)
+// has no address clients could use unless BACKD_URL says which.
+var errNoPublicURL = errors.New("backd's public address is unknown: set BACKD_URL")
+
+// linkError answers a link that couldn't be made.
+func linkError(w http.ResponseWriter, r *http.Request, err error) {
+	logger(r.Context()).Error("make a file link", "error", err)
+	message := "file storage is not available"
+	if errors.Is(err, errNoPublicURL) {
+		message = "this link is made for an address clients can reach, which isn't known: set BACKD_URL"
+	}
+	writeError(w, r, http.StatusServiceUnavailable, codeStorageUnavailable, message)
+}
+
 // publicBase is the address of backd as clients reach it, for the links backd signs.
 func (d *documents) publicBase(r *http.Request) string {
 	if d.baseURL != "" {
@@ -474,6 +488,9 @@ func (d *documents) fileLink(ctx context.Context, r *http.Request, obj *storage.
 	key, err := d.linkKey(ctx, c.Realm)
 	if err != nil {
 		return "", time.Time{}, err
+	}
+	if d.internal && d.baseURL == "" {
+		return "", time.Time{}, errNoPublicURL
 	}
 	expires = d.now().Add(ttl)
 	sig := fileLinkMAC(key, c.Realm, c.Database, c.Name, docID, f.Name, fileID, expires.Unix())
@@ -564,15 +581,15 @@ func (d *documents) downloadFile(w http.ResponseWriter, r *http.Request) {
 	if q.Get("link") == "json" && !signed {
 		l, exp, err := d.fileLink(r.Context(), r, obj, c, f, docID, file)
 		if err != nil {
-			logger(r.Context()).Error("make a file link", "error", err)
-			writeError(w, r, http.StatusServiceUnavailable, codeStorageUnavailable, "file storage is not available")
+			linkError(w, r, err)
 			return
 		}
 		w.Header().Set("Cache-Control", "private, no-store")
 		writeJSON(w, http.StatusOK, map[string]any{"url": l, "expires_at": exp.UTC().Format(timeFormat)})
 		return
 	}
-	if !signed && downloadMode(f, st) == registry.DownloadPresigned {
+	// A function reads the bytes through backd: it may not reach the bucket.
+	if !signed && !d.internal && downloadMode(f, st) == registry.DownloadPresigned {
 		l, _, err := d.fileLink(r.Context(), r, obj, c, f, docID, file)
 		if err != nil {
 			logger(r.Context()).Error("make a file link", "error", err)
@@ -748,8 +765,7 @@ func (d *documents) addFileLinks(w http.ResponseWriter, r *http.Request, c *regi
 				}
 				l, exp, err := d.fileLink(r.Context(), r, obj, c, f, docID, file)
 				if err != nil {
-					logger(r.Context()).Error("make a file link", "error", err)
-					writeError(w, r, http.StatusServiceUnavailable, codeStorageUnavailable, "file storage is not available")
+					linkError(w, r, err)
 					return false
 				}
 				cp["url"], cp["expires_at"] = l, exp.UTC().Format(timeFormat)

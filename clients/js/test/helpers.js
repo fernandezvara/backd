@@ -1,10 +1,10 @@
 /**
  * A fake fetch that answers from a list of expected calls, in order, and
  * records what was sent.
- * @param {Array<{ status?: number, body?: unknown, headers?: Record<string, string> } | Error>} answers
+ * @param {Array<{ status?: number, body?: unknown, bytes?: string, headers?: Record<string, string> } | Error>} answers
  */
 export function mockFetch(answers) {
-  /** @type {Array<{ url: URL, method: string, headers: Record<string, string>, body: any, credentials?: string }>} */
+  /** @type {Array<{ url: URL, method: string, headers: Record<string, string>, body: any, rawBody?: Uint8Array, credentials?: string }>} */
   const calls = []
   const queue = [...answers]
   /**
@@ -19,12 +19,14 @@ export function mockFetch(answers) {
       method: init.method ?? 'GET',
       headers: /** @type {Record<string, string>} */ (init.headers ?? {}),
       body: typeof init.body === 'string' ? JSON.parse(init.body) : undefined,
+      rawBody: init.body instanceof Uint8Array ? init.body : undefined,
       credentials: init.credentials,
     })
     const next = queue.shift()
     if (!next) throw new Error('unexpected request: ' + (init.method ?? 'GET') + ' ' + url.pathname)
     if (next instanceof Error) throw next
     const status = next.status ?? 200
+    if (next.bytes !== undefined) return new Response(next.bytes, { status, headers: { 'Content-Type': 'application/octet-stream', ...next.headers } })
     const body = next.body === undefined || status === 204 ? null : JSON.stringify(next.body)
     return new Response(body, { status, headers: { 'Content-Type': 'application/json', ...next.headers } })
   }

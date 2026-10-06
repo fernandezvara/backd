@@ -45,7 +45,9 @@ import { COOKIE_SESSION, memoryStorage } from './storage.js'
  * @property {string[]} path             Path segments after /v1/{realm}, encoded here.
  * @property {Record<string, string | number | boolean | undefined>} [query]
  * @property {unknown} [body]            Sent as JSON.
- * @property {string} [contentType]      Defaults to application/json when there's a body.
+ * @property {BodyInit} [rawBody]        Sent as it is (a file's bytes), instead of `body`.
+ * @property {boolean} [raw]             Don't read the answer: it comes back as `response`, for a file's bytes.
+ * @property {string} [contentType]      Defaults to application/json when there's a body (octet-stream with `rawBody`).
  * @property {Record<string, string>} [headers]
  * @property {boolean} [auth]            Send credentials; default true.
  * @property {boolean} [expire]          Treat a refused session token as expired; default true.
@@ -59,6 +61,7 @@ import { COOKIE_SESSION, memoryStorage } from './storage.js'
  * @property {number} status
  * @property {Headers} headers
  * @property {any} data   Parsed JSON, or undefined for empty bodies.
+ * @property {Response} [response]   With `raw`: the answer, its body not read.
  */
 
 const isBrowser = () => typeof window !== 'undefined' && typeof window.document !== 'undefined'
@@ -136,8 +139,9 @@ export class Client {
       if (v !== undefined) url.searchParams.set(k, String(v))
     }
     /** @type {Record<string, string>} */
-    const headers = { Accept: 'application/json', ...this.headers, ...req.headers }
-    if (req.body !== undefined) headers['Content-Type'] = req.contentType ?? 'application/json'
+    const headers = { Accept: req.raw ? '*/*' : 'application/json', ...this.headers, ...req.headers }
+    if (req.rawBody !== undefined) headers['Content-Type'] = req.contentType ?? 'application/octet-stream'
+    else if (req.body !== undefined) headers['Content-Type'] = req.contentType ?? 'application/json'
 
     let sentSession = false
     if (req.auth !== false) {
@@ -163,9 +167,11 @@ export class Client {
         res = await this.fetchImpl(url, {
           method: req.method,
           headers,
-          body: req.body === undefined ? undefined : JSON.stringify(req.body),
+          body: req.rawBody !== undefined ? req.rawBody : req.body === undefined ? undefined : JSON.stringify(req.body),
           signal: req.signal,
           credentials: this.cookies ? 'include' : undefined,
+          // A stream is sent as it is read, which fetch asks to be told about.
+          ...(typeof ReadableStream !== 'undefined' && req.rawBody instanceof ReadableStream ? { duplex: 'half' } : {}),
         })
       } catch (cause) {
         throw new NetworkError({
@@ -175,6 +181,7 @@ export class Client {
           cause,
         })
       }
+      if (res.ok && req.raw) return { status: res.status, headers: res.headers, data: undefined, response: res }
       if (res.ok) {
         const text = await res.text()
         return { status: res.status, headers: res.headers, data: text ? JSON.parse(text) : undefined }

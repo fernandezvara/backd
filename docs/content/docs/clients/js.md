@@ -213,6 +213,21 @@ const [order, stock] = await backd.db('main').batch([
 - If any operation fails, the whole batch rejects (the usual error types — `ValidationError`, `ForbiddenError`, `VersionMismatchError`, ...) and nothing was written. A version mismatch means re-reading and retrying the whole batch, not just one operation.
 - See [Batch writes](../../api/documents/#batch-writes) for the full request/response shape.
 
+## Files
+
+A document's files are reached with `files(id, field)` on a collection (the admin data route too): `put` stores bytes, `get` downloads, `link` makes a link an `<img>` or a button can use, and `delete` removes. Each is a request to the field's [`_files` routes](../../files/transfers/), under the caller's rules.
+
+```js
+const photos = backd.db('main').collection('people').files(person.id, 'photo')
+
+const doc = await photos.put(file, { name: file.name })   // a File or Blob; the document, with the file's details
+const { response } = await photos.get()                   // a fetch Response; or `(await photos.get()).bytes()`
+const { url } = await photos.link()                       // { url, expires_at }
+await photos.delete()                                     // the field's files; delete(fileId) removes one
+```
+
+`put` replaces a single field's file and adds to a `multiple` field's; `get`, `link` and `delete` take a `fileId` (a field that holds several needs one). A pending upload for a document that doesn't exist yet, and direct uploads from the browser, are not in the client yet: they use the [API](../../files/transfers/#creating-a-document-with-its-files) directly.
+
 ## Functions
 
 `db.fn(name, input, opts)` calls a [function](../../functions/). A `sync` function's output comes back directly:
