@@ -86,7 +86,7 @@ func TestFileFieldErrors(t *testing.T) {
 		{"max_files range", "files:\n  a: {max_size: 1MB, multiple: true, max_files: 0}\n", "max_files: must be between 1 and 1000"},
 		{"type", "files:\n  a: {max_size: 1MB, types: [png]}\n", "must be a content type"},
 		{"upload mode", "files:\n  a: {max_size: 1MB, upload: ftp}\n", "upload: must be proxy or direct"},
-		{"direct isn't available", "files:\n  a: {max_size: 1MB, upload: direct}\n", "upload: direct isn't available yet"},
+		{"direct over one PUT", "files:\n  a: {max_size: 6GiB, upload: direct}\n", "at most 5GiB"},
 		{"download", "files:\n  a: {max_size: 1MB, download: cdn}\n", "download: must be presigned or proxy"},
 		{"ttl", "files:\n  a: {max_size: 1MB, presigned_ttl: 8d}\n", "presigned_ttl: must be between"},
 		{"cache without proxy", "files:\n  a: {max_size: 1MB, cache: 1h}\n", "cache: only applies to proxied downloads"},

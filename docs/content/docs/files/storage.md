@@ -69,7 +69,7 @@ The running `backd` (which holds the keys) verifies the storage the way files wi
 | `list` | The prefix can be listed (only a reconcile needs this: a failure is a warning). |
 | `checksum` | The storage **rejects** an upload whose `x-amz-checksum-sha256` doesn't match: direct uploads rely on this. The report says whether it is `verified` or `ignored`. |
 | `download link`, `upload link` | Signed links work, force a download, and refuse different content. Skipped when links are for a `public_endpoint` `backd` can't reach: open one from a browser instead. |
-| `cors` | The bucket's CORS rules (browsers need them for direct uploads and cross-origin downloads), where the provider exposes them. |
+| `cors` | The bucket's CORS rules, where the provider exposes them: browsers need them for [direct uploads](../transfers/#direct-uploads) (the `PUT` method and the `Content-Type` and `x-amz-checksum-sha256` headers) and for cross-origin downloads. It warns when a rule set couldn't carry a direct upload. |
 | `encryption` | The bucket's default encryption, where the provider exposes it. |
 
 The objects it makes are deleted again; nothing else in the bucket is touched. `--json` prints the report as JSON, and it is the admin API's [`POST /_admin/storage/check`](../../auth/admin/#endpoints) (audited as `storage.check`; the `config` area, read is enough).

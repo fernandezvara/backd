@@ -288,6 +288,7 @@ var systemCollections = []systemCollection{
 			"expires_at":  typ("date"),
 			// Pending uploads (made before the document that holds them).
 			"pending":       typ("bool"),
+			"direct":        typ("bool"),
 			"token_hash":    str(),
 			"owner":         str(),
 			"caller_key":    str(),

@@ -287,3 +287,66 @@ func TestPutStreamOnMinIO(t *testing.T) {
 type failingReader struct{}
 
 func (failingReader) Read([]byte) (int, error) { return 0, errors.New("the client went away") }
+
+func TestCORSGapsForDirectUploads(t *testing.T) {
+	for name, c := range map[string]struct {
+		rules []CORSRule
+		want  int
+	}{
+		"complete":         {[]CORSRule{{Origins: []string{"https://app"}, Methods: []string{"PUT", "GET"}, Headers: []string{"Content-Type", "x-amz-checksum-sha256"}}}, 0},
+		"wildcard headers": {[]CORSRule{{Methods: []string{"PUT"}, Headers: []string{"*"}}}, 0},
+		"reads only":       {[]CORSRule{{Methods: []string{"GET"}, Headers: []string{"*"}}}, 1},
+		"no checksum":      {[]CORSRule{{Methods: []string{"PUT"}, Headers: []string{"content-type"}}}, 1},
+		"no headers":       {[]CORSRule{{Methods: []string{"PUT"}}}, 2},
+	} {
+		if got := corsGaps(c.rules); len(got) != c.want {
+			t.Errorf("%s: %v", name, got)
+		}
+	}
+}
+
+// A direct upload as a browser makes it: the signed link carries the length, the type
+// and the checksum, so the storage refuses a body that differs from what was signed.
+func TestPresignedPutIsVerifiedByMinIO(t *testing.T) {
+	o := minioObjects(t)
+	ctx := context.Background()
+	key := o.Key("acme", "app", "notes", "fl_direct")
+	t.Cleanup(func() { _ = o.Delete(context.Background(), key) })
+	body := []byte("signed upload, exactly this")
+	sum := sha256.Sum256(body)
+	sumHex := hex.EncodeToString(sum[:])
+	l, err := o.PresignPut(ctx, key, time.Minute, int64(len(body)), "text/plain", sumHex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	put := func(content []byte) int {
+		req, _ := http.NewRequest(http.MethodPut, l.URL, bytes.NewReader(content))
+		for k, v := range l.Headers {
+			req.Header.Set(k, v)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	other := bytes.Clone(body)
+	other[0] = 'S'
+	if code := put(other); code < 400 {
+		t.Errorf("other bytes of the same length: %d", code)
+	}
+	if code := put(body[:10]); code < 400 {
+		t.Errorf("another length: %d", code)
+	}
+	if _, err := o.Head(ctx, key); !errors.Is(err, ErrObjectNotFound) {
+		t.Fatalf("a refused PUT stored something: %v", err)
+	}
+	if code := put(body); code != 200 {
+		t.Fatalf("the signed bytes: %d", code)
+	}
+	info, err := o.Head(ctx, key)
+	if err != nil || info.SHA256 != sumHex || info.Size != int64(len(body)) || info.ContentType != "text/plain" {
+		t.Errorf("head: %+v %v", info, err)
+	}
+}

@@ -2448,6 +2448,11 @@ paths:
         file. The same limits as any upload apply (`max_size`, `types`,
         `BACKD_MAX_UPLOAD_BYTES`), and a caller holds at most 20 unused uploads
         and starts a limited number per window (`429`).
+
+        On a field with `upload: direct` the body is not the file but its declaration,
+        `{"name", "size", "type", "sha256"}` as in `POST …/{id}/_files/{field}/uploads`,
+        and the answer carries the signed link to send the file to; `…/uploads/{upload_id}/complete`
+        then verifies it and makes the upload ready to be named in a write.
       operationId: startFileUpload
       security: [{}, { session: [] }, { apiKey: [] }]
       parameters:
@@ -2462,18 +2467,141 @@ paths:
             schema: { type: string, format: binary }
       responses:
         "201":
-          description: The pending upload.
+          description: The pending upload (for a direct field, with the link to send the file to).
           headers:
             Cache-Control: { schema: { const: no-store } }
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/PendingUpload" }
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/PendingUpload" }
+                  - { $ref: "#/components/schemas/DirectUpload" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "413": { $ref: "#/components/responses/Error" }
         "415": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/{database}/{collection}/{id}/_files/{field}/uploads:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+      - { $ref: "#/components/parameters/id" }
+      - { $ref: "#/components/parameters/fileField" }
+    post:
+      tags: [documents]
+      summary: Start a direct upload to a document
+      description: |
+        For a field with `upload: direct` (a proxy field answers `409 upload_mode_mismatch`).
+        The body declares the file: `name`, `size`, `type` and `sha256` are all required
+        and `size` can't exceed the field's `max_size`. The `update` rule is asked, as
+        for any upload, about the document with the declared file in it, before anything
+        is signed; `max_files` and `If-Match` are checked too.
+
+        The answer is a signed `PUT` link to the bucket, with the headers to send (the
+        content type and `x-amz-checksum-sha256` are signed in, and so is the length: the
+        storage refuses a body that differs), an `upload_id` and a secret `upload_token`.
+        After the `PUT`, `POST …/_files/{field}/uploads/{upload_id}/complete` with the
+        token verifies the file and attaches it. The bucket needs CORS for the app's
+        origins (`backd storage check` looks).
+      operationId: startDirectUpload
+      security: [{}, { session: [] }, { apiKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/ifMatch" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DirectUploadStart" }
+      responses:
+        "201":
+          description: The upload, started.
+          headers:
+            Cache-Control: { schema: { const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DirectUpload" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/VersionMismatch" }
+        "415": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/{database}/{collection}/_files/{field}/uploads/{uploadID}/complete:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+      - { $ref: "#/components/parameters/fileField" }
+      - name: uploadID
+        in: path
+        required: true
+        description: The `upload_id` of a started direct upload.
+        schema: { type: string, pattern: '^fl_[0-9a-z]{20}$' }
+    post:
+      tags: [documents]
+      summary: Complete a direct upload
+      description: |
+        Body `{"upload_token": "…"}`. Verifies what the client put in the bucket: one
+        `HEAD` (the size, and the SHA-256 the storage computed, must be the declared
+        ones; a missing checksum is a mismatch) and one range read of the first bytes,
+        whatever the file's size, to detect its type. Any mismatch deletes the object:
+        `422 upload_mismatch`, or `415 unsupported_file_type` when the content isn't a
+        type of the field. Nothing uploaded yet is `409 file_not_uploaded`, and the
+        completion can be tried again.
+
+        An upload started for a document is then attached to it (`201` with the
+        document, the update rule asked about the real details, `If-Match` accepted); a
+        pending one becomes ready to be named in a write (`200`). A wrong, used or
+        expired token, an upload of another field, or one another user started is
+        `400`, without saying which.
+      operationId: completeDirectUpload
+      security: [{}, { session: [] }, { apiKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/ifMatch" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [upload_token]
+              properties:
+                upload_token: { type: string }
+      responses:
+        "200":
+          description: A pending upload, ready to be attached by a write.
+          headers:
+            Cache-Control: { schema: { const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CompletedUpload" }
+        "201":
+          description: The document, with the file attached.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+            Location: { schema: { type: string }, description: "The file's URL." }
+            Vary: { $ref: "#/components/headers/DataVary" }
+            Cache-Control: { $ref: "#/components/headers/DataCacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Document" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/VersionMismatch" }
+        "415": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
@@ -2893,7 +3021,12 @@ paths:
         rule; an anonymous caller needs it to admit a document holding just this
         file. The same limits as any upload apply (`max_size`, `types`,
         `BACKD_MAX_UPLOAD_BYTES`), and a caller holds at most 20 unused uploads
-        and starts a limited number per window (`429`). Admin route: past the collection's rules.
+        and starts a limited number per window (`429`).
+
+        On a field with `upload: direct` the body is not the file but its declaration,
+        `{"name", "size", "type", "sha256"}` as in `POST …/{id}/_files/{field}/uploads`,
+        and the answer carries the signed link to send the file to; `…/uploads/{upload_id}/complete`
+        then verifies it and makes the upload ready to be named in a write. Admin route: past the collection's rules.
       operationId: adminStartFileUpload
       security: [{ apiKey: [] }, { session: [] }]
       parameters:
@@ -2908,18 +3041,141 @@ paths:
             schema: { type: string, format: binary }
       responses:
         "201":
-          description: The pending upload.
+          description: The pending upload (for a direct field, with the link to send the file to).
           headers:
             Cache-Control: { schema: { const: no-store } }
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/PendingUpload" }
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/PendingUpload" }
+                  - { $ref: "#/components/schemas/DirectUpload" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "413": { $ref: "#/components/responses/Error" }
         "415": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/data/{database}/{collection}/{id}/_files/{field}/uploads:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+      - { $ref: "#/components/parameters/id" }
+      - { $ref: "#/components/parameters/fileField" }
+    post:
+      tags: [admin]
+      summary: Start a direct upload to a document
+      description: |
+        For a field with `upload: direct` (a proxy field answers `409 upload_mode_mismatch`).
+        The body declares the file: `name`, `size`, `type` and `sha256` are all required
+        and `size` can't exceed the field's `max_size`. The `update` rule is asked, as
+        for any upload, about the document with the declared file in it, before anything
+        is signed; `max_files` and `If-Match` are checked too.
+
+        The answer is a signed `PUT` link to the bucket, with the headers to send (the
+        content type and `x-amz-checksum-sha256` are signed in, and so is the length: the
+        storage refuses a body that differs), an `upload_id` and a secret `upload_token`.
+        After the `PUT`, `POST …/_files/{field}/uploads/{upload_id}/complete` with the
+        token verifies the file and attaches it. The bucket needs CORS for the app's
+        origins (`backd storage check` looks). Admin route: past the collection's rules.
+      operationId: adminStartDirectUpload
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters: [{ $ref: "#/components/parameters/ifMatch" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DirectUploadStart" }
+      responses:
+        "201":
+          description: The upload, started.
+          headers:
+            Cache-Control: { schema: { const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DirectUpload" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/VersionMismatch" }
+        "415": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/data/{database}/{collection}/_files/{field}/uploads/{uploadID}/complete:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+      - { $ref: "#/components/parameters/fileField" }
+      - name: uploadID
+        in: path
+        required: true
+        description: The `upload_id` of a started direct upload.
+        schema: { type: string, pattern: '^fl_[0-9a-z]{20}$' }
+    post:
+      tags: [admin]
+      summary: Complete a direct upload
+      description: |
+        Body `{"upload_token": "…"}`. Verifies what the client put in the bucket: one
+        `HEAD` (the size, and the SHA-256 the storage computed, must be the declared
+        ones; a missing checksum is a mismatch) and one range read of the first bytes,
+        whatever the file's size, to detect its type. Any mismatch deletes the object:
+        `422 upload_mismatch`, or `415 unsupported_file_type` when the content isn't a
+        type of the field. Nothing uploaded yet is `409 file_not_uploaded`, and the
+        completion can be tried again.
+
+        An upload started for a document is then attached to it (`201` with the
+        document, the update rule asked about the real details, `If-Match` accepted); a
+        pending one becomes ready to be named in a write (`200`). A wrong, used or
+        expired token, an upload of another field, or one another user started is
+        `400`, without saying which. Admin route: past the collection's rules.
+      operationId: adminCompleteDirectUpload
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters: [{ $ref: "#/components/parameters/ifMatch" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [upload_token]
+              properties:
+                upload_token: { type: string }
+      responses:
+        "200":
+          description: A pending upload, ready to be attached by a write.
+          headers:
+            Cache-Control: { schema: { const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CompletedUpload" }
+        "201":
+          description: The document, with the file attached.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+            Location: { schema: { type: string }, description: "The file's URL." }
+            Vary: { $ref: "#/components/headers/DataVary" }
+            Cache-Control: { $ref: "#/components/headers/DataCacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Document" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/VersionMismatch" }
+        "415": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
@@ -3903,6 +4159,48 @@ components:
             size: { type: integer, minimum: 0 }
             type: { type: string, description: Detected from the content. }
             sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+
+    DirectUploadStart:
+      type: object
+      additionalProperties: false
+      required: [name, size, type, sha256]
+      properties:
+        name: { type: string }
+        size: { type: integer, minimum: 1, description: "The file's size in bytes, at most the field's `max_size`." }
+        type: { type: string, description: The file's content type; signed into the link. }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$', description: "The file's SHA-256: signed into the link and verified by the storage." }
+
+    DirectUpload:
+      type: object
+      additionalProperties: false
+      required: [upload_id, upload_token, expires_at, method, url, headers, url_expires_at]
+      properties:
+        upload_id: { type: string, pattern: '^fl_[0-9a-z]{20}$' }
+        upload_token: { type: string, description: "Secret, shown once. Only its hash is kept." }
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
+        method: { const: PUT }
+        url: { type: string, description: The signed link to the bucket. }
+        headers:
+          type: object
+          additionalProperties: { type: string }
+          description: "Headers the PUT must send, exactly (content type and checksum are signed in)."
+        url_expires_at: { $ref: "#/components/schemas/Timestamp" }
+
+    CompletedUpload:
+      type: object
+      additionalProperties: false
+      required: [upload_id, file]
+      properties:
+        upload_id: { type: string }
+        file:
+          type: object
+          additionalProperties: false
+          required: [name, size, type, sha256]
+          properties:
+            name: { type: string }
+            size: { type: integer }
+            type: { type: string }
+            sha256: { type: string }
 
     FileLink:
       type: object

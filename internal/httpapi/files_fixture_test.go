@@ -70,3 +70,30 @@ read: user != nil && document._meta.owner == user.id
 create: "true"
 update: user != nil && document._meta.owner == user.id
 `
+
+// videos takes direct uploads, to an existing document and before it exists.
+const videosSchema = `{
+  "type": "object",
+  "properties": {"title": {"type": "string"}},
+  "required": ["title", "clip"]
+}`
+
+const videosConfig = `files:
+  clip:
+    upload: direct
+    max_size: 4KiB
+    types: [image/png]
+  clips:
+    upload: direct
+    multiple: true
+    max_files: 2
+    max_size: 4KiB
+  photo:
+    max_size: 4KiB
+`
+
+const videosRules = `
+read: user != nil && document._meta.owner == user.id
+create: "true"
+update: user != nil && document._meta.owner == user.id
+`

@@ -238,7 +238,10 @@ type Store interface {
 	FileJournalEntry(ctx context.Context, id string) (FileJournalEntry, error)
 	CompletePendingUpload(ctx context.Context, id, name, contentType, sha256sum string, size int64, uploadedAt, at time.Time) error
 	ClaimPendingUpload(ctx context.Context, id, tokenHash, documentID string, now time.Time) (FileJournalEntry, error)
-	ReleasePendingUpload(ctx context.Context, id string, at time.Time) error
+	// ClaimDirectUpload is the same for a direct upload waiting for its bytes (writing →
+	// attaching); ReleaseUpload moves a claimed upload back to the given status.
+	ClaimDirectUpload(ctx context.Context, id, tokenHash string, now time.Time) (FileJournalEntry, error)
+	ReleaseUpload(ctx context.Context, id, status string, at time.Time) error
 	CountOpenPendingUploads(ctx context.Context, callerKey string, now time.Time) (int, error)
 	// QueueFileDeletion adds an object to delete (one per key); ClaimFileDeletions
 	// returns up to limit due ones and holds them until lease; CompleteFileDeletion

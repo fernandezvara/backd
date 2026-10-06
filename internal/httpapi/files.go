@@ -42,6 +42,8 @@ const uploadTimeout = time.Hour
 // or remove a file. There is no PUT.
 func (d *documents) mountFiles(r chi.Router) {
 	r.Post("/_files/{field}/uploads", d.uploadPending)
+	r.Post("/_files/{field}/uploads/{uploadID}/complete", d.completeDirect)
+	r.Post("/{id}/_files/{field}/uploads", d.startDirectForDocument)
 	r.Post("/{id}/_files/{field}", d.uploadFile)
 	r.Delete("/{id}/_files/{field}", d.clearFiles)
 	r.Get("/{id}/_files/{field}/{fileID}", d.downloadFile)
@@ -132,7 +134,7 @@ func (d *documents) uploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if f.Upload != registry.UploadProxy {
-		writeError(w, r, http.StatusConflict, codeUploadModeMismatch, "this field takes direct uploads: start one with POST …/_files/"+f.Name+"/uploads")
+		writeError(w, r, http.StatusConflict, codeUploadModeMismatch, "this field takes direct uploads: start one with POST …/{id}/_files/"+f.Name+"/uploads")
 		return
 	}
 	svc := d.users(c.Realm)
@@ -205,6 +207,33 @@ func (d *documents) uploadFile(w http.ResponseWriter, r *http.Request) {
 	defer up.cancel()
 	ctx, meta, abandon := up.ctx, up.meta, up.abandon
 
+	d.attachFile(w, r, attachJob{c: c, f: f, repo: repo, svc: svc, obj: obj, docID: docID, cond: cond, meta: meta, check: check, abandon: abandon, ctx: ctx,
+		location: r.URL.JoinPath(url.PathEscape(plan.id)).Path})
+}
+
+// attachJob is a stored file waiting to be attached to a document.
+type attachJob struct {
+	c       *registry.Collection
+	f       *registry.FileField
+	repo    storage.Repository
+	svc     *auth.Users
+	obj     *storage.Objects
+	docID   string
+	cond    ifMatch
+	meta    map[string]any                           // the file's details
+	check   func() (current map[string]any, ok bool) // reads the document and asks the rules; answers when it refuses
+	abandon func()                                   // the file will not be attached: queue its object for deletion
+	ctx     context.Context
+	// location is the file's URL, answered with the 201.
+	location string
+}
+
+// attachFile updates the document with the file, conditionally on the version
+// read; a concurrent change retries (with the rules asked again), up to three
+// times. It answers the request; on any failure the file is abandoned.
+func (d *documents) attachFile(w http.ResponseWriter, r *http.Request, j attachJob) {
+	c, f, repo, svc, obj, docID, cond, meta, check, abandon, ctx := j.c, j.f, j.repo, j.svc, j.obj, j.docID, j.cond, j.meta, j.check, j.abandon, j.ctx
+	plan := struct{ id string }{id: meta["id"].(string)}
 	// Attach it: the document is updated conditionally on the version read; a
 	// concurrent change retries (with the rule asked again), up to three times.
 	for attempt := range maxWriteAttempts {
@@ -244,7 +273,7 @@ func (d *documents) uploadFile(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			d.auditData(r, auth.AuditDataUpdate, c, docID)
-			w.Header().Set("Location", r.URL.JoinPath(url.PathEscape(plan.id)).Path)
+			w.Header().Set("Location", j.location)
 			writeDocument(w, http.StatusCreated, fields)
 			return
 		case errors.Is(err, storage.ErrVersionMismatch) && cond.specific():

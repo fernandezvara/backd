@@ -69,4 +69,4 @@ mc admin policy attach prod files-prod --user backd-files
 
 **Encryption at rest:** MinIO encrypts objects when a KMS (or `MINIO_KMS_SECRET_KEY` in development) is configured and the bucket has default encryption; set it with `mc encrypt set` and confirm it by hand, since `backd storage check` can't read it.
 
-**CORS** is MinIO's API-wide setting (`MINIO_API_CORS_ALLOW_ORIGIN`), not a bucket setting.
+**CORS** is MinIO's API-wide setting (`MINIO_API_CORS_ALLOW_ORIGIN`), not a bucket setting, and it is what [direct uploads](../transfers/#direct-uploads) from a browser need: set it to your app's origin (MinIO answers the headers a signed `PUT` carries, `Content-Type` and `x-amz-checksum-sha256`). `backd storage check` can't read it.
