@@ -59,6 +59,8 @@ The second request is validated and answered like any create, with the file's de
 - **Rules** see the final document, with the file in it, for every caller alike: see [Rules for files](../rules/#creating-with-files). Batches don't take references yet.
 - The upload endpoint takes the same body and refuses what an upload to a document does: `413`, `415 unsupported_file_type`, `503 storage_unavailable`.
 
+The [JavaScript client](../../clients/js/#files) does all of this (and chooses between proxy and direct on its own): `uploadFile`, `prepareUpload`, `fileUrl`, `downloadFile`. `GET …/_files/{field}` answers how a field takes files (`upload`, `download`, `multiple`, `max_files`, `max_size`, `types`).
+
 ## Direct uploads
 
 With `upload: direct` the bytes never pass through backd: the client sends them to the bucket with a link backd signed, then backd checks what arrived. It suits large files (up to the field's `max_size`, at most 5 GiB, one signed `PUT`) and keeps their traffic off backd.

@@ -215,18 +215,36 @@ const [order, stock] = await backd.db('main').batch([
 
 ## Files
 
-A document's files are reached with `files(id, field)` on a collection (the admin data route too): `put` stores bytes, `get` downloads, `link` makes a link an `<img>` or a button can use, and `delete` removes. Each is a request to the field's [`_files` routes](../../files/transfers/), under the caller's rules.
+Files live in the file fields of a collection's documents ([File fields](../../files/file-fields/)). The collection handle has a method for each thing an app does with them, and each is a request to the field's [`_files` routes](../../files/transfers/), under the signed-in user's rules.
 
 ```js
-const photos = backd.db('main').collection('people').files(person.id, 'photo')
+const docs = backd.db('app').collection('claims')
 
-const doc = await photos.put(file, { name: file.name })   // a File or Blob; the document, with the file's details
-const { response } = await photos.get()                   // a fetch Response; or `(await photos.get()).bytes()`
-const { url } = await photos.link()                       // { url, expires_at }
-await photos.delete()                                     // the field's files; delete(fileId) removes one
+// Upload into a document. Through backd or straight to the bucket: the client asks the field.
+const doc = await docs.uploadFile(id, 'receipts', file, { onProgress: ({ loaded, total }) => bar.set(loaded / total) })
+
+// Upload before the document exists, then name the upload in the create.
+const up = await docs.prepareUpload('receipt', file)
+await docs.create({ title: 'Taxi', receipt: up.ref })              // up.ref is { upload, token }
+
+const { url, expiresAt } = await docs.fileUrl(id, 'receipts', fileId) // a link for an <img> or a button
+await docs.downloadFile(id, 'receipts', fileId)                      // a fresh link, opened: the browser saves it
+const one = await docs.get(id, { fileLinks: true })                  // every file carries url and expires_at
+await docs.deleteFile(id, 'receipts', fileId)
+const info = await docs.fileField('receipts')                       // { upload, max_size, types, multiple, max_files, … }
 ```
 
-`put` replaces a single field's file and adds to a `multiple` field's; `get`, `link` and `delete` take a `fileId` (a field that holds several needs one). A pending upload for a document that doesn't exist yet, and direct uploads from the browser, are not in the client yet: they use the [API](../../files/transfers/#creating-a-document-with-its-files) directly.
+- **`uploadFile(id, field, file, opts)`** takes a `File` or `Blob` (or bytes, or a string) and resolves with the updated document. A field with `upload: direct` is sent straight to the bucket: the client reads the file once to compute its SHA-256 (incrementally, so a large file isn't held in memory), declares it, sends it with the signed link and completes it, and backd verifies the result. `opts`: `name` and `type` (default to the file's own), `ifMatch`, `signal` and `onProgress`.
+- **`prepareUpload(field, file, opts)`** does the same for a document that doesn't exist yet and resolves with `{ id, token, ref, expiresAt, file }`. Put `ref` in the file field of a `create` (or a `put` or `patch`; a list of them for a `multiple` field). An upload is used once and expires after the realm's `pending_ttl`.
+- **`onProgress({ loaded, total })`** reports the bytes sent as they go **in a browser** (the client uses `XMLHttpRequest`, the only way to know). Elsewhere it is called once, when the file has been sent.
+- **`fileUrl(id, field, fileId)`** resolves with a link that works without credentials until `expiresAt`. Fetch it when it is needed: see [Download buttons](../../files/apps/#download-buttons).
+- **`downloadFile(id, field, fileId)`** is `fileUrl()` followed by `location.assign()`; the link forces a download, so the page stays. **Browsers only**: elsewhere it throws, and `fileUrl()` or `files(id, field).get()` are what to use.
+- **`fileLinks: true`** on `get` and `list` adds `url` and `expires_at` to every file. Links expire; use it for what is shown at once.
+- **`deleteFile(id, field, fileId, { ifMatch })`** removes one file. `files(id, field).delete()` clears the field.
+- **`files(id, field)`** is the lower level: `put`, `get` (the bytes), `link`, `delete` and `list`, which is also what a [function](../../functions/files/) uses.
+- **`fileField(field)`** says how the field takes files (asked once, then remembered): to show `max_size` and `types` and refuse a file before sending it.
+
+Errors are the client's: `unsupported_file_type` (`415`), `payload_too_large` (`413`), `too_many_files` (`409`), a `NotFoundError` for a document the user can't read, and for a direct upload `upload_failed` when the bucket refuses the file. That one almost always means the bucket's CORS isn't set for the app's origin: see your [provider's page](../../files/).
 
 ## Functions
 

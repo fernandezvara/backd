@@ -830,6 +830,16 @@ func TestContract(t *testing.T) {
 	}
 	for _, base := range []string{"/v1/acme/app/library", ad + "/data/app/library"} {
 		isAdmin := strings.Contains(base, "_admin")
+		info := req("GET", base+"/_files/avatar", "", key, 200)
+		if info["upload"] != "proxy" || info["max_files"] != float64(1) || info["max_size"] != float64(4096) {
+			t.Errorf("file field: %v", info)
+		}
+		req("GET", base+"/_files/receipts", "", key, 200)
+		req("GET", base+"/_files/nope", "", key, 404)
+		if isAdmin {
+			req("GET", base+"/_files/avatar", "", nil, 401)
+			req("GET", base+"/_files/avatar", "", ada, 403)
+		}
 		// A pending upload, and the document made with it.
 		pend := base + "/_files/avatar/uploads"
 		pu := req("POST", pend, png, typed(key, "image/png"), 201)

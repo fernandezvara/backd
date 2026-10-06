@@ -41,6 +41,7 @@ const uploadTimeout = time.Hour
 // single and multiple fields, so a client needs no field's cardinality to download
 // or remove a file. There is no PUT.
 func (d *documents) mountFiles(r chi.Router) {
+	r.Get("/_files/{field}", d.fileFieldInfo)
 	r.Post("/_files/{field}/uploads", d.uploadPending)
 	r.Post("/_files/{field}/uploads/{uploadID}/complete", d.completeDirect)
 	r.Post("/{id}/_files/{field}/uploads", d.startDirectForDocument)
@@ -57,6 +58,35 @@ func fileField(w http.ResponseWriter, r *http.Request, c *registry.Collection) *
 		writeError(w, r, http.StatusNotFound, codeNotFound, "this collection has no such file field")
 	}
 	return f
+}
+
+// fileFieldInfo answers GET …/_files/{field}: how the field takes files, so an app can
+// choose between a proxy and a direct upload and check a file before sending it. It is
+// the field's configuration, nothing about any document.
+func (d *documents) fileFieldInfo(w http.ResponseWriter, r *http.Request) {
+	c, _ := d.collection(r)
+	f := fileField(w, r, c)
+	if f == nil {
+		return
+	}
+	st := d.reg.Realms[c.Realm].Settings.Storage
+	if st == nil {
+		notFound(w, r)
+		return
+	}
+	maxFiles := 1
+	if f.Multiple {
+		maxFiles = f.MaxFiles
+	}
+	maxSize := f.MaxSize
+	if f.Upload == registry.UploadProxy {
+		maxSize = min(maxSize, d.maxUpload)
+	}
+	w.Header().Set("Cache-Control", "private, max-age=60")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"name": f.Name, "upload": f.Upload, "download": downloadMode(f, st), "multiple": f.Multiple,
+		"max_files": maxFiles, "max_size": maxSize, "types": orStrings(f.Types),
+	})
 }
 
 // objectsFor returns the realm's storage connection or answers for it: 503

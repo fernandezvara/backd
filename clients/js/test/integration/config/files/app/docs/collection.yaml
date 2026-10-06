@@ -1,0 +1,15 @@
+files:
+  attachment:
+    max_size: 64KiB
+  video:
+    upload: direct
+    max_size: 1MiB
+    types: [image/png, text/plain]
+  gallery:
+    multiple: true
+    max_files: 2
+    max_size: 64KiB
+    types: [image/*]
+  notes:
+    max_size: 64KiB
+    download: proxy

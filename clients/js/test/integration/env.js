@@ -12,6 +12,10 @@ let n = 0
 /** A unique email for this run. @param {string} name */
 export const email = (name) => `${name}.${run}.${n++}@example.com`
 
+export const filesApiKey = process.env.BACKD_FILES_API_KEY ?? ''
+/** The files realm: MinIO behind it, links signed for the host. @param {Partial<import('../../src/index.js').ClientOptions>} [opts] */
+export const filesClient = (opts = {}) => createClient({ url, realm: 'files', ...opts })
+
 export const password = 'dev-p4ssw0rd!'
 
 /**

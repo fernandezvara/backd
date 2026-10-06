@@ -17,6 +17,28 @@ services:
       timeout: 5s
       retries: 30
 
+  # S3-compatible storage for the files realm. The test process uploads to it straight
+  # (direct uploads), so it is published on localhost and the realm signs links for that
+  # address (public_endpoint). Dev-only credentials.
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: backd-js
+      MINIO_ROOT_PASSWORD: dev-p4ssw0rd!
+    ports:
+      - "127.0.0.1:18090:9000"
+    tmpfs: [/data]
+
+  # One-shot: creates the bucket; the image has no shell, so it tries again until up.
+  minio-setup:
+    image: cgr.dev/chainguard/minio-client:latest
+    environment:
+      MC_HOST_local: "http://backd-js:dev-p4ssw0rd!@minio:9000"
+    command: ["mb", "--ignore-existing", "local/files"]
+    depends_on: [minio]
+    restart: on-failure:30
+
   # One-shot: bundles the test functions so backd's startup check passes.
   # Uses the executor image (backd + the pinned Deno) so no extra image
   # is needed to build (see docker/egress-test/docker-compose.yml).
@@ -51,6 +73,8 @@ services:
       # The mail realm delivers email through the dev-only email-capture function.
       BACKD_DEV: "true"
       BACKD_DEV_ANY_ADDR: "true"
+      # The files realm keeps its storage keys as secrets (set by run.sh).
+      BACKD_SECRETS_KEY: js-integration-secrets-key-0123456789abcdef
     volumes:
       - ./clients/js/test/integration/config:/config:ro
     depends_on:

@@ -1,0 +1,17 @@
+# The realm of the files integration tests: MinIO from docker-compose.js.yml. backd
+# reaches it at http://minio:9000; the tests, on the host, at the address links are
+# signed for. The keys are secrets, set by run.sh.
+auth: enabled
+signup: open
+roles:
+  admin: {}
+  ops:
+    admin: true
+storage:
+  provider: minio
+  endpoint: http://minio:9000
+  public_endpoint: http://127.0.0.1:18090
+  bucket: files
+  prefix: itest
+  access_key: secret:STORAGE_ACCESS_KEY
+  secret_key: secret:STORAGE_SECRET_KEY

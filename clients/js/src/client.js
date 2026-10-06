@@ -1,6 +1,7 @@
 import { Admin } from './admin.js'
 import { Auth } from './auth.js'
 import { Database } from './data.js'
+import { xhrFetch } from './xhr.js'
 import { NetworkError, RetryableError, errorFromResponse } from './errors.js'
 import { COOKIE_SESSION, memoryStorage } from './storage.js'
 
@@ -32,6 +33,13 @@ import { COOKIE_SESSION, memoryStorage } from './storage.js'
  */
 
 /**
+ * How much of an upload has been sent.
+ * @typedef {object} UploadProgress
+ * @property {number} loaded   Bytes sent.
+ * @property {number} total    Bytes in all, when known (0 otherwise).
+ */
+
+/**
  * Per-request options.
  * @typedef {object} RequestOptions
  * @property {AbortSignal} [signal]
@@ -46,6 +54,7 @@ import { COOKIE_SESSION, memoryStorage } from './storage.js'
  * @property {Record<string, string | number | boolean | undefined>} [query]
  * @property {unknown} [body]            Sent as JSON.
  * @property {BodyInit} [rawBody]        Sent as it is (a file's bytes), instead of `body`.
+ * @property {(p: UploadProgress) => void} [onUploadProgress]  Called as the body is sent (in a browser; elsewhere once, when it is sent).
  * @property {boolean} [raw]             Don't read the answer: it comes back as `response`, for a file's bytes.
  * @property {string} [contentType]      Defaults to application/json when there's a body (octet-stream with `rawBody`).
  * @property {Record<string, string>} [headers]
@@ -101,6 +110,8 @@ export class Client {
     /** @internal */
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis)
     /** @internal */
+    this.customFetch = Boolean(options.fetch)
+    /** @internal */
     this.retry = options.retry ?? { attempts: 0 }
     /** @internal */
     this.headers = options.headers ?? {}
@@ -125,6 +136,24 @@ export class Client {
    */
   db(name) {
     return new Database(this, name)
+  }
+
+  /**
+   * Sends one request. In a browser, an upload that reports its progress goes through
+   * XMLHttpRequest, the only way to know how much has been sent; everywhere else, fetch.
+   * @internal
+   * @param {URL} url
+   * @param {((p: UploadProgress) => void) | undefined} onProgress
+   * @param {{ method: string, headers: Record<string, string>, body?: any, signal?: AbortSignal, credentials?: 'include', duplex?: string }} init
+   * @returns {Promise<Response>}
+   */
+  async send(url, onProgress, init) {
+    if (!onProgress) return this.fetchImpl(url, init)
+    if (typeof XMLHttpRequest !== 'undefined' && !this.customFetch) return xhrFetch(url, init, onProgress)
+    const size = init.body instanceof Blob ? init.body.size : /** @type {any} */ (init.body)?.byteLength ?? 0
+    const res = await this.fetchImpl(url, init)
+    onProgress({ loaded: size, total: size })
+    return res
   }
 
   /**
@@ -164,7 +193,7 @@ export class Client {
       /** @type {Response} */
       let res
       try {
-        res = await this.fetchImpl(url, {
+        res = await this.send(url, req.onUploadProgress, {
           method: req.method,
           headers,
           body: req.rawBody !== undefined ? req.rawBody : req.body === undefined ? undefined : JSON.stringify(req.body),

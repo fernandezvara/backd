@@ -3,6 +3,7 @@ export { Auth } from './auth.js'
 export { Database, Collection, ifMatchValue } from './data.js'
 export { Admin } from './admin.js'
 export { Files } from './files.js'
+export { Sha256, sha256Blob } from './sha256.js'
 export { Job, JobTimeoutError } from './functions.js'
 export {
   BackdError,
@@ -38,6 +39,10 @@ export { memoryStorage, localStorageStorage } from './storage.js'
  * @typedef {import('./files.js').FileContent} FileContent
  * @typedef {import('./files.js').FileLink} FileLink
  * @typedef {import('./files.js').PutOptions} PutOptions
+ * @typedef {import('./files.js').UploadOptions} UploadOptions
+ * @typedef {import('./files.js').FileField} FileField
+ * @typedef {import('./files.js').PreparedUpload} PreparedUpload
+ * @typedef {import('./client.js').UploadProgress} UploadProgress
  * @typedef {import('./admin.js').AdminUser} AdminUser
  * @typedef {import('./admin.js').AdminAccess} AdminAccess
  * @typedef {import('./admin.js').AdminConfig} AdminConfig
