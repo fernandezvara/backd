@@ -93,6 +93,7 @@ func (w *Worker) scheduleLoop(ctx context.Context) {
 	for {
 		w.EnqueueDue(ctx)
 		w.PurgeDue(ctx)
+		w.FilesDue(ctx)
 		select {
 		case <-ctx.Done():
 			return
@@ -469,4 +470,64 @@ func executorResultFromJobResult(r *auth.JobResult) executor.Result {
 		res.FunctionError = &executor.FunctionError{Status: r.HTTPStatus, Code: r.Code, Message: r.Message, Details: r.Details}
 	}
 	return res
+}
+
+// fileMaintenanceBatch is how many abandoned uploads and due deletions one pass handles.
+const fileMaintenanceBatch = 50
+
+// FilesDue keeps the realms' file storage tidy (roadmap #149): an upload left
+// writing or stored past the grace period (its process died, or its document
+// write failed) is marked failed and its object queued for deletion, and the
+// objects queued for deletion are deleted, with a growing wait after a failure.
+// Every worker runs it; claiming a deletion holds it for a lease, so two never
+// take the same one.
+func (w *Worker) FilesDue(ctx context.Context) {
+	for realm, rl := range w.reg.Realms {
+		if rl.Settings.Storage == nil {
+			continue
+		}
+		svc := w.fns.docs.users(realm)
+		if svc == nil {
+			continue
+		}
+		stale, err := svc.AbandonedUploads(ctx, fileMaintenanceBatch)
+		if err != nil {
+			w.log.Error("find abandoned uploads", "realm", realm, "error", err)
+			continue
+		}
+		for _, e := range stale {
+			if err := svc.QueueFileDeletion(ctx, e.Key, "abandoned"); err != nil {
+				w.log.Error("queue an abandoned upload's object", "realm", realm, "file", e.ID, "error", err)
+				continue
+			}
+			if err := svc.SetUploadStatus(ctx, e.ID, auth.JournalFailed, ""); err != nil {
+				w.log.Error("mark an upload failed", "realm", realm, "file", e.ID, "error", err)
+			}
+		}
+		due, err := svc.ClaimFileDeletions(ctx, fileMaintenanceBatch)
+		if err != nil {
+			w.log.Error("claim file deletions", "realm", realm, "error", err)
+			continue
+		}
+		if len(due) == 0 {
+			continue
+		}
+		obj, err := w.fns.docs.objects.For(ctx, realm)
+		if err != nil {
+			// The keys aren't usable now: the claims lapse and the deletions come back later.
+			w.log.Warn("file storage is not available; deletions wait", "realm", realm, "error", err)
+			continue
+		}
+		for _, d := range due {
+			if err := obj.Delete(ctx, d.Key); err != nil {
+				wait := min(time.Minute<<min(d.Attempts, 6), time.Hour)
+				w.log.Warn("delete a file's object failed; it will be tried again", "realm", realm, "key", d.Key, "attempt", d.Attempts+1, "retry_in", wait.String(), "error", err)
+				_ = svc.RetryFileDeletion(ctx, d.Key, wait)
+				continue
+			}
+			if err := svc.FinishFileDeletion(ctx, d.Key); err != nil {
+				w.log.Error("forget a deleted object", "realm", realm, "key", d.Key, "error", err)
+			}
+		}
+	}
 }
