@@ -16,7 +16,8 @@
 // and event id is new or looked up first. Exits 0 when every check passes.
 import { execFileSync } from 'node:child_process'
 import { createHmac } from 'node:crypto'
-import { createClient, AuthenticationError, ForbiddenError, NotFoundError } from '../../src/index.js'
+import { deflateSync } from 'node:zlib'
+import { createClient, AuthenticationError, ForbiddenError, NotFoundError, VersionMismatchError } from '../../src/index.js'
 
 const url = process.env.BACKD_URL ?? 'http://localhost:8080'
 const PASSWORD = 'dev-p4ssw0rd!'
@@ -183,6 +184,116 @@ await refused('a revoked key is dead at once', () => keyed.db('main').collection
 const audit = await operator.admin.audit.list({ limit: 30 })
 check('the trail records the key', audit.items.some((e) => e.action === 'apikey.create' && e.target === `key:${keyName}`), JSON.stringify(audit.items[0]))
 check('the trail records the hand-run digest', audit.items.some((e) => e.action.startsWith('function.invoke') && e.target === 'main/digest'), '')
+
+/** A small valid PNG: a w×h gradient, so the thumbnail function has something to decode. */
+function png(/** @type {number} */ w, /** @type {number} */ h) {
+  const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0 })
+  const crc = (/** @type {Buffer} */ b) => { let c = 0xffffffff; for (const x of b) c = crcTable[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0 }
+  const chunk = (/** @type {string} */ type, /** @type {Buffer} */ data) => {
+    const body = Buffer.concat([Buffer.from(type), data])
+    const out = Buffer.alloc(8 + data.length + 4)
+    out.writeUInt32BE(data.length, 0)
+    body.copy(out, 4)
+    out.writeUInt32BE(crc(body), 8 + data.length)
+    return out
+  }
+  const row = Buffer.alloc(1 + w * 3)
+  const raw = Buffer.alloc((1 + w * 3) * h)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) { row[1 + x * 3] = (x * 255) / w; row[2 + x * 3] = (y * 255) / h; row[3 + x * 3] = 128 }
+    row.copy(raw, y * row.length)
+  }
+  const head = Buffer.alloc(13)
+  head.writeUInt32BE(w, 0); head.writeUInt32BE(h, 4); head[8] = 8; head[9] = 2
+  return new Blob([Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', head), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))])], { type: 'image/png' })
+}
+const bytesOf = async (/** @type {Blob} */ b) => Buffer.from(await b.arrayBuffer())
+const fetched = async (/** @type {string} */ u) => Buffer.from(await (await fetch(u)).arrayBuffer())
+
+heading('Files on assets (ch13)')
+// The storage keys are realm secrets; the tutorial sets them with `backd secret set`.
+const haveKeys = (await operator.admin.secrets.list()).filter((x) => !x.database && x.name.startsWith('STORAGE_')).length === 2
+if (!haveKeys) {
+  await operator.admin.secrets.set('STORAGE_ACCESS_KEY', 'backd-dev')
+  await operator.admin.secrets.set('STORAGE_SECRET_KEY', PASSWORD)
+}
+let storageCheck = await operator.admin.storage.check().catch((e) => e)
+for (let i = 0; i < 70 && storageCheck instanceof Error; i++) { // the bucket is made by minio-setup, and a new secret may take a moment
+  await new Promise((r) => setTimeout(r, 1000))
+  storageCheck = await operator.admin.storage.check().catch((e) => e)
+}
+check('backd storage check passes against MinIO', !(storageCheck instanceof Error) && storageCheck.ok, JSON.stringify(storageCheck))
+
+const assets = main(member).collection('assets')
+const photo = png(640, 480)
+const withFile = await assets.prepareUpload('file', photo).then((up) => assets.create({ title: 'Team photo', kind: 'file', file: up.ref }))
+check('a file asset is created with a pending upload', withFile.kind === 'file' && withFile.file.type === 'image/png' && withFile.file.size === photo.size, JSON.stringify(withFile.file))
+const linked = await assets.get(withFile.id, { fileLinks: true })
+check('fileLinks gives a link that works without credentials', linked.file.url && (await fetched(linked.file.url)).equals(await bytesOf(photo)))
+check('a plain read has no link', (await assets.get(withFile.id)).file.url === undefined)
+const listed = (await assets.list({ where: { '_meta.owner': (await member.auth.me()).id }, fileLinks: true })).items.find((a) => a.id === withFile.id)
+check('a list with fileLinks carries them too', Boolean(listed?.file.url))
+const dl = await assets.fileUrl(withFile.id, 'file', withFile.file.id)
+check('fileUrl makes a fresh link', (await fetched(dl.url)).equals(await bytesOf(photo)))
+await refused('downloadFile is for browsers', () => assets.downloadFile(withFile.id, 'file', withFile.file.id), Error, '')
+
+const replaced = await assets.uploadFile(withFile.id, 'file', new Blob(['%PDF-1.4 the handbook'], { type: 'application/pdf' }), { name: 'handbook.pdf', ifMatch: withFile._meta.version })
+check('replacing the file keeps one file, with its new type', replaced.file.type === 'application/pdf' && replaced.file.name === 'handbook.pdf' && replaced._meta.version === withFile._meta.version + 1, JSON.stringify(replaced.file))
+await refused('a replace against a stale version loses', () => assets.uploadFile(withFile.id, 'file', photo, { ifMatch: withFile._meta.version }), VersionMismatchError, '')
+await refused('a file over 25 MiB is refused (413) before it is stored', () => assets.uploadFile(withFile.id, 'file', new Blob([new Uint8Array(25 * 1024 * 1024 + 512 * 1024)], { type: 'application/pdf' })), Error, 'payload_too_large')
+await refused('a disguised executable is refused by what its bytes say (415)', () => assets.uploadFile(withFile.id, 'file', new Blob([Buffer.from('MZ\x90\x00\x03\x00\x00\x00\x04\x00\x00\x00\xff\xff')], { type: 'image/png' }), { name: 'photo.png' }), Error, 'unsupported_file_type')
+const published13 = /** @type {any} */ (await main(curator).fn('publish', { asset_id: withFile.id }, { idempotencyKey: `publish-${withFile.id}` }))
+await refused("someone else's upload to a published asset is refused by the update rule (403)", () => main(curator).collection('assets').uploadFile(withFile.id, 'file', photo), ForbiddenError, '')
+check('the asset is published and readable by the curator, file and all', typeof published13.published_at === 'string')
+const removed = await assets.deleteFile(withFile.id, 'file', replaced.file.id)
+check('removing the file leaves the asset', removed.file === undefined && removed.title === 'Team photo')
+
+heading('Big files and thumbnails (ch14)')
+const big = await assets.create({ title: 'Conference recordings', kind: 'file' })
+const progress = []
+let withAttachments = big
+for (let i = 0; i < 5; i++) {
+  withAttachments = await assets.uploadFile(big.id, 'attachments', new Blob([`recording ${i}`.repeat(1000)], { type: 'text/plain' }), { name: `talk-${i}.txt`, onProgress: (p) => progress.push(p) })
+}
+check('five attachments went straight to the bucket', withAttachments.attachments.length === 5 && progress.length >= 5, JSON.stringify(withAttachments.attachments?.length))
+await refused('a sixth is refused (409 too_many_files)', () => assets.uploadFile(big.id, 'attachments', new Blob(['x'], { type: 'text/plain' })), Error, 'too_many_files')
+const one = await assets.fileUrl(big.id, 'attachments', withAttachments.attachments[2].id)
+check('an attachment downloads from the storage', (await fetched(one.url)).toString().startsWith('recording 2'))
+
+const pictureBlob = png(800, 600)
+const picture = await assets.create({ title: 'Office', kind: 'file', file: (await assets.prepareUpload('file', pictureBlob)).ref })
+const thumbJob = /** @type {any} */ (await main(member).fn('thumbnail', { asset_id: picture.id }))
+const made = /** @type {any} */ (await thumbJob.wait({ pollIntervalMs: 500, timeoutMs: 120000 }))
+const withThumb = await assets.get(picture.id, { fileLinks: true })
+check('the thumbnail job stored a small PNG', withThumb.thumbnail?.type === 'image/png' && withThumb.thumbnail.size < withThumb.file.size && made.thumbnail === withThumb.thumbnail.id, JSON.stringify({ made, thumbnail: withThumb.thumbnail }))
+check('the thumbnail has a link', Boolean(withThumb.thumbnail?.url) && (await fetched(withThumb.thumbnail.url)).subarray(1, 4).toString() === 'PNG')
+await refused('a client may not upload the thumbnail (403)', () => assets.uploadFile(picture.id, 'thumbnail', png(10, 10), { ifMatch: withThumb._meta.version }), ForbiddenError, '')
+const fake = await assets.prepareUpload('thumbnail', png(10, 10))
+await refused('nor create an asset that names one (403)', () => assets.create({ title: 'Fake', kind: 'file', thumbnail: fake.ref }), ForbiddenError, '')
+await refused('nor remove it (403)', () => assets.deleteFile(picture.id, 'thumbnail', withThumb.thumbnail.id), ForbiddenError, '')
+const notAnImage = await assets.create({ title: 'Notes', kind: 'file', file: (await assets.prepareUpload('file', new Blob(['plain notes'], { type: 'text/plain' }))).ref })
+const refusedJob = /** @type {any} */ (await main(member).fn('thumbnail', { asset_id: notAnImage.id }))
+await refused('a thumbnail of a text file fails (422 not_an_image)', () => refusedJob.wait({ pollIntervalMs: 500, timeoutMs: 120000 }), Error, 'not_an_image')
+
+heading('Sharing and counting downloads (ch15)')
+const pub15 = await main(curator).fn('publish', { asset_id: picture.id }, { idempotencyKey: `publish-${picture.id}` })
+void pub15
+const fresh = await assets.get(picture.id)
+const counted = /** @type {any} */ (await main(curator).fn('download', { document_id: picture.id, field: 'file', file_id: fresh.file.id }))
+check('the download function returns a link to the file', (await fetched(counted.url)).equals(await bytesOf(pictureBlob)), '')
+await main(curator).fn('download', { document_id: picture.id, field: 'file', file_id: fresh.file.id })
+check('the downloads are counted (2)', (await assets.get(picture.id)).downloads === 2, JSON.stringify((await assets.get(picture.id)).downloads))
+await refused('a signed-out caller gets no link (401)', () => main(anonymous).fn('download', { document_id: picture.id, field: 'file', file_id: fresh.file.id }), AuthenticationError, '')
+await refused('an owner may not set their own count (403)', () => assets.patch(picture.id, { downloads: 1000 }), ForbiddenError, '')
+await refused('nor start an asset with one (403)', () => assets.create({ title: 'Cheat', kind: 'note', downloads: 99 }), ForbiddenError, '')
+const shareOfFile = /** @type {any} */ (await main(member).fn('share', { asset_id: picture.id, expires_in: 'week' }, { idempotencyKey: `share-${picture.id}-${Date.now()}` }))
+const sharedFiles = /** @type {any} */ (await main(anonymous).fn('share-open', { token: shareOfFile.token }))
+check('a share link opens with links to the files', sharedFiles.files.length === 1 && sharedFiles.files[0].name && !('id' in sharedFiles.files[0]), JSON.stringify(sharedFiles.files))
+check('the shared file downloads without an account', (await fetched(sharedFiles.files[0].url)).subarray(1, 4).toString() === 'PNG')
+const usage = await operator.admin.storage.status()
+check('the operator sees the storage in use', usage.configured && usage.keys?.ok && usage.reachable?.ok && (usage.usage?.files ?? 0) >= 5 && (usage.usage?.bytes ?? 0) > 0, JSON.stringify(usage.usage))
+const dry = await operator.admin.storage.reconcile()
+check('reconcile reports without deleting', dry.delete === false && dry.deleted === 0, JSON.stringify(dry))
 
 heading('cleanup by hand (ch9)')
 const sweep = /** @type {any} */ (await operator.admin.invokeFunction('main/cleanup'))

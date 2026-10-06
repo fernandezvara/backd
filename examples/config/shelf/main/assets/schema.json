@@ -1,9 +1,9 @@
 {
-  "$comment": "Assets the workspace saves: links and notes. Every document must match this JSON Schema (draft 2020-12); backd adds id and _meta itself.",
+  "$comment": "Assets the workspace saves: links, notes and files (declared in collection.yaml, chapter 13). Every document must match this JSON Schema (draft 2020-12); backd adds id and _meta itself.",
   "type": "object",
   "properties": {
     "title": { "type": "string", "minLength": 1, "maxLength": 200, "description": "What the asset is called. Required." },
-    "kind":  { "enum": ["link", "note"], "description": "A URL worth keeping, or a written note." },
+    "kind":  { "enum": ["link", "note", "file"], "description": "A URL worth keeping, a written note, or a file (chapter 13)." },
     "url":   { "type": "string", "format": "uri", "description": "The link, for kind \"link\"." },
     "body":  { "type": "string", "description": "Why the team should care." },
     "tags":  {
@@ -16,7 +16,10 @@
       "type": ["string", "null"], "format": "date-time", "x-backd-store": "date",
       "description": "null while a draft. Stored as a BSON date so filters, ranges and sorting compare instants."
     },
-    "file": { "type": "object", "description": "Reserved for file management, a later tutorial chapter." }
+    "downloads": {
+      "type": "integer", "minimum": 0,
+      "description": "How many times the download function opened a file of this asset (chapter 15). Only that function writes it: the rules refuse clients."
+    }
   },
   "required": ["title", "kind"]
 }

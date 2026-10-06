@@ -257,6 +257,39 @@ import { Job } from './functions.js'
  */
 
 /**
+ * What `admin.storage.status()` answers: how the realm's storage is configured (the keys by
+ * name, never their values), whether it works, and what the documents hold in it.
+ * @typedef {object} StorageStatus
+ * @property {boolean} configured   False when the realm has no `storage:`; nothing else is set then.
+ * @property {string} [provider]
+ * @property {string} [endpoint]
+ * @property {string | null} [public_endpoint]
+ * @property {string} [bucket]
+ * @property {string} [prefix]
+ * @property {{ ok: boolean, error?: string }} [keys]        Whether the access keys are set and readable.
+ * @property {{ ok: boolean, error?: string }} [reachable]   Whether the bucket answers.
+ * @property {{ bytes: number, files: number, users: { user_id: string, bytes: number, files: number }[] }} [usage]
+ *   What documents reference: the realm's totals and the users holding the most.
+ * @property {{ queued: number, retrying: number, oldest: string | null }} [deletions]   Objects waiting to be deleted.
+ * @property {number} [stale_uploads]   Uploads left unfinished past their time.
+ */
+
+/**
+ * What `admin.storage.reconcile()` found.
+ * @typedef {object} StorageReconcile
+ * @property {boolean} delete
+ * @property {number} scanned
+ * @property {number} referenced
+ * @property {number} skipped_recent
+ * @property {number} skipped_in_journal
+ * @property {number} ignored
+ * @property {{ key: string, database: string, collection: string, file_id: string, size: number, last_modified: string }[]} orphans
+ * @property {number} orphan_bytes
+ * @property {number} deleted
+ * @property {string[]} failed
+ */
+
+/**
  * @typedef {object} JobsPage
  * @property {JobSummary[]} items    Newest first.
  * @property {number} limit
@@ -773,6 +806,29 @@ class AdminStorage {
    */
   async check(opts) {
     return (await this.admin._request({ method: 'POST', path: ['storage', 'check'], ...opts })).data
+  }
+
+  /**
+   * How the storage is configured, whether it works, and what the documents hold in it: the
+   * realm's totals of bytes and files and the users holding the most, what waits to be deleted
+   * and the uploads left unfinished. A realm without `storage:` answers `{ configured: false }`.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<StorageStatus>}
+   */
+  async status(opts) {
+    return (await this.admin._request({ method: 'GET', path: ['storage'], ...opts })).data
+  }
+
+  /**
+   * Lists the realm's file objects and reports those no document references (for use after
+   * restoring a backup or removing a file field); with `delete: true` removes exactly those. It
+   * skips anything younger than 24 hours or with an upload record still open. Needs write access
+   * to the `config` area.
+   * @param {{ delete?: boolean } & RequestOptions} [opts]
+   * @returns {Promise<StorageReconcile>}
+   */
+  async reconcile({ delete: remove = false, ...opts } = {}) {
+    return (await this.admin._request({ method: 'POST', path: ['storage', 'reconcile'], body: { delete: remove }, ...opts })).data
   }
 }
 

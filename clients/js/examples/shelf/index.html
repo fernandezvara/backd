@@ -68,6 +68,15 @@
               </span>
               <span class="muted" x-text="sharedDoc?.published_at ? 'shared · published ' + new Date(sharedDoc.published_at).toLocaleDateString() : ''"></span>
             </footer>
+            <!-- view: shared files (ch15) — links that work for whoever holds the share link, until they expire. -->
+            <ul class="files" x-show="sharedDoc?.files?.length">
+              <template x-for="f in sharedDoc?.files ?? []" :key="f.url">
+                <li>
+                  <a :href="f.url" x-text="'⬇ ' + f.name"></a>
+                  <span class="muted" x-text="prettySize(f.size)"></span>
+                </li>
+              </template>
+            </ul>
           </div>
         </template>
       </article>
@@ -102,12 +111,22 @@
               <strong x-text="asset.title"></strong>
               <span class="kind" x-text="asset.kind"></span>
             </header>
+            <img class="thumb" x-show="previewUrl(asset)" :src="previewUrl(asset)" :alt="'Preview of ' + asset.title" loading="lazy">
             <p>
               <a x-show="asset.url" :href="asset.url" x-text="asset.url"></a>
               <span x-text="asset.body"></span>
             </p>
+            <!-- view: files (ch13, ch15) — a download goes through the download function, which counts it. -->
+            <ul class="files" x-show="filesOf(asset).length">
+              <template x-for="f in filesOf(asset)" :key="f.id">
+                <li>
+                  <button class="link sm" @click="download(asset, f)" x-text="'⬇ ' + f.name"></button>
+                  <span class="muted" x-text="prettySize(f.size)"></span>
+                </li>
+              </template>
+            </ul>
             <footer>
-              <span class="muted" x-text="(asset.published_at ? new Date(asset.published_at).toLocaleDateString() : 'draft') + (byline(asset) ? ' · ' + byline(asset) : '')"></span>
+              <span class="muted" x-text="(asset.published_at ? new Date(asset.published_at).toLocaleDateString() : 'draft') + (byline(asset) ? ' · ' + byline(asset) : '') + (asset.downloads ? ' · ' + asset.downloads + ' downloads' : '')"></span>
               <span class="tags">
                 <template x-for="t in asset.tags ?? []" :key="t">
                   <a href="#" @click.prevent="tag = t; refilter()" x-text="t"></a>
@@ -175,7 +194,7 @@
           <div class="grid">
             <label>Title <input placeholder="What is it?" x-model="draft.title" required></label>
             <label>Kind
-              <select x-model="draft.kind"><option value="link">link</option><option value="note">note</option></select>
+              <select x-model="draft.kind"><option value="link">link</option><option value="note">note</option><option value="file">file</option></select>
             </label>
           </div>
           <label x-show="draft.kind === 'link'">URL
@@ -184,8 +203,16 @@
               <button type="button" class="secondary" @click="fetchPreview" :disabled="busy || !draft.url">Preview</button>
             </fieldset>
           </label>
+          <!-- view: file pickers (ch13, ch14) — `file` goes through backd; attachments go straight to the bucket. -->
+          <label x-show="draft.kind === 'file'">File <small class="muted">(one document or image, up to 25 MiB)</small>
+            <input type="file" id="draft-file" @change="pickFile">
+          </label>
+          <label x-show="draft.kind === 'file'">Attachments <small class="muted">(up to five, any size up to 1 GiB, sent to the storage directly)</small>
+            <input type="file" id="draft-attachments" multiple @change="pickAttachments">
+          </label>
           <label>Notes <textarea rows="3" placeholder="Why should the team care?" x-model="draft.body"></textarea></label>
           <label>Tags <input placeholder="comma, separated, tags" x-model="draft.tags"></label>
+          <p x-show="progress"><small x-text="progress?.label"></small> <progress :value="progress?.pct" max="100"></progress></p>
           <footer>
             <button type="submit" :disabled="busy">Save draft</button>
           </footer>
@@ -214,9 +241,25 @@
                 <span class="badge" :class="asset.published_at ? 'pub' : 'draft'"
                       x-text="asset.published_at ? 'published' : 'draft'"></span>
               </header>
+              <img class="thumb" x-show="previewUrl(asset)" :src="previewUrl(asset)" :alt="'Preview of ' + asset.title" loading="lazy">
               <p x-text="asset.body"></p>
+              <!-- view: my files (ch13, ch14) — download, remove, replace, add; each an update of the asset. -->
+              <ul class="files" x-show="filesOf(asset).length">
+                <template x-for="f in filesOf(asset)" :key="f.id">
+                  <li>
+                    <button class="link sm" @click="downloadMine(asset, f)" x-text="'⬇ ' + f.name"></button>
+                    <span class="muted" x-text="prettySize(f.size)"></span>
+                    <button class="link danger sm" @click="removeFile(asset, f)" :disabled="busy">remove</button>
+                  </li>
+                </template>
+              </ul>
+              <p x-show="asset.kind === 'file'">
+                <label class="sm">Replace the file <input type="file" @change="putFile(asset, 'file', $event)" :disabled="busy"></label>
+                <label class="sm" x-show="(asset.attachments ?? []).length < 5">Add an attachment <input type="file" @change="putFile(asset, 'attachments', $event)" :disabled="busy"></label>
+              </p>
+              <p x-show="progress && busy"><small x-text="progress?.label"></small> <progress :value="progress?.pct" max="100"></progress></p>
               <footer>
-                <span class="muted" x-text="asset.published_at ? 'published ' + new Date(asset.published_at).toLocaleDateString() : 'draft'"></span>
+                <span class="muted" x-text="(asset.published_at ? 'published ' + new Date(asset.published_at).toLocaleDateString() : 'draft') + (asset.downloads ? ' · ' + asset.downloads + ' downloads' : '')"></span>
                 <span>
                   <button class="link sm" @click="startEdit(asset)" :disabled="busy || editing !== null">Edit</button>
                   <button class="link sm" x-show="isCurator && !asset.published_at" @click="publish(asset)" :disabled="busy">Publish</button>
@@ -352,6 +395,26 @@
             </li>
           </template>
         </ul>
+      </article>
+
+      <!-- view: storage (ch15) — what the files cost, from GET /_admin/storage. -->
+      <article x-show="isAdmin && storage">
+        <header><strong>Storage</strong> <button class="link sm" @click="loadStorage">refresh</button></header>
+        <template x-if="storage?.configured">
+          <div>
+            <p><code x-text="storage.provider + ' · ' + storage.bucket + '/' + storage.prefix"></code>
+              — keys <strong x-text="storage.keys?.ok ? 'ok' : 'not usable'"></strong>,
+              bucket <strong x-text="storage.reachable?.ok ? 'reachable' : 'not reachable'"></strong></p>
+            <p><strong x-text="prettySize(storage.usage.bytes)"></strong> in <strong x-text="storage.usage.files"></strong> files;
+              <span x-text="storage.deletions.queued"></span> objects waiting to be deleted.</p>
+            <ul class="notif" x-show="storage.usage.users.length">
+              <template x-for="u in storage.usage.users" :key="u.user_id">
+                <li><code x-text="u.user_id"></code> <span class="muted" x-text="u.files + ' files · ' + prettySize(u.bytes)"></span></li>
+              </template>
+            </ul>
+          </div>
+        </template>
+        <p class="muted" x-show="!storage?.configured">This realm has no storage configured.</p>
       </article>
 
       <article x-show="isAdmin">

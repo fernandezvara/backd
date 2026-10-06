@@ -19,7 +19,7 @@ You do **not** need a `backd` checkout: the app, the client and the released con
 
 ## What you need
 
-- **Docker** with Compose v2 (`docker compose version` prints a version) and free ports **8080** (the app and the API); the first start downloads about 1 GB of images.
+- **Docker** with Compose v2 (`docker compose version` prints a version) and free ports **8080** (the app and the API) and, from chapter 13, **9000** (the files' storage); the first start downloads about 1 GB of images.
 - A text editor and a terminal with a **POSIX shell** (macOS, Linux, or WSL on Windows — the examples use `curl`, `sed` and `$VARIABLES`). **Node 20 or newer** only for chapter 11's feed script (optional).
 - This tutorial's stack is a *separate* thing from the backd documentation you are reading: the docs may be at `https://localhost:8443` or on GitHub Pages, the tutorial's app is always **`http://localhost:8080`**.
 
@@ -27,7 +27,7 @@ To start over at any point: `docker compose down -v` (deletes the database), the
 
 ## What runs, and what you edit
 
-`docker compose up -d` starts five containers. You only ever edit files on your side of them:
+`docker compose up -d` starts these containers (and, from chapter 13, MinIO). You only ever edit files on your side of them:
 
 | Container | What it does | You touch |
 |---|---|---|
@@ -36,6 +36,7 @@ To start over at any point: `docker compose down -v` (deletes the database), the
 | `executor` | runs each function call in its own Deno process | nothing |
 | `egress` | the only way out for functions that declare `network:` (chapter 6) | nothing |
 | `nginx` | serves the app at `/` and the client at `/example/client/`, proxies `/v1` to backd — one origin for both | `app/` if you change the app |
+| `minio` | S3-compatible storage for files (chapter 13): the browser sends big files straight to it and follows download links to it, on `localhost:9000`; a one-shot `minio-setup` creates its bucket | nothing |
 | `functions-build` | a one-shot job that bundles the functions' TypeScript before backd starts | run again after editing a function |
 
 ## Conventions
@@ -66,7 +67,7 @@ for f in pico.min.css alpine.min.js; do
 done
 
 # The JavaScript client the app imports (backd-js, as source).
-for f in admin auth client data errors functions index storage; do
+for f in admin auth client data errors files functions index sha256 storage xhr; do
   curl -fsSL "https://fernandezvara.github.io/backd/tutorial/client/$f.js" -o "client/$f.js"
 done
 ```
@@ -93,8 +94,11 @@ Working on a `backd` checkout instead? The same files live in the repository: `e
 | 10 | [Email for real](10-email/) | delivery function, templates, the Mailbox |
 | 11 | [Being called by the internet](11-webhooks/) | the `import` webhook |
 | 12 | [Running it](12-running/) | API keys, audit feed, the hardening checklist |
+| 13 | [Files on assets](13-files/) | a MinIO storage, `files:` in `collection.yaml`, uploads, previews, download buttons |
+| 14 | [Big files and thumbnails](14-big-files/) | direct uploads with a progress bar, `attachments`, a `thumbnail` function and the rules that protect it |
+| 15 | [Sharing and counting downloads](15-sharing-files/) | a `download` function, share links that carry files, the storage in the Admin view |
 
-Later chapters (not written yet) add file management: uploads, thumbnails, share links to files — the schema already reserves `assets.file` for them.
+
 
 ## The three accounts
 
