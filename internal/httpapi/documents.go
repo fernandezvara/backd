@@ -142,6 +142,7 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 	}
 	defer claim.release(r.Context())
 	stripSystemFields(body)
+	stripFileFields(c, body)
 	if !validate(w, r, c, body) {
 		return
 	}
@@ -295,11 +296,17 @@ func (d *documents) replace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stripSystemFields(body)
-	d.write(w, r, c, repo, func(map[string]any) (map[string]any, bool) {
-		if !validate(w, r, c, body) {
+	stripFileFields(c, body)
+	d.write(w, r, c, repo, func(current map[string]any) (map[string]any, bool) {
+		candidate := body
+		if len(c.Files) > 0 { // a PUT keeps the document's files
+			candidate = deepCopy(body)
+			keepFileFields(c, candidate, timesToStrings(current).(map[string]any))
+		}
+		if !validate(w, r, c, candidate) {
 			return nil, false
 		}
-		return c.DatesToStorage(jsonnum.Normalize(userFields(body)).(map[string]any)), true
+		return c.DatesToStorage(jsonnum.Normalize(userFields(candidate)).(map[string]any)), true
 	})
 }
 
@@ -310,6 +317,7 @@ func (d *documents) patch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stripSystemFields(patch)
+	stripFileFields(c, patch)
 	d.write(w, r, c, repo, func(current map[string]any) (map[string]any, bool) {
 		// Deep copies: merging must not modify the stored document, which the
 		// update rule (changed()) compares against.

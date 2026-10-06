@@ -804,7 +804,10 @@ func TestContract(t *testing.T) {
 	store := ad + "/storage/check"
 	req("POST", store, ``, nil, 401)
 	req("POST", store, ``, ada, 403)
+	saved := f.reg.Realms["acme"].Settings.Storage
+	f.reg.Realms["acme"].Settings.Storage = nil
 	req("POST", store, ``, key, 404)
+	f.reg.Realms["acme"].Settings.Storage = saved
 	fake := storagetest.New(t, "files")
 	f.reg.Realms["acme"].Settings.Storage = &registry.StorageSettings{Provider: "minio", Endpoint: fake.URL, Region: "us-east-1", Bucket: "files", Prefix: "contract", AccessKey: "STORAGE_ACCESS_KEY", SecretKey: "STORAGE_SECRET_KEY", Download: registry.DownloadPresigned, PresignedTTL: registry.DefaultPresignedTTL, PendingTTL: registry.DefaultPendingTTL, HTTP: true}
 	req("POST", store, ``, key, 503)
