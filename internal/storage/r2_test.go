@@ -16,7 +16,8 @@ import (
 //	BACKD_TEST_R2_SECRET_KEY=… go test ./internal/storage -run R2 -v
 //
 // It makes a handful of tiny requests (a few small objects, deleted again). What
-// it finds about the SHA-256 checksum decides the "r2" entry's ChecksumSHA256.
+// it finds about the SHA-256 checksum decides the "r2" entry's ChecksumSHA256: on
+// 2026-10-06 R2 verified it, so the entry says Supported.
 func TestR2SmokeTest(t *testing.T) {
 	endpoint, bucket := os.Getenv("BACKD_TEST_R2_ENDPOINT"), os.Getenv("BACKD_TEST_R2_BUCKET")
 	access, secret := os.Getenv("BACKD_TEST_R2_ACCESS_KEY"), os.Getenv("BACKD_TEST_R2_SECRET_KEY")

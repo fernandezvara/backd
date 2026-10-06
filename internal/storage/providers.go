@@ -103,8 +103,9 @@ var providers = []Provider{
 		Name: "r2", Label: "Cloudflare R2", Addressing: VirtualHosted, EndpointRequired: true,
 		EndpointPattern: regexp.MustCompile(`^https://[0-9a-f]{32}(\.(?:eu|fedramp))?\.r2\.cloudflarestorage\.com$`),
 		EndpointHelp:    "https://<account id>.r2.cloudflarestorage.com", FixedRegion: "auto",
-		// Not confirmed yet: the smoke test (internal/storage's R2 test) decides.
-		ChecksumSHA256: Unverified, MaxSinglePut: 5 * gib, ChecksumsWhenRequired: true,
+		// Confirmed by the R2 smoke test (internal/storage's r2_test.go, 2026-10-06): a wrong
+		// x-amz-checksum-sha256 is rejected and the stored one is reported back.
+		ChecksumSHA256: Supported, MaxSinglePut: 5 * gib, ChecksumsWhenRequired: true,
 	},
 	{
 		Name: "digitalocean", Label: "DigitalOcean Spaces", Addressing: VirtualHosted,

@@ -30,7 +30,7 @@ func TestStorageSettings(t *testing.T) {
 		t.Errorf("aws: %+v %v", s.Storage, errs)
 	}
 	s, errs = parseRealmSettings([]byte("storage:\n  provider: r2\n  endpoint: https://be24f8b836589be5638e95d6579afa46.r2.cloudflarestorage.com\n  bucket: tests-backd\n  prefix: ci\n  access_key: secret:K\n  secret_key: secret:S\n"))
-	if len(errs) != 0 || s.Storage.Region != "auto" || s.Storage.ProviderEntry().SupportsDirectUploads() {
+	if len(errs) != 0 || s.Storage.Region != "auto" || !s.Storage.ProviderEntry().SupportsDirectUploads() {
 		t.Errorf("r2: %+v %v", s.Storage, errs)
 	}
 	// No storage: none.

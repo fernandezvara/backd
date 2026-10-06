@@ -22,8 +22,8 @@ func TestProviderTable(t *testing.T) {
 			t.Errorf("%s: no endpoint and no default", n)
 		}
 	}
-	if p, _ := LookupProvider("r2"); p.SupportsDirectUploads() {
-		t.Error("r2's checksum support is unverified until the smoke test confirms it")
+	if p, _ := LookupProvider("r2"); !p.SupportsDirectUploads() {
+		t.Error("r2's checksum support was confirmed by the smoke test")
 	}
 	if p, _ := LookupProvider("minio"); !p.SupportsDirectUploads() || !p.PublicEndpointAllowed || p.OldestTested == "" {
 		t.Errorf("minio: %+v", p)
