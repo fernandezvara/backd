@@ -104,7 +104,13 @@ func (o *Objects) Provider() Provider { return o.provider }
 
 // Key is the object key of a file: <prefix>/<realm>/<database>/<collection>/<file id>.
 func (o *Objects) Key(realm, database, collection, fileID string) string {
-	return strings.Join([]string{o.cfg.Prefix, realm, database, collection, fileID}, "/")
+	return ObjectKey(o.cfg.Prefix, realm, database, collection, fileID)
+}
+
+// ObjectKey is the key of a file's object under a prefix: it needs no connection, so
+// what only has to name an object (a deletion to queue) works while the storage is down.
+func ObjectKey(prefix, realm, database, collection, fileID string) string {
+	return strings.Join([]string{prefix, realm, database, collection, fileID}, "/")
 }
 
 // ObjectInfo describes a stored object.
@@ -223,6 +229,24 @@ func (o *Objects) List(ctx context.Context, prefix string, max int) ([]ObjectInf
 		items[i] = ObjectInfo{Key: aws.ToString(c.Key), Size: aws.ToInt64(c.Size), ETag: aws.ToString(c.ETag), LastModified: aws.ToTime(c.LastModified)}
 	}
 	return items, nil
+}
+
+// ListAll calls fn for every object under prefix, page by page, until fn returns
+// false. It is for the manual reconcile: nothing else lists the bucket.
+func (o *Objects) ListAll(ctx context.Context, prefix string, fn func(ObjectInfo) bool) error {
+	p := s3.NewListObjectsV2Paginator(o.client, &s3.ListObjectsV2Input{Bucket: aws.String(o.cfg.Bucket), Prefix: aws.String(prefix)})
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return mapError(err)
+		}
+		for _, c := range page.Contents {
+			if !fn(ObjectInfo{Key: aws.ToString(c.Key), Size: aws.ToInt64(c.Size), ETag: aws.ToString(c.ETag), LastModified: aws.ToTime(c.LastModified)}) {
+				return nil
+			}
+		}
+	}
+	return nil
 }
 
 // Link is a signed URL.

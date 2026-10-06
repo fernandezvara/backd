@@ -288,12 +288,27 @@ func registerRemote(cfg *cli.Config) {
 		boolean(cc, "json", "one JSON object per line, for other tools")
 	})
 
-	st := cfg.Command("storage").ShortHelp("check a realm's object storage")
+	st := cfg.Command("storage").ShortHelp("check, inspect and clean up a realm's object storage")
 	st.SubCommand("check").ShortHelp("verify the realm's storage the way files would use it").
 		LongHelp("Asks the running backd, which holds the realm's access keys, to check its storage:\nthe bucket and credentials, put, head, get, a range request and a listing on the realm's\nprefix, the signed SHA-256 (a wrong one must be rejected), signed download and upload\nlinks, and, where the provider exposes them, the bucket's CORS rules and default\nencryption. It stores a few small objects under <prefix>/<realm>/_check/ and deletes them\nagain. Exits 1 when a step failed (warnings don't fail it). Audited as storage.check. " + adminAPINote).
 		Func(act("storage check", storageCheck)).Config(func(cc *cli.CommandConfig) {
 		required(cc, "realm", "the realm whose storage to check")
 		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+		boolean(cc, "json", "print the report as JSON")
+	})
+	st.SubCommand("usage").ShortHelp("show what the realm's storage holds and whether it works").
+		LongHelp("Asks the running backd for the realm's storage: how it is configured (never the keys), whether the keys\nare set and the bucket answers, the running totals of bytes and files the documents reference for the realm\nand for the users holding the most, and what waits to be cleaned up (objects queued for deletion, uploads left\nunfinished). " + adminAPINote).
+		Func(act("storage usage", storageUsage)).Config(func(cc *cli.CommandConfig) {
+		required(cc, "realm", "the realm whose storage to show")
+		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+		boolean(cc, "json", "print it as JSON")
+	})
+	st.SubCommand("reconcile").ShortHelp("find (and with --delete remove) objects no document references").
+		LongHelp("Lists the realm's file objects (the only time backd lists the bucket) and reports the ones no declared file\nfield of any document references. Use it after restoring a database backup or removing a file field. It always\nskips objects younger than 24 hours, objects whose upload record is still open (uploads in flight, pending\nuploads not yet expired, files a document holds) and anything that isn't <prefix>/<realm>/<database>/<collection>/<file id>.\nWithout --delete it only reports; with it, it removes exactly the objects the report lists. Needs the config\narea with write access. Audited as storage.reconcile. " + adminAPINote).
+		Func(act("storage reconcile", storageReconcile)).Config(func(cc *cli.CommandConfig) {
+		required(cc, "realm", "the realm whose storage to reconcile")
+		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+		boolean(cc, "delete", "remove the unreferenced objects instead of only reporting them")
 		boolean(cc, "json", "print the report as JSON")
 	})
 	data := cfg.Command("data").ShortHelp("check the stored documents against their schemas")

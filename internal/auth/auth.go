@@ -248,6 +248,11 @@ type Store interface {
 	// removes one; RetryFileDeletion counts a failed attempt and holds it until
 	// notBefore.
 	QueueFileDeletion(ctx context.Context, d FileDeletion) error
+	// AddStorageUsage adds to the realm's running totals and, for a non-empty owner,
+	// the user's; StorageUsage reads them; FileDeletionStats describes the queue.
+	AddStorageUsage(ctx context.Context, owner string, bytes, files int64) error
+	StorageUsage(ctx context.Context, limit int) (StorageUsage, error)
+	FileDeletionStats(ctx context.Context) (FileDeletionStats, error)
 	ClaimFileDeletions(ctx context.Context, now, lease time.Time, limit int) ([]FileDeletion, error)
 	CompleteFileDeletion(ctx context.Context, key string) error
 	RetryFileDeletion(ctx context.Context, key string, notBefore time.Time) error

@@ -171,3 +171,42 @@ func TestFileDeletionsOnMongoDB(t *testing.T) {
 		}
 	}
 }
+
+func TestStorageUsageOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	for _, c := range []struct {
+		owner string
+		bytes int64
+		files int64
+	}{{"u1", 100, 1}, {"u1", 50, 1}, {"u2", 400, 1}, {"", 7, 1}, {"u1", -100, -1}} {
+		if err := s.AddStorageUsage(ctx, c.owner, c.bytes, c.files); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.StorageUsage(ctx, 10)
+	if err != nil || got.Realm.Bytes != 457 || got.Realm.Files != 3 {
+		t.Fatalf("realm: %+v %v", got, err)
+	}
+	if len(got.Users) != 2 || got.Users[0].UserID != "u2" || got.Users[0].Bytes != 400 || got.Users[1].UserID != "u1" || got.Users[1].Bytes != 50 || got.Users[1].Files != 1 {
+		t.Errorf("users: %+v", got.Users)
+	}
+	if top, _ := s.StorageUsage(ctx, 1); len(top.Users) != 1 || top.Users[0].UserID != "u2" {
+		t.Errorf("the top one: %+v", top.Users)
+	}
+
+	t0 := time.Date(2126, 10, 7, 12, 0, 0, 0, time.UTC)
+	if st, err := s.FileDeletionStats(ctx); err != nil || st.Queued != 0 || !st.Oldest.IsZero() {
+		t.Errorf("empty queue: %+v %v", st, err)
+	}
+	for i, k := range []string{"a", "b"} {
+		if err := s.QueueFileDeletion(ctx, auth.FileDeletion{Key: k, Reason: "x", NotBefore: t0, CreatedAt: t0.Add(time.Duration(i) * time.Hour)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = s.RetryFileDeletion(ctx, "b", t0)
+	st, err := s.FileDeletionStats(ctx)
+	if err != nil || st.Queued != 2 || st.Retrying != 1 || !st.Oldest.Equal(t0) {
+		t.Errorf("queue: %+v %v", st, err)
+	}
+}

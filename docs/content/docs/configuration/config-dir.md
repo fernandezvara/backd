@@ -170,6 +170,10 @@ soft_delete:
 - **Erasing a user** still deletes, anonymizes and clears documents that are in the trash: it works on everything the user owns.
 - It doesn't need users: a realm with `auth: disabled` can soft-delete, though it has no rules to restrict the trash.
 
+### Files and erasure
+
+`on_owner_delete` covers file fields: `delete` queues every file of the user's documents, and `anonymize` with a file field in `remove` queues that field's files. Without a policy the files stay. See [Keeping storage tidy](../../files/maintenance/#what-queues-an-object).
+
 ### File fields
 
 `files:` declares the fields of a document that carry files, kept in the realm's [storage](../../files/storage/): `max_size`, `types`, `multiple`, `max_files`, `download` and more. See [File fields](../../files/file-fields/). Don't declare them in `schema.json`: backd adds their schema.

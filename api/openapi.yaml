@@ -1567,6 +1567,81 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/storage:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+    get:
+      tags: [admin]
+      summary: The realm's object storage, what it holds and what waits
+      description: |
+        How the realm's storage is configured (the secrets by name, never their values),
+        whether its access keys are set and the bucket answers, the running totals of
+        bytes and files documents reference (for the realm, and for the 20 users holding
+        the most), the objects queued for deletion, and the uploads left unfinished past
+        their time. A realm without `storage:` answers `{"configured": false}`. Needs
+        the `config` area (read is enough).
+      operationId: adminStorageStatus
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The status.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StorageStatus" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/storage/reconcile:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+    post:
+      tags: [admin]
+      summary: Find, and optionally delete, objects no document references
+      description: |
+        Lists the realm's file objects (the only time backd lists the bucket) and
+        reports those no declared file field of any document references, for use after
+        restoring a database backup or removing a file field. It always skips objects
+        younger than 24 hours, objects whose upload record isn't `failed` (uploads in
+        flight, pending uploads not yet expired, files a document holds), and anything
+        that isn't `<prefix>/<realm>/<database>/<collection>/<file id>`. With
+        `delete: true` it removes exactly the objects reported. Audited as
+        `storage.reconcile`. Needs the `config` area with write access.
+      operationId: adminReconcileStorage
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                delete: { type: boolean, default: false }
+      responses:
+        "200":
+          description: The report.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StorageReconcile" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404":
+          description: The realm has no `storage:` in `realm.yaml`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: "`storage_unavailable`: the access keys can't be read, or the bucket or the documents couldn't be read."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/data-checks:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -4159,6 +4234,86 @@ components:
             size: { type: integer, minimum: 0 }
             type: { type: string, description: Detected from the content. }
             sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+
+    StorageStatus:
+      type: object
+      required: [configured]
+      properties:
+        configured: { type: boolean }
+        provider: { type: string }
+        endpoint: { type: string }
+        public_endpoint: { type: [string, "null"] }
+        region: { type: string }
+        bucket: { type: string }
+        prefix: { type: string }
+        access_key: { type: string, description: "`secret:NAME`: the secret's name, never its value." }
+        secret_key: { type: string }
+        download: { type: string }
+        presigned_ttl: { type: string }
+        pending_ttl: { type: string }
+        keys:
+          type: object
+          required: [ok]
+          properties:
+            ok: { type: boolean }
+            error: { type: string }
+        reachable:
+          type: object
+          required: [ok]
+          properties:
+            ok: { type: boolean }
+            error: { type: string }
+        usage:
+          type: object
+          required: [bytes, files, users]
+          properties:
+            bytes: { type: integer }
+            files: { type: integer }
+            users:
+              type: array
+              items:
+                type: object
+                required: [user_id, bytes, files]
+                properties:
+                  user_id: { type: string }
+                  bytes: { type: integer }
+                  files: { type: integer }
+        deletions:
+          type: object
+          required: [queued, retrying, oldest]
+          properties:
+            queued: { type: integer }
+            retrying: { type: integer }
+            oldest: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
+        stale_uploads: { type: integer }
+
+    StorageReconcile:
+      type: object
+      additionalProperties: false
+      required: [delete, scanned, referenced, skipped_recent, skipped_in_journal, ignored, orphans, orphan_bytes, deleted, failed]
+      properties:
+        delete: { type: boolean }
+        scanned: { type: integer }
+        referenced: { type: integer }
+        skipped_recent: { type: integer }
+        skipped_in_journal: { type: integer }
+        ignored: { type: integer }
+        orphans:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [key, database, collection, file_id, size, last_modified]
+            properties:
+              key: { type: string }
+              database: { type: string }
+              collection: { type: string }
+              file_id: { type: string }
+              size: { type: integer }
+              last_modified: { $ref: "#/components/schemas/Timestamp" }
+        orphan_bytes: { type: integer }
+        deleted: { type: integer }
+        failed: { type: array, items: { type: string } }
 
     DirectUploadStart:
       type: object

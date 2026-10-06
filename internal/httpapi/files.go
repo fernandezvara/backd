@@ -232,7 +232,7 @@ type attachJob struct {
 // read; a concurrent change retries (with the rules asked again), up to three
 // times. It answers the request; on any failure the file is abandoned.
 func (d *documents) attachFile(w http.ResponseWriter, r *http.Request, j attachJob) {
-	c, f, repo, svc, obj, docID, cond, meta, check, abandon, ctx := j.c, j.f, j.repo, j.svc, j.obj, j.docID, j.cond, j.meta, j.check, j.abandon, j.ctx
+	c, f, repo, svc, docID, cond, meta, check, abandon, ctx := j.c, j.f, j.repo, j.svc, j.docID, j.cond, j.meta, j.check, j.abandon, j.ctx
 	plan := struct{ id string }{id: meta["id"].(string)}
 	// Attach it: the document is updated conditionally on the version read; a
 	// concurrent change retries (with the rule asked again), up to three times.
@@ -265,12 +265,9 @@ func (d *documents) attachFile(w http.ResponseWriter, r *http.Request, j attachJ
 		switch {
 		case err == nil:
 			_ = svc.SetUploadStatus(ctx, plan.id, auth.JournalAttached, docID)
+			d.fileAdded(ctx, c, docOwner(current), meta)
 			if !f.Multiple { // the file this one replaced
-				for _, old := range existing {
-					if oldID, _ := old["id"].(string); oldID != "" {
-						_ = svc.QueueFileDeletion(ctx, obj.Key(c.Realm, c.Database, c.Name, oldID), "replaced")
-					}
-				}
+				d.filesGone(ctx, c, docOwner(current), existing, "replaced")
 			}
 			d.auditData(r, auth.AuditDataUpdate, c, docID)
 			w.Header().Set("Location", j.location)
@@ -317,8 +314,7 @@ func (d *documents) removeFiles(w http.ResponseWriter, r *http.Request, fileID s
 		notFound(w, r)
 		return
 	}
-	obj, ok := d.objectsFor(w, r, c.Realm)
-	if !ok {
+	if _, ok := d.objectsFor(w, r, c.Realm); !ok {
 		return
 	}
 	cond, err := parseIfMatch(r.Header.Values("If-Match"))
@@ -376,11 +372,7 @@ func (d *documents) removeFiles(w http.ResponseWriter, r *http.Request, fileID s
 			if fileID == "" {
 				reason = "cleared"
 			}
-			for _, e := range removed {
-				if id, _ := e["id"].(string); id != "" {
-					_ = svc.QueueFileDeletion(r.Context(), obj.Key(c.Realm, c.Database, c.Name, id), reason)
-				}
-			}
+			d.filesGone(r.Context(), c, docOwner(current), removed, reason)
 			d.auditData(r, auth.AuditDataUpdate, c, docID)
 			writeDocument(w, http.StatusOK, fields)
 			return

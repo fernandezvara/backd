@@ -42,6 +42,9 @@ const (
 	// FileDeletionsCollection queues the objects to delete from the bucket (roadmap #149).
 	FileJournalCollection   = "file_journal"
 	FileDeletionsCollection = "file_deletions"
+	// StorageUsageCollection keeps running totals of the bytes and files documents
+	// reference: one document for the realm ("realm") and one per user ("user:<id>").
+	StorageUsageCollection = "storage_usage"
 	// SchedulesCollection holds the runtime state of scheduled functions:
 	// whether an administrator paused one.
 	SchedulesCollection = "schedules"
@@ -304,6 +307,20 @@ var systemCollections = []systemCollection{
 			// How many open pending uploads a caller holds.
 			{keys: bson.D{{Key: "caller_key", Value: 1}, {Key: "status", Value: 1}}, sparse: true},
 			{keys: bson.D{{Key: "expires_at", Value: 1}}, ttl: true},
+		},
+	},
+	{
+		// _id is "realm", or "user:<id>".
+		name: StorageUsageCollection,
+		validator: jsonSchema([]string{"_id", "bytes", "files", "updated_at"}, map[string]any{
+			"_id":        str(),
+			"bytes":      typ("long"),
+			"files":      typ("long"),
+			"updated_at": typ("date"),
+		}),
+		indexes: []systemIndex{
+			// The users holding the most.
+			{keys: bson.D{{Key: "bytes", Value: -1}}},
 		},
 	},
 	{

@@ -116,27 +116,54 @@ func (r *memRepo) CountReferences(_ context.Context, field, value string, _ bool
 	return int64(len(r.matching(0, holds(field, value)))), nil
 }
 
-func (r *memRepo) DeleteOwned(_ context.Context, owner string, limit int) (int64, error) {
+func (r *memRepo) DeleteOwned(_ context.Context, owner string, fileFields []string, limit int) (int64, []storage.ErasedFile, error) {
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
 	if r.s.fail != nil {
-		return 0, r.s.fail
+		return 0, nil, r.s.fail
 	}
 	docs := r.matching(limit, ownedBy(owner))
+	var files []storage.ErasedFile
 	for _, d := range docs {
+		files = append(files, memFiles(d, fileFields)...)
 		delete(r.coll(), d["id"].(string))
 	}
-	return int64(len(docs)), nil
+	return int64(len(docs)), files, nil
 }
 
-func (r *memRepo) AnonymizeOwned(_ context.Context, owner string, remove []string, replace map[string]any, limit int, now time.Time) (int64, error) {
+// memFiles lists the files a document holds in the fields.
+func memFiles(d map[string]any, fields []string) []storage.ErasedFile {
+	var out []storage.ErasedFile
+	add := func(v any) {
+		if m, ok := v.(map[string]any); ok {
+			id, _ := m["id"].(string)
+			size, _ := m["size"].(int64)
+			out = append(out, storage.ErasedFile{ID: id, Size: size})
+		}
+	}
+	for _, f := range fields {
+		switch v := d[f].(type) {
+		case []any:
+			for _, e := range v {
+				add(e)
+			}
+		default:
+			add(v)
+		}
+	}
+	return out
+}
+
+func (r *memRepo) AnonymizeOwned(_ context.Context, owner string, remove []string, replace map[string]any, fileFields []string, limit int, now time.Time) (int64, []storage.ErasedFile, error) {
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
 	if r.s.fail != nil {
-		return 0, r.s.fail
+		return 0, nil, r.s.fail
 	}
 	docs := r.matching(limit, ownedBy(owner))
+	var files []storage.ErasedFile
 	for _, d := range docs {
+		files = append(files, memFiles(d, fileFields)...)
 		for _, f := range remove {
 			pathUnset(d, f)
 		}
@@ -146,7 +173,7 @@ func (r *memRepo) AnonymizeOwned(_ context.Context, owner string, remove []strin
 		pathSet(d, "_meta.owner", nil)
 		systemTouch(d, now)
 	}
-	return int64(len(docs)), nil
+	return int64(len(docs)), files, nil
 }
 
 func (r *memRepo) PullReference(_ context.Context, field, value string, limit int, now time.Time) (int64, error) {

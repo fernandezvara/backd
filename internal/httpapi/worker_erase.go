@@ -79,6 +79,7 @@ func (w *Worker) applyErasePolicies(ctx context.Context, realm string, svc *auth
 				return fmt.Errorf("the storage of %s.%s can't erase", dbName, name)
 			}
 			now := svc.Clock()
+			fileFields := sortedKeys(c.Files)
 			// step repeats one operation until nothing matches any more, adding what each
 			// batch did to the job's counts.
 			step := func(op string, run func() (int64, error)) error {
@@ -97,12 +98,24 @@ func (w *Worker) applyErasePolicies(ctx context.Context, realm string, svc *auth
 			}
 			switch p.Action {
 			case registry.ErasureDelete:
-				if err := step("deleted", func() (int64, error) { return er.DeleteOwned(ctx, e.UserID, eraseBatch) }); err != nil {
+				if err := step("deleted", func() (int64, error) {
+					n, files, err := er.DeleteOwned(ctx, e.UserID, fileFields, eraseBatch)
+					w.eraseFiles(ctx, svc, c, e.UserID, files)
+					return n, err
+				}); err != nil {
 					return err
 				}
 			case registry.ErasureAnonymize:
+				var removedFiles []string
+				for _, f := range fileFields {
+					if slices.Contains(p.Remove, f) {
+						removedFiles = append(removedFiles, f)
+					}
+				}
 				if err := step("anonymized", func() (int64, error) {
-					return er.AnonymizeOwned(ctx, e.UserID, p.Remove, p.Replace, eraseBatch, now)
+					n, files, err := er.AnonymizeOwned(ctx, e.UserID, p.Remove, p.Replace, removedFiles, eraseBatch, now)
+					w.eraseFiles(ctx, svc, c, e.UserID, files)
+					return n, err
 				}); err != nil {
 					return err
 				}
@@ -155,4 +168,20 @@ func (w *Worker) eraseFailed(ctx context.Context, log *slog.Logger, svc *auth.Us
 		return
 	}
 	w.fns.metrics.JobFinished(svc.Realm, "erase", executor.StatusError)
+}
+
+// eraseFiles queues the objects of the files an erase took out of documents, and stops
+// counting them: `delete` takes every file field of the user's documents, `anonymize`
+// the file fields it removes.
+func (w *Worker) eraseFiles(ctx context.Context, svc *auth.Users, c *registry.Collection, userID string, files []storage.ErasedFile) {
+	d := w.fns.docs
+	for _, f := range files {
+		if err := svc.QueueFileDeletion(ctx, d.objectKey(c, f.ID), "erased"); err != nil {
+			w.log.Error("queue an erased file's object for deletion", "realm", svc.Realm, "file", f.ID, "error", err)
+			continue
+		}
+		if err := svc.FileRemoved(ctx, userID, f.Size); err != nil {
+			w.log.Error("count an erased file out of the storage usage", "realm", svc.Realm, "error", err)
+		}
+	}
 }

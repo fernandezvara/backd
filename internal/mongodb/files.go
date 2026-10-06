@@ -3,6 +3,7 @@ package mongodb
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -222,4 +223,79 @@ func (s *AuthStore) CountOpenPendingUploads(ctx context.Context, callerKey strin
 	n, err := s.fileJournal().CountDocuments(ctx, bson.D{{Key: "caller_key", Value: callerKey},
 		{Key: "status", Value: bson.D{{Key: "$in", Value: bson.A{auth.JournalWriting, auth.JournalStored}}}}, {Key: "pending_until", Value: bson.D{{Key: "$gt", Value: now}}}})
 	return int(n), err
+}
+
+func (s *AuthStore) storageUsage() *mongo.Collection { return s.db.Collection(StorageUsageCollection) }
+
+// AddStorageUsage adds to the realm's totals and, for an owner, to theirs.
+func (s *AuthStore) AddStorageUsage(ctx context.Context, owner string, bytes, files int64) error {
+	ids := []string{"realm"}
+	if owner != "" {
+		ids = append(ids, "user:"+owner)
+	}
+	for _, id := range ids {
+		_, err := s.storageUsage().UpdateByID(ctx, id, bson.D{
+			{Key: "$inc", Value: bson.D{{Key: "bytes", Value: bytes}, {Key: "files", Value: files}}},
+			{Key: "$set", Value: bson.D{{Key: "updated_at", Value: time.Now().UTC()}}},
+		}, options.UpdateOne().SetUpsert(true))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// StorageUsage returns the realm's totals and the limit users holding the most bytes.
+func (s *AuthStore) StorageUsage(ctx context.Context, limit int) (auth.StorageUsage, error) {
+	var out auth.StorageUsage
+	var realm struct {
+		Bytes int64 `bson:"bytes"`
+		Files int64 `bson:"files"`
+	}
+	switch err := s.storageUsage().FindOne(ctx, bson.D{{Key: "_id", Value: "realm"}}).Decode(&realm); {
+	case err == nil:
+		out.Realm = auth.StorageUsageTotals{Bytes: realm.Bytes, Files: realm.Files}
+	case !errors.Is(err, mongo.ErrNoDocuments):
+		return out, err
+	}
+	cur, err := s.storageUsage().Find(ctx, bson.D{{Key: "_id", Value: bson.D{{Key: "$regex", Value: "^user:"}}}},
+		options.Find().SetSort(bson.D{{Key: "bytes", Value: -1}, {Key: "_id", Value: 1}}).SetLimit(int64(limit)))
+	if err != nil {
+		return out, err
+	}
+	var docs []struct {
+		ID    string `bson:"_id"`
+		Bytes int64  `bson:"bytes"`
+		Files int64  `bson:"files"`
+	}
+	if err := cur.All(ctx, &docs); err != nil {
+		return out, err
+	}
+	for _, d := range docs {
+		out.Users = append(out.Users, auth.UserUsage{UserID: strings.TrimPrefix(d.ID, "user:"), StorageUsageTotals: auth.StorageUsageTotals{Bytes: d.Bytes, Files: d.Files}})
+	}
+	return out, nil
+}
+
+// FileDeletionStats describes the deletion queue.
+func (s *AuthStore) FileDeletionStats(ctx context.Context) (auth.FileDeletionStats, error) {
+	var st auth.FileDeletionStats
+	n, err := s.fileDeletions().CountDocuments(ctx, bson.D{})
+	if err != nil {
+		return st, err
+	}
+	st.Queued = int(n)
+	r, err := s.fileDeletions().CountDocuments(ctx, bson.D{{Key: "attempts", Value: bson.D{{Key: "$gt", Value: 0}}}})
+	if err != nil {
+		return st, err
+	}
+	st.Retrying = int(r)
+	var oldest fileDeletionDoc
+	switch err := s.fileDeletions().FindOne(ctx, bson.D{}, options.FindOne().SetSort(bson.D{{Key: "created_at", Value: 1}})).Decode(&oldest); {
+	case err == nil:
+		st.Oldest = oldest.CreatedAt.UTC()
+	case !errors.Is(err, mongo.ErrNoDocuments):
+		return st, err
+	}
+	return st, nil
 }
