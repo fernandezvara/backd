@@ -33,6 +33,7 @@ type batchOp struct {
 	fields     map[string]any // create, replace: the new document's fields
 	patch      map[string]any // patch: the raw merge patch
 	cond       ifMatch
+	gone       *map[string]any // delete: the document removed for good, once the batch commits
 }
 
 // accessDeniedErr marks a batch operation the caller's rules don't allow.
@@ -118,6 +119,9 @@ func (d *documents) batch(w http.ResponseWriter, r *http.Request) {
 		if hasAuth && !scopeAllows(w, r, caller, auth.ScopeWrite, database, op.collection.Name) {
 			return
 		}
+		if op.kind == "delete" && len(op.collection.Files) > 0 {
+			op.gone = new(map[string]any)
+		}
 		ops[i] = op
 	}
 
@@ -145,6 +149,9 @@ func (d *documents) batch(w http.ResponseWriter, r *http.Request) {
 			action = auth.AuditDataUpdate
 		}
 		d.auditData(r, action, ops[i].collection, id)
+		if g := ops[i].gone; g != nil && *g != nil {
+			d.documentGone(r.Context(), ops[i].collection, *g)
+		}
 	}
 	answer := map[string]any{"results": rendered}
 	claim.complete(r.Context(), http.StatusOK, answer)
@@ -351,6 +358,9 @@ func (d *documents) applyBatchOp(ctx context.Context, r *http.Request, a access,
 		}
 		if err := repo.Delete(ctx, op.id, &read); err != nil {
 			return nil, err
+		}
+		if op.gone != nil {
+			*op.gone = current
 		}
 		return map[string]any{"id": op.id}, nil
 	}

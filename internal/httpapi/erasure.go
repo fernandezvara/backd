@@ -62,7 +62,7 @@ func ownedReport(ctx context.Context, reg *registry.Registry, store Store, realm
 			}
 			if p.Action == registry.ErasureAnonymize {
 				entry["remove"] = nonNil(slices.Clone(p.Remove))
-				entry["replace"] = slices.Sorted(maps.Keys(p.Replace))
+				entry["replace"] = nonNil(slices.Sorted(maps.Keys(p.Replace)))
 			}
 			for key, fields := range map[string]map[string]string{"pull": p.Pull, "unset": p.Unset} {
 				if len(fields) == 0 {

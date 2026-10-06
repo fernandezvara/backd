@@ -40,7 +40,7 @@ func TestOwnedReport(t *testing.T) {
 		t.Errorf("user: %v", user)
 	}
 	cols := out["collections"].([]any)
-	if len(cols) != 1 {
+	if len(cols) != 3 { // orders, and the file collections with a policy (files_account_test.go): profiles, vault
 		t.Fatalf("collections: %v", cols)
 	}
 	c := cols[0].(map[string]any)

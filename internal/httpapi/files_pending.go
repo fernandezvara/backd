@@ -222,7 +222,7 @@ type pendingSet struct {
 	svc      *auth.Users
 	obj      *storage.Objects
 	files    map[string][]pendingFile // by field
-	replaced []string                 // keys of files a single field lost, set by apply
+	replaced []map[string]any         // files a single field lost, set by apply
 	claimed  []string
 }
 
@@ -313,11 +313,7 @@ func (p *pendingSet) apply(w http.ResponseWriter, r *http.Request, c *registry.C
 			continue
 		}
 		doc[name] = p.files[name][0].meta
-		for _, old := range existing {
-			if id, _ := old["id"].(string); id != "" {
-				p.replaced = append(p.replaced, p.obj.Key(c.Realm, c.Database, c.Name, id))
-			}
-		}
+		p.replaced = append(p.replaced, existing...)
 	}
 	return true
 }
@@ -354,15 +350,18 @@ func (p *pendingSet) release(r *http.Request) {
 	p.claimed = nil
 }
 
-// attached records that the document references the files, and queues the objects
-// of the files a single field lost.
-func (p *pendingSet) attached(r *http.Request, docID string) {
+// attached records that the document (owned by owner) references the files, counts
+// them, and queues the objects of the files a single field lost.
+func (p *pendingSet) attached(r *http.Request, d *documents, c *registry.Collection, docID, owner string) {
 	for _, id := range p.claimed {
 		_ = p.svc.SetUploadStatus(r.Context(), id, auth.JournalAttached, docID)
 	}
-	for _, key := range p.replaced {
-		_ = p.svc.QueueFileDeletion(r.Context(), key, "replaced")
+	for _, name := range sortedKeys(p.files) {
+		for _, pf := range p.files[name] {
+			d.fileAdded(r.Context(), c, owner, pf.meta)
+		}
 	}
+	d.filesGone(r.Context(), c, owner, p.replaced, "replaced")
 	p.claimed = nil
 }
 

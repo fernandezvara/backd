@@ -533,8 +533,29 @@ func TestStorageCheck(t *testing.T) {
 		}
 	}
 	c.expect(0, `"checksum_sha256":"verified"`, "", "storage", "check", "--realm", "acme", "--url", srv.URL, "--json")
+	// What it holds: configuration, reachability and totals, without the keys.
+	out = c.expect(0, "bucket reachable: ok", "", "storage", "usage", "--realm", "acme", "--url", srv.URL)
+	for _, want := range []string{"minio  bucket files  prefix cli", "access keys (secret:STORAGE_ACCESS_KEY, secret:STORAGE_SECRET_KEY): ok", "in use: 0 B in 0 files", "waiting to be deleted: 0 objects"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("usage lacks %q:\n%s", want, out)
+		}
+	}
+	c.expect(0, `"configured":true`, "", "storage", "usage", "--realm", "acme", "--url", srv.URL, "--json")
+	// Reconcile: a report first, then exactly what it listed is removed.
+	fake.PutAt("cli/acme/app/notes/fl_old00000000000000001", []byte("orphan"), time.Now().Add(-48*time.Hour))
+	fake.PutAt("cli/acme/app/notes/fl_new00000000000000001", []byte("recent"), time.Now())
+	out = c.expect(0, "run again with --delete", "", "storage", "reconcile", "--realm", "acme", "--url", srv.URL)
+	if !strings.Contains(out, "orphan  cli/acme/app/notes/fl_old00000000000000001") || strings.Contains(out, "fl_new") || len(fake.Keys()) != 2 {
+		t.Errorf("reconcile report:\n%s", out)
+	}
+	c.expect(0, "deleted 1 of 1 unreferenced objects", "", "storage", "reconcile", "--realm", "acme", "--delete", "--url", srv.URL)
+	if keys := fake.Keys(); len(keys) != 1 || !strings.Contains(keys[0], "fl_new") {
+		t.Errorf("after --delete: %v", keys)
+	}
 	// A realm without storage.
 	env(bareKey).expect(1, "no storage configured", "", "storage", "check", "--realm", "bare", "--url", srv.URL)
+	env(bareKey).expect(0, "no storage configured", "", "storage", "usage", "--realm", "bare", "--url", srv.URL)
+	env(bareKey).expect(1, "no storage configured", "", "storage", "reconcile", "--realm", "bare", "--url", srv.URL)
 	// A bucket that doesn't exist fails the check (exit 1) and says why.
 	fake.Bucket = "other"
 	c.expect(1, "doesn't exist", "", "storage", "check", "--realm", "acme", "--url", srv.URL)

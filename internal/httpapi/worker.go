@@ -501,14 +501,16 @@ func (w *Worker) FilesDue(ctx context.Context) {
 			// A write may have attached the file and died before saying so: a
 			// document that references it keeps it.
 			if e.DocumentID != "" {
-				referenced, err := w.fileReferenced(ctx, realm, e)
+				file, owner, err := w.fileReferenced(ctx, realm, e)
 				if err != nil {
 					w.log.Warn("could not check whether a document references an upload; it is left for now", "realm", realm, "file", e.ID, "error", err)
 					continue
 				}
-				if referenced {
+				if file != nil {
 					if err := svc.SetUploadStatus(ctx, e.ID, auth.JournalAttached, e.DocumentID); err != nil {
 						w.log.Error("mark an upload attached", "realm", realm, "file", e.ID, "error", err)
+					} else if err := svc.FileAdded(ctx, owner, fileSize(file)); err != nil { // the write died before it was counted
+						w.log.Error("count a file in the storage usage", "realm", realm, "file", e.ID, "error", err)
 					}
 					continue
 				}
@@ -549,23 +551,24 @@ func (w *Worker) FilesDue(ctx context.Context) {
 	}
 }
 
-// fileReferenced reports whether the document an upload was meant for holds the file.
-func (w *Worker) fileReferenced(ctx context.Context, realm string, e auth.FileJournalEntry) (bool, error) {
+// fileReferenced returns the file's details, and the document's owner, when the document
+// an upload was meant for holds the file; nil when it doesn't.
+func (w *Worker) fileReferenced(ctx context.Context, realm string, e auth.FileJournalEntry) (map[string]any, string, error) {
 	c, ok := w.reg.Collection(realm, e.Database, e.Collection)
 	if !ok || c.Files[e.Field] == nil {
-		return false, nil
+		return nil, "", nil
 	}
 	doc, err := w.fns.docs.store.Repository(c).Get(ctx, e.DocumentID)
 	switch {
 	case errors.Is(err, storage.ErrNotFound):
-		return false, nil
+		return nil, "", nil
 	case err != nil:
-		return false, err
+		return nil, "", err
 	}
 	for _, f := range filesOf(c.Files[e.Field], doc) {
 		if f["id"] == e.ID {
-			return true, nil
+			return f, docOwner(doc), nil
 		}
 	}
-	return false, nil
+	return nil, "", nil
 }

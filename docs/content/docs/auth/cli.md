@@ -25,7 +25,7 @@ Two commands write to MongoDB directly instead: `backd bootstrap`, which creates
 | `backd functions build\|types` | `CONFIG_DIR` | `CONFIG_DIR` (`build` also needs Deno) |
 | `backd bootstrap --realm <realm> --email <email>` | MongoDB, once per realm | `CONFIG_DIR`, `MONGO_URI`, a provisioned realm |
 | `backd login`, `backd logout`, `backd whoami` | A running `backd` | Its URL |
-| `backd user …`, `backd apikey …`, `backd audit …`, `backd secret set\|list\|delete`, `backd functions invoke\|history\|logs\|jobs`, `backd storage check` | A running `backd`, through the [admin API](../admin/) or the function's own route | Its URL, and a stored session or `BACKD_API_KEY` |
+| `backd user …`, `backd apikey …`, `backd audit …`, `backd secret set\|list\|delete`, `backd functions invoke\|history\|logs\|jobs`, `backd storage check\|usage\|reconcile` | A running `backd`, through the [admin API](../admin/) or the function's own route | Its URL, and a stored session or `BACKD_API_KEY` |
 | `backd secret rotate-key` | MongoDB, directly (not the admin API) | `CONFIG_DIR`, `MONGO_URI`, `BACKD_SECRETS_KEY`, `BACKD_SECRETS_NEW_KEY` |
 | `backd version` | Nothing | Nothing |
 

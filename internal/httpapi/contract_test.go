@@ -1032,6 +1032,25 @@ func TestContract(t *testing.T) {
 		req("POST", base+"/videos/_files/clip/uploads", declare("c.png", pngBytes(3), "image/png"), jsonBody, 429)
 		req("POST", base+"/videos/"+mine+"/_files/clips/uploads", declare("c.png", pngBytes(3), "image/png"), jsonBody, 429)
 	}
+	// The storage's status, and reconcile.
+	req("GET", ad+"/storage", "", key, 200)
+	req("GET", ad+"/storage", "", nil, 401)
+	req("GET", ad+"/storage", "", ada, 403)
+	req("POST", ad+"/storage/reconcile", `{}`, key, 200)
+	req("POST", ad+"/storage/reconcile", `{"delete": true}`, key, 200)
+	req("POST", ad+"/storage/reconcile", `{"delete": 5}`, key, 400)
+	req("POST", ad+"/storage/reconcile", `{}`, nil, 401)
+	req("POST", ad+"/storage/reconcile", `{}`, ada, 403)
+	saved0 := f.reg.Realms["acme"].Settings.Storage
+	broken0 := *saved0
+	broken0.AccessKey = "NOT_SET_ANYWHERE"
+	f.reg.Realms["acme"].Settings.Storage = &broken0
+	req("POST", ad+"/storage/reconcile", `{}`, key, 503)
+	f.reg.Realms["acme"].Settings.Storage = nil
+	req("POST", ad+"/storage/reconcile", `{}`, key, 404)
+	req("GET", ad+"/storage", "", key, 200) // not configured
+	f.reg.Realms["acme"].Settings.Storage = saved0
+
 	// Schema checks.
 	checks := ad + "/data-checks"
 	req("GET", checks, "", key, 200)

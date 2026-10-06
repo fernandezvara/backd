@@ -217,6 +217,12 @@ func Fetch(ctx context.Context, repo Repository, id string, filter Filter) (Docu
 	return page.Items[0], nil
 }
 
+// ErasedFile is a file an erase took out of a document.
+type ErasedFile struct {
+	ID   string
+	Size int64
+}
+
 // Eraser is what erasing a user needs of a collection's storage. Every method
 // works in batches and acts only on documents that still match, so a batch
 // that was interrupted is simply repeated: call each until it returns 0.
@@ -229,11 +235,15 @@ type Eraser interface {
 	// CountReferences counts the documents where field (an array of strings
 	// when array is true, else a string) holds value.
 	CountReferences(ctx context.Context, field, value string, array bool) (int64, error)
-	// DeleteOwned deletes up to limit documents the user owns.
-	DeleteOwned(ctx context.Context, owner string, limit int) (int64, error)
+	// DeleteOwned deletes up to limit documents the user owns. It returns the files
+	// the documents held in fileFields (the collection's file fields), exactly the
+	// ones of the documents it deleted, so their objects can be queued for deletion.
+	DeleteOwned(ctx context.Context, owner string, fileFields []string, limit int) (int64, []ErasedFile, error)
 	// AnonymizeOwned removes the fields in remove, sets those in replace and
-	// clears _meta.owner on up to limit documents the user owns.
-	AnonymizeOwned(ctx context.Context, owner string, remove []string, replace map[string]any, limit int, now time.Time) (int64, error)
+	// clears _meta.owner on up to limit documents the user owns. It returns the
+	// files the documents held in fileFields (the file fields among remove) at the
+	// moment they were removed.
+	AnonymizeOwned(ctx context.Context, owner string, remove []string, replace map[string]any, fileFields []string, limit int, now time.Time) (int64, []ErasedFile, error)
 	// PullReference removes value from the array field of up to limit
 	// documents that contain it.
 	PullReference(ctx context.Context, field, value string, limit int, now time.Time) (int64, error)

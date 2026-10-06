@@ -214,3 +214,49 @@ func (s *Users) FinishFileDeletion(ctx context.Context, key string) error {
 func (s *Users) RetryFileDeletion(ctx context.Context, key string, wait time.Duration) error {
 	return s.Store.RetryFileDeletion(ctx, key, s.now().Add(wait))
 }
+
+// StorageUsageTotals is bytes and files a scope holds.
+type StorageUsageTotals struct {
+	Bytes int64
+	Files int64
+}
+
+// UserUsage is what the files of the documents a user owns add up to.
+type UserUsage struct {
+	UserID string
+	StorageUsageTotals
+}
+
+// StorageUsage is a realm's running totals: all of it, and the users holding the most.
+type StorageUsage struct {
+	Realm StorageUsageTotals
+	Users []UserUsage
+}
+
+// FileDeletionStats describes the deletion queue.
+type FileDeletionStats struct {
+	Queued   int       // objects waiting to be deleted
+	Retrying int       // of them, the ones that failed at least once
+	Oldest   time.Time // when the oldest was queued; zero when empty
+}
+
+// FileAdded counts a file a document now references, for the realm and, when the
+// document has an owner, for them.
+func (s *Users) FileAdded(ctx context.Context, owner string, size int64) error {
+	return s.Store.AddStorageUsage(ctx, owner, size, 1)
+}
+
+// FileRemoved counts a file no document references any more.
+func (s *Users) FileRemoved(ctx context.Context, owner string, size int64) error {
+	return s.Store.AddStorageUsage(ctx, owner, -size, -1)
+}
+
+// StorageUsage returns the running totals: the realm's and the limit users holding the most.
+func (s *Users) StorageUsage(ctx context.Context, limit int) (StorageUsage, error) {
+	return s.Store.StorageUsage(ctx, limit)
+}
+
+// FileDeletionStats describes what waits to be deleted.
+func (s *Users) FileDeletionStats(ctx context.Context) (FileDeletionStats, error) {
+	return s.Store.FileDeletionStats(ctx)
+}

@@ -3,8 +3,12 @@ package mongodb
 import (
 	"context"
 	"slices"
+	"strings"
 	"testing"
 	"time"
+
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/fernandezvara/backd/internal/storage"
 )
@@ -100,7 +104,7 @@ func TestEraserOnMongoDB(t *testing.T) {
 	// ones it finished no longer match, so repeating converges.
 	var total int64
 	for range 5 {
-		n, err := eraser.AnonymizeOwned(ctx, "u1", []string{"phone"}, map[string]any{"buyer_name": "Erased customer", "total": int64(0)}, 2, now)
+		n, _, err := eraser.AnonymizeOwned(ctx, "u1", []string{"phone"}, map[string]any{"buyer_name": "Erased customer", "total": int64(0)}, nil, 2, now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -176,7 +180,7 @@ func TestEraserOnMongoDB(t *testing.T) {
 	}
 	var deleted int64
 	for range 5 {
-		n, err := eraser.DeleteOwned(ctx, "u4", 2)
+		n, _, err := eraser.DeleteOwned(ctx, "u4", nil, 2)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -190,5 +194,91 @@ func TestEraserOnMongoDB(t *testing.T) {
 	}
 	if n, _ := eraser.CountOwned(ctx, "u2"); n != 2 {
 		t.Errorf("another owner's documents were deleted: %d", n)
+	}
+}
+
+// An erase reports the files of the documents it took them from, exactly: the ones of the
+// documents it deleted, the ones it removed, and none of a document that is left alone.
+func TestEraseReportsTheFilesItRemoved(t *testing.T) {
+	eraser, repo, ctx := eraseFixture(t)
+	coll := repo.(*Repository).coll
+	file := func(id string, size int64) bson.D {
+		return bson.D{{Key: "id", Value: id}, {Key: "size", Value: size}}
+	}
+	insert := func(id, owner string, extra ...bson.E) {
+		doc := bson.D{{Key: "_id", Value: id}, {Key: "id", Value: id}, {Key: "_meta", Value: bson.D{{Key: "owner", Value: owner}, {Key: "version", Value: int64(1)}}}}
+		doc = append(doc, extra...)
+		if _, err := coll.InsertOne(ctx, doc, options.InsertOne().SetBypassDocumentValidation(true)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insert("d1", "u9", bson.E{Key: "avatar", Value: file("fl_a1", 10)}, bson.E{Key: "receipts", Value: bson.A{file("fl_r1", 20), file("fl_r2", 30)}})
+	insert("d2", "u9", bson.E{Key: "avatar", Value: file("fl_a2", 40)})
+	insert("d3", "u9")
+	insert("other", "u8", bson.E{Key: "avatar", Value: file("fl_keep", 50)})
+
+	// Anonymizing removes the avatar only: the receipts stay with the document.
+	var got []storage.ErasedFile
+	for range 5 {
+		n, files, err := eraser.AnonymizeOwned(ctx, "u9", []string{"avatar"}, nil, []string{"avatar"}, 2, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, files...)
+		if n == 0 {
+			break
+		}
+	}
+	slices.SortFunc(got, func(a, b storage.ErasedFile) int { return strings.Compare(a.ID, b.ID) })
+	if len(got) != 2 || got[0] != (storage.ErasedFile{ID: "fl_a1", Size: 10}) || got[1] != (storage.ErasedFile{ID: "fl_a2", Size: 40}) {
+		t.Errorf("anonymize reported %+v", got)
+	}
+	if n, _ := eraser.CountOwned(ctx, "u9"); n != 0 {
+		t.Errorf("owned after: %d", n)
+	}
+	// Deleting takes every file field.
+	insert("d4", "u7", bson.E{Key: "avatar", Value: file("fl_a4", 7)}, bson.E{Key: "receipts", Value: bson.A{file("fl_r4", 8), file("fl_r5", 9)}})
+	insert("d5", "u7")
+	var deleted []storage.ErasedFile
+	var count int64
+	for range 5 {
+		n, files, err := eraser.DeleteOwned(ctx, "u7", []string{"avatar", "receipts"}, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		count += n
+		deleted = append(deleted, files...)
+		if n == 0 {
+			break
+		}
+	}
+	slices.SortFunc(deleted, func(a, b storage.ErasedFile) int { return strings.Compare(a.ID, b.ID) })
+	if count != 2 || len(deleted) != 3 || deleted[0].ID != "fl_a4" || deleted[1].ID != "fl_r4" || deleted[2] != (storage.ErasedFile{ID: "fl_r5", Size: 9}) {
+		t.Errorf("delete reported %d documents, %+v", count, deleted)
+	}
+	if n, _ := eraser.CountOwned(ctx, "u8"); n != 1 {
+		t.Errorf("another user's document: %d", n)
+	}
+}
+
+// Reconcile finds out whether a document holds a file by asking for its id in the file
+// field, which is an array on a multiple field.
+func TestFileReferencesAreFoundByID(t *testing.T) {
+	_, repo, ctx := eraseFixture(t)
+	coll := repo.(*Repository).coll
+	_, err := coll.InsertOne(ctx, bson.D{{Key: "_id", Value: "d1"}, {Key: "id", Value: "d1"}, {Key: "_meta", Value: bson.D{{Key: "version", Value: int64(1)}}},
+		{Key: "avatar", Value: bson.D{{Key: "id", Value: "fl_single"}}},
+		{Key: "receipts", Value: bson.A{bson.D{{Key: "id", Value: "fl_one"}}, bson.D{{Key: "id", Value: "fl_two"}}}}}, options.InsertOne().SetBypassDocumentValidation(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for field, id := range map[string]string{"avatar": "fl_single", "receipts": "fl_two"} {
+		page, err := repo.List(ctx, storage.Query{Filter: storage.Condition{Field: field + ".id", Op: storage.OpEq, Value: id}, Limit: 1})
+		if err != nil || len(page.Items) != 1 {
+			t.Errorf("%s.id = %s: %d documents, %v", field, id, len(page.Items), err)
+		}
+	}
+	if page, _ := repo.List(ctx, storage.Query{Filter: storage.Condition{Field: "receipts.id", Op: storage.OpEq, Value: "fl_none"}, Limit: 1}); len(page.Items) != 0 {
+		t.Error("a file nobody holds was found")
 	}
 }

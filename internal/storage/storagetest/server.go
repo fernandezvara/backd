@@ -67,6 +67,14 @@ func (s *Server) Put(key string, data []byte) {
 	s.objects[key] = &object{data: data, sum: base64.StdEncoding.EncodeToString(sum[:]), modified: time.Now().UTC()}
 }
 
+// PutAt is Put with the time the object was last modified, to make one look old.
+func (s *Server) PutAt(key string, data []byte, modified time.Time) {
+	s.Put(key, data)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.objects[key].modified = modified.UTC()
+}
+
 // Delete removes an object directly, as if it were lost.
 func (s *Server) Delete(key string) {
 	s.mu.Lock()

@@ -27,6 +27,7 @@ type MemStore struct {
 	audit       []auth.AuditRecord
 	journal     map[string]auth.FileJournalEntry
 	deletions   map[string]auth.FileDeletion
+	usage       map[string]auth.StorageUsageTotals
 	checks      map[string]auth.CheckReport // "database/collection" → latest report
 	secrets     map[string]auth.Secret      // "database\x00name" → secret
 	schedules   map[string]auth.ScheduleState
@@ -1215,4 +1216,60 @@ func (m *MemStore) RetryFileDeletion(_ context.Context, key string, notBefore ti
 		m.deletions[key] = d
 	}
 	return nil
+}
+
+func (m *MemStore) AddStorageUsage(_ context.Context, owner string, bytes, files int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.usage == nil {
+		m.usage = map[string]auth.StorageUsageTotals{}
+	}
+	add := func(k string) {
+		u := m.usage[k]
+		u.Bytes += bytes
+		u.Files += files
+		m.usage[k] = u
+	}
+	add("") // the realm
+	if owner != "" {
+		add("user:" + owner)
+	}
+	return nil
+}
+
+func (m *MemStore) StorageUsage(_ context.Context, limit int) (auth.StorageUsage, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := auth.StorageUsage{Realm: m.usage[""]}
+	for k, u := range m.usage {
+		if k != "" {
+			out.Users = append(out.Users, auth.UserUsage{UserID: strings.TrimPrefix(k, "user:"), StorageUsageTotals: u})
+		}
+	}
+	slices.SortFunc(out.Users, func(a, b auth.UserUsage) int {
+		if a.Bytes != b.Bytes {
+			return int(b.Bytes - a.Bytes)
+		}
+		return strings.Compare(a.UserID, b.UserID)
+	})
+	if len(out.Users) > limit {
+		out.Users = out.Users[:limit]
+	}
+	return out, nil
+}
+
+func (m *MemStore) FileDeletionStats(_ context.Context) (auth.FileDeletionStats, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var st auth.FileDeletionStats
+	for _, d := range m.deletions {
+		st.Queued++
+		if d.Attempts > 0 {
+			st.Retrying++
+		}
+		if st.Oldest.IsZero() || d.CreatedAt.Before(st.Oldest) {
+			st.Oldest = d.CreatedAt
+		}
+	}
+	return st, nil
 }

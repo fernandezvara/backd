@@ -97,3 +97,14 @@ read: user != nil && document._meta.owner == user.id
 create: "true"
 update: user != nil && document._meta.owner == user.id
 `
+
+// vault deletes what a user owns when they are erased; profiles anonymizes, removing
+// the avatar and leaving the receipts; library (no policy) keeps everything.
+const vaultConfig = filesConfig + `on_owner_delete:
+  action: delete
+`
+
+const profilesConfig = filesConfig + `on_owner_delete:
+  action: anonymize
+  remove: [avatar]
+`

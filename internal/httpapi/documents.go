@@ -183,7 +183,7 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if pending != nil {
-		pending.attached(r, doc["id"].(string))
+		pending.attached(r, d, c, doc["id"].(string), docOwner(doc))
 	}
 	w.Header().Set("Location", r.URL.JoinPath(url.PathEscape(doc["id"].(string))).Path)
 	out := render(doc)
@@ -451,7 +451,7 @@ func (d *documents) write(w http.ResponseWriter, r *http.Request, c *registry.Co
 		switch {
 		case err == nil:
 			if pending != nil {
-				pending.attached(r, fields["id"].(string))
+				pending.attached(r, d, c, fields["id"].(string), docOwner(current))
 			}
 			d.auditData(r, auth.AuditDataUpdate, c, fields["id"].(string))
 			writeDocument(w, http.StatusOK, fields)
@@ -506,7 +506,7 @@ func (d *documents) delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Without rules or If-Match, the document needn't be read first.
-	if !a.ruled && !cond.specific() {
+	if !a.ruled && !cond.specific() && len(c.Files) == 0 {
 		if err := repo.Delete(r.Context(), id, nil); err != nil {
 			storageError(w, r, err)
 			return
@@ -537,6 +537,7 @@ func (d *documents) delete(w http.ResponseWriter, r *http.Request) {
 		}
 		switch err := repo.Delete(r.Context(), id, &read); {
 		case err == nil:
+			d.documentGone(r.Context(), c, current)
 			d.auditData(r, auth.AuditDataDelete, c, id)
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -829,6 +830,7 @@ func (d *documents) purge(w http.ResponseWriter, r *http.Request, c *registry.Co
 		}
 		switch err := repo.Delete(r.Context(), id, &read); {
 		case err == nil:
+			d.documentGone(r.Context(), c, current)
 			d.auditData(r, auth.AuditDataPurge, c, id)
 			w.WriteHeader(http.StatusNoContent)
 			return

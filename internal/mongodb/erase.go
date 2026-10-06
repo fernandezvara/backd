@@ -2,9 +2,11 @@ package mongodb
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/fernandezvara/backd/internal/storage"
@@ -49,23 +51,83 @@ func (r *Repository) CountReferences(ctx context.Context, field, value string, a
 	return n, mapError(err)
 }
 
-func (r *Repository) DeleteOwned(ctx context.Context, owner string, limit int) (int64, error) {
+// erasedFiles reads the files held in fileFields from a document's raw BSON.
+func erasedFiles(raw bson.Raw, fileFields []string) []storage.ErasedFile {
+	var out []storage.ErasedFile
+	one := func(v bson.RawValue) {
+		doc, ok := v.DocumentOK()
+		if !ok {
+			return
+		}
+		id, _ := doc.Lookup("id").StringValueOK()
+		if id == "" {
+			return
+		}
+		var size int64
+		if sv, err := doc.LookupErr("size"); err == nil {
+			if n, ok := sv.AsInt64OK(); ok {
+				size = n
+			}
+		}
+		out = append(out, storage.ErasedFile{ID: id, Size: size})
+	}
+	for _, f := range fileFields {
+		v, err := raw.LookupErr(f)
+		if err != nil {
+			continue
+		}
+		if arr, ok := v.ArrayOK(); ok {
+			if vals, err := arr.Values(); err == nil {
+				for _, e := range vals {
+					one(e)
+				}
+			}
+			continue
+		}
+		one(v)
+	}
+	return out
+}
+
+func fileProjection(fileFields []string) bson.D {
+	p := bson.D{{Key: "_id", Value: 1}}
+	for _, f := range fileFields {
+		p = append(p, bson.E{Key: mongoField(f), Value: 1})
+	}
+	return p
+}
+
+func (r *Repository) DeleteOwned(ctx context.Context, owner string, fileFields []string, limit int) (int64, []storage.ErasedFile, error) {
+	if len(fileFields) > 0 {
+		// One document at a time, each returned as it is deleted: the files reported are
+		// exactly those of the documents that are gone.
+		var n int64
+		var files []storage.ErasedFile
+		for range limit {
+			raw, err := r.coll.FindOneAndDelete(ctx, ownedBy(owner), options.FindOneAndDelete().SetProjection(fileProjection(fileFields))).Raw()
+			if errors.Is(err, mongo.ErrNoDocuments) {
+				break
+			}
+			if err != nil {
+				return n, files, mapError(err)
+			}
+			n++
+			files = append(files, erasedFiles(raw, fileFields)...)
+		}
+		return n, files, nil
+	}
 	ids, err := r.ids(ctx, ownedBy(owner), limit)
 	if err != nil || len(ids) == 0 {
-		return 0, err
+		return 0, nil, err
 	}
 	res, err := r.coll.DeleteMany(ctx, bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: ids}}}, {Key: "_meta.owner", Value: owner}})
 	if err != nil {
-		return 0, mapError(err)
+		return 0, nil, mapError(err)
 	}
-	return res.DeletedCount, nil
+	return res.DeletedCount, nil, nil
 }
 
-func (r *Repository) AnonymizeOwned(ctx context.Context, owner string, remove []string, replace map[string]any, limit int, now time.Time) (int64, error) {
-	ids, err := r.ids(ctx, ownedBy(owner), limit)
-	if err != nil || len(ids) == 0 {
-		return 0, err
-	}
+func (r *Repository) AnonymizeOwned(ctx context.Context, owner string, remove []string, replace map[string]any, fileFields []string, limit int, now time.Time) (int64, []storage.ErasedFile, error) {
 	set, inc := systemWrite(now)
 	set = append(set, bson.E{Key: "_meta.owner", Value: nil})
 	for _, f := range sortedKeys(replace) {
@@ -79,11 +141,34 @@ func (r *Repository) AnonymizeOwned(ctx context.Context, owner string, remove []
 		}
 		update = append(update, bson.E{Key: "$unset", Value: unset})
 	}
+	if len(fileFields) > 0 {
+		// One document at a time, returning what it held before: the files reported are
+		// exactly those the update removed.
+		var n int64
+		var files []storage.ErasedFile
+		for range limit {
+			raw, err := r.coll.FindOneAndUpdate(ctx, ownedBy(owner), update,
+				options.FindOneAndUpdate().SetProjection(fileProjection(fileFields)).SetReturnDocument(options.Before)).Raw()
+			if errors.Is(err, mongo.ErrNoDocuments) {
+				break
+			}
+			if err != nil {
+				return n, files, mapError(err)
+			}
+			n++
+			files = append(files, erasedFiles(raw, fileFields)...)
+		}
+		return n, files, nil
+	}
+	ids, err := r.ids(ctx, ownedBy(owner), limit)
+	if err != nil || len(ids) == 0 {
+		return 0, nil, err
+	}
 	res, err := r.coll.UpdateMany(ctx, bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: ids}}}, {Key: "_meta.owner", Value: owner}}, update)
 	if err != nil {
-		return 0, mapError(err)
+		return 0, nil, mapError(err)
 	}
-	return res.ModifiedCount, nil
+	return res.ModifiedCount, nil, nil
 }
 
 func (r *Repository) PullReference(ctx context.Context, field, value string, limit int, now time.Time) (int64, error) {
