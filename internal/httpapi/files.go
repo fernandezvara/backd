@@ -427,7 +427,7 @@ func (d *documents) clearFiles(w http.ResponseWriter, r *http.Request) { d.remov
 // linkKeySecret is the realm secret holding the key that signs backd's own links to
 // files. backd makes it the first time it is needed; rotating the key (setting or
 // deleting the secret) invalidates every outstanding link.
-const linkKeySecret = "BACKD_FILES_LINK_KEY"
+const linkKeySecret = registry.FilesLinkKeySecret
 
 // linkKey returns the realm's link-signing key, making it when the realm has none.
 func (d *documents) linkKey(ctx context.Context, realm string) ([]byte, error) {

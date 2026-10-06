@@ -49,6 +49,18 @@ files:
 		t.Error("Allows")
 	}
 
+	// A family never admits what runs in a browser: it has to be named.
+	imgs := &FileField{Types: []string{"image/*", "text/*"}}
+	named := &FileField{Types: []string{"image/svg+xml", "text/html"}}
+	for _, ct := range []string{"image/svg+xml", "text/html", "text/html; charset=utf-8", "application/xhtml+xml"} {
+		if imgs.Allows(ct) {
+			t.Errorf("image/* and text/* admit %s", ct)
+		}
+	}
+	if !imgs.Allows("image/png") || !imgs.Allows("text/plain") || !named.Allows("image/svg+xml") || !named.Allows("text/html") || !(&FileField{}).Allows("text/html") {
+		t.Error("what is named or unrestricted is allowed")
+	}
+
 	ok := map[string]any{"title": "t", "avatar": map[string]any{"id": "fl_" + strings.Repeat("a", 20), "name": "a.png", "size": int64(3), "type": "image/png", "sha256": strings.Repeat("0", 64), "uploaded_at": "2026-10-06T10:00:00Z"}}
 	if err := c.Schema.Validate(ok); err != nil {
 		t.Errorf("a document with a file: %v", err)
@@ -110,5 +122,28 @@ func TestFileFieldErrors(t *testing.T) {
 	// Other sections of collection.yaml still work next to files.
 	if _, err := filesTree(t, "soft_delete: true\nfiles:\n  a: {max_size: 1MB}\n", nil); err != nil {
 		t.Errorf("soft_delete next to files: %v", err)
+	}
+}
+
+// A function can't read what backd uses to reach the bucket or to sign links.
+func TestFunctionsCantDeclareTheStorageSecrets(t *testing.T) {
+	for _, name := range []string{"realm.STORAGE_SECRET_KEY", "realm.STORAGE_ACCESS_KEY", "realm.BACKD_FILES_LINK_KEY"} {
+		_, err := Load(writeTree(t, map[string]string{
+			"shop/realm.yaml":                     "auth: enabled\nstorage:\n  provider: minio\n  endpoint: https://minio.internal:9000\n  bucket: b\n  prefix: p\n  access_key: secret:STORAGE_ACCESS_KEY\n  secret_key: secret:STORAGE_SECRET_KEY\n",
+			"shop/app/_functions/f/function.yaml": "secrets: [" + name + "]\n",
+			"shop/app/_functions/f/index.ts":      "export default () => 1\n",
+		}))
+		if err == nil || !strings.Contains(err.Error(), "a secret backd keeps for itself") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	// Another secret of the same realm, or one with the same name in a database, is the function's own.
+	_, err := Load(writeTree(t, map[string]string{
+		"shop/realm.yaml":                     "auth: enabled\nstorage:\n  provider: minio\n  endpoint: https://minio.internal:9000\n  bucket: b\n  prefix: p\n  access_key: secret:STORAGE_ACCESS_KEY\n  secret_key: secret:STORAGE_SECRET_KEY\n",
+		"shop/app/_functions/f/function.yaml": "secrets: [realm.SHARED, STORAGE_SECRET_KEY]\n",
+		"shop/app/_functions/f/index.ts":      "export default () => 1\n",
+	}))
+	if err != nil && strings.Contains(err.Error(), "keeps for itself") {
+		t.Errorf("an unrelated secret was refused: %v", err)
 	}
 }

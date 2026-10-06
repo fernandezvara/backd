@@ -195,6 +195,7 @@ func TestFunctionErrors(t *testing.T) {
 		{"invoke guard", fn("invoke: \"user.email_verified\"\n"), "needs a guard for anonymous callers"},
 		{"invoke syntax", fn("invoke: \"user !=\"\n"), "invoke:"},
 		{"secret name", fn("secrets: [stripe_key]\n"), `secrets[0]: "stripe_key" must be NAME or realm.NAME`},
+		{"secret the link key", fn("secrets: [realm.BACKD_FILES_LINK_KEY]\n"), "is a secret backd keeps for itself"},
 		{"secret twice", fn("secrets: [A, A]\n"), `secrets[1]: "A" is listed twice`},
 		{"network url", fn("network: [\"https://api.stripe.com\"]\n"), `network[0]: "https://api.stripe.com"`},
 		{"network wildcard", fn("network: [\"*.stripe.com\"]\n"), `network[0]: "*.stripe.com"`},

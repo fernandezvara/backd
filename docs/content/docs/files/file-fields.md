@@ -27,7 +27,7 @@ files:
 | Key | Default | Meaning |
 |---|---|---|
 | `max_size` | required | The largest one file may be (`512KiB`, `10MiB`, `1GiB`). Checked while the bytes stream in |
-| `types` | any | Allowed content types, `image/png` or a family such as `image/*`. Checked against the type **detected from the file's content**, never the one the client claims |
+| `types` | any | Allowed content types, `image/png` or a family such as `image/*`. Checked against the type **detected from the file's content**, never the one the client claims. A family never admits SVG, HTML or XML: name them to accept them |
 | `multiple` | `false` | The field is a list of files instead of one |
 | `max_files` | `10` | With `multiple`: how many files the field may hold (1 to 1000) |
 | `upload` | `proxy` | `proxy` streams the bytes through backd; `direct` has the client send them straight to the bucket with a signed link, which backd verifies afterwards ([Direct uploads](../transfers/#direct-uploads)). `max_size` is at most 5GiB for `direct` |

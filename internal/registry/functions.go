@@ -668,6 +668,8 @@ func loadFunction(db *Database, settings RealmSettings, name, dir string) (*Func
 			ref = SecretRef{Realm: true, Name: name}
 		}
 		switch {
+		case ref.Realm && reservedRealmSecret(settings, ref.Name):
+			add("secrets[%d]: %q is a secret backd keeps for itself (the realm's storage keys and the files link key): a function can't read it", i, s)
 		case !secretPattern.MatchString(ref.Name):
 			add("secrets[%d]: %q must be NAME or realm.NAME, with NAME in upper case letters, digits and _ (starting with a letter)", i, s)
 		case seen[s]:
@@ -925,4 +927,17 @@ func sortedKeys[V any](m map[string]V) []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// FilesLinkKeySecret is the realm secret that signs backd's own links to files.
+const FilesLinkKeySecret = "BACKD_FILES_LINK_KEY"
+
+// reservedRealmSecret reports whether a realm secret is one backd uses itself: with the
+// storage keys a function could read the bucket, and with the link key it could sign a
+// link to any file.
+func reservedRealmSecret(settings RealmSettings, name string) bool {
+	if name == FilesLinkKeySecret {
+		return true
+	}
+	return settings.Storage != nil && slices.Contains(settings.Storage.SecretNames(), name)
 }
