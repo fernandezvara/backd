@@ -381,9 +381,11 @@ export function callTimedOut() {
  * in-memory store (a fresh one per call unless `store` is given, so
  * several calls in one test can share state). Also returns `fakeCall` to
  * fake what `ctx.call(name, ...)` answers, `calls` to list what the
- * function called, and `sentEmails` to list what it sent with `ctx.email.send`.
+ * function called, `sentEmails` to list what it sent with `ctx.email.send`, and `steps`
+ * to list what it reported with `ctx.step` and `ctx.progress` (name, total, message, the
+ * last `current`, and every `updates` entry).
  * @param {ContextOptions} [opts]
- * @returns {{ ctx: any, store: MemoryStore, fakeCall: (name: string, handler: (input: any, options: any) => any) => void, calls: (name: string) => Array<{ input: any, options: any }>, sentEmails: () => Array<Record<string, any>> }}
+ * @returns {{ ctx: any, store: MemoryStore, fakeCall: (name: string, handler: (input: any, options: any) => any) => void, calls: (name: string) => Array<{ input: any, options: any }>, sentEmails: () => Array<Record<string, any>>, steps: () => Array<{ name: string, total: number | null, message: string | null, current: number, updates: Array<{ current: number, message: string | null }> }> }}
  */
 export function createContext(opts = {}) {
   const store = opts.store ?? new MemoryStore()
@@ -423,6 +425,33 @@ export function createContext(opts = {}) {
     return await handler(input, options)
   }
 
+  // ctx.step / ctx.progress: recorded, with what the real ones would refuse.
+  /** @type {Array<{ name: string, total: number | null, message: string | null, current: number, updates: Array<{ current: number, message: string | null }> }>} */
+  const reported = []
+  const count = (what, v) => {
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) throw new TypeError(`${what} must be a number that is not negative`)
+    return v
+  }
+  ctx.step = (name, options = {}) => {
+    if (typeof name !== 'string' || name === '') throw new TypeError('ctx.step: the name must be a non-empty string')
+    if (options === null || typeof options !== 'object') throw new TypeError('ctx.step: options must be an object')
+    reported.push({
+      name,
+      total: options.total === undefined ? null : count('ctx.step: total', options.total),
+      message: options.message === undefined ? null : String(options.message),
+      current: 0,
+      updates: [],
+    })
+  }
+  ctx.progress = (current, message) => {
+    count('ctx.progress: current', current)
+    if (reported.length === 0) ctx.step('progress')
+    const step = reported[reported.length - 1]
+    step.current = current
+    if (message !== undefined) step.message = message === null ? null : String(message)
+    step.updates.push({ current, message: message === undefined ? null : message === null ? null : String(message) })
+  }
+
   // ctx.email.send: records the email; checks what backd would refuse.
   const mail = fakeEmail(typeof opts.email === 'object' ? opts.email : {})
   if (opts.email) ctx.email = Object.freeze({ send: mail.send })
@@ -430,6 +459,7 @@ export function createContext(opts = {}) {
     ctx: Object.freeze(ctx),
     store,
     sentEmails: mail.sent,
+    steps: () => reported.map((st) => ({ ...st, updates: st.updates.map((u) => ({ ...u })) })),
     fakeCall: (name, handler) => void fakes.set(name, handler),
     calls: (name) => recorded.filter((c) => c.name === name).map(({ input, options }) => ({ input, options })),
   }
