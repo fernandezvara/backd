@@ -42,6 +42,7 @@ function open() {
 <template>
   <h1 class="text-2xl font-semibold">{{ t('data.title') }}</h1>
   <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">{{ t('data.help') }}</p>
+  <p class="mt-2 text-sm"><RouterLink :to="{ name: 'data-checks', params: { realm } }" class="underline" data-testid="open-checks">{{ t('checks.title') }}</RouterLink></p>
 
   <template v-if="knows">
     <AppAlert v-if="cfg.error" kind="error" class="mt-4">{{ cfg.error }}</AppAlert>

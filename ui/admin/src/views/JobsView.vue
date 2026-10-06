@@ -80,7 +80,9 @@ onMounted(load)
 
 // Cancel and re-run: only function jobs (not backd's own emails and erasures).
 const isFunctionJob = (j: JobSummary) => j.email_kind === null && !j.origin.startsWith('backd:')
-const canCancel = (j: JobSummary) => isFunctionJob(j) && j.status !== 'done'
+const isCheck = (j: JobSummary) => j.origin === 'backd:schema.check'
+// A schema check is cancelled by whoever may read the data, a function's job by whoever may write functions.
+const canCancel = (j: JobSummary) => j.status !== 'done' && ((isFunctionJob(j) && canWrite.value) || (isCheck(j) && session.canRead('data')))
 const canRerun = (j: JobSummary) => isFunctionJob(j) && j.status === 'done'
 
 const asking = ref<'cancel' | 'rerun' | null>(null)
@@ -186,7 +188,7 @@ const resultText = (j: JobSummary) => (j.result ? `${j.result.status}${j.result.
           <th scope="col" class="px-3 py-2">{{ t('jobs.completed') }}</th>
           <th scope="col" class="px-3 py-2">{{ t('jobs.result') }}</th>
           <th scope="col" class="px-3 py-2">{{ t('jobs.progress') }}</th>
-          <th v-if="canWrite" scope="col" class="px-3 py-2"><span class="sr-only">{{ t('jobs.actions') }}</span></th>
+          <th v-if="canWrite || session.canRead('data')" scope="col" class="px-3 py-2"><span class="sr-only">{{ t('jobs.actions') }}</span></th>
         </tr>
       </thead>
       <tbody>
@@ -209,13 +211,13 @@ const resultText = (j: JobSummary) => (j.result ? `${j.result.status}${j.result.
             </details>
             <span v-else class="text-xs text-slate-600 dark:text-slate-400">—</span>
           </td>
-          <td v-if="canWrite" class="px-3 py-2 text-right whitespace-nowrap">
+          <td v-if="canWrite || session.canRead('data')" class="px-3 py-2 text-right whitespace-nowrap">
             <button v-if="canCancel(j)" type="button" class="underline" :aria-label="`${t('jobs.cancel.open')} ${j.id}`" @click="ask('cancel', j)">{{ t('jobs.cancel.open') }}</button>
-            <button v-if="canRerun(j)" type="button" class="underline" :aria-label="`${t('jobs.rerun.open')} ${j.id}`" @click="ask('rerun', j)">{{ t('jobs.rerun.open') }}</button>
+            <button v-if="canRerun(j) && canWrite" type="button" class="underline" :aria-label="`${t('jobs.rerun.open')} ${j.id}`" @click="ask('rerun', j)">{{ t('jobs.rerun.open') }}</button>
           </td>
         </tr>
         <tr v-if="!jobs.length && !loading">
-          <td :colspan="canWrite ? 10 : 9" class="px-3 py-6 text-center text-slate-600 dark:text-slate-400">{{ t('jobs.empty') }}</td>
+          <td :colspan="canWrite || session.canRead('data') ? 10 : 9" class="px-3 py-6 text-center text-slate-600 dark:text-slate-400">{{ t('jobs.empty') }}</td>
         </tr>
       </tbody>
     </table>

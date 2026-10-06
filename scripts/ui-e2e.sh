@@ -54,6 +54,15 @@ ready || {
   exit 1
 }
 
+# A document that no longer matches its schema, for the schema check's tests: the
+# API refuses to write one and MongoDB's validator too, so it goes in with the
+# validation bypassed, as a schema change would have left it.
+docker compose exec -T mongo mongosh --quiet --eval 'printjson(db.getSiblingDB("adminui__main").runCommand({
+  insert: "labels",
+  documents: [{ _id: "drifted1", name: 42, _meta: { version: NumberLong(1), created_at: new Date(), updated_at: new Date() } }],
+  bypassDocumentValidation: true,
+}))' >/dev/null
+
 cd ui/admin
 (cd ../../clients/js && npm ci --no-audit --no-fund)
 npm ci --no-audit --no-fund

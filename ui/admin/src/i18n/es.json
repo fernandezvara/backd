@@ -431,6 +431,55 @@
     "ms": "{n} ms",
     "loadFailed": "No se ha podido cargar el historial de invocaciones."
   },
+  "checks": {
+    "title": "Comprobaciones de esquema",
+    "help": "Encuentra los documentos guardados que ya no cumplen el esquema de su colección, por ejemplo tras cambiarlo. Una comprobación lee todos los documentos y nunca modifica ninguno.",
+    "panel": "Comprobación de esquema",
+    "button": "Comprobar los documentos con el esquema",
+    "allChecks": "Todas las comprobaciones",
+    "checkAll": "Comprobar todas las colecciones",
+    "checkOne": "Comprobar",
+    "collection": "Colección",
+    "scanned": "Documentos leídos",
+    "invalid": "Inválidos",
+    "finished": "Comprobada",
+    "actions": "Acciones",
+    "never": "Nunca comprobada.",
+    "incomplete": "incompleta",
+    "showReport": "Ver el informe",
+    "empty": "Este realm no tiene colecciones.",
+    "loadFailed": "No se pudieron cargar las comprobaciones.",
+    "started": "Comprobación iniciada.",
+    "cancelled": "Comprobación cancelada.",
+    "cancel": "Cancelar la comprobación",
+    "queued": "La comprobación está en cola, esperando a un worker.",
+    "running": "Comprobando {scope}",
+    "progress": "Progreso de la comprobación",
+    "needsWorker": "Las comprobaciones se ejecutan en un worker: si no hay ninguno, esperan.",
+    "otherRunning": "Se está comprobando {scope}; solo se ejecuta una a la vez.",
+    "start": {
+      "title": "¿Comprobar los documentos con el esquema?",
+      "body": "Se lee y valida con el esquema actual cada documento guardado, también los de la papelera. No se cambia nada.",
+      "action": "Iniciar la comprobación",
+      "everything": "Todas las colecciones del realm",
+      "estimated": "Unos {n} documentos que leer.",
+      "warning": "Esto lee todos los documentos, así que en una colección grande puede tardar mucho y carga la base de datos. Se ejecuta en segundo plano: puedes salir de esta página. Solo se ejecuta una comprobación a la vez."
+    },
+    "report": {
+      "summary": "{scanned} documentos leídos, {invalid} inválidos.",
+      "meta": "Comprobada {at}, con el esquema {schema}.",
+      "clean": "Todos los documentos leídos cumplen el esquema.",
+      "document": "Documento",
+      "problems": "Problemas",
+      "trash": "en la papelera",
+      "root": "el documento",
+      "more": "y {n} más",
+      "stopped": {
+        "limit": "Detenida: se alcanzó el límite de documentos inválidos, así que puede haber más.",
+        "time": "Detenida: se alcanzó el límite de tiempo antes del final."
+      }
+    }
+  },
   "steps": {
     "omitted": "{n} pasos omitidos",
     "progressOf": "Progreso de {name}",

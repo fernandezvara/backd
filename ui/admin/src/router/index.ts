@@ -28,6 +28,7 @@ export const routes: RouteRecordRaw[] = [
   { path: '/r/:realm/config/collections', name: 'config-collections', component: () => import('@/views/ConfigCollectionsView.vue'), props: true, meta: { auth: true, area: 'config' as const } },
   { path: '/r/:realm/config/templates', name: 'config-templates', component: () => import('@/views/ConfigTemplatesView.vue'), props: true, meta: { auth: true, area: 'config' as const } },
   { path: '/r/:realm/data', name: 'data', component: () => import('@/views/DataView.vue'), props: true, meta: { auth: true, area: 'data' as const } },
+  { path: '/r/:realm/data/checks', name: 'data-checks', component: () => import('@/views/DataChecksView.vue'), props: true, meta: { auth: true, area: 'data' as const } },
   { path: '/r/:realm/data/:database/:collection', name: 'data-collection', component: () => import('@/views/CollectionView.vue'), props: true, meta: { auth: true, area: 'data' as const } },
   { path: '/r/:realm/data/:database/:collection/new', name: 'data-new', component: () => import('@/views/DocumentView.vue'), props: true, meta: { auth: true, area: 'data' as const } },
   { path: '/r/:realm/data/:database/:collection/:id', name: 'data-doc', component: () => import('@/views/DocumentView.vue'), props: true, meta: { auth: true, area: 'data' as const } },
