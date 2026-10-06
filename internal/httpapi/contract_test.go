@@ -804,7 +804,10 @@ func TestContract(t *testing.T) {
 	store := ad + "/storage/check"
 	req("POST", store, ``, nil, 401)
 	req("POST", store, ``, ada, 403)
+	saved := f.reg.Realms["acme"].Settings.Storage
+	f.reg.Realms["acme"].Settings.Storage = nil
 	req("POST", store, ``, key, 404)
+	f.reg.Realms["acme"].Settings.Storage = saved
 	fake := storagetest.New(t, "files")
 	f.reg.Realms["acme"].Settings.Storage = &registry.StorageSettings{Provider: "minio", Endpoint: fake.URL, Region: "us-east-1", Bucket: "files", Prefix: "contract", AccessKey: "STORAGE_ACCESS_KEY", SecretKey: "STORAGE_SECRET_KEY", Download: registry.DownloadPresigned, PresignedTTL: registry.DefaultPresignedTTL, PendingTTL: registry.DefaultPendingTTL, HTTP: true}
 	req("POST", store, ``, key, 503)
@@ -815,6 +818,89 @@ func TestContract(t *testing.T) {
 	}
 	if out := req("POST", store, ``, key, 200); out["ok"] != true || out["checksum_sha256"] != "verified" {
 		t.Errorf("storage check: %v", out)
+	}
+	// Files: upload, download, remove and clear, on the data route and the admin data route.
+	png := "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + strings.Repeat("x", 20)
+	typed := func(h map[string]string, ct string) map[string]string { return with(h, "Content-Type", ct) }
+	for _, base := range []string{"/v1/acme/app/library", ad + "/data/app/library"} {
+		isAdmin := strings.Contains(base, "_admin")
+		doc := req("POST", base, `{"title": "files"}`, key, 201)["id"].(string)
+		files := base + "/" + doc + "/_files/"
+		up := req("POST", files+"avatar?name=face.png", png, typed(key, "image/png"), 201)
+		avatar := up["avatar"].(map[string]any)["id"].(string)
+		req("POST", files+"avatar", png, typed(with(key, "If-Match", "bad"), "image/png"), 400)
+		req("POST", files+"avatar", png, typed(nil, "image/png"), 401)
+		if isAdmin {
+			req("POST", files+"avatar", png, typed(ada, "image/png"), 403)
+		} else {
+			mine := req("POST", base, `{"title": "mine"}`, ada, 201)["id"].(string)
+			req("POST", base+"/"+mine+"/_files/thumbnail", png, typed(ada, "image/png"), 403)
+		}
+		req("POST", base+"/nope/_files/avatar", png, typed(key, "image/png"), 404)
+		req("POST", files+"avatar", png, typed(with(key, "If-Match", `"999"`), "image/png"), 412)
+		req("POST", files+"avatar", strings.Repeat("x", 5000), typed(key, "image/png"), 413)
+		req("POST", files+"avatar", "plain text", typed(key, "text/plain"), 415)
+		req("POST", files+"receipts", png, typed(key, "image/png"), 201)
+		req("POST", files+"receipts", png, typed(key, "image/png"), 201)
+		req("POST", files+"receipts", png, typed(key, "image/png"), 409)
+		req("POST", files+"manual", "the manual", typed(key, "text/plain"), 201)
+		manual := req("GET", base+"/"+doc, "", key, 200)["manual"].(map[string]any)["id"].(string)
+
+		// Downloads: a redirect, the link as JSON, the bytes, a range, a repeat, and the refusals.
+		req("GET", files+"avatar/"+avatar+"?link=json", "", key, 200)
+		if rec, _ := f.doH(t, "GET", files+"avatar/"+avatar, "", key); rec.Code != 302 {
+			t.Errorf("download redirect: %d", rec.Code)
+		}
+		mp := files + "manual/" + manual
+		_, _ = f.doH(t, "GET", mp, "", key)
+		etag := `"` + sha([]byte("the manual")) + `"`
+		req("GET", mp, "", with(key, "If-None-Match", etag), 304)
+		req("GET", mp, "", with(key, "Range", "bytes=0-2"), 206)
+		req("GET", mp, "", with(key, "Range", "bytes=500-600"), 416)
+		req("GET", mp, "", nil, 401)
+		if !isAdmin {
+			req("GET", mp+"?exp=1&sig=bad", "", nil, 403)
+		}
+		req("GET", files+"avatar/fl_nope00000000000000", "", key, 404)
+		if isAdmin {
+			req("GET", mp, "", ada, 403)
+		}
+		saved := f.reg.Realms["acme"].Settings.Storage
+		broken := *saved
+		broken.AccessKey = "NOT_SET_ANYWHERE"
+		f.reg.Realms["acme"].Settings.Storage = &broken
+		req("GET", mp, "", key, 503)
+		req("POST", files+"avatar", png, typed(key, "image/png"), 503)
+		f.reg.Realms["acme"].Settings.Storage = saved
+
+		// Removing: one file, then the field.
+		req("DELETE", files+"avatar/"+avatar, "", nil, 401)
+		if isAdmin {
+			req("DELETE", files+"avatar/"+avatar, "", ada, 403)
+			req("DELETE", files+"receipts", "", ada, 403)
+		}
+		req("DELETE", files+"avatar/"+avatar, "", with(key, "If-Match", "bad"), 400)
+		req("DELETE", files+"avatar/"+avatar, "", with(key, "If-Match", `"999"`), 412)
+		req("DELETE", files+"avatar/"+avatar, "", key, 200)
+		req("DELETE", files+"avatar/"+avatar, "", key, 404)
+		req("DELETE", files+"receipts", "", nil, 401)
+		req("DELETE", files+"receipts", "", with(key, "If-Match", "bad"), 400)
+		req("DELETE", files+"receipts", "", with(key, "If-Match", `"999"`), 412)
+		req("DELETE", base+"/nope/_files/receipts", "", key, 404)
+		req("DELETE", files+"receipts", "", key, 200)
+		if !isAdmin {
+			// The rule that reserves a field refuses a client and accepts the key (above).
+			mine := req("POST", base, `{"title": "again"}`, ada, 201)["id"].(string)
+			req("DELETE", base+"/"+mine+"/_files/avatar", "", carl, 404)
+			// A field the rules reserve stays: a function (the key) sets it, the owner can't take it away.
+			req("POST", base+"/"+mine+"/_files/thumbnail", png, typed(key, "image/png"), 201)
+			req("DELETE", base+"/"+mine+"/_files/thumbnail", "", ada, 403)
+			th := req("GET", base+"/"+mine, "", ada, 200)["thumbnail"].(map[string]any)["id"].(string)
+			req("DELETE", base+"/"+mine+"/_files/thumbnail/"+th, "", ada, 403)
+			req("DELETE", base+"/"+mine+"/_files/avatar", "", with(ada, "If-Match", "bad"), 400)
+			req("GET", base+"/"+mine+"?file_links=true", "", ada, 200)
+			req("GET", base+"?file_links=true", "", ada, 200)
+		}
 	}
 	// Schema checks.
 	checks := ad + "/data-checks"

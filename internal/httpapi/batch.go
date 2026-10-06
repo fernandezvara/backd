@@ -217,9 +217,14 @@ func (d *documents) parseBatchOp(w http.ResponseWriter, r *http.Request, realm, 
 			return batchOp{}, false
 		}
 		stripSystemFields(doc)
-		if err := c.Schema.Validate(doc); err != nil {
-			writeError(w, r, http.StatusBadRequest, codeValidation, fmt.Sprintf("operation %d failed schema validation", index), prefixDetails(idx, validationDetails(err))...)
-			return batchOp{}, false
+		stripFileFields(c, doc)
+		// A replace keeps the document's files, so with file fields it is validated
+		// once the stored document is read (applyBatchOp).
+		if kind == "create" || len(c.Files) == 0 {
+			if err := c.Schema.Validate(doc); err != nil {
+				writeError(w, r, http.StatusBadRequest, codeValidation, fmt.Sprintf("operation %d failed schema validation", index), prefixDetails(idx, validationDetails(err))...)
+				return batchOp{}, false
+			}
 		}
 		if kind == "create" {
 			op.fields = c.DatesToStorage(jsonnum.Normalize(doc).(map[string]any))
@@ -233,6 +238,7 @@ func (d *documents) parseBatchOp(w http.ResponseWriter, r *http.Request, realm, 
 			return batchOp{}, false
 		}
 		stripSystemFields(patch)
+		stripFileFields(c, patch)
 		op.patch = patch
 	}
 	return op, true
@@ -292,6 +298,14 @@ func (d *documents) applyBatchOp(ctx context.Context, r *http.Request, a access,
 
 	switch op.kind {
 	case "replace":
+		if len(op.collection.Files) > 0 {
+			candidate := deepCopy(op.fields)
+			keepFileFields(op.collection, candidate, current)
+			if err := op.collection.Schema.Validate(timesToStrings(candidate)); err != nil {
+				return nil, &patchValidationErr{err: err}
+			}
+			op.fields = candidate
+		}
 		if err := checkWrite(a, op.collection, rules.Update, current, op.fields); err != nil {
 			return nil, err
 		}

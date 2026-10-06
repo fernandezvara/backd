@@ -33,6 +33,7 @@ func TestRealmStorageConnection(t *testing.T) {
 	}
 
 	// No storage: the realm says so.
+	f.reg.Realms["acme"].Settings.Storage = nil
 	if _, err := objects.For(ctx, "acme"); !errors.Is(err, errNoStorage) {
 		t.Fatalf("no storage: %v", err)
 	}

@@ -26,12 +26,15 @@ const (
 
 // Settings is the complete runtime configuration.
 type Settings struct {
-	ConfigDir       string
-	MongoURI        string
-	HTTPAddr        string
-	ProvisionMode   ProvisionMode
-	LogLevel        slog.Level
-	MaxBodyBytes    int64
+	ConfigDir     string
+	MongoURI      string
+	HTTPAddr      string
+	ProvisionMode ProvisionMode
+	LogLevel      slog.Level
+	MaxBodyBytes  int64
+	// MaxUploadBytes caps one file of a proxy upload (BACKD_MAX_UPLOAD_BYTES), apart from
+	// MaxBodyBytes, which is for JSON.
+	MaxUploadBytes  int64
 	MongoOpTimeout  time.Duration
 	ShutdownTimeout time.Duration
 	// PasswordHashConcurrency caps concurrent password hashes; 0 means
@@ -141,6 +144,13 @@ func Load(getenv func(string) string) (Settings, error) {
 		errs = append(errs, fmt.Errorf("MAX_BODY_BYTES must be a positive integer, got %q", maxBody))
 	} else {
 		s.MaxBodyBytes = n
+	}
+
+	maxUpload := orDefault(getenv("BACKD_MAX_UPLOAD_BYTES"), "104857600")
+	if n, err := strconv.ParseInt(maxUpload, 10, 64); err != nil || n < 1 {
+		errs = append(errs, fmt.Errorf("BACKD_MAX_UPLOAD_BYTES must be a positive integer, got %q", maxUpload))
+	} else {
+		s.MaxUploadBytes = n
 	}
 
 	if v := getenv("PASSWORD_HASH_CONCURRENCY"); v != "" {

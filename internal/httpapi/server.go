@@ -27,6 +27,10 @@ type Config struct {
 	Now func() time.Time
 	// MaxBodyBytes caps request bodies; defaults to DefaultMaxBodyBytes.
 	MaxBodyBytes int64
+	// MaxUploadBytes caps one file of a proxy upload (BACKD_MAX_UPLOAD_BYTES), apart
+	// from MaxBodyBytes, which does not apply to file uploads; defaults to
+	// DefaultMaxUploadBytes.
+	MaxUploadBytes int64
 	// OpTimeout bounds the storage work of each document request;
 	// defaults to DefaultOpTimeout.
 	OpTimeout time.Duration
@@ -66,6 +70,16 @@ type Config struct {
 
 // DefaultOpTimeout is the per-request storage deadline when none is configured.
 const DefaultOpTimeout = 10 * time.Second
+
+// DefaultMaxUploadBytes is the largest file a proxy upload carries when none is configured.
+const DefaultMaxUploadBytes = 100 << 20
+
+func maxUploadOf(cfg Config) int64 {
+	if cfg.MaxUploadBytes > 0 {
+		return cfg.MaxUploadBytes
+	}
+	return DefaultMaxUploadBytes
+}
 
 // DefaultMaxBodyBytes is the request body limit when none is configured.
 const DefaultMaxBodyBytes = 1 << 20
@@ -113,7 +127,7 @@ func NewHandler(cfg Config) http.Handler {
 	}
 	authRoutes := &authAPI{users: users, reg: cfg.Registry, actions: hostedActions(), opTimeout: opTimeout}
 	authRoutes.routes(r)
-	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users, callbackKey: cfg.CallbackKey, objects: newRealmObjects(cfg.Registry, users)}
+	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users, callbackKey: cfg.CallbackKey, objects: newRealmObjects(cfg.Registry, users), baseURL: cfg.BackdURL, maxUpload: maxUploadOf(cfg)}
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, executorToken: cfg.ExecutorToken, log: cfg.Log, dev: cfg.Dev, concurrency: limiterFor(cfg.Registry), metrics: cfg.Metrics}
 	if !cfg.DisableAdminAPI {
 		(&adminAPI{users: users, reg: cfg.Registry, fns: fns, fingerprint: cfg.ConfigFingerprint}).routes(r, authRoutes.resolveRealm, withTimeout(opTimeout))
@@ -155,7 +169,7 @@ func NewInternalHandler(cfg Config) http.Handler {
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
-	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users,
+	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users, objects: newRealmObjects(cfg.Registry, users), baseURL: cfg.BackdURL, maxUpload: maxUploadOf(cfg),
 		internal: true, callbackKey: cfg.CallbackKey}
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, executorToken: cfg.ExecutorToken, log: cfg.Log, dev: cfg.Dev, concurrency: limiterFor(cfg.Registry), metrics: cfg.Metrics}
 	r.Get("/_internal/functions/{sha256}", fns.bundle)

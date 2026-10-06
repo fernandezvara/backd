@@ -181,6 +181,24 @@ func collectionConfig(c *registry.Collection, rel func(string) string) map[strin
 	if e := c.Erasure; e != nil {
 		policy["on_owner_delete"] = map[string]any{"action": e.Action, "remove": orStrings(e.Remove), "replace": e.Replace, "pull": e.Pull, "unset": e.Unset}
 	}
+	if len(c.Files) > 0 {
+		files := map[string]any{}
+		for name, f := range c.Files {
+			var ttl, cache any
+			if f.PresignedTTL > 0 {
+				ttl = dur(f.PresignedTTL)
+			}
+			if f.Cache > 0 {
+				cache = dur(f.Cache)
+			}
+			var download any
+			if f.Download != "" {
+				download = f.Download
+			}
+			files[name] = map[string]any{"multiple": f.Multiple, "max_files": f.MaxFiles, "max_size": f.MaxSize, "types": orStrings(f.Types), "upload": f.Upload, "download": download, "presigned_ttl": ttl, "cache": cache}
+		}
+		out["files"] = files
+	}
 	if len(policy) > 0 {
 		out["policy"] = policy
 		out["policy_file"] = rel(c.ErasurePath)

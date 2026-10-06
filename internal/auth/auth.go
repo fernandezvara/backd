@@ -224,6 +224,21 @@ type Store interface {
 	// ListJobs returns the jobs matching f, newest first, and whether
 	// more follow.
 	ListJobs(ctx context.Context, f JobFilter) ([]Job, bool, error)
+	// JournalFile records an upload; SetFileJournalStatus moves it to a new status
+	// (with the document that references it, if any) and sets when the record
+	// expires; StaleFileJournal lists uploads still writing or stored that were
+	// last updated before the given time.
+	JournalFile(ctx context.Context, e FileJournalEntry) error
+	SetFileJournalStatus(ctx context.Context, id, status, documentID string, at, expiresAt time.Time) error
+	StaleFileJournal(ctx context.Context, before time.Time, limit int) ([]FileJournalEntry, error)
+	// QueueFileDeletion adds an object to delete (one per key); ClaimFileDeletions
+	// returns up to limit due ones and holds them until lease; CompleteFileDeletion
+	// removes one; RetryFileDeletion counts a failed attempt and holds it until
+	// notBefore.
+	QueueFileDeletion(ctx context.Context, d FileDeletion) error
+	ClaimFileDeletions(ctx context.Context, now, lease time.Time, limit int) ([]FileDeletion, error)
+	CompleteFileDeletion(ctx context.Context, key string) error
+	RetryFileDeletion(ctx context.Context, key string, notBefore time.Time) error
 	// RenewJobLease moves the lease of a running job's attempt to until; false
 	// when the job no longer runs that attempt.
 	RenewJobLease(ctx context.Context, id string, attempt int, until time.Time) (bool, error)

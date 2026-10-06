@@ -9,7 +9,7 @@ toc: true
 `backd` itself stores no files. A realm that wants documents to carry files (an avatar, receipts, attachments) **brings its own S3-compatible storage**, from a closed list of providers: [AWS S3](aws-s3/), [MinIO](minio/), [Cloudflare R2](cloudflare-r2/) and [DigitalOcean Spaces](digitalocean-spaces/). The bucket stays private: files are only ever reached through `backd`, under the same access rules as the document they belong to.
 
 {{< hint note >}}
-**What is available.** This release connects a realm to its storage and checks it: [`storage:` in `realm.yaml`](storage/), the keys as realm secrets, and `backd storage check`. File fields in collections, uploads and downloads are the next steps of the Files roadmap, and these pages grow with them.
+**What is available.** A realm [connects its storage](storage/); collections declare [file fields](file-fields/); documents take [uploads and downloads](transfers/) through backd, under the document's [rules](rules/). Creating a document together with its files, uploads straight to the bucket, erasure and reconcile, and the functions and JavaScript client APIs are the next steps of the Files roadmap.
 {{< /hint >}}
 
 ## The ideas
@@ -20,4 +20,4 @@ toc: true
 - **Only what every provider has:** put, get (with ranges), head, delete, listing (for a manual reconcile only) and presigned links, all signed with AWS Signature Version 4.
 - **Encryption at rest is the bucket's default,** set at the provider. `backd` sends no encryption headers and has no setting for it; `backd storage check` reports the bucket's status where the provider exposes it.
 
-Start with [Connecting storage](storage/), then the page of your provider.
+Start with [Connecting storage](storage/) and the page of your provider, then [File fields](file-fields/), [Uploads and downloads](transfers/) and [Rules for files](rules/).

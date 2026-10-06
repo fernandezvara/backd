@@ -36,7 +36,8 @@ type Server struct {
 	mu      sync.Mutex
 	objects map[string]*object
 	// Requests counts the requests the server got, by method.
-	Requests map[string]int
+	Requests    map[string]int
+	failDeletes bool
 }
 
 // New starts a server with one bucket and stops it when the test ends.
@@ -46,6 +47,38 @@ func New(t testing.TB, bucket string) *Server {
 	s.Server = httptest.NewServer(http.HandlerFunc(s.serve))
 	t.Cleanup(s.Close)
 	return s
+}
+
+// Object returns what is stored under key, or nil.
+func (s *Server) Object(key string) []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if o := s.objects[key]; o != nil {
+		return o.data
+	}
+	return nil
+}
+
+// Put stores bytes under key, as an object a test wants to find.
+func (s *Server) Put(key string, data []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sum := sha256.Sum256(data)
+	s.objects[key] = &object{data: data, sum: base64.StdEncoding.EncodeToString(sum[:]), modified: time.Now().UTC()}
+}
+
+// Delete removes an object directly, as if it were lost.
+func (s *Server) Delete(key string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.objects, key)
+}
+
+// FailDeletes makes DELETE requests fail (500) while on.
+func (s *Server) FailDeletes(on bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.failDeletes = on
 }
 
 // Keys lists the stored keys, sorted.
@@ -94,6 +127,10 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodGet || r.Method == http.MethodHead:
 		s.get(w, r, key)
 	case r.Method == http.MethodDelete:
+		if s.failDeletes {
+			apiError(w, http.StatusInternalServerError, "InternalError", "we encountered an internal error")
+			return
+		}
 		delete(s.objects, key)
 		w.WriteHeader(http.StatusNoContent)
 	default:

@@ -129,11 +129,26 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 		fnDir + "flaky/index.js":                  "",
 		fnDir + "tally/function.yaml":             "internal: true\nmode: async\n",
 		fnDir + "tally/index.js":                  "",
+		// Collections with file fields (see files_test.go): library is private to its owner,
+		// gallery can be read by anyone.
+		"acme/app/library/schema.json":     filesSchema,
+		"acme/app/library/collection.yaml": filesConfig,
+		"acme/app/library/rules.yaml":      filesRules,
+		"acme/app/gallery/schema.json":     filesSchema,
+		"acme/app/gallery/collection.yaml": filesConfig,
+		"acme/app/gallery/rules.yaml":      strings.Replace(filesRules, "read: user != nil && document._meta.owner == user.id", "read: true", 1),
 	} {
 		_ = os.MkdirAll(filepath.Dir(filepath.Join(root, p)), 0o755)
 		if err := os.WriteFile(filepath.Join(root, p), []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// The realm keeps its files in a storage the tests point at their fake S3 server
+	// (see files_test.go): the address here is never connected to.
+	realmPath := filepath.Join(root, "acme", "realm.yaml")
+	realmYAML, _ := os.ReadFile(realmPath)
+	if err := os.WriteFile(realmPath, append(realmYAML, []byte(filesStorage)...), 0o644); err != nil {
+		t.Fatal(err)
 	}
 	// The default hosted pages, in English and (the same text) Spanish.
 	for _, kind := range email.PageKinds {

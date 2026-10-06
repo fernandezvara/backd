@@ -38,6 +38,10 @@ const (
 	// SchemaChecksCollection holds the latest schema check report of each
 	// collection (roadmap #26), replaced by the next finished check.
 	SchemaChecksCollection = "schema_checks"
+	// FileJournalCollection records every upload of a realm's files and what became of it;
+	// FileDeletionsCollection queues the objects to delete from the bucket (roadmap #149).
+	FileJournalCollection   = "file_journal"
+	FileDeletionsCollection = "file_deletions"
 	// SchedulesCollection holds the runtime state of scheduled functions:
 	// whether an administrator paused one.
 	SchedulesCollection = "schedules"
@@ -264,6 +268,43 @@ var systemCollections = []systemCollection{
 			// loses the field, so the name is free again.
 			{keys: bson.D{{Key: "exclusive", Value: 1}}, unique: true, sparse: true},
 			{keys: bson.D{{Key: "expires_at", Value: 1}}, ttl: true},
+		},
+	},
+	{
+		// _id is the file's id.
+		name: FileJournalCollection,
+		validator: jsonSchema([]string{"_id", "database", "collection", "field", "key", "size", "status", "created_at", "updated_at", "expires_at"}, map[string]any{
+			"_id":         str(),
+			"database":    str(),
+			"collection":  str(),
+			"field":       str(),
+			"document_id": str(),
+			"key":         str(),
+			"caller":      str(),
+			"size":        typ("long"),
+			"status":      str(),
+			"created_at":  typ("date"),
+			"updated_at":  typ("date"),
+			"expires_at":  typ("date"),
+		}),
+		indexes: []systemIndex{
+			// What a worker looks for: uploads stuck writing or stored.
+			{keys: bson.D{{Key: "status", Value: 1}, {Key: "updated_at", Value: 1}}},
+			{keys: bson.D{{Key: "expires_at", Value: 1}}, ttl: true},
+		},
+	},
+	{
+		// _id is the object's key.
+		name: FileDeletionsCollection,
+		validator: jsonSchema([]string{"_id", "reason", "attempts", "not_before", "created_at"}, map[string]any{
+			"_id":        str(),
+			"reason":     str(),
+			"attempts":   typ("int"),
+			"not_before": typ("date"),
+			"created_at": typ("date"),
+		}),
+		indexes: []systemIndex{
+			{keys: bson.D{{Key: "not_before", Value: 1}}},
 		},
 	},
 	{

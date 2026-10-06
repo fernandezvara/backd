@@ -2224,6 +2224,7 @@ paths:
       operationId: listDocuments
       security: [{}, { session: [] }, { apiKey: [] }]
       parameters:
+        - { $ref: "#/components/parameters/fileLinks" }
         - name: where
           in: query
           description: >-
@@ -2313,7 +2314,9 @@ paths:
       summary: Get a document
       operationId: getDocument
       security: [{}, { session: [] }, { apiKey: [] }]
-      parameters: [{ $ref: "#/components/parameters/deleted" }]
+      parameters:
+        - { $ref: "#/components/parameters/deleted" }
+        - { $ref: "#/components/parameters/fileLinks" }
       responses:
         "200": { $ref: "#/components/responses/Document" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
@@ -2420,6 +2423,185 @@ paths:
         "412": { $ref: "#/components/responses/VersionMismatch" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/{database}/{collection}/{id}/_files/{field}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+      - { $ref: "#/components/parameters/id" }
+      - { $ref: "#/components/parameters/fileField" }
+    post:
+      tags: [documents]
+      summary: Upload a file into a file field
+      description: |
+        The request body is the file's bytes, with its `Content-Type`. On a field that
+        holds one file the upload replaces it; on a `multiple` field it is appended
+        (`409 too_many_files` at `max_files`, before any byte is read). The file's
+        name comes from `?name=` or the `Content-Disposition` filename, and is
+        sanitized, never refused. The type is detected from the content: a file that
+        isn't of one of the field's `types` is `415 unsupported_file_type`, one over
+        `max_size` is `413`. The `update` rule is asked first, with the document as it
+        would be after the change. Every upload is a change: it bumps the version and
+        accepts `If-Match`. The document is answered with the new file's details, and
+        `Location` is the file's URL. A field set to `upload: direct` answers
+        `409 upload_mode_mismatch`.
+      operationId: uploadFile
+      security: [{}, { session: [] }, { apiKey: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/ifMatch" }
+        - name: name
+          in: query
+          description: The file's name; defaults to the `Content-Disposition` filename, then `file`.
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          "*/*":
+            schema: { type: string, format: binary }
+      responses:
+        "201":
+          description: The document, with the file attached.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+            Location: { schema: { type: string }, description: "The file's URL." }
+            Vary: { $ref: "#/components/headers/DataVary" }
+            Cache-Control: { $ref: "#/components/headers/DataCacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Document" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/VersionMismatch" }
+        "413": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [documents]
+      summary: Clear a file field
+      description: |
+        Removes every file of the field. The `update` rule is asked about the result;
+        the objects are deleted afterwards by the workers.
+      operationId: clearFiles
+      security: [{}, { session: [] }, { apiKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/ifMatch" }]
+      responses:
+        "200": { $ref: "#/components/responses/Document" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/VersionMismatch" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/{database}/{collection}/{id}/_files/{field}/{fileID}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+      - { $ref: "#/components/parameters/id" }
+      - { $ref: "#/components/parameters/fileField" }
+      - { $ref: "#/components/parameters/fileId" }
+    get:
+      tags: [documents]
+      summary: Download a file
+      description: |
+        The `read` rule decides (a document the caller can't read is `404`). In
+        `download: presigned` mode (the default) the answer is a `302` to a short-lived
+        signed link of the storage, forcing a download; `?link=json` answers
+        `{url, expires_at}` instead. In `download: proxy` mode backd streams the
+        bytes: with `nosniff` and a sandbox CSP, one `Range` (`206`, `416`), a strong
+        `ETag` from the file's sha256 (`If-None-Match` → `304`, `If-Range`), and
+        public caching only for a document anyone may read. A signed backd link
+        (`?exp=&sig=`, from `?link=json` or `?file_links=true`) is its own credential
+        for this file until it expires (`403 invalid_file_link` otherwise).
+        `404 file_missing` when the object is gone from storage.
+      operationId: downloadFile
+      security: [{}, { session: [] }, { apiKey: [] }]
+      parameters:
+        - name: link
+          in: query
+          description: "`json` answers the link instead of redirecting to it."
+          schema: { type: string, enum: [json] }
+        - name: exp
+          in: query
+          description: A backd link's expiry (Unix seconds).
+          schema: { type: string }
+        - name: sig
+          in: query
+          description: A backd link's signature.
+          schema: { type: string }
+        - name: Range
+          in: header
+          schema: { type: string }
+        - name: If-Range
+          in: header
+          schema: { type: string }
+        - name: If-None-Match
+          in: header
+          schema: { type: string }
+      responses:
+        "200":
+          description: The file's bytes (proxy mode), or the link (`?link=json`).
+          headers:
+            ETag: { schema: { type: string } }
+            Accept-Ranges: { schema: { const: bytes } }
+            Content-Disposition: { schema: { type: string } }
+            X-Content-Type-Options: { schema: { const: nosniff } }
+            Content-Security-Policy: { schema: { type: string } }
+            Cache-Control: { schema: { type: string } }
+          content:
+            "*/*":
+              schema: { type: string, format: binary }
+            application/json:
+              schema: { $ref: "#/components/schemas/FileLink" }
+        "206":
+          description: The requested range of the file.
+          headers:
+            Content-Range: { schema: { type: string } }
+            ETag: { schema: { type: string } }
+          content:
+            "*/*":
+              schema: { type: string, format: binary }
+        "302":
+          description: Redirect to the storage's signed link.
+          headers:
+            Location: { schema: { type: string } }
+            Cache-Control: { schema: { const: "private, no-store" } }
+        "304": { description: The caller's copy is current. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "416":
+          description: The range is outside the file.
+          headers:
+            Content-Range: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [documents]
+      summary: Remove one file
+      description: |
+        Takes the file out of the document (a new version, `If-Match` accepted) and
+        queues the object for deletion.
+      operationId: deleteFile
+      security: [{}, { session: [] }, { apiKey: [] }]
+      parameters: [{ $ref: "#/components/parameters/ifMatch" }]
+      responses:
+        "200": { $ref: "#/components/responses/Document" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/VersionMismatch" }
+        default: { $ref: "#/components/responses/Error" }
+
   # The admin data route: the data routes' operations for administrators (the
   # `data` admin area), past the collections' rules. Writes are audited.
 
@@ -2438,6 +2620,7 @@ paths:
       operationId: adminListDocuments
       security: [{ apiKey: [] }, { session: [] }]
       parameters:
+        - { $ref: "#/components/parameters/fileLinks" }
         - name: where
           in: query
           description: >-
@@ -2526,7 +2709,9 @@ paths:
       summary: Admin data, get a document
       operationId: adminGetDocument
       security: [{ apiKey: [] }, { session: [] }]
-      parameters: [{ $ref: "#/components/parameters/deleted" }]
+      parameters:
+        - { $ref: "#/components/parameters/deleted" }
+        - { $ref: "#/components/parameters/fileLinks" }
       responses:
         "200": { $ref: "#/components/responses/Document" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
@@ -2630,6 +2815,185 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "412": { $ref: "#/components/responses/VersionMismatch" }
         default: { $ref: "#/components/responses/Error" }
+  /v1/{realm}/_admin/data/{database}/{collection}/{id}/_files/{field}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+      - { $ref: "#/components/parameters/id" }
+      - { $ref: "#/components/parameters/fileField" }
+    post:
+      tags: [admin]
+      summary: Upload a file into a file field, admin data
+      description: |
+        The request body is the file's bytes, with its `Content-Type`. On a field that
+        holds one file the upload replaces it; on a `multiple` field it is appended
+        (`409 too_many_files` at `max_files`, before any byte is read). The file's
+        name comes from `?name=` or the `Content-Disposition` filename, and is
+        sanitized, never refused. The type is detected from the content: a file that
+        isn't of one of the field's `types` is `415 unsupported_file_type`, one over
+        `max_size` is `413`. The `update` rule is asked first, with the document as it
+        would be after the change. Every upload is a change: it bumps the version and
+        accepts `If-Match`. The document is answered with the new file's details, and
+        `Location` is the file's URL. A field set to `upload: direct` answers
+        `409 upload_mode_mismatch`. Admin route: past the collection's rules.
+      operationId: adminUploadFile
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/ifMatch" }
+        - name: name
+          in: query
+          description: The file's name; defaults to the `Content-Disposition` filename, then `file`.
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          "*/*":
+            schema: { type: string, format: binary }
+      responses:
+        "201":
+          description: The document, with the file attached.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+            Location: { schema: { type: string }, description: "The file's URL." }
+            Vary: { $ref: "#/components/headers/DataVary" }
+            Cache-Control: { $ref: "#/components/headers/DataCacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Document" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/VersionMismatch" }
+        "413": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      summary: Clear a file field, admin data
+      description: |
+        Removes every file of the field. The `update` rule is asked about the result;
+        the objects are deleted afterwards by the workers. Admin route: past the collection's rules.
+      operationId: adminClearFiles
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters: [{ $ref: "#/components/parameters/ifMatch" }]
+      responses:
+        "200": { $ref: "#/components/responses/Document" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/VersionMismatch" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/data/{database}/{collection}/{id}/_files/{field}/{fileID}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+      - { $ref: "#/components/parameters/id" }
+      - { $ref: "#/components/parameters/fileField" }
+      - { $ref: "#/components/parameters/fileId" }
+    get:
+      tags: [admin]
+      summary: Download a file, admin data
+      description: |
+        The `read` rule decides (a document the caller can't read is `404`). In
+        `download: presigned` mode (the default) the answer is a `302` to a short-lived
+        signed link of the storage, forcing a download; `?link=json` answers
+        `{url, expires_at}` instead. In `download: proxy` mode backd streams the
+        bytes: with `nosniff` and a sandbox CSP, one `Range` (`206`, `416`), a strong
+        `ETag` from the file's sha256 (`If-None-Match` → `304`, `If-Range`), and
+        public caching only for a document anyone may read. A signed backd link
+        (`?exp=&sig=`, from `?link=json` or `?file_links=true`) is its own credential
+        for this file until it expires (`403 invalid_file_link` otherwise).
+        `404 file_missing` when the object is gone from storage. Admin route: past the collection's rules.
+      operationId: adminDownloadFile
+      security: [{}, { session: [] }, { apiKey: [] }]
+      parameters:
+        - name: link
+          in: query
+          description: "`json` answers the link instead of redirecting to it."
+          schema: { type: string, enum: [json] }
+        - name: exp
+          in: query
+          description: A backd link's expiry (Unix seconds).
+          schema: { type: string }
+        - name: sig
+          in: query
+          description: A backd link's signature.
+          schema: { type: string }
+        - name: Range
+          in: header
+          schema: { type: string }
+        - name: If-Range
+          in: header
+          schema: { type: string }
+        - name: If-None-Match
+          in: header
+          schema: { type: string }
+      responses:
+        "200":
+          description: The file's bytes (proxy mode), or the link (`?link=json`).
+          headers:
+            ETag: { schema: { type: string } }
+            Accept-Ranges: { schema: { const: bytes } }
+            Content-Disposition: { schema: { type: string } }
+            X-Content-Type-Options: { schema: { const: nosniff } }
+            Content-Security-Policy: { schema: { type: string } }
+            Cache-Control: { schema: { type: string } }
+          content:
+            "*/*":
+              schema: { type: string, format: binary }
+            application/json:
+              schema: { $ref: "#/components/schemas/FileLink" }
+        "206":
+          description: The requested range of the file.
+          headers:
+            Content-Range: { schema: { type: string } }
+            ETag: { schema: { type: string } }
+          content:
+            "*/*":
+              schema: { type: string, format: binary }
+        "302":
+          description: Redirect to the storage's signed link.
+          headers:
+            Location: { schema: { type: string } }
+            Cache-Control: { schema: { const: "private, no-store" } }
+        "304": { description: The caller's copy is current. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "416":
+          description: The range is outside the file.
+          headers:
+            Content-Range: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      summary: Remove one file, admin data
+      description: |
+        Takes the file out of the document (a new version, `If-Match` accepted) and
+        queues the object for deletion. Admin route: past the collection's rules.
+      operationId: adminDeleteFile
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters: [{ $ref: "#/components/parameters/ifMatch" }]
+      responses:
+        "200": { $ref: "#/components/responses/Document" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/VersionMismatch" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/data/{database}/_batch:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -2745,6 +3109,26 @@ components:
         `read` rule. Anything else is `400`, and so is any value on a collection
         that doesn't soft-delete.
       schema: { type: string, enum: [only, include] }
+
+    fileLinks:
+      name: file_links
+      in: query
+      description: >-
+        `true` adds `url` and `expires_at` to every file of the documents read: a
+        link for apps to show or download it. Never stored, and not part of the ETag.
+      schema: { type: string, enum: ["true"] }
+    fileField:
+      name: field
+      in: path
+      required: true
+      description: The name of a file field, as declared under `files:` in collection.yaml.
+      schema: { type: string }
+    fileId:
+      name: fileID
+      in: path
+      required: true
+      description: The file's id (`fl_…`), from the document's file field.
+      schema: { type: string, pattern: '^fl_[0-9a-z]{20}$' }
 
   headers:
     ETag:
@@ -3383,11 +3767,24 @@ components:
     Document:
       type: object
       required: [id, _meta]
-      description: A stored document. Other fields follow the collection's schema.json.
+      description: |
+        A stored document. Other fields follow the collection's schema.json.
+        A file field (`files:` in collection.yaml) holds backd's file details, an
+        object `{id, name, size, type, sha256, uploaded_at}` (an array of them on a
+        `multiple` field), which only uploads write. With `?file_links=true` each
+        also carries `url` and `expires_at`.
       properties:
         id: { type: string }
         _meta: { $ref: "#/components/schemas/Meta" }
       additionalProperties: true
+
+    FileLink:
+      type: object
+      additionalProperties: false
+      required: [url, expires_at]
+      properties:
+        url: { type: string }
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
 
     DocumentBody:
       type: object

@@ -80,7 +80,9 @@ func (p *ErasurePolicy) IndexedFields() []string {
 }
 
 type erasureDoc struct {
-	SoftDelete    *softDeleteDoc `yaml:"soft_delete"`
+	SoftDelete *softDeleteDoc `yaml:"soft_delete"`
+	// Files is read by parseFiles, which checks it; here it is only allowed.
+	Files         map[string]*fileFieldDoc `yaml:"files"`
 	OnOwnerDelete *struct {
 		Action  string            `yaml:"action"`
 		Remove  []string          `yaml:"remove"`
