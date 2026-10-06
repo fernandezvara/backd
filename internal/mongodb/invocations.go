@@ -17,20 +17,22 @@ type logLineDoc struct {
 }
 
 type invocationDoc struct {
-	ID         string       `bson:"_id"`
-	At         time.Time    `bson:"at"`
-	ExpiresAt  time.Time    `bson:"expires_at"`
-	Function   string       `bson:"function"`
-	Actor      string       `bson:"actor"`
-	Mode       string       `bson:"mode"`
-	Status     string       `bson:"status"`
-	Code       string       `bson:"code,omitempty"`
-	DurationMS int64        `bson:"duration_ms"`
-	RequestID  string       `bson:"request_id,omitempty"`
-	JobID      string       `bson:"job_id,omitempty"`
-	ParentID   string       `bson:"parent_id,omitempty"`
-	Origin     string       `bson:"origin,omitempty"`
-	Logs       []logLineDoc `bson:"logs,omitempty"`
+	ID           string       `bson:"_id"`
+	At           time.Time    `bson:"at"`
+	ExpiresAt    time.Time    `bson:"expires_at"`
+	Function     string       `bson:"function"`
+	Actor        string       `bson:"actor"`
+	Mode         string       `bson:"mode"`
+	Status       string       `bson:"status"`
+	Code         string       `bson:"code,omitempty"`
+	DurationMS   int64        `bson:"duration_ms"`
+	RequestID    string       `bson:"request_id,omitempty"`
+	JobID        string       `bson:"job_id,omitempty"`
+	ParentID     string       `bson:"parent_id,omitempty"`
+	Origin       string       `bson:"origin,omitempty"`
+	Logs         []logLineDoc `bson:"logs,omitempty"`
+	Steps        []stepDoc    `bson:"steps,omitempty"`
+	StepsOmitted int32        `bson:"steps_omitted,omitempty"`
 }
 
 func (s *AuthStore) invocations() *mongo.Collection { return s.db.Collection(InvocationsCollection) }
@@ -44,7 +46,7 @@ func (s *AuthStore) RecordInvocation(ctx context.Context, r auth.InvocationRecor
 	}
 	_, err := s.invocations().InsertOne(ctx, invocationDoc{
 		ID: r.ID, At: r.At, ExpiresAt: r.ExpiresAt, Function: r.Function, Actor: r.Actor, Mode: r.Mode,
-		Status: r.Status, Code: r.Code, DurationMS: r.DurationMS, RequestID: r.RequestID, JobID: r.JobID, ParentID: r.ParentID, Origin: r.Origin, Logs: logs,
+		Status: r.Status, Code: r.Code, DurationMS: r.DurationMS, RequestID: r.RequestID, JobID: r.JobID, ParentID: r.ParentID, Origin: r.Origin, Logs: logs, Steps: stepsToDocs(r.Steps), StepsOmitted: int32(r.StepsOmitted),
 	})
 	return err
 }
@@ -90,7 +92,7 @@ func (s *AuthStore) ListInvocations(ctx context.Context, f auth.InvocationFilter
 		}
 		out[i] = auth.InvocationRecord{
 			ID: d.ID, At: d.At.UTC(), ExpiresAt: d.ExpiresAt.UTC(), Function: d.Function, Actor: d.Actor, Mode: d.Mode,
-			Status: d.Status, Code: d.Code, DurationMS: d.DurationMS, RequestID: d.RequestID, JobID: d.JobID, ParentID: d.ParentID, Origin: d.Origin, Logs: logs,
+			Status: d.Status, Code: d.Code, DurationMS: d.DurationMS, RequestID: d.RequestID, JobID: d.JobID, ParentID: d.ParentID, Origin: d.Origin, Logs: logs, Steps: stepsFromDocs(d.Steps), StepsOmitted: int(d.StepsOmitted),
 		}
 	}
 	return out, more, nil

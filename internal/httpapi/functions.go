@@ -148,6 +148,7 @@ func (f *functions) internalRoutes(r chi.Router) {
 	r.With(noStore).Post("/v1/{realm}/{database}/_func/{function}", f.invoke)
 	r.With(noStore).Get("/v1/{realm}/{database}/_jobs/{id}", f.getJob)
 	r.With(noStore).Post("/v1/{realm}/_email/send", f.emailSend)
+	r.With(noStore).Put("/v1/{realm}/_job/steps", f.putSteps)
 }
 
 func (f *functions) routes(r chi.Router) {
@@ -365,7 +366,7 @@ func (f *functions) run(w http.ResponseWriter, r *http.Request, fn *registry.Fun
 			Webhook:        webhook,
 			User:           userEnvelope(caller),
 			Secrets:        secrets,
-			Callback:       f.callback(realm, database, name, fn, caller, deadline.Add(callbackMargin), invID, meta.Depth),
+			Callback:       f.callback(realm, database, name, fn, caller, deadline.Add(callbackMargin), invID, meta.Depth, nil),
 			IdempotencyKey: r.Header.Get("Idempotency-Key"),
 			RequestID:      requestID(r.Context()),
 		},
@@ -701,6 +702,8 @@ func jobJSON(job auth.Job) map[string]any {
 		"attempts":        job.Attempts,
 		"next_attempt_at": nil,
 		"result":          nil,
+		"steps":           stepsJSON(job.Steps),
+		"steps_omitted":   job.StepsOmitted,
 	}
 	if !job.NextAttemptAt.IsZero() && job.Status != auth.JobDone {
 		out["next_attempt_at"] = formatTime(job.NextAttemptAt)
@@ -778,6 +781,9 @@ func (f *functions) recordInvocation(ctx context.Context, requestID, realm, data
 		ParentID:   meta.ParentID,
 		Origin:     meta.Origin,
 		Logs:       logs,
+		// Steps arrive settled (closed) for a job; a sync call's are closed here.
+		Steps:        auth.CloseSteps(stepsFromExecutor(res.Steps), stepEnding(res.Status), f.docs.now()),
+		StepsOmitted: res.StepsOmitted,
 	})
 }
 
@@ -842,15 +848,18 @@ func userEnvelope(c auth.Caller) json.RawMessage {
 
 // callback gives the function its tokens: ctx.db acts as the caller,
 // ctx.admin.db (admin: true only) has full access as the function.
-func (f *functions) callback(realm, database, name string, fn *registry.Function, c auth.Caller, expires time.Time, invID string, depth int) *executor.Callback {
+func (f *functions) callback(realm, database, name string, fn *registry.Function, c auth.Caller, expires time.Time, invID string, depth int, job *auth.Job) *executor.Callback {
 	claims := auth.CallbackClaims{Realm: realm, Function: database + "/" + name, Expires: expires, Calls: fn.Calls, Depth: depth, Inv: invID, Email: fn.Email}
+	if job != nil {
+		claims.Job, claims.Attempt = job.ID, job.Attempts
+	}
 	if c.User != nil {
 		claims.UserID = c.User.User.ID
 	}
 	if c.Key != nil {
 		claims.KeyHash = c.Key.Hash
 	}
-	cb := &executor.Callback{URL: f.callbackURL, Realm: realm, Database: database, Token: auth.SignCallback(f.docs.callbackKey, claims), Email: fn.Email}
+	cb := &executor.Callback{URL: f.callbackURL, Realm: realm, Database: database, Token: auth.SignCallback(f.docs.callbackKey, claims), Email: fn.Email, Progress: job != nil}
 	if fn.Admin || (c.Func != nil && c.Func.Admin) {
 		cb.AdminToken = auth.SignCallback(f.docs.callbackKey, auth.CallbackClaims{Realm: realm, Function: database + "/" + name, Admin: true, Expires: expires})
 	}

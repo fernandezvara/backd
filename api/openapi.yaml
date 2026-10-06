@@ -1500,6 +1500,32 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/jobs/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    get:
+      tags: [admin]
+      summary: Read a job with its steps
+      description: |
+        The job as the listing shows it (never its input or output), with every
+        step the running or last attempt reported (`ctx.step`, `ctx.progress`).
+        Needs the `functions` area (read is enough).
+      operationId: adminGetJob
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The job.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobSummary" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/jobs/{id}/cancel:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -2814,7 +2840,7 @@ components:
         happened and its own console log lines (roadmap F10).
       type: object
       additionalProperties: false
-      required: [id, at, function, actor, mode, status, duration_ms, request_id, job_id, parent_id, origin, logs]
+      required: [id, at, function, actor, mode, status, duration_ms, request_id, job_id, parent_id, origin, logs, steps, steps_omitted]
       properties:
         id: { type: string }
         at: { $ref: "#/components/schemas/Timestamp" }
@@ -2841,6 +2867,32 @@ components:
             properties:
               level: { type: string }
               line: { type: string }
+        steps:
+          type: array
+          description: "What the call reported with `ctx.step()`, closed when it ended; at most 100 (the first 50 and the latest 50)."
+          items: { $ref: "#/components/schemas/Step" }
+        steps_omitted: { type: integer, description: "How many steps were left out of the middle when there were more than 100." }
+
+    Step:
+      description: |
+        One step a function reported with `ctx.step()`, and how far it got with
+        `ctx.progress()`. A new step closes the previous one; when an attempt
+        ends, the step still running is closed as `done`, `failed`, `timed_out`
+        or `cancelled`.
+      type: object
+      additionalProperties: false
+      required: [n, name, status, started_at, ended_at, duration_ms, current, total, message, updated_at]
+      properties:
+        n: { type: integer, description: "1 for the first step the attempt started; counts steps left out too." }
+        name: { type: string }
+        status: { type: string, enum: [running, done, failed, timed_out, cancelled] }
+        started_at: { $ref: "#/components/schemas/Timestamp" }
+        ended_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }], description: "Null while running." }
+        duration_ms: { type: [integer, "null"], description: "Null while running." }
+        current: { type: number, description: "How far the step got (`ctx.progress`)." }
+        total: { type: [number, "null"], description: "How much there is to do, when the function said (`ctx.step`'s `total`)." }
+        message: { type: [string, "null"] }
+        updated_at: { $ref: "#/components/schemas/Timestamp" }
 
     Schedule:
       type: object
@@ -2860,11 +2912,31 @@ components:
         never the input or the output.
       type: object
       additionalProperties: false
-      required: [id, function, status, scheduled, origin, email_kind, rerun_of, attempts, next_attempt_at, created_at, completed_at, result]
+      required: [id, function, status, scheduled, origin, email_kind, rerun_of, attempts, next_attempt_at, created_at, completed_at, result, progress]
       properties:
         origin: { type: string, description: "Where the job came from: `http`, `function` (a `ctx.call`), `cron`, `admin`, `on_complete:<database>/<name>` (the notification a function's `on_complete` queues when its job ends), `backd:email.<kind>` (an email backd sends itself) or `function:<database>/<name>` (an email that function sent with `ctx.email.send`)." }
         email_kind: { type: [string, "null"], description: "The kind of an email job (never its recipients or text); null for other jobs." }
         rerun_of: { type: [string, "null"], description: "The finished job an administrator re-ran to make this one; null otherwise." }
+        steps:
+          type: array
+          description: "Only in the job's own detail (GET /jobs/{id}): what the running or last attempt reported, the last entry being the current step; at most 100."
+          items: { $ref: "#/components/schemas/Step" }
+        steps_omitted: { type: integer, description: "Only in the detail: how many steps were left out of the middle when there were more than 100." }
+        progress:
+          description: "The current (latest) step of the running or last attempt, or null when the function reported none. The job's detail has every step."
+          oneOf:
+            - type: "null"
+            - type: object
+              additionalProperties: false
+              required: [step, name, status, current, total, message, updated_at]
+              properties:
+                step: { type: integer }
+                name: { type: string }
+                status: { type: string, enum: [running, done, failed, timed_out, cancelled] }
+                current: { type: number }
+                total: { type: [number, "null"] }
+                message: { type: [string, "null"] }
+                updated_at: { $ref: "#/components/schemas/Timestamp" }
         id: { type: string, description: "For cron runs, `cron_<database>_<function>_<yyyymmddhhmm>` (UTC)." }
         function: { type: string, description: "`<database>/<name>`." }
         status: { type: string, description: "`queued`, `running` or `done`." }
@@ -2890,10 +2962,15 @@ components:
         `status` is `done`, its result. Never its input.
       type: object
       additionalProperties: false
-      required: [id, function, status, created_at, attempts, next_attempt_at, result]
+      required: [id, function, status, created_at, attempts, next_attempt_at, result, steps, steps_omitted]
       properties:
         id: { type: string }
         function: { type: string, description: "`<database>/<name>`." }
+        steps:
+          type: array
+          description: "What the running (or last) attempt reported, the last entry being the current step; at most 100 (the first 50 and the latest 50). A new attempt starts with none."
+          items: { $ref: "#/components/schemas/Step" }
+        steps_omitted: { type: integer, description: "How many steps were left out of the middle when there were more than 100." }
         status: { type: string, description: "`queued`, `running` or `done`. A job waiting to be retried is `queued`, with `next_attempt_at` set." }
         created_at: { $ref: "#/components/schemas/Timestamp" }
         attempts: { type: integer, description: "How many times a worker has started it." }

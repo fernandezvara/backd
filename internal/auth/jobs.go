@@ -66,6 +66,64 @@ type Job struct {
 	CompletedAt   time.Time // zero until done
 	ExpiresAt     time.Time
 	Result        *JobResult // nil until done
+	// Steps are what the running (or last) attempt reported with ctx.step and
+	// ctx.progress, the last being the current one; StepsOmitted counts those
+	// left out of the middle when there were more than MaxSteps. A new attempt
+	// starts with none.
+	Steps        []Step
+	StepsOmitted int
+}
+
+// MaxSteps is how many steps a job or an invocation record keeps: the first
+// half and the latest half of what a function reported.
+const MaxSteps = 100
+
+// Step statuses.
+const (
+	StepRunning   = "running"
+	StepDone      = "done"
+	StepFailed    = "failed"
+	StepTimedOut  = "timed_out"
+	StepCancelled = "cancelled"
+)
+
+// Step is one named step of an attempt, with how far it got.
+type Step struct {
+	N          int
+	Name       string
+	Status     string // StepRunning, StepDone, StepFailed, StepTimedOut or StepCancelled
+	StartedAt  time.Time
+	EndedAt    time.Time // zero while running
+	DurationMS int64
+	Current    float64
+	Total      *float64 // nil when the step has no known size
+	Message    string
+	UpdatedAt  time.Time
+}
+
+// SetJobSteps stores the steps the attempt numbered attempt reported, replacing
+// what the job held. It does nothing (false) when the job is not running that
+// attempt any more: finished, cancelled, or claimed again by another worker.
+func (s *Users) SetJobSteps(ctx context.Context, id string, attempt int, steps []Step, omitted int) (bool, error) {
+	if len(steps) > MaxSteps {
+		steps = append(steps[:MaxSteps/2:MaxSteps/2], steps[len(steps)-MaxSteps/2:]...)
+	}
+	return s.Store.SetJobSteps(ctx, id, attempt, steps, omitted)
+}
+
+// CloseSteps ends the step still running, if any, with status and the time at.
+// It returns steps itself when none is running.
+func CloseSteps(steps []Step, status string, at time.Time) []Step {
+	if n := len(steps); n > 0 && steps[n-1].Status == StepRunning {
+		out := append([]Step(nil), steps...)
+		last := &out[n-1]
+		last.Status, last.EndedAt, last.UpdatedAt = status, at, at
+		if d := at.Sub(last.StartedAt).Milliseconds(); d > 0 {
+			last.DurationMS = d
+		}
+		return out
+	}
+	return steps
 }
 
 // EmailJob is what an email job stores: which email, for whom, and nothing
@@ -171,7 +229,7 @@ func (s *Users) CancelJob(ctx context.Context, id string) (Job, error) {
 		return Job{}, ErrJobFinished
 	}
 	now := s.now()
-	cancelled, err := s.Store.CancelJob(ctx, id, JobResult{Status: ResultCancelled, Message: "cancelled by an administrator"}, now, now.Add(s.jobRetention()))
+	cancelled, err := s.Store.CancelJob(ctx, id, JobResult{Status: ResultCancelled, Message: "cancelled by an administrator"}, CloseSteps(j.Steps, StepCancelled, now), now, now.Add(s.jobRetention()))
 	if err != nil {
 		return Job{}, err
 	}

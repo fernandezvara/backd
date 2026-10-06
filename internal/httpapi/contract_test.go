@@ -800,6 +800,10 @@ func TestContract(t *testing.T) {
 	req("POST", run+"nothing_here/resume", ``, key, 404)
 	// Cancelling and re-running jobs.
 	jobs := ad + "/jobs/"
+	req("GET", jobs+jobID, "", key, 200)
+	req("GET", jobs+"nope", "", key, 404)
+	req("GET", jobs+jobID, "", nil, 401)
+	req("GET", jobs+jobID, "", ada, 403)
 	req("POST", jobs+jobID+"/rerun", ``, key, 409) // still queued
 	req("POST", jobs+jobID+"/cancel", ``, key, 200)
 	req("POST", jobs+jobID+"/cancel", ``, key, 409) // already finished

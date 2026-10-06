@@ -75,6 +75,49 @@ type jobDoc struct {
 	CompletedAt    *time.Time    `bson:"completed_at,omitempty"`
 	ExpiresAt      time.Time     `bson:"expires_at"`
 	Result         *jobResultDoc `bson:"result,omitempty"`
+	Steps          []stepDoc     `bson:"steps,omitempty"`
+	StepsOmitted   int32         `bson:"steps_omitted,omitempty"`
+}
+
+type stepDoc struct {
+	N          int32      `bson:"n"`
+	Name       string     `bson:"name"`
+	Status     string     `bson:"status"`
+	StartedAt  time.Time  `bson:"started_at"`
+	EndedAt    *time.Time `bson:"ended_at,omitempty"`
+	DurationMS int64      `bson:"duration_ms"`
+	Current    float64    `bson:"current"`
+	Total      *float64   `bson:"total,omitempty"`
+	Message    string     `bson:"message,omitempty"`
+	UpdatedAt  time.Time  `bson:"updated_at"`
+}
+
+func stepsToDocs(steps []auth.Step) []stepDoc {
+	out := make([]stepDoc, len(steps))
+	for i, st := range steps {
+		d := stepDoc{N: int32(st.N), Name: st.Name, Status: st.Status, StartedAt: st.StartedAt, DurationMS: st.DurationMS, Current: st.Current, Total: st.Total, Message: st.Message, UpdatedAt: st.UpdatedAt}
+		if !st.EndedAt.IsZero() {
+			t := st.EndedAt
+			d.EndedAt = &t
+		}
+		out[i] = d
+	}
+	return out
+}
+
+func stepsFromDocs(docs []stepDoc) []auth.Step {
+	if len(docs) == 0 {
+		return nil
+	}
+	out := make([]auth.Step, len(docs))
+	for i, d := range docs {
+		st := auth.Step{N: int(d.N), Name: d.Name, Status: d.Status, StartedAt: d.StartedAt.UTC(), DurationMS: d.DurationMS, Current: d.Current, Total: d.Total, Message: d.Message, UpdatedAt: d.UpdatedAt.UTC()}
+		if d.EndedAt != nil {
+			st.EndedAt = d.EndedAt.UTC()
+		}
+		out[i] = st
+	}
+	return out
 }
 
 type eraseJobDoc struct {
@@ -187,7 +230,7 @@ func jobFromDoc(d jobDoc) auth.Job {
 		ActsAsFunction: d.ActsAsFunction, Email: emailJobFromDoc(d.Email), Erase: eraseFromDoc(d.Erase), Origin: d.Origin, ParentID: d.ParentID, RerunOf: d.RerunOf, Depth: int(d.Depth),
 		TimeoutMS: d.TimeoutMS, RequestID: d.RequestID,
 		Status: d.Status, Attempts: int(d.Attempts), CreatedAt: d.CreatedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC(),
-		Result: jobResultFromDoc(d.Result),
+		Result: jobResultFromDoc(d.Result), Steps: stepsFromDocs(d.Steps), StepsOmitted: int(d.StepsOmitted),
 	}
 	j.Failures = int(d.Failures)
 	if d.NextAttemptAt != nil {
@@ -246,7 +289,7 @@ func (s *AuthStore) ClaimJob(ctx context.Context, workerID string, at time.Time,
 		{Key: "lease_owner", Value: workerID},
 		{Key: "lease_expires", Value: leaseExpires},
 		{Key: "attempts", Value: bson.D{{Key: "$add", Value: bson.A{"$attempts", int32(1)}}}},
-	}}}, {{Key: "$unset", Value: "next_attempt_at"}}}
+	}}}, {{Key: "$unset", Value: bson.A{"next_attempt_at", "steps", "steps_omitted"}}}}
 	opts := options.FindOneAndUpdate().SetSort(bson.D{{Key: "created_at", Value: 1}}).SetReturnDocument(options.After)
 	var d jobDoc
 	err := s.jobs().FindOneAndUpdate(ctx, filter, pipeline, opts).Decode(&d)
@@ -257,6 +300,19 @@ func (s *AuthStore) ClaimJob(ctx context.Context, workerID string, at time.Time,
 		return auth.Job{}, false, err
 	}
 	return jobFromDoc(d), true, nil
+}
+
+// SetJobSteps replaces the steps of the running attempt. The filter names the
+// attempt, so a worker that lost its lease, or a job cancelled meanwhile,
+// changes nothing.
+func (s *AuthStore) SetJobSteps(ctx context.Context, id string, attempt int, steps []auth.Step, omitted int) (bool, error) {
+	filter := bson.D{{Key: "_id", Value: id}, {Key: "status", Value: auth.JobRunning}, {Key: "attempts", Value: int32(attempt)}}
+	set := bson.D{{Key: "steps", Value: stepsToDocs(steps)}, {Key: "steps_omitted", Value: int32(omitted)}}
+	res, err := s.jobs().UpdateOne(ctx, filter, bson.D{{Key: "$set", Value: set}})
+	if err != nil {
+		return false, err
+	}
+	return res.MatchedCount == 1, nil
 }
 
 // CompleteJob records a job's result; expiresAt starts its retention
@@ -282,7 +338,7 @@ func (s *AuthStore) CompleteJob(ctx context.Context, id string, result auth.JobR
 // no worker claims it again; a worker running it is told by finding it done.
 // It reports whether the job changed: the filter only matches a job that is not
 // done, so a result already recorded is never overwritten.
-func (s *AuthStore) CancelJob(ctx context.Context, id string, result auth.JobResult, completedAt, expiresAt time.Time) (bool, error) {
+func (s *AuthStore) CancelJob(ctx context.Context, id string, result auth.JobResult, steps []auth.Step, completedAt, expiresAt time.Time) (bool, error) {
 	doc, err := jobResultToDoc(&result)
 	if err != nil {
 		return false, err
@@ -294,6 +350,7 @@ func (s *AuthStore) CancelJob(ctx context.Context, id string, result auth.JobRes
 			{Key: "completed_at", Value: completedAt},
 			{Key: "expires_at", Value: expiresAt},
 			{Key: "result", Value: doc},
+			{Key: "steps", Value: stepsToDocs(steps)},
 		}},
 		{Key: "$unset", Value: bson.D{{Key: "lease_owner", Value: ""}, {Key: "lease_expires", Value: ""}, {Key: "next_attempt_at", Value: ""}}},
 	})
