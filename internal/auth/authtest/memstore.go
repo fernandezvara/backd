@@ -25,6 +25,8 @@ type MemStore struct {
 	loginLocks  map[string]memLock
 	invites     map[string]auth.Invitation // id → invitation
 	audit       []auth.AuditRecord
+	journal     map[string]auth.FileJournalEntry
+	deletions   map[string]auth.FileDeletion
 	checks      map[string]auth.CheckReport // "database/collection" → latest report
 	secrets     map[string]auth.Secret      // "database\x00name" → secret
 	schedules   map[string]auth.ScheduleState
@@ -38,7 +40,7 @@ type MemStore struct {
 
 // NewMemStore returns an empty store.
 func NewMemStore() *MemStore {
-	return &MemStore{users: map[string]auth.User{}, identities: map[string]auth.Identity{}, sessions: map[string]auth.Session{}, keys: map[string]auth.APIKey{}, attempts: map[string]memAttempts{}, invites: map[string]auth.Invitation{}, secrets: map[string]auth.Secret{}, schedules: map[string]auth.ScheduleState{}, checks: map[string]auth.CheckReport{}, jobs: map[string]memJob{}, idempotency: map[string]auth.IdempotencyRecord{}}
+	return &MemStore{users: map[string]auth.User{}, identities: map[string]auth.Identity{}, sessions: map[string]auth.Session{}, keys: map[string]auth.APIKey{}, attempts: map[string]memAttempts{}, invites: map[string]auth.Invitation{}, secrets: map[string]auth.Secret{}, schedules: map[string]auth.ScheduleState{}, checks: map[string]auth.CheckReport{}, journal: map[string]auth.FileJournalEntry{}, deletions: map[string]auth.FileDeletion{}, jobs: map[string]memJob{}, idempotency: map[string]auth.IdempotencyRecord{}}
 }
 
 func secretKey(database, name string) string { return database + "\x00" + name }
@@ -1029,4 +1031,106 @@ func (m *MemStore) GetCheckReport(_ context.Context, database, collection string
 	defer m.mu.Unlock()
 	r, ok := m.checks[database+"/"+collection]
 	return r, ok, nil
+}
+
+func (m *MemStore) JournalFile(_ context.Context, e auth.FileJournalEntry) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.journal[e.ID] = e
+	return nil
+}
+
+func (m *MemStore) SetFileJournalStatus(_ context.Context, id, status, documentID string, at, expiresAt time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e, ok := m.journal[id]
+	if !ok {
+		return auth.ErrNotFound
+	}
+	e.Status, e.UpdatedAt, e.ExpiresAt = status, at, expiresAt
+	if documentID != "" {
+		e.DocumentID = documentID
+	}
+	m.journal[id] = e
+	return nil
+}
+
+func (m *MemStore) StaleFileJournal(_ context.Context, before time.Time, limit int) ([]auth.FileJournalEntry, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []auth.FileJournalEntry
+	for _, e := range m.journal {
+		if (e.Status == auth.JournalWriting || e.Status == auth.JournalStored) && e.UpdatedAt.Before(before) {
+			out = append(out, e)
+		}
+	}
+	slices.SortFunc(out, func(a, b auth.FileJournalEntry) int { return a.UpdatedAt.Compare(b.UpdatedAt) })
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+// JournalEntry returns an upload's record, for tests.
+func (m *MemStore) JournalEntry(id string) (auth.FileJournalEntry, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e, ok := m.journal[id]
+	return e, ok
+}
+
+// Deletions returns the queued deletions, for tests.
+func (m *MemStore) Deletions() []auth.FileDeletion {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []auth.FileDeletion
+	for _, d := range m.deletions {
+		out = append(out, d)
+	}
+	slices.SortFunc(out, func(a, b auth.FileDeletion) int { return strings.Compare(a.Key, b.Key) })
+	return out
+}
+
+func (m *MemStore) QueueFileDeletion(_ context.Context, d auth.FileDeletion) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.deletions[d.Key]; !ok {
+		m.deletions[d.Key] = d
+	}
+	return nil
+}
+
+func (m *MemStore) ClaimFileDeletions(_ context.Context, now, lease time.Time, limit int) ([]auth.FileDeletion, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []auth.FileDeletion
+	for k, d := range m.deletions {
+		if len(out) == limit {
+			break
+		}
+		if !d.NotBefore.After(now) {
+			out = append(out, d)
+			d.NotBefore = lease
+			m.deletions[k] = d
+		}
+	}
+	return out, nil
+}
+
+func (m *MemStore) CompleteFileDeletion(_ context.Context, key string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.deletions, key)
+	return nil
+}
+
+func (m *MemStore) RetryFileDeletion(_ context.Context, key string, notBefore time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if d, ok := m.deletions[key]; ok {
+		d.Attempts++
+		d.NotBefore = notBefore
+		m.deletions[key] = d
+	}
+	return nil
 }
