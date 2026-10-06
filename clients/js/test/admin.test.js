@@ -306,3 +306,15 @@ test('schedules can be listed, paused and resumed', async () => {
   await assert.rejects(a.schedules.pause('app/plain'), ConflictError)
   await assert.rejects(a.schedules.pause('nightly'), TypeError)
 })
+
+test('jobs.get returns one job with its steps', async () => {
+  const step = { n: 1, name: 'load', status: 'running', started_at: '2026-10-06T10:00:00.000Z', ended_at: null, duration_ms: null, current: 4, total: 10, message: 'rows', updated_at: '2026-10-06T10:00:01.000Z' }
+  const job = { id: 'j1', function: 'app/report', status: 'running', scheduled: false, origin: 'http', email_kind: null, rerun_of: null, attempts: 1, next_attempt_at: null, created_at: '2026-10-06T10:00:00.000Z', completed_at: null, result: null, progress: { step: 1, name: 'load', status: 'running', current: 4, total: 10, message: 'rows', updated_at: step.updated_at }, steps: [step], steps_omitted: 0 }
+  const m = mockFetch([{ body: job }, { status: 404, body: errorBody('not_found', 'job not found') }])
+  const a = adminOf(m)
+  const got = await a.jobs.get('j1')
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/jobs/j1')
+  assert.equal(got.steps?.[0].current, 4)
+  assert.equal(got.progress?.name, 'load')
+  await assert.rejects(a.jobs.get('nope'), NotFoundError)
+})

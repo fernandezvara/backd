@@ -20,6 +20,22 @@ import { errorClassFor } from './errors.js'
  */
 
 /**
+ * One step the function reported with `ctx.step()`, and how far it got with
+ * `ctx.progress()`.
+ * @typedef {object} Step
+ * @property {number} n                  1 for the first step of the attempt (it counts steps left out too).
+ * @property {string} name
+ * @property {'running' | 'done' | 'failed' | 'timed_out' | 'cancelled'} status
+ * @property {string} started_at
+ * @property {string | null} ended_at    Null while running.
+ * @property {number | null} duration_ms Null while running.
+ * @property {number} current            How far the step got.
+ * @property {number | null} total       How much there is to do, when the function said.
+ * @property {string | null} message
+ * @property {string} updated_at
+ */
+
+/**
  * A job as the API returns it: `POST .../_func/{name}`'s `202` body, or `GET .../_jobs/{id}`.
  * @typedef {object} JobData
  * @property {string} id
@@ -29,6 +45,8 @@ import { errorClassFor } from './errors.js'
  * @property {number} [attempts] How many times a worker has started it.
  * @property {string | null} [next_attempt_at] When a failed attempt will be retried (the function's `retry` policy); null otherwise.
  * @property {JobResult | null} result
+ * @property {Step[]} [steps] What the running (or last) attempt reported with `ctx.step()`, the last being the current step; at most 100.
+ * @property {number} [steps_omitted] How many were left out of the middle when there were more than 100.
  */
 
 /**
@@ -77,6 +95,15 @@ export class Job {
   }
 
   /**
+   * The steps the function reported, as of the last `status()` or `wait()` poll
+   * (empty before one, or when it reports none): the last is the current step.
+   * @returns {Step[]}
+   */
+  get steps() {
+    return this.data.steps ?? []
+  }
+
+  /**
    * Polls the job's current status.
    * @param {RequestOptions} [opts]
    * @returns {Promise<'queued' | 'running' | 'done'>}
@@ -91,15 +118,17 @@ export class Job {
    * value a `sync` call would have returned — or throws a `BackdError`
    * matching what a `sync` call would have thrown for the same outcome
    * (the function's own `code`, when it threw `ctx.error(...)`).
-   * @param {RequestOptions & { pollIntervalMs?: number, timeoutMs?: number }} [opts]
+   * @param {RequestOptions & { pollIntervalMs?: number, timeoutMs?: number, onProgress?: (steps: Step[], job: Job) => void }} [opts]
    *   `pollIntervalMs` default 500. Without `timeoutMs`, waits indefinitely.
+   *   `onProgress` is called after every poll with the steps reported so far.
    * @returns {Promise<unknown>}
    */
   async wait(opts = {}) {
-    const { pollIntervalMs = 500, timeoutMs, ...rest } = opts
+    const { pollIntervalMs = 500, timeoutMs, onProgress, ...rest } = opts
     const deadline = timeoutMs === undefined ? undefined : Date.now() + timeoutMs
     for (;;) {
       this.data = await this._fetch(rest)
+      onProgress?.(this.steps, this)
       if (this.data.status === 'done') return outputOrThrow(this.data.result, this.id)
       if (deadline !== undefined && Date.now() >= deadline) throw new JobTimeoutError(this.id)
       await sleep(pollIntervalMs)
