@@ -241,6 +241,22 @@ import { Job } from './functions.js'
  */
 
 /**
+ * What `admin.storage.check()` found in the realm's object storage.
+ * @typedef {object} StorageCheck
+ * @property {boolean} ok                      False when a step failed.
+ * @property {'aws' | 'minio' | 'r2' | 'digitalocean'} provider
+ * @property {string} endpoint                 What backd connects to.
+ * @property {string | null} public_endpoint   The address signed links use, when it differs.
+ * @property {string} bucket
+ * @property {string} prefix
+ * @property {{ name: string, level: 'ok' | 'warn' | 'fail' | 'skipped', detail: string }[]} steps
+ * @property {'verified' | 'ignored' | 'not tested'} checksum_sha256   What the storage does with a signed `x-amz-checksum-sha256`.
+ * @property {string} encryption               The bucket's default encryption, `none` or `unknown`.
+ * @property {{ origins: string[], methods: string[], headers: string[] }[]} cors
+ * @property {string} link_host                The host a signed link is for.
+ */
+
+/**
  * @typedef {object} JobsPage
  * @property {JobSummary[]} items    Newest first.
  * @property {number} limit
@@ -267,6 +283,8 @@ export class Admin {
     this.audit = new AdminAudit(this)
     /** The realm's async and scheduled jobs (read-only). */
     this.jobs = new AdminJobs(this)
+    /** The realm's object storage (its files): check that it works. */
+    this.storage = new AdminStorage(this)
     /** Schema checks: which stored documents no longer match their collection's schema. */
     this.dataChecks = new AdminDataChecks(this)
     /** The realm's schedules: list them, pause and resume them. */
@@ -734,6 +752,27 @@ class AdminJobs {
    */
   async rerun(id, opts) {
     return (await this.admin._request({ method: 'POST', path: ['jobs', id, 'rerun'], ...opts })).data
+  }
+}
+
+class AdminStorage {
+  /** @param {Admin} admin */
+  constructor(admin) {
+    /** @internal */
+    this.admin = admin
+  }
+
+  /**
+   * Verifies the realm's storage the way files will use it (credentials, put/get/head/delete on
+   * the prefix, the signed SHA-256, signed links, CORS and encryption where the provider exposes
+   * them) with a few small objects it deletes again. Resolves with the report whatever it found
+   * (`ok` is false when a step failed). Rejects with a `NotFoundError` when the realm has no
+   * `storage:`, and with a `BackdError` with code `storage_unavailable` when its keys aren't set.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<StorageCheck>}
+   */
+  async check(opts) {
+    return (await this.admin._request({ method: 'POST', path: ['storage', 'check'], ...opts })).data
   }
 }
 

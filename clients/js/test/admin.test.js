@@ -351,3 +351,14 @@ test('dataChecks start, list, get and wait', async () => {
   assert.equal(m.calls[5].url.pathname, '/v1/acme/_admin/data-checks/app/notes')
   await assert.rejects(a.dataChecks.get('app', 'labels'), NotFoundError)
 })
+
+test('storage.check posts to the storage check route', async () => {
+  const report = { ok: true, provider: 'minio', endpoint: 'http://minio:9000', public_endpoint: null, bucket: 'files', prefix: 'dev', steps: [{ name: 'bucket', level: 'ok', detail: 'files exists' }], checksum_sha256: 'verified', encryption: 'unknown', cors: [], link_host: 'minio:9000' }
+  const m = mockFetch([{ body: report }, { status: 404, body: errorBody('not_found', 'this realm has no storage configured') }])
+  const a = adminOf(m)
+  const got = await a.storage.check()
+  assert.equal(m.calls[0].method, 'POST')
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/storage/check')
+  assert.equal(got.checksum_sha256, 'verified')
+  await assert.rejects(a.storage.check(), NotFoundError)
+})
