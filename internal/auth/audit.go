@@ -57,6 +57,8 @@ const (
 	// schedule:<database>/<function>.
 	AuditSchedulePause  = "schedule.pause"
 	AuditScheduleResume = "schedule.resume"
+	// An administrator ran `backd storage check`; details: ok, provider, bucket.
+	AuditStorageCheck   = "storage.check"
 	AuditSecretSet      = "secret.set"        // details: database ("": realm scope); never the value
 	AuditSecretDelete   = "secret.delete"     // details: database
 	AuditSecretsRotated = "secret.rotate_key" // by backd secret rotate-key; details: count

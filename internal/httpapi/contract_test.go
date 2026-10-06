@@ -22,7 +22,9 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage"
+	"github.com/fernandezvara/backd/internal/storage/storagetest"
 )
 
 // contract checks HTTP responses against api/openapi.yaml.
@@ -798,6 +800,22 @@ func TestContract(t *testing.T) {
 	req("POST", run+"nightly/resume", ``, ada, 403)
 	req("POST", run+"echo/resume", ``, key, 409)
 	req("POST", run+"nothing_here/resume", ``, key, 404)
+	// The storage check: the realm has none, then one whose keys aren't set, then one that works.
+	store := ad + "/storage/check"
+	req("POST", store, ``, nil, 401)
+	req("POST", store, ``, ada, 403)
+	req("POST", store, ``, key, 404)
+	fake := storagetest.New(t, "files")
+	f.reg.Realms["acme"].Settings.Storage = &registry.StorageSettings{Provider: "minio", Endpoint: fake.URL, Region: "us-east-1", Bucket: "files", Prefix: "contract", AccessKey: "STORAGE_ACCESS_KEY", SecretKey: "STORAGE_SECRET_KEY", Download: registry.DownloadPresigned, PresignedTTL: registry.DefaultPresignedTTL, PendingTTL: registry.DefaultPendingTTL, HTTP: true}
+	req("POST", store, ``, key, 503)
+	for _, name := range []string{"STORAGE_ACCESS_KEY", "STORAGE_SECRET_KEY"} {
+		if err := f.svc.SetSecret(context.Background(), "", name, "value-"+name, "key:test"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if out := req("POST", store, ``, key, 200); out["ok"] != true || out["checksum_sha256"] != "verified" {
+		t.Errorf("storage check: %v", out)
+	}
 	// Schema checks.
 	checks := ad + "/data-checks"
 	req("GET", checks, "", key, 200)

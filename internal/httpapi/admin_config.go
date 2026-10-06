@@ -133,6 +133,18 @@ func realmConfig(s registry.RealmSettings, seesUsers bool) map[string]any {
 			"redirects": e.Redirects, "allowed_redirects": orStrings(e.AllowedRedirects), "links": e.Links,
 		}
 	}
+	if st := s.Storage; st != nil {
+		var public any
+		if st.PublicEndpoint != "" {
+			public = st.PublicEndpoint
+		}
+		// The keys are secrets: only their names are shown, never a value.
+		out["storage"] = map[string]any{
+			"provider": st.Provider, "endpoint": st.Endpoint, "public_endpoint": public, "region": st.Region, "bucket": st.Bucket, "prefix": st.Prefix,
+			"access_key": "secret:" + st.AccessKey, "secret_key": "secret:" + st.SecretKey,
+			"download": st.Download, "presigned_ttl": dur(st.PresignedTTL), "pending_ttl": dur(st.PendingTTL),
+		}
+	}
 	return out
 }
 
