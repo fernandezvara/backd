@@ -1526,6 +1526,47 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/storage/check:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+    post:
+      tags: [admin]
+      summary: Check the realm's object storage
+      description: |
+        Verifies the realm's storage the way files would use it: the bucket and
+        the credentials, put, head, get, a range request and a listing on the
+        realm's prefix, the signed SHA-256 (a wrong one must be rejected), signed
+        download and upload links (when the links are for an address backd can
+        reach), and, where the provider exposes them, the bucket's CORS rules and
+        default encryption. It stores a few small objects under
+        `<prefix>/<realm>/_check/` and deletes them again; it touches nothing else.
+        Answers `200` with the report whatever it found: `ok` is false when a step
+        failed (`level: fail`); `warn` steps are worth reading but don't fail it.
+        Audited as `storage.check`. Needs the `config` area (read is enough).
+      operationId: adminCheckStorage
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The report.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StorageCheck" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404":
+          description: The realm has no `storage:` in `realm.yaml`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: "`storage_unavailable`: the realm's access keys can't be read (a secret is not set)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/data-checks:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -3005,6 +3046,41 @@ components:
           description: "What the call reported with `ctx.step()`, closed when it ended; at most 100 (the first 50 and the latest 50)."
           items: { $ref: "#/components/schemas/Step" }
         steps_omitted: { type: integer, description: "How many steps were left out of the middle when there were more than 100." }
+
+    StorageCheck:
+      type: object
+      additionalProperties: false
+      required: [ok, provider, endpoint, public_endpoint, bucket, prefix, steps, checksum_sha256, encryption, cors, link_host]
+      properties:
+        ok: { type: boolean, description: "False when a step failed." }
+        provider: { type: string, enum: [aws, minio, r2, digitalocean] }
+        endpoint: { type: string, description: What backd connects to. }
+        public_endpoint: { type: [string, "null"], description: "The address signed links use, when it differs (never connected to)." }
+        bucket: { type: string }
+        prefix: { type: string }
+        steps:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, level, detail]
+            properties:
+              name: { type: string, description: "`bucket`, `write`, `head`, `read`, `range`, `list`, `checksum`, `stored checksum`, `download link`, `upload link`, `cors` or `encryption`." }
+              level: { type: string, enum: [ok, warn, fail, skipped] }
+              detail: { type: string }
+        checksum_sha256: { type: string, enum: [verified, ignored, not tested], description: "What the storage does with a signed `x-amz-checksum-sha256`: `verified` rejects content that differs." }
+        encryption: { type: string, description: "The bucket's default encryption algorithm, `none`, or `unknown` when the provider doesn't expose it." }
+        cors:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [origins, methods, headers]
+            properties:
+              origins: { type: array, items: { type: string } }
+              methods: { type: array, items: { type: string } }
+              headers: { type: array, items: { type: string } }
+        link_host: { type: string, description: The host a signed link is for. }
 
     CheckReportSummary:
       description: What a schema check found in one collection, without the documents.

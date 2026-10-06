@@ -43,7 +43,7 @@ An admin role can open the whole admin API (`admin: true`), only some of its are
 | `POST /jobs/{id}/rerun` | none | `202` with a new job (`rerun_of` names the original) for a finished function job: the same function, input and caller. `409` while it hasn't finished, or when it isn't a function's job or its function no longer exists. Audited |
 | `POST /functions/{database}/{name}/invoke`, `GET /invocations`, `GET /jobs`, `GET /jobs/{id}`, `POST /jobs/{id}/cancel` and `…/rerun`, `GET /schedules`, and `POST /functions/{database}/{name}/pause` and `…/resume`; and reading any job through the data API |
 | `data` | the admin data route (documents past their collections' rules), and the [schema checks](../../configuration/validation/#finding-documents-that-no-longer-match) (`GET` and `POST /data-checks`, read is enough; cancelling one needs only this area) |
-| `config` | `GET /config`, the read-only view of the realm's configuration |
+| `config` | `GET /config`, the read-only view of the realm's configuration, and `POST /storage/check`, which checks the realm's object storage |
 
 ### The read-only level
 
@@ -81,6 +81,7 @@ Paths are relative to `/v1/{realm}/_admin`. Bodies are JSON (`Content-Type: appl
 | `DELETE /users/{id}/roles/{role}` | none | `200` with the user |
 | `PUT /users/{id}/networks` | `{"admin_networks": [...], "login_networks": [...]}` | `200` with the user |
 | `GET /whoami` | none | `200` with what this credential may do: `level`, the areas it may `write` and `read`, and `read_access` (see [the read-only level](#the-read-only-level)) |
+| `POST /storage/check` | none | `200` with the report of a [storage check](../../files/storage/#checking-it) (`ok`, one entry per step with its `level` and `detail`, what the storage does with a signed SHA-256, the bucket's CORS and encryption where exposed): it stores a few small objects under `<prefix>/<realm>/_check/` and deletes them. `404` when the realm has no `storage:`; `503 storage_unavailable` when its keys aren't set. Needs the `config` area (read is enough). Audited as `storage.check` |
 | `GET /config` | none | `200` with the realm's [configuration](#configuration), read-only |
 | `POST /invitations` | `{"email"?, "expires_in"?, "send"?, "redirect_to"?, "locale"?}` | `201` with the invitation and its token, or `sent: true` and no token when it is [emailed](#emailing-an-invitation) |
 | `GET /invitations` | none | `200` with unexpired, unused invitations |

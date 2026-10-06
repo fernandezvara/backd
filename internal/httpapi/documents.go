@@ -47,6 +47,7 @@ type collectionKey struct{}
 type documents struct {
 	reg       *registry.Registry
 	store     Store
+	objects   *realmObjects // each realm's object storage (files)
 	now       func() time.Time
 	maxBody   int64
 	opTimeout time.Duration

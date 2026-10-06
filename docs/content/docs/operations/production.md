@@ -208,6 +208,17 @@ Sizing (`compose.yaml`'s `executor` service): `EXECUTOR_MAX_PROCESSES` functions
 
 To serve your own functions, add a Deno project under your config's `<realm>/<database>/_functions/` (see [Functions](../../functions/)) and rebuild; `functions/netprobe` in this reference exists only for its own test and isn't a usable app — review or remove it the same way you would the blog example.
 
+## Files: object storage on its own network
+
+A realm's files live in its own S3-compatible [storage](../../files/storage/). The reference runs a **MinIO** for the `netprobe` realm to show how to wire one safely:
+
+- **`minio`** is on `storage`, an internal network (fixed subnet, nothing published) whose only members are `backd`, `backd-admin` and `worker`, the processes that hold the keys. The executor and egress are not on it, so a function process has **no route** to the storage, which `functions/netprobe` proves from a real function call (raw TCP, and a declared host that resolves to its address, which egress refuses).
+- **TLS:** `setup.sh` issues MinIO a certificate from the deployment's CA; `backd`, `backd-admin` and `worker` trust that CA through `SSL_CERT_FILE`. `backd` refuses a plain `http` storage address outside `BACKD_DEV=true`.
+- **Scoped key:** the `storage-setup` job creates the bucket and a MinIO user whose policy allows put, get and delete on the `prod/` prefix and listing for it, and nothing else; the key is set as the realm's two secrets (`backd secret set`), never in `realm.yaml`. The root password is only for that job.
+- **The test** (`test.sh`) runs `backd storage check --realm netprobe` (stores, reads, signs and uses links over TLS, verifies the signed SHA-256) before and after the keys are set, and checks the executor can't reach the storage.
+
+`backd`'s storage client connects directly, and only, to the declared endpoint (see [Connecting storage](../../files/storage/#what-backd-connects-to)): this network placement is the other half of that promise.
+
 ## Hardening checklist
 
 Before going public, go through the [hardening checklist](../checklist/): it covers this deployment, and your realms, credentials and operations.

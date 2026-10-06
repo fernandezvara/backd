@@ -42,6 +42,9 @@ x-backd-environment: &backd-environment
     # Prometheus, on `func`, has the token.
     METRICS_ADDR: ":9090"
     METRICS_TOKEN: ${BACKD_METRICS_TOKEN:?run ./setup.sh}
+    # The object storage's certificate is signed by this deployment's CA, which
+    # is also the only one backd needs to trust (docs: Files -> MinIO).
+    SSL_CERT_FILE: /etc/backd/tls/ca.pem
 
 
 services:
@@ -84,6 +87,51 @@ services:
       timeout: 5s
       retries: 30
     restart: unless-stopped
+
+  # The object storage for the realms' files (docs: Files). On `storage`: an
+  # internal network whose only members are backd, backd-admin and the worker
+  # (the processes that hold the keys), so nothing else, a function process
+  # included, has a route to it. TLS with a certificate from this deployment's CA.
+  # A fixed address, so functions/netprobe can prove the executor has no route to it.
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    command: ["server", "/data", "--certs-dir", "/etc/minio/certs"]
+    environment:
+      MINIO_ROOT_USER: minio-root
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?run ./setup.sh and pass --env-file .env}
+    volumes:
+      - minio-data:/data
+      - ${SECRETS_DIR:-./secrets}/minio:/etc/minio/certs:ro
+    networks:
+      storage:
+        ipv4_address: 172.30.100.10
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 1
+    mem_limit: 512m
+    restart: unless-stopped
+
+  # One-shot: the bucket, a policy that lets backd's key use the `prod` prefix
+  # of that bucket and nothing else, and the key itself (ops/storage-setup.sh,
+  # in the ops image, which has the MinIO client). Idempotent.
+  storage-setup:
+    build:
+      context: ../..
+      dockerfile: deploy/production/ops/Dockerfile
+    image: backd-ops
+    command: ["/ops/storage-setup.sh"]
+    environment:
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?run ./setup.sh and pass --env-file .env}
+      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:?run ./setup.sh}
+      STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:?run ./setup.sh}
+      SSL_CERT_FILE: /etc/backd/tls/ca.pem
+    volumes:
+      - ${SECRETS_DIR:-./secrets}/mongo/ca.pem:/etc/backd/tls/ca.pem:ro
+    networks: [storage]
+    depends_on: [minio]
+    restart: "no"
 
   # One-shot deploy step, run with admin credentials: `backd provision`,
   # then least-privilege grants on exactly the databases the config uses
@@ -166,7 +214,7 @@ services:
       # the public/internal split); backd-admin below is the one that does.
       BACKD_ADMIN_API: "false"
     volumes: *tls
-    networks: [edge, data, func]
+    networks: [edge, data, func, storage]
     depends_on:
       provision:
         condition: service_completed_successfully
@@ -194,7 +242,7 @@ services:
       # Manual function invocations call back to this instance.
       BACKD_CALLBACK_URL: http://backd-admin:8081
     volumes: *tls
-    networks: [edge, data, func]
+    networks: [edge, data, func, storage]
     depends_on:
       provision:
         condition: service_completed_successfully
@@ -228,8 +276,9 @@ services:
       # Prometheus, on `func`, has the token.
       METRICS_ADDR: ":9090"
       METRICS_TOKEN: ${BACKD_METRICS_TOKEN:?run ./setup.sh}
+      SSL_CERT_FILE: /etc/backd/tls/ca.pem
     volumes: *tls
-    networks: [data, func]
+    networks: [data, func, storage]
     depends_on:
       provision:
         condition: service_completed_successfully
@@ -265,8 +314,10 @@ services:
     extra_hosts:
       # A declared function host resolving to MongoDB's real address on
       # this deployment's data network: proves layer 3 with no route at
-      # all, the same way functions/netprobe's own function does.
+      # all, the same way functions/netprobe's own function does. The
+      # same for the object storage's.
       - mongo-data.internal.test:172.30.90.10
+      - storage-data.internal.test:172.30.100.10
     networks: [func]
     depends_on: [backd]
     read_only: true
@@ -295,6 +346,7 @@ services:
       METRICS_TOKEN: ${BACKD_METRICS_TOKEN:?run ./setup.sh}
     extra_hosts:
       - mongo-data.internal.test:172.30.90.10
+      - storage-data.internal.test:172.30.100.10
     networks: [func, uplink]
     depends_on: [backd]
     read_only: true
@@ -368,6 +420,14 @@ networks:
     ipam:
       config:
         - subnet: 172.30.90.0/24
+  # The object storage and the processes that hold its keys (backd, the admin
+  # instance and the worker): no route out, and none from `func`, so a function
+  # process can't reach it. A fixed subnet, so the storage has a fixed address.
+  storage:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.100.0/24
   # The executor's only peers: backd's internal listener and egress (F4's
   # layer 3 — no route to `data` or the internet at the network level).
   func:
@@ -378,4 +438,5 @@ networks:
 
 volumes:
   mongo-data:
+  minio-data:
   prometheus-data:

@@ -193,6 +193,8 @@ check "layer 1: an undeclared host is refused" sh -c "echo '$resp' | grep -q '\"
 check "layer 2: a declared metadata address is refused by egress (403)" sh -c "echo '$resp' | grep -q '\"test\":\"metadata\",\"reached\":true,\"status\":403'"
 check "layer 2: a declared name resolving to MongoDB is refused by egress (403)" sh -c "echo '$resp' | grep -q '\"test\":\"mongo-fetch\",\"reached\":true,\"status\":403'"
 check "layer 3: the same address has no route at all (raw TCP, bypasses egress)" sh -c "echo '$resp' | grep -q '\"test\":\"mongo-rawtcp\",\"reached\":false'"
+check "the object storage: a declared name resolving to it is refused by egress (403)" sh -c "echo '$resp' | grep -q '\"test\":\"storage-fetch\",\"reached\":true,\"status\":403'"
+check "the object storage: the same address has no route from the executor (raw TCP)" sh -c "echo '$resp' | grep -q '\"test\":\"storage-rawtcp\",\"reached\":false'"
 # async_job_completes: enqueues network_probe_async and polls until the
 # worker (claiming jobs through the same executor) marks it done.
 async_job_completes() {
@@ -207,6 +209,25 @@ async_job_completes() {
   return 1
 }
 check "an async job still completes (the worker claims and runs it)" async_job_completes
+
+echo "--- object storage (a realm's files): reachable only from backd"
+# backd holds the keys (secrets of the realm), the storage sits on a network of
+# its own, and `backd storage check` runs the real thing against it.
+. "$work/.env"
+np_cli() { # np_cli <script>: backd commands as the netprobe realm's administrator
+  compose run --rm -T --no-deps -e BACKD_URL=http://backd-admin:8080 -e BACKD_CREDENTIALS=/tmp/np-credentials provision sh -c \
+    "printf 'dev-p4ssw0rd!5\n' | backd login --realm netprobe --email np@example.com >/dev/null && $1" 2>&1
+}
+out=$(np_cli "backd storage check --realm netprobe" || true)
+check "before the keys are set, the check says the storage is unavailable" sh -c 'printf %s "$1" | grep -q storage_unavailable' _ "$out"
+for name in STORAGE_ACCESS_KEY STORAGE_SECRET_KEY; do
+  eval "value=\$$name"
+  np_cli "printf '%s\n' '$value' | backd secret set --realm netprobe --name $name" >/dev/null || true
+done
+out=$(np_cli "backd storage check --realm netprobe" || true)
+printf '%s\n' "$out" | sed 's/^/     /'
+check "backd stores, reads and signs links against the storage over TLS (storage check)" sh -c 'printf %s "$1" | grep -q "signed SHA-256: verified" && ! printf %s "$1" | grep -q " fail "' _ "$out"
+check "the storage publishes nothing on the host" sh -c "[ -z \"\$(compose port minio 9000 2>/dev/null)\" ]"
 
 echo "--- metrics (private port, Prometheus)"
 # The edge has no route to the metrics port.

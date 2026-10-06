@@ -173,6 +173,10 @@ roles:
 - An email listed in several roles must have the same networks everywhere.
 - [API keys](../../auth/api-keys/#network-restrictions) can be limited too, when they're created.
 
+## Storage
+
+A realm that lets documents carry files connects its own S3-compatible bucket with a `storage:` section: the provider, bucket, a required `prefix`, and the access keys as `secret:NAME` references to realm secrets. See [Connecting storage](../../files/storage/) and the page of your provider ([AWS S3](../../files/aws-s3/), [MinIO](../../files/minio/), [Cloudflare R2](../../files/cloudflare-r2/), [DigitalOcean Spaces](../../files/digitalocean-spaces/)). `backd template realm` writes it commented, with an example for each.
+
 ## Validation
 
 `realm.yaml` is read strictly. `backd` refuses to start, naming the file, when:

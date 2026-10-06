@@ -9,3 +9,14 @@
 roles:
   admin:
     admin: true
+
+# The realm's files live in this deployment's own object storage (compose.yaml:
+# minio, on the `storage` network). Its keys are secrets of the realm: test.sh
+# sets them, then runs `backd storage check`.
+storage:
+  provider: minio
+  endpoint: https://minio:9000
+  bucket: backd-files
+  prefix: prod
+  access_key: secret:STORAGE_ACCESS_KEY
+  secret_key: secret:STORAGE_SECRET_KEY

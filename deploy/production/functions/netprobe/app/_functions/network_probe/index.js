@@ -42,5 +42,10 @@ export default async function (ctx) {
   // Layer 3: the same address, over raw TCP (bypasses egress entirely) —
   // the executor's network has no route to it at all.
   await tryConnect(results, "mongo-rawtcp", "mongo-data.internal.test", 27017);
+  // The same two for the object storage (the realms' files): egress refuses the
+  // declared name that resolves to its private address, and the network has no
+  // route to it at all.
+  await tryFetch(results, "storage-fetch", "http://storage-data.internal.test:9000/");
+  await tryConnect(results, "storage-rawtcp", "storage-data.internal.test", 9000);
   return { results };
 }

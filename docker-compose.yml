@@ -36,6 +36,36 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # S3-compatible object storage for realms' files (storage: in realm.yaml,
+  # provider: minio). Chainguard's build, since MinIO stopped publishing images of
+  # its own. Dev-only credentials, never real secrets; ports on localhost only.
+  # Backd reaches it at http://minio:9000; a browser at http://localhost:9000 (a
+  # realm sets that as public_endpoint, so signed links work from the page). The
+  # console is at http://localhost:9001.
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: backd-dev
+      MINIO_ROOT_PASSWORD: dev-p4ssw0rd!
+      # Browsers on the example pages may upload and download directly.
+      MINIO_API_CORS_ALLOW_ORIGIN: "http://localhost:8080,https://localhost:8443"
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio-data:/data
+
+  # One-shot: creates the bucket the example realms use. The image has no shell,
+  # so it tries again until the server is up.
+  minio-setup:
+    image: cgr.dev/chainguard/minio-client:latest
+    environment:
+      MC_HOST_local: "http://backd-dev:dev-p4ssw0rd!@minio:9000"
+    command: ["mb", "--ignore-existing", "local/backd-files"]
+    depends_on: [minio]
+    restart: on-failure:20
+
   # One-shot: bundles every example realm's functions before backd starts
   # (backd refuses stale or missing bundles). Uses the executor image
   # (backd + the pinned Deno) so no extra image is needed to build; needs
@@ -203,6 +233,7 @@ services:
 
 volumes:
   mongo-data:
+  minio-data:
   docs-cache:
   prometheus-data:
   grafana-data:

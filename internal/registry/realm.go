@@ -112,6 +112,9 @@ type RealmSettings struct {
 	// Email is how the realm sends email (email in realm.yaml); nil when it
 	// doesn't, and then no email is ever sent.
 	Email *EmailSettings
+	// Storage is where the realm's files live (storage in realm.yaml); nil
+	// when it has none, and then it can't declare file fields.
+	Storage *StorageSettings
 	// Account is how the realm's accounts behave (account in realm.yaml).
 	Account AccountSettings
 }
@@ -271,7 +274,8 @@ type realmDoc struct {
 		Admin       adminDoc    `yaml:"admin"`
 		Users       []roleEntry `yaml:"users"`
 	} `yaml:"roles"`
-	Email   *emailDoc `yaml:"email"`
+	Email   *emailDoc   `yaml:"email"`
+	Storage *storageDoc `yaml:"storage"`
 	Account *struct {
 		RequireVerifiedEmail bool   `yaml:"require_verified_email"`
 		WelcomeEmail         bool   `yaml:"welcome_email"`
@@ -585,6 +589,16 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 		} else {
 			var es []error
 			s.Email, es = parseEmail(e)
+			errs = append(errs, es...)
+		}
+	}
+
+	if st := doc.Storage; st != nil {
+		if !s.AuthEnabled {
+			errs = append(errs, errors.New("storage: only applies when auth is enabled (its access keys are secrets of the realm's system database)"))
+		} else {
+			var es []error
+			s.Storage, es = parseStorage(st)
 			errs = append(errs, es...)
 		}
 	}
