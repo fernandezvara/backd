@@ -52,16 +52,17 @@ type Collection struct {
 	Database      string
 	MongoDatabase string // <realm>__<database>
 	Name          string
-	SchemaPath    string             // path of schema.json, for error messages
-	RawSchema     map[string]any     // decoded schema.json (numbers as json.Number)
-	Schema        *jsonschema.Schema // compiled draft 2020-12 schema
-	Fields        map[string]Field   // dot path → field info, for query checks
-	Indexes       []Index            // declared in indexes.json
-	IndexPath     string             // path of indexes.json, when present
-	Rules         *rules.Set         // from rules.yaml; nil allows nothing
-	Erasure       *ErasurePolicy     // from collection.yaml; nil: an erase leaves the collection alone
-	ErasurePath   string             // path of collection.yaml, for error messages
-	SoftDelete    *SoftDelete        // from collection.yaml; nil: DELETE removes the document
+	SchemaPath    string                // path of schema.json, for error messages
+	RawSchema     map[string]any        // decoded schema.json (numbers as json.Number)
+	Schema        *jsonschema.Schema    // compiled draft 2020-12 schema
+	Fields        map[string]Field      // dot path → field info, for query checks
+	Indexes       []Index               // declared in indexes.json
+	IndexPath     string                // path of indexes.json, when present
+	Rules         *rules.Set            // from rules.yaml; nil allows nothing
+	Erasure       *ErasurePolicy        // from collection.yaml; nil: an erase leaves the collection alone
+	ErasurePath   string                // path of collection.yaml, for error messages
+	SoftDelete    *SoftDelete           // from collection.yaml; nil: DELETE removes the document
+	Files         map[string]*FileField // file fields from collection.yaml's files:; their schema is already in Schema and RawSchema
 }
 
 // Index is one index declared in indexes.json.

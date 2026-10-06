@@ -199,6 +199,16 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 		return nil, fmt.Errorf("%s: %w", path, errors.Join(errs...))
 	}
 
+	// File fields are declared in collection.yaml, and backd adds their schema: from
+	// here on the collection's schema is the author's plus theirs.
+	files, err := parseFiles(filepath.Join(dir, CollectionFile), raw, settings)
+	if err != nil {
+		return nil, err
+	}
+	if len(files) > 0 {
+		raw = withFileSchemas(raw, files)
+	}
+
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
@@ -224,6 +234,7 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 		RawSchema:     raw,
 		Schema:        compiled,
 		Fields:        fieldIndex(raw),
+		Files:         files,
 	}
 	if err := loadIndexes(coll, filepath.Join(dir, indexesFile)); err != nil {
 		return nil, err
