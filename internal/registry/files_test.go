@@ -129,7 +129,7 @@ func TestFileFieldErrors(t *testing.T) {
 func TestFunctionsCantDeclareTheStorageSecrets(t *testing.T) {
 	for _, name := range []string{"realm.STORAGE_SECRET_KEY", "realm.STORAGE_ACCESS_KEY", "realm.BACKD_FILES_LINK_KEY"} {
 		_, err := Load(writeTree(t, map[string]string{
-			"shop/realm.yaml": "auth: enabled\nstorage:\n  provider: minio\n  endpoint: https://minio.internal:9000\n  bucket: b\n  prefix: p\n  access_key: secret:STORAGE_ACCESS_KEY\n  secret_key: secret:STORAGE_SECRET_KEY\n",
+			"shop/realm.yaml":                     "auth: enabled\nstorage:\n  provider: minio\n  endpoint: https://minio.internal:9000\n  bucket: b\n  prefix: p\n  access_key: secret:STORAGE_ACCESS_KEY\n  secret_key: secret:STORAGE_SECRET_KEY\n",
 			"shop/app/_functions/f/function.yaml": "secrets: [" + name + "]\n",
 			"shop/app/_functions/f/index.ts":      "export default () => 1\n",
 		}))
@@ -139,7 +139,7 @@ func TestFunctionsCantDeclareTheStorageSecrets(t *testing.T) {
 	}
 	// Another secret of the same realm, or one with the same name in a database, is the function's own.
 	_, err := Load(writeTree(t, map[string]string{
-		"shop/realm.yaml": "auth: enabled\nstorage:\n  provider: minio\n  endpoint: https://minio.internal:9000\n  bucket: b\n  prefix: p\n  access_key: secret:STORAGE_ACCESS_KEY\n  secret_key: secret:STORAGE_SECRET_KEY\n",
+		"shop/realm.yaml":                     "auth: enabled\nstorage:\n  provider: minio\n  endpoint: https://minio.internal:9000\n  bucket: b\n  prefix: p\n  access_key: secret:STORAGE_ACCESS_KEY\n  secret_key: secret:STORAGE_SECRET_KEY\n",
 		"shop/app/_functions/f/function.yaml": "secrets: [realm.SHARED, STORAGE_SECRET_KEY]\n",
 		"shop/app/_functions/f/index.ts":      "export default () => 1\n",
 	}))
