@@ -56,6 +56,8 @@ async function load() {
     })
     jobs.value = page.items
     hasMore.value = page.has_more
+    // Steps already opened show what the job is now, not what it was.
+    for (const j of page.items) if (j.id in open) void loadSteps(j)
   } catch (e) {
     error.value = errorText(e, t('jobs.loadFailed'))
   } finally {

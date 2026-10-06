@@ -150,7 +150,7 @@ test('a running job shows the steps it reported, and a cancel closes the current
   await row.getByRole('button', { name: `Cancel ${jobId}` }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Cancel the job' }).click()
   await expect(row).toContainText('cancelled')
-  await page.getByTestId(`progress-${jobId}`).locator('summary').click()
+  // The steps still open now show the closed step, with no new click.
   await expect(page.getByTestId(`progress-${jobId}`).getByTestId('step-2')).toContainText('cancelled')
 
   // The attempt's record keeps the steps next to its logs.
