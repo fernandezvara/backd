@@ -176,6 +176,7 @@ func serve(ctx context.Context, a *app) error {
 		return err
 	}
 	a.logSecurityWarnings()
+	a.logStorageSecrets(ctx, a.realmUsers())
 	if err := a.logAPIKeyExpiry(ctx, a.realmUsers(), time.Now()); err != nil {
 		return err
 	}
@@ -577,6 +578,29 @@ func (a *app) logSecurityWarnings() {
 
 // keyExpiryNotice is how long before an API key expires startup warns about it.
 const keyExpiryNotice = 14 * 24 * time.Hour
+
+// logStorageSecrets warns about a realm whose storage keys are not set: its file
+// endpoints answer 503 storage_unavailable until they are. It never stops startup
+// (the keys are set after the instance is up, with backd secret set).
+func (a *app) logStorageSecrets(ctx context.Context, users func(string) *auth.Users) {
+	for _, rl := range a.reg.SortedRealms() {
+		st := rl.Settings.Storage
+		svc := users(rl.Name)
+		if st == nil || svc == nil {
+			continue
+		}
+		refs := []registry.SecretRef{{Realm: true, Name: st.AccessKey}, {Realm: true, Name: st.SecretKey}}
+		_, missing, err := svc.ResolveSecrets(ctx, refs, "")
+		switch {
+		case err != nil:
+			a.log.Warn("could not read the realm's storage keys", "realm", rl.Name, "error", err)
+		case len(missing) > 0:
+			a.log.Warn("storage keys are not set: the realm's file endpoints answer 503 storage_unavailable until they are (backd secret set, then backd storage check)", "realm", rl.Name, "missing", missing)
+		default:
+			a.log.Info("realm storage", "realm", rl.Name, "provider", st.Provider, "bucket", st.Bucket, "prefix", st.Prefix)
+		}
+	}
+}
 
 // logAPIKeyExpiry reports API keys that never expire, that expire within
 // keyExpiryNotice, and that have expired but are still stored. It logs key

@@ -288,6 +288,14 @@ func registerRemote(cfg *cli.Config) {
 		boolean(cc, "json", "one JSON object per line, for other tools")
 	})
 
+	st := cfg.Command("storage").ShortHelp("check a realm's object storage")
+	st.SubCommand("check").ShortHelp("verify the realm's storage the way files would use it").
+		LongHelp("Asks the running backd, which holds the realm's access keys, to check its storage:\nthe bucket and credentials, put, head, get, a range request and a listing on the realm's\nprefix, the signed SHA-256 (a wrong one must be rejected), signed download and upload\nlinks, and, where the provider exposes them, the bucket's CORS rules and default\nencryption. It stores a few small objects under <prefix>/<realm>/_check/ and deletes them\nagain. Exits 1 when a step failed (warnings don't fail it). Audited as storage.check. " + adminAPINote).
+		Func(act("storage check", storageCheck)).Config(func(cc *cli.CommandConfig) {
+		required(cc, "realm", "the realm whose storage to check")
+		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+		boolean(cc, "json", "print the report as JSON")
+	})
 	data := cfg.Command("data").ShortHelp("check the stored documents against their schemas")
 	checkFlags := func(cc *cli.CommandConfig) {
 		required(cc, "realm", "the realm")

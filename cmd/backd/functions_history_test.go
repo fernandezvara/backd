@@ -15,6 +15,7 @@ import (
 	"github.com/fernandezvara/backd/internal/executor"
 	"github.com/fernandezvara/backd/internal/httpapi"
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/internal/storage/storagetest"
 )
 
 func TestFunctionsHistoryAndLogs(t *testing.T) {
@@ -473,4 +474,68 @@ func TestDataCheck(t *testing.T) {
 	c.expect(0, "n7", "", append([]string{"data", "checks", "--database", "app", "--collection", "notes"}, plain...)...)
 	c.expect(1, "no schema check report yet", "", append([]string{"data", "checks", "--database", "app", "--collection", "ghost"}, plain...)...)
 	c.expect(2, "--collection needs --database", "", append([]string{"data", "check", "--collection", "notes"}, base...)...)
+}
+
+func TestStorageCheck(t *testing.T) {
+	fake := storagetest.New(t, "files")
+	root := writeConfig(t, map[string]string{
+		"acme/realm.yaml":            "roles:\n  ops:\n    admin: true\nstorage:\n  provider: minio\n  endpoint: " + fake.URL + "\n  bucket: files\n  prefix: cli\n  access_key: secret:STORAGE_ACCESS_KEY\n  secret_key: secret:STORAGE_SECRET_KEY\n",
+		"acme/app/notes/schema.json": `{"type": "object"}`,
+		"bare/realm.yaml":            "roles:\n  ops:\n    admin: true\n",
+		"bare/app/notes/schema.json": `{"type": "object"}`,
+	})
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	cipher, _ := auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
+	mk := func(realm string) *auth.Users {
+		return &auth.Users{
+			Store: authtest.NewMemStore(), Cipher: cipher, Cache: auth.NewSecretCache(), Realm: realm,
+			Hasher:   auth.NewHasher(2, auth.Argon2Params{Memory: 64, Time: 1, Threads: 1}),
+			Settings: reg.Realms[realm].Settings,
+		}
+	}
+	acme, bare := mk("acme"), mk("bare")
+	_, key, _ := acme.CreateAPIKey(ctx, "cli", auth.KeyOptions{Role: auth.KeyRoleAdmin})
+	_, bareKey, _ := bare.CreateAPIKey(ctx, "cli", auth.KeyOptions{Role: auth.KeyRoleAdmin})
+	srv := httptest.NewServer(httpapi.NewHandler(httpapi.Config{
+		Log: slog.New(slog.NewJSONHandler(io.Discard, nil)), Registry: reg, Ready: func(context.Context) error { return nil },
+		ExecutorToken: "test-executor-token-0123456789ab",
+		Users: func(realm string) *auth.Users {
+			switch realm {
+			case "acme":
+				return acme
+			case "bare":
+				return bare
+			}
+			return nil
+		},
+	}))
+	defer srv.Close()
+	env := func(k string) *cliEnv {
+		return &cliEnv{t: t, env: map[string]string{"BACKD_CREDENTIALS": filepath.Join(t.TempDir(), "backd", "credentials"), "BACKD_API_KEY": k}}
+	}
+	c := env(key)
+
+	// Keys not set: the server says the storage is unavailable.
+	c.expect(1, "storage_unavailable", "", "storage", "check", "--realm", "acme", "--url", srv.URL)
+	for _, n := range []string{"STORAGE_ACCESS_KEY", "STORAGE_SECRET_KEY"} {
+		if err := acme.SetSecret(ctx, "", n, "value", "key:test"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out := c.expect(0, "ok", "", "storage", "check", "--realm", "acme", "--url", srv.URL)
+	for _, want := range []string{"minio", "bucket files", "prefix cli", "the credentials reach it", "a wrong SHA-256 is rejected", "signed SHA-256: verified", "doesn't expose the bucket's CORS"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the report lacks %q:\n%s", want, out)
+		}
+	}
+	c.expect(0, `"checksum_sha256":"verified"`, "", "storage", "check", "--realm", "acme", "--url", srv.URL, "--json")
+	// A realm without storage.
+	env(bareKey).expect(1, "no storage configured", "", "storage", "check", "--realm", "bare", "--url", srv.URL)
+	// A bucket that doesn't exist fails the check (exit 1) and says why.
+	fake.Bucket = "other"
+	c.expect(1, "doesn't exist", "", "storage", "check", "--realm", "acme", "--url", srv.URL)
 }
