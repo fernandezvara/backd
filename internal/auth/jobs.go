@@ -60,7 +60,7 @@ type Job struct {
 	Check *CheckJob
 	// Exclusive, when set, lets only one job of that name be unfinished at a
 	// time: enqueuing another fails with ErrJobExclusive.
-	Exclusive string
+	Exclusive     string
 	TimeoutMS     int64 // the function's timeout at enqueue time, for the worker's lease
 	RequestID     string
 	Status        string    // queued | running | done

@@ -26,7 +26,7 @@ type MemStore struct {
 	invites     map[string]auth.Invitation // id → invitation
 	audit       []auth.AuditRecord
 	checks      map[string]auth.CheckReport // "database/collection" → latest report
-	secrets     map[string]auth.Secret // "database\x00name" → secret
+	secrets     map[string]auth.Secret      // "database\x00name" → secret
 	schedules   map[string]auth.ScheduleState
 	invocations []auth.InvocationRecord
 	emailTokens map[string]auth.EmailToken

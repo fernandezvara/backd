@@ -520,6 +520,7 @@ func (s *AuthStore) JobStats(ctx context.Context, now time.Time) ([]metrics.JobS
 		{Key: "branches", Value: bson.A{
 			bson.D{{Key: "case", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$email", false}}}}, {Key: "then", Value: "email"}},
 			bson.D{{Key: "case", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$erase", false}}}}, {Key: "then", Value: "erase"}},
+			bson.D{{Key: "case", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$check", false}}}}, {Key: "then", Value: "check"}},
 			bson.D{{Key: "case", Value: bson.D{{Key: "$eq", Value: bson.A{bson.D{{Key: "$ifNull", Value: bson.A{"$scheduled", false}}}, true}}}}, {Key: "then", Value: "schedule"}},
 		}},
 		{Key: "default", Value: "function"},
