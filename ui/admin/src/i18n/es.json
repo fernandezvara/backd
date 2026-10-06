@@ -431,6 +431,17 @@
     "ms": "{n} ms",
     "loadFailed": "No se ha podido cargar el historial de invocaciones."
   },
+  "steps": {
+    "omitted": "{n} pasos omitidos",
+    "progressOf": "Progreso de {name}",
+    "statuses": {
+      "running": "en curso",
+      "done": "hecho",
+      "failed": "fallido",
+      "timed_out": "agotó el tiempo",
+      "cancelled": "cancelado"
+    }
+  },
   "jobs": {
     "title": "Trabajos",
     "empty": "Ningún trabajo coincide.",
@@ -453,6 +464,7 @@
     "email": "correo: {kind}",
     "loadFailed": "No se han podido cargar los trabajos.",
     "actions": "Acciones",
+    "progress": "Progreso",
     "cancel": {
       "open": "Cancelar",
       "title": "¿Cancelar este trabajo?",
