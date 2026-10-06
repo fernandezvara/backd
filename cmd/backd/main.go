@@ -698,6 +698,18 @@ func checkFunctions(reg *registry.Registry, cfg settings.Settings, log *slog.Log
 		}
 	}
 	for _, name := range reg.RealmNames() {
+		st := reg.Realms[name].Settings.Storage
+		if st == nil {
+			continue
+		}
+		if len(cfg.SecretsKey) == 0 {
+			return fmt.Errorf("realm %s configures storage, whose access keys are secrets, but BACKD_SECRETS_KEY (or BACKD_SECRETS_KEY_FILE) is not set", name)
+		}
+		if st.HTTP && !cfg.Dev {
+			return fmt.Errorf("realm %s: storage uses a plain http address (%s): only BACKD_DEV=true (local development) allows it; use https", name, plainHTTP(st))
+		}
+	}
+	for _, name := range reg.RealmNames() {
 		if e := reg.Realms[name].Settings.Email; e != nil && e.PublicURL == "" && cfg.BackdURL == "" {
 			return fmt.Errorf("realm %s configures email, but backd's public address is unknown: set BACKD_URL (or email.public_url in its realm.yaml), the base of the links in its emails", name)
 		}
@@ -825,4 +837,12 @@ func (a *app) jobStats(ctx context.Context) (map[string]metrics.RealmJobs, error
 		out[realm] = metrics.RealmJobs{Stats: stats, NeedsAttention: attention}
 	}
 	return out, errors.Join(errs...)
+}
+
+// plainHTTP is the storage address that is not https.
+func plainHTTP(st *registry.StorageSettings) string {
+	if strings.HasPrefix(st.Endpoint, "http://") {
+		return st.Endpoint
+	}
+	return st.PublicEndpoint
 }
