@@ -66,6 +66,7 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		r.With(audit).Get("/audit", a.listAudit)
 		r.With(fns).Get("/invocations", a.listInvocations)
 		r.With(fns).Get("/jobs", a.listJobs)
+		r.With(fns).Get("/jobs/{id}", a.getJob)
 		r.With(fns).Post("/jobs/{id}/cancel", a.cancelJob)
 		r.With(fns).Post("/jobs/{id}/rerun", a.rerunJob)
 		r.With(fns).Get("/schedules", a.listSchedules)
@@ -1260,6 +1261,11 @@ func jobSummaryJSON(j auth.Job) map[string]any {
 		"completed_at":    nil,
 		"next_attempt_at": nil,
 		"result":          nil,
+		"progress":        nil,
+	}
+	if n := len(j.Steps); n > 0 {
+		last := stepJSON(j.Steps[n-1])
+		out["progress"] = map[string]any{"step": last["n"], "name": last["name"], "status": last["status"], "current": last["current"], "total": last["total"], "message": last["message"], "updated_at": last["updated_at"]}
 	}
 	if j.Email != nil {
 		out["email_kind"] = j.Email.Kind // never the recipients or the message
@@ -1284,25 +1290,44 @@ func jobSummaryJSON(j auth.Job) map[string]any {
 	return out
 }
 
+// getJob answers GET /v1/{realm}/_admin/jobs/{id}: the job as the listing shows
+// it, with every step it reported (the steps of its running or last attempt).
+func (a *adminAPI) getJob(w http.ResponseWriter, r *http.Request) {
+	j, found, err := usersOf(r).GetJob(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		adminError(w, r, err)
+		return
+	}
+	if !found {
+		jobError(w, r, auth.ErrNotFound)
+		return
+	}
+	out := jobSummaryJSON(j)
+	out["steps"], out["steps_omitted"] = stepsJSON(j.Steps), j.StepsOmitted
+	writeJSON(w, http.StatusOK, out)
+}
+
 func invocationJSON(rec auth.InvocationRecord) map[string]any {
 	logs := make([]map[string]any, len(rec.Logs))
 	for i, l := range rec.Logs {
 		logs[i] = map[string]any{"level": l.Level, "line": l.Line}
 	}
 	out := map[string]any{
-		"id":          rec.ID,
-		"at":          formatTime(rec.At),
-		"function":    rec.Function,
-		"actor":       rec.Actor,
-		"mode":        rec.Mode,
-		"status":      rec.Status,
-		"code":        nil,
-		"duration_ms": rec.DurationMS,
-		"request_id":  nil,
-		"job_id":      nil,
-		"parent_id":   nil,
-		"origin":      nil,
-		"logs":        logs,
+		"id":            rec.ID,
+		"at":            formatTime(rec.At),
+		"function":      rec.Function,
+		"actor":         rec.Actor,
+		"mode":          rec.Mode,
+		"status":        rec.Status,
+		"code":          nil,
+		"duration_ms":   rec.DurationMS,
+		"request_id":    nil,
+		"job_id":        nil,
+		"parent_id":     nil,
+		"origin":        nil,
+		"logs":          logs,
+		"steps":         stepsJSON(rec.Steps),
+		"steps_omitted": rec.StepsOmitted,
 	}
 	for k, v := range map[string]string{"code": rec.Code, "request_id": rec.RequestID, "job_id": rec.JobID, "parent_id": rec.ParentID, "origin": rec.Origin} {
 		if v != "" {

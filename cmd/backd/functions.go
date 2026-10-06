@@ -179,6 +179,45 @@ type invocationRecord struct {
 	RequestID  *string         `json:"request_id"`
 	JobID      *string         `json:"job_id"`
 	Logs       []invocationLog `json:"logs"`
+	// Steps are what the call reported with ctx.step, closed when it ended.
+	Steps        []stepRecord `json:"steps"`
+	StepsOmitted int          `json:"steps_omitted"`
+}
+
+// stepRecord mirrors a step of the admin API.
+type stepRecord struct {
+	N          int      `json:"n"`
+	Name       string   `json:"name"`
+	Status     string   `json:"status"`
+	StartedAt  string   `json:"started_at"`
+	EndedAt    *string  `json:"ended_at"`
+	DurationMS *int64   `json:"duration_ms"`
+	Current    float64  `json:"current"`
+	Total      *float64 `json:"total"`
+	Message    *string  `json:"message"`
+	UpdatedAt  string   `json:"updated_at"`
+}
+
+// progressText is "name 4/10", "name 4" without a total, or "-".
+func progressText(name string, current float64, total *float64) string {
+	if name == "" {
+		return "-"
+	}
+	if total != nil {
+		return fmt.Sprintf("%s %s/%s", name, strconv.FormatFloat(current, 'f', -1, 64), strconv.FormatFloat(*total, 'f', -1, 64))
+	}
+	if current > 0 {
+		return fmt.Sprintf("%s %s", name, strconv.FormatFloat(current, 'f', -1, 64))
+	}
+	return name
+}
+
+func lastStepText(steps []stepRecord) string {
+	if len(steps) == 0 {
+		return "-"
+	}
+	l := steps[len(steps)-1]
+	return progressText(l.Name, l.Current, l.Total)
 }
 
 type invocationLog struct {
@@ -206,9 +245,9 @@ func functionsHistory(c *cli.CommandContext) error {
 		return encodeJSONLines(c.Stdout(), recs)
 	}
 	tw := tabwriter.NewWriter(c.Stdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "TIME\tSTATUS\tCODE\tDURATION\tACTOR\tREQUEST-ID")
+	fmt.Fprintln(tw, "TIME\tSTATUS\tCODE\tDURATION\tLAST STEP\tACTOR\tREQUEST-ID")
 	for _, r := range recs {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%dms\t%s\t%s\n", r.At, r.Status, orDash(r.Code), r.DurationMS, r.Actor, orDash(r.RequestID))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%dms\t%s\t%s\t%s\n", r.At, r.Status, orDash(r.Code), r.DurationMS, lastStepText(r.Steps), r.Actor, orDash(r.RequestID))
 	}
 	return tw.Flush()
 }
@@ -224,7 +263,18 @@ type jobRecord struct {
 	NextAttempt *string `json:"next_attempt_at"`
 	CreatedAt   string  `json:"created_at"`
 	CompletedAt *string `json:"completed_at"`
-	Result      *struct {
+	// Progress is the current step; the job's detail (--job) has every Step.
+	Progress *struct {
+		Step    int      `json:"step"`
+		Name    string   `json:"name"`
+		Status  string   `json:"status"`
+		Current float64  `json:"current"`
+		Total   *float64 `json:"total"`
+		Message *string  `json:"message"`
+	} `json:"progress"`
+	Steps        []stepRecord `json:"steps,omitempty"`
+	StepsOmitted int          `json:"steps_omitted,omitempty"`
+	Result       *struct {
 		Status     string  `json:"status"`
 		Code       *string `json:"code"`
 		DurationMS int64   `json:"duration_ms"`
@@ -234,6 +284,9 @@ type jobRecord struct {
 // functionsJobs handles `backd functions jobs`: the realm's async and
 // scheduled jobs, newest first, for one function or all of them.
 func functionsJobs(c *cli.CommandContext) error {
+	if id := str(c, "job"); id != "" {
+		return functionsJobDetail(c, id)
+	}
 	function, realm := str(c, "function"), str(c, "realm")
 	q := url.Values{}
 	switch {
@@ -284,7 +337,7 @@ func functionsJobs(c *cli.CommandContext) error {
 		return encodeJSONLines(c.Stdout(), jobs)
 	}
 	tw := tabwriter.NewWriter(c.Stdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "CREATED\tFUNCTION\tSTATUS\tRESULT\tCODE\tDURATION\tTRIES\tNEXT ATTEMPT\tSCHEDULED\tID")
+	fmt.Fprintln(tw, "CREATED\tFUNCTION\tSTATUS\tRESULT\tCODE\tDURATION\tTRIES\tNEXT ATTEMPT\tSCHEDULED\tPROGRESS\tID")
 	for _, j := range jobs {
 		result, code, duration := "-", "-", "-"
 		if j.Result != nil {
@@ -294,9 +347,68 @@ func functionsJobs(c *cli.CommandContext) error {
 		if j.NextAttempt != nil {
 			next = *j.NextAttempt
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\t%t\t%s\n", j.CreatedAt, j.Function, j.Status, result, code, duration, j.Attempts, next, j.Scheduled, j.ID)
+		progress := "-"
+		if p := j.Progress; p != nil {
+			progress = progressText(p.Name, p.Current, p.Total)
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\t%t\t%s\t%s\n", j.CreatedAt, j.Function, j.Status, result, code, duration, j.Attempts, next, j.Scheduled, progress, j.ID)
 	}
 	return tw.Flush()
+}
+
+// functionsJobDetail handles `backd functions jobs --job <id>`: one job with every
+// step its running or last attempt reported.
+func functionsJobDetail(c *cli.CommandContext, id string) error {
+	if str(c, "function") != "" || str(c, "realm") == "" {
+		return usageErr(errors.New("--job needs --realm (the job's id is unique within it) and no --function"))
+	}
+	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	if err != nil {
+		return err
+	}
+	var j jobRecord
+	if err := t.call("GET", "_admin/jobs/"+url.PathEscape(id), nil, nil, &j); err != nil {
+		return err
+	}
+	if flag(c, "json") {
+		return encodeJSONLines(c.Stdout(), []jobRecord{j})
+	}
+	out := c.Stdout()
+	result := "-"
+	if j.Result != nil {
+		result = j.Result.Status
+	}
+	fmt.Fprintf(out, "%s  %s  %s  result %s  tries %d\n", j.ID, j.Function, j.Status, result, j.Attempts)
+	if len(j.Steps) == 0 {
+		fmt.Fprintln(out, "no steps reported")
+		return nil
+	}
+	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "STEP\tNAME\tSTATUS\tDURATION\tPROGRESS\tMESSAGE")
+	for _, s := range j.Steps {
+		duration := "-"
+		if s.DurationMS != nil {
+			duration = fmt.Sprintf("%dms", *s.DurationMS)
+		}
+		msg := "-"
+		if s.Message != nil {
+			msg = *s.Message
+		}
+		prog := "-"
+		if s.Total != nil {
+			prog = fmt.Sprintf("%s/%s", strconv.FormatFloat(s.Current, 'f', -1, 64), strconv.FormatFloat(*s.Total, 'f', -1, 64))
+		} else if s.Current > 0 {
+			prog = strconv.FormatFloat(s.Current, 'f', -1, 64)
+		}
+		fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\n", s.N, s.Name, s.Status, duration, prog, msg)
+	}
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	if j.StepsOmitted > 0 {
+		fmt.Fprintf(out, "(%d steps left out of the middle)\n", j.StepsOmitted)
+	}
+	return nil
 }
 
 // functionsCancel handles `backd functions cancel`: ends a job that hasn't

@@ -13,6 +13,7 @@ Every function call — `sync`, `webhook`, and once an [async](../jobs/) job fin
 
 - The function (`<database>/<name>`), who called it, its mode, status and duration.
 - The function's own console output (`console.log`, `console.error`, …), already masked of any [declared secrets'](../secrets/) exact values.
+- The [steps](../jobs/#reporting-progress-from-a-long-job) the function reported with `ctx.step()`, closed when the call ended (at most 100).
 - The request id, so a record can be matched to `backd`'s own JSON log line for the same call.
 - **Never** the input or output. If you need to reproduce what a specific call did, log what matters yourself with `console.log` inside the function.
 
@@ -30,7 +31,9 @@ Every function call — `sync`, `webhook`, and once an [async](../jobs/) job fin
   "job_id": null,
   "parent_id": null,
   "origin": "http",
-  "logs": [{ "level": "log", "line": "charging card for 1250" }]
+  "logs": [{ "level": "log", "line": "charging card for 1250" }],
+  "steps": [],
+  "steps_omitted": 0
 }
 ```
 

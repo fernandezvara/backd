@@ -122,6 +122,47 @@ test('the functions views have no accessibility violations', async ({ page, sign
   }
 })
 
+test('a running job shows the steps it reported, and a cancel closes the current one', async ({ page, signIn }) => {
+  await signIn('admin', { keep: true })
+  await page.getByRole('link', { name: 'Functions' }).click()
+  await page.getByTestId('fn-main-slow').getByRole('button', { name: 'Run' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Run', exact: true }).click()
+  await page.getByRole('link', { name: 'See the job' }).click()
+  const row = page.getByTestId('jobs-table').locator('tbody tr').first()
+  const jobId = (await row.locator('td').first().innerText()).trim()
+
+  // The function reports "warm up", then "count" (5 items): the listing shows the current step.
+  await expect(async () => {
+    await page.getByRole('button', { name: 'Filter' }).click()
+    await expect(row).toContainText('count', { timeout: 2000 })
+  }).toPass({ timeout: 40_000 })
+
+  // Opening it lists every step, with the first one closed.
+  const progress = page.getByTestId(`progress-${jobId}`)
+  await progress.locator('summary').click()
+  await expect(progress.getByTestId('step-1')).toContainText('warm up')
+  await expect(progress.getByTestId('step-1')).toContainText('done')
+  await expect(progress.getByTestId('step-2')).toContainText('count')
+  await expect(progress.getByTestId('step-2')).toContainText('running')
+  await expect(progress.getByTestId('step-2')).toContainText('/ 5')
+
+  // Cancelling closes the step the job was on.
+  await row.getByRole('button', { name: `Cancel ${jobId}` }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel the job' }).click()
+  await expect(row).toContainText('cancelled')
+  // The steps still open now show the closed step, with no new click.
+  await expect(page.getByTestId(`progress-${jobId}`).getByTestId('step-2')).toContainText('cancelled')
+
+  // The attempt's record keeps the steps next to its logs.
+  await page.getByRole('link', { name: 'History' }).click()
+  await page.getByRole('textbox', { name: 'Function' }).fill('main/slow')
+  await expect(async () => {
+    await page.getByRole('button', { name: 'Filter' }).click()
+    await page.getByTestId('history-table').locator('tbody tr').first().locator('summary').click({ timeout: 2000 })
+    await expect(page.getByTestId('history-table').getByTestId('step-2').first()).toContainText('cancelled', { timeout: 2000 })
+  }).toPass({ timeout: 20_000 })
+})
+
 test('a running job is cancelled, and a finished one re-run', async ({ page, signIn }) => {
   await signIn('admin', { keep: true })
   await page.getByRole('link', { name: 'Functions' }).click()

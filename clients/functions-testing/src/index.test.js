@@ -11,6 +11,16 @@ function assertEquals(got, want, message) {
   const w = JSON.stringify(want)
   if (g !== w) throw new Error(message ?? `got ${g}, want ${w}`)
 }
+function assertThrows(fn, errClass) {
+  try {
+    fn()
+  } catch (e) {
+    if (!(e instanceof errClass)) throw new Error(`expected ${errClass.name}, got ${e}`)
+    return
+  }
+  throw new Error('expected a throw')
+}
+
 async function assertRejects(fn, errClass) {
   try {
     await fn()
@@ -227,4 +237,24 @@ Deno.test('fakeEmail works on its own', async () => {
   const mail = fakeEmail()
   await mail.send({ to_user: 'u1', kind: 'order-shipped' })
   assertEquals(mail.sent().map((m) => m.kind), ['order-shipped'])
+})
+
+Deno.test('ctx.step and ctx.progress are recorded, and refuse what backd refuses', () => {
+  const { ctx, steps } = createContext()
+  ctx.step('load', { total: 10, message: 'reading' })
+  ctx.progress(4)
+  ctx.progress(10, 'done reading')
+  ctx.step('save')
+  assertEquals(steps().map((s) => [s.name, s.total, s.current, s.message]), [
+    ['load', 10, 10, 'done reading'],
+    ['save', null, 0, null],
+  ])
+  assertEquals(steps()[0].updates, [{ current: 4, message: null }, { current: 10, message: 'done reading' }])
+  assertThrows(() => ctx.step(''), TypeError)
+  assertThrows(() => ctx.step('x', { total: -1 }), TypeError)
+  assertThrows(() => ctx.progress(Number.NaN), TypeError)
+  // Without a step, progress starts one called "progress", as the runner does.
+  const fresh = createContext()
+  fresh.ctx.progress(3)
+  assertEquals(fresh.steps()[0].name, 'progress')
 })

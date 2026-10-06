@@ -93,6 +93,23 @@ test('job.wait polls until done and returns the output', async () => {
   assert.equal(m.calls.length, 3)
 })
 
+test('job.steps and wait({ onProgress }) show what the function reported', async () => {
+  /** @type {(n: number, name: string, status: 'running' | 'done', current: number) => import('../src/index.js').Step} */
+  const step = (n, name, status, current) => ({ n, name, status, started_at: '2026-10-06T10:00:00.000Z', ended_at: null, duration_ms: null, current, total: 10, message: null, updated_at: '2026-10-06T10:00:01.000Z' })
+  const m = mockFetch([
+    { status: 202, body: job() },
+    { body: job({ status: 'running', steps: [step(1, 'load', 'running', 4)] }) },
+    { body: job({ status: 'done', steps: [step(1, 'load', 'done', 10)], result: { status: 'ok', output: 1, duration_ms: 12 } }) },
+  ])
+  const j = await asyncFn(m)
+  assert.equal(j.steps.length, 0)
+  /** @type {string[][]} */
+  const seen = []
+  await j.wait({ pollIntervalMs: 0, onProgress: (steps) => seen.push(steps.map((s) => `${s.name} ${s.current}/${s.total} ${s.status}`)) })
+  assert.deepEqual(seen, [['load 4/10 running'], ['load 10/10 done']])
+  assert.equal(j.steps[0]?.status, 'done')
+})
+
 test('job.wait throws a BackdError matching a sync call for the same outcome', async () => {
   const m = mockFetch([
     { status: 202, body: job() },

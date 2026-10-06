@@ -60,6 +60,8 @@ export default async function handler(ctx) {
   ctx.call("send-receipt", input) // another function of this database, listed in `calls` (see Internal functions)
   ctx.email.send({ kind, to_user, data }) // a custom email: only with `email: true` (see Email)
   ctx.admin.db("orders").batch([...]) // several writes, atomically (see below)
+  ctx.step("send", { total: 500 })  // a named step of a long job (see Jobs: Reporting progress)
+  ctx.progress(120, "sending")      // how far the current step got
   throw ctx.error(409, "out_of_stock", "Not enough stock", [{ path: "items[0]", reason: "sold out" }])
 }
 ```

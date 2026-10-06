@@ -93,6 +93,9 @@ jobs:
         run: npm run typecheck
       - name: Unit tests
         run: npm test
+      - name: The functions runner's step tracking (plain JavaScript, no Deno)
+        working-directory: .
+        run: node --test internal/executor/steps.test.js
       - name: The package, as a user installs it from npm
         working-directory: .
         run: scripts/check-js-package.sh

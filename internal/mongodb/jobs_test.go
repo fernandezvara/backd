@@ -318,7 +318,7 @@ func TestCancelJobOnMongoDB(t *testing.T) {
 	cancelled := auth.JobResult{Status: auth.ResultCancelled, Message: "cancelled by an administrator"}
 
 	// A queued job: done, with the result, never claimable again.
-	if ok, err := s.CancelJob(ctx, "c0", cancelled, t0.Add(time.Minute), t0.Add(25*time.Hour)); err != nil || !ok {
+	if ok, err := s.CancelJob(ctx, "c0", cancelled, nil, t0.Add(time.Minute), t0.Add(25*time.Hour)); err != nil || !ok {
 		t.Fatalf("cancel queued: %v %v", ok, err)
 	}
 	got, _, _ := s.GetJob(ctx, "c0")
@@ -330,7 +330,7 @@ func TestCancelJobOnMongoDB(t *testing.T) {
 	if !found || claimed.ID != "c1" {
 		t.Fatalf("claim: %+v %v", claimed, found)
 	}
-	if ok, _ := s.CancelJob(ctx, "c1", cancelled, t0.Add(3*time.Minute), t0.Add(25*time.Hour)); !ok {
+	if ok, _ := s.CancelJob(ctx, "c1", cancelled, nil, t0.Add(3*time.Minute), t0.Add(25*time.Hour)); !ok {
 		t.Fatal("cancel running")
 	}
 	if err := s.CompleteJob(ctx, "c1", auth.JobResult{Status: "ok"}, t0.Add(4*time.Minute), t0.Add(26*time.Hour)); err != nil {
@@ -340,10 +340,10 @@ func TestCancelJobOnMongoDB(t *testing.T) {
 		t.Errorf("a late completion overwrote the cancellation: %+v", got.Result)
 	}
 	// Once done (or unknown), there is nothing to cancel, and nothing changes.
-	if ok, err := s.CancelJob(ctx, "c1", cancelled, t0, t0); err != nil || ok {
+	if ok, err := s.CancelJob(ctx, "c1", cancelled, nil, t0, t0); err != nil || ok {
 		t.Errorf("cancel a done job: %v %v", ok, err)
 	}
-	if ok, err := s.CancelJob(ctx, "nope", cancelled, t0, t0); err != nil || ok {
+	if ok, err := s.CancelJob(ctx, "nope", cancelled, nil, t0, t0); err != nil || ok {
 		t.Errorf("cancel an unknown job: %v %v", ok, err)
 	}
 	// The one left is still claimable.
@@ -383,5 +383,63 @@ func TestScheduleStatesOnMongoDB(t *testing.T) {
 				t.Errorf("digest: %+v", st)
 			}
 		}
+	}
+}
+
+func TestJobStepsOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	t0 := time.Date(2126, 10, 5, 12, 0, 0, 0, time.UTC)
+	if err := s.EnqueueJob(ctx, auth.Job{ID: "s1", Database: "app", Function: "report", Status: auth.JobQueued, TimeoutMS: 1000, CreatedAt: t0, ExpiresAt: t0.Add(48 * time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	total := 10.0
+	steps := []auth.Step{
+		{N: 1, Name: "load", Status: auth.StepDone, StartedAt: t0, EndedAt: t0.Add(time.Second), DurationMS: 1000, Current: 10, Total: &total, Message: "ten", UpdatedAt: t0.Add(time.Second)},
+		{N: 2, Name: "save", Status: auth.StepRunning, StartedAt: t0.Add(time.Second), UpdatedAt: t0.Add(2 * time.Second)},
+	}
+	// Not running yet: nothing is stored.
+	if ok, err := s.SetJobSteps(ctx, "s1", 1, steps, 0); err != nil || ok {
+		t.Fatalf("queued job: %v %v", ok, err)
+	}
+	if _, found, _ := s.ClaimJob(ctx, "w1", t0.Add(time.Minute), 30*time.Second); !found {
+		t.Fatal("claim")
+	}
+	// Only the running attempt writes.
+	if ok, _ := s.SetJobSteps(ctx, "s1", 2, steps, 0); ok {
+		t.Error("another attempt wrote")
+	}
+	if ok, err := s.SetJobSteps(ctx, "s1", 1, steps, 3); err != nil || !ok {
+		t.Fatalf("running attempt: %v %v", ok, err)
+	}
+	got, _, _ := s.GetJob(ctx, "s1")
+	if len(got.Steps) != 2 || got.StepsOmitted != 3 || got.Steps[0].Total == nil || *got.Steps[0].Total != 10 || got.Steps[0].Message != "ten" || !got.Steps[0].EndedAt.Equal(t0.Add(time.Second)) || !got.Steps[1].EndedAt.IsZero() || got.Steps[1].Status != auth.StepRunning {
+		t.Errorf("stored: %+v omitted %d", got.Steps, got.StepsOmitted)
+	}
+	// A retry is claimed again: its attempt starts with no steps.
+	if err := s.RetryJob(ctx, "s1", t0.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, _ := s.ClaimJob(ctx, "w1", t0.Add(3*time.Minute), 30*time.Second); !found {
+		t.Fatal("claim the retry")
+	}
+	if got, _, _ := s.GetJob(ctx, "s1"); len(got.Steps) != 0 || got.StepsOmitted != 0 || got.Attempts != 2 {
+		t.Errorf("after the claim: %+v", got)
+	}
+	// A cancel stores the steps it was given.
+	if ok, err := s.CancelJob(ctx, "s1", auth.JobResult{Status: auth.ResultCancelled}, steps, t0.Add(4*time.Minute), t0.Add(25*time.Hour)); err != nil || !ok {
+		t.Fatalf("cancel: %v %v", ok, err)
+	}
+	if got, _, _ := s.GetJob(ctx, "s1"); len(got.Steps) != 2 {
+		t.Errorf("after the cancel: %+v", got.Steps)
+	}
+	// And an invocation record keeps its steps.
+	rec := auth.InvocationRecord{ID: "i1", At: t0, ExpiresAt: t0.Add(time.Hour), Function: "app/report", Actor: "key:x", Mode: "async", Status: "ok", DurationMS: 5, Steps: steps, StepsOmitted: 1}
+	if err := s.RecordInvocation(ctx, rec); err != nil {
+		t.Fatal(err)
+	}
+	recs, _, err := s.ListInvocations(ctx, auth.InvocationFilter{Function: "app/report"})
+	if err != nil || len(recs) != 1 || len(recs[0].Steps) != 2 || recs[0].StepsOmitted != 1 || recs[0].Steps[1].Name != "save" {
+		t.Errorf("invocation: %+v %v", recs, err)
 	}
 }

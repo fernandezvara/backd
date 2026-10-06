@@ -33,6 +33,10 @@ type CallbackClaims struct {
 	Calls []string `json:"c,omitempty"`
 	Depth int      `json:"d,omitempty"`
 	Inv   string   `json:"i,omitempty"`
+	// Job and Attempt say which job attempt this run is, so it may report its
+	// steps (ctx.step): only for an async function's job.
+	Job     string `json:"j,omitempty"`
+	Attempt int    `json:"t,omitempty"`
 	// Email says the function may send custom emails (function.yaml `email: true`).
 	Email bool `json:"m,omitempty"`
 }
@@ -86,13 +90,15 @@ type FuncCaller struct {
 	Calls      []string
 	Depth      int
 	Invocation string
-	Email      bool // ctx.email.send
+	Email      bool   // ctx.email.send
+	Job        string // the job attempt behind the token, if any (see CallbackClaims)
+	Attempt    int
 	Expires    time.Time
 }
 
 // FuncCallerOf is the function behind a verified callback token.
 func FuncCallerOf(c CallbackClaims) *FuncCaller {
-	return &FuncCaller{Name: c.Realm + "/" + c.Function, Admin: c.Admin, Calls: c.Calls, Depth: c.Depth, Invocation: c.Inv, Email: c.Email, Expires: c.Expires}
+	return &FuncCaller{Name: c.Realm + "/" + c.Function, Admin: c.Admin, Calls: c.Calls, Depth: c.Depth, Invocation: c.Inv, Email: c.Email, Job: c.Job, Attempt: c.Attempt, Expires: c.Expires}
 }
 
 // CallbackCaller resolves a verified token into the caller it acts as,

@@ -6,6 +6,7 @@ import { useRoute } from 'vue-router'
 import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
 import FunctionsTabs from '@/components/FunctionsTabs.vue'
+import StepsList from '@/components/StepsList.vue'
 import PagerBar from '@/components/PagerBar.vue'
 import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
@@ -105,7 +106,7 @@ const statusClass = (s: string) => (s === 'ok' ? '' : 'font-semibold text-red-80
           <td class="px-3 py-2 font-mono text-xs">{{ r.origin ?? '—' }}</td>
           <td class="px-3 py-2 font-mono text-xs break-all">{{ r.actor }}</td>
           <td class="px-3 py-2">
-            <details v-if="r.logs.length || r.job_id || r.parent_id || r.request_id">
+            <details v-if="r.logs.length || r.steps.length || r.job_id || r.parent_id || r.request_id">
               <summary class="cursor-pointer text-xs underline">{{ t('common.details') }}</summary>
               <dl class="mt-1 space-y-1 text-xs">
                 <div v-if="r.request_id"><dt class="inline text-slate-600 dark:text-slate-400">{{ t('history.requestId') }}: </dt><dd class="inline font-mono">{{ r.request_id }}</dd></div>
@@ -115,6 +116,7 @@ const statusClass = (s: string) => (s === 'ok' ? '' : 'font-semibold text-red-80
                 </div>
                 <div v-if="r.parent_id"><dt class="inline text-slate-600 dark:text-slate-400">{{ t('history.parent') }}: </dt><dd class="inline font-mono">{{ r.parent_id }}</dd></div>
               </dl>
+              <StepsList v-if="r.steps.length" :steps="r.steps" :omitted="r.steps_omitted" />
               <pre v-if="r.logs.length" class="mt-1 max-h-64 max-w-md overflow-auto rounded bg-slate-100 p-2 text-xs dark:bg-slate-800" tabindex="0" data-testid="log-lines">{{ r.logs.map((l) => `[${l.level}] ${l.line}`).join('\n') }}</pre>
               <p v-else class="mt-1 text-xs text-slate-600 dark:text-slate-400">{{ t('history.noLogs') }}</p>
             </details>

@@ -150,6 +150,8 @@ import { Job } from './functions.js'
  * @property {string | null} parent_id    The invocation that called this one with `ctx.call`.
  * @property {string | null} origin       `http`, `function`, `cron`, `admin`, `on_complete:<database>/<name>` or `backd:<event>`.
  * @property {{ level: string, line: string }[]} logs
+ * @property {import('./functions.js').Step[]} steps   What the call reported with `ctx.step()`, closed when it ended.
+ * @property {number} steps_omitted
  */
 
 /**
@@ -179,6 +181,9 @@ import { Job } from './functions.js'
  * @property {string} origin                 `http`, `function`, `cron`, `admin`, `on_complete:<database>/<name>`, `backd:email.<kind>` or `function:<database>/<name>`.
  * @property {string | null} email_kind      The kind of an email job, never its recipients.
  * @property {string | null} rerun_of        The finished job an administrator re-ran to make this one.
+ * @property {{ step: number, name: string, status: string, current: number, total: number | null, message: string | null, updated_at: string } | null} progress   The current step; the job's `get()` has every step.
+ * @property {import('./functions.js').Step[]} [steps]   Only from `jobs.get()`: every step of the running or last attempt.
+ * @property {number} [steps_omitted]
  * @property {number} attempts               More than 1 after a worker was lost mid-run.
  * @property {string} created_at
  * @property {string | null} completed_at
@@ -650,6 +655,18 @@ class AdminJobs {
       since: time(params.since), until: time(params.until), limit: params.limit, skip: params.skip,
     }
     return (await this.admin._request({ method: 'GET', path: ['jobs'], query, ...opts })).data
+  }
+
+  /**
+   * One job as the listing shows it, with every step its running or last attempt
+   * reported (`steps`; `steps_omitted` counts those dropped from the middle past
+   * 100). Rejects with a `NotFoundError` when there is no such job.
+   * @param {string} id
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<JobSummary>}
+   */
+  async get(id, opts) {
+    return (await this.admin._request({ method: 'GET', path: ['jobs', id], ...opts })).data
   }
 
   /**

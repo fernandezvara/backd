@@ -220,10 +220,13 @@ type Store interface {
 	// CancelJob ends a job that isn't done yet with the given result (status
 	// "cancelled"), clearing its lease. It reports whether it did: false when
 	// the job was already done (or is unknown).
-	CancelJob(ctx context.Context, id string, result JobResult, completedAt, expiresAt time.Time) (bool, error)
+	CancelJob(ctx context.Context, id string, result JobResult, steps []Step, completedAt, expiresAt time.Time) (bool, error)
 	// ListJobs returns the jobs matching f, newest first, and whether
 	// more follow.
 	ListJobs(ctx context.Context, f JobFilter) ([]Job, bool, error)
+	// SetJobSteps replaces the steps of a running job's attempt; false when the
+	// job is not running that attempt (so a late write changes nothing).
+	SetJobSteps(ctx context.Context, id string, attempt int, steps []Step, omitted int) (bool, error)
 	// GetJob returns one job by id; found is false if there is none.
 	GetJob(ctx context.Context, id string) (j Job, found bool, err error)
 

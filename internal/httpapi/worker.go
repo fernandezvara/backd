@@ -298,7 +298,7 @@ func (w *Worker) execute(ctx context.Context, log *slog.Logger, realm string, sv
 			User:      userEnvelope(caller),
 			Secrets:   secrets,
 			Mask:      mask,
-			Callback:  w.fns.callback(realm, job.Database, job.Function, fn, caller, deadline.Add(callbackMargin), invID, job.Depth),
+			Callback:  w.fns.callback(realm, job.Database, job.Function, fn, caller, deadline.Add(callbackMargin), invID, job.Depth, &job),
 			RequestID: job.RequestID,
 		},
 	}
@@ -312,7 +312,8 @@ func (w *Worker) execute(ctx context.Context, log *slog.Logger, realm string, sv
 		// result. The run was stopped (the executor kills the process when the
 		// request ends); only the attempt is recorded.
 		log.Info("the job was cancelled while it ran; its run was stopped")
-		w.fns.recordInvocation(ctx, job.RequestID, realm, job.Database, job.Function, registry.ModeAsync, caller, executor.Result{Status: executor.StatusCancelled, DurationMS: time.Since(started).Milliseconds()}, job.ID, invID, meta)
+		cres := w.fns.settleSteps(ctx, svc, &job, false, executor.Result{Status: executor.StatusCancelled, DurationMS: time.Since(started).Milliseconds()})
+		w.fns.recordInvocation(ctx, job.RequestID, realm, job.Database, job.Function, registry.ModeAsync, caller, cres, job.ID, invID, meta)
 		return
 	}
 	w.fns.logResult(ctx, req.Function, res, err)
@@ -324,6 +325,7 @@ func (w *Worker) execute(ctx context.Context, log *slog.Logger, realm string, sv
 		log.Warn("executor busy; leaving the job to be retried")
 		return
 	}
+	res = w.fns.settleSteps(ctx, svc, &job, true, res)
 	w.fns.recordInvocation(ctx, job.RequestID, realm, job.Database, job.Function, registry.ModeAsync, caller, res, job.ID, invID, meta)
 	// A failure that may pass (the function threw, timed out or crashed) is
 	// tried again after a growing wait while attempts are left; one the

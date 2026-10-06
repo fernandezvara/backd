@@ -215,6 +215,7 @@ var systemCollections = []systemCollection{
 			"request_id":  str(),
 			"job_id":      str(),
 			"logs":        typ("array"), // [{level, line}], already masked by the executor
+			"steps":       typ("array"), // [{n, name, status, ...}] from ctx.step
 		}),
 		indexes: []systemIndex{
 			{keys: bson.D{{Key: "function", Value: 1}, {Key: "at", Value: 1}}},
@@ -242,6 +243,8 @@ var systemCollections = []systemCollection{
 			"completed_at":    typ("date"),
 			"expires_at":      typ("date"),
 			"result":          typ("object"),
+			"steps":           typ("array"), // [{n, name, status, ...}] the running attempt reported (ctx.step)
+			"steps_omitted":   typ("int"),
 		}),
 		indexes: []systemIndex{
 			// The worker's claim query: the oldest job that's queued, or

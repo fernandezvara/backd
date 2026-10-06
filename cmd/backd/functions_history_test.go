@@ -285,3 +285,68 @@ func TestFunctionsPauseAndResume(t *testing.T) {
 	c.expect(1, "no schedule", "", "functions", "pause", "--function", "acme/app/plain", "--url", srv.URL)
 	c.expect(1, "not found", "", "functions", "pause", "--function", "acme/app/ghost", "--url", srv.URL)
 }
+
+func TestFunctionsShowSteps(t *testing.T) {
+	root := writeConfig(t, map[string]string{
+		"acme/realm.yaml":                          "roles:\n  ops:\n    admin: true\n",
+		"acme/app/notes/schema.json":               `{}`,
+		"acme/app/_functions/export/function.yaml": "mode: async\n",
+		"acme/app/_functions/export/index.ts":      "export default () => ({});\n",
+	})
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	svc := &auth.Users{
+		Store:    authtest.NewMemStore(),
+		Hasher:   auth.NewHasher(2, auth.Argon2Params{Memory: 64, Time: 1, Threads: 1}),
+		Settings: reg.Realms["acme"].Settings,
+	}
+	_, apiKey, err := svc.CreateAPIKey(ctx, "cli", auth.KeyOptions{Role: auth.KeyRoleAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := svc.EnqueueJob(ctx, auth.Job{Database: "app", Function: "export", CallerActor: "user:u1", TimeoutMS: 1000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, _, _ := svc.ClaimJob(ctx, "w1")
+	now := time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC)
+	total := 10.0
+	steps := []auth.Step{
+		{N: 1, Name: "load", Status: auth.StepDone, StartedAt: now, EndedAt: now.Add(2 * time.Second), DurationMS: 2000, Current: 10, Total: &total, UpdatedAt: now},
+		{N: 2, Name: "save", Status: auth.StepRunning, StartedAt: now, Current: 4, Total: &total, Message: "rows", UpdatedAt: now},
+	}
+	if ok, err := svc.SetJobSteps(ctx, claimed.ID, claimed.Attempts, steps, 7); err != nil || !ok {
+		t.Fatalf("steps: %v %v", ok, err)
+	}
+	srv := httptest.NewServer(httpapi.NewHandler(httpapi.Config{
+		Log:           slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		Registry:      reg,
+		Ready:         func(context.Context) error { return nil },
+		ExecutorToken: "test-executor-token-0123456789ab",
+		Users: func(realm string) *auth.Users {
+			if realm == "acme" {
+				return svc
+			}
+			return nil
+		},
+	}))
+	defer srv.Close()
+	c := &cliEnv{t: t, env: map[string]string{
+		"BACKD_CREDENTIALS": filepath.Join(t.TempDir(), "backd", "credentials"),
+		"BACKD_API_KEY":     apiKey,
+	}}
+
+	c.expect(0, "save 4/10", "", "functions", "jobs", "--realm", "acme", "--url", srv.URL)
+	out := c.expect(0, job.ID, "", "functions", "jobs", "--realm", "acme", "--job", job.ID, "--url", srv.URL)
+	for _, want := range []string{"load", "done", "2000ms", "10/10", "save", "running", "4/10", "rows", "7 steps left out"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("job detail lacks %q:\n%s", want, out)
+		}
+	}
+	c.expect(0, `"steps":[`, "", "functions", "jobs", "--realm", "acme", "--job", job.ID, "--json", "--url", srv.URL)
+	c.expect(2, "--realm", "", "functions", "jobs", "--job", job.ID, "--url", srv.URL)
+	c.expect(1, "not found", "", "functions", "jobs", "--realm", "acme", "--job", "nope", "--url", srv.URL)
+}

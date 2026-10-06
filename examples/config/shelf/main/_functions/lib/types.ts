@@ -35,6 +35,10 @@ export type Context = {
   admin: { db(name: string): Database };
   /** Calls a function of this database listed in `calls`: its output (sync) or a job handle (async). */
   call(name: string, input?: unknown, options?: { idempotencyKey?: string }): Promise<any>;
+  /** Starts a named step of a long job; the Jobs page and `job.steps` show where it is. */
+  step(name: string, options?: { total?: number; message?: string }): void;
+  /** How far the current step got (out of its `total`), with an optional message. */
+  progress(current: number, message?: string): void;
   /** Present for functions with `email: true`: a custom email through the realm's templates. */
   email: {
     send(message: {

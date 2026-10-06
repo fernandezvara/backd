@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import type { JobSummary } from 'backd-js'
-import { computed, onMounted, reactive, ref } from 'vue'
+import type { JobSummary, Step } from 'backd-js'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
 import FunctionsTabs from '@/components/FunctionsTabs.vue'
 import PagerBar from '@/components/PagerBar.vue'
+import StepsList from '@/components/StepsList.vue'
 import FormDialog from '@/components/FormDialog.vue'
 import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
@@ -55,6 +56,8 @@ async function load() {
     })
     jobs.value = page.items
     hasMore.value = page.has_more
+    // Steps already opened show what the job is now, not what it was.
+    for (const j of page.items) if (j.id in open) void loadSteps(j)
   } catch (e) {
     error.value = errorText(e, t('jobs.loadFailed'))
   } finally {
@@ -111,6 +114,37 @@ async function act() {
   }
 }
 
+// Steps a function reported (ctx.step): the listing has the current one; opening a
+// job loads every step, and refreshes them while it runs.
+const open = reactive<Record<string, { steps: Step[]; omitted: number }>>({})
+let refresher: ReturnType<typeof setInterval> | undefined
+async function loadSteps(j: JobSummary) {
+  try {
+    const full = await admin.jobs.get(j.id)
+    open[j.id] = { steps: full.steps ?? [], omitted: full.steps_omitted ?? 0 }
+    const row = jobs.value.findIndex((x) => x.id === j.id)
+    if (row >= 0) jobs.value[row] = { ...full, steps: undefined, steps_omitted: undefined }
+  } catch {
+    // The listing stays; the steps will be tried again.
+  }
+}
+function toggleSteps(j: JobSummary, event: Event) {
+  if ((event.target as HTMLDetailsElement).open) void loadSteps(j)
+  else delete open[j.id]
+}
+function startRefresh() {
+  refresher ??= setInterval(() => {
+    for (const j of jobs.value) if (j.id in open && j.status !== 'done') void loadSteps(j)
+  }, 2500)
+}
+onMounted(startRefresh)
+onBeforeUnmount(() => clearInterval(refresher))
+const progressText = (j: JobSummary) => {
+  const p = j.progress
+  if (!p) return ''
+  return p.total !== null ? `${p.name} ${p.current}/${p.total}` : p.current > 0 ? `${p.name} ${p.current}` : p.name
+}
+
 const resultText = (j: JobSummary) => (j.result ? `${j.result.status}${j.result.code ? ` · ${j.result.code}` : ''} · ${t('history.ms', { n: j.result.duration_ms })}` : t('jobs.pending'))
 </script>
 
@@ -151,6 +185,7 @@ const resultText = (j: JobSummary) => (j.result ? `${j.result.status}${j.result.
           <th scope="col" class="px-3 py-2">{{ t('jobs.created') }}</th>
           <th scope="col" class="px-3 py-2">{{ t('jobs.completed') }}</th>
           <th scope="col" class="px-3 py-2">{{ t('jobs.result') }}</th>
+          <th scope="col" class="px-3 py-2">{{ t('jobs.progress') }}</th>
           <th v-if="canWrite" scope="col" class="px-3 py-2"><span class="sr-only">{{ t('jobs.actions') }}</span></th>
         </tr>
       </thead>
@@ -167,13 +202,20 @@ const resultText = (j: JobSummary) => (j.result ? `${j.result.status}${j.result.
           <td class="px-3 py-2 whitespace-nowrap">{{ formatDate(j.created_at) }}</td>
           <td class="px-3 py-2 whitespace-nowrap">{{ j.completed_at ? formatDate(j.completed_at) : '—' }}</td>
           <td class="px-3 py-2" :class="j.result && j.result.status !== 'ok' && j.result.status !== 'skipped' ? 'font-semibold text-red-800 dark:text-red-300' : ''">{{ resultText(j) }}</td>
+          <td class="px-3 py-2">
+            <details v-if="j.progress" :data-testid="`progress-${j.id}`" @toggle="toggleSteps(j, $event)">
+              <summary class="cursor-pointer text-xs underline">{{ progressText(j) }}</summary>
+              <StepsList v-if="open[j.id]" :steps="open[j.id].steps" :omitted="open[j.id].omitted" />
+            </details>
+            <span v-else class="text-xs text-slate-600 dark:text-slate-400">—</span>
+          </td>
           <td v-if="canWrite" class="px-3 py-2 text-right whitespace-nowrap">
             <button v-if="canCancel(j)" type="button" class="underline" :aria-label="`${t('jobs.cancel.open')} ${j.id}`" @click="ask('cancel', j)">{{ t('jobs.cancel.open') }}</button>
             <button v-if="canRerun(j)" type="button" class="underline" :aria-label="`${t('jobs.rerun.open')} ${j.id}`" @click="ask('rerun', j)">{{ t('jobs.rerun.open') }}</button>
           </td>
         </tr>
         <tr v-if="!jobs.length && !loading">
-          <td :colspan="canWrite ? 9 : 8" class="px-3 py-6 text-center text-slate-600 dark:text-slate-400">{{ t('jobs.empty') }}</td>
+          <td :colspan="canWrite ? 10 : 9" class="px-3 py-6 text-center text-slate-600 dark:text-slate-400">{{ t('jobs.empty') }}</td>
         </tr>
       </tbody>
     </table>

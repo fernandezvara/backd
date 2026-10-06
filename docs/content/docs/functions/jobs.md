@@ -149,6 +149,47 @@ backd functions jobs --realm workshop --status running    # what is being worked
 
 It shows each job's state, how many times a worker started it (`TRIES` above 1 means a worker was lost, the executor was unavailable, or the function is being [retried](#retrying-a-failed-job); `NEXT ATTEMPT` says when) and how it ended, but never its input or output. It needs an admin API key or a session of a user with an admin role ([the admin API](../../auth/admin/)).
 
+## Reporting progress from a long job
+
+A job that runs for minutes should say where it is. Two calls on `ctx` do it, and nothing has to be configured:
+
+```ts
+export default async function handler(ctx) {
+  ctx.step("read the orders");                       // starts a named step
+  const orders = await readAll();
+
+  ctx.step("send the invoices", { total: orders.length, message: "starting" });
+  for (const [i, order] of orders.entries()) {
+    await send(order);
+    ctx.progress(i + 1, `invoice ${order.id}`);       // how far the current step got
+  }
+  return { sent: orders.length };
+}
+```
+
+- **`ctx.step(name, { total?, message? })`** starts a step and closes the one running as `done`. `total` is how much there is to do, `message` a short note.
+- **`ctx.progress(current, message?)`** sets how far the current step got. Called with no step started, it starts one called `progress`, so reporting never throws for that reason. A bad argument (an empty name, a negative number) is a `TypeError`.
+- **A step is** `n`, `name`, `status` (`running`, `done`, `failed`, `timed_out` or `cancelled`), `started_at`, `ended_at`, `duration_ms`, `current`, `total`, `message` and `updated_at`. The last one in the list is the current step.
+- **Names are clipped to 100 characters and messages to 200.** Don't put anything in them you wouldn't show the job's caller: see below.
+
+### What `backd` does with them
+
+- **A running job shows its steps live.** The runner sends them to `backd` as they change, **coalesced**: a progress update goes out at most every 2 seconds, a new step right away (but no faster than every 200 ms, however many steps a loop starts), and the last values when the call ends. Thousands of `ctx.progress()` calls make a handful of writes, not thousands.
+- **At most 100 steps are kept per attempt:** the first 50 and the latest 50, with `steps_omitted` counting the ones in between.
+- **When an attempt ends, the step still running is closed** as `done` (the function returned), `failed` (any other end), `timed_out` or `cancelled` (an administrator [cancelled the job](#cancelling-and-re-running-a-job)). The steps are then stored in the attempt's [invocation record](../logs/) next to its logs.
+- **A killed run keeps what it reported.** A timeout or a memory kill sends no result, so the job's steps are the last ones it pushed live, closed as `timed_out` or `failed`; at most the last two seconds of progress are lost.
+- **A retry starts again.** A new attempt starts with an empty `steps` list; each attempt's own steps stay in its record.
+- **Sync calls, webhooks and internal sync calls** keep their steps in memory and store them once, in the invocation record when they end: nothing is written while they run.
+- **Reporting never fails the function.** A write that fails is dropped, and the steps in the final result still arrive.
+
+### Where they are shown
+
+- **To the caller:** `job.steps` in the [JavaScript client](../../clients/js/#functions) after `status()` or `wait()`, and `wait({ onProgress })` to follow a job without polling by hand; they are also in `GET .../_jobs/{id}` as `steps` and `steps_omitted`. **The caller who started a job (or an API key) can read its steps**, so treat step names and messages as part of the function's output.
+- **To administrators:** the Jobs page of the [admin UI](../../auth/admin-ui/#functions) shows the current step of each job and, opened, every step (refreshed while the job runs); `GET /_admin/jobs/{id}` and `backd functions jobs --realm R --job ID` list them all, and `backd functions jobs` has a PROGRESS column; the History page and `backd functions history` show a call's steps.
+- **In tests:** [`@backd/functions-testing`](../testing/) records them: `createContext()` returns `steps()`.
+
+Steps are **not** logs: they are a small, bounded structure (a job's document holds one list, replaced in place), and the 64 KiB cap on console output doesn't count them. Console output is still written once, when the call ends.
+
 ## Cancelling and re-running a job
 
 An administrator can end a job that hasn't finished, and queue a finished one again, with the admin API (`POST /_admin/jobs/{id}/cancel` and `…/rerun`), `backd functions cancel` and `backd functions rerun`, `client.admin.jobs.cancel()` and `.rerun()`, or the Jobs page of the [admin UI](../../auth/admin-ui/#functions). Both need the `functions` [area](../../auth/admin/#admin-rights), are [audited](../../auth/audit/) (`job.cancel`, `job.rerun`) and apply to function jobs only: backd's own emails and erasures are neither cancelled nor re-run by hand.

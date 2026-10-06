@@ -239,6 +239,7 @@ const output = await job.wait({ pollIntervalMs: 500, timeoutMs: 30_000 })
 - `wait` polls every `pollIntervalMs` (default 500) and resolves with the job's output once it's `done`. If the job itself fails — the function threw, timed out, or crashed — `wait` (and a plain `sync` call) throw the same [error](#errors) a direct call would: a `BackdError` subclass built from the job's own status/code/message, so callers don't need to branch on sync vs. async to handle failures.
 - If `timeoutMs` is set and elapses before the job is done, `wait` throws `JobTimeoutError` (`.jobId`) instead — a plain `Error`, not a `BackdError`, since giving up on polling isn't something the server reported. The job itself keeps running; call `wait` again, or `status()`, to check on it later.
 - With no `timeoutMs`, `wait` polls until the job finishes, however long that takes (up to the function's own `timeout`).
+- `job.steps` are the [steps](../../functions/jobs/#reporting-progress-from-a-long-job) the function reported as of the last `status()` or `wait()` (the last is the current step), and `wait({ onProgress: (steps) => ... })` calls you after every poll.
 - `job.raw` is the last `GET .../_jobs/{id}` response `status()`/`wait()` fetched, if you need fields beyond `id`, `function` and `status`.
 
 An administrator can also run a function by hand, internal ones included, with `backd.admin.invokeFunction('<database>/<name>', { input, as, idempotencyKey })` (see [Internal functions](../../functions/internal/#running-a-function-by-hand)); it returns the output or a `Job`, like `db.fn()`.
@@ -384,6 +385,7 @@ await backd.admin.invitations.revoke(invitation.id)
 const access = await backd.admin.whoami()                         // level, areas it may read and change
 const posts = backd.admin.data('blog', 'posts')                  // the admin data route: list/get/create/replace/patch/delete/restore, past the rules
 const config = await backd.admin.config()                         // what this instance runs for the realm, read-only
+const detail = await backd.admin.jobs.get(jobId)                // the job with every step it reported (detail.steps)
 await backd.admin.jobs.cancel(jobId)                              // a queued or running function job ends as "cancelled"
 const again = await backd.admin.jobs.rerun(jobId)                 // a finished one is queued again as a new job (again.rerun_of)
 await backd.admin.schedules.pause('main/nightly')                 // a schedule creates no runs until resume(); list() shows which are paused

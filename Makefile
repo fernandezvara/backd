@@ -20,6 +20,7 @@ vet:
 # JavaScript client: type-check and unit tests (needs Node).
 js-test:
 	cd clients/js && npm ci --silent && npm run typecheck && npm test
+	node --test internal/executor/steps.test.js
 
 # The JavaScript client packed and installed the way npm users get it, used from
 # Node and TypeScript (needs Node; see scripts/check-js-package.sh).

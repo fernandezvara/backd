@@ -20,11 +20,13 @@ export default async function handler(ctx: Context) {
     return { report_id: report.id, rows: report.rows as number, reused: true };
   }
 
+  ctx.step("read the orders");
   const orders: Doc[] = [];
   for await (const order of db.collection("orders").iterate({ orderBy: "_meta.created_at" })) {
     orders.push(order);
   }
 
+  ctx.step("write the report", { total: orders.length });
   const report = await reports.create({
     kind: "orders",
     export_key: key,
@@ -32,6 +34,7 @@ export default async function handler(ctx: Context) {
     csv: toCsv(orders, ["id", "item", "quantity", "amount", "status"]),
     requested_by: ctx.user!.email,
   });
+  ctx.progress(orders.length, "report stored");
   console.log(`exported ${orders.length} orders for ${ctx.user!.email}`);
   return { report_id: report.id, rows: orders.length, reused: false };
 }

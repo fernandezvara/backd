@@ -693,6 +693,7 @@ func (m *MemStore) ClaimJob(_ context.Context, workerID string, at time.Time, ma
 	best.Status = auth.JobRunning
 	best.Attempts++
 	best.NextAttemptAt = time.Time{}
+	best.Steps, best.StepsOmitted = nil, 0
 	best.leaseExpires = at.Add(time.Duration(best.TimeoutMS)*time.Millisecond + margin)
 	m.jobs[bestID] = best
 	return best.Job, true, nil
@@ -801,7 +802,7 @@ func (m *MemStore) CompleteJob(_ context.Context, id string, result auth.JobResu
 	return nil
 }
 
-func (m *MemStore) CancelJob(_ context.Context, id string, result auth.JobResult, completedAt, expiresAt time.Time) (bool, error) {
+func (m *MemStore) CancelJob(_ context.Context, id string, result auth.JobResult, steps []auth.Step, completedAt, expiresAt time.Time) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	j, ok := m.jobs[id]
@@ -814,6 +815,7 @@ func (m *MemStore) CancelJob(_ context.Context, id string, result auth.JobResult
 	j.leaseExpires = time.Time{}
 	r := result
 	j.Result = &r
+	j.Steps = append([]auth.Step(nil), steps...)
 	m.jobs[id] = j
 	return true, nil
 }
@@ -968,4 +970,16 @@ func (m *MemStore) ListScheduleStates(context.Context) ([]auth.ScheduleState, er
 		out = append(out, st)
 	}
 	return out, nil
+}
+
+func (m *MemStore) SetJobSteps(_ context.Context, id string, attempt int, steps []auth.Step, omitted int) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	j, ok := m.jobs[id]
+	if !ok || j.Status != auth.JobRunning || j.Attempts != attempt {
+		return false, nil
+	}
+	j.Steps, j.StepsOmitted = append([]auth.Step(nil), steps...), omitted
+	m.jobs[id] = j
+	return true, nil
 }
