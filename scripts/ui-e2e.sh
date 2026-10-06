@@ -28,7 +28,7 @@ cleanup() {
 trap cleanup EXIT
 
 scripts/local-certs.sh
-docker compose build functions-build backd
+docker compose build functions-build backd executor
 docker compose up -d --no-deps mongo
 mongo_ready() {
   docker compose exec -T mongo mongosh --quiet --eval "try { rs.status() } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo:27017'}]}) } if (!db.hello().isWritablePrimary) quit(1)" >/dev/null 2>&1
@@ -53,6 +53,15 @@ ready || {
   docker compose logs --tail 80 >&2
   exit 1
 }
+
+# A document that no longer matches its schema, for the schema check's tests: the
+# API refuses to write one and MongoDB's validator too, so it goes in with the
+# validation bypassed, as a schema change would have left it.
+docker compose exec -T mongo mongosh --quiet --eval 'printjson(db.getSiblingDB("adminui__main").runCommand({
+  insert: "labels",
+  documents: [{ _id: "drifted1", name: 42, _meta: { version: NumberLong(1), created_at: new Date(), updated_at: new Date() } }],
+  bypassDocumentValidation: true,
+}))' >/dev/null
 
 cd ui/admin
 (cd ../../clients/js && npm ci --no-audit --no-fund)

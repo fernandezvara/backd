@@ -10,7 +10,7 @@ import (
 
 // JobStat is the queue of one kind of job in one realm.
 type JobStat struct {
-	Kind string // function, schedule, email or erase
+	Kind string // function, schedule, email, erase or check
 	// Queued jobs wait for a worker, Running ones hold a lease, Waiting ones
 	// wait out the delay of a retry.
 	Queued, Running, Waiting int64
@@ -21,12 +21,14 @@ type JobStat struct {
 
 // JobKind names a job's kind from what it holds: the label values are this
 // closed list.
-func JobKind(email, erase, scheduled bool) string {
+func JobKind(email, erase, check, scheduled bool) string {
 	switch {
 	case email:
 		return "email"
 	case erase:
 		return "erase"
+	case check:
+		return "check"
 	case scheduled:
 		return "schedule"
 	}
@@ -104,7 +106,7 @@ func (m *Metrics) SetJobs(realm string, stats []JobStat, needsAttention int64) {
 	for _, s := range stats {
 		have[s.Kind] = true
 	}
-	for _, k := range []string{"function", "schedule", "email", "erase"} {
+	for _, k := range []string{"function", "schedule", "email", "erase", "check"} {
 		if !have[k] {
 			stats = append(stats, JobStat{Kind: k})
 		}

@@ -431,6 +431,55 @@
     "ms": "{n} ms",
     "loadFailed": "The invocation history could not be loaded."
   },
+  "checks": {
+    "title": "Schema checks",
+    "help": "Finds the stored documents that no longer match their collection's schema, for example after the schema changed. A check reads every document and never changes one.",
+    "panel": "Schema check",
+    "button": "Check documents against the schema",
+    "allChecks": "All schema checks",
+    "checkAll": "Check every collection",
+    "checkOne": "Check",
+    "collection": "Collection",
+    "scanned": "Documents read",
+    "invalid": "Invalid",
+    "finished": "Checked",
+    "actions": "Actions",
+    "never": "Never checked.",
+    "incomplete": "incomplete",
+    "showReport": "Show the report",
+    "empty": "This realm has no collections.",
+    "loadFailed": "The schema checks could not be loaded.",
+    "started": "Schema check started.",
+    "cancelled": "Schema check cancelled.",
+    "cancel": "Cancel the check",
+    "queued": "The check is queued, waiting for a worker.",
+    "running": "Checking {scope}",
+    "progress": "Progress of the schema check",
+    "needsWorker": "Checks run on a worker: with none running, it waits.",
+    "otherRunning": "A check of {scope} is running; only one runs at a time.",
+    "start": {
+      "title": "Check the documents against the schema?",
+      "body": "Every stored document, including those in the trash, is read and validated against the current schema. Nothing is changed.",
+      "action": "Start the check",
+      "everything": "Every collection of the realm",
+      "estimated": "About {n} documents to read.",
+      "warning": "This reads every document, so on a big collection it can take a long time and loads the database. It runs in the background: you can leave this page. Only one check runs at a time."
+    },
+    "report": {
+      "summary": "{scanned} documents read, {invalid} invalid.",
+      "meta": "Checked {at}, against schema {schema}.",
+      "clean": "Every document read matches the schema.",
+      "document": "Document",
+      "problems": "Problems",
+      "trash": "in the trash",
+      "root": "the document",
+      "more": "and {n} more",
+      "stopped": {
+        "limit": "Stopped: the limit of invalid documents was reached, so there may be more.",
+        "time": "Stopped: the time limit was reached before the end."
+      }
+    }
+  },
   "steps": {
     "omitted": "{n} steps left out",
     "progressOf": "Progress of {name}",

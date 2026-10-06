@@ -1526,6 +1526,139 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/data-checks:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+    get:
+      tags: [admin]
+      summary: The schema check running now and the latest report of every collection
+      description: |
+        `running` is the schema check queued or running now (the job, with the step
+        it is at in `progress`), or null. `items` lists every collection of the
+        realm with the summary of its latest report, or null when it was never
+        checked. Needs the `data` area (read is enough; for the read-only level,
+        `admin.read_access.data`).
+      operationId: adminListDataChecks
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The running check and the latest reports.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [running, items]
+                properties:
+                  running:
+                    oneOf:
+                      - type: "null"
+                      - { $ref: "#/components/schemas/JobSummary" }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [database, collection, report]
+                      properties:
+                        database: { type: string }
+                        collection: { type: string }
+                        report:
+                          oneOf:
+                            - type: "null"
+                            - { $ref: "#/components/schemas/CheckReportSummary" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [admin]
+      summary: Start a schema check
+      description: |
+        Queues a check of the documents that no longer match their collection's
+        schema: `collection` (with `database`), a whole `database`, or, with no body, every
+        collection of the realm. **A check reads every stored document, so on a
+        big collection it takes a long time and loads MongoDB.** It runs in the
+        background (a worker must be running) as a job, reporting one step per
+        collection with a total of 100, advancing every 5 percent; follow it with
+        `GET /jobs/{id}`, cancel it with `POST /jobs/{id}/cancel`. Each
+        collection's report is stored when it is done, replacing the previous
+        one. Only one check is queued or running per realm: another start answers
+        `409 check_running` with that job's id in `details`. It never writes
+        documents. Audited as `data.check`. Needs the `data` area (read is enough).
+      operationId: adminStartDataCheck
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                database: { type: string }
+                collection: { type: string, description: "Needs `database`." }
+                limit: { type: integer, minimum: 1, maximum: 1000, description: "How many invalid documents to list per collection (default 100); the scan of a collection stops when it finds that many." }
+      responses:
+        "202":
+          description: The check, queued.
+          headers:
+            Location: { schema: { type: string }, description: "`/v1/{realm}/_admin/jobs/{id}`." }
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [id, status, scope, collections, limit, estimated_documents, created_at]
+                properties:
+                  id: { type: string, description: The job's id. }
+                  status: { type: string }
+                  scope: { type: string, description: "`<database>/<collection>`, `<database>` or `*`." }
+                  collections: { type: array, items: { type: string }, description: "`<database>/<collection>` of each collection it will read." }
+                  limit: { type: integer }
+                  estimated_documents: { type: [integer, "null"], description: "About how many documents it will read, for the warning a client shows; null when the storage can't say." }
+                  created_at: { $ref: "#/components/schemas/Timestamp" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "`check_running`: another schema check is queued or running; its job id is in `details[0].reason`."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/data-checks/{database}/{collection}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { name: collection, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [admin]
+      summary: The latest schema check report of a collection
+      description: |
+        The documents that failed the schema when the collection was last
+        checked: for each, its id, whether it is soft-deleted, and up to 5
+        problems (a JSON path and the rule that failed, never the value). Needs
+        the `data` area (read is enough).
+      operationId: adminGetDataCheck
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The report.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckReport" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/jobs/{id}/cancel:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -2873,6 +3006,62 @@ components:
           items: { $ref: "#/components/schemas/Step" }
         steps_omitted: { type: integer, description: "How many steps were left out of the middle when there were more than 100." }
 
+    CheckReportSummary:
+      description: What a schema check found in one collection, without the documents.
+      type: object
+      additionalProperties: false
+      required: [database, collection, job_id, started_at, finished_at, scanned, invalid, complete, stopped_by, limit, schema_hash]
+      properties:
+        database: { type: string }
+        collection: { type: string }
+        job_id: { type: string, description: The check job that made it. }
+        started_at: { $ref: "#/components/schemas/Timestamp" }
+        finished_at: { $ref: "#/components/schemas/Timestamp" }
+        scanned: { type: integer, format: int64, description: How many documents it read. }
+        invalid: { type: integer, format: int64, description: How many did not match the schema (up to `limit`). }
+        complete: { type: boolean, description: "False when the scan stopped before the end." }
+        stopped_by: { type: [string, "null"], enum: [limit, time, null], description: "Why it stopped early: `limit` (it found `limit` invalid documents) or `time` (the 6-hour limit of an attempt)." }
+        limit: { type: integer }
+        schema_hash: { type: string, description: Identifies the schema the documents were checked against. }
+
+    CheckReport:
+      description: A collection's latest schema check report, with the invalid documents.
+      type: object
+      additionalProperties: false
+      required: [database, collection, job_id, started_at, finished_at, scanned, invalid, complete, stopped_by, limit, schema_hash, documents]
+      properties:
+        database: { type: string }
+        collection: { type: string }
+        job_id: { type: string, description: The check job that made it. }
+        started_at: { $ref: "#/components/schemas/Timestamp" }
+        finished_at: { $ref: "#/components/schemas/Timestamp" }
+        scanned: { type: integer, format: int64, description: How many documents it read. }
+        invalid: { type: integer, format: int64, description: How many did not match the schema (up to `limit`). }
+        complete: { type: boolean, description: "False when the scan stopped before the end." }
+        stopped_by: { type: [string, "null"], enum: [limit, time, null], description: "Why it stopped early: `limit` (it found `limit` invalid documents) or `time` (the 6-hour limit of an attempt)." }
+        limit: { type: integer }
+        schema_hash: { type: string, description: Identifies the schema the documents were checked against. }
+        documents:
+          type: array
+          description: The documents that failed, in id order, up to `limit`.
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, deleted, problems, more_problems]
+            properties:
+              id: { type: string }
+              deleted: { type: boolean, description: "True for a soft-deleted document (in the trash)." }
+              problems:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [path, reason]
+                  properties:
+                    path: { type: string, description: "A JSON path, dots between names (`items.2.price`); empty for the document itself. A name can come from the document." }
+                    reason: { type: string, description: "The rule that failed (`is required`, `got string, want number`...), never the value." }
+              more_problems: { type: integer, description: How many more problems were left out past 5. }
+
     Step:
       description: |
         One step a function reported with `ctx.step()`, and how far it got with
@@ -2914,13 +3103,15 @@ components:
       additionalProperties: false
       required: [id, function, status, scheduled, origin, email_kind, rerun_of, attempts, next_attempt_at, created_at, completed_at, result, progress]
       properties:
-        origin: { type: string, description: "Where the job came from: `http`, `function` (a `ctx.call`), `cron`, `admin`, `on_complete:<database>/<name>` (the notification a function's `on_complete` queues when its job ends), `backd:email.<kind>` (an email backd sends itself) or `function:<database>/<name>` (an email that function sent with `ctx.email.send`)." }
+        origin: { type: string, description: "Where the job came from: `http`, `function` (a `ctx.call`), `cron`, `admin`, `on_complete:<database>/<name>` (the notification a function's `on_complete` queues when its job ends), `backd:email.<kind>` (an email backd sends itself), `backd:schema.check` (a schema check) or `function:<database>/<name>` (an email that function sent with `ctx.email.send`)." }
         email_kind: { type: [string, "null"], description: "The kind of an email job (never its recipients or text); null for other jobs." }
         rerun_of: { type: [string, "null"], description: "The finished job an administrator re-ran to make this one; null otherwise." }
         steps:
           type: array
           description: "Only in the job's own detail (GET /jobs/{id}): what the running or last attempt reported, the last entry being the current step; at most 100."
           items: { $ref: "#/components/schemas/Step" }
+        collections: { type: array, items: { type: string }, description: "Only in `running` of the schema checks listing: the `<database>/<collection>` the check reads." }
+        limit: { type: integer, description: "Only there too: how many invalid documents it lists per collection." }
         steps_omitted: { type: integer, description: "Only in the detail: how many steps were left out of the middle when there were more than 100." }
         progress:
           description: "The current (latest) step of the running or last attempt, or null when the function reported none. The job's detail has every step."

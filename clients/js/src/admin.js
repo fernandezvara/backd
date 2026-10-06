@@ -203,6 +203,44 @@ import { Job } from './functions.js'
  */
 
 /**
+ * What a schema check found in one collection (without the documents).
+ * @typedef {object} CheckReportSummary
+ * @property {string} database
+ * @property {string} collection
+ * @property {string} job_id          The check job that made it.
+ * @property {string} started_at
+ * @property {string} finished_at
+ * @property {number} scanned         How many documents it read.
+ * @property {number} invalid         How many did not match the schema (up to `limit`).
+ * @property {boolean} complete       False when the scan stopped before the end.
+ * @property {'limit' | 'time' | null} stopped_by
+ * @property {number} limit
+ * @property {string} schema_hash     Identifies the schema the documents were checked against.
+ */
+
+/**
+ * A collection's latest schema check report, with the documents that failed.
+ * @typedef {CheckReportSummary & { documents: { id: string, deleted: boolean, problems: { path: string, reason: string }[], more_problems: number }[] }} CheckReport
+ */
+
+/**
+ * @typedef {object} DataCheckStarted
+ * @property {string} id                          The job's id.
+ * @property {string} status
+ * @property {string} scope                       `<database>/<collection>`, `<database>` or `*`.
+ * @property {string[]} collections               `<database>/<collection>` of each collection it reads.
+ * @property {number} limit
+ * @property {number | null} estimated_documents  About how many documents it reads; null when unknown.
+ * @property {string} created_at
+ */
+
+/**
+ * @typedef {object} DataChecksList
+ * @property {JobSummary | null} running   The check queued or running now (`progress` is the collection it is at).
+ * @property {{ database: string, collection: string, report: CheckReportSummary | null }[]} items   Every collection with its latest report, or null when never checked.
+ */
+
+/**
  * @typedef {object} JobsPage
  * @property {JobSummary[]} items    Newest first.
  * @property {number} limit
@@ -229,6 +267,8 @@ export class Admin {
     this.audit = new AdminAudit(this)
     /** The realm's async and scheduled jobs (read-only). */
     this.jobs = new AdminJobs(this)
+    /** Schema checks: which stored documents no longer match their collection's schema. */
+    this.dataChecks = new AdminDataChecks(this)
     /** The realm's schedules: list them, pause and resume them. */
     this.schedules = new AdminSchedules(this)
     /** Function secrets: set and delete their values, list their metadata. */
@@ -694,6 +734,77 @@ class AdminJobs {
    */
   async rerun(id, opts) {
     return (await this.admin._request({ method: 'POST', path: ['jobs', id, 'rerun'], ...opts })).data
+  }
+}
+
+class AdminDataChecks {
+  /** @param {Admin} admin */
+  constructor(admin) {
+    /** @internal */
+    this.admin = admin
+  }
+
+  /**
+   * Starts a check of the documents that no longer match their schema:
+   * `{ database, collection }` for one collection, `{ database }` for a database, nothing for
+   * every collection of the realm; `limit` (default 100, at most 1000) is how many invalid
+   * documents to list per collection. **It reads every stored document, so on a big
+   * collection it takes a long time and loads MongoDB**: `estimated_documents` in the answer
+   * is how many, for a warning. It runs as a job on a worker: follow it with `wait()`.
+   * Rejects with a `ConflictError` (code `check_running`, the running job's id in
+   * `details[0].reason`) while another check is queued or running in the realm.
+   * @param {{ database?: string, collection?: string, limit?: number }} [params]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<DataCheckStarted>}
+   */
+  async start(params = {}, opts) {
+    return (await this.admin._request({ method: 'POST', path: ['data-checks'], body: params, ...opts })).data
+  }
+
+  /**
+   * The check running now (or null) and every collection with its latest report
+   * summary (null when never checked).
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<DataChecksList>}
+   */
+  async list(opts) {
+    return (await this.admin._request({ method: 'GET', path: ['data-checks'], ...opts })).data
+  }
+
+  /**
+   * A collection's latest report in full. Rejects with a `NotFoundError` when it was never checked.
+   * @param {string} database
+   * @param {string} collection
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<CheckReport>}
+   */
+  async get(database, collection, opts) {
+    return (await this.admin._request({ method: 'GET', path: ['data-checks', database, collection], ...opts })).data
+  }
+
+  /**
+   * Waits for a started check to finish and returns the report of each collection it read.
+   * `onProgress(job)` is called after every poll with the job, whose `progress` is the
+   * step it is at (`name`, `current` percent, `message`). Throws when the check was
+   * cancelled or failed.
+   * @param {DataCheckStarted | string} started   What `start()` returned, or the job's id.
+   * @param {RequestOptions & { pollIntervalMs?: number, onProgress?: (job: JobSummary) => void }} [opts]
+   * @returns {Promise<CheckReport[]>}
+   */
+  async wait(started, opts = {}) {
+    const { pollIntervalMs = 2000, onProgress, ...rest } = opts
+    const id = typeof started === 'string' ? started : started.id
+    for (;;) {
+      const job = await this.admin.jobs.get(id, rest)
+      onProgress?.(job)
+      if (job.status === 'done') {
+        if (job.result?.status !== 'ok') throw new Error(`the schema check ${id} ended without a report: ${job.result?.status ?? 'no result'}`)
+        break
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
+    }
+    const collections = typeof started === 'string' ? (await this.list(rest)).items.filter((i) => i.report?.job_id === id).map((i) => `${i.database}/${i.collection}`) : started.collections
+    return Promise.all(collections.map((key) => this.get(key.slice(0, key.indexOf('/')), key.slice(key.indexOf('/') + 1), rest)))
   }
 }
 

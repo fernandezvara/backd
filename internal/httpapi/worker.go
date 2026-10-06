@@ -234,6 +234,10 @@ func (w *Worker) runJob(ctx context.Context, realm string, svc *auth.Users, job 
 		w.runErase(ctx, log, realm, svc, job) // not a function: a worker applies the policies itself
 		return
 	}
+	if job.Check != nil {
+		w.runCheck(ctx, log, realm, svc, job) // not a function either: a worker reads the collections itself
+		return
+	}
 	fn := w.fns.lookup(realm, job.Database, job.Function)
 	if fn == nil {
 		w.fail(ctx, log, svc, job, "the function no longer exists")
@@ -388,7 +392,9 @@ func (w *Worker) watchCancellation(ctx context.Context, svc *auth.Users, jobID s
 }
 
 // jobKind is the job's kind as the metrics name it.
-func jobKind(j auth.Job) string { return metrics.JobKind(j.Email != nil, j.Erase != nil, j.Scheduled) }
+func jobKind(j auth.Job) string {
+	return metrics.JobKind(j.Email != nil, j.Erase != nil, j.Check != nil, j.Scheduled)
+}
 
 // retryableStatus says whether an attempt that ended this way may succeed
 // when repeated: the function threw, ran out of time or resources, or its

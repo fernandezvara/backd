@@ -385,6 +385,8 @@ await backd.admin.invitations.revoke(invitation.id)
 const access = await backd.admin.whoami()                         // level, areas it may read and change
 const posts = backd.admin.data('blog', 'posts')                  // the admin data route: list/get/create/replace/patch/delete/restore, past the rules
 const config = await backd.admin.config()                         // what this instance runs for the realm, read-only
+const started = await backd.admin.dataChecks.start({ database: 'main', collection: 'orders' }) // reads every document: see estimated_documents
+const reports = await backd.admin.dataChecks.wait(started, { onProgress: (job) => console.log(job.progress?.current) })  // the documents that no longer match their schema
 const detail = await backd.admin.jobs.get(jobId)                // the job with every step it reported (detail.steps)
 await backd.admin.jobs.cancel(jobId)                              // a queued or running function job ends as "cancelled"
 const again = await backd.admin.jobs.rerun(jobId)                 // a finished one is queued again as a new job (again.rerun_of)

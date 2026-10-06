@@ -288,6 +288,25 @@ func registerRemote(cfg *cli.Config) {
 		boolean(cc, "json", "one JSON object per line, for other tools")
 	})
 
+	data := cfg.Command("data").ShortHelp("check the stored documents against their schemas")
+	checkFlags := func(cc *cli.CommandConfig) {
+		required(cc, "realm", "the realm")
+		optional(cc, "database", "only this database (default: every database of the realm)")
+		optional(cc, "collection", "only this collection (needs --database)")
+		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+		boolean(cc, "json", "one JSON object per line")
+	}
+	data.SubCommand("check").ShortHelp("report the documents that no longer match their collection's schema").
+		LongHelp("Starts a schema check and follows it: backd reads every stored document of the\ncollections (soft-deleted ones too), validates it against the collection's current\nschema as the API validates a write, and lists the invalid ones with the path and the\nrule that failed, never the values. It never writes. **It reads every document, so on a\nbig collection it takes a long time and loads MongoDB**: it runs in the background on a\nworker (one check per realm at a time) and this command follows its progress, in\nsteps of 5 percent, on stderr. Exits non-zero when drift is found or a collection was not\nchecked to the end. --no-wait only starts it and prints the job id; the latest reports\nstay readable with `backd data checks`. Audited as data.check. " + adminAPINote).
+		Func(act("data check", dataCheck)).Config(func(cc *cli.CommandConfig) {
+		checkFlags(cc)
+		cc.Define("limit").Int64().Flag("limit").Default(0).Min(0).Max(1000).Description("list at most this many invalid documents per collection (default 100, at most 1000)")
+		boolean(cc, "no-wait", "start the check and print its job id, without following it")
+		cc.Define("interval").String().Flag("interval").Default("2s").Description("how often to ask the server for progress")
+	})
+	data.SubCommand("checks").ShortHelp("print the latest schema check reports").
+		LongHelp("Lists every collection of the realm with its latest schema check (documents read,\ninvalid, whether it was complete, when it finished), and notes a check running now. With\n--database and --collection prints that collection's report in full. " + adminAPINote).
+		Func(act("data checks", dataChecks)).Config(checkFlags)
 	fn := cfg.Command("functions").ShortHelp("build, call and inspect server-side functions")
 	fn.SubCommand("build").ShortHelp("bundle every function in CONFIG_DIR with deno").
 		LongHelp("Bundles every function in CONFIG_DIR with `deno bundle` into\n<realm>/<database>/_functions/.build/, one file per function named by its\ncontent hash, and records them in .build/manifest.json. Needs only CONFIG_DIR\nand Deno " + registry.DenoVersion + " (DENO, or deno on the PATH). --check also type-checks\nTypeScript. backd refuses to start while any bundle is missing or stale, so\nbuild after every change to a functions project, before provisioning or\ndeploying.").

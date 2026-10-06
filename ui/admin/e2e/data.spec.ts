@@ -210,7 +210,7 @@ test('deleting goes to the trash, which can be browsed, restored and emptied', a
   await expect(page.getByTestId('docs-table')).toContainText(made.id)
   await page.getByRole('button', { name: `Restore ${made.id}` }).click()
   await expect(page.getByTestId('docs-table')).not.toContainText(made.id)
-  await page.getByRole('button', { name: 'Documents' }).click()
+  await page.getByRole('button', { name: 'Documents', exact: true }).click()
   await page.getByLabel('Write the query as JSON').check()
   await page.locator('#raw-where').fill(JSON.stringify({ id: made.id }))
   await page.getByRole('button', { name: 'Apply' }).click()

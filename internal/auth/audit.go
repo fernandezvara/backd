@@ -46,6 +46,9 @@ const (
 	AuditDataDelete  = "data.delete"
 	AuditDataRestore = "data.restore"
 	AuditDataPurge   = "data.purge"
+	// A schema check started by an administrator; the target is the scope
+	// (<database>/<collection>, <database> or the realm), details: collections, limit.
+	AuditDataCheck = "data.check"
 	// A job cancelled or re-run by an administrator; the target is job:<id>,
 	// details: function (and, for a re-run, the new job's id).
 	AuditJobCancel = "job.cancel"

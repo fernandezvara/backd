@@ -55,7 +55,12 @@ type Job struct {
 	// message and no token.
 	Email *EmailJob
 	// Erase is set on an erase job (origin backd:account.erase).
-	Erase         *EraseJob
+	Erase *EraseJob
+	// Check is set on a schema check's job (origin CheckOrigin).
+	Check *CheckJob
+	// Exclusive, when set, lets only one job of that name be unfinished at a
+	// time: enqueuing another fails with ErrJobExclusive.
+	Exclusive     string
 	TimeoutMS     int64 // the function's timeout at enqueue time, for the worker's lease
 	RequestID     string
 	Status        string    // queued | running | done
@@ -251,7 +256,7 @@ func (s *Users) RerunJob(ctx context.Context, id string, timeoutMS int64) (Job, 
 	if !found {
 		return Job{}, ErrNotFound
 	}
-	if j.Email != nil || j.Erase != nil {
+	if j.Email != nil || j.Erase != nil || j.Check != nil {
 		return Job{}, ErrJobNotFunction
 	}
 	if j.Status != JobDone {

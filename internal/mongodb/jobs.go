@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -60,6 +61,8 @@ type jobDoc struct {
 	Origin         string        `bson:"origin,omitempty"`
 	Email          *emailJobDoc  `bson:"email,omitempty"`
 	Erase          *eraseJobDoc  `bson:"erase,omitempty"`
+	Check          *checkJobDoc  `bson:"check,omitempty"`
+	Exclusive      string        `bson:"exclusive,omitempty"`
 	ParentID       string        `bson:"parent_id,omitempty"`
 	RerunOf        string        `bson:"rerun_of,omitempty"`
 	Depth          int32         `bson:"depth,omitempty"`
@@ -118,6 +121,27 @@ func stepsFromDocs(docs []stepDoc) []auth.Step {
 		out[i] = st
 	}
 	return out
+}
+
+type checkJobDoc struct {
+	Collections []string `bson:"collections"`
+	Database    string   `bson:"database,omitempty"`
+	Collection  string   `bson:"collection,omitempty"`
+	Limit       int32    `bson:"limit"`
+}
+
+func checkToDoc(c *auth.CheckJob) *checkJobDoc {
+	if c == nil {
+		return nil
+	}
+	return &checkJobDoc{Collections: c.Collections, Database: c.Database, Collection: c.Collection, Limit: int32(c.Limit)}
+}
+
+func checkFromDoc(d *checkJobDoc) *auth.CheckJob {
+	if d == nil {
+		return nil
+	}
+	return &auth.CheckJob{Collections: d.Collections, Database: d.Database, Collection: d.Collection, Limit: int(d.Limit)}
 }
 
 type eraseJobDoc struct {
@@ -227,7 +251,7 @@ func jobFromDoc(d jobDoc) auth.Job {
 	j := auth.Job{
 		ID: d.ID, Database: d.Database, Function: d.Function, Input: encodeJSONAny(d.Input),
 		CallerActor: d.CallerActor, CallerUserID: d.CallerUserID, CallerKeyHash: d.CallerKeyHash, Scheduled: d.Scheduled,
-		ActsAsFunction: d.ActsAsFunction, Email: emailJobFromDoc(d.Email), Erase: eraseFromDoc(d.Erase), Origin: d.Origin, ParentID: d.ParentID, RerunOf: d.RerunOf, Depth: int(d.Depth),
+		ActsAsFunction: d.ActsAsFunction, Email: emailJobFromDoc(d.Email), Erase: eraseFromDoc(d.Erase), Check: checkFromDoc(d.Check), Exclusive: d.Exclusive, Origin: d.Origin, ParentID: d.ParentID, RerunOf: d.RerunOf, Depth: int(d.Depth),
 		TimeoutMS: d.TimeoutMS, RequestID: d.RequestID,
 		Status: d.Status, Attempts: int(d.Attempts), CreatedAt: d.CreatedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC(),
 		Result: jobResultFromDoc(d.Result), Steps: stepsFromDocs(d.Steps), StepsOmitted: int(d.StepsOmitted),
@@ -259,11 +283,14 @@ func (s *AuthStore) EnqueueJob(ctx context.Context, j auth.Job) error {
 	_, err = s.jobs().InsertOne(ctx, jobDoc{
 		ID: j.ID, Database: j.Database, Function: j.Function, Input: input,
 		CallerActor: j.CallerActor, CallerUserID: j.CallerUserID, CallerKeyHash: j.CallerKeyHash, Scheduled: j.Scheduled, Status: j.Status,
-		ActsAsFunction: j.ActsAsFunction, Email: emailJobToDoc(j.Email), Erase: eraseToDoc(j.Erase), Origin: j.Origin, ParentID: j.ParentID, RerunOf: j.RerunOf, Depth: int32(j.Depth),
+		ActsAsFunction: j.ActsAsFunction, Email: emailJobToDoc(j.Email), Erase: eraseToDoc(j.Erase), Check: checkToDoc(j.Check), Exclusive: j.Exclusive, Origin: j.Origin, ParentID: j.ParentID, RerunOf: j.RerunOf, Depth: int32(j.Depth),
 		Attempts: 0, TimeoutMS: j.TimeoutMS, RequestID: j.RequestID,
 		CreatedAt: j.CreatedAt, CompletedAt: completed, ExpiresAt: j.ExpiresAt, Result: result,
 	})
 	if mongo.IsDuplicateKeyError(err) {
+		if strings.Contains(err.Error(), "exclusive") { // the unique index on exclusive, not the id
+			return auth.ErrJobExclusive
+		}
 		return auth.ErrJobExists
 	}
 	return err
@@ -315,6 +342,16 @@ func (s *AuthStore) SetJobSteps(ctx context.Context, id string, attempt int, ste
 	return res.MatchedCount == 1, nil
 }
 
+// RenewJobLease moves the lease of the running attempt to until.
+func (s *AuthStore) RenewJobLease(ctx context.Context, id string, attempt int, until time.Time) (bool, error) {
+	filter := bson.D{{Key: "_id", Value: id}, {Key: "status", Value: auth.JobRunning}, {Key: "attempts", Value: int32(attempt)}}
+	res, err := s.jobs().UpdateOne(ctx, filter, bson.D{{Key: "$set", Value: bson.D{{Key: "lease_expires", Value: until}}}})
+	if err != nil {
+		return false, err
+	}
+	return res.MatchedCount == 1, nil
+}
+
 // CompleteJob records a job's result; expiresAt starts its retention
 // countdown. The update is conditional on the job not already being
 // done, so a worker whose lease expired and was reclaimed can't finish
@@ -325,12 +362,15 @@ func (s *AuthStore) CompleteJob(ctx context.Context, id string, result auth.JobR
 		return err
 	}
 	filter := bson.D{{Key: "_id", Value: id}, {Key: "status", Value: bson.D{{Key: "$ne", Value: auth.JobDone}}}}
-	_, err = s.jobs().UpdateOne(ctx, filter, bson.D{{Key: "$set", Value: bson.D{
-		{Key: "status", Value: auth.JobDone},
-		{Key: "completed_at", Value: completedAt},
-		{Key: "expires_at", Value: expiresAt},
-		{Key: "result", Value: doc},
-	}}})
+	_, err = s.jobs().UpdateOne(ctx, filter, bson.D{
+		{Key: "$set", Value: bson.D{
+			{Key: "status", Value: auth.JobDone},
+			{Key: "completed_at", Value: completedAt},
+			{Key: "expires_at", Value: expiresAt},
+			{Key: "result", Value: doc},
+		}},
+		{Key: "$unset", Value: bson.D{{Key: "exclusive", Value: ""}}}, // frees its exclusive name
+	})
 	return err
 }
 
@@ -352,7 +392,7 @@ func (s *AuthStore) CancelJob(ctx context.Context, id string, result auth.JobRes
 			{Key: "result", Value: doc},
 			{Key: "steps", Value: stepsToDocs(steps)},
 		}},
-		{Key: "$unset", Value: bson.D{{Key: "lease_owner", Value: ""}, {Key: "lease_expires", Value: ""}, {Key: "next_attempt_at", Value: ""}}},
+		{Key: "$unset", Value: bson.D{{Key: "lease_owner", Value: ""}, {Key: "lease_expires", Value: ""}, {Key: "next_attempt_at", Value: ""}, {Key: "exclusive", Value: ""}}},
 	})
 	if err != nil {
 		return false, err
@@ -480,6 +520,7 @@ func (s *AuthStore) JobStats(ctx context.Context, now time.Time) ([]metrics.JobS
 		{Key: "branches", Value: bson.A{
 			bson.D{{Key: "case", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$email", false}}}}, {Key: "then", Value: "email"}},
 			bson.D{{Key: "case", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$erase", false}}}}, {Key: "then", Value: "erase"}},
+			bson.D{{Key: "case", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$check", false}}}}, {Key: "then", Value: "check"}},
 			bson.D{{Key: "case", Value: bson.D{{Key: "$eq", Value: bson.A{bson.D{{Key: "$ifNull", Value: bson.A{"$scheduled", false}}}, true}}}}, {Key: "then", Value: "schedule"}},
 		}},
 		{Key: "default", Value: "function"},

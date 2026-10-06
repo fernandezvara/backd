@@ -67,7 +67,12 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		r.With(fns).Get("/invocations", a.listInvocations)
 		r.With(fns).Get("/jobs", a.listJobs)
 		r.With(fns).Get("/jobs/{id}", a.getJob)
-		r.With(fns).Post("/jobs/{id}/cancel", a.cancelJob)
+		// Cancelling needs the functions area, except for a schema check, which the data
+		// area's readers may cancel as they start it: cancelJob looks at the job.
+		r.Post("/jobs/{id}/cancel", a.cancelJob)
+		r.With(a.needRead(registry.RightData)).Get("/data-checks", a.listDataChecks)
+		r.With(a.needRead(registry.RightData)).Post("/data-checks", a.startDataCheck)
+		r.With(a.needRead(registry.RightData)).Get("/data-checks/{database}/{collection}", a.getDataCheck)
 		r.With(fns).Post("/jobs/{id}/rerun", a.rerunJob)
 		r.With(fns).Get("/schedules", a.listSchedules)
 		r.With(fns).Post("/functions/{database}/{name}/pause", a.pauseSchedule(true))
@@ -161,6 +166,20 @@ func (a *adminAPI) need(right registry.AdminRights) func(http.Handler) http.Hand
 				rightRefused(w, r, fmt.Sprintf("your roles can read the %q admin area but not change it", right))
 				return
 			default:
+				rightRefused(w, r, fmt.Sprintf("this endpoint needs the %q admin right; your roles open: %s", right, have))
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// needRead lets in an administrator who can read the area, whatever the
+// method: starting a schema check reads documents and writes none.
+func (a *adminAPI) needRead(right registry.AdminRights) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if have := adminAccessOf(r); !have.CanRead(usersOf(r).Settings, right) {
 				rightRefused(w, r, fmt.Sprintf("this endpoint needs the %q admin right; your roles open: %s", right, have))
 				return
 			}
@@ -1198,6 +1217,16 @@ func jobError(w http.ResponseWriter, r *http.Request, err error) {
 func (a *adminAPI) cancelJob(w http.ResponseWriter, r *http.Request) {
 	svc := usersOf(r)
 	id := chi.URLParam(r, "id")
+	have, settings := adminAccessOf(r), svc.Settings
+	if found, ok, _ := svc.GetJob(r.Context(), id); ok && found.Check != nil {
+		if !have.CanRead(settings, registry.RightData) {
+			rightRefused(w, r, fmt.Sprintf("cancelling a schema check needs the %q admin right; your roles open: %s", registry.RightData, have))
+			return
+		}
+	} else if !have.CanWrite(registry.RightFunctions) {
+		rightRefused(w, r, fmt.Sprintf("this endpoint needs the %q admin right to change; your roles open: %s", registry.RightFunctions, have))
+		return
+	}
 	j, err := svc.CancelJob(r.Context(), id)
 	if err != nil {
 		jobError(w, r, err)
@@ -1248,9 +1277,13 @@ func (a *adminAPI) rerunJob(w http.ResponseWriter, r *http.Request) {
 // jobSummaryJSON is a job as the admin listing shows it: state and how it
 // ended, never its input or output.
 func jobSummaryJSON(j auth.Job) map[string]any {
+	function := j.Database + "/" + j.Function
+	if j.Check != nil {
+		function = checkScope(j.Check.Database, j.Check.Collection)
+	}
 	out := map[string]any{
 		"id":              j.ID,
-		"function":        j.Database + "/" + j.Function,
+		"function":        function,
 		"status":          j.Status,
 		"scheduled":       j.Scheduled,
 		"origin":          j.Origin,
