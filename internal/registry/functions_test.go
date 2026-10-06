@@ -171,6 +171,12 @@ func TestFunctionErrors(t *testing.T) {
 		{"timezone needs schedule", fn("mode: async\ntimezone: Europe/Madrid\n"), "timezone: only applies to a scheduled function"},
 		{"timezone unknown", fn("mode: async\nschedule: \"* * * * *\"\ntimezone: Mars/Olympus\n"), `timezone: "Mars/Olympus" is not an IANA time zone name`},
 		{"timezone Local", fn("mode: async\nschedule: \"* * * * *\"\ntimezone: Local\n"), `timezone: "Local" is not an IANA`},
+		{"on_complete needs async", fn("on_complete: {function: g}\n"), "on_complete: needs mode: async"},
+		{"on_complete itself", fn("mode: async\non_complete: {function: f}\n"), `on_complete.function: "f" is the function itself`},
+		{"on_complete bad name", fn("mode: async\non_complete: {function: Not_A_Name}\n"), "on_complete.function: \"Not_A_Name\" is not a valid function name"},
+		{"on_complete bad ending", fn("mode: async\non_complete: {function: g, on: [done]}\n"), `on_complete.on[0]: "done" must be ok, failed or cancelled`},
+		{"on_complete twice", fn("mode: async\non_complete: {function: g, on: [ok, ok]}\n"), `on_complete.on[1]: "ok" is listed twice`},
+		{"on_complete unknown key", fn("mode: async\non_complete: {function: g, url: https://x.example}\n"), "field url not found"},
 		{"overlap value", fn("mode: async\nschedule: \"* * * * *\"\noverlap: queue\n"), `overlap: must be allow or skip, got "queue"`},
 		{"overlap needs schedule", fn("mode: async\noverlap: skip\n"), "overlap: only applies to a scheduled function"},
 		{"async timeout cap", fn("mode: async\ntimeout: 25h\n"), "between 1s and 24h0m0s for async functions"},
@@ -384,6 +390,44 @@ func TestScheduledFunctionOverlap(t *testing.T) {
 	}
 	if got := reg.Realms["shop"].Databases["app"].Functions.Functions["sync"].Overlap; got != OverlapSkip {
 		t.Fatalf("overlap = %q", got)
+	}
+}
+
+func TestOnComplete(t *testing.T) {
+	files := func(extra map[string]string) map[string]string {
+		m := map[string]string{
+			fnPrefix + "export/function.yaml": "mode: async\non_complete: {function: notify, on: [failed, cancelled]}\n",
+			fnPrefix + "export/index.js":      "export default () => 1;\n",
+			fnPrefix + "notify/function.yaml": "mode: async\n",
+			fnPrefix + "notify/index.js":      "export default () => 1;\n",
+		}
+		for k, v := range extra {
+			m[k] = v
+		}
+		return m
+	}
+	reg, err := Load(functionTree(t, files(nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	oc := reg.Realms["shop"].Databases["app"].Functions.Functions["export"].OnComplete
+	if oc == nil || oc.Function != "notify" || !oc.Notifies(CompleteFailed) || !oc.Notifies(CompleteCancelled) || oc.Notifies(CompleteOK) {
+		t.Errorf("on_complete = %+v", oc)
+	}
+	if !(&OnComplete{Function: "n"}).Notifies(CompleteOK) || (*OnComplete)(nil).Notifies(CompleteOK) {
+		t.Error("an empty on tells every ending; no on_complete tells none")
+	}
+	for name, tt := range map[string]struct {
+		extra map[string]string
+		want  string
+	}{
+		"unknown target": {map[string]string{fnPrefix + "notify/function.yaml": "mode: async\n", fnPrefix + "export/function.yaml": "mode: async\non_complete: {function: ghost}\n"}, `"ghost" is not a function of this database`},
+		"sync target":    {map[string]string{fnPrefix + "notify/function.yaml": "mode: sync\n"}, `"notify" must be mode: async`},
+		"chain":          {map[string]string{fnPrefix + "notify/function.yaml": "mode: async\non_complete: {function: export}\n"}, "notifications don't chain"},
+	} {
+		if _, err := Load(functionTree(t, files(tt.extra))); err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Errorf("%s: %v, want %q", name, err, tt.want)
+		}
 	}
 }
 

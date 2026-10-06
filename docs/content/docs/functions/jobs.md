@@ -80,7 +80,7 @@ A retry runs the function again, so it must be safe to repeat ([below](#designin
 
 ## Knowing when a job finished
 
-`backd` doesn't push a notification when a job ends; you ask, or the function tells you. Pick what fits:
+`backd` can queue a function when a job ends ([`on_complete`](#be-told-when-it-ends-on_complete)); otherwise you ask, or the function tells you. Pick what fits:
 
 ### Poll the job
 
@@ -163,6 +163,38 @@ backd functions rerun --realm workshop --job d3c9ljp8hc2g00b6s1m0
 
 - **Cancel** ends a `queued` job (one waiting for a [retry](#retrying-a-failed-job) too) or a `running` one at once: it is `done`, with the result `cancelled`, and nobody claims it again. A worker that is running it looks every couple of seconds, notices, and stops the run (the executor kills the process); the attempt shows in the [history](../logs/) as `cancelled`. **What the function already did stays done**, as when a worker is lost, so a function that changes things must be [safe to repeat](#designing-jobs-that-are-safe-to-repeat). A job that has already finished answers `409`.
 - **Re-run** queues a **new job** for a finished one (any result, a cancelled one included): the same function, the same stored input and the same caller, so it behaves as the first run did (a scheduled run's re-run acts as the function, like the run). It has its own id, `origin: admin` and `rerun_of` naming the original, which keeps its own result. A job that hasn't finished, or whose function no longer exists, answers `409`. The input is the one stored with the job, so a re-run is only possible until the job [expires](#storage-and-retention).
+
+### Be told when it ends: on_complete
+
+Name an async function in `on_complete` and `backd` queues it whenever a job of this function ends, so nothing has to poll:
+
+```yaml
+# export_orders/function.yaml
+mode: async
+on_complete:
+  function: tell_ops     # an async function of the same database
+  on: [failed, cancelled] # optional: ok, failed, cancelled; every ending when left out
+```
+
+The notification is **a job of its own**, run by a worker like any other, so it is visible in the [job list](#list-jobs-administrators) (origin `on_complete:<database>/<function>`) and in the [history](../logs/), and the target's own [`retry:`](#retrying-a-failed-job) applies when it fails. Its input is:
+
+```json
+{
+  "job_id": "d3c9ljp8hc2g00b6s1m0",
+  "function": "main/export_orders",
+  "status": "failed",
+  "result": { "status": "timeout", "code": null, "message": null, "duration_ms": 900000 },
+  "attempts": 1, "scheduled": false, "origin": "http",
+  "created_at": "2026-10-05T10:00:00Z", "completed_at": "2026-10-05T10:15:00Z"
+}
+```
+
+`status` is `ok`, `failed` (any result but `ok`: a `ctx.error`, a timeout, a crash, a failure of `backd` itself) or `cancelled` (an administrator [cancelled it](#cancelling-and-re-running-a-job)). `result` is the job's [result](#the-life-of-a-job). **The job's own input and output are not sent**: read the job by id if the handler needs them.
+
+- **It is one notification per finished job**, however many attempts the job took: it is queued when the job ends, not on each failed attempt, and its id comes from the job, so it can't be queued twice. A [re-run](#cancelling-and-re-running-a-job) is a new job and notifies again.
+- **The handler has no caller.** `ctx.user` is `null` and `ctx.db` acts as an anonymous caller; give the handler `admin: true` if it must write, and declare `network:` and `secrets:` for a chat or webhook call (see [Network](../network/)). To call a URL, write that in the handler.
+- **Not every end is told.** A run [skipped](../cron/#skipping-a-run-while-the-previous-one-is-going) by `overlap: skip` never ran and isn't. A notification is not queued if `backd` stops in the instant between the job ending and the notification being queued: the job's result stands, and a handler that must not miss one should also [check the job list](#list-jobs-administrators) now and then.
+- **No chains.** The target must be `mode: async`, a different function, with no `on_complete` of its own; startup stops otherwise.
 
 ### Have the function say so
 

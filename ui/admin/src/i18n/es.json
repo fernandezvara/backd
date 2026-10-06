@@ -380,6 +380,7 @@
     "noneValue": "Ninguno",
     "noSchedule": "Sin programar",
     "overlapSkip": "Omite una ejecución mientras la anterior sigue en marcha",
+    "onComplete": "Al terminar",
     "paused": "En pausa",
     "pause": { "open": "Pausar", "done": "Programación de {function} en pausa." },
     "resume": { "open": "Reanudar", "done": "Programación de {function} reanudada." },

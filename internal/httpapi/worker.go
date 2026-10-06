@@ -342,11 +342,13 @@ func (w *Worker) execute(ctx context.Context, log *slog.Logger, realm string, sv
 		}
 		log.Warn("attempts used up; the job fails", "attempts", rp.Attempts, "status", res.Status)
 	}
-	if err := svc.CompleteJob(ctx, job.ID, jobResultFromExecutor(res)); err != nil {
+	result := jobResultFromExecutor(res)
+	if err := svc.CompleteJob(ctx, job.ID, result); err != nil {
 		log.Error("complete job", "error", err)
 		return
 	}
 	w.fns.metrics.JobFinished(svc.Realm, jobKind(job), res.Status)
+	w.fns.notifyCompletion(ctx, log, svc, job, result)
 }
 
 // cancelPollInterval is how often a worker looks whether the job it is running
@@ -409,6 +411,7 @@ func (w *Worker) fail(ctx context.Context, log *slog.Logger, svc *auth.Users, jo
 		return
 	}
 	w.fns.metrics.JobFinished(svc.Realm, jobKind(job), res.Status)
+	w.fns.notifyCompletion(ctx, log, svc, job, res)
 }
 
 // callerFor reconstructs the caller that enqueued job, fetching the

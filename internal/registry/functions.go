@@ -103,8 +103,9 @@ type Function struct {
 	Calls                 []string       // functions of the same database this one may ctx.call
 	Schedule              *cron.Schedule // nil: not scheduled
 	ScheduleExpr          string
-	Timezone              string // IANA name the schedule is read in; "UTC" unless set. Empty when not scheduled
-	Overlap               string // allow (default) or skip: what a scheduled time does while the previous run hasn't finished
+	OnComplete            *OnComplete // nil: nothing is told when a job ends
+	Timezone              string      // IANA name the schedule is read in; "UTC" unless set. Empty when not scheduled
+	Overlap               string      // allow (default) or skip: what a scheduled time does while the previous run hasn't finished
 	Secrets               []SecretRef
 	Network               []string // hosts (host or host:port) the function may reach
 	InputSchema           *jsonschema.Schema
@@ -182,9 +183,33 @@ type functionDoc struct {
 	Calls       []string `yaml:"calls"`
 	Schedule    *string  `yaml:"schedule"`
 	Timezone    *string  `yaml:"timezone"`
-	Overlap     *string  `yaml:"overlap"`
-	Secrets     []string `yaml:"secrets"`
-	Network     []string `yaml:"network"`
+	OnComplete  *struct {
+		Function string   `yaml:"function"`
+		On       []string `yaml:"on"`
+	} `yaml:"on_complete"`
+	Overlap *string  `yaml:"overlap"`
+	Secrets []string `yaml:"secrets"`
+	Network []string `yaml:"network"`
+}
+
+// The endings a job's on_complete notification can be limited to (`on`).
+const (
+	CompleteOK        = "ok"        // the function returned
+	CompleteFailed    = "failed"    // any other result: an error, a timeout, a crash
+	CompleteCancelled = "cancelled" // an administrator cancelled the job
+)
+
+// OnComplete says which async function is queued, as a job of its own, when a
+// job of this function ends.
+type OnComplete struct {
+	Function string   // a function of the same database
+	On       []string // the endings that notify; every one when empty
+}
+
+// Notifies reports whether an ending (CompleteOK, CompleteFailed or
+// CompleteCancelled) is told.
+func (o *OnComplete) Notifies(ending string) bool {
+	return o != nil && (len(o.On) == 0 || slices.Contains(o.On, ending))
 }
 
 // What a scheduled time does while the function's previous run hasn't finished.
@@ -273,6 +298,20 @@ func checkCalls(fns *Functions) []error {
 			if _, ok := fns.Functions[c]; !ok {
 				errs = append(errs, fmt.Errorf("%s: calls: %q is not a function of this database", file(n), c))
 			}
+		}
+	}
+	for _, n := range names {
+		oc := fns.Functions[n].OnComplete
+		if oc == nil {
+			continue
+		}
+		switch t := fns.Functions[oc.Function]; {
+		case t == nil:
+			errs = append(errs, fmt.Errorf("%s: on_complete.function: %q is not a function of this database", file(n), oc.Function))
+		case t.Mode != ModeAsync:
+			errs = append(errs, fmt.Errorf("%s: on_complete.function: %q must be mode: async (the notification is a job, so it can be retried)", file(n), oc.Function))
+		case t.OnComplete != nil:
+			errs = append(errs, fmt.Errorf("%s: on_complete.function: %q has an on_complete of its own (notifications don't chain)", file(n), oc.Function))
 		}
 	}
 	for _, n := range names {
@@ -581,6 +620,30 @@ func loadFunction(db *Database, settings RealmSettings, name, dir string) (*Func
 			add("timezone: %q is not an IANA time zone name such as Europe/Madrid or UTC", *doc.Timezone)
 		case fn.Schedule != nil:
 			fn.Schedule, fn.Timezone = fn.Schedule.In(loc), *doc.Timezone
+		}
+	}
+
+	if oc := doc.OnComplete; oc != nil {
+		switch {
+		case fn.Mode != ModeAsync:
+			add("on_complete: needs mode: async (only async functions have jobs)")
+		case !namePattern.MatchString(oc.Function):
+			add("on_complete.function: %q is not a valid function name", oc.Function)
+		case oc.Function == name:
+			add("on_complete.function: %q is the function itself", oc.Function)
+		default:
+			on := &OnComplete{Function: oc.Function}
+			for i, e := range oc.On {
+				switch {
+				case e != CompleteOK && e != CompleteFailed && e != CompleteCancelled:
+					add("on_complete.on[%d]: %q must be %s, %s or %s", i, e, CompleteOK, CompleteFailed, CompleteCancelled)
+				case slices.Contains(on.On, e):
+					add("on_complete.on[%d]: %q is listed twice", i, e)
+				default:
+					on.On = append(on.On, e)
+				}
+			}
+			fn.OnComplete = on
 		}
 	}
 

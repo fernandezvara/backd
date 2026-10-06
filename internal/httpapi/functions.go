@@ -1002,3 +1002,64 @@ func (f *functions) bundle(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 	w.Write(data)
 }
+
+// completionEnding is how a job's result is told to its on_complete function.
+func completionEnding(status string) string {
+	switch status {
+	case executor.StatusOK:
+		return registry.CompleteOK
+	case executor.StatusCancelled:
+		return registry.CompleteCancelled
+	}
+	return registry.CompleteFailed
+}
+
+// notifyCompletion queues the on_complete notification of a job that just
+// ended with result, when its function has one and the ending is among those it
+// wants. The notification is a job of its own (its id comes from the finished
+// job, so it is queued once), which a worker runs with the target function's own
+// retry policy; the job shows in the job list with the origin
+// on_complete:<database>/<function>. A failure to queue it is logged, not
+// retried: the finished job's result stands either way.
+//
+// The input carries the job's id, function and outcome, never its input or
+// output (read the job by id for those).
+func (f *functions) notifyCompletion(ctx context.Context, log *slog.Logger, svc *auth.Users, job auth.Job, result auth.JobResult) {
+	fn := f.lookup(svc.Realm, job.Database, job.Function)
+	if fn == nil || fn.OnComplete == nil {
+		return
+	}
+	ending := completionEnding(result.Status)
+	if !fn.OnComplete.Notifies(ending) {
+		return
+	}
+	target := f.lookup(svc.Realm, job.Database, fn.OnComplete.Function)
+	if target == nil {
+		return
+	}
+	payload := map[string]any{
+		"job_id": job.ID, "function": job.Database + "/" + job.Function, "status": ending,
+		"result":   map[string]any{"status": result.Status, "code": nilIfEmpty(result.Code), "message": nilIfEmpty(result.Message), "duration_ms": result.DurationMS},
+		"attempts": job.Attempts, "scheduled": job.Scheduled, "origin": job.Origin,
+		"created_at": job.CreatedAt.UTC().Format(time.RFC3339Nano), "completed_at": f.docs.now().UTC().Format(time.RFC3339Nano),
+	}
+	input, err := json.Marshal(payload)
+	if err != nil {
+		log.Error("on_complete: encode the notification", "job_id", job.ID, "error", err)
+		return
+	}
+	n, created, err := svc.EnqueueCompletionJob(ctx, job, target.Name, target.Timeout.Milliseconds(), input)
+	switch {
+	case err != nil:
+		log.Error("on_complete: queue the notification", "job_id", job.ID, "function", fn.OnComplete.Function, "error", err)
+	case created:
+		log.Info("on_complete: notification queued", "job_id", job.ID, "notification_job_id", n.ID, "function", fn.OnComplete.Function, "ending", ending)
+	}
+}
+
+func nilIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}

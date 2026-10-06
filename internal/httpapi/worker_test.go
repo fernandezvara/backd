@@ -289,6 +289,102 @@ func TestWorkerSkipsAnOverlappingScheduledRun(t *testing.T) {
 	}
 }
 
+// TestOnCompleteNotifiesAJobsEnd proves on_complete: when a job ends, the
+// function named is queued as a job of its own with the outcome (never the
+// job's input or output), once per finished job, for the endings it asked for:
+// a success, a failure, and a cancel by an administrator.
+func TestOnCompleteNotifiesAJobsEnd(t *testing.T) {
+	f := newRulesFixture(t)
+	w := newTestWorker(t, f)
+	ctx := context.Background()
+	f.svc.Realm = "acme" // the fixture's service has none; a real one does
+	fns := f.reg.Realms["acme"].Databases["app"].Functions.Functions
+	fns["job"].OnComplete = &registry.OnComplete{Function: "tally"}
+	fns["flaky"].Retry = nil
+	fns["flaky"].OnComplete = &registry.OnComplete{Function: "tally", On: []string{registry.CompleteFailed, registry.CompleteCancelled}}
+	_, adminKey, err := f.svc.CreateAPIKey(ctx, "notify-admin", auth.KeyOptions{Role: auth.KeyRoleAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	enqueue := func(fn string) string {
+		t.Helper()
+		rec, out := f.doH(t, "POST", "/v1/acme/app/_func/"+fn, `{"secret": "input-value"}`, bearer(f.ada))
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("enqueue %s: %d %v", fn, rec.Code, out)
+		}
+		return out["id"].(string)
+	}
+	notification := func(id string) (auth.Job, bool) {
+		t.Helper()
+		j, ok, err := f.svc.GetJob(ctx, auth.CompletionJobID(id))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return j, ok
+	}
+
+	// A success tells the function, as a job with no caller.
+	id := enqueue("job")
+	w.RunOnce(ctx)
+	n, ok := notification(id)
+	if !ok || n.Status != auth.JobQueued || n.Function != "tally" || n.Origin != "on_complete:app/job" || n.CallerUserID != "" || n.Scheduled {
+		t.Fatalf("the notification: %+v %v", n, ok)
+	}
+	var in map[string]any
+	if err := json.Unmarshal(n.Input, &in); err != nil {
+		t.Fatal(err)
+	}
+	res, _ := in["result"].(map[string]any)
+	if in["job_id"] != id || in["function"] != "app/job" || in["status"] != "ok" || res["status"] != "ok" || strings.Contains(string(n.Input), "input-value") {
+		t.Errorf("the payload: %s", n.Input)
+	}
+	if !w.RunOnce(ctx) {
+		t.Fatal("the notification job wasn't claimed")
+	}
+	if req := f.runner.last(); req.Function != "acme/app/tally" || req.Envelope.User != nil {
+		t.Errorf("the notification ran as %+v", req)
+	}
+	if n, _ := notification(id); n.Status != auth.JobDone {
+		t.Errorf("after running: %+v", n)
+	}
+
+	// Telling twice for one job does nothing.
+	job, _, _ := f.svc.GetJob(ctx, id)
+	w.fns.notifyCompletion(ctx, slog.Default(), f.svc, job, *job.Result)
+	if jobs, _, _ := f.svc.Jobs(ctx, auth.JobFilter{Function: "tally"}); len(jobs) != 1 {
+		t.Errorf("%d notifications for one job", len(jobs))
+	}
+
+	// flaky wants failures and cancels only.
+	okID := enqueue("flaky")
+	w.RunOnce(ctx)
+	if _, ok := notification(okID); ok {
+		t.Error("a success was told to a function that asked for failures")
+	}
+	f.runner.set(func(executor.InvokeRequest) (executor.Result, error) {
+		return executor.Result{Status: executor.StatusError, Message: "boom"}, nil
+	})
+	failID := enqueue("flaky")
+	w.RunOnce(ctx)
+	n, ok = notification(failID)
+	_ = json.Unmarshal(n.Input, &in)
+	if !ok || in["status"] != "failed" || in["result"].(map[string]any)["status"] != "error" {
+		t.Errorf("a failure: %+v %s", n, n.Input)
+	}
+
+	// An administrator's cancel of a job that never ran is told too.
+	f.runner.set(nil)
+	queued := enqueue("flaky")
+	if rec, _ := f.doH(t, "POST", admin+"/jobs/"+queued+"/cancel", "", bearer(adminKey)); rec.Code != http.StatusOK {
+		t.Fatalf("cancel: %d", rec.Code)
+	}
+	n, ok = notification(queued)
+	_ = json.Unmarshal(n.Input, &in)
+	if !ok || in["status"] != "cancelled" {
+		t.Errorf("a cancel: %+v %s", n, n.Input)
+	}
+}
+
 // TestWorkerRetries proves an async function with a retry policy is tried
 // again after the function threw, with growing waits, until it succeeds or
 // the attempts run out; and that an answer the function chose isn't retried.

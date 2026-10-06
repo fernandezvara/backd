@@ -380,6 +380,7 @@
     "noneValue": "None",
     "noSchedule": "Not scheduled",
     "overlapSkip": "Skips a run while the previous one is going",
+    "onComplete": "On completion",
     "paused": "Paused",
     "pause": { "open": "Pause", "done": "Schedule of {function} paused." },
     "resume": { "open": "Resume", "done": "Schedule of {function} resumed." },

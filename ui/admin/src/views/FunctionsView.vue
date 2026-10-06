@@ -35,6 +35,7 @@ interface FunctionConfig {
   network: string[]
   invoke?: string
   rate_limit?: { per: string; limit: number; window: string }
+  on_complete?: { function: string; on: string[] }
   retry?: { attempts: number; backoff: string; max_backoff: string }
 }
 
@@ -177,6 +178,10 @@ async function run() {
           <dd class="font-mono text-xs">{{ list(f.secrets) }}</dd>
           <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.network') }}</dt>
           <dd class="font-mono text-xs">{{ list(f.network) }}</dd>
+          <template v-if="f.on_complete">
+            <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.onComplete') }}</dt>
+            <dd class="font-mono text-xs">{{ f.on_complete.function }}<span v-if="f.on_complete.on.length" class="font-sans text-slate-600 dark:text-slate-400"> · {{ f.on_complete.on.join(', ') }}</span></dd>
+          </template>
           <template v-if="f.retry">
             <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.retry') }}</dt>
             <dd>{{ t('functions.retryText', { attempts: f.retry.attempts, backoff: prettyDuration(f.retry.backoff) }) }}</dd>
