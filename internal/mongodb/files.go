@@ -27,6 +27,7 @@ type fileJournalDoc struct {
 	ExpiresAt  time.Time `bson:"expires_at"`
 
 	Pending      bool      `bson:"pending,omitempty"`
+	Direct       bool      `bson:"direct,omitempty"`
 	TokenHash    string    `bson:"token_hash,omitempty"`
 	Owner        string    `bson:"owner,omitempty"`
 	CallerKey    string    `bson:"caller_key,omitempty"`
@@ -53,14 +54,15 @@ func (s *AuthStore) fileDeletions() *mongo.Collection {
 func (d fileJournalDoc) entry() auth.FileJournalEntry {
 	return auth.FileJournalEntry{ID: d.ID, Database: d.Database, Collection: d.Collection, Field: d.Field, DocumentID: d.DocumentID, Key: d.Key,
 		Caller: d.Caller, Size: d.Size, Status: d.Status, CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC(),
-		Pending: d.Pending, TokenHash: d.TokenHash, Owner: d.Owner, CallerKey: d.CallerKey, PendingUntil: d.PendingUntil.UTC(), Name: d.Name, Type: d.Type, SHA256: d.SHA256, UploadedAt: d.UploadedAt.UTC()}
+		Pending: d.Pending, Direct: d.Direct, TokenHash: d.TokenHash, Owner: d.Owner, CallerKey: d.CallerKey, PendingUntil: d.PendingUntil.UTC(), Name: d.Name, Type: d.Type, SHA256: d.SHA256, UploadedAt: d.UploadedAt.UTC()}
 }
 
 // JournalFile records an upload.
 func (s *AuthStore) JournalFile(ctx context.Context, e auth.FileJournalEntry) error {
 	_, err := s.fileJournal().InsertOne(ctx, fileJournalDoc{ID: e.ID, Database: e.Database, Collection: e.Collection, Field: e.Field, DocumentID: e.DocumentID,
 		Key: e.Key, Caller: e.Caller, Size: e.Size, Status: e.Status, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt, ExpiresAt: e.ExpiresAt,
-		Pending: e.Pending, TokenHash: e.TokenHash, Owner: e.Owner, CallerKey: e.CallerKey, PendingUntil: e.PendingUntil})
+		Pending: e.Pending, Direct: e.Direct, TokenHash: e.TokenHash, Owner: e.Owner, CallerKey: e.CallerKey, PendingUntil: e.PendingUntil,
+		Name: e.Name, Type: e.Type, SHA256: e.SHA256, UploadedAt: e.UploadedAt})
 	return err
 }
 
@@ -83,10 +85,15 @@ func (s *AuthStore) SetFileJournalStatus(ctx context.Context, id, status, docume
 // StaleFileJournal lists the uploads that were left writing, stored or attaching and last
 // updated before the time, and the pending uploads that expired unused.
 func (s *AuthStore) StaleFileJournal(ctx context.Context, before, now time.Time, limit int) ([]auth.FileJournalEntry, error) {
+	epoch := time.Unix(0, 0)
+	waiting := bson.D{{Key: "$in", Value: bson.A{auth.JournalWriting, auth.JournalStored}}}
 	filter := bson.D{{Key: "$or", Value: bson.A{
-		bson.D{{Key: "status", Value: bson.D{{Key: "$in", Value: bson.A{auth.JournalWriting, auth.JournalAttaching}}}}, {Key: "updated_at", Value: bson.D{{Key: "$lt", Value: before}}}},
-		bson.D{{Key: "status", Value: auth.JournalStored}, {Key: "pending", Value: bson.D{{Key: "$ne", Value: true}}}, {Key: "updated_at", Value: bson.D{{Key: "$lt", Value: before}}}},
-		bson.D{{Key: "status", Value: auth.JournalStored}, {Key: "pending", Value: true}, {Key: "pending_until", Value: bson.D{{Key: "$lt", Value: now}}}},
+		// A claimed upload that nobody finished.
+		bson.D{{Key: "status", Value: auth.JournalAttaching}, {Key: "updated_at", Value: bson.D{{Key: "$lt", Value: before}}}},
+		// One that may be used until it expires.
+		bson.D{{Key: "status", Value: waiting}, {Key: "pending_until", Value: bson.D{{Key: "$gt", Value: epoch}, {Key: "$lt", Value: now}}}},
+		// A proxy upload that stopped.
+		bson.D{{Key: "status", Value: waiting}, {Key: "updated_at", Value: bson.D{{Key: "$lt", Value: before}}}, {Key: "pending_until", Value: bson.D{{Key: "$not", Value: bson.D{{Key: "$gt", Value: epoch}}}}}},
 	}}}
 	cur, err := s.fileJournal().Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "updated_at", Value: 1}}).SetLimit(int64(limit)))
 	if err != nil {
@@ -186,16 +193,33 @@ func (s *AuthStore) ClaimPendingUpload(ctx context.Context, id, tokenHash, docum
 	return d.entry(), nil
 }
 
-// ReleasePendingUpload gives a claimed upload back.
-func (s *AuthStore) ReleasePendingUpload(ctx context.Context, id string, at time.Time) error {
+// ClaimDirectUpload takes a direct upload that waits for its bytes, once.
+func (s *AuthStore) ClaimDirectUpload(ctx context.Context, id, tokenHash string, now time.Time) (auth.FileJournalEntry, error) {
+	var d fileJournalDoc
+	err := s.fileJournal().FindOneAndUpdate(ctx,
+		bson.D{{Key: "_id", Value: id}, {Key: "direct", Value: true}, {Key: "status", Value: auth.JournalWriting}, {Key: "token_hash", Value: tokenHash}, {Key: "pending_until", Value: bson.D{{Key: "$gt", Value: now}}}},
+		bson.D{{Key: "$set", Value: bson.D{{Key: "status", Value: auth.JournalAttaching}, {Key: "updated_at", Value: now}}}},
+		options.FindOneAndUpdate().SetReturnDocument(options.After)).Decode(&d)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return auth.FileJournalEntry{}, auth.ErrNotFound
+	}
+	if err != nil {
+		return auth.FileJournalEntry{}, err
+	}
+	return d.entry(), nil
+}
+
+// ReleaseUpload moves a claimed upload back to status; a pending upload forgets the document it was claimed for.
+func (s *AuthStore) ReleaseUpload(ctx context.Context, id, status string, at time.Time) error {
 	_, err := s.fileJournal().UpdateOne(ctx, bson.D{{Key: "_id", Value: id}, {Key: "status", Value: auth.JournalAttaching}},
-		bson.D{{Key: "$set", Value: bson.D{{Key: "status", Value: auth.JournalStored}, {Key: "updated_at", Value: at}}}, {Key: "$unset", Value: bson.D{{Key: "document_id", Value: ""}}}})
+		bson.A{bson.D{{Key: "$set", Value: bson.D{{Key: "status", Value: status}, {Key: "updated_at", Value: at},
+			{Key: "document_id", Value: bson.D{{Key: "$cond", Value: bson.A{bson.D{{Key: "$eq", Value: bson.A{"$pending", true}}}, "$$REMOVE", "$document_id"}}}}}}}})
 	return err
 }
 
 // CountOpenPendingUploads counts a caller's pending uploads that are still being made or waiting.
 func (s *AuthStore) CountOpenPendingUploads(ctx context.Context, callerKey string, now time.Time) (int, error) {
-	n, err := s.fileJournal().CountDocuments(ctx, bson.D{{Key: "pending", Value: true}, {Key: "caller_key", Value: callerKey},
+	n, err := s.fileJournal().CountDocuments(ctx, bson.D{{Key: "caller_key", Value: callerKey},
 		{Key: "status", Value: bson.D{{Key: "$in", Value: bson.A{auth.JournalWriting, auth.JournalStored}}}}, {Key: "pending_until", Value: bson.D{{Key: "$gt", Value: now}}}})
 	return int(n), err
 }

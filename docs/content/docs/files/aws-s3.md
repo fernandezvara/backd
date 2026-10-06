@@ -45,7 +45,14 @@ storage:
    ```
 
    `prod` is the `prefix`; a staging instance of `backd` gets its own prefix and its own policy. Listing is only for a manual reconcile and for `backd storage check`.
-4. **CORS**, only if browsers will upload straight to the bucket or fetch links across origins: allow your app's origin with `GET`, `PUT` and `HEAD`, and expose `ETag`.
+4. **CORS**, needed for [direct uploads](../transfers/#direct-uploads) and for pages that fetch links across origins. Allow your app's origin with `GET`, `PUT` and `HEAD`, the headers `Content-Type` and `x-amz-checksum-sha256`, and expose `ETag`:
+
+   ```json
+   [{"AllowedOrigins": ["https://app.example.com"], "AllowedMethods": ["GET", "PUT", "HEAD"],
+     "AllowedHeaders": ["Content-Type", "x-amz-checksum-sha256"], "ExposeHeaders": ["ETag"], "MaxAgeSeconds": 3600}]
+   ```
+
+   `backd storage check` reads the rules and warns when a browser couldn't PUT with them.
 5. **Set the two secrets** and run `backd storage check --realm <realm>`.
 
 ## Backups

@@ -159,8 +159,10 @@ func limitBody(max int64) func(http.Handler) http.Handler {
 	}
 }
 
-// isFileUpload reports whether the request is POST …/_files/{field}: the body of
-// a file, which MAX_BODY_BYTES (made for JSON) must not cap.
+// isFileUpload reports whether the request is POST …/_files/{field} or
+// …/_files/{field}/uploads: the body of a file (or the small JSON that starts a
+// direct upload, which its handler caps itself), which MAX_BODY_BYTES (made for
+// JSON) must not cap.
 func isFileUpload(r *http.Request) bool {
 	if r.Method != http.MethodPost {
 		return false
@@ -168,7 +170,12 @@ func isFileUpload(r *http.Request) bool {
 	rest, ok := strings.CutSuffix(r.URL.Path, "/")
 	_ = ok
 	i := strings.LastIndex(rest, "/_files/")
-	return i >= 0 && !strings.Contains(rest[i+len("/_files/"):], "/")
+	if i < 0 {
+		return false
+	}
+	tail := rest[i+len("/_files/"):]
+	field, more, nested := strings.Cut(tail, "/")
+	return field != "" && (!nested || more == "uploads")
 }
 
 func tooLarge(w http.ResponseWriter, r *http.Request, max int64) {

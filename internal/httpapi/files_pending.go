@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/subtle"
 	"errors"
 	"net/http"
@@ -55,10 +56,6 @@ func (d *documents) uploadPending(w http.ResponseWriter, r *http.Request) {
 	if f == nil {
 		return
 	}
-	if f.Upload != registry.UploadProxy {
-		writeError(w, r, http.StatusConflict, codeUploadModeMismatch, "this field takes direct uploads: they are started another way")
-		return
-	}
 	svc := d.users(c.Realm)
 	if svc == nil {
 		notFound(w, r)
@@ -68,52 +65,20 @@ func (d *documents) uploadPending(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// Who may: whoever the create rule lets write in principle. A signed-in user
-	// needs a create rule at all; an anonymous caller needs it to say yes to a
-	// document that holds just this file (what is asked, before a byte is stored).
-	a := d.accessFor(r)
 	plan := uploadPlan{name: sanitizeFileName(requestedFileName(r)), id: "fl_" + xid.New().String()}
 	plan.known = map[string]any{"id": plan.id, "name": plan.name, "size": nil, "type": nil, "sha256": nil, "uploaded_at": nil}
+	if f.Upload == registry.UploadDirect { // the body declares the file; the client sends the bytes to the bucket
+		d.startDirectPending(w, r, c, f, svc, obj)
+		return
+	}
 	if r.ContentLength >= 0 {
 		plan.known["size"] = r.ContentLength
 	}
-	if a.ruled {
-		switch {
-		case c.Rules.For(rules.Create) == nil:
-			deny(w, r, a, c, rules.Create, "no create rule")
-			return
-		case a.caller.User == nil:
-			var data map[string]any
-			if f.Multiple {
-				data = map[string]any{f.Name: []any{plan.known}}
-			} else {
-				data = map[string]any{f.Name: plan.known}
-			}
-			if !allowWrite(w, r, a, c, rules.Create, nil, data) {
-				return
-			}
-		}
-	}
-
-	callerKey := uploadCallerKey(r)
-	if err := svc.RateLimit(r.Context(), "pending:"+callerKey, pendingRateLimit, pendingRateWindow); err != nil {
-		var te *auth.ThrottledError
-		if errors.As(err, &te) {
-			w.Header().Set("Retry-After", strconv.Itoa(max(int((te.RetryAfter+time.Second-1)/time.Second), 1)))
-			writeError(w, r, http.StatusTooManyRequests, codeTooManyRequests, "too many uploads started; retry later")
-			return
-		}
-		storageError(w, r, err)
+	if !d.pendingGate(w, r, c, f, plan.known) {
 		return
 	}
-	open, err := svc.OpenPendingUploads(r.Context(), callerKey)
-	if err != nil {
-		storageError(w, r, err)
-		return
-	}
-	if open >= auth.MaxOpenPendingUploads {
-		w.Header().Set("Retry-After", "60")
-		writeError(w, r, http.StatusTooManyRequests, codeTooManyRequests, "this caller already holds "+strconv.Itoa(auth.MaxOpenPendingUploads)+" unused uploads: use or let them expire first")
+	callerKey, ok := d.uploadGate(w, r, svc)
+	if !ok {
 		return
 	}
 	if limit := min(f.MaxSize, d.maxUpload); r.ContentLength > limit {
@@ -122,10 +87,7 @@ func (d *documents) uploadPending(w http.ResponseWriter, r *http.Request) {
 	}
 
 	token, hash := auth.NewUploadToken()
-	template := auth.FileJournalEntry{Pending: true, TokenHash: hash, CallerKey: callerKey}
-	if cl, ok := callerOf(r); ok && cl.User != nil && !adminData(r) {
-		template.Owner = cl.User.User.ID
-	}
+	template := auth.FileJournalEntry{Pending: true, TokenHash: hash, CallerKey: callerKey, Owner: ownerOf(r)}
 	up, ok := d.storeUpload(w, r, c, f, svc, obj, plan, template)
 	if !ok {
 		return
@@ -137,6 +99,65 @@ func (d *documents) uploadPending(w http.ResponseWriter, r *http.Request) {
 		"upload_id": plan.id, "upload_token": token, "expires_at": expires.Format(timeFormat),
 		"file": map[string]any{"name": up.meta["name"], "size": up.meta["size"], "type": up.meta["type"], "sha256": up.meta["sha256"]},
 	})
+}
+
+// pendingGate decides whether the caller may start a pending upload to the field: a
+// signed-in user needs the collection to have a create rule; an anonymous caller
+// needs it to say yes to a document that holds just this file (known, what is known
+// of it before a byte is stored). It answers and returns false when not.
+func (d *documents) pendingGate(w http.ResponseWriter, r *http.Request, c *registry.Collection, f *registry.FileField, known map[string]any) bool {
+	a := d.accessFor(r)
+	if !a.ruled {
+		return true
+	}
+	switch {
+	case c.Rules.For(rules.Create) == nil:
+		deny(w, r, a, c, rules.Create, "no create rule")
+		return false
+	case a.caller.User == nil:
+		var data map[string]any
+		if f.Multiple {
+			data = map[string]any{f.Name: []any{known}}
+		} else {
+			data = map[string]any{f.Name: known}
+		}
+		return allowWrite(w, r, a, c, rules.Create, nil, data)
+	}
+	return true
+}
+
+// uploadGate applies the limits of unused uploads: a rate of starting them and how
+// many a caller holds. It answers 429 and returns false past either, and otherwise
+// returns who the upload is counted for.
+func (d *documents) uploadGate(w http.ResponseWriter, r *http.Request, svc *auth.Users) (string, bool) {
+	callerKey := uploadCallerKey(r)
+	if err := svc.RateLimit(r.Context(), "pending:"+callerKey, pendingRateLimit, pendingRateWindow); err != nil {
+		var te *auth.ThrottledError
+		if errors.As(err, &te) {
+			w.Header().Set("Retry-After", strconv.Itoa(max(int((te.RetryAfter+time.Second-1)/time.Second), 1)))
+			writeError(w, r, http.StatusTooManyRequests, codeTooManyRequests, "too many uploads started; retry later")
+			return "", false
+		}
+		storageError(w, r, err)
+		return "", false
+	}
+	open, err := svc.OpenPendingUploads(r.Context(), callerKey)
+	if err != nil {
+		storageError(w, r, err)
+		return "", false
+	}
+	if open >= auth.MaxOpenPendingUploads {
+		w.Header().Set("Retry-After", "60")
+		writeError(w, r, http.StatusTooManyRequests, codeTooManyRequests, "this caller already holds "+strconv.Itoa(auth.MaxOpenPendingUploads)+" unused uploads: use or let them expire first")
+		return "", false
+	}
+	return callerKey, true
+}
+
+// contextForUpload outlives the request: the work that follows a verified upload
+// must finish even if the client goes away.
+func contextForUpload(r *http.Request) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(r.Context()), uploadTimeout)
 }
 
 // fileRef is a write's reference to a pending upload.

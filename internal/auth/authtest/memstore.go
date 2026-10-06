@@ -1060,10 +1060,14 @@ func (m *MemStore) StaleFileJournal(_ context.Context, before, now time.Time, li
 	defer m.mu.Unlock()
 	var out []auth.FileJournalEntry
 	for _, e := range m.journal {
-		open := e.Status == auth.JournalWriting || e.Status == auth.JournalStored || e.Status == auth.JournalAttaching
+		waiting := e.Status == auth.JournalWriting || e.Status == auth.JournalStored
 		switch {
-		case !open:
-		case e.Pending && e.Status == auth.JournalStored:
+		case e.Status == auth.JournalAttaching:
+			if e.UpdatedAt.Before(before) {
+				out = append(out, e)
+			}
+		case !waiting:
+		case !e.PendingUntil.IsZero(): // it may be used until it expires
 			if e.PendingUntil.Before(now) {
 				out = append(out, e)
 			}
@@ -1112,11 +1116,26 @@ func (m *MemStore) ClaimPendingUpload(_ context.Context, id, tokenHash, document
 	return e, nil
 }
 
-func (m *MemStore) ReleasePendingUpload(_ context.Context, id string, at time.Time) error {
+func (m *MemStore) ClaimDirectUpload(_ context.Context, id, tokenHash string, now time.Time) (auth.FileJournalEntry, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e, ok := m.journal[id]
+	if !ok || !e.Direct || e.Status != auth.JournalWriting || e.TokenHash != tokenHash || !e.PendingUntil.After(now) {
+		return auth.FileJournalEntry{}, auth.ErrNotFound
+	}
+	e.Status, e.UpdatedAt = auth.JournalAttaching, now
+	m.journal[id] = e
+	return e, nil
+}
+
+func (m *MemStore) ReleaseUpload(_ context.Context, id, status string, at time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if e, ok := m.journal[id]; ok && e.Status == auth.JournalAttaching {
-		e.Status, e.DocumentID, e.UpdatedAt = auth.JournalStored, "", at
+		e.Status, e.UpdatedAt = status, at
+		if e.Pending {
+			e.DocumentID = ""
+		}
 		m.journal[id] = e
 	}
 	return nil
@@ -1127,7 +1146,7 @@ func (m *MemStore) CountOpenPendingUploads(_ context.Context, callerKey string, 
 	defer m.mu.Unlock()
 	n := 0
 	for _, e := range m.journal {
-		if e.Pending && e.CallerKey == callerKey && (e.Status == auth.JournalWriting || e.Status == auth.JournalStored) && e.PendingUntil.After(now) {
+		if e.CallerKey == callerKey && (e.Status == auth.JournalWriting || e.Status == auth.JournalStored) && e.PendingUntil.After(now) {
 			n++
 		}
 	}

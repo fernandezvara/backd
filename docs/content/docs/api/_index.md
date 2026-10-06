@@ -81,11 +81,13 @@ Every error uses the same JSON envelope. Success responses are never wrapped.
 | 403 | `invalid_file_link` | A [file link](../files/transfers/#links-for-apps) that was changed, has expired or whose key was rotated |
 | 404 | `file_missing` | The document holds a [file](../files/transfers/#downloading) the storage no longer has |
 | 409 | `too_many_files` | A `multiple` [file field](../files/file-fields/) is at `max_files` |
-| 409 | `upload_mode_mismatch` | The field takes direct uploads, not this one |
+| 409 | `upload_mode_mismatch` | A proxy upload to a [direct](../files/transfers/#direct-uploads) field, or a direct start on a proxy field |
+| 409 | `file_not_uploaded` | A direct upload was completed before its file reached the bucket |
 | 413 | `payload_too_large` | Body exceeds `MAX_BODY_BYTES`; an upload, `max_size` or `BACKD_MAX_UPLOAD_BYTES` |
 | 415 | `unsupported_file_type` | The type detected from an upload isn't one the field accepts |
 | 416 | `range_not_satisfiable` | A `Range` outside the file |
 | 415 | `unsupported_media_type` | Wrong `Content-Type` for the method (a `webhook` function's body isn't required to be JSON at all) |
+| 422 | `upload_mismatch` | A direct upload's size or SHA-256 isn't the declared one: the object was deleted |
 | 422 | `idempotency_key_reused` | A [function](../functions/calling/#idempotency) `Idempotency-Key` was already used with different input |
 | 429 | `too_many_requests` | Too many failed logins (see [brute-force protection](../auth/sessions/#brute-force-protection)); or a [function](../functions/calling/#concurrency-limits), or its realm, is at its concurrency limit; or the caller is over a function's [rate limit](../functions/calling/#rate-limits). Wait `Retry-After` seconds |
 | 500 | `function_failed` | A [function](../functions/calling/#calling-a-function) threw an error other than `ctx.error`, crashed, or went over its memory or CPU limit |

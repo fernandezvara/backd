@@ -854,10 +854,6 @@ func TestContract(t *testing.T) {
 		f.reg.Realms["acme"].Settings.Storage = &broken
 		req("POST", pend, png, typed(key, "image/png"), 503)
 		f.reg.Realms["acme"].Settings.Storage = saved
-		for range 20 { // a caller holds at most 20 unused uploads
-			f.doH(t, "POST", pend, png, typed(carlOr(key, isAdmin, carl), "image/png"))
-		}
-		req("POST", pend, png, typed(carlOr(key, isAdmin, carl), "image/png"), 429)
 
 		doc := req("POST", base, `{"title": "files"}`, key, 201)["id"].(string)
 		files := base + "/" + doc + "/_files/"
@@ -936,6 +932,105 @@ func TestContract(t *testing.T) {
 			req("GET", base+"/"+mine+"?file_links=true", "", ada, 200)
 			req("GET", base+"?file_links=true", "", ada, 200)
 		}
+	}
+	// Direct uploads: start, PUT to the bucket as a browser would, complete.
+	for _, base := range []string{"/v1/acme/app/videos", ad + "/data/app/videos"} {
+		isAdmin := strings.Contains(base, "_admin")
+		data := pngBytes(30)
+		decl := func(d []byte, typ string) string { return declare("c.png", d, typ) }
+		startAt := func(path string, d []byte, typ string, hdr map[string]string, want int) map[string]any {
+			return req("POST", path, decl(d, typ), hdr, want)
+		}
+		done := func(field string, out map[string]any, token string, hdr map[string]string, want int) map[string]any {
+			return req("POST", base+"/_files/"+field+"/uploads/"+out["upload_id"].(string)+"/complete", `{"upload_token": "`+token+`"}`, hdr, want)
+		}
+		// A pending one, and the document made with it.
+		pst := startAt(base+"/_files/clip/uploads", data, "image/png", key, 201)
+		putToLink(t, pst, data)
+		done("clip", pst, pst["upload_token"].(string), key, 200)
+		doc := req("POST", base, `{"title": "v", "clip": {"upload": "`+pst["upload_id"].(string)+`", "token": "`+pst["upload_token"].(string)+`"}}`, key, 201)["id"].(string)
+		dpath := base + "/" + doc + "/_files/clips/uploads"
+
+		// Starting.
+		startAt(dpath, data, "image/png", key, 201)
+		req("POST", dpath, `{}`, key, 400)
+		startAt(dpath, data, "image/png", nil, 401)
+		if isAdmin {
+			startAt(dpath, data, "image/png", ada, 403)
+		} else {
+			vids := f.reg.Realms["acme"].Databases["app"].Collections["videos"]
+			rl := vids.Rules
+			vids.Rules = nil
+			startAt(dpath, data, "image/png", ada, 403)
+			vids.Rules = rl
+		}
+		startAt(base+"/nope/_files/clips/uploads", data, "image/png", key, 404)
+		startAt(base+"/"+doc+"/_files/photo/uploads", data, "image/png", key, 409)
+		startAt(base+"/"+doc+"/_files/clip/uploads", data, "text/plain", key, 415)
+		startAt(dpath, data, "image/png", with(key, "If-Match", `"99"`), 412)
+		saved := f.reg.Realms["acme"].Settings.Storage
+		broken := *saved
+		broken.AccessKey = "NOT_SET_ANYWHERE"
+		f.reg.Realms["acme"].Settings.Storage = &broken
+		startAt(dpath, data, "image/png", key, 503)
+		f.reg.Realms["acme"].Settings.Storage = saved
+
+		// Completing.
+		ok := startAt(dpath, data, "image/png", key, 201)
+		tok := ok["upload_token"].(string)
+		done("clips", ok, tok, key, 409) // nothing uploaded yet
+		done("clips", ok, "wrong", key, 400)
+		done("clips", ok, tok, nil, 401)
+		if isAdmin {
+			done("clips", ok, tok, ada, 403)
+		} else {
+			vids := f.reg.Realms["acme"].Databases["app"].Collections["videos"]
+			rl := vids.Rules
+			vids.Rules = nil
+			done("clips", ok, tok, ada, 403)
+			vids.Rules = rl
+		}
+		req("POST", base+"/_files/nope/uploads/"+ok["upload_id"].(string)+"/complete", `{"upload_token": "`+tok+`"}`, key, 404)
+		putToLink(t, ok, data)
+		done("clips", ok, tok, with(key, "If-Match", `"99"`), 412)
+		// That attempt attached nothing and abandoned the upload; a new one is completed.
+		ok = startAt(dpath, data, "image/png", key, 201)
+		putToLink(t, ok, data)
+		done("clips", ok, ok["upload_token"].(string), key, 201)
+		// A file that isn't what was declared.
+		text := []byte(strings.Repeat("plain words ", 8))
+		bad := startAt(base+"/"+doc+"/_files/clip/uploads", text, "image/png", key, 201)
+		putToLink(t, bad, text)
+		done("clip", bad, bad["upload_token"].(string), key, 415)
+		wrong := startAt(dpath, data, "image/png", key, 201)
+		fake.Put("contract/acme/app/videos/"+wrong["upload_id"].(string), pngBytes(31))
+		done("clips", wrong, wrong["upload_token"].(string), key, 422)
+		last := startAt(dpath, data, "image/png", key, 201)
+		f.reg.Realms["acme"].Settings.Storage = &broken
+		done("clips", last, last["upload_token"].(string), key, 503)
+		f.reg.Realms["acme"].Settings.Storage = saved
+	}
+
+	startAtBase := func(base string, who map[string]string, field string) string { // a video document of the caller's
+		d := pngBytes(7)
+		jb := with(who, "Content-Type", "application/json")
+		st := req("POST", base+"/videos/_files/"+field+"/uploads", declare("c.png", d, "image/png"), jb, 201)
+		putToLink(t, st, d)
+		req("POST", base+"/videos/_files/"+field+"/uploads/"+st["upload_id"].(string)+"/complete", `{"upload_token": "`+st["upload_token"].(string)+`"}`, jb, 200)
+		return req("POST", base+"/videos", `{"title": "mine", "clip": {"upload": "`+st["upload_id"].(string)+`", "token": "`+st["upload_token"].(string)+`"}}`, who, 201)["id"].(string)
+	}
+	// A caller holds at most 20 unused uploads, whichever way they start: the three
+	// routes that start one answer 429 past it.
+	for _, base := range []string{"/v1/acme/app", ad + "/data/app"} {
+		who := carlOr(key, strings.Contains(base, "_admin"), carl)
+		jsonBody := with(who, "Content-Type", "application/json")
+		mine := startAtBase(base, who, "clip")
+		for range 25 {
+			f.doH(t, "POST", base+"/videos/_files/clip/uploads", declare("c.png", pngBytes(3), "image/png"), jsonBody)
+		}
+		req("POST", base+"/library/_files/avatar/uploads", png, typed(who, "image/png"), 429)
+		req("POST", base+"/videos/_files/clip/uploads", declare("c.png", pngBytes(3), "image/png"), jsonBody, 429)
+		req("POST", base+"/videos/"+mine+"/_files/clips/uploads", declare("c.png", pngBytes(3), "image/png"), jsonBody, 429)
 	}
 	// Schema checks.
 	checks := ad + "/data-checks"

@@ -170,7 +170,11 @@ func (o *Objects) Check(ctx context.Context, realm string) CheckReport {
 			rep.add("cors", CheckWarn, "the bucket has no CORS rules: a browser can't upload straight to it or fetch from it across origins (not needed for uploads and downloads through backd)")
 		default:
 			rep.CORS = rules
-			rep.add("cors", CheckOK, fmt.Sprintf("%d CORS rule(s)", len(rules)))
+			if gaps := corsGaps(rules); len(gaps) > 0 {
+				rep.add("cors", CheckWarn, fmt.Sprintf("%d CORS rule(s), but a browser can't upload straight to the bucket with them (direct uploads): %s", len(rules), strings.Join(gaps, "; ")))
+			} else {
+				rep.add("cors", CheckOK, fmt.Sprintf("%d CORS rule(s) that allow direct uploads (PUT with content-type and x-amz-checksum-sha256)", len(rules)))
+			}
 		}
 	} else {
 		rep.add("cors", CheckSkip, o.provider.Label+" doesn't expose the bucket's CORS rules to this check: set them for the origins of your app and check by hand (direct uploads and cross-origin downloads need them)")
@@ -348,4 +352,38 @@ func describe(err error) string {
 		return "the bucket doesn't exist (or isn't visible to this key)"
 	}
 	return err.Error()
+}
+
+// corsGaps says what the bucket's CORS rules lack for a browser to PUT a direct
+// upload: the method, and the two headers the signed link carries. Which origins
+// they allow is for the operator, who knows the app's.
+func corsGaps(rules []CORSRule) []string {
+	has := func(list []string, want string) bool {
+		for _, v := range list {
+			if v == "*" || strings.EqualFold(v, want) {
+				return true
+			}
+		}
+		return false
+	}
+	var put, ctype, sum bool
+	for _, r := range rules {
+		if has(r.Methods, "PUT") {
+			put = true
+			ctype = ctype || has(r.Headers, "content-type")
+			sum = sum || has(r.Headers, "x-amz-checksum-sha256")
+		}
+	}
+	var gaps []string
+	if !put {
+		gaps = append(gaps, "no rule allows the PUT method")
+		return gaps
+	}
+	if !ctype {
+		gaps = append(gaps, "no PUT rule allows the content-type header")
+	}
+	if !sum {
+		gaps = append(gaps, "no PUT rule allows the x-amz-checksum-sha256 header")
+	}
+	return gaps
 }

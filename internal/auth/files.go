@@ -54,10 +54,11 @@ type FileJournalEntry struct {
 	// (or without the document being touched): it is attached by naming it, with
 	// its token, in a write. Its details are kept here until then.
 	Pending      bool
+	Direct       bool      // a direct upload: the client sends the bytes to the bucket and completes it
 	TokenHash    string    // SHA-256 of the secret token the creator holds
 	Owner        string    // the user who made it; "" for an anonymous caller
 	CallerKey    string    // who the open-uploads limit counts it for
-	PendingUntil time.Time // unused, it expires then
+	PendingUntil time.Time // unused, it expires then (also set for a direct upload to a document)
 	Name         string
 	Type         string
 	SHA256       string
@@ -125,6 +126,11 @@ func (s *Users) CompletePendingUpload(ctx context.Context, id, name, contentType
 	return s.Store.CompletePendingUpload(ctx, id, name, contentType, sha256sum, size, uploadedAt, s.now())
 }
 
+// UploadEntry returns an upload's record whatever kind it is, or ErrNotFound.
+func (s *Users) UploadEntry(ctx context.Context, id string) (FileJournalEntry, error) {
+	return s.Store.FileJournalEntry(ctx, id)
+}
+
 // PendingUpload returns a pending upload's record, or ErrNotFound.
 func (s *Users) PendingUpload(ctx context.Context, id string) (FileJournalEntry, error) {
 	e, err := s.Store.FileJournalEntry(ctx, id)
@@ -147,7 +153,30 @@ func (s *Users) ClaimPendingUpload(ctx context.Context, id, token, documentID st
 // ReleasePendingUpload gives a claimed pending upload back, when the write that
 // claimed it didn't happen.
 func (s *Users) ReleasePendingUpload(ctx context.Context, id string) error {
-	return s.Store.ReleasePendingUpload(ctx, id, s.now())
+	return s.Store.ReleaseUpload(ctx, id, JournalStored, s.now())
+}
+
+// JournalDirectUpload records a direct upload that is starting: the client will send
+// the bytes to the bucket and complete it before it expires after ttl. A pending one
+// (e.Pending) is attached later by a write; the others belong to a document.
+func (s *Users) JournalDirectUpload(ctx context.Context, e FileJournalEntry, ttl time.Duration) error {
+	now := s.now()
+	e.Direct, e.PendingUntil = true, now.Add(ttl)
+	e.Status, e.CreatedAt, e.UpdatedAt = JournalWriting, now, now
+	e.ExpiresAt = e.PendingUntil.Add(fileJournalFailedKeep)
+	return s.Store.JournalFile(ctx, e)
+}
+
+// ClaimDirectUpload takes a direct upload to verify and complete it, once: held as
+// attaching until it is done or released. ErrNotFound when the token doesn't match, the
+// upload isn't one that waits for its bytes, or it expired.
+func (s *Users) ClaimDirectUpload(ctx context.Context, id, token string) (FileJournalEntry, error) {
+	return s.Store.ClaimDirectUpload(ctx, id, HashUploadToken(token), s.now())
+}
+
+// ReleaseDirectUpload gives a claimed direct upload back, to wait for its bytes again.
+func (s *Users) ReleaseDirectUpload(ctx context.Context, id string) error {
+	return s.Store.ReleaseUpload(ctx, id, JournalWriting, s.now())
 }
 
 // OpenPendingUploads counts the unused pending uploads a caller holds.

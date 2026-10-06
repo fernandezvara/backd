@@ -76,7 +76,7 @@ func TestPendingUploadsOnMongoDB(t *testing.T) {
 	if _, err := s.ClaimPendingUpload(ctx, "fl_p1", auth.HashUploadToken("fut_fl_p1"), "doc2", t0); err == nil {
 		t.Error("claimed twice")
 	}
-	if err := s.ReleasePendingUpload(ctx, "fl_p1", t0); err != nil {
+	if err := s.ReleaseUpload(ctx, "fl_p1", auth.JournalStored, t0); err != nil {
 		t.Fatal(err)
 	}
 	if e, _ := s.FileJournalEntry(ctx, "fl_p1"); e.Status != auth.JournalStored || e.DocumentID != "" {
@@ -84,11 +84,50 @@ func TestPendingUploadsOnMongoDB(t *testing.T) {
 	}
 	// Stale: expired and unused, whatever its last update; an attaching one past the grace period.
 	stale, _ := s.StaleFileJournal(ctx, t0.Add(-time.Hour), until.Add(time.Minute), 10)
-	if len(stale) != 1 || stale[0].ID != "fl_p1" {
+	if len(stale) != 2 {
 		t.Errorf("expired pending: %+v", stale)
 	}
 	if stale, _ := s.StaleFileJournal(ctx, t0.Add(-time.Hour), t0, 10); len(stale) != 0 {
 		t.Errorf("unexpired pending reported: %+v", stale)
+	}
+}
+
+func TestDirectUploadsOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	t0 := time.Date(2126, 10, 7, 12, 0, 0, 0, time.UTC)
+	until := t0.Add(3 * time.Hour)
+	e := auth.FileJournalEntry{ID: "fl_d1", Database: "app", Collection: "docs", Field: "video", DocumentID: "doc1", Key: "k/fl_d1", Status: auth.JournalWriting,
+		CreatedAt: t0, UpdatedAt: t0, ExpiresAt: until.Add(24 * time.Hour), Direct: true, TokenHash: auth.HashUploadToken("fut_d1"), CallerKey: "user:u1", PendingUntil: until,
+		Name: "v.mp4", Type: "video/mp4", SHA256: "abc", Size: 10}
+	if err := s.JournalFile(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := s.CountOpenPendingUploads(ctx, "user:u1", t0); n != 1 {
+		t.Errorf("open: %d", n)
+	}
+	// Waiting for its bytes for hours is not abandoned at the one-hour grace: it may be used until it expires.
+	if stale, _ := s.StaleFileJournal(ctx, t0.Add(2*time.Hour), t0.Add(2*time.Hour), 10); len(stale) != 0 {
+		t.Errorf("a live direct upload is stale: %+v", stale)
+	}
+	if stale, _ := s.StaleFileJournal(ctx, t0, until.Add(time.Minute), 10); len(stale) != 1 {
+		t.Errorf("an expired direct upload isn't stale: %+v", stale)
+	}
+	if _, err := s.ClaimDirectUpload(ctx, "fl_d1", auth.HashUploadToken("nope"), t0); err == nil {
+		t.Error("claimed with the wrong token")
+	}
+	got, err := s.ClaimDirectUpload(ctx, "fl_d1", auth.HashUploadToken("fut_d1"), t0)
+	if err != nil || got.Status != auth.JournalAttaching || got.Name != "v.mp4" || got.SHA256 != "abc" || got.Type != "video/mp4" || !got.Direct {
+		t.Fatalf("claim: %+v %v", got, err)
+	}
+	if _, err := s.ClaimDirectUpload(ctx, "fl_d1", auth.HashUploadToken("fut_d1"), t0); err == nil {
+		t.Error("claimed twice")
+	}
+	if err := s.ReleaseUpload(ctx, "fl_d1", auth.JournalWriting, t0); err != nil {
+		t.Fatal(err)
+	}
+	if e, _ := s.FileJournalEntry(ctx, "fl_d1"); e.Status != auth.JournalWriting || e.DocumentID != "doc1" {
+		t.Errorf("released: %+v", e)
 	}
 }
 

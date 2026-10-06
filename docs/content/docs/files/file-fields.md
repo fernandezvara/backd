@@ -30,7 +30,7 @@ files:
 | `types` | any | Allowed content types, `image/png` or a family such as `image/*`. Checked against the type **detected from the file's content**, never the one the client claims |
 | `multiple` | `false` | The field is a list of files instead of one |
 | `max_files` | `10` | With `multiple`: how many files the field may hold (1 to 1000) |
-| `upload` | `proxy` | `proxy` streams the bytes through backd. `direct` (uploads straight to the bucket) is not available yet |
+| `upload` | `proxy` | `proxy` streams the bytes through backd; `direct` has the client send them straight to the bucket with a signed link, which backd verifies afterwards ([Direct uploads](../transfers/#direct-uploads)). `max_size` is at most 5GiB for `direct` |
 | `download` | the realm's | `presigned` redirects to a short-lived link of the storage; `proxy` streams the file through backd |
 | `presigned_ttl` | the realm's | How long this field's links last (at most 7 days) |
 | `cache` | none | With `download: proxy`: how long shared caches may keep the file, only when anyone may read the document |

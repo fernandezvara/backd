@@ -28,10 +28,6 @@ const (
 	UploadDirect = "direct" // a signed PUT straight to the bucket
 )
 
-// directUploadsAvailable is false until direct uploads exist (roadmap #151): the
-// configuration says so instead of accepting a mode nothing implements.
-const directUploadsAvailable = false
-
 const (
 	maxFilesPerField   = 1000
 	defaultMaxFiles    = 10
@@ -177,8 +173,6 @@ func parseFiles(path string, schema map[string]any, settings RealmSettings) (map
 		case "", UploadProxy:
 		case UploadDirect:
 			switch {
-			case !directUploadsAvailable:
-				add(name, "upload: direct isn't available yet; use proxy (the default)")
 			case !settings.Storage.ProviderEntry().SupportsDirectUploads():
 				add(name, "upload: direct needs a provider that verifies a signed SHA-256, which %s doesn't (use proxy)", settings.Storage.Provider)
 			case f.MaxSize > maxDirectFileSize:
