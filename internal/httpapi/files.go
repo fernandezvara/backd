@@ -602,7 +602,8 @@ func (d *documents) downloadFile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Cache-Control", "private, no-store")
-		http.Redirect(w, r, l, http.StatusFound)
+		w.Header().Set("Location", l)
+		w.WriteHeader(http.StatusFound)
 		return
 	}
 	d.proxyFile(w, r, obj, c, f, doc, file)
