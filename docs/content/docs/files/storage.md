@@ -64,7 +64,7 @@ The running `backd` (which holds the keys) verifies the storage the way files wi
 
 | Step | What it proves |
 |---|---|
-| `bucket` | The bucket exists and the keys reach it. |
+| `bucket` | The bucket exists and the keys reach it (a listing of the realm's prefix, so a key limited to its prefix works; a refused listing is a warning, since only a reconcile lists). |
 | `write`, `head`, `read`, `range` | A small object can be stored under `<prefix>/<realm>/_check/`, read back identical and read by range. |
 | `list` | The prefix can be listed (only a reconcile needs this: a failure is a warning). |
 | `checksum` | The storage **rejects** an upload whose `x-amz-checksum-sha256` doesn't match: direct uploads rely on this. The report says whether it is `verified` or `ignored`. |

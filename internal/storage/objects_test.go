@@ -134,13 +134,19 @@ func TestCheckSaysWhatIsWrong(t *testing.T) {
 	cfg.SecretKey = "not-the-secret"
 	o, _ := NewObjects(cfg)
 	rep := o.Check(context.Background(), "acme")
-	if rep.OK() || len(rep.Steps) != 1 || rep.Steps[0].Name != "bucket" || !strings.Contains(rep.Steps[0].Detail, "access key") {
+	var told bool
+	for _, s := range rep.Steps {
+		if s.Level == CheckFail && strings.Contains(s.Detail, "access key") {
+			told = true
+		}
+	}
+	if rep.OK() || !told {
 		t.Errorf("bad credentials: %+v", rep.Steps)
 	}
 	cfg = minioConfig(t)
 	cfg.Bucket = "no-such-bucket-here"
 	o, _ = NewObjects(cfg)
-	if rep := o.Check(context.Background(), "acme"); rep.OK() || !strings.Contains(rep.Steps[0].Detail, "doesn't exist") {
+	if rep := o.Check(context.Background(), "acme"); rep.OK() || len(rep.Steps) != 1 || !strings.Contains(rep.Steps[0].Detail, "doesn't exist") {
 		t.Errorf("missing bucket: %+v", rep.Steps)
 	}
 }

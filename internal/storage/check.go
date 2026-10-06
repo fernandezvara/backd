@@ -84,11 +84,27 @@ func (o *Objects) Check(ctx context.Context, realm string) CheckReport {
 		}
 	}()
 
-	if err := o.HeadBucket(ctx); err != nil {
-		rep.add("bucket", CheckFail, fmt.Sprintf("%s: %v", o.cfg.Bucket, describe(err)))
-		return rep // nothing else can work
+	// The first request is a listing of the realm's prefix, not a HEAD of the bucket:
+	// a key limited to its prefix (as it should be) may list that prefix but not ask
+	// about the bucket itself. A missing bucket is the one answer that stops here; a
+	// refusal is a warning (only a reconcile needs to list) and the write below says
+	// whether the credentials work.
+	canList := false
+	if _, err := o.List(ctx, o.checkPrefix(realm), 1); err != nil {
+		switch {
+		case errors.Is(err, ErrBucketNotFound):
+			rep.add("bucket", CheckFail, fmt.Sprintf("%s: %v", o.cfg.Bucket, describe(err)))
+			return rep // nothing else can work
+		case errors.Is(err, ErrAccessDenied):
+			rep.add("bucket", CheckWarn, fmt.Sprintf("%s: listing the prefix was refused (%v); only `backd storage reconcile` needs it, and the steps below show whether the key works", o.cfg.Bucket, err))
+		default:
+			rep.add("bucket", CheckFail, fmt.Sprintf("%s: %v", o.cfg.Bucket, describe(err)))
+			return rep
+		}
+	} else {
+		canList = true
+		rep.add("bucket", CheckOK, fmt.Sprintf("%s exists and the credentials reach it", o.cfg.Bucket))
 	}
-	rep.add("bucket", CheckOK, fmt.Sprintf("%s exists and the credentials reach it", o.cfg.Bucket))
 
 	id := make([]byte, 8)
 	_, _ = rand.Read(id)
@@ -132,7 +148,9 @@ func (o *Objects) Check(ctx context.Context, realm string) CheckReport {
 		rep.add("range", CheckOK, "a range request returns just the range")
 	}
 
-	if items, err := o.List(ctx, o.checkPrefix(realm), 10); err != nil {
+	if !canList {
+		rep.add("list", CheckWarn, "the prefix can't be listed: `backd storage reconcile` won't work with this key")
+	} else if items, err := o.List(ctx, o.checkPrefix(realm), 10); err != nil {
 		rep.add("list", CheckWarn, "listing the prefix failed ("+describe(err)+"): only `backd storage reconcile` needs it")
 	} else if len(items) == 0 {
 		rep.add("list", CheckWarn, "listing the prefix returned nothing: reconcile would miss objects")

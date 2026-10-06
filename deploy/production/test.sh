@@ -219,14 +219,14 @@ np_cli() { # np_cli <script>: backd commands as the netprobe realm's administrat
     "printf 'dev-p4ssw0rd!5\n' | backd login --realm netprobe --email np@example.com >/dev/null && $1" 2>&1
 }
 out=$(np_cli "backd storage check --realm netprobe" || true)
-check "before the keys are set, the check says the storage is unavailable" sh -c "echo '$out' | grep -q storage_unavailable"
+check "before the keys are set, the check says the storage is unavailable" sh -c 'printf %s "$1" | grep -q storage_unavailable' _ "$out"
 for name in STORAGE_ACCESS_KEY STORAGE_SECRET_KEY; do
   eval "value=\$$name"
   np_cli "printf '%s\n' '$value' | backd secret set --realm netprobe --name $name" >/dev/null || true
 done
 out=$(np_cli "backd storage check --realm netprobe" || true)
 printf '%s\n' "$out" | sed 's/^/     /'
-check "backd stores, reads and signs links against the storage over TLS (storage check)" sh -c "echo '$out' | grep -q 'signed SHA-256: verified' && ! echo '$out' | grep -q ' fail '"
+check "backd stores, reads and signs links against the storage over TLS (storage check)" sh -c 'printf %s "$1" | grep -q "signed SHA-256: verified" && ! printf %s "$1" | grep -q " fail "' _ "$out"
 check "the storage publishes nothing on the host" sh -c "[ -z \"\$(compose port minio 9000 2>/dev/null)\" ]"
 
 echo "--- metrics (private port, Prometheus)"
