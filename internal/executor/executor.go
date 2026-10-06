@@ -41,6 +41,9 @@ import (
 //go:embed runner.js
 var runnerJS []byte
 
+//go:embed steps.js
+var stepsJS []byte
+
 // Result statuses.
 const (
 	StatusOK            = "ok"
@@ -61,6 +64,8 @@ const (
 	// (runtime, runner, client); the RSS limit is memory + this.
 	rssOverhead = 128 << 20
 	maxLogBytes = 64 << 10
+	// maxStepsBytes is the room the steps take in the result line, on top of the output.
+	maxStepsBytes = 64 << 10
 	// maxRequestBytes bounds an invocation request (input included).
 	maxRequestBytes = 64 << 20
 )
@@ -119,6 +124,9 @@ type Callback struct {
 	Token      string `json:"token,omitempty"`
 	AdminToken string `json:"admin_token,omitempty"`
 	Email      bool   `json:"email,omitempty"` // ctx.email.send
+	// Progress says the run is an async job's attempt: the runner reports its
+	// steps live with Token (PUT /v1/{realm}/_job/steps).
+	Progress bool `json:"progress,omitempty"`
 }
 
 // Result is how an invocation ended.
@@ -132,6 +140,25 @@ type Result struct {
 	Message    string    `json:"message,omitempty"`
 	Logs       []LogLine `json:"logs,omitempty"`
 	DurationMS int64     `json:"duration_ms"`
+	// Steps are what the function reported with ctx.step and ctx.progress, from
+	// the result line. A run that was killed sends none; for a job, backd has
+	// the last it was sent live.
+	Steps        []Step `json:"steps,omitempty"`
+	StepsOmitted int    `json:"steps_omitted,omitempty"`
+}
+
+// Step is one step a function reported (ctx.step), with how far it got.
+type Step struct {
+	N          int        `json:"n"`
+	Name       string     `json:"name"`
+	Status     string     `json:"status"` // running, done, failed, timed_out or cancelled
+	StartedAt  time.Time  `json:"started_at"`
+	EndedAt    *time.Time `json:"ended_at"`
+	DurationMS *int64     `json:"duration_ms"`
+	Current    float64    `json:"current"`
+	Total      *float64   `json:"total"`
+	Message    *string    `json:"message"`
+	UpdatedAt  time.Time  `json:"updated_at"`
 }
 
 // WebhookResponse is a webhook function's own answer to its caller
@@ -231,6 +258,9 @@ func New(cfg Config) (*Executor, error) {
 	}
 	e.runner = filepath.Join(runtime, "runner.js")
 	if err := os.WriteFile(e.runner, runnerJS, 0o444); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(filepath.Join(runtime, "steps.js"), stepsJS, 0o444); err != nil {
 		return nil, err
 	}
 	err = fs.WalkDir(jsclient.Sources, "src", func(path string, d fs.DirEntry, err error) error {
@@ -447,7 +477,7 @@ func (e *Executor) run(ctx context.Context, bundle string, req InvokeRequest, ti
 		err  error
 	}
 	lines := make(chan line, 2)
-	maxLine := int(req.MaxOutput) + 4096
+	maxLine := int(req.MaxOutput) + 4096 + maxStepsBytes
 	go func() {
 		r := bufio.NewReaderSize(stdoutPipe, 64<<10)
 		for i := 0; i < 2; i++ {
@@ -557,23 +587,28 @@ func parseResult(data []byte) Result {
 		Webhook       *WebhookResponse `json:"webhook"`
 		FunctionError *FunctionError   `json:"function_error"`
 		Error         string           `json:"error"`
+		Steps         []Step           `json:"steps"`
+		StepsOmitted  int              `json:"steps_omitted"`
 	}
 	if err := json.Unmarshal(data, &r); err != nil {
 		return Result{Status: StatusError, Message: "unreadable result"}
 	}
+	var res Result
 	switch {
 	case r.OK && r.Webhook != nil:
-		return Result{Status: StatusOK, Webhook: r.Webhook}
+		res = Result{Status: StatusOK, Webhook: r.Webhook}
 	case r.OK:
 		if len(r.Output) == 0 {
 			r.Output = json.RawMessage("null")
 		}
-		return Result{Status: StatusOK, Output: r.Output}
+		res = Result{Status: StatusOK, Output: r.Output}
 	case r.FunctionError != nil:
-		return Result{Status: StatusFunctionError, FunctionError: r.FunctionError}
+		res = Result{Status: StatusFunctionError, FunctionError: r.FunctionError}
 	default:
-		return Result{Status: StatusError, Message: r.Error}
+		res = Result{Status: StatusError, Message: r.Error}
 	}
+	res.Steps, res.StepsOmitted = r.Steps, r.StepsOmitted
+	return res
 }
 
 // crashReason tells why a process ended without a result.

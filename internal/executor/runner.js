@@ -6,6 +6,7 @@
 // envelope (input, caller, secrets, callback). The function's console goes
 // to stderr as JSON lines, where the executor captures and masks it.
 import { createClient } from "./client/index.js";
+import { createFlusher, createSteps } from "./steps.js";
 
 const enc = new TextEncoder();
 const stdoutWrite = Deno.stdout.writeSync.bind(Deno.stdout);
@@ -140,7 +141,26 @@ if (env.callback?.admin_token) {
   const admin = client(env.callback.admin_token);
   ctx.admin = Object.freeze({ db: (name) => admin.db(name) });
 }
+// Steps and progress: kept here and sent with the result; for an async job
+// backd also takes them live (coalesced), so a running job shows how far it got.
+let flusher = null;
+const steps = createSteps({ onChange: (kind) => flusher?.changed(kind) });
+if (env.callback?.token && env.callback.progress) {
+  const reporter = client(env.callback.token);
+  flusher = createFlusher({ steps, send: (body) => reporter.request({ method: "PUT", path: ["_job", "steps"], body }) });
+}
+ctx.step = (name, options) => steps.step(name, options);
+ctx.progress = (current, message) => steps.progress(current, message);
 Object.freeze(ctx);
+
+// The result line carries the steps (closed as done or failed) when there are any.
+const ending = async (status, line) => {
+  if (!steps.started) return line;
+  steps.finish(status);
+  if (flusher) await Promise.race([flusher.flush(), new Promise((r) => setTimeout(r, 2000))]);
+  const { steps: list, omitted } = steps.snapshot();
+  return { ...line, steps: list, steps_omitted: omitted };
+};
 
 try {
   const result = await handler(ctx);
@@ -148,16 +168,16 @@ try {
     const status = Number.isInteger(result?.status) ? result.status : 200;
     const body = typeof result?.body === "string" ? result.body : "";
     const headers = result?.headers && typeof result.headers === "object" ? result.headers : {};
-    out({ ok: true, webhook: { status, body, headers } });
+    out(await ending("done", { ok: true, webhook: { status, body, headers } }));
   } else {
-    out({ ok: true, output: result === undefined ? null : result });
+    out(await ending("done", { ok: true, output: result === undefined ? null : result }));
   }
   Deno.exit(0);
 } catch (e) {
   if (e && e[brand]) {
-    out({ ok: false, function_error: { status: e.status, code: e.code, message: e.message, details: e.details ?? null } });
+    out(await ending("failed", { ok: false, function_error: { status: e.status, code: e.code, message: e.message, details: e.details ?? null } }));
   } else {
-    out({ ok: false, error: String(e?.stack ?? e) });
+    out(await ending("failed", { ok: false, error: String(e?.stack ?? e) }));
   }
   Deno.exit(1);
 }

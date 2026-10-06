@@ -317,3 +317,17 @@ func TestHandler(t *testing.T) {
 		t.Error("short token accepted")
 	}
 }
+
+func TestParseResultCarriesSteps(t *testing.T) {
+	res := parseResult([]byte(`{"ok":true,"output":1,"steps":[{"n":1,"name":"load","status":"done","started_at":"2026-10-06T10:00:00.000Z","ended_at":"2026-10-06T10:00:02.000Z","duration_ms":2000,"current":10,"total":10,"message":null,"updated_at":"2026-10-06T10:00:02.000Z"}],"steps_omitted":4}`))
+	if res.Status != StatusOK || len(res.Steps) != 1 || res.StepsOmitted != 4 || res.Steps[0].Name != "load" || res.Steps[0].Total == nil || *res.Steps[0].Total != 10 || res.Steps[0].Message != nil || res.Steps[0].EndedAt == nil {
+		t.Errorf("result: %+v", res)
+	}
+	fe := parseResult([]byte(`{"ok":false,"function_error":{"status":422,"code":"bad","message":"m"},"steps":[{"n":1,"name":"x","status":"failed","started_at":"2026-10-06T10:00:00Z","current":0,"updated_at":"2026-10-06T10:00:00Z"}]}`))
+	if fe.Status != StatusFunctionError || len(fe.Steps) != 1 {
+		t.Errorf("function error: %+v", fe)
+	}
+	if res := parseResult([]byte(`{"ok":true,"output":1}`)); len(res.Steps) != 0 {
+		t.Errorf("no steps: %+v", res.Steps)
+	}
+}
