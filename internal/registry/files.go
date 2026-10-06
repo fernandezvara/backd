@@ -72,6 +72,14 @@ var (
 	fileTypeRe    = regexp.MustCompile(`^[a-z0-9][a-z0-9!#$&^_.+-]*/(\*|[a-z0-9][a-z0-9!#$&^_.+-]*)$`)
 )
 
+// activeTypes are the content types a browser may run something from. A family such
+// as `image/*` or `text/*` never admits them: a field takes one only when it is named
+// in `types`, so allowing images doesn't quietly allow SVG with scripts in it.
+var activeTypes = map[string]bool{
+	"image/svg+xml": true, "text/html": true, "application/xhtml+xml": true,
+	"text/xml": true, "application/xml": true, "text/javascript": true, "application/javascript": true,
+}
+
 // Allows reports whether a detected content type may be uploaded to the field.
 func (f *FileField) Allows(contentType string) bool {
 	if len(f.Types) == 0 {
@@ -83,7 +91,7 @@ func (f *FileField) Allows(contentType string) bool {
 		if t == ct {
 			return true
 		}
-		if family, ok := strings.CutSuffix(t, "/*"); ok && strings.HasPrefix(ct, family+"/") {
+		if family, ok := strings.CutSuffix(t, "/*"); ok && strings.HasPrefix(ct, family+"/") && !activeTypes[ct] {
 			return true
 		}
 	}

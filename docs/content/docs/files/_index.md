@@ -12,7 +12,7 @@ toc: true
 **What is available.** Everything below, from [connecting storage](storage/) to [files in apps](apps/). The Shelf tutorial chapters that use it are the next step of the Files roadmap.
 {{< /hint >}}
 
-Pages: [connecting storage](storage/), [file fields](file-fields/), [uploads and downloads](transfers/), [rules for files](rules/), [keeping storage tidy](maintenance/), [files in apps](apps/), and [files in functions](../functions/files/).
+Pages: [connecting storage](storage/), [file fields](file-fields/), [uploads and downloads](transfers/), [rules for files](rules/), [keeping storage tidy](maintenance/), [files in apps](apps/), [security](security/), and [files in functions](../functions/files/).
 
 ## The ideas
 
