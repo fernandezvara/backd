@@ -36,7 +36,7 @@ js-integration:
 # @backd/functions-testing's own tests (needs Deno; the dockerized test
 # image already has it).
 functions-testing-test:
-	$(COMPOSE_TEST) run --rm --build --entrypoint deno tests test clients/functions-testing/src/ examples/config/workshop/main/_functions/ examples/config/workshop/notifications/_functions/ examples/config/shelf/main/_functions/
+	$(COMPOSE_TEST) run --rm --build --entrypoint deno tests test clients/functions-testing/src/ clients/functions-testing/examples/ examples/config/workshop/main/_functions/ examples/config/workshop/notifications/_functions/ examples/config/shelf/main/_functions/
 	$(COMPOSE_TEST) down -v
 
 # The admin UI (ui/admin): build it into internal/adminui/dist, where the Go

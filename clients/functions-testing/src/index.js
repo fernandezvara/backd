@@ -107,11 +107,46 @@ function sortBy(items, orderBy) {
   return sorted
 }
 
+/**
+ * What a file field declares (`files:` in collection.yaml).
+ * @typedef {object} FileFieldConfig
+ * @property {boolean} [multiple]
+ * @property {number} [max_files]
+ * @property {number} [max_size]
+ * @property {string[]} [types]   Content types, or families such as `image/*`.
+ */
+
 /** An in-memory store shared by every ctx.db(...) call in one test. */
 export class MemoryStore {
   constructor() {
     /** @type {Map<string, Map<string, any>>} */
     this.byCollection = new Map()
+    /** @type {Map<string, Uint8Array>} */
+    this.objects = new Map()
+    /** @type {Map<string, Record<string, FileFieldConfig>>} */
+    this.fileFields = new Map()
+  }
+
+  /**
+   * Declares a collection's file fields, as `files:` in its collection.yaml does, so the
+   * fake enforces what backd does for them: `multiple` (a list; `put` adds), `max_files`,
+   * `max_size` (bytes) and `types`. A field that isn't declared holds one file, unlimited.
+   * @param {string} database
+   * @param {string} name
+   * @param {Record<string, FileFieldConfig>} fields
+   */
+  declareFiles(database, name, fields) {
+    this.fileFields.set(`${database}/${name}`, fields)
+    return this
+  }
+
+  /**
+   * The bytes stored for a file id, for assertions after calling the function under test.
+   * @param {string} fileId
+   * @returns {Uint8Array | undefined}
+   */
+  fileBytes(fileId) {
+    return this.objects.get(fileId)
   }
 
   /** @private */
@@ -154,8 +189,21 @@ export class MemoryStore {
 
 class FakeCollection {
   constructor(store, database, name, actor) {
+    this.store = store
+    this.database = database
+    this.name = name
     this.map = store.collection(database, name)
     this.actor = actor ?? null
+  }
+
+  /**
+   * The files of a document's file field: `get`, `put`, `delete`, `link`, as the real client
+   * has them, over the store's memory. No access rules, like the rest of the fake.
+   * @param {string} id
+   * @param {string} field
+   */
+  files(id, field) {
+    return new FakeFiles(this, id, field)
   }
 
   /**
@@ -224,6 +272,123 @@ class FakeCollection {
     checkIfMatch(doc, opts.ifMatch)
     this.map.delete(id)
   }
+}
+
+/** @param {string | Uint8Array | ArrayBuffer | Blob | ReadableStream} data */
+async function toBytes(data) {
+  if (typeof data === 'string') return new TextEncoder().encode(data)
+  if (data instanceof Uint8Array) return data
+  if (data instanceof ArrayBuffer) return new Uint8Array(data)
+  if (typeof Blob !== 'undefined' && data instanceof Blob) return new Uint8Array(await data.arrayBuffer())
+  return new Uint8Array(await new Response(/** @type {ReadableStream} */ (data)).arrayBuffer())
+}
+
+let fileSeq = 0
+
+/** The fake of `collection.files(id, field)`. */
+class FakeFiles {
+  constructor(collection, id, field) {
+    this.collection = collection
+    this.id = id
+    this.field = field
+  }
+
+  /** @private */
+  get config() {
+    const { database, name, store } = this.collection
+    return store.fileFields.get(`${database}/${name}`)?.[this.field] ?? {}
+  }
+
+  /** @private */
+  held(doc) {
+    const v = doc[this.field]
+    return v == null ? [] : Array.isArray(v) ? v : [v]
+  }
+
+  async list() {
+    return this.held(await this.collection.get(this.id))
+  }
+
+  /** @private */
+  async which(fileId) {
+    if (fileId !== undefined) return fileId
+    const files = await this.list()
+    if (files.length === 0) throw new NotFoundError({ status: 404, code: 'not_found', message: `the document holds no file in ${this.field}` })
+    if (files.length > 1) throw new TypeError(`files(${this.field}): the field holds several files: say which one (a fileId)`)
+    return files[0].id
+  }
+
+  async get(fileId) {
+    const id = await this.which(fileId)
+    const file = (await this.list()).find((f) => f.id === id)
+    const bytes = this.collection.store.objects.get(id)
+    if (!file || !bytes) throw new NotFoundError({ status: 404, code: 'not_found', message: 'file not found' })
+    return {
+      file,
+      response: new Response(bytes, { headers: { 'Content-Type': file.type } }),
+      bytes: async () => bytes,
+      text: async () => new TextDecoder().decode(bytes),
+    }
+  }
+
+  async put(data, opts = {}) {
+    const bytes = await toBytes(data)
+    const type = opts.type ?? (typeof Blob !== 'undefined' && data instanceof Blob && data.type ? data.type : 'application/octet-stream')
+    const cfg = this.config
+    const refuse = (status, code, message) => new BackdError({ status, code, message })
+    if (cfg.max_size !== undefined && bytes.length > cfg.max_size) throw refuse(413, 'payload_too_large', `the file is over ${cfg.max_size} bytes`)
+    if (cfg.types?.length && !cfg.types.some((t) => t === type || (t.endsWith('/*') && type.startsWith(t.slice(0, -1))))) {
+      throw refuse(415, 'unsupported_file_type', `this field doesn't accept ${type}`)
+    }
+    const doc = await this.collection.get(this.id)
+    checkIfMatch(doc, opts.ifMatch)
+    const existing = this.held(doc)
+    if (cfg.multiple && existing.length >= (cfg.max_files ?? 10)) throw refuse(409, 'too_many_files', `this field already holds ${existing.length} files (max_files)`)
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))
+    const file = {
+      id: `fl_test${String(++fileSeq).padStart(16, '0')}`,
+      name: sanitizeName(opts.name),
+      size: bytes.length,
+      type,
+      sha256: [...digest].map((b) => b.toString(16).padStart(2, '0')).join(''),
+      uploaded_at: now(),
+    }
+    this.collection.store.objects.set(file.id, bytes)
+    for (const old of cfg.multiple ? [] : existing) this.collection.store.objects.delete(old.id)
+    const next = { ...doc, [this.field]: cfg.multiple ? [...existing, file] : file }
+    next._meta = { ...doc._meta, version: doc._meta.version + 1, updated_at: now() }
+    this.collection.map.set(this.id, next)
+    return next
+  }
+
+  async delete(fileId, opts = {}) {
+    const doc = await this.collection.get(this.id)
+    checkIfMatch(doc, opts.ifMatch)
+    const existing = this.held(doc)
+    const gone = fileId === undefined ? existing : existing.filter((f) => f.id === fileId)
+    if (fileId !== undefined && gone.length === 0) throw new NotFoundError({ status: 404, code: 'not_found', message: 'file not found' })
+    for (const f of gone) this.collection.store.objects.delete(f.id)
+    const keep = existing.filter((f) => !gone.includes(f))
+    const next = { ...doc }
+    if (keep.length === 0) delete next[this.field]
+    else next[this.field] = this.config.multiple ? keep : keep[0]
+    next._meta = { ...doc._meta, version: doc._meta.version + 1, updated_at: now() }
+    this.collection.map.set(this.id, next)
+    return next
+  }
+
+  async link(fileId) {
+    const id = await this.which(fileId)
+    if (!(await this.list()).some((f) => f.id === id)) throw new NotFoundError({ status: 404, code: 'not_found', message: 'file not found' })
+    return { url: `https://files.test/${this.field}/${id}`, expires_at: new Date(Date.now() + 5 * 60_000).toISOString() }
+  }
+}
+
+/** What backd does to a file's name, roughly: no path, no control characters, `file` when nothing is left. */
+function sanitizeName(name) {
+  const base = String(name ?? '').normalize('NFC').split(/[\\/]/).pop() ?? ''
+  const clean = base.replace(/[\u0000-\u001f\u007f]/g, '').trim()
+  return clean === '' ? 'file' : clean.slice(0, 255)
 }
 
 function mergePatch(target, patch) {

@@ -1,5 +1,5 @@
 import { callTimedOut, createContext, EmailLimitError, emailMessage, fakeEmail, fakeJob, FunctionError, MemoryStore, resetIds } from './index.js'
-import { NotFoundError, VersionMismatchError } from '../../js/src/errors.js'
+import { BackdError, NotFoundError, VersionMismatchError } from '../../js/src/errors.js'
 
 // No test-framework dependency, matching the JS client's "no runtime
 // dependencies" (these helpers are dev-only, never shipped).
@@ -257,4 +257,51 @@ Deno.test('ctx.step and ctx.progress are recorded, and refuse what backd refuses
   const fresh = createContext()
   fresh.ctx.progress(3)
   assertEquals(fresh.steps()[0].name, 'progress')
+})
+
+// A document's files through ctx.db and ctx.admin.db, as the real client has them.
+Deno.test('files: put, get, link and delete on a single field', async () => {
+  const { ctx, store } = createContext({ admin: true })
+  store.seed('app', 'people', [{ id: 'p1', name: 'Ada' }])
+  const files = ctx.db('app').collection('people').files('p1', 'avatar')
+
+  const doc = await files.put(new Uint8Array([1, 2, 3]), { name: '../ada.png', type: 'image/png' })
+  assertEquals(doc.avatar.name, 'ada.png')
+  assertEquals(doc.avatar.size, 3)
+  assertEquals(doc.avatar.type, 'image/png')
+  assertEquals(doc.avatar.sha256.length, 64)
+  assertEquals(doc._meta.version, 2)
+  assertEquals([...(store.fileBytes(doc.avatar.id) ?? [])], [1, 2, 3])
+
+  const got = await files.get()
+  assertEquals([...(await got.bytes())], [1, 2, 3])
+  assertEquals(got.file.id, doc.avatar.id)
+  const link = await files.link()
+  assertEquals(link.url.startsWith('https://'), true)
+
+  // A second put replaces the file and drops the old bytes.
+  const again = await ctx.admin.db('app').collection('people').files('p1', 'avatar').put('two')
+  assertEquals(store.fileBytes(doc.avatar.id), undefined)
+  assertEquals(again.avatar.name, 'file')
+  assertEquals(await (await files.get(again.avatar.id)).text(), 'two')
+
+  const cleared = await files.delete()
+  assertEquals(cleared.avatar, undefined)
+  await assertRejects(() => files.get(), NotFoundError)
+})
+
+Deno.test('files: a declared field enforces what backd does', async () => {
+  const { ctx, store } = createContext()
+  store.seed('app', 'claims', [{ id: 'c1' }])
+  store.declareFiles('app', 'claims', { receipts: { multiple: true, max_files: 2, max_size: 4, types: ['image/*'] } })
+  const receipts = ctx.db('app').collection('claims').files('c1', 'receipts')
+  await receipts.put('abc', { type: 'image/png' })
+  const two = await receipts.put('def', { type: 'image/jpeg' })
+  assertEquals(two.receipts.length, 2)
+  assertEquals((await assertRejects(() => receipts.put('ghi', { type: 'image/png' }), BackdError)).code, 'too_many_files')
+  await assertRejects(() => receipts.get(), TypeError) // which one?
+  await receipts.delete(two.receipts[0].id)
+  assertEquals((await assertRejects(() => receipts.put('toolong', { type: 'image/png' }), BackdError)).status, 413)
+  assertEquals((await assertRejects(() => receipts.put('abc', { type: 'application/pdf' }), BackdError)).code, 'unsupported_file_type')
+  await assertRejects(() => receipts.put('abc', { type: 'image/png', ifMatch: 1 }), VersionMismatchError)
 })
