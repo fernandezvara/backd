@@ -54,6 +54,9 @@ func (a *adminAPI) checkCollections(realm, database, collection string) (list []
 // estimatedDocuments is the size of the collections a check would read, as far
 // as the storage can say cheaply; -1 when it can't.
 func (a *adminAPI) estimatedDocuments(r *http.Request, realm string, keys []string) int64 {
+	if a.fns == nil || a.fns.docs == nil || a.fns.docs.store == nil {
+		return -1
+	}
 	var total int64
 	rl := a.reg.Realms[realm]
 	for _, key := range keys {

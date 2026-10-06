@@ -350,3 +350,127 @@ func TestFunctionsShowSteps(t *testing.T) {
 	c.expect(2, "--realm", "", "functions", "jobs", "--job", job.ID, "--url", srv.URL)
 	c.expect(1, "not found", "", "functions", "jobs", "--realm", "acme", "--job", "nope", "--url", srv.URL)
 }
+
+// fakeCheckWorker plays the worker of a schema check for the CLI tests: it
+// claims the job, reports a step and a report per collection, and completes it.
+func fakeCheckWorker(t *testing.T, svc *auth.Users, reports map[string]auth.CheckReport) (stop func()) {
+	t.Helper()
+	done := make(chan struct{})
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		ctx := context.Background()
+		for {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			job, found, _ := svc.ClaimJob(ctx, "w1")
+			if !found || job.Check == nil {
+				time.Sleep(5 * time.Millisecond)
+				continue
+			}
+			total := 100.0
+			now := time.Now().UTC()
+			_, _ = svc.SetJobSteps(ctx, job.ID, job.Attempts, []auth.Step{{N: 1, Name: job.Check.Collections[0], Status: auth.StepRunning, StartedAt: now, Current: 45, Total: &total, Message: "scanned 450 of about 1000 documents", UpdatedAt: now}}, 0)
+			time.Sleep(60 * time.Millisecond)
+			for _, key := range job.Check.Collections {
+				if r, ok := reports[key]; ok {
+					r.JobID = job.ID
+					_ = svc.SaveCheckReport(ctx, r)
+				}
+			}
+			_ = svc.CompleteJob(ctx, job.ID, auth.JobResult{Status: "ok"})
+		}
+	}()
+	return func() { close(done); <-finished }
+}
+
+func TestDataCheck(t *testing.T) {
+	root := writeConfig(t, map[string]string{
+		"acme/realm.yaml":             "roles:\n  ops:\n    admin: true\n",
+		"acme/app/notes/schema.json":  `{"type": "object"}`,
+		"acme/app/labels/schema.json": `{"type": "object"}`,
+	})
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	svc := &auth.Users{
+		Store:    authtest.NewMemStore(),
+		Hasher:   auth.NewHasher(2, auth.Argon2Params{Memory: 64, Time: 1, Threads: 1}),
+		Settings: reg.Realms["acme"].Settings,
+	}
+	_, apiKey, err := svc.CreateAPIKey(ctx, "cli", auth.KeyOptions{Role: auth.KeyRoleAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(httpapi.NewHandler(httpapi.Config{
+		Log:           slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		Registry:      reg,
+		Ready:         func(context.Context) error { return nil },
+		ExecutorToken: "test-executor-token-0123456789ab",
+		Users: func(realm string) *auth.Users {
+			if realm == "acme" {
+				return svc
+			}
+			return nil
+		},
+	}))
+	defer srv.Close()
+	c := &cliEnv{t: t, env: map[string]string{
+		"BACKD_CREDENTIALS": filepath.Join(t.TempDir(), "backd", "credentials"),
+		"BACKD_API_KEY":     apiKey,
+	}}
+	at := time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC)
+	notes := auth.CheckReport{Database: "app", Collection: "notes", StartedAt: at, FinishedAt: at.Add(time.Minute), Scanned: 1000, Invalid: 2, Complete: true, Limit: 100, SchemaHash: "abc123def456",
+		Documents: []auth.CheckedDocument{
+			{ID: "n1", Problems: []auth.CheckProblem{{Path: "title", Reason: "is required"}}},
+			{ID: "n7", Deleted: true, MoreProblems: 3, Problems: []auth.CheckProblem{{Path: "items.2.price", Reason: "got string, want number"}}},
+		}}
+	labels := auth.CheckReport{Database: "app", Collection: "labels", StartedAt: at, FinishedAt: at.Add(time.Minute), Scanned: 10, Complete: true, Limit: 100, SchemaHash: "000000000000"}
+	plain := []string{"--realm", "acme", "--url", srv.URL}
+	base := append(append([]string{}, plain...), "--interval", "10ms")
+
+	// Drift in one collection: the reports are printed and the exit status is 1.
+	stop := fakeCheckWorker(t, svc, map[string]auth.CheckReport{"app/notes": notes, "app/labels": labels})
+	out := c.expect(1, "drift found: 2 invalid documents in 1 collections", "", append([]string{"data", "check"}, base...)...)
+	for _, want := range []string{"app/notes: scanned 1000, invalid 2 (complete)", "n1", "title: is required", "n7", "yes", "items.2.price: got string, want number; and 3 more", "app/labels: scanned 10, invalid 0 (complete)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the report lacks %q:\n%s", want, out)
+		}
+	}
+	stop()
+
+	// A collection with nothing wrong exits 0.
+	stop = fakeCheckWorker(t, svc, map[string]auth.CheckReport{"app/labels": labels})
+	c.expect(0, "app/labels: scanned 10, invalid 0 (complete)", "", append([]string{"data", "check", "--database", "app", "--collection", "labels"}, base...)...)
+	stop()
+
+	// --json: one object per collection.
+	stop = fakeCheckWorker(t, svc, map[string]auth.CheckReport{"app/notes": notes})
+	c.expect(1, `"invalid":2`, "", append([]string{"data", "check", "--database", "app", "--collection", "notes", "--json"}, base...)...)
+	stop()
+
+	// --no-wait starts it and prints the job id; another start is refused with it.
+	id := strings.TrimSpace(c.expect(0, "", "", append([]string{"data", "check", "--no-wait"}, base...)...))
+	if len(id) < 10 {
+		t.Fatalf("the job id: %q", id)
+	}
+	c.expect(1, "already running in this realm (job "+id+")", "", append([]string{"data", "check"}, base...)...)
+	c.expect(0, "a schema check is queued (job "+id+")", "", append([]string{"data", "checks"}, plain...)...) // stderr is mixed in by the helper
+	if _, err := svc.CancelJob(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+
+	// The latest reports.
+	table := c.expect(0, "app/notes", "", append([]string{"data", "checks"}, plain...)...)
+	if !strings.Contains(table, "never checked") && !strings.Contains(table, "1000") {
+		t.Errorf("checks:\n%s", table)
+	}
+	c.expect(0, "n7", "", append([]string{"data", "checks", "--database", "app", "--collection", "notes"}, plain...)...)
+	c.expect(1, "no schema check report yet", "", append([]string{"data", "checks", "--database", "app", "--collection", "ghost"}, plain...)...)
+	c.expect(2, "--collection needs --database", "", append([]string{"data", "check", "--collection", "notes"}, base...)...)
+}
