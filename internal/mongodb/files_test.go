@@ -20,7 +20,7 @@ func TestFileJournalOnMongoDB(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	stale, err := s.StaleFileJournal(ctx, t0.Add(time.Hour), 10)
+	stale, err := s.StaleFileJournal(ctx, t0.Add(time.Hour), t0.Add(time.Hour), 10)
 	if err != nil || len(stale) != 2 || stale[0].ID != "fl_old" || stale[1].ID != "fl_stored" {
 		t.Fatalf("stale: %+v %v", stale, err)
 	}
@@ -30,8 +30,65 @@ func TestFileJournalOnMongoDB(t *testing.T) {
 	if err := s.SetFileJournalStatus(ctx, "fl_ghost", auth.JournalFailed, "", t0, t0); err == nil {
 		t.Error("a status for an unknown upload")
 	}
-	if stale, _ := s.StaleFileJournal(ctx, t0.Add(time.Hour), 10); len(stale) != 1 || stale[0].ID != "fl_stored" {
+	if stale, _ := s.StaleFileJournal(ctx, t0.Add(time.Hour), t0.Add(time.Hour), 10); len(stale) != 1 || stale[0].ID != "fl_stored" {
 		t.Errorf("after attaching one: %+v", stale)
+	}
+}
+
+func TestPendingUploadsOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	t0 := time.Date(2126, 10, 7, 12, 0, 0, 0, time.UTC)
+	until := t0.Add(time.Hour)
+	for _, id := range []string{"fl_p1", "fl_p2"} {
+		e := auth.FileJournalEntry{ID: id, Database: "app", Collection: "forms", Field: "scan", Key: "k/" + id, Status: auth.JournalWriting, CreatedAt: t0, UpdatedAt: t0, ExpiresAt: until.Add(24 * time.Hour),
+			Pending: true, TokenHash: auth.HashUploadToken("fut_" + id), CallerKey: "user:u1", PendingUntil: until}
+		if err := s.JournalFile(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n, _ := s.CountOpenPendingUploads(ctx, "user:u1", t0); n != 2 {
+		t.Errorf("open uploads: %d", n)
+	}
+	if n, _ := s.CountOpenPendingUploads(ctx, "user:other", t0); n != 0 {
+		t.Errorf("another caller's: %d", n)
+	}
+	// Not ready until it is completed.
+	if _, err := s.ClaimPendingUpload(ctx, "fl_p1", auth.HashUploadToken("fut_fl_p1"), "doc1", t0); err == nil {
+		t.Error("claimed an upload still being written")
+	}
+	if err := s.CompletePendingUpload(ctx, "fl_p1", "scan.png", "image/png", "abc", 12, t0, t0); err != nil {
+		t.Fatal(err)
+	}
+	if e, err := s.FileJournalEntry(ctx, "fl_p1"); err != nil || e.Status != auth.JournalStored || e.Name != "scan.png" || e.Size != 12 || e.SHA256 != "abc" || !e.Pending {
+		t.Fatalf("completed: %+v %v", e, err)
+	}
+	if _, err := s.ClaimPendingUpload(ctx, "fl_p1", auth.HashUploadToken("wrong"), "doc1", t0); err == nil {
+		t.Error("claimed with the wrong token")
+	}
+	if _, err := s.ClaimPendingUpload(ctx, "fl_p1", auth.HashUploadToken("fut_fl_p1"), "doc1", until.Add(time.Second)); err == nil {
+		t.Error("claimed an expired upload")
+	}
+	e, err := s.ClaimPendingUpload(ctx, "fl_p1", auth.HashUploadToken("fut_fl_p1"), "doc1", t0)
+	if err != nil || e.Status != auth.JournalAttaching || e.DocumentID != "doc1" {
+		t.Fatalf("claim: %+v %v", e, err)
+	}
+	if _, err := s.ClaimPendingUpload(ctx, "fl_p1", auth.HashUploadToken("fut_fl_p1"), "doc2", t0); err == nil {
+		t.Error("claimed twice")
+	}
+	if err := s.ReleasePendingUpload(ctx, "fl_p1", t0); err != nil {
+		t.Fatal(err)
+	}
+	if e, _ := s.FileJournalEntry(ctx, "fl_p1"); e.Status != auth.JournalStored || e.DocumentID != "" {
+		t.Errorf("released: %+v", e)
+	}
+	// Stale: expired and unused, whatever its last update; an attaching one past the grace period.
+	stale, _ := s.StaleFileJournal(ctx, t0.Add(-time.Hour), until.Add(time.Minute), 10)
+	if len(stale) != 1 || stale[0].ID != "fl_p1" {
+		t.Errorf("expired pending: %+v", stale)
+	}
+	if stale, _ := s.StaleFileJournal(ctx, t0.Add(-time.Hour), t0, 10); len(stale) != 0 {
+		t.Errorf("unexpired pending reported: %+v", stale)
 	}
 }
 

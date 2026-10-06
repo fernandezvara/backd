@@ -46,3 +46,27 @@ update: >
   && !('thumbnail' in changed())
 delete: user != nil && document._meta.owner == user.id
 `
+
+// forms takes anonymous submissions with a required scan: a collection for creating
+// documents together with their files.
+const formsSchema = `{
+  "type": "object",
+  "properties": {"title": {"type": "string"}},
+  "required": ["title", "scan"]
+}`
+
+const formsConfig = `files:
+  scan:
+    max_size: 4KiB
+    types: [image/png]
+  extras:
+    multiple: true
+    max_files: 2
+    max_size: 4KiB
+`
+
+const formsRules = `
+read: user != nil && document._meta.owner == user.id
+create: "true"
+update: user != nil && document._meta.owner == user.id
+`

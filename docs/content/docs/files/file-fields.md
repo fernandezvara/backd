@@ -39,7 +39,7 @@ A field name is lower-case letters, digits and underscores. **A file field is de
 
 ## What a file field holds
 
-backd owns it. Clients can't write it: a `POST`, `PUT`, `PATCH` or batch operation drops file fields from the body, and a `PUT` keeps the files the document has. Files change only through [uploads and removals](../transfers/). A single field holds one object, a `multiple` one a list of them:
+backd owns it. Clients can't write it: a `POST`, `PUT`, `PATCH` or batch operation drops file fields from the body, and a `PUT` keeps the files the document has. Files change only through [uploads and removals](../transfers/), or by naming a [pending upload](../transfers/#creating-a-document-with-its-files) in a write. A single field holds one object, a `multiple` one a list of them:
 
 ```json
 {

@@ -30,7 +30,17 @@ update: >
   && !('thumbnail' in changed())
 ```
 
-An owner who uploads to or removes `thumbnail` gets `403`; a function calling `ctx.admin.db` sets it and nothing in the rules stands in the way. A rule on `create` can refuse the field as well (`data.thumbnail == nil`), though a create can't carry files in this release.
+An owner who uploads to or removes `thumbnail` gets `403`; a function calling `ctx.admin.db` sets it and nothing in the rules stands in the way. A rule on `create` can refuse the field as well, see [Creating with files](#creating-with-files).
+
+## Creating with files
+
+A [pending upload](../transfers/#creating-a-document-with-its-files) named in a create, `PUT` or `PATCH` is checked by the `create` or `update` rule **on the final document**, with the file's details already in the field: the same rule for a signed-in caller and an anonymous one. On a create there is no `changed()`, so a rule that reserves a field refuses it with `data.thumbnail == nil`:
+
+```yaml
+create: user != nil && data.thumbnail == nil
+```
+
+A rule that refuses leaves the upload unused. Starting a pending upload is itself only a question of the `create` rule existing (and, for an anonymous caller, admitting a document with just the file); what the document may hold is decided when it is written.
 
 ## Limits by what is already there
 

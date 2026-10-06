@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"github.com/rs/xid"
 	"log/slog"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/fernandezvara/backd/internal/executor"
 	"github.com/fernandezvara/backd/internal/metrics"
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/internal/storage"
 )
 
 // workerPollInterval is how long a worker's goroutine waits before
@@ -496,6 +498,21 @@ func (w *Worker) FilesDue(ctx context.Context) {
 			continue
 		}
 		for _, e := range stale {
+			// A write may have attached the file and died before saying so: a
+			// document that references it keeps it.
+			if e.DocumentID != "" {
+				referenced, err := w.fileReferenced(ctx, realm, e)
+				if err != nil {
+					w.log.Warn("could not check whether a document references an upload; it is left for now", "realm", realm, "file", e.ID, "error", err)
+					continue
+				}
+				if referenced {
+					if err := svc.SetUploadStatus(ctx, e.ID, auth.JournalAttached, e.DocumentID); err != nil {
+						w.log.Error("mark an upload attached", "realm", realm, "file", e.ID, "error", err)
+					}
+					continue
+				}
+			}
 			if err := svc.QueueFileDeletion(ctx, e.Key, "abandoned"); err != nil {
 				w.log.Error("queue an abandoned upload's object", "realm", realm, "file", e.ID, "error", err)
 				continue
@@ -530,4 +547,25 @@ func (w *Worker) FilesDue(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// fileReferenced reports whether the document an upload was meant for holds the file.
+func (w *Worker) fileReferenced(ctx context.Context, realm string, e auth.FileJournalEntry) (bool, error) {
+	c, ok := w.reg.Collection(realm, e.Database, e.Collection)
+	if !ok || c.Files[e.Field] == nil {
+		return false, nil
+	}
+	doc, err := w.fns.docs.store.Repository(c).Get(ctx, e.DocumentID)
+	switch {
+	case errors.Is(err, storage.ErrNotFound):
+		return false, nil
+	case err != nil:
+		return false, err
+	}
+	for _, f := range filesOf(c.Files[e.Field], doc) {
+		if f["id"] == e.ID {
+			return true, nil
+		}
+	}
+	return false, nil
 }

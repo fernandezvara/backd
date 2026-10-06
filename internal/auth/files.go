@@ -2,6 +2,10 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"time"
 )
 
@@ -13,10 +17,11 @@ import (
 
 // Journal states of an upload.
 const (
-	JournalWriting  = "writing"  // the upload started; the object may be partly stored
-	JournalStored   = "stored"   // the object is stored; the document doesn't reference it yet
-	JournalAttached = "attached" // a document references it
-	JournalFailed   = "failed"   // it never became part of a document; its object was queued for deletion
+	JournalWriting   = "writing"   // the upload started; the object may be partly stored
+	JournalStored    = "stored"    // the object is stored; the document doesn't reference it yet
+	JournalAttaching = "attaching" // a write is attaching a pending upload to a document
+	JournalAttached  = "attached"  // a document references it
+	JournalFailed    = "failed"    // it never became part of a document; its object was queued for deletion
 )
 
 const (
@@ -44,6 +49,19 @@ type FileJournalEntry struct {
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 	ExpiresAt  time.Time
+
+	// A pending upload is one made before the document that will hold it exists
+	// (or without the document being touched): it is attached by naming it, with
+	// its token, in a write. Its details are kept here until then.
+	Pending      bool
+	TokenHash    string    // SHA-256 of the secret token the creator holds
+	Owner        string    // the user who made it; "" for an anonymous caller
+	CallerKey    string    // who the open-uploads limit counts it for
+	PendingUntil time.Time // unused, it expires then
+	Name         string
+	Type         string
+	SHA256       string
+	UploadedAt   time.Time
 }
 
 // FileDeletion is an object to delete from the bucket.
@@ -74,6 +92,69 @@ func (s *Users) SetUploadStatus(ctx context.Context, id, status, documentID stri
 	return s.Store.SetFileJournalStatus(ctx, id, status, documentID, now, expires)
 }
 
+// MaxOpenPendingUploads is how many unused pending uploads one caller may hold.
+const MaxOpenPendingUploads = 20
+
+// NewUploadToken makes the secret a pending upload's creator holds, and the hash
+// that is stored instead of it.
+func NewUploadToken() (token, hash string) {
+	b := make([]byte, 32)
+	_, _ = rand.Read(b)
+	token = "fut_" + base64.RawURLEncoding.EncodeToString(b)
+	return token, HashUploadToken(token)
+}
+
+// HashUploadToken is what is stored of an upload token.
+func HashUploadToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+// JournalPendingUpload records a pending upload that is starting; unused, it
+// expires after ttl.
+func (s *Users) JournalPendingUpload(ctx context.Context, e FileJournalEntry, ttl time.Duration) error {
+	now := s.now()
+	e.Pending, e.PendingUntil = true, now.Add(ttl)
+	e.Status, e.CreatedAt, e.UpdatedAt = JournalWriting, now, now
+	e.ExpiresAt = e.PendingUntil.Add(fileJournalFailedKeep)
+	return s.Store.JournalFile(ctx, e)
+}
+
+// CompletePendingUpload records what was stored: the upload is now ready to be attached.
+func (s *Users) CompletePendingUpload(ctx context.Context, id, name, contentType, sha256sum string, size int64, uploadedAt time.Time) error {
+	return s.Store.CompletePendingUpload(ctx, id, name, contentType, sha256sum, size, uploadedAt, s.now())
+}
+
+// PendingUpload returns a pending upload's record, or ErrNotFound.
+func (s *Users) PendingUpload(ctx context.Context, id string) (FileJournalEntry, error) {
+	e, err := s.Store.FileJournalEntry(ctx, id)
+	if err != nil {
+		return e, err
+	}
+	if !e.Pending {
+		return FileJournalEntry{}, ErrNotFound
+	}
+	return e, nil
+}
+
+// ClaimPendingUpload takes a completed, unexpired pending upload whose token
+// matches, once: it is held as attaching to the document until it is attached or
+// released. ErrNotFound when there is none to take.
+func (s *Users) ClaimPendingUpload(ctx context.Context, id, token, documentID string) (FileJournalEntry, error) {
+	return s.Store.ClaimPendingUpload(ctx, id, HashUploadToken(token), documentID, s.now())
+}
+
+// ReleasePendingUpload gives a claimed pending upload back, when the write that
+// claimed it didn't happen.
+func (s *Users) ReleasePendingUpload(ctx context.Context, id string) error {
+	return s.Store.ReleasePendingUpload(ctx, id, s.now())
+}
+
+// OpenPendingUploads counts the unused pending uploads a caller holds.
+func (s *Users) OpenPendingUploads(ctx context.Context, callerKey string) (int, error) {
+	return s.Store.CountOpenPendingUploads(ctx, callerKey, s.now())
+}
+
 // QueueFileDeletion queues an object for deletion; queueing the same key twice
 // is one deletion.
 func (s *Users) QueueFileDeletion(ctx context.Context, key, reason string) error {
@@ -81,10 +162,11 @@ func (s *Users) QueueFileDeletion(ctx context.Context, key, reason string) error
 	return s.Store.QueueFileDeletion(ctx, FileDeletion{Key: key, Reason: reason, NotBefore: now, CreatedAt: now})
 }
 
-// AbandonedUploads returns uploads left writing or stored for longer than the
-// grace period.
+// AbandonedUploads returns uploads left writing, stored or attaching for longer
+// than the grace period, and pending uploads nobody used before they expired.
 func (s *Users) AbandonedUploads(ctx context.Context, limit int) ([]FileJournalEntry, error) {
-	return s.Store.StaleFileJournal(ctx, s.now().Add(-FileJournalGrace), limit)
+	now := s.now()
+	return s.Store.StaleFileJournal(ctx, now.Add(-FileJournalGrace), now, limit)
 }
 
 // ClaimFileDeletions returns up to limit deletions that are due, holding them for

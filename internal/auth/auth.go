@@ -230,7 +230,16 @@ type Store interface {
 	// last updated before the given time.
 	JournalFile(ctx context.Context, e FileJournalEntry) error
 	SetFileJournalStatus(ctx context.Context, id, status, documentID string, at, expiresAt time.Time) error
-	StaleFileJournal(ctx context.Context, before time.Time, limit int) ([]FileJournalEntry, error)
+	StaleFileJournal(ctx context.Context, before, now time.Time, limit int) ([]FileJournalEntry, error)
+	// FileJournalEntry returns one upload's record (ErrNotFound); the others are
+	// the bookkeeping of pending uploads: completing one, claiming it once by its
+	// token hash (stored → attaching, ErrNotFound when it can't be taken), giving
+	// a claim back, and counting a caller's open ones.
+	FileJournalEntry(ctx context.Context, id string) (FileJournalEntry, error)
+	CompletePendingUpload(ctx context.Context, id, name, contentType, sha256sum string, size int64, uploadedAt, at time.Time) error
+	ClaimPendingUpload(ctx context.Context, id, tokenHash, documentID string, now time.Time) (FileJournalEntry, error)
+	ReleasePendingUpload(ctx context.Context, id string, at time.Time) error
+	CountOpenPendingUploads(ctx context.Context, callerKey string, now time.Time) (int, error)
 	// QueueFileDeletion adds an object to delete (one per key); ClaimFileDeletions
 	// returns up to limit due ones and holds them until lease; CompleteFileDeletion
 	// removes one; RetryFileDeletion counts a failed attempt and holds it until
