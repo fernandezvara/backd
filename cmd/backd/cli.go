@@ -317,10 +317,11 @@ func registerRemote(cfg *cli.Config) {
 		boolean(cc, "json", "one JSON object per line")
 	})
 	fn.SubCommand("jobs").ShortHelp("list async and scheduled jobs, newest first").
-		LongHelp("Lists the realm's async jobs and cron runs with their state and how they ended\n(never their input or output): for one function with --function, or every\nfunction of a realm with --realm. --status narrows to queued, running or done,\n--scheduled to cron runs. A cron run's id is cron_<database>_<function>_<yyyymmddhhmm>\n(UTC). " + adminAPINote).
+		LongHelp("Lists the realm's async jobs and cron runs with their state and how they ended\n(never their input or output): for one function with --function, or every\nfunction of a realm with --realm. --status narrows to queued, running or done,\n--scheduled to cron runs; PROGRESS is the step a function reported with ctx.step\n(--job <id> with --realm shows every step of one job). A cron run's id is cron_<database>_<function>_<yyyymmddhhmm>\n(UTC). " + adminAPINote).
 		Func(act("functions jobs", functionsJobs)).Config(func(cc *cli.CommandConfig) {
 		optional(cc, "function", "the function, as <realm>/<database>/<name>")
 		optional(cc, "realm", "list every function's jobs in this realm instead")
+		optional(cc, "job", "show one job (with --realm) with every step it reported, instead of listing")
 		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
 		cc.Define("status").String().Flag("status").Default("").OneOf("", "queued", "running", "done").Description("only jobs in this state")
 		boolean(cc, "scheduled", "only cron runs")
