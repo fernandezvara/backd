@@ -286,10 +286,22 @@ var systemCollections = []systemCollection{
 			"created_at":  typ("date"),
 			"updated_at":  typ("date"),
 			"expires_at":  typ("date"),
+			// Pending uploads (made before the document that holds them).
+			"pending":       typ("bool"),
+			"token_hash":    str(),
+			"owner":         str(),
+			"caller_key":    str(),
+			"pending_until": typ("date"),
+			"name":          str(),
+			"type":          str(),
+			"sha256":        str(),
+			"uploaded_at":   typ("date"),
 		}),
 		indexes: []systemIndex{
 			// What a worker looks for: uploads stuck writing or stored.
 			{keys: bson.D{{Key: "status", Value: 1}, {Key: "updated_at", Value: 1}}},
+			// How many open pending uploads a caller holds.
+			{keys: bson.D{{Key: "caller_key", Value: 1}, {Key: "status", Value: 1}}, sparse: true},
 			{keys: bson.D{{Key: "expires_at", Value: 1}}, ttl: true},
 		},
 	},

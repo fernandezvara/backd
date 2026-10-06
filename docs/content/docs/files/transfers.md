@@ -35,6 +35,30 @@ curl -X POST "$API/v1/acme/app/people/$ID/_files/avatar?name=ada.png" \
 - A field with `upload: direct` answers `409 upload_mode_mismatch`.
 - Bodies stream: they never sit in memory, and large files go to the bucket in parts. `BACKD_MAX_UPLOAD_BYTES` (default 100 MiB) caps what a proxy upload may be; a field's effective limit is the smaller of it and `max_size`. It replaces `MAX_BODY_BYTES` for upload requests only.
 
+## Creating a document with its files
+
+A new document has no id to upload to yet, and a **required** file field can't wait for one. So upload first, then name the upload in the write:
+
+```sh
+# 1. The file, before the document exists: answers an upload_id and a secret upload_token
+curl -X POST "$API/v1/acme/app/claims/_files/receipt/uploads?name=receipt.pdf" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/pdf" --data-binary @receipt.pdf
+
+# 2. The document, naming the upload where the file goes
+curl -X POST "$API/v1/acme/app/claims" -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Taxi", "receipt": {"upload": "fl_…", "token": "fut_…"}}'
+```
+
+The second request is validated and answered like any create, with the file's details in the field. The same reference works in a `PUT` and a `PATCH`: a single field's file is replaced, and a `multiple` field's gets the new files after the ones it holds (a list of references adds several; `409 too_many_files` past `max_files`).
+
+- **The token is the proof.** Only its hash is kept, and it is shown once. An upload made by a signed-in user can only be used by that user; one made by an anonymous caller by whoever holds the token. A leaked `upload_id` alone does nothing.
+- **Used once, and for its field.** An upload belongs to one collection and field, is attached by one write, and expires after the realm's `pending_ttl` (1 hour by default). A reference that is wrong, used, expired or someone else's is a `400 validation_error` that doesn't say which.
+- **A write that fails gives the upload back:** a refused rule or a validation error leaves it usable for the next try.
+- **Who may start one:** a signed-in user, when the collection has a `create` rule; an anonymous caller, when the `create` rule admits a document holding just that file. Each caller holds at most **20 unused uploads** and may start a limited number per ten minutes (`429`, with `Retry-After`). Unused uploads and their objects are deleted by the workers after they expire.
+- **Rules** see the final document, with the file in it, for every caller alike: see [Rules for files](../rules/#creating-with-files). Batches don't take references yet.
+- The upload endpoint takes the same body and refuses what an upload to a document does: `413`, `415 unsupported_file_type`, `503 storage_unavailable`.
+
 ## Downloading
 
 - **`download: presigned`** (the default): `302` to a link of the storage that works for a few minutes (`presigned_ttl`, field, then realm, then 5 minutes; at most 7 days) and forces a download. The response is `Cache-Control: private, no-store`. Ask for `?link=json` to get `{"url": …, "expires_at": …}` instead of a redirect.

@@ -145,7 +145,20 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 	}
 	defer claim.release(r.Context())
 	stripSystemFields(body)
-	stripFileFields(c, body)
+	refs, details := takeFileRefs(c, body)
+	if len(details) > 0 {
+		refsError(w, r, details)
+		return
+	}
+	var pending *pendingSet
+	if len(refs) > 0 {
+		if pending, ok = d.resolvePending(w, r, c, refs); !ok {
+			return
+		}
+		if !pending.apply(w, r, c, body, nil) {
+			return
+		}
+	}
 	if !validate(w, r, c, body) {
 		return
 	}
@@ -159,9 +172,18 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 	meta := map[string]any{"created_at": now, "updated_at": now, "version": int64(1)}
 	stampCreate(r, meta)
 	doc["_meta"] = meta
+	if pending != nil && !pending.claim(w, r, doc["id"].(string)) {
+		return
+	}
 	if err := repo.Create(r.Context(), doc); err != nil {
+		if pending != nil {
+			pending.release(r)
+		}
 		storageError(w, r, err)
 		return
+	}
+	if pending != nil {
+		pending.attached(r, doc["id"].(string))
 	}
 	w.Header().Set("Location", r.URL.JoinPath(url.PathEscape(doc["id"].(string))).Path)
 	out := render(doc)
@@ -304,6 +326,21 @@ func parseListQuery(v url.Values, fields map[string]registry.Field) (storage.Que
 	return q, details
 }
 
+// takePending takes the file fields out of a PUT or PATCH body and resolves the
+// pending uploads it names, if any: nil when it names none. It answers and returns
+// false when it can't.
+func (d *documents) takePending(w http.ResponseWriter, r *http.Request, c *registry.Collection, body map[string]any) (*pendingSet, bool) {
+	refs, details := takeFileRefs(c, body)
+	if len(details) > 0 {
+		refsError(w, r, details)
+		return nil, false
+	}
+	if len(refs) == 0 {
+		return nil, true
+	}
+	return d.resolvePending(w, r, c, refs)
+}
+
 func (d *documents) replace(w http.ResponseWriter, r *http.Request) {
 	c, repo := d.collection(r)
 	body, ok := readObject(w, r)
@@ -311,12 +348,18 @@ func (d *documents) replace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stripSystemFields(body)
-	stripFileFields(c, body)
-	d.write(w, r, c, repo, func(current map[string]any) (map[string]any, bool) {
+	pending, ok := d.takePending(w, r, c, body)
+	if !ok {
+		return
+	}
+	d.write(w, r, c, repo, pending, func(current map[string]any) (map[string]any, bool) {
 		candidate := body
 		if len(c.Files) > 0 { // a PUT keeps the document's files
 			candidate = deepCopy(body)
 			keepFileFields(c, candidate, timesToStrings(current).(map[string]any))
+		}
+		if pending != nil && !pending.apply(w, r, c, candidate, timesToStrings(current).(map[string]any)) {
+			return nil, false
 		}
 		if !validate(w, r, c, candidate) {
 			return nil, false
@@ -332,11 +375,17 @@ func (d *documents) patch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stripSystemFields(patch)
-	stripFileFields(c, patch)
-	d.write(w, r, c, repo, func(current map[string]any) (map[string]any, bool) {
+	pending, ok := d.takePending(w, r, c, patch)
+	if !ok {
+		return
+	}
+	d.write(w, r, c, repo, pending, func(current map[string]any) (map[string]any, bool) {
 		// Deep copies: merging must not modify the stored document, which the
 		// update rule (changed()) compares against.
 		merged := mergePatch(timesToStrings(userFields(current)).(map[string]any), deepCopy(patch))
+		if pending != nil && !pending.apply(w, r, c, merged, timesToStrings(current).(map[string]any)) {
+			return nil, false
+		}
 		if !validate(w, r, c, merged) {
 			return nil, false
 		}
@@ -353,7 +402,7 @@ const maxWriteAttempts = 3
 // version read. When the document changes underneath, a request with a
 // specific If-Match fails with 412; otherwise the cycle is retried, and
 // gives up with 409 write_conflict after maxWriteAttempts.
-func (d *documents) write(w http.ResponseWriter, r *http.Request, c *registry.Collection, repo storage.Repository, build func(current map[string]any) (map[string]any, bool)) {
+func (d *documents) write(w http.ResponseWriter, r *http.Request, c *registry.Collection, repo storage.Repository, pending *pendingSet, build func(current map[string]any) (map[string]any, bool)) {
 	cond, err := parseIfMatch(r.Header.Values("If-Match"))
 	if err != nil {
 		writeError(w, r, http.StatusBadRequest, codeInvalidHeader, err.Error())
@@ -392,9 +441,18 @@ func (d *documents) write(w http.ResponseWriter, r *http.Request, c *registry.Co
 		fields["id"] = current["id"]
 		fields["_meta"] = meta
 
+		if pending != nil && !pending.claim(w, r, current["id"].(string)) {
+			return
+		}
 		err = repo.Replace(r.Context(), fields, read)
+		if err != nil && pending != nil {
+			pending.release(r)
+		}
 		switch {
 		case err == nil:
+			if pending != nil {
+				pending.attached(r, fields["id"].(string))
+			}
 			d.auditData(r, auth.AuditDataUpdate, c, fields["id"].(string))
 			writeDocument(w, http.StatusOK, fields)
 			return

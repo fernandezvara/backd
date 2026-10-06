@@ -1055,12 +1055,19 @@ func (m *MemStore) SetFileJournalStatus(_ context.Context, id, status, documentI
 	return nil
 }
 
-func (m *MemStore) StaleFileJournal(_ context.Context, before time.Time, limit int) ([]auth.FileJournalEntry, error) {
+func (m *MemStore) StaleFileJournal(_ context.Context, before, now time.Time, limit int) ([]auth.FileJournalEntry, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []auth.FileJournalEntry
 	for _, e := range m.journal {
-		if (e.Status == auth.JournalWriting || e.Status == auth.JournalStored) && e.UpdatedAt.Before(before) {
+		open := e.Status == auth.JournalWriting || e.Status == auth.JournalStored || e.Status == auth.JournalAttaching
+		switch {
+		case !open:
+		case e.Pending && e.Status == auth.JournalStored:
+			if e.PendingUntil.Before(now) {
+				out = append(out, e)
+			}
+		case e.UpdatedAt.Before(before):
 			out = append(out, e)
 		}
 	}
@@ -1069,6 +1076,62 @@ func (m *MemStore) StaleFileJournal(_ context.Context, before time.Time, limit i
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+func (m *MemStore) FileJournalEntry(_ context.Context, id string) (auth.FileJournalEntry, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e, ok := m.journal[id]
+	if !ok {
+		return e, auth.ErrNotFound
+	}
+	return e, nil
+}
+
+func (m *MemStore) CompletePendingUpload(_ context.Context, id, name, contentType, sha256sum string, size int64, uploadedAt, at time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e, ok := m.journal[id]
+	if !ok {
+		return auth.ErrNotFound
+	}
+	e.Name, e.Type, e.SHA256, e.Size, e.UploadedAt, e.Status, e.UpdatedAt = name, contentType, sha256sum, size, uploadedAt, auth.JournalStored, at
+	m.journal[id] = e
+	return nil
+}
+
+func (m *MemStore) ClaimPendingUpload(_ context.Context, id, tokenHash, documentID string, now time.Time) (auth.FileJournalEntry, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e, ok := m.journal[id]
+	if !ok || !e.Pending || e.Status != auth.JournalStored || e.TokenHash != tokenHash || !e.PendingUntil.After(now) {
+		return auth.FileJournalEntry{}, auth.ErrNotFound
+	}
+	e.Status, e.DocumentID, e.UpdatedAt = auth.JournalAttaching, documentID, now
+	m.journal[id] = e
+	return e, nil
+}
+
+func (m *MemStore) ReleasePendingUpload(_ context.Context, id string, at time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if e, ok := m.journal[id]; ok && e.Status == auth.JournalAttaching {
+		e.Status, e.DocumentID, e.UpdatedAt = auth.JournalStored, "", at
+		m.journal[id] = e
+	}
+	return nil
+}
+
+func (m *MemStore) CountOpenPendingUploads(_ context.Context, callerKey string, now time.Time) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := 0
+	for _, e := range m.journal {
+		if e.Pending && e.CallerKey == callerKey && (e.Status == auth.JournalWriting || e.Status == auth.JournalStored) && e.PendingUntil.After(now) {
+			n++
+		}
+	}
+	return n, nil
 }
 
 // JournalEntry returns an upload's record, for tests.

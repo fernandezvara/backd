@@ -822,8 +822,43 @@ func TestContract(t *testing.T) {
 	// Files: upload, download, remove and clear, on the data route and the admin data route.
 	png := "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + strings.Repeat("x", 20)
 	typed := func(h map[string]string, ct string) map[string]string { return with(h, "Content-Type", ct) }
+	carlOr := func(k map[string]string, admin bool, c map[string]string) map[string]string {
+		if admin {
+			return k
+		}
+		return c
+	}
 	for _, base := range []string{"/v1/acme/app/library", ad + "/data/app/library"} {
 		isAdmin := strings.Contains(base, "_admin")
+		// A pending upload, and the document made with it.
+		pend := base + "/_files/avatar/uploads"
+		pu := req("POST", pend, png, typed(key, "image/png"), 201)
+		req("POST", base, `{"title": "with a file", "avatar": {"upload": "`+pu["upload_id"].(string)+`", "token": "`+pu["upload_token"].(string)+`"}}`, key, 201)
+		req("POST", base, `{"title": "bad ref", "avatar": {"upload": "`+pu["upload_id"].(string)+`", "token": "wrong"}}`, key, 400)
+		req("POST", pend, png, typed(nil, "image/png"), 401)
+		req("POST", pend, "plain text", typed(key, "text/plain"), 415)
+		req("POST", pend, strings.Repeat("x", 5000), typed(key, "image/png"), 413)
+		req("POST", base+"/_files/nope/uploads", png, typed(key, "image/png"), 404)
+		if isAdmin {
+			req("POST", pend, png, typed(ada, "image/png"), 403)
+		} else {
+			lib := f.reg.Realms["acme"].Databases["app"].Collections["library"]
+			rl := lib.Rules
+			lib.Rules = nil
+			req("POST", pend, png, typed(ada, "image/png"), 403)
+			lib.Rules = rl
+		}
+		saved := f.reg.Realms["acme"].Settings.Storage
+		broken := *saved
+		broken.AccessKey = "NOT_SET_ANYWHERE"
+		f.reg.Realms["acme"].Settings.Storage = &broken
+		req("POST", pend, png, typed(key, "image/png"), 503)
+		f.reg.Realms["acme"].Settings.Storage = saved
+		for range 20 { // a caller holds at most 20 unused uploads
+			f.doH(t, "POST", pend, png, typed(carlOr(key, isAdmin, carl), "image/png"))
+		}
+		req("POST", pend, png, typed(carlOr(key, isAdmin, carl), "image/png"), 429)
+
 		doc := req("POST", base, `{"title": "files"}`, key, 201)["id"].(string)
 		files := base + "/" + doc + "/_files/"
 		up := req("POST", files+"avatar?name=face.png", png, typed(key, "image/png"), 201)
@@ -865,8 +900,8 @@ func TestContract(t *testing.T) {
 		if isAdmin {
 			req("GET", mp, "", ada, 403)
 		}
-		saved := f.reg.Realms["acme"].Settings.Storage
-		broken := *saved
+		saved = f.reg.Realms["acme"].Settings.Storage
+		broken = *saved
 		broken.AccessKey = "NOT_SET_ANYWHERE"
 		f.reg.Realms["acme"].Settings.Storage = &broken
 		req("GET", mp, "", key, 503)

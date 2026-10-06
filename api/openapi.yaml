@@ -2423,6 +2423,60 @@ paths:
         "412": { $ref: "#/components/responses/VersionMismatch" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/{database}/{collection}/_files/{field}/uploads:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+      - { $ref: "#/components/parameters/fileField" }
+    post:
+      tags: [documents]
+      summary: Upload a file before its document exists
+      description: |
+        Stores the request body (the file's bytes, with its `Content-Type`) as a
+        **pending upload** for this field and answers an `upload_id` and a secret
+        `upload_token` (only its hash is kept). Naming them in the field of a later
+        create, `PUT` or `PATCH`, `{"upload": "<id>", "token": "<token>"}`, writes the
+        document with the file's details in the same write, under the `create` or
+        `update` rule applied to the final document; so a required file field works.
+        The upload is used once, by whoever holds the token (and, when a signed-in
+        user made it, only by that user), and expires after `pending_ttl` of the
+        realm's `storage:`; an unused one is deleted by the workers.
+
+        Who may upload: a signed-in user needs the collection to have a `create`
+        rule; an anonymous caller needs it to admit a document holding just this
+        file. The same limits as any upload apply (`max_size`, `types`,
+        `BACKD_MAX_UPLOAD_BYTES`), and a caller holds at most 20 unused uploads
+        and starts a limited number per window (`429`).
+      operationId: startFileUpload
+      security: [{}, { session: [] }, { apiKey: [] }]
+      parameters:
+        - name: name
+          in: query
+          description: The file's name; defaults to the `Content-Disposition` filename, then `file`.
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          "*/*":
+            schema: { type: string, format: binary }
+      responses:
+        "201":
+          description: The pending upload.
+          headers:
+            Cache-Control: { schema: { const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PendingUpload" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/{database}/{collection}/{id}/_files/{field}:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -2815,6 +2869,60 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "412": { $ref: "#/components/responses/VersionMismatch" }
         default: { $ref: "#/components/responses/Error" }
+  /v1/{realm}/_admin/data/{database}/{collection}/_files/{field}/uploads:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+      - { $ref: "#/components/parameters/fileField" }
+    post:
+      tags: [admin]
+      summary: Upload a file before its document exists
+      description: |
+        Stores the request body (the file's bytes, with its `Content-Type`) as a
+        **pending upload** for this field and answers an `upload_id` and a secret
+        `upload_token` (only its hash is kept). Naming them in the field of a later
+        create, `PUT` or `PATCH`, `{"upload": "<id>", "token": "<token>"}`, writes the
+        document with the file's details in the same write, under the `create` or
+        `update` rule applied to the final document; so a required file field works.
+        The upload is used once, by whoever holds the token (and, when a signed-in
+        user made it, only by that user), and expires after `pending_ttl` of the
+        realm's `storage:`; an unused one is deleted by the workers.
+
+        Who may upload: a signed-in user needs the collection to have a `create`
+        rule; an anonymous caller needs it to admit a document holding just this
+        file. The same limits as any upload apply (`max_size`, `types`,
+        `BACKD_MAX_UPLOAD_BYTES`), and a caller holds at most 20 unused uploads
+        and starts a limited number per window (`429`). Admin route: past the collection's rules.
+      operationId: adminStartFileUpload
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - name: name
+          in: query
+          description: The file's name; defaults to the `Content-Disposition` filename, then `file`.
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          "*/*":
+            schema: { type: string, format: binary }
+      responses:
+        "201":
+          description: The pending upload.
+          headers:
+            Cache-Control: { schema: { const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PendingUpload" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/data/{database}/{collection}/{id}/_files/{field}:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -3778,6 +3886,24 @@ components:
         _meta: { $ref: "#/components/schemas/Meta" }
       additionalProperties: true
 
+    PendingUpload:
+      type: object
+      additionalProperties: false
+      required: [upload_id, upload_token, expires_at, file]
+      properties:
+        upload_id: { type: string, pattern: '^fl_[0-9a-z]{20}$' }
+        upload_token: { type: string, description: "Secret, shown once. Only its hash is kept." }
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
+        file:
+          type: object
+          additionalProperties: false
+          required: [name, size, type, sha256]
+          properties:
+            name: { type: string }
+            size: { type: integer, minimum: 0 }
+            type: { type: string, description: Detected from the content. }
+            sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+
     FileLink:
       type: object
       additionalProperties: false
@@ -3790,7 +3916,12 @@ components:
       type: object
       description: |
         The document's fields, validated against the collection's
-        schema.json. `id`, `_id` and `_meta` are ignored.
+        schema.json. `id`, `_id` and `_meta` are ignored. So are file fields,
+        except for a reference to a pending upload, `{"upload": "<id>", "token":
+        "<token>"}` (a list of them on a `multiple` field), which attaches the
+        file in this write (`POST …/_files/{field}/uploads`). On a `PUT` or `PATCH`
+        a single field's file is replaced and a `multiple` field's is added to;
+        a reference that is wrong, used or expired is `400 validation_error`.
       additionalProperties: true
 
     DocumentList:

@@ -41,6 +41,7 @@ const uploadTimeout = time.Hour
 // single and multiple fields, so a client needs no field's cardinality to download
 // or remove a file. There is no PUT.
 func (d *documents) mountFiles(r chi.Router) {
+	r.Post("/_files/{field}/uploads", d.uploadPending)
 	r.Post("/{id}/_files/{field}", d.uploadFile)
 	r.Delete("/{id}/_files/{field}", d.clearFiles)
 	r.Get("/{id}/_files/{field}/{fileID}", d.downloadFile)
@@ -197,56 +198,12 @@ func (d *documents) uploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The first bytes decide the type, before anything is stored.
-	body := http.MaxBytesReader(w, r.Body, limit)
-	br := bufio.NewReaderSize(body, 4096)
-	head, peekErr := br.Peek(sniffBytes)
-	var tooBig *http.MaxBytesError
-	if errors.As(peekErr, &tooBig) {
-		tooLarge(w, r, limit)
+	up, ok := d.storeUpload(w, r, c, f, svc, obj, plan, auth.FileJournalEntry{DocumentID: docID})
+	if !ok {
 		return
 	}
-	contentType := detectContentType(head, r.Header.Get("Content-Type"))
-	if !f.Allows(contentType) {
-		writeError(w, r, http.StatusUnsupportedMediaType, codeUnsupportedFile, "this field doesn't accept "+contentType+" (detected from the file's content)")
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), uploadTimeout)
-	defer cancel()
-	key := obj.Key(c.Realm, c.Database, c.Name, plan.id)
-	caller, _ := callerOf(r)
-	if err := svc.JournalUpload(ctx, auth.FileJournalEntry{ID: plan.id, Database: c.Database, Collection: c.Name, Field: f.Name, DocumentID: docID, Key: key, Caller: caller.Subject(), Size: max(r.ContentLength, 0)}); err != nil {
-		storageError(w, r, err)
-		return
-	}
-	// From here an object may exist: any failure queues it for deletion.
-	abandon := func() {
-		_ = svc.SetUploadStatus(ctx, plan.id, auth.JournalFailed, "")
-		_ = svc.QueueFileDeletion(ctx, key, "abandoned")
-	}
-
-	hasher := sha256.New()
-	var size int64
-	stream := io.TeeReader(&countingReader{r: br, n: &size}, hasher)
-	if err := obj.PutStream(ctx, key, stream, contentType); err != nil {
-		abandon()
-		if errors.As(err, &tooBig) || size > limit {
-			tooLarge(w, r, limit)
-			return
-		}
-		logger(r.Context()).Error("store a file", "realm", c.Realm, "collection", c.Name, "field", f.Name, "error", err)
-		writeError(w, r, http.StatusBadGateway, codeStorageUnavailable, "the file could not be stored")
-		return
-	}
-	if size > limit {
-		abandon()
-		tooLarge(w, r, limit)
-		return
-	}
-	_ = svc.SetUploadStatus(ctx, plan.id, auth.JournalStored, "")
-
-	meta := map[string]any{"id": plan.id, "name": plan.name, "size": size, "type": contentType, "sha256": hex.EncodeToString(hasher.Sum(nil)), "uploaded_at": d.timestamp().UTC().Format(timeFormat)}
+	defer up.cancel()
+	ctx, meta, abandon := up.ctx, up.meta, up.abandon
 
 	// Attach it: the document is updated conditionally on the version read; a
 	// concurrent change retries (with the rule asked again), up to three times.
@@ -789,4 +746,91 @@ func (d *documents) addFileLinks(w http.ResponseWriter, r *http.Request, c *regi
 		}
 	}
 	return true
+}
+
+// storedUpload is a file that was streamed to storage and not yet attached to a
+// document: its details, and what to do if it never is.
+type storedUpload struct {
+	ctx     context.Context // outlives the request: the work that follows must finish
+	cancel  context.CancelFunc
+	key     string
+	meta    map[string]any // the file's details, as a document holds them
+	abandon func()         // the upload failed or is not used: queue the object for deletion
+}
+
+// storeUpload streams the request's body to the field's storage: the first bytes
+// decide the type (refused before anything is stored), the size is checked as the
+// bytes pass, and the upload is journaled before the first one is stored. template
+// carries what the caller knows about the journal entry (the document, or the
+// pending upload's token). It answers and returns false when it can't.
+func (d *documents) storeUpload(w http.ResponseWriter, r *http.Request, c *registry.Collection, f *registry.FileField, svc *auth.Users, obj *storage.Objects, plan uploadPlan, template auth.FileJournalEntry) (*storedUpload, bool) {
+	limit := min(f.MaxSize, d.maxUpload)
+
+	// The first bytes decide the type, before anything is stored.
+	body := http.MaxBytesReader(w, r.Body, limit)
+	br := bufio.NewReaderSize(body, 4096)
+	head, peekErr := br.Peek(sniffBytes)
+	var tooBig *http.MaxBytesError
+	if errors.As(peekErr, &tooBig) {
+		tooLarge(w, r, limit)
+		return nil, false
+	}
+	contentType := detectContentType(head, r.Header.Get("Content-Type"))
+	if !f.Allows(contentType) {
+		writeError(w, r, http.StatusUnsupportedMediaType, codeUnsupportedFile, "this field doesn't accept "+contentType+" (detected from the file's content)")
+		return nil, false
+	}
+
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), uploadTimeout)
+	key := obj.Key(c.Realm, c.Database, c.Name, plan.id)
+	caller, _ := callerOf(r)
+	entry := template
+	entry.ID, entry.Database, entry.Collection, entry.Field, entry.Key, entry.Caller, entry.Size = plan.id, c.Database, c.Name, f.Name, key, caller.Subject(), max(r.ContentLength, 0)
+	var err error
+	if entry.Pending {
+		err = svc.JournalPendingUpload(ctx, entry, d.pendingTTL(c))
+	} else {
+		err = svc.JournalUpload(ctx, entry)
+	}
+	if err != nil {
+		cancel()
+		storageError(w, r, err)
+		return nil, false
+	}
+	// From here an object may exist: any failure queues it for deletion.
+	abandon := func() {
+		_ = svc.SetUploadStatus(ctx, plan.id, auth.JournalFailed, "")
+		_ = svc.QueueFileDeletion(ctx, key, "abandoned")
+	}
+
+	hasher := sha256.New()
+	var size int64
+	stream := io.TeeReader(&countingReader{r: br, n: &size}, hasher)
+	if err := obj.PutStream(ctx, key, stream, contentType); err != nil {
+		abandon()
+		cancel()
+		if errors.As(err, &tooBig) || size > limit {
+			tooLarge(w, r, limit)
+			return nil, false
+		}
+		logger(r.Context()).Error("store a file", "realm", c.Realm, "collection", c.Name, "field", f.Name, "error", err)
+		writeError(w, r, http.StatusBadGateway, codeStorageUnavailable, "the file could not be stored")
+		return nil, false
+	}
+	if size > limit {
+		abandon()
+		cancel()
+		tooLarge(w, r, limit)
+		return nil, false
+	}
+	uploadedAt := d.timestamp().UTC()
+	sum := hex.EncodeToString(hasher.Sum(nil))
+	if entry.Pending {
+		_ = svc.CompletePendingUpload(ctx, plan.id, plan.name, contentType, sum, size, uploadedAt)
+	} else {
+		_ = svc.SetUploadStatus(ctx, plan.id, auth.JournalStored, "")
+	}
+
+	meta := map[string]any{"id": plan.id, "name": plan.name, "size": size, "type": contentType, "sha256": sum, "uploaded_at": uploadedAt.Format(timeFormat)}
+	return &storedUpload{ctx: ctx, cancel: cancel, key: key, meta: meta, abandon: abandon}, true
 }

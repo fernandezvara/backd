@@ -5,3 +5,8 @@ openapi.yaml:
   operation-4xx-response:
     - '#/paths/~1healthz/get/responses'
     - '#/paths/~1readyz/get/responses'
+  # `_admin` is not a database name (names can't start with an underscore), so the
+  # admin data route and the pending-upload route never match the same request.
+  no-ambiguous-paths:
+    - '#/paths/~1v1~1{realm}~1{database}~1{collection}~1_files~1{field}~1uploads'
+    - '#/paths/~1v1~1{realm}~1_admin~1data~1{database}~1{collection}~1{id}'
