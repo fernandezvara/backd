@@ -36,6 +36,39 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # S3-compatible object storage for realms' files (storage: in realm.yaml,
+  # provider: minio). Dev-only credentials, never real secrets; ports on
+  # localhost only. Backd reaches it at http://minio:9000; a browser at
+  # http://localhost:9000 (a realm sets that as public_endpoint, so signed links
+  # work from the page). The console is at http://localhost:9001.
+  minio:
+    image: docker.io/minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: backd-dev
+      MINIO_ROOT_PASSWORD: dev-p4ssw0rd!
+      # Browsers on the example pages may upload and download directly.
+      MINIO_API_CORS_ALLOW_ORIGIN: "http://localhost:8080,https://localhost:8443"
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /minio/health/live HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && read -r line <&3 && [[ $$line == *' 200 '* ]]"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # One-shot: creates the bucket the example realms use.
+  minio-setup:
+    image: docker.io/minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["mc alias set local http://minio:9000 backd-dev 'dev-p4ssw0rd!' && mc mb --ignore-existing local/backd-files"]
+
   # One-shot: bundles every example realm's functions before backd starts
   # (backd refuses stale or missing bundles). Uses the executor image
   # (backd + the pinned Deno) so no extra image is needed to build; needs
@@ -203,6 +236,7 @@ services:
 
 volumes:
   mongo-data:
+  minio-data:
   docs-cache:
   prometheus-data:
   grafana-data:

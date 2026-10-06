@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -73,5 +74,35 @@ func TestStorageSettingsErrors(t *testing.T) {
 		if !strings.Contains(strings.Join(all, "\n"), c.want) {
 			t.Errorf("%s: errors %v, want %q", c.name, all, c.want)
 		}
+	}
+}
+
+// The commented example in `backd template realm` is real configuration: take it
+// out of its comments and it has to load.
+func TestRealmTemplateStorageExampleLoads(t *testing.T) {
+	data, err := os.ReadFile("../templates/files/realm.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(data), "\n")
+	var block []string
+	for i := 0; i < len(lines); i++ {
+		if lines[i] != "# storage:" {
+			continue
+		}
+		for _, l := range lines[i:] {
+			if l == "#" || l == "" {
+				break
+			}
+			block = append(block, strings.TrimPrefix(strings.TrimPrefix(l, "# "), "#"))
+		}
+		break
+	}
+	if len(block) < 8 {
+		t.Fatalf("the template has no storage example: %q", block)
+	}
+	s, errs := parseRealmSettings([]byte(strings.Join(block, "\n")))
+	if len(errs) != 0 || s.Storage == nil {
+		t.Fatalf("the template's example doesn't load: %v\n%s", errs, strings.Join(block, "\n"))
 	}
 }

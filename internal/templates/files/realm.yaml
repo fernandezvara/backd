@@ -88,6 +88,36 @@ auth: enabled
 #     per_function: { per_hour: 200, per_invocation: 50 }   # custom emails from functions (email: true)
 #     recipients_per_message: 10
 
+# Files. A realm that lets documents carry files brings its own S3-compatible
+# bucket (backd has no storage of its own). The bucket stays private: files are
+# served through backd's rules. The access keys are secrets of the realm
+# (`backd secret set`, with no --database), referenced as secret:NAME; never write
+# a key here. Encryption at rest is the bucket's default encryption, set at the
+# provider (backd sends no encryption headers). `prefix` is required and starts
+# every object key: each backd instance that shares the bucket (prod, staging...)
+# needs its own, because two instances on one prefix would collide and
+# `backd storage reconcile` on one could delete the other's files.
+# Check it with `backd storage check --realm <name>`. One example per provider:
+#
+# storage:
+#   provider: minio                  # aws | minio | r2 | digitalocean
+#   endpoint: http://minio:9000      # minio: https://<host>[:port] (http only with BACKD_DEV=true)
+#   # public_endpoint: http://localhost:9000   # minio only: the address signed links use when
+#                                    # browsers can't reach `endpoint` (backd never connects to it)
+#   region: us-east-1                # minio: any (default us-east-1)
+#   bucket: acme-files
+#   prefix: prod                     # required, unique per backd instance sharing the bucket
+#   access_key: secret:STORAGE_ACCESS_KEY
+#   secret_key: secret:STORAGE_SECRET_KEY
+#   download: presigned              # presigned (redirect to a signed link) | proxy (stream through backd)
+#   presigned_ttl: 5m                # lifetime of signed links, up to 7d
+#   pending_ttl: 1h                  # lifetime of uploads nobody attached to a document
+#
+# aws:          provider: aws          region: eu-west-1   (endpoint derived: https://s3.<region>.amazonaws.com)
+# r2:           provider: r2           endpoint: https://<account id>.r2.cloudflarestorage.com   (region is always auto;
+#                                      the bucket goes in `bucket:`, never in the endpoint)
+# digitalocean: provider: digitalocean region: nyc3        (endpoint derived: https://<region>.digitaloceanspaces.com)
+
 # Accounts. Each setting here needs the `email:` section above.
 # account:
 #   require_verified_email: false  # true: no session until the address is verified (sign-up answers 202;
