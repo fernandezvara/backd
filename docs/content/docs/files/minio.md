@@ -23,10 +23,12 @@ storage:
 | Addressing | path style (`<endpoint>/<bucket>/…`) |
 | Region | any; default `us-east-1` |
 | Signed SHA-256 (direct uploads) | supported |
-| Oldest version tested | `RELEASE.2024-01-01T00-00-00Z` |
+| Oldest version tested | `RELEASE.2025-09-07T16-13-09Z` (the repository's tests run against Chainguard's current build as well) |
 | `backd storage check` reads | neither CORS nor encryption (MinIO doesn't expose them to an S3 client): it says so |
 
 ## Development
+
+**Images:** the MinIO project no longer publishes container images (the old `minio/minio` and `quay.io/minio/minio` repositories stopped being pullable). The repository's stacks use [Chainguard's build](https://images.chainguard.dev/directory/image/minio/overview) (`cgr.dev/chainguard/minio` and `cgr.dev/chainguard/minio-client`); both have no shell, so the server can't run a health check and one-shot jobs call `mc` directly. You can also build MinIO from its source. `backd storage check` tells whether whatever you run behaves.
 
 The repository's local stack (`make example`) runs MinIO on `http://localhost:9000` (console `http://localhost:9001`, user `backd-dev`, password `dev-p4ssw0rd!`) and creates a `backd-files` bucket. `backd` reaches it at `http://minio:9000` inside the stack; a browser reaches it at `http://localhost:9000`, so a realm sets both:
 
@@ -56,8 +58,9 @@ cat > files-prod.json <<'JSON'
 { "Version": "2012-10-17", "Statement": [
   { "Effect": "Allow", "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"],
     "Resource": ["arn:aws:s3:::acme-files/prod/*"] },
-  { "Effect": "Allow", "Action": ["s3:ListBucket", "s3:GetBucketLocation"],
-    "Resource": ["arn:aws:s3:::acme-files"], "Condition": { "StringLike": { "s3:prefix": ["prod/*"] } } } ] }
+  { "Effect": "Allow", "Action": ["s3:ListBucket"],
+    "Resource": ["arn:aws:s3:::acme-files"], "Condition": { "StringLike": { "s3:prefix": ["prod/*"] } } },
+  { "Effect": "Allow", "Action": ["s3:GetBucketLocation"], "Resource": ["arn:aws:s3:::acme-files"] } ] }
 JSON
 mc admin policy create prod files-prod files-prod.json
 mc admin user add prod backd-files <a long random secret>

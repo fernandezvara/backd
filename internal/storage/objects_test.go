@@ -41,9 +41,16 @@ func minioObjects(t *testing.T) *Objects {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := o.client.CreateBucket(context.Background(), &s3.CreateBucketInput{Bucket: aws.String(o.cfg.Bucket)}); err != nil && !strings.Contains(err.Error(), "BucketAlready") {
-		t.Fatalf("create the test bucket: %v", err)
+	// The storage may have only just started: try for a while.
+	var err2 error
+	for i := 0; i < 60; i++ {
+		_, err2 = o.client.CreateBucket(context.Background(), &s3.CreateBucketInput{Bucket: aws.String(o.cfg.Bucket)})
+		if err2 == nil || strings.Contains(err2.Error(), "BucketAlready") {
+			return o
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
+	t.Fatalf("create the test bucket: %v", err2)
 	return o
 }
 

@@ -46,7 +46,7 @@ backd secret set --realm acme --name STORAGE_ACCESS_KEY
 backd secret set --realm acme --name STORAGE_SECRET_KEY
 ```
 
-They are encrypted under `BACKD_SECRETS_KEY`, which a realm with `storage:` therefore needs (startup stops without it), and applied within a minute of a change, so rotating a key needs no restart. Give `backd` a key that can only use the realm's bucket and prefix: put, get, head and delete on `<prefix>/*`, and listing on the bucket for that prefix (only a manual reconcile lists). Each provider's page has the policy.
+They are encrypted under `BACKD_SECRETS_KEY`, which an instance serving a realm with `storage:` therefore needs (without it the keys can't be read and the realm's file endpoints answer `503 storage_unavailable`), and applied within a minute of a change, so rotating a key needs no restart. Give `backd` a key that can only use the realm's bucket and prefix: put, get, head and delete on `<prefix>/*`, and listing on the bucket for that prefix (only a manual reconcile lists). Each provider's page has the policy.
 
 A realm whose keys aren't set yet starts, with a warning naming the secrets, and its file endpoints answer `503 storage_unavailable` until they are.
 
@@ -86,7 +86,7 @@ In production, give `backd` a route to the declared storage and nothing else for
 
 ## Startup checks
 
-`backd` refuses to start, naming the file and the setting, for an unknown `provider`, an `endpoint` or `region` that doesn't fit the provider, a `public_endpoint` on a provider that doesn't allow one, a missing `prefix`, `bucket` or key, a `download`, `presigned_ttl` or `pending_ttl` out of range, `storage:` in a realm with `auth: disabled`, plain `http` outside `BACKD_DEV=true`, and a realm with `storage:` on an instance without `BACKD_SECRETS_KEY`.
+`backd` refuses to start, naming the file and the setting, for an unknown `provider`, an `endpoint` or `region` that doesn't fit the provider, a `public_endpoint` on a provider that doesn't allow one, a missing `prefix`, `bucket` or key, a `download`, `presigned_ttl` or `pending_ttl` out of range, `storage:` in a realm with `auth: disabled`, and plain `http` outside `BACKD_DEV=true`. A realm whose keys can't be read (no `BACKD_SECRETS_KEY`, or the secrets not set) starts with a warning instead.
 
 ## When something is wrong
 

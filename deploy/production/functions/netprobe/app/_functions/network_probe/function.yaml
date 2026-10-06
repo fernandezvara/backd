@@ -4,7 +4,7 @@
 # Functions -> Outbound network.
 # Not a usable app function; admin-only.
 mode: sync
-# Four checks, each with its own 3s internal timeout (see index.js): a
+# Six checks, each with its own 3s internal timeout (see index.js): a
 # generous ceiling in case a blocked raw TCP attempt hangs instead of
 # refusing immediately.
 timeout: 30s
@@ -12,3 +12,4 @@ invoke: "user != nil"
 network:
   - 169.254.169.254:80
   - mongo-data.internal.test:27017
+  - storage-data.internal.test:9000

@@ -595,7 +595,7 @@ func (a *app) logStorageSecrets(ctx context.Context, users func(string) *auth.Us
 		case err != nil:
 			a.log.Warn("could not read the realm's storage keys", "realm", rl.Name, "error", err)
 		case len(missing) > 0:
-			a.log.Warn("storage keys are not set: the realm's file endpoints answer 503 storage_unavailable until they are (backd secret set, then backd storage check)", "realm", rl.Name, "missing", missing)
+			a.log.Warn("storage keys are not set: the realm's file endpoints answer 503 storage_unavailable until they are (BACKD_SECRETS_KEY on this instance, then backd secret set and backd storage check)", "realm", rl.Name, "missing", missing, "secrets_key_configured", svc.Cipher != nil)
 		default:
 			a.log.Info("realm storage", "realm", rl.Name, "provider", st.Provider, "bucket", st.Bucket, "prefix", st.Prefix)
 		}
@@ -725,9 +725,6 @@ func checkFunctions(reg *registry.Registry, cfg settings.Settings, log *slog.Log
 		st := reg.Realms[name].Settings.Storage
 		if st == nil {
 			continue
-		}
-		if len(cfg.SecretsKey) == 0 {
-			return fmt.Errorf("realm %s configures storage, whose access keys are secrets, but BACKD_SECRETS_KEY (or BACKD_SECRETS_KEY_FILE) is not set", name)
 		}
 		if st.HTTP && !cfg.Dev {
 			return fmt.Errorf("realm %s: storage uses a plain http address (%s): only BACKD_DEV=true (local development) allows it; use https", name, plainHTTP(st))

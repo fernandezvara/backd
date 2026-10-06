@@ -60,6 +60,20 @@ if [ ! -f "$secrets/mongo/keyfile" ]; then
   echo "created $secrets/mongo/keyfile"
 fi
 
+if [ ! -f "$secrets/minio/public.crt" ]; then
+  # The object storage (a realm's files): its certificate, signed by the same
+  # CA. backd trusts that CA through SSL_CERT_FILE (see compose.yaml). MinIO
+  # reads public.crt, private.key and the CAs it should trust from one folder.
+  mkdir -p "$secrets/minio/CAs"
+  issue minio minio "DNS:minio,DNS:localhost" "$secrets/minio/minio"
+  mv "$secrets/minio/minio.crt" "$secrets/minio/public.crt"
+  mv "$secrets/minio/minio.key" "$secrets/minio/private.key"
+  cp "$secrets/ca.pem" "$secrets/minio/CAs/ca.pem"
+  chmod 755 "$secrets/minio" "$secrets/minio/CAs"
+  chmod 644 "$secrets/minio/public.crt" "$secrets/minio/private.key" "$secrets/minio/CAs/ca.pem"
+  echo "created $secrets/minio/public.crt"
+fi
+
 if [ ! -f "$secrets/tls/edge.key" ]; then
   issue edge "$server_name" "DNS:$server_name,DNS:localhost,IP:127.0.0.1" "$secrets/tls/edge"
   chmod 755 "$secrets/tls"
@@ -95,6 +109,12 @@ BACKD_SECRETS_KEY=$(pw)
 BACKD_METRICS_TOKEN=$(pw)
 ENV
   echo "created $dir/.env"
+fi
+if ! grep -q '^MINIO_ROOT_PASSWORD=' "$dir/.env"; then
+  # The object storage (see compose.yaml): the root password is only for the
+  # setup job; backd's own key can use one bucket and nothing else.
+  printf '# Object storage (docs: Files): the setup job creates the bucket and backd'"'"'s key; the realm'"'"'s\n# secrets STORAGE_ACCESS_KEY and STORAGE_SECRET_KEY hold the key (backd secret set).\nMINIO_ROOT_PASSWORD=%s\nSTORAGE_ACCESS_KEY=backd-files\nSTORAGE_SECRET_KEY=%s\n' "$(openssl rand -hex 24)" "$(openssl rand -hex 24)" >> "$dir/.env"
+  echo "added the object storage settings to $dir/.env"
 fi
 if ! grep -q '^BACKD_METRICS_TOKEN=' "$dir/.env"; then
   # An .env from before metrics existed.

@@ -24,7 +24,10 @@ RUN /usr/local/bin/backd functions build --check
 FROM docker.io/library/mongo:8.2
 RUN apt-get update && apt-get install -y --no-install-recommends age && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/backd /usr/local/bin/backd
-COPY deploy/production/ops/*.sh deploy/production/ops/*.js /ops/
+# The MinIO client, for storage-setup.sh (MinIO publishes no image of its own now;
+# Chainguard's build has just the binary).
+COPY --from=cgr.dev/chainguard/minio-client:latest /usr/bin/mc /usr/local/bin/mc
+COPY deploy/production/ops/*.sh deploy/production/ops/*.js deploy/production/ops/*.json /ops/
 COPY --from=functions /config /config
 USER mongodb
 ENTRYPOINT []

@@ -97,7 +97,7 @@ var providers = []Provider{
 		EndpointHelp:    "https://<host>[:port] (http only for development)", AllowHTTP: true,
 		DefaultRegion:  "us-east-1",
 		ChecksumSHA256: Supported, MaxSinglePut: 5 * gib, ReadsCORS: false, ReadsEncryption: false,
-		ChecksumsWhenRequired: true, PublicEndpointAllowed: true, OldestTested: "RELEASE.2024-01-01T00-00-00Z",
+		ChecksumsWhenRequired: true, PublicEndpointAllowed: true, OldestTested: "RELEASE.2025-09-07T16-13-09Z",
 	},
 	{
 		Name: "r2", Label: "Cloudflare R2", Addressing: VirtualHosted, EndpointRequired: true,
