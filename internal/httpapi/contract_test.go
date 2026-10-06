@@ -798,6 +798,28 @@ func TestContract(t *testing.T) {
 	req("POST", run+"nightly/resume", ``, ada, 403)
 	req("POST", run+"echo/resume", ``, key, 409)
 	req("POST", run+"nothing_here/resume", ``, key, 404)
+	// Schema checks.
+	checks := ad + "/data-checks"
+	req("GET", checks, "", key, 200)
+	req("GET", checks, "", nil, 401)
+	req("GET", checks, "", ada, 403)
+	req("POST", checks, `{"database": "app", "collection": "ghost"}`, key, 404)
+	req("POST", checks, `{"database": "app", "limit": 0}`, key, 400)
+	req("POST", checks, `{"database": "app"}`, nil, 401)
+	req("POST", checks, `{"database": "app"}`, ada, 403)
+	checkID := req("POST", checks, `{"database": "app", "collection": "notes", "limit": 20}`, key, 202)["id"].(string)
+	req("POST", checks, ``, key, 409) // one at a time
+	req("GET", checks, "", key, 200)  // now with a check running
+	req("POST", ad+"/jobs/"+checkID+"/cancel", ``, key, 200)
+	req("GET", checks+"/app/notes", "", key, 404) // never checked
+	if err := f.svc.SaveCheckReport(context.Background(), auth.CheckReport{Database: "app", Collection: "notes", JobID: checkID, StartedAt: *f.clock, FinishedAt: *f.clock, Scanned: 3, Invalid: 1, Complete: true, Limit: 20, SchemaHash: "abc",
+		Documents: []auth.CheckedDocument{{ID: "n1", Deleted: true, Problems: []auth.CheckProblem{{Path: "title", Reason: "is required"}}}}}); err != nil {
+		t.Fatal(err)
+	}
+	req("GET", checks+"/app/notes", "", key, 200)
+	req("GET", checks, "", key, 200) // with a report
+	req("GET", checks+"/app/notes", "", nil, 401)
+	req("GET", checks+"/app/notes", "", ada, 403)
 	// Cancelling and re-running jobs.
 	jobs := ad + "/jobs/"
 	req("GET", jobs+jobID, "", key, 200)
