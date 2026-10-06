@@ -20,7 +20,7 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := Settings{ConfigDir: "/cfg", MongoURI: "mongodb://m", HTTPAddr: ":8080", ProvisionMode: ProvisionApply, LogLevel: slog.LevelInfo, MaxBodyBytes: 1 << 20,
+	want := Settings{ConfigDir: "/cfg", MongoURI: "mongodb://m", HTTPAddr: ":8080", ProvisionMode: ProvisionApply, LogLevel: slog.LevelInfo, MaxBodyBytes: 1 << 20, MaxUploadBytes: 100 << 20,
 		MongoOpTimeout: 10 * time.Second, ShutdownTimeout: 15 * time.Second, AdminUIIdle: 30 * time.Minute, InternalAddr: ":8081", WorkerConcurrency: 10}
 	if !reflect.DeepEqual(s, want) {
 		t.Errorf("got %+v, want %+v", s, want)
@@ -227,5 +227,15 @@ func TestAdminSwitches(t *testing.T) {
 		if _, err := load(map[string]string{name: "maybe"}); err == nil || !strings.Contains(err.Error(), name+" must be true or false") {
 			t.Errorf("%s=maybe: %v", name, err)
 		}
+	}
+}
+
+func TestMaxUploadBytes(t *testing.T) {
+	s, err := Load(env(map[string]string{"CONFIG_DIR": "/cfg", "MONGO_URI": "mongodb://m", "BACKD_MAX_UPLOAD_BYTES": "5000"}))
+	if err != nil || s.MaxUploadBytes != 5000 {
+		t.Errorf("set: %v %d", err, s.MaxUploadBytes)
+	}
+	if _, err := Load(env(map[string]string{"CONFIG_DIR": "/cfg", "MONGO_URI": "mongodb://m", "BACKD_MAX_UPLOAD_BYTES": "lots"})); err == nil || !strings.Contains(err.Error(), "BACKD_MAX_UPLOAD_BYTES") {
+		t.Errorf("bad value: %v", err)
 	}
 }

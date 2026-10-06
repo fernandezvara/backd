@@ -145,6 +145,10 @@ func requestMetrics(m *metrics.Metrics) func(http.Handler) http.Handler {
 func limitBody(max int64) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if isFileUpload(r) { // a file's size is limited by its field and BACKD_MAX_UPLOAD_BYTES
+				next.ServeHTTP(w, r)
+				return
+			}
 			if r.ContentLength > max {
 				tooLarge(w, r, max)
 				return
@@ -153,6 +157,18 @@ func limitBody(max int64) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// isFileUpload reports whether the request is POST …/_files/{field}: the body of
+// a file, which MAX_BODY_BYTES (made for JSON) must not cap.
+func isFileUpload(r *http.Request) bool {
+	if r.Method != http.MethodPost {
+		return false
+	}
+	rest, ok := strings.CutSuffix(r.URL.Path, "/")
+	_ = ok
+	i := strings.LastIndex(rest, "/_files/")
+	return i >= 0 && !strings.Contains(rest[i+len("/_files/"):], "/")
 }
 
 func tooLarge(w http.ResponseWriter, r *http.Request, max int64) {

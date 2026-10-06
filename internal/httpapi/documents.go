@@ -48,6 +48,8 @@ type documents struct {
 	reg       *registry.Registry
 	store     Store
 	objects   *realmObjects // each realm's object storage (files)
+	baseURL   string        // backd's public address, for the links it signs (BACKD_URL)
+	maxUpload int64         // the largest file a proxy upload may carry (BACKD_MAX_UPLOAD_BYTES)
 	now       func() time.Time
 	maxBody   int64
 	opTimeout time.Duration
@@ -79,6 +81,7 @@ func (d *documents) mountDocuments(r chi.Router) {
 	r.With(mergePatch).Patch("/{id}", d.patch)
 	r.Delete("/{id}", d.delete)
 	r.Post("/{id}/restore", d.restore)
+	d.mountFiles(r)
 }
 
 // The admin data route (/_admin/data/…) serves the same operations to an
@@ -183,6 +186,15 @@ func (d *documents) get(w http.ResponseWriter, r *http.Request) {
 		storageError(w, r, err)
 		return
 	}
+	if r.URL.Query().Get("file_links") == "true" && len(c.Files) > 0 {
+		out := render(doc)
+		if !d.addFileLinks(w, r, c, []map[string]any{out}) {
+			return
+		}
+		w.Header().Set("ETag", etag(version(doc))) // links are made per response: not part of the version
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
 	writeDocument(w, http.StatusOK, doc)
 }
 
@@ -222,6 +234,9 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 	for _, doc := range page.Items {
 		resp.Items = append(resp.Items, render(doc))
 	}
+	if !d.addFileLinks(w, r, c, resp.Items) {
+		return
+	}
 	if page.HasMore && len(page.Items) > 0 {
 		if ok, _ := query.Cursorable(q.Sort, c.Fields); ok {
 			resp.NextCursor = query.EncodeCursor(q.Sort, page.Items[len(page.Items)-1])
@@ -230,7 +245,7 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-var listParams = map[string]bool{"where": true, "order_by": true, "limit": true, "skip": true, "after": true, "count": true, "deleted": true}
+var listParams = map[string]bool{"where": true, "order_by": true, "limit": true, "skip": true, "after": true, "count": true, "deleted": true, "file_links": true}
 
 func parseListQuery(v url.Values, fields map[string]registry.Field) (storage.Query, []Detail) {
 	q := storage.Query{Limit: defaultLimit}

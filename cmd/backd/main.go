@@ -457,6 +457,7 @@ func (a *app) handlerConfig() httpapi.Config {
 		Store:             &mongodb.Store{Client: a.client},
 		Ready:             func(ctx context.Context) error { return a.client.Ping(ctx, nil) },
 		MaxBodyBytes:      a.cfg.MaxBodyBytes,
+		MaxUploadBytes:    a.cfg.MaxUploadBytes,
 		OpTimeout:         a.cfg.MongoOpTimeout,
 		Users:             a.realmUsers(),
 		TrustedProxies:    a.cfg.TrustedProxies,

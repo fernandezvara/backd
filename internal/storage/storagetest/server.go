@@ -48,6 +48,16 @@ func New(t testing.TB, bucket string) *Server {
 	return s
 }
 
+// Object returns what is stored under key, or nil.
+func (s *Server) Object(key string) []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if o := s.objects[key]; o != nil {
+		return o.data
+	}
+	return nil
+}
+
 // Keys lists the stored keys, sorted.
 func (s *Server) Keys() []string {
 	s.mu.Lock()
