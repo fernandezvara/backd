@@ -25,6 +25,7 @@ type MemStore struct {
 	loginLocks  map[string]memLock
 	invites     map[string]auth.Invitation // id → invitation
 	audit       []auth.AuditRecord
+	checks      map[string]auth.CheckReport // "database/collection" → latest report
 	secrets     map[string]auth.Secret // "database\x00name" → secret
 	schedules   map[string]auth.ScheduleState
 	invocations []auth.InvocationRecord
@@ -37,7 +38,7 @@ type MemStore struct {
 
 // NewMemStore returns an empty store.
 func NewMemStore() *MemStore {
-	return &MemStore{users: map[string]auth.User{}, identities: map[string]auth.Identity{}, sessions: map[string]auth.Session{}, keys: map[string]auth.APIKey{}, attempts: map[string]memAttempts{}, invites: map[string]auth.Invitation{}, secrets: map[string]auth.Secret{}, schedules: map[string]auth.ScheduleState{}, jobs: map[string]memJob{}, idempotency: map[string]auth.IdempotencyRecord{}}
+	return &MemStore{users: map[string]auth.User{}, identities: map[string]auth.Identity{}, sessions: map[string]auth.Session{}, keys: map[string]auth.APIKey{}, attempts: map[string]memAttempts{}, invites: map[string]auth.Invitation{}, secrets: map[string]auth.Secret{}, schedules: map[string]auth.ScheduleState{}, checks: map[string]auth.CheckReport{}, jobs: map[string]memJob{}, idempotency: map[string]auth.IdempotencyRecord{}}
 }
 
 func secretKey(database, name string) string { return database + "\x00" + name }
@@ -668,6 +669,13 @@ func (m *MemStore) EnqueueJob(_ context.Context, j auth.Job) error {
 	if _, ok := m.jobs[j.ID]; ok {
 		return auth.ErrJobExists
 	}
+	if j.Exclusive != "" {
+		for _, other := range m.jobs {
+			if other.Exclusive == j.Exclusive && other.Status != auth.JobDone {
+				return auth.ErrJobExclusive
+			}
+		}
+	}
 	m.jobs[j.ID] = memJob{Job: j}
 	return nil
 }
@@ -982,4 +990,43 @@ func (m *MemStore) SetJobSteps(_ context.Context, id string, attempt int, steps 
 	j.Steps, j.StepsOmitted = append([]auth.Step(nil), steps...), omitted
 	m.jobs[id] = j
 	return true, nil
+}
+
+func (m *MemStore) RenewJobLease(_ context.Context, id string, attempt int, until time.Time) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	j, ok := m.jobs[id]
+	if !ok || j.Status != auth.JobRunning || j.Attempts != attempt {
+		return false, nil
+	}
+	j.leaseExpires = until
+	m.jobs[id] = j
+	return true, nil
+}
+
+func (m *MemStore) SetCheckReport(_ context.Context, r auth.CheckReport) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.checks[r.Database+"/"+r.Collection] = r
+	return nil
+}
+
+func (m *MemStore) ListCheckReports(_ context.Context, documents bool) ([]auth.CheckReport, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]auth.CheckReport, 0, len(m.checks))
+	for _, r := range m.checks {
+		if !documents {
+			r.Documents = nil
+		}
+		out = append(out, r)
+	}
+	return out, nil
+}
+
+func (m *MemStore) GetCheckReport(_ context.Context, database, collection string) (auth.CheckReport, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r, ok := m.checks[database+"/"+collection]
+	return r, ok, nil
 }

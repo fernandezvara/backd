@@ -242,5 +242,16 @@ type Eraser interface {
 	ClearReference(ctx context.Context, field, value string, limit int, now time.Time) (int64, error)
 }
 
+// Scanner reads every stored document of a collection, in id order, for the
+// schema check: soft-deleted ones included, with no access rules and no
+// writes. A repository that doesn't implement it can't be checked.
+type Scanner interface {
+	// ScanAfter returns up to limit documents whose id sorts after afterID
+	// ("" starts from the first), ordered by id.
+	ScanAfter(ctx context.Context, afterID string, limit int) ([]Document, error)
+	// EstimatedCount is the collection's approximate size, cheap to ask.
+	EstimatedCount(ctx context.Context) (int64, error)
+}
+
 // ErasedBy is what an erase records in _meta.updated_by.
 const ErasedBy = "backd:erase"

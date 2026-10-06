@@ -224,6 +224,15 @@ type Store interface {
 	// ListJobs returns the jobs matching f, newest first, and whether
 	// more follow.
 	ListJobs(ctx context.Context, f JobFilter) ([]Job, bool, error)
+	// RenewJobLease moves the lease of a running job's attempt to until; false
+	// when the job no longer runs that attempt.
+	RenewJobLease(ctx context.Context, id string, attempt int, until time.Time) (bool, error)
+	// SetCheckReport stores a collection's latest schema check report, replacing
+	// the previous one; ListCheckReports and GetCheckReport read them (documents
+	// false leaves the lists of invalid documents out).
+	SetCheckReport(ctx context.Context, r CheckReport) error
+	ListCheckReports(ctx context.Context, documents bool) ([]CheckReport, error)
+	GetCheckReport(ctx context.Context, database, collection string) (CheckReport, bool, error)
 	// SetJobSteps replaces the steps of a running job's attempt; false when the
 	// job is not running that attempt (so a late write changes nothing).
 	SetJobSteps(ctx context.Context, id string, attempt int, steps []Step, omitted int) (bool, error)

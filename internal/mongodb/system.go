@@ -35,6 +35,9 @@ const (
 	// IdempotencyCollection ties an Idempotency-Key to its outcome
 	// (roadmap F12), scoped to the function and the caller.
 	IdempotencyCollection = "idempotency"
+	// SchemaChecksCollection holds the latest schema check report of each
+	// collection (roadmap #26), replaced by the next finished check.
+	SchemaChecksCollection = "schema_checks"
 	// SchedulesCollection holds the runtime state of scheduled functions:
 	// whether an administrator paused one.
 	SchedulesCollection = "schedules"
@@ -243,6 +246,8 @@ var systemCollections = []systemCollection{
 			"completed_at":    typ("date"),
 			"expires_at":      typ("date"),
 			"result":          typ("object"),
+			"check":           typ("object"),
+			"exclusive":       str(),        // only one unfinished job holds a name (unique index below)
 			"steps":           typ("array"), // [{n, name, status, ...}] the running attempt reported (ctx.step)
 			"steps_omitted":   typ("int"),
 		}),
@@ -255,8 +260,30 @@ var systemCollections = []systemCollection{
 			// The erase jobs only (the metrics refresher counts the failed ones
 			// without scanning every finished job).
 			{keys: bson.D{{Key: "erase.user_id", Value: 1}}, sparse: true},
+			// One unfinished job per exclusive name (a schema check): a finished job
+			// loses the field, so the name is free again.
+			{keys: bson.D{{Key: "exclusive", Value: 1}}, unique: true, sparse: true},
 			{keys: bson.D{{Key: "expires_at", Value: 1}}, ttl: true},
 		},
+	},
+	{
+		// _id is "<database>/<collection>".
+		name: SchemaChecksCollection,
+		validator: jsonSchema([]string{"_id", "database", "collection", "job_id", "started_at", "finished_at", "scanned", "invalid", "complete", "limit", "documents"}, map[string]any{
+			"_id":         str(),
+			"database":    str(),
+			"collection":  str(),
+			"job_id":      str(),
+			"started_at":  typ("date"),
+			"finished_at": typ("date"),
+			"scanned":     typ("long"),
+			"invalid":     typ("long"),
+			"complete":    typ("bool"),
+			"stopped_by":  str(),
+			"limit":       typ("int"),
+			"schema_hash": str(),
+			"documents":   typ("array"),
+		}),
 	},
 	{
 		// _id is "<database>/<function>".
