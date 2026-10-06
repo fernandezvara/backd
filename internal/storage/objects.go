@@ -14,6 +14,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
@@ -347,5 +348,29 @@ func (o *Objects) HeadBucket(ctx context.Context) error {
 			return ErrBucketNotFound
 		}
 	}
+	return mapError(err)
+}
+
+// UploadPartSize is the size of the parts a streamed upload is cut into; an object
+// smaller than one is a single PUT.
+const UploadPartSize = 8 << 20
+
+// PutStream stores a stream of unknown length under key, in parts when it is large
+// (a multipart upload, aborted if the stream fails), holding at most one part in
+// memory. It does not verify a checksum: the caller hashes the stream as it passes.
+func (o *Objects) PutStream(ctx context.Context, key string, body io.Reader, contentType string) error {
+	tm := transfermanager.New(o.client, func(opt *transfermanager.Options) {
+		opt.PartSizeBytes = UploadPartSize
+		opt.MultipartUploadThreshold = UploadPartSize
+		opt.Concurrency = 1
+		if o.provider.ChecksumsWhenRequired {
+			opt.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+		}
+	})
+	in := &transfermanager.UploadObjectInput{Bucket: aws.String(o.cfg.Bucket), Key: aws.String(key), Body: body}
+	if contentType != "" {
+		in.ContentType = aws.String(contentType)
+	}
+	_, err := tm.UploadObject(ctx, in)
 	return mapError(err)
 }

@@ -242,3 +242,48 @@ func TestVirtualHostedBucketIsAllowedUnderTheEndpoint(t *testing.T) {
 		t.Error("blockedAddress")
 	}
 }
+
+// A stream of unknown length is stored in one PUT when small and in parts when
+// large, and what is read back is what was sent.
+func TestPutStreamOnMinIO(t *testing.T) {
+	o := minioObjects(t)
+	ctx := context.Background()
+	for name, size := range map[string]int{"small": 100, "multipart": UploadPartSize*2 + 12345} {
+		key := o.Key("acme", "app", "notes", "fl_"+name)
+		t.Cleanup(func() { _ = o.Delete(context.Background(), key) })
+		data := make([]byte, size)
+		for i := range data {
+			data[i] = byte(i * 7)
+		}
+		// A reader that doesn't know its length, as a request body doesn't.
+		if err := o.PutStream(ctx, key, io.MultiReader(bytes.NewReader(data)), "application/octet-stream"); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		info, err := o.Head(ctx, key)
+		if err != nil || info.Size != int64(size) || info.ContentType != "application/octet-stream" {
+			t.Fatalf("%s head: %+v %v", name, info, err)
+		}
+		rc, _, err := o.Get(ctx, key, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, _ := io.ReadAll(rc)
+		rc.Close()
+		if !bytes.Equal(got, data) {
+			t.Errorf("%s: what was read back differs", name)
+		}
+	}
+	// A stream that fails leaves nothing behind.
+	key := o.Key("acme", "app", "notes", "fl_broken")
+	broken := io.MultiReader(bytes.NewReader(make([]byte, UploadPartSize+5)), failingReader{})
+	if err := o.PutStream(ctx, key, broken, ""); err == nil {
+		t.Error("a failing stream succeeded")
+	}
+	if _, err := o.Head(ctx, key); !errors.Is(err, ErrObjectNotFound) {
+		t.Errorf("a failed upload left an object: %v", err)
+	}
+}
+
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) { return 0, errors.New("the client went away") }
