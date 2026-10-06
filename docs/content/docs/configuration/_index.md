@@ -16,6 +16,7 @@ All runtime configuration comes from environment variables. At startup `backd` c
 | `PROVISION_MODE` | no | `apply` | `apply` creates or updates collections, validators and indexes; `verify` only compares them and refuses to start on differences |
 | `LOG_LEVEL` | no | `info` | `debug`, `info`, `warn` or `error` (case-insensitive) |
 | `MAX_BODY_BYTES` | no | `1048576` | Maximum request body size in bytes; larger bodies get `413` |
+| `BACKD_MAX_UPLOAD_BYTES` | no | `104857600` | Largest file a [proxy upload](../files/transfers/#uploading) may carry (100 MiB). A field's own `max_size` applies as well; the smaller wins |
 | `MONGO_OP_TIMEOUT` | no | `10s` | Deadline for the storage work of each document request; exceeding it returns `503` |
 | `SHUTDOWN_TIMEOUT` | no | `15s` | How long in-flight requests may take to finish after `SIGTERM` |
 | `TRUSTED_PROXIES` | no | none | Comma-separated IP addresses or CIDR networks of your reverse proxies; only they may set `X-Forwarded-For` (see [client addresses behind a proxy](../operations/#client-addresses-behind-a-proxy)) |

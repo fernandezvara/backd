@@ -180,6 +180,10 @@ At `LOG_LEVEL=debug`, every denial is logged (`"msg":"access denied"`) with the 
 - has a `read` rule that can't be a database filter, or that compares an array field or a field without a declared type;
 - exists in a realm with `auth: disabled`.
 
+## Files
+
+Uploads and removals of [file fields](../../files/file-fields/) follow the `update` rule, downloads the `read` rule: see [Rules for files](../../files/rules/).
+
 ## Testing rules
 
 `backd rules test` checks your rules without MongoDB and without starting `backd`. It reads a fixture, `rules.test.yaml`, next to each `rules.yaml`: named callers, stored documents, and for each caller which documents they may read, create, update, delete, restore and purge. It prints what fails and exits non-zero, so it fits a CI step before packaging. It needs only `CONFIG_DIR`.

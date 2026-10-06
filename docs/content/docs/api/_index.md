@@ -78,7 +78,13 @@ Every error uses the same JSON envelope. Success responses are never wrapped.
 | 409 | `email_taken` | Sign-up with an email that is already registered |
 | 409 | `request_in_progress` | A [function](../functions/calling/#idempotency) call with this `Idempotency-Key` is still running |
 | 412 | `version_mismatch` | `If-Match` doesn't match the current version |
-| 413 | `payload_too_large` | Body exceeds `MAX_BODY_BYTES` |
+| 403 | `invalid_file_link` | A [file link](../files/transfers/#links-for-apps) that was changed, has expired or whose key was rotated |
+| 404 | `file_missing` | The document holds a [file](../files/transfers/#downloading) the storage no longer has |
+| 409 | `too_many_files` | A `multiple` [file field](../files/file-fields/) is at `max_files` |
+| 409 | `upload_mode_mismatch` | The field takes direct uploads, not this one |
+| 413 | `payload_too_large` | Body exceeds `MAX_BODY_BYTES`; an upload, `max_size` or `BACKD_MAX_UPLOAD_BYTES` |
+| 415 | `unsupported_file_type` | The type detected from an upload isn't one the field accepts |
+| 416 | `range_not_satisfiable` | A `Range` outside the file |
 | 415 | `unsupported_media_type` | Wrong `Content-Type` for the method (a `webhook` function's body isn't required to be JSON at all) |
 | 422 | `idempotency_key_reused` | A [function](../functions/calling/#idempotency) `Idempotency-Key` was already used with different input |
 | 429 | `too_many_requests` | Too many failed logins (see [brute-force protection](../auth/sessions/#brute-force-protection)); or a [function](../functions/calling/#concurrency-limits), or its realm, is at its concurrency limit; or the caller is over a function's [rate limit](../functions/calling/#rate-limits). Wait `Retry-After` seconds |
@@ -86,6 +92,7 @@ Every error uses the same JSON envelope. Success responses are never wrapped.
 | 500 | `internal_error` | Unexpected failure. Details are only in the logs |
 | 500 | `invalid_output` | A [function](../functions/calling/#calling-a-function)'s output is larger than `max_output`, or doesn't match `output.schema.json` |
 | 500 | `secret_missing` | A [function](../functions/secrets/) declares a secret that isn't set for its database or realm |
+| 503 | `storage_unavailable` | A realm's [file storage](../files/storage/) can't be reached, or its keys aren't set |
 | 503 | `unavailable` | Not ready, MongoDB unreachable, `MONGO_OP_TIMEOUT` exceeded, too many password operations at once, or the [functions](../functions/running/#running-the-executor) executor isn't configured, doesn't answer, or is at capacity (all with `Retry-After` where the caller can usefully retry) |
 | 504 | `function_timeout` | A [function](../functions/calling/#calling-a-function) didn't finish within its `timeout`; it was stopped |
 

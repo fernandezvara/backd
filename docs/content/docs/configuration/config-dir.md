@@ -170,6 +170,10 @@ soft_delete:
 - **Erasing a user** still deletes, anonymizes and clears documents that are in the trash: it works on everything the user owns.
 - It doesn't need users: a realm with `auth: disabled` can soft-delete, though it has no rules to restrict the trash.
 
+### File fields
+
+`files:` declares the fields of a document that carry files, kept in the realm's [storage](../../files/storage/): `max_size`, `types`, `multiple`, `max_files`, `download` and more. See [File fields](../../files/file-fields/). Don't declare them in `schema.json`: backd adds their schema.
+
 ## Errors
 
 Any invalid config stops startup with a non-zero exit. Every error is reported at once, each naming the offending file or directory. Examples of invalid config:
