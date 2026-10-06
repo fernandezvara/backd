@@ -318,3 +318,36 @@ test('jobs.get returns one job with its steps', async () => {
   assert.equal(got.progress?.name, 'load')
   await assert.rejects(a.jobs.get('nope'), NotFoundError)
 })
+
+test('dataChecks start, list, get and wait', async () => {
+  const summary = { database: 'app', collection: 'notes', job_id: 'j1', started_at: '2026-10-07T09:00:00.000Z', finished_at: '2026-10-07T09:01:00.000Z', scanned: 1000, invalid: 1, complete: true, stopped_by: null, limit: 100, schema_hash: 'abc' }
+  const report = { ...summary, documents: [{ id: 'n1', deleted: false, problems: [{ path: 'title', reason: 'is required' }], more_problems: 0 }] }
+  /** @type {(status: string, extra?: Record<string, unknown>) => any} */
+  const job = (status, extra = {}) => ({ id: 'j1', function: 'app/notes', status, scheduled: false, origin: 'backd:schema.check', email_kind: null, rerun_of: null, attempts: 1, next_attempt_at: null, created_at: '2026-10-07T09:00:00.000Z', completed_at: null, result: null, progress: null, ...extra })
+  const started = { id: 'j1', status: 'queued', scope: 'app/notes', collections: ['app/notes'], limit: 100, estimated_documents: 1000, created_at: '2026-10-07T09:00:00.000Z' }
+  const m = mockFetch([
+    { status: 202, body: started },
+    { status: 409, body: { error: { code: 'check_running', message: 'a schema check is already queued or running', details: [{ path: 'job_id', reason: 'j1' }], request_id: 'r' } } },
+    { body: { running: job('running'), items: [{ database: 'app', collection: 'notes', report: summary }, { database: 'app', collection: 'labels', report: null }] } },
+    { body: job('running', { progress: { step: 1, name: 'app/notes', status: 'running', current: 45, total: 100, message: 'scanned 450', updated_at: '2026-10-07T09:00:30.000Z' } }) },
+    { body: job('done', { completed_at: '2026-10-07T09:01:00.000Z', result: { status: 'ok', code: null, duration_ms: 1 } }) },
+    { body: report },
+    { status: 404, body: errorBody('not_found', 'this collection has no schema check report yet') },
+  ])
+  const a = adminOf(m)
+  const got = await a.dataChecks.start({ database: 'app', collection: 'notes' })
+  assert.equal(got.estimated_documents, 1000)
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/data-checks')
+  assert.deepEqual(m.calls[0].body, { database: 'app', collection: 'notes' })
+  await assert.rejects(a.dataChecks.start(), (/** @type {any} */ e) => e instanceof ConflictError && e.details[0].reason === 'j1')
+  const list = await a.dataChecks.list()
+  assert.equal(list.running?.id, 'j1')
+  assert.equal(list.items[1].report, null)
+  /** @type {number[]} */
+  const seen = []
+  const reports = await a.dataChecks.wait(got, { pollIntervalMs: 0, onProgress: (j) => seen.push(j.progress?.current ?? -1) })
+  assert.deepEqual(seen, [45, -1])
+  assert.equal(reports[0].documents[0].problems[0].reason, 'is required')
+  assert.equal(m.calls[5].url.pathname, '/v1/acme/_admin/data-checks/app/notes')
+  await assert.rejects(a.dataChecks.get('app', 'labels'), NotFoundError)
+})
