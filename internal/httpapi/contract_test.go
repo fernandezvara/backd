@@ -1042,6 +1042,13 @@ func TestContract(t *testing.T) {
 		req("POST", base+"/videos/_files/clip/uploads", declare("c.png", pngBytes(3), "image/png"), jsonBody, 429)
 		req("POST", base+"/videos/"+mine+"/_files/clips/uploads", declare("c.png", pngBytes(3), "image/png"), jsonBody, 429)
 	}
+	// A change to the configuration, checked and not applied.
+	cc := ad + "/config/check"
+	req("POST", cc, `{"files": {}}`, key, 200)
+	req("POST", cc, `{"files": {"app/posts/rules.yaml": "read: document.nothing == 1\n"}}`, key, 200) // ok: false
+	req("POST", cc, `{"files": {"../x": "a"}}`, key, 400)
+	req("POST", cc, `{"files": {}}`, nil, 401)
+	req("POST", cc, `{"files": {}}`, ada, 403)
 	// The storage's status, and reconcile.
 	req("GET", ad+"/storage", "", key, 200)
 	req("GET", ad+"/storage", "", nil, 401)

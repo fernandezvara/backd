@@ -43,7 +43,7 @@ An admin role can open the whole admin API (`admin: true`), only some of its are
 | `POST /jobs/{id}/rerun` | none | `202` with a new job (`rerun_of` names the original) for a finished function job: the same function, input and caller. `409` while it hasn't finished, or when it isn't a function's job or its function no longer exists. Audited |
 | `POST /functions/{database}/{name}/invoke`, `GET /invocations`, `GET /jobs`, `GET /jobs/{id}`, `POST /jobs/{id}/cancel` and `…/rerun`, `GET /schedules`, and `POST /functions/{database}/{name}/pause` and `…/resume`; and reading any job through the data API |
 | `data` | the admin data route (documents past their collections' rules), and the [schema checks](../../configuration/validation/#finding-documents-that-no-longer-match) (`GET` and `POST /data-checks`, read is enough; cancelling one needs only this area) |
-| `config` | `GET /config`, the read-only view of the realm's configuration, and `POST /storage/check`, which checks the realm's object storage |
+| `config` | `GET /config`, the read-only view of the realm's configuration, `POST /config/check`, which checks a change to the configuration, and `POST /storage/check`, which checks the realm's object storage |
 
 ### The read-only level
 
@@ -85,6 +85,7 @@ Paths are relative to `/v1/{realm}/_admin`. Bodies are JSON (`Content-Type: appl
 | `GET /storage` | none | `200` with the realm's [storage status](../../files/maintenance/#usage): its configuration (the keys by name), whether the keys are set and the bucket answers, the running totals of bytes and files (the realm's and the 20 users holding the most), the deletion queue and the unfinished uploads. `{"configured": false}` without `storage:`. Needs the `config` area (read is enough) |
 | `POST /storage/reconcile` | `{"delete"?: bool}` | `200` with the [reconcile](../../files/maintenance/#reconciling) report: what was looked at, what was skipped and why, and the unreferenced objects; with `delete: true` it removes exactly those. `404` without `storage:`, `503 storage_unavailable` when the keys can't be read. Needs the `config` area with write access. Audited as `storage.reconcile` |
 | `GET /config` | none | `200` with the realm's [configuration](#configuration), read-only |
+| `POST /config/check` | `{"files": {"main/notes/rules.yaml": "…", "main/old/schema.json": null}}` | `200` with `ok`, `checked` (how many files of the realm were loaded and validated, drafts included), `changed` and `problems` (`file`, `message`). It loads the realm's **whole** configuration as startup does, with the draft files (paths relative to the realm, `null` deletes one) in place of the ones on disk, so a change that breaks another file is found. It works on a copy and applies nothing; function bundles are not part of it. At most 50 files of 1 MiB; `400` for a path outside the realm. Needs the `config` area (read is enough) |
 | `POST /invitations` | `{"email"?, "expires_in"?, "send"?, "redirect_to"?, "locale"?}` | `201` with the invitation and its token, or `sent: true` and no token when it is [emailed](#emailing-an-invitation) |
 | `GET /invitations` | none | `200` with unexpired, unused invitations |
 | `DELETE /invitations/{id}` | none | `204` |

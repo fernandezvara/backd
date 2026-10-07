@@ -570,8 +570,12 @@
     "draft": {
       "edit": "Prepare a change to {file}",
       "hide": "Close the editor",
-      "note": "The file is made in your browser and nothing is sent to the server, which never has its configuration written through this page. Download it, review it, save it as {path} in your configuration repository and commit it; backd reads configuration at startup.",
+      "note": "The file is made in your browser. The server checks it, with your other changes, against the realm's whole configuration, but applies nothing and never has its configuration written through this page. Download it, review it, save it as {path} in your configuration repository and commit it; backd reads configuration at startup.",
       "changed": "Changed from what the server runs.",
+      "checking": "Checking the whole realm with your changes…",
+      "ok": "All {n} files of the realm were checked with your changes ({changed} changed) and the configuration loads.",
+      "notOk": "The configuration would not load with your changes (all {n} files of the realm were checked):",
+      "unchecked": "The server could not check it ({why}): the file is not verified.",
       "invalid": "Not valid JSON: {problem}",
       "download": "Download {file}",
       "reset": "Start again"
