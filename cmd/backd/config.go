@@ -6,6 +6,7 @@ import (
 	"github.com/fernandezvara/cli"
 
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/internal/settings"
 )
 
 // checkConfig and configFingerprint handle `backd config check|fingerprint`.
@@ -22,6 +23,12 @@ func configCommand(c *cli.CommandContext, fingerprintOnly bool) error {
 	reg, err := registry.Load(dir)
 	if err == nil {
 		err = reg.CheckBundles()
+	}
+	if err == nil {
+		var max int64
+		if max, err = settings.ImageMaxPixels(c.Getenv); err == nil {
+			err = reg.CheckImageLimits(max)
+		}
 	}
 	if err != nil {
 		return fmt.Errorf("invalid config:\n%w", err)

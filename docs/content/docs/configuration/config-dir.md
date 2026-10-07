@@ -176,7 +176,7 @@ soft_delete:
 
 ### File fields
 
-`files:` declares the fields of a document that carry files, kept in the realm's [storage](../../files/storage/): `max_size`, `types`, `multiple`, `max_files`, `download` and more. See [File fields](../../files/file-fields/). Don't declare them in `schema.json`: backd adds their schema.
+`files:` declares the fields of a document that carry files, kept in the realm's [storage](../../files/storage/): `max_size`, `types`, `multiple`, `max_files`, `download`, [`versions`](../../files/file-fields/#image-versions) and more. See [File fields](../../files/file-fields/). Don't declare them in `schema.json`: backd adds their schema.
 
 ## Errors
 

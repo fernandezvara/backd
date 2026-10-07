@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -862,17 +863,26 @@ func (d *documents) storeUpload(w http.ResponseWriter, r *http.Request, c *regis
 
 	// The first bytes decide the type, before anything is stored.
 	body := http.MaxBytesReader(w, r.Body, limit)
-	br := bufio.NewReaderSize(body, 4096)
-	head, peekErr := br.Peek(sniffBytes)
+	headSize := sniffBytes
+	bufSize := 4096
+	if readsImages(f) {
+		headSize, bufSize = imageHeadBytes, imageHeadBytes // the start of a picture tells its size
+	}
+	br := bufio.NewReaderSize(body, bufSize)
+	head, peekErr := br.Peek(headSize)
 	var tooBig *http.MaxBytesError
 	if errors.As(peekErr, &tooBig) {
 		over()
 		return nil, false
 	}
-	contentType := detectContentType(head, r.Header.Get("Content-Type"))
+	contentType := detectContentType(head[:min(len(head), sniffBytes)], r.Header.Get("Content-Type"))
 	if !f.Allows(contentType) {
 		writeError(w, r, http.StatusUnsupportedMediaType, codeUnsupportedFile, "this field doesn't accept "+contentType+" (detected from the file's content)")
 		return nil, false
+	}
+	var image map[string]any
+	if len(f.Versions) > 0 || strings.HasPrefix(contentType, "image/") {
+		image = imageDetails(f, head, d.imageMaxPixels)
 	}
 
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), uploadTimeout)
@@ -920,11 +930,12 @@ func (d *documents) storeUpload(w http.ResponseWriter, r *http.Request, c *regis
 	uploadedAt := d.timestamp().UTC()
 	sum := hex.EncodeToString(hasher.Sum(nil))
 	if entry.Pending {
-		_ = svc.CompletePendingUpload(ctx, plan.id, plan.name, contentType, sum, size, uploadedAt)
+		_ = svc.CompletePendingUpload(ctx, plan.id, plan.name, contentType, sum, size, uploadedAt, imageJSON(image))
 	} else {
 		_ = svc.SetUploadStatus(ctx, plan.id, auth.JournalStored, "")
 	}
 
 	meta := map[string]any{"id": plan.id, "name": plan.name, "size": size, "type": contentType, "sha256": sum, "uploaded_at": uploadedAt.Format(timeFormat)}
+	maps.Copy(meta, image)
 	return &storedUpload{ctx: ctx, cancel: cancel, key: key, meta: meta, abandon: abandon}, true
 }

@@ -63,6 +63,9 @@ type FileJournalEntry struct {
 	Type         string
 	SHA256       string
 	UploadedAt   time.Time
+	// Image is a pending upload's image details as JSON (width, height and the state of each
+	// declared version), for the document that will hold it.
+	Image string
 }
 
 // FileDeletion is an object to delete from the bucket.
@@ -122,8 +125,8 @@ func (s *Users) JournalPendingUpload(ctx context.Context, e FileJournalEntry, tt
 }
 
 // CompletePendingUpload records what was stored: the upload is now ready to be attached.
-func (s *Users) CompletePendingUpload(ctx context.Context, id, name, contentType, sha256sum string, size int64, uploadedAt time.Time) error {
-	return s.Store.CompletePendingUpload(ctx, id, name, contentType, sha256sum, size, uploadedAt, s.now())
+func (s *Users) CompletePendingUpload(ctx context.Context, id, name, contentType, sha256sum string, size int64, uploadedAt time.Time, image string) error {
+	return s.Store.CompletePendingUpload(ctx, id, name, contentType, sha256sum, size, uploadedAt, image, s.now())
 }
 
 // UploadEntry returns an upload's record whatever kind it is, or ErrNotFound.

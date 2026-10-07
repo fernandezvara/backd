@@ -16,6 +16,27 @@ import { sha256Blob } from './sha256.js'
  * @property {string} type          Detected from the content.
  * @property {string} sha256        Hex.
  * @property {string} uploaded_at   RFC3339 timestamp.
+ * @property {number} [width]       Pixels, for an image (as a viewer sees it).
+ * @property {number} [height]
+ * @property {Record<string, VersionState>} [versions]   The state of each version the field declares (`versions:` in collection.yaml).
+ */
+
+/**
+ * One version of an image: `pending` (a worker will make it), `ready` (made: `id`, `size`,
+ * `type`, `width`, `height`), `empty` (only functions make it, none has yet), `skipped`
+ * (`reason` is `not_an_image` or `unsupported_format`) or `failed` (`reason` is `too_large`
+ * or `decode_error`).
+ * @typedef {object} VersionState
+ * @property {'pending' | 'ready' | 'empty' | 'skipped' | 'failed'} status
+ * @property {string} [reason]
+ * @property {string} [id]            `fv_…`, once ready.
+ * @property {number} [size]          Bytes, once ready.
+ * @property {string} [type]
+ * @property {number} [width]
+ * @property {number} [height]
+ * @property {Record<string, unknown>} [params]   What it was made with.
+ * @property {string} [fingerprint]
+ * @property {string} [generated_at]  RFC3339 timestamp.
  */
 
 /**

@@ -269,8 +269,9 @@ func (d *documents) resolvePending(w http.ResponseWriter, r *http.Request, c *re
 				details = append(details, Detail{Path: name, Reason: uploadInvalid})
 				continue
 			}
-			p.files[name] = append(p.files[name], pendingFile{ref: ref, meta: map[string]any{
-				"id": e.ID, "name": e.Name, "size": e.Size, "type": e.Type, "sha256": e.SHA256, "uploaded_at": e.UploadedAt.UTC().Format(timeFormat)}})
+			meta := map[string]any{
+				"id": e.ID, "name": e.Name, "size": e.Size, "type": e.Type, "sha256": e.SHA256, "uploaded_at": e.UploadedAt.UTC().Format(timeFormat)}
+			p.files[name] = append(p.files[name], pendingFile{ref: ref, meta: withImage(meta, e.Image)})
 		}
 	}
 	if len(details) > 0 {

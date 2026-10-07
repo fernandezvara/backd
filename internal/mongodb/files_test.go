@@ -57,7 +57,7 @@ func TestPendingUploadsOnMongoDB(t *testing.T) {
 	if _, err := s.ClaimPendingUpload(ctx, "fl_p1", auth.HashUploadToken("fut_fl_p1"), "doc1", t0); err == nil {
 		t.Error("claimed an upload still being written")
 	}
-	if err := s.CompletePendingUpload(ctx, "fl_p1", "scan.png", "image/png", "abc", 12, t0, t0); err != nil {
+	if err := s.CompletePendingUpload(ctx, "fl_p1", "scan.png", "image/png", "abc", 12, t0, "", t0); err != nil {
 		t.Fatal(err)
 	}
 	if e, err := s.FileJournalEntry(ctx, "fl_p1"); err != nil || e.Status != auth.JournalStored || e.Name != "scan.png" || e.Size != 12 || e.SHA256 != "abc" || !e.Pending {

@@ -1093,14 +1093,14 @@ func (m *MemStore) FileJournalEntry(_ context.Context, id string) (auth.FileJour
 	return e, nil
 }
 
-func (m *MemStore) CompletePendingUpload(_ context.Context, id, name, contentType, sha256sum string, size int64, uploadedAt, at time.Time) error {
+func (m *MemStore) CompletePendingUpload(_ context.Context, id, name, contentType, sha256sum string, size int64, uploadedAt time.Time, image string, at time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	e, ok := m.journal[id]
 	if !ok {
 		return auth.ErrNotFound
 	}
-	e.Name, e.Type, e.SHA256, e.Size, e.UploadedAt, e.Status, e.UpdatedAt = name, contentType, sha256sum, size, uploadedAt, auth.JournalStored, at
+	e.Name, e.Type, e.SHA256, e.Size, e.UploadedAt, e.Image, e.Status, e.UpdatedAt = name, contentType, sha256sum, size, uploadedAt, image, auth.JournalStored, at
 	m.journal[id] = e
 	return nil
 }
