@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"github.com/fernandezvara/backd/internal/email"
+	"github.com/fernandezvara/backd/internal/registry"
 	"io"
 	"log/slog"
 	"os"
@@ -210,4 +211,17 @@ func emailLines(realm, prefix, suffix string) string {
 		b.WriteString(prefix + realm + "/pages/" + kind + "/en.html" + suffix + "\n")
 	}
 	return b.String()
+}
+
+func TestStorageOriginsForTheAdminUI(t *testing.T) {
+	reg := &registry.Registry{Realms: map[string]*registry.Realm{
+		"a": {Name: "a", Settings: registry.RealmSettings{Storage: &registry.StorageSettings{Provider: "minio", Endpoint: "http://minio:9000", PublicEndpoint: "http://localhost:9000", Bucket: "b"}}},
+		"b": {Name: "b", Settings: registry.RealmSettings{Storage: &registry.StorageSettings{Provider: "minio", Endpoint: "http://minio:9000", PublicEndpoint: "http://localhost:9000", Bucket: "b"}}},
+		"c": {Name: "c", Settings: registry.RealmSettings{Storage: &registry.StorageSettings{Provider: "aws", Endpoint: "https://s3.eu-west-1.amazonaws.com", Bucket: "files"}}},
+		"d": {Name: "d"},
+	}}
+	got := storageOrigins(reg)
+	if len(got) != 2 || got[0] != "http://localhost:9000" || got[1] != "https://files.s3.eu-west-1.amazonaws.com" {
+		t.Errorf("origins: %v", got)
+	}
 }

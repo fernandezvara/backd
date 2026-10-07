@@ -9,9 +9,11 @@ declare global {
 
 // Every test fails on a CSP violation or on a request to another origin:
 // the interface loads nothing but its own files and talks only to backd.
-export const test = base.extend<{ guard: void; signIn: (who: keyof typeof users, opts?: { keep?: boolean }) => Promise<void> }>({
+export const test = base.extend<{ allowedOrigins: string[]; guard: void; signIn: (who: keyof typeof users, opts?: { keep?: boolean }) => Promise<void> }>({
+  // Origins besides the interface's own a test may reach: the file storage, for the tests of files.
+  allowedOrigins: [[], { option: true }],
   guard: [
-    async ({ page, baseURL }, use) => {
+    async ({ page, baseURL, allowedOrigins }, use) => {
       const origin = new URL(baseURL!).origin
       const foreign: string[] = []
       const consoleCSP: string[] = []
@@ -23,7 +25,7 @@ export const test = base.extend<{ guard: void; signIn: (who: keyof typeof users,
       })
       page.on('request', (req) => {
         const u = new URL(req.url())
-        if (u.protocol !== 'blob:' && u.protocol !== 'data:' && u.origin !== origin) foreign.push(req.url())
+        if (u.protocol !== 'blob:' && u.protocol !== 'data:' && u.origin !== origin && !allowedOrigins.includes(u.origin)) foreign.push(req.url())
       })
       page.on('console', (msg) => {
         if (/content security policy|Refused to/i.test(msg.text())) consoleCSP.push(msg.text())

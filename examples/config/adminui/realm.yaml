@@ -29,3 +29,14 @@ roles:
     admin: [users, invitations]
     users:
       - support@adminui.example
+
+# Files (the data browser's file controls): the local stack's MinIO. The keys are
+# realm secrets, set by the e2e global setup (backd secret set, in a real stack).
+storage:
+  provider: minio
+  endpoint: http://minio:9000
+  public_endpoint: http://localhost:9000
+  bucket: backd-files
+  prefix: adminui
+  access_key: secret:STORAGE_ACCESS_KEY
+  secret_key: secret:STORAGE_SECRET_KEY

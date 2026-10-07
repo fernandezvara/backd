@@ -153,3 +153,12 @@ export function errorsByPath(details: { path: string; reason: string }[]): Recor
 
 /** Join a path: ("author", "name") → "author.name"; array items use their index ("tags.0"). */
 export const join = (base: string, key: string | number) => (base ? `${base}.${key}` : String(key))
+
+/** The schema without some properties (the file fields backd injects: they have their own controls). */
+export function withoutProperties(schema: Schema, names: string[]): Schema {
+  if (!names.length || !schema.properties) return schema
+  const properties = Object.fromEntries(Object.entries(schema.properties as Schema).filter(([k]) => !names.includes(k)))
+  const out: Schema = { ...schema, properties }
+  if (Array.isArray(schema.required)) out.required = (schema.required as string[]).filter((k) => !names.includes(k))
+  return out
+}

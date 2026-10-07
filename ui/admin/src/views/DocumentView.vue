@@ -5,13 +5,14 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
+import DocumentFiles from '@/components/DocumentFiles.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import JsonField from '@/components/JsonField.vue'
 import JsonView from '@/components/JsonView.vue'
 import SchemaForm from '@/components/SchemaForm.vue'
 import { useAdmin } from '@/lib/admin'
 import { errorText, formatDate } from '@/lib/format'
-import { errorsByPath, formable, newDocument, type Schema } from '@/lib/schema'
+import { errorsByPath, formable, newDocument, withoutProperties, type Schema } from '@/lib/schema'
 import { useRealmConfig } from '@/stores/config'
 import { useSession } from '@/stores/session'
 import { useToasts } from '@/stores/toasts'
@@ -27,7 +28,11 @@ const toasts = useToasts()
 const isNew = computed(() => props.id === undefined)
 const col = computed(() => admin.data(props.database, props.collection))
 const info = computed(() => cfg.collectionInfo(props.database, props.collection))
-const schema = computed(() => info.value?.schema as Schema | undefined)
+// The file fields have their own controls (below the form): the form and the
+// JSON tab leave them out, and a save never sends them (a PUT keeps the files).
+const fileFields = computed(() => info.value?.files ?? {})
+const fileNames = computed(() => Object.keys(fileFields.value))
+const schema = computed(() => (info.value?.schema ? withoutProperties(info.value.schema as Schema, fileNames.value) : undefined))
 const softDelete = computed(() => info.value?.softDelete ?? false)
 const canForm = computed(() => formable(schema.value))
 
@@ -44,6 +49,7 @@ const split = (d: Doc): Fields => {
   const { id: _id, _meta: _m, ...rest } = d as Record<string, unknown>
   void _id
   void _m
+  for (const name of fileNames.value) delete rest[name]
   return structuredClone(rest)
 }
 function adopt(d: Doc) {
@@ -62,12 +68,30 @@ const dirty = computed(() => JSON.stringify(draft.value) !== original.value)
 // collection without a trash refuses: ask for it only where it can exist.
 // Where the configuration isn't readable, try, and fall back.
 async function fetchDoc(): Promise<Doc> {
-  if (info.value && !softDelete.value) return col.value.get(props.id!)
+  // Links to the files (for the previews) come with the document.
+  const fileLinks = fileNames.value.length > 0
+  if (info.value && !softDelete.value) return col.value.get(props.id!, { fileLinks })
   try {
-    return await col.value.get(props.id!, { deleted: 'include' })
+    return await col.value.get(props.id!, { deleted: 'include', fileLinks })
   } catch (e) {
     if (info.value || !(e instanceof ValidationError)) throw e
     return col.value.get(props.id!)
+  }
+}
+
+// A file was uploaded or removed: the document has a new version, and new links.
+// Unsaved edits stay; only what the files changed is taken.
+async function filesChanged() {
+  try {
+    const fresh = await fetchDoc()
+    if (dirty.value) {
+      doc.value = fresh
+      baseVersion.value = fresh._meta.version
+    } else {
+      adopt(fresh)
+    }
+  } catch (e) {
+    toasts.push(errorText(e, t('common.unexpected')), 'error')
   }
 }
 
@@ -231,6 +255,8 @@ const actor = (v?: string | null) => v || '—'
         <AppButton type="submit" :busy="busy">{{ isNew ? t('data.doc.create') : t('data.doc.save') }}</AppButton>
       </div>
     </form>
+
+    <DocumentFiles v-if="!isNew && doc && fileNames.length" :database="database" :collection="collection" :doc="doc" :fields="fileFields" :writable="canWrite && !inTrash" @changed="filesChanged" />
 
     <div v-if="!isNew && canWrite" class="mt-8 flex flex-wrap gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
       <template v-if="inTrash">

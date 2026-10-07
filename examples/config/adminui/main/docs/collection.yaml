@@ -1,0 +1,12 @@
+# Documents with files, for the data browser's file controls.
+files:
+  # One small picture, through backd (a proxy upload).
+  cover:
+    max_size: 1MiB
+    types: [image/png, image/jpeg]
+  # Up to two files of any type, straight to the bucket (a direct upload).
+  manuals:
+    multiple: true
+    max_files: 2
+    upload: direct
+    max_size: 2MiB

@@ -4,6 +4,16 @@ import { computed, ref, shallowRef, watch } from 'vue'
 import { errorText } from '@/lib/format'
 import { useSession } from './session'
 
+/** A file field as the configuration shows it (`files:` in collection.yaml). */
+export interface FileFieldConfig {
+  multiple: boolean
+  max_files: number
+  max_size: number
+  types: string[]
+  upload: 'proxy' | 'direct'
+  download: string | null
+}
+
 /**
  * The realm's configuration, read once per sign-in by the views that need a
  * fact from it. Only a level with the `config` area can read it; for the
@@ -48,11 +58,13 @@ export const useRealmConfig = defineStore('realm-config', () => {
   /** The realm's databases (null: not known). */
   const databases = computed(() => (config.value ? Object.keys(config.value.databases).sort() : null))
 
-  /** A collection's schema and whether it keeps a trash, from the configuration (null: not known). */
-  function collectionInfo(database: string, name: string): { schema: Record<string, unknown>; softDelete: boolean } | null {
-    const dbs = config.value?.databases as Record<string, { collections?: { name: string; schema: Record<string, unknown>; policy?: { soft_delete?: unknown } }[] }> | undefined
+  /** A collection's schema, whether it keeps a trash and its file fields, from the configuration (null: not known). */
+  function collectionInfo(database: string, name: string): { schema: Record<string, unknown>; softDelete: boolean; files: Record<string, FileFieldConfig> } | null {
+    const dbs = config.value?.databases as
+      | Record<string, { collections?: { name: string; schema: Record<string, unknown>; policy?: { soft_delete?: unknown }; files?: Record<string, FileFieldConfig> }[] }>
+      | undefined
     const c = dbs?.[database]?.collections?.find((x) => x.name === name)
-    return c ? { schema: c.schema, softDelete: !!c.policy?.soft_delete } : null
+    return c ? { schema: c.schema, softDelete: !!c.policy?.soft_delete, files: c.files ?? {} } : null
   }
 
   function reset() {
