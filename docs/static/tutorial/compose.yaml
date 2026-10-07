@@ -4,6 +4,9 @@
 #   docker compose up -d        http://localhost:8080  → the app
 #   docker compose down -v      resets the data
 #
+#   http://localhost:9000       MinIO, where files go (chapter 13): the browser
+#                               uploads and downloads there with links backd signs
+#
 # Expected layout next to this file:
 #   config/    the realms you write (chapter 1 creates config/shelf/realm.yaml)
 #   app/       the Shelf app (the snapshot you downloaded)
@@ -19,6 +22,32 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
+
+  # S3-compatible object storage for the files of chapters 13-15, with its bucket
+  # made at start. Published on localhost because the browser sends big files
+  # straight to it and follows download links to it (the realm's
+  # `public_endpoint`). Dev-only credentials; the realm's secrets must match.
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: backd-dev
+      MINIO_ROOT_PASSWORD: dev-p4ssw0rd!
+      # The app is served from http://localhost:8080: it may PUT and GET here.
+      MINIO_API_CORS_ALLOW_ORIGIN: "http://localhost:8080"
+    ports:
+      - "127.0.0.1:9000:9000"
+    volumes:
+      - minio-data:/data
+
+  # One-shot: creates the bucket (the image has no shell, so it tries again until MinIO is up).
+  minio-setup:
+    image: cgr.dev/chainguard/minio-client:latest
+    environment:
+      MC_HOST_local: "http://backd-dev:dev-p4ssw0rd!@minio:9000"
+    command: ["mb", "--ignore-existing", "local/backd-files"]
+    depends_on: [minio]
+    restart: on-failure:20
 
   # Bundles every realm's functions before backd starts (backd refuses stale
   # or missing bundles). Does nothing until chapter 5 adds the first function.
@@ -97,3 +126,4 @@ services:
 
 volumes:
   mongo-data:
+  minio-data:

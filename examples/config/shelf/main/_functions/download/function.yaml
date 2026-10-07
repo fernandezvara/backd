@@ -1,0 +1,9 @@
+# Counts a download and returns its link (chapter 15). admin: true because the
+# count is written through ctx.admin.db; the link is asked as the caller, so
+# the asset's read rule still decides who may download.
+admin: true
+invoke: "user != nil"
+rate_limit:
+  per: user
+  limit: 120
+  window: 1m

@@ -104,10 +104,24 @@ func diffFixture(t *testing.T) (*registry.Collection, *Repository) {
 // provisionOne provisions a collection with the schema in a realm that
 // declares diffRoles.
 func provisionOne(t *testing.T, schema string) (*registry.Collection, *Repository) {
+	return provisionOneWith(t, schema, "")
+}
+
+// provisionOneWith is provisionOne for a collection with a collection.yaml, whose file
+// fields need the realm to have storage.
+func provisionOneWith(t *testing.T, schema, config string) (*registry.Collection, *Repository) {
 	t.Helper()
 	client := testClient(t)
 	realm := testRealm(t, client)
-	reg := loadRegistryWith(t, realm, "roles:\n  admin: {}\n  a: {}\n  editor: {}\n  staff: {}\n  curator: {}\n  ops: {}\n", map[string]string{"app/items": schema})
+	realmYAML := "roles:\n  admin: {}\n  a: {}\n  editor: {}\n  staff: {}\n  curator: {}\n  ops: {}\n"
+	files := map[string]string{"app/items": schema}
+	if strings.Contains(config, "files:") {
+		realmYAML += "storage:\n  provider: minio\n  endpoint: http://minio:9000\n  bucket: test-bucket\n  prefix: p\n  access_key: secret:A\n  secret_key: secret:B\n"
+	}
+	if config != "" {
+		files["app/items/collection.yaml"] = config
+	}
+	reg := loadRegistryWith(t, realm, realmYAML, files)
 	log, _ := testLogger()
 	if err := (&Provisioner{Client: client, Registry: reg, Log: log}).Apply(context.Background()); err != nil {
 		t.Fatal(err)
@@ -250,7 +264,7 @@ func TestSampleReadRules(t *testing.T) {
 			continue
 		}
 		t.Run(s.path, func(t *testing.T) {
-			c, repo := provisionOne(t, s.schema)
+			c, repo := provisionOneWith(t, s.schema, s.config)
 			r := compileRules(t, c, s.rules).For(rules.Read)
 			if r == nil {
 				t.Skip("no read rule")

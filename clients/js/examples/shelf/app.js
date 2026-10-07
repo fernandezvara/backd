@@ -3,6 +3,11 @@
 // Chapter 5 adds the first functions: curators `publish` drafts, members
 // mint `share` links, and `?s=<token>` resolves one publicly through
 // `share-open` — the holes the rules chapter left, closed.
+//
+// Chapters 13–15 add files: an asset can carry one file (`file`, through backd)
+// and up to five attachments (straight to the bucket, with a progress bar), the
+// thumbnail function makes a picture of an image, downloads are counted by the
+// `download` function, and a shared asset comes with links to its files.
 import { createClient, localStorageStorage, NotFoundError, VersionMismatchError } from 'backd-js'
 
 const backd = createClient({
@@ -89,7 +94,12 @@ document.addEventListener('alpine:init', () => {
     busy: false,
 
     // The "new asset" form (tags come in as one comma-separated string).
-    draft: { title: '', kind: 'link', url: '', body: '', tags: '' },
+    // `file` and `attachments` hold what the pickers chose (chapters 13, 14).
+    draft: { title: '', kind: 'link', url: '', body: '', tags: '', file: null, attachments: [] },
+    // The upload in progress, for the bar: { label, pct }.
+    progress: null,
+    // Admin: what the storage holds (chapter 15).
+    storage: null,
 
     async init() {
       window.addEventListener('hashchange', () => this.syncView())
@@ -182,6 +192,9 @@ document.addEventListener('alpine:init', () => {
           orderBy: this.sort,
           limit: 9,
           after: this.after,
+          // Chapter 13: every file comes with a link, for the previews shown at
+          // once. They expire (five minutes), so downloads fetch a fresh one.
+          fileLinks: true,
         })
         this.assets = this.assets.concat(page.items)
         this.after = page.next_cursor
@@ -200,6 +213,82 @@ document.addEventListener('alpine:init', () => {
       await this.load()
     },
 
+    // --- files (chapters 13-15) ------------------------------------------------
+
+    // The bar: a small helper the uploads below share.
+    reportProgress(label) {
+      return ({ loaded, total }) => { this.progress = { label, pct: total ? Math.round((100 * loaded) / total) : 0 } }
+    },
+
+    pickFile(event) {
+      this.draft.file = event.target.files[0] ?? null
+    },
+
+    pickAttachments(event) {
+      this.draft.attachments = [...event.target.files]
+    },
+
+    prettySize(bytes) {
+      if (bytes < 1024) return `${bytes} B`
+      if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KiB`
+      if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MiB`
+      return `${(bytes / 1024 ** 3).toFixed(1)} GiB`
+    },
+
+    isImage(file) {
+      return Boolean(file?.type?.startsWith('image/'))
+    },
+
+    // The picture an asset's card shows: the thumbnail once the function made
+    // it, else the image itself — both links came with the list (`fileLinks`).
+    previewUrl(asset) {
+      return asset.thumbnail?.url ?? (this.isImage(asset.file) ? asset.file.url : null)
+    },
+
+    // The files an asset holds, as a flat list for the download buttons.
+    filesOf(asset) {
+      const out = []
+      if (asset.file) out.push({ field: 'file', ...asset.file })
+      for (const f of asset.attachments ?? []) out.push({ field: 'attachments', ...f })
+      return out
+    },
+
+    // Chapter 15: a download goes through the `download` function, which counts
+    // it and answers a fresh link for the browser to open. The link makes the
+    // browser save the file and leave the page where it is.
+    async download(asset, file) {
+      this.error = null
+      try {
+        const { url } = await main.fn('download', { document_id: asset.id, field: file.field, file_id: file.id })
+        window.location.assign(url)
+        setTimeout(() => this.refilter(), 1500) // the count moved
+      } catch (e) {
+        this.error = e.message
+      }
+    },
+
+    // Chapter 13: the owner's own downloads need no counting: the client makes
+    // the link when the button is clicked (a link fetched earlier may have expired).
+    async downloadMine(asset, file) {
+      this.error = null
+      try {
+        await assets.downloadFile(asset.id, file.field, file.id)
+      } catch (e) {
+        this.error = e.message
+      }
+    },
+
+    // Chapter 14: the thumbnail is a job; the app doesn't wait for it, it
+    // refreshes the lists when the job is done.
+    async makeThumbnail(assetId) {
+      try {
+        const job = await main.fn('thumbnail', { asset_id: assetId })
+        job.wait({ pollIntervalMs: 500, timeoutMs: 60000 }).then(() => Promise.all([this.loadMine(), this.refilter()])).catch(() => {})
+      } catch {
+        // a thumbnail is a nicety: the asset is saved either way
+      }
+    },
+
     async create() {
       this.busy = true
       this.error = null
@@ -213,13 +302,32 @@ document.addEventListener('alpine:init', () => {
         if (this.draft.body) doc.body = this.draft.body
         const tags = this.draft.tags.split(',').map((t) => t.trim()).filter(Boolean)
         if (tags.length) doc.tags = tags
-        await assets.create(doc)
-        this.draft = { title: '', kind: 'link', url: '', body: '', tags: '' }
+        // Chapters 13-14: the files go first, as pending uploads (the asset
+        // doesn't exist yet), and the create names them: `{ upload, token }`.
+        // The client sends `file` through backd and `attachments` straight to the bucket.
+        if (this.draft.kind === 'file' && this.draft.file) {
+          const up = await assets.prepareUpload('file', this.draft.file, { onProgress: this.reportProgress(this.draft.file.name) })
+          doc.file = up.ref
+        }
+        if (this.draft.kind === 'file' && this.draft.attachments.length) {
+          doc.attachments = []
+          for (const f of this.draft.attachments) {
+            const up = await assets.prepareUpload('attachments', f, { onProgress: this.reportProgress(f.name) })
+            doc.attachments.push(up.ref)
+          }
+        }
+        const made = await assets.create(doc)
+        if (this.isImage(made.file)) this.makeThumbnail(made.id)
+        this.draft = { title: '', kind: 'link', url: '', body: '', tags: '', file: null, attachments: [] }
+        for (const input of document.querySelectorAll('input[type=file]')) input.value = ''
         await this.refilter()
         await this.loadMine()
       } catch (e) {
+        // 413: over the field's max_size; 415: not a type it takes (backd looks
+        // at the bytes, not the name); 409 too_many_files: past max_files.
         this.error = e.message
       } finally {
+        this.progress = null
         this.busy = false
       }
     },
@@ -233,6 +341,7 @@ document.addEventListener('alpine:init', () => {
           where: { '_meta.owner': this.user.id },
           orderBy: '-published_at',
           limit: 50,
+          fileLinks: true,
         })
         this.mine = page.items
       } catch (e) {
@@ -263,6 +372,43 @@ document.addEventListener('alpine:init', () => {
         url: asset.url ?? '',
         body: asset.body ?? '',
         tags: (asset.tags ?? []).join(', '),
+      }
+    },
+
+    // Replace the file of an asset, or add an attachment (chapters 13-14). Both
+    // are updates of the asset: the update rule is asked before a byte moves,
+    // and `ifMatch` makes them lose to a concurrent change instead of winning it.
+    async putFile(asset, field, event) {
+      const picked = event.target.files[0]
+      event.target.value = ''
+      if (!picked) return
+      this.busy = true
+      this.error = null
+      try {
+        const doc = await assets.uploadFile(asset.id, field, picked, { ifMatch: asset._meta.version, onProgress: this.reportProgress(picked.name) })
+        if (field === 'file' && this.isImage(doc.file)) this.makeThumbnail(asset.id)
+        await this.loadMine()
+        await this.refilter()
+      } catch (e) {
+        this.error = e instanceof VersionMismatchError ? 'Someone else changed this asset first — reload and try again.' : e.message
+      } finally {
+        this.progress = null
+        this.busy = false
+      }
+    },
+
+    async removeFile(asset, file) {
+      if (!confirm(`Remove ${file.name}?`)) return
+      this.busy = true
+      this.error = null
+      try {
+        await assets.deleteFile(asset.id, file.field, file.id, { ifMatch: asset._meta.version })
+        await this.loadMine()
+        await this.refilter()
+      } catch (e) {
+        this.error = e instanceof VersionMismatchError ? 'Someone else changed this asset first — reload and try again.' : e.message
+      } finally {
+        this.busy = false
       }
     },
 
@@ -328,7 +474,18 @@ document.addEventListener('alpine:init', () => {
 
     async loadAdmin() {
       if (!this.isAdmin) return
-      await Promise.all([this.loadMailbox(), this.loadAudit(), this.loadKeys()])
+      await Promise.all([this.loadMailbox(), this.loadAudit(), this.loadKeys(), this.loadStorage()])
+    },
+
+    // Chapter 15: what the storage holds, for the operator — how it is set up,
+    // whether it answers, and the totals of what documents reference.
+    async loadStorage() {
+      if (!this.isAdmin) return
+      try {
+        this.storage = await backd.admin.storage.status()
+      } catch (e) {
+        this.error = e.message
+      }
     },
 
     async loadAudit() {

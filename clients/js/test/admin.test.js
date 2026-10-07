@@ -362,3 +362,14 @@ test('storage.check posts to the storage check route', async () => {
   assert.equal(got.checksum_sha256, 'verified')
   await assert.rejects(a.storage.check(), NotFoundError)
 })
+
+test('storage.status and storage.reconcile use the storage routes', async () => {
+  const m = mockFetch([{ body: { configured: true, usage: { bytes: 5, files: 1, users: [] } } }, { body: { delete: true, orphans: [], deleted: 0 } }])
+  const a = createClient({ url: 'https://api.test', realm: 'acme', apiKey: 'bdk_x', fetch: m.fetch }).admin
+  assert.equal((await a.storage.status()).usage?.files, 1)
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/storage')
+  assert.equal(m.calls[0].method, 'GET')
+  await a.storage.reconcile({ delete: true })
+  assert.equal(m.calls[1].url.pathname, '/v1/acme/_admin/storage/reconcile')
+  assert.deepEqual(m.calls[1].body, { delete: true })
+})

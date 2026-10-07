@@ -9,10 +9,24 @@ export type Doc = Record<string, unknown> & {
 
 export type ListParams = { where?: object; orderBy?: string; limit?: number; skip?: number };
 
+export type FileDetails = { id: string; name: string; size: number; type: string; sha256: string; uploaded_at: string };
+
+/** The files of one document's file field (`collection.files(id, field)`). */
+export type Files = {
+  /** Reads a file; without an id, the one a single field holds. */
+  get(fileId?: string): Promise<{ file?: FileDetails; bytes(): Promise<Uint8Array>; text(): Promise<string> }>;
+  /** Stores a file: replaces a single field's, is added to a multiple field's. Resolves with the document. */
+  put(data: Uint8Array | string, options?: { name?: string; type?: string; ifMatch?: number }): Promise<Doc>;
+  delete(fileId?: string, options?: { ifMatch?: number }): Promise<Doc>;
+  /** A link that works without credentials until it expires. */
+  link(fileId?: string): Promise<{ url: string; expires_at: string }>;
+};
+
 export type Collection = {
+  files(id: string, field: string): Files;
   get(id: string): Promise<Doc>;
   create(doc: Record<string, unknown>): Promise<Doc>;
-  patch(id: string, patch: Record<string, unknown>): Promise<Doc>;
+  patch(id: string, patch: Record<string, unknown>, options?: { ifMatch?: number }): Promise<Doc>;
   delete(id: string): Promise<void>;
   list(params?: ListParams): Promise<{ items: Doc[]; has_more: boolean }>;
   iterate(params?: ListParams): AsyncIterable<Doc>;

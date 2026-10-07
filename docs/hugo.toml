@@ -52,7 +52,7 @@ enableGitInfo = true
   [[module.mounts]]
     source = "../examples/config/shelf"
     target = "assets/examples/shelf"
-    includeFiles = ["**.ts", "**.yaml", "**.json", "**.html", "**.txt"]
+    includeFiles = ["**.ts", "**.yaml", "**.json", "**.html", "**.txt", "**.lock"]
     excludeFiles = ["**/.build/**"]
   # The tutorial's downloads: the same files the repo runs, served under
   # /tutorial/ so readers never need a backd checkout.

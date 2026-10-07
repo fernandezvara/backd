@@ -51,6 +51,24 @@ func copyShelf(t *testing.T, dst string, files ...string) {
 	}
 }
 
+// beforeFiles copies shelf files like copyShelf, but keeps a collection.yaml only up
+// to chapter 13's `files:` section: what a reader has before they add it.
+func beforeFiles(t *testing.T, dst string, files ...string) {
+	t.Helper()
+	src := filepath.Join("..", "..", "examples", "config", "shelf")
+	for _, f := range files {
+		b, err := os.ReadFile(filepath.Join(src, f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(b)
+		if i := strings.Index(text, "\n# Chapter 13:"); i >= 0 {
+			text = text[:i+1]
+		}
+		writeFile(t, filepath.Join(dst, f), text)
+	}
+}
+
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -79,6 +97,7 @@ func TestTutorialChaptersLoad(t *testing.T) {
 	}
 	ch4 = strings.Replace(ch2, "signup: open", "signup: invite", 1)
 	ch10 := ch4 + "\n" + blockAfter(t, "10-email", "Add to `config/shelf/realm.yaml`")
+	ch13 := ch10 + "\n" + blockAfter(t, "13-files", "Add to `config/shelf/realm.yaml`")
 	collections := []string{
 		"main/assets/schema.json", "main/assets/indexes.json", "main/shares/schema.json", "main/shares/indexes.json",
 	}
@@ -93,24 +112,24 @@ func TestTutorialChaptersLoad(t *testing.T) {
 	t.Run("chapter 2", func(t *testing.T) {
 		loadChapter(t, func(d string) {
 			writeFile(t, filepath.Join(d, "realm.yaml"), ch2)
-			copyShelf(t, d, append(collections, more...)...)
+			beforeFiles(t, d, append(collections, more...)...)
 		})
 	})
 	t.Run("chapters 3 and 4", func(t *testing.T) {
 		loadChapter(t, func(d string) {
 			writeFile(t, filepath.Join(d, "realm.yaml"), ch4)
-			copyShelf(t, d, append(collections, more...)...)
+			beforeFiles(t, d, append(collections, more...)...)
 			writeFile(t, filepath.Join(d, "main/assets/rules.yaml"), blockAfter(t, "03-rules", "## The assets rules"))
 			writeFile(t, filepath.Join(d, "main/shares/rules.yaml"), blockAfter(t, "03-rules", "## The shares rules"))
 		})
 	})
-	t.Run("chapter 10 is the finished realm", func(t *testing.T) {
+	t.Run("chapter 13 is the finished realm", func(t *testing.T) {
 		loadChapter(t, func(d string) {
 			src := filepath.Join("..", "..", "examples", "config", "shelf")
 			if err := os.CopyFS(d, os.DirFS(src)); err != nil {
 				t.Fatal(err)
 			}
-			writeFile(t, filepath.Join(d, "realm.yaml"), ch10)
+			writeFile(t, filepath.Join(d, "realm.yaml"), ch13)
 		})
 		final, err := os.ReadFile(filepath.Join("..", "..", "examples", "config", "shelf", "realm.yaml"))
 		if err != nil {
@@ -120,7 +139,7 @@ func TestTutorialChaptersLoad(t *testing.T) {
 		if err := yaml.Unmarshal(final, &a); err != nil {
 			t.Fatal(err)
 		}
-		if err := yaml.Unmarshal([]byte(ch10), &b); err != nil {
+		if err := yaml.Unmarshal([]byte(ch13), &b); err != nil {
 			t.Fatal(err)
 		}
 		if !reflect.DeepEqual(a, b) {

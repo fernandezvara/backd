@@ -53,13 +53,14 @@ export function makeThumbnailer(resize) {
 ```
 
 ```ts
-// index.ts: the function, with an image library
-import { Image } from "npm:imagescript";
+// index.ts: the function, with image libraries (pure JavaScript: a function can't read files,
+// so a library that loads WebAssembly or native code from disk can't start)
+import UPNG from "npm:upng-js@2.1.0";
 import { makeThumbnailer } from "./thumbnail.js";
 
 export default makeThumbnailer(async (bytes: Uint8Array, width: number) => {
-  const image = await Image.decode(bytes);
-  return await image.resize(width, Image.RESIZE_AUTO).encode();
+  // decode with UPNG (PNG) or jpeg-js (JPEG), average the pixels down to `width`, encode with UPNG.encode
+  // (the Shelf tutorial's thumbnail function has the whole of it)
 });
 ```
 

@@ -75,3 +75,10 @@ main.publiclink #shared-view { display: block !important; }
   border-radius: var(--pico-border-radius);
   padding: .6rem .8rem;
 }
+
+/* Files (chapters 13-15) */
+.thumb { display: block; max-width: 100%; max-height: 10rem; margin-bottom: .75rem; border-radius: var(--pico-border-radius); object-fit: cover; }
+.files { list-style: none; padding: 0; margin: 0 0 .75rem; }
+.files li { display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap; }
+progress { margin: 0; height: .5rem; }
+label.sm { font-size: .85rem; }

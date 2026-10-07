@@ -1,0 +1,11 @@
+# Makes an asset's thumbnail (chapter 14). Async: the app queues it and shows
+# the gallery's placeholder until the job finishes. admin: true gives
+# ctx.admin.db, the one way to write the thumbnail field the rules protect.
+# Any signed-in member may queue it; the function checks they can read the asset.
+mode: async
+admin: true
+invoke: "user != nil"
+retry:
+  attempts: 3
+  backoff: 5s
+  max_backoff: 1m

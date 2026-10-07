@@ -7,3 +7,22 @@
 # one person's shelf.
 on_owner_delete:
   action: delete
+
+# Chapter 13: the fields of an asset that hold files. backd adds their schema,
+# so they are declared here and never in schema.json (it refuses them there).
+files:
+  # One document or image per asset, streamed through backd.
+  file:
+    max_size: 25MiB
+    types: [application/pdf, image/png, image/jpeg, text/plain]
+  # Chapter 14: big attachments go straight from the browser to the bucket.
+  attachments:
+    multiple: true
+    max_files: 5
+    upload: direct
+    max_size: 1GiB
+  # Chapter 14: a small picture the thumbnail function makes. The rules keep
+  # clients from writing it.
+  thumbnail:
+    max_size: 512KiB
+    types: [image/png]

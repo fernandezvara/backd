@@ -37,3 +37,26 @@ Deno.test("unknown and expired tokens answer 404 / 410", async () => {
     if (err.status !== 410 || err.code !== "expired") throw e;
   }
 });
+
+Deno.test("a shared file asset comes with links to its files, and nothing that identifies them", async () => {
+  const { ctx, store } = createContext({ admin: true, input: { token: "tok-24-chars-aaaaaaaaaaaa" } });
+  seed(store);
+  store.declareFiles("main", "assets", { attachments: { multiple: true } });
+  const assets = ctx.admin.db("main").collection("assets");
+  await assets.files("a1", "file").put("the handbook", { name: "handbook.txt", type: "text/plain" });
+  await assets.files("a1", "attachments").put("one", { name: "a.zip", type: "application/zip" });
+  await assets.files("a1", "attachments").put("two", { name: "b.zip", type: "application/zip" });
+
+  const out = (await handler(ctx as never)) as { files: Record<string, unknown>[] };
+  if (out.files.length !== 3 || out.files[0].name !== "handbook.txt" || !String(out.files[1].url).startsWith("https://")) throw new Error(JSON.stringify(out.files));
+  for (const f of out.files) {
+    if ("id" in f || "sha256" in f || !f.expires_at) throw new Error(JSON.stringify(f));
+  }
+});
+
+Deno.test("an asset without files answers an empty list", async () => {
+  const { ctx, store } = createContext({ admin: true, input: { token: "tok-24-chars-aaaaaaaaaaaa" } });
+  seed(store);
+  const out = (await handler(ctx as never)) as { files: unknown[] };
+  if (out.files.length !== 0) throw new Error(JSON.stringify(out));
+});

@@ -41,3 +41,17 @@ roles:
     description: Publishes assets and manages share links (chapter 5)
     users:
       - curator@shelf.example
+
+# Chapter 13 gives assets files. They live in the realm's own S3-compatible
+# storage: in the tutorial's stack, a MinIO next to backd. backd reaches it at
+# `endpoint`; links are signed for `public_endpoint`, the address the browser
+# uses. The keys are realm secrets (`backd secret set`), never written here.
+# BACKD_DEV=true lets a local stack use plain http.
+storage:
+  provider: minio
+  endpoint: http://minio:9000
+  public_endpoint: http://localhost:9000
+  bucket: backd-files
+  prefix: shelf
+  access_key: secret:STORAGE_ACCESS_KEY
+  secret_key: secret:STORAGE_SECRET_KEY

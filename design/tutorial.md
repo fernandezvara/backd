@@ -64,7 +64,7 @@ Indexes: `assets` on `published_at` (gallery order) and `_meta.owner`; `shares` 
 | `cleanup` | internal async, `schedule:` nightly | delete expired shares |
 | `import` | `mode: webhook`, `invoke: "true"`, `rate_limit:` | receive assets pushed by an outside service |
 | `deliver` | internal async, `retry:` | the realm's email delivery function |
-| `thumbnail` | async, `admin: true`, `retry:` | files API in functions: `get()` the image, `put()` a WebP into `thumbnail` through `ctx.admin.db`, the only writer the rules allow (ch 14) |
+| `thumbnail` | async, `admin: true`, `retry:` | files API in functions: `get()` the image, `put()` a small PNG into `thumbnail` through `ctx.admin.db`, the only writer the rules allow (ch 14) |
 | `download` | sync, `admin: true` | download function: increment `downloads` through `ctx.admin.db`, return `link()` (ch 15) |
 | `share-open` | sync, `admin: true` (existing) | also returns a file link for a shared file asset via `ctx.admin.db … link()` (ch 15) |
 
