@@ -257,6 +257,16 @@ import { Job } from './functions.js'
  */
 
 /**
+ * What `admin.checkConfig()` found.
+ * @typedef {object} ConfigCheck
+ * @property {boolean} ok         False when the configuration with the drafts would not load.
+ * @property {string} realm
+ * @property {number} checked     How many files of the realm were loaded and validated, drafts included.
+ * @property {string[]} changed   The draft files.
+ * @property {{ file?: string, message: string }[]} problems
+ */
+
+/**
  * What `admin.storage.status()` answers: how the realm's storage is configured (the keys by
  * name, never their values), whether it works, and what the documents hold in it.
  * @typedef {object} StorageStatus
@@ -365,6 +375,19 @@ export class Admin {
    */
   async config(opts) {
     return (await this._request({ method: 'GET', path: ['config'], ...opts })).data
+  }
+
+  /**
+   * Checks a change to the configuration without applying it: loads the realm's whole
+   * configuration as startup does, with `files` (path in the realm → content, or null to delete)
+   * in place of the ones on disk, and says what it found. Every file of the realm is validated,
+   * not only these. Nothing on the server changes. Needs the `config` area.
+   * @param {Record<string, string | null>} files   e.g. `{ 'main/notes/rules.yaml': 'read: user != nil\n' }`
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<ConfigCheck>}
+   */
+  async checkConfig(files, opts) {
+    return (await this._request({ method: 'POST', path: ['config', 'check'], body: { files }, ...opts })).data
   }
 
   /**

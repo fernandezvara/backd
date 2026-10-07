@@ -78,24 +78,25 @@ test('the configuration views have no accessibility violations', async ({ page, 
   }
 })
 
-test('a change to a schema or to rules is prepared as a file to download, and nothing is sent to the server', async ({ page, signIn }) => {
+test('a change to a schema or to rules is checked against the whole realm and prepared as a file to download', async ({ page, signIn }) => {
   await signIn('admin')
   await page.getByRole('link', { name: 'Configuration' }).click()
   await page.getByRole('link', { name: 'Collections' }).click()
   const notes = page.getByTestId('col-main-notes')
   await notes.getByText('notes', { exact: true }).click()
-  const writes: string[] = []
+  const posts: string[] = []
   page.on('request', (req) => {
-    if (req.method() !== 'GET') writes.push(`${req.method()} ${req.url()}`)
+    if (req.method() !== 'GET') posts.push(`${req.method()} ${new URL(req.url()).pathname}`)
   })
 
+  // A good change: the server loads the whole realm with it, and says how many files.
   await notes.getByRole('button', { name: 'Prepare a change to schema.json' }).click()
   const editor = notes.getByLabel('notes schema.json')
   const original = JSON.parse(await editor.inputValue())
   expect(original.properties.title.minLength).toBe(1)
   original.properties.title.minLength = 3
   await editor.fill(JSON.stringify(original, null, 2))
-  await expect(notes.getByText('Changed from what the server runs.')).toBeVisible()
+  await expect(notes.getByTestId('draft-ok')).toContainText(/All \d+ files of the realm were checked with your changes \(1 changed\) and the configuration loads/)
   const download = page.waitForEvent('download')
   await notes.getByRole('button', { name: 'Download schema.json' }).click()
   const file = await download
@@ -103,18 +104,32 @@ test('a change to a schema or to rules is prepared as a file to download, and no
   const saved = JSON.parse((await import('node:fs')).readFileSync((await file.path())!, 'utf8'))
   expect(saved.properties.title.minLength).toBe(3)
 
-  // Invalid JSON can't be downloaded; starting again restores what the server runs.
+  // Invalid JSON is stopped in the browser; a schema that parses but that the realm refuses is
+  // stopped by the server, in whichever file it breaks.
   await editor.fill('{"type": ')
   await expect(notes.getByRole('alert')).toContainText('Not valid JSON')
   await expect(notes.getByRole('button', { name: 'Download schema.json' })).toBeDisabled()
+  await editor.fill(JSON.stringify({ ...original, type: 'not-a-type' }))
+  await expect(notes.getByTestId('draft-problems')).toContainText('would not load with your changes')
+  await expect(notes.getByTestId('draft-problems')).toContainText('notes/schema.json')
+  await expect(notes.getByRole('button', { name: 'Download schema.json' })).toBeDisabled()
   await notes.getByRole('button', { name: 'Start again' }).click()
   expect(JSON.parse(await editor.inputValue()).properties.title.minLength).toBe(1)
+  await expect(notes.getByTestId('draft-ok')).toHaveCount(0)
 
-  // Rules are rebuilt from the expressions the server runs.
+  // Rules are rebuilt from the expressions the server runs, and checked the same way.
   await notes.getByRole('button', { name: 'Prepare a change to rules.yaml' }).click()
   const rules = notes.getByLabel('notes rules.yaml')
   const text = await rules.inputValue()
   expect(text).toContain('read: "user != nil"')
   expect(text).toContain('update: "user != nil && document._meta.owner == user.id"')
-  expect(writes).toEqual([]) // the server was never written to
+  await rules.fill(text.replace('read: "user != nil"', 'read: "document.nothing == 1"'))
+  await expect(notes.getByTestId('draft-problems')).toContainText('rules.yaml')
+  await expect(notes.getByRole('button', { name: 'Download rules.yaml' })).toBeDisabled()
+  await rules.fill(text.replace('read: "user != nil"', 'read: "user != nil && document.pinned == true"'))
+  await expect(notes.getByTestId('draft-ok')).toBeVisible()
+  await expect(notes.getByRole('button', { name: 'Download rules.yaml' })).toBeEnabled()
+
+  // Only checks were sent: the configuration is never written.
+  expect([...new Set(posts)]).toEqual([`POST /v1/${REALM}/_admin/config/check`])
 })

@@ -1526,6 +1526,50 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/config/check:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [admin]
+      summary: Check a change to the realm's configuration without applying it
+      description: |
+        Loads the realm's **whole** configuration as startup does (realm.yaml, every
+        collection's schema, indexes, rules and policy, every function.yaml, the email
+        templates and pages) with the draft `files` in place of, or beside, the ones on
+        disk, and answers what it found. Every file of the realm is read and validated,
+        not only the drafts, since a change can break another file (a schema that drops a
+        field a rule names). `checked` is how many files the realm has with the drafts.
+        Function bundles are built by `backd functions build` and are not part of it.
+        It works on a copy: nothing on the server is changed or applied, and the
+        configuration stays a file in a repository. Draft paths are relative to the realm's
+        directory (`main/notes/rules.yaml`); a `null` content deletes the file. Needs the
+        `config` area (a read-only administrator may check).
+      operationId: adminCheckConfig
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [files]
+              properties:
+                files:
+                  type: object
+                  description: "At most 50 files of at most 1 MiB, by path in the realm."
+                  additionalProperties: { type: [string, "null"] }
+      responses:
+        "200":
+          description: The result; `ok` is false when the configuration with the drafts would not load.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConfigCheck" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/storage/check:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -3927,6 +3971,25 @@ components:
           description: "What the call reported with `ctx.step()`, closed when it ended; at most 100 (the first 50 and the latest 50)."
           items: { $ref: "#/components/schemas/Step" }
         steps_omitted: { type: integer, description: "How many steps were left out of the middle when there were more than 100." }
+
+    ConfigCheck:
+      type: object
+      additionalProperties: false
+      required: [ok, realm, checked, changed, problems]
+      properties:
+        ok: { type: boolean }
+        realm: { type: string }
+        checked: { type: integer, description: "How many files of the realm were loaded and validated, drafts included." }
+        changed: { type: array, items: { type: string }, description: "The draft files, sorted." }
+        problems:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [message]
+            properties:
+              file: { type: string, description: "The file the message is about, relative to the realm, when it names one." }
+              message: { type: string }
 
     StorageCheck:
       type: object

@@ -35,6 +35,7 @@ export { memoryStorage, localStorageStorage } from './storage.js'
  * @typedef {import('./data.js').GetOptions} GetOptions
  * @typedef {import('./data.js').DeleteOptions} DeleteOptions
  * @typedef {import('./data.js').CreateOptions} CreateOptions
+ * @typedef {import('./admin.js').ConfigCheck} ConfigCheck
  * @typedef {import('./admin.js').StorageStatus} StorageStatus
  * @typedef {import('./admin.js').StorageReconcile} StorageReconcile
  * @typedef {import('./files.js').FileDetails} FileDetails

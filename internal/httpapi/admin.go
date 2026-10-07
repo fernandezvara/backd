@@ -36,6 +36,7 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		json := requireContentType("application/json")
 		r.Get("/whoami", a.whoami)
 		r.With(a.need(registry.RightConfig)).Get("/config", a.config)
+		r.With(a.needRead(registry.RightConfig), requireContentType("application/json")).Post("/config/check", a.checkConfig)
 		r.With(a.needRead(registry.RightConfig)).Post("/storage/check", a.checkStorage)
 		r.With(a.needRead(registry.RightConfig)).Get("/storage", a.storageStatus)
 		r.With(a.need(registry.RightConfig), requireContentType("application/json")).Post("/storage/reconcile", a.reconcileStorage)

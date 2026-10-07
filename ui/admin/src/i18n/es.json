@@ -570,8 +570,12 @@
     "draft": {
       "edit": "Preparar un cambio en {file}",
       "hide": "Cerrar el editor",
-      "note": "El archivo se hace en tu navegador y no se envía nada al servidor, que nunca recibe cambios de su configuración desde esta página. Descárgalo, revísalo, guárdalo como {path} en el repositorio de tu configuración y haz commit; backd lee la configuración al arrancar.",
+      "note": "El archivo se hace en tu navegador. El servidor lo comprueba, junto con tus otros cambios, contra toda la configuración del realm, pero no aplica nada y nunca recibe cambios de su configuración desde esta página. Descárgalo, revísalo, guárdalo como {path} en el repositorio de tu configuración y haz commit; backd lee la configuración al arrancar.",
       "changed": "Distinto de lo que ejecuta el servidor.",
+      "checking": "Comprobando todo el realm con tus cambios…",
+      "ok": "Se comprobaron los {n} archivos del realm con tus cambios ({changed} cambiados) y la configuración carga.",
+      "notOk": "La configuración no cargaría con tus cambios (se comprobaron los {n} archivos del realm):",
+      "unchecked": "El servidor no pudo comprobarlo ({why}): el archivo no está verificado.",
       "invalid": "JSON no válido: {problem}",
       "download": "Descargar {file}",
       "reset": "Empezar de nuevo"
