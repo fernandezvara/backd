@@ -662,3 +662,29 @@ func TestFileFieldInfo(t *testing.T) {
 		t.Errorf("an unknown field: %d", rec.Code)
 	}
 }
+
+// A document is still readable when its files' storage isn't: it just comes without links.
+func TestReadsSurviveAnUnavailableStorage(t *testing.T) {
+	f := newFilesFixture(t)
+	id := f.newDoc(t, "library")
+	f.upload(t, f.ada, "library", id, "avatar", "a.png", "image/png", pngBytes(5), nil)
+	st := f.reg.Realms["acme"].Settings.Storage
+	saved := *st
+	st.AccessKey = "NOT_SET_ANYWHERE"
+	defer func() { *st = saved }()
+	hdr := map[string]string{"Authorization": "Bearer " + f.ada}
+	rec, doc := f.doRaw(t, "GET", "/v1/acme/app/library/"+id+"?file_links=true", nil, hdr)
+	avatar, _ := doc["avatar"].(map[string]any)
+	if rec.Code != 200 || avatar["id"] == nil || avatar["url"] != nil {
+		t.Errorf("get: %d %v", rec.Code, doc)
+	}
+	rec, list := f.doRaw(t, "GET", "/v1/acme/app/library?file_links=true", nil, hdr)
+	if rec.Code != 200 || len(list["items"].([]any)) != 1 {
+		t.Errorf("list: %d %v", rec.Code, list)
+	}
+	// A download, which needs the storage, says so.
+	rec, _ = f.doRaw(t, "GET", "/v1/acme/app/library/"+id+"/_files/avatar/"+avatar["id"].(string), nil, hdr)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("download: %d", rec.Code)
+	}
+}

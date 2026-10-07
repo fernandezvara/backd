@@ -98,7 +98,7 @@ curl -X POST "$API/v1/acme/app/people/$ID/_files/video/uploads/$UPLOAD_ID/comple
 An `<img>` or a download button can't send an `Authorization` header. Two ways to get a link:
 
 - `GET …/_files/{field}/{file id}?link=json`.
-- **`?file_links=true` on any document read** (get or list, data or admin): every file in the answer gets `url` and `expires_at`. They are never stored and not part of the `ETag`.
+- **`?file_links=true` on any document read** (get or list, data or admin): every file in the answer gets `url` and `expires_at`. They are never stored and not part of the `ETag`. If the realm's storage can't be used (its keys aren't set, or `BACKD_URL` is missing for a function's backd link) the documents are answered **without** links and the reason is logged, so a read never fails because of the storage; a download or `?link=json` answers `503 storage_unavailable`.
 
 In `presigned` mode the link is the storage's. In `proxy` mode it is a **backd link**, signed with a per-realm key (the realm secret `BACKD_FILES_LINK_KEY`, made on first use): bound to that file, expiring, valid for as many requests as it takes (`Range`, seeking, retries), and `403 invalid_file_link` when changed or expired. Setting a new value for the secret invalidates every link in circulation.
 

@@ -771,14 +771,18 @@ func attachment(name string) string {
 // documents when the request asks for them (?file_links=true). A link is made per
 // response, never stored, and has no part in the document's ETag; making one is a
 // local calculation, so a list carries them cheaply. It answers the request and
-// returns false when it can't.
+// returns false when it can't. When links can't be made (the storage's keys aren't set,
+// or the public address isn't known) the documents are answered without them, and
+// the reason is logged: reading a document never fails because its files' storage is
+// down; a download then says why.
 func (d *documents) addFileLinks(w http.ResponseWriter, r *http.Request, c *registry.Collection, docs []map[string]any) bool {
 	if r.URL.Query().Get("file_links") != "true" || len(c.Files) == 0 {
 		return true
 	}
-	obj, ok := d.objectsFor(w, r, c.Realm)
-	if !ok {
-		return false
+	obj, err := d.objects.For(r.Context(), c.Realm)
+	if err != nil {
+		logger(r.Context()).Warn("file links left out: the realm's storage is not available", "realm", c.Realm, "error", err)
+		return true
 	}
 	for _, doc := range docs {
 		docID, _ := doc["id"].(string)
@@ -795,8 +799,8 @@ func (d *documents) addFileLinks(w http.ResponseWriter, r *http.Request, c *regi
 				}
 				l, exp, err := d.fileLink(r.Context(), r, obj, c, f, docID, file)
 				if err != nil {
-					linkError(w, r, err)
-					return false
+					logger(r.Context()).Warn("file links left out", "realm", c.Realm, "error", err)
+					return true
 				}
 				cp["url"], cp["expires_at"] = l, exp.UTC().Format(timeFormat)
 				linked[i] = cp
