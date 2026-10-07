@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: backd HTTP API
-  version: 0.7.0
+  version: 0.8.0
   summary: Config-driven, schema-validated REST API over MongoDB.
   description: |
     The contract of backd's HTTP API. Collections and their document fields
