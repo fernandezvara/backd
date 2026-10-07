@@ -7,9 +7,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.6
 	github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager v0.4.13
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.0
-	github.com/aws/smithy-go v1.28.1
+	github.com/aws/smithy-go v1.28.2
 	github.com/expr-lang/expr v1.17.8
-	github.com/fernandezvara/cli v0.2.1
+	github.com/fernandezvara/cli v1.18.1
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/prometheus/client_golang v1.24.1
 	github.com/rs/xid v1.6.0
@@ -24,9 +24,6 @@ require (
 )
 
 require (
-	github.com/BurntSushi/toml v1.6.0 // indirect
-	github.com/awnumar/memcall v0.2.0 // indirect
-	github.com/awnumar/memguard v0.22.5 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.20 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.4 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.4 // indirect
@@ -48,5 +45,4 @@ require (
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
