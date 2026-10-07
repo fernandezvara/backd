@@ -21,29 +21,38 @@ var assets embed.FS
 // Prefix is where the interface is served.
 const Prefix = "/_ui"
 
-// csp lets the page load only its own scripts, styles and images, and talk
-// only to this origin. No inline script or style, no eval.
-const csp = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; " +
-	"connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; require-trusted-types-for 'script'"
+// csp lets the page load only its own scripts and styles, and talk only to this origin
+// and the realms' file storage: it shows images from there (the previews of a document's
+// files) and sends direct uploads to it (see Handler). No inline script or style, no eval.
+func csp(storageOrigins []string) string {
+	img := strings.Join(append([]string{"'self'", "data:"}, storageOrigins...), " ")
+	connect := strings.Join(append([]string{"'self'"}, storageOrigins...), " ")
+	return "default-src 'none'; script-src 'self'; style-src 'self'; img-src " + img + "; font-src 'self'; " +
+		"connect-src " + connect + "; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; require-trusted-types-for 'script'"
+}
 
 // Handler serves the embedded interface, or returns nil when this build has
-// no assets. idle is the sign-out timeout handed to the page.
-func Handler(idle time.Duration) http.Handler {
+// no assets. idle is the sign-out timeout handed to the page. imageOrigins are the
+// origins (scheme://host:port) of the realms' file storage, the only places besides
+// itself the page may load images from and send direct uploads to: previews and uploads of
+// files go through links backd signed.
+func Handler(idle time.Duration, imageOrigins ...string) http.Handler {
 	sub, err := fs.Sub(assets, "dist")
 	if err != nil {
 		return nil
 	}
-	return newHandler(sub, idle)
+	return newHandler(sub, idle, imageOrigins...)
 }
 
-func newHandler(fsys fs.FS, idle time.Duration) http.Handler {
+func newHandler(fsys fs.FS, idle time.Duration, imageOrigins ...string) http.Handler {
+	policy := csp(imageOrigins)
 	if _, err := fs.Stat(fsys, "index.html"); err != nil {
 		return nil
 	}
 	config, _ := json.Marshal(map[string]int{"idle_seconds": int(idle / time.Second)})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy", csp)
+		h.Set("Content-Security-Policy", policy)
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "no-referrer")

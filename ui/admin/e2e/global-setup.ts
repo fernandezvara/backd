@@ -15,6 +15,7 @@ export default async function globalSetup() {
     }
   }
   await seedProducts(url)
+  await setStorageKeys(url)
 }
 
 // The data browser's tests need documents to browse and page through: a few
@@ -32,5 +33,21 @@ async function seedProducts(url: string) {
   ]
   for (const doc of named) await products.create(doc)
   for (let i = 1; i <= 45; i++) await products.create({ name: `Seed Bulk ${String(i).padStart(2, '0')}`, price: i, stock: i, kind: 'tool' })
+  await client.auth.logout()
+}
+
+// The realm keeps its storage keys as secrets (the local stack's MinIO user).
+async function setStorageKeys(url: string) {
+  const client = createClient({ url, realm: REALM })
+  await client.auth.login({ email: users.admin, password: PASSWORD })
+  const have = (await client.admin.secrets.list()).filter((s) => !s.database).map((s) => s.name)
+  if (!have.includes('STORAGE_ACCESS_KEY')) await client.admin.secrets.set('STORAGE_ACCESS_KEY', 'backd-dev')
+  if (!have.includes('STORAGE_SECRET_KEY')) await client.admin.secrets.set('STORAGE_SECRET_KEY', PASSWORD)
+  // A new secret is read within a minute of being set: wait until the storage answers.
+  for (let i = 0; i < 90; i++) {
+    const check = await client.admin.storage.check().catch(() => null)
+    if (check?.ok) break
+    await new Promise((r) => setTimeout(r, 1000))
+  }
   await client.auth.logout()
 }

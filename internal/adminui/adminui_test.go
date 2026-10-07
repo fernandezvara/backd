@@ -84,3 +84,15 @@ func TestSecurityHeaders(t *testing.T) {
 		}
 	}
 }
+
+// The realms' storage origins, and only those, may show images.
+func TestImagesComeFromTheStorageOnlyWhenTheRealmsHaveOne(t *testing.T) {
+	plain := get(t, newHandler(testFS(), time.Minute), "GET", "/_ui/").Header().Get("Content-Security-Policy")
+	if !strings.Contains(plain, "img-src 'self' data:;") {
+		t.Errorf("without storage: %s", plain)
+	}
+	with := get(t, newHandler(testFS(), time.Minute, "http://localhost:9000", "https://files.example.com"), "GET", "/_ui/").Header().Get("Content-Security-Policy")
+	if !strings.Contains(with, "img-src 'self' data: http://localhost:9000 https://files.example.com;") || !strings.Contains(with, "connect-src 'self' http://localhost:9000 https://files.example.com;") {
+		t.Errorf("with storage: %s", with)
+	}
+}

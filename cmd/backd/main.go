@@ -10,6 +10,7 @@ import (
 	"maps"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"runtime/debug"
@@ -31,6 +32,7 @@ import (
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/rules"
 	"github.com/fernandezvara/backd/internal/settings"
+	"github.com/fernandezvara/backd/internal/storage"
 	"github.com/fernandezvara/backd/internal/templates"
 )
 
@@ -440,7 +442,7 @@ func (a *app) internalHandler() http.Handler {
 func (a *app) handlerConfig() httpapi.Config {
 	var ui http.Handler
 	if a.cfg.AdminUI {
-		ui = adminui.Handler(a.cfg.AdminUIIdle)
+		ui = adminui.Handler(a.cfg.AdminUIIdle, storageOrigins(a.reg)...)
 	}
 	var runner httpapi.FunctionRunner
 	if a.cfg.ExecutorURL != "" {
@@ -867,4 +869,34 @@ func plainHTTP(st *registry.StorageSettings) string {
 		return st.Endpoint
 	}
 	return st.PublicEndpoint
+}
+
+// storageOrigins lists the origins links to the realms' files point to (a realm's
+// public_endpoint, else its endpoint): where the admin interface may load previews from.
+func storageOrigins(reg *registry.Registry) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, rl := range reg.SortedRealms() {
+		st := rl.Settings.Storage
+		if st == nil {
+			continue
+		}
+		raw := st.PublicEndpoint
+		if raw == "" {
+			raw = st.Endpoint
+		}
+		u, err := url.Parse(raw)
+		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+			continue
+		}
+		host := u.Host
+		if st.PublicEndpoint == "" && st.ProviderEntry().Addressing == storage.VirtualHosted {
+			host = st.Bucket + "." + host // links name the bucket in the host
+		}
+		if origin := u.Scheme + "://" + host; !seen[origin] {
+			seen[origin] = true
+			out = append(out, origin)
+		}
+	}
+	return out
 }
