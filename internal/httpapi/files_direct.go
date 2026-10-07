@@ -158,7 +158,15 @@ func (d *documents) startDirectForDocument(w http.ResponseWriter, r *http.Reques
 	docID := chi.URLParam(r, "id")
 	id := "fl_" + xid.New().String()
 	known := map[string]any{"id": id, "name": sanitizeFileName(in.Name), "size": *in.Size, "type": in.Type, "sha256": in.SHA256, "uploaded_at": nil}
-	if _, ok := d.checkFileChange(w, r, repo, a, c, f, docID, filter, cond, known); !ok {
+	current, ok := d.checkFileChange(w, r, repo, a, c, f, docID, filter, cond, known)
+	if !ok {
+		return
+	}
+	var freed int64
+	if !f.Multiple {
+		freed = fileSizes(filesOf(f, current))
+	}
+	if !d.quotaAllows(w, r, c, docOwner(current), *in.Size, freed) {
 		return
 	}
 	callerKey, ok := d.uploadGate(w, r, svc)
@@ -222,7 +230,7 @@ func (d *documents) startDirectPending(w http.ResponseWriter, r *http.Request, c
 	}
 	id := "fl_" + xid.New().String()
 	known := map[string]any{"id": id, "name": sanitizeFileName(in.Name), "size": *in.Size, "type": in.Type, "sha256": in.SHA256, "uploaded_at": nil}
-	if !d.pendingGate(w, r, c, f, known) {
+	if !d.pendingGate(w, r, c, f, known) || !d.quotaAllows(w, r, c, ownerOf(r), *in.Size, 0) {
 		return
 	}
 	callerKey, ok := d.uploadGate(w, r, svc)

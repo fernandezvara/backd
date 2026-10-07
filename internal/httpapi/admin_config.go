@@ -143,6 +143,7 @@ func realmConfig(s registry.RealmSettings, seesUsers bool) map[string]any {
 			"provider": st.Provider, "endpoint": st.Endpoint, "public_endpoint": public, "region": st.Region, "bucket": st.Bucket, "prefix": st.Prefix,
 			"access_key": "secret:" + st.AccessKey, "secret_key": "secret:" + st.SecretKey,
 			"download": st.Download, "presigned_ttl": dur(st.PresignedTTL), "pending_ttl": dur(st.PendingTTL),
+			"quota": map[string]any{"realm": nilIfZero(st.QuotaRealm), "user": nilIfZero(st.QuotaUser)},
 		}
 	}
 	return out
@@ -285,4 +286,11 @@ func configWarnings(s registry.RealmSettings) []map[string]any {
 		return []map[string]any{}
 	}
 	return out
+}
+
+func nilIfZero(n int64) any {
+	if n == 0 {
+		return nil
+	}
+	return n
 }

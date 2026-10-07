@@ -118,6 +118,10 @@ The **Data** area browses and fixes documents through the [admin data route](../
 
 A read-only level browses only when the realm's `admin.read_access.data` allows it, and then every form is read-only with no button that changes anything: the files can be downloaded, not changed. Creating a document here can't attach files, so a collection whose file field is **required** is created through the API (a [pending upload](../../files/transfers/#creating-a-document-with-its-files)) and its files managed here.
 
+## Storage
+
+The **Storage** page (for realms with [`storage:`](../../files/storage/)) shows how the storage is connected (the provider, bucket and prefix, whether the keys are set and the bucket answers), the **bytes and files in use** against the realm's [quota](../../files/storage/#quotas) with a meter, the users holding the most with their share of the per-user quota, and the clean-up queue (objects waiting to be deleted, uploads left unfinished). A banner appears when the realm or a user is at or near a limit. It needs the `config` area, which every read-only level has, and refreshes with a button.
+
 ## Language and theme
 
 The interface speaks **English** and **Spanish**. It follows the browser's preferred languages (the first one it has a translation for, English otherwise) until you pick one with the language switch next to the theme switch; the choice is kept in this browser, and *Automatic* goes back to following it. Dates are written in the language shown. Light and dark themes follow the system and can be switched by hand.

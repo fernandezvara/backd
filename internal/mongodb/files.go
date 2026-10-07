@@ -299,3 +299,24 @@ func (s *AuthStore) FileDeletionStats(ctx context.Context) (auth.FileDeletionSta
 	}
 	return st, nil
 }
+
+// StorageUsageOf returns the realm's totals and one user's.
+func (s *AuthStore) StorageUsageOf(ctx context.Context, owner string) (auth.StorageUsageTotals, auth.StorageUsageTotals, error) {
+	one := func(id string) (auth.StorageUsageTotals, error) {
+		var d struct {
+			Bytes int64 `bson:"bytes"`
+			Files int64 `bson:"files"`
+		}
+		err := s.storageUsage().FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&d)
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return auth.StorageUsageTotals{}, nil
+		}
+		return auth.StorageUsageTotals{Bytes: d.Bytes, Files: d.Files}, err
+	}
+	realm, err := one("realm")
+	if err != nil || owner == "" {
+		return realm, auth.StorageUsageTotals{}, err
+	}
+	user, err := one("user:" + owner)
+	return realm, user, err
+}

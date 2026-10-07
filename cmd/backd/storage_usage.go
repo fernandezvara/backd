@@ -43,6 +43,10 @@ type storageStatus struct {
 		Retrying int     `json:"retrying"`
 		Oldest   *string `json:"oldest"`
 	} `json:"deletions"`
+	Quota struct {
+		Realm *int64 `json:"realm"`
+		User  *int64 `json:"user"`
+	} `json:"quota"`
 	StaleUploads int `json:"stale_uploads"`
 }
 
@@ -83,12 +87,23 @@ func printStorageStatus(w io.Writer, st storageStatus) {
 		reach = "NO: " + st.Reachable.Error
 	}
 	fmt.Fprintf(w, "access keys (%s, %s): %s\nbucket reachable: %s\n", st.AccessKey, st.SecretKey, keys, reach)
-	fmt.Fprintf(w, "\nin use: %s in %d files\n", humanBytes(st.Usage.Bytes), st.Usage.Files)
+	fmt.Fprintf(w, "\nin use: %s in %d files", humanBytes(st.Usage.Bytes), st.Usage.Files)
+	if st.Quota.Realm != nil {
+		fmt.Fprintf(w, " (%s of the realm's quota of %s)", percent(st.Usage.Bytes, *st.Quota.Realm), humanBytes(*st.Quota.Realm))
+	}
+	fmt.Fprintln(w)
+	if st.Quota.User != nil {
+		fmt.Fprintf(w, "quota per user: %s\n", humanBytes(*st.Quota.User))
+	}
 	if len(st.Usage.Users) > 0 {
 		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(tw, "USER\tFILES\tSIZE")
+		fmt.Fprintln(tw, "USER\tFILES\tSIZE\tOF QUOTA")
 		for _, u := range st.Usage.Users {
-			fmt.Fprintf(tw, "%s\t%d\t%s\n", u.UserID, u.Files, humanBytes(u.Bytes))
+			of := ""
+			if st.Quota.User != nil {
+				of = percent(u.Bytes, *st.Quota.User)
+			}
+			fmt.Fprintf(tw, "%s\t%d\t%s\t%s\n", u.UserID, u.Files, humanBytes(u.Bytes), of)
 		}
 		tw.Flush()
 	}
@@ -164,4 +179,11 @@ func storageReconcile(c *cli.CommandContext) error {
 		return cli.Exit(1, fmt.Errorf("%d objects could not be deleted: run it again", len(rep.Failed)))
 	}
 	return nil
+}
+
+func percent(used, limit int64) string {
+	if limit <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%.0f%%", 100*float64(used)/float64(limit))
 }

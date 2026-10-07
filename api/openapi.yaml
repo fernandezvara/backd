@@ -4406,6 +4406,13 @@ components:
             queued: { type: integer }
             retrying: { type: integer }
             oldest: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
+        quota:
+          type: object
+          required: [realm, user]
+          description: "The limits usage is held to (`storage.quota` in realm.yaml), in bytes; null: none."
+          properties:
+            realm: { type: [integer, "null"] }
+            user: { type: [integer, "null"] }
         stale_uploads: { type: integer }
 
     StorageReconcile:

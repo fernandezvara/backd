@@ -1273,3 +1273,13 @@ func (m *MemStore) FileDeletionStats(_ context.Context) (auth.FileDeletionStats,
 	}
 	return st, nil
 }
+
+func (m *MemStore) StorageUsageOf(_ context.Context, owner string) (auth.StorageUsageTotals, auth.StorageUsageTotals, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	user := auth.StorageUsageTotals{}
+	if owner != "" {
+		user = m.usage["user:"+owner]
+	}
+	return m.usage[""], user, nil
+}

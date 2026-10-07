@@ -20,6 +20,9 @@ storage:
   download: presigned                # presigned | proxy
   presigned_ttl: 5m
   pending_ttl: 1h
+  quota:
+    realm: 10GiB                     # optional
+    user: 1GiB                       # optional
 ```
 
 | Setting | Meaning |
@@ -34,8 +37,21 @@ storage:
 | `download` | The realm's default for how files are delivered: `presigned` (a redirect to a signed link, the default) or `proxy` (streamed through `backd`). |
 | `presigned_ttl` | How long a signed link works: `10s` to `7d`, default `5m`. |
 | `pending_ttl` | How long an upload nobody attached to a document is kept: `1m` to `7d`, default `1h`. |
+| `quota.realm`, `quota.user` | Optional limits on the bytes documents reference: for the whole realm, and for the documents one user owns. Sizes like `500MiB` or `10GiB`. See [Quotas](#quotas). |
 
 There is no `path_style` setting (the provider decides how a bucket is addressed) and no `sse` (encryption at rest is the bucket's default). `backd template realm` writes the section commented, with an example for each provider.
+
+## Quotas
+
+`storage.quota` limits what documents may hold, measured with the [usage totals](../maintenance/#usage): the bytes of the files that documents reference.
+
+- `realm` caps the whole realm. `user` caps the files of the documents **one user owns** (the document's owner). Documents without an owner, and anything made with an API key or by anonymous callers, count for the realm only.
+- An upload that would pass a limit is refused with **`413 quota_exceeded`**, before any byte is stored when the size is known (a proxy upload with a `Content-Length`, a direct upload's declared size) and while streaming when it isn't. Replacing the file of a single field counts only the difference.
+- A [pending upload](../transfers/#creating-a-document-with-its-files) counts for its creator, and attaching it to a document is checked again, so a document can't be given more than its owner may hold.
+- Removing a file or a document frees the quota once the file is queued for deletion, without waiting for the workers.
+- Enforcement is **approximate under concurrency**: uploads that run at the same moment each see the totals before the others, so a limit can be passed by what a few simultaneous uploads add. It protects against runaway use, not to the byte.
+
+The admin UI's *Storage* page, `backd storage usage` and `GET /_admin/storage` show the usage against the limits.
 
 ## The access keys
 

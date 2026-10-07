@@ -219,6 +219,15 @@ func (a *adminAPI) storageStatus(w http.ResponseWriter, r *http.Request) {
 		users[i] = map[string]any{"user_id": u.UserID, "bytes": u.Bytes, "files": u.Files}
 	}
 	out["usage"] = map[string]any{"bytes": usage.Realm.Bytes, "files": usage.Realm.Files, "users": users}
+	// The limits usage is held to (null: none).
+	quota := map[string]any{"realm": nil, "user": nil}
+	if st.QuotaRealm > 0 {
+		quota["realm"] = st.QuotaRealm
+	}
+	if st.QuotaUser > 0 {
+		quota["user"] = st.QuotaUser
+	}
+	out["quota"] = quota
 
 	q, err := svc.FileDeletionStats(r.Context())
 	if err != nil {

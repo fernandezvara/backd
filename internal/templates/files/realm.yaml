@@ -112,6 +112,9 @@ auth: enabled
 #   download: presigned              # presigned (redirect to a signed link) | proxy (stream through backd)
 #   presigned_ttl: 5m                # lifetime of signed links, up to 7d
 #   pending_ttl: 1h                  # lifetime of uploads nobody attached to a document
+#   quota:                           # optional limits on the bytes documents reference
+#     realm: 10GiB                   # for the whole realm
+#     user: 1GiB                     # for the files of the documents one user owns
 #
 # aws:          provider: aws          region: eu-west-1   (endpoint derived: https://s3.<region>.amazonaws.com)
 # r2:           provider: r2           endpoint: https://<account id>.r2.cloudflarestorage.com   (region is always auto;
