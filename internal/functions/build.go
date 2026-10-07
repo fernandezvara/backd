@@ -128,6 +128,9 @@ func Watch(ctx context.Context, reg *registry.Registry, opts Options, interval t
 				continue
 			}
 			last[db.Functions.Dir] = hash
+			if after, err := registry.SourceHash(db.Functions.Dir); err == nil {
+				last[db.Functions.Dir] = after // the build may have written deno.lock
+			}
 		}
 	}
 }
@@ -163,6 +166,12 @@ func buildProject(ctx context.Context, db *registry.Database, opts Options) erro
 		}
 		m.Functions[name] = registry.ManifestBundle{Bundle: file, SHA256: hash}
 		opts.Log("bundled %s/%s/%s → %s (%d bytes)", db.Realm, db.Name, name, file, len(b))
+	}
+	// Bundling can write files into the project (deno.lock, the first time a function imports
+	// a package): the manifest records the sources as they are now, or the next start would
+	// find them changed since the build.
+	if m.Source, err = registry.SourceHash(fns.Dir); err != nil {
+		return err
 	}
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {

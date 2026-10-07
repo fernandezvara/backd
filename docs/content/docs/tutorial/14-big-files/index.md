@@ -45,7 +45,7 @@ Read what it does with the files API: `files(id, field).get()` reads the picture
 
 (The packages are downloaded and pinned when `functions-build` runs, never at run time. They are pure JavaScript on purpose: a function has no permission to read files, so a library that loads WebAssembly or native code from disk would fail to start.) Fetch the files, build, restart:
 
-{{< tutorial-files "main/_functions/lib/types.ts main/_functions/lib/thumbnail.ts main/_functions/thumbnail/function.yaml main/_functions/thumbnail/index.ts main/_functions/thumbnail/index.test.ts main/_functions/thumbnail/input.schema.json" >}}
+{{< tutorial-files "main/_functions/deno.lock main/_functions/lib/types.ts main/_functions/lib/thumbnail.ts main/_functions/thumbnail/function.yaml main/_functions/thumbnail/index.ts main/_functions/thumbnail/index.test.ts main/_functions/thumbnail/input.schema.json" >}}
 
 ```sh
 docker compose run --rm functions-build && docker compose restart backd

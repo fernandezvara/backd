@@ -26,6 +26,7 @@ type sample struct {
 	path   string // relative to the repository root
 	schema string
 	rules  string // "" without rules.yaml
+	config string // collection.yaml, "" without one (file fields are declared there)
 }
 
 func samples(t *testing.T) []sample {
@@ -45,8 +46,12 @@ func samples(t *testing.T) []sample {
 			if err != nil && !os.IsNotExist(err) {
 				return err
 			}
+			config, err := os.ReadFile(filepath.Join(dir, "collection.yaml"))
+			if err != nil && !os.IsNotExist(err) {
+				return err
+			}
 			rel, _ := filepath.Rel(filepath.Join("..", ".."), dir)
-			out = append(out, sample{path: rel, schema: string(schema), rules: string(rules)})
+			out = append(out, sample{path: rel, schema: string(schema), rules: string(rules), config: string(config)})
 			return nil
 		})
 		if err != nil {
