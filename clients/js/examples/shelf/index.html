@@ -456,7 +456,7 @@
         <form @submit.prevent="submitAuth">
           <label>Email <input type="email" x-model="email" required autocomplete="email"></label>
           <label x-show="mode === 'signup'">Invitation token
-            <input x-model="invitation" required placeholder="bdi_… from your operator"></label>
+            <input x-model="invitation" :required="mode === 'signup'" placeholder="bdi_… from your operator"></label>
           <label>Password <input type="password" x-model="password" required minlength="12"
                                :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"></label>
           <button type="submit" :disabled="busy" x-text="mode === 'login' ? 'Sign in' : 'Create account'"></button>

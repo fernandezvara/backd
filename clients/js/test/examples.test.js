@@ -54,3 +54,13 @@ test('amounts typed by people (expenses-with-functions)', () => {
   assert.equal(toCentsWithFunctions('12,50'), 1250)
   for (const bad of ['', '0', '-3', 'abc']) assert.equal(toCentsWithFunctions(bad), 0, bad)
 })
+
+// A required field hidden with x-show can't be filled, and the browser then refuses to submit the
+// form it is in ("An invalid form control is not focusable"): the shelf's sign-in broke that way.
+test('the shelf app has no required input inside something that x-show hides', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const html = await readFile(new URL('../examples/shelf/index.html', import.meta.url), 'utf8')
+  const hidden = [...html.matchAll(/<(label|div|fieldset|p)\b[^>]*\bx-show=[^>]*>[\s\S]*?<\/\1>/g)].map((m) => m[0])
+  const offenders = hidden.filter((block) => /<input\b[^>]*\srequired\b/.test(block))
+  assert.deepEqual(offenders, [], 'use :required="…" so a hidden field isn\'t required')
+})
