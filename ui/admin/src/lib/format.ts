@@ -45,3 +45,16 @@ export function prettyDuration(value: string): string {
   if (seconds) parts.push(`${seconds}s`)
   return parts.length ? parts.join('') : '0s'
 }
+
+/** Bytes in the unit that reads best (1536 → "1.5 KiB"). */
+export function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 ** 2) return `${(n / 1024).toFixed(1)} KiB`
+  if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MiB`
+  return `${(n / 1024 ** 3).toFixed(1)} GiB`
+}
+
+/** Used out of a limit, as a whole percentage (not capped: 120 means over). */
+export function percentOf(used: number, limit: number): number {
+  return limit > 0 ? Math.round((100 * used) / limit) : 0
+}

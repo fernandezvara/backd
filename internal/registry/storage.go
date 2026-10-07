@@ -46,6 +46,10 @@ type storageDoc struct {
 	Download       string `yaml:"download"`
 	PresignedTTL   string `yaml:"presigned_ttl"`
 	PendingTTL     string `yaml:"pending_ttl"`
+	Quota          *struct {
+		Realm string `yaml:"realm"`
+		User  string `yaml:"user"`
+	} `yaml:"quota"`
 }
 
 // StorageSettings is where a realm keeps its files: its own S3-compatible
@@ -68,6 +72,10 @@ type StorageSettings struct {
 	Download             string // DownloadPresigned or DownloadProxy: the default of the realm's fields
 	PresignedTTL         time.Duration
 	PendingTTL           time.Duration
+	// QuotaRealm and QuotaUser are the most bytes the files of all documents of the realm, and
+	// of the documents one user owns, may add up to; 0 is no limit. An upload that would pass
+	// either answers 413 quota_exceeded.
+	QuotaRealm, QuotaUser int64
 	// HTTP is true when Endpoint or PublicEndpoint is plain http, which startup
 	// allows only in development.
 	HTTP bool
@@ -171,6 +179,28 @@ func parseStorage(d *storageDoc) (*StorageSettings, []error) {
 			add("%s: must be between %s and %s, got %s", t.field, t.min, t.max, t.value)
 		default:
 			*t.dst = v
+		}
+	}
+	if d.Quota != nil {
+		for _, q := range []struct {
+			field, value string
+			dst          *int64
+		}{{"quota.realm", d.Quota.Realm, &st.QuotaRealm}, {"quota.user", d.Quota.User, &st.QuotaUser}} {
+			if q.value == "" {
+				continue
+			}
+			v, err := ParseSize(q.value)
+			switch {
+			case err != nil:
+				add("%s: %v", q.field, err)
+			case v < 1:
+				add("%s: must be at least 1B (leave it out for no limit)", q.field)
+			default:
+				*q.dst = v
+			}
+		}
+		if st.QuotaRealm > 0 && st.QuotaUser > st.QuotaRealm {
+			add("quota.user: a user's quota can't be larger than the realm's")
 		}
 	}
 	return st, errs

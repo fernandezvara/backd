@@ -29,9 +29,9 @@ backd keeps running totals of the bytes and files that documents reference, for 
 backd storage usage --realm acme
 ```
 
-It prints how the storage is configured (the keys by name, never their values), whether the keys are set and the bucket answers, the realm's totals and the users holding the most, the objects waiting to be deleted (and how many are retrying) and the uploads left unfinished past their time. The same is `GET /v1/{realm}/_admin/storage` in the [admin API](../../auth/admin/).
+It prints how the storage is configured (the keys by name, never their values), whether the keys are set and the bucket answers, the realm's totals and the users holding the most, the objects waiting to be deleted (and how many are retrying) and the uploads left unfinished past their time. The same is `GET /v1/{realm}/_admin/storage` in the [admin API](../../auth/admin/), and the [admin UI](../../auth/admin-ui/#storage) has it as the *Storage* page.
 
-The totals follow what documents reference. They don't count objects of uploads that never finished, and a document removed by MongoDB's retention isn't subtracted: reconcile frees the objects, not the totals. Enforcing a quota is not built.
+The totals follow what documents reference. They don't count objects of uploads that never finished, and a document removed by MongoDB's retention isn't subtracted: reconcile frees the objects, not the totals. The [`storage.quota`](../storage/#quotas) of the realm and of each user is compared with these totals: the CLI and the admin UI's *Storage* page show the percentage in use, and an upload that would pass a limit is refused with `413 quota_exceeded`.
 
 ## Reconciling
 

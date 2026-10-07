@@ -281,6 +281,7 @@ import { Job } from './functions.js'
  * @property {{ bytes: number, files: number, users: { user_id: string, bytes: number, files: number }[] }} [usage]
  *   What documents reference: the realm's totals and the users holding the most.
  * @property {{ queued: number, retrying: number, oldest: string | null }} [deletions]   Objects waiting to be deleted.
+ * @property {{ realm: number | null, user: number | null }} [quota]   The limits usage is held to (`storage.quota`), in bytes; null: none.
  * @property {number} [stale_uploads]   Uploads left unfinished past their time.
  */
 

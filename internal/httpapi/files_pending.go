@@ -85,6 +85,10 @@ func (d *documents) uploadPending(w http.ResponseWriter, r *http.Request) {
 		tooLarge(w, r, limit)
 		return
 	}
+	// The file will belong to the document its creator makes: their quota counts it.
+	if plan.quota, ok = d.quotaPlan(w, r, c, ownerOf(r), 0, r.ContentLength); !ok {
+		return
+	}
 
 	token, hash := auth.NewUploadToken()
 	template := auth.FileJournalEntry{Pending: true, TokenHash: hash, CallerKey: callerKey, Owner: ownerOf(r)}
@@ -219,6 +223,7 @@ func takeFileRefs(c *registry.Collection, body map[string]any) (map[string][]fil
 
 // pendingSet is the pending uploads one write attaches.
 type pendingSet struct {
+	d        *documents
 	svc      *auth.Users
 	obj      *storage.Objects
 	files    map[string][]pendingFile // by field
@@ -246,7 +251,7 @@ func (d *documents) resolvePending(w http.ResponseWriter, r *http.Request, c *re
 	if !ok {
 		return nil, false
 	}
-	p := &pendingSet{svc: svc, obj: obj, files: map[string][]pendingFile{}}
+	p := &pendingSet{d: d, svc: svc, obj: obj, files: map[string][]pendingFile{}}
 	caller, _ := callerOf(r)
 	now := d.now()
 	var details []Detail
@@ -315,7 +320,19 @@ func (p *pendingSet) apply(w http.ResponseWriter, r *http.Request, c *registry.C
 		doc[name] = p.files[name][0].meta
 		p.replaced = append(p.replaced, existing...)
 	}
-	return true
+	// What the document will hold must fit the quotas: the uploads were made earlier,
+	// when there may have been room that others have used since.
+	var added int64
+	for _, files := range p.files {
+		for _, pf := range files {
+			added += fileSize(pf.meta)
+		}
+	}
+	owner := ownerOf(r)
+	if current != nil {
+		owner = docOwner(current)
+	}
+	return p.d.quotaAllows(w, r, c, owner, added, fileSizes(p.replaced))
 }
 
 // claim takes every pending upload, once, for the document the write is about to

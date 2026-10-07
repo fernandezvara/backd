@@ -84,6 +84,7 @@ Every error uses the same JSON envelope. Success responses are never wrapped.
 | 409 | `upload_mode_mismatch` | A proxy upload to a [direct](../files/transfers/#direct-uploads) field, or a direct start on a proxy field |
 | 409 | `file_not_uploaded` | A direct upload was completed before its file reached the bucket |
 | 413 | `payload_too_large` | Body exceeds `MAX_BODY_BYTES`; an upload, `max_size` or `BACKD_MAX_UPLOAD_BYTES` |
+| 413 | `quota_exceeded` | An upload would pass the realm's or the owner's [storage quota](../files/storage/#quotas) |
 | 415 | `unsupported_file_type` | The type detected from an upload isn't one the field accepts |
 | 416 | `range_not_satisfiable` | A `Range` outside the file |
 | 415 | `unsupported_media_type` | Wrong `Content-Type` for the method (a `webhook` function's body isn't required to be JSON at all) |

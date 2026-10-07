@@ -32,6 +32,7 @@ export const routes: RouteRecordRaw[] = [
   { path: '/r/:realm/data/:database/:collection', name: 'data-collection', component: () => import('@/views/CollectionView.vue'), props: true, meta: { auth: true, area: 'data' as const } },
   { path: '/r/:realm/data/:database/:collection/new', name: 'data-new', component: () => import('@/views/DocumentView.vue'), props: true, meta: { auth: true, area: 'data' as const } },
   { path: '/r/:realm/data/:database/:collection/:id', name: 'data-doc', component: () => import('@/views/DocumentView.vue'), props: true, meta: { auth: true, area: 'data' as const } },
+  { path: '/r/:realm/storage', name: 'storage', component: () => import('@/views/StorageView.vue'), props: true, meta: { auth: true, area: 'config' as const } },
   { path: '/r/:realm', name: 'home', component: () => import('@/views/HomeView.vue'), props: true, meta: { auth: true } },
   { path: '/:rest(.*)*', name: 'not-found', component: () => import('@/views/NotFoundView.vue') },
 ]

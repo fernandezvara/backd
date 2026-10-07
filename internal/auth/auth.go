@@ -252,6 +252,8 @@ type Store interface {
 	// the user's; StorageUsage reads them; FileDeletionStats describes the queue.
 	AddStorageUsage(ctx context.Context, owner string, bytes, files int64) error
 	StorageUsage(ctx context.Context, limit int) (StorageUsage, error)
+	// StorageUsageOf returns the realm's totals and one user's (zero for an owner of "").
+	StorageUsageOf(ctx context.Context, owner string) (realm, user StorageUsageTotals, err error)
 	FileDeletionStats(ctx context.Context) (FileDeletionStats, error)
 	ClaimFileDeletions(ctx context.Context, now, lease time.Time, limit int) ([]FileDeletion, error)
 	CompleteFileDeletion(ctx context.Context, key string) error

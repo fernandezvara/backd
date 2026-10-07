@@ -147,3 +147,31 @@ func TestFunctionsCantDeclareTheStorageSecrets(t *testing.T) {
 		t.Errorf("an unrelated secret was refused: %v", err)
 	}
 }
+
+func TestStorageQuotaSettings(t *testing.T) {
+	load := func(quota string) (*Registry, error) {
+		return Load(writeTree(t, map[string]string{
+			"shop/realm.yaml": "auth: enabled\nstorage:\n  provider: minio\n  endpoint: https://minio.internal:9000\n  bucket: files\n  prefix: p\n  access_key: secret:A\n  secret_key: secret:B\n" + quota,
+		}))
+	}
+	reg, err := load("  quota:\n    realm: 50GiB\n    user: 2GiB\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st := reg.Realms["shop"].Settings.Storage; st.QuotaRealm != 50<<30 || st.QuotaUser != 2<<30 {
+		t.Errorf("quota: %+v", st)
+	}
+	if reg, err = load("  quota:\n    user: 1MiB\n"); err != nil || reg.Realms["shop"].Settings.Storage.QuotaRealm != 0 {
+		t.Errorf("a user quota alone: %v", err)
+	}
+	for quota, want := range map[string]string{
+		"  quota:\n    realm: lots\n":                 "quota.realm:",
+		"  quota:\n    user: 0B\n":                    "at least 1B",
+		"  quota:\n    realm: 1GiB\n    user: 2GiB\n": "can't be larger than the realm's",
+		"  quota:\n    files: 5\n":                    "files",
+	} {
+		if _, err := load(quota); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: %v", quota, err)
+		}
+	}
+}

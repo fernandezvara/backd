@@ -150,6 +150,7 @@ type uploadPlan struct {
 	name  string
 	id    string
 	known map[string]any // what is known before the bytes: id, name, size (Content-Length) and nothing else
+	quota quota          // how many bytes the owner's quota still leaves (room -1: no quota)
 }
 
 // uploadFile handles POST …/{id}/_files/{field}: it adds a file (replacing the one
@@ -222,11 +223,20 @@ func (d *documents) uploadFile(w http.ResponseWriter, r *http.Request) {
 		}
 		return current, true
 	}
-	if _, ok := check(); !ok {
+	current, ok := check()
+	if !ok {
 		return
 	}
 	if r.ContentLength > limit {
 		tooLarge(w, r, limit)
+		return
+	}
+	// The quota of whoever owns the document; a single field's old file is freed by the replace.
+	var freed int64
+	if !f.Multiple {
+		freed = fileSizes(filesOf(f, current))
+	}
+	if plan.quota, ok = d.quotaPlan(w, r, c, docOwner(current), freed, r.ContentLength); !ok {
 		return
 	}
 
@@ -836,6 +846,19 @@ type storedUpload struct {
 // pending upload's token). It answers and returns false when it can't.
 func (d *documents) storeUpload(w http.ResponseWriter, r *http.Request, c *registry.Collection, f *registry.FileField, svc *auth.Users, obj *storage.Objects, plan uploadPlan, template auth.FileJournalEntry) (*storedUpload, bool) {
 	limit := min(f.MaxSize, d.maxUpload)
+	// A quota with less room than the field allows is the limit, and what passes it is a
+	// quota error rather than a size one.
+	quotaLimited := plan.quota.room >= 0 && plan.quota.room < limit
+	if quotaLimited {
+		limit = plan.quota.room
+	}
+	over := func() {
+		if quotaLimited {
+			d.quotaExceeded(w, r, c, plan.quota.which)
+			return
+		}
+		tooLarge(w, r, limit)
+	}
 
 	// The first bytes decide the type, before anything is stored.
 	body := http.MaxBytesReader(w, r.Body, limit)
@@ -843,7 +866,7 @@ func (d *documents) storeUpload(w http.ResponseWriter, r *http.Request, c *regis
 	head, peekErr := br.Peek(sniffBytes)
 	var tooBig *http.MaxBytesError
 	if errors.As(peekErr, &tooBig) {
-		tooLarge(w, r, limit)
+		over()
 		return nil, false
 	}
 	contentType := detectContentType(head, r.Header.Get("Content-Type"))
@@ -881,7 +904,7 @@ func (d *documents) storeUpload(w http.ResponseWriter, r *http.Request, c *regis
 		abandon()
 		cancel()
 		if errors.As(err, &tooBig) || size > limit {
-			tooLarge(w, r, limit)
+			over()
 			return nil, false
 		}
 		logger(r.Context()).Error("store a file", "realm", c.Realm, "collection", c.Name, "field", f.Name, "error", err)
@@ -891,7 +914,7 @@ func (d *documents) storeUpload(w http.ResponseWriter, r *http.Request, c *regis
 	if size > limit {
 		abandon()
 		cancel()
-		tooLarge(w, r, limit)
+		over()
 		return nil, false
 	}
 	uploadedAt := d.timestamp().UTC()

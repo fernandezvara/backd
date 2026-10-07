@@ -260,3 +260,8 @@ func (s *Users) StorageUsage(ctx context.Context, limit int) (StorageUsage, erro
 func (s *Users) FileDeletionStats(ctx context.Context) (FileDeletionStats, error) {
 	return s.Store.FileDeletionStats(ctx)
 }
+
+// StorageUsageOf returns the realm's totals and those of one user, for the quotas.
+func (s *Users) StorageUsageOf(ctx context.Context, owner string) (realm, user StorageUsageTotals, err error) {
+	return s.Store.StorageUsageOf(ctx, owner)
+}

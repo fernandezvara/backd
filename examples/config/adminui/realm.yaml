@@ -40,3 +40,7 @@ storage:
   prefix: adminui
   access_key: secret:STORAGE_ACCESS_KEY
   secret_key: secret:STORAGE_SECRET_KEY
+  # Limits, for the Storage page and the tests: 10 MiB for the realm, 5 MiB for one user.
+  quota:
+    realm: 10MiB
+    user: 5MiB

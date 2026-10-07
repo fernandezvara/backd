@@ -119,5 +119,6 @@ Every upload is written to a journal before its bytes go to the bucket, and a wo
 | 409 | `file_not_uploaded` | A direct upload was completed before its file reached the bucket |
 | 422 | `upload_mismatch` | A direct upload's size or SHA-256 isn't the declared one |
 | 413 | `payload_too_large` | The file is over `max_size` or `BACKD_MAX_UPLOAD_BYTES` |
+| 413 | `quota_exceeded` | The file would take the realm or its owner past the [storage quota](../storage/#quotas) |
 | 415 | `unsupported_file_type` | The detected type isn't one of the field's `types` |
 | 503 | `storage_unavailable` | The realm's storage can't be reached or its keys aren't set |
