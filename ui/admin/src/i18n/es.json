@@ -567,6 +567,15 @@
       "seeded": "Usuarios sembrados",
       "none": "No se ha declarado ningún rol."
     },
+    "draft": {
+      "edit": "Preparar un cambio en {file}",
+      "hide": "Cerrar el editor",
+      "note": "El archivo se hace en tu navegador y no se envía nada al servidor, que nunca recibe cambios de su configuración desde esta página. Descárgalo, revísalo, guárdalo como {path} en el repositorio de tu configuración y haz commit; backd lee la configuración al arrancar.",
+      "changed": "Distinto de lo que ejecuta el servidor.",
+      "invalid": "JSON no válido: {problem}",
+      "download": "Descargar {file}",
+      "reset": "Empezar de nuevo"
+    },
     "collections": {
       "title": "Colecciones",
       "none": "No hay colecciones.",

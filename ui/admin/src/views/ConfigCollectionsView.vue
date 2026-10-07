@@ -2,7 +2,9 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ConfigFrame from '@/components/ConfigFrame.vue'
+import ConfigDraft from '@/components/ConfigDraft.vue'
 import JsonView from '@/components/JsonView.vue'
+import { rulesFileText, schemaFileText } from '@/lib/draft'
 import { prettyDuration } from '@/lib/format'
 import { useRealmConfig } from '@/stores/config'
 
@@ -23,6 +25,7 @@ interface CollectionConfig {
     on_owner_delete?: { action: string; remove?: string[] | null; replace?: Record<string, unknown> | null; pull?: Record<string, unknown> | null; unset?: Record<string, unknown> | null }
   }
   policy_file?: string
+  files?: Record<string, unknown>
 }
 
 const databases = computed(() => {
@@ -47,6 +50,7 @@ const hasValues = (o?: Record<string, unknown> | string[] | null) => !!o && (Arr
         <h3 class="mt-4 text-sm font-semibold">{{ t('config.collections.schema') }}</h3>
         <p class="mb-1 font-mono text-xs text-slate-600 dark:text-slate-400">{{ c.schema_file }}</p>
         <JsonView :value="c.schema" :label="`${c.name} ${t('config.collections.schema')}`" />
+        <ConfigDraft :path="c.schema_file" :initial="schemaFileText(c.schema, Object.keys(c.files ?? {}))" kind="json" :label="`${c.name} schema.json`" />
 
         <h3 class="mt-4 text-sm font-semibold">{{ t('config.collections.indexes') }}</h3>
         <p class="mb-1 font-mono text-xs text-slate-600 dark:text-slate-400">{{ c.indexes_file }}</p>
@@ -70,6 +74,7 @@ const hasValues = (o?: Record<string, unknown> | string[] | null) => !!o && (Arr
             </div>
           </template>
         </dl>
+        <ConfigDraft v-if="c.rules && c.rules_file" :path="c.rules_file" :initial="rulesFileText(c.rules)" kind="yaml" :label="`${c.name} rules.yaml`" />
 
         <h3 class="mt-4 text-sm font-semibold">{{ t('config.collections.policy') }}</h3>
         <p v-if="c.policy_file" class="mb-1 font-mono text-xs text-slate-600 dark:text-slate-400">{{ c.policy_file }}</p>

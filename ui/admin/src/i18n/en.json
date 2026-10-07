@@ -567,6 +567,15 @@
       "seeded": "Seeded users",
       "none": "No roles are declared."
     },
+    "draft": {
+      "edit": "Prepare a change to {file}",
+      "hide": "Close the editor",
+      "note": "The file is made in your browser and nothing is sent to the server, which never has its configuration written through this page. Download it, review it, save it as {path} in your configuration repository and commit it; backd reads configuration at startup.",
+      "changed": "Changed from what the server runs.",
+      "invalid": "Not valid JSON: {problem}",
+      "download": "Download {file}",
+      "reset": "Start again"
+    },
     "collections": {
       "title": "Collections",
       "none": "No collections.",
