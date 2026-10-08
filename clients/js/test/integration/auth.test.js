@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { AuthenticationError, ConflictError, RetryableError, ValidationError } from '../../src/index.js'
+import { AuthenticationError, ConflictError, NotFoundError, RetryableError, ValidationError } from '../../src/index.js'
 import { client, email, password, skip, user } from './env.js'
 
 test('sign-up, me, sessions, logout', { skip }, async () => {
@@ -83,4 +83,19 @@ test('repeated failed logins are throttled', { skip }, async () => {
     assert.ok(e.retryAfter !== undefined && e.retryAfter > 0 && e.retryAfter <= 2000, `retryAfter ${e.retryAfter}`)
     return true
   })
+})
+
+test('sign-in methods: me lists them, the last one stays, and a realm without providers has none', { skip }, async () => {
+  const { c } = await user('methods')
+  const me = await c.auth.me()
+  assert.equal(me.identities.length, 1)
+  assert.equal(me.identities[0].provider, 'password')
+  assert.equal(me.identities[0].email, me.email)
+  assert.ok(me.identities[0].last_used_at === null || typeof me.identities[0].last_used_at === 'string')
+  // The only way to sign in can't be removed; a provider the user doesn't have isn't there.
+  await assert.rejects(c.auth.unlinkProvider('password'), (/** @type {any} */ e) => e instanceof ConflictError && e.code === 'last_sign_in_method')
+  await assert.rejects(c.auth.unlinkProvider('google'), (/** @type {any} */ e) => e instanceof NotFoundError)
+  // The test realm lists no providers: starting one, or sending a token, is a 404.
+  await assert.rejects(client().auth.signInWith('google', { redirectTo: 'http://localhost/in', navigate: () => {} }), NotFoundError)
+  await assert.rejects(client().auth.signInWithIdToken('google', { idToken: 'x', nonce: 'n' }), NotFoundError)
 })

@@ -9,7 +9,7 @@ toc: true
 A realm can let its users sign in with **Google**, **Microsoft** or **Apple**. backd runs the redirect flow with the provider, checks the answer, finds or creates the user, and gives your app a one-time code to trade for a session. A user can have a password and any number of providers at once (at most one of each): they are [sign-in methods](../sessions/#sign-in-methods) of the same user, so roles, rules and owned documents don't depend on how the user signed in.
 
 {{< hint style="note" >}}
-This page covers the **redirect** sign-in and the **native** sign-in of mobile apps. Provider calls in the JavaScript client and other OpenID Connect providers are **planned**, each in its own step.
+This page covers the **redirect** sign-in and the **native** sign-in of mobile apps. Other OpenID Connect providers are **planned**. The [JavaScript client](../../clients/js/#sign-in-with-google-microsoft-or-apple) does both flows for you (`signInWith`, `completeSignIn`, `signInWithIdToken`).
 {{< /hint >}}
 
 ## Set it up

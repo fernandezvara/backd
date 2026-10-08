@@ -99,6 +99,45 @@ await backd.auth.acceptInvitation({ token, password, locale })  // an emailed in
 
 The rules behind each flow are in [Sign-up, login and sessions](../../auth/sessions/).
 
+### Sign in with Google, Microsoft or Apple
+
+In a realm that lists [providers](../../auth/providers/), signing in is two calls: one on the page with the buttons, one on the page backd sends the user back to (they can be the same page).
+
+```js
+// A "Continue with Google" button: PKCE is handled, the browser goes to the provider.
+await backd.auth.signInWith('google', { redirectTo: 'https://app.acme.example/signed-in' })
+
+// On the return page, on every load: null when there is nothing to finish.
+try {
+  const session = await backd.auth.completeSignIn()
+  if (session?.new_user) await createProfile(session.profile)   // { name, given_name, family_name, picture } as the provider gave them
+} catch (err) {
+  if (err.code === 'account_exists') showLinkHelp(err.details[0].reason)   // the provider
+}
+```
+
+- `completeSignIn()` trades the one-time code for a session (stored like a login's) and resolves with it, plus `new_user` and, for a new user, the `profile`. Use [`account.on_signup`](../../auth/providers/#the-profile-and-the-sign-up-hook) to create the profile document on the server instead of depending on the page. It reads the address of the page and removes the outcome from the address bar.
+- Failures reject with the error the code means: `account_exists` and `link_conflict` are a `ConflictError`; `signup_closed`, `email_not_verified` and `signin_refused` a `ForbiddenError`; `cancelled` an `AuthenticationError`; `invitation_invalid` and `email_required` a `ValidationError`; `provider_error` a `BackdError`. `code` is the code.
+- The PKCE verifier waits in the tab's `sessionStorage` between the two pages (`oauthStorage` in `createClient` replaces it). `navigate(url)` in the options replaces `location.assign` for apps that open a browser session of their own (React Native, Capacitor); `redirectTo` may be an app scheme (`acme://signed-in`) there, and `completeSignIn(url)` takes the address the app was opened with.
+- `signInWith(provider, { invitation, locale })` passes an invitation for realms with `signup: invite`.
+
+For a signed-in user:
+
+```js
+await backd.auth.linkProvider('apple', { redirectTo })   // the same flow; completeSignIn() resolves { linked: 'apple' }
+const me = await backd.auth.me()                          // me.identities: [{ provider, email, email_verified, created_at, last_used_at }]
+await backd.auth.unlinkProvider('apple')                  // never the last way to sign in: ConflictError, code 'last_sign_in_method'
+```
+
+An app that signs in with the platform (Sign in with Apple, Google Sign-In, MSAL) already holds the ID token and uses it directly:
+
+```js
+const session = await backd.auth.signInWithIdToken('apple', { idToken, nonce, authorizationCode })
+await backd.auth.linkProviderWithIdToken('google', { idToken, nonce })   // for a signed-in user
+```
+
+`nonce` is the raw value the sign-in was started with. An invalid token rejects with an `AuthenticationError` (`invalid_token`). Apple's `authorizationCode` is required unless the provider sets `revoke_on_delete: false`.
+
 ### Auth events
 
 ```js
