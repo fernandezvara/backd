@@ -6,12 +6,12 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/fernandezvara/cli"
+	"github.com/fernandezvara/kli"
 )
 
 // filesRegenerate handles `backd files regenerate`: it starts the job that
 // makes the stale image versions of a file field again and follows it.
-func filesRegenerate(c *cli.CommandContext) error {
+func filesRegenerate(c *kli.CommandContext) error {
 	interval, err := time.ParseDuration(str(c, "interval"))
 	if err != nil || interval <= 0 {
 		return usageErr(errors.New("--interval must be a duration such as 2s"))
@@ -65,7 +65,7 @@ func filesRegenerate(c *cli.CommandContext) error {
 				if job.Result != nil {
 					status = job.Result.Status
 				}
-				return cli.Exit(1, fmt.Errorf("the regeneration did not finish: %s (see `backd functions jobs --realm %s --job %s`)", status, t.realm, started.ID))
+				return kli.Exit(1, fmt.Errorf("the regeneration did not finish: %s (see `backd functions jobs --realm %s --job %s`)", status, t.realm, started.ID))
 			}
 			fmt.Fprintln(c.Stdout(), "done")
 			return nil

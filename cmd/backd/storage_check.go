@@ -5,7 +5,7 @@ import (
 	"io"
 	"text/tabwriter"
 
-	"github.com/fernandezvara/cli"
+	"github.com/fernandezvara/kli"
 )
 
 type storageStep struct {
@@ -35,7 +35,7 @@ type storageCheckReport struct {
 // storageCheck handles `backd storage check`: the running backd verifies the
 // realm's storage (it holds the access keys) and the report is printed. Exits 1
 // when a step failed.
-func storageCheck(c *cli.CommandContext) error {
+func storageCheck(c *kli.CommandContext) error {
 	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
 	if err != nil {
 		return err
@@ -52,7 +52,7 @@ func storageCheck(c *cli.CommandContext) error {
 		printStorageReport(c.Stdout(), rep)
 	}
 	if !rep.OK {
-		return cli.Exit(1, fmt.Errorf("the storage check failed: fix the steps marked fail"))
+		return kli.Exit(1, fmt.Errorf("the storage check failed: fix the steps marked fail"))
 	}
 	return nil
 }

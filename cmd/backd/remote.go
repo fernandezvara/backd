@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fernandezvara/cli"
+	"github.com/fernandezvara/kli"
 )
 
 // The CLI manages realms through backd's HTTP API: `backd login` stores a
@@ -147,7 +147,7 @@ func newTarget(flagURL, realm string, getenv func(string) string, sessionOnly bo
 
 // targetOf resolves the server, realm and credential of an API command
 // from its --realm and --url flags.
-func targetOf(c *cli.CommandContext, sessionOnly bool) (*target, error) {
+func targetOf(c *kli.CommandContext, sessionOnly bool) (*target, error) {
 	return newTarget(str(c, "url"), str(c, "realm"), c.Getenv, sessionOnly)
 }
 

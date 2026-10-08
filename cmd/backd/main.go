@@ -19,7 +19,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/fernandezvara/cli"
+	"github.com/fernandezvara/kli"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	"github.com/fernandezvara/backd/internal/adminui"
@@ -58,8 +58,8 @@ func run(args []string, getenv func(string) string, stdin io.Reader, stdout, std
 
 // role runs one of backd's server roles: it loads the settings, the config
 // and the MongoDB client, then hands the app to action.
-func role(name string, action func(context.Context, *app) error) cli.CommandFunc {
-	return act(name, func(c *cli.CommandContext) error {
+func role(name string, action func(context.Context, *app) error) kli.CommandFunc {
+	return act(name, func(c *kli.CommandContext) error {
 		ctx := context.Background()
 		a, err := setup(ctx, c.Getenv, c.Stderr())
 		if err != nil {
@@ -319,7 +319,7 @@ func workerID() string {
 // templateRealm, templateDatabase, templateFunction and templateProject
 // handle `backd template ...`: they write files under CONFIG_DIR (the
 // project template, a whole directory) and list what they created.
-func templateRealm(c *cli.CommandContext) error {
+func templateRealm(c *kli.CommandContext) error {
 	dir, err := configDir(c)
 	if err != nil {
 		return err
@@ -329,7 +329,7 @@ func templateRealm(c *cli.CommandContext) error {
 	return err
 }
 
-func templateDatabase(c *cli.CommandContext) error {
+func templateDatabase(c *kli.CommandContext) error {
 	dir, err := configDir(c)
 	if err != nil {
 		return err
@@ -343,7 +343,7 @@ func templateDatabase(c *cli.CommandContext) error {
 	return err
 }
 
-func templateFunction(c *cli.CommandContext) error {
+func templateFunction(c *kli.CommandContext) error {
 	dir, err := configDir(c)
 	if err != nil {
 		return err
@@ -353,7 +353,7 @@ func templateFunction(c *cli.CommandContext) error {
 	return err
 }
 
-func templateEmailCapture(c *cli.CommandContext) error {
+func templateEmailCapture(c *kli.CommandContext) error {
 	dir, err := configDir(c)
 	if err != nil {
 		return err
@@ -366,7 +366,7 @@ func templateEmailCapture(c *cli.CommandContext) error {
 	return err
 }
 
-func templateCollectionPolicy(c *cli.CommandContext) error {
+func templateCollectionPolicy(c *kli.CommandContext) error {
 	dir, err := configDir(c)
 	if err != nil {
 		return err
@@ -376,7 +376,7 @@ func templateCollectionPolicy(c *cli.CommandContext) error {
 	return err
 }
 
-func templateProject(c *cli.CommandContext) error {
+func templateProject(c *kli.CommandContext) error {
 	dir := str(c, "dir")
 	files, err := templates.Project(dir, str(c, "realm"))
 	printTemplateFiles(c.Stdout(), files)
@@ -402,7 +402,7 @@ func printTemplateFiles(stdout io.Writer, files []templates.File) {
 // databases, sorted; with --collections, every collection as
 // <database>.<collection>. It needs only CONFIG_DIR, so deploy scripts can
 // grant a least-privilege user access to exactly these.
-func listDatabases(c *cli.CommandContext) error {
+func listDatabases(c *kli.CommandContext) error {
 	collections := flag(c, "collections")
 	dir, err := configDir(c)
 	if err != nil {

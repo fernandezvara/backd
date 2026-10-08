@@ -11,7 +11,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/fernandezvara/cli"
+	"github.com/fernandezvara/kli"
 
 	"github.com/fernandezvara/backd/internal/registry"
 )
@@ -28,7 +28,7 @@ type auditRecord struct {
 }
 
 // auditAction handles `backd audit`.
-func auditAction(c *cli.CommandContext) error {
+func auditAction(c *kli.CommandContext) error {
 	q := url.Values{}
 	limit, err := auditQuery(c, q, time.Now())
 	if err != nil {
@@ -42,7 +42,7 @@ func auditAction(c *cli.CommandContext) error {
 }
 
 // auditQuery turns the flags into query parameters and returns the limit.
-func auditQuery(c *cli.CommandContext, q url.Values, now time.Time) (int, error) {
+func auditQuery(c *kli.CommandContext, q url.Values, now time.Time) (int, error) {
 	for _, k := range []string{"action", "actor", "target"} {
 		if v := str(c, k); v != "" {
 			q.Set(k, v)
@@ -79,7 +79,7 @@ func sinceParam(v string, now time.Time) (string, error) {
 	return "", fmt.Errorf("--since: want an RFC 3339 time or a duration such as 24h or 7d, got %q", v)
 }
 
-func printAudit(t *target, q url.Values, c *cli.CommandContext, limit int, uio userIO) error {
+func printAudit(t *target, q url.Values, c *kli.CommandContext, limit int, uio userIO) error {
 	if email := str(c, "user"); email != "" {
 		u, err := (&userCtx{t: t, email: email}).find()
 		if err != nil {

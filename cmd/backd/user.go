@@ -14,7 +14,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/fernandezvara/cli"
+	"github.com/fernandezvara/kli"
 	"golang.org/x/term"
 
 	"github.com/fernandezvara/backd/internal/auth"
@@ -37,7 +37,7 @@ type adminUser struct {
 // userCtx is what a user subcommand works with.
 type userCtx struct {
 	t     *target
-	cmd   *cli.CommandContext
+	cmd   *kli.CommandContext
 	email string
 	uio   userIO
 	local *registry.RealmSettings // the realm's settings, when CONFIG_DIR has it
