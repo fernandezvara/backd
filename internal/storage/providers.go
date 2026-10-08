@@ -109,7 +109,8 @@ var providers = []Provider{
 		EndpointHelp:    "https://<account id>.r2.cloudflarestorage.com", FixedRegion: "auto",
 		// Confirmed by the R2 smoke test (internal/storage's r2_test.go, 2026-10-06): a wrong
 		// x-amz-checksum-sha256 is rejected and the stored one is reported back.
-		ChecksumSHA256: Supported, MaxSinglePut: 5 * gib, MultipartSHA256: Unverified, ChecksumsWhenRequired: true,
+		// Multipart uploads with a SHA-256 per part confirmed too (2026-10-08).
+		ChecksumSHA256: Supported, MaxSinglePut: 5 * gib, MultipartSHA256: Supported, ChecksumsWhenRequired: true,
 	},
 	{
 		Name: "digitalocean", Label: "DigitalOcean Spaces", Addressing: VirtualHosted,

@@ -304,12 +304,12 @@ func TestDirectUploadsAboveOnePut(t *testing.T) {
 	if f := c.Files["a"]; f == nil || f.MaxSize != 1<<40 || f.Upload != UploadDirect {
 		t.Errorf("field: %+v", f)
 	}
-	r2 := "roles:\n  staff: {}\nstorage:\n  provider: r2\n  endpoint: https://be24f8b836589be5638e95d6579afa46.r2.cloudflarestorage.com\n  bucket: tests-backd\n  prefix: p\n  access_key: secret:K\n  secret_key: secret:S\n"
-	_, err = filesTree(t, "files:\n  a: {max_size: 6GiB, upload: direct}\n", map[string]string{"shop/realm.yaml": r2})
-	if err == nil || !strings.Contains(err.Error(), "at most 5GiB, with r2") {
-		t.Errorf("r2 and 6GiB: %v", err)
+	do := "roles:\n  staff: {}\nstorage:\n  provider: digitalocean\n  region: ams3\n  bucket: tests-backd\n  prefix: p\n  access_key: secret:K\n  secret_key: secret:S\n"
+	_, err = filesTree(t, "files:\n  a: {max_size: 6GiB, upload: direct}\n", map[string]string{"shop/realm.yaml": do})
+	if err == nil || !strings.Contains(err.Error(), "at most 5GiB, with digitalocean") {
+		t.Errorf("digitalocean and 6GiB: %v", err)
 	}
-	if _, err = filesTree(t, "files:\n  a: {max_size: 5GiB, upload: direct}\n", map[string]string{"shop/realm.yaml": r2}); err != nil {
-		t.Errorf("r2 and 5GiB: %v", err)
+	if _, err = filesTree(t, "files:\n  a: {max_size: 5GiB, upload: direct}\n", map[string]string{"shop/realm.yaml": do}); err != nil {
+		t.Errorf("digitalocean and 5GiB: %v", err)
 	}
 }

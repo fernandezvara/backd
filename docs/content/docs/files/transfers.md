@@ -88,7 +88,7 @@ curl -X POST "$API/v1/acme/app/people/$ID/_files/video/uploads/$UPLOAD_ID/comple
 
 ### Files above 5 GiB
 
-A storage takes at most 5 GiB in one `PUT`. A direct field whose `max_size` is larger (up to 4 TiB) sends the files above that in parts, each to its own signed link, when the [provider](../storage/) supports it (AWS S3 and MinIO do; the field is refused with the others if its `max_size` is above 5 GiB). `GET …/_files/{field}` says so with `multipart_above`, and the [JavaScript client](../../clients/js/#files) does all of the below on its own: it hashes the parts, sends three at a time, sends again a part that failed and reports the progress of the whole file.
+A storage takes at most 5 GiB in one `PUT`. A direct field whose `max_size` is larger (up to 4 TiB) sends the files above that in parts, each to its own signed link, when the [provider](../storage/) supports it (AWS S3, Cloudflare R2 and MinIO do; the field is refused with the others if its `max_size` is above 5 GiB). `GET …/_files/{field}` says so with `multipart_above`, and the [JavaScript client](../../clients/js/#files) does all of the below on its own: it hashes the parts, sends three at a time, sends again a part that failed and reports the progress of the whole file.
 
 ```sh
 # 1. Declare the file with the SHA-256 of every part instead of one for the whole file
