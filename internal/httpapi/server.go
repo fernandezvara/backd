@@ -13,6 +13,7 @@ import (
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/metrics"
+	"github.com/fernandezvara/backd/internal/oauth"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -75,6 +76,9 @@ type Config struct {
 	UI http.Handler
 	// Metrics records what the API does; nil turns it off.
 	Metrics *metrics.Metrics
+	// OAuth reaches the identity providers; nil uses the built-in ones through a
+	// client that dials only their hosts. Tests point it at a fake.
+	OAuth *oauth.Service
 }
 
 // DefaultOpTimeout is the per-request storage deadline when none is configured.
@@ -134,7 +138,11 @@ func NewHandler(cfg Config) http.Handler {
 	if users == nil {
 		users = func(string) *auth.Users { return nil }
 	}
-	authRoutes := &authAPI{users: users, reg: cfg.Registry, actions: hostedActions(), opTimeout: opTimeout}
+	oauthSvc := cfg.OAuth
+	if oauthSvc == nil {
+		oauthSvc = &oauth.Service{HTTP: oauth.NewClient(oauth.BuiltinHostAllowed, cfg.Dev)}
+	}
+	authRoutes := &authAPI{users: users, reg: cfg.Registry, actions: hostedActions(), opTimeout: opTimeout, oauth: oauthSvc, baseURL: cfg.BackdURL}
 	authRoutes.routes(r)
 	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users, callbackKey: cfg.CallbackKey, objects: newRealmObjects(cfg.Registry, users), baseURL: cfg.BackdURL, maxUpload: maxUploadOf(cfg), imageMaxPixels: cfg.ImageMaxPixels}
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, executorToken: cfg.ExecutorToken, log: cfg.Log, dev: cfg.Dev, concurrency: limiterFor(cfg.Registry), metrics: cfg.Metrics}

@@ -779,6 +779,185 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_auth/oauth/{provider}/start:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/oauthProvider" }
+    get:
+      tags: [auth]
+      summary: Start signing in with a provider (a redirect)
+      description: |
+        Begins the redirect flow for a provider the realm lists under `providers:`
+        (`google`, `microsoft`, `apple`): remembers the attempt (a random `state`, a
+        nonce and PKCE for the provider, kept for 10 minutes and good for one callback)
+        and answers `302` to the provider's sign-in page. After the user signs in, the
+        provider sends them to the callback, which sends them on to `redirect_to` with a
+        one-time `code` or an `error` (see the callback). `redirect_to` must be within
+        the realm's `sign_in.allowed_redirects` (or `email.allowed_redirects`) and
+        `code_challenge` is the S256 challenge of a verifier only the app holds.
+        Linking a provider to a signed-in user needs `POST`, which carries the session.
+        At most 30 starts a minute per address (`429`).
+      operationId: oauthStart
+      parameters:
+        - { name: redirect_to, in: query, required: true, schema: { type: string } }
+        - { name: code_challenge, in: query, required: true, schema: { type: string, minLength: 43, maxLength: 43 } }
+        - { name: invitation, in: query, schema: { type: string }, description: "An invitation token, for realms with `signup: invite`." }
+        - { name: locale, in: query, schema: { type: string } }
+      responses:
+        "302":
+          description: To the provider.
+          headers:
+            Location: { schema: { type: string } }
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503":
+          description: "`provider_unavailable`: a secret of the provider is not set, or backd's public address (`BACKD_URL`) is unknown."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [auth]
+      summary: Start signing in with a provider, or linking one
+      description: |
+        The same as `GET`, with the answer in JSON: `authorize_url` is where the app sends
+        the user. It is the only way to **link** a provider to the signed-in user
+        (`intent: "link"`, with the session in `Authorization`): a browser navigation
+        can't carry that header. The flow then ends at `redirect_to?linked=<provider>`
+        instead of a login code.
+      operationId: oauthStartJSON
+      security: [{}, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [redirect_to, code_challenge]
+              properties:
+                redirect_to: { type: string }
+                code_challenge: { type: string, minLength: 43, maxLength: 43, description: The S256 PKCE challenge of the app's verifier. }
+                intent: { type: string, enum: [signin, link], default: signin }
+                invitation: { type: string }
+                locale: { type: string }
+      responses:
+        "200":
+          description: Where to send the user.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [authorize_url]
+                properties:
+                  authorize_url: { type: string }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503":
+          description: "`provider_unavailable`."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/oauth/{provider}/callback:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/oauthProvider" }
+    get:
+      tags: [auth]
+      summary: Where the provider sends the user back to
+      description: |
+        The address registered with the provider as the redirect URI (the realm's public
+        address plus this path). It finds the attempt by its `state` (one use), asks the
+        provider for the user's ID token, verifies it and decides who the person is
+        (linking, sign-up and the other rules of provider sign-in, described in the docs),
+        then answers `302` to the app's `redirect_to` with one of:
+
+        - `code`: a one-time login code (valid one minute, bound to the app's PKCE
+          challenge) to redeem at `POST /_auth/oauth/token`;
+        - `linked=<provider>`: the provider account was added to the signed-in user;
+        - `error=<code>`: `cancelled`, `account_exists` (with `provider`), `signup_closed`,
+          `invitation_invalid`, `link_conflict`, `email_not_verified`, `email_required`,
+          `signin_refused` or `provider_error`.
+
+        An attempt that can't be traced to an app (the `state` is unknown, used, expired or
+        for another provider) can't be sent anywhere: the answer is the realm's
+        `pages/oauth-error/<locale>.html` page (the built-in one without it), with `400`.
+        A session never appears in a URL.
+      operationId: oauthCallback
+      parameters:
+        - { name: state, in: query, schema: { type: string } }
+        - { name: code, in: query, schema: { type: string } }
+        - { name: error, in: query, schema: { type: string } }
+      responses:
+        "302": { $ref: "#/components/responses/BackToApp" }
+        "400": { $ref: "#/components/responses/HostedPage" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [auth]
+      summary: The provider's callback as a form post
+      description: |
+        The same, for providers that answer with `response_mode=form_post` (Apple): the
+        fields come in an `application/x-www-form-urlencoded` body and the redirect to
+        the app is `303`, so the browser follows it with a `GET`.
+      operationId: oauthCallbackForm
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                state: { type: string }
+                code: { type: string }
+                error: { type: string }
+      responses:
+        "303": { $ref: "#/components/responses/BackToApp" }
+        "400": { $ref: "#/components/responses/HostedPage" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/oauth/token:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Redeem a login code for a session
+      description: |
+        Trades the one-time `code` the flow ended with, and the PKCE `code_verifier` the
+        app's `code_challenge` came from, for a session, like a login. The code is used up
+        even when the verifier is wrong, so a stolen code can't be tried again; an unknown,
+        expired, used or wrongly verified code and a user who can no longer sign in are all
+        `401 invalid_credentials`. At most 30 a minute per address.
+      operationId: oauthToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [code, code_verifier]
+              properties:
+                code: { type: string }
+                code_verifier: { type: string }
+                cookie: { type: boolean, description: "As in `POST /_auth/login`." }
+      responses:
+        "200": { $ref: "#/components/responses/Session" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_auth/identities/{provider}:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -3960,6 +4139,12 @@ components:
         `true` adds `url` and `expires_at` to every file of the documents read: a
         link for apps to show or download it. Never stored, and not part of the ETag.
       schema: { type: string, enum: ["true"] }
+    oauthProvider:
+      name: provider
+      in: path
+      required: true
+      description: A provider of the realm's `providers:` (`google`, `microsoft` or `apple`).
+      schema: { type: string, pattern: '^[a-z][a-z0-9-]{0,31}$' }
     fileField:
       name: field
       in: path
@@ -4047,6 +4232,12 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    BackToApp:
+      description: Back to the app's `redirect_to`, with the outcome in its query.
+      headers:
+        Location: { schema: { type: string } }
+        Cache-Control: { $ref: "#/components/headers/NoStore" }
+        Referrer-Policy: { description: Always `no-referrer`., schema: { type: string } }
     HostedPage:
       description: A page of the realm's `pages/` folder, with no external resources.
       headers:

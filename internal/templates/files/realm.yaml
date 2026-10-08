@@ -121,6 +121,34 @@ auth: enabled
 #                                      the bucket goes in `bucket:`, never in the endpoint)
 # digitalocean: provider: digitalocean region: nyc3        (endpoint derived: https://<region>.digitaloceanspaces.com)
 
+# Sign-in with Google, Microsoft or Apple. Every provider needs an application
+# registered in its console, and the callback address to register there is
+#     {BACKD_URL}/v1/<realm>/_auth/oauth/<provider>/callback
+# (the realm's email.public_url replaces BACKD_URL when it is set). The secrets
+# are realm secrets (`backd secret set --realm <name> NAME`); their values never
+# go in this file. `sign_in.allowed_redirects` lists the web origins and app
+# schemes (acme://) a sign-in may send the user back to; without it the ones of
+# `email.allowed_redirects` are used. Realm accounts that have no password still
+# work: a user can hold a password and several providers at once.
+# sign_in:
+#   allowed_redirects: [https://app.acme.example, "acme://"]
+# providers:
+#   google:                          # console.cloud.google.com → APIs & Services → Credentials → OAuth client (web)
+#     client_id: 1234.apps.googleusercontent.com
+#     client_secret: secret:GOOGLE_CLIENT_SECRET
+#     native_client_ids: [5678.apps.googleusercontent.com]   # optional: the ids of your mobile apps
+#   microsoft:                       # entra.microsoft.com → App registrations (platform: Web)
+#     client_id: 00000000-0000-0000-0000-000000000000
+#     client_secret: secret:MICROSOFT_CLIENT_SECRET
+#     tenant: common                 # common | organizations | consumers | <tenant id>
+#   apple:                           # developer.apple.com → Identifiers (Services ID) and Keys (Sign in with Apple)
+#     services_id: com.acme.web      # the web client id
+#     bundle_ids: [com.acme.ios]     # optional: your iOS apps
+#     team_id: ABCDE12345
+#     key_id: XYZ9876543
+#     private_key: secret:APPLE_SIGN_IN_KEY    # the whole .p8 file
+#     revoke_on_delete: true         # revoke the user's Apple tokens when the account is deleted (default)
+
 # Accounts. Each setting here needs the `email:` section above.
 # account:
 #   require_verified_email: false  # true: no session until the address is verified (sign-up answers 202;

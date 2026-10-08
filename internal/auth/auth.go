@@ -159,6 +159,13 @@ type Store interface {
 	UpdateIdentity(ctx context.Context, id string, upd IdentityUpdate, now time.Time) error
 	// DeleteIdentity removes a user's identity of a provider; ErrNotFound if none.
 	DeleteIdentity(ctx context.Context, userID, provider string) error
+	// PutOAuthState stores a sign-in attempt; ClaimOAuthState deletes and returns the
+	// unexpired attempt with that id (ErrNotFound if none), so a state works once.
+	PutOAuthState(ctx context.Context, st OAuthState) error
+	ClaimOAuthState(ctx context.Context, id string, now time.Time) (OAuthState, error)
+	// PutLoginCode and ClaimLoginCode are the same for the one-time login codes.
+	PutLoginCode(ctx context.Context, lc LoginCode) error
+	ClaimLoginCode(ctx context.Context, id string, now time.Time) (LoginCode, error)
 	// DeleteSessions revokes every session of the user and says how many.
 	DeleteSessions(ctx context.Context, userID string) (int64, error)
 

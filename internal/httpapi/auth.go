@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/oauth"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -24,6 +25,10 @@ type authAPI struct {
 	reg       *registry.Registry
 	actions   []hostedAction // the flows behind links in emails
 	opTimeout time.Duration
+	// oauth talks to the identity providers; baseURL is backd's public address
+	// (BACKD_URL), where they send the user back to.
+	oauth   *oauth.Service
+	baseURL string
 }
 
 type usersKey struct{}
@@ -38,6 +43,7 @@ func (a *authAPI) routes(r chi.Router) {
 		r.With(json).Post("/verify-email/resend", a.resendVerification)
 		r.With(json).Post("/reset-password/request", a.requestPasswordReset)
 		a.hostedRoutes(r)
+		a.oauthRoutes(r, json)
 		r.Group(func(r chi.Router) {
 			r.Use(a.requireSession)
 			r.Post("/logout", a.logout)
@@ -76,29 +82,38 @@ func principalOf(r *http.Request) auth.Principal {
 // from the path, so a token from another realm is simply unknown here.
 func (a *authAPI) requireSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		svc := usersOf(r)
-		token, src, headerOK := credentialOf(r, svc.Settings)
-		if !headerOK || src == noCredential {
-			unauthenticated(w, r, false, "authentication required")
+		p, ok := a.authenticateRequest(w, r)
+		if !ok {
 			return
 		}
-		p, err := svc.Authenticate(r.Context(), token)
-		if err != nil {
-			if src == fromCookie {
-				clearSessionCookie(w, r, svc.Settings)
-			}
-			authError(w, r, err)
-			return
-		}
-		if src == fromCookie && !csrfCheck(w, r, svc.Settings) {
-			return
-		}
-		if !allowedFrom(w, r, auth.Caller{User: &p}) {
-			return
-		}
-		setActor(r.Context(), "user:"+p.User.ID)
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, p)))
 	})
+}
+
+// authenticateRequest resolves the request's session, or answers why it can't.
+func (a *authAPI) authenticateRequest(w http.ResponseWriter, r *http.Request) (auth.Principal, bool) {
+	svc := usersOf(r)
+	token, src, headerOK := credentialOf(r, svc.Settings)
+	if !headerOK || src == noCredential {
+		unauthenticated(w, r, false, "authentication required")
+		return auth.Principal{}, false
+	}
+	p, err := svc.Authenticate(r.Context(), token)
+	if err != nil {
+		if src == fromCookie {
+			clearSessionCookie(w, r, svc.Settings)
+		}
+		authError(w, r, err)
+		return auth.Principal{}, false
+	}
+	if src == fromCookie && !csrfCheck(w, r, svc.Settings) {
+		return auth.Principal{}, false
+	}
+	if !allowedFrom(w, r, auth.Caller{User: &p}) {
+		return auth.Principal{}, false
+	}
+	setActor(r.Context(), "user:"+p.User.ID)
+	return p, true
 }
 
 // bearerToken extracts the token of an "Authorization: Bearer" header.

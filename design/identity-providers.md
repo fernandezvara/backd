@@ -26,37 +26,40 @@ Two standing rules shape the design:
 | Network | provider calls from `serve` and the worker use backd's own HTTP client, which dials only the provider's allowed hosts (built-in list; the issuer's for generic OIDC) and never private addresses |
 | Pages | errors go back to the app as `?error=<code>`; one hosted fallback page, `oauth-error`; the full hosted sign-in page is #158 |
 | Providers | built-ins `google`, `microsoft`, `apple`; any other name is `type: oidc` (§3.1) |
-| Redirect targets | `auth.allowed_redirects`, falling back to `email.allowed_redirects` |
+| Redirect targets | `sign_in.allowed_redirects`, falling back to `email.allowed_redirects` |
 | Apple revocation | on account deletion and on unlinking, through Apple's REST API |
 
 ## 3. Configuration (`realm.yaml`)
 
 Written commented by `backd template realm`, including where to create each app in the providers' consoles and the callback URL to register.
 
+The keys are top level in `realm.yaml` (`auth:` is already the `enabled`/`disabled` switch, so the providers cannot live under it):
+
 ```yaml
-auth:
-  providers:
-    google:
-      client_id: 1234.apps.googleusercontent.com
-      client_secret: secret:GOOGLE_CLIENT_SECRET          # realm-level secret
-      native_client_ids: [5678.apps.googleusercontent.com] # extra audiences accepted by the id-token endpoint
-    microsoft:
-      client_id: 00000000-0000-0000-0000-000000000000
-      client_secret: secret:MICROSOFT_CLIENT_SECRET
-      tenant: common            # common | organizations | consumers | <tenant id>
-    apple:
-      services_id: com.acme.web           # web client id (redirect flow)
-      bundle_ids: [com.acme.ios]          # audiences accepted by the id-token endpoint
-      team_id: ABCDE12345
-      key_id: XYZ987
-      private_key: secret:APPLE_SIGN_IN_KEY
-      revoke_on_delete: true              # default true; see §9
+sign_in:
+  allowed_redirects: [https://app.acme.example, "acme://"]
+providers:
+  google:
+    client_id: 1234.apps.googleusercontent.com
+    client_secret: secret:GOOGLE_CLIENT_SECRET          # realm-level secret
+    native_client_ids: [5678.apps.googleusercontent.com] # extra audiences accepted by the id-token endpoint
+  microsoft:
+    client_id: 00000000-0000-0000-0000-000000000000
+    client_secret: secret:MICROSOFT_CLIENT_SECRET
+    tenant: common            # common | organizations | consumers | <tenant id>
+  apple:
+    services_id: com.acme.web           # web client id (redirect flow)
+    bundle_ids: [com.acme.ios]          # audiences accepted by the id-token endpoint
+    team_id: ABCDE12345
+    key_id: XYZ987
+    private_key: secret:APPLE_SIGN_IN_KEY
+    revoke_on_delete: true              # default true; see §9
 ```
 
 - **Callback URL to register** with each provider: `{BACKD_URL}/v1/{realm}/_auth/oauth/{provider}/callback` (or `email.public_url` when set for the realm).
 - Secrets are realm-level entries managed with `backd secret set --realm <r> NAME` (encrypted, admin-only, audited); rotation needs no restart.
 - backd generates Apple's client-secret JWT (ES256, signed with `private_key`) and renews it before it expires.
-- **`redirect_to` targets** come from `auth.allowed_redirects` (a new realm-level list of URL prefixes, same syntax as `email.allowed_redirects`). When it is absent, sign-in uses `email.allowed_redirects`; when both are absent, `start` refuses every `redirect_to`. One list can serve both.
+- **`redirect_to` targets** come from `sign_in.allowed_redirects` (a new realm-level list of origins and app schemes, same syntax as `email.allowed_redirects`). When it is absent, sign-in uses `email.allowed_redirects`; when both are absent, `start` refuses every `redirect_to`. One list can serve both.
 - **Names:** `google`, `microsoft` and `apple` are reserved and imply their type. Any other provider name must declare `type: oidc` (§3.1) and match `[a-z][a-z0-9-]{0,31}`. The name is what `identities.provider`, the URLs and the audit use; renaming a provider in `realm.yaml` orphans its identities (documented).
 - **Scopes are fixed:** `openid email profile` (Apple: `name email`, with `response_mode=form_post`). backd never asks for access to a provider's APIs and never for `offline_access`; a generic OIDC provider may list extra `scopes:` that its issuer needs.
 - **Startup checks:** strict parsing; required keys present; `tenant` valid; identifiers well formed; names valid and not duplicated. A referenced secret that is not set → startup warning and that provider answers `503 provider_unavailable` until it is set.
@@ -64,15 +67,14 @@ auth:
 ### 3.1 Generic OpenID Connect providers (#157)
 
 ```yaml
-auth:
-  providers:
-    keycloak:
-      type: oidc
-      issuer: https://sso.acme.example/realms/acme
-      client_id: backd
-      client_secret: secret:KEYCLOAK_CLIENT_SECRET
-      scopes: [groups]            # optional, added to openid email profile
-      link_by_email: false        # default false; true allows automatic linking (§6)
+providers:
+  keycloak:
+    type: oidc
+    issuer: https://sso.acme.example/realms/acme
+    client_id: backd
+    client_secret: secret:KEYCLOAK_CLIENT_SECRET
+    scopes: [groups]            # optional, added to openid email profile
+    link_by_email: false        # default false; true allows automatic linking (§6)
 ```
 
 - backd reads `<issuer>/.well-known/openid-configuration` (cached, refetched like JWKS, §11) and checks that the document's `issuer` equals the configured one.
@@ -164,7 +166,7 @@ sequenceDiagram
 | `intent=link`, identity free | attach to the signed-in user |
 | `intent=link`, identity belongs to another user, or the user already has an identity of this provider | `error=link_conflict` |
 
-- New users from Google or Apple with a provider-verified email get `email_verified: true` (an Apple private-relay address counts: Apple verified it); from Microsoft and generic OIDC providers the email is stored unverified and email verification ([account-lifecycle.md §4.2](./account-lifecycle.md#42-email-verification)) applies unless the provider is configured with `link_by_email: true`. If a provider gives no email, the user is created without one when the sign-up mode allows it. With `require_verified_email: true`, an unverified Microsoft sign-in ends with `error=email_not_verified`.
+- New users from Google or Apple with a provider-verified email get `email_verified: true` (an Apple private-relay address counts: Apple verified it); from Microsoft and generic OIDC providers the email is stored unverified and email verification ([account-lifecycle.md §4.2](./account-lifecycle.md#42-email-verification)) applies unless the provider is configured with `link_by_email: true`. If a provider gives no email, the sign-in ends with `error=email_required`: users without an email address are not supported yet (they would be missing from the admin user list, which is sorted by email). With `require_verified_email: true`, an unverified Microsoft sign-in ends with `error=email_not_verified`.
 - New users get `locale` from the request like any sign-up.
 - **Automatic linking happens only on first sight of an identity;** later changes of the provider's email never relink or change the user.
 - **Unlinking:** `DELETE /_auth/identities/{provider}` removes an identity, **never the last sign-in method** (password or provider) — a user can't lock themselves out. An administrator can do the same on a user's behalf (§13), with the same rule. A provider-only user who wants a password uses password reset.
@@ -180,7 +182,7 @@ sequenceDiagram
 
 ## 8. Errors and the hosted page
 
-- The callback sends failures back to `redirect_to` as `?error=<code>`: `cancelled`, `account_exists` (+ `provider`), `signup_closed`, `invitation_invalid`, `link_conflict`, `email_not_verified`, `signin_refused`, `provider_error`. Nothing sensitive is included. The JS client maps them to `BackdError`s.
+- The callback sends failures back to `redirect_to` as `?error=<code>`: `cancelled`, `account_exists` (+ `provider`), `signup_closed`, `invitation_invalid`, `link_conflict`, `email_not_verified`, `email_required`, `signin_refused`, `provider_error`. A successful `intent: link` ends at `redirect_to?linked=<provider>` instead of a login code. Nothing sensitive is included. The JS client maps them to `BackdError`s.
 - **One hosted page, `oauth-error`,** for attempts that can't be traced to an app (unknown, expired or tampered `state`). Localized, `<realm>/pages/oauth-error/<locale>.html`, written by `backd template realm`, same security headers as the other hosted pages.
 
 ## 9. Apple token revocation
@@ -211,7 +213,7 @@ Apple requires apps that offer Sign in with Apple and account deletion to revoke
 - `state` (single use, 10 min, stored hashed) protects the callback against forgery; nonce in every ID token; PKCE between backd and the provider (where the provider supports it) and between the app and backd (required).
 - Issuer validation per provider; for Microsoft multi-tenant, the issuer must match the token's tenant (`https://login.microsoftonline.com/<tid>/v2.0`), and `tenant` restricts which tenants are accepted.
 - Audiences restricted to the configured client ids.
-- `redirect_to` only from `auth.allowed_redirects` (or `email.allowed_redirects`), stored server-side with the attempt, never trusted from the callback.
+- `redirect_to` only from `sign_in.allowed_redirects` (or `email.allowed_redirects`), stored server-side with the attempt, never trusted from the callback.
 - Login codes: 1 minute, single use, hashed, PKCE-bound; sessions never in URLs.
 - Automatic linking only under the conditions of §6, and only the first time an identity is seen.
 - Per-IP limits on `start`, `token` and `id-token` using the shared counters: 30 per minute per IP each, fixed (not configurable).
@@ -233,18 +235,18 @@ Paths are relative to `/v1/{realm}`: `/_auth/oauth/{provider}/start` is `/v1/{re
 | `GET /_admin/users/{id}/identities` | admin view; `backd user identities` |
 | `DELETE /_admin/users/{id}/identities/{provider}` | admin unlink (never the last method) |
 
-**Audit:** `identity.linked`, `identity.unlinked` (also by an administrator, who is the actor) and `identity.apple_revoked`; a refused sign-in (`signin_refused`) records its real reason. Ordinary provider sign-ins are not audited one by one.
+**Audit:** `identity.linked`, `identity.unlinked` (also by an administrator, who is the actor) and `identity.apple_revoked`; a refused sign-in (`signin_refused`) records its real reason as `identity.signin_refused`. Ordinary provider sign-ins are not audited one by one.
 
 ## 14. Documentation
 
 - "Sign in with providers" guide: setting up each provider's console, callback URL, `realm.yaml`, secrets, the redirect flow with the JS client, native sign-in, linking rules (and why Microsoft emails don't auto-link), error codes, profile handover and `on_signup`, Apple revocation.
-- Configuration reference: `auth.providers`, `auth.allowed_redirects`, `account.on_signup`.
+- Configuration reference: `providers`, `sign_in.allowed_redirects`, `account.on_signup`.
 - Security model page: §12.
 - `api/openapi.yaml`: every endpoint and code.
 
 ## 15. Acceptance criteria by issue
 
-**#142 — provider sign-in:** configuration and startup checks; `auth.allowed_redirects`; secrets by reference; Apple client-secret JWT; the host-restricted client and JWKS caching; `start`/callback/`token` with state, nonce and PKCE; linking and sign-up rules of §6 including the pre-hijacking test; error codes; `oauth-error` page; `/_auth/me` identities and unlinking (never the last method); per-IP limits; audit; docs and OpenAPI. Tests with a fake OIDC provider in the test stack covering every row of §6 and every error code.
+**#142 — provider sign-in:** configuration and startup checks; `sign_in.allowed_redirects`; secrets by reference; Apple client-secret JWT; the host-restricted client and JWKS caching; `start`/callback/`token` with state, nonce and PKCE; linking and sign-up rules of §6 including the pre-hijacking test; error codes; `oauth-error` page; `/_auth/me` identities and unlinking (never the last method); per-IP limits; audit; docs and OpenAPI. Tests with a fake OIDC provider in the test stack covering every row of §6 and every error code.
 
 **#143 — ID-token endpoint:** verification of signature, issuer, audience (including native ids), expiry and nonce (raw or hashed); same rules as §6; JSON outcomes; tests per provider using the fake provider.
 
