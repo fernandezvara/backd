@@ -52,7 +52,7 @@ services:
   # Bundles every realm's functions before backd starts (backd refuses stale
   # or missing bundles). Does nothing until chapter 5 adds the first function.
   functions-build:
-    image: ghcr.io/fernandezvara/backd-executor:v0.8.0   # backd plus the pinned Deno
+    image: ghcr.io/fernandezvara/backd-executor:v0.8.1   # backd plus the pinned Deno
     entrypoint: ["/usr/local/bin/backd"]
     command: ["functions", "build"]
     user: root
@@ -62,7 +62,7 @@ services:
       - ./config:/config
 
   backd:
-    image: ghcr.io/fernandezvara/backd:v0.8.0
+    image: ghcr.io/fernandezvara/backd:v0.8.1
     command: ["serve", "--with-worker"]
     environment:
       CONFIG_DIR: /config
@@ -94,7 +94,7 @@ services:
     stop_grace_period: 20s
 
   executor:
-    image: ghcr.io/fernandezvara/backd-executor:v0.8.0
+    image: ghcr.io/fernandezvara/backd-executor:v0.8.1
     environment:
       BACKD_EXECUTOR_TOKEN: local-dev-executor-token-not-a-secret-0123456789
       EXECUTOR_PROXY: http://egress:3128
@@ -103,7 +103,7 @@ services:
       - backd
 
   egress:
-    image: ghcr.io/fernandezvara/backd:v0.8.0
+    image: ghcr.io/fernandezvara/backd:v0.8.1
     command: ["egress"]
     environment:
       BACKD_EGRESS_KEY: local-dev-egress-key-not-a-secret-0123456789abcd

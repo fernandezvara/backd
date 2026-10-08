@@ -7,7 +7,7 @@ sections:
     weight: 10
     template: hero
 
-    badge: "v0.8.0 · files in your own S3-compatible storage, uploads and downloads with the document's rules, and file controls in the admin UI"
+    badge: "v0.8.1 · files in your own S3-compatible storage, image versions, quotas and uploads of files up to 4 TiB"
 
     title: "backd"
     subtitle: "A **config-driven** REST backend over MongoDB. Declare realms, databases and collections as files on disk, and get a **schema-validated**, **queryable** document API. Add **server-side functions** for the logic clients can't be trusted with: background jobs, cron schedules and webhooks included."
