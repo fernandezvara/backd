@@ -202,7 +202,6 @@ func (f *functions) invoke(w http.ResponseWriter, r *http.Request) {
 		// The callee inherits the caller's user and nothing else: no API
 		// key's access, no admin access.
 		caller = auth.Caller{User: caller.User}
-		hasAuth = f.docs.users(realm) != nil
 	} else if hasAuth && !f.mayInvoke(w, r, fn, caller) {
 		return
 	}
@@ -673,7 +672,7 @@ func (f *functions) getJob(w http.ResponseWriter, r *http.Request) {
 	admin := caller.User != nil && f.docs.users(realm).Settings.AdminAccess(caller.User.User.Roles).CanRead(f.docs.users(realm).Settings, registry.RightFunctions)
 	// A scoped key reads the jobs of the functions it may call, and no others.
 	scoped := caller.Key != nil && !caller.Key.Scopes.Allows(auth.ScopeCall, job.Database, job.Function)
-	if !found || job.Database != database || scoped || !(admin || jobVisibleTo(job, caller)) {
+	if !found || job.Database != database || scoped || (!admin && !jobVisibleTo(job, caller)) {
 		notFound(w, r)
 		return
 	}
@@ -904,7 +903,7 @@ func (f *functions) respond(w http.ResponseWriter, r *http.Request, fn *registry
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write(res.Output)
+		_, _ = w.Write(res.Output)
 	case executor.StatusFunctionError:
 		fe := res.FunctionError
 		if fe == nil || fe.Status < 400 || fe.Status > 499 || !functionErrorCode.MatchString(fe.Code) {
@@ -942,7 +941,7 @@ func (f *functions) respondWebhook(w http.ResponseWriter, r *http.Request, wh *e
 		w.Header().Set(k, v)
 	}
 	w.WriteHeader(wh.Status)
-	io.WriteString(w, wh.Body)
+	_, _ = io.WriteString(w, wh.Body)
 }
 
 // logResult logs the invocation and the function's log lines, tagged with
@@ -1009,7 +1008,7 @@ func (f *functions) bundle(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/javascript")
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
-	w.Write(data)
+	_, _ = w.Write(data)
 }
 
 // completionEnding is how a job's result is told to its on_complete function.

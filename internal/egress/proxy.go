@@ -160,9 +160,9 @@ func (p *Proxy) tunnel(w http.ResponseWriter, conn net.Conn) {
 		conn.Close()
 		return
 	}
-	cl.Write([]byte("HTTP/1.1 200 Connection established\r\n\r\n"))
-	go func() { io.Copy(conn, buf); conn.Close() }()
-	io.Copy(cl, conn)
+	_, _ = cl.Write([]byte("HTTP/1.1 200 Connection established\r\n\r\n"))
+	go func() { _, _ = io.Copy(conn, buf); _ = conn.Close() }()
+	_, _ = io.Copy(cl, conn)
 	cl.Close()
 }
 
@@ -182,5 +182,5 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, conn net.Conn) {
 		w.Header()[k] = v
 	}
 	w.WriteHeader(res.StatusCode)
-	io.Copy(w, res.Body)
+	_, _ = io.Copy(w, res.Body)
 }

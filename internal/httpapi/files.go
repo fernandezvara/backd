@@ -216,7 +216,7 @@ func (d *documents) uploadFile(w http.ResponseWriter, r *http.Request) {
 			return nil, false
 		}
 		existing := filesOf(f, current)
-		next := existing
+		var next []map[string]any
 		if f.Multiple {
 			next = append(slices.Clone(existing), plan.known)
 		} else {

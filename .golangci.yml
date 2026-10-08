@@ -1,0 +1,27 @@
+# golangci-lint v2: `golangci-lint run ./...` (CI runs it too, see .github/workflows/ci.yml).
+# The standard linters (errcheck, govet, ineffassign, staticcheck, unused) are on.
+version: "2"
+
+linters:
+  default: standard
+  settings:
+    errcheck:
+      # Where a failure can't be acted on: output to the user's terminal or a response,
+      # releasing a handle that was only read, flushing a table.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (io.Closer).Close
+        - (io.ReadCloser).Close
+        - (net.Conn).Close
+        - (net.Listener).Close
+        - (io/fs.File).Close
+        - (*os.File).Close
+        - (*text/tabwriter.Writer).Flush
+  exclusions:
+    rules:
+      # Tests write to recorders and temporary files, and fail by their assertions.
+      - path: _test\.go
+        linters:
+          - errcheck

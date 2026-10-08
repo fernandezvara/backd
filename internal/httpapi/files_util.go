@@ -73,8 +73,8 @@ func detectContentType(head []byte, claimed string) string {
 	base, _, _ := strings.Cut(detected, ";")
 	claimedBase, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(claimed)), ";")
 	claimedBase = strings.TrimSpace(claimedBase)
-	switch {
-	case base == "text/xml" || base == "text/plain":
+	switch base {
+	case "text/xml", "text/plain":
 		if looksLikeSVG(head) {
 			return "image/svg+xml"
 		}

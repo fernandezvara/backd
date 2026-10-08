@@ -39,10 +39,10 @@ func TestFamiliesDontAdmitActiveContent(t *testing.T) {
 func TestFileNamesCantInjectAnything(t *testing.T) {
 	f := newFilesFixture(t)
 	id := f.newDoc(t, "library")
-	hostile := "a\r\nX-Evil: 1\"; filename=\"b\x00/../../etc/passwd‮gnp.html"
+	hostile := "a\r\nX-Evil: 1\"; filename=\"b\x00/../../etc/passwd\u202egnp.html"
 	_, doc := f.upload(t, f.ada, "library", id, "manual", hostile, "text/plain", []byte("x"), nil)
 	file := doc["manual"].(map[string]any)
-	if strings.ContainsAny(file["name"].(string), "\r\n\x00/‮") {
+	if strings.ContainsAny(file["name"].(string), "\r\n\x00/\u202e") {
 		t.Errorf("the stored name: %q", file["name"])
 	}
 	rec := f.get(t, "/v1/acme/app/library/"+id+"/_files/manual/"+file["id"].(string), map[string]string{"Authorization": "Bearer " + f.ada})

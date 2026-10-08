@@ -446,7 +446,7 @@ func readSecret(uio userIO, confirm bool) (string, error) {
 		return string(p1), nil
 	}
 	line, err := bufio.NewReader(uio.stdin).ReadString('\n')
-	if err != nil && !(errors.Is(err, io.EOF) && line != "") {
+	if err != nil && (!errors.Is(err, io.EOF) || line == "") {
 		return "", errors.New("no password on standard input")
 	}
 	return strings.TrimRight(line, "\r\n"), nil

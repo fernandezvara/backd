@@ -91,7 +91,7 @@ func (a *adminAPI) checkConfig(w http.ResponseWriter, r *http.Request) {
 		adminError(w, r, err)
 		return
 	}
-	defer os.RemoveAll(tmp)
+	defer func() { _ = os.RemoveAll(tmp) }()
 	dst := filepath.Join(tmp, name)
 	if err := copyRealm(filepath.Join(a.reg.Root, name), dst); err != nil {
 		if errors.Is(err, errRealmTooLarge) {

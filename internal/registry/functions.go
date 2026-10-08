@@ -564,8 +564,8 @@ func loadFunction(db *Database, settings RealmSettings, name, dir string) (*Func
 		add("invoke: only applies when auth is enabled (in this realm anyone may call the function)")
 	}
 	if fn.Mode == ModeWebhook && settings.AuthEnabled {
-		switch {
-		case fn.Invoke == nil:
+		switch fn.Invoke {
+		case nil:
 			add("mode: webhook requires an invoke rule that allows anonymous callers (without one, only API keys may call it, but a webhook sender never has one)")
 		default:
 			allowed, err := fn.Invoke.Allow(rules.Values{Now: time.Now()})

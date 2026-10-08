@@ -202,7 +202,7 @@ scan:
 			}
 			report.Invalid++
 			report.Documents = append(report.Documents, auth.CheckedDocument{ID: after, Deleted: isDeleted(doc), Problems: problems, MoreProblems: more})
-			if report.Invalid >= int64(limit) && !(len(docs) < checkBatch && i == len(docs)-1) {
+			if report.Invalid >= int64(limit) && (len(docs) >= checkBatch || i != len(docs)-1) {
 				report.Complete, report.StoppedBy = false, "limit"
 				break scan
 			}

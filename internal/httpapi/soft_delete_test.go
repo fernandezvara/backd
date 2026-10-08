@@ -98,7 +98,7 @@ func TestSoftDelete(t *testing.T) {
 			t.Errorf("%s: %d %v", q, rec.Code, out)
 		}
 	}
-	if rec, out := f.doH(t, "GET", posts+"?deleted=only", "", bearer(f.ada)); rec.Code != http.StatusBadRequest || !strings.Contains(string(rec.Body.Bytes()), "doesn't soft-delete") {
+	if rec, out := f.doH(t, "GET", posts+"?deleted=only", "", bearer(f.ada)); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "doesn't soft-delete") {
 		t.Errorf("deleted= on a collection that doesn't soft-delete: %d %v", rec.Code, out)
 	}
 	if rec, _ := f.doH(t, "POST", posts+"/x/restore", "", bearer(f.ada)); rec.Code != http.StatusNotFound {

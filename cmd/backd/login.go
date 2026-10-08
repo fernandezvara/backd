@@ -93,7 +93,7 @@ func logout(realm, flagURL string, getenv func(string) string, uio userIO) error
 	}
 	// A session the server no longer accepts is forgotten anyway.
 	var ae *apiError
-	if err := t.call("POST", "_auth/logout", nil, nil, nil); err != nil && !(errors.As(err, &ae) && ae.Status == 401) {
+	if err := t.call("POST", "_auth/logout", nil, nil, nil); err != nil && (!errors.As(err, &ae) || ae.Status != 401) {
 		return err
 	}
 	creds, path, err := loadCredentials(getenv)

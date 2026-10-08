@@ -88,7 +88,7 @@ func New(version, commit string) *Metrics {
 		collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		build, m.requests, m.requestTime, m.inFlight, m.authRefusals, m.mongoTime, m.mongoUp,
 	)
-	reg.MustRegister(m.domain.collectors()...)
+	reg.MustRegister(m.collectors()...)
 	return m
 }
 
