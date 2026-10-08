@@ -90,7 +90,7 @@ Each realm with `auth: enabled` has a system database named `<realm>___system` (
 | Collection | Holds | Indexes |
 |---|---|---|
 | `users` | email, verified flag, roles, disabled flag | `email` (unique, sparse) |
-| `identities` | sign-in methods per user: a password hash today, external providers later | `provider` + `subject` (unique), `user_id` |
+| `identities` | sign-in methods per user: a password hash, or an external [provider](../auth/providers/)'s subject and address (and, for Apple, a sealed refresh token) | `provider` + `subject` (unique), `user_id` + `provider` (unique), `user_id` |
 | `sessions` | sessions: public id, hashed token, last use and expiry | `token_hash` (unique), `user_id`, `expires_at` (TTL) |
 | `api_keys` | hashed [API keys](../auth/api-keys/) with name, first characters, last use and expiry | `name` (unique) |
 | `invitations` | [invitations](../auth/admin/#invitations): public id, hashed token, optional email | `token_hash` (unique), `expires_at` (TTL) |
@@ -99,6 +99,7 @@ Each realm with `auth: enabled` has a system database named `<realm>___system` (
 | `secrets` | [function secrets](../functions/secrets/), encrypted at rest (never their plaintext values) | `database` + `name` (unique) |
 | `invocations` | [function invocation history](../functions/logs/): append-only, what happened — never a call's input or output | `function` + `at`, `request_id` (sparse), `expires_at` (TTL) |
 | `jobs` | [async function jobs](../functions/jobs/): input, status, and once done, result — the one exception to never storing input/output, since there's nowhere else to keep it until read | `status` + `lease_expires` + `created_at`, `expires_at` (TTL) |
+| `oauth_states`, `oauth_codes` | the short-lived records of the [provider sign-in](../auth/providers/#the-flow): an attempt waiting for the provider, and a one-time login code waiting to be redeemed; both hashed, used once | `expires_at` (TTL) |
 | `idempotency` | [`Idempotency-Key` claims](../functions/calling/#idempotency): scoped to the function and caller, a sync call's stored response or an async call's job id | `expires_at` (TTL) |
 
 Each collection has a `$jsonSchema` validator that checks its required fields and their types. The TTL indexes make MongoDB delete expired sessions, invitations, counters, audit records, invocation records, jobs and idempotency claims automatically. If one of these indexes exists with different options (for example `expires_at` without TTL, so sessions would never expire), `apply` and `verify` fail and name it; drop the index and let `backd` recreate it.
