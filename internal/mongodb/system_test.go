@@ -169,3 +169,71 @@ func contains(list []string, s string) bool {
 	}
 	return false
 }
+
+// A realm provisioned by v0.8.0 has identities that only allow the password provider and no
+// (user_id, provider) index: provisioning updates both, keeps the identities it has, and then
+// providers fit.
+func TestProvisionUpgradesIdentitiesFromV080(t *testing.T) {
+	client := testClient(t)
+	realm := testRealm(t, client)
+	ctx := context.Background()
+	log, _ := testLogger()
+	p := &Provisioner{Client: client, Registry: loadRegistryWith(t, realm, "", map[string]string{"app/notes": `{}`}), Log: log}
+	if err := p.Apply(ctx); err != nil {
+		t.Fatal(err)
+	}
+	ids := client.Database(realm + "___system").Collection("identities")
+
+	// Back to how v0.8.0 left it.
+	old := bson.D{{Key: "$jsonSchema", Value: bson.D{
+		{Key: "bsonType", Value: "object"},
+		{Key: "required", Value: bson.A{"_id", "user_id", "provider", "subject", "created_at", "updated_at"}},
+		{Key: "properties", Value: bson.D{
+			{Key: "_id", Value: bson.D{{Key: "bsonType", Value: "string"}}},
+			{Key: "user_id", Value: bson.D{{Key: "bsonType", Value: "string"}}},
+			{Key: "provider", Value: bson.D{{Key: "enum", Value: bson.A{"password"}}}},
+			{Key: "subject", Value: bson.D{{Key: "bsonType", Value: "string"}}},
+			{Key: "password_hash", Value: bson.D{{Key: "bsonType", Value: "string"}}},
+			{Key: "created_at", Value: bson.D{{Key: "bsonType", Value: "date"}}},
+			{Key: "updated_at", Value: bson.D{{Key: "bsonType", Value: "date"}}},
+		}},
+	}}}
+	if err := client.Database(realm+"___system").RunCommand(ctx, bson.D{{Key: "collMod", Value: "identities"}, {Key: "validator", Value: old}}).Err(); err != nil {
+		t.Fatal(err)
+	}
+	if err := ids.Indexes().DropOne(ctx, "user_id_1_provider_1"); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if _, err := ids.InsertOne(ctx, bson.D{{Key: "_id", Value: "i1"}, {Key: "user_id", Value: "u1"}, {Key: "provider", Value: "password"}, {Key: "subject", Value: "u1"},
+		{Key: "password_hash", Value: "h"}, {Key: "created_at", Value: now}, {Key: "updated_at", Value: now}}); err != nil {
+		t.Fatal(err)
+	}
+	google := bson.D{{Key: "_id", Value: "i2"}, {Key: "user_id", Value: "u1"}, {Key: "provider", Value: "google"}, {Key: "subject", Value: "g"}, {Key: "created_at", Value: now}, {Key: "updated_at", Value: now}}
+	if _, err := ids.InsertOne(ctx, google); err == nil {
+		t.Fatal("the old validator accepted a provider")
+	}
+
+	// verify mode refuses to start until provisioning has run; applying fixes it.
+	err := p.Verify(ctx)
+	if err == nil || !strings.Contains(err.Error(), "identities") {
+		t.Fatalf("Verify before the upgrade = %v", err)
+	}
+	if err := p.Apply(ctx); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if err := p.Verify(ctx); err != nil {
+		t.Fatalf("Verify after the upgrade: %v", err)
+	}
+	if _, err := ids.InsertOne(ctx, google); err != nil {
+		t.Errorf("a provider identity after the upgrade: %v", err)
+	}
+	if n, _ := ids.CountDocuments(ctx, bson.D{{Key: "user_id", Value: "u1"}}); n != 2 {
+		t.Errorf("identities: %d", n)
+	}
+	// The index now enforces one identity per provider per user.
+	dup := bson.D{{Key: "_id", Value: "i3"}, {Key: "user_id", Value: "u1"}, {Key: "provider", Value: "google"}, {Key: "subject", Value: "g2"}, {Key: "created_at", Value: now}, {Key: "updated_at", Value: now}}
+	if _, err := ids.InsertOne(ctx, dup); !mongo.IsDuplicateKeyError(err) {
+		t.Errorf("a second google identity for the user: %v", err)
+	}
+}
