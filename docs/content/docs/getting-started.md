@@ -150,7 +150,7 @@ cosign verify ghcr.io/fernandezvara/backd:v0.8.1 \
 
 ## Building from source
 
-`backd` needs Go 1.27.1 or later.
+`backd` needs Go 1.27.2 or later.
 
 ```sh
 git clone https://github.com/fernandezvara/backd
