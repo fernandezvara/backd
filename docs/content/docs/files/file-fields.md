@@ -34,6 +34,7 @@ files:
 | `download` | the realm's | `presigned` redirects to a short-lived link of the storage; `proxy` streams the file through backd |
 | `presigned_ttl` | the realm's | How long this field's links last (at most 7 days) |
 | `cache` | none | With `download: proxy`: how long shared caches may keep the file, only when anyone may read the document |
+| `keep_metadata` | `false` | By default the metadata of JPEG and PNG pictures is [removed](#metadata-and-the-gps-risk) when they are stored. `true` stores them exactly as sent |
 | `max_pixels` | the instance's | For images: the most pixels (width × height) the field gets [versions](#image-versions) for. It can only lower `BACKD_IMAGE_MAX_PIXELS`; a higher value stops startup |
 | `versions` | none | Resized copies of an image, declared by name: see [Image versions](#image-versions) |
 
@@ -57,6 +58,25 @@ backd owns it. Clients can't write it: a `POST`, `PUT`, `PATCH` or batch operati
 `type` is the detected content type, `sha256` the digest of the bytes backd stored. Names are cleaned, never rejected: Unicode is normalized (NFC), path and control characters are dropped, the name is cut at 255 bytes and an empty one becomes `file`.
 
 Objects are stored under `<prefix>/<realm>/<database>/<collection>/<file id>` and never move. The name is not part of the key, so renaming or sharing names never touches storage.
+
+## Metadata and the GPS risk
+
+A photograph carries more than its pixels: the phone or camera that took it, the time, and very often **the GPS position of where it was taken**, in EXIF; also XMP, IPTC and comments. A PNG can carry text chunks and a time. A user who uploads a picture of their cat rarely knows it says where they live, and everyone who can download the file can read it.
+
+So backd **removes it by default**. A JPEG or PNG stored in a file field is copied without its metadata:
+
+- **Nothing is re-compressed.** The compressed image data is copied byte for byte; only the segments around it are left out, so not one pixel changes and the quality is the same.
+- **It still shows upright.** What decides how it looks stays: a JPEG's tables, JFIF header, ICC colour profile and the Adobe colour marker, with a minimal EXIF holding only the **orientation**; a PNG's colour information (gamma, chromaticities, sRGB, ICC profile), transparency, animation and pixel density.
+- **Anything after the end of the picture is dropped** (a second image or a trailer some cameras append). It still counts against `max_size`.
+- **The `size` and `sha256` in the file's details are those of the stored file,** not of what was sent: a client that compares them to its own copy will see they differ.
+- **Other types are stored untouched** (PDFs, text, GIF, WebP and so on; their metadata is not removed).
+- **A picture too damaged to be copied is refused** with `422 invalid_image`, rather than stored with its metadata. A field with `keep_metadata: true` takes it.
+- **It happens on the way in.** Proxy uploads (and pending uploads) are cleaned while they stream; for a [direct upload](../transfers/#direct-uploads) the client's bytes reach the bucket first, and `backd` rewrites the object, without its metadata, when the upload is completed, after verifying the checksum the client declared. The object that is cleaned must be the one whose checksum was verified, and the clean copy replaces it before the file is attached to a document. Files stored before this was the default are not changed.
+- **[Versions](#image-versions) never carry metadata,** whatever the field says.
+
+{{< hint style="tip" title="Best practice" >}}
+Leave it on unless the file is the evidence: set `keep_metadata: true` only for fields where the metadata is the point (photography portfolios, forensic or legal evidence, archives), and say so to the people who upload.
+{{< /hint >}}
 
 ## Image versions
 

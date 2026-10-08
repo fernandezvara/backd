@@ -2691,6 +2691,10 @@ paths:
         `{"name", "size", "type", "sha256"}` as in `POST …/{id}/_files/{field}/uploads`,
         and the answer carries the signed link to send the file to; `…/uploads/{upload_id}/complete`
         then verifies it and makes the upload ready to be named in a write.
+        A JPEG or PNG is stored without its metadata (EXIF with the GPS position, XMP,
+        comments, PNG text and time), its pixels untouched and its orientation kept, unless
+        the field sets `keep_metadata: true`; the file's `size` and `sha256` describe what
+        is stored. A picture too damaged to be copied that way is `422 invalid_image`.
       operationId: startFileUpload
       security: [{}, { session: [] }, { apiKey: [] }]
       parameters:
@@ -2717,6 +2721,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
         "413": { $ref: "#/components/responses/Error" }
         "415": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
@@ -2865,6 +2870,10 @@ paths:
         accepts `If-Match`. The document is answered with the new file's details, and
         `Location` is the file's URL. A field set to `upload: direct` answers
         `409 upload_mode_mismatch`.
+        A JPEG or PNG is stored without its metadata (EXIF with the GPS position, XMP,
+        comments, PNG text and time), its pixels untouched and its orientation kept, unless
+        the field sets `keep_metadata: true`; the file's `size` and `sha256` describe what
+        is stored. A picture too damaged to be copied that way is `422 invalid_image`.
       operationId: uploadFile
       security: [{}, { session: [] }, { apiKey: [] }]
       parameters:
@@ -2895,6 +2904,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "412": { $ref: "#/components/responses/VersionMismatch" }
+        "422": { $ref: "#/components/responses/Error" }
         "413": { $ref: "#/components/responses/Error" }
         "415": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
@@ -3273,6 +3283,8 @@ paths:
         `{"name", "size", "type", "sha256"}` as in `POST …/{id}/_files/{field}/uploads`,
         and the answer carries the signed link to send the file to; `…/uploads/{upload_id}/complete`
         then verifies it and makes the upload ready to be named in a write. Admin route: past the collection's rules.
+        A JPEG or PNG is stored without its metadata unless the field sets
+        `keep_metadata: true`; a picture too damaged to be copied that way is `422 invalid_image`.
       operationId: adminStartFileUpload
       security: [{ apiKey: [] }, { session: [] }]
       parameters:
@@ -3299,6 +3311,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
         "413": { $ref: "#/components/responses/Error" }
         "415": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
@@ -3447,6 +3460,10 @@ paths:
         accepts `If-Match`. The document is answered with the new file's details, and
         `Location` is the file's URL. A field set to `upload: direct` answers
         `409 upload_mode_mismatch`. Admin route: past the collection's rules.
+        A JPEG or PNG is stored without its metadata (EXIF with the GPS position, XMP,
+        comments, PNG text and time), its pixels untouched and its orientation kept, unless
+        the field sets `keep_metadata: true`; the file's `size` and `sha256` describe what
+        is stored. A picture too damaged to be copied that way is `422 invalid_image`.
       operationId: adminUploadFile
       security: [{ apiKey: [] }, { session: [] }]
       parameters:
@@ -3477,6 +3494,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "412": { $ref: "#/components/responses/VersionMismatch" }
+        "422": { $ref: "#/components/responses/Error" }
         "413": { $ref: "#/components/responses/Error" }
         "415": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }

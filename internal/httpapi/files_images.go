@@ -3,12 +3,18 @@ package httpapi
 import (
 	"bytes"
 	"cmp"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"io"
 	"strings"
 
 	"github.com/fernandezvara/backd/internal/imaging"
 	"github.com/fernandezvara/backd/internal/jsonnum"
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/internal/storage"
 )
 
 // imageHeadBytes is how much of a file's start is read to learn an image's size: a
@@ -106,4 +112,59 @@ func withImage(meta map[string]any, stored string) map[string]any {
 		meta[k] = v
 	}
 	return meta
+}
+
+// metadataFormat is the format whose metadata is removed from a file of the content type:
+// "jpeg" or "png", "" for anything else, which is stored as it was sent.
+func metadataFormat(contentType string) string {
+	switch contentType {
+	case "image/jpeg":
+		return "jpeg"
+	case "image/png":
+		return "png"
+	}
+	return ""
+}
+
+// errUploadChanged: the object read to be cleaned is not the one whose checksum was verified.
+var errUploadChanged = errors.New("the object changed after it was verified")
+
+// rewriteWithoutMetadata reads the object under key, writes it back to the same key without
+// its metadata (a streaming copy, multipart when large) and returns the size and SHA-256 of
+// what is stored. The bytes read must be the ones whose checksum was verified (wantSHA): the
+// signed link that wrote them is valid until it expires, so the object could have been
+// replaced since.
+func rewriteWithoutMetadata(ctx context.Context, obj *storage.Objects, key, format, contentType, wantSHA string) (size int64, sum string, err error) {
+	rc, _, err := obj.Get(ctx, key, "")
+	if err != nil {
+		return 0, "", err
+	}
+	defer rc.Close()
+	read := sha256.New()
+	in := io.TeeReader(rc, read)
+	pr, pw := io.Pipe()
+	done := make(chan error, 1)
+	go func() {
+		e := imaging.Strip(pw, in, format)
+		pw.CloseWithError(e)
+		if e == nil { // what follows the end of the image (dropped) was part of the verified file
+			_, e = io.Copy(io.Discard, in)
+		}
+		done <- e
+	}()
+	written := sha256.New()
+	put := obj.PutStream(ctx, key, io.TeeReader(&countingReader{r: pr, n: &size}, written), contentType)
+	_ = pr.Close()
+	serr := <-done
+	switch {
+	case errors.Is(serr, imaging.ErrUnreadable):
+		return 0, "", serr
+	case put != nil:
+		return 0, "", put
+	case serr != nil:
+		return 0, "", serr
+	case hex.EncodeToString(read.Sum(nil)) != wantSHA:
+		return 0, "", errUploadChanged
+	}
+	return size, hex.EncodeToString(written.Sum(nil)), nil
 }

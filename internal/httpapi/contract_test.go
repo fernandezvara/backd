@@ -849,6 +849,8 @@ func TestContract(t *testing.T) {
 		req("POST", pend, "plain text", typed(key, "text/plain"), 415)
 		req("POST", pend, strings.Repeat("x", 5000), typed(key, "image/png"), 413)
 		req("POST", base+"/_files/nope/uploads", png, typed(key, "image/png"), 404)
+		cutJPEG := string(dirtyJPEGForContract(t))
+		req("POST", pend[:len(pend)-len("/avatar/uploads")]+"/shot/uploads", cutJPEG, typed(key, "image/jpeg"), 422)
 		if isAdmin {
 			req("POST", pend, png, typed(ada, "image/png"), 403)
 		} else {
@@ -867,6 +869,7 @@ func TestContract(t *testing.T) {
 
 		doc := req("POST", base, `{"title": "files"}`, key, 201)["id"].(string)
 		files := base + "/" + doc + "/_files/"
+		req("POST", files+"shot", cutJPEG, typed(key, "image/jpeg"), 422)
 		up := req("POST", files+"avatar?name=face.png", png, typed(key, "image/png"), 201)
 		avatar := up["avatar"].(map[string]any)["id"].(string)
 		req("POST", files+"avatar", png, typed(with(key, "If-Match", "bad"), "image/png"), 400)
@@ -1427,3 +1430,10 @@ func TestContractDetectsViolations(t *testing.T) {
 }
 
 func ptrString(s string) *string { return &s }
+
+// dirtyJPEGForContract is a JPEG cut short, which cannot be copied without its metadata.
+func dirtyJPEGForContract(t *testing.T) []byte {
+	t.Helper()
+	dirty, _ := dirtyJPEG(t, 30, 10)
+	return dirty[:len(dirty)-40]
+}

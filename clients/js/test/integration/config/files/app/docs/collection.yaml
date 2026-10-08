@@ -1,11 +1,15 @@
 files:
+  # These tests send pictures that are not whole ones: leave them as they are.
   attachment:
+    keep_metadata: true
     max_size: 64KiB
   video:
+    keep_metadata: true
     upload: direct
     max_size: 1MiB
     types: [image/png, text/plain]
   gallery:
+    keep_metadata: true
     multiple: true
     max_files: 2
     max_size: 64KiB

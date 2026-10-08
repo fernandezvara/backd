@@ -35,3 +35,21 @@
 # must exist; a required field can't be removed or unset; `replace` values must
 # satisfy the schema and can't be in a unique index; `pull` fields must be
 # arrays of strings without `minItems`.
+#
+# Files (docs: Files -> File fields). A collection that lets documents carry files
+# declares the fields here, and the realm needs a `storage:` section. Everything below is
+# commented out.
+#
+# files:
+#   photo:
+#     max_size: 10MiB
+#     types: [image/jpeg, image/png]
+#     # Metadata of JPEG and PNG pictures is REMOVED when they are stored: a photograph
+#     # carries the camera, the time and often the GPS position of where it was taken,
+#     # and uploading it would hand that to everyone who can open it. Pixels are not
+#     # touched (the image is not re-compressed) and the orientation is kept, so the
+#     # picture still shows upright. Set this to keep the file exactly as it was sent,
+#     # for photography, evidence or archives:
+#     # keep_metadata: true
+#     versions:                  # resized copies, made by workers (docs: File fields)
+#       thumb: { max_width: 256, max_height: 256, fit: cover }

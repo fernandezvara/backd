@@ -20,6 +20,7 @@ The files feature was reviewed as a whole before this page: rules on file operat
 - **backd's own links** are an HMAC over the realm, database, collection, document, field, file and expiry, with a per-realm key, verified in constant time: a link can't be moved to another file or kept past its time. Rotating the key (setting or deleting the secret `BACKD_FILES_LINK_KEY`) invalidates every one.
 - **Backd's keys are not a function's to read.** A function can't declare the realm's storage secrets or the link key as its own secrets: the configuration is refused at startup.
 - **Cleanup never touches what a document holds.** A worker checks that no document references an upload before it deletes it, and reconcile only considers objects named like files, older than 24 hours, with no open upload record, and that no declared field references.
+- **Metadata is removed from pictures.** The GPS position, camera and comments of a JPEG, and the text and time of a PNG, are dropped as it is stored, unless the field sets `keep_metadata: true`: see [Metadata and the GPS risk](../file-fields/#metadata-and-the-gps-risk).
 - **Limits** bound what a caller can store: `max_size` and `max_files` per field, `BACKD_MAX_UPLOAD_BYTES` for proxy uploads, 20 unused uploads per caller (IPv6 callers counted per `/64`) and a rate for starting them.
 
 ## What you are responsible for

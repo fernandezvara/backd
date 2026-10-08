@@ -81,7 +81,7 @@ curl -X POST "$API/v1/acme/app/people/$ID/_files/video/uploads/$UPLOAD_ID/comple
 ```
 
 - **The storage enforces what you declared.** The link has the length, the type and the SHA-256 signed in, so the bucket refuses a body that differs. The `size` can't be over the field's `max_size`, nor the `type` outside its `types`.
-- **backd verifies, never trusts.** Completing is one `HEAD` (the size and the checksum the storage computed must be the declared ones) and one read of the first bytes, whatever the file's size, to detect its type. Any mismatch deletes the object: `422 upload_mismatch`, or `415 unsupported_file_type` when the content isn't one of the field's types. The `sha256` in a file's details is therefore always one the storage verified.
+- **backd verifies, never trusts.** Completing is one `HEAD` (the size and the checksum the storage computed must be the declared ones) and one read of the first bytes, whatever the file's size, to detect its type. Any mismatch deletes the object: `422 upload_mismatch`, or `415 unsupported_file_type` when the content isn't one of the field's types. The `sha256` in a file's details is therefore always one the storage verified (for a JPEG or PNG, that of the copy [without its metadata](../file-fields/#metadata-and-the-gps-risk) that replaces it).
 - **Complete it with the token,** the same way a [pending upload](#creating-a-document-with-its-files) is attached; nothing uploaded yet answers `409 file_not_uploaded` and it can be tried again. The upload can be used once and lives as long as the realm's `pending_ttl`; the link itself lasts the field's `presigned_ttl`.
 - **Before the document exists,** start with `POST …/_files/{field}/uploads` (no document id) and the same declaration: completing answers `200` and the upload is named in a create, `PUT` or `PATCH` like any pending upload. They count among the caller's 20 unused uploads.
 - **The bucket needs CORS** for the app's origin to accept the browser's `PUT`: see your provider's page. `backd storage check` reads the rules where the provider lets it and warns when they couldn't carry one.
@@ -121,6 +121,7 @@ Every upload is written to a journal before its bytes go to the bucket, and a wo
 | 409 | `file_not_uploaded` | A direct upload was completed before its file reached the bucket |
 | 422 | `upload_mismatch` | A direct upload's size or SHA-256 isn't the declared one |
 | 413 | `payload_too_large` | The file is over `max_size` or `BACKD_MAX_UPLOAD_BYTES` |
+| 422 | `invalid_image` | A JPEG or PNG too damaged to be copied [without its metadata](../file-fields/#metadata-and-the-gps-risk) |
 | 413 | `quota_exceeded` | The file would take the realm or its owner past the [storage quota](../storage/#quotas) |
 | 415 | `unsupported_file_type` | The detected type isn't one of the field's `types` |
 | 503 | `storage_unavailable` | The realm's storage can't be reached or its keys aren't set |

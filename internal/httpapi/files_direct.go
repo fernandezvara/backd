@@ -17,6 +17,7 @@ import (
 	"github.com/rs/xid"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/imaging"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/rules"
 	"github.com/fernandezvara/backd/internal/storage"
@@ -362,6 +363,25 @@ func (d *documents) completeDirect(w http.ResponseWriter, r *http.Request) {
 	if !f.Allows(contentType) {
 		reject(http.StatusUnsupportedMediaType, codeUnsupportedFile, "this field doesn't accept "+contentType+" (detected from the file's content)")
 		return
+	}
+	// A JPEG or PNG loses its metadata: the object is rewritten without it, and the size and
+	// checksum recorded are those of what is stored.
+	if format := metadataFormat(contentType); format != "" && !f.KeepMetadata {
+		size, sum, err := rewriteWithoutMetadata(ctx, obj, key, format, contentType, claimed.SHA256)
+		switch {
+		case errors.Is(err, imaging.ErrUnreadable):
+			reject(http.StatusUnprocessableEntity, codeInvalidImage, "the image can't be read to remove its metadata: it is damaged (or set keep_metadata: true for this field)")
+			return
+		case errors.Is(err, errUploadChanged):
+			reject(http.StatusUnprocessableEntity, codeUploadMismatch, "the uploaded file changed while its metadata was removed")
+			return
+		case err != nil:
+			retry()
+			logger(r.Context()).Error("remove the metadata of a direct upload", "realm", c.Realm, "error", err)
+			writeError(w, r, http.StatusServiceUnavailable, codeStorageUnavailable, "file storage is not available")
+			return
+		}
+		claimed.Size, claimed.SHA256 = size, sum
 	}
 	uploadedAt := d.timestamp().UTC()
 	meta := map[string]any{"id": id, "name": claimed.Name, "size": claimed.Size, "type": contentType, "sha256": claimed.SHA256, "uploaded_at": uploadedAt.Format(timeFormat)}

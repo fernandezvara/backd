@@ -22,6 +22,7 @@ import (
 	"github.com/rs/xid"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/imaging"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/rules"
 	"github.com/fernandezvara/backd/internal/storage"
@@ -34,6 +35,7 @@ const (
 	codeUnsupportedFile    = "unsupported_file_type"
 	codeFileMissing        = "file_missing"
 	codeVersionUnavailable = "version_unavailable"
+	codeInvalidImage       = "invalid_image"
 	codeInvalidFileLink    = "invalid_file_link"
 )
 
@@ -1013,12 +1015,40 @@ func (d *documents) storeUpload(w http.ResponseWriter, r *http.Request, c *regis
 		_ = svc.QueueFileDeletion(ctx, key, "abandoned")
 	}
 
+	// A JPEG or PNG is stored without its metadata (the GPS position of a photograph, the
+	// camera, comments), copied byte for byte otherwise; what is hashed and counted is what
+	// is stored.
+	var source io.Reader = br
+	var stripped chan error
+	closeSource := func() {}
+	if format := metadataFormat(contentType); format != "" && !f.KeepMetadata {
+		pr, pw := io.Pipe()
+		stripped = make(chan error, 1)
+		go func() {
+			err := imaging.Strip(pw, br, format)
+			pw.CloseWithError(err)
+			if err == nil { // what follows the end of the picture is dropped, but counts against the size limit
+				_, err = io.Copy(io.Discard, br)
+			}
+			stripped <- err
+		}()
+		closeSource = func() { _ = pr.Close() }
+		defer closeSource()
+		source = pr
+	}
 	hasher := sha256.New()
 	var size int64
-	stream := io.TeeReader(&countingReader{r: br, n: &size}, hasher)
+	stream := io.TeeReader(&countingReader{r: source, n: &size}, hasher)
 	if err := obj.PutStream(ctx, key, stream, contentType); err != nil {
 		abandon()
 		cancel()
+		if stripped != nil {
+			closeSource() // the copy may be blocked on a reader that has gone
+			if serr := <-stripped; errors.Is(serr, imaging.ErrUnreadable) {
+				writeError(w, r, http.StatusUnprocessableEntity, codeInvalidImage, "the image can't be read to remove its metadata: it is damaged (or set keep_metadata: true for this field)")
+				return nil, false
+			}
+		}
 		if errors.As(err, &tooBig) || size > limit {
 			over()
 			return nil, false
@@ -1026,6 +1056,18 @@ func (d *documents) storeUpload(w http.ResponseWriter, r *http.Request, c *regis
 		logger(r.Context()).Error("store a file", "realm", c.Realm, "collection", c.Name, "field", f.Name, "error", err)
 		writeError(w, r, http.StatusBadGateway, codeStorageUnavailable, "the file could not be stored")
 		return nil, false
+	}
+	if stripped != nil {
+		if serr := <-stripped; serr != nil { // the rest of the body could not be read to its end
+			abandon()
+			cancel()
+			if errors.As(serr, &tooBig) {
+				over()
+				return nil, false
+			}
+			writeError(w, r, http.StatusBadGateway, codeStorageUnavailable, "the file could not be read")
+			return nil, false
+		}
 	}
 	if size > limit {
 		abandon()

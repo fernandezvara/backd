@@ -61,6 +61,9 @@ type FileField struct {
 	Versions []Version
 	// MaxPixels lowers the instance's image pixel limit for this field; 0 follows it.
 	MaxPixels int64
+	// KeepMetadata stores the JPEG and PNG pictures of the field as they were sent. By default
+	// their metadata (EXIF with the GPS position, XMP, comments, text chunks) is removed.
+	KeepMetadata bool
 }
 
 // Version is one declared version of an image field (image versions, milestone 11).
@@ -156,6 +159,7 @@ type fileFieldDoc struct {
 	PresignedTTL string                 `yaml:"presigned_ttl"`
 	Cache        string                 `yaml:"cache"`
 	MaxPixels    *int64                 `yaml:"max_pixels"`
+	KeepMetadata bool                   `yaml:"keep_metadata"`
 	Versions     map[string]*versionDoc `yaml:"versions"`
 }
 
@@ -318,6 +322,7 @@ func parseFiles(path string, schema map[string]any, settings RealmSettings) (map
 				f.MaxPixels = *d.MaxPixels
 			}
 		}
+		f.KeepMetadata = d.KeepMetadata
 		versions, verrs := parseVersions(d)
 		for _, e := range verrs {
 			add(name, "%s", e)
