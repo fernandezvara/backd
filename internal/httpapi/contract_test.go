@@ -560,7 +560,21 @@ func TestContract(t *testing.T) {
 	}
 	req("POST", a+"/login", `{"email": "victim@example.com", "password": "dev-p4ssw0rd!0"}`, nil, 429)
 
-	req("GET", a+"/me", "", me, 200)
+	who := req("GET", a+"/me", "", me, 200)
+	if ids, _ := who["identities"].([]any); len(ids) != 1 || ids[0].(map[string]any)["provider"] != "password" {
+		t.Errorf("a password user's identities: %v", who["identities"])
+	}
+	// Sign-in methods: the only one can't be removed; a second one can, and a method the user lacks is a 404.
+	req("DELETE", a+"/identities/password", "", me, 409)
+	req("DELETE", a+"/identities/google", "", me, 404)
+	req("DELETE", a+"/identities/google", "", nil, 401)
+	if err := f.svc.Store.PutIdentity(context.Background(), auth.Identity{ID: "idn1", UserID: who["id"].(string), Provider: "google", Subject: "g-1", Email: "g@example.com", EmailVerified: true, CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if ids := req("GET", a+"/me", "", me, 200)["identities"].([]any); len(ids) != 2 {
+		t.Errorf("identities after linking: %v", ids)
+	}
+	req("DELETE", a+"/identities/google", "", me, 204)
 	// The user's language: a listed one is accepted, any other is refused.
 	req("PATCH", a+"/me", `{"locale": "es"}`, with(me, "Content-Type", "application/json"), 200)
 	req("PATCH", a+"/me", `{"locale": "fr"}`, with(me, "Content-Type", "application/json"), 400)

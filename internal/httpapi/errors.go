@@ -19,6 +19,7 @@ const (
 	codeMethodNotAllowed = "method_not_allowed"
 	codeConflict         = "conflict"
 	codeInvalidLocale    = "invalid_locale"
+	codeLastMethod       = "last_sign_in_method"
 	codeInvalidToken     = "invalid_token"
 	codeEmailNotDeclared = "email_not_declared"
 	codeAlreadyErased    = "already_erased"

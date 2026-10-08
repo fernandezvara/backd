@@ -18,6 +18,21 @@ import { COOKIE_SESSION } from './storage.js'
  */
 
 /**
+ * One way the user signs in: a password or an external provider.
+ * @typedef {object} Identity
+ * @property {string} provider        `password`, `google`, `microsoft`, `apple` or a configured provider's name.
+ * @property {string} email           The address the provider reported (the user's own for a password).
+ * @property {boolean} email_verified
+ * @property {string} created_at      RFC3339 timestamp: when it was linked.
+ * @property {string | null} last_used_at   RFC3339 timestamp of the last sign-in with it, null if none is recorded.
+ */
+
+/**
+ * The signed-in user with their sign-in methods, oldest first.
+ * @typedef {User & { identities: Identity[] }} Me
+ */
+
+/**
  * A new session.
  * @typedef {object} Session
  * @property {string} [token]     Session token (`bds_…`); already stored by the client. Absent with `cookies: true`:
@@ -246,9 +261,9 @@ export class Auth {
   }
 
   /**
-   * The signed-in user.
+   * The signed-in user, with their sign-in methods in `identities`.
    * @param {RequestOptions} [opts]
-   * @returns {Promise<User>}
+   * @returns {Promise<Me>}
    */
   async me(opts) {
     return (await this.client.request({ method: 'GET', path: ['_auth', 'me'], ...opts })).data

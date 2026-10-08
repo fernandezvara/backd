@@ -156,6 +156,85 @@ func TestAuthStoreIdentitiesAndDelete(t *testing.T) {
 	}
 }
 
+func TestAuthStoreSeveralIdentities(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Date(2126, 10, 8, 12, 0, 0, 0, time.UTC)
+	for _, id := range []string{"u1", "u2"} {
+		if err := s.CreateUser(ctx, auth.User{ID: id, Email: id + "@example.com", CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put := func(id, user, provider, subject string, at time.Time) error {
+		return s.PutIdentity(ctx, auth.Identity{ID: id, UserID: user, Provider: provider, Subject: subject, Email: subject + "@mail.example", EmailVerified: true, CreatedAt: at, UpdatedAt: at})
+	}
+	if err := s.PutIdentity(ctx, auth.Identity{ID: "p1", UserID: "u1", Provider: auth.ProviderPassword, Subject: "u1", PasswordHash: "h", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := put("g1", "u1", "google", "gsub", now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := put("a1", "u1", "apple", "asub", now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	// The database enforces one identity per provider per user, and one user per provider account.
+	if err := put("g2", "u1", "google", "other-sub", now.Add(3*time.Minute)); !errors.Is(err, auth.ErrIdentityExists) {
+		t.Errorf("second google identity of a user: %v", err)
+	}
+	if err := put("g3", "u2", "google", "gsub", now.Add(3*time.Minute)); !errors.Is(err, auth.ErrIdentityExists) {
+		t.Errorf("a google account of another user: %v", err)
+	}
+	// Names the validator doesn't allow are refused by the database.
+	if err := put("x1", "u2", "Bad Name", "x", now); err == nil {
+		t.Error("a provider name that is not a slug was stored")
+	}
+	if err := put("m1", "u2", "keycloak", "ksub", now); err != nil {
+		t.Errorf("a generic provider's identity: %v", err)
+	}
+
+	ids, err := s.ListIdentities(ctx, "u1")
+	if err != nil || len(ids) != 3 || ids[0].Provider != auth.ProviderPassword || ids[1].Provider != "google" || ids[2].Provider != "apple" {
+		t.Fatalf("ListIdentities = %+v, %v", ids, err)
+	}
+	g, err := s.IdentityOf(ctx, "u1", "google")
+	if err != nil || g.ID != "g1" || g.Email != "gsub@mail.example" || !g.EmailVerified || !g.LastUsedAt.IsZero() {
+		t.Errorf("IdentityOf = %+v, %v", g, err)
+	}
+	if _, err := s.IdentityOf(ctx, "u2", "apple"); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("IdentityOf a missing one: %v", err)
+	}
+
+	email, verified, used := "new@mail.example", false, now.Add(time.Hour)
+	if err := s.UpdateIdentity(ctx, "g1", auth.IdentityUpdate{Email: &email, EmailVerified: &verified, LastUsedAt: &used}, used); err != nil {
+		t.Fatal(err)
+	}
+	g, _ = s.IdentityOf(ctx, "u1", "google")
+	if g.Email != email || g.EmailVerified || !g.LastUsedAt.Equal(used) || !g.UpdatedAt.Equal(used) {
+		t.Errorf("after update: %+v", g)
+	}
+	if err := s.UpdateIdentity(ctx, "missing", auth.IdentityUpdate{}, used); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("update of a missing identity: %v", err)
+	}
+
+	if err := s.DeleteIdentity(ctx, "u1", "google"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteIdentity(ctx, "u1", "google"); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("second delete: %v", err)
+	}
+	// Once removed, the provider account can be linked to someone else.
+	if err := put("g4", "u2", "google", "gsub", now.Add(time.Hour)); err != nil {
+		t.Errorf("relinking a freed account: %v", err)
+	}
+	// Deleting a user takes every identity.
+	if err := s.DeleteUser(ctx, "u1"); err != nil {
+		t.Fatal(err)
+	}
+	if ids, _ := s.ListIdentities(ctx, "u1"); len(ids) != 0 {
+		t.Errorf("identities left after DeleteUser: %+v", ids)
+	}
+}
+
 // TestUsersServiceOnMongoDB runs the user service against the real store,
 // so the system validators must accept everything it writes.
 func TestUsersServiceOnMongoDB(t *testing.T) {
