@@ -1,6 +1,6 @@
 # Hugo server for the documentation site, with live reload. Hugo modules
 # (the hugodoks theme) need Go and Git, so this starts from the Go image.
-FROM docker.io/library/golang:1.27.1-bookworm
+FROM docker.io/library/golang:1.27.2-bookworm
 
 ARG HUGO_VERSION=0.154.5
 RUN arch="$(dpkg --print-architecture)" \
