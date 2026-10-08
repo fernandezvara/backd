@@ -13,7 +13,9 @@ test('sign-up, me, sessions, logout', { skip }, async () => {
   const s = await c.auth.signup({ email: address.toUpperCase(), password })
   assert.match(String(s.token), /^bds_/)
   assert.equal(s.user.email, address)
-  assert.deepEqual(await c.auth.me(), s.user)
+  const { identities, ...me } = await c.auth.me()
+  assert.deepEqual(me, s.user)
+  assert.deepEqual(identities.map((i) => i.provider), ['password'])
 
   await assert.rejects(client().auth.signup({ email: address, password }), ConflictError)
   await assert.rejects(client().auth.signup({ email: 'not-an-email', password }), (/** @type {any} */ e) => e instanceof ValidationError && e.details[0].path === 'email')
