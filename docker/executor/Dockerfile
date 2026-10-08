@@ -6,7 +6,7 @@
 # Run it non-root with a read-only root filesystem and a tmpfs for its
 # working directory (EXECUTOR_DIR), on a network that reaches only backd's
 # internal listener (see the functions docs).
-FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.27.1-alpine AS build
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.27.2-alpine AS build
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev
