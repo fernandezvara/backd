@@ -274,7 +274,8 @@ func TestWorkerSkipsAnOverlappingScheduledRun(t *testing.T) {
 	if skipped.Status != auth.JobDone || skipped.Result == nil || skipped.Result.Status != auth.ResultSkipped || !skipped.Scheduled || skipped.CompletedAt.IsZero() || !strings.Contains(skipped.Result.Message, job(29).ID) {
 		t.Errorf("the overlapping run: %+v result %+v", skipped, skipped.Result)
 	}
-	if !w.RunOnce(ctx) || !w.RunOnce(ctx) {
+	first := w.RunOnce(ctx)
+	if second := w.RunOnce(ctx); !first || !second {
 		t.Fatal("the two queued runs were not claimed")
 	}
 	if w.RunOnce(ctx) {

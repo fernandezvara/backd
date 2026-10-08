@@ -51,25 +51,6 @@ func concurrencyFixture(t *testing.T, funcConcurrency, realmMax int, runner Func
 	})
 }
 
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var digits []byte
-	for n > 0 {
-		digits = append([]byte{byte('0' + n%10)}, digits...)
-		n /= 10
-	}
-	if neg {
-		return "-" + string(digits)
-	}
-	return string(digits)
-}
-
 // blockingRunner runs one call at a time per test's direction: each
 // Invoke signals started, then waits for release.
 type blockingRunner struct {

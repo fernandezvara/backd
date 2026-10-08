@@ -252,7 +252,7 @@ func TestDirectCompletionVerifiesWhatWasUploaded(t *testing.T) {
 	}
 	// Bytes that aren't what the declared type says: the type comes from the content.
 	text := []byte(strings.Repeat("plain words ", 10))
-	rec, o := f.startOn(t, f.ada, "/v1/acme/app/videos/"+id+"/_files/clip/uploads", declare("c", text, "image/png"))
+	_, o := f.startOn(t, f.ada, "/v1/acme/app/videos/"+id+"/_files/clip/uploads", declare("c", text, "image/png"))
 	fid, tok = o["upload_id"].(string), o["upload_token"].(string)
 	putToLink(t, o, text)
 	rec, _ = f.complete(t, f.ada, "videos", "clip", fid, tok)

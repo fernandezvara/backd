@@ -234,7 +234,7 @@ func (a *adminAPI) storageStatus(w http.ResponseWriter, r *http.Request) {
 		"download": st.Download, "presigned_ttl": dur(st.PresignedTTL), "pending_ttl": dur(st.PendingTTL),
 	}
 	// Whether it works: the keys are set, and the bucket answers.
-	keys, reach := map[string]any{"ok": true}, map[string]any{"ok": false}
+	var keys, reach map[string]any
 	obj, err := a.fns.docs.objects.For(r.Context(), realm)
 	switch {
 	case errors.Is(err, errStorageUnavailable):
@@ -244,6 +244,7 @@ func (a *adminAPI) storageStatus(w http.ResponseWriter, r *http.Request) {
 		keys = map[string]any{"ok": false, "error": err.Error()}
 		reach = map[string]any{"ok": false, "error": "not tried"}
 	default:
+		keys = map[string]any{"ok": true}
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 		if err := obj.HeadBucket(ctx); err != nil {

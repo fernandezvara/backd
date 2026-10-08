@@ -195,7 +195,7 @@ func bundle(ctx context.Context, dir string, fn *registry.Function, opts Options
 		return nil, err
 	}
 	out.Close()
-	defer os.Remove(out.Name())
+	defer func() { _ = os.Remove(out.Name()) }()
 	args := []string{"bundle", "--platform=deno", "--quiet", "--output", out.Name()}
 	if _, err := os.Stat(filepath.Join(dir, "deno.lock")); err == nil {
 		args = append(args, "--frozen-lockfile")

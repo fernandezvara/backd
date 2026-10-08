@@ -160,7 +160,7 @@ func TestAdminDataRouteSoftDelete(t *testing.T) {
 func TestAdminDataRouteLevels(t *testing.T) {
 	f := newRulesFixture(t)
 	f.bobHolds(t, "support") // users, invitations: no data
-	if rec, out := f.doH(t, "GET", adminDataBase+"/posts", "", bearer(f.bob)); rec.Code != http.StatusForbidden || !strings.Contains(string(rec.Body.Bytes()), "data") {
+	if rec, out := f.doH(t, "GET", adminDataBase+"/posts", "", bearer(f.bob)); rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "data") {
 		t.Errorf("a role without the data area: %d %v", rec.Code, out)
 	}
 	f.bobHolds(t, "viewer")
@@ -175,7 +175,7 @@ func TestAdminDataRouteLevels(t *testing.T) {
 		{"POST", "/posts", `{"title":"x"}`}, {"DELETE", "/posts/x", ""}, {"POST", "/_batch", `{"operations":[{"op":"delete","collection":"posts","id":"x"}]}`},
 	} {
 		rec, _ := f.doH(t, c.method, adminDataBase+c.path, c.body, jsonHdr(f.bob))
-		if rec.Code != http.StatusForbidden || !strings.Contains(string(rec.Body.Bytes()), "can read") {
+		if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "can read") {
 			t.Errorf("read-only %s %s: %d %s", c.method, c.path, rec.Code, rec.Body)
 		}
 	}

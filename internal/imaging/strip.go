@@ -128,7 +128,7 @@ func stripJPEG(w *bufio.Writer, r *bufio.Reader) error {
 			if _, err := io.ReadFull(r, seg); err != nil {
 				return unreadable("a segment is cut short")
 			}
-			if code == 0xe2 && !(len(seg) >= 12 && string(seg[:12]) == "ICC_PROFILE\x00") {
+			if code == 0xe2 && (len(seg) < 12 || string(seg[:12]) != "ICC_PROFILE\x00") {
 				continue // another APP2: FlashPix, MPF
 			}
 			_, _ = w.Write([]byte{0xff, code})

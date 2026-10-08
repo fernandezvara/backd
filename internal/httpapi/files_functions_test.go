@@ -68,7 +68,6 @@ func TestFunctionsUseTheFileRoutes(t *testing.T) {
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), f.s3.URL) {
 		t.Errorf("link: %d %s", rec.Code, rec.Body)
 	}
-	_, doc = f.as(t, f.ada, "GET", "/v1/acme/app/library/"+id, "")
 	f.upload(t, f.ada, "library", id, "manual", "m.txt", "text/plain", []byte("manual"), nil)
 	_, doc = f.as(t, f.ada, "GET", "/v1/acme/app/library/"+id, "")
 	manualID := doc["manual"].(map[string]any)["id"].(string)

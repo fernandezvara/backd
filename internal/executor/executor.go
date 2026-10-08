@@ -284,7 +284,7 @@ func (e *Executor) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{"status":"ok"}`)
+		_, _ = io.WriteString(w, `{"status":"ok"}`)
 	})
 	mux.HandleFunc("POST /invoke", func(w http.ResponseWriter, r *http.Request) {
 		if !e.authorized(r) {
@@ -298,7 +298,7 @@ func (e *Executor) Handler() http.Handler {
 		}
 		res := e.Invoke(r.Context(), req)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(res)
+		_ = json.NewEncoder(w).Encode(res)
 	})
 	return mux
 }
@@ -467,7 +467,7 @@ func (e *Executor) run(ctx context.Context, bundle string, req InvokeRequest, ti
 	var stderr bytes.Buffer
 	stderrDone := make(chan struct{})
 	go func() {
-		io.Copy(limitWriter{&stderr, maxLogBytes}, stderrPipe)
+		_, _ = io.Copy(limitWriter{&stderr, maxLogBytes}, stderrPipe)
 		close(stderrDone)
 	}()
 
@@ -518,7 +518,7 @@ func (e *Executor) run(ctx context.Context, bundle string, req InvokeRequest, ti
 					break
 				}
 				env, _ := json.Marshal(req.Envelope)
-				stdin.Write(append(env, '\n'))
+				_, _ = stdin.Write(append(env, '\n'))
 				stdin.Close()
 				state = "running"
 			default:

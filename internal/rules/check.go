@@ -95,7 +95,7 @@ func check(r *Rule, schema Schema) error {
 	// way the rule says.
 	walk(r.tree, func(n ast.Node) {
 		b, ok := n.(*ast.BinaryNode)
-		if !ok || !(comparisons[b.Operator] || b.Operator == "in") {
+		if !ok || (!comparisons[b.Operator] && b.Operator != "in") {
 			return
 		}
 		for i, sides := range [][2]ast.Node{{b.Left, b.Right}, {b.Right, b.Left}} {

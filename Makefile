@@ -1,6 +1,6 @@
 COMPOSE_TEST = docker compose -f docker-compose.test.yml
 
-.PHONY: build ui ui-test ui-e2e test test-local vet lint-api js-test js-package js-integration functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour shelf-tour-ci example-attacks release-check
+.PHONY: lint build ui ui-test ui-e2e test test-local vet lint-api js-test js-package js-integration functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour shelf-tour-ci example-attacks release-check
 
 build:
 	go build -o bin/backd ./cmd/backd
@@ -16,6 +16,11 @@ test-local:
 
 vet:
 	go vet ./...
+
+# golangci-lint (v2; install: https://golangci-lint.run/welcome/install/); config in .golangci.yml.
+# CI runs the same through golangci-lint-action.
+lint:
+	golangci-lint run ./...
 
 # JavaScript client: type-check and unit tests (needs Node).
 js-test:
