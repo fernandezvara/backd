@@ -152,20 +152,24 @@ type imageJobDoc struct {
 	FileID     string `bson:"file_id"`
 	Version    string `bson:"version,omitempty"`
 	Params     string `bson:"params,omitempty"`
+
+	Scan        bool  `bson:"scan,omitempty"`
+	MissingOnly bool  `bson:"missing_only,omitempty"`
+	Rate        int32 `bson:"rate,omitempty"`
 }
 
 func imageToDoc(i *auth.ImageJob) *imageJobDoc {
 	if i == nil {
 		return nil
 	}
-	return &imageJobDoc{Collection: i.Collection, Field: i.Field, DocumentID: i.DocumentID, FileID: i.FileID, Version: i.Version, Params: i.Params}
+	return &imageJobDoc{Collection: i.Collection, Field: i.Field, DocumentID: i.DocumentID, FileID: i.FileID, Version: i.Version, Params: i.Params, Scan: i.Scan, MissingOnly: i.MissingOnly, Rate: int32(i.Rate)}
 }
 
 func imageFromDoc(d *imageJobDoc) *auth.ImageJob {
 	if d == nil {
 		return nil
 	}
-	return &auth.ImageJob{Collection: d.Collection, Field: d.Field, DocumentID: d.DocumentID, FileID: d.FileID, Version: d.Version, Params: d.Params}
+	return &auth.ImageJob{Collection: d.Collection, Field: d.Field, DocumentID: d.DocumentID, FileID: d.FileID, Version: d.Version, Params: d.Params, Scan: d.Scan, MissingOnly: d.MissingOnly, Rate: int(d.Rate)}
 }
 
 type eraseJobDoc struct {

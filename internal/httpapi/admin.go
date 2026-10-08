@@ -42,6 +42,7 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		r.With(a.needRead(registry.RightConfig)).Post("/storage/check", a.checkStorage)
 		r.With(a.needRead(registry.RightConfig)).Get("/storage", a.storageStatus)
 		r.With(a.need(registry.RightConfig), requireContentType("application/json")).Post("/storage/reconcile", a.reconcileStorage)
+		r.With(a.need(registry.RightConfig), requireContentType("application/json")).Post("/files/versions/regenerate", a.regenerateVersions)
 		users, invites, keys := a.need(registry.RightUsers), a.need(registry.RightInvitations), a.need(registry.RightAPIKeys)
 		secrets, audit, fns := a.need(registry.RightSecrets), a.need(registry.RightAudit), a.need(registry.RightFunctions)
 		r.With(users).Get("/users", a.listUsers)
@@ -1227,6 +1228,11 @@ func (a *adminAPI) cancelJob(w http.ResponseWriter, r *http.Request) {
 	if found, ok, _ := svc.GetJob(r.Context(), id); ok && found.Check != nil {
 		if !have.CanRead(settings, registry.RightData) {
 			rightRefused(w, r, fmt.Sprintf("cancelling a schema check needs the %q admin right; your roles open: %s", registry.RightData, have))
+			return
+		}
+	} else if ok && found.Image != nil {
+		if !have.CanWrite(registry.RightConfig) {
+			rightRefused(w, r, fmt.Sprintf("cancelling a regeneration of image versions needs the %q admin right to change; your roles open: %s", registry.RightConfig, have))
 			return
 		}
 	} else if !have.CanWrite(registry.RightFunctions) {

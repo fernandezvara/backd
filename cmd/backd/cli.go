@@ -311,6 +311,21 @@ func registerRemote(cfg *cli.Config) {
 		boolean(cc, "delete", "remove the unreferenced objects instead of only reporting them")
 		boolean(cc, "json", "print the report as JSON")
 	})
+	vers := cfg.Command("versions").ShortHelp("image versions of file fields")
+	vers.SubCommand("regenerate").ShortHelp("make again the versions that no longer match what a file field declares").
+		LongHelp("Starts a job that goes through every document of a file field and makes again, on a worker, the image\nversions whose copies no longer match the field's `versions:` in collection.yaml: copies made with other\nparameters (after you changed the declaration), copies that failed or never finished, and versions added later\nthat a file has no copy of. Copies a function generated with its own parameters, versions only functions\nmake, and files that are not pictures are left alone. --missing-only makes only the copies that do not exist.\nThe job runs in the background (one per field at a time), makes at most --rate files a second, keeps serving\nthe old copy of a file until its new one is ready, and can be cancelled and resumed: running it again skips\nwhat matches already. This command follows its progress on stderr; --no-wait only starts it. Needs the config\narea with write access. Audited as files.versions.regenerate. " + adminAPINote).
+		Func(act("versions regenerate", filesVersionsRegenerate)).Config(func(cc *cli.CommandConfig) {
+		required(cc, "realm", "the realm")
+		required(cc, "database", "the file field's database")
+		required(cc, "collection", "the file field's collection")
+		required(cc, "field", "the file field")
+		optional(cc, "version", "only this version (default: every version the field declares with parameters)")
+		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+		boolean(cc, "missing-only", "make only the copies that do not exist, not the ones made with other parameters")
+		cc.Define("rate").Int64().Flag("rate").Default(0).Min(0).Max(1000).Description("at most this many files a second (default 10)")
+		boolean(cc, "no-wait", "start the job and print its id, without following it")
+		cc.Define("interval").String().Flag("interval").Default("2s").Description("how often to ask the server for progress")
+	})
 	data := cfg.Command("data").ShortHelp("check the stored documents against their schemas")
 	checkFlags := func(cc *cli.CommandConfig) {
 		required(cc, "realm", "the realm")

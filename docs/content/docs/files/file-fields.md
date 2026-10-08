@@ -163,9 +163,27 @@ Read `width` and `height` from the document to reserve room for a picture before
 
 Functions can make a version again, with other parameters, or drop it: [Versions of an image](../../functions/files/#versions-of-an-image).
 
-{{< hint style="note" >}}
-Regenerating after a configuration change is planned.
-{{< /hint >}}
+### After you change a declaration
+
+Each copy records a **fingerprint** of the parameters it was made with. Changing a version in `collection.yaml` (a new `max_width`, another `fit`), or adding one to a field that already holds pictures, leaves the existing copies as they were: they are served, and not remade by themselves. When a worker starts it looks at each declared version and, for one that is new or changed since it last looked, logs how many files are affected:
+
+```
+WARN image version changed: files need it made (backd versions regenerate --realm acme --database main --collection assets --field file --version thumb)  files=1840
+```
+
+Make them again with a job that goes through the field in the background:
+
+```sh
+backd versions regenerate --realm acme --database main --collection assets --field file --version thumb
+```
+
+It (or `POST /_admin/files/versions/regenerate`, `admin.storage.regenerateVersions()` in the JavaScript client) remakes, for every file of the field, the copies made with other parameters, the ones that failed or never finished, and the versions a file has no copy of. It leaves alone the copies a function [generated](../../functions/files/#versions-of-an-image) with its own parameters, the versions only functions make and the files that aren't pictures; `--missing-only` makes just the copies that don't exist (a version you added, and pictures uploaded before versions existed). What to know:
+
+- **The old copy is served until the new one replaces it.** Nothing goes `pending` and nobody sees a gap.
+- **It is rate limited:** `--rate` files a second at most (default 10), and a worker's [image concurrency](#sizing-the-worker) still applies, so it doesn't starve uploads.
+- **One per field at a time** (`409 regenerate_running`). It shows in the jobs list (origin `backd:image.versions`) with its progress as steps, and `backd functions cancel` stops it.
+- **It can be interrupted and resumed.** A worker that dies leaves a job another takes over, and running it again skips what matches already, so nothing is made twice.
+- It needs the `config` area with write access, and is audited as `files.versions.regenerate`.
 
 ## Changing `files:`
 

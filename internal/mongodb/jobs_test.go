@@ -463,3 +463,22 @@ func TestImageJobsOnMongoDB(t *testing.T) {
 		t.Fatalf("claim: %+v %v %v", got, found, err)
 	}
 }
+
+func TestImageDeclarationsOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	if got, err := s.ImageDeclarations(ctx); err != nil || len(got) != 0 {
+		t.Fatalf("empty: %v %v", got, err)
+	}
+	if err := s.SetImageDeclaration(ctx, "app/library.picture/thumb", "aa"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetImageDeclaration(ctx, "app/library.picture/thumb", "bb"); err != nil { // replaced
+		t.Fatal(err)
+	}
+	_ = s.SetImageDeclaration(ctx, "app/library.picture/big", "cc")
+	got, err := s.ImageDeclarations(ctx)
+	if err != nil || len(got) != 2 || got["app/library.picture/thumb"] != "bb" || got["app/library.picture/big"] != "cc" {
+		t.Errorf("recorded: %v %v", got, err)
+	}
+}

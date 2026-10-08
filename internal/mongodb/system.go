@@ -45,6 +45,9 @@ const (
 	// StorageUsageCollection keeps running totals of the bytes and files documents
 	// reference: one document for the realm ("realm") and one per user ("user:<id>").
 	StorageUsageCollection = "storage_usage"
+	// ImageDeclaredCollection keeps the fingerprint of each declared image version as a worker
+	// last saw it, to tell a changed declaration at startup.
+	ImageDeclaredCollection = "image_declared"
 	// SchedulesCollection holds the runtime state of scheduled functions:
 	// whether an administrator paused one.
 	SchedulesCollection = "schedules"

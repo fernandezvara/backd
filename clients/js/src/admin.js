@@ -854,6 +854,21 @@ class AdminStorage {
   async reconcile({ delete: remove = false, ...opts } = {}) {
     return (await this.admin._request({ method: 'POST', path: ['storage', 'reconcile'], body: { delete: remove }, ...opts })).data
   }
+
+  /**
+   * Starts the job that makes again, on a worker, the image versions of a file field that no
+   * longer match what it declares (a changed declaration, copies that failed, versions added
+   * later); copies a function generated with its own parameters are left alone. `missingOnly`
+   * makes only the copies that don't exist; `rate` caps the files a second (default 10). Follow
+   * it with `admin.jobs`; one runs per field at a time (`regenerate_running`, 409). Needs write
+   * access to the `config` area.
+   * @param {{ database: string, collection: string, field: string, version?: string, missingOnly?: boolean, rate?: number } & RequestOptions} params
+   * @returns {Promise<{ id: string, status: string, database: string, collection: string, field: string, version: string | null, missing_only: boolean, created_at: string }>}
+   */
+  async regenerateVersions({ database, collection, field, version, missingOnly, rate, ...opts }) {
+    const body = { database, collection, field, version, missing_only: missingOnly, rate }
+    return (await this.admin._request({ method: 'POST', path: ['files', 'versions', 'regenerate'], body, ...opts })).data
+  }
 }
 
 class AdminDataChecks {

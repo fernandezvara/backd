@@ -427,6 +427,13 @@ type ImageJob struct {
 	// ones); the job's result carries the outcome for the function waiting on it.
 	Version string
 	Params  string
+	// Scan makes this a job over a whole field (backd versions regenerate): every file
+	// whose copies no longer match what the field declares is made again, for Version only
+	// when it is set. MissingOnly leaves the copies that exist alone. Rate is how many files
+	// a second at most (0 for the default). DocumentID and FileID are empty.
+	Scan        bool
+	MissingOnly bool
+	Rate        int
 }
 
 // EnqueueImageOp queues the making of one version for a function that waits for it. It
@@ -458,4 +465,27 @@ func (s *Users) EnqueueImageJob(ctx context.Context, database string, e ImageJob
 		return err
 	}
 	return nil
+}
+
+// ErrRegenerateRunning means a regeneration of the same field is queued or running.
+var ErrRegenerateRunning = errors.New("a regeneration of this field's versions is already queued or running")
+
+// StartRegeneration queues the making again of the versions of a file field that no longer
+// match what it declares (a scan job; see ImageJob.Scan). A field has at most one at a time.
+func (s *Users) StartRegeneration(ctx context.Context, database string, e ImageJob, requestedBy, requestID string) (Job, error) {
+	e.Scan = true
+	e.DocumentID, e.FileID = "", ""
+	now := s.now()
+	j := Job{
+		ID: xid.New().String(), Database: database, Function: e.Collection, CallerActor: requestedBy,
+		Origin: ImageOrigin, Exclusive: "regenerate:" + database + "/" + e.Collection + "." + e.Field, TimeoutMS: (10 * time.Minute).Milliseconds(), RequestID: requestID,
+		Image: &e, Status: JobQueued, CreatedAt: now, ExpiresAt: now.Add(pendingJobTTL),
+	}
+	if err := s.Store.EnqueueJob(ctx, j); err != nil {
+		if errors.Is(err, ErrJobExclusive) {
+			return Job{}, ErrRegenerateRunning
+		}
+		return Job{}, err
+	}
+	return j, nil
 }

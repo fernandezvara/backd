@@ -256,7 +256,11 @@ func serve(ctx context.Context, a *app) error {
 		w := httpapi.NewWorker(a.handlerConfig(), workerID())
 		a.log.Info("worker ready", "concurrency", a.cfg.WorkerConcurrency)
 		w.LogImageLimits()
-		tasks = append(tasks, func() error { w.Run(ctx, a.cfg.WorkerConcurrency); return nil })
+		tasks = append(tasks, func() error {
+			go w.CheckImageDeclarations(ctx)
+			w.Run(ctx, a.cfg.WorkerConcurrency)
+			return nil
+		})
 	}
 	errc := make(chan error, len(tasks))
 	for _, t := range tasks {
@@ -293,6 +297,7 @@ func worker(ctx context.Context, a *app) error {
 			}
 		}()
 	}
+	go w.CheckImageDeclarations(ctx)
 	w.Run(ctx, a.cfg.WorkerConcurrency)
 	return nil
 }

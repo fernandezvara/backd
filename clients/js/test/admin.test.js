@@ -383,3 +383,13 @@ test('checkConfig posts the draft files and answers what was found', async () =>
   assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/config/check')
   assert.deepEqual(m.calls[0].body, { files: { 'main/a/rules.yaml': 'read: x\n', 'main/b/schema.json': null } })
 })
+
+test('storage.regenerateVersions starts the job for a field', async () => {
+  const m = mockFetch([{ status: 202, body: { id: 'j1', status: 'queued', database: 'app', collection: 'library', field: 'picture', version: 'thumb', missing_only: true, created_at: 'x' } }])
+  const a = createClient({ url: 'https://api.test', realm: 'acme', apiKey: 'bdk_x', fetch: m.fetch }).admin
+  const job = await a.storage.regenerateVersions({ database: 'app', collection: 'library', field: 'picture', version: 'thumb', missingOnly: true, rate: 5 })
+  assert.equal(job.id, 'j1')
+  assert.equal(m.calls[0].method, 'POST')
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/files/versions/regenerate')
+  assert.deepEqual(m.calls[0].body, { database: 'app', collection: 'library', field: 'picture', version: 'thumb', missing_only: true, rate: 5 })
+})

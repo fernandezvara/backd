@@ -267,6 +267,11 @@ type Store interface {
 	SetCheckReport(ctx context.Context, r CheckReport) error
 	ListCheckReports(ctx context.Context, documents bool) ([]CheckReport, error)
 	GetCheckReport(ctx context.Context, database, collection string) (CheckReport, bool, error)
+	// ImageDeclarations returns, by "<database>/<collection>.<field>/<version>", the
+	// fingerprint of each declared image version as it was when a worker last looked;
+	// SetImageDeclaration records one.
+	ImageDeclarations(ctx context.Context) (map[string]string, error)
+	SetImageDeclaration(ctx context.Context, key, fingerprint string) error
 	// SetJobSteps replaces the steps of a running job's attempt; false when the
 	// job is not running that attempt (so a late write changes nothing).
 	SetJobSteps(ctx context.Context, id string, attempt int, steps []Step, omitted int) (bool, error)

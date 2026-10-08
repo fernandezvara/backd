@@ -268,3 +268,13 @@ func (s *Users) FileDeletionStats(ctx context.Context) (FileDeletionStats, error
 func (s *Users) StorageUsageOf(ctx context.Context, owner string) (realm, user StorageUsageTotals, err error) {
 	return s.Store.StorageUsageOf(ctx, owner)
 }
+
+// ImageDeclarations returns the fingerprints recorded for the declared image versions.
+func (s *Users) ImageDeclarations(ctx context.Context) (map[string]string, error) {
+	return s.Store.ImageDeclarations(ctx)
+}
+
+// SetImageDeclaration records a declared version's fingerprint.
+func (s *Users) SetImageDeclaration(ctx context.Context, key, fingerprint string) error {
+	return s.Store.SetImageDeclaration(ctx, key, fingerprint)
+}
