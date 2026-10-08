@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage"
 )
@@ -56,13 +57,36 @@ func allFiles(c *registry.Collection, doc map[string]any) []map[string]any {
 	return out
 }
 
-// fileAdded counts a file a document now references.
-func (d *documents) fileAdded(ctx context.Context, c *registry.Collection, owner string, meta map[string]any) {
-	if svc := d.users(c.Realm); svc != nil {
-		if err := svc.FileAdded(ctx, owner, fileSize(meta)); err != nil {
-			logger(ctx).Error("count a file in the storage usage", "realm", c.Realm, "error", err)
+// fileAdded counts a file a document now references, and queues the making of its
+// image versions when it has some waiting.
+func (d *documents) fileAdded(ctx context.Context, c *registry.Collection, docID, field, owner string, meta map[string]any) {
+	svc := d.users(c.Realm)
+	if svc == nil {
+		return
+	}
+	if err := svc.FileAdded(ctx, owner, fileSize(meta)); err != nil {
+		logger(ctx).Error("count a file in the storage usage", "realm", c.Realm, "error", err)
+	}
+	if !hasPendingVersions(meta) {
+		return
+	}
+	id, _ := meta["id"].(string)
+	job := auth.ImageJob{Collection: c.Name, Field: field, DocumentID: docID, FileID: id}
+	// A failure is logged and the versions stay pending: nothing else queues them yet.
+	if err := svc.EnqueueImageJob(ctx, c.Database, job, requestID(ctx)); err != nil {
+		logger(ctx).Error("queue the making of a file's image versions", "realm", c.Realm, "file", id, "error", err)
+	}
+}
+
+// hasPendingVersions reports whether a file's details name a version a worker is to make.
+func hasPendingVersions(meta map[string]any) bool {
+	versions, _ := meta["versions"].(map[string]any)
+	for _, v := range versions {
+		if s, _ := v.(map[string]any); s != nil && s["status"] == versionPending {
+			return true
 		}
 	}
+	return false
 }
 
 // filesGone queues the objects of files no document references any more, and stops
@@ -84,7 +108,30 @@ func (d *documents) filesGone(ctx context.Context, c *registry.Collection, owner
 		if err := svc.FileRemoved(ctx, owner, fileSize(f)); err != nil {
 			logger(ctx).Error("count a file out of the storage usage", "realm", c.Realm, "error", err)
 		}
+		// The copies made of an image go with it.
+		for _, name := range readyVersions(f) {
+			v, _ := f["versions"].(map[string]any)[name].(map[string]any)
+			if err := svc.QueueFileDeletion(ctx, d.objectKey(c, id)+"/"+name, reason); err != nil {
+				logger(ctx).Error("queue a file's version for deletion", "realm", c.Realm, "file", id, "version", name, "error", err)
+				continue
+			}
+			if err := svc.FileRemoved(ctx, owner, fileSize(v)); err != nil {
+				logger(ctx).Error("count a version out of the storage usage", "realm", c.Realm, "error", err)
+			}
+		}
 	}
+}
+
+// readyVersions names, in order, the versions of a file that were made (and so have an object).
+func readyVersions(file map[string]any) []string {
+	versions, _ := file["versions"].(map[string]any)
+	var out []string
+	for _, name := range sortedKeys(versions) {
+		if s, _ := versions[name].(map[string]any); s != nil && s["status"] == versionReady {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // documentGone is filesGone for a document that was removed for good.

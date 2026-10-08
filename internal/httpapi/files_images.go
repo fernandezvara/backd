@@ -20,6 +20,7 @@ const (
 	versionPending = "pending" // waits for a worker
 	versionEmpty   = "empty"   // only functions make it, and none has yet
 	versionSkipped = "skipped" // the file isn't an image the engine reads
+	versionReady   = "ready"
 	versionFailed  = "failed"
 )
 

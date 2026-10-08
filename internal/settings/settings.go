@@ -37,9 +37,14 @@ type Settings struct {
 	MaxUploadBytes int64
 	// ImageMaxPixels is the most pixels (width × height) an image may have to get
 	// versions (BACKD_IMAGE_MAX_PIXELS); a file field may only lower it.
-	ImageMaxPixels  int64
-	MongoOpTimeout  time.Duration
-	ShutdownTimeout time.Duration
+	ImageMaxPixels int64
+	// ImageTimeout bounds the making of one image's versions (BACKD_IMAGE_TIMEOUT).
+	ImageTimeout time.Duration
+	// ImageConcurrency is how many images one worker process makes versions of at once
+	// (BACKD_IMAGE_CONCURRENCY); 0 derives it from the container's CPU and memory limits.
+	ImageConcurrency int
+	MongoOpTimeout   time.Duration
+	ShutdownTimeout  time.Duration
 	// PasswordHashConcurrency caps concurrent password hashes; 0 means
 	// auth.DefaultHashConcurrency (CPU and memory limits).
 	PasswordHashConcurrency int
@@ -160,6 +165,19 @@ func Load(getenv func(string) string) (Settings, error) {
 		errs = append(errs, err)
 	} else {
 		s.ImageMaxPixels = n
+	}
+
+	if d, err := duration(getenv, "BACKD_IMAGE_TIMEOUT", "30s", false); err != nil {
+		errs = append(errs, err)
+	} else {
+		s.ImageTimeout = d
+	}
+	if v := getenv("BACKD_IMAGE_CONCURRENCY"); v != "" {
+		if n, err := strconv.Atoi(v); err != nil || n < 1 {
+			errs = append(errs, fmt.Errorf("BACKD_IMAGE_CONCURRENCY must be a positive integer, got %q", v))
+		} else {
+			s.ImageConcurrency = n
+		}
 	}
 
 	if v := getenv("PASSWORD_HASH_CONCURRENCY"); v != "" {

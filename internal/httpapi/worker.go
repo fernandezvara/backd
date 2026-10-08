@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"github.com/rs/xid"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/executor"
+	"github.com/fernandezvara/backd/internal/imaging"
 	"github.com/fernandezvara/backd/internal/metrics"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage"
@@ -35,6 +37,8 @@ type Worker struct {
 	// cancelPoll is how often a running job is checked for cancellation (zero:
 	// cancelPollInterval); tests shorten it.
 	cancelPoll time.Duration
+	// images makes the versions of images, within the instance's limits.
+	images *imaging.Engine
 
 	lastScheduled map[string]time.Time // only touched by the schedule loop
 	lastPurge     map[string]time.Time // realm → last purge of unverified accounts; same
@@ -58,7 +62,27 @@ func NewWorker(cfg Config, id string) *Worker {
 	}
 	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, users: users, callbackKey: cfg.CallbackKey, objects: newRealmObjects(cfg.Registry, users)}
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, log: log, metrics: cfg.Metrics}
-	return &Worker{id: id, fns: fns, reg: cfg.Registry, backdURL: cfg.BackdURL, log: log, lastScheduled: map[string]time.Time{}, lastPurge: map[string]time.Time{}}
+	docs.imageMaxPixels = cfg.ImageMaxPixels
+	return &Worker{id: id, fns: fns, reg: cfg.Registry, backdURL: cfg.BackdURL, log: log, lastScheduled: map[string]time.Time{}, lastPurge: map[string]time.Time{}, images: newImageEngine(cfg)}
+}
+
+// newImageEngine builds the engine from the instance's settings: the concurrency is the
+// one asked for, else derived from the container's CPU and memory limits.
+func newImageEngine(cfg Config) *imaging.Engine {
+	maxPixels := cmp.Or(cfg.ImageMaxPixels, imaging.DefaultMaxPixels)
+	concurrency := cfg.ImageConcurrency
+	if concurrency < 1 {
+		cpus, memory := imaging.ContainerLimits()
+		concurrency = imaging.DeriveConcurrency(cpus, memory, maxPixels)
+	}
+	return imaging.New(imaging.Limits{MaxPixels: maxPixels, Timeout: cfg.ImageTimeout, Concurrency: concurrency})
+}
+
+// LogImageLimits logs the limits the worker makes image versions within, as they
+// are in effect (derived values included).
+func (w *Worker) LogImageLimits() {
+	l := w.images.Limits()
+	w.log.Info("image versions", "max_pixels", l.MaxPixels, "timeout", l.Timeout.String(), "concurrency", l.Concurrency)
 }
 
 // Run claims and runs jobs until ctx is done, with concurrency
@@ -237,6 +261,10 @@ func (w *Worker) runJob(ctx context.Context, realm string, svc *auth.Users, job 
 		w.runErase(ctx, log, realm, svc, job) // not a function: a worker applies the policies itself
 		return
 	}
+	if job.Image != nil {
+		w.runImage(ctx, log, realm, svc, job) // not a function: a worker makes the copies itself
+		return
+	}
 	if job.Check != nil {
 		w.runCheck(ctx, log, realm, svc, job) // not a function either: a worker reads the collections itself
 		return
@@ -396,7 +424,7 @@ func (w *Worker) watchCancellation(ctx context.Context, svc *auth.Users, jobID s
 
 // jobKind is the job's kind as the metrics name it.
 func jobKind(j auth.Job) string {
-	return metrics.JobKind(j.Email != nil, j.Erase != nil, j.Check != nil, j.Scheduled)
+	return metrics.JobKind(j.Email != nil, j.Erase != nil, j.Check != nil, j.Image != nil, j.Scheduled)
 }
 
 // retryableStatus says whether an attempt that ended this way may succeed
@@ -500,7 +528,19 @@ func (w *Worker) FilesDue(ctx context.Context) {
 		for _, e := range stale {
 			// A write may have attached the file and died before saying so: a
 			// document that references it keeps it.
-			if e.DocumentID != "" {
+			if e.DocumentID != "" && strings.HasPrefix(e.ID, "fv_") { // a made version
+				held, err := w.versionReferenced(ctx, realm, e)
+				if err != nil {
+					w.log.Warn("could not check whether a document references a version; it is left for now", "realm", realm, "version", e.ID, "error", err)
+					continue
+				}
+				if held {
+					if err := svc.SetUploadStatus(ctx, e.ID, auth.JournalAttached, e.DocumentID); err != nil {
+						w.log.Error("mark a version attached", "realm", realm, "version", e.ID, "error", err)
+					}
+					continue
+				}
+			} else if e.DocumentID != "" {
 				file, owner, err := w.fileReferenced(ctx, realm, e)
 				if err != nil {
 					w.log.Warn("could not check whether a document references an upload; it is left for now", "realm", realm, "file", e.ID, "error", err)
@@ -571,4 +611,29 @@ func (w *Worker) fileReferenced(ctx context.Context, realm string, e auth.FileJo
 		}
 	}
 	return nil, "", nil
+}
+
+// versionReferenced reports whether the document an upload was meant for records the
+// version made by it.
+func (w *Worker) versionReferenced(ctx context.Context, realm string, e auth.FileJournalEntry) (bool, error) {
+	c, ok := w.reg.Collection(realm, e.Database, e.Collection)
+	if !ok || c.Files[e.Field] == nil {
+		return false, nil
+	}
+	doc, err := w.fns.docs.store.Repository(c).Get(ctx, e.DocumentID)
+	switch {
+	case errors.Is(err, storage.ErrNotFound):
+		return false, nil
+	case err != nil:
+		return false, err
+	}
+	for _, f := range filesOf(c.Files[e.Field], doc) {
+		versions, _ := f["versions"].(map[string]any)
+		for _, v := range versions {
+			if s, _ := v.(map[string]any); s != nil && s["id"] == e.ID {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }

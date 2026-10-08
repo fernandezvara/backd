@@ -113,8 +113,41 @@ What a document records, next to the file's other details:
 
 Like the rest of a file's details, clients can't write them.
 
+### How versions are made
+
+When an upload becomes part of a document, one job per file is queued (origin `backd:image.versions`, visible in the [jobs](../../functions/jobs/) list and counted by the `image` job kind in the [metrics](../../operations/metrics/)). A **worker** reads the original, decodes it **once**, makes every pending version, stores each beside the original under `<file key>/<version name>` and records its details in the document:
+
+```json
+"thumb": {
+  "status": "ready", "id": "fv_d3a1k2n5x0q7w1a9b4c6", "size": 18342, "type": "image/jpeg",
+  "width": 256, "height": 256,
+  "params": { "max_width": 256, "max_height": 256, "fit": "cover", "quality": 80, "format": "jpeg" },
+  "fingerprint": "a91c4be2f10d7733"
+}
+```
+
+- **Metadata is never copied:** a version has none (no EXIF, no GPS), and its pixels are upright.
+- **Writing the details doesn't change the document's `_meta.version`**, so a client editing the document is never told it conflicts because a version finished.
+- **A failure is recorded, not raised:** an unreadable image fails its versions with `decode_error`, one over the limit with `too_large`, one that takes too long with `timeout`. A storage or database error is retried with a growing wait, five times, and then fails the pending versions with `storage_error`.
+- **A worker that dies mid-job** loses nothing: its lease lapses, another worker takes the job and repeats it. Running a job twice is harmless.
+- **Replacing or deleting the original** queues its versions' objects for deletion too, and the new file starts with its own versions. Deleting the document, or erasing a user, does the same.
+- **Versions count in the [usage](../maintenance/#usage)** of the realm and of the document's owner, though they are never refused by a [quota](../storage/#quotas).
+- `backd storage reconcile` keeps the version objects a document records and reports the rest of a file's `<name>` objects as orphans.
+
+### Sizing the worker
+
+Decoding takes memory: about **4 bytes per pixel** of the image, plus the scaled copies. A 40-megapixel photograph needs about 160 MB while it is decoded.
+
+| `BACKD_IMAGE_MAX_PIXELS` | Per image | Two at once |
+|---|---|---|
+| 12 000 000 (a phone photo) | ~50 MB | ~100 MB |
+| 40 000 000 (the default) | ~160 MB | ~320 MB |
+| 100 000 000 | ~400 MB | ~800 MB |
+
+Give the worker's container at least twice what the table says for the concurrency you want, since the original is also read and the runtime needs room. By default the concurrency is derived from the container's CPU and memory limits (half the CPUs, and no more than fit in half the memory), and logged at startup as `image versions`; set `BACKD_IMAGE_CONCURRENCY` to choose it. If the worker is undersized, the container is killed for memory, another worker retries the job when the lease lapses, and an image that keeps killing it can be kept out with a lower `BACKD_IMAGE_MAX_PIXELS` or a field's `max_pixels`.
+
 {{< hint style="note" >}}
-Backd records the declared versions and their state today. The workers that make them, downloads with `?version=` and the functions' API are planned, so versions stay `pending` or `empty` for now.
+Downloading a version with `?version=`, the functions' API and regenerating after a configuration change are planned. Until then a `ready` version's object is there, but the API has no route to serve it.
 {{< /hint >}}
 
 ## Changing `files:`

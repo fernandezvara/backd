@@ -35,6 +35,11 @@ type Config struct {
 	// (BACKD_IMAGE_MAX_PIXELS); a file field's max_pixels may only be lower. Zero
 	// means 40 million.
 	ImageMaxPixels int64
+	// ImageTimeout and ImageConcurrency bound the workers making image versions
+	// (BACKD_IMAGE_TIMEOUT, BACKD_IMAGE_CONCURRENCY); zero is 30 seconds, and a number
+	// derived from the container's limits.
+	ImageTimeout     time.Duration
+	ImageConcurrency int
 	// OpTimeout bounds the storage work of each document request;
 	// defaults to DefaultOpTimeout.
 	OpTimeout time.Duration

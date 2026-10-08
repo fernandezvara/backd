@@ -306,7 +306,7 @@ func (d *documents) attachFile(w http.ResponseWriter, r *http.Request, j attachJ
 		switch {
 		case err == nil:
 			_ = svc.SetUploadStatus(ctx, plan.id, auth.JournalAttached, docID)
-			d.fileAdded(ctx, c, docOwner(current), meta)
+			d.fileAdded(ctx, c, docID, f.Name, docOwner(current), meta)
 			if !f.Multiple { // the file this one replaced
 				d.filesGone(ctx, c, docOwner(current), existing, "replaced")
 			}

@@ -376,7 +376,7 @@ func (p *pendingSet) attached(r *http.Request, d *documents, c *registry.Collect
 	}
 	for _, name := range sortedKeys(p.files) {
 		for _, pf := range p.files[name] {
-			d.fileAdded(r.Context(), c, owner, pf.meta)
+			d.fileAdded(r.Context(), c, docID, name, owner, pf.meta)
 		}
 	}
 	d.filesGone(r.Context(), c, owner, p.replaced, "replaced")

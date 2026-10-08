@@ -183,5 +183,14 @@ func (w *Worker) eraseFiles(ctx context.Context, svc *auth.Users, c *registry.Co
 		if err := svc.FileRemoved(ctx, userID, f.Size); err != nil {
 			w.log.Error("count an erased file out of the storage usage", "realm", svc.Realm, "error", err)
 		}
+		for _, name := range slices.Sorted(maps.Keys(f.Versions)) {
+			if err := svc.QueueFileDeletion(ctx, d.objectKey(c, f.ID)+"/"+name, "erased"); err != nil {
+				w.log.Error("queue an erased file's version for deletion", "realm", svc.Realm, "file", f.ID, "version", name, "error", err)
+				continue
+			}
+			if err := svc.FileRemoved(ctx, userID, f.Versions[name]); err != nil {
+				w.log.Error("count an erased version out of the storage usage", "realm", svc.Realm, "error", err)
+			}
+		}
 	}
 }
