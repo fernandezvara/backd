@@ -159,6 +159,9 @@ func (s *Users) PurgeUnverified(ctx context.Context) (int, error) {
 		if len(u.Roles) > 0 {
 			continue
 		}
+		if err := s.queueAppleRevocation(ctx, u.ID); err != nil {
+			return n, err
+		}
 		if err := s.Store.DeleteUser(ctx, u.ID); err != nil && !errors.Is(err, ErrNotFound) {
 			return n, err
 		}
