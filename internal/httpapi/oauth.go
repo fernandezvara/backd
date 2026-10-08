@@ -30,6 +30,7 @@ func (a *authAPI) oauthRoutes(r chi.Router, json func(http.Handler) http.Handler
 	r.With(json).Post("/oauth/{provider}/start", a.oauthStartPost)
 	r.Get("/oauth/{provider}/callback", a.oauthCallback)
 	r.Post("/oauth/{provider}/callback", a.oauthCallback) // Apple answers with a form
+	r.With(json).Post("/oauth/{provider}/id-token", a.oauthIDToken)
 	r.With(json).Post("/oauth/token", a.oauthToken)
 }
 

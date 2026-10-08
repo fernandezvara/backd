@@ -182,6 +182,12 @@ func (s *Users) RedeemLoginCode(ctx context.Context, code, verifier string) (Pri
 	return s.startSession(ctx, u)
 }
 
+// StartProviderSession starts a session for a user a provider login resolved (the native
+// flow, which has no login code to redeem).
+func (s *Users) StartProviderSession(ctx context.Context, u User) (Principal, string, error) {
+	return s.startSession(ctx, u)
+}
+
 // ProviderLogin is a person an external provider has vouched for.
 type ProviderLogin struct {
 	Provider      string

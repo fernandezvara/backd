@@ -22,6 +22,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/oauth"
 	"github.com/fernandezvara/backd/internal/oauth/oauthtest"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage"
@@ -334,7 +335,16 @@ func (c *contract) verify(t *testing.T, router chi.Routes) {
 func TestContract(t *testing.T) {
 	c := loadContract(t)
 	idp := oauthtest.New(t)
-	f := newRulesFixture(t, func(cfg *Config) { cfg.OAuth = idp.Service() })
+	oauthSvc := idp.Service()
+	live := oauthSvc.Endpoints
+	oauthSvc.Endpoints = func(p *registry.Provider) oauth.Endpoints { // a provider whose keys can't be fetched
+		e := live(p)
+		if p.ClientID == "dead-client" {
+			e.JWKS = "http://127.0.0.1:1/keys"
+		}
+		return e
+	}
+	f := newRulesFixture(t, func(cfg *Config) { cfg.OAuth = oauthSvc })
 	setUpProviders(t, f)
 	router := f.h.(chi.Routes)
 	f.h = c.wrap(t, f.h)
@@ -603,6 +613,29 @@ func TestContract(t *testing.T) {
 		if p := req("POST", aback.Path, aback.RawQuery, map[string]string{"Content-Type": "application/x-www-form-urlencoded"}, 303); p != nil {
 			t.Errorf("apple callback body: %v", p)
 		}
+		// Native sign-in with the ID token the app holds.
+		native := func(claims map[string]any, extra string) string {
+			return `{"id_token": "` + idp.IDToken(t, claims) + `", "nonce": "n1"` + extra + `}`
+		}
+		nativeClaims := func(sub, email string, verified bool) map[string]any {
+			return map[string]any{"iss": "https://accounts.google.com", "aud": "g-native", "sub": sub, "email": email, "email_verified": verified, "nonce": "n1"}
+		}
+		ex := o + "/google/id-token"
+		req("POST", ex, native(nativeClaims("g-n", "native@example.com", true), ""), nil, 200)
+		req("POST", ex, native(nativeClaims("g-n", "native@example.com", true), `, "cookie": true`), map[string]string{"Origin": "https://evil.example"}, 403)
+		req("POST", ex, native(nativeClaims("g-n2", "ada@example.com", false), ""), nil, 409)
+		req("POST", ex, native(nativeClaims("g-n3", "", true), ""), nil, 400)
+		req("POST", ex, `{"id_token": "x"}`, nil, 400)
+		req("POST", ex, `{"id_token": "bad", "nonce": "n1"}`, nil, 401)
+		req("POST", ex, native(nativeClaims("g-n", "native@example.com", true), `, "intent": "link"`), nil, 401)
+		req("POST", ex, native(nativeClaims("g-link", "x@gmail.example", true), `, "intent": "link"`), ada, 200)
+		req("POST", ex, native(nativeClaims("g-link", "x@gmail.example", true), `, "intent": "link"`), bearer(f.bob), 409)
+		req("POST", o+"/github/id-token", native(nativeClaims("g-n", "n@example.com", true), ""), nil, 404)
+		f.svc.Settings.Signup = registry.SignupClosed
+		req("POST", ex, native(nativeClaims("g-closed", "closed@example.com", true), ""), nil, 403)
+		f.svc.Settings.Signup = registry.SignupOpen
+		f.svc.Settings.Providers["dead"] = &registry.Provider{Name: "google", ClientID: "dead-client", ClientSecret: "GOOGLE_SECRET"}
+		req("POST", o+"/dead/id-token", native(nativeClaims("g-n", "native@example.com", true), ""), nil, 503)
 		// A provider whose secret was never set can't be offered.
 		f.svc.Settings.Providers["unset"] = &registry.Provider{Name: "google", ClientID: "g-client", ClientSecret: "NEVER_SET"}
 		req("GET", o+"/unset/start?redirect_to="+redirect+"&code_challenge="+challenge, "", nil, 503)
@@ -620,6 +653,10 @@ func TestContract(t *testing.T) {
 			f.doH(t, "POST", o+"/token", `{"code": "x", "code_verifier": "y"}`, map[string]string{"Content-Type": "application/json"})
 		}
 		req("POST", o+"/token", `{"code": "x", "code_verifier": "y"}`, nil, 429)
+		for range 31 {
+			f.doH(t, "POST", ex, `{"id_token": "bad", "nonce": "n1"}`, map[string]string{"Content-Type": "application/json"})
+		}
+		req("POST", ex, `{"id_token": "bad", "nonce": "n1"}`, nil, 429)
 	}
 	who := req("GET", a+"/me", "", me, 200)
 	if ids, _ := who["identities"].([]any); len(ids) != 1 || ids[0].(map[string]any)["provider"] != "password" {

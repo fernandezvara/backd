@@ -926,6 +926,92 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_auth/oauth/{provider}/id-token:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/oauthProvider" }
+    post:
+      tags: [auth]
+      summary: Sign in with the ID token a mobile app already holds
+      description: |
+        For apps that sign in with the platform (Sign in with Apple, Google Sign-In,
+        MSAL): the app sends the provider's ID token and the nonce it started the
+        sign-in with, and gets a session at once, under the same rules as the redirect
+        flow (linking by verified address, the sign-up modes, disabled users and
+        networks). backd verifies the token's signature, issuer, audience (the web
+        client and the `native_client_ids`, for Apple the `bundle_ids`), expiry and nonce:
+        the app sends the raw nonce, and the token may carry it raw or as its SHA-256
+        (hex or base64url), as the SDKs do. With `"intent": "link"` and the session in
+        `Authorization`, the provider account is added to the signed-in user instead
+        (`{"linked": "<provider>"}`). At most 30 a minute per address.
+        `authorization_code` is accepted for Apple and used to revoke the user's tokens
+        when the account is deleted (not yet).
+      operationId: oauthIDToken
+      security: [{}, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [id_token, nonce]
+              properties:
+                id_token: { type: string }
+                nonce: { type: string, description: The raw nonce the sign-in was started with. }
+                authorization_code: { type: string, description: "Apple's authorization code." }
+                intent: { type: string, enum: [signin, link], default: signin }
+                invitation: { type: string, description: "An invitation token, for realms with `signup: invite`." }
+                locale: { type: string }
+                cookie: { type: boolean, description: "As in `POST /_auth/login`." }
+      responses:
+        "200":
+          description: "A session (as a login's), or `{\"linked\": \"<provider>\"}` for `intent: link`."
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/Session" }
+                  - type: object
+                    additionalProperties: false
+                    required: [linked]
+                    properties:
+                      linked: { type: string }
+        "400":
+          description: "An invalid body, `invitation_invalid` (sign-up needs a valid invitation) or `email_required` (the provider gave no address)."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          description: "`invalid_token`: the ID token does not verify; or no session for `intent: link`."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: "`signup_closed`, `email_not_verified` or `signin_refused` (the account can't sign in), or a cookie session from an origin that isn't allowed."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "`account_exists`: an account has the address and can't be linked automatically (sign in another way and link from there); or `link_conflict`."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503":
+          description: "`provider_unavailable`: the provider's keys could not be fetched."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_auth/oauth/token:
     parameters: [{ $ref: "#/components/parameters/realm" }]
     post:
