@@ -95,7 +95,7 @@ Working on a `backd` checkout instead? The same files live in the repository: `e
 | 11 | [Being called by the internet](11-webhooks/) | the `import` webhook |
 | 12 | [Running it](12-running/) | API keys, audit feed, the hardening checklist |
 | 13 | [Files on assets](13-files/) | a MinIO storage, `files:` in `collection.yaml`, uploads, previews, download buttons |
-| 14 | [Big files and thumbnails](14-big-files/) | direct uploads with a progress bar, `attachments`, a `thumbnail` function and the rules that protect it |
+| 14 | [Big files and thumbnails](14-big-files/) | direct uploads with a progress bar, `attachments`, a thumbnail declared as a version, made by a worker |
 | 15 | [Sharing and counting downloads](15-sharing-files/) | a `download` function, share links that carry files, the storage in the Admin view |
 
 

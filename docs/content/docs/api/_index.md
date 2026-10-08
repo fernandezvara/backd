@@ -80,6 +80,7 @@ Every error uses the same JSON envelope. Success responses are never wrapped.
 | 412 | `version_mismatch` | `If-Match` doesn't match the current version |
 | 403 | `invalid_file_link` | A [file link](../files/transfers/#links-for-apps) that was changed, has expired or whose key was rotated |
 | 404 | `file_missing` | The document holds a [file](../files/transfers/#downloading) the storage no longer has |
+| 404 | `version_unavailable` | `?version=` names an [image version](../files/file-fields/#image-versions) that isn't ready, with its `status` and `reason` in `details` |
 | 409 | `too_many_files` | A `multiple` [file field](../files/file-fields/) is at `max_files` |
 | 409 | `upload_mode_mismatch` | A proxy upload to a [direct](../files/transfers/#direct-uploads) field, or a direct start on a proxy field |
 | 409 | `file_not_uploaded` | A direct upload was completed before its file reached the bucket |

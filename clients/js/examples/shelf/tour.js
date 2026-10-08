@@ -17,7 +17,7 @@
 import { execFileSync } from 'node:child_process'
 import { createHmac } from 'node:crypto'
 import { deflateSync } from 'node:zlib'
-import { createClient, AuthenticationError, ForbiddenError, NotFoundError, VersionMismatchError } from '../../src/index.js'
+import { createClient, AuthenticationError, ForbiddenError, NotFoundError, VersionMismatchError, versionStatus } from '../../src/index.js'
 
 const url = process.env.BACKD_URL ?? 'http://localhost:8080'
 const PASSWORD = 'dev-p4ssw0rd!'
@@ -185,7 +185,7 @@ const audit = await operator.admin.audit.list({ limit: 30 })
 check('the trail records the key', audit.items.some((e) => e.action === 'apikey.create' && e.target === `key:${keyName}`), JSON.stringify(audit.items[0]))
 check('the trail records the hand-run digest', audit.items.some((e) => e.action.startsWith('function.invoke') && e.target === 'main/digest'), '')
 
-/** A small valid PNG: a w×h gradient, so the thumbnail function has something to decode. */
+/** A small valid PNG: a w×h gradient, so the thumbnail worker has something to decode. */
 function png(/** @type {number} */ w, /** @type {number} */ h) {
   const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0 })
   const crc = (/** @type {Buffer} */ b) => { let c = 0xffffffff; for (const x of b) c = crcTable[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0 }
@@ -262,18 +262,27 @@ check('an attachment downloads from the storage', (await fetched(one.url)).toStr
 
 const pictureBlob = png(800, 600)
 const picture = await assets.create({ title: 'Office', kind: 'file', file: (await assets.prepareUpload('file', pictureBlob)).ref })
-const thumbJob = /** @type {any} */ (await main(member).fn('thumbnail', { asset_id: picture.id }))
-const made = /** @type {any} */ (await thumbJob.wait({ pollIntervalMs: 500, timeoutMs: 120000 }))
-const withThumb = await assets.get(picture.id, { fileLinks: true })
-check('the thumbnail job stored a small PNG', withThumb.thumbnail?.type === 'image/png' && withThumb.thumbnail.size < withThumb.file.size && made.thumbnail === withThumb.thumbnail.id, JSON.stringify({ made, thumbnail: withThumb.thumbnail }))
-check('the thumbnail has a link', Boolean(withThumb.thumbnail?.url) && (await fetched(withThumb.thumbnail.url)).subarray(1, 4).toString() === 'PNG')
-await refused('a client may not upload the thumbnail (403)', () => assets.uploadFile(picture.id, 'thumbnail', png(10, 10), { ifMatch: withThumb._meta.version }), ForbiddenError, '')
-const fake = await assets.prepareUpload('thumbnail', png(10, 10))
-await refused('nor create an asset that names one (403)', () => assets.create({ title: 'Fake', kind: 'file', thumbnail: fake.ref }), ForbiddenError, '')
-await refused('nor remove it (403)', () => assets.deleteFile(picture.id, 'thumbnail', withThumb.thumbnail.id), ForbiddenError, '')
+// The thumbnail is a declared version: a worker makes it after the upload.
+const ready = async (/** @type {string} */ id) => {
+  for (let i = 0; i < 120; i++) {
+    const doc = await assets.get(id, { fileLinks: true })
+    if (versionStatus(doc.file, 'thumb').status !== 'pending') return doc
+    await new Promise((r) => setTimeout(r, 1000))
+  }
+  throw new Error('the thumbnail was never made')
+}
+const withThumb = await ready(picture.id)
+const thumbState = versionStatus(withThumb.file, 'thumb')
+check('a worker made the thumbnail: a small PNG of the picture', thumbState.ready && withThumb.file.versions.thumb.type === 'image/png' && withThumb.file.versions.thumb.size < withThumb.file.size, JSON.stringify(withThumb.file.versions))
+check('the picture records its size, and the thumbnail its own', withThumb.file.width === 800 && withThumb.file.height === 600 && thumbState.width === 256 && thumbState.height === 256, JSON.stringify({ w: withThumb.file.width, h: withThumb.file.height, t: thumbState }))
+check('the thumbnail has a link that works without credentials', Boolean(withThumb.file.versions.thumb.url) && (await fetched(withThumb.file.versions.thumb.url)).subarray(1, 4).toString() === 'PNG')
+const thumbLink = await assets.fileUrl(picture.id, 'file', withThumb.file.id, { version: 'thumb' })
+check('fileUrl with a version links it', Boolean(thumbLink) && (await fetched(thumbLink.url)).subarray(1, 4).toString() === 'PNG')
+check('the document kept its version while the worker wrote the thumbnail', withThumb._meta.version === picture._meta.version, JSON.stringify([withThumb._meta.version, picture._meta.version]))
 const notAnImage = await assets.create({ title: 'Notes', kind: 'file', file: (await assets.prepareUpload('file', new Blob(['plain notes'], { type: 'text/plain' }))).ref })
-const refusedJob = /** @type {any} */ (await main(member).fn('thumbnail', { asset_id: notAnImage.id }))
-await refused('a thumbnail of a text file fails (422 not_an_image)', () => refusedJob.wait({ pollIntervalMs: 500, timeoutMs: 120000 }), Error, 'not_an_image')
+const notes = await assets.get(notAnImage.id)
+check('a text file has no thumbnail: skipped, not an error', versionStatus(notes.file, 'thumb').status === 'skipped' && versionStatus(notes.file, 'thumb').reason === 'not_an_image', JSON.stringify(notes.file.versions))
+check('fileUrl for a version that is not there is null', (await assets.fileUrl(notAnImage.id, 'file', notes.file.id, { version: 'thumb' })) === null)
 
 heading('Sharing and counting downloads (ch15)')
 const pub15 = await main(curator).fn('publish', { asset_id: picture.id }, { idempotencyKey: `publish-${picture.id}` })

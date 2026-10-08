@@ -91,16 +91,17 @@ curl -X POST "$API/v1/acme/app/people/$ID/_files/video/uploads/$UPLOAD_ID/comple
 
 - **`download: presigned`** (the default): `302` to a link of the storage that works for a few minutes (`presigned_ttl`, field, then realm, then 5 minutes; at most 7 days) and forces a download. The response is `Cache-Control: private, no-store`. Ask for `?link=json` to get `{"url": …, "expires_at": …}` instead of a redirect.
 - **`download: proxy`**: backd streams the file with `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox` and `Content-Disposition: attachment`. It supports one `Range` (`206`, `416`), a strong `ETag` from the file's sha256 with `If-None-Match` (`304`) and `If-Range`. Shared caches may keep a file only when its field has `cache` **and** the document is readable by anyone; otherwise it is `private, no-store`.
+- **`?version=<name>`** serves a made [version](../file-fields/#image-versions) of an image instead of the original, with the same rules, links, headers, ranges and caching. In proxy mode its `ETag` is the version's id (it changes when the version is made again), and it is saved as `<name>-<version>.jpg` or `.png`. A version that isn't ready answers `404 version_unavailable`, with its `status` (`pending`, `empty`, `skipped`, `failed`, or `undeclared`) and `reason` in `details`, so an app can tell "processing" from "no preview".
 - `404 file_missing` when the object has vanished from the storage, `503 storage_unavailable` when the storage can't be reached.
 
 ## Links for apps
 
 An `<img>` or a download button can't send an `Authorization` header. Two ways to get a link:
 
-- `GET …/_files/{field}/{file id}?link=json`.
-- **`?file_links=true` on any document read** (get or list, data or admin): every file in the answer gets `url` and `expires_at`. They are never stored and not part of the `ETag`. If the realm's storage can't be used (its keys aren't set, or `BACKD_URL` is missing for a function's backd link) the documents are answered **without** links and the reason is logged, so a read never fails because of the storage; a download or `?link=json` answers `503 storage_unavailable`.
+- `GET …/_files/{field}/{file id}?link=json` (add `&version=<name>` for a version).
+- **`?file_links=true` on any document read** (get or list, data or admin): every file in the answer gets `url` and `expires_at`, and so does each of its `ready` [versions](../file-fields/#image-versions) (in its entry of `versions`). They are never stored and not part of the `ETag`. If the realm's storage can't be used (its keys aren't set, or `BACKD_URL` is missing for a function's backd link) the documents are answered **without** links and the reason is logged, so a read never fails because of the storage; a download or `?link=json` answers `503 storage_unavailable`.
 
-In `presigned` mode the link is the storage's. In `proxy` mode it is a **backd link**, signed with a per-realm key (the realm secret `BACKD_FILES_LINK_KEY`, made on first use): bound to that file, expiring, valid for as many requests as it takes (`Range`, seeking, retries), and `403 invalid_file_link` when changed or expired. Setting a new value for the secret invalidates every link in circulation.
+In `presigned` mode the link is the storage's. In `proxy` mode it is a **backd link**, signed with a per-realm key (the realm secret `BACKD_FILES_LINK_KEY`, made on first use): bound to that file (or that version: changing `?version=` on it is `403`), expiring, valid for as many requests as it takes (`Range`, seeking, retries), and `403 invalid_file_link` when changed or expired. Setting a new value for the secret invalidates every link in circulation.
 
 ## Removing
 
@@ -114,6 +115,7 @@ Every upload is written to a journal before its bytes go to the bucket, and a wo
 |---|---|---|
 | 403 | `invalid_file_link` | A backd link that was changed, has expired or was signed with a rotated key |
 | 404 | `file_missing` | The document holds the file but the storage doesn't |
+| 404 | `version_unavailable` | `?version=` names a version that isn't `ready` (or isn't declared); `details` carry its `status` and `reason` |
 | 409 | `too_many_files` | A `multiple` field is at `max_files` |
 | 409 | `upload_mode_mismatch` | A proxy upload to a direct field, or a direct start on a proxy field |
 | 409 | `file_not_uploaded` | A direct upload was completed before its file reached the bucket |

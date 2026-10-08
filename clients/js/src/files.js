@@ -40,6 +40,12 @@ import { sha256Blob } from './sha256.js'
  */
 
 /**
+ * Options of `get` and `link`: `version` names a made version of an image (`versions:` in
+ * collection.yaml) to read instead of the original.
+ * @typedef {RequestOptions & { version?: string }} VersionOptions
+ */
+
+/**
  * A link to a file that works without credentials until it expires.
  * @typedef {object} FileLink
  * @property {string} url
@@ -116,12 +122,13 @@ export class Files {
    * there is none or the caller may not read the document; a `BackdError` with code
    * `file_missing` when the storage no longer has it.
    * @param {string} [fileId]
-   * @param {RequestOptions} [opts]
+   * @param {VersionOptions} [opts]  `version` reads a made version of an image instead: a `BackdError` with code `version_unavailable` when it isn't ready.
    * @returns {Promise<FileContent>}
    */
   async get(fileId, opts) {
-    const found = await this.#which(fileId, opts)
-    const { response } = await this.client.request({ method: 'GET', path: [...this.path, found.fileId], raw: true, ...opts })
+    const { version, ...rest } = opts ?? {}
+    const found = await this.#which(fileId, rest)
+    const { response } = await this.client.request({ method: 'GET', path: [...this.path, found.fileId], query: { version }, raw: true, ...rest })
     if (!response) throw new Error('backd: no response')
     return {
       file: found.file,
@@ -171,12 +178,13 @@ export class Files {
    * A link to download the file without credentials, until it expires: for an app to open or
    * show (`{ url, expires_at }`). Without `fileId` the one a single field holds.
    * @param {string} [fileId]
-   * @param {RequestOptions} [opts]
+   * @param {VersionOptions} [opts]  `version` links a made version of an image instead: a `BackdError` with code `version_unavailable` when it isn't ready.
    * @returns {Promise<FileLink>}
    */
   async link(fileId, opts) {
-    const found = await this.#which(fileId, opts)
-    return (await this.client.request({ method: 'GET', path: [...this.path, found.fileId], query: { link: 'json' }, ...opts })).data
+    const { version, ...rest } = opts ?? {}
+    const found = await this.#which(fileId, rest)
+    return (await this.client.request({ method: 'GET', path: [...this.path, found.fileId], query: { link: 'json', version }, ...rest })).data
   }
 }
 
@@ -367,18 +375,61 @@ export async function prepareUpload(client, collectionPath, field, file, opts = 
 }
 
 /**
- * A link to a file, for an app to show or open: `{ url, expiresAt }`.
+ * A link to a file, for an app to show or open: `{ url, expiresAt }`. With `version` it is a
+ * link to that made version of an image, or `null` while the version isn't ready (pending,
+ * skipped, failed, or not made by a worker yet): show a placeholder, and read the document
+ * (`versionStatus`) to tell why.
+ * @overload
  * @param {Client} client
  * @param {string[]} collectionPath
  * @param {string} id
  * @param {string} field
  * @param {string} fileId
- * @param {RequestOptions} [opts]
+ * @param {RequestOptions & { version?: undefined }} [opts]
  * @returns {Promise<{ url: string, expiresAt: string }>}
  */
+/**
+ * @overload
+ * @param {Client} client
+ * @param {string[]} collectionPath
+ * @param {string} id
+ * @param {string} field
+ * @param {string} fileId
+ * @param {RequestOptions & { version: string }} opts
+ * @returns {Promise<{ url: string, expiresAt: string } | null>}
+ */
+/**
+ * @param {Client} client
+ * @param {string[]} collectionPath
+ * @param {string} id
+ * @param {string} field
+ * @param {string} fileId
+ * @param {VersionOptions} [opts]
+ */
 export async function fileUrl(client, collectionPath, id, field, fileId, opts) {
-  const l = await new Files(client, collectionPath, id, field).link(fileId, opts)
-  return { url: l.url, expiresAt: l.expires_at }
+  try {
+    const l = await new Files(client, collectionPath, id, field).link(fileId, opts)
+    return { url: l.url, expiresAt: l.expires_at }
+  } catch (e) {
+    if (opts?.version !== undefined && e instanceof BackdError && e.code === 'version_unavailable') return null
+    throw e
+  }
+}
+
+/**
+ * What a document says about a made version of one of its files, to show "processing…" or
+ * "no preview" and to reserve room for the picture: `{ status, ready, reason?, width?,
+ * height? }`. `status` is `pending`, `ready`, `empty`, `skipped` or `failed`, and
+ * `undeclared` for a version the file's details don't name (the field declares none, or
+ * it was declared after the file was uploaded).
+ * @param {FileDetails} file    A file as a document holds it.
+ * @param {string} name         The version's name.
+ * @returns {{ status: VersionState['status'] | 'undeclared', ready: boolean, reason?: string, width?: number, height?: number }}
+ */
+export function versionStatus(file, name) {
+  const v = file?.versions?.[name]
+  if (!v) return { status: 'undeclared', ready: false }
+  return { status: v.status, ready: v.status === 'ready', reason: v.reason, width: v.width, height: v.height }
 }
 
 /**

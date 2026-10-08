@@ -146,8 +146,23 @@ Decoding takes memory: about **4 bytes per pixel** of the image, plus the scaled
 
 Give the worker's container at least twice what the table says for the concurrency you want, since the original is also read and the runtime needs room. By default the concurrency is derived from the container's CPU and memory limits (half the CPUs, and no more than fit in half the memory), and logged at startup as `image versions`; set `BACKD_IMAGE_CONCURRENCY` to choose it. If the worker is undersized, the container is killed for memory, another worker retries the job when the lease lapses, and an image that keeps killing it can be kept out with a lower `BACKD_IMAGE_MAX_PIXELS` or a field's `max_pixels`.
 
+### Showing and downloading versions
+
+`GET …/_files/{field}/{file id}?version=thumb` serves a version like its original ([Downloading](../transfers/#downloading)), and `?file_links=true` links every `ready` version with the document. In the [JavaScript client](../../clients/js/#files):
+
+```js
+const doc = await photos.get(id, { fileLinks: true })
+const thumb = doc.photo.versions.thumb          // { status, width, height, url, … }
+img.src = thumb.url                              // only a ready version has a link
+
+versionStatus(doc.photo, 'thumb')               // { status: 'pending', ready: false, … }: "processing…", and room to reserve
+await photos.fileUrl(id, 'photo', doc.photo.id, { version: 'thumb' })   // a link, or null while it isn't ready
+```
+
+Read `width` and `height` from the document to reserve room for a picture before it loads, and `status` to say "processing…" or "no preview".
+
 {{< hint style="note" >}}
-Downloading a version with `?version=`, the functions' API and regenerating after a configuration change are planned. Until then a `ready` version's object is there, but the API has no route to serve it.
+The functions' API for versions and regenerating them after a configuration change are planned.
 {{< /hint >}}
 
 ## Changing `files:`

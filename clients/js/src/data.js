@@ -352,15 +352,31 @@ export class Collection {
 
   /**
    * A link to a file, to show or open: `{ url, expiresAt }`. It works without credentials until
-   * it expires, so fetch it when it is needed.
+   * it expires, so fetch it when it is needed. With `version` it links that made version of an
+   * image (a thumbnail), or is `null` while the version isn't ready.
+   * @overload
    * @param {string} id
    * @param {string} field
    * @param {string} fileId
-   * @param {RequestOptions} [opts]
+   * @param {RequestOptions & { version?: undefined }} [opts]
    * @returns {Promise<{ url: string, expiresAt: string }>}
    */
+  /**
+   * @overload
+   * @param {string} id
+   * @param {string} field
+   * @param {string} fileId
+   * @param {RequestOptions & { version: string }} opts
+   * @returns {Promise<{ url: string, expiresAt: string } | null>}
+   */
+  /**
+   * @param {string} id
+   * @param {string} field
+   * @param {string} fileId
+   * @param {import('./files.js').VersionOptions} [opts]
+   */
   fileUrl(id, field, fileId, opts) {
-    return fileUrl(this.client, this.path, id, field, fileId, opts)
+    return fileUrl(this.client, this.path, id, field, fileId, /** @type {any} */ (opts))
   }
 
   /**

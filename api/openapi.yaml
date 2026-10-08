@@ -2893,6 +2893,14 @@ paths:
           in: query
           description: A backd link's signature.
           schema: { type: string }
+        - name: version
+          in: query
+          description: |
+            Serve this made version of an image (`versions:` in collection.yaml) instead of
+            the original, with the same rules, links, caching and ranges. A backd link made
+            for a version is bound to it. `404 version_unavailable` (with the version's
+            `status` and `reason` in `details`) when it isn't `ready` or isn't declared.
+          schema: { type: string }
         - name: Range
           in: header
           schema: { type: string }
@@ -3466,6 +3474,14 @@ paths:
         - name: sig
           in: query
           description: A backd link's signature.
+          schema: { type: string }
+        - name: version
+          in: query
+          description: |
+            Serve this made version of an image (`versions:` in collection.yaml) instead of
+            the original, with the same rules, links, caching and ranges. A backd link made
+            for a version is bound to it. `404 version_unavailable` (with the version's
+            `status` and `reason` in `details`) when it isn't `ready` or isn't declared.
           schema: { type: string }
         - name: Range
           in: header
