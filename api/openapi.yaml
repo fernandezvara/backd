@@ -1368,6 +1368,64 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/users/{id}/identities:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    get:
+      tags: [admin]
+      summary: A user's sign-in methods
+      description: |
+        The user's ways to sign in, oldest first, as `GET /_auth/me` lists them for the user:
+        a password and the providers they use, with the address each reported and when it was
+        linked and last used. Never a provider's subject, a hash or a token. Needs the `users` area.
+      operationId: adminUserIdentities
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The sign-in methods.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Identity" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/users/{id}/identities/{provider}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+      - { $ref: "#/components/parameters/oauthProvider" }
+    delete:
+      tags: [admin]
+      summary: Remove one of a user's sign-in methods
+      description: |
+        Unlinks the user's sign-in method of that provider (`password` included), for example to
+        undo a link made by mistake. The last one can't be removed (`409 last_sign_in_method`),
+        and a provider the user doesn't have is `404`. Audited as `identity.unlinked`, with the
+        administrator as the actor. Removing Apple also revokes the user's Apple tokens.
+        Needs the `users` area to change.
+      operationId: adminUnlinkUserIdentity
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "204":
+          description: Sign-in method removed.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/users/{id}/roles/{role}:
     parameters:
       - { $ref: "#/components/parameters/realm" }

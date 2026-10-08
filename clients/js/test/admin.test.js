@@ -253,6 +253,18 @@ test('whoami, config, user search and sessions', async () => {
   assert.equal(m.calls[4].url.pathname, '/v1/acme/_admin/users/u1/sessions/s1')
 })
 
+test('an administrator sees and removes a user\'s ways to sign in', async () => {
+  const identity = { provider: 'password', email: 'ada@example.com', email_verified: true, created_at: '2026-10-01T10:00:00.000Z', last_used_at: null }
+  const m = mockFetch([{ body: { items: [identity] } }, { status: 204 }, { status: 409, body: { error: { code: 'last_sign_in_method', message: 'only way', request_id: 'r' } } }])
+  const a = adminOf(m)
+  assert.deepEqual(await a.users.identities('u1'), [identity])
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/users/u1/identities')
+  await a.users.unlinkIdentity('u1', 'google')
+  assert.equal(m.calls[1].method, 'DELETE')
+  assert.equal(m.calls[1].url.pathname, '/v1/acme/_admin/users/u1/identities/google')
+  await assert.rejects(a.users.unlinkIdentity('u1', 'password'), (/** @type {any} */ e) => e.status === 409 && e.code === 'last_sign_in_method')
+})
+
 test('data goes through the admin data route', async () => {
   const doc = { id: 'p1', title: 'Hello', _meta: { created_at: '2026-10-01T00:00:00.000Z', updated_at: '2026-10-01T00:00:00.000Z', version: 1 } }
   const m = mockFetch([

@@ -139,13 +139,20 @@ roles:
 	c.expect(1, "user not found: nobody@example.com", "x\n", "user", "set-password", "--realm", "acme", "--email", "nobody@example.com")
 	c.expect(1, "this realm doesn't send email", "", "user", "change-email", "--realm", "acme", "--email", "bob@example.com", "--new-email", "bob.new@example.com")
 	c.expect(0, "bob@example.com (id ", "", "user", "owned", "--realm", "acme", "--email", "bob@example.com")
+	out := c.expect(0, "PROVIDER", "", "user", "identities", "--realm", "acme", "--email", "bob@example.com")
+	if lines := strings.Split(strings.TrimSpace(out), "\n"); len(lines) != 2 || !strings.HasPrefix(lines[1], "password") || !strings.Contains(lines[1], "bob@example.com") {
+		t.Errorf("user identities:\n%s", out)
+	}
+	c.expect(1, "only way to sign in", "", "user", "unlink-identity", "--realm", "acme", "--email", "bob@example.com", "--provider", "password")
+	c.expect(1, "no sign-in method of that provider", "", "user", "unlink-identity", "--realm", "acme", "--email", "bob@example.com", "--provider", "google")
+	c.expect(2, "--provider", "", "user", "unlink-identity", "--realm", "acme", "--email", "bob@example.com")
 	c.expect(0, "email of bob@example.com marked as verified", "", "user", "verify-email", "--realm", "acme", "--email", "bob@example.com")
 	c.expect(0, "dan@example.com disabled", "", "user", "disable", "--realm", "acme", "--email", "dan@example.com")
 	c.expect(0, "dan@example.com enabled", "", "user", "enable", "--realm", "acme", "--email", "dan@example.com")
 	c.expect(1, "add --yes to confirm", "", "user", "delete", "--realm", "acme", "--email", "dan@example.com")
 	c.expect(0, "erasing dan@example.com", "", "user", "delete", "--realm", "acme", "--email", "dan@example.com", "--yes", "--wait", "0s")
 	c.expect(1, "user not found", "", "user", "delete", "--realm", "acme", "--email", "dan@example.com", "--yes", "--wait", "0s")
-	out := c.expect(0, "EMAIL", "", "user", "list", "--realm", "acme")
+	out = c.expect(0, "EMAIL", "", "user", "list", "--realm", "acme")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	// The erased user is still listed, as a tombstone (the placeholder email, disabled).
 	if len(lines) != 5 || !strings.HasPrefix(lines[3], "erased-") || !strings.Contains(lines[3], "@erased.invalid") || !strings.HasPrefix(lines[1], "ada@example.com") || !strings.Contains(lines[1], "ops") ||

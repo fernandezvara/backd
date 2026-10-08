@@ -458,6 +458,29 @@ class AdminUsers {
   }
 
   /**
+   * The user's sign-in methods, oldest first: a password and the providers they use, with the address
+   * each reported and when it was linked and last used. Never a provider's subject, a hash or a token.
+   * @param {string} id
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<import('./auth.js').Identity[]>}
+   */
+  async identities(id, opts) {
+    return (await this.admin._request({ method: 'GET', path: ['users', id, 'identities'], ...opts })).data.items
+  }
+
+  /**
+   * Removes one of a user's sign-in methods (`password` included), for example a link made by mistake.
+   * The last one can't be removed: that rejects with a `ConflictError` whose `code` is `last_sign_in_method`.
+   * @param {string} id
+   * @param {string} provider
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async unlinkIdentity(id, provider, opts) {
+    await this.admin._request({ method: 'DELETE', path: ['users', id, 'identities', provider], ...opts })
+  }
+
+  /**
    * Ends one of a user's sessions: its token stops working at once.
    * @param {string} id
    * @param {string} sessionId

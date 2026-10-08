@@ -445,6 +445,8 @@ await backd.admin.users.setPassword(user.id, newPassword)        // ends their s
 await backd.admin.users.addRole(user.id, 'editor')               // roles declared in realm.yaml
 await backd.admin.users.removeRole(user.id, 'editor')
 await backd.admin.users.owned(user.id)                          // what erasing them would do, per collection with a policy
+await backd.admin.users.identities(user.id)                      // the ways to sign in: password, providers
+await backd.admin.users.unlinkIdentity(user.id, 'google')        // never the last one: ConflictError, 'last_sign_in_method'
 await backd.admin.users.sessions(user.id)                        // unexpired sessions, never a token
 await backd.admin.users.revokeSession(user.id, sessionId)
 await backd.admin.users.delete(user.id)                         // ERASES them (irreversible): a tombstone, and the collections' policies; resolves with the erase job
