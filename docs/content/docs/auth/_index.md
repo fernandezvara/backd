@@ -20,16 +20,18 @@ Each realm with `auth: enabled` has its own pool of users and [API keys](api-key
 | [Admin API](admin/) for server-side user management | available |
 | [Audit trail](audit/) of security-sensitive actions | available |
 | [Deactivating and erasing users](erasure/), with per-collection policies for their data | available |
+| [Brute-force protection](sessions/#brute-force-protection) on login | available |
+| [Sign in with Google, Microsoft or Apple](providers/): the redirect flow, linking and sign-up rules | available |
+| Sign-in with a mobile app's ID token, Apple token revocation, the profile handover, other OpenID Connect providers | planned |
 
 See the [security model](security/) for what `backd` protects, and the [hardening checklist](../operations/checklist/) before exposing a realm.
-| [Brute-force protection](sessions/#brute-force-protection) on login | available |
 
 ## Users and sign-in methods
 
 A user holds only identity data: a unique email, whether that email is verified, roles, and whether the account is disabled. Credentials are not part of the user. Each way of signing in is a separate *sign-in method* (an identity) linked to the user:
 
 - **password** is one kind;
-- sign-in with external providers (Google, Microsoft, Apple, …) is planned and will add more kinds.
+- **Google**, **Microsoft** and **Apple** are others ([Sign in with providers](providers/)); more kinds are planned.
 
 A user can have several at once, at most one of each kind: a password and a provider, say. They all lead to the same user, so roles, rules and owned documents don't depend on how the user signed in. A user can exist without a password, for example when an operator creates the account first and sets the password later, and can remove any method but the last ([`DELETE /_auth/identities/{provider}`](sessions/#sign-in-methods)).
 

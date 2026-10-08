@@ -74,6 +74,19 @@ func Realm(configDir, realm string, sample bool) ([]File, error) {
 		}
 		out = append(out, more...)
 	}
+	// The page shown when a provider sends the user back with a sign-in backd can't
+	// trace to an app; the built-in one is used without this file.
+	for _, kind := range email.OptionalPageKinds {
+		data, err := email.DefaultPage(kind)
+		if err != nil {
+			return out, err
+		}
+		more, err := writeBytes(configDir, realm+"/"+email.PagesDirName+"/"+kind+"/en.html", data)
+		if err != nil {
+			return out, err
+		}
+		out = append(out, more...)
+	}
 	if !sample {
 		return out, nil
 	}

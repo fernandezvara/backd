@@ -43,6 +43,9 @@ const (
 	// (self or admin) for an unlink.
 	AuditIdentityLinked   = "identity.linked"
 	AuditIdentityUnlinked = "identity.unlinked"
+	// A provider sign-in the account's state refused; details: provider, reason
+	// (disabled, network, erased, …).
+	AuditSignInRefused = "identity.signin_refused"
 	// The admin data route (documents written past the collections' rules);
 	// the target is database/collection/id, never content.
 	AuditDataCreate  = "data.create"

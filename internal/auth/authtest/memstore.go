@@ -26,6 +26,8 @@ type MemStore struct {
 	invites     map[string]auth.Invitation // id → invitation
 	audit       []auth.AuditRecord
 	journal     map[string]auth.FileJournalEntry
+	oauthStates map[string]auth.OAuthState
+	loginCodes  map[string]auth.LoginCode
 	deletions   map[string]auth.FileDeletion
 	usage       map[string]auth.StorageUsageTotals
 	declared    map[string]string
@@ -42,7 +44,7 @@ type MemStore struct {
 
 // NewMemStore returns an empty store.
 func NewMemStore() *MemStore {
-	return &MemStore{users: map[string]auth.User{}, identities: map[string]auth.Identity{}, sessions: map[string]auth.Session{}, keys: map[string]auth.APIKey{}, attempts: map[string]memAttempts{}, invites: map[string]auth.Invitation{}, secrets: map[string]auth.Secret{}, schedules: map[string]auth.ScheduleState{}, checks: map[string]auth.CheckReport{}, journal: map[string]auth.FileJournalEntry{}, deletions: map[string]auth.FileDeletion{}, jobs: map[string]memJob{}, idempotency: map[string]auth.IdempotencyRecord{}}
+	return &MemStore{users: map[string]auth.User{}, identities: map[string]auth.Identity{}, sessions: map[string]auth.Session{}, keys: map[string]auth.APIKey{}, attempts: map[string]memAttempts{}, invites: map[string]auth.Invitation{}, secrets: map[string]auth.Secret{}, schedules: map[string]auth.ScheduleState{}, checks: map[string]auth.CheckReport{}, journal: map[string]auth.FileJournalEntry{}, oauthStates: map[string]auth.OAuthState{}, loginCodes: map[string]auth.LoginCode{}, deletions: map[string]auth.FileDeletion{}, jobs: map[string]memJob{}, idempotency: map[string]auth.IdempotencyRecord{}}
 }
 
 func secretKey(database, name string) string { return database + "\x00" + name }
@@ -1370,4 +1372,40 @@ func (m *MemStore) StorageUsageOf(_ context.Context, owner string) (auth.Storage
 		user = m.usage["user:"+owner]
 	}
 	return m.usage[""], user, nil
+}
+
+func (m *MemStore) PutOAuthState(_ context.Context, st auth.OAuthState) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.oauthStates[st.ID] = st
+	return nil
+}
+
+func (m *MemStore) ClaimOAuthState(_ context.Context, id string, now time.Time) (auth.OAuthState, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	st, ok := m.oauthStates[id]
+	delete(m.oauthStates, id)
+	if !ok || !st.ExpiresAt.After(now) {
+		return auth.OAuthState{}, auth.ErrNotFound
+	}
+	return st, nil
+}
+
+func (m *MemStore) PutLoginCode(_ context.Context, lc auth.LoginCode) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.loginCodes[lc.ID] = lc
+	return nil
+}
+
+func (m *MemStore) ClaimLoginCode(_ context.Context, id string, now time.Time) (auth.LoginCode, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	lc, ok := m.loginCodes[id]
+	delete(m.loginCodes, id)
+	if !ok || !lc.ExpiresAt.After(now) {
+		return auth.LoginCode{}, auth.ErrNotFound
+	}
+	return lc, nil
 }
