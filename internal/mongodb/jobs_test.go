@@ -443,3 +443,23 @@ func TestJobStepsOnMongoDB(t *testing.T) {
 		t.Errorf("invocation: %+v %v", recs, err)
 	}
 }
+
+func TestImageJobsOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	t0 := time.Date(2126, 10, 5, 12, 0, 0, 0, time.UTC)
+	image := &auth.ImageJob{Collection: "library", Field: "picture", DocumentID: "d1", FileID: "fl_x"}
+	job := auth.Job{ID: "img1", Database: "app", Function: "library", Origin: auth.ImageOrigin, Exclusive: "image:fl_x", Image: image, Status: auth.JobQueued, TimeoutMS: 1000, CreatedAt: t0, ExpiresAt: t0.Add(time.Hour)}
+	if err := s.EnqueueJob(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	// One job per file at a time.
+	job.ID = "img2"
+	if err := s.EnqueueJob(ctx, job); !errors.Is(err, auth.ErrJobExclusive) {
+		t.Errorf("a second job for the file: %v", err)
+	}
+	got, found, err := s.ClaimJob(ctx, "w1", t0.Add(time.Second), time.Second)
+	if err != nil || !found || got.ID != "img1" || got.Image == nil || *got.Image != *image || got.Origin != auth.ImageOrigin {
+		t.Fatalf("claim: %+v %v %v", got, found, err)
+	}
+}

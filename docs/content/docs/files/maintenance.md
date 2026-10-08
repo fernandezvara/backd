@@ -23,7 +23,7 @@ A soft-deleted document keeps its files until it is purged. When MongoDB's reten
 
 ## Usage
 
-backd keeps running totals of the bytes and files that documents reference, for the realm and for each user (the owner of the document). A file counts once a document holds it and stops counting when it is queued for deletion. `backd storage usage` shows them:
+backd keeps running totals of the bytes and files that documents reference, for the realm and for each user (the owner of the document). A file counts once a document holds it and stops counting when it is queued for deletion. The [versions](../file-fields/#image-versions) made of an image count as files of their own. `backd storage usage` shows them:
 
 ```sh
 backd storage usage --realm acme

@@ -58,6 +58,8 @@ type Job struct {
 	Erase *EraseJob
 	// Check is set on a schema check's job (origin CheckOrigin).
 	Check *CheckJob
+	// Image is set on the job that makes a file's image versions (origin ImageOrigin).
+	Image *ImageJob
 	// Exclusive, when set, lets only one job of that name be unfinished at a
 	// time: enqueuing another fails with ErrJobExclusive.
 	Exclusive     string
@@ -256,7 +258,7 @@ func (s *Users) RerunJob(ctx context.Context, id string, timeoutMS int64) (Job, 
 	if !found {
 		return Job{}, ErrNotFound
 	}
-	if j.Email != nil || j.Erase != nil || j.Check != nil {
+	if j.Email != nil || j.Erase != nil || j.Check != nil || j.Image != nil {
 		return Job{}, ErrJobNotFunction
 	}
 	if j.Status != JobDone {
@@ -404,4 +406,35 @@ func (s *Users) RetryJob(ctx context.Context, id string, delay time.Duration) er
 // GetJob returns a job by id, for its caller to poll its status.
 func (s *Users) GetJob(ctx context.Context, id string) (Job, bool, error) {
 	return s.Store.GetJob(ctx, id)
+}
+
+// ImageOrigin is the origin of the job that makes a file's image versions.
+const ImageOrigin = "backd:image.versions"
+
+// imageLease is how long a worker holds an image job before another may take it: the
+// download, the decoding and every version of one image, at the engine's longest.
+const imageLease = 5 * time.Minute
+
+// ImageJob is what an image-versions job carries: the file, and where it is. The
+// job's Database is the file's database and its Function the collection.
+type ImageJob struct {
+	Collection string
+	Field      string
+	DocumentID string
+	FileID     string
+}
+
+// EnqueueImageJob queues the making of a file's pending versions. A file has at most
+// one such job at a time: asking again while one is queued or running is not an error.
+func (s *Users) EnqueueImageJob(ctx context.Context, database string, e ImageJob, requestID string) error {
+	now := s.now()
+	j := Job{
+		ID: xid.New().String(), Database: database, Function: e.Collection, CallerActor: "system",
+		Origin: ImageOrigin, Exclusive: "image:" + e.FileID, TimeoutMS: imageLease.Milliseconds(), RequestID: requestID,
+		Image: &e, Status: JobQueued, CreatedAt: now, ExpiresAt: now.Add(pendingJobTTL),
+	}
+	if err := s.Store.EnqueueJob(ctx, j); err != nil && !errors.Is(err, ErrJobExclusive) {
+		return err
+	}
+	return nil
 }

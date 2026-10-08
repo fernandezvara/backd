@@ -77,13 +77,32 @@ func (a *adminAPI) reconcileStorage(w http.ResponseWriter, r *http.Request) {
 			return true
 		}
 		rep.scanned++
-		if len(segs) != 3 || !strings.HasPrefix(segs[2], "fl_") { // only what backd names a file is ever a candidate
+		// Only what backd names a file (<db>/<collection>/fl_…), or a version of one
+		// (…/fl_…/<name>), is ever a candidate.
+		if (len(segs) != 3 && len(segs) != 4) || !strings.HasPrefix(segs[2], "fl_") {
 			rep.ignored++
 			return true
 		}
 		database, collection, fileID := segs[0], segs[1], segs[2]
+		versionName := ""
+		if len(segs) == 4 {
+			versionName = segs[3]
+		}
 		if o.LastModified.After(cutoff) {
 			rep.tooNew++
+			return true
+		}
+		if versionName != "" { // a version is kept while its file's details record it
+			held, err := docs.versionHeld(r.Context(), realm, database, collection, fileID, versionName)
+			if err != nil {
+				walkErr = err
+				return false
+			}
+			if held {
+				rep.referenced++
+			} else {
+				rep.orphans = append(rep.orphans, reconcileOrphan{Key: o.Key, Database: database, Collection: collection, FileID: fileID, Size: o.Size, LastModified: o.LastModified.UTC()})
+			}
 			return true
 		}
 		entry, err := svc.UploadEntry(r.Context(), fileID)
@@ -163,6 +182,32 @@ func (d *documents) fileReferenced(ctx context.Context, realm, database, collect
 		}
 		if len(page.Items) > 0 {
 			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// versionHeld reports whether the document holding a file records the made version of
+// that name, which is what keeps the version's object.
+func (d *documents) versionHeld(ctx context.Context, realm, database, collection, fileID, name string) (bool, error) {
+	c, ok := d.reg.Collection(realm, database, collection)
+	if !ok || len(c.Files) == 0 {
+		return false, nil
+	}
+	repo := d.store.Repository(c)
+	for _, field := range sortedKeys(c.Files) {
+		page, err := repo.List(ctx, storage.Query{Filter: storage.Condition{Field: field + ".id", Op: storage.OpEq, Value: fileID}, Limit: 1})
+		if err != nil {
+			return false, err
+		}
+		for _, doc := range page.Items {
+			for _, f := range filesOf(c.Files[field], doc) {
+				if f["id"] != fileID {
+					continue
+				}
+				v := mapOf(mapOf(f["versions"])[name])
+				return v != nil && v["status"] == versionReady, nil
+			}
 		}
 	}
 	return false, nil

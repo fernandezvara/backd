@@ -51,10 +51,10 @@ All names start with `backd_`; durations are in seconds.
 | `function_refusals_total` | `realm`, `function`, `reason` | Calls refused before running: `rate_limit`, `concurrency`, `idempotency_conflict`, `idempotency_reused`. |
 | `function_idempotent_replays_total` | `realm`, `function` | Calls answered from a stored result because their `Idempotency-Key` was used before. |
 | `executor_errors_total` | `kind` | Calls that failed because the executor couldn't be used (`unavailable`). |
-| `jobs` | `realm`, `kind`, `state` | Jobs not done yet: `kind` is `function`, `schedule`, `email`, `erase` or `check` (a schema check); `state` is `queued` (a worker can claim it), `running` (a worker holds its lease) or `waiting` (for a retry's delay). Refreshed every 15 seconds in the background, never when you scrape. |
+| `jobs` | `realm`, `kind`, `state` | Jobs not done yet: `kind` is `function`, `schedule`, `email`, `erase`, `check` (a schema check) or `image` (the versions of an image file); `state` is `queued` (a worker can claim it), `running` (a worker holds its lease) or `waiting` (for a retry's delay). Refreshed every 15 seconds in the background, never when you scrape. |
 | `jobs_oldest_wait_seconds` | `realm`, `kind` | Age of the longest-waiting queued job: the number to alert on when workers fall behind. |
 | `jobs_refreshed_timestamp_seconds` | | When the job gauges were last refreshed; `0` means never. |
-| `jobs_completed_total` | `realm`, `kind`, `status` | Jobs a worker finished. Email and erase outcomes are here: `kind="email"`, `kind="erase"` and `kind="check"`, `status="ok"` or the failure's status. |
+| `jobs_completed_total` | `realm`, `kind`, `status` | Jobs a worker finished. Email and erase outcomes are here: `kind="email"`, `kind="erase"`, `kind="check"` and `kind="image"`, `status="ok"` or the failure's status. |
 | `jobs_retried_total` | `realm`, `kind` | Failed attempts queued again. |
 | `jobs_expired_leases_total` | `realm`, `kind` | Jobs claimed again because the worker holding them stopped answering. |
 | `erase_needs_attention` | `realm` | Erase jobs that used up their attempts and need an administrator (repeat the delete to resume). |

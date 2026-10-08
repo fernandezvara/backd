@@ -2,6 +2,8 @@ package registry
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -73,6 +75,24 @@ type Version struct {
 
 // HasParams reports whether workers make the version: it has a box to fit.
 func (v Version) HasParams() bool { return v.Params.MaxWidth > 0 || v.Params.MaxHeight > 0 }
+
+// Fingerprint identifies what a version is made with, so that a changed declaration can be
+// told from the copies made before it. Defaults are written out, so spelling a default
+// doesn't change it.
+func (v Version) Fingerprint() string {
+	p := v.Params
+	fit := string(p.Fit)
+	if fit == "" {
+		fit = string(imaging.Contain)
+	}
+	quality := p.Quality
+	if quality == 0 {
+		quality = imaging.DefaultQuality
+	}
+	data, _ := json.Marshal([]any{p.MaxWidth, p.MaxHeight, fit, quality, string(p.Format), p.Upscale})
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:8])
+}
 
 // Version returns the declared version with the name.
 func (f *FileField) Version(name string) (Version, bool) {

@@ -20,7 +20,7 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := Settings{ConfigDir: "/cfg", MongoURI: "mongodb://m", HTTPAddr: ":8080", ProvisionMode: ProvisionApply, LogLevel: slog.LevelInfo, MaxBodyBytes: 1 << 20, MaxUploadBytes: 100 << 20, ImageMaxPixels: 40_000_000,
+	want := Settings{ConfigDir: "/cfg", MongoURI: "mongodb://m", HTTPAddr: ":8080", ProvisionMode: ProvisionApply, LogLevel: slog.LevelInfo, MaxBodyBytes: 1 << 20, MaxUploadBytes: 100 << 20, ImageMaxPixels: 40_000_000, ImageTimeout: 30 * time.Second,
 		MongoOpTimeout: 10 * time.Second, ShutdownTimeout: 15 * time.Second, AdminUIIdle: 30 * time.Minute, InternalAddr: ":8081", WorkerConcurrency: 10}
 	if !reflect.DeepEqual(s, want) {
 		t.Errorf("got %+v, want %+v", s, want)
@@ -254,5 +254,17 @@ func TestImageMaxPixels(t *testing.T) {
 	}
 	if _, err := Load(env(map[string]string{"CONFIG_DIR": "/c", "MONGO_URI": "m", "BACKD_IMAGE_MAX_PIXELS": "x"})); err == nil {
 		t.Error("Load accepted a bad BACKD_IMAGE_MAX_PIXELS")
+	}
+}
+
+func TestImageWorkerSettings(t *testing.T) {
+	s, err := Load(env(map[string]string{"CONFIG_DIR": "/c", "MONGO_URI": "m", "BACKD_IMAGE_TIMEOUT": "2m", "BACKD_IMAGE_CONCURRENCY": "3"}))
+	if err != nil || s.ImageTimeout != 2*time.Minute || s.ImageConcurrency != 3 {
+		t.Fatalf("%+v %v", s, err)
+	}
+	for k, v := range map[string]string{"BACKD_IMAGE_TIMEOUT": "soon", "BACKD_IMAGE_CONCURRENCY": "0"} {
+		if _, err := Load(env(map[string]string{"CONFIG_DIR": "/c", "MONGO_URI": "m", k: v})); err == nil || !strings.Contains(err.Error(), k) {
+			t.Errorf("%s=%s: %v", k, v, err)
+		}
 	}
 }

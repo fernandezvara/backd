@@ -69,7 +69,29 @@ func erasedFiles(raw bson.Raw, fileFields []string) []storage.ErasedFile {
 				size = n
 			}
 		}
-		out = append(out, storage.ErasedFile{ID: id, Size: size})
+		file := storage.ErasedFile{ID: id, Size: size}
+		if vs, ok := doc.Lookup("versions").DocumentOK(); ok {
+			if elems, err := vs.Elements(); err == nil {
+				for _, e := range elems {
+					v, ok := e.Value().DocumentOK()
+					if !ok {
+						continue
+					}
+					if status, _ := v.Lookup("status").StringValueOK(); status != "ready" {
+						continue
+					}
+					var vsize int64
+					if n, ok := v.Lookup("size").AsInt64OK(); ok {
+						vsize = n
+					}
+					if file.Versions == nil {
+						file.Versions = map[string]int64{}
+					}
+					file.Versions[e.Key()] = vsize
+				}
+			}
+		}
+		out = append(out, file)
 	}
 	for _, f := range fileFields {
 		v, err := raw.LookupErr(f)

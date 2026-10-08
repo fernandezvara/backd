@@ -221,6 +221,8 @@ func Fetch(ctx context.Context, repo Repository, id string, filter Filter) (Docu
 type ErasedFile struct {
 	ID   string
 	Size int64
+	// Versions are the made copies of an image the file had, by version name, with their sizes.
+	Versions map[string]int64
 }
 
 // Eraser is what erasing a user needs of a collection's storage. Every method

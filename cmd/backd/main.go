@@ -255,6 +255,7 @@ func serve(ctx context.Context, a *app) error {
 	if a.withWorker {
 		w := httpapi.NewWorker(a.handlerConfig(), workerID())
 		a.log.Info("worker ready", "concurrency", a.cfg.WorkerConcurrency)
+		w.LogImageLimits()
 		tasks = append(tasks, func() error { w.Run(ctx, a.cfg.WorkerConcurrency); return nil })
 	}
 	errc := make(chan error, len(tasks))
@@ -282,6 +283,7 @@ func worker(ctx context.Context, a *app) error {
 	defer stop()
 	w := httpapi.NewWorker(a.handlerConfig(), workerID())
 	a.log.Info("worker ready", "version", version, "concurrency", a.cfg.WorkerConcurrency)
+	w.LogImageLimits()
 	if a.metrics != nil {
 		go a.metrics.WatchMongo(ctx, func(c context.Context) error { return a.client.Ping(c, nil) }, 15*time.Second)
 		go a.metrics.WatchJobs(ctx, 15*time.Second, a.jobStats)
@@ -464,6 +466,8 @@ func (a *app) handlerConfig() httpapi.Config {
 		MaxBodyBytes:      a.cfg.MaxBodyBytes,
 		MaxUploadBytes:    a.cfg.MaxUploadBytes,
 		ImageMaxPixels:    a.cfg.ImageMaxPixels,
+		ImageTimeout:      a.cfg.ImageTimeout,
+		ImageConcurrency:  a.cfg.ImageConcurrency,
 		OpTimeout:         a.cfg.MongoOpTimeout,
 		Users:             a.realmUsers(),
 		TrustedProxies:    a.cfg.TrustedProxies,

@@ -62,6 +62,7 @@ type jobDoc struct {
 	Email          *emailJobDoc  `bson:"email,omitempty"`
 	Erase          *eraseJobDoc  `bson:"erase,omitempty"`
 	Check          *checkJobDoc  `bson:"check,omitempty"`
+	Image          *imageJobDoc  `bson:"image,omitempty"`
 	Exclusive      string        `bson:"exclusive,omitempty"`
 	ParentID       string        `bson:"parent_id,omitempty"`
 	RerunOf        string        `bson:"rerun_of,omitempty"`
@@ -142,6 +143,27 @@ func checkFromDoc(d *checkJobDoc) *auth.CheckJob {
 		return nil
 	}
 	return &auth.CheckJob{Collections: d.Collections, Database: d.Database, Collection: d.Collection, Limit: int(d.Limit)}
+}
+
+type imageJobDoc struct {
+	Collection string `bson:"collection"`
+	Field      string `bson:"field"`
+	DocumentID string `bson:"document_id"`
+	FileID     string `bson:"file_id"`
+}
+
+func imageToDoc(i *auth.ImageJob) *imageJobDoc {
+	if i == nil {
+		return nil
+	}
+	return &imageJobDoc{Collection: i.Collection, Field: i.Field, DocumentID: i.DocumentID, FileID: i.FileID}
+}
+
+func imageFromDoc(d *imageJobDoc) *auth.ImageJob {
+	if d == nil {
+		return nil
+	}
+	return &auth.ImageJob{Collection: d.Collection, Field: d.Field, DocumentID: d.DocumentID, FileID: d.FileID}
 }
 
 type eraseJobDoc struct {
@@ -251,7 +273,7 @@ func jobFromDoc(d jobDoc) auth.Job {
 	j := auth.Job{
 		ID: d.ID, Database: d.Database, Function: d.Function, Input: encodeJSONAny(d.Input),
 		CallerActor: d.CallerActor, CallerUserID: d.CallerUserID, CallerKeyHash: d.CallerKeyHash, Scheduled: d.Scheduled,
-		ActsAsFunction: d.ActsAsFunction, Email: emailJobFromDoc(d.Email), Erase: eraseFromDoc(d.Erase), Check: checkFromDoc(d.Check), Exclusive: d.Exclusive, Origin: d.Origin, ParentID: d.ParentID, RerunOf: d.RerunOf, Depth: int(d.Depth),
+		ActsAsFunction: d.ActsAsFunction, Email: emailJobFromDoc(d.Email), Erase: eraseFromDoc(d.Erase), Check: checkFromDoc(d.Check), Image: imageFromDoc(d.Image), Exclusive: d.Exclusive, Origin: d.Origin, ParentID: d.ParentID, RerunOf: d.RerunOf, Depth: int(d.Depth),
 		TimeoutMS: d.TimeoutMS, RequestID: d.RequestID,
 		Status: d.Status, Attempts: int(d.Attempts), CreatedAt: d.CreatedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC(),
 		Result: jobResultFromDoc(d.Result), Steps: stepsFromDocs(d.Steps), StepsOmitted: int(d.StepsOmitted),
@@ -283,7 +305,7 @@ func (s *AuthStore) EnqueueJob(ctx context.Context, j auth.Job) error {
 	_, err = s.jobs().InsertOne(ctx, jobDoc{
 		ID: j.ID, Database: j.Database, Function: j.Function, Input: input,
 		CallerActor: j.CallerActor, CallerUserID: j.CallerUserID, CallerKeyHash: j.CallerKeyHash, Scheduled: j.Scheduled, Status: j.Status,
-		ActsAsFunction: j.ActsAsFunction, Email: emailJobToDoc(j.Email), Erase: eraseToDoc(j.Erase), Check: checkToDoc(j.Check), Exclusive: j.Exclusive, Origin: j.Origin, ParentID: j.ParentID, RerunOf: j.RerunOf, Depth: int32(j.Depth),
+		ActsAsFunction: j.ActsAsFunction, Email: emailJobToDoc(j.Email), Erase: eraseToDoc(j.Erase), Check: checkToDoc(j.Check), Image: imageToDoc(j.Image), Exclusive: j.Exclusive, Origin: j.Origin, ParentID: j.ParentID, RerunOf: j.RerunOf, Depth: int32(j.Depth),
 		Attempts: 0, TimeoutMS: j.TimeoutMS, RequestID: j.RequestID,
 		CreatedAt: j.CreatedAt, CompletedAt: completed, ExpiresAt: j.ExpiresAt, Result: result,
 	})

@@ -2,6 +2,7 @@ package mongodb
 
 import (
 	"context"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -230,7 +231,7 @@ func TestEraseReportsTheFilesItRemoved(t *testing.T) {
 		}
 	}
 	slices.SortFunc(got, func(a, b storage.ErasedFile) int { return strings.Compare(a.ID, b.ID) })
-	if len(got) != 2 || got[0] != (storage.ErasedFile{ID: "fl_a1", Size: 10}) || got[1] != (storage.ErasedFile{ID: "fl_a2", Size: 40}) {
+	if len(got) != 2 || !reflect.DeepEqual(got, []storage.ErasedFile{{ID: "fl_a1", Size: 10}, {ID: "fl_a2", Size: 40}}) {
 		t.Errorf("anonymize reported %+v", got)
 	}
 	if n, _ := eraser.CountOwned(ctx, "u9"); n != 0 {
@@ -253,11 +254,23 @@ func TestEraseReportsTheFilesItRemoved(t *testing.T) {
 		}
 	}
 	slices.SortFunc(deleted, func(a, b storage.ErasedFile) int { return strings.Compare(a.ID, b.ID) })
-	if count != 2 || len(deleted) != 3 || deleted[0].ID != "fl_a4" || deleted[1].ID != "fl_r4" || deleted[2] != (storage.ErasedFile{ID: "fl_r5", Size: 9}) {
+	if count != 2 || len(deleted) != 3 || deleted[0].ID != "fl_a4" || deleted[1].ID != "fl_r4" || !reflect.DeepEqual(deleted[2], storage.ErasedFile{ID: "fl_r5", Size: 9}) {
 		t.Errorf("delete reported %d documents, %+v", count, deleted)
 	}
 	if n, _ := eraser.CountOwned(ctx, "u8"); n != 1 {
 		t.Errorf("another user's document: %d", n)
+	}
+	// The copies made of an image are reported with it: only the ones that were made.
+	withVersions := file("fl_v1", 100)
+	withVersions = append(withVersions, bson.E{Key: "versions", Value: bson.D{
+		{Key: "thumb", Value: bson.D{{Key: "status", Value: "ready"}, {Key: "size", Value: int64(11)}}},
+		{Key: "big", Value: bson.D{{Key: "status", Value: "pending"}}},
+		{Key: "mark", Value: bson.D{{Key: "status", Value: "failed"}, {Key: "reason", Value: "too_large"}}},
+	}})
+	insert("d6", "u6", bson.E{Key: "avatar", Value: withVersions})
+	_, got6, err := eraser.DeleteOwned(ctx, "u6", []string{"avatar"}, 5)
+	if err != nil || !reflect.DeepEqual(got6, []storage.ErasedFile{{ID: "fl_v1", Size: 100, Versions: map[string]int64{"thumb": 11}}}) {
+		t.Errorf("a file with versions: %+v %v", got6, err)
 	}
 }
 
