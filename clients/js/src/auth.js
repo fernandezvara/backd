@@ -1,5 +1,6 @@
-import { AuthenticationError, VerificationRequiredError } from './errors.js'
+import { AuthenticationError, ValidationError, VerificationRequiredError } from './errors.js'
 import { COOKIE_SESSION } from './storage.js'
+import { defaultOAuthStorage, loadPending, newPKCE, oauthError, parseReturn, savePending, withoutReturn } from './oauth.js'
 
 /**
  * @typedef {import('./client.js').Client} Client
@@ -33,6 +34,16 @@ import { COOKIE_SESSION } from './storage.js'
  */
 
 /**
+ * What a provider says of a person who just signed up, handed over once: fields the provider
+ * did not give are absent. Treat it as a hint.
+ * @typedef {object} Profile
+ * @property {string} [name]
+ * @property {string} [given_name]
+ * @property {string} [family_name]
+ * @property {string} [picture]   A URL.
+ */
+
+/**
  * A new session.
  * @typedef {object} Session
  * @property {string} [token]     Session token (`bds_…`); already stored by the client. Absent with `cookies: true`:
@@ -41,6 +52,22 @@ import { COOKIE_SESSION } from './storage.js'
  * @property {string} session_id
  * @property {string} expires_at  RFC3339; pushed forward as the session is used.
  * @property {User} user
+ */
+
+/**
+ * The session a sign-in with a provider gives: a login's, and whether it made the user.
+ * @typedef {Session & { new_user: boolean, profile?: Profile }} ProviderSession
+ */
+
+/**
+ * Options of the redirect sign-in.
+ * @typedef {object} SignInWithOptions
+ * @property {string} [redirectTo]    Where backd sends the browser back to (it must be within the realm's
+ *   `sign_in.allowed_redirects`); this page, without its query, by default.
+ * @property {string} [invitation]    An invitation token, for realms with `signup: invite`.
+ * @property {string} [locale]
+ * @property {(url: string) => void | Promise<void>} [navigate]  How to go to the provider; `location.assign` by default.
+ *   Apps that open a browser session (React Native, Capacitor) pass their own.
  */
 
 /**
@@ -79,6 +106,8 @@ export class Auth {
     this.client = client
     /** @internal */
     this.listeners = new Set()
+    /** @type {import('./oauth.js').OAuthStorage | undefined} */
+    this._oauthStorage = undefined
   }
 
   /**
@@ -121,6 +150,143 @@ export class Auth {
     const body = this.client.cookies ? { email, password, cookie: true } : { email, password }
     const { data } = await this.client.request({ method: 'POST', path: ['_auth', 'login'], body, auth: false, ...opts })
     return this.signedIn(data)
+  }
+
+  /**
+   * Starts signing in with a provider the realm lists (`google`, `microsoft` or `apple`): makes a PKCE
+   * verifier, keeps it for the return, and sends the browser to the provider. The user comes back to
+   * `redirectTo`, where {@link Auth.completeSignIn} finishes the sign-in. Resolves with the address it
+   * sent the browser to (in a browser the page is already leaving).
+   * @param {string} provider
+   * @param {SignInWithOptions} [options]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ authorizeUrl: string }>}
+   */
+  async signInWith(provider, options = {}, opts) {
+    return this.#startOAuth(provider, 'signin', options, opts)
+  }
+
+  /**
+   * Adds a provider to the signed-in user as another way to sign in. The same flow as
+   * {@link Auth.signInWith}; {@link Auth.completeSignIn} then resolves with `{ linked: provider }`.
+   * @param {string} provider
+   * @param {SignInWithOptions} [options]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ authorizeUrl: string }>}
+   */
+  async linkProvider(provider, options = {}, opts) {
+    return this.#startOAuth(provider, 'link', options, opts)
+  }
+
+  /**
+   * @param {string} provider
+   * @param {'signin' | 'link'} intent
+   * @param {SignInWithOptions} options
+   * @param {RequestOptions} [opts]
+   */
+  async #startOAuth(provider, intent, options, opts) {
+    const here = globalThis.location
+    const redirectTo = options.redirectTo ?? (here ? here.origin + here.pathname : undefined)
+    if (!redirectTo) throw new TypeError('signInWith: `redirectTo` is required outside a browser')
+    const { verifier, challenge } = newPKCE()
+    const body = compact({ redirect_to: redirectTo, code_challenge: challenge, intent, invitation: options.invitation, locale: options.locale })
+    const { data } = await this.client.request({
+      method: 'POST', path: ['_auth', 'oauth', provider, 'start'], body, auth: intent === 'link', ...opts,
+    })
+    savePending(this.#oauthStorage(), { verifier, provider, intent })
+    const authorizeUrl = /** @type {string} */ (data.authorize_url)
+    if (options.navigate) await options.navigate(authorizeUrl)
+    else if (here) here.assign(authorizeUrl)
+    return { authorizeUrl }
+  }
+
+  /** @returns {import('./oauth.js').OAuthStorage} */
+  #oauthStorage() {
+    return (this._oauthStorage ??= this.client.oauthStorage ?? defaultOAuthStorage())
+  }
+
+  /**
+   * Finishes a sign-in with a provider on the page backd sent the user back to. It reads the outcome
+   * from the address: a sign-in is traded for a session (stored by the client, like a login's) and
+   * resolves with it, with `new_user` and, for a new user, the `profile` the provider gave; linking
+   * resolves with `{ linked: provider }`; a failure rejects with the error the code means
+   * (`account_exists` and `link_conflict` are a `ConflictError`, `signup_closed`, `email_not_verified`
+   * and `signin_refused` a `ForbiddenError`, `cancelled` an `AuthenticationError`, …; `code` is the
+   * code). Resolves with null on an ordinary visit that has nothing to finish, so it can be called on
+   * every page load. In a browser it removes the outcome from the address bar.
+   * @param {string | URL} [href]  The address to read; the page's own by default.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<ProviderSession | { linked: string } | null>}
+   */
+  async completeSignIn(href = globalThis.location?.href, opts) {
+    const ret = parseReturn(href)
+    if (!ret || !href) return null
+    const storage = this.#oauthStorage()
+    const pending = loadPending(storage)
+    storage.remove()
+    if (globalThis.history?.replaceState && globalThis.location && String(href) === globalThis.location.href) {
+      globalThis.history.replaceState(null, '', withoutReturn(href))
+    }
+    if (ret.error) throw oauthError(ret.error, ret.provider ?? pending?.provider)
+    if (ret.linked) return { linked: ret.linked }
+    if (!pending) {
+      throw new ValidationError({ status: 400, code: 'sign_in_not_started', message: 'there is no sign-in waiting on this page: start it with signInWith(), in this tab' })
+    }
+    /** @type {Record<string, unknown>} */
+    const body = { code: ret.code, code_verifier: pending.verifier }
+    if (this.client.cookies) body.cookie = true
+    const { data } = await this.client.request({ method: 'POST', path: ['_auth', 'oauth', 'token'], body, auth: false, ...opts })
+    return /** @type {ProviderSession} */ (await this.signedIn(data))
+  }
+
+  /**
+   * Removes one of the user's ways to sign in (`password` included). The last one can't be removed:
+   * that rejects with a `ConflictError` whose `code` is `last_sign_in_method`.
+   * @param {string} provider
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async unlinkProvider(provider, opts) {
+    await this.client.request({ method: 'DELETE', path: ['_auth', 'identities', provider], ...opts })
+  }
+
+  /**
+   * Signs in with the ID token a mobile app got from the platform sign-in (Sign in with Apple, Google
+   * Sign-In, MSAL), with the raw `nonce` it started that sign-in with. For Apple, also the
+   * `authorizationCode` its SDK gave. Rejects with `invalid_token` (a `AuthenticationError`) when the token
+   * does not verify, and with `account_exists`, `signup_closed`, … as {@link Auth.completeSignIn} does.
+   * @param {string} provider
+   * @param {{ idToken: string, nonce: string, authorizationCode?: string, invitation?: string, locale?: string }} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<ProviderSession>}
+   */
+  async signInWithIdToken(provider, input, opts) {
+    const { data } = await this.client.request({
+      method: 'POST', path: ['_auth', 'oauth', provider, 'id-token'], body: this.#idTokenBody(input), auth: false, ...opts,
+    })
+    return /** @type {ProviderSession} */ (await this.signedIn(data))
+  }
+
+  /**
+   * Adds a provider to the signed-in user with the ID token of the platform sign-in.
+   * @param {string} provider
+   * @param {{ idToken: string, nonce: string, authorizationCode?: string }} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ linked: string }>}
+   */
+  async linkProviderWithIdToken(provider, input, opts) {
+    const { data } = await this.client.request({
+      method: 'POST', path: ['_auth', 'oauth', provider, 'id-token'], body: { ...this.#idTokenBody(input), intent: 'link' }, ...opts,
+    })
+    return data
+  }
+
+  /** @param {{ idToken: string, nonce: string, authorizationCode?: string, invitation?: string, locale?: string }} input */
+  #idTokenBody(input) {
+    return compact({
+      id_token: input.idToken, nonce: input.nonce, authorization_code: input.authorizationCode,
+      invitation: input.invitation, locale: input.locale, cookie: this.client.cookies ? true : undefined,
+    })
   }
 
   /**

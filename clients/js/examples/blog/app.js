@@ -15,12 +15,17 @@ const backd = createClient({
   // localStorage: real apps must guard against cross-site scripting.
   storage: localStorageStorage('backd-blog-example'),
 })
+// Providers to offer as "Continue with" buttons. The blog realm lists none, so no button shows; after
+// adding `providers:` to examples/config/blog/realm.yaml (see `backd template realm` for the shape),
+// name them here, for example ['google', 'apple'].
+const PROVIDERS = []
 const db = backd.db('main')
 const posts = db.collection('posts')
 
 document.addEventListener('alpine:init', () => {
   window.Alpine.data('blog', () => ({
     user: null,
+    providers: PROVIDERS,
     mode: 'login',
     email: '',
     password: '',
@@ -42,6 +47,12 @@ document.addEventListener('alpine:init', () => {
           this.load()
         }
       })
+      // Back from a provider: finish the sign-in the buttons started (null on any other visit).
+      try {
+        await backd.auth.completeSignIn()
+      } catch (err) {
+        this.error = err.code === 'account_exists' ? 'An account with that address exists: log in with your password first, then link the provider.' : err.message
+      }
       if (await backd.auth.token()) {
         try {
           this.user = await backd.auth.me()
@@ -51,6 +62,16 @@ document.addEventListener('alpine:init', () => {
       }
       await this.load()
       await this.refreshStats()
+    },
+
+    // Sends the browser to the provider; completeSignIn() in init() finishes it on the way back.
+    async continueWith(provider) {
+      this.error = ''
+      try {
+        await backd.auth.signInWith(provider)
+      } catch (err) {
+        this.error = err.message
+      }
     },
 
     // Best-effort: a stats hiccup shouldn't block the rest of the page.
