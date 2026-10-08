@@ -16,7 +16,7 @@ This page covers the **redirect** sign-in and the **native** sign-in of mobile a
 
 1. **Register an application** in each provider's console. The callback (redirect) address to register is
    `{BACKD_URL}/v1/{realm}/_auth/oauth/{provider}/callback`, for example `https://api.acme.example/v1/acme/_auth/oauth/google/callback`. The realm's `email.public_url` replaces `BACKD_URL` when it is set. `backd` logs this address for every provider at startup.
-2. **Store the secrets** as realm secrets, never in `realm.yaml`: `backd secret set --realm acme GOOGLE_CLIENT_SECRET` (the instance needs `BACKD_SECRETS_KEY`).
+2. **Store the secrets** as realm secrets, never in `realm.yaml`: `backd secret set --realm acme --name GOOGLE_CLIENT_SECRET` (the instance needs `BACKD_SECRETS_KEY`).
 3. **Declare the providers** in `realm.yaml`, and the apps a sign-in may send the user back to:
 
 ```yaml
