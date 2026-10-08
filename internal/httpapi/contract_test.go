@@ -1059,6 +1059,14 @@ func TestContract(t *testing.T) {
 	req("POST", ad+"/storage/reconcile", `{"delete": 5}`, key, 400)
 	req("POST", ad+"/storage/reconcile", `{}`, nil, 401)
 	req("POST", ad+"/storage/reconcile", `{}`, ada, 403)
+	// Making stale image versions again.
+	rg := ad + "/files/versions/regenerate"
+	req("POST", rg, `{"database": "app", "collection": "library", "field": "picture"}`, nil, 401)
+	req("POST", rg, `{"database": "app", "collection": "library", "field": "picture"}`, ada, 403)
+	req("POST", rg, `{}`, key, 400)
+	req("POST", rg, `{"database": "app", "collection": "library", "field": "nope"}`, key, 404)
+	req("POST", rg, `{"database": "app", "collection": "library", "field": "picture", "version": "thumb", "missing_only": true, "rate": 5}`, key, 202)
+	req("POST", rg, `{"database": "app", "collection": "library", "field": "picture"}`, key, 409)
 	saved0 := f.reg.Realms["acme"].Settings.Storage
 	broken0 := *saved0
 	broken0.AccessKey = "NOT_SET_ANYWHERE"

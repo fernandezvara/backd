@@ -63,16 +63,18 @@ func (d imageParamsDoc) params() imaging.Params {
 	return imaging.Params{MaxWidth: d.MaxWidth, MaxHeight: d.MaxHeight, Fit: imaging.Fit(d.Fit), Quality: d.Quality, Format: imaging.Format(d.Format), Upscale: d.Upscale}
 }
 
-// runImage makes versions of one file: it reads the document and the file's object,
-// decodes the image once, makes the versions, stores each beside the source under
-// <file key>/<version name> and records the details in the document. By default they
-// are the file's pending versions; a job for one version (a function asked) makes just
-// that one, whatever its state, and ends with its outcome for the function waiting on
-// it. The document is written without changing its version, so a client editing it is
-// never told it conflicts. Safe to repeat: a file that is gone, or whose versions are no
-// longer pending, ends the job at once.
+// runImage makes versions of one file: by default its pending versions; a job for one
+// version (a function asked) makes just that one, whatever its state, and ends with its
+// outcome for the function waiting on it. A scan job (backd versions regenerate)
+// goes through a whole field instead. The document is written without changing its
+// version, so a client editing it is never told it conflicts. Safe to repeat: a file
+// that is gone, or whose versions are no longer pending, ends the job at once.
 func (w *Worker) runImage(ctx context.Context, log *slog.Logger, realm string, svc *auth.Users, job auth.Job) {
 	e := job.Image
+	if e.Scan {
+		w.runRegenerate(ctx, log, realm, svc, job)
+		return
+	}
 	log = log.With("file", e.FileID)
 	asked := e.Version != ""
 	finishWith := func(out any) {
@@ -166,19 +168,55 @@ func (w *Worker) runImage(ctx context.Context, log *slog.Logger, realm string, s
 		}
 	}
 
-	obj, err := w.fns.docs.objects.For(ctx, realm)
-	if err != nil {
-		again("storage", err)
+	out := w.makeFile(ctx, svc, c, f, e, targets, asked)
+	switch {
+	case ctx.Err() != nil: // the worker is stopping: the lease lapses and the job comes back
 		return
+	case out.transient != "":
+		again(out.transient, out.err)
+	case out.gone:
+		finish(map[string]int{})
+	case asked && out.failure != "":
+		refuse(out.failure) // a version that was there is kept
+	case asked:
+		finishWith(map[string]any{"version": out.states[e.Version]})
+		log.Info("image version made", "version", e.Version)
+	default:
+		finishWith(out.summary)
+		log.Info("image versions made", "ready", out.summary[versionReady], "failed", out.summary[versionFailed], "skipped", out.summary[versionSkipped])
+	}
+}
+
+// fileOutcome is what making versions of one file ended with.
+type fileOutcome struct {
+	states  map[string]map[string]any // by version name, as recorded
+	summary map[string]int            // how many ended ready, failed, skipped
+	failure string                    // why a version could not be made ("" when all were)
+	gone    bool                      // the file (or its source object) is no longer there
+	// transient is "storage" or "database" when something that may pass went wrong; err says what.
+	transient string
+	err       error
+}
+
+// makeFile makes the targets of one file: it reads the file's object, decodes the image
+// once, makes every target, stores each beside the source under <file key>/<name> and
+// records the details in the document. With keep set, a failure to make a target is not
+// recorded (the copy it had stays) and only reported.
+func (w *Worker) makeFile(ctx context.Context, svc *auth.Users, c *registry.Collection, f *registry.FileField, e *auth.ImageJob, targets []imageTarget, keep bool) fileOutcome {
+	out := fileOutcome{states: map[string]map[string]any{}, summary: map[string]int{}}
+	obj, err := w.fns.docs.objects.For(ctx, c.Realm)
+	if err != nil {
+		out.transient, out.err = "storage", err
+		return out
 	}
 	src, cleanup, err := w.fetchSource(ctx, obj, w.fns.docs.objectKey(c, e.FileID), f.MaxSize)
 	switch {
 	case errors.Is(err, storage.ErrObjectNotFound):
-		finish(map[string]int{}) // nothing to make copies of
-		return
+		out.gone = true // nothing to make copies of
+		return out
 	case err != nil:
-		again("storage", err)
-		return
+		out.transient, out.err = "storage", err
+		return out
 	}
 	defer cleanup()
 
@@ -188,75 +226,66 @@ func (w *Worker) runImage(ctx context.Context, log *slog.Logger, realm string, s
 	}
 	outcomes, perr := w.images.Process(ctx, src, f.MaxPixels, params)
 
-	states := map[string]map[string]any{}
 	var made []madeVersion
-	summary := map[string]int{}
-	var failure string // why the version a function asked for was not made
 	if perr != nil {
 		reason := imaging.ReasonOf(perr)
-		if ctx.Err() != nil { // the worker is stopping: the lease lapses and the job comes back
-			return
+		if ctx.Err() != nil {
+			return out
 		}
 		status := versionFailed
 		if reason == imaging.ReasonNotAnImage || reason == imaging.ReasonUnsupportedFormat {
 			status = versionSkipped
 		}
-		failure = reason
+		out.failure = reason
 		for _, t := range targets {
-			states[t.name] = map[string]any{"status": status, "reason": reason}
-			summary[status]++
+			out.states[t.name] = map[string]any{"status": status, "reason": reason}
+			out.summary[status]++
 		}
 	} else {
 		fileKey := w.fns.docs.objectKey(c, e.FileID)
 		for i, t := range targets {
 			o := outcomes[i]
 			if o.Err != nil {
-				failure = imaging.ReasonOf(o.Err)
-				states[t.name] = map[string]any{"status": versionFailed, "reason": failure}
-				summary[versionFailed]++
+				out.failure = imaging.ReasonOf(o.Err)
+				out.states[t.name] = map[string]any{"status": versionFailed, "reason": out.failure}
+				out.summary[versionFailed]++
 				continue
 			}
 			m := madeVersion{name: t.name, id: "fv_" + xid.New().String(), key: fileKey + "/" + t.name, result: o.Result, params: versionParams(t.params, o.Result)}
 			if err := w.storeVersion(ctx, svc, c, e, m); err != nil {
 				w.discard(ctx, svc, made)
-				again("storage", err)
-				return
+				out.transient, out.err = "storage", err
+				return out
 			}
 			made = append(made, m)
-			states[t.name] = madeState(t, m)
-			summary[versionReady]++
+			out.states[t.name] = madeState(t, m)
+			out.summary[versionReady]++
 		}
 	}
-	if asked && failure != "" {
-		// A version that was there is kept; the function is told why it wasn't remade.
-		refuse(failure)
-		return
+	if keep && out.failure != "" {
+		w.discard(ctx, svc, made)
+		return out
 	}
 
 	err = w.fns.docs.updateVersions(ctx, svc, c, e, func(versions map[string]any) {
-		for name, st := range states {
+		for name, st := range out.states {
 			versions[name] = st
 		}
 	})
 	switch {
 	case errors.Is(err, errFileGone):
 		w.discard(ctx, svc, made) // replaced or deleted while it was made
-		finish(map[string]int{})
-		return
+		out.gone = true
+		return out
 	case err != nil:
 		w.discard(ctx, svc, made)
-		again("database", err)
-		return
+		out.transient, out.err = "database", err
+		return out
 	}
 	for _, m := range made {
 		_ = svc.SetUploadStatus(ctx, m.id, auth.JournalAttached, e.DocumentID)
 	}
-	if asked {
-		finishWith(map[string]any{"version": states[e.Version]})
-	} else {
-		finishWith(summary)
-	}
-	log.Info("image versions made", "ready", summary[versionReady], "failed", summary[versionFailed], "skipped", summary[versionSkipped])
+	return out
 }
 
 var errFileGone = errors.New("the file is no longer in the document")

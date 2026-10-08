@@ -1638,6 +1638,67 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/files/versions/regenerate:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+    post:
+      tags: [admin]
+      summary: Make the stale image versions of a file field again
+      description: |
+        Queues a job that goes through every document of a file field and makes again, on a
+        worker, the versions that no longer match the field's `versions:`: copies made with
+        other parameters (the declaration changed), copies that failed or never finished, and
+        versions added later that a file has no copy of. Copies a function generated with its
+        own parameters (`custom`), versions only functions make and files that aren't pictures
+        are left alone; `missing_only` makes only the copies that don't exist. The old copy is
+        served until the new one is ready. The job makes at most `rate` files a second
+        (default 10), keeps a lease and can be cancelled (`POST …/jobs/{id}/cancel`); running
+        it again resumes, since what matches is skipped. Its progress is the job's steps. One
+        job per field at a time (`409 regenerate_running`). Audited as
+        `files.versions.regenerate`. Needs the `config` area with write access.
+      operationId: adminRegenerateVersions
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [database, collection, field]
+              properties:
+                database: { type: string }
+                collection: { type: string }
+                field: { type: string }
+                version: { type: string, description: Only this version; default every version the field declares with parameters. }
+                missing_only: { type: boolean, default: false }
+                rate: { type: integer, minimum: 1, maximum: 1000, description: Files a second at most. }
+      responses:
+        "202":
+          description: The job.
+          headers:
+            Location: { schema: { type: string } }
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, status, database, collection, field, version, missing_only, created_at]
+                properties:
+                  id: { type: string }
+                  status: { type: string }
+                  database: { type: string }
+                  collection: { type: string }
+                  field: { type: string }
+                  version: { type: [string, "null"] }
+                  missing_only: { type: boolean }
+                  created_at: { $ref: "#/components/schemas/Timestamp" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/storage/reconcile:
     parameters:
       - { $ref: "#/components/parameters/realm" }

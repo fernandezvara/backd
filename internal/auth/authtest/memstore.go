@@ -28,6 +28,7 @@ type MemStore struct {
 	journal     map[string]auth.FileJournalEntry
 	deletions   map[string]auth.FileDeletion
 	usage       map[string]auth.StorageUsageTotals
+	declared    map[string]string
 	checks      map[string]auth.CheckReport // "database/collection" → latest report
 	secrets     map[string]auth.Secret      // "database\x00name" → secret
 	schedules   map[string]auth.ScheduleState
@@ -1032,6 +1033,26 @@ func (m *MemStore) GetCheckReport(_ context.Context, database, collection string
 	defer m.mu.Unlock()
 	r, ok := m.checks[database+"/"+collection]
 	return r, ok, nil
+}
+
+func (m *MemStore) ImageDeclarations(_ context.Context) (map[string]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make(map[string]string, len(m.declared))
+	for k, v := range m.declared {
+		out[k] = v
+	}
+	return out, nil
+}
+
+func (m *MemStore) SetImageDeclaration(_ context.Context, key, fingerprint string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.declared == nil {
+		m.declared = map[string]string{}
+	}
+	m.declared[key] = fingerprint
+	return nil
 }
 
 func (m *MemStore) JournalFile(_ context.Context, e auth.FileJournalEntry) error {
