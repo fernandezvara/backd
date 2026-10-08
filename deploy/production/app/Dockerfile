@@ -11,7 +11,7 @@
 #
 # Here backd is built from this checkout, so the reference tests this code.
 # Build context: the repository root.
-FROM docker.io/library/golang:1.27.1-alpine AS build
+FROM docker.io/library/golang:1.27.2-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum* ./
 RUN go mod download
