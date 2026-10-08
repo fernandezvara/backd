@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"io"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/fernandezvara/backd/internal/imaging"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -117,7 +119,11 @@ func (a *adminAPI) checkConfig(w http.ResponseWriter, r *http.Request) {
 
 	checked := countFiles(dst)
 	problems := []configCheckProblem{}
-	if _, err := registry.Load(tmp); err != nil {
+	reg, err := registry.Load(tmp)
+	if err == nil {
+		err = reg.CheckImageLimits(cmp.Or(a.imageMaxPixels, imaging.DefaultMaxPixels))
+	}
+	if err != nil {
 		for _, e := range splitErrors(err) {
 			problems = append(problems, problem(e.Error(), tmp+string(filepath.Separator)+name+string(filepath.Separator)))
 		}

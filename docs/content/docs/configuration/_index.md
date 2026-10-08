@@ -17,6 +17,7 @@ All runtime configuration comes from environment variables. At startup `backd` c
 | `LOG_LEVEL` | no | `info` | `debug`, `info`, `warn` or `error` (case-insensitive) |
 | `MAX_BODY_BYTES` | no | `1048576` | Maximum request body size in bytes; larger bodies get `413` |
 | `BACKD_MAX_UPLOAD_BYTES` | no | `104857600` | Largest file a [proxy upload](../files/transfers/#uploading) may carry (100 MiB). A field's own `max_size` applies as well; the smaller wins |
+| `BACKD_IMAGE_MAX_PIXELS` | no | `40000000` | Most pixels (width × height) an image may have to get [versions](../files/file-fields/#image-versions): 40 megapixels. Read from the file's header, so a larger image is refused without being decoded. A field's `max_pixels` may only lower it, and a higher one stops startup |
 | `MONGO_OP_TIMEOUT` | no | `10s` | Deadline for the storage work of each document request; exceeding it returns `503` |
 | `SHUTDOWN_TIMEOUT` | no | `15s` | How long in-flight requests may take to finish after `SIGTERM` |
 | `TRUSTED_PROXIES` | no | none | Comma-separated IP addresses or CIDR networks of your reverse proxies; only they may set `X-Forwarded-For` (see [client addresses behind a proxy](../operations/#client-addresses-behind-a-proxy)) |

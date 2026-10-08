@@ -20,7 +20,7 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := Settings{ConfigDir: "/cfg", MongoURI: "mongodb://m", HTTPAddr: ":8080", ProvisionMode: ProvisionApply, LogLevel: slog.LevelInfo, MaxBodyBytes: 1 << 20, MaxUploadBytes: 100 << 20,
+	want := Settings{ConfigDir: "/cfg", MongoURI: "mongodb://m", HTTPAddr: ":8080", ProvisionMode: ProvisionApply, LogLevel: slog.LevelInfo, MaxBodyBytes: 1 << 20, MaxUploadBytes: 100 << 20, ImageMaxPixels: 40_000_000,
 		MongoOpTimeout: 10 * time.Second, ShutdownTimeout: 15 * time.Second, AdminUIIdle: 30 * time.Minute, InternalAddr: ":8081", WorkerConcurrency: 10}
 	if !reflect.DeepEqual(s, want) {
 		t.Errorf("got %+v, want %+v", s, want)
@@ -237,5 +237,22 @@ func TestMaxUploadBytes(t *testing.T) {
 	}
 	if _, err := Load(env(map[string]string{"CONFIG_DIR": "/cfg", "MONGO_URI": "mongodb://m", "BACKD_MAX_UPLOAD_BYTES": "lots"})); err == nil || !strings.Contains(err.Error(), "BACKD_MAX_UPLOAD_BYTES") {
 		t.Errorf("bad value: %v", err)
+	}
+}
+
+func TestImageMaxPixels(t *testing.T) {
+	if n, err := ImageMaxPixels(env(nil)); err != nil || n != 40_000_000 {
+		t.Errorf("default = %d, %v", n, err)
+	}
+	if n, err := ImageMaxPixels(env(map[string]string{"BACKD_IMAGE_MAX_PIXELS": "1000000"})); err != nil || n != 1_000_000 {
+		t.Errorf("set = %d, %v", n, err)
+	}
+	for _, bad := range []string{"0", "-5", "many", "1.5"} {
+		if _, err := ImageMaxPixels(env(map[string]string{"BACKD_IMAGE_MAX_PIXELS": bad})); err == nil {
+			t.Errorf("%q was accepted", bad)
+		}
+	}
+	if _, err := Load(env(map[string]string{"CONFIG_DIR": "/c", "MONGO_URI": "m", "BACKD_IMAGE_MAX_PIXELS": "x"})); err == nil {
+		t.Error("Load accepted a bad BACKD_IMAGE_MAX_PIXELS")
 	}
 }

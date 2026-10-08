@@ -31,6 +31,10 @@ type Config struct {
 	// from MaxBodyBytes, which does not apply to file uploads; defaults to
 	// DefaultMaxUploadBytes.
 	MaxUploadBytes int64
+	// ImageMaxPixels is the instance's limit on an image's pixels
+	// (BACKD_IMAGE_MAX_PIXELS); a file field's max_pixels may only be lower. Zero
+	// means 40 million.
+	ImageMaxPixels int64
 	// OpTimeout bounds the storage work of each document request;
 	// defaults to DefaultOpTimeout.
 	OpTimeout time.Duration
@@ -127,10 +131,10 @@ func NewHandler(cfg Config) http.Handler {
 	}
 	authRoutes := &authAPI{users: users, reg: cfg.Registry, actions: hostedActions(), opTimeout: opTimeout}
 	authRoutes.routes(r)
-	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users, callbackKey: cfg.CallbackKey, objects: newRealmObjects(cfg.Registry, users), baseURL: cfg.BackdURL, maxUpload: maxUploadOf(cfg)}
+	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users, callbackKey: cfg.CallbackKey, objects: newRealmObjects(cfg.Registry, users), baseURL: cfg.BackdURL, maxUpload: maxUploadOf(cfg), imageMaxPixels: cfg.ImageMaxPixels}
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, executorToken: cfg.ExecutorToken, log: cfg.Log, dev: cfg.Dev, concurrency: limiterFor(cfg.Registry), metrics: cfg.Metrics}
 	if !cfg.DisableAdminAPI {
-		(&adminAPI{users: users, reg: cfg.Registry, fns: fns, fingerprint: cfg.ConfigFingerprint}).routes(r, authRoutes.resolveRealm, withTimeout(opTimeout))
+		(&adminAPI{users: users, reg: cfg.Registry, fns: fns, fingerprint: cfg.ConfigFingerprint, imageMaxPixels: cfg.ImageMaxPixels}).routes(r, authRoutes.resolveRealm, withTimeout(opTimeout))
 	}
 	if cfg.UI != nil {
 		r.Handle("/_ui", http.RedirectHandler("/_ui/", http.StatusMovedPermanently))
@@ -169,7 +173,7 @@ func NewInternalHandler(cfg Config) http.Handler {
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
-	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users, objects: newRealmObjects(cfg.Registry, users), baseURL: cfg.BackdURL, maxUpload: maxUploadOf(cfg),
+	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users, objects: newRealmObjects(cfg.Registry, users), baseURL: cfg.BackdURL, maxUpload: maxUploadOf(cfg), imageMaxPixels: cfg.ImageMaxPixels,
 		internal: true, callbackKey: cfg.CallbackKey}
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, executorToken: cfg.ExecutorToken, log: cfg.Log, dev: cfg.Dev, concurrency: limiterFor(cfg.Registry), metrics: cfg.Metrics}
 	r.Get("/_internal/functions/{sha256}", fns.bundle)

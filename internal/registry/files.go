@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/fernandezvara/backd/internal/imaging"
 )
 
 // File fields (roadmap Phase 10): a collection declares which fields of its
@@ -53,18 +55,58 @@ type FileField struct {
 	// Cache is the Cache-Control max-age of proxied downloads of anonymously
 	// readable documents; 0 means no caching.
 	Cache time.Duration
+	// Versions are the resized copies of an image the field declares, by name order.
+	Versions []Version
+	// MaxPixels lowers the instance's image pixel limit for this field; 0 follows it.
+	MaxPixels int64
+}
+
+// Version is one declared version of an image field (image versions, milestone 11).
+type Version struct {
+	Name string
+	// Params are what workers make it with; zero (no max_width or max_height) for a
+	// version only functions make.
+	Params imaging.Params
+	// Writable lets functions make the version (with other parameters, too).
+	Writable bool
+}
+
+// HasParams reports whether workers make the version: it has a box to fit.
+func (v Version) HasParams() bool { return v.Params.MaxWidth > 0 || v.Params.MaxHeight > 0 }
+
+// Version returns the declared version with the name.
+func (f *FileField) Version(name string) (Version, bool) {
+	for _, v := range f.Versions {
+		if v.Name == name {
+			return v, true
+		}
+	}
+	return Version{}, false
+}
+
+// versionDoc mirrors one entry of a field's `versions:`.
+type versionDoc struct {
+	MaxWidth  *int   `yaml:"max_width"`
+	MaxHeight *int   `yaml:"max_height"`
+	Fit       string `yaml:"fit"`
+	Quality   *int   `yaml:"quality"`
+	Format    string `yaml:"format"`
+	Upscale   bool   `yaml:"upscale"`
+	Writable  bool   `yaml:"writable"`
 }
 
 // fileFieldDoc mirrors one entry of `files:`.
 type fileFieldDoc struct {
-	Multiple     bool     `yaml:"multiple"`
-	MaxFiles     *int     `yaml:"max_files"`
-	MaxSize      string   `yaml:"max_size"`
-	Types        []string `yaml:"types"`
-	Upload       string   `yaml:"upload"`
-	Download     string   `yaml:"download"`
-	PresignedTTL string   `yaml:"presigned_ttl"`
-	Cache        string   `yaml:"cache"`
+	Multiple     bool                   `yaml:"multiple"`
+	MaxFiles     *int                   `yaml:"max_files"`
+	MaxSize      string                 `yaml:"max_size"`
+	Types        []string               `yaml:"types"`
+	Upload       string                 `yaml:"upload"`
+	Download     string                 `yaml:"download"`
+	PresignedTTL string                 `yaml:"presigned_ttl"`
+	Cache        string                 `yaml:"cache"`
+	MaxPixels    *int64                 `yaml:"max_pixels"`
+	Versions     map[string]*versionDoc `yaml:"versions"`
 }
 
 var (
@@ -219,12 +261,118 @@ func parseFiles(path string, schema map[string]any, settings RealmSettings) (map
 				f.Cache = v
 			}
 		}
+		if d.MaxPixels != nil {
+			if *d.MaxPixels < 1 {
+				add(name, "max_pixels: must be a positive number of pixels (width × height)")
+			} else {
+				f.MaxPixels = *d.MaxPixels
+			}
+		}
+		versions, verrs := parseVersions(d)
+		for _, e := range verrs {
+			add(name, "%s", e)
+		}
+		f.Versions = versions
 		out[name] = f
 	}
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
 	return out, nil
+}
+
+var versionName = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
+
+// parseVersions reads a field's `versions:`: each needs parameters (a box) or
+// `writable: true`, and what it names must be something the image engine can do.
+func parseVersions(d *fileFieldDoc) ([]Version, []string) {
+	if len(d.Versions) == 0 {
+		return nil, nil
+	}
+	var errs []string
+	var out []Version
+	for _, vn := range slices.Sorted(maps.Keys(d.Versions)) {
+		vd := d.Versions[vn]
+		if vd == nil {
+			vd = &versionDoc{}
+		}
+		bad := func(format string, args ...any) {
+			errs = append(errs, fmt.Sprintf("versions.%s: "+format, append([]any{vn}, args...)...))
+		}
+		if !versionName.MatchString(vn) {
+			bad("the name must be lower-case letters, digits, hyphens and underscores, starting with a letter (32 at most)")
+			continue
+		}
+		v := Version{Name: vn, Writable: vd.Writable}
+		for _, dim := range []struct {
+			name string
+			in   *int
+			set  *int
+		}{{"max_width", vd.MaxWidth, &v.Params.MaxWidth}, {"max_height", vd.MaxHeight, &v.Params.MaxHeight}} {
+			if dim.in == nil {
+				continue
+			}
+			if *dim.in < 1 || *dim.in > maxVersionDimension {
+				bad("%s: must be between 1 and %d pixels, got %d", dim.name, maxVersionDimension, *dim.in)
+				continue
+			}
+			*dim.set = *dim.in
+		}
+		switch imaging.Fit(vd.Fit) {
+		case "", imaging.Contain, imaging.Cover, imaging.Stretch:
+			v.Params.Fit = imaging.Fit(vd.Fit)
+		default:
+			bad("fit: must be contain, cover or stretch, got %q", vd.Fit)
+		}
+		switch imaging.Format(vd.Format) {
+		case "", imaging.JPEG, imaging.PNG:
+			v.Params.Format = imaging.Format(vd.Format)
+		case "webp":
+			bad("format: webp can't be written (no pure-Go encoder makes lossy WebP); use jpeg or png")
+		default:
+			bad("format: must be jpeg or png, got %q", vd.Format)
+		}
+		if vd.Quality != nil {
+			if *vd.Quality < 1 || *vd.Quality > 100 {
+				bad("quality: must be between 1 and 100, got %d", *vd.Quality)
+			} else if v.Params.Format == imaging.PNG {
+				bad("quality: only applies to format jpeg")
+			} else {
+				v.Params.Quality = *vd.Quality
+			}
+		}
+		v.Params.Upscale = vd.Upscale
+		hasBox := vd.MaxWidth != nil || vd.MaxHeight != nil
+		switch {
+		case !hasBox && !v.Writable:
+			bad("needs max_width or max_height (workers make it), or writable: true (only functions make it)")
+		case !hasBox && (vd.Fit != "" || vd.Quality != nil || vd.Format != "" || vd.Upscale):
+			bad("fit, quality, format and upscale need max_width or max_height")
+		case v.Params.Fit == imaging.Cover && (vd.MaxWidth == nil || vd.MaxHeight == nil):
+			bad("fit: cover needs both max_width and max_height")
+		}
+		out = append(out, v)
+	}
+	return out, errs
+}
+
+// maxVersionDimension bounds a version's box; larger than any useful derived copy.
+const maxVersionDimension = 16384
+
+// CheckImageLimits reports the fields whose `max_pixels` is above the instance's
+// limit (BACKD_IMAGE_MAX_PIXELS): a field may only lower it.
+func (r *Registry) CheckImageLimits(instance int64) error {
+	var errs []error
+	for _, db := range r.Databases() {
+		for _, c := range db.SortedCollections() {
+			for _, name := range slices.Sorted(maps.Keys(c.Files)) {
+				if f := c.Files[name]; f.MaxPixels > instance {
+					errs = append(errs, fmt.Errorf("%s/%s/%s: files.%s: max_pixels: %d is above this instance's limit of %d (BACKD_IMAGE_MAX_PIXELS); a field can only lower it", c.Realm, c.Database, c.Name, name, f.MaxPixels, instance))
+				}
+			}
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func firstNonEmpty(vals ...string) string {
@@ -249,8 +397,34 @@ func fileDetailsSchema() map[string]any {
 			"type":        str(),
 			"sha256":      map[string]any{"type": "string", "pattern": "^[0-9a-f]{64}$"},
 			"uploaded_at": map[string]any{"type": "string", "format": "date-time"},
+			// The pixel size of an image original, and the state of each declared version.
+			"width":    map[string]any{"type": "integer"},
+			"height":   map[string]any{"type": "integer"},
+			"versions": map[string]any{"type": "object", "additionalProperties": versionStateSchema()},
 		},
 		"required":             []any{"id", "name", "size", "type", "sha256", "uploaded_at"},
+		"additionalProperties": false,
+	}
+}
+
+// versionStateSchema is what a document records of one version: its status, and
+// once made, the copy's details.
+func versionStateSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"status":       map[string]any{"enum": []any{"pending", "ready", "empty", "skipped", "failed"}},
+			"reason":       map[string]any{"type": "string"},
+			"id":           map[string]any{"type": "string", "pattern": "^fv_[0-9a-z]{20}$"},
+			"size":         map[string]any{"type": "integer"},
+			"type":         map[string]any{"type": "string"},
+			"width":        map[string]any{"type": "integer"},
+			"height":       map[string]any{"type": "integer"},
+			"params":       map[string]any{"type": "object"},
+			"fingerprint":  map[string]any{"type": "string"},
+			"generated_at": map[string]any{"type": "string", "format": "date-time"},
+		},
+		"required":             []any{"status"},
 		"additionalProperties": false,
 	}
 }

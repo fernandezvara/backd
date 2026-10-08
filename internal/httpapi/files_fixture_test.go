@@ -34,6 +34,15 @@ const filesConfig = `files:
     max_size: 8KiB
     download: proxy
     cache: 1h
+  # A picture with versions: workers make thumb, functions may redo big and make mark.
+  picture:
+    max_size: 64KiB
+    max_pixels: 1000
+    types: [image/*]
+    versions:
+      thumb: {max_width: 10, max_height: 10, fit: cover, format: jpeg, quality: 70}
+      big: {max_width: 100, writable: true}
+      mark: {writable: true}
 `
 
 // A document's owner reads and changes it; nobody but a function (ctx.admin.db,
@@ -63,6 +72,8 @@ const formsConfig = `files:
     multiple: true
     max_files: 2
     max_size: 4KiB
+    versions:
+      thumb: {max_width: 8}
 `
 
 const formsRules = `
@@ -90,6 +101,11 @@ const videosConfig = `files:
     max_size: 4KiB
   photo:
     max_size: 4KiB
+  still:
+    upload: direct
+    max_size: 64KiB
+    versions:
+      thumb: {max_width: 8}
 `
 
 const videosRules = `

@@ -37,6 +37,7 @@ type fileJournalDoc struct {
 	Type         string    `bson:"type,omitempty"`
 	SHA256       string    `bson:"sha256,omitempty"`
 	UploadedAt   time.Time `bson:"uploaded_at,omitempty"`
+	Image        string    `bson:"image,omitempty"`
 }
 
 type fileDeletionDoc struct {
@@ -55,7 +56,7 @@ func (s *AuthStore) fileDeletions() *mongo.Collection {
 func (d fileJournalDoc) entry() auth.FileJournalEntry {
 	return auth.FileJournalEntry{ID: d.ID, Database: d.Database, Collection: d.Collection, Field: d.Field, DocumentID: d.DocumentID, Key: d.Key,
 		Caller: d.Caller, Size: d.Size, Status: d.Status, CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC(),
-		Pending: d.Pending, Direct: d.Direct, TokenHash: d.TokenHash, Owner: d.Owner, CallerKey: d.CallerKey, PendingUntil: d.PendingUntil.UTC(), Name: d.Name, Type: d.Type, SHA256: d.SHA256, UploadedAt: d.UploadedAt.UTC()}
+		Pending: d.Pending, Direct: d.Direct, TokenHash: d.TokenHash, Owner: d.Owner, CallerKey: d.CallerKey, PendingUntil: d.PendingUntil.UTC(), Name: d.Name, Type: d.Type, SHA256: d.SHA256, UploadedAt: d.UploadedAt.UTC(), Image: d.Image}
 }
 
 // JournalFile records an upload.
@@ -63,7 +64,7 @@ func (s *AuthStore) JournalFile(ctx context.Context, e auth.FileJournalEntry) er
 	_, err := s.fileJournal().InsertOne(ctx, fileJournalDoc{ID: e.ID, Database: e.Database, Collection: e.Collection, Field: e.Field, DocumentID: e.DocumentID,
 		Key: e.Key, Caller: e.Caller, Size: e.Size, Status: e.Status, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt, ExpiresAt: e.ExpiresAt,
 		Pending: e.Pending, Direct: e.Direct, TokenHash: e.TokenHash, Owner: e.Owner, CallerKey: e.CallerKey, PendingUntil: e.PendingUntil,
-		Name: e.Name, Type: e.Type, SHA256: e.SHA256, UploadedAt: e.UploadedAt})
+		Name: e.Name, Type: e.Type, SHA256: e.SHA256, UploadedAt: e.UploadedAt, Image: e.Image})
 	return err
 }
 
@@ -164,8 +165,8 @@ func (s *AuthStore) FileJournalEntry(ctx context.Context, id string) (auth.FileJ
 }
 
 // CompletePendingUpload records what was stored and makes the upload ready to attach.
-func (s *AuthStore) CompletePendingUpload(ctx context.Context, id, name, contentType, sha256sum string, size int64, uploadedAt, at time.Time) error {
-	res, err := s.fileJournal().UpdateByID(ctx, id, bson.D{{Key: "$set", Value: bson.D{
+func (s *AuthStore) CompletePendingUpload(ctx context.Context, id, name, contentType, sha256sum string, size int64, uploadedAt time.Time, image string, at time.Time) error {
+	res, err := s.fileJournal().UpdateByID(ctx, id, bson.D{{Key: "$set", Value: bson.D{{Key: "image", Value: image},
 		{Key: "name", Value: name}, {Key: "type", Value: contentType}, {Key: "sha256", Value: sha256sum}, {Key: "size", Value: size},
 		{Key: "uploaded_at", Value: uploadedAt}, {Key: "status", Value: auth.JournalStored}, {Key: "updated_at", Value: at}}}})
 	if err != nil {

@@ -45,14 +45,15 @@ type Store interface {
 type collectionKey struct{}
 
 type documents struct {
-	reg       *registry.Registry
-	store     Store
-	objects   *realmObjects // each realm's object storage (files)
-	baseURL   string        // backd's public address, for the links it signs (BACKD_URL)
-	maxUpload int64         // the largest file a proxy upload may carry (BACKD_MAX_UPLOAD_BYTES)
-	now       func() time.Time
-	maxBody   int64
-	opTimeout time.Duration
+	reg            *registry.Registry
+	store          Store
+	objects        *realmObjects // each realm's object storage (files)
+	baseURL        string        // backd's public address, for the links it signs (BACKD_URL)
+	imageMaxPixels int64         // the instance's image pixel limit (BACKD_IMAGE_MAX_PIXELS)
+	maxUpload      int64         // the largest file a proxy upload may carry (BACKD_MAX_UPLOAD_BYTES)
+	now            func() time.Time
+	maxBody        int64
+	opTimeout      time.Duration
 	// users returns the user service of an auth-enabled realm, or nil.
 	users func(realm string) *auth.Users
 	// internal: served on the internal listener, to functions calling back

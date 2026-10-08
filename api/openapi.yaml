@@ -4331,8 +4331,14 @@ components:
         A stored document. Other fields follow the collection's schema.json.
         A file field (`files:` in collection.yaml) holds backd's file details, an
         object `{id, name, size, type, sha256, uploaded_at}` (an array of them on a
-        `multiple` field), which only uploads write. With `?file_links=true` each
-        also carries `url` and `expires_at`.
+        `multiple` field), which only uploads write. An image also has `width` and
+        `height` (as a viewer sees it, with the EXIF orientation applied), and a field
+        that declares `versions:` has `versions`: an object by version name whose value
+        is `{status}` with `pending` (a worker will make it), `ready` (made; with `id`,
+        `size`, `type`, `width`, `height`, `params`, `fingerprint` and `generated_at`),
+        `empty` (only functions make it, none has yet), `skipped` (`reason`:
+        `not_an_image` or `unsupported_format`) or `failed` (`reason`: `too_large` or
+        `decode_error`). With `?file_links=true` each also carries `url` and `expires_at`.
       properties:
         id: { type: string }
         _meta: { $ref: "#/components/schemas/Meta" }

@@ -93,6 +93,9 @@ func setup(ctx context.Context, getenv func(string) string, logOut io.Writer) (*
 	if err != nil {
 		return nil, fmt.Errorf("invalid config:\n%w", err)
 	}
+	if err := reg.CheckImageLimits(cfg.ImageMaxPixels); err != nil {
+		return nil, fmt.Errorf("invalid config:\n%w", err)
+	}
 	if err := checkFunctions(reg, cfg, log); err != nil {
 		return nil, err
 	}
@@ -460,6 +463,7 @@ func (a *app) handlerConfig() httpapi.Config {
 		Ready:             func(ctx context.Context) error { return a.client.Ping(ctx, nil) },
 		MaxBodyBytes:      a.cfg.MaxBodyBytes,
 		MaxUploadBytes:    a.cfg.MaxUploadBytes,
+		ImageMaxPixels:    a.cfg.ImageMaxPixels,
 		OpTimeout:         a.cfg.MongoOpTimeout,
 		Users:             a.realmUsers(),
 		TrustedProxies:    a.cfg.TrustedProxies,

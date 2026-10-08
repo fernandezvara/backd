@@ -34,7 +34,10 @@ type Settings struct {
 	MaxBodyBytes  int64
 	// MaxUploadBytes caps one file of a proxy upload (BACKD_MAX_UPLOAD_BYTES), apart from
 	// MaxBodyBytes, which is for JSON.
-	MaxUploadBytes  int64
+	MaxUploadBytes int64
+	// ImageMaxPixels is the most pixels (width × height) an image may have to get
+	// versions (BACKD_IMAGE_MAX_PIXELS); a file field may only lower it.
+	ImageMaxPixels  int64
 	MongoOpTimeout  time.Duration
 	ShutdownTimeout time.Duration
 	// PasswordHashConcurrency caps concurrent password hashes; 0 means
@@ -151,6 +154,12 @@ func Load(getenv func(string) string) (Settings, error) {
 		errs = append(errs, fmt.Errorf("BACKD_MAX_UPLOAD_BYTES must be a positive integer, got %q", maxUpload))
 	} else {
 		s.MaxUploadBytes = n
+	}
+
+	if n, err := ImageMaxPixels(getenv); err != nil {
+		errs = append(errs, err)
+	} else {
+		s.ImageMaxPixels = n
 	}
 
 	if v := getenv("PASSWORD_HASH_CONCURRENCY"); v != "" {
@@ -331,4 +340,20 @@ func orDefault(v, def string) string {
 		return def
 	}
 	return v
+}
+
+// DefaultImageMaxPixels is the pixel limit for image versions when none is set.
+const DefaultImageMaxPixels = 40_000_000
+
+// ImageMaxPixels reads BACKD_IMAGE_MAX_PIXELS: a positive number of pixels.
+func ImageMaxPixels(getenv func(string) string) (int64, error) {
+	v := getenv("BACKD_IMAGE_MAX_PIXELS")
+	if v == "" {
+		return DefaultImageMaxPixels, nil
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || n < 1 {
+		return 0, fmt.Errorf("BACKD_IMAGE_MAX_PIXELS must be a positive integer, got %q", v)
+	}
+	return n, nil
 }

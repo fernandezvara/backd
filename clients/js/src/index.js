@@ -40,6 +40,7 @@ export { memoryStorage, localStorageStorage } from './storage.js'
  * @typedef {import('./admin.js').StorageReconcile} StorageReconcile
  * @typedef {import('./files.js').FileDetails} FileDetails
  * @typedef {import('./files.js').FileContent} FileContent
+ * @typedef {import('./files.js').VersionState} VersionState
  * @typedef {import('./files.js').FileLink} FileLink
  * @typedef {import('./files.js').PutOptions} PutOptions
  * @typedef {import('./files.js').UploadOptions} UploadOptions

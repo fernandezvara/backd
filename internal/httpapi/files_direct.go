@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"mime"
 	"net/http"
 	"net/url"
@@ -344,25 +345,34 @@ func (d *documents) completeDirect(w http.ResponseWriter, r *http.Request) {
 		reject(http.StatusUnprocessableEntity, codeUploadMismatch, "the uploaded file's SHA-256 is not the declared one")
 		return
 	}
-	rc, _, err := obj.Get(ctx, key, "bytes=0-"+strconv.Itoa(sniffBytes-1))
+	headSize := sniffBytes
+	if readsImages(f) {
+		headSize = imageHeadBytes
+	}
+	rc, _, err := obj.Get(ctx, key, "bytes=0-"+strconv.Itoa(headSize-1))
 	if err != nil {
 		retry()
 		logger(r.Context()).Error("read the start of a direct upload", "realm", c.Realm, "error", err)
 		writeError(w, r, http.StatusServiceUnavailable, codeStorageUnavailable, "file storage is not available")
 		return
 	}
-	head, _ := io.ReadAll(io.LimitReader(rc, sniffBytes))
+	head, _ := io.ReadAll(io.LimitReader(rc, int64(headSize)))
 	rc.Close()
-	contentType := detectContentType(head, claimed.Type)
+	contentType := detectContentType(head[:min(len(head), sniffBytes)], claimed.Type)
 	if !f.Allows(contentType) {
 		reject(http.StatusUnsupportedMediaType, codeUnsupportedFile, "this field doesn't accept "+contentType+" (detected from the file's content)")
 		return
 	}
 	uploadedAt := d.timestamp().UTC()
 	meta := map[string]any{"id": id, "name": claimed.Name, "size": claimed.Size, "type": contentType, "sha256": claimed.SHA256, "uploaded_at": uploadedAt.Format(timeFormat)}
+	var image map[string]any
+	if len(f.Versions) > 0 || strings.HasPrefix(contentType, "image/") {
+		image = imageDetails(f, head, d.imageMaxPixels)
+	}
+	maps.Copy(meta, image)
 
 	if claimed.Pending {
-		if err := svc.CompletePendingUpload(ctx, id, claimed.Name, contentType, claimed.SHA256, claimed.Size, uploadedAt); err != nil {
+		if err := svc.CompletePendingUpload(ctx, id, claimed.Name, contentType, claimed.SHA256, claimed.Size, uploadedAt, imageJSON(image)); err != nil {
 			retry()
 			storageError(w, r, err)
 			return

@@ -236,7 +236,7 @@ type Store interface {
 	// token hash (stored → attaching, ErrNotFound when it can't be taken), giving
 	// a claim back, and counting a caller's open ones.
 	FileJournalEntry(ctx context.Context, id string) (FileJournalEntry, error)
-	CompletePendingUpload(ctx context.Context, id, name, contentType, sha256sum string, size int64, uploadedAt, at time.Time) error
+	CompletePendingUpload(ctx context.Context, id, name, contentType, sha256sum string, size int64, uploadedAt time.Time, image string, at time.Time) error
 	ClaimPendingUpload(ctx context.Context, id, tokenHash, documentID string, now time.Time) (FileJournalEntry, error)
 	// ClaimDirectUpload is the same for a direct upload waiting for its bytes (writing →
 	// attaching); ReleaseUpload moves a claimed upload back to the given status.

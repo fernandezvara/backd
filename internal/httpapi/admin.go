@@ -26,6 +26,8 @@ type adminAPI struct {
 	reg         *registry.Registry
 	fns         *functions // runs functions by hand (see adminInvoke)
 	fingerprint string     // the config this instance runs (readyz shows it too)
+	// imageMaxPixels is the instance's image pixel limit, which a config check applies to the draft.
+	imageMaxPixels int64
 }
 
 type adminUserKey struct{}

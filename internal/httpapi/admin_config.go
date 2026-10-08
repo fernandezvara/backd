@@ -196,7 +196,18 @@ func collectionConfig(c *registry.Collection, rel func(string) string) map[strin
 			if f.Download != "" {
 				download = f.Download
 			}
-			files[name] = map[string]any{"multiple": f.Multiple, "max_files": f.MaxFiles, "max_size": f.MaxSize, "types": orStrings(f.Types), "upload": f.Upload, "download": download, "presigned_ttl": ttl, "cache": cache}
+			view := map[string]any{"multiple": f.Multiple, "max_files": f.MaxFiles, "max_size": f.MaxSize, "types": orStrings(f.Types), "upload": f.Upload, "download": download, "presigned_ttl": ttl, "cache": cache}
+			if f.MaxPixels > 0 {
+				view["max_pixels"] = f.MaxPixels
+			}
+			if len(f.Versions) > 0 {
+				versions := make(map[string]any, len(f.Versions))
+				for _, v := range f.Versions {
+					versions[v.Name] = versionView(v)
+				}
+				view["versions"] = versions
+			}
+			files[name] = view
 		}
 		out["files"] = files
 	}
@@ -293,4 +304,29 @@ func nilIfZero(n int64) any {
 		return nil
 	}
 	return n
+}
+
+// versionView is a declared version as the configuration view shows it.
+func versionView(v registry.Version) map[string]any {
+	out := map[string]any{"writable": v.Writable}
+	p := v.Params
+	if p.MaxWidth > 0 {
+		out["max_width"] = p.MaxWidth
+	}
+	if p.MaxHeight > 0 {
+		out["max_height"] = p.MaxHeight
+	}
+	if p.Fit != "" {
+		out["fit"] = string(p.Fit)
+	}
+	if p.Quality > 0 {
+		out["quality"] = p.Quality
+	}
+	if p.Format != "" {
+		out["format"] = string(p.Format)
+	}
+	if p.Upscale {
+		out["upscale"] = true
+	}
+	return out
 }
