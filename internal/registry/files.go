@@ -79,8 +79,11 @@ func (v Version) HasParams() bool { return v.Params.MaxWidth > 0 || v.Params.Max
 // Fingerprint identifies what a version is made with, so that a changed declaration can be
 // told from the copies made before it. Defaults are written out, so spelling a default
 // doesn't change it.
-func (v Version) Fingerprint() string {
-	p := v.Params
+func (v Version) Fingerprint() string { return ParamsFingerprint(v.Params) }
+
+// ParamsFingerprint is Fingerprint for parameters that aren't a declared version's, such as
+// the ones a function generates with.
+func ParamsFingerprint(p imaging.Params) string {
 	fit := string(p.Fit)
 	if fit == "" {
 		fit = string(imaging.Contain)
@@ -92,6 +95,33 @@ func (v Version) Fingerprint() string {
 	data, _ := json.Marshal([]any{p.MaxWidth, p.MaxHeight, fit, quality, string(p.Format), p.Upscale})
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:8])
+}
+
+// ValidateVersionParams reports what is wrong with parameters given at run time (by a
+// function), with the same rules `versions:` is parsed with.
+func ValidateVersionParams(p imaging.Params) []string {
+	var out []string
+	for _, dim := range []struct {
+		name string
+		v    int
+	}{{"max_width", p.MaxWidth}, {"max_height", p.MaxHeight}} {
+		if dim.v < 0 || dim.v > maxVersionDimension {
+			out = append(out, fmt.Sprintf("%s: must be between 1 and %d pixels, got %d", dim.name, maxVersionDimension, dim.v))
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+	if err := p.Validate(); err != nil {
+		return []string{err.Error()}
+	}
+	if p.Fit == imaging.Cover && (p.MaxWidth == 0 || p.MaxHeight == 0) {
+		out = append(out, "fit: cover needs both max_width and max_height")
+	}
+	if p.Quality != 0 && p.Format == imaging.PNG {
+		out = append(out, "quality: only applies to format jpeg")
+	}
+	return out
 }
 
 // Version returns the declared version with the name.
@@ -442,6 +472,7 @@ func versionStateSchema() map[string]any {
 			"height":       map[string]any{"type": "integer"},
 			"params":       map[string]any{"type": "object"},
 			"fingerprint":  map[string]any{"type": "string"},
+			"custom":       map[string]any{"type": "boolean"}, // made with parameters a function gave
 			"generated_at": map[string]any{"type": "string", "format": "date-time"},
 		},
 		"required":             []any{"status"},

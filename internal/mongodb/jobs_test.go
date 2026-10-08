@@ -448,7 +448,7 @@ func TestImageJobsOnMongoDB(t *testing.T) {
 	s, _ := authFixture(t)
 	ctx := context.Background()
 	t0 := time.Date(2126, 10, 5, 12, 0, 0, 0, time.UTC)
-	image := &auth.ImageJob{Collection: "library", Field: "picture", DocumentID: "d1", FileID: "fl_x"}
+	image := &auth.ImageJob{Collection: "library", Field: "picture", DocumentID: "d1", FileID: "fl_x", Version: "thumb", Params: `{"max_width":5}`}
 	job := auth.Job{ID: "img1", Database: "app", Function: "library", Origin: auth.ImageOrigin, Exclusive: "image:fl_x", Image: image, Status: auth.JobQueued, TimeoutMS: 1000, CreatedAt: t0, ExpiresAt: t0.Add(time.Hour)}
 	if err := s.EnqueueJob(ctx, job); err != nil {
 		t.Fatal(err)

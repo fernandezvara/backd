@@ -8,6 +8,8 @@ import (
 	"image/jpeg"
 	"image/png"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"slices"
 	"strconv"
@@ -703,5 +705,202 @@ func TestFileLinksIncludeTheReadyVersions(t *testing.T) {
 	rec2, _ := f.doRaw(t, "GET", "/v1/acme/app/library/"+docID+"?file_links=true", nil, ada)
 	if rec1.Header().Get("ETag") != rec2.Header().Get("ETag") {
 		t.Error("the links changed the ETag")
+	}
+}
+
+// runWorker keeps a worker making jobs in the background for the test, as a deployment
+// would, for requests that wait on one.
+func runWorker(t *testing.T, w *Worker) {
+	t.Helper()
+	old := versionWaitMax
+	versionWaitMax = 5 * time.Second
+	t.Cleanup(func() { versionWaitMax = old })
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for ctx.Err() == nil {
+			if !w.RunOnce(ctx) {
+				time.Sleep(5 * time.Millisecond)
+			}
+		}
+	}()
+	t.Cleanup(func() { cancel(); <-done })
+}
+
+func TestAFunctionRemakesGeneratesAndDeletesVersions(t *testing.T) {
+	f := newFilesFixture(t)
+	w := newTestWorker(t, f.rulesFixture)
+	docID, fileID := f.madePicture(t, w, "picture")
+	runImageJobs(t, w)
+	runWorker(t, w)
+	base := "/v1/acme/app/library/" + docID + "/_files/picture/" + fileID + "/versions/"
+	ada := map[string]string{"Authorization": "Bearer " + f.ada, "Content-Type": "application/json"}
+	post := func(name, body string) (*httptest.ResponseRecorder, map[string]any) {
+		return f.doRaw(t, "POST", base+name, []byte(body), ada)
+	}
+	state := func(name string) map[string]any {
+		return versionsOf(t, f.readDoc(t, docID)["picture"].(map[string]any))[name].(map[string]any)
+	}
+	before := f.readDoc(t, docID)["_meta"].(map[string]any)["version"]
+	oldThumb := state("thumb")["id"]
+	_, filesBefore, _ := f.usage(t)
+
+	// Again, with the declared parameters: a new copy, in the same place.
+	rec, out := post("thumb", "")
+	if rec.Code != 200 || out["status"] != "ready" || out["id"] == oldThumb || out["width"] != float64(10) || out["custom"] != nil {
+		t.Fatalf("regenerate: %d %v", rec.Code, out)
+	}
+	if state("thumb")["id"] != out["id"] {
+		t.Errorf("the document records another copy: %v vs %v", state("thumb"), out)
+	}
+	if _, files, _ := f.usage(t); files != filesBefore {
+		t.Errorf("usage files %d → %d: the old copy should have stopped counting", filesBefore, files)
+	}
+	if f.readDoc(t, docID)["_meta"].(map[string]any)["version"] != before {
+		t.Error("the document's version changed")
+	}
+
+	// Other parameters: only for a writable version.
+	rec, out = post("big", `{"max_width": 5, "format": "png"}`)
+	if rec.Code != 200 || out["status"] != "ready" || out["width"] != float64(5) || out["height"] != float64(3) || out["custom"] != true || out["params"].(map[string]any)["max_width"] != float64(5) {
+		t.Fatalf("generate: %d %v", rec.Code, out)
+	}
+	rec, out = post("thumb", `{"max_width": 5}`)
+	if rec.Code != 403 || out["error"].(map[string]any)["code"] != "version_not_writable" {
+		t.Errorf("a version that isn't writable: %d %v", rec.Code, out)
+	}
+	rec, out = post("mark", `{"max_width": 8}`) // only functions make it
+	if rec.Code != 200 || out["status"] != "ready" || out["width"] != float64(8) {
+		t.Errorf("a function-only version: %d %v", rec.Code, out)
+	}
+	if rec, _ := f.doRaw(t, "GET", "/v1/acme/app/library/"+docID+"/_files/picture/"+fileID+"?version=mark&link=json", nil, ada); rec.Code != 200 {
+		t.Errorf("the generated version is downloadable: %d", rec.Code)
+	}
+
+	// Parameters are checked like collection.yaml's.
+	for name, body := range map[string]string{
+		"a fit that doesn't exist":   `{"max_width": 5, "fit": "zoom"}`,
+		"cover with one side":        `{"max_width": 5, "fit": "cover"}`,
+		"no box":                     `{"quality": 50}`,
+		"a size out of range":        `{"max_width": 99999}`,
+		"quality for png":            `{"max_width": 5, "format": "png", "quality": 50}`,
+		"a parameter that isn't one": `{"max_width": 5, "sharpen": 3}`,
+		"webp":                       `{"max_width": 5, "format": "webp"}`,
+		"not an object":              `[1]`,
+	} {
+		if rec, o := post("big", body); rec.Code != 400 {
+			t.Errorf("%s: %d %v", name, rec.Code, o)
+		}
+	}
+	// Nothing to remake a function-only version from.
+	if rec, _ := post("mark", ""); rec.Code != 400 {
+		t.Errorf("remake a version without parameters: %d", rec.Code)
+	}
+	// What isn't there.
+	if rec, _ := post("nope", ""); rec.Code != 404 {
+		t.Errorf("undeclared: %d", rec.Code)
+	}
+	if rec, _ := f.doRaw(t, "POST", "/v1/acme/app/library/"+docID+"/_files/picture/fl_nope/versions/thumb", nil, ada); rec.Code != 404 {
+		t.Errorf("unknown file: %d", rec.Code)
+	}
+	// The update rule: another user can't see the document, anonymous isn't signed in.
+	if rec, _ := f.doRaw(t, "POST", base+"thumb", nil, map[string]string{"Authorization": "Bearer " + f.bob}); rec.Code != 404 {
+		t.Errorf("another user: %d", rec.Code)
+	}
+	if rec, _ := f.doRaw(t, "POST", base+"thumb", nil, nil); rec.Code != 401 && rec.Code != 404 {
+		t.Errorf("anonymous: %d", rec.Code)
+	}
+
+	// Deleting: a version with parameters goes back to pending and a worker makes it again;
+	// one only functions make goes back to empty, and its object is deleted.
+	rec, out = f.doRaw(t, "DELETE", base+"mark", nil, ada)
+	if rec.Code != 200 || out["status"] != "empty" || state("mark")["status"] != "empty" {
+		t.Fatalf("delete mark: %d %v", rec.Code, out)
+	}
+	w.FilesDue(context.Background())
+	if keys := f.s3.Keys(); slices.Contains(keys, "t/acme/app/library/"+fileID+"/mark") {
+		t.Errorf("mark's object is still there: %v", keys)
+	}
+	rec, out = f.doRaw(t, "DELETE", base+"thumb", nil, ada)
+	if rec.Code != 200 || out["status"] != "pending" {
+		t.Fatalf("delete thumb: %d %v", rec.Code, out)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for state("thumb")["status"] != "ready" && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if state("thumb")["status"] != "ready" {
+		t.Errorf("thumb was not made again: %v", state("thumb"))
+	}
+	w.FilesDue(context.Background())
+	if keys := f.s3.Keys(); !slices.Contains(keys, "t/acme/app/library/"+fileID+"/thumb") {
+		t.Errorf("thumb's object was deleted after it was made again: %v", keys)
+	}
+	if rec, _ := f.doRaw(t, "DELETE", base+"nope", nil, ada); rec.Code != 404 {
+		t.Errorf("delete undeclared: %d", rec.Code)
+	}
+}
+
+func TestAFunctionIsToldWhyAVersionCannotBeMade(t *testing.T) {
+	f := newFilesFixture(t)
+	w := newTestWorker(t, f.rulesFixture)
+	runWorker(t, w)
+	ada := map[string]string{"Authorization": "Bearer " + f.ada, "Content-Type": "application/json"}
+	// forms.extras takes any type and declares a thumb.
+	id, tok := f.pending(t, f.ada, "forms", "scan", pngBytes(5))
+	_, doc := f.as(t, f.ada, "POST", "/v1/acme/app/forms", `{"title": "x", "scan": `+ref(id, tok)+`}`)
+	did := doc["id"].(string)
+	_, out := f.upload(t, f.ada, "forms", did, "extras", "notes.txt", "text/plain", []byte("just words"), nil)
+	fileID := out["extras"].([]any)[0].(map[string]any)["id"].(string)
+	rec, o := f.doRaw(t, "POST", "/v1/acme/app/forms/"+did+"/_files/extras/"+fileID+"/versions/thumb", nil, ada)
+	if rec.Code != 422 || o["error"].(map[string]any)["code"] != "not_an_image" {
+		t.Errorf("a text file: %d %v", rec.Code, o)
+	}
+	// A truncated picture.
+	lib := f.newDoc(t, "library")
+	good := realPNG(t, 20, 10)
+	pdoc := f.picture(t, lib, good[:len(good)-30])
+	pid := pdoc["picture"].(map[string]any)["id"].(string)
+	deadline := time.Now().Add(10 * time.Second)
+	for versionsOf(t, f.readDoc(t, lib)["picture"].(map[string]any))["thumb"].(map[string]any)["status"] == "pending" && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	rec, o = f.doRaw(t, "POST", "/v1/acme/app/library/"+lib+"/_files/picture/"+pid+"/versions/thumb", nil, ada)
+	if rec.Code != 422 || o["error"].(map[string]any)["code"] != "decode_error" {
+		t.Errorf("a truncated picture: %d %v", rec.Code, o)
+	}
+}
+
+func TestWithNoWorkerAVersionRequestWaitsUntilItGivesUp(t *testing.T) {
+	f := newFilesFixture(t)
+	w := newTestWorker(t, f.rulesFixture)
+	docID, fileID := f.madePicture(t, w, "picture")
+	runImageJobs(t, w)
+	old := versionWaitMax
+	versionWaitMax = 200 * time.Millisecond
+	defer func() { versionWaitMax = old }()
+	req := httptest.NewRequest("POST", "/v1/acme/app/library/"+docID+"/_files/picture/"+fileID+"/versions/thumb", nil)
+	req.Header.Set("Authorization", "Bearer "+f.ada)
+	rec := httptest.NewRecorder()
+	f.h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusGatewayTimeout || !strings.Contains(rec.Body.String(), "version_timeout") {
+		t.Errorf("no worker: %d %s", rec.Code, rec.Body)
+	}
+	// A caller that hangs up stops the wait.
+	versionWaitMax = time.Minute
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(150*time.Millisecond, cancel)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		r2 := httptest.NewRequest("POST", "/v1/acme/app/library/"+docID+"/_files/picture/"+fileID+"/versions/thumb", nil).WithContext(ctx)
+		r2.Header.Set("Authorization", "Bearer "+f.ada)
+		f.h.ServeHTTP(httptest.NewRecorder(), r2)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Error("the wait went on after the caller hung up")
 	}
 }

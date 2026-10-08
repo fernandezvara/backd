@@ -305,3 +305,48 @@ Deno.test('files: a declared field enforces what backd does', async () => {
   assertEquals((await assertRejects(() => receipts.put('abc', { type: 'application/pdf' }), BackdError)).code, 'unsupported_file_type')
   await assertRejects(() => receipts.put('abc', { type: 'image/png', ifMatch: 1 }), VersionMismatchError)
 })
+
+// A 20×10 PNG's header: all the fake reads of a picture.
+function pngHeader(w, h) {
+  const b = new Uint8Array(33)
+  b.set([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82])
+  const v = new DataView(b.buffer)
+  v.setUint32(16, w)
+  v.setUint32(20, h)
+  return b
+}
+
+Deno.test('files: declared versions start pending, empty or skipped, and a function can remake, generate and delete them', async () => {
+  const { ctx, store } = createContext()
+  store.seed('app', 'assets', [{ id: 'a1' }])
+  store.declareFiles('app', 'assets', {
+    photo: { versions: { thumb: { max_width: 10, max_height: 10, fit: 'cover' }, big: { max_width: 100, writable: true }, mark: { writable: true } } },
+  })
+  const photo = ctx.db('app').collection('assets').files('a1', 'photo')
+  const doc = await photo.put(pngHeader(20, 10), { name: 'a.png', type: 'image/png' })
+  assertEquals([doc.photo.width, doc.photo.height], [20, 10])
+  assertEquals(doc.photo.versions, { thumb: { status: 'pending' }, big: { status: 'pending' }, mark: { status: 'empty' } })
+
+  const thumb = photo.version('thumb')
+  const made = await thumb.regenerate()
+  assertEquals([made.status, made.width, made.height], ['ready', 10, 10])
+  assertEquals(store.all('app', 'assets')[0].photo.versions.thumb.status, 'ready')
+  assertEquals(store.all('app', 'assets')[0]._meta.version, 2) // writing a version doesn't change it
+
+  const generated = await photo.version('big').generate({ max_width: 5, format: 'png' })
+  assertEquals([generated.width, generated.height, generated.custom], [5, 3, true])
+  assertEquals((await assertRejects(() => thumb.generate({ max_width: 5 }), BackdError)).code, 'version_not_writable')
+  assertEquals((await assertRejects(() => photo.version('big').generate({ max_width: 5, fit: 'zoom' }), BackdError)).status, 400)
+  assertEquals((await assertRejects(() => photo.version('mark').regenerate(), BackdError)).status, 400)
+  await assertRejects(() => photo.version('nope').regenerate(), NotFoundError)
+
+  assertEquals((await thumb.delete()).status, 'pending')
+  assertEquals((await photo.version('mark').delete()).status, 'empty')
+
+  // Not a picture: the versions are skipped, and asking for one is a 422.
+  store.seed('app', 'assets', [{ id: 'a2' }])
+  const notes = ctx.db('app').collection('assets').files('a2', 'photo')
+  const text = await notes.put('plain words', { type: 'text/plain' })
+  assertEquals(text.photo.versions.thumb, { status: 'skipped', reason: 'not_an_image' })
+  assertEquals((await assertRejects(() => notes.version('thumb').regenerate(), BackdError)).code, 'not_an_image')
+})

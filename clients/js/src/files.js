@@ -36,6 +36,7 @@ import { sha256Blob } from './sha256.js'
  * @property {number} [height]
  * @property {Record<string, unknown>} [params]   What it was made with.
  * @property {string} [fingerprint]
+ * @property {boolean} [custom]       Made with parameters a function gave (`generate`), not the declared ones.
  * @property {string} [generated_at]  RFC3339 timestamp.
  */
 
@@ -43,6 +44,29 @@ import { sha256Blob } from './sha256.js'
  * Options of `get` and `link`: `version` names a made version of an image (`versions:` in
  * collection.yaml) to read instead of the original.
  * @typedef {RequestOptions & { version?: string }} VersionOptions
+ */
+
+/**
+ * Parameters to generate a version with, named as in `collection.yaml`: a box (`max_width`,
+ * `max_height`, at least one), and optionally `fit` (`contain`, `cover`, `stretch`), `quality`
+ * (1 to 100, jpeg), `format` (`jpeg`, `png`) and `upscale`.
+ * @typedef {object} VersionParams
+ * @property {number} [max_width]
+ * @property {number} [max_height]
+ * @property {'contain' | 'cover' | 'stretch'} [fit]
+ * @property {number} [quality]
+ * @property {'jpeg' | 'png'} [format]
+ * @property {boolean} [upscale]
+ */
+
+/**
+ * A made version of one file (`files(id, field).version(name)`): make it again, make it
+ * with other parameters, or drop it. Each waits for a worker to do it and resolves with the
+ * version's state.
+ * @typedef {object} FileVersion
+ * @property {(opts?: RequestOptions) => Promise<VersionState>} regenerate   Again, with the parameters `collection.yaml` declares.
+ * @property {(params: VersionParams, opts?: RequestOptions) => Promise<VersionState>} generate   With other parameters: only a `writable` version allows it (`version_not_writable`).
+ * @property {(opts?: RequestOptions) => Promise<VersionState>} delete   Drops the copy: the version is `pending` again (a worker makes it) or `empty` (only functions make it).
  */
 
 /**
@@ -172,6 +196,27 @@ export class Files {
     if (ifMatch !== undefined) headers['If-Match'] = typeof ifMatch === 'number' ? `"${ifMatch}"` : ifMatch
     const path = fileId === undefined ? this.path : [...this.path, fileId]
     return (await this.client.request({ method: 'DELETE', path, ...rest, headers })).data
+  }
+
+  /**
+   * One of the file's declared versions (`versions:` in collection.yaml), to make again,
+   * generate with other parameters, or delete. They are requests that wait for a worker, so a
+   * function can use them within its time limit; the caller's `update` rule applies. Errors
+   * carry the reason as their `code`: `not_an_image`, `unsupported_format`, `too_large`,
+   * `decode_error`, `timeout` (422), `version_not_writable` (403), `version_timeout` (504, no
+   * worker).
+   * @param {string} name       The version's name.
+   * @param {string} [fileId]   Which file; without it the one a single field holds.
+   * @returns {FileVersion}
+   */
+  version(name, fileId) {
+    /** @param {RequestOptions | undefined} opts */
+    const path = async (opts) => [...this.path, (await this.#which(fileId, opts)).fileId, 'versions', name]
+    return {
+      regenerate: async (opts) => (await this.client.request({ method: 'POST', path: await path(opts), ...opts })).data,
+      generate: async (params, opts) => (await this.client.request({ method: 'POST', path: await path(opts), body: params, ...opts })).data,
+      delete: async (opts) => (await this.client.request({ method: 'DELETE', path: await path(opts), ...opts })).data,
+    }
   }
 
   /**

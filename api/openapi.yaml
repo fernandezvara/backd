@@ -3594,6 +3594,153 @@ paths:
         "422": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/{database}/{collection}/{id}/_files/{field}/{fileID}/versions/{version}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+      - { $ref: "#/components/parameters/id" }
+      - { $ref: "#/components/parameters/fileField" }
+      - { $ref: "#/components/parameters/fileId" }
+      - name: version
+        in: path
+        required: true
+        description: The name of a version the field declares (`versions:` in collection.yaml).
+        schema: { type: string }
+    post:
+      tags: [documents]
+      summary: Make a version of an image again, or with other parameters
+      description: |
+        For functions (and anything else allowed to update the document): an empty body
+        makes the version again with the parameters the field declares; a JSON object of
+        parameters (`max_width`, `max_height`, `fit`, `quality`, `format`, `upscale`, checked
+        like `collection.yaml`'s) generates it with those instead, which only a `writable`
+        version allows (`403 version_not_writable`). The request waits for a worker to make
+        it (up to five minutes: `504 version_timeout` when no worker did) and answers the
+        version's new details, as in the document. The `update` rule is asked with the
+        document as it is; an API key skips it. The document's version does not change.
+        When the version can't be made the answer is `422` with the reason as its code:
+        `not_an_image`, `unsupported_format`, `too_large`, `decode_error`, `timeout`.
+      operationId: MakeVersion
+      security: [{ session: [] }, { apiKey: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                max_width: { type: integer, minimum: 1, maximum: 16384 }
+                max_height: { type: integer, minimum: 1, maximum: 16384 }
+                fit: { type: string, enum: [contain, cover, stretch] }
+                quality: { type: integer, minimum: 1, maximum: 100 }
+                format: { type: string, enum: [jpeg, png] }
+                upscale: { type: boolean }
+      responses:
+        "200":
+          description: The version's details.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VersionState" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [documents]
+      summary: Delete a made version
+      description: |
+        Drops the made copy and sends the version back to what a new file's is: `pending`
+        (a worker makes it again) when it has parameters, `empty` when only functions make
+        it. Needs the same access as making it. The document's version does not change.
+      operationId: DeleteVersion
+      security: [{ session: [] }, { apiKey: [] }]
+      responses:
+        "200":
+          description: The version's new state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VersionState" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/{realm}/_admin/data/{database}/{collection}/{id}/_files/{field}/{fileID}/versions/{version}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+      - { $ref: "#/components/parameters/id" }
+      - { $ref: "#/components/parameters/fileField" }
+      - { $ref: "#/components/parameters/fileId" }
+      - name: version
+        in: path
+        required: true
+        description: The name of a version the field declares (`versions:` in collection.yaml).
+        schema: { type: string }
+    post:
+      tags: [admin]
+      summary: Make a version of an image again, or with other parameters
+      description: |
+        For functions (and anything else allowed to update the document): an empty body
+        makes the version again with the parameters the field declares; a JSON object of
+        parameters (`max_width`, `max_height`, `fit`, `quality`, `format`, `upscale`, checked
+        like `collection.yaml`'s) generates it with those instead, which only a `writable`
+        version allows (`403 version_not_writable`). The request waits for a worker to make
+        it (up to five minutes: `504 version_timeout` when no worker did) and answers the
+        version's new details, as in the document. The `update` rule is asked with the
+        document as it is; an API key skips it. The document's version does not change.
+        When the version can't be made the answer is `422` with the reason as its code:
+        `not_an_image`, `unsupported_format`, `too_large`, `decode_error`, `timeout`.
+      operationId: adminMakeVersion
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                max_width: { type: integer, minimum: 1, maximum: 16384 }
+                max_height: { type: integer, minimum: 1, maximum: 16384 }
+                fit: { type: string, enum: [contain, cover, stretch] }
+                quality: { type: integer, minimum: 1, maximum: 100 }
+                format: { type: string, enum: [jpeg, png] }
+                upscale: { type: boolean }
+      responses:
+        "200":
+          description: The version's details.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VersionState" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      summary: Delete a made version
+      description: |
+        Drops the made copy and sends the version back to what a new file's is: `pending`
+        (a worker makes it again) when it has parameters, `empty` when only functions make
+        it. Needs the same access as making it. The document's version does not change.
+      operationId: adminDeleteVersion
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The version's new state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VersionState" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
 components:
   securitySchemes:
     session:
@@ -4519,6 +4666,29 @@ components:
             size: { type: integer }
             type: { type: string }
             sha256: { type: string }
+
+    VersionState:
+      type: object
+      required: [status]
+      description: |
+        One version of an image file, as the file's details record it: `pending` (a worker
+        will make it), `ready` (made), `empty` (only functions make it, none has yet),
+        `skipped` (`reason`: `not_an_image` or `unsupported_format`) or `failed` (`reason`:
+        `too_large`, `decode_error`, `timeout` or `storage_error`).
+      properties:
+        status: { type: string, enum: [pending, ready, empty, skipped, failed] }
+        reason: { type: string }
+        id: { type: string, pattern: '^fv_[0-9a-z]{20}$' }
+        size: { type: integer }
+        type: { type: string }
+        width: { type: integer }
+        height: { type: integer }
+        params: { type: object, additionalProperties: true }
+        fingerprint: { type: string }
+        custom: { type: boolean, description: "Made with parameters a function gave, not the declared ones." }
+        generated_at: { $ref: "#/components/schemas/Timestamp" }
+        url: { type: string, description: "With `?file_links=true`, a ready version's link." }
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
 
     FileLink:
       type: object

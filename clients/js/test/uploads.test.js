@@ -219,3 +219,22 @@ test('files get and link pass the version; versionStatus reads it from the docum
   assert.deepEqual(versionStatus(file, 'nope'), { status: 'undeclared', ready: false })
   assert.deepEqual(versionStatus({ ...file, versions: undefined }, 'thumb'), { status: 'undeclared', ready: false })
 })
+
+test('a file version can be made again, generated with parameters, or deleted', async () => {
+  const state = { status: 'ready', id: 'fv_1', width: 5, height: 3 }
+  const m = mockFetch([{ body: state }, { body: { ...state, custom: true } }, { body: { status: 'pending' } }, { body: doc({ photo: { id: 'fl_9', name: 'a.png' } }) }, { body: state }])
+  const c = people(m)
+  const v = c.files('d1', 'photo').version('thumb', 'fl_1')
+  assert.deepEqual(await v.regenerate(), state)
+  assert.equal(m.calls[0].method, 'POST')
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/app/people/d1/_files/photo/fl_1/versions/thumb')
+  assert.equal(m.calls[0].body, undefined)
+  assert.equal((await v.generate({ max_width: 5, format: 'png' })).custom, true)
+  assert.deepEqual(m.calls[1].body, { max_width: 5, format: 'png' })
+  assert.equal((await v.delete()).status, 'pending')
+  assert.equal(m.calls[2].method, 'DELETE')
+  // Without a file id, the one a single field holds.
+  await c.files('d1', 'photo').version('thumb').regenerate()
+  assert.equal(m.calls[3].method, 'GET')
+  assert.equal(m.calls[4].url.pathname, '/v1/acme/app/people/d1/_files/photo/fl_9/versions/thumb')
+})

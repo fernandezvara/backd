@@ -161,8 +161,10 @@ await photos.fileUrl(id, 'photo', doc.photo.id, { version: 'thumb' })   // a lin
 
 Read `width` and `height` from the document to reserve room for a picture before it loads, and `status` to say "processing…" or "no preview".
 
+Functions can make a version again, with other parameters, or drop it: [Versions of an image](../../functions/files/#versions-of-an-image).
+
 {{< hint style="note" >}}
-The functions' API for versions and regenerating them after a configuration change are planned.
+Regenerating after a configuration change is planned.
 {{< /hint >}}
 
 ## Changing `files:`

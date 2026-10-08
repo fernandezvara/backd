@@ -89,3 +89,36 @@ func TestFunctionsUseTheFileRoutes(t *testing.T) {
 		t.Errorf("journal: %+v", e)
 	}
 }
+
+// A function asks for a version over the internal listener: as the user the update rule
+// applies, as a function with admin access it doesn't, and either way a worker makes it.
+func TestFunctionsRemakeVersionsThroughTheInternalListener(t *testing.T) {
+	f := newFilesFixture(t)
+	w := newTestWorker(t, f.rulesFixture)
+	docID, fileID := f.madePicture(t, w, "picture")
+	runImageJobs(t, w)
+	runWorker(t, w)
+	exp := f.clock.Add(time.Minute)
+	user := auth.SignCallback(f.callbackKey, auth.CallbackClaims{Realm: "acme", Function: "app/echo", UserID: f.adaID, Expires: exp})
+	admin := auth.SignCallback(f.callbackKey, auth.CallbackClaims{Realm: "acme", Function: "app/echo", Admin: true, Expires: exp})
+	other := auth.SignCallback(f.callbackKey, auth.CallbackClaims{Realm: "acme", Function: "app/echo", UserID: f.bobID, Expires: exp})
+	do := func(token, method, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, "/v1/acme/app/library/"+docID+"/_files/picture/"+fileID+"/versions/thumb", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		f.internal.ServeHTTP(rec, req)
+		return rec
+	}
+	if rec := do(user, "POST", ""); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"status":"ready"`) {
+		t.Errorf("ctx.db: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(admin, "POST", ""); rec.Code != 200 {
+		t.Errorf("ctx.admin.db: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(other, "POST", ""); rec.Code != 404 {
+		t.Errorf("a user who can't read the document: %d", rec.Code)
+	}
+	if rec := do(admin, "DELETE", ""); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"pending"`) {
+		t.Errorf("delete: %d %s", rec.Code, rec.Body)
+	}
+}

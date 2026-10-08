@@ -114,6 +114,20 @@ function sortBy(items, orderBy) {
  * @property {number} [max_files]
  * @property {number} [max_size]
  * @property {string[]} [types]   Content types, or families such as `image/*`.
+ * @property {Record<string, VersionConfig>} [versions]   Declared image versions (`versions:`).
+ */
+
+/**
+ * A declared version, as in `collection.yaml`: a box (`max_width`, `max_height`), how it fits
+ * (`fit`), `quality`, `format`, `upscale`, and `writable`.
+ * @typedef {object} VersionConfig
+ * @property {number} [max_width]
+ * @property {number} [max_height]
+ * @property {'contain' | 'cover' | 'stretch'} [fit]
+ * @property {number} [quality]
+ * @property {'jpeg' | 'png'} [format]
+ * @property {boolean} [upscale]
+ * @property {boolean} [writable]
  */
 
 /** An in-memory store shared by every ctx.db(...) call in one test. */
@@ -353,6 +367,9 @@ class FakeFiles {
       sha256: [...digest].map((b) => b.toString(16).padStart(2, '0')).join(''),
       uploaded_at: now(),
     }
+    const size = pngSize(bytes)
+    if (size) Object.assign(file, size)
+    if (cfg.versions) file.versions = initialVersions(cfg.versions, type, size)
     this.collection.store.objects.set(file.id, bytes)
     for (const old of cfg.multiple ? [] : existing) this.collection.store.objects.delete(old.id)
     const next = { ...doc, [this.field]: cfg.multiple ? [...existing, file] : file }
@@ -377,11 +394,122 @@ class FakeFiles {
     return next
   }
 
+  /**
+   * One of the file's declared versions: `regenerate()`, `generate(params)` and `delete()`,
+   * with the errors backd gives (`version_not_writable`, `not_an_image`, validation). The fake
+   * makes no pictures: a made version is `ready` with the size the box gives (the dimensions
+   * of a PNG are read; other pictures have none), so a function's logic can be tested.
+   * @param {string} name
+   * @param {string} [fileId]
+   */
+  version(name, fileId) {
+    const fail = (status, code, message) => new BackdError({ status, code, message })
+    const target = async () => {
+      const id = await this.which(fileId)
+      const doc = await this.collection.get(this.id)
+      const file = this.held(doc).find((f) => f.id === id)
+      if (!file) throw new NotFoundError({ status: 404, code: 'not_found', message: 'file not found' })
+      const declared = this.config.versions?.[name]
+      if (!declared) throw new NotFoundError({ status: 404, code: 'not_found', message: `this field declares no version ${name}` })
+      return { doc, file, declared }
+    }
+    const record = (doc, file, state) => {
+      const files = this.held(doc).map((f) => (f.id === file.id ? { ...f, versions: { ...f.versions, [name]: state } } : f))
+      // Like backd, the document's version does not change.
+      this.collection.map.set(this.id, { ...doc, [this.field]: this.config.multiple ? files : files[0], _meta: { ...doc._meta, updated_at: now() } })
+      return state
+    }
+    const make = async (params, custom) => {
+      const { doc, file } = await target()
+      if (!file.type.startsWith('image/')) throw fail(422, 'not_an_image', 'the version could not be made: not_an_image')
+      const dims = file.width ? fitBox(file.width, file.height, params) : {}
+      const state = {
+        status: 'ready', id: `fv_test${String(++fileSeq).padStart(15, '0')}`, size: 1, type: params.format === 'png' || (!params.format && file.type === 'image/png') ? 'image/png' : 'image/jpeg',
+        ...dims, params: { ...params }, fingerprint: JSON.stringify(params),
+      }
+      if (custom) state.custom = true
+      return record(doc, file, state)
+    }
+    return {
+      regenerate: async () => {
+        const { declared } = await target()
+        if (!declared.max_width && !declared.max_height) throw fail(400, 'validation_failed', `the version ${name} has no parameters of its own: generate it with max_width or max_height`)
+        const { writable, ...params } = declared
+        return make(params, false)
+      },
+      generate: async (params) => {
+        const { declared } = await target()
+        if (!declared.writable) throw fail(403, 'version_not_writable', `the version ${name} is not writable: declare writable: true to generate it with other parameters`)
+        const problems = versionParamProblems(params ?? {})
+        if (problems.length) throw fail(400, 'validation_failed', `the parameters are not valid: ${problems.join('; ')}`)
+        return make(params, true)
+      },
+      delete: async () => {
+        const { doc, file, declared } = await target()
+        return record(doc, file, declared.max_width || declared.max_height ? { status: 'pending' } : { status: 'empty' })
+      },
+    }
+  }
+
   async link(fileId) {
     const id = await this.which(fileId)
     if (!(await this.list()).some((f) => f.id === id)) throw new NotFoundError({ status: 404, code: 'not_found', message: 'file not found' })
     return { url: `https://files.test/${this.field}/${id}`, expires_at: new Date(Date.now() + 5 * 60_000).toISOString() }
   }
+}
+
+/** The pixel size of a PNG, from its header; null for anything else. */
+function pngSize(bytes) {
+  const sig = [137, 80, 78, 71, 13, 10, 26, 10]
+  if (bytes.length < 24 || sig.some((b, i) => bytes[i] !== b)) return null
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  return { width: view.getUint32(16), height: view.getUint32(20) }
+}
+
+/** The state of each declared version of a new file, as backd records it on upload. */
+function initialVersions(declared, type, size) {
+  const out = {}
+  for (const [name, v] of Object.entries(declared)) {
+    if (!type.startsWith('image/')) out[name] = { status: 'skipped', reason: 'not_an_image' }
+    else out[name] = v.max_width || v.max_height ? { status: 'pending' } : { status: 'empty' }
+  }
+  void size
+  return out
+}
+
+/** The size a picture of w × h gets in a box, as backd's image engine does it. */
+function fitBox(w, h, p) {
+  let mw = p.max_width ?? 0
+  let mh = p.max_height ?? 0
+  if (!p.upscale) {
+    if (mw > w) mw = w
+    if (mh > h) mh = h
+  }
+  const fit = p.fit ?? 'contain'
+  if (fit === 'stretch') return { width: mw || w, height: mh || h }
+  if (fit === 'cover' && mw && mh) return { width: mw, height: mh }
+  let s = Infinity
+  if (mw) s = Math.min(s, mw / w)
+  if (mh) s = Math.min(s, mh / h)
+  if (!p.upscale && s > 1) s = 1
+  return { width: Math.max(1, Math.round(w * s)), height: Math.max(1, Math.round(h * s)) }
+}
+
+/** What is wrong with parameters given at run time, with backd's rules. */
+function versionParamProblems(p) {
+  const known = new Set(['max_width', 'max_height', 'fit', 'quality', 'format', 'upscale'])
+  const out = []
+  for (const k of Object.keys(p)) if (!known.has(k)) out.push(`unknown parameter ${k}`)
+  for (const k of ['max_width', 'max_height']) {
+    if (p[k] !== undefined && !(Number.isInteger(p[k]) && p[k] >= 1 && p[k] <= 16384)) out.push(`${k}: must be between 1 and 16384`)
+  }
+  if (!p.max_width && !p.max_height) out.push('at least one of max_width and max_height is required')
+  if (p.fit !== undefined && !['contain', 'cover', 'stretch'].includes(p.fit)) out.push('fit: must be contain, cover or stretch')
+  if (p.fit === 'cover' && !(p.max_width && p.max_height)) out.push('fit: cover needs both max_width and max_height')
+  if (p.format !== undefined && !['jpeg', 'png'].includes(p.format)) out.push('format: must be jpeg or png')
+  if (p.quality !== undefined && !(Number.isInteger(p.quality) && p.quality >= 1 && p.quality <= 100)) out.push('quality: must be between 1 and 100')
+  if (p.quality !== undefined && p.format === 'png') out.push('quality: only applies to format jpeg')
+  return out
 }
 
 /** What backd does to a file's name, roughly: no path, no control characters, `file` when nothing is left. */

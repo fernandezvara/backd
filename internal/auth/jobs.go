@@ -422,6 +422,27 @@ type ImageJob struct {
 	Field      string
 	DocumentID string
 	FileID     string
+	// Version, when set, makes just that version, whatever its state: a function asked
+	// for it. Params are the parameters to make it with, as JSON ("" means the declared
+	// ones); the job's result carries the outcome for the function waiting on it.
+	Version string
+	Params  string
+}
+
+// EnqueueImageOp queues the making of one version for a function that waits for it. It
+// returns ErrJobExclusive while another job of the file is queued or running: the
+// caller waits and asks again.
+func (s *Users) EnqueueImageOp(ctx context.Context, database string, e ImageJob, requestID string) (Job, error) {
+	now := s.now()
+	j := Job{
+		ID: xid.New().String(), Database: database, Function: e.Collection, CallerActor: "system",
+		Origin: ImageOrigin, Exclusive: "image:" + e.FileID, TimeoutMS: imageLease.Milliseconds(), RequestID: requestID,
+		Image: &e, Status: JobQueued, CreatedAt: now, ExpiresAt: now.Add(pendingJobTTL),
+	}
+	if err := s.Store.EnqueueJob(ctx, j); err != nil {
+		return Job{}, err
+	}
+	return j, nil
 }
 
 // EnqueueImageJob queues the making of a file's pending versions. A file has at most
