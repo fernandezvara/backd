@@ -175,3 +175,19 @@ func TestOnSignupHookFailureNeverFailsTheSignUp(t *testing.T) {
 		t.Errorf("the user is gone: %v", err)
 	}
 }
+
+func TestOnlyApplesCallbackCarriesAName(t *testing.T) {
+	f := newOAuthFixture(t)
+	verifier, challenge, _ := auth.NewPKCE()
+	f.idp.SetUser(googleUser("g-x", "x@example.com", true))
+	rec, _ := f.doH(t, "GET", oauthBase+"/google/start?redirect_to="+url.QueryEscape(appRedirect)+"&code_challenge="+challenge, "", nil)
+	back, _ := url.Parse(f.idp.Authorize(rec.Header().Get("Location")))
+	q := back.Query()
+	q.Set("user", `{"name": {"firstName": "Mallory", "lastName": "Madeup"}}`)
+	cb, _ := f.doH(t, "GET", back.Path+"?"+q.Encode(), "", nil)
+	to, _ := url.Parse(cb.Header().Get("Location"))
+	_, out := f.redeem(t, attempt{verifier: verifier, result: to, status: cb.Code})
+	if out["new_user"] != true || out["profile"] != nil {
+		t.Errorf("a name sent to Google's callback was used: %v", out)
+	}
+}
