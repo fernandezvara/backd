@@ -125,7 +125,7 @@ auth: enabled
 # registered in its console, and the callback address to register there is
 #     {BACKD_URL}/v1/<realm>/_auth/oauth/<provider>/callback
 # (the realm's email.public_url replaces BACKD_URL when it is set). The secrets
-# are realm secrets (`backd secret set --realm <name> NAME`); their values never
+# are realm secrets (`backd secret set --realm <name> --name NAME`); their values never
 # go in this file. `sign_in.allowed_redirects` lists the web origins and app
 # schemes (acme://) a sign-in may send the user back to; without it the ones of
 # `email.allowed_redirects` are used. Realm accounts that have no password still

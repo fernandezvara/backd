@@ -2,6 +2,7 @@
 
 - **Issues:** #141 (this design) → #214 (several sign-in methods per user), #142 (Google, Microsoft, Apple), #143 (native ID tokens), #144 (Apple revocation), #145 (profile handover, `account.on_signup`), #146 (JS client), #215 (identities in the admin API, CLI and UI), #216 (integration testing guide), #157 (generic OpenID Connect), #158 (hosted sign-in page); supersedes #36
 - **Status:** decided
+- **Testing with real providers:** [identity-providers-testing.md](./identity-providers-testing.md)
 - **Related designs:** [account-lifecycle.md](./account-lifecycle.md) (verification, erasure, sign-up modes), [email-delivery.md](./email-delivery.md) (hosted pages, templates, `allowed_redirects`, `BACKD_URL`), [internal-functions.md](./internal-functions.md) (`account.on_signup`)
 
 ## 1. Why, and what already exists
@@ -57,7 +58,7 @@ providers:
 ```
 
 - **Callback URL to register** with each provider: `{BACKD_URL}/v1/{realm}/_auth/oauth/{provider}/callback` (or `email.public_url` when set for the realm).
-- Secrets are realm-level entries managed with `backd secret set --realm <r> NAME` (encrypted, admin-only, audited); rotation needs no restart.
+- Secrets are realm-level entries managed with `backd secret set --realm <r> --name NAME` (encrypted, admin-only, audited); rotation needs no restart.
 - backd generates Apple's client-secret JWT (ES256, signed with `private_key`) and renews it before it expires.
 - **`redirect_to` targets** come from `sign_in.allowed_redirects` (a new realm-level list of origins and app schemes, same syntax as `email.allowed_redirects`). When it is absent, sign-in uses `email.allowed_redirects`; when both are absent, `start` refuses every `redirect_to`. One list can serve both.
 - **Names:** `google`, `microsoft` and `apple` are reserved and imply their type. Any other provider name must declare `type: oidc` (§3.1) and match `[a-z][a-z0-9-]{0,31}`. The name is what `identities.provider`, the URLs and the audit use; renaming a provider in `realm.yaml` orphans its identities (documented).
