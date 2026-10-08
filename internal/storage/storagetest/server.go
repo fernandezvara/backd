@@ -38,12 +38,25 @@ type Server struct {
 	// Requests counts the requests the server got, by method.
 	Requests    map[string]int
 	failDeletes bool
+	uploads     map[string]*upload
+	started     int
+}
+
+// upload is a multipart upload in progress.
+type upload struct {
+	key, contentType string
+	parts            map[int]*part
+}
+
+type part struct {
+	data []byte
+	sum  []byte // raw SHA-256
 }
 
 // New starts a server with one bucket and stops it when the test ends.
 func New(t testing.TB, bucket string) *Server {
 	t.Helper()
-	s := &Server{Bucket: bucket, objects: map[string]*object{}, Requests: map[string]int{}}
+	s := &Server{Bucket: bucket, objects: map[string]*object{}, uploads: map[string]*upload{}, Requests: map[string]int{}}
 	s.Server = httptest.NewServer(http.HandlerFunc(s.serve))
 	t.Cleanup(s.Close)
 	return s
@@ -80,6 +93,13 @@ func (s *Server) Delete(key string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.objects, key)
+}
+
+// OpenUploads is the number of multipart uploads started and neither completed nor aborted.
+func (s *Server) OpenUploads() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.uploads)
 }
 
 // FailDeletes makes DELETE requests fail (500) while on.
@@ -121,7 +141,12 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusNotFound, "NoSuchBucket", "The specified bucket does not exist")
 		return
 	}
+	q := r.URL.Query()
 	switch {
+	case key != "" && r.Method == http.MethodPost && q.Has("uploads"):
+		s.createUpload(w, r, key)
+	case key != "" && q.Has("uploadId"):
+		s.multipart(w, r, key, q.Get("uploadId"))
 	case key == "" && r.Method == http.MethodHead:
 		w.WriteHeader(http.StatusOK)
 	case key == "" && r.Method == http.MethodGet && r.URL.Query().Has("cors"):
@@ -245,4 +270,116 @@ func (s *Server) sortedKeys() []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func (s *Server) createUpload(w http.ResponseWriter, r *http.Request, key string) {
+	s.started++
+	id := fmt.Sprintf("upload-%d", s.started)
+	s.uploads[id] = &upload{key: key, contentType: r.Header.Get("Content-Type"), parts: map[int]*part{}}
+	w.Header().Set("Content-Type", "application/xml")
+	fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?><InitiateMultipartUploadResult><Bucket>%s</Bucket><Key>%s</Key><UploadId>%s</UploadId></InitiateMultipartUploadResult>`, s.Bucket, key, id)
+}
+
+func partETag(sum []byte) string { return fmt.Sprintf(`"%x"`, sum[:8]) }
+
+// multipart serves the requests on an upload: a part, ListParts, complete and abort.
+func (s *Server) multipart(w http.ResponseWriter, r *http.Request, key, id string) {
+	u := s.uploads[id]
+	if u == nil || u.key != key {
+		apiError(w, http.StatusNotFound, "NoSuchUpload", "The specified multipart upload does not exist.")
+		return
+	}
+	switch r.Method {
+	case http.MethodPut:
+		n, _ := strconv.Atoi(r.URL.Query().Get("partNumber"))
+		body, err := io.ReadAll(r.Body)
+		if err != nil || n < 1 || n > 10000 {
+			apiError(w, http.StatusBadRequest, "InvalidPart", "bad part")
+			return
+		}
+		sum := sha256.Sum256(body)
+		want := r.Header.Get("X-Amz-Checksum-Sha256")
+		if want == "" {
+			want = r.URL.Query().Get("x-amz-checksum-sha256")
+		}
+		if want != "" && want != base64.StdEncoding.EncodeToString(sum[:]) {
+			apiError(w, http.StatusBadRequest, "BadDigest", "The SHA-256 you specified did not match the calculated checksum.")
+			return
+		}
+		u.parts[n] = &part{data: body, sum: sum[:]}
+		w.Header().Set("ETag", partETag(sum[:]))
+		w.WriteHeader(http.StatusOK)
+	case http.MethodGet:
+		type xpart struct {
+			PartNumber     int
+			ETag           string
+			Size           int
+			ChecksumSHA256 string
+		}
+		var out struct {
+			XMLName              xml.Name `xml:"ListPartsResult"`
+			IsTruncated          bool
+			NextPartNumberMarker int
+			Parts                []xpart `xml:"Part"`
+		}
+		marker, _ := strconv.Atoi(r.URL.Query().Get("part-number-marker"))
+		max, _ := strconv.Atoi(r.URL.Query().Get("max-parts"))
+		if max <= 0 || max > 1000 {
+			max = 1000
+		}
+		var nums []int
+		for n := range u.parts {
+			if n > marker {
+				nums = append(nums, n)
+			}
+		}
+		sort.Ints(nums)
+		if len(nums) > max {
+			nums, out.IsTruncated = nums[:max], true
+		}
+		for _, n := range nums {
+			p := u.parts[n]
+			out.Parts = append(out.Parts, xpart{n, partETag(p.sum), len(p.data), base64.StdEncoding.EncodeToString(p.sum)})
+			out.NextPartNumberMarker = n
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		_ = xml.NewEncoder(w).Encode(out)
+	case http.MethodDelete:
+		delete(s.uploads, id)
+		w.WriteHeader(http.StatusNoContent)
+	case http.MethodPost:
+		var in struct {
+			Parts []struct {
+				PartNumber int
+				ETag       string
+			} `xml:"Part"`
+		}
+		if err := xml.NewDecoder(r.Body).Decode(&in); err != nil || len(in.Parts) == 0 {
+			apiError(w, http.StatusBadRequest, "MalformedXML", "bad body")
+			return
+		}
+		var data, sums []byte
+		last := 0
+		for _, ip := range in.Parts {
+			p := u.parts[ip.PartNumber]
+			switch {
+			case p == nil || ip.ETag != partETag(p.sum):
+				apiError(w, http.StatusBadRequest, "InvalidPart", "One or more of the specified parts could not be found.")
+				return
+			case ip.PartNumber <= last:
+				apiError(w, http.StatusBadRequest, "InvalidPartOrder", "The list of parts was not in ascending order.")
+				return
+			}
+			last = ip.PartNumber
+			data = append(data, p.data...)
+			sums = append(sums, p.sum...)
+		}
+		composite := sha256.Sum256(sums)
+		s.objects[key] = &object{data: data, contentType: u.contentType, sum: fmt.Sprintf("%s-%d", base64.StdEncoding.EncodeToString(composite[:]), len(in.Parts)), modified: time.Now().UTC()}
+		delete(s.uploads, id)
+		w.Header().Set("Content-Type", "application/xml")
+		fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?><CompleteMultipartUploadResult><Bucket>%s</Bucket><Key>%s</Key><ETag>"fake-%d"</ETag></CompleteMultipartUploadResult>`, s.Bucket, key, len(in.Parts))
+	default:
+		apiError(w, http.StatusMethodNotAllowed, "MethodNotAllowed", r.Method)
+	}
 }

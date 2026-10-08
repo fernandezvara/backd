@@ -23,6 +23,7 @@ storage:
 | Addressing | path style (`<endpoint>/<bucket>/…`) |
 | Region | any; default `us-east-1` |
 | Signed SHA-256 (direct uploads) | supported |
+| Multipart uploads (files above 5 GiB) | supported, with a SHA-256 per part |
 | Oldest version tested | `RELEASE.2025-09-07T16-13-09Z` (the repository's tests run against Chainguard's current build as well) |
 | `backd storage check` reads | neither CORS nor encryption (MinIO doesn't expose them to an S3 client): it says so |
 

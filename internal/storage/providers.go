@@ -66,6 +66,10 @@ type Provider struct {
 	ChecksumSHA256 Capability
 	// MaxSinglePut is the largest object one PUT can carry.
 	MaxSinglePut int64
+	// MultipartSHA256 is whether a multipart upload can carry a SHA-256 per part, which the
+	// storage verifies and combines into the object's composite checksum: what direct uploads
+	// above MaxSinglePut need. Unverified (not confirmed by a smoke test) counts as unsupported.
+	MultipartSHA256 Capability
 	// ReadsCORS and ReadsEncryption say whether `backd storage check` can read
 	// the bucket's CORS rules and default encryption.
 	ReadsCORS, ReadsEncryption bool
@@ -89,14 +93,14 @@ var providers = []Provider{
 		DefaultEndpoint: func(region string) string { return "https://s3." + region + ".amazonaws.com" },
 		EndpointPattern: regexp.MustCompile(`^https://s3\.([a-z0-9-]+)\.amazonaws\.com$`),
 		EndpointHelp:    "https://s3.<region>.amazonaws.com", RegionFromEndpoint: true,
-		ChecksumSHA256: Supported, MaxSinglePut: 5 * gib, ReadsCORS: true, ReadsEncryption: true,
+		ChecksumSHA256: Supported, MaxSinglePut: 5 * gib, MultipartSHA256: Supported, ReadsCORS: true, ReadsEncryption: true,
 	},
 	{
 		Name: "minio", Label: "MinIO", Addressing: PathStyle, EndpointRequired: true,
 		EndpointPattern: regexp.MustCompile(`^https?://[^/?#\s]+$`),
 		EndpointHelp:    "https://<host>[:port] (http only for development)", AllowHTTP: true,
 		DefaultRegion:  "us-east-1",
-		ChecksumSHA256: Supported, MaxSinglePut: 5 * gib, ReadsCORS: false, ReadsEncryption: false,
+		ChecksumSHA256: Supported, MaxSinglePut: 5 * gib, MultipartSHA256: Supported, ReadsCORS: false, ReadsEncryption: false,
 		ChecksumsWhenRequired: true, PublicEndpointAllowed: true, OldestTested: "RELEASE.2025-09-07T16-13-09Z",
 	},
 	{
@@ -105,14 +109,14 @@ var providers = []Provider{
 		EndpointHelp:    "https://<account id>.r2.cloudflarestorage.com", FixedRegion: "auto",
 		// Confirmed by the R2 smoke test (internal/storage's r2_test.go, 2026-10-06): a wrong
 		// x-amz-checksum-sha256 is rejected and the stored one is reported back.
-		ChecksumSHA256: Supported, MaxSinglePut: 5 * gib, ChecksumsWhenRequired: true,
+		ChecksumSHA256: Supported, MaxSinglePut: 5 * gib, MultipartSHA256: Unverified, ChecksumsWhenRequired: true,
 	},
 	{
 		Name: "digitalocean", Label: "DigitalOcean Spaces", Addressing: VirtualHosted,
 		DefaultEndpoint: func(region string) string { return "https://" + region + ".digitaloceanspaces.com" },
 		EndpointPattern: regexp.MustCompile(`^https://([a-z0-9]+)\.digitaloceanspaces\.com$`),
 		EndpointHelp:    "https://<region>.digitaloceanspaces.com", RegionFromEndpoint: true,
-		ChecksumSHA256: Supported, MaxSinglePut: 5 * gib, ChecksumsWhenRequired: true,
+		ChecksumSHA256: Supported, MaxSinglePut: 5 * gib, MultipartSHA256: Unverified, ChecksumsWhenRequired: true,
 	},
 }
 
@@ -140,6 +144,12 @@ func LookupProvider(name string) (Provider, bool) {
 // they sign a SHA-256 into the PUT, so the provider must have been confirmed to
 // verify it.
 func (p Provider) SupportsDirectUploads() bool { return p.ChecksumSHA256 == Supported }
+
+// SupportsMultipartUploads reports whether direct uploads above MaxSinglePut work: the
+// provider must verify a SHA-256 per part and report the composite checksum.
+func (p Provider) SupportsMultipartUploads() bool {
+	return p.SupportsDirectUploads() && p.MultipartSHA256 == Supported
+}
 
 // Resolved is the endpoint and region a configuration comes to once the
 // provider's rules are applied.

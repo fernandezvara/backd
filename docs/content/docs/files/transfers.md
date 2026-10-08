@@ -63,7 +63,7 @@ The [JavaScript client](../../clients/js/#files) does all of this (and chooses b
 
 ## Direct uploads
 
-With `upload: direct` the bytes never pass through backd: the client sends them to the bucket with a link backd signed, then backd checks what arrived. It suits large files (up to the field's `max_size`, at most 5 GiB, one signed `PUT`) and keeps their traffic off backd.
+With `upload: direct` the bytes never pass through backd: the client sends them to the bucket with a link backd signed, then backd checks what arrived. It suits large files and keeps their traffic off backd: a file of up to 5 GiB goes in one signed `PUT`, a larger one [in parts](#files-above-5-gib), up to 4 TiB.
 
 ```sh
 # 1. Declare the file: all four are required. The update rule is asked here, before anything is signed.
@@ -85,7 +85,35 @@ curl -X POST "$API/v1/acme/app/people/$ID/_files/video/uploads/$UPLOAD_ID/comple
 - **Complete it with the token,** the same way a [pending upload](#creating-a-document-with-its-files) is attached; nothing uploaded yet answers `409 file_not_uploaded` and it can be tried again. The upload can be used once and lives as long as the realm's `pending_ttl`; the link itself lasts the field's `presigned_ttl`.
 - **Before the document exists,** start with `POST …/_files/{field}/uploads` (no document id) and the same declaration: completing answers `200` and the upload is named in a create, `PUT` or `PATCH` like any pending upload. They count among the caller's 20 unused uploads.
 - **The bucket needs CORS** for the app's origin to accept the browser's `PUT`: see your provider's page. `backd storage check` reads the rules where the provider lets it and warns when they couldn't carry one.
-- Presigned multipart uploads (files above 5 GiB) are not available.
+
+### Files above 5 GiB
+
+A storage takes at most 5 GiB in one `PUT`. A direct field whose `max_size` is larger (up to 4 TiB) sends the files above that in parts, each to its own signed link, when the [provider](../storage/) supports it (AWS S3 and MinIO do; the field is refused with the others if its `max_size` is above 5 GiB). `GET …/_files/{field}` says so with `multipart_above`, and the [JavaScript client](../../clients/js/#files) does all of the below on its own: it hashes the parts, sends three at a time, sends again a part that failed and reports the progress of the whole file.
+
+```sh
+# 1. Declare the file with the SHA-256 of every part instead of one for the whole file
+curl -X POST "$API/v1/acme/app/people/$ID/_files/video/uploads" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name": "raw.mov", "size": 8589934592, "type": "video/quicktime", "part_sha256": ["3f1a…", "a9c0…", …]}'
+# → {"upload_id": "fl_…", "upload_token": "fut_…", "multipart": true, "part_size": 67108864,
+#    "parts": [{"number": 1, "url": "https://…", "headers": {…}, "size": 67108864}, …], …}
+
+# 2. PUT every part to its own link, with exactly the headers named (in any order, in parallel)
+curl -X PUT "$PART_URL" -H "x-amz-checksum-sha256: …" --data-binary @part-0001
+
+# 3. Complete it, as for any direct upload
+```
+
+- **The part size is fixed by the file's size:** 64 MiB, or the next multiple of 16 MiB that keeps the file within 1000 parts; the last part is the shorter one. The start call says how many digests it wants (and of what size) if you send another number: `400`.
+- **Each part is checked by the storage.** Its link has the length and the SHA-256 signed in, so a part that differs is refused, exactly as a single `PUT` is.
+- **The file's `sha256` is not the SHA-256 of its bytes.** A storage can't compute that for a file sent in parts; it only knows a composite checksum, the SHA-256 of the parts' digests put one after the other (and the number of parts). backd checks that composite when completing, so the file is as verified as any other, and records its digest (64 hex characters, in the start reply too) as the file's `sha256`. To compare it with a file on disk, hash the parts the same way.
+- **Completing** lists the parts in the bucket (the sizes and digests must be the declared ones; parts missing are `409 file_not_uploaded` and the completion can be tried again), has the storage assemble them and verifies the result as above. A mismatch aborts the upload: `422 upload_mismatch`.
+- **The upload lasts at least a day,** or the realm's `pending_ttl` if longer (at most 7 days), and so do the links. Uploads that are never completed are aborted by the worker, which frees the parts already sent (they are billed until then). Without a worker running they stay open.
+- **A JPEG or PNG sent in parts is refused** (`422 invalid_image`) unless its field sets `keep_metadata: true`: removing metadata means rewriting the file, which backd does not do for files of this size.
+
+{{< hint style="tip" title="Best practice" >}}
+Set a lifecycle rule on the bucket that aborts incomplete multipart uploads after a few days, as a second line of defence for uploads the worker could not reach.
+{{< /hint >}}
 
 ## Downloading
 

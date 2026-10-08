@@ -115,11 +115,14 @@ func ObjectKey(prefix, realm, database, collection, fileID string) string {
 
 // ObjectInfo describes a stored object.
 type ObjectInfo struct {
-	Key          string
-	Size         int64
-	ContentType  string
-	ETag         string
-	SHA256       string // hex; "" when the storage keeps none
+	Key         string
+	Size        int64
+	ContentType string
+	ETag        string
+	SHA256      string // hex; "" when the storage keeps none (or keeps a composite one)
+	// Checksum is the SHA-256 as the storage reports it: base64, and for an object made by a
+	// multipart upload "<base64>-<parts>" (a composite checksum, see CompositeSHA256).
+	Checksum     string
 	LastModified time.Time
 }
 
@@ -137,6 +140,8 @@ func mapError(err error) error {
 		switch api.ErrorCode() {
 		case "NoSuchKey", "NotFound":
 			return ErrObjectNotFound
+		case "NoSuchUpload":
+			return ErrNoSuchUpload
 		case "NoSuchBucket":
 			return ErrBucketNotFound
 		case "AccessDenied", "InvalidAccessKeyId", "SignatureDoesNotMatch", "AllAccessDisabled", "Forbidden", "403":
@@ -194,7 +199,7 @@ func (o *Objects) Head(ctx context.Context, key string) (ObjectInfo, error) {
 		return ObjectInfo{}, mapError(err)
 	}
 	return ObjectInfo{Key: key, Size: aws.ToInt64(out.ContentLength), ContentType: aws.ToString(out.ContentType), ETag: aws.ToString(out.ETag),
-		SHA256: fromB64(out.ChecksumSHA256), LastModified: aws.ToTime(out.LastModified)}, nil
+		SHA256: fromB64(out.ChecksumSHA256), Checksum: aws.ToString(out.ChecksumSHA256), LastModified: aws.ToTime(out.LastModified)}, nil
 }
 
 // Get opens an object; rng is an HTTP Range value ("bytes=0-99") or "". The caller closes the body.

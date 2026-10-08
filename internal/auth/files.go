@@ -66,6 +66,13 @@ type FileJournalEntry struct {
 	// Image is a pending upload's image details as JSON (width, height and the state of each
 	// declared version), for the document that will hold it.
 	Image string
+
+	// A multipart direct upload (a file above one signed PUT): the storage's upload id, the
+	// part size and the SHA-256 of each part as declared at the start. SHA256 is then their
+	// composite, which storage can verify.
+	MultipartID string
+	PartSize    int64
+	PartSHA256  []string
 }
 
 // FileDeletion is an object to delete from the bucket.

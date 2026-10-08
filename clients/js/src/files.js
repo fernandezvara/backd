@@ -244,6 +244,7 @@ export class Files {
  * @property {number} max_files   1 for a field that holds one file.
  * @property {number} max_size    Bytes per file.
  * @property {string[]} types     Allowed content types; empty allows any.
+ * @property {number} [multipart_above]   A direct field that can hold more: files above this many bytes are sent in parts.
  */
 
 /**
@@ -324,23 +325,91 @@ async function putToBucket(client, start, blob, opts) {
   }
 }
 
+const MIB = 1024 * 1024
+const MAX_PARTS = 1000
+const PART_ATTEMPTS = 4
+const PART_CONCURRENCY = 3
+
+/**
+ * The size of the parts of a file sent in parts: at least 64 MiB, and a multiple of 16 MiB
+ * when the file needs more to stay within 1000 parts. backd checks it, so it is the same on
+ * both sides.
+ * @param {number} size
+ */
+export function partSizeFor(size) {
+  const need = Math.ceil(Math.ceil(size / MAX_PARTS) / (16 * MIB)) * 16 * MIB
+  return Math.max(64 * MIB, need)
+}
+
+/** @param {number} ms @param {AbortSignal} [signal] */
+const pause = (ms, signal) =>
+  new Promise((resolve, reject) => {
+    const t = setTimeout(resolve, ms)
+    signal?.addEventListener('abort', () => (clearTimeout(t), reject(signal.reason)), { once: true })
+  })
+
+/**
+ * Sends a file in parts, each to its own signed link: a few at a time, a part that fails to
+ * go through is sent again (the others are not). Progress is that of the whole file.
+ * @param {Client} client
+ * @param {{ part_size: number, parts: { number: number, url: string, headers: Record<string, string>, size: number }[] }} start
+ * @param {Blob} blob
+ * @param {UploadOptions} opts
+ */
+async function putParts(client, start, blob, opts) {
+  const sent = new Array(start.parts.length).fill(0)
+  const report = opts.onProgress
+    ? () => opts.onProgress?.({ loaded: sent.reduce((a, b) => a + b, 0), total: blob.size })
+    : undefined
+  let next = 0
+  async function worker() {
+    while (next < start.parts.length) {
+      const i = next++
+      const part = start.parts[i]
+      const body = blob.slice(i * start.part_size, i * start.part_size + part.size)
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await putToBucket(client, part, body, {
+            ...opts,
+            onProgress: report && ((p) => ((sent[i] = p.loaded), report())),
+          })
+          break
+        } catch (e) {
+          const retryable = e instanceof NetworkError || (e instanceof BackdError && e.status >= 500)
+          if (!retryable || attempt >= PART_ATTEMPTS || opts.signal?.aborted) throw e
+          sent[i] = 0
+          await pause(500 * 2 ** (attempt - 1), opts.signal)
+        }
+      }
+      sent[i] = part.size
+      report?.()
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(PART_CONCURRENCY, start.parts.length) }, worker))
+}
+
 /**
  * Declares a file, sends it to the bucket and completes: the three steps of a direct
  * upload. `startPath` is where to start it; the completion is always under the collection.
+ * A file above the field's `multipart_above` is declared by the SHA-256 of each part and
+ * sent in parts.
  * @param {Client} client
  * @param {string[]} collectionPath
  * @param {string[]} startPath
- * @param {string} field
+ * @param {FileField} info
  * @param {Blob} blob
  * @param {UploadOptions} opts
  * @returns {Promise<{ start: any, answer: any }>}
  */
-async function direct(client, collectionPath, startPath, field, blob, opts) {
+async function direct(client, collectionPath, startPath, info, blob, opts) {
   const { name, type, size } = describe(blob, opts)
-  const sha256 = await sha256Blob(blob, { signal: opts.signal })
+  const field = info.name
+  const multipart = info.multipart_above !== undefined && size > info.multipart_above
+  const declared = multipart ? { part_sha256: await partDigests(blob, partSizeFor(size), opts.signal) } : { sha256: await sha256Blob(blob, { signal: opts.signal }) }
   const headers = opts.ifMatch === undefined ? opts.headers : { ...opts.headers, 'If-Match': typeof opts.ifMatch === 'number' ? `"${opts.ifMatch}"` : opts.ifMatch }
-  const { data: start } = await client.request({ method: 'POST', path: startPath, body: { name, size, type, sha256 }, signal: opts.signal, headers })
-  await putToBucket(client, start, blob, opts)
+  const { data: start } = await client.request({ method: 'POST', path: startPath, body: { name, size, type, ...declared }, signal: opts.signal, headers })
+  if (start.multipart) await putParts(client, start, blob, opts)
+  else await putToBucket(client, start, blob, opts)
   const { data: answer } = await client.request({
     method: 'POST',
     path: [...collectionPath, '_files', field, 'uploads', start.upload_id, 'complete'],
@@ -349,6 +418,18 @@ async function direct(client, collectionPath, startPath, field, blob, opts) {
     headers,
   })
   return { start, answer }
+}
+
+/**
+ * @param {Blob} blob
+ * @param {number} partSize
+ * @param {AbortSignal} [signal]
+ */
+async function partDigests(blob, partSize, signal) {
+  /** @type {string[]} */
+  const out = []
+  for (let at = 0; at < blob.size; at += partSize) out.push(await sha256Blob(blob.slice(at, at + partSize), { signal }))
+  return out
 }
 
 /**
@@ -368,7 +449,7 @@ export async function uploadFile(client, collectionPath, id, field, file, opts =
   const blob = asBlob(file)
   const info = await fileField(client, collectionPath, field, { signal: opts.signal })
   if (info.upload === 'direct') {
-    return (await direct(client, collectionPath, [...collectionPath, id, '_files', field, 'uploads'], field, blob, opts)).answer
+    return (await direct(client, collectionPath, [...collectionPath, id, '_files', field, 'uploads'], info, blob, opts)).answer
   }
   const { name, type } = describe(blob, opts)
   return new Files(client, collectionPath, id, field).put(blob, { ...opts, name, type })
@@ -393,7 +474,7 @@ export async function prepareUpload(client, collectionPath, field, file, opts = 
   /** @type {any} */
   let file2
   if (info.upload === 'direct') {
-    const done = await direct(client, collectionPath, [...collectionPath, '_files', field, 'uploads'], field, blob, { ...opts, ifMatch: undefined })
+    const done = await direct(client, collectionPath, [...collectionPath, '_files', field, 'uploads'], info, blob, { ...opts, ifMatch: undefined })
     start = done.start
     file2 = done.answer.file
   } else {

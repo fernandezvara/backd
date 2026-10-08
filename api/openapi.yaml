@@ -2751,6 +2751,18 @@ paths:
         After the `PUT`, `POST …/_files/{field}/uploads/{upload_id}/complete` with the
         token verifies the file and attaches it. The bucket needs CORS for the app's
         origins (`backd storage check` looks).
+
+        Above the storage's single-`PUT` limit (5 GiB, `multipart_above` in the field's
+        info) the file is sent in parts: instead of `sha256` the body carries
+        `part_sha256`, the SHA-256 of each consecutive part of `part_size` bytes (the
+        part size follows from the file's size: at least 64 MiB, a multiple of 16 MiB,
+        at most 1000 parts; a body naming the wrong number of digests is `400` and says
+        how many). The answer then has `multipart: true`, the `part_size` and a signed
+        `PUT` link per part (`parts`, each with its own headers) instead of `url`. The
+        links last at least a day. Completing assembles the parts, and the file's
+        `sha256` is not that of its bytes but the digest of the parts' digests
+        (`sha256` of the reply, checked by the storage). Uploads left unfinished are
+        aborted by the worker.
       operationId: startDirectUpload
       security: [{}, { session: [] }, { apiKey: [] }]
       parameters: [{ $ref: "#/components/parameters/ifMatch" }]
@@ -2799,7 +2811,11 @@ paths:
         whatever the file's size, to detect its type. Any mismatch deletes the object:
         `422 upload_mismatch`, or `415 unsupported_file_type` when the content isn't a
         type of the field. Nothing uploaded yet is `409 file_not_uploaded`, and the
-        completion can be tried again.
+        completion can be tried again. A multipart upload lists its parts first (the
+        sizes and digests must be the declared ones; parts still missing are `409
+        file_not_uploaded` too), has the storage assemble them, and checks the composite
+        checksum of the object against the declared parts. A JPEG or PNG sent in parts is
+        refused (`422 invalid_image`) unless the field sets `keep_metadata: true`.
 
         An upload started for a document is then attached to it (`201` with the
         document, the update rule asked about the real details, `If-Match` accepted); a
@@ -3341,6 +3357,18 @@ paths:
         After the `PUT`, `POST …/_files/{field}/uploads/{upload_id}/complete` with the
         token verifies the file and attaches it. The bucket needs CORS for the app's
         origins (`backd storage check` looks). Admin route: past the collection's rules.
+
+        Above the storage's single-`PUT` limit (5 GiB, `multipart_above` in the field's
+        info) the file is sent in parts: instead of `sha256` the body carries
+        `part_sha256`, the SHA-256 of each consecutive part of `part_size` bytes (the
+        part size follows from the file's size: at least 64 MiB, a multiple of 16 MiB,
+        at most 1000 parts; a body naming the wrong number of digests is `400` and says
+        how many). The answer then has `multipart: true`, the `part_size` and a signed
+        `PUT` link per part (`parts`, each with its own headers) instead of `url`. The
+        links last at least a day. Completing assembles the parts, and the file's
+        `sha256` is not that of its bytes but the digest of the parts' digests
+        (`sha256` of the reply, checked by the storage). Uploads left unfinished are
+        aborted by the worker.
       operationId: adminStartDirectUpload
       security: [{ apiKey: [] }, { session: [] }]
       parameters: [{ $ref: "#/components/parameters/ifMatch" }]
@@ -3389,7 +3417,11 @@ paths:
         whatever the file's size, to detect its type. Any mismatch deletes the object:
         `422 upload_mismatch`, or `415 unsupported_file_type` when the content isn't a
         type of the field. Nothing uploaded yet is `409 file_not_uploaded`, and the
-        completion can be tried again.
+        completion can be tried again. A multipart upload lists its parts first (the
+        sizes and digests must be the declared ones; parts still missing are `409
+        file_not_uploaded` too), has the storage assemble them, and checks the composite
+        checksum of the object against the declared parts. A JPEG or PNG sent in parts is
+        refused (`422 invalid_image`) unless the field sets `keep_metadata: true`.
 
         An upload started for a document is then attached to it (`201` with the
         document, the update rule asked about the real details, `If-Match` accepted); a
@@ -4703,32 +4735,52 @@ components:
         max_files: { type: integer, minimum: 1, description: "1 for a field that holds one file." }
         max_size: { type: integer, description: Bytes per file. }
         types: { type: array, items: { type: string }, description: "Allowed content types; empty allows any." }
+        multipart_above: { type: integer, description: "Direct fields only, when the field can hold more: files above this many bytes are sent in parts." }
 
     DirectUploadStart:
       type: object
       additionalProperties: false
-      required: [name, size, type, sha256]
+      required: [name, size, type]
       properties:
         name: { type: string }
         size: { type: integer, minimum: 1, description: "The file's size in bytes, at most the field's `max_size`." }
         type: { type: string, description: The file's content type; signed into the link. }
-        sha256: { type: string, pattern: '^[0-9a-f]{64}$', description: "The file's SHA-256: signed into the link and verified by the storage." }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$', description: "The file's SHA-256: signed into the link and verified by the storage. Required, except for a file sent in parts." }
+        part_sha256:
+          type: array
+          items: { type: string, pattern: '^[0-9a-f]{64}$' }
+          description: "For a file above the field's `multipart_above`: the SHA-256 of each consecutive part (required there, refused below)."
 
     DirectUpload:
       type: object
       additionalProperties: false
-      required: [upload_id, upload_token, expires_at, method, url, headers, url_expires_at]
+      required: [upload_id, upload_token, expires_at, url_expires_at]
       properties:
         upload_id: { type: string, pattern: '^fl_[0-9a-z]{20}$' }
         upload_token: { type: string, description: "Secret, shown once. Only its hash is kept." }
         expires_at: { $ref: "#/components/schemas/Timestamp" }
-        method: { const: PUT }
-        url: { type: string, description: The signed link to the bucket. }
+        method: { const: PUT, description: Not in the reply to a multipart upload. }
+        url: { type: string, description: The signed link to the bucket (a file sent in one piece). }
         headers:
           type: object
           additionalProperties: { type: string }
           description: "Headers the PUT must send, exactly (content type and checksum are signed in)."
         url_expires_at: { $ref: "#/components/schemas/Timestamp" }
+        multipart: { const: true, description: The file is sent in parts. }
+        part_size: { type: integer, description: "Bytes per part; the last one may be shorter." }
+        sha256: { type: string, description: "A multipart upload: the digest the file will be recorded with (of the parts' digests)." }
+        parts:
+          type: array
+          description: "A multipart upload: one signed PUT link per part."
+          items:
+            type: object
+            additionalProperties: false
+            required: [number, url, headers, size]
+            properties:
+              number: { type: integer, minimum: 1 }
+              url: { type: string }
+              headers: { type: object, additionalProperties: { type: string } }
+              size: { type: integer }
 
     CompletedUpload:
       type: object

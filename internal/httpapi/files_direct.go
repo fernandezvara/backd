@@ -57,22 +57,29 @@ type directStart struct {
 	Size   *int64 `json:"size"`
 	Type   string `json:"type"`
 	SHA256 string `json:"sha256"`
+	// PartSHA256 is for a file above one signed PUT: the SHA-256 of each of its parts.
+	PartSHA256 []string `json:"part_sha256"`
+
+	multipart   bool
+	partSize    int64
+	links       []map[string]any
+	linksExpire time.Time
 }
 
 // readDirectStart reads and validates a start call against the field. It answers and
 // returns false when it can't be used.
-func readDirectStart(w http.ResponseWriter, r *http.Request, f *registry.FileField) (directStart, bool) {
+func readDirectStart(w http.ResponseWriter, r *http.Request, f *registry.FileField, obj *storage.Objects) (directStart, bool) {
 	var in directStart
-	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxStartBody))
+	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxMultipartStartBody))
 	var tooBig *http.MaxBytesError
 	if errors.As(err, &tooBig) {
-		tooLarge(w, r, maxStartBody)
+		tooLarge(w, r, maxMultipartStartBody)
 		return in, false
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err != nil || dec.Decode(&in) != nil {
-		writeError(w, r, http.StatusBadRequest, codeInvalidJSON, `the body must be a JSON object: {"name", "size", "type", "sha256"}`)
+		writeError(w, r, http.StatusBadRequest, codeInvalidJSON, `the body must be a JSON object: {"name", "size", "type", "sha256"} ("part_sha256" instead of "sha256" above the multipart limit)`)
 		return in, false
 	}
 	var details []Detail
@@ -90,8 +97,16 @@ func readDirectStart(w http.ResponseWriter, r *http.Request, f *registry.FileFie
 	if _, _, err := mime.ParseMediaType(in.Type); err != nil || strings.TrimSpace(in.Type) == "" {
 		details = append(details, Detail{Path: "type", Reason: "is required: the file's content type"})
 	}
-	if !sha256Hex(in.SHA256) {
-		details = append(details, Detail{Path: "sha256", Reason: "is required: the file's SHA-256, 64 lower-case hex characters"})
+	if above := multipartThreshold(obj.Provider()); in.Size != nil && above > 0 && *in.Size > above && *in.Size <= f.MaxSize {
+		in.multipart = true
+		details = append(details, checkMultipartStart(&in)...)
+	} else {
+		if !sha256Hex(in.SHA256) {
+			details = append(details, Detail{Path: "sha256", Reason: "is required: the file's SHA-256, 64 lower-case hex characters"})
+		}
+		if len(in.PartSHA256) > 0 {
+			details = append(details, Detail{Path: "part_sha256", Reason: "is only for a file above " + strconv.FormatInt(max(above, obj.Provider().MaxSinglePut), 10) + " bytes: this one is sent in one piece"})
+		}
 	}
 	if len(details) > 0 {
 		writeError(w, r, http.StatusBadRequest, codeValidation, "the upload isn't described: "+directStartDescribing, details...)
@@ -105,8 +120,19 @@ func readDirectStart(w http.ResponseWriter, r *http.Request, f *registry.FileFie
 }
 
 // startReply answers a started direct upload: where to PUT, with which headers, and
-// the id and token to complete it.
+// the id and token to complete it. A multipart one (begun by beginMultipart) lists a
+// link per part instead.
 func (d *documents) startReply(w http.ResponseWriter, r *http.Request, c *registry.Collection, f *registry.FileField, obj *storage.Objects, id, token string, in directStart, ttl time.Duration) {
+	w.Header().Set("Cache-Control", "no-store")
+	if in.multipart {
+		ttl = multipartTTL(ttl)
+		writeJSON(w, http.StatusCreated, map[string]any{
+			"upload_id": id, "upload_token": token, "expires_at": d.timestamp().Add(ttl).UTC().Format(timeFormat),
+			"multipart": true, "part_size": in.partSize, "parts": in.links, "url_expires_at": in.linksExpire.UTC().Format(timeFormat),
+			"sha256": in.SHA256,
+		})
+		return
+	}
 	key := obj.Key(c.Realm, c.Database, c.Name, id)
 	link, err := obj.PresignPut(r.Context(), key, linkTTL(f, d.reg.Realms[c.Realm].Settings.Storage), *in.Size, in.Type, in.SHA256)
 	if err != nil {
@@ -114,7 +140,6 @@ func (d *documents) startReply(w http.ResponseWriter, r *http.Request, c *regist
 		writeError(w, r, http.StatusServiceUnavailable, codeStorageUnavailable, "file storage is not available")
 		return
 	}
-	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"upload_id": id, "upload_token": token, "expires_at": d.timestamp().Add(ttl).UTC().Format(timeFormat),
 		"method": http.MethodPut, "url": link.URL, "headers": link.Headers, "url_expires_at": link.ExpiresAt.UTC().Format(timeFormat),
@@ -143,7 +168,7 @@ func (d *documents) startDirectForDocument(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	in, ok := readDirectStart(w, r, f)
+	in, ok := readDirectStart(w, r, f, obj)
 	if !ok {
 		return
 	}
@@ -180,7 +205,15 @@ func (d *documents) startDirectForDocument(w http.ResponseWriter, r *http.Reques
 	caller, _ := callerOf(r)
 	entry := auth.FileJournalEntry{ID: id, Database: c.Database, Collection: c.Name, Field: f.Name, DocumentID: docID, Key: obj.Key(c.Realm, c.Database, c.Name, id),
 		Caller: caller.Subject(), Size: *in.Size, TokenHash: hash, CallerKey: callerKey, Owner: ownerOf(r), Name: sanitizeFileName(in.Name), Type: in.Type, SHA256: in.SHA256}
-	if err := svc.JournalDirectUpload(r.Context(), entry, ttl); err != nil {
+	uploadID, ok := d.beginMultipart(w, r, c, obj, entry.Key, &in, ttl)
+	if !ok {
+		return
+	}
+	in.multipartEntry(&entry, uploadID)
+	if err := svc.JournalDirectUpload(r.Context(), entry, multipartTTLIf(in.multipart, ttl)); err != nil {
+		if uploadID != "" {
+			_ = obj.AbortMultipart(r.Context(), entry.Key, uploadID)
+		}
 		storageError(w, r, err)
 		return
 	}
@@ -226,7 +259,7 @@ func ownerOf(r *http.Request) string {
 // startDirectPending handles the start of a pending upload on a direct field: the
 // body of POST …/_files/{field}/uploads is the declaration, not the file.
 func (d *documents) startDirectPending(w http.ResponseWriter, r *http.Request, c *registry.Collection, f *registry.FileField, svc *auth.Users, obj *storage.Objects) {
-	in, ok := readDirectStart(w, r, f)
+	in, ok := readDirectStart(w, r, f, obj)
 	if !ok {
 		return
 	}
@@ -244,7 +277,15 @@ func (d *documents) startDirectPending(w http.ResponseWriter, r *http.Request, c
 	caller, _ := callerOf(r)
 	entry := auth.FileJournalEntry{ID: id, Database: c.Database, Collection: c.Name, Field: f.Name, Key: obj.Key(c.Realm, c.Database, c.Name, id),
 		Caller: caller.Subject(), Size: *in.Size, Pending: true, TokenHash: hash, CallerKey: callerKey, Owner: ownerOf(r), Name: sanitizeFileName(in.Name), Type: in.Type, SHA256: in.SHA256}
-	if err := svc.JournalDirectUpload(r.Context(), entry, ttl); err != nil {
+	uploadID, ok := d.beginMultipart(w, r, c, obj, entry.Key, &in, ttl)
+	if !ok {
+		return
+	}
+	in.multipartEntry(&entry, uploadID)
+	if err := svc.JournalDirectUpload(r.Context(), entry, multipartTTLIf(in.multipart, ttl)); err != nil {
+		if uploadID != "" {
+			_ = obj.AbortMultipart(r.Context(), entry.Key, uploadID)
+		}
 		storageError(w, r, err)
 		return
 	}
@@ -319,12 +360,18 @@ func (d *documents) completeDirect(w http.ResponseWriter, r *http.Request) {
 	retry := func() { _ = svc.ReleaseDirectUpload(ctx, id) }
 	reject := func(status int, code, message string) {
 		_ = svc.SetUploadStatus(ctx, id, auth.JournalFailed, "")
+		if claimed.MultipartID != "" {
+			_ = obj.AbortMultipart(ctx, key, claimed.MultipartID) // no-op once it is completed
+		}
 		if err := obj.Delete(ctx, key); err != nil {
 			_ = svc.QueueFileDeletion(ctx, key, "rejected")
 		}
 		writeError(w, r, status, code, message)
 	}
 
+	if claimed.MultipartID != "" && !d.assembleParts(ctx, w, r, obj, claimed, retry, reject) {
+		return
+	}
 	info, err := obj.Head(ctx, key)
 	switch {
 	case errors.Is(err, storage.ErrObjectNotFound):
@@ -342,7 +389,12 @@ func (d *documents) completeDirect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Only a checksum storage computed counts: a missing one is not a pass.
-	if info.SHA256 == "" || info.SHA256 != claimed.SHA256 {
+	if claimed.MultipartID != "" {
+		if !storage.IsCompositeOf(info.Checksum, claimed.PartSHA256) {
+			reject(http.StatusUnprocessableEntity, codeUploadMismatch, "the uploaded file's checksum is not the one of the declared parts")
+			return
+		}
+	} else if info.SHA256 == "" || info.SHA256 != claimed.SHA256 {
 		reject(http.StatusUnprocessableEntity, codeUploadMismatch, "the uploaded file's SHA-256 is not the declared one")
 		return
 	}
@@ -366,7 +418,10 @@ func (d *documents) completeDirect(w http.ResponseWriter, r *http.Request) {
 	}
 	// A JPEG or PNG loses its metadata: the object is rewritten without it, and the size and
 	// checksum recorded are those of what is stored.
-	if format := metadataFormat(contentType); format != "" && !f.KeepMetadata {
+	if format := metadataFormat(contentType); format != "" && !f.KeepMetadata && claimed.MultipartID != "" {
+		reject(http.StatusUnprocessableEntity, codeInvalidImage, "the metadata of an image sent in parts can't be removed: set keep_metadata: true for this field")
+		return
+	} else if format != "" && !f.KeepMetadata {
 		size, sum, err := rewriteWithoutMetadata(ctx, obj, key, format, contentType, claimed.SHA256)
 		switch {
 		case errors.Is(err, imaging.ErrUnreadable):

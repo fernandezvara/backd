@@ -23,6 +23,7 @@ storage:
 | Region | always `auto` |
 | Signed SHA-256 (direct uploads) | supported: R2 rejects an upload whose digest differs (confirmed by the provider smoke test) |
 | Largest single PUT | 5 GiB |
+| Multipart uploads (files above 5 GiB) | not enabled until the provider smoke test confirms a SHA-256 per part: `max_size` stays at 5 GiB |
 | `backd storage check` reads | neither CORS nor encryption: it says so |
 
 ## Setting it up

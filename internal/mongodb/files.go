@@ -38,6 +38,9 @@ type fileJournalDoc struct {
 	SHA256       string    `bson:"sha256,omitempty"`
 	UploadedAt   time.Time `bson:"uploaded_at,omitempty"`
 	Image        string    `bson:"image,omitempty"`
+	MultipartID  string    `bson:"multipart_id,omitempty"`
+	PartSize     int64     `bson:"part_size,omitempty"`
+	PartSHA256   []string  `bson:"part_sha256,omitempty"`
 }
 
 type fileDeletionDoc struct {
@@ -56,7 +59,8 @@ func (s *AuthStore) fileDeletions() *mongo.Collection {
 func (d fileJournalDoc) entry() auth.FileJournalEntry {
 	return auth.FileJournalEntry{ID: d.ID, Database: d.Database, Collection: d.Collection, Field: d.Field, DocumentID: d.DocumentID, Key: d.Key,
 		Caller: d.Caller, Size: d.Size, Status: d.Status, CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC(),
-		Pending: d.Pending, Direct: d.Direct, TokenHash: d.TokenHash, Owner: d.Owner, CallerKey: d.CallerKey, PendingUntil: d.PendingUntil.UTC(), Name: d.Name, Type: d.Type, SHA256: d.SHA256, UploadedAt: d.UploadedAt.UTC(), Image: d.Image}
+		Pending: d.Pending, Direct: d.Direct, TokenHash: d.TokenHash, Owner: d.Owner, CallerKey: d.CallerKey, PendingUntil: d.PendingUntil.UTC(), Name: d.Name, Type: d.Type, SHA256: d.SHA256, UploadedAt: d.UploadedAt.UTC(), Image: d.Image,
+		MultipartID: d.MultipartID, PartSize: d.PartSize, PartSHA256: d.PartSHA256}
 }
 
 // JournalFile records an upload.
@@ -64,7 +68,8 @@ func (s *AuthStore) JournalFile(ctx context.Context, e auth.FileJournalEntry) er
 	_, err := s.fileJournal().InsertOne(ctx, fileJournalDoc{ID: e.ID, Database: e.Database, Collection: e.Collection, Field: e.Field, DocumentID: e.DocumentID,
 		Key: e.Key, Caller: e.Caller, Size: e.Size, Status: e.Status, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt, ExpiresAt: e.ExpiresAt,
 		Pending: e.Pending, Direct: e.Direct, TokenHash: e.TokenHash, Owner: e.Owner, CallerKey: e.CallerKey, PendingUntil: e.PendingUntil,
-		Name: e.Name, Type: e.Type, SHA256: e.SHA256, UploadedAt: e.UploadedAt, Image: e.Image})
+		Name: e.Name, Type: e.Type, SHA256: e.SHA256, UploadedAt: e.UploadedAt, Image: e.Image,
+		MultipartID: e.MultipartID, PartSize: e.PartSize, PartSHA256: e.PartSHA256})
 	return err
 }
 
