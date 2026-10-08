@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -264,6 +265,7 @@ func (a *authAPI) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	res, err := svc.ResolveProviderLogin(r.Context(), auth.ProviderLogin{
 		Provider: p.Name, Subject: claims.Subject, Email: claims.Email, EmailVerified: claims.EmailVerified, TrustsEmail: p.TrustsEmail(),
 		Intent: st.Intent, LinkUserID: st.LinkUserID, Invitation: st.InvitationID, Locales: st.Locales, IP: clientIP(r),
+		Profile: profileOf(claims, firstAuthorization(p, get("user"))),
 	})
 	if err != nil {
 		a.oauthFailure(w, r, svc, st, p, err)
@@ -274,7 +276,7 @@ func (a *authAPI) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		back("linked", p.Name)
 		return
 	}
-	loginCode, err := svc.IssueLoginCode(r.Context(), res.User.ID, st.CodeChallenge)
+	loginCode, err := svc.IssueLoginCode(r.Context(), res.User.ID, st.CodeChallenge, res.NewUser, res.Profile)
 	if err != nil {
 		logger(r.Context()).Error("issue a login code", "error", err)
 		back("error", oauthProviderError)
@@ -390,15 +392,71 @@ func (a *authAPI) oauthToken(w http.ResponseWriter, r *http.Request) {
 		authError(w, r, err)
 		return
 	}
-	p, token, err := svc.RedeemLoginCode(r.Context(), f["code"].(string), f["code_verifier"].(string))
+	red, err := svc.RedeemLoginCode(r.Context(), f["code"].(string), f["code_verifier"].(string))
 	if err != nil {
 		authError(w, r, err)
 		return
 	}
+	p, token := red.Principal, red.Token
 	setActor(r.Context(), "user:"+p.User.ID)
 	if useCookie {
 		setSessionCookie(w, r, svc, p, token)
 		token = ""
 	}
-	writeJSON(w, http.StatusOK, sessionJSON(p, token, svc.LocaleOf(p.User)))
+	writeJSON(w, http.StatusOK, providerSessionJSON(p, token, svc.LocaleOf(p.User), red.NewUser, red.Profile))
+}
+
+// providerSessionJSON is a session given by a provider sign-in: a login's answer plus whether
+// the sign-in made the user and, if so, the profile the provider gave. The profile is handed
+// over here once and kept nowhere.
+func providerSessionJSON(p auth.Principal, token, locale string, newUser bool, profile map[string]string) map[string]any {
+	out := sessionJSON(p, token, locale)
+	out["new_user"] = newUser
+	if newUser && len(profile) > 0 {
+		out["profile"] = profile
+	}
+	return out
+}
+
+// profileOf is what the provider says of the person: the ID token's claims, and, for Apple's
+// first authorization, the name Apple sends in the callback form (never in the token).
+func profileOf(c oauth.Claims, extra map[string]string) map[string]string {
+	in := map[string]string{"name": c.Name, "given_name": c.GivenName, "family_name": c.FamilyName, "picture": c.Picture}
+	for k, v := range extra {
+		if in[k] == "" {
+			in[k] = v
+		}
+	}
+	return auth.CleanProfile(in)
+}
+
+// firstAuthorization is the name Apple posts with a person's first authorization of the app;
+// no other provider sends such a field, and one sent to them is ignored.
+func firstAuthorization(p *registry.Provider, raw string) map[string]string {
+	if p.Name != registry.ProviderApple {
+		return nil
+	}
+	return appleFirstAuthorization(raw)
+}
+
+// appleFirstAuthorization reads the "user" field Apple posts to the callback the first time a
+// person authorizes the app: {"name": {"firstName": …, "lastName": …}}.
+func appleFirstAuthorization(raw string) map[string]string {
+	if raw == "" || len(raw) > 4096 {
+		return nil
+	}
+	var u struct {
+		Name struct {
+			First string `json:"firstName"`
+			Last  string `json:"lastName"`
+		} `json:"name"`
+	}
+	if json.Unmarshal([]byte(raw), &u) != nil {
+		return nil
+	}
+	out := map[string]string{"given_name": u.Name.First, "family_name": u.Name.Last}
+	if full := strings.TrimSpace(u.Name.First + " " + u.Name.Last); full != "" {
+		out["name"] = full
+	}
+	return out
 }

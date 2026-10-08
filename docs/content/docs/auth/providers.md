@@ -9,7 +9,7 @@ toc: true
 A realm can let its users sign in with **Google**, **Microsoft** or **Apple**. backd runs the redirect flow with the provider, checks the answer, finds or creates the user, and gives your app a one-time code to trade for a session. A user can have a password and any number of providers at once (at most one of each): they are [sign-in methods](../sessions/#sign-in-methods) of the same user, so roles, rules and owned documents don't depend on how the user signed in.
 
 {{< hint style="note" >}}
-This page covers the **redirect** sign-in and the **native** sign-in of mobile apps. The profile handed to the app, `account.on_signup`, provider calls in the JavaScript client and other OpenID Connect providers are **planned**, each in its own step.
+This page covers the **redirect** sign-in and the **native** sign-in of mobile apps. Provider calls in the JavaScript client and other OpenID Connect providers are **planned**, each in its own step.
 {{< /hint >}}
 
 ## Set it up
@@ -99,6 +99,24 @@ The same rules as the redirect flow decide who the person is, with JSON answers 
 | `503 provider_unavailable` | The provider's keys could not be fetched |
 
 With `"intent": "link"` and the session in `Authorization`, the call adds the provider account to the signed-in user and answers `{"linked": "google"}`. For **Apple** the app also sends the `authorization_code` its SDK gave with the token (required, unless the provider sets `revoke_on_delete: false`): see [Apple and account deletion](#apple-and-account-deletion). At most 30 calls a minute per address.
+
+## The profile and the sign-up hook
+
+Users hold sign-in data only; names and pictures belong in your own collections. So backd hands you what the provider says about a **new** person once, and stores none of it:
+
+- The answer that completes a provider sign-in (`POST /_auth/oauth/token`, or `…/id-token`) has `"new_user": true|false` and, when it made the user, `"profile": {"name", "given_name", "family_name", "picture"}` (fields the provider didn't give are left out). Apple sends the name only the first time a person authorizes the app, in the callback, and that is when you get it. Treat the profile as a hint: it is what the provider (or the browser, for Apple's name) said.
+- If the app crashes before saving it, it is gone: for that, name a function in `realm.yaml` and let backd call it:
+
+```yaml
+account:
+  on_signup: app/create-profile      # an internal, async function of this realm
+```
+
+`account.on_signup` is called for **every** user who signs up — with a password, through an emailed invitation, or with a provider — with `{"user_id", "provider", "profile"?}` (`provider` is `password` or the provider's name; `profile` only from a provider). It runs as the function itself, with full access, so it can create the app's profile document in a collection the clients can't write. The function must be `internal: true` and `mode: async`; give it a `retry:` so a failure is tried again.
+
+- **A failing hook never fails the sign-up.** The user is created and signed in first; the hook is a [job](../../functions/jobs/) (`origin: backd:account.on_signup`) that the workers run, so run a worker. Treat the absence of the profile document as "not created yet".
+- The profile is **masked in the function's logs**, and the job's input is emptied as soon as the job has ended (while it waits for a retry it must keep it).
+- Users created by an administrator (`backd user create`, the admin API) are not sign-ups and don't call the hook.
 
 ## Apple and account deletion
 

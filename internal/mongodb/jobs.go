@@ -541,6 +541,12 @@ func revokeToDoc(r *auth.RevokeJob) *revokeJobDoc {
 	return &revokeJobDoc{UserID: r.UserID, ClientID: r.ClientID, Token: r.Token}
 }
 
+// ClearJobInput replaces a job's input with an empty object.
+func (s *AuthStore) ClearJobInput(ctx context.Context, jobID string) error {
+	_, err := s.jobs().UpdateByID(ctx, jobID, bson.D{{Key: "$set", Value: bson.D{{Key: "input", Value: bson.D{}}}}})
+	return err
+}
+
 // ClearRevokeToken removes the sealed token a revoke job held.
 func (s *AuthStore) ClearRevokeToken(ctx context.Context, jobID string) error {
 	_, err := s.jobs().UpdateByID(ctx, jobID, bson.D{{Key: "$unset", Value: bson.D{{Key: "revoke.token", Value: ""}}}})

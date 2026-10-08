@@ -95,6 +95,7 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 	login := auth.ProviderLogin{
 		Provider: p.Name, Subject: claims.Subject, Email: claims.Email, EmailVerified: claims.EmailVerified, TrustsEmail: p.TrustsEmail(),
 		Intent: intent, LinkUserID: who.User.ID, Locales: append([]string{str("locale")}, acceptLanguages(r.Header.Get("Accept-Language"))...), IP: clientIP(r),
+		Profile: profileOf(claims, nil),
 	}
 	if inv := str("invitation"); inv != "" {
 		login.Invitation = auth.HashToken(inv)
@@ -120,7 +121,7 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 		setSessionCookie(w, r, svc, session, token)
 		token = ""
 	}
-	writeJSON(w, http.StatusOK, sessionJSON(session, token, svc.LocaleOf(session.User)))
+	writeJSON(w, http.StatusOK, providerSessionJSON(session, token, svc.LocaleOf(session.User), res.NewUser, res.Profile))
 }
 
 // nativeFailure answers a provider login the rules refuse, in JSON.

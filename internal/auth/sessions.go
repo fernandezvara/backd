@@ -135,6 +135,7 @@ func (s *Users) signup(ctx context.Context, email, password, invitation string, 
 		return User{}, err
 	}
 	s.AuditAs(ctx, userTarget(u.ID), AuditUserSignup, userTarget(u.ID), map[string]any{"invited": invitation != "", "roles": u.Roles})
+	s.queueOnSignup(ctx, u, ProviderPassword, nil)
 	return u, nil
 }
 

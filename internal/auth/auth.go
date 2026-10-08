@@ -144,6 +144,9 @@ type Store interface {
 	// AddEraseCount adds n to the erase job's count under key
 	// ("<database>/<collection>/<operation>"), atomically.
 	AddEraseCount(ctx context.Context, jobID, key string, n int64) error
+	// ClearJobInput replaces a job's input with an empty object: what it held (a new user's
+	// profile) is not kept after the job has run.
+	ClearJobInput(ctx context.Context, jobID string) error
 	// ClearRevokeToken removes the sealed token a revoke job held.
 	ClearRevokeToken(ctx context.Context, jobID string) error
 	// ClearEraseEmail removes the email an erase job held.

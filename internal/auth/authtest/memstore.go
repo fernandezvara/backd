@@ -4,6 +4,7 @@ package authtest
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"slices"
 	"sort"
 	"strings"
@@ -1025,6 +1026,18 @@ func (m *MemStore) ClearEraseEmail(_ context.Context, jobID string) error {
 	e := *j.Erase
 	e.Email = ""
 	j.Erase = &e
+	m.jobs[jobID] = j
+	return nil
+}
+
+func (m *MemStore) ClearJobInput(_ context.Context, jobID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	j, ok := m.jobs[jobID]
+	if !ok {
+		return auth.ErrNotFound
+	}
+	j.Input = json.RawMessage(`{}`)
 	m.jobs[jobID] = j
 	return nil
 }

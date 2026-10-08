@@ -969,13 +969,13 @@ paths:
                 cookie: { type: boolean, description: "As in `POST /_auth/login`." }
       responses:
         "200":
-          description: "A session (as a login's), or `{\"linked\": \"<provider>\"}` for `intent: link`."
+          description: "A session (as a login's, with `new_user` and, for a new user, `profile`), or `{\"linked\": \"<provider>\"}` for `intent: link`."
           headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
           content:
             application/json:
               schema:
                 oneOf:
-                  - { $ref: "#/components/schemas/Session" }
+                  - { $ref: "#/components/schemas/ProviderSession" }
                   - type: object
                     additionalProperties: false
                     required: [linked]
@@ -1040,7 +1040,7 @@ paths:
                 code_verifier: { type: string }
                 cookie: { type: boolean, description: "As in `POST /_auth/login`." }
       responses:
-        "200": { $ref: "#/components/responses/Session" }
+        "200": { $ref: "#/components/responses/ProviderSession" }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
@@ -4342,6 +4342,12 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Session" }
+    ProviderSession:
+      description: A new session from a provider sign-in, and whether it made the user.
+      headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ProviderSession" }
     SessionCreated:
       description: The new user, signed in.
       headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
@@ -4842,6 +4848,31 @@ components:
         session_id: { type: string }
         expires_at: { $ref: "#/components/schemas/Timestamp" }
         user: { $ref: "#/components/schemas/User" }
+
+    ProviderSession:
+      type: object
+      additionalProperties: false
+      required: [session_id, expires_at, user, new_user]
+      description: >-
+        A login's answer, from a sign-in with a provider. `new_user` says whether the sign-in
+        made the user; only then `profile` is present, with what the provider said of the
+        person (fields it did not give are left out). It is handed over once and kept nowhere:
+        use `account.on_signup` to create the app's profile document without depending on the client.
+      properties:
+        token: { type: string, pattern: "^bds_" }
+        token_type: { const: Bearer }
+        session_id: { type: string }
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
+        user: { $ref: "#/components/schemas/User" }
+        new_user: { type: boolean }
+        profile:
+          type: object
+          additionalProperties: false
+          properties:
+            name: { type: string }
+            given_name: { type: string }
+            family_name: { type: string }
+            picture: { type: string, description: A URL. }
 
     SessionInfo:
       type: object

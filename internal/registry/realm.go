@@ -141,6 +141,17 @@ type AccountSettings struct {
 	ResetPasswordTTL time.Duration
 	// PurgeUnverifiedAfter deletes accounts that never verified; 0 is off.
 	PurgeUnverifiedAfter time.Duration
+	// OnSignup is the internal, async function (<database>/<function>) called for every
+	// new user (account.on_signup), to create the app's profile document; OnSignupTimeout
+	// is its timeout.
+	OnSignup        string
+	OnSignupTimeout time.Duration
+}
+
+// OnSignupDatabaseAndName splits OnSignup.
+func (a AccountSettings) OnSignupDatabaseAndName() (string, string) {
+	db, name, _ := strings.Cut(a.OnSignup, "/")
+	return db, name
 }
 
 // TokenLifetime is how long a token of this purpose works in the realm.
@@ -292,6 +303,7 @@ type realmDoc struct {
 		WelcomeEmail         bool   `yaml:"welcome_email"`
 		AllowEmailChange     bool   `yaml:"allow_email_change"`
 		PurgeUnverifiedAfter string `yaml:"purge_unverified_after"`
+		OnSignup             string `yaml:"on_signup"`
 		Tokens               *struct {
 			VerifyEmail       string `yaml:"verify_email"`
 			ResetPassword     string `yaml:"reset_password"`
@@ -669,6 +681,14 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 				}
 			}
 			dur("purge_unverified_after", a.PurgeUnverifiedAfter, &s.Account.PurgeUnverifiedAfter)
+			if a.OnSignup != "" {
+				db, name, ok := strings.Cut(a.OnSignup, "/")
+				if !ok || !namePattern.MatchString(db) || !namePattern.MatchString(name) {
+					errs = append(errs, fmt.Errorf("account.on_signup: must be <database>/<function> (the internal, async function called for every new user), got %q", a.OnSignup))
+				} else {
+					s.Account.OnSignup = a.OnSignup
+				}
+			}
 			if a.Tokens != nil {
 				dur("tokens.verify_email", a.Tokens.VerifyEmail, &s.Account.VerifyEmailTTL)
 				dur("tokens.reset_password", a.Tokens.ResetPassword, &s.Account.ResetPasswordTTL)

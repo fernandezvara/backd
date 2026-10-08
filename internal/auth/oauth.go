@@ -77,8 +77,12 @@ type LoginCode struct {
 	ID            string // HashToken(code)
 	UserID        string
 	CodeChallenge string
-	CreatedAt     time.Time
-	ExpiresAt     time.Time
+	// NewUser says the sign-in made the user, and Profile is what the provider said of them:
+	// the redemption hands both over once.
+	NewUser   bool
+	Profile   map[string]string
+	CreatedAt time.Time
+	ExpiresAt time.Time
 }
 
 // randomValue is a URL-safe random string of 256 bits.
@@ -144,13 +148,17 @@ func (s *Users) TakeOAuthState(ctx context.Context, state string) (OAuthState, e
 
 // IssueLoginCode makes the one-time code that lets the app, holding the PKCE verifier
 // of challenge, get a session for the user.
-func (s *Users) IssueLoginCode(ctx context.Context, userID, challenge string) (string, error) {
+func (s *Users) IssueLoginCode(ctx context.Context, userID, challenge string, newUser bool, profile map[string]string) (string, error) {
 	code, err := randomValue()
 	if err != nil {
 		return "", err
 	}
 	now := s.now()
-	err = s.Store.PutLoginCode(ctx, LoginCode{ID: HashToken(code), UserID: userID, CodeChallenge: challenge, CreatedAt: now, ExpiresAt: now.Add(LoginCodeTTL)})
+	lc := LoginCode{ID: HashToken(code), UserID: userID, CodeChallenge: challenge, NewUser: newUser, CreatedAt: now, ExpiresAt: now.Add(LoginCodeTTL)}
+	if newUser && len(profile) > 0 {
+		lc.Profile = profile
+	}
+	err = s.Store.PutLoginCode(ctx, lc)
 	return code, err
 }
 
@@ -158,28 +166,41 @@ func (s *Users) IssueLoginCode(ctx context.Context, userID, challenge string) (s
 // used up whether or not the verifier fits, so a stolen code can't be tried again.
 // Every failure is ErrInvalidCredentials, and the answer is the same for an unknown,
 // expired or used code.
-func (s *Users) RedeemLoginCode(ctx context.Context, code, verifier string) (Principal, string, error) {
+func (s *Users) RedeemLoginCode(ctx context.Context, code, verifier string) (Redeemed, error) {
 	if code == "" || verifier == "" {
-		return Principal{}, "", ErrInvalidCredentials
+		return Redeemed{}, ErrInvalidCredentials
 	}
 	lc, err := s.Store.ClaimLoginCode(ctx, HashToken(code), s.now())
 	if errors.Is(err, ErrNotFound) {
-		return Principal{}, "", ErrInvalidCredentials
+		return Redeemed{}, ErrInvalidCredentials
 	}
 	if err != nil {
-		return Principal{}, "", err
+		return Redeemed{}, err
 	}
 	if subtle.ConstantTimeCompare([]byte(PKCEChallenge(verifier)), []byte(lc.CodeChallenge)) != 1 {
-		return Principal{}, "", ErrInvalidCredentials
+		return Redeemed{}, ErrInvalidCredentials
 	}
 	u, err := s.Store.UserByID(ctx, lc.UserID)
 	if errors.Is(err, ErrNotFound) || (err == nil && (u.Disabled || !u.ErasedAt.IsZero())) {
-		return Principal{}, "", ErrInvalidCredentials
+		return Redeemed{}, ErrInvalidCredentials
 	}
 	if err != nil {
-		return Principal{}, "", err
+		return Redeemed{}, err
 	}
-	return s.startSession(ctx, u)
+	p, token, err := s.startSession(ctx, u)
+	if err != nil {
+		return Redeemed{}, err
+	}
+	return Redeemed{Principal: p, Token: token, NewUser: lc.NewUser, Profile: lc.Profile}, nil
+}
+
+// Redeemed is the outcome of redeeming a login code: the session, whether the sign-in made the
+// user and, if so, what the provider said of them.
+type Redeemed struct {
+	Principal Principal
+	Token     string
+	NewUser   bool
+	Profile   map[string]string
 }
 
 // StartProviderSession starts a session for a user a provider login resolved (the native
@@ -203,6 +224,9 @@ type ProviderLogin struct {
 	Invitation string
 	Locales    []string
 	IP         string
+	// Profile is what the provider says of the person (CleanProfile's fields): handed to
+	// the app and to account.on_signup when the login makes a new user, and kept nowhere else.
+	Profile map[string]string
 }
 
 // ProviderResult is the outcome of a provider login.
@@ -210,6 +234,8 @@ type ProviderResult struct {
 	User    User
 	NewUser bool
 	Linked  bool // an identity was added to an existing user
+	// Profile is what the provider said of a new user (empty for anyone else).
+	Profile map[string]string
 }
 
 // ResolveProviderLogin decides who a provider's person is, under the rules of the
@@ -391,8 +417,9 @@ func (s *Users) signUpWithProvider(ctx context.Context, in ProviderLogin, email 
 		return ProviderResult{}, err
 	}
 	s.AuditAs(ctx, userTarget(u.ID), AuditUserSignup, userTarget(u.ID), map[string]any{"provider": in.Provider, "invited": in.Invitation != "", "roles": u.Roles})
+	s.queueOnSignup(ctx, u, in.Provider, in.Profile)
 	if err := s.mayStartSession(u, in.IP); err != nil {
-		return ProviderResult{User: u, NewUser: true}, err
+		return ProviderResult{User: u, NewUser: true, Profile: in.Profile}, err
 	}
-	return ProviderResult{User: u, NewUser: true}, nil
+	return ProviderResult{User: u, NewUser: true, Profile: in.Profile}, nil
 }

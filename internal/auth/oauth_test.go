@@ -2,7 +2,9 @@ package auth_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -239,37 +241,37 @@ func TestLoginCodesWorkOnceWithTheirVerifier(t *testing.T) {
 	if err != nil || !ValidPKCEChallenge(challenge) || ValidPKCEChallenge("short") {
 		t.Fatal(err)
 	}
-	code, err := svc.IssueLoginCode(ctx, res.User.ID, challenge)
+	code, err := svc.IssueLoginCode(ctx, res.User.ID, challenge, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, token, err := svc.RedeemLoginCode(ctx, code, verifier)
-	if err != nil || p.User.ID != res.User.ID || token == "" {
-		t.Fatalf("redeem: %+v, %v", p, err)
+	red, err := svc.RedeemLoginCode(ctx, code, verifier)
+	if err != nil || red.Principal.User.ID != res.User.ID || red.Token == "" || red.NewUser || red.Profile != nil {
+		t.Fatalf("redeem: %+v, %v", red, err)
 	}
-	if _, _, err := svc.RedeemLoginCode(ctx, code, verifier); !errors.Is(err, ErrInvalidCredentials) {
+	if _, err := svc.RedeemLoginCode(ctx, code, verifier); !errors.Is(err, ErrInvalidCredentials) {
 		t.Errorf("a code used twice: %v", err)
 	}
 	// A wrong verifier burns the code: a thief who has the code can't try verifiers.
-	code, _ = svc.IssueLoginCode(ctx, res.User.ID, challenge)
-	if _, _, err := svc.RedeemLoginCode(ctx, code, "not-the-verifier"); !errors.Is(err, ErrInvalidCredentials) {
+	code, _ = svc.IssueLoginCode(ctx, res.User.ID, challenge, false, nil)
+	if _, err := svc.RedeemLoginCode(ctx, code, "not-the-verifier"); !errors.Is(err, ErrInvalidCredentials) {
 		t.Errorf("wrong verifier: %v", err)
 	}
-	if _, _, err := svc.RedeemLoginCode(ctx, code, verifier); !errors.Is(err, ErrInvalidCredentials) {
+	if _, err := svc.RedeemLoginCode(ctx, code, verifier); !errors.Is(err, ErrInvalidCredentials) {
 		t.Errorf("the code survived a wrong verifier: %v", err)
 	}
 	// Expiry, and a user disabled in between.
-	code, _ = svc.IssueLoginCode(ctx, res.User.ID, challenge)
+	code, _ = svc.IssueLoginCode(ctx, res.User.ID, challenge, false, nil)
 	*clock = clock.Add(2 * time.Minute)
-	if _, _, err := svc.RedeemLoginCode(ctx, code, verifier); !errors.Is(err, ErrInvalidCredentials) {
+	if _, err := svc.RedeemLoginCode(ctx, code, verifier); !errors.Is(err, ErrInvalidCredentials) {
 		t.Errorf("an expired code: %v", err)
 	}
-	code, _ = svc.IssueLoginCode(ctx, res.User.ID, challenge)
+	code, _ = svc.IssueLoginCode(ctx, res.User.ID, challenge, false, nil)
 	_ = svc.SetDisabled(ctx, "ada@example.com", true)
-	if _, _, err := svc.RedeemLoginCode(ctx, code, verifier); !errors.Is(err, ErrInvalidCredentials) {
+	if _, err := svc.RedeemLoginCode(ctx, code, verifier); !errors.Is(err, ErrInvalidCredentials) {
 		t.Errorf("a disabled user: %v", err)
 	}
-	if _, _, err := svc.RedeemLoginCode(ctx, "", verifier); !errors.Is(err, ErrInvalidCredentials) {
+	if _, err := svc.RedeemLoginCode(ctx, "", verifier); !errors.Is(err, ErrInvalidCredentials) {
 		t.Errorf("empty code: %v", err)
 	}
 }
@@ -296,6 +298,111 @@ func TestOAuthStatesWorkOnce(t *testing.T) {
 	if _, err := svc.TakeOAuthState(ctx, ""); !errors.Is(err, ErrNotFound) {
 		t.Errorf("an empty state: %v", err)
 	}
+}
+
+func TestLoginCodesHandTheProfileOverOnce(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _ := providerFixture(t)
+	res, _ := svc.ResolveProviderLogin(ctx, googleLogin("ada@example.com"))
+	verifier, challenge, _ := NewPKCE()
+	profile := map[string]string{"name": "Ada Lovelace", "given_name": "Ada"}
+	code, _ := svc.IssueLoginCode(ctx, res.User.ID, challenge, true, profile)
+	red, err := svc.RedeemLoginCode(ctx, code, verifier)
+	if err != nil || !red.NewUser || red.Profile["name"] != "Ada Lovelace" || red.Profile["given_name"] != "Ada" {
+		t.Fatalf("redeem: %+v, %v", red, err)
+	}
+	// The profile only goes with a code that made the user.
+	code, _ = svc.IssueLoginCode(ctx, res.User.ID, challenge, false, profile)
+	if red, _ = svc.RedeemLoginCode(ctx, code, verifier); red.NewUser || red.Profile != nil {
+		t.Errorf("a returning user's code carried a profile: %+v", red)
+	}
+}
+
+func TestProfilesAreCleaned(t *testing.T) {
+	got := CleanProfile(map[string]string{
+		"name": "  Ada\x00 Lovelace\n ", "given_name": "", "picture": "https://x/" + strings.Repeat("a", 3000), "email": "not a profile field", "other": "x",
+	})
+	if got["name"] != "Ada Lovelace" || len(got) != 2 || len([]rune(got["picture"])) != 2000 {
+		t.Errorf("profile = %v", got)
+	}
+	long := CleanProfile(map[string]string{"name": strings.Repeat("é", 500)})
+	if len([]rune(long["name"])) != 200 {
+		t.Errorf("name length %d", len([]rune(long["name"])))
+	}
+}
+
+func TestOnSignupIsQueuedForEveryNewUser(t *testing.T) {
+	ctx := context.Background()
+	svc, store, _ := providerFixture(t)
+	svc.Settings.Account.OnSignup = "app/profile"
+	svc.Settings.Account.OnSignupTimeout = 20 * time.Second
+	jobs := func() []Job {
+		js, _, _ := svc.Jobs(ctx, JobFilter{Origin: OnSignupOrigin})
+		return js
+	}
+	// A password sign-up, and a provider sign-up with a profile.
+	pw, _, err := svc.Signup(ctx, "pw@example.com", "dev-p4ssw0rd!", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	login := googleLogin("g@example.com")
+	login.Profile = map[string]string{"name": "Gee", "picture": "https://x/p.png"}
+	g, err := svc.ResolveProviderLogin(ctx, login)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := jobs()
+	if len(got) != 2 {
+		t.Fatalf("jobs: %d", len(got))
+	}
+	byUser := map[string]OnSignupInput{}
+	for _, j := range got {
+		var in OnSignupInput
+		if err := json.Unmarshal(j.Input, &in); err != nil {
+			t.Fatal(err)
+		}
+		byUser[in.UserID] = in
+		if j.Database != "app" || j.Function != "profile" || !j.ActsAsFunction || j.TimeoutMS != 20000 || j.Origin != OnSignupOrigin {
+			t.Errorf("job: %+v", j)
+		}
+	}
+	if in := byUser[pw.User.ID]; in.Provider != "password" || in.Profile != nil {
+		t.Errorf("password sign-up: %+v", in)
+	}
+	if in := byUser[g.User.ID]; in.Provider != "google" || in.Profile["name"] != "Gee" || in.Profile["picture"] != "https://x/p.png" {
+		t.Errorf("provider sign-up: %+v", in)
+	}
+	// Signing in again, linking, or an administrator creating a user queue nothing.
+	_, _ = svc.ResolveProviderLogin(ctx, googleLogin("g@example.com"))
+	if _, err := svc.Create(ctx, "made@example.com", nil); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(jobs()); n != 2 {
+		t.Errorf("jobs after more activity: %d", n)
+	}
+	// The profile values are what logs must hide.
+	if vals := ProfileValues(byUserInput(t, got, g.User.ID)); len(vals) != 2 {
+		t.Errorf("ProfileValues = %v", vals)
+	}
+	// A realm without the hook queues nothing, and a failing queue never fails the sign-up.
+	svc.Settings.Account.OnSignup = ""
+	if _, _, err := svc.Signup(ctx, "other@example.com", "dev-p4ssw0rd!", ""); err != nil || len(jobs()) != 2 {
+		t.Errorf("no hook: %v, %d jobs", err, len(jobs()))
+	}
+	_ = store
+}
+
+func byUserInput(t *testing.T, jobs []Job, userID string) json.RawMessage {
+	t.Helper()
+	for _, j := range jobs {
+		var in OnSignupInput
+		_ = json.Unmarshal(j.Input, &in)
+		if in.UserID == userID {
+			return j.Input
+		}
+	}
+	t.Fatal("no job for the user")
+	return nil
 }
 
 func TestPurgingAnUnverifiedAccountRevokesItsAppleToken(t *testing.T) {

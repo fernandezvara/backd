@@ -446,6 +446,8 @@ var systemCollections = []systemCollection{
 			"_id":            str(),
 			"user_id":        str(),
 			"code_challenge": str(),
+			"new_user":       typ("bool"),
+			"profile":        typ("object"),
 			"created_at":     typ("date"),
 			"expires_at":     typ("date"),
 		}),

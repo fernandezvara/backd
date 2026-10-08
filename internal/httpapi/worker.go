@@ -290,7 +290,23 @@ func (w *Worker) runJob(ctx context.Context, realm string, svc *auth.Users, job 
 		}
 		caller = auth.Caller{} // backd's own request: no user, ctx.db anonymous
 	}
+	if job.Origin == auth.OnSignupOrigin {
+		// The hook gets the new user's profile; its logs must not show it, and the job
+		// does not keep it once the function has run.
+		mask = auth.ProfileValues(job.Input)
+		defer w.forgetProfile(ctx, log, svc, job.ID)
+	}
 	w.execute(ctx, log, realm, svc, job, fn, caller, mask)
+}
+
+// forgetProfile empties the input of an account.on_signup job that has ended; one waiting for a
+// retry keeps it, the next attempt needs it.
+func (w *Worker) forgetProfile(ctx context.Context, log *slog.Logger, svc *auth.Users, id string) {
+	if j, found, err := svc.GetJob(ctx, id); err == nil && found && j.Status == auth.JobDone {
+		if err := svc.Store.ClearJobInput(ctx, id); err != nil {
+			log.Warn("could not forget a new user's profile", "error", err)
+		}
+	}
 }
 
 // execute runs the function for a claimed job (its input already in place)
