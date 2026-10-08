@@ -313,7 +313,7 @@ func TestAWorkerReportsDeclaredVersionsThatChanged(t *testing.T) {
 	declareThumb(t, f, 6)
 	w.CheckImageDeclarations(context.Background())
 	out := buf.String()
-	if !strings.Contains(out, "image version changed") || !strings.Contains(out, `"files":1`) || !strings.Contains(out, "backd versions regenerate") || !strings.Contains(out, `"level":"WARN"`) {
+	if !strings.Contains(out, "image version changed") || !strings.Contains(out, `"files":1`) || !strings.Contains(out, "backd files regenerate") || !strings.Contains(out, `"level":"WARN"`) {
 		t.Errorf("after the change: %s", out)
 	}
 	// And it is said once.

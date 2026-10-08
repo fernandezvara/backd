@@ -20,20 +20,31 @@ const filesSchema = `{
 
 const filesConfig = `files:
   avatar:
+    keep_metadata: true
     max_size: 4KiB
     types: [image/png, image/jpeg, image/webp]
   receipts:
+    keep_metadata: true
     multiple: true
     max_files: 2
     max_size: 8KiB
     types: [application/pdf, image/*]
   thumbnail:
+    keep_metadata: true
     max_size: 4KiB
     types: [image/png]
   manual:
     max_size: 8KiB
     download: proxy
     cache: 1h
+  # Pictures that lose their metadata (the default), and ones that keep it.
+  shot:
+    max_size: 64KiB
+    types: [image/*, application/pdf]
+  raw:
+    keep_metadata: true
+    max_size: 64KiB
+    types: [image/*]
   # Pictures served through backd, with a version.
   proxied:
     max_size: 64KiB
@@ -44,6 +55,7 @@ const filesConfig = `files:
       thumb: {max_width: 10, max_height: 10, format: png}
   # A picture with versions: workers make thumb, functions may redo big and make mark.
   picture:
+    keep_metadata: true # the tests send pictures that are cut short on purpose
     max_size: 64KiB
     max_pixels: 1000
     types: [image/*]
@@ -74,9 +86,11 @@ const formsSchema = `{
 
 const formsConfig = `files:
   scan:
+    keep_metadata: true
     max_size: 4KiB
     types: [image/png]
   extras:
+    keep_metadata: true
     multiple: true
     max_files: 2
     max_size: 4KiB
@@ -99,16 +113,26 @@ const videosSchema = `{
 
 const videosConfig = `files:
   clip:
+    keep_metadata: true
     upload: direct
     max_size: 4KiB
     types: [image/png]
   clips:
+    keep_metadata: true
     upload: direct
     multiple: true
     max_files: 2
     max_size: 4KiB
   photo:
+    keep_metadata: true
     max_size: 4KiB
+  snap:
+    upload: direct
+    max_size: 64KiB
+  rawsnap:
+    upload: direct
+    keep_metadata: true
+    max_size: 64KiB
   still:
     upload: direct
     max_size: 64KiB

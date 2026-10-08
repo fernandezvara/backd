@@ -142,7 +142,7 @@ await v.delete();                                                  // back to pe
 ## 9. Config changes and regeneration
 
 - Each version stores a fingerprint of its parameters. At startup backd logs new or changed declared versions and the number of files affected.
-- `backd files versions regenerate --realm <r> --db <d> --collection <c> --field <f> [--version <v>] [--missing-only]` and an admin API route queue background jobs: resumable, rate-limited, progress through job steps (f6). Versions functions generated with custom parameters are not touched.
+- `backd files regenerate --realm <r> --db <d> --collection <c> --field <f> [--version <v>] [--missing-only]` and an admin API route queue background jobs: resumable, rate-limited, progress through job steps (f6). Versions functions generated with custom parameters are not touched.
 
 ## 10. Downloads and clients
 

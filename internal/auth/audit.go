@@ -61,7 +61,7 @@ const (
 	AuditStorageCheck = "storage.check"
 	// An administrator ran `backd storage reconcile`; details: delete, orphans, deleted.
 	AuditStorageReconcile = "storage.reconcile"
-	// An administrator ran `backd versions regenerate`; details: version, missing_only, job_id.
+	// An administrator ran `backd files regenerate`; details: version, missing_only, job_id.
 	AuditVersionsRegenerate = "files.versions.regenerate"
 	AuditSecretSet          = "secret.set"        // details: database ("": realm scope); never the value
 	AuditSecretDelete       = "secret.delete"     // details: database

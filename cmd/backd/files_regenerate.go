@@ -9,9 +9,9 @@ import (
 	"github.com/fernandezvara/cli"
 )
 
-// filesVersionsRegenerate handles `backd versions regenerate`: it starts the job that
+// filesRegenerate handles `backd files regenerate`: it starts the job that
 // makes the stale image versions of a file field again and follows it.
-func filesVersionsRegenerate(c *cli.CommandContext) error {
+func filesRegenerate(c *cli.CommandContext) error {
 	interval, err := time.ParseDuration(str(c, "interval"))
 	if err != nil || interval <= 0 {
 		return usageErr(errors.New("--interval must be a duration such as 2s"))

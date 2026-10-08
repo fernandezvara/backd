@@ -197,6 +197,9 @@ func collectionConfig(c *registry.Collection, rel func(string) string) map[strin
 				download = f.Download
 			}
 			view := map[string]any{"multiple": f.Multiple, "max_files": f.MaxFiles, "max_size": f.MaxSize, "types": orStrings(f.Types), "upload": f.Upload, "download": download, "presigned_ttl": ttl, "cache": cache}
+			if f.KeepMetadata {
+				view["keep_metadata"] = true
+			}
 			if f.MaxPixels > 0 {
 				view["max_pixels"] = f.MaxPixels
 			}
