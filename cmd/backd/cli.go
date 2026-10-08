@@ -452,16 +452,14 @@ func userAction(withEmail bool, run func(*userCtx) error) cli.CommandFunc {
 	}
 }
 
-// registerRoles adds the commands that run backd's server roles. serve is
-// also what plain `backd` does.
+// registerRoles adds the commands that run backd's server roles. Plain `backd` starts
+// none of them: it prints the help (see isGlobalHelp).
 func registerRoles(cfg *cli.Config) {
 	serveHelp := "Loads CONFIG_DIR, provisions or verifies MongoDB (PROVISION_MODE), and serves\nHTTP. --with-worker also runs the worker role (async jobs) in this process; it\nneeds BACKD_EXECUTOR_URL."
 	withWorker := func(cc *cli.CommandConfig) {
 		boolean(cc, "with-worker", "also run the worker role (async jobs) in this process")
 	}
-	cfg.Command("").ShortHelp("load config, provision or verify MongoDB, serve HTTP (the default)").LongHelp(serveHelp).
-		Func(role("serve", serve)).Config(withWorker)
-	cfg.Command("serve").ShortHelp("load config, provision or verify MongoDB, serve HTTP (the default)").LongHelp(serveHelp).
+	cfg.Command("serve").ShortHelp("load config, provision or verify MongoDB, serve HTTP").LongHelp(serveHelp).
 		Func(role("serve", serve)).Config(withWorker)
 	cfg.Command("worker").ShortHelp("run the worker role alone: claims and runs async jobs").
 		LongHelp("Claims and runs async jobs (mode: async) and scheduled functions. Needs\nBACKD_EXECUTOR_URL; WORKER_CONCURRENCY caps jobs running at once (default 10).").

@@ -24,7 +24,7 @@ func TestRun(t *testing.T) {
 		wantCode int
 		wantOut  string
 	}{
-		{"default is serve", nil, missingDir, 1, "backd serve:"},
+		{"no arguments print the help and start nothing", nil, missingDir, 0, "Usage: backd <command>"},
 		{"invalid settings", []string{"serve"}, nil, 1, "CONFIG_DIR is required"},
 		{"invalid config", []string{"serve"}, missingDir, 1, "invalid config"},
 		{"provision", []string{"provision"}, missingDir, 1, "backd provision:"},
