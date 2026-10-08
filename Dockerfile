@@ -9,7 +9,7 @@ RUN mkdir -p internal/adminui/dist && (cd clients/js && npm ci --ignore-scripts 
 
 # The build stage runs on the build machine's platform and cross-compiles
 # for the target one, so multi-arch images build without emulation.
-FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.27.1-alpine AS build
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.27.2-alpine AS build
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev
