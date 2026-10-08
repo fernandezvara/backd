@@ -1541,7 +1541,7 @@ paths:
         Function bundles are built by `backd functions build` and are not part of it.
         It works on a copy: nothing on the server is changed or applied, and the
         configuration stays a file in a repository. Draft paths are relative to the realm's
-        directory (`main/notes/rules.yaml`); a `null` content deletes the file. Needs the
+        directory (`main/notes/collection.yaml`); a `null` content deletes the file. Needs the
         `config` area (a read-only administrator may check).
       operationId: adminCheckConfig
       security: [{ apiKey: [] }, { session: [] }]

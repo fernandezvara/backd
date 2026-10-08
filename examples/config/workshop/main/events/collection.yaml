@@ -1,0 +1,3 @@
+rules:
+  # Only payment_webhook touches events.
+  read: user != nil && hasRole(user, 'staff')

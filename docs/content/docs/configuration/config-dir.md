@@ -15,9 +15,8 @@ $CONFIG_DIR/<realm>/
     <database>/<collection>/
         schema.json      # required — JSON Schema draft 2020-12
         indexes.json     # optional — index declarations
-        rules.yaml       # optional — access rules (see Authentication)
+        collection.yaml  # optional — access rules, file fields, soft delete, erase policy
         rules.test.yaml  # optional — tests of the rules (`backd rules test`)
-        collection.yaml  # optional — what an erase does to the collection
     <database>/_functions/  # optional — server-side functions
 ```
 
@@ -47,7 +46,7 @@ backd template email-capture --realm demo --database blog          # a developme
 backd template collection-policy --realm demo --database blog --collection posts   # a commented collection.yaml
 ```
 
-With `--sample`, the command adds a `posts` collection (title, body, published, optional category, author) with explanations: `schema.json`, `indexes.json` and a commented [`rules.yaml`](../../auth/rules/) (anyone reads published posts, signed-in users write posts signed with their own email, authors edit and delete their own but can't change who wrote them), and a [`collection.yaml`](#collectionyaml) that anonymizes the byline when a user is erased. `backd template realm --realm demo --sample` creates the realm plus a database named `main` holding that sample: the same database as the `blog` realm in `examples/config` (whose `realm.yaml` is adjusted for the example app).
+With `--sample`, the command adds a `posts` collection (title, body, published, optional category, author) with explanations: `schema.json`, `indexes.json` and a `collection.yaml` with commented [`rules:`](../../auth/rules/) (anyone reads published posts, signed-in users write posts signed with their own email, authors edit and delete their own but can't change who wrote them), and a [`collection.yaml`](#collectionyaml) that anonymizes the byline when a user is erased. `backd template realm --realm demo --sample` creates the realm plus a database named `main` holding that sample: the same database as the `blog` realm in `examples/config` (whose `realm.yaml` is adjusted for the example app).
 
 The command prints each file it created and each one it left unchanged because it already existed.
 
@@ -131,7 +130,25 @@ Filtering and sorting on unindexed fields works, but scans the whole collection,
 
 ## `collection.yaml`
 
-This optional file says whether the collection keeps deleted documents recoverable ([`soft_delete`](#soft-delete)) and what an administrator's **erase** does to the collection when a user is erased (`backd user delete`). **Without it, the collection is left alone**: its documents keep everything, which is what you want for records you must keep, such as purchases. `backd template collection-policy` writes a commented example.
+This optional file holds a collection's policy, in sections that can each be left out:
+
+| Section | What it says | Documented in |
+|---|---|---|
+| `rules:` | Who may read, create, update and delete documents. **Without it only API keys reach the collection.** | [Access rules](../../auth/rules/) |
+| `files:` | The fields of a document that carry files | [File fields](../../files/file-fields/) |
+| `soft_delete:` | Whether deleted documents stay recoverable | [Soft delete](#soft-delete) |
+| `on_owner_delete:` | What an administrator's **erase** does to the collection when a user is erased (`backd user delete`) | below |
+
+```yaml
+rules:
+  read: user != nil
+  update: user != nil && document._meta.owner == user.id
+soft_delete: true
+```
+
+`rules.test.yaml`, the fixture of [`backd rules test`](../../auth/rules/#testing-rules), stays a separate file next to it: it is a test, not configuration. A `rules.yaml` in a collection directory (where the rules used to be) stops `backd` from loading, with a message that says to move its content under `rules:`.
+
+Without `on_owner_delete:` an erase leaves the collection alone: its documents keep everything, which is what you want for records you must keep, such as purchases. `backd template collection-policy` writes a commented example of all of the sections.
 
 ```yaml
 on_owner_delete:
@@ -164,7 +181,7 @@ soft_delete:
 `soft_delete: true` is the same without a retention. What changes in a collection that soft-deletes:
 
 - **`DELETE` marks the document** (`_meta.deleted_at`, `deleted_by` and, with a retention, `purge_at`, at the next version) instead of removing it. No read, list, count, write or batch sees it; a unique value it held is free for a new document at once.
-- **The trash is a separate view**: `?deleted=only|include` on list and get, `POST /{id}/restore`, and `DELETE /{id}?purge=true`, each under its own rule (`restore` and `purge` in [`rules.yaml`](../../auth/rules/#operations), denied unless declared). See [Soft delete](../../api/documents/#soft-delete).
+- **The trash is a separate view**: `?deleted=only|include` on list and get, `POST /{id}/restore`, and `DELETE /{id}?purge=true`, each under its own rule (`restore` and `purge` in the [`rules:`](../../auth/rules/#operations), denied unless declared). See [Soft delete](../../api/documents/#soft-delete).
 - **A retention is MongoDB's TTL index**: `backd provision` creates it on `_meta.purge_at` and MongoDB removes the documents in the background, within about a minute of that time. Without a retention a deleted document stays until it is purged by hand.
 - **Unique indexes** from `indexes.json` get `_meta.deleted_at` as their last key, so live documents stay unique among themselves, a deleted one never clashes with anything, and documents that existed before count as live. Turning `soft_delete` on for a collection that already has a unique index builds the new index next to the old one, and `backd provision` warns about the old one: it also covers deleted documents, so **drop it** once the new one exists (`db.<collection>.dropIndex("<name>")`) or a deleted document's values stay taken. `backd` never drops an index itself.
 - **Erasing a user** still deletes, anonymizes and clears documents that are in the trash: it works on everything the user owns.
@@ -189,5 +206,5 @@ Any invalid config stops startup with a non-zero exit. Every error is reported a
 - invalid JSON or an invalid schema;
 - a schema that declares a system field;
 - an invalid `indexes.json`;
-- an invalid [`rules.yaml`](../../auth/rules/#checks-at-startup);
+- an invalid [`rules:` section](../../auth/rules/#checks-at-startup), or a leftover `rules.yaml` (rules live in `collection.yaml` now);
 - an invalid [`collection.yaml`](#collectionyaml) (an unknown field, a required field removed, a value that breaks the schema).

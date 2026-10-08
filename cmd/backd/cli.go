@@ -52,7 +52,7 @@ func newCLI(getenv func(string) string, stdin io.Reader, stdout, stderr io.Write
 			required(cc, "realm", "the realm of the database")
 			required(cc, "database", "the database to add the function and the outbox to")
 		})
-	tpl.SubCommand("collection-policy").ShortHelp("add a commented collection.yaml: what an erase does to a collection").
+	tpl.SubCommand("collection-policy").ShortHelp("add a commented collection.yaml: rules, soft delete and what an erase does").
 		LongHelp("Creates <realm>/<database>/<collection>/collection.yaml, with everything commented\nout: without a policy an erase leaves the collection alone. Uncomment what you need\n(delete or anonymize the documents a user owns, remove the user from other\ndocuments' arrays and fields). See the docs, Auth -> Erasing users.").
 		Func(act("template collection-policy", templateCollectionPolicy)).
 		Config(func(cc *cli.CommandConfig) {
@@ -89,13 +89,13 @@ func newCLI(getenv func(string) string, stdin io.Reader, stdout, stderr io.Write
 
 	rl := cfg.Command("rules").ShortHelp("test the access rules of CONFIG_DIR").
 		LongHelp("Needs only CONFIG_DIR, no database.")
-	rl.SubCommand("test").ShortHelp("run every collection's rules.test.yaml against its rules.yaml").
-		LongHelp("Runs the fixture next to each collection's rules.yaml (rules.test.yaml): named\ncallers and stored documents, and per operation which of them are allowed or\ndenied. The decisions are the server's: read rules become the database filter,\nevaluated the way MongoDB does; an update or delete first needs the document to\nbe readable. Prints the failures and exits non-zero when an assertion fails or\na fixture is wrong, for CI. Collections with rules and no fixture are listed;\n--strict makes them fail.").
+	rl.SubCommand("test").ShortHelp("run every collection's rules.test.yaml against its rules").
+		LongHelp("Runs the fixture next to each collection's collection.yaml (rules.test.yaml): named\ncallers and stored documents, and per operation which of them are allowed or\ndenied. The decisions are the server's: read rules become the database filter,\nevaluated the way MongoDB does; an update or delete first needs the document to\nbe readable. Prints the failures and exits non-zero when an assertion fails or\na fixture is wrong, for CI. Collections with rules and no fixture are listed;\n--strict makes them fail.").
 		Func(act("rules test", rulesTest)).
 		Config(func(cc *cli.CommandConfig) {
 			optional(cc, "collection", "only this collection, or a prefix: realm, realm/database or realm/database/collection")
 			boolean(cc, "verbose", "also print the assertions that pass")
-			boolean(cc, "strict", "fail when a collection with rules.yaml has no rules.test.yaml")
+			boolean(cc, "strict", "fail when a collection with rules has no rules.test.yaml")
 		})
 
 	cfg.Command("bootstrap").ShortHelp("create a realm's first administrator").

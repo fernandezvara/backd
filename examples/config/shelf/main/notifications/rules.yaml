@@ -1,6 +1,0 @@
-# Notifications are written by functions only — there is no create rule.
-# A member reads their own and may set exactly one field, read_at.
-read: user != nil && document.to_user == user.id
-update: >
-  user != nil && document.to_user == user.id
-  && all(changed(), # in ['read_at'])

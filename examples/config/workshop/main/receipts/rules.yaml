@@ -1,2 +1,0 @@
-# Staff read receipts; nobody writes them directly: refund_receipt does, as admin.
-read: user != nil && hasRole(user, 'staff')

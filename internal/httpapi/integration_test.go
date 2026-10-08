@@ -301,16 +301,16 @@ func TestRulesAgainstMongoDB(t *testing.T) {
 		realm + "/realm.yaml":             "signup: open\n",
 		realm + "/app/posts/schema.json":  schema,
 		realm + "/app/posts/indexes.json": `[{"fields": ["_meta.owner"]}]`,
-		realm + "/app/posts/rules.yaml": `
+		realm + "/app/posts/collection.yaml": rulesSection(`
 read: >
   document.published == true
   || (user != nil && (document._meta.owner == user.id || user.id in document.members))
 write: user != nil
-`,
-		realm + "/app/recent/schema.json": schema,
-		realm + "/app/recent/rules.yaml":  "read: document._meta.created_at > now - duration('1h')\nwrite: user != nil\n",
-		realm + "/app/open/schema.json":   schema,
-		realm + "/app/open/rules.yaml":    "read: \"!(document.status == 'done')\"\nwrite: user != nil\n",
+`),
+		realm + "/app/recent/schema.json":     schema,
+		realm + "/app/recent/collection.yaml": rulesSection("read: document._meta.created_at > now - duration('1h')\nwrite: user != nil\n"),
+		realm + "/app/open/schema.json":       schema,
+		realm + "/app/open/collection.yaml":   rulesSection("read: \"!(document.status == 'done')\"\nwrite: user != nil\n"),
 	})
 	ctx := context.Background()
 	svc := f.users[realm]

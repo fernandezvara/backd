@@ -2,7 +2,7 @@
 // sees who owes whom. Alpine.js + backd-js, no build step.
 //
 // Everything the server enforces lives in examples/config/expenses: read
-// its rules.yaml files. What they can't enforce is done here, in the
+// the rules: of its collection.yaml files. What they can't enforce is done here, in the
 // browser, where any user can bypass it: see the docs page "Expenses
 // without functions" and hack.js next to this file.
 import { createClient, localStorageStorage, VerificationRequiredError, VersionMismatchError, ForbiddenError } from 'backd-js'

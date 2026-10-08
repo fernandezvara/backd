@@ -86,7 +86,7 @@ Each chapter: goal in one line, the features it exercises, a working state, and 
 
 ### Ch 3 — Who may touch what: access rules
 
-- `rules.yaml`: owner writes own assets; members read published + own; curators extra rights.
+- `rules:` in `collection.yaml`: owner writes own assets; members read published + own; curators extra rights.
 - The limits of rules: what they can express, what leaks (invite the reader to find the hole — sets up Ch 5).
 - *See:* two demo users, one blocked where the other isn't.
 
@@ -188,7 +188,7 @@ The tutorial should teach secure defaults, not just features:
 
 - Rules chapter explicitly asks the reader to find the rule hole a function must close — the expenses example's lesson, learned once.
 - Anonymous surfaces (`import` webhook, public shares) get `rate_limit` and are revisited in Ch 12's checklist.
-- Fields only functions write (`published_at`, `downloads`) are refused to clients in `rules.yaml` (`== nil` on create, `changed()` on update) and written through `ctx.admin.db`; chapter 15 shows the hole first, then close it, like chapter 5.
+- Fields only functions write (`published_at`, `downloads`) are refused to clients in the `rules:` of `collection.yaml` (`== nil` on create, `changed()` on update) and written through `ctx.admin.db`; chapter 15 shows the hole first, then close it, like chapter 5.
 - Secrets only ever live in `secrets:`; the egress allowlist is minimal (`api.example.com`-style placeholder, or a self-hosted target).
 - Audit chapter reads ids, not emails; demo accounts are disposable.
 

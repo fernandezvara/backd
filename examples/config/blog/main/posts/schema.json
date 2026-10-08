@@ -8,7 +8,7 @@
     "category":  { "type": "string", "minLength": 1, "maxLength": 40, "description": "Optional topic, e.g. \"news\". indexes.json indexes it for listing a category's posts." },
     "author":    {
       "type": "object",
-      "description": "Who wrote the post. Nested objects can be queried with dot paths, e.g. where={\"author.email\":\"ada@example.com\"}. rules.yaml checks that author.email is the writer's own email.",
+      "description": "Who wrote the post. Nested objects can be queried with dot paths, e.g. where={\"author.email\":\"ada@example.com\"}. collection.yaml checks that author.email is the writer's own email.",
       "properties": {
         "name":  { "type": "string" },
         "email": { "type": "string", "format": "email" }

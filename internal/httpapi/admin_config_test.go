@@ -37,7 +37,7 @@ func TestAdminConfigView(t *testing.T) {
 			bin = c.(map[string]any)
 		}
 	}
-	if posts == nil || posts["schema_file"] != "acme/app/posts/schema.json" || posts["schema"] == nil || posts["rules_file"] != "acme/app/posts/rules.yaml" {
+	if posts == nil || posts["schema_file"] != "acme/app/posts/schema.json" || posts["schema"] == nil || posts["collection_file"] != "acme/app/posts/collection.yaml" || !strings.Contains(posts["collection_yaml"].(string), "rules:") {
 		t.Fatalf("posts: %v", posts)
 	}
 	if r := posts["rules"].(map[string]any)["read"].(map[string]any); !strings.Contains(r["expression"].(string), "published") {

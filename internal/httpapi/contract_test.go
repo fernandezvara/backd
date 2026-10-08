@@ -1049,7 +1049,7 @@ func TestContract(t *testing.T) {
 	// A change to the configuration, checked and not applied.
 	cc := ad + "/config/check"
 	req("POST", cc, `{"files": {}}`, key, 200)
-	req("POST", cc, `{"files": {"app/posts/rules.yaml": "read: document.nothing == 1\n"}}`, key, 200) // ok: false
+	req("POST", cc, `{"files": {"app/posts/collection.yaml": "rules:\n  read: document.nothing == 1\n"}}`, key, 200) // ok: false
 	req("POST", cc, `{"files": {"../x": "a"}}`, key, 400)
 	req("POST", cc, `{"files": {}}`, nil, 401)
 	req("POST", cc, `{"files": {}}`, ada, 403)

@@ -24,10 +24,11 @@ File fields are known to the rules like any other field of the collection, so a 
 A field only a function may set, such as a generated thumbnail, is a file field the rule refuses to clients:
 
 ```yaml
-# rules.yaml
-update: >
-  user != nil && document._meta.owner == user.id
-  && !('thumbnail' in changed())
+# collection.yaml
+rules:
+  update: >
+    user != nil && document._meta.owner == user.id
+    && !('thumbnail' in changed())
 ```
 
 An owner who uploads to or removes `thumbnail` gets `403`; a function calling `ctx.admin.db` sets it and nothing in the rules stands in the way. A rule on `create` can refuse the field as well, see [Creating with files](#creating-with-files).

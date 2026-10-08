@@ -42,10 +42,10 @@ func TestConfigCheckLoadsTheWholeRealmWithTheDrafts(t *testing.T) {
 	}
 	all := out["checked"]
 
-	// A rule that names a field the schema doesn't have is found, in the rules file.
-	code, out = post(`{"files": {"app/library/rules.yaml": "read: document.nothing == 1\n"}}`)
+	// A rule that names a field the schema doesn't have is found, in the collection.yaml that holds it.
+	code, out = post(`{"files": {"app/notes/collection.yaml": "rules:\n  read: document.nothing == 1\n"}}`)
 	problems, _ := out["problems"].([]any)
-	if code != 200 || out["ok"] != false || len(problems) == 0 || !strings.Contains(problems[0].(map[string]any)["file"].(string), "app/library/rules.yaml") {
+	if code != 200 || out["ok"] != false || len(problems) == 0 || !strings.Contains(problems[0].(map[string]any)["file"].(string), "app/notes/collection.yaml") {
 		t.Fatalf("a bad rule: %d %v", code, out)
 	}
 	if strings.Contains(problems[0].(map[string]any)["message"].(string), os.TempDir()) {
@@ -71,11 +71,11 @@ func TestConfigCheckLoadsTheWholeRealmWithTheDrafts(t *testing.T) {
 	}
 
 	// A valid change passes, a new collection counts as one more file, and a null deletes.
-	code, out = post(`{"files": {"app/library/rules.yaml": "read: user != nil\n", "app/fresh/schema.json": "{\"type\":\"object\"}"}}`)
+	code, out = post(`{"files": {"app/notes/collection.yaml": "rules:\n  read: user != nil\n", "app/fresh/schema.json": "{\"type\":\"object\"}"}}`)
 	if code != 200 || out["ok"] != true || out["checked"].(float64) != all.(float64)+1 {
 		t.Errorf("a valid change: %d %v (was %v files)", code, out, all)
 	}
-	if code, out = post(`{"files": {"app/library/rules.yaml": null}}`); code != 200 || out["checked"].(float64) != all.(float64)-1 {
+	if code, out = post(`{"files": {"app/notes/collection.yaml": null}}`); code != 200 || out["checked"].(float64) != all.(float64)-1 {
 		t.Errorf("a deleted file: %d %v", code, out)
 	}
 

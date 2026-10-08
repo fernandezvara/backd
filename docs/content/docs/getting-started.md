@@ -39,12 +39,12 @@ examples/config/
 ├── blog/
 │   ├── realm.yaml
 │   └── main/
-│       └── posts/{schema.json, indexes.json, rules.yaml}
+│       └── posts/{schema.json, indexes.json, collection.yaml}
 ├── expenses/                   (and expenses-with-functions/: the same app with server-side functions)
 │   ├── realm.yaml
 │   └── main/
-│       ├── groups/{schema.json, indexes.json, rules.yaml}
-│       └── expenses/{schema.json, indexes.json, rules.yaml}
+│       ├── groups/{schema.json, indexes.json, collection.yaml}
+│       └── expenses/{schema.json, indexes.json, collection.yaml}
 └── workshop/                   the functions cookbook: sync, jobs, cron and a webhook
     ├── realm.yaml
     └── main/
@@ -184,7 +184,7 @@ docker build -t backd .
 | `backd executor` | Run server-side [functions](../functions/running/#running-the-executor) for `backd` (needs Deno; the `backd-executor` image has it) |
 | `backd egress` | Run the [egress role](../functions/network/#egress-the-network-allowlist-completed), the only way a function process reaches the network |
 | `backd config check`, `backd config fingerprint` | Validate `CONFIG_DIR` as startup would, or print its fingerprint (see [Deploying config](../operations/deploying/)) |
-| `backd rules test` | Run each collection's `rules.test.yaml` against its `rules.yaml`, without a database (see [Testing rules](../auth/rules/#testing-rules)) |
+| `backd rules test` | Run each collection's `rules.test.yaml` against its `rules:`, without a database (see [Testing rules](../auth/rules/#testing-rules)) |
 | `backd version` | Print the version |
 | `backd databases [--collections]` | Print the MongoDB databases (or collections) the config uses, one per line (needs only `CONFIG_DIR`; see [least-privilege deployments](../operations/#least-privilege-deployments)) |
 | `backd bootstrap --realm <realm> --email <email>` | Create a realm's first administrator (see [Command-line administration](../auth/cli/)) |

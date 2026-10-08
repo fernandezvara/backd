@@ -25,7 +25,7 @@ Three steps, in order:
 
 Create the function and the `imports` collection (a record of event ids already handled), plus the shared helper:
 
-{{< tutorial-files "main/_functions/import/function.yaml main/_functions/import/index.ts main/_functions/lib/signature.ts main/_functions/lib/signature.test.ts main/imports/schema.json main/imports/indexes.json main/imports/rules.yaml" >}}
+{{< tutorial-files "main/_functions/import/function.yaml main/_functions/import/index.ts main/_functions/lib/signature.ts main/_functions/lib/signature.test.ts main/imports/schema.json main/imports/indexes.json main/imports/collection.yaml" >}}
 
 Rebuild and restart as before.
 

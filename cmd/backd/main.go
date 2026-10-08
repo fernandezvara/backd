@@ -588,7 +588,7 @@ func (a *app) logSecurityWarnings() {
 		if !rl.Settings.AuthEnabled {
 			a.log.Warn("REALM HAS AUTH DISABLED: anyone who can reach this service can read and modify its data", "realm", rl.Name)
 		} else if !hasRules(rl) {
-			a.log.Warn("realm has no rules.yaml in any collection: only API keys can access its data", "realm", rl.Name)
+			a.log.Warn("realm has no rules in any collection: only API keys can access its data", "realm", rl.Name)
 		}
 		if rl.Settings.AuthEnabled && len(rl.Settings.AdminNetworks) == 0 {
 			a.log.Info("admin API reachable from any network (no admin.allowed_networks in realm.yaml)", "realm", rl.Name)

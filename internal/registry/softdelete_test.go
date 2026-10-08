@@ -13,11 +13,11 @@ func softTree(t *testing.T, realm, collection, rules string) (*Registry, error) 
 		"shop/main/orders/schema.json":  ordersSchema,
 		"shop/main/orders/indexes.json": `[{"fields": ["code"], "unique": true}, {"fields": ["total", "-code"]}, {"fields": ["buyer_name", "code"], "unique": true}]`,
 	}
-	if collection != "" {
+	if collection != "" || rules != "" {
 		files["shop/main/orders/collection.yaml"] = collection
-	}
-	if rules != "" {
-		files["shop/main/orders/rules.yaml"] = rules
+		if rules != "" {
+			files["shop/main/orders/collection.yaml"] += rulesSection(rules)
+		}
 	}
 	return Load(writeTree(t, files))
 }

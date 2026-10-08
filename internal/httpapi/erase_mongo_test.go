@@ -19,8 +19,7 @@ func TestEraseAgainstMongoDB(t *testing.T) {
 	f := mongoFixture(t, map[string]string{
 		realm + "/realm.yaml":                 "signup: open\n",
 		realm + "/app/orders/schema.json":     `{"type": "object", "properties": {"buyer": {"type": "string"}, "phone": {"type": "string"}, "members": {"type": "array", "items": {"type": "string"}}, "paid_by": {"type": "string"}}, "additionalProperties": false}`,
-		realm + "/app/orders/rules.yaml":      "read: user != nil\ncreate: user != nil\nupdate: user != nil\ndelete: user != nil\n",
-		realm + "/app/orders/collection.yaml": "on_owner_delete:\n  action: anonymize\n  remove: [phone]\n  replace: {buyer: \"Erased customer\"}\n  pull: {members: email}\n  unset: {paid_by: id}\n",
+		realm + "/app/orders/collection.yaml": rulesSection("read: user != nil\ncreate: user != nil\nupdate: user != nil\ndelete: user != nil\n") + "on_owner_delete:\n  action: anonymize\n  remove: [phone]\n  replace: {buyer: \"Erased customer\"}\n  pull: {members: email}\n  unset: {paid_by: id}\n",
 		realm + "/app/notes/schema.json":      `{}`,
 	})
 	ctx := context.Background()

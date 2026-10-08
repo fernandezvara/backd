@@ -10,7 +10,7 @@ func TestFingerprint(t *testing.T) {
 	files := map[string]string{
 		"shop/realm.yaml":                        "roles:\n  staff: {}\n",
 		"shop/app/notes/schema.json":             `{}`,
-		"shop/app/notes/rules.yaml":              "read: \"true\"\n",
+		"shop/app/notes/collection.yaml":         rulesSection("read: \"true\"\n"),
 		"shop/app/notes/indexes.json":            `[]`,
 		fnPrefix + "hello/function.yaml":         "",
 		fnPrefix + "hello/index.ts":              "export default () => 1;\n",
@@ -61,7 +61,7 @@ func TestFingerprint(t *testing.T) {
 	for rel, content := range map[string]string{
 		"shop/realm.yaml":                      "roles:\n  staff: {}\n  editor: {}\n",
 		"shop/app/notes/schema.json":           `{"type": "object"}`,
-		"shop/app/notes/rules.yaml":            "read: \"false\"\n",
+		"shop/app/notes/collection.yaml":       rulesSection("read: \"false\"\n"),
 		"shop/app/notes/indexes.json":          `[{"fields": ["id"]}]`,
 		fnPrefix + "hello/index.ts":            "export default () => 2;\n",
 		fnPrefix + "lib/money.ts":              "export const x = 1;\n",

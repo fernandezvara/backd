@@ -1,0 +1,3 @@
+rules:
+  # Staff read refunds; nobody writes them directly: refund does, as admin.
+  read: user != nil && hasRole(user, 'staff')

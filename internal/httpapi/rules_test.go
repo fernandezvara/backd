@@ -60,20 +60,18 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 	t.Helper()
 	root := t.TempDir()
 	for p, content := range map[string]string{
-		"acme/realm.yaml":              "signup: open\nsessions:\n  cookie:\n    enabled: true\ncors:\n  origins: [https://app.acme.example]\nroles:\n  admin: {}\n  staff:\n    admin: true\n  support:\n    admin: [users, invitations]\n  keeper:\n    admin: [apikeys, secrets]\n  auditor:\n    admin: [audit]\n  runner:\n    admin: [functions]\n  viewer:\n    admin: read\n  lookout:\n    admin: [read, secrets]\nemail:\n  function: app/deliver\n  from: \"Acme <no-reply@acme.example>\"\n  public_url: https://api.acme.example\n  locales: [en, es]\n  allowed_redirects: [https://app.acme.example]\n  redirects:\n    verify_email: https://app.acme.example/verified\n  links:\n    change_email: https://app.acme.example/confirm?token={token}\n",
-		"acme/app/posts/schema.json":   postsSchema,
-		"acme/app/posts/rules.yaml":    postsRules,
-		"acme/app/notes/schema.json":   postsSchema,
-		"acme/app/notes/rules.yaml":    "read: user != nil\nwrite: user != nil\n",
-		"acme/app/private/schema.json": postsSchema,
+		"acme/realm.yaml":                "signup: open\nsessions:\n  cookie:\n    enabled: true\ncors:\n  origins: [https://app.acme.example]\nroles:\n  admin: {}\n  staff:\n    admin: true\n  support:\n    admin: [users, invitations]\n  keeper:\n    admin: [apikeys, secrets]\n  auditor:\n    admin: [audit]\n  runner:\n    admin: [functions]\n  viewer:\n    admin: read\n  lookout:\n    admin: [read, secrets]\nemail:\n  function: app/deliver\n  from: \"Acme <no-reply@acme.example>\"\n  public_url: https://api.acme.example\n  locales: [en, es]\n  allowed_redirects: [https://app.acme.example]\n  redirects:\n    verify_email: https://app.acme.example/verified\n  links:\n    change_email: https://app.acme.example/confirm?token={token}\n",
+		"acme/app/posts/schema.json":     postsSchema,
+		"acme/app/posts/collection.yaml": rulesSection(postsRules),
+		"acme/app/notes/schema.json":     postsSchema,
+		"acme/app/notes/collection.yaml": rulesSection("read: user != nil\nwrite: user != nil\n"),
+		"acme/app/private/schema.json":   postsSchema,
 		// A collection that soft-deletes (see soft_delete_test.go).
 		// …and one that soft-deletes without a restore rule (nobody sees its trash).
 		"acme/app/archive/schema.json":     postsSchema,
-		"acme/app/archive/collection.yaml": "soft_delete: true\n",
-		"acme/app/archive/rules.yaml":      "read: user != nil\ncreate: user != nil\ndelete: user != nil\n",
+		"acme/app/archive/collection.yaml": "soft_delete: true\n" + rulesSection("read: user != nil\ncreate: user != nil\ndelete: user != nil\n"),
 		"acme/app/bin/schema.json":         postsSchema,
-		"acme/app/bin/collection.yaml":     "soft_delete:\n  retention: 7d\n",
-		"acme/app/bin/rules.yaml":          "read: user != nil\ncreate: user != nil\nupdate: user != nil && document._meta.owner == user.id\ndelete: user != nil && document._meta.owner == user.id\nrestore: user != nil && (document._meta.owner == user.id || hasRole(user, 'staff'))\npurge: hasRole(user, 'staff')\n",
+		"acme/app/bin/collection.yaml":     "soft_delete:\n  retention: 7d\n" + rulesSection("read: user != nil\ncreate: user != nil\nupdate: user != nil && document._meta.owner == user.id\ndelete: user != nil && document._meta.owner == user.id\nrestore: user != nil && (document._meta.owner == user.id || hasRole(user, 'staff'))\npurge: hasRole(user, 'staff')\n"),
 		// Functions (see functions_test.go).
 		fnDir + "echo/function.yaml":  "invoke: \"user != nil && user.email_verified\"\n",
 		fnDir + "echo/index.js":       "",
@@ -132,23 +130,17 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 		// Collections with file fields (see files_test.go): library is private to its owner,
 		// gallery can be read by anyone.
 		"acme/app/library/schema.json":      filesSchema,
-		"acme/app/library/collection.yaml":  filesConfig,
-		"acme/app/library/rules.yaml":       filesRules,
+		"acme/app/library/collection.yaml":  filesConfig + rulesSection(filesRules),
 		"acme/app/forms/schema.json":        formsSchema,
-		"acme/app/forms/collection.yaml":    formsConfig,
-		"acme/app/forms/rules.yaml":         formsRules,
+		"acme/app/forms/collection.yaml":    formsConfig + rulesSection(formsRules),
 		"acme/app/videos/schema.json":       videosSchema,
-		"acme/app/videos/collection.yaml":   videosConfig,
-		"acme/app/videos/rules.yaml":        videosRules,
+		"acme/app/videos/collection.yaml":   videosConfig + rulesSection(videosRules),
 		"acme/app/vault/schema.json":        filesSchema,
-		"acme/app/vault/collection.yaml":    vaultConfig,
-		"acme/app/vault/rules.yaml":         filesRules,
+		"acme/app/vault/collection.yaml":    vaultConfig + rulesSection(filesRules),
 		"acme/app/profiles/schema.json":     filesSchema,
-		"acme/app/profiles/collection.yaml": profilesConfig,
-		"acme/app/profiles/rules.yaml":      filesRules,
+		"acme/app/profiles/collection.yaml": profilesConfig + rulesSection(filesRules),
 		"acme/app/gallery/schema.json":      filesSchema,
-		"acme/app/gallery/collection.yaml":  filesConfig,
-		"acme/app/gallery/rules.yaml":       strings.Replace(filesRules, "read: user != nil && document._meta.owner == user.id", "read: true", 1),
+		"acme/app/gallery/collection.yaml":  filesConfig + rulesSection(strings.Replace(filesRules, "read: user != nil && document._meta.owner == user.id", "read: true", 1)),
 	} {
 		_ = os.MkdirAll(filepath.Dir(filepath.Join(root, p)), 0o755)
 		if err := os.WriteFile(filepath.Join(root, p), []byte(content), 0o644); err != nil {
@@ -571,7 +563,7 @@ func TestChangedSeesNestedPatch(t *testing.T) {
 		"acme/realm.yaml": "signup: open\n",
 		"acme/app/posts/schema.json": `{"type": "object", "properties": {"title": {"type": "string"},
 			"author": {"type": "object", "properties": {"email": {"type": "string"}, "name": {"type": "string"}}}}}`,
-		"acme/app/posts/rules.yaml": "read: \"true\"\ncreate: \"true\"\nupdate: \"!('author' in changed())\"\n",
+		"acme/app/posts/collection.yaml": rulesSection("read: \"true\"\ncreate: \"true\"\nupdate: \"!('author' in changed())\"\n"),
 	} {
 		_ = os.MkdirAll(filepath.Dir(filepath.Join(root, p)), 0o755)
 		if err := os.WriteFile(filepath.Join(root, p), []byte(content), 0o644); err != nil {

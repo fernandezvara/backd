@@ -21,7 +21,7 @@ toc: true
 | `internal/jsonnum/` | JSON number normalization (int64 / float64) |
 | `internal/httpapi/` | HTTP layer: router, middleware, error envelope, document, `/_auth` and `/_admin` handlers, CORS |
 | `internal/auth/` | Users, sessions, API keys, invitations, roles, password hashing and login throttling (storage-neutral); `authtest/` has an in-memory store for tests |
-| `internal/rules/` | Loads, checks and evaluates `rules.yaml`; turns read rules into storage filters |
+| `internal/rules/` | Checks, compiles and evaluates the `rules:` of `collection.yaml`; turns read rules into storage filters |
 | `internal/templates/` | Starter files for `backd template` |
 | `internal/query/` | Parses and checks `where` / `order_by` / `count` against the schema |
 | `internal/storage/` | Backend-neutral repository interface and query conditions |
@@ -74,7 +74,7 @@ Two differential tests guard against data leaks and failed writes, and run again
 - `internal/mongodb/rules_diff_test.go` checks that read rules pushed down to MongoDB never leak or hide documents. For each read rule, it compares the documents the rule allows when evaluated in memory with what lists return and what single reads (`GET /{id}`, and the lookups of `PUT`, `PATCH` and `DELETE`) return. It does this for every caller: anonymous, users with and without roles, owners and members.
   - It runs on hundreds of generated documents, some ownerless, some with missing or null fields.
   - The rules exercise `&&`, `||` and `!` short-circuiting, `nil` guards, `in` on arrays, `hasRole`, and `now` against `_meta` timestamps.
-  - It runs the same comparison for the read rule of every sample `rules.yaml` in the repository (`examples/config`, the template sample and the JavaScript client's test configs), on documents generated from its schema.
+  - It runs the same comparison for the read rule of every sample collection's `rules:` in the repository (`examples/config`, the template sample and the JavaScript client's test configs), on documents generated from its schema.
   - It pins how missing and null fields behave where the rule language can't decide (`nil > 3`).
   - A self-test breaks the filters on purpose (a lost negation, `&&` and `||` swapped, `!=` as `==`, and so on) and fails unless the comparison notices each break.
 - `internal/mongodb/validator_diff_test.go` checks that every document the API's JSON Schema validation accepts is also accepted by the MongoDB validator. It covers tricky number spellings and `_meta` with and without ownership fields. It runs on a synthetic schema and on every sample `schema.json`, with documents generated from each schema, valid and invalid, including extra properties for `additionalProperties: false`.

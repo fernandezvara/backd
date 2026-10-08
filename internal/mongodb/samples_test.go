@@ -3,6 +3,7 @@ package mongodb
 import (
 	"bytes"
 	"encoding/json"
+	"go.yaml.in/yaml/v3"
 	"io/fs"
 	"math"
 	"math/rand/v2"
@@ -21,11 +22,11 @@ import (
 // client's integration configs. New samples are picked up automatically.
 var sampleRoots = []string{"examples/config", "internal/templates/files", "clients/js/test/integration/config"}
 
-// sample is one collection directory with a schema.json and maybe a rules.yaml.
+// sample is one collection directory with a schema.json and maybe rules in its collection.yaml.
 type sample struct {
 	path   string // relative to the repository root
 	schema string
-	rules  string // "" without rules.yaml
+	rules  string // "" without a rules: section
 	config string // collection.yaml, "" without one (file fields are declared there)
 }
 
@@ -42,13 +43,22 @@ func samples(t *testing.T) []sample {
 			if err != nil {
 				return err
 			}
-			rules, err := os.ReadFile(filepath.Join(dir, "rules.yaml"))
-			if err != nil && !os.IsNotExist(err) {
-				return err
-			}
 			config, err := os.ReadFile(filepath.Join(dir, "collection.yaml"))
 			if err != nil && !os.IsNotExist(err) {
 				return err
+			}
+			// The rules are the `rules:` section of collection.yaml, as YAML again.
+			var section struct {
+				Rules map[string]string `yaml:"rules"`
+			}
+			if err := yaml.Unmarshal(config, &section); err != nil {
+				return err
+			}
+			var rules []byte
+			if len(section.Rules) > 0 {
+				if rules, err = yaml.Marshal(section.Rules); err != nil {
+					return err
+				}
 			}
 			rel, _ := filepath.Rel(filepath.Join("..", ".."), dir)
 			out = append(out, sample{path: rel, schema: string(schema), rules: string(rules), config: string(config)})

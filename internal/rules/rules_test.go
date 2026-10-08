@@ -24,7 +24,7 @@ var testSchema = Schema{
 }
 
 func TestParseValid(t *testing.T) {
-	s, errs := Parse([]byte(`
+	s, errs := parseYAML(`
 read: |
   document.published == true
   || (user != nil && (document._meta.owner == user.id || user.id in document.members))
@@ -36,7 +36,7 @@ update: >
 delete: "(user != nil && 'admin' in user.roles) || hasRole(user, 'admin')"
 restore: user != nil && document._meta.owner == user.id
 purge: hasRole(user, 'admin')
-`), testSchema)
+`, testSchema)
 	if len(errs) > 0 {
 		t.Fatal(errs)
 	}
@@ -48,7 +48,7 @@ purge: hasRole(user, 'admin')
 }
 
 func TestParseWriteShorthand(t *testing.T) {
-	s, errs := Parse([]byte("read: 'true'\nwrite: hasRole(user, 'admin')\nupdate: 'false'\n"), testSchema)
+	s, errs := parseYAML("read: 'true'\nwrite: hasRole(user, 'admin')\nupdate: 'false'\n", testSchema)
 	if len(errs) > 0 {
 		t.Fatal(errs)
 	}
@@ -59,7 +59,7 @@ func TestParseWriteShorthand(t *testing.T) {
 	}
 
 	// No rule for an operation: nil, which denies.
-	s, _ = Parse([]byte("read: 'true'\n"), testSchema)
+	s, _ = parseYAML("read: 'true'\n", testSchema)
 	if s.For(Create) != nil || s.For(Delete) != nil {
 		t.Error("operations without a rule must have no rule")
 	}
@@ -116,7 +116,7 @@ func TestParseErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, errs := Parse([]byte(tt.src), testSchema)
+			_, errs := parseYAML(tt.src, testSchema)
 			var msgs []string
 			for _, e := range errs {
 				msgs = append(msgs, e.Error())
@@ -149,7 +149,7 @@ func TestParseAccepted(t *testing.T) {
 		"update: user != nil && !('status' in changed())",
 		"create: hasRole(user, 'editor') && data.author.name != nil",
 	} {
-		if _, errs := Parse([]byte(src), testSchema); len(errs) > 0 {
+		if _, errs := parseYAML(src, testSchema); len(errs) > 0 {
 			t.Errorf("%q: %v", src, errs)
 		}
 	}
@@ -157,7 +157,7 @@ func TestParseAccepted(t *testing.T) {
 
 // TestDocsExample keeps the example in docs/content/docs/auth/rules.md valid.
 func TestDocsExample(t *testing.T) {
-	_, errs := Parse([]byte(`
+	_, errs := parseYAML(`
 read: >
   document.published == true
   || (user != nil && document._meta.owner == user.id)
@@ -166,7 +166,7 @@ update: >
   user != nil && document._meta.owner == user.id
   && !('status' in changed())
 delete: hasRole(user, 'admin')
-`), testSchema)
+`, testSchema)
 	if len(errs) > 0 {
 		t.Error(errs)
 	}
@@ -190,7 +190,7 @@ func TestRulesOnDateFields(t *testing.T) {
 		`create: user != nil && data.ends_at > data.starts_at`,
 		`update: user != nil && document.starts_at > now && !('starts_at' in changed())`,
 	} {
-		if _, errs := Parse([]byte(ok+"\n"), schema); len(errs) > 0 {
+		if _, errs := parseYAML(ok+"\n", schema); len(errs) > 0 {
 			t.Errorf("%q: %v", ok, errs)
 		}
 	}
@@ -202,7 +202,7 @@ func TestRulesOnDateFields(t *testing.T) {
 		`create: "data.starts_at < '2030-01-01T00:00:00Z'"`:      "stored as a date",
 		`read: document.title == 'x' || now > document.title`:    "`now` can only be compared with a timestamp",
 	} {
-		_, errs := Parse([]byte(src+"\n"), schema)
+		_, errs := parseYAML(src+"\n", schema)
 		if len(errs) == 0 || !strings.Contains(errs[0].Error(), want) {
 			t.Errorf("%q: %v, want an error with %q", src, errs, want)
 		}
@@ -213,14 +213,14 @@ func TestRulesOnDateFields(t *testing.T) {
 // cover them (they are denied unless declared), restore is a filter like read,
 // and neither sees `data`.
 func TestRestoreAndPurgeRules(t *testing.T) {
-	s, errs := Parse([]byte("read: 'true'\nwrite: hasRole(user, 'admin')\n"), testSchema)
+	s, errs := parseYAML("read: 'true'\nwrite: hasRole(user, 'admin')\n", testSchema)
 	if len(errs) > 0 {
 		t.Fatal(errs)
 	}
 	if s.For(Restore) != nil || s.For(Purge) != nil {
 		t.Error("write shorthand must not grant restore or purge")
 	}
-	s, errs = Parse([]byte("read: 'true'\nrestore: user != nil && document._meta.owner == user.id\npurge: hasRole(user, 'admin')\n"), testSchema)
+	s, errs = parseYAML("read: 'true'\nrestore: user != nil && document._meta.owner == user.id\npurge: hasRole(user, 'admin')\n", testSchema)
 	if len(errs) > 0 {
 		t.Fatal(errs)
 	}
@@ -228,12 +228,12 @@ func TestRestoreAndPurgeRules(t *testing.T) {
 		t.Errorf("restore rule isn't a usable filter: %v", err)
 	}
 	for _, src := range []string{"restore: data.status == 'draft'\n", "purge: data.status == 'draft'\n"} {
-		if _, errs := Parse([]byte("read: 'true'\n"+src), testSchema); len(errs) == 0 || !strings.Contains(errors.Join(errs...).Error(), "`data` is only available on create and update") {
+		if _, errs := parseYAML("read: 'true'\n"+src, testSchema); len(errs) == 0 || !strings.Contains(errors.Join(errs...).Error(), "`data` is only available on create and update") {
 			t.Errorf("%q: errors = %v", src, errs)
 		}
 	}
 	// A restore rule becomes a database filter, so it follows read's limits.
-	if _, errs := Parse([]byte("read: 'true'\nrestore: document.tags == nil\n"), testSchema); len(errs) == 0 {
+	if _, errs := parseYAML("read: 'true'\nrestore: document.tags == nil\n", testSchema); len(errs) == 0 {
 		t.Log("(array comparison accepted by the test schema)")
 	}
 }

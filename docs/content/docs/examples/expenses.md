@@ -49,7 +49,7 @@ Two collections in the database `main`:
 
 ## What the rules enforce
 
-`groups/rules.yaml` (every rule of both collections also starts with `user != nil && user.email_verified`; the table shows the rest):
+The `rules:` of `groups/collection.yaml` (every rule of both collections also starts with `user != nil && user.email_verified`; the table shows the rest):
 
 | Rule | Enforces |
 |---|---|
@@ -58,7 +58,7 @@ Two collections in the database `main`:
 | `update: … user.email in document.members && user.email in data.members && !('currency' in changed())` | Members edit the group and invite people; nobody removes themselves, and the currency never changes |
 | `delete: … document._meta.owner == user.id` | Only the creator deletes it |
 
-`expenses/rules.yaml`:
+And those of `expenses/collection.yaml`:
 
 | Rule | Enforces |
 |---|---|

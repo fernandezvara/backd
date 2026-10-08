@@ -83,7 +83,7 @@ await stopped('an outsider reads the group', () => carl.groups.get(group.id), No
 await stopped('an outsider calls list_expenses for the group', () => carl.db.fn('list_expenses', { group_id: group.id }), NotFoundError)
 await stopped('an anonymous caller calls list_expenses', () => createClient({ url, realm: 'expenses-with-functions' }).db('main').fn('list_expenses', { group_id: group.id }), AuthenticationError)
 {
-  // A direct read only ever returns your own entries (expenses/rules.yaml:
+  // A direct read only ever returns your own entries (expenses/collection.yaml:
   // read: user != nil && document._meta.owner == user.id) — never anyone
   // else's, regardless of group membership. Seeing the group's other
   // expenses always goes through list_expenses instead.

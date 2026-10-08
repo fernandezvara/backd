@@ -1,0 +1,6 @@
+rules:
+  # A customer reads and deletes their own reports. Creating one is what the
+  # export_orders job does, acting as the customer (ctx.db, not ctx.admin.db).
+  read: user != nil && document._meta.owner == user.id
+  create: user != nil
+  delete: user != nil && document._meta.owner == user.id

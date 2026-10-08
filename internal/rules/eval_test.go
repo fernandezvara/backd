@@ -10,7 +10,7 @@ import (
 
 func mustRule(t *testing.T, src string, op Op) *Rule {
 	t.Helper()
-	s, errs := Parse([]byte(src), testSchema)
+	s, errs := parseYAML(src, testSchema)
 	if len(errs) > 0 {
 		t.Fatal(errs)
 	}

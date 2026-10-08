@@ -4,7 +4,7 @@
 // functions" happen (anyone who knew a group's id could write into it).
 //
 // Reading the group through ctx.db, acting as the caller, does double
-// duty: groups/rules.yaml's read rule already requires the caller's email
+// duty: groups/collection.yaml's read rule already requires the caller's email
 // to be a current member, so a non-member's read fails not_found, which
 // refuses the whole call before any expense is written.
 import { relay } from "../lib/relay.ts";

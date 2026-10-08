@@ -1,3 +1,16 @@
+# Access rules (docs: Authentication -> Access rules). Each key is an operation; its
+# value is an expression that must be true to allow it. Operations without a rule are
+# denied, and a collection with no `rules:` is reachable with API keys only. `user` is
+# the signed-in user (nil for anonymous callers: check `user != nil` first), `document`
+# the stored document and `data` the one being written. `write` stands for create,
+# update and delete at once. Everything below is commented out.
+#
+# rules:
+#   read: user != nil
+#   create: user != nil
+#   update: user != nil && document._meta.owner == user.id
+#   delete: user != nil && document._meta.owner == user.id
+#
 # Soft delete (docs: Configuration -> collection.yaml). With it, DELETE marks a
 # document deleted instead of removing it: nothing reads it, it can be restored
 # (POST /{id}/restore) or purged (DELETE /{id}?purge=true) under the `restore`

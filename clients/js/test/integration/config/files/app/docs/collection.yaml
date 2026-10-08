@@ -1,3 +1,9 @@
+rules:
+  read: user != nil && document._meta.owner == user.id
+  create: user != nil
+  update: user != nil && document._meta.owner == user.id
+  delete: user != nil && document._meta.owner == user.id
+
 files:
   # These tests send pictures that are not whole ones: leave them as they are.
   attachment:

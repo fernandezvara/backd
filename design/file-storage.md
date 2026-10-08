@@ -29,7 +29,7 @@ Let a document carry files — an avatar, receipts, attachments — stored in **
 | Links for apps | `?link=json` on the download endpoint returns `{ url, expires_at }`; `?file_links=true` on document reads adds `url` and `expires_at` to every file; proxy-mode links are HMAC-signed backd links, so both modes give a URL usable in `<img>`, `<video>` or `<a>` without credentials |
 | Creating with files | upload first (pending upload), reference it on create/update: `{ "upload": "<id>", "token": "<token>" }` |
 | Object keys | one key per file, set at upload: `<prefix>/<realm>/<db>/<coll>/<file id>`; never copied or moved; `prefix` required and unique per instance |
-| Access | read the file ⇔ read the document; upload/replace/delete ⇔ update the document, evaluated with `data` and `changed()` like any update (§5.1), so `rules.yaml` can reserve a file field for functions |
+| Access | read the file ⇔ read the document; upload/replace/delete ⇔ update the document, evaluated with `data` and `changed()` like any update (§5.1), so the collection's rules can reserve a file field for functions |
 | Network | backd connects **directly and only** to declared storage endpoints (documented exception to "everything through egress") |
 | Consistency | every upload journaled; the bucket is never listed except by a manual `reconcile`, which never touches in-flight or recent objects |
 | Image versions | not built in; functions can make them with the files API; built-in version is backlog |
@@ -142,7 +142,7 @@ In the document (server-owned, returned, ignored on writes except as a pending-u
 
 ### 5.1 Rules for file operations
 
-File operations use the collection's ordinary `rules.yaml`; there is no separate permission system.
+File operations use the collection's ordinary rules (the `rules:` of its `collection.yaml`); there is no separate permission system.
 
 - **Rules know file fields.** The schema backd injects for file fields counts for the rules check, so `document.file.type`, `data.attachments` or `'thumbnail' in changed()` are valid at startup.
 - **Uploads, replacements and removals through `_files`** evaluate the `update` rule with `document` = the stored document and `data` = the document as it will be after the operation (field replaced, appended to, one file removed, or cleared). `changed()` therefore contains the field. The rule runs **before any byte is stored**; the new file's metadata in `data` holds what is known then:

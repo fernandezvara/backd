@@ -136,7 +136,8 @@ shop__orders.items
 ### Upgrading to v0.9.0
 
 1. **`backd` without a command prints the help; it no longer serves.** Before, `backd` alone ran `serve`. Anything that starts the binary or the container image with no command must say `serve` now: a `command: ["serve"]` in a compose file, `args: ["serve"]` in Kubernetes, `docker run … backd serve`, `ExecStart=/usr/local/bin/backd serve`. The images now have `CMD ["serve"]`, so `docker run backd` and a container that overrides nothing still serve, but a service that sets its own `entrypoint` or runs the binary directly does not. The shipped compose files say it explicitly.
-2. **`backd files regenerate`** is new (see [File fields](../files/file-fields/#after-you-change-a-declaration)); `backd` and `backd help` show the commands grouped by who uses them.
+2. **`rules.yaml` is gone: the rules are the `rules:` section of the collection's `collection.yaml`.** A configuration directory with a `rules.yaml` no longer loads: `backd` stops at startup and in `backd config check`, naming the file. Migrate each one by moving its content, indented by two spaces, under a `rules:` key in the collection's `collection.yaml` (create the file if there is none; its other sections, `files:`, `soft_delete:` and `on_owner_delete:`, stay as they are) and deleting `rules.yaml`. The rules mean exactly what they meant. `rules.test.yaml` stays where it is. The config fingerprint changes (it hashes `collection.yaml` now), and the admin API's configuration view gives `collection_file` and `collection_yaml` where it gave `rules_file`; the admin interface prepares a change to `collection.yaml`.
+3. **`backd files regenerate`** is new (see [File fields](../files/file-fields/#after-you-change-a-declaration)); `backd` and `backd help` show the commands grouped by who uses them.
 
 ### Upgrading to v0.8.0
 
@@ -211,7 +212,7 @@ v0.2.0 adds users and access rules and is a breaking release: every realm needs 
    - run `backd provision` (or start `backd serve` with `PROVISION_MODE=apply`) to create the realm's system database;
    - create the realm's first administrator with `backd bootstrap --realm <realm> --email <email>`, and log in as them with `backd login --realm <realm> --url <server>`;
    - give server-side clients an API key: `backd apikey create --realm <realm> --name <name> --expires 90d`, sent as `Authorization: Bearer <key>`;
-   - add a `rules.yaml` to collections that users or anonymous callers should reach. Without one, only API keys can.
+   - add a `rules:` section to the `collection.yaml` of collections that users or anonymous callers should reach. Without one, only API keys can.
 3. **Existing documents** don't have ownership fields. They keep working: `_meta.owner` reads as `null`, so owner-based rules don't match them, and their next write adds `_meta.updated_by`. API keys can still manage them.
 4. **Behind a reverse proxy**, set `TRUSTED_PROXIES` so login throttling sees real client addresses.
 5. **Browser apps** on another origin need that origin under `cors.origins` in `realm.yaml`.
@@ -224,7 +225,7 @@ Use `GET /healthz` as the liveness probe and `GET /readyz` as the readiness prob
 
 Logs are JSON lines on standard error, filtered by `LOG_LEVEL`.
 
-- At startup, `backd` logs a `WARN` line for each realm with `auth: disabled` (its data is open to anyone who can reach the service), and for each realm with `auth: enabled` but no `rules.yaml` in any collection (only API keys can reach its data). It warns about realms with `auth: enabled` that nobody can administer with a session (no admin role, or no user holding one). It also lists API keys that never expire or expire within 14 days (see the [expiry policy](../auth/api-keys/#expiry-and-rotation-policy)).
+- At startup, `backd` logs a `WARN` line for each realm with `auth: disabled` (its data is open to anyone who can reach the service), and for each realm with `auth: enabled` but no rules in any collection (only API keys can reach its data). It warns about realms with `auth: enabled` that nobody can administer with a session (no admin role, or no user holding one). It also lists API keys that never expire or expire within 14 days (see the [expiry policy](../auth/api-keys/#expiry-and-rotation-policy)).
 - Each request produces one access-log line (`"msg":"request"`). It includes the method, route pattern, realm, database, collection, status, duration, bytes, `request_id` and the client's address (`client`, following [`TRUSTED_PROXIES`](#client-addresses-behind-a-proxy)), plus `actor` in realms with `auth: enabled`: `user:<id>` for a session, `key:<name>` for an API key, `key:<name> as user:<id>` for an API key acting on behalf of a user, or `anonymous`.
 - At `debug` level, requests refused by [access rules](../auth/rules/#answers-when-a-rule-says-no) are logged (`"msg":"access denied"`) with the collection, operation and reason.
 - Request bodies, document contents, passwords and tokens are never logged.

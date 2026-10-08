@@ -245,7 +245,7 @@ func EmailCapture(configDir, realm, database string) ([]File, error) {
 		{project + "/email-capture/" + registry.FunctionFile, "files/email-capture/function.yaml"},
 		{project + "/email-capture/index.ts", "files/email-capture/index.ts"},
 		{dbDir + "/outbox/schema.json", "files/email-capture/outbox/schema.json"},
-		{dbDir + "/outbox/rules.yaml", "files/email-capture/outbox/rules.yaml"},
+		{dbDir + "/outbox/" + registry.CollectionFile, "files/email-capture/outbox/collection.yaml"},
 		{dbDir + "/outbox/indexes.json", "files/email-capture/outbox/indexes.json"},
 	} {
 		data, err := files.ReadFile(f[1])
@@ -260,7 +260,7 @@ func EmailCapture(configDir, realm, database string) ([]File, error) {
 }
 
 // CollectionPolicy creates <realm>/<database>/<collection>/collection.yaml, a
-// commented example of what an erase can do to the collection (everything is
+// commented example of the collection's rules, soft delete, and what an erase can do to it (everything is
 // commented out: without a policy an erase leaves the collection alone). The
 // collection must exist.
 func CollectionPolicy(configDir, realm, database, collection string) ([]File, error) {

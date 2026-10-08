@@ -33,8 +33,8 @@ roles:
         login_networks: [192.0.2.0/28]
       - bob@example.com
 `,
-		"net/app/notes/schema.json": `{}`,
-		"net/app/notes/rules.yaml":  "read: user != nil\nwrite: user != nil\n",
+		"net/app/notes/schema.json":     `{}`,
+		"net/app/notes/collection.yaml": rulesSection("read: user != nil\nwrite: user != nil\n"),
 	} {
 		_ = os.MkdirAll(filepath.Dir(filepath.Join(root, p)), 0o755)
 		if err := os.WriteFile(filepath.Join(root, p), []byte(content), 0o644); err != nil {

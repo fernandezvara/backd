@@ -1,3 +1,6 @@
+rules:
+  read: user != nil
+
 # Deleted products go to the trash for 30 days.
 soft_delete:
   retention: 30d

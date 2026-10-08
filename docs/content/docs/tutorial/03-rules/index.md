@@ -1,49 +1,57 @@
 ---
 title: "3. Who may touch what"
-description: "rules.yaml: read, create, update and delete rules per collection — and the hole only a function can close."
+description: "rules: in collection.yaml: read, create, update and delete rules per collection — and the hole only a function can close."
 weight: 230
 toc: true
 ---
 
-Until now every signed-in member could do anything to anything. `rules.yaml` gives each collection four expressions — `read`, `create`, `update`, `delete` — evaluated per call. Operations without a rule are denied.
+Until now every signed-in member could do anything to anything. The `rules:` section of a collection's `collection.yaml` gives it four expressions — `read`, `create`, `update`, `delete` — evaluated per call. Operations without a rule are denied.
 
 ## The assets rules
 
-Create `config/shelf/main/assets/rules.yaml`:
+Replace `config/shelf/main/assets/collection.yaml` (chapter 2's policy stays; the rules go above it):
 
 ```yaml
-# Everyone in the workspace reads published assets; a member also reads
-# their own drafts.
-read: >
-  user != nil
-  && (document.published_at != nil || document._meta.owner == user.id)
+rules:
+  # Everyone in the workspace reads published assets; a member also reads
+  # their own drafts.
+  read: >
+    user != nil
+    && (document.published_at != nil || document._meta.owner == user.id)
 
-# Members write their own assets. HOLE: published_at is the client's word —
-# any member can publish, and pick the date.
-create: user != nil
-update: user != nil && document._meta.owner == user.id
-delete: user != nil && document._meta.owner == user.id
+  # Members write their own assets. HOLE: published_at is the client's word —
+  # any member can publish, and pick the date.
+  create: user != nil
+  update: user != nil && document._meta.owner == user.id
+  delete: user != nil && document._meta.owner == user.id
+
+on_owner_delete:
+  action: delete
 ```
 
 Three names carry the context: `user` (the caller, or `nil` when anonymous — always check `user != nil` first), `document` (the stored asset), `data` (the asset being written). `changed()` lists the fields a write touches, and `hasRole(user, 'curator')` checks a `realm.yaml` role. The full language is in [Access rules](../../auth/rules/).
 
 ## The shares rules
 
-And `config/shelf/main/shares/rules.yaml`:
+And `config/shelf/main/shares/collection.yaml`:
 
 ```yaml
-# Share links are private to their creator. The public /s/{token} lookup
-# happens through a function (chapter 5) — nobody lists this collection.
-read: user != nil && document._meta.owner == user.id
+rules:
+  # Share links are private to their creator. The public /s/{token} lookup
+  # happens through a function (chapter 5) — nobody lists this collection.
+  read: user != nil && document._meta.owner == user.id
 
-# HOLE: asset_id is the client's word — nothing checks the caller owns the
-# asset or that it exists; and a token is any string of 16+ characters, so a
-# client could pick a guessable one.
-create: user != nil
-delete: user != nil && document._meta.owner == user.id
+  # HOLE: asset_id is the client's word — nothing checks the caller owns the
+  # asset or that it exists; and a token is any string of 16+ characters, so a
+  # client could pick a guessable one.
+  create: user != nil
+  delete: user != nil && document._meta.owner == user.id
+
+on_owner_delete:
+  action: delete
 ```
 
-`read` is deliberately narrow: nobody lists share links — not members, certainly not anonymous callers. Chapter 5 resolves `GET /s/{token}` through a function instead. (These are the chapter's versions; chapter 5 replaces both files. The repository's `rules.yaml` files are their final state.)
+`read` is deliberately narrow: nobody lists share links — not members, certainly not anonymous callers. Chapter 5 resolves `GET /s/{token}` through a function instead. (These are the chapter's versions; chapter 5 replaces the `rules:` of both files. The repository's `collection.yaml` files are their final state.)
 
 ## Apply and try to break it
 

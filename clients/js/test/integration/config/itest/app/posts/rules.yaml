@@ -1,8 +1,0 @@
-read: >
-  document.published == true
-  || (user != nil && (document._meta.owner == user.id || user.id in document.members))
-create: user != nil
-update: >
-  user != nil && document._meta.owner == user.id
-  && !('status' in changed())
-delete: hasRole(user, 'admin')

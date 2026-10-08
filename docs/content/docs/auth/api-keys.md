@@ -150,6 +150,6 @@ In a realm with `auth: enabled`, data routes (`/v1/{realm}/{database}/{collectio
 | No credentials | What the access rules allow anonymous callers (`user == nil`) |
 | Unknown, expired or revoked key or token, or one from another realm | `401 unauthenticated` |
 
-A collection without `rules.yaml` is only reachable with API keys.
+A collection without a `rules:` section is only reachable with API keys.
 
 Realms with `auth: disabled` ignore credentials entirely: everyone has full access.

@@ -43,9 +43,9 @@ curl -s -X PATCH "http://localhost:8080/v1/shelf/main/assets/$ASSET" \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/merge-patch+json' -d '{"downloads": 1000}'   # 200
 ```
 
-The same two lines as for `published_at` in chapter 5 close it. Edit `assets/rules.yaml` again; this is the finished file's rule:
+The same two lines as for `published_at` in chapter 5 close it. Edit the `rules:` of `assets/collection.yaml` again; this is the finished file's rule:
 
-{{< example-file path="shelf/main/assets/rules.yaml" lines="25-30" >}}
+{{< example-file path="shelf/main/assets/collection.yaml" lines="26-32" >}}
 
 ```sh
 docker compose restart backd
