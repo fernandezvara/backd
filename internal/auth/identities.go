@@ -34,6 +34,11 @@ func (s *Users) Unlink(ctx context.Context, userID, provider, by string) error {
 	case len(ids) < 2:
 		return ErrLastSignInMethod
 	}
+	if provider == ProviderApple {
+		if err := s.queueAppleRevocation(ctx, userID); err != nil {
+			return err
+		}
+	}
 	if err := s.Store.DeleteIdentity(ctx, userID, provider); err != nil {
 		return err
 	}

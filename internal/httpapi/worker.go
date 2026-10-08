@@ -14,6 +14,7 @@ import (
 	"github.com/fernandezvara/backd/internal/executor"
 	"github.com/fernandezvara/backd/internal/imaging"
 	"github.com/fernandezvara/backd/internal/metrics"
+	"github.com/fernandezvara/backd/internal/oauth"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage"
 )
@@ -28,9 +29,10 @@ const workerPollInterval = 250 * time.Millisecond
 // function's own caller would, reusing the same bundle resolution,
 // callback construction and invocation recording sync calls use.
 type Worker struct {
-	id  string
-	fns *functions
-	reg *registry.Registry
+	oauth *oauth.Service // reaches the identity providers (to revoke Apple tokens)
+	id    string
+	fns   *functions
+	reg   *registry.Registry
 	// backdURL is backd's public address, for the links in emails.
 	backdURL string
 	log      *slog.Logger
@@ -63,7 +65,7 @@ func NewWorker(cfg Config, id string) *Worker {
 	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, users: users, callbackKey: cfg.CallbackKey, objects: newRealmObjects(cfg.Registry, users)}
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, log: log, metrics: cfg.Metrics}
 	docs.imageMaxPixels = cfg.ImageMaxPixels
-	return &Worker{id: id, fns: fns, reg: cfg.Registry, backdURL: cfg.BackdURL, log: log, lastScheduled: map[string]time.Time{}, lastPurge: map[string]time.Time{}, images: newImageEngine(cfg)}
+	return &Worker{id: id, fns: fns, reg: cfg.Registry, backdURL: cfg.BackdURL, oauth: cfg.oauthService(), log: log, lastScheduled: map[string]time.Time{}, lastPurge: map[string]time.Time{}, images: newImageEngine(cfg)}
 }
 
 // newImageEngine builds the engine from the instance's settings: the concurrency is the
@@ -261,6 +263,10 @@ func (w *Worker) runJob(ctx context.Context, realm string, svc *auth.Users, job 
 		w.runErase(ctx, log, realm, svc, job) // not a function: a worker applies the policies itself
 		return
 	}
+	if job.Revoke != nil {
+		w.runRevoke(ctx, log, realm, svc, job) // not a function: a worker tells Apple itself
+		return
+	}
 	if job.Image != nil {
 		w.runImage(ctx, log, realm, svc, job) // not a function: a worker makes the copies itself
 		return
@@ -424,6 +430,9 @@ func (w *Worker) watchCancellation(ctx context.Context, svc *auth.Users, jobID s
 
 // jobKind is the job's kind as the metrics name it.
 func jobKind(j auth.Job) string {
+	if j.Revoke != nil {
+		return "revoke"
+	}
 	return metrics.JobKind(j.Email != nil, j.Erase != nil, j.Check != nil, j.Image != nil, j.Scheduled)
 }
 

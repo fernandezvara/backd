@@ -43,6 +43,9 @@ const (
 	// (self or admin) for an unlink.
 	AuditIdentityLinked   = "identity.linked"
 	AuditIdentityUnlinked = "identity.unlinked"
+	// Apple revoked a user's tokens when their account went away or Apple was unlinked;
+	// never the token itself.
+	AuditAppleRevoked = "identity.apple_revoked"
 	// A provider sign-in the account's state refused; details: provider, reason
 	// (disabled, network, erased, …).
 	AuditSignInRefused = "identity.signin_refused"

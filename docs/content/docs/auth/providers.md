@@ -9,7 +9,7 @@ toc: true
 A realm can let its users sign in with **Google**, **Microsoft** or **Apple**. backd runs the redirect flow with the provider, checks the answer, finds or creates the user, and gives your app a one-time code to trade for a session. A user can have a password and any number of providers at once (at most one of each): they are [sign-in methods](../sessions/#sign-in-methods) of the same user, so roles, rules and owned documents don't depend on how the user signed in.
 
 {{< hint style="note" >}}
-This page covers the **redirect** sign-in and the **native** sign-in of mobile apps. Apple's token revocation when an account is deleted, the profile handed to the app, `account.on_signup`, provider calls in the JavaScript client and other OpenID Connect providers are **planned**, each in its own step.
+This page covers the **redirect** sign-in and the **native** sign-in of mobile apps. The profile handed to the app, `account.on_signup`, provider calls in the JavaScript client and other OpenID Connect providers are **planned**, each in its own step.
 {{< /hint >}}
 
 ## Set it up
@@ -46,7 +46,7 @@ providers:
 | `providers.google.native_client_ids` | Optional: the client ids of your mobile apps, accepted by the [ID-token sign-in](#native-apps-the-id-token) |
 | `providers.microsoft.client_id`, `client_secret`, `tenant` | The application (client) id, its secret, and which accounts are accepted: `common` (any), `organizations` (work and school), `consumers` (personal) or one tenant id |
 | `providers.apple.services_id`, `team_id`, `key_id`, `private_key` | The Services ID (web client id), the team and key that sign Apple's client secret, and the secret that holds the key. backd signs and renews the client secret itself |
-| `providers.apple.bundle_ids`, `revoke_on_delete` | Optional: your iOS apps, and whether Apple tokens are revoked when an account is deleted (planned) |
+| `providers.apple.bundle_ids`, `revoke_on_delete` | Optional: your iOS apps, and whether Apple's tokens are kept and [revoked](#apple-and-account-deletion) when an account is deleted (default `true`) |
 
 `google`, `microsoft` and `apple` are reserved names; any other name is not a provider yet. A provider whose secret is not set answers `503 provider_unavailable`, and `backd` warns about it at startup. A realm with providers needs `BACKD_URL` (or `email.public_url`): startup refuses without it.
 
@@ -98,7 +98,17 @@ The same rules as the redirect flow decide who the person is, with JSON answers 
 | `400 invitation_invalid`, `400 email_required` | Sign-up needs a valid invitation (`invitation` in the body); the provider gave no address |
 | `503 provider_unavailable` | The provider's keys could not be fetched |
 
-With `"intent": "link"` and the session in `Authorization`, the call adds the provider account to the signed-in user and answers `{"linked": "google"}`. Apple's `authorization_code` may be sent too: it is for revoking the user's Apple tokens when the account is deleted, which is planned. At most 30 calls a minute per address.
+With `"intent": "link"` and the session in `Authorization`, the call adds the provider account to the signed-in user and answers `{"linked": "google"}`. For **Apple** the app also sends the `authorization_code` its SDK gave with the token (required, unless the provider sets `revoke_on_delete: false`): see [Apple and account deletion](#apple-and-account-deletion). At most 30 calls a minute per address.
+
+## Apple and account deletion
+
+Apple requires an app that offers Sign in with Apple and account deletion to **revoke the user's tokens** with Apple when the account is deleted. backd does it for you:
+
+- At sign-in with Apple (the redirect flow, or the native flow with its `authorization_code`) backd gets Apple's **refresh token** and keeps it, **encrypted** with the realm's secrets key, on the user's Apple sign-in method. It is never returned by any endpoint, never logged and used for nothing else: this is the only provider token backd stores.
+- When the user is [erased](../erasure/) or deleted, or removes the Apple sign-in method, a **revoke job** (`origin: backd:apple.revoke` in the [jobs](../../functions/jobs/) list) takes the token before the sign-in method goes, and a worker tells Apple to revoke it. A failure is tried again after a growing wait (up to eight attempts, then the job is listed as failed and keeps the token until it expires); once Apple has revoked it the job forgets the token and the audit records `identity.apple_revoked`, never the token.
+- `revoke_on_delete: false` stops all of it: nothing is stored and nothing is revoked, for realms without an iOS app.
+
+Run a worker (`backd worker`, or `serve --with-worker`) for this: without one the revoke job waits.
 
 ## Who the person is
 

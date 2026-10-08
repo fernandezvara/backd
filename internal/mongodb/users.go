@@ -71,14 +71,18 @@ type identityDoc struct {
 	Email         string    `bson:"email,omitempty"`
 	EmailVerified bool      `bson:"email_verified,omitempty"`
 	LastUsedAt    time.Time `bson:"last_used_at,omitempty"`
-	CreatedAt     time.Time `bson:"created_at"`
-	UpdatedAt     time.Time `bson:"updated_at"`
+	// Apple's refresh token, sealed, and the client id it belongs to.
+	AppleRefreshToken string    `bson:"apple_refresh_token,omitempty"`
+	AppleClientID     string    `bson:"apple_client_id,omitempty"`
+	CreatedAt         time.Time `bson:"created_at"`
+	UpdatedAt         time.Time `bson:"updated_at"`
 }
 
 func (d identityDoc) identity() auth.Identity {
 	return auth.Identity{
 		ID: d.ID, UserID: d.UserID, Provider: d.Provider, Subject: d.Subject, PasswordHash: d.PasswordHash,
 		Email: d.Email, EmailVerified: d.EmailVerified, LastUsedAt: d.LastUsedAt.UTC(),
+		AppleRefreshToken: d.AppleRefreshToken, AppleClientID: d.AppleClientID,
 		CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC(),
 	}
 }
@@ -375,6 +379,12 @@ func (s *AuthStore) UpdateIdentity(ctx context.Context, id string, upd auth.Iden
 	}
 	if upd.LastUsedAt != nil {
 		set = append(set, bson.E{Key: "last_used_at", Value: *upd.LastUsedAt})
+	}
+	if upd.AppleRefreshToken != nil {
+		set = append(set, bson.E{Key: "apple_refresh_token", Value: *upd.AppleRefreshToken})
+	}
+	if upd.AppleClientID != nil {
+		set = append(set, bson.E{Key: "apple_client_id", Value: *upd.AppleClientID})
 	}
 	res, err := s.identities().UpdateByID(ctx, id, bson.D{{Key: "$set", Value: set}})
 	if err != nil {

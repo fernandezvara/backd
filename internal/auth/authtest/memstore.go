@@ -318,6 +318,12 @@ func (m *MemStore) UpdateIdentity(_ context.Context, id string, upd auth.Identit
 		if upd.LastUsedAt != nil {
 			i.LastUsedAt = *upd.LastUsedAt
 		}
+		if upd.AppleRefreshToken != nil {
+			i.AppleRefreshToken = *upd.AppleRefreshToken
+		}
+		if upd.AppleClientID != nil {
+			i.AppleClientID = *upd.AppleClientID
+		}
 		i.UpdatedAt = now
 		m.identities[k] = i
 		return nil
@@ -1019,6 +1025,20 @@ func (m *MemStore) ClearEraseEmail(_ context.Context, jobID string) error {
 	e := *j.Erase
 	e.Email = ""
 	j.Erase = &e
+	m.jobs[jobID] = j
+	return nil
+}
+
+func (m *MemStore) ClearRevokeToken(_ context.Context, jobID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	j, ok := m.jobs[jobID]
+	if !ok || j.Revoke == nil {
+		return auth.ErrNotFound
+	}
+	r := *j.Revoke
+	r.Token = ""
+	j.Revoke = &r
 	m.jobs[jobID] = j
 	return nil
 }

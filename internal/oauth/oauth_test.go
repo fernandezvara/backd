@@ -220,7 +220,7 @@ func TestExchange(t *testing.T) {
 	redirect := p.Authorize(svc.AuthorizeURL(google, oauth.AuthorizeParams{RedirectURI: "https://api.example/cb", State: "s", Nonce: "nn", CodeChallenge: "ch"}))
 	code := mustQuery(t, redirect, "code")
 	p.GiveRefreshToken("refresh-1")
-	tok, err := svc.Exchange(context.Background(), google, "the-secret", code, "https://api.example/cb", "verifier")
+	tok, err := svc.Exchange(context.Background(), google, "g-client", "the-secret", code, "https://api.example/cb", "verifier")
 	if err != nil || tok.RefreshToken != "refresh-1" {
 		t.Fatalf("Exchange = %+v, %v", tok, err)
 	}
@@ -232,18 +232,18 @@ func TestExchange(t *testing.T) {
 		t.Errorf("token request: %v", form)
 	}
 	// A code works once; the provider's refusal is an ErrExchange; an outage is not.
-	if _, err := svc.Exchange(context.Background(), google, "s", code, "", ""); !errors.Is(err, oauth.ErrExchange) {
+	if _, err := svc.Exchange(context.Background(), google, "g-client", "s", code, "", ""); !errors.Is(err, oauth.ErrExchange) {
 		t.Errorf("code reuse: %v", err)
 	}
 	p.FailToken(500, "server_error")
-	if _, err := svc.Exchange(context.Background(), google, "s", "x", "", ""); !errors.Is(err, oauth.ErrUnavailable) {
+	if _, err := svc.Exchange(context.Background(), google, "g-client", "s", "x", "", ""); !errors.Is(err, oauth.ErrUnavailable) {
 		t.Errorf("provider outage: %v", err)
 	}
 	// Apple's web flow sends no PKCE verifier.
 	p.FailToken(0, "")
 	p.SetUser(map[string]any{"iss": "https://appleid.apple.com", "aud": "com.acme.web", "sub": "a"})
 	code = mustQuery(t, p.Authorize(svc.AuthorizeURL(apple, oauth.AuthorizeParams{RedirectURI: "https://api.example/cb", State: "s", Nonce: "n"})), "code")
-	if _, err := svc.Exchange(context.Background(), apple, "jwt", code, "https://api.example/cb", "verifier"); err != nil {
+	if _, err := svc.Exchange(context.Background(), apple, "com.acme.web", "jwt", code, "https://api.example/cb", "verifier"); err != nil {
 		t.Fatal(err)
 	}
 	if forms := p.TokenRequests(); forms[len(forms)-1].Has("code_verifier") {
@@ -266,7 +266,7 @@ func TestAppleClientSecret(t *testing.T) {
 	pemKey := string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
 	now := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
 	svc := &oauth.Service{Now: func() time.Time { return now }}
-	secret, err := svc.AppleClientSecret(apple, pemKey)
+	secret, err := svc.AppleClientSecret(apple, "com.acme.web", pemKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,15 +284,15 @@ func TestAppleClientSecret(t *testing.T) {
 		}
 	}
 	// It is reused while it lives, and renewed before it ends.
-	if again, _ := svc.AppleClientSecret(apple, pemKey); again != secret {
+	if again, _ := svc.AppleClientSecret(apple, "com.acme.web", pemKey); again != secret {
 		t.Error("a new secret was signed while the first was good")
 	}
 	now = now.Add(50 * time.Minute)
-	if renewed, _ := svc.AppleClientSecret(apple, pemKey); renewed == secret {
+	if renewed, _ := svc.AppleClientSecret(apple, "com.acme.web", pemKey); renewed == secret {
 		t.Error("the secret was not renewed before it expired")
 	}
 	for name, bad := range map[string]string{"not PEM": "nope", "an RSA key": rsaPEM(t)} {
-		if _, err := svc.AppleClientSecret(apple, bad); err == nil {
+		if _, err := svc.AppleClientSecret(apple, "com.acme.web", bad); err == nil {
 			t.Errorf("%s was accepted", name)
 		}
 	}

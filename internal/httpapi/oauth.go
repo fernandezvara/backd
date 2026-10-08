@@ -239,7 +239,7 @@ func (a *authAPI) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	secret := secrets[p.ClientSecret]
 	if p.Name == registry.ProviderApple {
-		if secret, err = a.oauth.AppleClientSecret(p, secrets[p.PrivateKey]); err != nil {
+		if secret, err = a.oauth.AppleClientSecret(p, p.ClientID, secrets[p.PrivateKey]); err != nil {
 			logger(r.Context()).Error("sign Apple's client secret", "error", err)
 			back("error", oauthProviderError)
 			return
@@ -249,7 +249,7 @@ func (a *authAPI) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	if oauth.UsesPKCE(p) {
 		verifier = st.Verifier
 	}
-	tokens, err := a.oauth.Exchange(r.Context(), p, secret, code, callback, verifier)
+	tokens, err := a.oauth.Exchange(r.Context(), p, p.ClientID, secret, code, callback, verifier)
 	if err != nil {
 		logger(r.Context()).Warn("the provider didn't give a token", "provider", p.Name, "error", err)
 		back("error", oauthProviderError)
@@ -269,6 +269,7 @@ func (a *authAPI) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		a.oauthFailure(w, r, svc, st, p, err)
 		return
 	}
+	a.keepAppleToken(r, svc, p, res.User.ID, p.ClientID, tokens.RefreshToken)
 	if st.Intent == auth.IntentLink {
 		back("linked", p.Name)
 		return
@@ -281,6 +282,17 @@ func (a *authAPI) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	setActor(r.Context(), "user:"+res.User.ID)
 	back("code", loginCode)
+}
+
+// keepAppleToken keeps Apple's refresh token for revoking it when the account goes away
+// (unless the provider is configured not to). A failure is logged, not the sign-in's.
+func (a *authAPI) keepAppleToken(r *http.Request, svc *auth.Users, p *registry.Provider, userID, clientID, refreshToken string) {
+	if p.Name != registry.ProviderApple || refreshToken == "" {
+		return
+	}
+	if err := svc.SaveAppleToken(r.Context(), userID, clientID, refreshToken); err != nil {
+		logger(r.Context()).Error("keep Apple's refresh token for revocation", "error", err)
+	}
 }
 
 // oauthFailure sends the app the code for a sign-in the rules refuse.

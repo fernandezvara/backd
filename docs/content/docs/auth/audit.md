@@ -33,6 +33,7 @@ Each realm with `auth: enabled` keeps an **audit trail**: one record per securit
 | `user.erased` | The erase job finished, or failed for good | `job_id` and `counts` per `database/collection/operation`; `needs_attention` and `error` when it failed. Never content |
 | `user.delete_account` | A user deletes their own account (it is deactivated, not erased) | |
 | `user.networks` | A user's [network restrictions](../../configuration/realm/#network-restrictions) change, through the API or from `realm.yaml` | `admin_networks`, `login_networks` |
+| `identity.apple_revoked` | Apple revoked a user's tokens after their account was erased or deleted, or Apple was unlinked | |
 | `identity.unlinked` | A user (or an administrator) removes a sign-in method | `provider`, `by` (`self` or `admin`) |
 | `role.add`, `role.remove` | A role is assigned or taken away, through the API or from `realm.yaml` seeds | `role` |
 | `apikey.create`, `apikey.revoke` | An API key is created or revoked | `role`, `networks`, `expires_at` |

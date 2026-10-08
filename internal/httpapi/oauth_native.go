@@ -8,6 +8,7 @@ import (
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/oauth"
+	"github.com/fernandezvara/backd/internal/registry"
 )
 
 // Native sign-in: a mobile app that signs in with the platform (Sign in with Apple, Google
@@ -85,6 +86,12 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 		a.providerUnavailable(w, r, "the provider could not be reached")
 		return
 	}
+	var refresh string
+	if p.Name == registry.ProviderApple && p.RevokeOnDelete {
+		if refresh, ok = a.appleRefreshToken(w, r, p, claims, str("authorization_code")); !ok {
+			return
+		}
+	}
 	login := auth.ProviderLogin{
 		Provider: p.Name, Subject: claims.Subject, Email: claims.Email, EmailVerified: claims.EmailVerified, TrustsEmail: p.TrustsEmail(),
 		Intent: intent, LinkUserID: who.User.ID, Locales: append([]string{str("locale")}, acceptLanguages(r.Header.Get("Accept-Language"))...), IP: clientIP(r),
@@ -98,9 +105,11 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if intent == auth.IntentLink {
+		a.keepAppleToken(r, svc, p, res.User.ID, claims.Audience, refresh)
 		writeJSON(w, http.StatusOK, map[string]any{"linked": p.Name})
 		return
 	}
+	a.keepAppleToken(r, svc, p, res.User.ID, claims.Audience, refresh)
 	session, token, err := svc.StartProviderSession(r.Context(), res.User)
 	if err != nil {
 		authError(w, r, err)
@@ -136,4 +145,44 @@ func (a *authAPI) nativeFailure(w http.ResponseWriter, r *http.Request, svc *aut
 	default:
 		authError(w, r, err)
 	}
+}
+
+// appleRefreshToken trades the authorization code an iOS app sends with its ID token for
+// Apple's refresh token, which backd keeps to revoke when the account is deleted. The code
+// must belong to the same person and app as the token, or a client could make backd keep
+// (and later revoke) someone else's token. It answers and returns false when it can't.
+func (a *authAPI) appleRefreshToken(w http.ResponseWriter, r *http.Request, p *registry.Provider, claims oauth.Claims, code string) (string, bool) {
+	if code == "" {
+		writeError(w, r, http.StatusBadRequest, codeValidation, "the sign-in isn't described", Detail{Path: "authorization_code", Reason: "is required for Apple: backd revokes the user's tokens with it when the account is deleted"})
+		return "", false
+	}
+	secrets, ok, err := a.providerSecrets(r.Context(), usersOf(r), p)
+	if err != nil || !ok {
+		a.providerUnavailable(w, r, "this provider's secrets are not set")
+		return "", false
+	}
+	secret, err := a.oauth.AppleClientSecret(p, claims.Audience, secrets[p.PrivateKey])
+	if err != nil {
+		logger(r.Context()).Error("sign Apple's client secret", "error", err)
+		a.providerUnavailable(w, r, "this provider is not set up correctly")
+		return "", false
+	}
+	tokens, err := a.oauth.Exchange(r.Context(), p, claims.Audience, secret, code, "", "")
+	if err == nil {
+		var subject, audience string
+		if subject, audience, err = a.oauth.Subject(r.Context(), p, tokens.IDToken, true); err == nil && (subject != claims.Subject || audience != claims.Audience) {
+			err = oauth.ErrInvalidToken
+		}
+	}
+	switch {
+	case errors.Is(err, oauth.ErrExchange), errors.Is(err, oauth.ErrInvalidToken):
+		logger(r.Context()).Info("an Apple authorization code was not accepted", "error", err)
+		writeError(w, r, http.StatusUnauthorized, codeInvalidToken, "the authorization code was refused, or is not the one of this ID token")
+		return "", false
+	case err != nil:
+		logger(r.Context()).Warn("could not exchange an Apple authorization code", "error", err)
+		a.providerUnavailable(w, r, "the provider could not be reached")
+		return "", false
+	}
+	return tokens.RefreshToken, true
 }
