@@ -78,3 +78,30 @@ func TestUserWithSeveralSignInMethods(t *testing.T) {
 		t.Errorf("password login without a password identity: %v", err)
 	}
 }
+
+func TestSealedTokens(t *testing.T) {
+	svc := newUsers(authtest.NewMemStore(), &time.Time{})
+	if _, err := svc.SealToken("x"); err == nil {
+		t.Error("sealed without a secrets key")
+	}
+	svc.Cipher, _ = NewSecretCipher([]byte("01234567890123456789012345678901"))
+	sealed, err := svc.SealToken("refresh-token")
+	if err != nil || sealed == "refresh-token" || len(sealed) < 30 {
+		t.Fatalf("sealed = %q, %v", sealed, err)
+	}
+	if plain, err := svc.OpenToken(sealed); err != nil || plain != "refresh-token" {
+		t.Errorf("open = %q, %v", plain, err)
+	}
+	other, _ := svc.SealToken("refresh-token")
+	if other == sealed {
+		t.Error("two seals of the same token are equal: the nonce is not random")
+	}
+	// A rotated key is noticed, and a mangled value is an error.
+	svc.Cipher, _ = NewSecretCipher([]byte("abcdefghijklmnopqrstuvwxyz012345"))
+	if _, err := svc.OpenToken(sealed); err == nil {
+		t.Error("opened under another key")
+	}
+	if _, err := svc.OpenToken("nope"); err == nil {
+		t.Error("opened a value that was never sealed")
+	}
+}

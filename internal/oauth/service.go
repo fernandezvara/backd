@@ -117,13 +117,15 @@ type Tokens struct {
 	RefreshToken string
 }
 
-// Exchange trades an authorization code for the user's ID token. secret is the
-// client secret of Google or Microsoft, or Apple's already-signed one.
-func (s *Service) Exchange(ctx context.Context, p *registry.Provider, secret, code, redirectURI, codeVerifier string) (Tokens, error) {
+// Exchange trades an authorization code for the user's ID token. clientID is the
+// application the code was issued to (the provider's web client, or for a native
+// app its own id), and secret the client secret of Google or Microsoft, or Apple's
+// already-signed one.
+func (s *Service) Exchange(ctx context.Context, p *registry.Provider, clientID, secret, code, redirectURI, codeVerifier string) (Tokens, error) {
 	form := url.Values{}
 	form.Set("grant_type", "authorization_code")
 	form.Set("code", code)
-	form.Set("client_id", p.ClientID)
+	form.Set("client_id", clientID)
 	form.Set("client_secret", secret)
 	if redirectURI != "" {
 		form.Set("redirect_uri", redirectURI)
@@ -191,6 +193,8 @@ type Claims struct {
 	GivenName     string
 	FamilyName    string
 	Picture       string
+	// Audience is the client id the token was issued to (the web client's, or a native app's).
+	Audience string
 }
 
 type idClaims struct {
@@ -262,18 +266,65 @@ func (f *flexBool) UnmarshalJSON(b []byte) error {
 // (exactly, or, when native, also as its SHA-256 in hex or base64url, as the platform
 // sign-in SDKs put it).
 func (s *Service) Verify(ctx context.Context, p *registry.Provider, idToken, nonce string, native bool) (Claims, error) {
-	bad := func(why string) (Claims, error) { return Claims{}, fmt.Errorf("%w: %s", ErrInvalidToken, why) }
 	if nonce == "" {
-		return bad("no nonce to check")
+		return Claims{}, fmt.Errorf("%w: no nonce to check", ErrInvalidToken)
 	}
+	c, err := s.check(ctx, p, idToken, native)
+	if err != nil {
+		return Claims{}, err
+	}
+	bad := func(why string) (Claims, error) { return Claims{}, fmt.Errorf("%w: %s", ErrInvalidToken, why) }
+	if !nonceOK(c.Nonce, nonce, native) {
+		return bad("nonce")
+	}
+	out := Claims{Subject: c.Subject, Email: strings.TrimSpace(c.Email), EmailVerified: bool(c.EmailVerified), Name: c.Name, GivenName: c.GivenName, FamilyName: c.FamilyName, Picture: c.Picture}
+	if p.Name == registry.ProviderMicrosoft {
+		// The tenant and the object id name the person; an address in a token is
+		// whatever the tenant's administrator set, so it is never taken as verified.
+		if c.TenantID == "" || c.ObjectID == "" {
+			return bad("no tenant or object id")
+		}
+		out.Subject, out.EmailVerified = c.TenantID+":"+c.ObjectID, false
+	}
+	if out.Subject == "" {
+		return bad("no subject")
+	}
+	for _, a := range p.Audiences(native) {
+		if audienceOK(c.Audience, []string{a}) {
+			out.Audience = a
+			break
+		}
+	}
+	return out, nil
+}
+
+// Subject verifies an ID token like Verify, except for the nonce (the one the code exchange
+// gives back has none), and returns who it is for: the subject and the client id it was issued
+// to. It is how backd checks that an authorization code and the ID token a native app sent
+// belong to the same person.
+func (s *Service) Subject(ctx context.Context, p *registry.Provider, idToken string, native bool) (subject, audience string, err error) {
+	c, err := s.check(ctx, p, idToken, native)
+	if err != nil {
+		return "", "", err
+	}
+	for _, a := range p.Audiences(native) {
+		if audienceOK(c.Audience, []string{a}) {
+			return c.Subject, a, nil
+		}
+	}
+	return "", "", fmt.Errorf("%w: audience", ErrInvalidToken)
+}
+
+// check verifies an ID token's signature, expiry, issuer and audience.
+func (s *Service) check(ctx context.Context, p *registry.Provider, idToken string, native bool) (idClaims, error) {
+	bad := func(why string) (idClaims, error) { return idClaims{}, fmt.Errorf("%w: %s", ErrInvalidToken, why) }
 	jws, err := jose.ParseSigned(idToken, []jose.SignatureAlgorithm{jose.RS256, jose.ES256})
 	if err != nil || len(jws.Signatures) != 1 {
 		return bad("not a signed token")
 	}
-	kid := jws.Signatures[0].Header.KeyID
-	payload, err := s.verifySignature(ctx, p, jws, kid)
+	payload, err := s.verifySignature(ctx, p, jws, jws.Signatures[0].Header.KeyID)
 	if err != nil {
-		return Claims{}, err
+		return idClaims{}, err
 	}
 	var c idClaims
 	if err := json.Unmarshal(payload, &c); err != nil {
@@ -294,22 +345,7 @@ func (s *Service) Verify(ctx context.Context, p *registry.Provider, idToken, non
 	if !audienceOK(c.Audience, p.Audiences(native)) {
 		return bad("audience")
 	}
-	if !nonceOK(c.Nonce, nonce, native) {
-		return bad("nonce")
-	}
-	out := Claims{Subject: c.Subject, Email: strings.TrimSpace(c.Email), EmailVerified: bool(c.EmailVerified), Name: c.Name, GivenName: c.GivenName, FamilyName: c.FamilyName, Picture: c.Picture}
-	if p.Name == registry.ProviderMicrosoft {
-		// The tenant and the object id name the person; an address in a token is
-		// whatever the tenant's administrator set, so it is never taken as verified.
-		if c.TenantID == "" || c.ObjectID == "" {
-			return bad("no tenant or object id")
-		}
-		out.Subject, out.EmailVerified = c.TenantID+":"+c.ObjectID, false
-	}
-	if out.Subject == "" {
-		return bad("no subject")
-	}
-	return out, nil
+	return c, nil
 }
 
 func (s *Service) issuerOK(p *registry.Provider, c idClaims) bool {

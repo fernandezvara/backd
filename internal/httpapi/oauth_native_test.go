@@ -138,12 +138,13 @@ func TestNativeSignInFollowsTheRealmsRules(t *testing.T) {
 func TestNativeApple(t *testing.T) {
 	f := newOAuthFixture(t)
 	apple := map[string]any{"iss": "https://appleid.apple.com", "aud": "com.acme.ios", "sub": "a-n1", "email": "x@privaterelay.appleid.com", "email_verified": "true", "nonce": "raw-nonce"}
+	f.idp.GrantCode("abc", map[string]any{"iss": "https://appleid.apple.com", "aud": "com.acme.ios", "sub": "a-n1"})
 	code, out := f.idToken(t, "apple", apple, map[string]any{"authorization_code": "abc"}, nil)
 	if code != 200 || out["user"].(map[string]any)["email_verified"] != true {
 		t.Errorf("apple: %d %v", code, out)
 	}
 	apple["aud"] = "com.someone.else"
-	if code, _ := f.idToken(t, "apple", apple, nil, nil); code != 401 {
+	if code, _ := f.idToken(t, "apple", apple, map[string]any{"authorization_code": "abc"}, nil); code != 401 {
 		t.Errorf("another bundle id: %d", code)
 	}
 }

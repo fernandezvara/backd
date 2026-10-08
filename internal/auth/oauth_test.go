@@ -297,3 +297,33 @@ func TestOAuthStatesWorkOnce(t *testing.T) {
 		t.Errorf("an empty state: %v", err)
 	}
 }
+
+func TestPurgingAnUnverifiedAccountRevokesItsAppleToken(t *testing.T) {
+	ctx := context.Background()
+	svc, store, clock := providerFixture(t)
+	svc.Cipher, _ = NewSecretCipher([]byte("01234567890123456789012345678901"))
+	svc.Settings.Providers = map[string]*registry.Provider{"apple": {Name: "apple", RevokeOnDelete: true}}
+	svc.Settings.Account.PurgeUnverifiedAfter = time.Hour
+	p, _, err := svc.Signup(ctx, "old@example.com", "dev-p4ssw0rd!", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := *clock
+	if err := store.PutIdentity(ctx, Identity{ID: "a1", UserID: p.User.ID, Provider: "apple", Subject: "a-sub", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SaveAppleToken(ctx, p.User.ID, "com.acme.web", "refresh-old"); err != nil {
+		t.Fatal(err)
+	}
+	*clock = clock.Add(2 * time.Hour)
+	if n, err := svc.PurgeUnverified(ctx); err != nil || n != 1 {
+		t.Fatalf("purge = %d, %v", n, err)
+	}
+	jobs, _, _ := svc.Jobs(ctx, JobFilter{Origin: RevokeOrigin})
+	if len(jobs) != 1 || jobs[0].Revoke.UserID != p.User.ID || jobs[0].Revoke.ClientID != "com.acme.web" {
+		t.Fatalf("revoke jobs: %+v", jobs)
+	}
+	if plain, err := svc.OpenToken(jobs[0].Revoke.Token); err != nil || plain != "refresh-old" {
+		t.Errorf("the job's token: %q, %v", plain, err)
+	}
+}

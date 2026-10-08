@@ -65,15 +65,22 @@ type Identity struct {
 	// LastUsedAt is the last successful sign-in with this identity; zero if
 	// none was recorded yet.
 	LastUsedAt time.Time
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	// AppleRefreshToken is Apple's refresh token, sealed with the realm's secrets cipher
+	// (see SealToken) and kept only to revoke it when the account goes away; AppleClientID
+	// is the client id it was issued to.
+	AppleRefreshToken string
+	AppleClientID     string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // IdentityUpdate changes the set fields of an identity.
 type IdentityUpdate struct {
-	Email         *string
-	EmailVerified *bool
-	LastUsedAt    *time.Time
+	Email             *string
+	EmailVerified     *bool
+	LastUsedAt        *time.Time
+	AppleRefreshToken *string
+	AppleClientID     *string
 }
 
 // UserUpdate changes the set fields of a user.
@@ -137,6 +144,8 @@ type Store interface {
 	// AddEraseCount adds n to the erase job's count under key
 	// ("<database>/<collection>/<operation>"), atomically.
 	AddEraseCount(ctx context.Context, jobID, key string, n int64) error
+	// ClearRevokeToken removes the sealed token a revoke job held.
+	ClearRevokeToken(ctx context.Context, jobID string) error
 	// ClearEraseEmail removes the email an erase job held.
 	ClearEraseEmail(ctx context.Context, jobID string) error
 	// ReopenJob queues a job that ended in failure again, with a fresh

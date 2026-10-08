@@ -35,6 +35,8 @@ type Provider struct {
 	status    int    // a status to answer the token endpoint with instead (0: none)
 	errCode   string // and the error code that goes with it
 	refresh   string // a refresh token to give with the ID token
+	revoke    int    // a status to answer the revoke endpoint with instead (0: 200)
+	revokes   []url.Values
 	keysHits  int
 }
 
@@ -98,6 +100,28 @@ func (p *Provider) GiveRefreshToken(token string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.refresh = token
+}
+
+// GrantCode registers an authorization code that a native app holds: exchanging it gives an ID
+// token with the claims (no nonce, as with Apple's native flow).
+func (p *Provider) GrantCode(code string, claims map[string]any) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.codes[code] = grant{claims: claims}
+}
+
+// FailRevoke makes the revoke endpoint answer status, until FailRevoke(0).
+func (p *Provider) FailRevoke(status int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.revoke = status
+}
+
+// Revocations are the forms the revoke endpoint received.
+func (p *Provider) Revocations() []url.Values {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]url.Values(nil), p.revokes...)
 }
 
 // TokenRequests are the forms the token endpoint received.
@@ -216,9 +240,13 @@ func (p *Provider) serve(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/revoke" && r.Method == http.MethodPost:
 		_ = r.ParseForm()
 		p.mu.Lock()
-		p.tokenForm = append(p.tokenForm, r.PostForm)
+		p.revokes = append(p.revokes, r.PostForm)
+		status := p.revoke
 		p.mu.Unlock()
-		w.WriteHeader(http.StatusOK)
+		if status == 0 {
+			status = http.StatusOK
+		}
+		w.WriteHeader(status)
 	default:
 		http.NotFound(w, r)
 	}

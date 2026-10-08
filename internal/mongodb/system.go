@@ -122,6 +122,7 @@ var systemCollections = []systemCollection{
 			"email_verified":      typ("bool"),
 			"last_used_at":        typ("date"),
 			"apple_refresh_token": str(),
+			"apple_client_id":     str(),
 			"created_at":          typ("date"),
 			"updated_at":          typ("date"),
 		}),

@@ -156,6 +156,39 @@ func TestAuthStoreIdentitiesAndDelete(t *testing.T) {
 	}
 }
 
+func TestAuthStoreAppleTokenAndRevokeJob(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Date(2126, 10, 9, 12, 0, 0, 0, time.UTC)
+	if err := s.PutIdentity(ctx, auth.Identity{ID: "a1", UserID: "u1", Provider: "apple", Subject: "asub", Email: "x@privaterelay.appleid.com", EmailVerified: true, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	sealed, client := "key.nonce.ciphertext", "com.acme.ios"
+	if err := s.UpdateIdentity(ctx, "a1", auth.IdentityUpdate{AppleRefreshToken: &sealed, AppleClientID: &client}, now); err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.IdentityOf(ctx, "u1", "apple")
+	if err != nil || id.AppleRefreshToken != sealed || id.AppleClientID != client {
+		t.Fatalf("identity = %+v, %v", id, err)
+	}
+	// A revoke job carries the sealed token and forgets it.
+	job := auth.Job{ID: "j1", Database: "_backd", Function: "revoke-apple", CallerActor: "system", Origin: auth.RevokeOrigin, TimeoutMS: 1000, Status: auth.JobQueued,
+		CreatedAt: now, ExpiresAt: now.Add(time.Hour), Revoke: &auth.RevokeJob{UserID: "u1", ClientID: client, Token: sealed}}
+	if err := s.EnqueueJob(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	got, found, err := s.GetJob(ctx, "j1")
+	if err != nil || !found || got.Revoke == nil || got.Revoke.Token != sealed || got.Revoke.ClientID != client || got.Revoke.UserID != "u1" {
+		t.Fatalf("job = %+v, %v, %v", got, found, err)
+	}
+	if err := s.ClearRevokeToken(ctx, "j1"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ = s.GetJob(ctx, "j1"); got.Revoke == nil || got.Revoke.Token != "" || got.Revoke.UserID != "u1" {
+		t.Errorf("after clearing: %+v", got.Revoke)
+	}
+}
+
 func TestAuthStoreSeveralIdentities(t *testing.T) {
 	s, _ := authFixture(t)
 	ctx := context.Background()

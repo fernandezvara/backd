@@ -23,7 +23,8 @@ Each realm with `auth: enabled` has its own pool of users and [API keys](api-key
 | [Brute-force protection](sessions/#brute-force-protection) on login | available |
 | [Sign in with Google, Microsoft or Apple](providers/): the redirect flow, linking and sign-up rules | available |
 | [Native sign-in](providers/#native-apps-the-id-token) with the ID token a mobile app holds | available |
-| Apple token revocation, the profile handover, other OpenID Connect providers | planned |
+| Apple token revocation when an account is deleted | available |
+| The profile handover, other OpenID Connect providers | planned |
 
 See the [security model](security/) for what `backd` protects, and the [hardening checklist](../operations/checklist/) before exposing a realm.
 

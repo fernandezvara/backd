@@ -193,6 +193,9 @@ func (s *Users) Delete(ctx context.Context, email string) error {
 		return err
 	}
 	s.countSessions(ctx, u.ID, "deleted")
+	if err := s.queueAppleRevocation(ctx, u.ID); err != nil {
+		return err
+	}
 	if err := s.Store.DeleteUser(ctx, u.ID); err != nil {
 		return err
 	}

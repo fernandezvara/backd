@@ -81,6 +81,15 @@ type Config struct {
 	OAuth *oauth.Service
 }
 
+// oauthService is the service that reaches the identity providers: the one configured, or the
+// built-in providers through a client that dials only their hosts.
+func (cfg Config) oauthService() *oauth.Service {
+	if cfg.OAuth != nil {
+		return cfg.OAuth
+	}
+	return &oauth.Service{HTTP: oauth.NewClient(oauth.BuiltinHostAllowed, cfg.Dev)}
+}
+
 // DefaultOpTimeout is the per-request storage deadline when none is configured.
 const DefaultOpTimeout = 10 * time.Second
 
@@ -138,11 +147,7 @@ func NewHandler(cfg Config) http.Handler {
 	if users == nil {
 		users = func(string) *auth.Users { return nil }
 	}
-	oauthSvc := cfg.OAuth
-	if oauthSvc == nil {
-		oauthSvc = &oauth.Service{HTTP: oauth.NewClient(oauth.BuiltinHostAllowed, cfg.Dev)}
-	}
-	authRoutes := &authAPI{users: users, reg: cfg.Registry, actions: hostedActions(), opTimeout: opTimeout, oauth: oauthSvc, baseURL: cfg.BackdURL}
+	authRoutes := &authAPI{users: users, reg: cfg.Registry, actions: hostedActions(), opTimeout: opTimeout, oauth: cfg.oauthService(), baseURL: cfg.BackdURL}
 	authRoutes.routes(r)
 	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users, callbackKey: cfg.CallbackKey, objects: newRealmObjects(cfg.Registry, users), baseURL: cfg.BackdURL, maxUpload: maxUploadOf(cfg), imageMaxPixels: cfg.ImageMaxPixels}
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, executorToken: cfg.ExecutorToken, log: cfg.Log, dev: cfg.Dev, concurrency: limiterFor(cfg.Registry), metrics: cfg.Metrics}

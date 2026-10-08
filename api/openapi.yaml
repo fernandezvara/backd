@@ -944,8 +944,11 @@ paths:
         (hex or base64url), as the SDKs do. With `"intent": "link"` and the session in
         `Authorization`, the provider account is added to the signed-in user instead
         (`{"linked": "<provider>"}`). At most 30 a minute per address.
-        `authorization_code` is accepted for Apple and used to revoke the user's tokens
-        when the account is deleted (not yet).
+        For Apple (unless the provider sets `revoke_on_delete: false`) the app also sends the
+        `authorization_code` the Apple SDK gave with the token: backd trades it, as the app,
+        for Apple's refresh token and keeps it sealed, to revoke it when the account is
+        erased or Apple is unlinked. A code that is not of the same person and app as the
+        token is `401 invalid_token`; a missing one is `400`.
       operationId: oauthIDToken
       security: [{}, { session: [] }]
       requestBody:
@@ -959,7 +962,7 @@ paths:
               properties:
                 id_token: { type: string }
                 nonce: { type: string, description: The raw nonce the sign-in was started with. }
-                authorization_code: { type: string, description: "Apple's authorization code." }
+                authorization_code: { type: string, description: "Apple only, required unless `revoke_on_delete: false`: the authorization code that came with the ID token." }
                 intent: { type: string, enum: [signin, link], default: signin }
                 invitation: { type: string, description: "An invitation token, for realms with `signup: invite`." }
                 locale: { type: string }
