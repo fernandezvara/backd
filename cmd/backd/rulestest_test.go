@@ -19,7 +19,7 @@ func rulesConfig(t *testing.T, fixture string) string {
 	files := map[string]string{
 		filepath.Join(root, "acme", "realm.yaml"): "roles:\n  admin: {}\n",
 		filepath.Join(dir, "schema.json"):         `{"type":"object","properties":{"title":{"type":"string"},"published":{"type":"boolean"}}}`,
-		filepath.Join(dir, "rules.yaml"):          "read: document.published == true\n",
+		filepath.Join(dir, "collection.yaml"):     rulesSection("read: document.published == true\n"),
 	}
 	if fixture != "" {
 		files[filepath.Join(dir, "rules.test.yaml")] = fixture
@@ -66,7 +66,7 @@ func TestRulesTest(t *testing.T) {
 
 	// No fixture: listed; --strict fails.
 	code, out, _ = runRules(t, rulesConfig(t, ""))
-	if code != 0 || !strings.Contains(out, "acme/app/posts: has rules.yaml but no rules.test.yaml") {
+	if code != 0 || !strings.Contains(out, "acme/app/posts: has rules but no rules.test.yaml") {
 		t.Errorf("untested: %d\n%s", code, out)
 	}
 	if code, _, errOut = runRules(t, rulesConfig(t, ""), "--strict"); code != 1 || !strings.Contains(errOut, "no tests (--strict)") {

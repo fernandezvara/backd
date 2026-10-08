@@ -1,7 +1,7 @@
 # The other half of closing hole 3 ("Unconfirmed settlements"): only the
 # receiver of a pending settlement — never its writer — may confirm it.
 # Needs ctx.admin.db because the receiver isn't the document's owner
-# (expenses/rules.yaml's update rule is owner-only, on purpose: it also
+# (expenses/collection.yaml's update rule is owner-only, on purpose: it also
 # refuses the writer changing their own settlement's status).
 mode: sync
 timeout: 10s

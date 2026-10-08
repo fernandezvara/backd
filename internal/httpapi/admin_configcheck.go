@@ -32,7 +32,7 @@ var checkSlots = make(chan struct{}, 2)
 
 type configCheckBody struct {
 	// Files are the draft files by path relative to the realm's directory
-	// (`main/notes/rules.yaml`, `realm.yaml`); a null value deletes the file.
+	// (`main/notes/collection.yaml`, `realm.yaml`); a null value deletes the file.
 	Files map[string]*string `json:"files"`
 }
 

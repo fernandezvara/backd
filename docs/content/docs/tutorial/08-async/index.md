@@ -65,9 +65,9 @@ export default async function handler(ctx: Context) {
 
 The digest needs "every member" — but realm users live in the **system database**, which functions can't read (it holds credentials, sessions, tokens). The honest pattern: keep a small `members` directory in business data; the app upserts its own row on sign-in, rules let anyone read it:
 
-{{< example-file path="shelf/main/members/rules.yaml" >}}
+{{< example-file path="shelf/main/members/collection.yaml" >}}
 
-{{< tutorial-files "main/_functions/digest/input.schema.json main/members/collection.yaml main/members/schema.json main/members/indexes.json main/members/rules.yaml" >}}
+{{< tutorial-files "main/_functions/digest/input.schema.json main/members/collection.yaml main/members/schema.json main/members/indexes.json" >}}
 
 Rebuild and restart (`docker compose run --rm functions-build && docker compose restart backd`).
 

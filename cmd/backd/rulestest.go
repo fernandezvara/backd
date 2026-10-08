@@ -16,7 +16,7 @@ import (
 )
 
 // rulesTest handles `backd rules test`: it runs every collection's
-// rules.test.yaml against its rules.yaml, with no database. Needs only CONFIG_DIR.
+// rules.test.yaml against its rules, with no database. Needs only CONFIG_DIR.
 func rulesTest(c *cli.CommandContext) error {
 	dir, err := configDir(c)
 	if err != nil {
@@ -87,7 +87,7 @@ func rulesTest(c *cli.CommandContext) error {
 		return fmt.Errorf("no collection matches --collection %q (use realm/database/collection, or a prefix)", only)
 	}
 	for _, name := range untested {
-		fmt.Fprintf(out, "%s: has rules.yaml but no %s\n", name, rulestest.FileName)
+		fmt.Fprintf(out, "%s: has rules but no %s\n", name, rulestest.FileName)
 	}
 	fmt.Fprintf(out, "%d collections tested, %d assertions passed, %d failed", tested, passed, failed)
 	if broken > 0 {

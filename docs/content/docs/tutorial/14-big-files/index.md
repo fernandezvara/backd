@@ -11,7 +11,7 @@ A 25 MiB limit and a trip through `backd` suit a handbook, not a conference reco
 
 `attachments` was declared with `files:` in the last chapter. What makes it different is one line, `upload: direct`:
 
-{{< example-file path="shelf/main/assets/collection.yaml" lines="22-27" >}}
+{{< example-file path="shelf/main/assets/collection.yaml" lines="55-60" >}}
 
 The browser asks `backd` to start the upload (declaring the file's name, size, type and SHA-256), receives a **signed link** with those signed in, sends the bytes to MinIO, and tells `backd` to complete: `backd` checks the size, the checksum **the storage computed** and the type from the first bytes, and attaches the file. Anything that doesn't match deletes the object. The client does all of it:
 
@@ -31,7 +31,7 @@ Try it: *My assets → New asset → kind: file*, pick two or three big files as
 
 A gallery of full-size images is slow, and a small copy of each picture fixes it. There is nothing to write: the `file` field **declares** a version, and a worker makes it.
 
-{{< example-file path="shelf/main/assets/collection.yaml" lines="14-21" >}}
+{{< example-file path="shelf/main/assets/collection.yaml" lines="47-54" >}}
 
 `thumb` fits the picture in a 256 × 256 box, cropping the excess (`cover`), and keeps the picture's format (a PNG stays a PNG). When an upload becomes part of an asset, `backd` queues a job and a **worker** (the stack already runs one) reads the original, makes the copy and stores it beside it. The asset records what happened, next to the file's other details:
 

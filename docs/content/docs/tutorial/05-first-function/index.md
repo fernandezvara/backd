@@ -102,13 +102,13 @@ Two more close the second hole:
 
 `share` checks the asset exists and is published, mints a 24-character token, stamps `created_by` — nothing the client sent decides any of it. `share` also requires an `Idempotency-Key` (a retry must not mint a second link), and it answers `409 not_published` for a draft. `share-open` is the other side: `invoke: "true"` lets strangers call it, `rate_limit` keeps guessing expensive, and it returns a *projection* — title, kind, url, body, tags — never the shares row, never `_meta`.
 
-The collections' rules tighten to match. Replace both files:
+The collections' rules tighten to match. Replace the `rules:` section of both `collection.yaml` files (the erase policy below it stays):
 
-{{< example-file path="shelf/main/assets/rules.yaml" lines="8-25" >}}
+{{< example-file path="shelf/main/assets/collection.yaml" lines="1-32" >}}
 
 `assets` now refuses `published_at` in client writes — and, since a curator can't publish what they can't see, the `read` rule gains `hasRole(user, 'curator')`: curators read every draft, members still read only their own. And `shares`:
 
-{{< example-file path="shelf/main/shares/rules.yaml" >}}
+{{< example-file path="shelf/main/shares/collection.yaml" lines="1-10" >}}
 
 has no `create`/`update` rule at all (functions write, nobody else), and `created_by` — not `_meta.owner`, which is the function — scopes who may read or revoke a link. Remember `docker compose restart backd` after the build above.
 

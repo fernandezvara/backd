@@ -69,7 +69,7 @@ That last gap — a function reaching the executor's own `/invoke` over its own 
 - **Rate limiting** of requests other than failed logins, in the [reverse proxy](../../operations/#rate-limiting-and-abuse).
 - **`TRUSTED_PROXIES`** when behind a proxy, so throttling sees real clients.
 - **API keys:** store them as secrets, give each service its own, set expiries and rotate them (see the [policy](../api-keys/#expiry-and-rotation-policy)), revoke unused ones. Never ship them to browsers or apps.
-- **Rules:** review each `rules.yaml`. A missing rule denies, but a too-broad one (`read: "true"`) publishes a collection. Unique indexes can reveal that a value exists: creating a document with a value that a hidden document already has answers `409`.
+- **Rules:** review the `rules:` of each `collection.yaml`. A missing rule denies, but a too-broad one (`read: "true"`) publishes a collection. Unique indexes can reveal that a value exists: creating a document with a value that a hidden document already has answers `409`.
 - **Files:** a private bucket with a key scoped to the realm's prefix, a prefix per backd instance, short link lifetimes on sensitive fields, `BACKD_URL`, and small limits where anonymous callers may upload: see [Security of files](../../files/security/#what-you-are-responsible-for).
 - **`auth: disabled` realms** must never be reachable from the internet.
 - **Browser apps** must protect their users' tokens against cross-site scripting, or keep the session in an HttpOnly [cookie](../sessions/#session-cookies) that scripts can't read (the origin check, `SameSite` and the JSON-only bodies protect it from CSRF).

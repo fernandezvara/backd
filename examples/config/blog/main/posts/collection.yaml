@@ -1,3 +1,47 @@
+rules:
+  # Who may do what with the documents of this collection.
+  # Each key is an operation; its value is an expression that must be true
+  # to allow it. Operations without a rule are denied. API keys bypass
+  # rules. See "Access rules" in the documentation for everything available.
+  #
+  # `user` is the signed-in user (user.id, user.email, user.email_verified,
+  # user.roles), or nil for anonymous callers: always check `user != nil`
+  # before using its fields. `document` is the stored post; `data` the post
+  # being written.
+
+  # Anyone, signed in or not, can read published posts; authors also see
+  # their own drafts.
+  read: >
+    document.published == true
+    || (user != nil && document._meta.owner == user.id)
+
+  # Signed-in users can write posts, signed with their own email: the rule
+  # checks the submitted data, so nobody can post as someone else. To only
+  # accept users whose email was verified (for now an operator sets that, as
+  # backd doesn't send email), add `&& user.email_verified`.
+  create: user != nil && data.author.email == user.email
+
+  # Authors can edit their own posts, but not change who wrote them, and
+  # delete them.
+  update: >
+    user != nil && document._meta.owner == user.id
+    && !('author' in changed())
+  delete: user != nil && document._meta.owner == user.id
+
+  # More examples:
+  #
+  #   read: "true"                     # a public collection
+  #   read: user != nil                # any signed-in user
+  #   read: "user != nil && user.id in document.members"   # shared documents
+  #
+  #   update: >                        # authors may change only title and body
+  #     user != nil && document._meta.owner == user.id
+  #     && all(changed(), # in ['title', 'body'])
+  #
+  #   delete: hasRole(user, 'admin')   # declare the role in realm.yaml first
+  #
+  #   write: user != nil               # create, update and delete at once
+
 # What happens to this collection when an administrator erases a user
 # (`backd user delete`, docs: Auth -> Deleting and erasing users). Without this
 # file an erase leaves every post as it is.

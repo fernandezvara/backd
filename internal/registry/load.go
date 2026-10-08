@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/fernandezvara/backd/internal/email"
 	"github.com/fernandezvara/backd/internal/rules"
@@ -30,7 +32,9 @@ const (
 	// SchemaFile is the name of a collection's schema file.
 	SchemaFile  = schemaFile
 	indexesFile = "indexes.json"
-	rulesFile   = "rules.yaml"
+	// retiredRulesFile held a collection's rules before they became the `rules:` section of
+	// collection.yaml; a collection directory that still has one does not load.
+	retiredRulesFile = "rules.yaml"
 )
 
 // reservedFields are system-owned and may not be declared by a schema.
@@ -239,7 +243,7 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 	if err := loadIndexes(coll, filepath.Join(dir, indexesFile)); err != nil {
 		return nil, err
 	}
-	if err := loadRules(coll, settings, filepath.Join(dir, rulesFile)); err != nil {
+	if err := loadRules(coll, settings, dir); err != nil {
 		return nil, err
 	}
 	if err := loadErasure(coll, settings, filepath.Join(dir, CollectionFile)); err != nil {
@@ -248,7 +252,7 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 	if coll.SoftDelete == nil && coll.Rules != nil {
 		for _, op := range []rules.Op{rules.Restore, rules.Purge} {
 			if coll.Rules.For(op) != nil {
-				return nil, fmt.Errorf("%s: a %s rule only applies to a collection that soft-deletes; add `soft_delete: true` to %s", filepath.Join(dir, rulesFile), op, filepath.Join(dir, CollectionFile))
+				return nil, fmt.Errorf("%s: a %s rule only applies to a collection that soft-deletes; add `soft_delete: true` to %s", filepath.Join(dir, CollectionFile), op, filepath.Join(dir, CollectionFile))
 			}
 		}
 	}
@@ -256,20 +260,42 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 	return coll, nil
 }
 
-// loadRules compiles the optional rules.yaml against the collection's
-// fields and the realm's roles.
-func loadRules(c *Collection, settings RealmSettings, path string) error {
-	if !settings.AuthEnabled {
-		if _, err := os.Stat(path); err == nil {
-			return fmt.Errorf("%s: rules only apply when the realm has auth enabled (realm.yaml has `auth: disabled`)", path)
-		}
+// rulesDoc is the part of collection.yaml loadRules reads; the other sections are read
+// (and checked) elsewhere.
+type rulesDoc struct {
+	Rules map[string]string `yaml:"rules"`
+}
+
+// loadRules compiles the optional `rules:` section of the collection's collection.yaml
+// against the collection's fields and the realm's roles. A collection without it has no
+// rules: nothing is allowed.
+func loadRules(c *Collection, settings RealmSettings, dir string) error {
+	if _, err := os.Stat(filepath.Join(dir, retiredRulesFile)); err == nil {
+		return fmt.Errorf("%s: rules.yaml is not part of the configuration any more: move its content under a `rules:` key in %s (indent it by two spaces) and delete it", filepath.Join(dir, retiredRulesFile), CollectionFile)
+	}
+	path := filepath.Join(dir, CollectionFile)
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
 		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	var doc rulesDoc
+	if err := yaml.NewDecoder(bytes.NewReader(data)).Decode(&doc); err != nil && !errors.Is(err, io.EOF) {
+		return fmt.Errorf("%s: invalid YAML in rules: want a mapping of operation to expression string: %w", path, err)
+	}
+	if doc.Rules == nil {
+		return nil
+	}
+	if !settings.AuthEnabled {
+		return fmt.Errorf("%s: rules only apply when the realm has auth enabled (realm.yaml has `auth: disabled`)", path)
 	}
 	roles := make([]string, 0, len(settings.Roles))
 	for r := range settings.Roles {
 		roles = append(roles, r)
 	}
-	set, err := rules.Load(path, rules.Schema{
+	set, errs := rules.Parse(doc.Rules, rules.Schema{
 		DocumentField: c.IsKnownField,
 		DataField:     func(p string) bool { _, ok := c.Fields[p]; return ok },
 		ScalarField:   c.ScalarField,
@@ -277,9 +303,13 @@ func loadRules(c *Collection, settings RealmSettings, path string) error {
 		DateField:     c.DateField,
 		Roles:         roles,
 	})
-	if err != nil {
-		return err
+	if len(errs) > 0 {
+		for i, e := range errs {
+			errs[i] = fmt.Errorf("%s: rules: %w", path, e)
+		}
+		return errors.Join(errs...)
 	}
+	set.File = path
 	c.Rules = set
 	return nil
 }

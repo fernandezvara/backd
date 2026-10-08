@@ -21,7 +21,7 @@ HTTP ──▶ handlers ──────┴──▶ storage.Repository ──
 | `internal/settings` | Environment variables → `Settings` |
 | `internal/registry` | Immutable realm → database → collection tree, with realm settings (`realm.yaml`), compiled schemas and field index |
 | `internal/templates` | Embedded starter files written by `backd template` |
-| `internal/rules` | Loads `rules.yaml`: compiles expr-lang rules and runs the static checks (guards, roles, fields, `now`, read rules as filters) |
+| `internal/rules` | Compiles the `rules:` of `collection.yaml`: expr-lang rules and runs the static checks (guards, roles, fields, `now`, read rules as filters) |
 | `internal/auth` | Storage-neutral identity model (users, identities, sessions), password policy, argon2id hashing with a concurrency cap, sign-up, login and session handling; persistence behind `auth.Store` (in-memory fake in `internal/auth/authtest`) |
 | `internal/query` | Parses the list query language into `storage.Condition`s, checking every field and value against the schema |
 | `internal/storage` | Backend-neutral `Repository` interface, `Document`/`Query`/`Page`/`Condition`/`Filter` types, `Fetch` (single reads under a read rule), and the errors `ErrNotFound`, `ErrVersionMismatch`, `ErrConflict` and `ErrUnavailable` |

@@ -60,11 +60,16 @@ The app's **Sign in** button now does something: `backd.auth.signup()` or `.logi
 - **Account page**: `backd.auth.changePassword()` works now; email change and password reset are visible but disabled — they need the email stack of chapter 10.
 - **Delete my account**: `backd.auth.deleteAccount()` *deactivates* — your email stays registered, your documents stay. Actual erasure is an admin action that applies each collection's policy ([Deleting and erasing users](../../auth/erasure/)):
 
-{{< example-file path="shelf/main/assets/collection.yaml" >}}
+Create `config/shelf/main/assets/collection.yaml`, and the same file for `shares`, then restart:
 
-`action: delete` says a member's assets — and their share links — go with them. The blog example shows the alternative (`anonymize`). Create it (and the same file for `shares`) with the other files of this chapter, then restart:
+```yaml
+# What happens when an administrator erases a member: their assets go with
+# them (and so do their share links, from the same file in shares/).
+on_owner_delete:
+  action: delete
+```
 
-{{< tutorial-files "main/assets/collection.yaml main/shares/collection.yaml" >}}
+`action: delete` says a member's assets — and their share links — go with them. The blog example shows the alternative (`anonymize`). `collection.yaml` is where a collection's policy lives: this chapter puts its erase policy in it, chapter 3 adds the access rules, and chapter 13 the file fields.
 
 ## You should see
 
@@ -74,4 +79,4 @@ The app's **Sign in** button now does something: `backd.auth.signup()` or `.logi
 - **My assets** lists only what you created; the account page changes your password and the new one signs in.
 - Deleting your account signs you out; signing up again with the same address says it's taken (deactivated, not gone).
 
-Next: chapter 3 — `rules.yaml` decides who may touch what.
+Next: chapter 3 — the `rules:` of each collection decide who may touch what.

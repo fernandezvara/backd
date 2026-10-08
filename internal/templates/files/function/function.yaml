@@ -29,7 +29,7 @@
 # Idempotency-Key header: optional or required.
 # idempotency: optional
 
-# Who may call the function, as an expression like those in rules.yaml. It
+# Who may call the function, as an expression like those in the `rules:` of collection.yaml. It
 # sees `user` (nil for anonymous callers) and hasRole(user, 'role'). Without
 # it, only API keys may call the function. Only in realms with auth enabled.
 # invoke: "user != nil"

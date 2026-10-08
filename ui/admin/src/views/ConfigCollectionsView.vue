@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import ConfigFrame from '@/components/ConfigFrame.vue'
 import ConfigDraft from '@/components/ConfigDraft.vue'
 import JsonView from '@/components/JsonView.vue'
-import { rulesFileText, schemaFileText } from '@/lib/draft'
+import { collectionFileText, schemaFileText } from '@/lib/draft'
 import { prettyDuration } from '@/lib/format'
 import { useRealmConfig } from '@/stores/config'
 
@@ -19,7 +19,8 @@ interface CollectionConfig {
   indexes: { fields: string; unique: boolean; ttl: boolean }[]
   indexes_file: string
   rules?: Record<string, { expression: string; from: string }>
-  rules_file?: string
+  collection_file?: string
+  collection_yaml?: string
   policy?: {
     soft_delete?: { retention: string }
     on_owner_delete?: { action: string; remove?: string[] | null; replace?: Record<string, unknown> | null; pull?: Record<string, unknown> | null; unset?: Record<string, unknown> | null }
@@ -64,7 +65,7 @@ const hasValues = (o?: Record<string, unknown> | string[] | null) => !!o && (Arr
         </ul>
 
         <h3 class="mt-4 text-sm font-semibold">{{ t('config.collections.rules') }}</h3>
-        <p v-if="c.rules_file" class="mb-1 font-mono text-xs text-slate-600 dark:text-slate-400">{{ c.rules_file }}</p>
+        <p v-if="c.collection_file" class="mb-1 font-mono text-xs text-slate-600 dark:text-slate-400">{{ c.collection_file }} (rules:)</p>
         <p v-if="!c.rules" class="text-sm text-slate-600 dark:text-slate-400">{{ t('config.collections.noRules') }}</p>
         <dl v-else class="space-y-2 text-sm">
           <template v-for="op in OPS" :key="op">
@@ -74,7 +75,6 @@ const hasValues = (o?: Record<string, unknown> | string[] | null) => !!o && (Arr
             </div>
           </template>
         </dl>
-        <ConfigDraft v-if="c.rules && c.rules_file" :path="c.rules_file" :initial="rulesFileText(c.rules)" kind="yaml" :label="`${c.name} rules.yaml`" />
 
         <h3 class="mt-4 text-sm font-semibold">{{ t('config.collections.policy') }}</h3>
         <p v-if="c.policy_file" class="mb-1 font-mono text-xs text-slate-600 dark:text-slate-400">{{ c.policy_file }}</p>
@@ -91,6 +91,7 @@ const hasValues = (o?: Record<string, unknown> | string[] | null) => !!o && (Arr
             </ul>
           </li>
         </ul>
+        <ConfigDraft v-if="c.collection_file && (c.collection_yaml || c.rules)" :path="c.collection_file" :initial="collectionFileText(c.collection_yaml, c.rules)" kind="yaml" :label="`${c.name} collection.yaml`" />
       </details>
     </section>
     <p class="text-sm text-slate-600 dark:text-slate-400">

@@ -40,7 +40,7 @@ func TestLogSecurityWarnings(t *testing.T) {
 	if !strings.Contains(out, `"level":"WARN","msg":"REALM HAS AUTH DISABLED`) || !strings.Contains(out, `"realm":"open"`) {
 		t.Errorf("no warning for the auth-disabled realm: %s", out)
 	}
-	if !strings.Contains(out, `"msg":"realm has no rules.yaml in any collection: only API keys can access its data","realm":"closed"`) {
+	if !strings.Contains(out, `"msg":"realm has no rules in any collection: only API keys can access its data","realm":"closed"`) {
 		t.Errorf("no warning for the auth-enabled realm without rules: %s", out)
 	}
 	if strings.Contains(out, `only API keys can access its data","realm":"ruled"`) {

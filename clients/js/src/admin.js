@@ -383,7 +383,7 @@ export class Admin {
    * configuration as startup does, with `files` (path in the realm → content, or null to delete)
    * in place of the ones on disk, and says what it found. Every file of the realm is validated,
    * not only these. Nothing on the server changes. Needs the `config` area.
-   * @param {Record<string, string | null>} files   e.g. `{ 'main/notes/rules.yaml': 'read: user != nil\n' }`
+   * @param {Record<string, string | null>} files   e.g. `{ 'main/notes/collection.yaml': 'rules:\n  read: user != nil\n' }`
    * @param {RequestOptions} [opts]
    * @returns {Promise<ConfigCheck>}
    */

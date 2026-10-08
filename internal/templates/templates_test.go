@@ -82,7 +82,6 @@ func TestRealm(t *testing.T) {
 		{Path: "demo/main/posts/collection.yaml", Created: true},
 		{Path: "demo/main/posts/indexes.json", Created: true},
 		{Path: "demo/main/posts/rules.test.yaml", Created: true},
-		{Path: "demo/main/posts/rules.yaml", Created: true},
 		{Path: "demo/main/posts/schema.json", Created: true},
 	}...)
 	if !reflect.DeepEqual(files, want) {
@@ -118,7 +117,7 @@ func TestDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 8 || files[7].Path != "demo/blog/posts/schema.json" || !files[7].Created {
+	if len(files) != 7 || files[6].Path != "demo/blog/posts/schema.json" || !files[6].Created {
 		t.Errorf("files = %v", files)
 	}
 	if _, err := registry.Load(root); err != nil {
@@ -138,7 +137,6 @@ func TestProject(t *testing.T) {
 		"config/shop/main/posts/collection.yaml",
 		"config/shop/main/posts/indexes.json",
 		"config/shop/main/posts/rules.test.yaml",
-		"config/shop/main/posts/rules.yaml",
 		"config/shop/main/posts/schema.json",
 		"config/shop/main/_functions/deno.json",
 		"config/shop/main/_functions/lib/testing.js",
@@ -301,7 +299,7 @@ func TestEmailCapture(t *testing.T) {
 	}
 	want := []string{
 		"demo/notify/_functions/deno.json", "demo/notify/_functions/email-capture/function.yaml", "demo/notify/_functions/email-capture/index.ts",
-		"demo/notify/outbox/schema.json", "demo/notify/outbox/rules.yaml", "demo/notify/outbox/indexes.json",
+		"demo/notify/outbox/schema.json", "demo/notify/outbox/collection.yaml", "demo/notify/outbox/indexes.json",
 	}
 	for i, f := range files {
 		if f.Path != want[i] || !f.Created {

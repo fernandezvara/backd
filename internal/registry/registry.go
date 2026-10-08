@@ -58,7 +58,7 @@ type Collection struct {
 	Fields        map[string]Field      // dot path → field info, for query checks
 	Indexes       []Index               // declared in indexes.json
 	IndexPath     string                // path of indexes.json, when present
-	Rules         *rules.Set            // from rules.yaml; nil allows nothing
+	Rules         *rules.Set            // from collection.yaml's rules:; nil allows nothing
 	Erasure       *ErasurePolicy        // from collection.yaml; nil: an erase leaves the collection alone
 	ErasurePath   string                // path of collection.yaml, for error messages
 	SoftDelete    *SoftDelete           // from collection.yaml; nil: DELETE removes the document

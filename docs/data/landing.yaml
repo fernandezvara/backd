@@ -74,7 +74,7 @@ sections:
 
       - title: Access rules
         icon: policy
-        description: "Per-collection rules.yaml decides who may read, create, update and delete each document. Read rules run inside the database query, so lists and counts only show what callers may see."
+        description: "The rules of each collection decide who may read, create, update and delete each document. Read rules run inside the database query, so lists and counts only show what callers may see."
 
       - title: Server-side functions
         icon: function

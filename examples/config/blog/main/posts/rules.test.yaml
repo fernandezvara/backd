@@ -1,4 +1,4 @@
-# Tests for rules.yaml, run by `backd rules test` (no database needed):
+# Tests for the rules of collection.yaml, run by `backd rules test` (no database needed):
 # named callers, stored documents, and what each may do. A change to the
 # rules that opens or closes something by accident fails here.
 now: 2026-10-04T12:00:00Z

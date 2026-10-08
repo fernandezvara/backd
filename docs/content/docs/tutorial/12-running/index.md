@@ -34,7 +34,7 @@ This tutorial ran on a dev stack: `BACKD_DEV` on, `email-capture` storing mail, 
 - Remove the seeded `roles.*.users` demo accounts and create your own administrator with `backd bootstrap` (chapter 4). Removing a seed from `realm.yaml` does **not** take the role away from the account that already has it — remove it from that user with the admin API (`DELETE /_admin/users/{id}/roles/{role}`, see [Admin API](../../auth/admin/)).
 - Keep `signup: invite`: it is the right setting for a team library. Anything else puts the door back.
 - Give every API key a scope and an expiry — the app already creates them that way.
-- Review each `rules.yaml` and run `backd rules test` in CI.
+- Review the `rules:` of each `collection.yaml` and run `backd rules test` in CI.
 
 ## You should see
 

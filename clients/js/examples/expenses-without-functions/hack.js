@@ -1,7 +1,7 @@
 // Attacks the expenses example the way a malicious user could, with the
 // same client library the app uses, and reports what happened:
 //
-//   - attacks the access rules stop (examples/config/expenses/*/rules.yaml);
+//   - attacks the access rules stop (examples/config/expenses/*/collection.yaml (rules:));
 //   - holes that stay open because this example doesn't use server-side
 //     functions (the "with functions" version closes them), and one that
 //     email verification closes. See the docs page "Expenses without

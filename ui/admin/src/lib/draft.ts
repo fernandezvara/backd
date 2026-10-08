@@ -20,21 +20,30 @@ export interface RuleView {
 const ORDER = ['read', 'create', 'update', 'delete', 'restore', 'purge', 'write']
 
 /**
- * A rules.yaml rebuilt from the expressions the server runs, one key per rule: the key
+ * A `rules:` section rebuilt from the expressions the server runs, one key per rule: the key
  * a rule came from (`write` covers create, update and delete), once. Comments and layout
  * of the original are not known to the server, so they are not kept.
  */
-export function rulesFileText(rules: Record<string, RuleView>): string {
+export function rulesSectionText(rules: Record<string, RuleView>): string {
   const byKey = new Map<string, string>()
   for (const rule of Object.values(rules)) if (!byKey.has(rule.from)) byKey.set(rule.from, rule.expression.trim())
   const keys = [...byKey.keys()].sort((a, b) => (ORDER.indexOf(a) + 1 || 99) - (ORDER.indexOf(b) + 1 || 99))
-  const lines = ['# Rebuilt by the admin UI from the rules the server runs: comments and layout of your file are not kept.']
+  const lines = ['rules:']
   for (const key of keys) {
     const expr = byKey.get(key)!
-    if (expr.includes('\n')) lines.push(`${key}: |-`, ...expr.split('\n').map((l) => `  ${l}`))
-    else lines.push(`${key}: ${JSON.stringify(expr)}`) // a JSON string is a YAML string
+    if (expr.includes('\n')) lines.push(`  ${key}: |-`, ...expr.split('\n').map((l) => `    ${l}`))
+    else lines.push(`  ${key}: ${JSON.stringify(expr)}`) // a JSON string is a YAML string
   }
   return lines.join('\n') + '\n'
+}
+
+/**
+ * The text of a collection's collection.yaml to start a change from: the file as written
+ * (comments and all) when the server sent it, else a file holding just the rules it runs.
+ */
+export function collectionFileText(raw: string | undefined, rules: Record<string, RuleView> | undefined): string {
+  if (raw?.trim()) return raw
+  return rules ? rulesSectionText(rules) : ''
 }
 
 /** What is wrong with a draft, or '' (only JSON can be checked here; a rules file is checked at startup). */

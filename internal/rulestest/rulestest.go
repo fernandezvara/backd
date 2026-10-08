@@ -1,9 +1,9 @@
 // Package rulestest runs the fixtures of `backd rules test`: it decides who
 // may read, create, update and delete which documents of a collection, with
-// the collection's real rules.yaml and schema.json and no database, and
+// the collection's real rules (the `rules:` of its collection.yaml) and schema.json and no database, and
 // compares the decisions with what the fixture expects.
 //
-// A fixture (rules.test.yaml, next to rules.yaml) names callers and stored
+// A fixture (rules.test.yaml, next to collection.yaml) names callers and stored
 // documents and asserts allow or deny per operation:
 //
 //	now: 2026-10-04T12:00:00Z       # optional: what `now` is in the rules
@@ -45,7 +45,7 @@ import (
 	"github.com/fernandezvara/backd/internal/storage"
 )
 
-// FileName is the fixture file, next to rules.yaml.
+// FileName is the fixture file, next to collection.yaml.
 const FileName = "rules.test.yaml"
 
 var printer = message.NewPrinter(language.English)

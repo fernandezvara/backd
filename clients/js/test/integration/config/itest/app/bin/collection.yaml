@@ -1,2 +1,10 @@
+rules:
+  read: user != nil
+  create: user != nil
+  update: user != nil && document._meta.owner == user.id
+  delete: user != nil && document._meta.owner == user.id
+  restore: user != nil && document._meta.owner == user.id
+  purge: hasRole(user, 'ops')
+
 soft_delete:
   retention: 7d

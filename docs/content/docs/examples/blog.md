@@ -52,7 +52,7 @@ One collection, `posts`, in the database `main`:
 
 ## What the rules enforce
 
-`posts/rules.yaml`:
+The `rules:` of `posts/collection.yaml`:
 
 | Rule | Enforces |
 |---|---|

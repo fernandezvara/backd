@@ -18,7 +18,7 @@ const fingerprintSalt = "backd-config-v1\x00"
 
 // Fingerprint identifies the config: a SHA-256 over every file backd
 // reads from CONFIG_DIR — realm.yaml, each collection's schema.json,
-// indexes.json and rules.yaml, and each functions project with its
+// indexes.json and collection.yaml, and each functions project with its
 // bundles — by relative path, length and content. Files backd ignores
 // (hidden entries such as .git, stray files) don't change it, so the same
 // checkout always has the same fingerprint, on any machine.
@@ -49,7 +49,7 @@ func (r *Registry) Fingerprint() (string, error) {
 		}
 		for _, db := range rl.Databases {
 			for _, c := range db.Collections {
-				for _, f := range []string{schemaFile, indexesFile, rulesFile, CollectionFile} {
+				for _, f := range []string{schemaFile, indexesFile, CollectionFile} {
 					add(filepath.Join(rl.Name, db.Name, c.Name, f))
 				}
 			}

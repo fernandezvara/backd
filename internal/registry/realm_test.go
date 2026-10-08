@@ -256,10 +256,10 @@ func TestNormalizeEmail(t *testing.T) {
 
 func TestLoadRules(t *testing.T) {
 	root := writeTree(t, map[string]string{
-		"shop/realm.yaml":           "roles:\n  admin: {}\n",
-		"shop/db/items/schema.json": personSchema,
-		"shop/db/items/rules.yaml":  "read: \"user != nil && document.name == user.email\"\nwrite: hasRole(user, 'admin')\n",
-		"shop/db/plain/schema.json": `{}`,
+		"shop/realm.yaml":               "roles:\n  admin: {}\n",
+		"shop/db/items/schema.json":     personSchema,
+		"shop/db/items/collection.yaml": rulesSection("read: \"user != nil && document.name == user.email\"\nwrite: hasRole(user, 'admin')\n"),
+		"shop/db/plain/schema.json":     `{}`,
 	})
 	reg, err := Load(root)
 	if err != nil {
@@ -270,7 +270,7 @@ func TestLoadRules(t *testing.T) {
 		t.Errorf("rules not loaded: %+v", items.Rules)
 	}
 	if plain, _ := reg.Collection("shop", "db", "plain"); plain.Rules != nil {
-		t.Error("collection without rules.yaml got rules")
+		t.Error("collection without rules got rules")
 	}
 
 	for name, tt := range map[string]struct {
@@ -278,18 +278,18 @@ func TestLoadRules(t *testing.T) {
 		want  []string
 	}{
 		"undeclared role": {map[string]string{
-			"shop/db/items/schema.json": personSchema,
-			"shop/db/items/rules.yaml":  "read: hasRole(user, 'admin')\n",
-		}, []string{"items/rules.yaml: read: role \"admin\" is not declared in realm.yaml"}},
+			"shop/db/items/schema.json":     personSchema,
+			"shop/db/items/collection.yaml": rulesSection("read: hasRole(user, 'admin')\n"),
+		}, []string{"items/collection.yaml: rules: read: role \"admin\" is not declared in realm.yaml"}},
 		"unknown field": {map[string]string{
-			"shop/db/items/schema.json": personSchema,
-			"shop/db/items/rules.yaml":  "read: document.nmae == 'x'\n",
-		}, []string{"items/rules.yaml: read: unknown field document.nmae"}},
+			"shop/db/items/schema.json":     personSchema,
+			"shop/db/items/collection.yaml": rulesSection("read: document.nmae == 'x'\n"),
+		}, []string{"items/collection.yaml: rules: read: unknown field document.nmae"}},
 		"auth disabled": {map[string]string{
-			"shop/realm.yaml":           "auth: disabled\n",
-			"shop/db/items/schema.json": personSchema,
-			"shop/db/items/rules.yaml":  "read: 'true'\n",
-		}, []string{"items/rules.yaml: rules only apply when the realm has auth enabled"}},
+			"shop/realm.yaml":               "auth: disabled\n",
+			"shop/db/items/schema.json":     personSchema,
+			"shop/db/items/collection.yaml": rulesSection("read: 'true'\n"),
+		}, []string{"items/collection.yaml: rules only apply when the realm has auth enabled"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := Load(writeTree(t, tt.files))
@@ -586,5 +586,69 @@ func TestLoginThrottleErrors(t *testing.T) {
 				t.Errorf("errors = %v, want one containing %q", errs, tc.want)
 			}
 		})
+	}
+}
+
+// A directory that still has a rules.yaml does not load: its rules would silently be gone.
+func TestARetiredRulesFileStopsTheLoad(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"shop/realm.yaml":           "roles:\n  admin: {}\n",
+		"shop/db/items/schema.json": personSchema,
+		"shop/db/items/rules.yaml":  "read: 'true'\n",
+	})
+	_, err := Load(root)
+	if err == nil {
+		t.Fatal("a collection with a rules.yaml loaded")
+	}
+	for _, want := range []string{"items/rules.yaml", "not part of the configuration any more", "`rules:` key in collection.yaml"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
+	// Even with a collection.yaml that has rules of its own: one place only.
+	root = writeTree(t, map[string]string{
+		"shop/realm.yaml":               "roles:\n  admin: {}\n",
+		"shop/db/items/schema.json":     personSchema,
+		"shop/db/items/rules.yaml":      "read: 'true'\n",
+		"shop/db/items/collection.yaml": rulesSection("read: 'true'\n"),
+	})
+	if _, err := Load(root); err == nil {
+		t.Error("rules in both places loaded")
+	}
+}
+
+// The rules: section is the old rules.yaml, under a key: the same keys, the write shortcut,
+// no section meaning nothing is allowed, and a section that is not a mapping an error.
+func TestRulesSectionOfCollectionYAML(t *testing.T) {
+	load := func(collection string) (*Collection, error) {
+		reg, err := Load(writeTree(t, map[string]string{
+			"shop/realm.yaml":               "roles:\n  admin: {}\n",
+			"shop/db/items/schema.json":     personSchema,
+			"shop/db/items/collection.yaml": collection,
+		}))
+		if err != nil {
+			return nil, err
+		}
+		c, _ := reg.Collection("shop", "db", "items")
+		return c, nil
+	}
+	c, err := load("soft_delete: true\nrules:\n  read: 'true'\n  write: user != nil\n  restore: user != nil\n")
+	if err != nil || c.Rules == nil || c.Rules.For("read") == nil || c.Rules.For("create").Key != "write" || c.Rules.For("restore") == nil || c.SoftDelete == nil {
+		t.Fatalf("rules next to other sections: %+v %v", c, err)
+	}
+	if c, err = load("files: {}\n"); err != nil || c.Rules != nil {
+		t.Errorf("no rules section: %+v %v", c, err)
+	}
+	if c, err = load("rules:\n"); err != nil || c.Rules != nil {
+		t.Errorf("an empty rules section: %+v %v", c, err)
+	}
+	for name, yaml := range map[string]string{
+		"a list":        "rules:\n  - read\n",
+		"an unknown op": "rules:\n  reed: 'true'\n",
+		"an empty rule": "rules:\n  read: ''\n",
+	} {
+		if _, err := load(yaml); err == nil || !strings.Contains(err.Error(), "collection.yaml") {
+			t.Errorf("%s: %v", name, err)
+		}
 	}
 }

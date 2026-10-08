@@ -32,7 +32,7 @@ Realms with `auth: disabled` are open to anyone who can reach `backd`: never exp
 - **Schema-validated writes,** mirrored as a MongoDB validator, with field-level errors and optimistic concurrency (`ETag`, `If-Match`).
 - **Queries without injection:** `where`, `order_by`, pagination and counts over an allowlisted query language.
 - **Users, sessions and API keys** per realm, with brute-force protection, invitations, network restrictions and an audit trail; administration through an [admin API](auth/admin/) and the [command line](auth/cli/), never database credentials.
-- **Access rules** (`rules.yaml`) decided per document, with read rules applied inside the database query.
+- **Access rules** (`rules:` in `collection.yaml`) decided per document, with read rules applied inside the database query.
 - **Server-side functions** in isolated Deno processes: sync calls, [background jobs](functions/jobs/), [cron schedules](functions/cron/), [webhooks](functions/webhooks/), encrypted secrets, rate limits, idempotency and a network allowlist.
 - **A production path:** a tested [reference deployment](operations/production/) (TLS, least-privilege MongoDB, encrypted backups), a [config fingerprint](operations/deploying/) so every instance runs the same configuration, and signed releases.
 

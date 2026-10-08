@@ -126,7 +126,7 @@ test('validation, unique values and missing collections', { skip }, async () => 
   await assert.rejects(tags.create({ name }), (/** @type {any} */ e) => e instanceof ConflictError && e.code === 'conflict' && e.details[0].path === 'name')
   await assert.rejects(c.db('app').collection('nope').list(), NotFoundError)
   await assert.rejects(posts.list({ where: { nope: 1 } }), (/** @type {any} */ e) => e instanceof ValidationError && e.code === 'invalid_query')
-  // A collection without rules.yaml: users can't, API keys can.
+  // A collection without rules: users can't, API keys can.
   await assert.rejects(c.db('app').collection('private').list(), ForbiddenError)
   await client({ apiKey }).db('app').collection('private').list()
 })

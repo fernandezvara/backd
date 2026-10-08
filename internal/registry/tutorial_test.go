@@ -11,7 +11,7 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// The tutorial (docs/content/docs/tutorial) shows realm.yaml and rules.yaml
+// The tutorial (docs/content/docs/tutorial) shows realm.yaml and collection.yaml
 // inline, chapter by chapter, and the files of examples/config/shelf are the
 // finished state. These tests load what a reader would have after chapters 1,
 // 2, 3 and 4, and check that the chapters add up to the finished realm.yaml —
@@ -101,7 +101,6 @@ func TestTutorialChaptersLoad(t *testing.T) {
 	collections := []string{
 		"main/assets/schema.json", "main/assets/indexes.json", "main/shares/schema.json", "main/shares/indexes.json",
 	}
-	more := []string{"main/assets/collection.yaml", "main/shares/collection.yaml"}
 
 	t.Run("chapter 1", func(t *testing.T) {
 		loadChapter(t, func(d string) {
@@ -112,15 +111,20 @@ func TestTutorialChaptersLoad(t *testing.T) {
 	t.Run("chapter 2", func(t *testing.T) {
 		loadChapter(t, func(d string) {
 			writeFile(t, filepath.Join(d, "realm.yaml"), ch2)
-			beforeFiles(t, d, append(collections, more...)...)
+			beforeFiles(t, d, collections...)
+			// Chapter 2 writes the erase policy of both collections.
+			policy := blockAfter(t, "02-members", "Create `config/shelf/main/assets/collection.yaml`")
+			writeFile(t, filepath.Join(d, "main/assets/collection.yaml"), policy)
+			writeFile(t, filepath.Join(d, "main/shares/collection.yaml"), policy)
 		})
 	})
 	t.Run("chapters 3 and 4", func(t *testing.T) {
 		loadChapter(t, func(d string) {
 			writeFile(t, filepath.Join(d, "realm.yaml"), ch4)
-			beforeFiles(t, d, append(collections, more...)...)
-			writeFile(t, filepath.Join(d, "main/assets/rules.yaml"), blockAfter(t, "03-rules", "## The assets rules"))
-			writeFile(t, filepath.Join(d, "main/shares/rules.yaml"), blockAfter(t, "03-rules", "## The shares rules"))
+			beforeFiles(t, d, collections...)
+			// Chapter 3 shows both collection.yaml files whole: the rules and chapter 2's policy.
+			writeFile(t, filepath.Join(d, "main/assets/collection.yaml"), blockAfter(t, "03-rules", "Replace `config/shelf/main/assets/collection.yaml`"))
+			writeFile(t, filepath.Join(d, "main/shares/collection.yaml"), blockAfter(t, "03-rules", "And `config/shelf/main/shares/collection.yaml`"))
 		})
 	})
 	t.Run("chapter 13 is the finished realm", func(t *testing.T) {

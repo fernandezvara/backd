@@ -30,7 +30,7 @@ func collectionWith(t *testing.T, schemaSrc, rulesSrc string) *registry.Collecti
 	for p, content := range map[string]string{
 		filepath.Join(root, "acme", "realm.yaml"): "roles:\n  admin: {}\n  staff: {}\n",
 		filepath.Join(dir, "schema.json"):         schemaSrc,
-		filepath.Join(dir, "rules.yaml"):          rulesSrc,
+		filepath.Join(dir, "collection.yaml"):     rulesSection(rulesSrc),
 	} {
 		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 			t.Fatal(err)
@@ -130,7 +130,7 @@ tests:
 	}
 }
 
-// With no rule for an operation, or no rules.yaml, everything is denied.
+// With no rule for an operation, or no `rules:` section, everything is denied.
 func TestRunWithoutRules(t *testing.T) {
 	c := collection(t, "read: \"true\"\n")
 	checks, problems := Run(c, roles, []byte(`
@@ -265,8 +265,7 @@ func softCollection(t *testing.T, rulesSrc string) *registry.Collection {
 	for p, content := range map[string]string{
 		filepath.Join(root, "acme", "realm.yaml"): "roles:\n  admin: {}\n  staff: {}\n",
 		filepath.Join(dir, "schema.json"):         schema,
-		filepath.Join(dir, "rules.yaml"):          rulesSrc,
-		filepath.Join(dir, "collection.yaml"):     "soft_delete: true\n",
+		filepath.Join(dir, "collection.yaml"):     "soft_delete: true\n" + rulesSection(rulesSrc),
 	} {
 		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 			t.Fatal(err)

@@ -33,7 +33,7 @@ test('collections show schema, indexes, rules and policy with their files', asyn
   await expect(notes.getByRole('region', { name: /Schema/ })).toContainText('"minLength": 1')
   await expect(notes).toContainText('pinned,-_meta.created_at')
   await expect(notes).toContainText('user != nil && document._meta.owner == user.id')
-  await expect(notes).toContainText('adminui/main/notes/rules.yaml')
+  await expect(notes).toContainText('adminui/main/notes/collection.yaml')
   await expect(notes).toContainText('Soft delete, kept for 30d')
   await expect(notes).toContainText('When an owner is erased: delete')
 })
@@ -117,18 +117,19 @@ test('a change to a schema or to rules is checked against the whole realm and pr
   expect(JSON.parse(await editor.inputValue()).properties.title.minLength).toBe(1)
   await expect(notes.getByTestId('draft-ok')).toHaveCount(0)
 
-  // Rules are rebuilt from the expressions the server runs, and checked the same way.
-  await notes.getByRole('button', { name: 'Prepare a change to rules.yaml' }).click()
-  const rules = notes.getByLabel('notes rules.yaml')
-  const text = await rules.inputValue()
-  expect(text).toContain('read: "user != nil"')
-  expect(text).toContain('update: "user != nil && document._meta.owner == user.id"')
-  await rules.fill(text.replace('read: "user != nil"', 'read: "document.nothing == 1"'))
-  await expect(notes.getByTestId('draft-problems')).toContainText('rules.yaml')
-  await expect(notes.getByRole('button', { name: 'Download rules.yaml' })).toBeDisabled()
-  await rules.fill(text.replace('read: "user != nil"', 'read: "user != nil && document.pinned == true"'))
+  // collection.yaml is the file as written (the rules are a section of it), and checked the same way.
+  await notes.getByRole('button', { name: 'Prepare a change to collection.yaml' }).click()
+  const yamlEditor = notes.getByLabel('notes collection.yaml')
+  const text = await yamlEditor.inputValue()
+  expect(text).toContain('rules:\n  read: user != nil\n')
+  expect(text).toContain('# Erasing a user deletes the notes they own.') // comments are kept
+  expect(text).toContain('soft_delete:')
+  await yamlEditor.fill(text.replace('read: user != nil\n', 'read: document.nothing == 1\n'))
+  await expect(notes.getByTestId('draft-problems')).toContainText('collection.yaml')
+  await expect(notes.getByRole('button', { name: 'Download collection.yaml' })).toBeDisabled()
+  await yamlEditor.fill(text.replace('read: user != nil\n', 'read: user != nil && document.pinned == true\n'))
   await expect(notes.getByTestId('draft-ok')).toBeVisible()
-  await expect(notes.getByRole('button', { name: 'Download rules.yaml' })).toBeEnabled()
+  await expect(notes.getByRole('button', { name: 'Download collection.yaml' })).toBeEnabled()
 
   // Only checks were sent: the configuration is never written.
   expect([...new Set(posts)]).toEqual([`POST /v1/${REALM}/_admin/config/check`])

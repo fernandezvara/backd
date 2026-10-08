@@ -1,4 +1,4 @@
-# Tests for rules.yaml (`backd rules test`): members see and edit their
+# Tests for the rules of collection.yaml (`backd rules test`): members see and edit their
 # groups, only the creator deletes one.
 users:
   ada:   { id: u1, email: ada@example.com }

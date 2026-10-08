@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go.yaml.in/yaml/v3"
 	"math/rand/v2"
 	"slices"
 	"strings"
@@ -135,10 +136,14 @@ func compileRead(t *testing.T, c *registry.Collection, src string) *rules.Rule {
 	return compileRules(t, c, "read: "+src+"\n").For(rules.Read)
 }
 
-// compileRules compiles a rules.yaml as startup does, for the collection.
+// compileRules compiles the YAML of a `rules:` section as startup does, for the collection.
 func compileRules(t *testing.T, c *registry.Collection, content string) *rules.Set {
 	t.Helper()
-	set, errs := rules.Parse([]byte(content), rules.Schema{
+	var doc map[string]string
+	if err := yaml.Unmarshal([]byte(content), &doc); err != nil {
+		t.Fatalf("%s: %v", content, err)
+	}
+	set, errs := rules.Parse(doc, rules.Schema{
 		DocumentField: c.IsKnownField,
 		DataField:     func(p string) bool { _, ok := c.Fields[p]; return ok },
 		ScalarField:   c.ScalarField,
@@ -254,7 +259,7 @@ func TestReadRuleFiltersMatchRules(t *testing.T) {
 }
 
 // TestSampleReadRules runs the comparison for the read rule of every
-// sample rules.yaml in the repository, on documents generated from its
+// sample collection.yaml in the repository, on documents generated from its
 // schema.
 func TestSampleReadRules(t *testing.T) {
 	testClient(t) // skips without MongoDB, before the subtests would

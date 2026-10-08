@@ -18,7 +18,7 @@ const backd = createClient({
 const db = backd.db('main')
 const groups = db.collection('groups')
 // No `expenses` collection reads here: a direct read only ever returns
-// your own entries (expenses/rules.yaml), so list_expenses is the only
+// your own entries (expenses/collection.yaml), so list_expenses is the only
 // way to see everyone's. Deleting your own entry is still a direct,
 // rule-checked document operation — see remove().
 const expenses = db.collection('expenses')
@@ -226,7 +226,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     // Deleting your own entry is still a direct, rule-checked document
-    // operation (expenses/rules.yaml's delete rule, owner-only, unchanged
+    // operation (expenses/collection.yaml's delete rule, owner-only, unchanged
     // from expenses-without-functions) — no function needed for this one.
     remove(e) {
       if (!confirm(`Delete "${e.description || e.kind}"?`)) return

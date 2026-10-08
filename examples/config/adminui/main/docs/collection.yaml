@@ -1,3 +1,9 @@
+rules:
+  read: user != nil
+  create: user != nil
+  update: user != nil && document._meta.owner == user.id
+  delete: user != nil && document._meta.owner == user.id
+
 # Documents with files, for the data browser's file controls.
 files:
   # One small picture, through backd (a proxy upload).

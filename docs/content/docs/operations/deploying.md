@@ -143,7 +143,7 @@ Instances that are already running aren't stopped: during a rollout, old instanc
 An instance left on an **old tag** keeps serving until it restarts, and then refuses to start against the newly provisioned config. Roll every instance to the new tag before the old ones can restart (a crash, a node drain), and don't provision a config you are not ready to deploy everywhere.
 {{< /hint >}}
 
-- The fingerprint is a hash of every file `backd` reads from `CONFIG_DIR`: `realm.yaml`, each collection's `schema.json`, `indexes.json` and `rules.yaml`, and each functions project with its bundles. Files `backd` ignores (`.git`, a `README.md`) don't change it, so the same tag gives the same fingerprint on any machine.
+- The fingerprint is a hash of every file `backd` reads from `CONFIG_DIR`: `realm.yaml`, each collection's `schema.json`, `indexes.json` and `collection.yaml`, and each functions project with its bundles. Files `backd` ignores (`.git`, a `README.md`) don't change it, so the same tag gives the same fingerprint on any machine.
 - Every instance logs its fingerprint at startup (`"msg":"config loaded"`) and reports it in [`/readyz`](../../api/#health-endpoints): `{"status":"ready","config":"<fingerprint>"}`.
 - `backd config fingerprint` prints it without starting anything.
 - The database user of instances in `verify` mode needs to read `backd___deployment.realms`; `backd databases --collections` lists it with the others for your grants. Only the provision step writes it.

@@ -14,7 +14,7 @@ You do **not** need a `backd` checkout: the app, the client and the released con
 
 - A **realm** is one application's world — its users, roles, sessions and settings (`shelf`). A **database** groups collections inside it (`main`), and a **collection** holds documents (`assets`). The URLs say it: `/v1/{realm}/{database}/{collection}`.
 - A **function** is a small TypeScript program backd runs in a sandbox when something calls it: a person, another function, a clock or the internet.
-- A **rule** is an expression in `rules.yaml` that decides whether a read or write is allowed. A **`HOLE` comment** (chapter 3) marks the place where a rule can't say what you mean and a function has to take over.
+- A **rule** is an expression in the `rules:` of a collection's `collection.yaml` that decides whether a read or write is allowed. A **`HOLE` comment** (chapter 3) marks the place where a rule can't say what you mean and a function has to take over.
 - An **operator** is the administrator of the realm; a **curator** is a member who may publish; a **member** is everyone else.
 
 ## What you need
@@ -84,7 +84,7 @@ Working on a `backd` checkout instead? The same files live in the repository: `e
 |---|---|---|
 | 1 | [An empty shelf](01-empty-shelf/) | the `shelf` realm, the `assets` and `shares` collections, dates, indexes, a public gallery with filters and cursor paging |
 | 2 | [Members](02-members/) | sign-up, sessions, roles, the account page |
-| 3 | [Who may touch what](03-rules/) | `rules.yaml`, ownership, optimistic concurrency |
+| 3 | [Who may touch what](03-rules/) | `rules:` in `collection.yaml`, ownership, optimistic concurrency |
 | 4 | [Invitations](04-invitations/) | closing sign-up; one-time invitation links |
 | 5 | [The first function](05-first-function/) | `publish`, `admin: true`, idempotency, share links |
 | 6 | [Reaching the outside](06-network/) | `preview` and the `network:` allowlist |

@@ -1,3 +1,36 @@
+rules:
+  # Who may do what with the documents of this collection. Each
+  # key is an operation; its value is an expression that must be true to allow
+  # it. Operations without a rule are denied. API keys bypass rules.
+  #
+  # `user` is the signed-in user (user.id, user.email, user.email_verified,
+  # user.roles), or nil for anonymous callers. `document` is the stored asset;
+  # `data` the asset being written; `changed()` the fields a write touches.
+
+  # Everyone in the workspace reads published assets; a member also reads
+  # their own drafts, and a curator reads every draft — including the ones
+  # nobody owns, like what the import webhook (chapter 11) lands — because
+  # publishing them is the curator's job.
+  read: >
+    user != nil
+    && (document.published_at != nil || document._meta.owner == user.id
+        || hasRole(user, 'curator'))
+
+  # Members write their own assets — as drafts. published_at stays off-limits
+  # to clients: only the publish function stamps it, as admin (chapter 5
+  # closed the HOLE that lived here).
+  #
+  # Fields only functions write are refused here the same way: published_at and
+  # the download count (chapter 15). On a create there is no `changed()`, so the
+  # rule asks for the field to be absent.
+  create: >
+    user != nil && data.published_at == nil && data.downloads == nil
+  update: >
+    user != nil && document._meta.owner == user.id
+    && !('published_at' in changed())
+    && !('downloads' in changed())
+  delete: user != nil && document._meta.owner == user.id
+
 # What happens to this collection when an administrator erases a user
 # (`backd user delete`, docs: Auth -> Deleting and erasing users). Chapter 2
 # adds this with the account page's "delete my account" button: self-service

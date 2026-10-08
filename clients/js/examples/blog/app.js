@@ -3,7 +3,7 @@
 // and can edit, publish, unpublish or delete their own posts. Posts show who
 // wrote them and their category; clicking an author or a category lists
 // only those posts (both filters combine). The rules that
-// decide all this live in examples/config/blog/main/posts/rules.yaml.
+// decide all this live in examples/config/blog/main/posts/collection.yaml.
 import { createClient, localStorageStorage, VersionMismatchError } from 'backd-js'
 
 const backd = createClient({

@@ -1,15 +1,12 @@
-// Package rules loads and checks a collection's rules.yaml: expr-lang
+// Package rules checks and compiles a collection's rules (the `rules:` section of its collection.yaml): expr-lang
 // expressions deciding, per operation, whether a caller may act on a
 // whole document. Read rules also become backend-neutral storage filters.
 // It knows nothing about HTTP or MongoDB.
 package rules
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
-	"io"
-	"os"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -18,7 +15,6 @@ import (
 	"github.com/expr-lang/expr/ast"
 	"github.com/expr-lang/expr/parser"
 	"github.com/expr-lang/expr/vm"
-	"go.yaml.in/yaml/v3"
 )
 
 // Op is an operation a rule can allow.
@@ -82,7 +78,7 @@ type Set struct {
 // Rule is one compiled rule.
 type Rule struct {
 	Op     Op
-	Key    string // the rules.yaml key it came from: the op, or "write"
+	Key    string // the rules key it came from: the op, or "write"
 	Source string
 	prog   *vm.Program
 	tree   ast.Node
@@ -97,36 +93,12 @@ func (s *Set) For(op Op) *Rule {
 	return s.rules[op]
 }
 
-// Load reads and checks path. A missing file returns (nil, nil): no rule
-// allows anything.
-func Load(path string, schema Schema) (*Set, error) {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
-	}
-	s, errs := Parse(data, schema)
-	if len(errs) > 0 {
-		for i, e := range errs {
-			errs[i] = fmt.Errorf("%s: %w", path, e)
-		}
-		return nil, errors.Join(errs...)
-	}
-	s.File = path
-	return s, nil
-}
-
-// Parse compiles and checks rules.yaml content.
-func Parse(data []byte, schema Schema) (*Set, []error) {
-	var doc map[string]string
-	dec := yaml.NewDecoder(bytes.NewReader(data))
-	if err := dec.Decode(&doc); err != nil && !errors.Is(err, io.EOF) {
-		return nil, []error{fmt.Errorf("invalid YAML: want a mapping of operation to expression string: %w", err)}
-	}
+// Parse compiles and checks the `rules:` section of a collection's collection.yaml: a
+// mapping of operation (read, create, update, delete, restore, purge, or write for the
+// three that change a document) to an expression.
+func Parse(doc map[string]string, schema Schema) (*Set, []error) {
 	var errs []error
-	for k := range doc {
+	for _, k := range slices.Sorted(maps.Keys(doc)) {
 		if k != "write" && !slices.Contains(Ops, Op(k)) {
 			errs = append(errs, fmt.Errorf("unknown key %q: want read, create, update, delete, restore, purge or write", k))
 		}

@@ -35,7 +35,7 @@ func TestFunctionsEndToEnd(t *testing.T) {
 	root := writeConfig(t, map[string]string{
 		realm + "/realm.yaml":                           "signup: open\n",
 		realm + "/app/notes/schema.json":                `{"type": "object", "properties": {"title": {"type": "string"}}, "required": ["title"]}`,
-		realm + "/app/notes/rules.yaml":                 "read: user != nil && document._meta.owner == user.id\nwrite: user != nil\n",
+		realm + "/app/notes/collection.yaml":            rulesSection("read: user != nil && document._meta.owner == user.id\nwrite: user != nil\n"),
 		realm + "/app/_functions/addnote/function.yaml": "invoke: \"user != nil\"\n",
 		realm + "/app/_functions/addnote/index.ts": `import { trimmed } from "../lib/text.ts";
 type Ctx = { input: { title: string }; db: (name: string) => any };

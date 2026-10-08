@@ -1,7 +1,7 @@
 // order_total: the amount a customer will be charged for one of their
 // orders. The tax rule lives here, on the server, not in every client.
 //
-// ctx.db acts as the caller, so orders/rules.yaml decides what they may
+// ctx.db acts as the caller, so orders/collection.yaml decides what they may
 // read: someone else's order (or one that doesn't exist) answers 404, the
 // same as reading the collection directly would.
 import { relay } from "../lib/relay.ts";

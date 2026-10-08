@@ -173,7 +173,13 @@ func collectionConfig(c *registry.Collection, rel func(string) string) map[strin
 			}
 		}
 		out["rules"] = ruleSet
-		out["rules_file"] = rel(c.Rules.File)
+	}
+	// The collection's policy file holds its rules, files and erase policy: its path, and its
+	// text as written (comments included) so a change can be prepared on it.
+	collectionFile := filepath.Join(filepath.Dir(c.SchemaPath), registry.CollectionFile)
+	out["collection_file"] = rel(collectionFile)
+	if data, err := os.ReadFile(collectionFile); err == nil {
+		out["collection_yaml"] = string(data)
 	}
 	policy := map[string]any{}
 	if c.SoftDelete != nil {

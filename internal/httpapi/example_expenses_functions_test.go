@@ -13,7 +13,7 @@ import "testing"
 // store can: a direct read only ever returns your own entries (never
 // anyone else's — read: false would have refused update and delete too,
 // since fetching the current document to check them against goes through
-// the read rule; see expenses/rules.yaml's own comment), defense-in-depth
+// the read rule; see expenses/collection.yaml's own comment), defense-in-depth
 // create checks hold, and only the writer may update or delete their own
 // entry.
 

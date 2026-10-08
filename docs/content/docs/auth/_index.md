@@ -16,7 +16,7 @@ Each realm with `auth: enabled` has its own pool of users and [API keys](api-key
 | [Command-line administration](cli/): `backd bootstrap`, `backd login` | available |
 | [Sign-up, login and sessions](sessions/) (`/v1/{realm}/_auth/…`) | available |
 | [API keys](api-keys/) for server-side services, with full access to the realm's data | available |
-| [Access rules](rules/) per collection (`rules.yaml`) | available |
+| [Access rules](rules/) per collection (`rules:` in `collection.yaml`) | available |
 | [Admin API](admin/) for server-side user management | available |
 | [Audit trail](audit/) of security-sensitive actions | available |
 | [Deactivating and erasing users](erasure/), with per-collection policies for their data | available |

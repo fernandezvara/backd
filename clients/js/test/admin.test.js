@@ -375,13 +375,13 @@ test('storage.status and storage.reconcile use the storage routes', async () => 
 })
 
 test('checkConfig posts the draft files and answers what was found', async () => {
-  const m = mockFetch([{ body: { ok: false, realm: 'acme', checked: 12, changed: ['main/a/rules.yaml'], problems: [{ file: 'main/a/rules.yaml', message: 'main/a/rules.yaml: unknown field' }] } }])
+  const m = mockFetch([{ body: { ok: false, realm: 'acme', checked: 12, changed: ['main/a/collection.yaml'], problems: [{ file: 'main/a/collection.yaml', message: 'main/a/collection.yaml: unknown field' }] } }])
   const a = createClient({ url: 'https://api.test', realm: 'acme', apiKey: 'bdk_x', fetch: m.fetch }).admin
-  const out = await a.checkConfig({ 'main/a/rules.yaml': 'read: x\n', 'main/b/schema.json': null })
+  const out = await a.checkConfig({ 'main/a/collection.yaml': 'rules:\n  read: x\n', 'main/b/schema.json': null })
   assert.equal(out.ok, false)
-  assert.equal(out.problems[0].file, 'main/a/rules.yaml')
+  assert.equal(out.problems[0].file, 'main/a/collection.yaml')
   assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/config/check')
-  assert.deepEqual(m.calls[0].body, { files: { 'main/a/rules.yaml': 'read: x\n', 'main/b/schema.json': null } })
+  assert.deepEqual(m.calls[0].body, { files: { 'main/a/collection.yaml': 'rules:\n  read: x\n', 'main/b/schema.json': null } })
 })
 
 test('storage.regenerateVersions starts the job for a field', async () => {

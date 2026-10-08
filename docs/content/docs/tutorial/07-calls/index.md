@@ -11,13 +11,13 @@ toc: true
 
 A member reads their own notifications and can flip exactly one field:
 
-{{< example-file path="shelf/main/notifications/rules.yaml" >}}
+{{< example-file path="shelf/main/notifications/collection.yaml" >}}
 
 There is deliberately no `create` rule — nobody may write a notification directly. The only writer is a function.
 
-Create the collection's other two files, `schema.json` and `indexes.json`, with the rules (they are plain listings in the repository):
+Create the collection's other files, `schema.json` and `indexes.json`, with the `collection.yaml` above (they are plain listings in the repository):
 
-{{< tutorial-files "main/notifications/schema.json main/notifications/indexes.json main/notifications/rules.yaml main/_functions/notify/function.yaml main/_functions/notify/index.ts main/_functions/notify/input.schema.json main/_functions/notify/index.test.ts" >}}
+{{< tutorial-files "main/notifications/schema.json main/notifications/indexes.json main/notifications/collection.yaml main/_functions/notify/function.yaml main/_functions/notify/index.ts main/_functions/notify/input.schema.json main/_functions/notify/index.test.ts" >}}
 
 ## notify, internal
 
@@ -86,7 +86,7 @@ Publishing now has a second consumer — the owner, who gets a notification — 
 "published_by": { "type": ["string", "null"], "description": "User id of the curator who published it, stamped by publish." },
 ```
 
-**2. Keep clients away from it.** The rule that stops members writing `published_at` has to cover the new field too, or any member could name any curator. In `assets/rules.yaml`:
+**2. Keep clients away from it.** The rule that stops members writing `published_at` has to cover the new field too, or any member could name any curator. In the `rules:` of `assets/collection.yaml`:
 
 ```yaml
 create: user != nil && data.published_at == nil && data.published_by == nil

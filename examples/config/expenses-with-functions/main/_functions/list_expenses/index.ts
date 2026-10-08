@@ -1,5 +1,5 @@
 // list_expenses: the only way to see a group's *other* members' expenses
-// in this version — a direct read (expenses/rules.yaml) only ever returns
+// in this version — a direct read (expenses/collection.yaml) only ever returns
 // your own. Checking membership here, fresh against the group every time,
 // is what closes hole 2 ("Stale member copies") — a removed member fails
 // the group read and gets nothing; a new member sees every expense
