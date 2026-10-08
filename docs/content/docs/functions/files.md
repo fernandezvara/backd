@@ -91,9 +91,35 @@ export default async function download(ctx) {
 
 Add the same rule trick to `downloads` (`!('downloads' in changed())`) so a client can't set its own count. Both recipes are exercised by tests in the repository (`clients/functions-testing/examples/files/`), with the fake `ctx` below.
 
+## Versions of an image
+
+A picture's declared [versions](../../files/file-fields/#image-versions) (a thumbnail, a preview) are made by workers after an upload. A function can make one again, make it with other parameters, or drop it, through the file's `version(name)`:
+
+```js
+const photo = ctx.db("app").collection("assets").files(id, "photo");
+const preview = photo.version("preview");   // a second argument names the file of a `multiple` field
+
+await preview.regenerate();                                              // the parameters collection.yaml declares
+const made = await preview.generate({ max_width: 900, fit: "cover", format: "png" }); // other parameters: a `writable` version only
+// made = { status: "ready", id: "fv_…", width: 900, height: 900, custom: true, … }
+await preview.delete();                                                  // back to pending (a worker remakes it) or empty
+```
+
+| | |
+|---|---|
+| `regenerate()` | Makes the version again with its declared parameters, and replaces the old copy. A version only functions make (no `max_width` or `max_height`) has nothing to remake from: `400` |
+| `generate(params)` | Makes it with `max_width`, `max_height`, `fit`, `quality`, `format` and `upscale` (named and checked as in `collection.yaml`; `400` otherwise). Only a version declared `writable: true` allows it: `403 version_not_writable`. The state records `custom: true`, so it can be told from a declared one |
+| `delete()` | Drops the copy. The version is `pending` again when it has parameters of its own (a worker makes it, so it is not gone for long) and `empty` when only functions make it; the object is deleted |
+
+Both of the first two **wait for a worker** to make the version and resolve with its new state, so the function's own `timeout` (and a running worker) matter; with no worker running they fail with `504 version_timeout`. An image that can't be made fails with a `422` whose `code` is the reason: `not_an_image`, `unsupported_format`, `too_large`, `decode_error` or `timeout`. The version that was there is kept. A function gets these as a `BackdError` (`e.status`, `e.code`); let it end the function, or `throw ctx.error(422, e.code, …)` to hand the reason to the caller.
+
+The identity applies as for any file operation: under `ctx.db` the document's `update` rule is asked (with the document as it is, so `changed()` is empty), and `ctx.admin.db` skips it. Changing a version never changes the document's `_meta.version`. There is no way to upload bytes into a version: it is always made from the original.
+
+A function-only version is how a function keeps a result of its own next to the original, such as a watermarked copy: declare `watermarked: { writable: true }`, and `generate` it with the box you want when the function runs.
+
 ## Testing
 
-[`@backd/functions-testing`](../testing/) fakes `files(id, field)` over its in-memory store: `put`, `get`, `delete` and `link` with the same names and results. Declare a collection's file fields with `store.declareFiles(database, collection, { receipts: { multiple: true, max_files: 3, max_size: 1000, types: ["image/*"] } })` and the fake enforces them (`too_many_files`, `payload_too_large`, `unsupported_file_type`); `store.fileBytes(fileId)` returns what was stored. Like the rest of the fake it evaluates no access rules, and it trusts the `type` it is given instead of detecting it.
+[`@backd/functions-testing`](../testing/) fakes `files(id, field)` over its in-memory store: `put`, `get`, `delete` and `link` with the same names and results. Declare a collection's file fields with `store.declareFiles(database, collection, { receipts: { multiple: true, max_files: 3, max_size: 1000, types: ["image/*"] } })` and the fake enforces them (`too_many_files`, `payload_too_large`, `unsupported_file_type`); `store.fileBytes(fileId)` returns what was stored. Declare `versions` in the field (`photo: { versions: { thumb: { max_width: 10, max_height: 10 }, mark: { writable: true } } }`) and a file starts with its versions `pending`, `empty` or `skipped`, and `version(name).regenerate()`, `.generate(params)` and `.delete()` work with backd's errors (`version_not_writable`, `not_an_image`, validation). The fake makes no pictures: a made version is `ready` with the size its box gives (read from a PNG's header; other pictures have none). Like the rest of the fake it evaluates no access rules, and it trusts the `type` it is given instead of detecting it.
 
 ## Good to know
 

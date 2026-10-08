@@ -42,6 +42,8 @@ export { memoryStorage, localStorageStorage } from './storage.js'
  * @typedef {import('./files.js').FileContent} FileContent
  * @typedef {import('./files.js').VersionState} VersionState
  * @typedef {import('./files.js').VersionOptions} VersionOptions
+ * @typedef {import('./files.js').VersionParams} VersionParams
+ * @typedef {import('./files.js').FileVersion} FileVersion
  * @typedef {import('./files.js').FileLink} FileLink
  * @typedef {import('./files.js').PutOptions} PutOptions
  * @typedef {import('./files.js').UploadOptions} UploadOptions

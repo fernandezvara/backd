@@ -929,6 +929,7 @@ func TestContract(t *testing.T) {
 		req("DELETE", files+"receipts", "", with(key, "If-Match", `"999"`), 412)
 		req("DELETE", base+"/nope/_files/receipts", "", key, 404)
 		req("DELETE", files+"receipts", "", key, 200)
+
 		if !isAdmin {
 			// The rule that reserves a field refuses a client and accepts the key (above).
 			mine := req("POST", base, `{"title": "again"}`, ada, 201)["id"].(string)
@@ -1314,7 +1315,56 @@ func TestContract(t *testing.T) {
 		req("POST", ab, `{"operations": [{"op": "patch", "collection": "posts", "id": "`+abID+`", "patch": {"title": "y"}, "if_match": "\"999\""}]}`, key, 412)
 	}
 
+	// A worker runs from here on, for what waits on one: making versions of images.
+	runWorker(t, newTestWorker(t, f))
+	for _, base := range []string{"/v1/acme/app/library", ad + "/data/app/library"} {
+		isAdmin := strings.Contains(base, "_admin")
+		files := base + "/"
+		_ = files
+
+		// Versions of an image: made by a worker, which a function (or anything allowed to
+		// update the document) can ask to make one again, with other parameters, or drop.
+		pic := req("POST", base, `{"title": "picture"}`, key, 201)["id"].(string)
+		picFile := req("POST", base+"/"+pic+"/_files/picture?name=p.png", string(realPNG(t, 20, 10)), typed(key, "image/png"), 201)["picture"].(map[string]any)["id"].(string)
+		vp := base + "/" + pic + "/_files/picture/" + picFile + "/versions/"
+		req("POST", vp+"thumb", "", key, 200)
+		req("POST", vp+"big", `{"max_width": 5, "format": "png"}`, key, 200)
+		req("POST", vp+"thumb", `{"max_width": 5}`, key, 403) // not writable
+		req("POST", vp+"big", `{"max_width": 5, "fit": "zoom"}`, key, 400)
+		req("POST", vp+"mark", "", key, 400) // nothing to remake it from
+		req("POST", vp+"thumb", "", nil, 401)
+		req("POST", vp+"nope", "", key, 404)
+		req("POST", base+"/"+pic+"/_files/picture/fl_nope/versions/thumb", "", key, 404)
+		if isAdmin {
+			req("POST", vp+"thumb", "", ada, 403)
+			req("DELETE", vp+"thumb", "", ada, 403)
+		} else {
+			lib := f.reg.Realms["acme"].Databases["app"].Collections["library"]
+			rl := lib.Rules
+			lib.Rules = nil
+			req("POST", vp+"thumb", "", ada, 403)
+			req("DELETE", vp+"thumb", "", ada, 403)
+			lib.Rules = rl
+		}
+		noKeys := *f.reg.Realms["acme"].Settings.Storage
+		noKeys.AccessKey = "NOT_SET_ANYWHERE"
+		working := f.reg.Realms["acme"].Settings.Storage
+		f.reg.Realms["acme"].Settings.Storage = &noKeys
+		req("POST", vp+"thumb", "", key, 503)
+		f.reg.Realms["acme"].Settings.Storage = working
+		cut := realPNG(t, 20, 10)
+		cutDoc := req("POST", base, `{"title": "cut"}`, key, 201)["id"].(string)
+		cutFile := req("POST", base+"/"+cutDoc+"/_files/picture?name=cut.png", string(cut[:len(cut)-30]), typed(key, "image/png"), 201)["picture"].(map[string]any)["id"].(string)
+		req("POST", base+"/"+cutDoc+"/_files/picture/"+cutFile+"/versions/thumb", "", key, 422)
+		req("DELETE", vp+"mark", "", nil, 401)
+		req("DELETE", vp+"nope", "", key, 404)
+		req("DELETE", vp+"mark", "", key, 200)
+		req("DELETE", vp+"thumb", "", key, 200)
+
+	}
+
 	c.verify(t, router)
+
 }
 
 // TestContractDetectsViolations proves the contract checks catch broken

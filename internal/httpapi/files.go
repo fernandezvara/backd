@@ -53,6 +53,8 @@ func (d *documents) mountFiles(r chi.Router) {
 	r.Delete("/{id}/_files/{field}", d.clearFiles)
 	r.Get("/{id}/_files/{field}/{fileID}", d.downloadFile)
 	r.Delete("/{id}/_files/{field}/{fileID}", d.deleteFile)
+	r.Post("/{id}/_files/{field}/{fileID}/versions/{version}", d.makeVersion)
+	r.Delete("/{id}/_files/{field}/{fileID}/versions/{version}", d.deleteVersion)
 }
 
 // fileField looks up the request's file field, or answers 404.
