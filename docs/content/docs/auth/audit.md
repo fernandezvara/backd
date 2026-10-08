@@ -22,7 +22,7 @@ Each realm with `auth: enabled` keeps an **audit trail**: one record per securit
 | `user.email_change_reverted` | The old address undid a change | |
 | `user.purged_unverified` | A worker deletes accounts that never verified their address | `count`, `older_than` |
 | `function.invoke_manual` | An administrator runs a function by hand ([admin API](../admin/)) | `as` (the user's **id**, never their email, or null) |
-| `files.versions.regenerate` | An administrator runs [`backd versions regenerate`](../../files/file-fields/#after-you-change-a-declaration) ([admin API](../admin/)) | `version`, `missing_only`, `job_id` |
+| `files.versions.regenerate` | An administrator runs [`backd files regenerate`](../../files/file-fields/#after-you-change-a-declaration) ([admin API](../admin/)) | `version`, `missing_only`, `job_id` |
 | `storage.reconcile` | An administrator runs [`backd storage reconcile`](../../files/maintenance/#reconciling) ([admin API](../admin/)) | `delete`, `orphans` (how many were found), `deleted` |
 | `storage.check` | An administrator runs a [storage check](../../files/storage/#checking-it) ([admin API](../admin/)); never the keys or anything stored | `ok`, `provider`, `bucket` |
 | `data.check` | An administrator starts a [schema check](../../configuration/validation/#finding-documents-that-no-longer-match) ([admin API](../admin/)); the target is `data:<database>/<collection>`, `data:<database>` or `data:*`; never the report | `collections`, `limit`, `job_id` |

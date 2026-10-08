@@ -427,7 +427,7 @@ type ImageJob struct {
 	// ones); the job's result carries the outcome for the function waiting on it.
 	Version string
 	Params  string
-	// Scan makes this a job over a whole field (backd versions regenerate): every file
+	// Scan makes this a job over a whole field (backd files regenerate): every file
 	// whose copies no longer match what the field declares is made again, for Version only
 	// when it is set. MissingOnly leaves the copies that exist alone. Rate is how many files
 	// a second at most (0 for the default). DocumentID and FileID are empty.

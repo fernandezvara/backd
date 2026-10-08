@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestFilesVersionsRegenerateStartsAndFollowsTheJob(t *testing.T) {
+func TestFilesRegenerateStartsAndFollowsTheJob(t *testing.T) {
 	var started map[string]any
 	var polls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -37,7 +37,7 @@ func TestFilesVersionsRegenerateStartsAndFollowsTheJob(t *testing.T) {
 	}))
 	defer srv.Close()
 	c := &cliEnv{t: t, env: map[string]string{"BACKD_CREDENTIALS": filepath.Join(t.TempDir(), "backd", "credentials"), "BACKD_API_KEY": "bdk_x"}}
-	base := []string{"versions", "regenerate", "--realm", "acme", "--url", srv.URL, "--database", "app", "--collection", "library", "--field", "picture", "--interval", "10ms"}
+	base := []string{"files", "regenerate", "--realm", "acme", "--url", srv.URL, "--database", "app", "--collection", "library", "--field", "picture", "--interval", "10ms"}
 
 	out := c.expect(0, "done", "", append(base, "--version", "thumb", "--missing-only", "--rate", "5")...)
 	_ = out
@@ -53,6 +53,6 @@ func TestFilesVersionsRegenerateStartsAndFollowsTheJob(t *testing.T) {
 	// --no-wait prints the job's id and leaves.
 	c.expect(0, "j1", "", append(base, "--no-wait")...)
 	// A regeneration already running is said plainly.
-	c.expect(1, "already running", "", "versions", "regenerate", "--realm", "acme", "--url", srv.URL, "--database", "app", "--collection", "library", "--field", "busy")
+	c.expect(1, "already running", "", "files", "regenerate", "--realm", "acme", "--url", srv.URL, "--database", "app", "--collection", "library", "--field", "busy")
 	c.expect(2, "--interval", "", append(base, "--interval", "soon")...)
 }

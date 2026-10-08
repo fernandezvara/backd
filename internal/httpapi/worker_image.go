@@ -65,7 +65,7 @@ func (d imageParamsDoc) params() imaging.Params {
 
 // runImage makes versions of one file: by default its pending versions; a job for one
 // version (a function asked) makes just that one, whatever its state, and ends with its
-// outcome for the function waiting on it. A scan job (backd versions regenerate)
+// outcome for the function waiting on it. A scan job (backd files regenerate)
 // goes through a whole field instead. The document is written without changing its
 // version, so a client editing it is never told it conflicts. Safe to repeat: a file
 // that is gone, or whose versions are no longer pending, ends the job at once.

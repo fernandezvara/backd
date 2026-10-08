@@ -311,10 +311,10 @@ func registerRemote(cfg *cli.Config) {
 		boolean(cc, "delete", "remove the unreferenced objects instead of only reporting them")
 		boolean(cc, "json", "print the report as JSON")
 	})
-	vers := cfg.Command("versions").ShortHelp("image versions of file fields")
-	vers.SubCommand("regenerate").ShortHelp("make again the versions that no longer match what a file field declares").
+	files := cfg.Command("files").ShortHelp("work on the image files documents hold")
+	files.SubCommand("regenerate").ShortHelp("make the image versions of a file field again when they no longer match its declaration").
 		LongHelp("Starts a job that goes through every document of a file field and makes again, on a worker, the image\nversions whose copies no longer match the field's `versions:` in collection.yaml: copies made with other\nparameters (after you changed the declaration), copies that failed or never finished, and versions added later\nthat a file has no copy of. Copies a function generated with its own parameters, versions only functions\nmake, and files that are not pictures are left alone. --missing-only makes only the copies that do not exist.\nThe job runs in the background (one per field at a time), makes at most --rate files a second, keeps serving\nthe old copy of a file until its new one is ready, and can be cancelled and resumed: running it again skips\nwhat matches already. This command follows its progress on stderr; --no-wait only starts it. Needs the config\narea with write access. Audited as files.versions.regenerate. " + adminAPINote).
-		Func(act("versions regenerate", filesVersionsRegenerate)).Config(func(cc *cli.CommandConfig) {
+		Func(act("files regenerate", filesRegenerate)).Config(func(cc *cli.CommandConfig) {
 		required(cc, "realm", "the realm")
 		required(cc, "database", "the file field's database")
 		required(cc, "collection", "the file field's collection")

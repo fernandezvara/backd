@@ -204,7 +204,7 @@ func (w *Worker) runRegenerate(ctx context.Context, log *slog.Logger, realm stri
 // CheckImageDeclarations looks, once at startup, for image versions whose declaration is
 // new or changed since a worker last saw it, and logs how many files are affected: the
 // copies made with other parameters, or no copy at all. It changes nothing but the
-// fingerprints it keeps: `backd versions regenerate` makes them again. A declaration
+// fingerprints it keeps: `backd files regenerate` makes them again. A declaration
 // that has not changed costs nothing; one that has makes one pass over its collection.
 func (w *Worker) CheckImageDeclarations(ctx context.Context) {
 	for _, realm := range w.reg.RealmNames() {
@@ -244,7 +244,7 @@ func (w *Worker) CheckImageDeclarations(ctx context.Context) {
 						attrs := []any{"realm", realm, "version", key, "files", affected}
 						switch {
 						case affected > 0:
-							w.log.Warn("image version "+what+": files need it made (backd versions regenerate --realm "+realm+" --database "+db+" --collection "+c.Name+" --field "+field+" --version "+v.Name+")", attrs...)
+							w.log.Warn("image version "+what+": files need it made (backd files regenerate --realm "+realm+" --database "+db+" --collection "+c.Name+" --field "+field+" --version "+v.Name+")", attrs...)
 						default:
 							w.log.Info("image version "+what+": no file needs it made", attrs...)
 						}
