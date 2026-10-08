@@ -208,6 +208,7 @@ services:
       dockerfile: deploy/production/app/Dockerfile
     # Shared with the worker job (below), so `up --build` updates it too.
     image: backd-app
+    command: ["serve"]
     environment:
       <<: *backd-environment
       # A public instance serves no admin API (docs: Production deployment ->
@@ -235,6 +236,7 @@ services:
   # the CLI's BACKD_URL points at it.
   backd-admin:
     image: backd-app
+    command: ["serve"]
     pull_policy: never
     environment:
       <<: *backd-environment

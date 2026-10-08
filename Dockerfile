@@ -25,3 +25,5 @@ FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/backd /backd
 EXPOSE 8080
 ENTRYPOINT ["/backd"]
+# `backd` without a command prints the help; the image serves unless told otherwise.
+CMD ["serve"]

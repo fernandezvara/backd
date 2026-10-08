@@ -49,6 +49,10 @@ func run(args []string, getenv func(string) string, stdin io.Reader, stdout, std
 	if len(args) == 1 && args[0] == "--version" {
 		args = []string{"version"}
 	}
+	if isGlobalHelp(args) {
+		fmt.Fprint(stdout, groupedHelp(getenv))
+		return 0
+	}
 	return execute(newCLI(getenv, stdin, stdout, stderr), args, stderr)
 }
 

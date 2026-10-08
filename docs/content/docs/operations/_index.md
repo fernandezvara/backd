@@ -133,6 +133,11 @@ blog__main.posts
 shop__orders.items
 ```
 
+### Upgrading to v0.9.0
+
+1. **`backd` without a command prints the help; it no longer serves.** Before, `backd` alone ran `serve`. Anything that starts the binary or the container image with no command must say `serve` now: a `command: ["serve"]` in a compose file, `args: ["serve"]` in Kubernetes, `docker run … backd serve`, `ExecStart=/usr/local/bin/backd serve`. The images now have `CMD ["serve"]`, so `docker run backd` and a container that overrides nothing still serve, but a service that sets its own `entrypoint` or runs the binary directly does not. The shipped compose files say it explicitly.
+2. **`backd files regenerate`** is new (see [File fields](../files/file-fields/#after-you-change-a-declaration)); `backd` and `backd help` show the commands grouped by who uses them.
+
 ### Upgrading to v0.8.0
 
 v0.8.0 adds [files](../files/), [schema checks](../configuration/validation/#finding-documents-that-no-longer-match), [`on_complete`](../functions/jobs/) and [job steps](../functions/jobs/), and more control over [schedules](../functions/cron/) (pausing, `timezone`, `overlap: skip`). Configuration that worked on v0.7.0 still loads, except for the one case in point 2; each new feature is off until you use it. What to check:

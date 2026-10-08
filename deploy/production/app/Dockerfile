@@ -37,3 +37,5 @@ ENV CONFIG_DIR=/config
 RUN ["/backd", "config", "check"]
 EXPOSE 8080 8081
 ENTRYPOINT ["/backd"]
+# `backd` without a command prints the help; the image serves unless told otherwise.
+CMD ["serve"]

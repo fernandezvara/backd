@@ -166,9 +166,11 @@ docker build -t backd .
 
 ## Commands
 
+`backd` on its own, `backd help` and `backd --help` print the commands grouped by who uses them (develop, session, administer a realm, server); `backd help <command>` and `backd <command> --help` show one command's options. Nothing starts without a command: a server is `backd serve`.
+
 | Command | Purpose |
 |---|---|
-| `backd serve` (default) | Load config, provision or verify MongoDB, serve HTTP |
+| `backd serve` | Load config, provision or verify MongoDB, serve HTTP |
 | `backd serve --with-worker` | Also run the worker role (below) in the same process |
 | `backd worker` | Claim and run [async jobs](../functions/jobs/) (`mode: async`); `WORKER_CONCURRENCY` caps how many run at once |
 | `backd provision` | Load config, apply provisioning once and exit |

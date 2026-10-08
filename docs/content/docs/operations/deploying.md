@@ -57,6 +57,7 @@ services:
       retries: 30
   backd:
     build: .
+    command: ["serve"]
     ports: ["127.0.0.1:8080:8080"]
     environment:
       MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
