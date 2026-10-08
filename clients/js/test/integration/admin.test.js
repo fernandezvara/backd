@@ -92,7 +92,14 @@ test('erasing a user applies the collections\' policies', { skip }, async () => 
   const doc = await keyed.db('app').collection('private').get(shared.id)
   assert.deepEqual(doc.members, ['someone@example.com'])
   assert.deepEqual((await admin.users.owned(ada.id)).user, { id: ada.id, status: 'erased' })
-  await assert.rejects(admin.users.delete(ada.id), (/** @type {any} */ e) => e.status === 409 && e.code === 'already_erased')
+  // Repeating the erase while its job is still finishing returns that job; once done it is a 409.
+  /** @type {any} */ let again
+  for (let i = 0; i < 100; i++) {
+    again = await admin.users.delete(ada.id).then(() => null, (/** @type {any} */ e) => e)
+    if (again) break
+    await new Promise((r) => setTimeout(r, 200))
+  }
+  assert.ok(again && again.status === 409 && again.code === 'already_erased', 'a finished erase can not be repeated')
 
   // The address is free for a new person.
   await client().auth.signup({ email: ada.email, password })
