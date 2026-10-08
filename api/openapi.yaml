@@ -645,6 +645,11 @@ paths:
     get:
       tags: [auth]
       summary: The signed-in user
+      description: |
+        The user, with their sign-in methods (`identities`): a password and any number of
+        external providers. Each says the address the provider reported (the password's is
+        the user's own), when it was linked and when it was last used (`null` before the
+        first use is recorded). The provider's subject, hashes and tokens are never shown.
       operationId: me
       security: [{ session: [] }]
       responses:
@@ -653,7 +658,7 @@ paths:
           headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/User" }
+              schema: { $ref: "#/components/schemas/Me" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         default: { $ref: "#/components/responses/Error" }
     patch:
@@ -772,6 +777,29 @@ paths:
         "204": { description: Session ended. }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/identities/{provider}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - name: provider
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[a-z][a-z0-9-]{0,31}$' }
+    delete:
+      tags: [auth]
+      summary: Remove one of the user's sign-in methods
+      description: |
+        Unlinks the user's sign-in method of that provider (`password` included). The last
+        one can't be removed (`409 last_sign_in_method`), so a user can't lock themselves
+        out. Audited as `identity.unlinked`.
+      operationId: unlinkIdentity
+      security: [{ session: [] }]
+      responses:
+        "204": { description: Sign-in method removed. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   # ── /_admin ───────────────────────────────────────────────────────────
@@ -4121,6 +4149,33 @@ components:
         roles: { type: array, items: { type: string } }
         locale: { type: string, description: "The user's language: one the realm lists (`email.locales`; English only without email). Used for the emails they get." }
         created_at: { $ref: "#/components/schemas/Timestamp" }
+
+    Me:
+      type: object
+      additionalProperties: false
+      required: [id, email, email_verified, roles, locale, created_at, identities]
+      properties:
+        id: { type: string }
+        email: { type: string }
+        email_verified: { type: boolean }
+        roles: { type: array, items: { type: string } }
+        locale: { type: string, description: "The user's language: one the realm lists (`email.locales`; English only without email). Used for the emails they get." }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        identities:
+          type: array
+          description: The user's sign-in methods, oldest first.
+          items: { $ref: "#/components/schemas/Identity" }
+
+    Identity:
+      type: object
+      additionalProperties: false
+      required: [provider, email, email_verified, created_at, last_used_at]
+      properties:
+        provider: { type: string, description: "`password`, `google`, `microsoft`, `apple` or the name of a configured provider." }
+        email: { type: string, description: "The address the provider reported at the last sign-in; for `password`, the user's own." }
+        email_verified: { type: boolean }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        last_used_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
 
     AdminUser:
       type: object

@@ -108,14 +108,22 @@ var systemCollections = []systemCollection{
 		validator: jsonSchema([]string{"_id", "user_id", "provider", "subject", "created_at", "updated_at"}, map[string]any{
 			"_id":           str(),
 			"user_id":       str(),
-			"provider":      map[string]any{"enum": bson.A{"password"}},
+			"provider":      map[string]any{"bsonType": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$"},
 			"subject":       str(),
 			"password_hash": str(),
-			"created_at":    typ("date"),
-			"updated_at":    typ("date"),
+			// What an external provider reported (never for a password), and the
+			// last sign-in; an Apple identity also holds its encrypted refresh token.
+			"email":               str(),
+			"email_verified":      typ("bool"),
+			"last_used_at":        typ("date"),
+			"apple_refresh_token": str(),
+			"created_at":          typ("date"),
+			"updated_at":          typ("date"),
 		}),
 		indexes: []systemIndex{
 			{keys: bson.D{{Key: "provider", Value: 1}, {Key: "subject", Value: 1}}, unique: true},
+			// One identity per provider per user.
+			{keys: bson.D{{Key: "user_id", Value: 1}, {Key: "provider", Value: 1}}, unique: true},
 			{keys: bson.D{{Key: "user_id", Value: 1}}},
 		},
 	},

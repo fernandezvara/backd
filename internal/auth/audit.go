@@ -39,6 +39,10 @@ const (
 	AuditAdminLogin      = "admin.login"   // login of a user holding an admin role
 	AuditAdminRefused    = "admin.refused" // details: reason
 	AuditBootstrap       = "realm.bootstrap"
+	// Sign-in methods; the target is the user, details: provider, and by
+	// (self or admin) for an unlink.
+	AuditIdentityLinked   = "identity.linked"
+	AuditIdentityUnlinked = "identity.unlinked"
 	// The admin data route (documents written past the collections' rules);
 	// the target is database/collection/id, never content.
 	AuditDataCreate  = "data.create"

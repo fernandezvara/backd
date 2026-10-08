@@ -47,6 +47,7 @@ func (a *authAPI) routes(r chi.Router) {
 			r.With(json).Delete("/me", a.deleteMe)
 			r.With(json).Post("/password", a.changePassword)
 			r.With(json).Post("/email", a.changeEmail)
+			r.Delete("/identities/{provider}", a.unlinkIdentity)
 			r.Get("/sessions", a.sessions)
 			r.Delete("/sessions/{id}", a.revokeSession)
 		})
@@ -210,7 +211,15 @@ func (a *authAPI) logoutAll(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *authAPI) me(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, userJSON(principalOf(r).User, usersOf(r).LocaleOf(principalOf(r).User)))
+	u := principalOf(r).User
+	out := userJSON(u, usersOf(r).LocaleOf(u))
+	ids, err := usersOf(r).Identities(r.Context(), u.ID)
+	if err != nil {
+		authError(w, r, err)
+		return
+	}
+	out["identities"] = identitiesJSON(u, ids)
+	writeJSON(w, http.StatusOK, out)
 }
 
 // updateMe handles PATCH /_auth/me: the user changes their own settings.

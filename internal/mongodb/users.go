@@ -62,13 +62,25 @@ func networks(stored []string) registry.Networks {
 }
 
 type identityDoc struct {
-	ID           string    `bson:"_id"`
-	UserID       string    `bson:"user_id"`
-	Provider     string    `bson:"provider"`
-	Subject      string    `bson:"subject"`
-	PasswordHash string    `bson:"password_hash,omitempty"`
-	CreatedAt    time.Time `bson:"created_at"`
-	UpdatedAt    time.Time `bson:"updated_at"`
+	ID           string `bson:"_id"`
+	UserID       string `bson:"user_id"`
+	Provider     string `bson:"provider"`
+	Subject      string `bson:"subject"`
+	PasswordHash string `bson:"password_hash,omitempty"`
+	// What an external provider last reported, and the last sign-in.
+	Email         string    `bson:"email,omitempty"`
+	EmailVerified bool      `bson:"email_verified,omitempty"`
+	LastUsedAt    time.Time `bson:"last_used_at,omitempty"`
+	CreatedAt     time.Time `bson:"created_at"`
+	UpdatedAt     time.Time `bson:"updated_at"`
+}
+
+func (d identityDoc) identity() auth.Identity {
+	return auth.Identity{
+		ID: d.ID, UserID: d.UserID, Provider: d.Provider, Subject: d.Subject, PasswordHash: d.PasswordHash,
+		Email: d.Email, EmailVerified: d.EmailVerified, LastUsedAt: d.LastUsedAt.UTC(),
+		CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC(),
+	}
 }
 
 func (s *AuthStore) users() *mongo.Collection      { return s.db.Collection(UsersCollection) }
@@ -303,19 +315,86 @@ func (s *AuthStore) DeleteUser(ctx context.Context, id string) error {
 }
 
 func (s *AuthStore) PutIdentity(ctx context.Context, id auth.Identity) error {
-	filter := bson.D{{Key: "provider", Value: id.Provider}, {Key: "subject", Value: id.Subject}}
+	// The user is part of the filter: a provider account that belongs to someone else
+	// is not updated but refused (the insert hits the unique index).
+	filter := bson.D{{Key: "provider", Value: id.Provider}, {Key: "subject", Value: id.Subject}, {Key: "user_id", Value: id.UserID}}
 	set := bson.D{{Key: "updated_at", Value: id.UpdatedAt}}
 	if id.PasswordHash != "" {
 		set = append(set, bson.E{Key: "password_hash", Value: id.PasswordHash})
 	}
-	update := bson.D{
-		{Key: "$set", Value: set},
-		{Key: "$setOnInsert", Value: bson.D{
-			{Key: "_id", Value: id.ID}, {Key: "user_id", Value: id.UserID}, {Key: "created_at", Value: id.CreatedAt},
-		}},
+	setOnInsert := bson.D{{Key: "_id", Value: id.ID}, {Key: "user_id", Value: id.UserID}, {Key: "created_at", Value: id.CreatedAt}}
+	if id.Email != "" {
+		set = append(set, bson.E{Key: "email", Value: id.Email})
 	}
+	if id.Provider != auth.ProviderPassword {
+		set = append(set, bson.E{Key: "email_verified", Value: id.EmailVerified})
+	}
+	update := bson.D{{Key: "$set", Value: set}, {Key: "$setOnInsert", Value: setOnInsert}}
 	_, err := s.identities().UpdateOne(ctx, filter, update, options.UpdateOne().SetUpsert(true))
+	if mongo.IsDuplicateKeyError(err) {
+		return auth.ErrIdentityExists
+	}
 	return err
+}
+
+func (s *AuthStore) ListIdentities(ctx context.Context, userID string) ([]auth.Identity, error) {
+	cur, err := s.identities().Find(ctx, bson.D{{Key: "user_id", Value: userID}}, options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}, {Key: "_id", Value: 1}}))
+	if err != nil {
+		return nil, err
+	}
+	var docs []identityDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	out := make([]auth.Identity, len(docs))
+	for i, d := range docs {
+		out[i] = d.identity()
+	}
+	return out, nil
+}
+
+func (s *AuthStore) IdentityOf(ctx context.Context, userID, provider string) (auth.Identity, error) {
+	var d identityDoc
+	err := s.identities().FindOne(ctx, bson.D{{Key: "user_id", Value: userID}, {Key: "provider", Value: provider}}).Decode(&d)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return auth.Identity{}, auth.ErrNotFound
+	}
+	if err != nil {
+		return auth.Identity{}, err
+	}
+	return d.identity(), nil
+}
+
+func (s *AuthStore) UpdateIdentity(ctx context.Context, id string, upd auth.IdentityUpdate, now time.Time) error {
+	set := bson.D{{Key: "updated_at", Value: now}}
+	if upd.Email != nil {
+		set = append(set, bson.E{Key: "email", Value: *upd.Email})
+	}
+	if upd.EmailVerified != nil {
+		set = append(set, bson.E{Key: "email_verified", Value: *upd.EmailVerified})
+	}
+	if upd.LastUsedAt != nil {
+		set = append(set, bson.E{Key: "last_used_at", Value: *upd.LastUsedAt})
+	}
+	res, err := s.identities().UpdateByID(ctx, id, bson.D{{Key: "$set", Value: set}})
+	if err != nil {
+		return err
+	}
+	if res.MatchedCount == 0 {
+		return auth.ErrNotFound
+	}
+	return nil
+}
+
+func (s *AuthStore) DeleteIdentity(ctx context.Context, userID, provider string) error {
+	res, err := s.identities().DeleteOne(ctx, bson.D{{Key: "user_id", Value: userID}, {Key: "provider", Value: provider}})
+	if err != nil {
+		return err
+	}
+	if res.DeletedCount == 0 {
+		return auth.ErrNotFound
+	}
+	return nil
 }
 
 func (s *AuthStore) Identity(ctx context.Context, provider, subject string) (auth.Identity, error) {
@@ -327,10 +406,7 @@ func (s *AuthStore) Identity(ctx context.Context, provider, subject string) (aut
 	if err != nil {
 		return auth.Identity{}, err
 	}
-	return auth.Identity{
-		ID: d.ID, UserID: d.UserID, Provider: d.Provider, Subject: d.Subject, PasswordHash: d.PasswordHash,
-		CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC(),
-	}, nil
+	return d.identity(), nil
 }
 
 func (s *AuthStore) DeleteSessions(ctx context.Context, userID string) (int64, error) {

@@ -260,12 +260,79 @@ func (m *MemStore) PutIdentity(_ context.Context, id auth.Identity) error {
 	}
 	k := id.Provider + "/" + id.Subject
 	if cur, ok := m.identities[k]; ok {
+		if cur.UserID != id.UserID {
+			return auth.ErrIdentityExists
+		}
 		cur.PasswordHash, cur.UpdatedAt = id.PasswordHash, id.UpdatedAt
 		m.identities[k] = cur
 		return nil
 	}
+	for _, other := range m.identities {
+		if other.UserID == id.UserID && other.Provider == id.Provider {
+			return auth.ErrIdentityExists
+		}
+	}
 	m.identities[k] = id
 	return nil
+}
+
+func (m *MemStore) ListIdentities(_ context.Context, userID string) ([]auth.Identity, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []auth.Identity
+	for _, i := range m.identities {
+		if i.UserID == userID {
+			out = append(out, i)
+		}
+	}
+	sort.SliceStable(out, func(a, b int) bool { return out[a].CreatedAt.Before(out[b].CreatedAt) })
+	return out, nil
+}
+
+func (m *MemStore) IdentityOf(_ context.Context, userID, provider string) (auth.Identity, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, i := range m.identities {
+		if i.UserID == userID && i.Provider == provider {
+			return i, nil
+		}
+	}
+	return auth.Identity{}, auth.ErrNotFound
+}
+
+func (m *MemStore) UpdateIdentity(_ context.Context, id string, upd auth.IdentityUpdate, now time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for k, i := range m.identities {
+		if i.ID != id {
+			continue
+		}
+		if upd.Email != nil {
+			i.Email = *upd.Email
+		}
+		if upd.EmailVerified != nil {
+			i.EmailVerified = *upd.EmailVerified
+		}
+		if upd.LastUsedAt != nil {
+			i.LastUsedAt = *upd.LastUsedAt
+		}
+		i.UpdatedAt = now
+		m.identities[k] = i
+		return nil
+	}
+	return auth.ErrNotFound
+}
+
+func (m *MemStore) DeleteIdentity(_ context.Context, userID, provider string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for k, i := range m.identities {
+		if i.UserID == userID && i.Provider == provider {
+			delete(m.identities, k)
+			return nil
+		}
+	}
+	return auth.ErrNotFound
 }
 
 func (m *MemStore) Identity(_ context.Context, provider, subject string) (auth.Identity, error) {

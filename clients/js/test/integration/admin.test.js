@@ -80,19 +80,21 @@ test('erasing a user applies the collections\' policies', { skip }, async () => 
   await assert.rejects(admin.users.update(ada.id, { disabled: false }), (/** @type {any} */ e) => e.status === 409 && e.code === 'user_erased')
   await assert.rejects(ada.c.auth.me(), AuthenticationError)
 
-  // A worker applies the policies: her posts are deleted (action: delete), and she is out of the shared document.
+  // A worker applies the policies: her posts are deleted (action: delete), and she is out of the shared
+  // document. The erase is over when the job is done, and only then is repeating it a 409.
   const keyed = client({ apiKey })
-  /** @type {any} */ let left
-  for (let i = 0; i < 100; i++) {
-    left = await keyed.db('app').collection('posts').list({ where: { '_meta.owner': ada.id }, limit: 10 })
-    if (left.items.length === 0) break
+  /** @type {any} */ let again
+  for (let i = 0; i < 150; i++) {
+    again = await admin.users.delete(ada.id).then(() => null, (/** @type {any} */ e) => e)
+    if (again) break
     await new Promise((r) => setTimeout(r, 200))
   }
+  assert.ok(again && again.status === 409 && again.code === 'already_erased', 'the erase should finish')
+  const left = await keyed.db('app').collection('posts').list({ where: { '_meta.owner': ada.id }, limit: 10 })
   assert.equal(left.items.length, 0, 'her posts should be deleted')
   const doc = await keyed.db('app').collection('private').get(shared.id)
   assert.deepEqual(doc.members, ['someone@example.com'])
   assert.deepEqual((await admin.users.owned(ada.id)).user, { id: ada.id, status: 'erased' })
-  await assert.rejects(admin.users.delete(ada.id), (/** @type {any} */ e) => e.status === 409 && e.code === 'already_erased')
 
   // The address is free for a new person.
   await client().auth.signup({ email: ada.email, password })

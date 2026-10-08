@@ -221,6 +221,15 @@ test('updateMe changes the language, and an unlisted one is a validation error',
   await assert.rejects(() => c.auth.updateMe({ locale: 'fr' }), (/** @type {any} */ e) => e.code === 'invalid_locale' && e.status === 400 && e.details[0].path === 'locale')
 })
 
+test('me carries the sign-in methods', async () => {
+  const identities = [{ provider: 'password', email: 'ada@example.com', email_verified: true, created_at: 'x', last_used_at: null }]
+  const m = mockFetch([{ status: 200, body: { ...user, identities } }])
+  const { c } = clientWith(m)
+  const me = await c.auth.me()
+  assert.equal(me.identities[0].provider, 'password')
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_auth/me')
+})
+
 test('the email flows send their bodies without a session and answer nothing', async () => {
   const m = mockFetch([{ status: 202, body: { status: 'accepted' } }, { status: 204 }, { status: 202, body: { status: 'accepted' } }, { status: 204 }, { status: 204 }, { status: 204 }, { status: 204 }])
   const { c, events } = clientWith(m)
