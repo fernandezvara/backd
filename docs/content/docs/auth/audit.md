@@ -34,7 +34,9 @@ Each realm with `auth: enabled` keeps an **audit trail**: one record per securit
 | `user.delete_account` | A user deletes their own account (it is deactivated, not erased) | |
 | `user.networks` | A user's [network restrictions](../../configuration/realm/#network-restrictions) change, through the API or from `realm.yaml` | `admin_networks`, `login_networks` |
 | `identity.apple_revoked` | Apple revoked a user's tokens after their account was erased or deleted, or Apple was unlinked | |
+| `identity.linked` | A provider account is linked to a user, automatically or by the user; also when a provider sign-up creates the user | `provider` |
 | `identity.unlinked` | A user (or an administrator) removes a sign-in method | `provider`, `by` (`self` or `admin`) |
+| `identity.signin_refused` | A provider sign-in for an account that can't sign in (the app is only told `signin_refused`) | `provider`, `reason` (`disabled`, `network`, `erased`, …) |
 | `role.add`, `role.remove` | A role is assigned or taken away, through the API or from `realm.yaml` seeds | `role` |
 | `apikey.create`, `apikey.revoke` | An API key is created or revoked | `role`, `networks`, `expires_at` |
 | `invitation.create`, `invitation.revoke` | An invitation is created or revoked | `bound_to_email` (whether it is), `expires_at` |

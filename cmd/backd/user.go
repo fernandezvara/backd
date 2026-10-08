@@ -451,3 +451,47 @@ func readSecret(uio userIO, confirm bool) (string, error) {
 	}
 	return strings.TrimRight(line, "\r\n"), nil
 }
+
+// userIdentities lists the user's sign-in methods.
+func userIdentities(c *userCtx) error {
+	u, err := c.find()
+	if err != nil {
+		return err
+	}
+	var out struct {
+		Items []struct {
+			Provider      string  `json:"provider"`
+			Email         string  `json:"email"`
+			EmailVerified bool    `json:"email_verified"`
+			CreatedAt     string  `json:"created_at"`
+			LastUsedAt    *string `json:"last_used_at"`
+		} `json:"items"`
+	}
+	if err := c.t.call("GET", "_admin/users/"+url.PathEscape(u.ID)+"/identities", nil, nil, &out); err != nil {
+		return err
+	}
+	w := tabwriter.NewWriter(c.uio.stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(w, "PROVIDER\tEMAIL\tVERIFIED\tLINKED\tLAST USED")
+	for _, i := range out.Items {
+		last := "-"
+		if i.LastUsedAt != nil {
+			last = *i.LastUsedAt
+		}
+		fmt.Fprintf(w, "%s\t%s\t%t\t%s\t%s\n", i.Provider, i.Email, i.EmailVerified, i.CreatedAt, last)
+	}
+	return w.Flush()
+}
+
+// userUnlinkIdentity removes one of the user's sign-in methods.
+func userUnlinkIdentity(c *userCtx) error {
+	provider := str(c.cmd, "provider")
+	u, err := c.find()
+	if err != nil {
+		return err
+	}
+	if err := c.t.call("DELETE", "_admin/users/"+url.PathEscape(u.ID)+"/identities/"+url.PathEscape(provider), nil, nil, nil); err != nil {
+		return err
+	}
+	fmt.Fprintf(c.uio.stdout, "%s can no longer sign in with %s\n", u.Email, provider)
+	return nil
+}

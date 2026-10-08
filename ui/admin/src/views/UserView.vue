@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AdminUser, OwnedReport, UserSession } from 'backd-js'
+import type { AdminUser, Identity, OwnedReport, UserSession } from 'backd-js'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -108,6 +108,35 @@ async function addRole() {
 }
 const removeRole = (role: string) => act(() => admin.users.removeRole(props.id, role), t('user.roles.removed', { role }))
 
+// Sign-in methods
+const identities = ref<Identity[]>([])
+const identitiesError = ref('')
+async function loadIdentities() {
+  identitiesError.value = ''
+  try {
+    identities.value = await admin.users.identities(props.id)
+  } catch (e) {
+    identitiesError.value = errorText(e, t('user.identities.loadFailed'))
+  }
+}
+const unlinkOpen = ref(false)
+const unlinking = ref('') // the provider being asked about; kept after the dialog closes, for the confirmation
+function askUnlink(provider: string) {
+  unlinking.value = provider
+  unlinkOpen.value = true
+}
+async function unlink() {
+  const provider = unlinking.value
+  try {
+    await admin.users.unlinkIdentity(props.id, provider)
+    toasts.push(t('user.identities.unlinked', { provider }))
+    await loadIdentities()
+  } catch (e) {
+    // The server's refusal (the last way in can't go) is shown as is.
+    toasts.push(errorText(e, t('common.unexpected')), 'error')
+  }
+}
+
 // Sessions
 const sessions = ref<UserSession[]>([])
 const sessionsError = ref('')
@@ -162,7 +191,7 @@ const statusText = computed(() => (erased.value ? t('users.erased') : user.value
 
 onMounted(async () => {
   await load()
-  if (user.value && !erased.value) await Promise.all([loadSessions(), realmConfig.load()])
+  if (user.value && !erased.value) await Promise.all([loadSessions(), loadIdentities(), realmConfig.load()])
 })
 </script>
 
@@ -236,6 +265,35 @@ onMounted(async () => {
         </dl>
       </section>
 
+      <section class="mt-8" aria-labelledby="identities-h">
+        <h2 id="identities-h" class="text-lg font-semibold">{{ t('user.identities.title') }}</h2>
+        <AppAlert v-if="identitiesError" kind="error" class="mt-2">{{ identitiesError }}</AppAlert>
+        <div v-else class="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+          <table class="w-full text-left text-sm" data-testid="user-identities">
+            <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
+              <tr>
+                <th scope="col" class="px-3 py-2">{{ t('user.identities.provider') }}</th>
+                <th scope="col" class="px-3 py-2">{{ t('user.identities.email') }}</th>
+                <th scope="col" class="px-3 py-2">{{ t('user.identities.linked') }}</th>
+                <th scope="col" class="px-3 py-2">{{ t('user.identities.lastUsed') }}</th>
+                <th v-if="canWrite" scope="col" class="px-3 py-2"><span class="sr-only">{{ t('user.identities.unlink') }}</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="i in identities" :key="i.provider" class="border-b border-slate-100 last:border-0 dark:border-slate-800">
+                <td class="px-3 py-2 font-mono text-xs">{{ i.provider }}</td>
+                <td class="px-3 py-2">{{ i.email }} <span class="text-xs text-slate-600 dark:text-slate-400">({{ i.email_verified ? t('user.identities.verified') : t('user.identities.unverified') }})</span></td>
+                <td class="px-3 py-2">{{ formatDate(i.created_at) }}</td>
+                <td class="px-3 py-2">{{ i.last_used_at ? formatDate(i.last_used_at) : t('user.identities.never') }}</td>
+                <td v-if="canWrite" class="px-3 py-2 text-right">
+                  <button type="button" class="underline" @click="askUnlink(i.provider)">{{ t('user.identities.unlink') }}</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section class="mt-8" aria-labelledby="sessions-h">
         <h2 id="sessions-h" class="text-lg font-semibold">{{ t('user.sessions.title') }}</h2>
         <AppAlert v-if="sessionsError" kind="error" class="mt-2">{{ sessionsError }}</AppAlert>
@@ -272,6 +330,7 @@ onMounted(async () => {
       <TextField v-model="email.value.value" type="email" :label="t('user.email.label')" :help="t('user.email.help')" autocomplete="off" required />
     </FormDialog>
 
+    <ConfirmDialog v-model:open="unlinkOpen" :title="t('user.identities.unlinkTitle', { provider: unlinking })" :description="t('user.identities.unlinkBody')" :expected="unlinking" :action="t('user.identities.unlink')" @confirm="unlink" />
     <ConfirmDialog v-model:open="erasing" :title="t('user.erase.title', { email: user.email })" :description="t('user.erase.body')" :expected="user.email" :action="t('user.erase.action')" :busy="erasingBusy" @confirm="erase">
       <AppAlert v-if="reportError" kind="error">{{ reportError }}</AppAlert>
       <p v-else-if="!report" class="text-sm" role="status">{{ t('user.erase.loadingReport') }}</p>

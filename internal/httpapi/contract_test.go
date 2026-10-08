@@ -801,6 +801,24 @@ func TestContract(t *testing.T) {
 	req("DELETE", ad+"/users/"+temp.ID+"/sessions/x", "", nil, 401)
 	req("DELETE", ad+"/users/"+temp.ID+"/sessions/x", "", ada, 403)
 	req("DELETE", ad+"/users/"+temp.ID+"/sessions/"+sessList["items"].([]any)[0].(map[string]any)["id"].(string), "", key, 204)
+	// The user's sign-in methods.
+	idents := req("GET", ad+"/users/"+temp.ID+"/identities", "", key, 200)
+	if items, _ := idents["items"].([]any); len(items) != 1 || items[0].(map[string]any)["provider"] != "password" {
+		t.Errorf("identities of a password user: %v", idents)
+	}
+	req("GET", ad+"/users/"+temp.ID+"/identities", "", nil, 401)
+	req("GET", ad+"/users/"+temp.ID+"/identities", "", ada, 403)
+	req("GET", ad+"/users/nope/identities", "", key, 404)
+	req("DELETE", ad+"/users/"+temp.ID+"/identities/password", "", key, 409)
+	req("DELETE", ad+"/users/"+temp.ID+"/identities/google", "", key, 404)
+	req("DELETE", ad+"/users/"+temp.ID+"/identities/google", "", nil, 401)
+	req("DELETE", ad+"/users/"+temp.ID+"/identities/google", "", ada, 403)
+	req("DELETE", ad+"/users/nope/identities/google", "", key, 404)
+	now := time.Now()
+	if err := f.svc.Store.PutIdentity(context.Background(), auth.Identity{ID: "idn-admin", UserID: temp.ID, Provider: "google", Subject: "g-admin", Email: "g@example.com", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	req("DELETE", ad+"/users/"+temp.ID+"/identities/google", "", key, 204)
 	req("GET", ad+"/whoami", "", key, 200)
 	req("GET", ad+"/whoami", "", nil, 401)
 	req("GET", ad+"/whoami", "", ada, 403)
