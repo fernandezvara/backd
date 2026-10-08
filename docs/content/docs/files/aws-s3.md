@@ -22,6 +22,7 @@ storage:
 | Addressing | virtual-hosted (`<bucket>.s3.<region>.amazonaws.com`) |
 | Signed SHA-256 (direct uploads) | supported |
 | Largest single PUT | 5 GiB |
+| Multipart uploads (files above 5 GiB) | supported, with a SHA-256 per part |
 | `backd storage check` reads | CORS and default encryption |
 
 ## Setting it up

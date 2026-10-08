@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"io"
@@ -348,5 +349,116 @@ func TestPresignedPutIsVerifiedByMinIO(t *testing.T) {
 	info, err := o.Head(ctx, key)
 	if err != nil || info.SHA256 != sumHex || info.Size != int64(len(body)) || info.ContentType != "text/plain" {
 		t.Errorf("head: %+v %v", info, err)
+	}
+}
+
+// A multipart upload the way a browser does it: each part to its own signed link with its
+// SHA-256, then complete, then the composite checksum is the one computed from the parts'.
+func TestMultipartOnMinIO(t *testing.T) {
+	o := minioObjects(t)
+	ctx := context.Background()
+	key := o.Key("acme", "app", "notes", "fl_multi")
+	t.Cleanup(func() { _ = o.Delete(ctx, key) })
+
+	parts := [][]byte{bytes.Repeat([]byte{'a'}, 5<<20), bytes.Repeat([]byte{'b'}, 5<<20), []byte("the last part is small")}
+	var sums []string
+	for _, p := range parts {
+		s := sha256.Sum256(p)
+		sums = append(sums, hex.EncodeToString(s[:]))
+	}
+	id, err := o.CreateMultipart(ctx, key, "application/octet-stream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	put := func(n int, data []byte, sum string) (*http.Response, error) {
+		l, err := o.PresignUploadPart(ctx, key, id, int32(n), time.Minute, int64(len(data)), sum)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req, _ := http.NewRequest(http.MethodPut, l.URL, bytes.NewReader(data))
+		for k, v := range l.Headers {
+			req.Header.Set(k, v)
+		}
+		return http.DefaultClient.Do(req)
+	}
+
+	// A part that is not what was signed is rejected by the storage.
+	if resp, err := put(1, []byte("something else, same declared digest"), sums[0]); err != nil || resp.StatusCode < 400 {
+		t.Fatalf("a part that differs from its signed SHA-256: %v %v", resp, err)
+	}
+	if _, err := o.ListParts(ctx, key, id); err != nil {
+		t.Fatal(err)
+	}
+	for i, p := range parts {
+		resp, err := put(i+1, p, sums[i])
+		if err != nil || resp.StatusCode != 200 {
+			t.Fatalf("part %d: %v %v", i+1, resp, err)
+		}
+	}
+	got, err := o.ListParts(ctx, key, id)
+	if err != nil || len(got) != 3 {
+		t.Fatalf("ListParts = %+v, %v", got, err)
+	}
+	for i, p := range got {
+		if p.Number != int32(i+1) || p.Size != int64(len(parts[i])) || p.SHA256 != sums[i] || p.ETag == "" {
+			t.Errorf("part %d: %+v", i+1, p)
+		}
+	}
+	if err := o.CompleteMultipart(ctx, key, id, got); err != nil {
+		t.Fatal(err)
+	}
+	info, err := o.Head(ctx, key)
+	if err != nil || info.Size != int64(5<<20*2+len(parts[2])) {
+		t.Fatalf("Head = %+v, %v", info, err)
+	}
+	if !IsCompositeOf(info.Checksum, sums) {
+		want, _, _ := CompositeSHA256(sums)
+		t.Errorf("composite checksum %q, want %q", info.Checksum, want)
+	}
+	// The upload is over: it can be listed no more, and aborting it is not an error.
+	if _, err := o.ListParts(ctx, key, id); !errors.Is(err, ErrNoSuchUpload) {
+		t.Errorf("ListParts after completing: %v", err)
+	}
+	if err := o.AbortMultipart(ctx, key, id); err != nil {
+		t.Errorf("abort of a finished upload: %v", err)
+	}
+
+	// An abandoned one is aborted, parts and all.
+	id2, err := o.CreateMultipart(ctx, key+"-b", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp, err := func() (*http.Response, error) {
+		l, _ := o.PresignUploadPart(ctx, key+"-b", id2, 1, time.Minute, int64(len(parts[2])), sums[2])
+		req, _ := http.NewRequest(http.MethodPut, l.URL, bytes.NewReader(parts[2]))
+		for k, v := range l.Headers {
+			req.Header.Set(k, v)
+		}
+		return http.DefaultClient.Do(req)
+	}(); err != nil || resp.StatusCode != 200 {
+		t.Fatalf("part of the second upload: %v %v", resp, err)
+	}
+	if err := o.AbortMultipart(ctx, key+"-b", id2); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := o.ListParts(ctx, key+"-b", id2); !errors.Is(err, ErrNoSuchUpload) {
+		t.Errorf("ListParts after aborting: %v", err)
+	}
+}
+
+func TestCompositeSHA256(t *testing.T) {
+	a := sha256.Sum256([]byte("a"))
+	b := sha256.Sum256([]byte("b"))
+	sums := []string{hex.EncodeToString(a[:]), hex.EncodeToString(b[:])}
+	reported, hexDigest, err := CompositeSHA256(sums)
+	joined := sha256.Sum256(append(a[:], b[:]...))
+	if err != nil || hexDigest != hex.EncodeToString(joined[:]) || reported != base64.StdEncoding.EncodeToString(joined[:])+"-2" {
+		t.Errorf("composite = %q %q %v", reported, hexDigest, err)
+	}
+	if !IsCompositeOf(reported, sums) || IsCompositeOf(reported, sums[:1]) || IsCompositeOf("nope", sums) {
+		t.Error("IsCompositeOf")
+	}
+	if _, _, err := CompositeSHA256([]string{"abc"}); err == nil {
+		t.Error("a digest that is not 64 hex characters was accepted")
 	}
 }

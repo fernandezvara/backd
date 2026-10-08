@@ -91,10 +91,15 @@ func (d *documents) fileFieldInfo(w http.ResponseWriter, r *http.Request) {
 		maxSize = min(maxSize, d.maxUpload)
 	}
 	w.Header().Set("Cache-Control", "private, max-age=60")
-	writeJSON(w, http.StatusOK, map[string]any{
+	info := map[string]any{
 		"name": f.Name, "upload": f.Upload, "download": downloadMode(f, st), "multiple": f.Multiple,
 		"max_files": maxFiles, "max_size": maxSize, "types": orStrings(f.Types),
-	})
+	}
+	// Above this size a direct upload is sent in parts.
+	if above := multipartThreshold(st.ProviderEntry()); f.Upload == registry.UploadDirect && above > 0 && f.MaxSize > above {
+		info["multipart_above"] = above
+	}
+	writeJSON(w, http.StatusOK, info)
 }
 
 // objectsFor returns the realm's storage connection or answers for it: 503

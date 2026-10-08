@@ -555,6 +555,10 @@ func (w *Worker) FilesDue(ctx context.Context) {
 					continue
 				}
 			}
+			// A multipart upload keeps its uploaded parts, and bills them, until it is aborted.
+			if e.MultipartID != "" && !w.abortMultipart(ctx, realm, e) {
+				continue
+			}
 			if err := svc.QueueFileDeletion(ctx, e.Key, "abandoned"); err != nil {
 				w.log.Error("queue an abandoned upload's object", "realm", realm, "file", e.ID, "error", err)
 				continue
@@ -589,6 +593,20 @@ func (w *Worker) FilesDue(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// abortMultipart aborts the multipart upload an abandoned entry started. It reports false
+// when that couldn't be done now, to try again on the next run.
+func (w *Worker) abortMultipart(ctx context.Context, realm string, e auth.FileJournalEntry) bool {
+	obj, err := w.fns.docs.objects.For(ctx, realm)
+	if err == nil {
+		err = obj.AbortMultipart(ctx, e.Key, e.MultipartID)
+	}
+	if err != nil {
+		w.log.Warn("abort an abandoned multipart upload failed; it will be tried again", "realm", realm, "file", e.ID, "error", err)
+		return false
+	}
+	return true
 }
 
 // fileReferenced returns the file's details, and the document's owner, when the document

@@ -98,7 +98,7 @@ func TestFileFieldErrors(t *testing.T) {
 		{"max_files range", "files:\n  a: {max_size: 1MB, multiple: true, max_files: 0}\n", "max_files: must be between 1 and 1000"},
 		{"type", "files:\n  a: {max_size: 1MB, types: [png]}\n", "must be a content type"},
 		{"upload mode", "files:\n  a: {max_size: 1MB, upload: ftp}\n", "upload: must be proxy or direct"},
-		{"direct over one PUT", "files:\n  a: {max_size: 6GiB, upload: direct}\n", "at most 5GiB"},
+		{"direct over everything", "files:\n  a: {max_size: 5TiB, upload: direct}\n", "at most 4TiB"},
 		{"download", "files:\n  a: {max_size: 1MB, download: cdn}\n", "download: must be presigned or proxy"},
 		{"ttl", "files:\n  a: {max_size: 1MB, presigned_ttl: 8d}\n", "presigned_ttl: must be between"},
 		{"cache without proxy", "files:\n  a: {max_size: 1MB, cache: 1h}\n", "cache: only applies to proxied downloads"},
@@ -129,7 +129,7 @@ func TestFileFieldErrors(t *testing.T) {
 func TestFunctionsCantDeclareTheStorageSecrets(t *testing.T) {
 	for _, name := range []string{"realm.STORAGE_SECRET_KEY", "realm.STORAGE_ACCESS_KEY", "realm.BACKD_FILES_LINK_KEY"} {
 		_, err := Load(writeTree(t, map[string]string{
-			"shop/realm.yaml":                     "auth: enabled\nstorage:\n  provider: minio\n  endpoint: https://minio.internal:9000\n  bucket: b\n  prefix: p\n  access_key: secret:STORAGE_ACCESS_KEY\n  secret_key: secret:STORAGE_SECRET_KEY\n",
+			"shop/realm.yaml":                     "auth: enabled\nstorage:\n  provider: minio\n  endpoint: https://minio.internal:9000\n  bucket: tests-backd\n  prefix: p\n  access_key: secret:STORAGE_ACCESS_KEY\n  secret_key: secret:STORAGE_SECRET_KEY\n",
 			"shop/app/_functions/f/function.yaml": "secrets: [" + name + "]\n",
 			"shop/app/_functions/f/index.ts":      "export default () => 1\n",
 		}))
@@ -139,7 +139,7 @@ func TestFunctionsCantDeclareTheStorageSecrets(t *testing.T) {
 	}
 	// Another secret of the same realm, or one with the same name in a database, is the function's own.
 	_, err := Load(writeTree(t, map[string]string{
-		"shop/realm.yaml":                     "auth: enabled\nstorage:\n  provider: minio\n  endpoint: https://minio.internal:9000\n  bucket: b\n  prefix: p\n  access_key: secret:STORAGE_ACCESS_KEY\n  secret_key: secret:STORAGE_SECRET_KEY\n",
+		"shop/realm.yaml":                     "auth: enabled\nstorage:\n  provider: minio\n  endpoint: https://minio.internal:9000\n  bucket: tests-backd\n  prefix: p\n  access_key: secret:STORAGE_ACCESS_KEY\n  secret_key: secret:STORAGE_SECRET_KEY\n",
 		"shop/app/_functions/f/function.yaml": "secrets: [realm.SHARED, STORAGE_SECRET_KEY]\n",
 		"shop/app/_functions/f/index.ts":      "export default () => 1\n",
 	}))
@@ -291,5 +291,25 @@ func TestMaxPixelsMayOnlyLowerTheInstanceLimit(t *testing.T) {
 	err = reg.CheckImageLimits(1_000_000)
 	if err == nil || !strings.Contains(err.Error(), "shop/app/notes: files.a: max_pixels: 5000000 is above this instance's limit of 1000000 (BACKD_IMAGE_MAX_PIXELS)") {
 		t.Errorf("a higher field limit: %v", err)
+	}
+}
+
+// Above one signed PUT a direct upload is multipart, which a provider must support.
+func TestDirectUploadsAboveOnePut(t *testing.T) {
+	reg, err := filesTree(t, "files:\n  a: {max_size: 1TiB, upload: direct}\n", nil)
+	if err != nil {
+		t.Fatalf("minio takes multipart uploads: %v", err)
+	}
+	c, _ := reg.Collection("shop", "app", "notes")
+	if f := c.Files["a"]; f == nil || f.MaxSize != 1<<40 || f.Upload != UploadDirect {
+		t.Errorf("field: %+v", f)
+	}
+	r2 := "roles:\n  staff: {}\nstorage:\n  provider: r2\n  endpoint: https://be24f8b836589be5638e95d6579afa46.r2.cloudflarestorage.com\n  bucket: tests-backd\n  prefix: p\n  access_key: secret:K\n  secret_key: secret:S\n"
+	_, err = filesTree(t, "files:\n  a: {max_size: 6GiB, upload: direct}\n", map[string]string{"shop/realm.yaml": r2})
+	if err == nil || !strings.Contains(err.Error(), "at most 5GiB, with r2") {
+		t.Errorf("r2 and 6GiB: %v", err)
+	}
+	if _, err = filesTree(t, "files:\n  a: {max_size: 5GiB, upload: direct}\n", map[string]string{"shop/realm.yaml": r2}); err != nil {
+		t.Errorf("r2 and 5GiB: %v", err)
 	}
 }

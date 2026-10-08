@@ -33,10 +33,13 @@ const (
 )
 
 const (
-	maxFilesPerField   = 1000
-	defaultMaxFiles    = 10
-	maxDirectFileSize  = 5 << 30 // the single signed PUT limit
-	maxFilePresignedTL = 7 * 24 * time.Hour
+	maxFilesPerField  = 1000
+	defaultMaxFiles   = 10
+	maxDirectFileSize = 5 << 30 // the single signed PUT limit
+	// MaxMultipartFileSize is the largest direct upload where the provider takes a multipart one:
+	// 1000 parts of at most about 4.2 GiB (a part may be 5 GiB).
+	MaxMultipartFileSize = 4 << 40
+	maxFilePresignedTL   = 7 * 24 * time.Hour
 )
 
 // FileField is one file field of a collection, from collection.yaml.
@@ -279,8 +282,10 @@ func parseFiles(path string, schema map[string]any, settings RealmSettings) (map
 			switch {
 			case !settings.Storage.ProviderEntry().SupportsDirectUploads():
 				add(name, "upload: direct needs a provider that verifies a signed SHA-256, which %s doesn't (use proxy)", settings.Storage.Provider)
-			case f.MaxSize > maxDirectFileSize:
-				add(name, "max_size: a direct upload is one signed PUT, at most 5GiB")
+			case f.MaxSize > MaxMultipartFileSize:
+				add(name, "max_size: a direct upload is at most 4TiB")
+			case f.MaxSize > maxDirectFileSize && !settings.Storage.ProviderEntry().SupportsMultipartUploads():
+				add(name, "max_size: a direct upload is one signed PUT, at most 5GiB, with %s (multipart uploads of larger files need a provider that verifies a SHA-256 per part)", settings.Storage.Provider)
 			default:
 				f.Upload = UploadDirect
 			}

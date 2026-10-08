@@ -22,6 +22,7 @@ storage:
 | Addressing | virtual-hosted |
 | Signed SHA-256 (direct uploads) | supported (documented in the [Spaces API reference](https://docs.digitalocean.com/reference/api/spaces/)) |
 | Largest single PUT | 5 GiB |
+| Multipart uploads (files above 5 GiB) | not enabled until the provider smoke test confirms a SHA-256 per part: `max_size` stays at 5 GiB |
 | `backd storage check` reads | neither CORS nor encryption: it says so |
 
 ## Setting it up

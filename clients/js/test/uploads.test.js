@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { createClient, Sha256, sha256Blob, BackdError, versionStatus } from '../src/index.js'
+import { partSizeFor } from '../src/files.js'
 import { mockFetch } from './helpers.js'
 
 const sha = (/** @type {Uint8Array | string} */ b) => createHash('sha256').update(b).digest('hex')
@@ -66,6 +67,38 @@ test('uploadFile to a direct field declares the file, sends it to the bucket and
   assert.equal(put.blob?.size, 7)
   assert.equal(complete.url.pathname, '/v1/acme/app/people/_files/receipts/uploads/fl_2/complete')
   assert.deepEqual(complete.body, { upload_token: 'fut_x' })
+})
+
+test('the part size keeps a file within 1000 parts', () => {
+  const MiB = 1024 * 1024
+  assert.equal(partSizeFor(1), 64 * MiB)
+  assert.equal(partSizeFor(5 * 1024 * MiB), 64 * MiB) // 5 GiB: 80 parts
+  assert.equal(partSizeFor(64000 * MiB), 64 * MiB)
+  assert.equal(partSizeFor(64000 * MiB + 1), 80 * MiB) // a multiple of 16 MiB
+  assert.equal(partSizeFor(4 * 1024 * 1024 * MiB) % (16 * MiB), 0)
+  assert.ok(Math.ceil((4 * 1024 * 1024 * MiB) / partSizeFor(4 * 1024 * 1024 * MiB)) <= 1000)
+})
+
+test('uploadFile above multipart_above declares the parts, sends each to its link and completes', async () => {
+  const MiB = 1024 * 1024
+  const data = new Uint8Array(150 * MiB).map((_, i) => (i * 7) & 255) // parts of 64, 64 and 22 MiB
+  const digests = [0, 64, 128].map((at) => sha(data.subarray(at * MiB, (at + 64) * MiB)))
+  const part = (/** @type {number} */ n, /** @type {number} */ size) => ({ number: n, url: `https://bucket.test/k?partNumber=${n}`, headers: { 'x-amz-checksum-sha256': 'p' + n }, size })
+  const start = { upload_id: 'fl_9', upload_token: 'fut_m', expires_at: 'z', multipart: true, part_size: 64 * MiB, sha256: 'ee', url_expires_at: 'z', parts: [part(1, 64 * MiB), part(2, 64 * MiB), part(3, 22 * MiB)] }
+  // The second part fails once, with a 503, and is sent again.
+  const m = mockFetch([{ body: info('direct', { multipart_above: 100 * MiB, max_size: 10 ** 12 }) }, { status: 201, body: start }, { status: 200 }, { status: 503 }, { status: 200 }, { status: 200 }, { status: 201, body: doc({ receipts: [{ id: 'fl_9' }] }) }])
+  const out = await people(m).uploadFile('d1', 'receipts', new File([data], 'big.bin', { type: 'application/octet-stream' }))
+  assert.equal(out.receipts[0].id, 'fl_9')
+  const [, begin, ...rest] = m.calls
+  assert.deepEqual(begin.body, { name: 'big.bin', size: 150 * MiB, type: 'application/octet-stream', part_sha256: digests })
+  const puts = rest.slice(0, -1)
+  assert.equal(puts.length, 4)
+  assert.ok(puts.every((c) => c.method === 'PUT' && c.url.host === 'bucket.test' && c.headers.Authorization === undefined))
+  const sizes = new Map()
+  for (const c of puts) sizes.set(c.url.searchParams.get('partNumber'), c.blob?.size)
+  assert.deepEqual([...sizes].sort(), [['1', 64 * MiB], ['2', 64 * MiB], ['3', 22 * MiB]])
+  assert.equal(rest.at(-1)?.url.pathname, '/v1/acme/app/people/_files/receipts/uploads/fl_9/complete')
+  assert.equal(m.remaining(), 0)
 })
 
 test('a bucket that refuses the file is an upload_failed error, and nothing is completed', async () => {
