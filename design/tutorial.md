@@ -40,9 +40,8 @@ shelf/main/assets
   published_at string date-time, x-backd-store: date   # null while a draft
   downloads    integer           # chapter 15, written only by the download function (rules refuse clients)
   # file fields: declared in collection.yaml `files:`, not in schema.json (chapter 13)
-  file         single, proxy upload, ≤ 25 MiB, documents/images         # ch 13
+  file         single, proxy upload, ≤ 25 MiB, documents/images; `versions: thumb` (256 px cover), made by a worker   # ch 13, 14
   attachments  multiple, max_files 5, upload: direct, ≤ 1 GiB          # ch 14
-  thumbnail    single, image/webp, written only by the thumbnail function (rules refuse clients)   # ch 14
 
 shelf/main/shares
   id, _meta.owner
@@ -64,7 +63,6 @@ Indexes: `assets` on `published_at` (gallery order) and `_meta.owner`; `shares` 
 | `cleanup` | internal async, `schedule:` nightly | delete expired shares |
 | `import` | `mode: webhook`, `invoke: "true"`, `rate_limit:` | receive assets pushed by an outside service |
 | `deliver` | internal async, `retry:` | the realm's email delivery function |
-| `thumbnail` | async, `admin: true`, `retry:` | files API in functions: `get()` the image, `put()` a small PNG into `thumbnail` through `ctx.admin.db`, the only writer the rules allow (ch 14) |
 | `download` | sync, `admin: true` | download function: increment `downloads` through `ctx.admin.db`, return `link()` (ch 15) |
 | `share-open` | sync, `admin: true` (existing) | also returns a file link for a shared file asset via `ctx.admin.db … link()` (ch 15) |
 
@@ -153,9 +151,8 @@ Each chapter: goal in one line, the features it exercises, a working state, and 
 ### Ch 14 — Big files and thumbnails
 
 - `attachments`: `multiple`, `max_files`, `upload: direct` with a progress bar; bucket CORS; `409 too_many_files`.
-- `thumbnail` async function with the functions files API (`get()`, `put()`), started by the app after an image upload; `admin: true` and `ctx.admin.db` to write the field; `retry:`; `@backd/functions-testing` with files.
-- Securing it: `create` gains `data.thumbnail == nil`, `update` gains `!('thumbnail' in changed())`; the reader first uploads a fake thumbnail with `curl` (accepted), adds the rules, and retries (`403`), while the function keeps working.
-- *See:* a large attachment uploads straight to MinIO with progress; the gallery shows a thumbnail once the job finishes; a client upload to `_files/thumbnail` answers `403`.
+- `versions: thumb` on `file` (declared image versions, `design/image-versions.md`): a worker makes the thumbnail after the upload; the app looks again until `versionStatus()` says it is no longer `pending`; `fileLinks` links the ready version; a text file's version is `skipped`. (This replaced a thumbnail function; the functions files API is still taught by the `download` and `share-open` functions in ch 15.)
+- *See:* a large attachment uploads straight to MinIO with progress; the card shows the thumbnail within seconds; a text file answers `404 version_unavailable` for its thumbnail.
 
 ### Ch 15 — Sharing and counting downloads
 
@@ -181,7 +178,7 @@ Before chapter 1 the tutorial hands the reader the **finished static app**: `ind
 ## 6. Testing
 
 - The chapter apps' functions have unit tests with `@backd/functions-testing` (`createContext`, `fakeCall`, `fakeEmail`, `fakeJob`) — the tutorial *teaches* the testing helpers in the chapters that need them; `preview`'s fetch is stubbed on `globalThis.fetch`.
-- Integration tests for `examples/config/shelf` mirror the workshop's: rules enforced, publish idempotent, webhook signature required, digest retried; files uploaded in both modes, refused by size and type, thumbnailed, counted and downloaded through a share link; client writes to `thumbnail` and `downloads` refused (`403`) while the functions succeed.
+- Integration tests for `examples/config/shelf` mirror the workshop's: rules enforced, publish idempotent, webhook signature required, digest retried; files uploaded in both modes, refused by size and type, thumbnailed by a worker, counted and downloaded through a share link; client writes to `downloads` refused (`403`) while the functions succeed.
 - The CI replay (`scripts/shelf-tour-ci.sh`, `tour.js`) covers chapters 13–15 on the starter stack with MinIO.
 - Each chapter's acceptance list doubles as a manual smoke script.
 
@@ -191,7 +188,7 @@ The tutorial should teach secure defaults, not just features:
 
 - Rules chapter explicitly asks the reader to find the rule hole a function must close — the expenses example's lesson, learned once.
 - Anonymous surfaces (`import` webhook, public shares) get `rate_limit` and are revisited in Ch 12's checklist.
-- Fields only functions write (`published_at`, `thumbnail`, `downloads`) are refused to clients in `rules.yaml` (`== nil` on create, `changed()` on update) and written through `ctx.admin.db`; chapters 14 and 15 show the hole first, then close it, like chapter 5.
+- Fields only functions write (`published_at`, `downloads`) are refused to clients in `rules.yaml` (`== nil` on create, `changed()` on update) and written through `ctx.admin.db`; chapter 15 shows the hole first, then close it, like chapter 5.
 - Secrets only ever live in `secrets:`; the egress allowlist is minimal (`api.example.com`-style placeholder, or a self-hosted target).
 - Audit chapter reads ids, not emails; demo accounts are disposable.
 

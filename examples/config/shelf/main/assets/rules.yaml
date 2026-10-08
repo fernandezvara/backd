@@ -19,15 +19,13 @@ read: >
 # to clients: only the publish function stamps it, as admin (chapter 5
 # closed the HOLE that lived here).
 #
-# Fields only functions write are refused here the same way: published_at,
-# the thumbnail (chapter 14) and the download count (chapter 15). On a create
-# there is no `changed()`, so the rule asks for the field to be absent.
+# Fields only functions write are refused here the same way: published_at and
+# the download count (chapter 15). On a create there is no `changed()`, so the
+# rule asks for the field to be absent.
 create: >
-  user != nil && data.published_at == nil
-  && data.thumbnail == nil && data.downloads == nil
+  user != nil && data.published_at == nil && data.downloads == nil
 update: >
   user != nil && document._meta.owner == user.id
   && !('published_at' in changed())
-  && !('thumbnail' in changed())
   && !('downloads' in changed())
 delete: user != nil && document._meta.owner == user.id

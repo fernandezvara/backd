@@ -52,9 +52,9 @@ curl -s -X POST http://localhost:8080/v1/shelf/_admin/storage/check -H "Authoriz
 
 Files are declared in **`collection.yaml`**, not in `schema.json`: `backd` adds their schema itself (and refuses a file field in `schema.json`). The reserved `file` property of chapter 1 moves out of the schema, `kind` learns `"file"`, and `assets/collection.yaml` gains `files:`:
 
-{{< example-file path="shelf/main/assets/collection.yaml" lines="13-28" >}}
+{{< example-file path="shelf/main/assets/collection.yaml" lines="13-17" >}}
 
-`file` takes one document or image, up to 25 MiB, **streamed through `backd`**. Its `types` are checked against what the bytes say, never the name or the type the browser claimed. `kind` learns `"file"` in `schema.json` (and the `file` property is gone):
+(The finished file also has chapter 14's `versions` and `attachments`; they come next.) `file` takes one document or image, up to 25 MiB, **streamed through `backd`**. Its `types` are checked against what the bytes say, never the name or the type the browser claimed. `kind` learns `"file"` in `schema.json` (and the `file` property is gone):
 
 {{< example-file path="shelf/main/assets/schema.json" lines="6-6" >}}
 
@@ -111,4 +111,4 @@ And chapter 2's `on_owner_delete: delete` already covers files: erasing a member
 - A curator's upload to a member's published asset answers `403`.
 - `curl http://localhost:9000/backd-files/` is refused: the bucket is private, and only links `backd` signed work.
 
-Next: chapter 14 — big files go straight to the bucket, and a function makes thumbnails.
+Next: chapter 14 — big files go straight to the bucket, and a worker makes thumbnails.

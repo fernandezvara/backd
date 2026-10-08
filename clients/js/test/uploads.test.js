@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { createClient, Sha256, sha256Blob, BackdError } from '../src/index.js'
+import { createClient, Sha256, sha256Blob, BackdError, versionStatus } from '../src/index.js'
 import { mockFetch } from './helpers.js'
 
 const sha = (/** @type {Uint8Array | string} */ b) => createHash('sha256').update(b).digest('hex')
@@ -184,4 +184,38 @@ test('in a browser an upload goes through XMLHttpRequest and reports its progres
     delete (/** @type {any} */ (globalThis).XMLHttpRequest)
     globalThis.fetch = realFetch
   }
+})
+
+test('fileUrl with a version asks for it, and is null while the version is not ready', async () => {
+  const unavailable = {
+    status: 404,
+    body: { error: { code: 'version_unavailable', message: 'this version of the file is not available', details: [{ path: 'status', reason: 'pending' }] } },
+  }
+  const m = mockFetch([{ body: { url: 'https://s3/t', expires_at: '2026-10-06T10:05:00.000Z' } }, unavailable, { status: 404, body: { error: { code: 'not_found', message: 'nope' } } }])
+  const c = people(m)
+  assert.deepEqual(await c.fileUrl('d1', 'photo', 'fl_1', { version: 'thumb' }), { url: 'https://s3/t', expiresAt: '2026-10-06T10:05:00.000Z' })
+  assert.equal(m.calls[0].url.searchParams.get('version'), 'thumb')
+  assert.equal(m.calls[0].url.searchParams.get('link'), 'json')
+  assert.equal(await c.fileUrl('d1', 'photo', 'fl_1', { version: 'thumb' }), null)
+  // Any other failure is still an error, and so is a missing version when none was asked.
+  await assert.rejects(c.fileUrl('d1', 'photo', 'fl_1', { version: 'thumb' }), (/** @type {any} */ e) => e.status === 404)
+})
+
+test('files get and link pass the version; versionStatus reads it from the document', async () => {
+  const m = mockFetch([{ body: { url: 'https://s3/t', expires_at: 'x' } }, { bytes: 'ab', headers: { 'content-type': 'image/jpeg' } }])
+  const c = people(m)
+  await c.files('d1', 'photo').link('fl_1', { version: 'thumb' })
+  await c.files('d1', 'photo').get('fl_1', { version: 'thumb' })
+  assert.equal(m.calls[0].url.searchParams.get('version'), 'thumb')
+  assert.equal(m.calls[1].url.searchParams.get('version'), 'thumb')
+
+  const file = /** @type {import('../src/index.js').FileDetails} */ ({
+    id: 'fl_1', name: 'a.jpg', size: 1, type: 'image/jpeg', sha256: 'x', uploaded_at: 'x', width: 400, height: 300,
+    versions: { thumb: { status: 'ready', width: 100, height: 75 }, big: { status: 'failed', reason: 'too_large' }, wait: { status: 'pending' } },
+  })
+  assert.deepEqual(versionStatus(file, 'thumb'), { status: 'ready', ready: true, reason: undefined, width: 100, height: 75 })
+  assert.deepEqual(versionStatus(file, 'big'), { status: 'failed', ready: false, reason: 'too_large', width: undefined, height: undefined })
+  assert.equal(versionStatus(file, 'wait').ready, false)
+  assert.deepEqual(versionStatus(file, 'nope'), { status: 'undeclared', ready: false })
+  assert.deepEqual(versionStatus({ ...file, versions: undefined }, 'thumb'), { status: 'undeclared', ready: false })
 })

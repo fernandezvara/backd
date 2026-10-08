@@ -15,14 +15,13 @@ files:
   file:
     max_size: 25MiB
     types: [application/pdf, image/png, image/jpeg, text/plain]
+    # Chapter 14: a small copy of an image for the gallery, made by a worker
+    # after the upload. A PDF or a text file has none (its version is skipped).
+    versions:
+      thumb: { max_width: 256, max_height: 256, fit: cover }
   # Chapter 14: big attachments go straight from the browser to the bucket.
   attachments:
     multiple: true
     max_files: 5
     upload: direct
     max_size: 1GiB
-  # Chapter 14: a small picture the thumbnail function makes. The rules keep
-  # clients from writing it.
-  thumbnail:
-    max_size: 512KiB
-    types: [image/png]

@@ -1,17 +1,17 @@
 ---
 title: "14. Big files and thumbnails"
-description: "Direct uploads with a progress bar, several attachments per asset, and a thumbnail function that writes the one field the rules refuse to clients."
+description: "Direct uploads with a progress bar, several attachments per asset, and a thumbnail declared as a version that a worker makes."
 weight: 340
 toc: true
 ---
 
-A 25 MiB limit and a trip through `backd` suit a handbook, not a conference recording. This chapter adds **attachments**: several files, up to a gigabyte each, that the browser sends **straight to the bucket**. Then a function makes a small picture of each image, and the rules keep clients from writing it.
+A 25 MiB limit and a trip through `backd` suit a handbook, not a conference recording. This chapter adds **attachments**: several files, up to a gigabyte each, that the browser sends **straight to the bucket**. Then a worker makes a small picture of each image, declared in one line.
 
 ## Attachments, straight to the storage
 
 `attachments` was declared with `files:` in the last chapter. What makes it different is one line, `upload: direct`:
 
-{{< example-file path="shelf/main/assets/collection.yaml" lines="18-23" >}}
+{{< example-file path="shelf/main/assets/collection.yaml" lines="22-27" >}}
 
 The browser asks `backd` to start the upload (declaring the file's name, size, type and SHA-256), receives a **signed link** with those signed in, sends the bytes to MinIO, and tells `backd` to complete: `backd` checks the size, the checksum **the storage computed** and the type from the first bytes, and attaches the file. Anything that doesn't match deletes the object. The client does all of it:
 
@@ -27,66 +27,53 @@ Try it: *My assets → New asset → kind: file*, pick two or three big files as
 `max_files`, `max_size` and `types` are limits `backd` enforces, but a bucket that accepts direct uploads from browsers needs CORS **for your app's origin only**. In production, set it per provider ([provider pages](../../files/)) and let `backd storage check` read it back.
 {{< /hint >}}
 
-## A thumbnail, written by a function
+## A thumbnail, declared
 
-A gallery of full-size images is slow. `thumbnail` makes a small PNG of an asset's image and stores it in the `thumbnail` field. Nobody but this function should write that field, or an owner could put anything there. Start with the function, then close the hole.
+A gallery of full-size images is slow, and a small copy of each picture fixes it. There is nothing to write: the `file` field **declares** a version, and a worker makes it.
 
-The function has three files, like every function (chapter 5):
+{{< example-file path="shelf/main/assets/collection.yaml" lines="14-21" >}}
 
-{{< example-file path="shelf/main/_functions/thumbnail/function.yaml" >}}
+`thumb` fits the picture in a 256 × 256 box, cropping the excess (`cover`), and keeps the picture's format (a PNG stays a PNG). When an upload becomes part of an asset, `backd` queues a job and a **worker** (the stack already runs one) reads the original, makes the copy and stores it beside it. The asset records what happened, next to the file's other details:
 
-It is **async** (the app doesn't wait for it), `admin: true` (so `ctx.admin.db` can write the protected field) and has `retry:` for a busy storage. The logic is in `lib/thumbnail.ts`, apart from the image library, so it is testable without it:
-
-{{< example-file path="shelf/main/_functions/lib/thumbnail.ts" >}}
-
-Read what it does with the files API: `files(id, field).get()` reads the picture, `put()` stores the result, and **two identities do two jobs**. `ctx.db` is the caller: the function first reads the asset as them, so a member can only ask for a thumbnail of what they can read. `ctx.admin.db` is the function: it writes the thumbnail. The index wires in the library:
-
-{{< example-file path="shelf/main/_functions/thumbnail/index.ts" >}}
-
-(The packages are downloaded and pinned when `functions-build` runs, never at run time. They are pure JavaScript on purpose: a function has no permission to read files, so a library that loads WebAssembly or native code from disk would fail to start.) Fetch the files, build, restart:
-
-{{< tutorial-files "main/_functions/deno.lock main/_functions/lib/types.ts main/_functions/lib/thumbnail.ts main/_functions/thumbnail/function.yaml main/_functions/thumbnail/index.ts main/_functions/thumbnail/index.test.ts main/_functions/thumbnail/input.schema.json" >}}
-
-```sh
-docker compose run --rm functions-build && docker compose restart backd
+```json
+"file": {
+  "id": "fl_8f3k2n5x0q7w1a9b4c6d", "name": "office.png", "type": "image/png", "size": 1203442,
+  "width": 800, "height": 600,
+  "versions": { "thumb": { "status": "ready", "type": "image/png", "width": 256, "height": 256, "size": 41022 } }
+}
 ```
 
-The app starts the job after an image upload and refreshes when it finishes: upload a PNG and the card swaps its picture for the thumbnail. The function's logic is tested with the fake `ctx` of chapter 5, which has the files API too: `deno test config/shelf/main/_functions/thumbnail/`.
+Until the worker is done the status is `pending`, so the app can say so; a PDF or a text file has no thumbnail, and its version is `skipped` rather than an error. The tutorial's `backd` runs its worker inside (`--with-worker`), so it needs nothing else. Fetch the finished `collection.yaml` and restart:
 
-## The hole, and closing it
-
-Until now **nothing stops a member from writing the thumbnail themselves**. Prove it with a fake one (`$TOKEN` is a member's session; use any small PNG):
-
-```sh
-ASSET=<an asset id of yours>
-curl -s -X POST "http://localhost:8080/v1/shelf/main/assets/$ASSET/_files/thumbnail?name=fake.png" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: image/png' --data-binary @tiny.png   # 201: accepted
-```
-
-The rules from chapter 5 refused `published_at` the same way, and they refuse this one the same way. Rules for files **are** the rules for the asset: an upload is an update, and `changed()` lists the file field. On a create there is no `changed()`, so the rule asks the field to be absent. Edit `assets/rules.yaml`: `create` and `update` each gain a line (the rest stays as chapter 5 left it):
-
-```yaml
-create: >
-  user != nil && data.published_at == nil
-  && data.thumbnail == nil
-update: >
-  user != nil && document._meta.owner == user.id
-  && !('published_at' in changed())
-  && !('thumbnail' in changed())
-```
+{{< tutorial-files "main/assets/collection.yaml" >}}
 
 ```sh
 docker compose restart backd
 ```
 
-Repeat the `curl`: **`403`**, and nothing was stored (the rule runs before the first byte). A member naming a pending upload in the thumbnail field of a create gets `403` too, and the thumbnail function keeps working: it writes through `ctx.admin.db`, which skips the rules.
+The app asks for links with `fileLinks: true`, which also links every `ready` version, so a card shows the thumbnail when there is one and the picture when there isn't:
+
+```js
+previewUrl(asset) {
+  return asset.file?.versions?.thumb?.url ?? (this.isImage(asset.file) ? asset.file.url : null)
+}
+```
+
+After an upload the app looks again every second and a half, for a few seconds, until `versionStatus(asset.file, 'thumb')` says the worker is done. To link a version by hand, `assets.fileUrl(id, 'file', fileId, { version: 'thumb' })` answers the link, or `null` while the version isn't ready. The API says the same with `404 version_unavailable`, carrying the version's status and reason.
+
+Try it: *My assets → New asset → kind: file*, pick a PNG or JPEG, and watch the card swap its picture for the thumbnail. The worker's memory and how many pictures it handles at once are covered in [Image versions](../../files/file-fields/#image-versions).
+
+{{< hint style="tip" title="Already done for you" >}}
+A version has no EXIF and no GPS position, whatever the original carries, and its pixels are upright. A thumbnail is safe to show to people who can't see the original.
+{{< /hint >}}
+
+The details a worker records (`width`, `height`, `versions`) are `backd`'s: a client that tries to write them has them dropped, so there is no rule to add for them. What a function writes into a field of its own is chapter 15.
 
 ## You should see
 
 - An attachment of a few hundred MiB uploads with a progress bar, straight to MinIO (watch `docker compose logs minio`: the PUT arrives there, not at `backd`).
 - Five attachments fit; the sixth answers `409 too_many_files`.
-- After a PNG upload, the gallery shows a thumbnail once the job finishes (*Admin → Run by hand* can't start it, but `docker compose logs backd` shows the job).
-- A client upload to `_files/thumbnail` answers `403` once the rule is in place, and `201` before.
-- `deno test` passes for `thumbnail`.
+- After a PNG upload, the card shows the thumbnail within a few seconds (`docker compose logs backd` shows the `image versions made` line).
+- A text file's `versions.thumb.status` is `skipped`; asking for its thumbnail answers `404 version_unavailable`.
 
 Next: chapter 15 — sharing files, and counting downloads.

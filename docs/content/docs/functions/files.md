@@ -60,7 +60,7 @@ import { makeThumbnailer } from "./thumbnail.js";
 
 export default makeThumbnailer(async (bytes: Uint8Array, width: number) => {
   // decode with UPNG (PNG) or jpeg-js (JPEG), average the pixels down to `width`, encode with UPNG.encode
-  // (the Shelf tutorial's thumbnail function has the whole of it)
+  // (for a plain thumbnail you don't need a function: declare a [version](../../files/file-fields/#image-versions) and a worker makes it)
 });
 ```
 

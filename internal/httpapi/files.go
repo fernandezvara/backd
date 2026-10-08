@@ -7,10 +7,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"maps"
 	"net/http"
 	"net/url"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -31,6 +33,7 @@ const (
 	codeUploadModeMismatch = "upload_mode_mismatch"
 	codeUnsupportedFile    = "unsupported_file_type"
 	codeFileMissing        = "file_missing"
+	codeVersionUnavailable = "version_unavailable"
 	codeInvalidFileLink    = "invalid_file_link"
 )
 
@@ -516,14 +519,11 @@ func (d *documents) publicBase(r *http.Request) string {
 
 // fileLink makes a link to download a file without credentials, that works until it
 // expires: a storage-signed link in presigned mode, a backd-signed one in proxy mode.
-func (d *documents) fileLink(ctx context.Context, r *http.Request, obj *storage.Objects, c *registry.Collection, f *registry.FileField, docID string, file map[string]any) (link string, expires time.Time, err error) {
+func (d *documents) fileLink(ctx context.Context, r *http.Request, obj *storage.Objects, c *registry.Collection, f *registry.FileField, docID string, tg fileTarget) (link string, expires time.Time, err error) {
 	st := d.reg.Realms[c.Realm].Settings.Storage
-	fileID, _ := file["id"].(string)
 	ttl := linkTTL(f, st)
 	if downloadMode(f, st) == registry.DownloadPresigned {
-		name, _ := file["name"].(string)
-		ct, _ := file["type"].(string)
-		l, err := obj.PresignGet(ctx, obj.Key(c.Realm, c.Database, c.Name, fileID), ttl, name, ct)
+		l, err := obj.PresignGet(ctx, tg.key, ttl, tg.name, tg.contentType)
 		return l.URL, l.ExpiresAt, err
 	}
 	key, err := d.linkKey(ctx, c.Realm)
@@ -534,9 +534,87 @@ func (d *documents) fileLink(ctx context.Context, r *http.Request, obj *storage.
 		return "", time.Time{}, errNoPublicURL
 	}
 	expires = d.now().Add(ttl)
-	sig := fileLinkMAC(key, c.Realm, c.Database, c.Name, docID, f.Name, fileID, expires.Unix())
-	path := "/v1/" + url.PathEscape(c.Realm) + "/" + url.PathEscape(c.Database) + "/" + url.PathEscape(c.Name) + "/" + url.PathEscape(docID) + "/_files/" + url.PathEscape(f.Name) + "/" + url.PathEscape(fileID)
-	return d.publicBase(r) + path + "?exp=" + strconv.FormatInt(expires.Unix(), 10) + "&sig=" + sig, expires, nil
+	sig := fileLinkMAC(key, c.Realm, c.Database, c.Name, docID, f.Name, tg.macID(), expires.Unix())
+	path := "/v1/" + url.PathEscape(c.Realm) + "/" + url.PathEscape(c.Database) + "/" + url.PathEscape(c.Name) + "/" + url.PathEscape(docID) + "/_files/" + url.PathEscape(f.Name) + "/" + url.PathEscape(tg.fileID)
+	link = d.publicBase(r) + path + "?exp=" + strconv.FormatInt(expires.Unix(), 10) + "&sig=" + sig
+	if tg.version != "" {
+		link += "&version=" + url.QueryEscape(tg.version)
+	}
+	return link, expires, nil
+}
+
+// fileTarget is what a download serves: a file's original, or one of its made versions.
+type fileTarget struct {
+	fileID      string
+	version     string // "" for the original
+	key         string // the object's key
+	name        string // the name a download is saved under
+	contentType string
+	etag        string
+	size        int64
+}
+
+// macID is what a backd-signed link names as its file: a version's link is bound to
+// that version, so changing ?version= on it invalidates the signature.
+func (t fileTarget) macID() string {
+	if t.version == "" {
+		return t.fileID
+	}
+	return t.fileID + "/" + t.version
+}
+
+// sourceTarget is the original of a file.
+func (d *documents) sourceTarget(c *registry.Collection, file map[string]any) fileTarget {
+	fileID, _ := file["id"].(string)
+	name, _ := file["name"].(string)
+	ct, _ := file["type"].(string)
+	sha, _ := file["sha256"].(string)
+	return fileTarget{fileID: fileID, key: d.objectKey(c, fileID), name: name, contentType: ct, etag: `"` + sha + `"`, size: fileSize(file)}
+}
+
+// versionTarget is a made version of a file, or false with the reason it can't be served.
+func (d *documents) versionTarget(c *registry.Collection, f *registry.FileField, file map[string]any, version string) (fileTarget, map[string]any, bool) {
+	src := d.sourceTarget(c, file)
+	if _, declared := f.Version(version); !declared {
+		return src, map[string]any{"status": "undeclared", "reason": "the field declares no version " + version}, false
+	}
+	state := mapOf(mapOf(file["versions"])[version])
+	if state == nil || state["status"] != versionReady {
+		out := map[string]any{"status": "unknown"}
+		if state != nil {
+			out["status"] = state["status"]
+			if reason, ok := state["reason"]; ok {
+				out["reason"] = reason
+			}
+		}
+		return src, out, false
+	}
+	id, _ := state["id"].(string)
+	ct, _ := state["type"].(string)
+	return fileTarget{
+		fileID: src.fileID, version: version, key: src.key + "/" + version, contentType: ct, etag: `"` + id + `"`, size: fileSize(state),
+		name: versionFileName(src.name, version, ct),
+	}, nil, true
+}
+
+// versionDetails say why a version can't be served: its status and, when it has one, the reason.
+func versionDetails(state map[string]any) []Detail {
+	out := []Detail{{Path: "status", Reason: fmt.Sprint(state["status"])}}
+	if reason, ok := state["reason"]; ok {
+		out = append(out, Detail{Path: "reason", Reason: fmt.Sprint(reason)})
+	}
+	return out
+}
+
+// versionFileName is the name a version is saved under: the original's, with the
+// version's name and the extension of its type.
+func versionFileName(name, version, contentType string) string {
+	stem := strings.TrimSuffix(name, path.Ext(name))
+	ext := ".jpg"
+	if contentType == "image/png" {
+		ext = ".png"
+	}
+	return stem + "-" + version + ext
 }
 
 // anonymousReadable reports whether the read rule lets anyone, signed in or not,
@@ -567,6 +645,11 @@ func (d *documents) downloadFile(w http.ResponseWriter, r *http.Request) {
 	docID, fileID := chi.URLParam(r, "id"), chi.URLParam(r, "fileID")
 	q := r.URL.Query()
 	signed := q.Has("sig") || q.Has("exp")
+	version := q.Get("version")
+	macID := fileID
+	if version != "" {
+		macID += "/" + version
+	}
 
 	var doc map[string]any
 	if signed {
@@ -576,7 +659,7 @@ func (d *documents) downloadFile(w http.ResponseWriter, r *http.Request) {
 			writeError(w, r, http.StatusServiceUnavailable, codeStorageUnavailable, "file storage is not available")
 			return
 		}
-		if !verifyFileLink(key, c.Realm, c.Database, c.Name, docID, f.Name, fileID, q.Get("exp"), q.Get("sig"), d.now()) {
+		if !verifyFileLink(key, c.Realm, c.Database, c.Name, docID, f.Name, macID, q.Get("exp"), q.Get("sig"), d.now()) {
 			writeError(w, r, http.StatusForbidden, codeInvalidFileLink, "this link is invalid or has expired: ask for a new one")
 			return
 		}
@@ -614,13 +697,22 @@ func (d *documents) downloadFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusNotFound, codeNotFound, "file not found")
 		return
 	}
+	tg := d.sourceTarget(c, file)
+	if version != "" {
+		var why map[string]any
+		var ok bool
+		if tg, why, ok = d.versionTarget(c, f, file, version); !ok {
+			writeError(w, r, http.StatusNotFound, codeVersionUnavailable, "this version of the file is not available", versionDetails(why)...)
+			return
+		}
+	}
 	obj, ok := d.objectsFor(w, r, c.Realm)
 	if !ok {
 		return
 	}
 
 	if q.Get("link") == "json" && !signed {
-		l, exp, err := d.fileLink(r.Context(), r, obj, c, f, docID, file)
+		l, exp, err := d.fileLink(r.Context(), r, obj, c, f, docID, tg)
 		if err != nil {
 			linkError(w, r, err)
 			return
@@ -631,7 +723,7 @@ func (d *documents) downloadFile(w http.ResponseWriter, r *http.Request) {
 	}
 	// A function reads the bytes through backd: it may not reach the bucket.
 	if !signed && !d.internal && downloadMode(f, st) == registry.DownloadPresigned {
-		l, _, err := d.fileLink(r.Context(), r, obj, c, f, docID, file)
+		l, _, err := d.fileLink(r.Context(), r, obj, c, f, docID, tg)
 		if err != nil {
 			logger(r.Context()).Error("make a file link", "error", err)
 			writeError(w, r, http.StatusServiceUnavailable, codeStorageUnavailable, "file storage is not available")
@@ -642,20 +734,15 @@ func (d *documents) downloadFile(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusFound)
 		return
 	}
-	d.proxyFile(w, r, obj, c, f, doc, file)
+	d.proxyFile(w, r, obj, c, f, doc, tg)
 }
 
 // proxyFile streams a file from storage with its own headers: a download (never
 // shown inline), not sniffed, sandboxed; strong ETag from the SHA-256 (304 on a
 // match); and single-range requests answered with 206. Shared caches may keep it
 // only when anyone may read the document.
-func (d *documents) proxyFile(w http.ResponseWriter, r *http.Request, obj *storage.Objects, c *registry.Collection, f *registry.FileField, doc, file map[string]any) {
-	fileID, _ := file["id"].(string)
-	name, _ := file["name"].(string)
-	ct, _ := file["type"].(string)
-	sha, _ := file["sha256"].(string)
-	size, _ := file["size"].(int64)
-	etag := `"` + sha + `"`
+func (d *documents) proxyFile(w http.ResponseWriter, r *http.Request, obj *storage.Objects, c *registry.Collection, f *registry.FileField, doc map[string]any, tg fileTarget) {
+	fileID, name, ct, size, etag := tg.fileID, tg.name, tg.contentType, tg.size, tg.etag
 	h := w.Header()
 	h.Set("Content-Type", ct)
 	h.Set("Content-Disposition", attachment(name))
@@ -689,7 +776,7 @@ func (d *documents) proxyFile(w http.ResponseWriter, r *http.Request, obj *stora
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), uploadTimeout)
 	defer cancel()
-	body, _, err := obj.Get(ctx, obj.Key(c.Realm, c.Database, c.Name, fileID), rng)
+	body, _, err := obj.Get(ctx, tg.key, rng)
 	if errors.Is(err, storage.ErrObjectNotFound) {
 		h.Del("Content-Range")
 		writeError(w, r, http.StatusNotFound, codeFileMissing, "the file is no longer in storage")
@@ -808,12 +895,29 @@ func (d *documents) addFileLinks(w http.ResponseWriter, r *http.Request, c *regi
 				for k, v := range file {
 					cp[k] = v
 				}
-				l, exp, err := d.fileLink(r.Context(), r, obj, c, f, docID, file)
+				l, exp, err := d.fileLink(r.Context(), r, obj, c, f, docID, d.sourceTarget(c, file))
 				if err != nil {
 					logger(r.Context()).Warn("file links left out", "realm", c.Realm, "error", err)
 					return true
 				}
 				cp["url"], cp["expires_at"] = l, exp.UTC().Format(timeFormat)
+				// The versions made of an image get a link too, to show right away.
+				if versions := mapOf(file["versions"]); versions != nil {
+					linkedVersions := make(map[string]any, len(versions))
+					for name, v := range versions {
+						state := maps.Clone(mapOf(v))
+						if vt, _, ok := d.versionTarget(c, f, file, name); ok && state != nil {
+							vl, vexp, err := d.fileLink(r.Context(), r, obj, c, f, docID, vt)
+							if err != nil {
+								logger(r.Context()).Warn("file links left out", "realm", c.Realm, "error", err)
+								return true
+							}
+							state["url"], state["expires_at"] = vl, vexp.UTC().Format(timeFormat)
+						}
+						linkedVersions[name] = state
+					}
+					cp["versions"] = linkedVersions
+				}
 				linked[i] = cp
 			}
 			if f.Multiple {

@@ -23,7 +23,7 @@ const doc = await claims.get(id, { fileLinks: true })
 img.src = doc.photo.url
 ```
 
-Every file then carries `url` and `expires_at`. Links last the field's `presigned_ttl` (five minutes by default), and a page can stay open much longer, so `fileLinks` is for what is shown right away: a gallery, a thumbnail grid. Links aren't stored and aren't part of the `ETag`.
+Every file then carries `url` and `expires_at`. Links last the field's `presigned_ttl` (five minutes by default), and a page can stay open much longer, so `fileLinks` is for what is shown right away: a gallery, a thumbnail grid. A picture's `ready` [versions](../file-fields/#image-versions) come with their own links, so a grid shows `file.versions.thumb.url`. Links aren't stored and aren't part of the `ETag`.
 
 ## Download buttons
 

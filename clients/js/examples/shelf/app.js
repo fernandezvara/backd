@@ -6,9 +6,9 @@
 //
 // Chapters 13–15 add files: an asset can carry one file (`file`, through backd)
 // and up to five attachments (straight to the bucket, with a progress bar), the
-// thumbnail function makes a picture of an image, downloads are counted by the
+// worker makes a thumbnail of an image (a declared version), downloads are counted by the
 // `download` function, and a shared asset comes with links to its files.
-import { createClient, localStorageStorage, NotFoundError, VersionMismatchError } from 'backd-js'
+import { createClient, localStorageStorage, NotFoundError, VersionMismatchError, versionStatus } from 'backd-js'
 
 const backd = createClient({
   url: window.location.origin,
@@ -239,10 +239,10 @@ document.addEventListener('alpine:init', () => {
       return Boolean(file?.type?.startsWith('image/'))
     },
 
-    // The picture an asset's card shows: the thumbnail once the function made
-    // it, else the image itself — both links came with the list (`fileLinks`).
+    // The picture an asset's card shows: the thumbnail once a worker made it,
+    // else the image itself — both links came with the list (`fileLinks`).
     previewUrl(asset) {
-      return asset.thumbnail?.url ?? (this.isImage(asset.file) ? asset.file.url : null)
+      return asset.file?.versions?.thumb?.url ?? (this.isImage(asset.file) ? asset.file.url : null)
     },
 
     // The files an asset holds, as a flat list for the download buttons.
@@ -278,15 +278,22 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    // Chapter 14: the thumbnail is a job; the app doesn't wait for it, it
-    // refreshes the lists when the job is done.
-    async makeThumbnail(assetId) {
+    // Chapter 14: the thumbnail is made by a worker after the upload; the app
+    // doesn't wait for it, it looks again a few times until the version is ready
+    // (`versionStatus` reads the state from the document).
+    async watchThumbnail(assetId, tries = 8) {
+      if (tries === 0) return
+      await new Promise((r) => setTimeout(r, 1500))
       try {
-        const job = await main.fn('thumbnail', { asset_id: assetId })
-        job.wait({ pollIntervalMs: 500, timeoutMs: 60000 }).then(() => Promise.all([this.loadMine(), this.refilter()])).catch(() => {})
+        const doc = await assets.get(assetId)
+        if (versionStatus(doc.file, 'thumb').status !== 'pending') {
+          await Promise.all([this.loadMine(), this.refilter()])
+          return
+        }
       } catch {
-        // a thumbnail is a nicety: the asset is saved either way
+        return // a thumbnail is a nicety: the asset is saved either way
       }
+      return this.watchThumbnail(assetId, tries - 1)
     },
 
     async create() {
@@ -317,7 +324,7 @@ document.addEventListener('alpine:init', () => {
           }
         }
         const made = await assets.create(doc)
-        if (this.isImage(made.file)) this.makeThumbnail(made.id)
+        if (this.isImage(made.file)) this.watchThumbnail(made.id)
         this.draft = { title: '', kind: 'link', url: '', body: '', tags: '', file: null, attachments: [] }
         for (const input of document.querySelectorAll('input[type=file]')) input.value = ''
         await this.refilter()
@@ -386,7 +393,7 @@ document.addEventListener('alpine:init', () => {
       this.error = null
       try {
         const doc = await assets.uploadFile(asset.id, field, picked, { ifMatch: asset._meta.version, onProgress: this.reportProgress(picked.name) })
-        if (field === 'file' && this.isImage(doc.file)) this.makeThumbnail(asset.id)
+        if (field === 'file' && this.isImage(doc.file)) this.watchThumbnail(asset.id)
         await this.loadMine()
         await this.refilter()
       } catch (e) {

@@ -538,3 +538,170 @@ func TestAVersionOfAnotherPendingSourceIsOnlyMadeWhenPending(t *testing.T) {
 		t.Errorf("the document changed:\n%v\n%v", before, after)
 	}
 }
+
+// upload a picture to a field and let the worker make its versions.
+func (f *filesFixture) madePicture(t *testing.T, w *Worker, field string) (docID, fileID string) {
+	t.Helper()
+	docID = f.newDoc(t, "library")
+	rec, doc := f.upload(t, f.ada, "library", docID, field, "Holiday.png", "image/png", realPNG(t, 20, 10), nil)
+	if rec.Code != 201 {
+		t.Fatalf("upload: %d %s", rec.Code, rec.Body)
+	}
+	fileID = doc[field].(map[string]any)["id"].(string)
+	return docID, fileID
+}
+
+func detailsOf(t *testing.T, out map[string]any) map[string]string {
+	t.Helper()
+	got := map[string]string{}
+	errObj, _ := out["error"].(map[string]any)
+	for _, d := range errObj["details"].([]any) {
+		m := d.(map[string]any)
+		got[m["path"].(string)] = m["reason"].(string)
+	}
+	return got
+}
+
+func TestAVersionIsDownloadedLikeItsSource(t *testing.T) {
+	f := newFilesFixture(t)
+	w := newTestWorker(t, f.rulesFixture)
+	ada := map[string]string{"Authorization": "Bearer " + f.ada}
+	docID, fileID := f.madePicture(t, w, "picture")
+	base := "/v1/acme/app/library/" + docID + "/_files/picture/" + fileID
+
+	// Not made yet: pending, with its status.
+	rec, out := f.doRaw(t, "GET", base+"?version=thumb", nil, ada)
+	if rec.Code != 404 || out["error"].(map[string]any)["code"] != "version_unavailable" || detailsOf(t, out)["status"] != "pending" {
+		t.Fatalf("pending: %d %v", rec.Code, out)
+	}
+	runImageJobs(t, w)
+
+	// Made: a redirect to a signed link of the version's object, saved under a name of its own.
+	rec, _ = f.doRaw(t, "GET", base+"?version=thumb", nil, ada)
+	loc := rec.Header().Get("Location")
+	if rec.Code != 302 || !strings.HasPrefix(loc, f.s3.URL) || !strings.Contains(loc, "/"+fileID+"/thumb") || !strings.Contains(loc, "Holiday-thumb.jpg") {
+		t.Fatalf("version redirect: %d %s", rec.Code, loc)
+	}
+	// ?link=json gives the same link, and the original is unchanged.
+	rec, out = f.doRaw(t, "GET", base+"?version=thumb&link=json", nil, ada)
+	if rec.Code != 200 || !strings.Contains(out["url"].(string), "/"+fileID+"/thumb") {
+		t.Errorf("link=json: %d %v", rec.Code, out)
+	}
+	rec, _ = f.doRaw(t, "GET", base, nil, ada)
+	if loc := rec.Header().Get("Location"); rec.Code != 302 || strings.Contains(loc, "/thumb") || !strings.Contains(loc, "/"+fileID+"?") {
+		t.Errorf("the original: %d %s", rec.Code, loc)
+	}
+	// The rule of the source applies: another user can't see the document, anonymous neither.
+	for who, cred := range map[string]string{"bob": f.bob, "anonymous": ""} {
+		hdr := map[string]string{}
+		if cred != "" {
+			hdr["Authorization"] = "Bearer " + cred
+		}
+		if rec, _ := f.doRaw(t, "GET", base+"?version=thumb", nil, hdr); rec.Code != 404 && rec.Code != 401 {
+			t.Errorf("%s: %d", who, rec.Code)
+		}
+	}
+
+	// Not downloadable: only functions make `mark`; `nope` isn't declared; a failed one says why.
+	rec, out = f.doRaw(t, "GET", base+"?version=mark", nil, ada)
+	if rec.Code != 404 || detailsOf(t, out)["status"] != "empty" {
+		t.Errorf("empty: %d %v", rec.Code, out)
+	}
+	rec, out = f.doRaw(t, "GET", base+"?version=nope", nil, ada)
+	if rec.Code != 404 || out["error"].(map[string]any)["code"] != "version_unavailable" || detailsOf(t, out)["status"] != "undeclared" {
+		t.Errorf("undeclared: %d %v", rec.Code, out)
+	}
+	big := f.newDoc(t, "library")
+	_, bdoc := f.upload(t, f.ada, "library", big, "picture", "huge.png", "image/png", realPNG(t, 40, 30), nil) // over max_pixels
+	bid := bdoc["picture"].(map[string]any)["id"].(string)
+	rec, out = f.doRaw(t, "GET", "/v1/acme/app/library/"+big+"/_files/picture/"+bid+"?version=thumb", nil, ada)
+	if d := detailsOf(t, out); rec.Code != 404 || d["status"] != "failed" || d["reason"] != "too_large" {
+		t.Errorf("failed: %d %v", rec.Code, out)
+	}
+}
+
+func TestAVersionThroughBackd(t *testing.T) {
+	f := newFilesFixture(t)
+	w := newTestWorker(t, f.rulesFixture)
+	ada := map[string]string{"Authorization": "Bearer " + f.ada}
+	docID, fileID := f.madePicture(t, w, "proxied")
+	runImageJobs(t, w)
+	base := "/v1/acme/app/library/" + docID + "/_files/proxied/" + fileID
+	thumbID := versionsOf(t, f.readDoc(t, docID)["proxied"].(map[string]any))["thumb"].(map[string]any)["id"].(string)
+
+	rec, _ := f.doRaw(t, "GET", base+"?version=thumb", nil, ada)
+	if rec.Code != 200 || rec.Header().Get("Content-Type") != "image/png" || rec.Header().Get("ETag") != `"`+thumbID+`"` ||
+		!strings.Contains(rec.Header().Get("Content-Disposition"), "Holiday-thumb.png") || rec.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("download: %d %v", rec.Code, rec.Header())
+	}
+	cfg, err := png.DecodeConfig(bytes.NewReader(rec.Body.Bytes()))
+	if err != nil || cfg.Width != 10 || cfg.Height != 5 {
+		t.Errorf("the version: %+v %v", cfg, err)
+	}
+	// Conditional and range requests work as on the original.
+	hdr := map[string]string{"Authorization": "Bearer " + f.ada, "If-None-Match": rec.Header().Get("ETag")}
+	if rec2, _ := f.doRaw(t, "GET", base+"?version=thumb", nil, hdr); rec2.Code != 304 {
+		t.Errorf("If-None-Match: %d", rec2.Code)
+	}
+	hdr = map[string]string{"Authorization": "Bearer " + f.ada, "Range": "bytes=0-7"}
+	if rec2, _ := f.doRaw(t, "GET", base+"?version=thumb", nil, hdr); rec2.Code != 206 || rec2.Body.Len() != 8 {
+		t.Errorf("Range: %d %d", rec2.Code, rec2.Body.Len())
+	}
+	// The original is still the original.
+	if rec2, _ := f.doRaw(t, "GET", base, nil, ada); rec2.Code != 200 || !bytes.Equal(rec2.Body.Bytes(), realPNG(t, 20, 10)) {
+		t.Errorf("the original: %d", rec2.Code)
+	}
+
+	// A signed backd link works without credentials, and is bound to the version.
+	_, out := f.doRaw(t, "GET", base+"?version=thumb&link=json", nil, ada)
+	link := strings.TrimPrefix(out["url"].(string), "http://example.com")
+	if rec2, _ := f.doRaw(t, "GET", link, nil, nil); rec2.Code != 200 || rec2.Header().Get("ETag") != `"`+thumbID+`"` {
+		t.Errorf("signed link: %d (%s)", rec2.Code, link)
+	}
+	for name, tampered := range map[string]string{
+		"another version":     strings.Replace(link, "version=thumb", "version=big", 1),
+		"without the version": strings.Replace(link, "&version=thumb", "", 1),
+	} {
+		if rec2, o := f.doRaw(t, "GET", tampered, nil, nil); rec2.Code != 403 || o["error"].(map[string]any)["code"] != "invalid_file_link" {
+			t.Errorf("%s: %d %v", name, rec2.Code, o)
+		}
+	}
+	// A link to the original can't be turned into a version's.
+	_, src := f.doRaw(t, "GET", base+"?link=json", nil, ada)
+	srcLink := strings.TrimPrefix(src["url"].(string), "http://example.com")
+	if rec2, _ := f.doRaw(t, "GET", srcLink+"&version=thumb", nil, nil); rec2.Code != 403 {
+		t.Errorf("a source link used for a version: %d", rec2.Code)
+	}
+}
+
+func TestFileLinksIncludeTheReadyVersions(t *testing.T) {
+	f := newFilesFixture(t)
+	w := newTestWorker(t, f.rulesFixture)
+	docID, fileID := f.madePicture(t, w, "picture")
+	ada := map[string]string{"Authorization": "Bearer " + f.ada}
+	// Before the worker: nothing to link but the original.
+	_, got := f.doRaw(t, "GET", "/v1/acme/app/library/"+docID+"?file_links=true", nil, ada)
+	pending := versionsOf(t, got["picture"].(map[string]any))["thumb"].(map[string]any)
+	if pending["status"] != "pending" || pending["url"] != nil {
+		t.Errorf("a pending version has no link: %v", pending)
+	}
+	runImageJobs(t, w)
+	_, got = f.doRaw(t, "GET", "/v1/acme/app/library/"+docID+"?file_links=true", nil, ada)
+	v := versionsOf(t, got["picture"].(map[string]any))
+	thumb := v["thumb"].(map[string]any)
+	if !strings.Contains(thumb["url"].(string), "/"+fileID+"/thumb") || thumb["expires_at"] == nil || thumb["width"] != float64(10) {
+		t.Errorf("thumb = %v", thumb)
+	}
+	if mark := v["mark"].(map[string]any); mark["url"] != nil {
+		t.Errorf("an empty version has a link: %v", mark)
+	}
+	// The same read without the option has no links, and the same ETag.
+	rec1, plain := f.doRaw(t, "GET", "/v1/acme/app/library/"+docID, nil, ada)
+	if versionsOf(t, plain["picture"].(map[string]any))["thumb"].(map[string]any)["url"] != nil {
+		t.Error("links without being asked")
+	}
+	rec2, _ := f.doRaw(t, "GET", "/v1/acme/app/library/"+docID+"?file_links=true", nil, ada)
+	if rec1.Header().Get("ETag") != rec2.Header().Get("ETag") {
+		t.Error("the links changed the ETag")
+	}
+}

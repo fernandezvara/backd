@@ -34,6 +34,14 @@ const filesConfig = `files:
     max_size: 8KiB
     download: proxy
     cache: 1h
+  # Pictures served through backd, with a version.
+  proxied:
+    max_size: 64KiB
+    types: [image/*]
+    download: proxy
+    cache: 1h
+    versions:
+      thumb: {max_width: 10, max_height: 10, format: png}
   # A picture with versions: workers make thumb, functions may redo big and make mark.
   picture:
     max_size: 64KiB
