@@ -9,7 +9,7 @@ toc: true
 A realm can let its users sign in with **Google**, **Microsoft** or **Apple**. backd runs the redirect flow with the provider, checks the answer, finds or creates the user, and gives your app a one-time code to trade for a session. A user can have a password and any number of providers at once (at most one of each): they are [sign-in methods](../sessions/#sign-in-methods) of the same user, so roles, rules and owned documents don't depend on how the user signed in.
 
 {{< hint style="note" >}}
-The provider flows described here are the **redirect** sign-in. Sign-in with the ID token a mobile app already holds, Apple's token revocation when an account is deleted, the profile handed to the app, `account.on_signup`, provider calls in the JavaScript client and other OpenID Connect providers are **planned**, each in its own step.
+This page covers the **redirect** sign-in and the **native** sign-in of mobile apps. Apple's token revocation when an account is deleted, the profile handed to the app, `account.on_signup`, provider calls in the JavaScript client and other OpenID Connect providers are **planned**, each in its own step.
 {{< /hint >}}
 
 ## Set it up
@@ -43,7 +43,7 @@ providers:
 |---|---|
 | `sign_in.allowed_redirects` | Origins (`https://app.acme.example`, no path) and app schemes (`acme://`) a sign-in may send the user back to. Without it, `email.allowed_redirects` is used. A realm with providers needs one of the two |
 | `providers.google.client_id`, `client_secret` | The OAuth client (type *Web application*) and the secret that holds its secret |
-| `providers.google.native_client_ids` | Optional: the client ids of your mobile apps (for the planned ID-token sign-in) |
+| `providers.google.native_client_ids` | Optional: the client ids of your mobile apps, accepted by the [ID-token sign-in](#native-apps-the-id-token) |
 | `providers.microsoft.client_id`, `client_secret`, `tenant` | The application (client) id, its secret, and which accounts are accepted: `common` (any), `organizations` (work and school), `consumers` (personal) or one tenant id |
 | `providers.apple.services_id`, `team_id`, `key_id`, `private_key` | The Services ID (web client id), the team and key that sign Apple's client secret, and the secret that holds the key. backd signs and renews the client secret itself |
 | `providers.apple.bundle_ids`, `revoke_on_delete` | Optional: your iOS apps, and whether Apple tokens are revoked when an account is deleted (planned) |
@@ -74,6 +74,31 @@ sequenceDiagram
 4. The app redeems it: `POST /v1/{realm}/_auth/oauth/token` with `{"code", "code_verifier"}`. The answer is a session, like a login's (`{"cookie": true}` works too). The code is used up even when the verifier is wrong, so a stolen code is useless without the verifier only your app holds.
 
 **A session never appears in a URL**: only the short-lived code does.
+
+## Native apps: the ID token
+
+An app that signs in with the platform (Sign in with Apple, Google Sign-In, MSAL) already holds the provider's ID token and needs no redirect. It sends the token to backd and gets a session:
+
+```sh
+curl -X POST "$API/v1/acme/_auth/oauth/google/id-token" -H "Content-Type: application/json" \
+  -d '{"id_token": "eyJ…", "nonce": "the raw nonce the sign-in was started with"}'
+# → a session, as a login gives
+```
+
+backd verifies the signature, issuer, expiry and nonce as for the redirect, and the **audience**: the token must have been issued to the web client or to one of the apps you listed (`native_client_ids` for Google and Microsoft, `bundle_ids` for Apple). The app generates the nonce, passes it to the SDK (some SDKs put its SHA-256 in the token, others the nonce itself) and sends the raw value; backd accepts either form, and always requires it.
+
+The same rules as the redirect flow decide who the person is, with JSON answers instead of `?error=`:
+
+| Status and `code` | When |
+|---|---|
+| `401 invalid_token` | The token doesn't verify (signature, issuer, audience, expiry or nonce) |
+| `409 account_exists` | An account has the address and can't be linked automatically |
+| `409 link_conflict` | The provider account belongs to another user (linking) |
+| `403 signup_closed`, `403 email_not_verified`, `403 signin_refused` | Sign-up is closed; the realm requires a verified address; the account can't sign in |
+| `400 invitation_invalid`, `400 email_required` | Sign-up needs a valid invitation (`invitation` in the body); the provider gave no address |
+| `503 provider_unavailable` | The provider's keys could not be fetched |
+
+With `"intent": "link"` and the session in `Authorization`, the call adds the provider account to the signed-in user and answers `{"linked": "google"}`. Apple's `authorization_code` may be sent too: it is for revoking the user's Apple tokens when the account is deleted, which is planned. At most 30 calls a minute per address.
 
 ## Who the person is
 
@@ -114,5 +139,5 @@ An attempt backd can't trace to an app (an unknown, used or expired `state`) can
 - PKCE protects the exchange with the provider (Google and Microsoft) and, always, the handover to your app.
 - The ID token's signature is checked against the provider's published keys (cached, refetched at most once a minute); issuer, audience and expiry are enforced; for Microsoft the issuer must be the token's own tenant, restricted by `tenant`.
 - backd reaches providers through a client that dials only the provider's hosts, resolves them itself and refuses private, loopback and link-local addresses, so a misconfiguration can't make it reach inside your network.
-- `start`, `token` and the other new endpoints are limited to 30 a minute per client address.
+- `start`, `token` and `id-token` are limited to 30 a minute per client address each.
 - Provider secrets live in the realm's encrypted store; backd keeps no provider tokens.
