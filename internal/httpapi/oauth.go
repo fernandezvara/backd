@@ -265,7 +265,7 @@ func (a *authAPI) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	res, err := svc.ResolveProviderLogin(r.Context(), auth.ProviderLogin{
 		Provider: p.Name, Subject: claims.Subject, Email: claims.Email, EmailVerified: claims.EmailVerified, TrustsEmail: p.TrustsEmail(),
 		Intent: st.Intent, LinkUserID: st.LinkUserID, Invitation: st.InvitationID, Locales: st.Locales, IP: clientIP(r),
-		Profile: profileOf(claims, appleFirstAuthorization(get("user"))),
+		Profile: profileOf(claims, firstAuthorization(p, get("user"))),
 	})
 	if err != nil {
 		a.oauthFailure(w, r, svc, st, p, err)
@@ -428,6 +428,15 @@ func profileOf(c oauth.Claims, extra map[string]string) map[string]string {
 		}
 	}
 	return auth.CleanProfile(in)
+}
+
+// firstAuthorization is the name Apple posts with a person's first authorization of the app;
+// no other provider sends such a field, and one sent to them is ignored.
+func firstAuthorization(p *registry.Provider, raw string) map[string]string {
+	if p.Name != registry.ProviderApple {
+		return nil
+	}
+	return appleFirstAuthorization(raw)
 }
 
 // appleFirstAuthorization reads the "user" field Apple posts to the callback the first time a
