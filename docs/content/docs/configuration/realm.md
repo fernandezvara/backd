@@ -75,6 +75,7 @@ An empty file, or one with only comments, is valid: every key has a default.
 | `account.allow_email_change` | `false` | `true`: users may [change their own address](../../auth/sessions/#changing-the-email-address) |
 | `account.welcome_email` | `false` | `true`: send the `welcome` email once the address is verified |
 | `account.purge_unverified_after` | off | Delete accounts that never verified after this long (at least `1m`; never accounts with roles) |
+| `account.on_signup` | none | An internal, async function (`<database>/<function>`) called for every new user, with `{user_id, provider, profile?}`, to create the app's profile document. See [The profile and the sign-up hook](../../auth/providers/#the-profile-and-the-sign-up-hook) |
 | `account.tokens.verify_email` | `48h` | How long the verification link works |
 | `account.tokens.reset_password` | `1h` | How long a [password reset](../../auth/sessions/#password-reset) link works |
 | `account.tokens.change_email` | `24h` | How long the confirmation link of an [email change](../../auth/sessions/#changing-the-email-address) works |

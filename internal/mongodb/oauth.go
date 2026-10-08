@@ -28,11 +28,13 @@ type oauthStateDoc struct {
 }
 
 type loginCodeDoc struct {
-	ID            string    `bson:"_id"`
-	UserID        string    `bson:"user_id"`
-	CodeChallenge string    `bson:"code_challenge"`
-	CreatedAt     time.Time `bson:"created_at"`
-	ExpiresAt     time.Time `bson:"expires_at"`
+	ID            string            `bson:"_id"`
+	UserID        string            `bson:"user_id"`
+	CodeChallenge string            `bson:"code_challenge"`
+	NewUser       bool              `bson:"new_user,omitempty"`
+	Profile       map[string]string `bson:"profile,omitempty"`
+	CreatedAt     time.Time         `bson:"created_at"`
+	ExpiresAt     time.Time         `bson:"expires_at"`
 }
 
 // PutOAuthState stores a sign-in attempt.

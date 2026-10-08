@@ -3,6 +3,7 @@ package registry
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 const providersYAML = `auth: enabled
@@ -96,6 +97,36 @@ func TestProviderErrors(t *testing.T) {
 		}
 		if !found {
 			t.Errorf("%s: errors %v, want %q", c.name, errs, c.want)
+		}
+	}
+}
+
+func TestOnSignupMustBeAnInternalAsyncFunction(t *testing.T) {
+	tree := func(realm, fn string) string {
+		return writeTree(t, map[string]string{
+			"shop/realm.yaml":                         realm,
+			"shop/app/_functions/deno.json":           `{}`,
+			"shop/app/_functions/hello/function.yaml": fn,
+			"shop/app/_functions/hello/index.ts":      "export default () => 1;\n",
+		})
+	}
+	reg, err := Load(tree("signup: open\naccount:\n  on_signup: app/hello\n", "internal: true\nmode: async\ntimeout: 20s\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := reg.Realms["shop"].Settings.Account
+	if db, name := a.OnSignupDatabaseAndName(); db != "app" || name != "hello" || a.OnSignupTimeout != 20*time.Second {
+		t.Errorf("account: %+v", a)
+	}
+	for name, tc := range map[string]struct{ realm, fn, want string }{
+		"not a function":   {"signup: open\naccount:\n  on_signup: app/nothing\n", "internal: true\nmode: async\n", "is not a function of this realm"},
+		"not internal":     {"signup: open\naccount:\n  on_signup: app/hello\n", "mode: async\n", "must have `internal: true`"},
+		"not async":        {"signup: open\naccount:\n  on_signup: app/hello\n", "internal: true\n", "must have `mode: async`"},
+		"not a path":       {"signup: open\naccount:\n  on_signup: hello\n", "internal: true\nmode: async\n", "must be <database>/<function>"},
+		"auth is disabled": {"auth: disabled\naccount:\n  on_signup: app/hello\n", "internal: true\nmode: async\n", "account: only applies when auth is enabled"},
+	} {
+		if _, err := Load(tree(tc.realm, tc.fn)); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: %v, want %q", name, err, tc.want)
 		}
 	}
 }

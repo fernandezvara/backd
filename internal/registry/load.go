@@ -90,11 +90,37 @@ func Load(root string) (*Registry, error) {
 	}
 	for _, realmName := range reg.RealmNames() {
 		errs = append(errs, loadEmail(reg.Realms[realmName], filepath.Join(root, realmName))...)
+		errs = append(errs, loadOnSignup(reg.Realms[realmName], filepath.Join(root, realmName))...)
 	}
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
 	return reg, nil
+}
+
+// loadOnSignup checks that account.on_signup names a function that can run in the background
+// without anyone calling it: internal and async.
+func loadOnSignup(rl *Realm, realmPath string) []error {
+	a := &rl.Settings.Account
+	if a.OnSignup == "" {
+		return nil
+	}
+	file := filepath.Join(realmPath, RealmFile)
+	dbName, fnName := a.OnSignupDatabaseAndName()
+	var fn *Function
+	if db := rl.Databases[dbName]; db != nil && db.Functions != nil {
+		fn = db.Functions.Functions[fnName]
+	}
+	switch {
+	case fn == nil:
+		return []error{fmt.Errorf("%s: account.on_signup: %q is not a function of this realm (it is _functions/%s in the database %q)", file, a.OnSignup, fnName, dbName)}
+	case !fn.Internal:
+		return []error{fmt.Errorf("%s: account.on_signup: %s must have `internal: true` in its function.yaml (nobody should call it over HTTP)", file, a.OnSignup)}
+	case fn.Mode != ModeAsync:
+		return []error{fmt.Errorf("%s: account.on_signup: %s must have `mode: async` in its function.yaml (nothing waits for it while someone signs up)", file, a.OnSignup)}
+	}
+	a.OnSignupTimeout = fn.Timeout
+	return nil
 }
 
 // loadEmail checks a realm's email settings against its functions and loads
