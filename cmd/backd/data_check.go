@@ -9,7 +9,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/fernandezvara/cli"
+	"github.com/fernandezvara/kli"
 )
 
 // checkWarning is said before every check: it is a full read of the data.
@@ -44,7 +44,7 @@ type checkReport struct {
 
 // dataCheck handles `backd data check`: it starts a schema check, follows its
 // progress, prints the reports and exits non-zero when it found drift.
-func dataCheck(c *cli.CommandContext) error {
+func dataCheck(c *kli.CommandContext) error {
 	database, collection := str(c, "database"), str(c, "collection")
 	if collection != "" && database == "" {
 		return usageErr(errors.New("--collection needs --database"))
@@ -149,9 +149,9 @@ func dataCheck(c *cli.CommandContext) error {
 	}
 	switch {
 	case invalid > 0:
-		return cli.Exit(1, fmt.Errorf("drift found: %d invalid documents in %d collections", invalid, countInvalid(reports)))
+		return kli.Exit(1, fmt.Errorf("drift found: %d invalid documents in %d collections", invalid, countInvalid(reports)))
 	case incomplete > 0:
-		return cli.Exit(1, fmt.Errorf("%d collections were not checked to the end (the time limit)", incomplete))
+		return kli.Exit(1, fmt.Errorf("%d collections were not checked to the end (the time limit)", incomplete))
 	}
 	return nil
 }
@@ -200,7 +200,7 @@ func printCheckReport(w io.Writer, r checkReport) {
 }
 
 // dataChecks handles `backd data checks`: the latest reports (or one in full).
-func dataChecks(c *cli.CommandContext) error {
+func dataChecks(c *kli.CommandContext) error {
 	database, collection := str(c, "database"), str(c, "collection")
 	if collection != "" && database == "" {
 		return usageErr(errors.New("--collection needs --database"))

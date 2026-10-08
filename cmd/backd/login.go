@@ -9,19 +9,19 @@ import (
 	"os"
 	"strings"
 
-	"github.com/fernandezvara/cli"
+	"github.com/fernandezvara/kli"
 	"golang.org/x/term"
 )
 
-func loginAction(c *cli.CommandContext) error {
+func loginAction(c *kli.CommandContext) error {
 	return login(str(c, "realm"), str(c, "url"), str(c, "email"), c.Getenv, ioOf(c))
 }
 
-func logoutAction(c *cli.CommandContext) error {
+func logoutAction(c *kli.CommandContext) error {
 	return logout(str(c, "realm"), str(c, "url"), c.Getenv, ioOf(c))
 }
 
-func whoamiAction(c *cli.CommandContext) error {
+func whoamiAction(c *kli.CommandContext) error {
 	return whoami(str(c, "realm"), str(c, "url"), c.Getenv, ioOf(c))
 }
 

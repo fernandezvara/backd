@@ -14,14 +14,14 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/fernandezvara/cli"
+	"github.com/fernandezvara/kli"
 
 	"github.com/fernandezvara/backd/internal/functions"
 	"github.com/fernandezvara/backd/internal/httpapi"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
-func functionsBuild(c *cli.CommandContext) error {
+func functionsBuild(c *kli.CommandContext) error {
 	dir, err := configDir(c)
 	if err != nil {
 		return err
@@ -50,7 +50,7 @@ func functionsBuild(c *cli.CommandContext) error {
 
 // functionTarget resolves --function <realm>/<database>/<name> and the
 // server to talk to.
-func functionTarget(c *cli.CommandContext) (t *target, database, name string, err error) {
+func functionTarget(c *kli.CommandContext) (t *target, database, name string, err error) {
 	realm, database, name, err := splitFunctionPath(str(c, "function"))
 	if err != nil {
 		return nil, "", "", usageErr(err)
@@ -62,7 +62,7 @@ func functionTarget(c *cli.CommandContext) (t *target, database, name string, er
 // functionsInvoke handles `backd functions invoke`: a normal call to a
 // running backd, through the same route and rules any other caller goes
 // through (not a local shortcut), so what it shows is what production does.
-func functionsInvoke(c *cli.CommandContext) error {
+func functionsInvoke(c *kli.CommandContext) error {
 	realm, database, name, err := splitFunctionPath(str(c, "function"))
 	if err != nil {
 		return usageErr(err)
@@ -153,7 +153,7 @@ func functionsInvoke(c *cli.CommandContext) error {
 	return nil
 }
 
-func functionsTypes(c *cli.CommandContext) error {
+func functionsTypes(c *kli.CommandContext) error {
 	dir, err := configDir(c)
 	if err != nil {
 		return err
@@ -226,7 +226,7 @@ type invocationLog struct {
 }
 
 // functionsHistory handles `backd functions history`.
-func functionsHistory(c *cli.CommandContext) error {
+func functionsHistory(c *kli.CommandContext) error {
 	q := url.Values{}
 	limit, err := invocationsQuery(c, q, time.Now())
 	if err != nil {
@@ -283,7 +283,7 @@ type jobRecord struct {
 
 // functionsJobs handles `backd functions jobs`: the realm's async and
 // scheduled jobs, newest first, for one function or all of them.
-func functionsJobs(c *cli.CommandContext) error {
+func functionsJobs(c *kli.CommandContext) error {
 	if id := str(c, "job"); id != "" {
 		return functionsJobDetail(c, id)
 	}
@@ -358,7 +358,7 @@ func functionsJobs(c *cli.CommandContext) error {
 
 // functionsJobDetail handles `backd functions jobs --job <id>`: one job with every
 // step its running or last attempt reported.
-func functionsJobDetail(c *cli.CommandContext, id string) error {
+func functionsJobDetail(c *kli.CommandContext, id string) error {
 	if str(c, "function") != "" || str(c, "realm") == "" {
 		return usageErr(errors.New("--job needs --realm (the job's id is unique within it) and no --function"))
 	}
@@ -413,13 +413,13 @@ func functionsJobDetail(c *cli.CommandContext, id string) error {
 
 // functionsCancel handles `backd functions cancel`: ends a job that hasn't
 // finished.
-func functionsCancel(c *cli.CommandContext) error { return jobControl(c, "cancel", "cancelled") }
+func functionsCancel(c *kli.CommandContext) error { return jobControl(c, "cancel", "cancelled") }
 
 // functionsRerun handles `backd functions rerun`: queues a finished job again.
-func functionsRerun(c *cli.CommandContext) error { return jobControl(c, "rerun", "queued as") }
+func functionsRerun(c *kli.CommandContext) error { return jobControl(c, "rerun", "queued as") }
 
 // jobControl posts to _admin/jobs/{id}/{op} and prints the job the answer names.
-func jobControl(c *cli.CommandContext, op, verb string) error {
+func jobControl(c *kli.CommandContext, op, verb string) error {
 	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
 	if err != nil {
 		return err
@@ -447,7 +447,7 @@ type scheduleRecord struct {
 }
 
 // functionsSchedules handles `backd functions schedules`.
-func functionsSchedules(c *cli.CommandContext) error {
+func functionsSchedules(c *kli.CommandContext) error {
 	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
 	if err != nil {
 		return err
@@ -477,11 +477,11 @@ func functionsSchedules(c *cli.CommandContext) error {
 	return tw.Flush()
 }
 
-func functionsPause(c *cli.CommandContext) error  { return scheduleControl(c, "pause") }
-func functionsResume(c *cli.CommandContext) error { return scheduleControl(c, "resume") }
+func functionsPause(c *kli.CommandContext) error  { return scheduleControl(c, "pause") }
+func functionsResume(c *kli.CommandContext) error { return scheduleControl(c, "resume") }
 
 // scheduleControl posts to _admin/functions/{database}/{name}/{op}.
-func scheduleControl(c *cli.CommandContext, op string) error {
+func scheduleControl(c *kli.CommandContext, op string) error {
 	t, database, name, err := functionTarget(c)
 	if err != nil {
 		return err
@@ -502,7 +502,7 @@ func scheduleControl(c *cli.CommandContext, op string) error {
 }
 
 // functionsLogs handles `backd functions logs`.
-func functionsLogs(c *cli.CommandContext) error {
+func functionsLogs(c *kli.CommandContext) error {
 	q := url.Values{}
 	limit, err := invocationsQuery(c, q, time.Now())
 	if err != nil {
@@ -542,7 +542,7 @@ func splitFunctionPath(s string) (realm, database, name string, err error) {
 
 // invocationsQuery turns --since and --limit into query parameters and
 // returns the limit (same shape as audit.go's auditQuery).
-func invocationsQuery(c *cli.CommandContext, q url.Values, now time.Time) (int, error) {
+func invocationsQuery(c *kli.CommandContext, q url.Values, now time.Time) (int, error) {
 	if v := str(c, "since"); v != "" {
 		since, err := sinceParam(v, now)
 		if err != nil {

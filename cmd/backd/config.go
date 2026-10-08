@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/fernandezvara/cli"
+	"github.com/fernandezvara/kli"
 
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/settings"
@@ -11,11 +11,11 @@ import (
 
 // checkConfig and configFingerprint handle `backd config check|fingerprint`.
 // They need only CONFIG_DIR.
-func checkConfig(c *cli.CommandContext) error { return configCommand(c, false) }
+func checkConfig(c *kli.CommandContext) error { return configCommand(c, false) }
 
-func configFingerprint(c *cli.CommandContext) error { return configCommand(c, true) }
+func configFingerprint(c *kli.CommandContext) error { return configCommand(c, true) }
 
-func configCommand(c *cli.CommandContext, fingerprintOnly bool) error {
+func configCommand(c *kli.CommandContext, fingerprintOnly bool) error {
 	dir, err := configDir(c)
 	if err != nil {
 		return err

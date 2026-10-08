@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/fernandezvara/cli"
+	"github.com/fernandezvara/kli"
 
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/rulestest"
@@ -17,7 +17,7 @@ import (
 
 // rulesTest handles `backd rules test`: it runs every collection's
 // rules.test.yaml against its rules, with no database. Needs only CONFIG_DIR.
-func rulesTest(c *cli.CommandContext) error {
+func rulesTest(c *kli.CommandContext) error {
 	dir, err := configDir(c)
 	if err != nil {
 		return err
@@ -96,9 +96,9 @@ func rulesTest(c *cli.CommandContext) error {
 	fmt.Fprintln(out)
 	switch {
 	case failed > 0 || broken > 0:
-		return cli.Exit(1, errors.New(""))
+		return kli.Exit(1, errors.New(""))
 	case strict && len(untested) > 0:
-		return cli.Exit(1, fmt.Errorf("%d collections with rules have no tests (--strict)", len(untested)))
+		return kli.Exit(1, fmt.Errorf("%d collections with rules have no tests (--strict)", len(untested)))
 	}
 	return nil
 }

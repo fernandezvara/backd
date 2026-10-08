@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"text/tabwriter"
 
-	"github.com/fernandezvara/cli"
+	"github.com/fernandezvara/kli"
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/mongodb"
@@ -23,7 +23,7 @@ type secret struct {
 	UpdatedBy string `json:"updated_by"`
 }
 
-func secretSet(c *cli.CommandContext) error {
+func secretSet(c *kli.CommandContext) error {
 	t, err := targetOf(c, false)
 	if err != nil {
 		return err
@@ -47,7 +47,7 @@ func secretSet(c *cli.CommandContext) error {
 	return nil
 }
 
-func secretList(c *cli.CommandContext) error {
+func secretList(c *kli.CommandContext) error {
 	t, err := targetOf(c, false)
 	if err != nil {
 		return err
@@ -68,7 +68,7 @@ func secretList(c *cli.CommandContext) error {
 	return tw.Flush()
 }
 
-func secretDelete(c *cli.CommandContext) error {
+func secretDelete(c *kli.CommandContext) error {
 	t, err := targetOf(c, false)
 	if err != nil {
 		return err
@@ -89,7 +89,7 @@ func secretDelete(c *cli.CommandContext) error {
 	return nil
 }
 
-func secretRotateKey(c *cli.CommandContext) error {
+func secretRotateKey(c *kli.CommandContext) error {
 	return rotateSecretsKey(context.Background(), c.Getenv, ioOf(c))
 }
 

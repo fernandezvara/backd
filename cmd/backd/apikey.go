@@ -7,7 +7,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/fernandezvara/cli"
+	"github.com/fernandezvara/kli"
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/registry"
@@ -27,7 +27,7 @@ type apiKey struct {
 }
 
 // keyOptions checks the create flags and adds them to the request body.
-func keyOptions(c *cli.CommandContext, body map[string]any) error {
+func keyOptions(c *kli.CommandContext, body map[string]any) error {
 	body["role"] = str(c, "role")
 	if v := str(c, "expires"); v != "" {
 		if d, err := registry.ParseDuration(v); err != nil || d <= 0 {
@@ -52,7 +52,7 @@ func keyOptions(c *cli.CommandContext, body map[string]any) error {
 	return nil
 }
 
-func apikeyCreate(c *cli.CommandContext) error {
+func apikeyCreate(c *kli.CommandContext) error {
 	body := map[string]any{"name": str(c, "name")}
 	if err := keyOptions(c, body); err != nil {
 		return err
@@ -80,7 +80,7 @@ func apikeyCreate(c *cli.CommandContext) error {
 	return nil
 }
 
-func apikeyList(c *cli.CommandContext) error {
+func apikeyList(c *kli.CommandContext) error {
 	t, err := targetOf(c, false)
 	if err != nil {
 		return err
@@ -104,7 +104,7 @@ func apikeyList(c *cli.CommandContext) error {
 	return tw.Flush()
 }
 
-func apikeyRevoke(c *cli.CommandContext) error {
+func apikeyRevoke(c *kli.CommandContext) error {
 	t, err := targetOf(c, false)
 	if err != nil {
 		return err

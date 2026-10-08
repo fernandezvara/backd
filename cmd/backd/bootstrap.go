@@ -7,13 +7,13 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/fernandezvara/cli"
+	"github.com/fernandezvara/kli"
 
 	"github.com/fernandezvara/backd/internal/auth"
 )
 
 // bootstrapAction handles `backd bootstrap`.
-func bootstrapAction(c *cli.CommandContext) error {
+func bootstrapAction(c *kli.CommandContext) error {
 	ctx := context.Background()
 	uio := ioOf(c)
 	a, err := setup(ctx, c.Getenv, uio.stderr)
