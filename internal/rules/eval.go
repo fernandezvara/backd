@@ -19,6 +19,9 @@ type Values struct {
 	Document map[string]any // stored document (read, update, delete)
 	Data     map[string]any // incoming document (create, update)
 	Now      time.Time
+	// Config is the app configuration, by dot path of each value, for appConfig();
+	// only filled in when a rule reads it.
+	Config map[string]any
 }
 
 func (v Values) env() map[string]any {
@@ -28,6 +31,7 @@ func (v Values) env() map[string]any {
 		"data":     v.Data,
 		"now":      v.Now,
 		"changed":  func() []string { return changed(v.Document, v.Data) },
+		"config":   v.configMap(),
 	}
 }
 
@@ -73,7 +77,7 @@ func (r *Rule) prepareFilter() error {
 			return
 		}
 		if !refs(n, "document") {
-			r.consts[n], err = expr.Compile(n.String(), expr.Env(compileEnv()), hasRoleFunc, hasConsentFunc)
+			r.consts[n], err = expr.Compile(n.String(), compileOptions()...)
 			return
 		}
 		for _, c := range children(n) {
@@ -224,4 +228,11 @@ func normalize(v any) any {
 		return out
 	}
 	return v
+}
+
+func (v Values) configMap() map[string]any {
+	if v.Config == nil {
+		return map[string]any{}
+	}
+	return v.Config
 }

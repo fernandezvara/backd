@@ -572,6 +572,8 @@ export class FunctionError extends Error {
  * @property {string[]} [calls]         function.yaml's `calls`: ctx.call refuses any other name with `call_not_declared`, as backd does.
  * @property {boolean | { kinds?: string[], audience?: boolean }} [push]  Give the function ctx.push.send (function.yaml's `push:`); the object is what it declares: the `kinds` it may name and whether it may send to an `audience`.
  * @property {boolean | { perInvocation?: number, recipientsPerMessage?: number, consents?: Record<string, string[]> }} [email]  Give the function ctx.email.send (function.yaml's `email: true`); the object sets the realm's caps (`email.limits`) the fake enforces, and the consents each user id holds, for sends that `requires_consent`.
+ * @property {Record<string, any>} [config]  The realm's app configuration, nested like its schema.json: gives the function ctx.config.get and ctx.config.all.
+ * @property {boolean} [configWrite]    Also give ctx.admin.config.set, reset and history (function.yaml's `config: write`); changes apply to `config` and are listed by `configChanges()`.
  */
 
 /** The kinds backd sends itself: a function can't send them. */
@@ -753,11 +755,11 @@ export function callTimedOut() {
  * in-memory store (a fresh one per call unless `store` is given, so
  * several calls in one test can share state). Also returns `fakeCall` to
  * fake what `ctx.call(name, ...)` answers, `calls` to list what the
- * function called, `sentEmails` to list what it sent with `ctx.email.send`, `sentPushes` to list what it sent with `ctx.push.send`, and `steps`
+ * function called, `sentEmails` to list what it sent with `ctx.email.send`, `sentPushes` to list what it sent with `ctx.push.send`, `configChanges` to list what it changed with `ctx.admin.config`, and `steps`
  * to list what it reported with `ctx.step` and `ctx.progress` (name, total, message, the
  * last `current`, and every `updates` entry).
  * @param {ContextOptions} [opts]
- * @returns {{ ctx: any, store: MemoryStore, fakeCall: (name: string, handler: (input: any, options: any) => any) => void, calls: (name: string) => Array<{ input: any, options: any }>, sentEmails: () => Array<Record<string, any>>, sentPushes: () => Array<Record<string, any>>, steps: () => Array<{ name: string, total: number | null, message: string | null, current: number, updates: Array<{ current: number, message: string | null }> }> }}
+ * @returns {{ ctx: any, store: MemoryStore, fakeCall: (name: string, handler: (input: any, options: any) => any) => void, calls: (name: string) => Array<{ input: any, options: any }>, sentEmails: () => Array<Record<string, any>>, sentPushes: () => Array<Record<string, any>>, configChanges: () => Array<{ path: string, old: any, new: any }>, steps: () => Array<{ name: string, total: number | null, message: string | null, current: number, updates: Array<{ current: number, message: string | null }> }> }}
  */
 export function createContext(opts = {}) {
   const store = opts.store ?? new MemoryStore()
@@ -830,11 +832,48 @@ export function createContext(opts = {}) {
   // ctx.push.send: records the push; checks what backd would refuse before queueing it.
   const pushes = fakePush(typeof opts.push === 'object' ? opts.push : {})
   if (opts.push) ctx.push = Object.freeze({ send: pushes.send })
+
+  // ctx.config (and ctx.admin.config with `configWrite`): the values the test gives, nested.
+  const config = structuredClone(opts.config ?? {})
+  const at = (path) => String(path).split('.').reduce((v, k) => (v !== null && typeof v === 'object' ? v[k] : undefined), config)
+  /** @type {Array<{ path: string, old: any, new: any }>} */
+  const configChanged = []
+  /** @type {Array<{ version: string, actor: string, kind: string, changes: Array<{ path: string, old: any, new: any }> }>} */
+  const configHistory = []
+  const put = (path, value) => {
+    const keys = String(path).split('.')
+    let cur = config
+    for (const k of keys.slice(0, -1)) cur = cur[k] ??= {}
+    cur[keys[keys.length - 1]] = value
+  }
+  if (opts.config) {
+    ctx.config = Object.freeze({ all: async () => structuredClone(config), get: async (path) => structuredClone(at(path)) })
+  }
+  if (opts.configWrite) {
+    const apply = (changes) => {
+      const real = changes.filter((c) => JSON.stringify(c.old) !== JSON.stringify(c.new))
+      for (const c of real) put(c.path, c.new)
+      configChanged.push(...real)
+      if (real.length > 0) configHistory.unshift({ version: `c${configHistory.length + 1}`, actor: 'function:test', kind: 'set', changes: real })
+      return { version: `c${configHistory.length}`, changed: real.length > 0, changes: real }
+    }
+    ctx.admin = Object.freeze({
+      ...(ctx.admin ?? {}),
+      config: Object.freeze({
+        set: async (values) => apply(Object.entries(values).map(([path, value]) => ({ path, old: structuredClone(at(path)), new: value }))),
+        reset: async () => {
+          throw new Error("@backd/functions-testing: ctx.admin.config.reset needs the schema's defaults, which the fake doesn't have: use set() to put the default back")
+        },
+        history: async (limit) => structuredClone(configHistory.slice(0, limit ?? 20)),
+      }),
+    })
+  }
   return {
     ctx: Object.freeze(ctx),
     store,
     sentEmails: mail.sent,
     sentPushes: pushes.sent,
+    configChanges: () => structuredClone(configChanged),
     steps: () => reported.map((st) => ({ ...st, updates: st.updates.map((u) => ({ ...u })) })),
     fakeCall: (name, handler) => void fakes.set(name, handler),
     calls: (name) => recorded.filter((c) => c.name === name).map(({ input, options }) => ({ input, options })),

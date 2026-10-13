@@ -41,6 +41,8 @@ type CallbackClaims struct {
 	Email bool `json:"m,omitempty"`
 	// Push says the function may send push notifications (function.yaml `push:`).
 	Push bool `json:"p,omitempty"`
+	// Config says the function may change the app configuration (function.yaml `config: write`).
+	Config bool `json:"g,omitempty"`
 	// MFA and Methods are how the session of the user the call acts as was created, so that
 	// rules in the function's own data calls see the same `user.mfa` and `user.methods`.
 	MFA     bool     `json:"x,omitempty"`
@@ -98,6 +100,7 @@ type FuncCaller struct {
 	Invocation string
 	Email      bool   // ctx.email.send
 	Push       bool   // ctx.push.send
+	Config     bool   // ctx.admin.config: may change the app configuration
 	Job        string // the job attempt behind the token, if any (see CallbackClaims)
 	Attempt    int
 	Expires    time.Time
@@ -105,7 +108,7 @@ type FuncCaller struct {
 
 // FuncCallerOf is the function behind a verified callback token.
 func FuncCallerOf(c CallbackClaims) *FuncCaller {
-	return &FuncCaller{Name: c.Realm + "/" + c.Function, Admin: c.Admin, Calls: c.Calls, Depth: c.Depth, Invocation: c.Inv, Email: c.Email, Push: c.Push, Job: c.Job, Attempt: c.Attempt, Expires: c.Expires}
+	return &FuncCaller{Name: c.Realm + "/" + c.Function, Admin: c.Admin, Calls: c.Calls, Depth: c.Depth, Invocation: c.Inv, Email: c.Email, Push: c.Push, Config: c.Config, Job: c.Job, Attempt: c.Attempt, Expires: c.Expires}
 }
 
 // CallbackCaller resolves a verified token into the caller it acts as,

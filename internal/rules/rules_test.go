@@ -2,6 +2,7 @@ package rules
 
 import (
 	"errors"
+	"github.com/fernandezvara/backd/internal/storage"
 	"slices"
 	"strings"
 	"testing"
@@ -262,5 +263,44 @@ func TestCompileConfig(t *testing.T) {
 		if _, err := CompileConfig(src, []string{"beta"}, nil); err == nil {
 			t.Errorf("%q compiled", src)
 		}
+	}
+}
+
+func TestAppConfigInRules(t *testing.T) {
+	schema := testSchema
+	schema.ConfigLeaf = func(p string) bool { return p == "features.export.enabled" || p == "limits.max" }
+	set, errs := Parse(map[string]string{
+		"read":   `appConfig("features.export.enabled") == true && document.published == true`,
+		"create": `user != nil && appConfig("limits.max") > 3`,
+	}, schema)
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	cfg := map[string]any{"features.export.enabled": true, "limits.max": float64(5)}
+	f, err := set.For(Read).Filter(Values{Config: cfg})
+	if _, isCond := f.(storage.Condition); err != nil || !isCond {
+		t.Errorf("filter with the flag on = %v, %v", f, err)
+	}
+	off, _ := set.For(Read).Filter(Values{Config: map[string]any{"features.export.enabled": false}})
+	if c, ok := off.(storage.Const); !ok || bool(c) {
+		t.Errorf("filter with the flag off = %#v, want a constant false", off)
+	}
+	if !set.For(Read).UsesConfig() || !set.UsesConfig() {
+		t.Error("UsesConfig is false")
+	}
+	if ok, err := set.For(Create).Allow(Values{User: &User{ID: "u"}, Config: cfg}); err != nil || !ok {
+		t.Errorf("create = %v, %v", ok, err)
+	}
+	if ok, _ := set.For(Create).Allow(Values{User: &User{ID: "u"}, Config: map[string]any{"limits.max": float64(1)}}); ok {
+		t.Error("create allowed with a low limit")
+	}
+	// A key that isn't declared, or isn't a literal, is refused; so is any use without a configuration.
+	for _, src := range []string{`appConfig("nope") == true`, `appConfig(user.id) == true`, `appConfig("features.export.enabled", 1)`} {
+		if _, errs := Parse(map[string]string{"create": "user != nil && " + src}, schema); len(errs) == 0 {
+			t.Errorf("%s compiled", src)
+		}
+	}
+	if _, errs := Parse(map[string]string{"read": `appConfig("a") == true`}, testSchema); len(errs) == 0 {
+		t.Error("appConfig compiled in a realm without configuration")
 	}
 }

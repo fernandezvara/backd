@@ -276,7 +276,7 @@ read:
 - **`rules.yaml`:** `read:` maps a path to a rule that sees `user` and `now`, with `hasRole`, `hasConsent` and the realm's roles and consents; there is no document. A path's effective rule is its own ANDed with every ancestor's, so deeper paths can only narrow. A path with no rule on it or on an ancestor can't be read by clients.
 - **Startup** fails on an uncompilable schema or rule, an object missing `additionalProperties: false`, a value without a default, a rules path the schema doesn't declare, a default that doesn't satisfy the schema, a `secret:` reference or defaults over the size cap. Both files are part of the config fingerprint.
 
-Apps read it with `GET /v1/{realm}/_config` (optionally `?paths=features,maintenance`): only the keys the caller's rules allow, defaults filled in, hidden keys absent without a hint. The answer carries a weak `ETag` (`If-None-Match` answers `304`) and `cache_ttl`, the seconds a client may use its copy without asking, set by `app_config.cache_ttl` in `realm.yaml` (5 minutes by default). An anonymous request whose keys are all readable by a rule that is literally `"true"` is `Cache-Control: public, max-age=<cache_ttl>` with `Vary: Authorization`, so a CDN can serve it; everything else is `private, no-cache`. Administrators change values through the [admin API](../../auth/admin/#app-configuration).
+The [app configuration guide](../app-config/) covers reading it with `GET /v1/{realm}/_config`, changing values, functions and rules.
 
 Configuration is readable by whoever its rules allow, and sits in the browser's cache: never put a secret in it.
 

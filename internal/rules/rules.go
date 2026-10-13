@@ -78,6 +78,9 @@ type Schema struct {
 	Roles []string
 	// Consents are the consent names declared in realm.yaml, for hasConsent.
 	Consents []string
+	// ConfigLeaf reports whether a dot path is a value of the realm's app
+	// configuration, for appConfig; nil when the realm declares none.
+	ConfigLeaf func(path string) bool
 }
 
 // Set is a collection's compiled rules. A nil rule denies the operation.
@@ -142,7 +145,62 @@ func compileEnv() map[string]any {
 		"data":     map[string]any{},
 		"now":      time.Time{},
 		"changed":  func() []string { return nil },
+		"config":   map[string]any{},
 	}
+}
+
+// appConfig reads a value of the app configuration. Rules write appConfig("a.b");
+// compilation passes the request's configuration as the first argument, so the
+// value is fixed for the request and is a constant to the filter pushdown.
+func appConfig(params ...any) (any, error) {
+	cfg, _ := params[0].(map[string]any)
+	return cfg[params[1].(string)], nil
+}
+
+var appConfigFunc = expr.Function("appConfig", appConfig, new(func(map[string]any, string) any))
+
+// configPatcher rewrites appConfig("a.b") into appConfig(config, "a.b").
+type configPatcher struct{}
+
+func (configPatcher) Visit(node *ast.Node) {
+	c, ok := (*node).(*ast.CallNode)
+	if !ok || len(c.Arguments) != 1 {
+		return
+	}
+	if id, ok := c.Callee.(*ast.IdentifierNode); ok && id.Value == "appConfig" {
+		c.Arguments = []ast.Node{&ast.IdentifierNode{Value: "config"}, c.Arguments[0]}
+	}
+}
+
+// compileOptions are what every rule is compiled with, whole or in parts.
+func compileOptions(extra ...expr.Option) []expr.Option {
+	return append([]expr.Option{expr.Env(compileEnv()), hasRoleFunc, hasConsentFunc, appConfigFunc, expr.Patch(configPatcher{})}, extra...)
+}
+
+// UsesConfig reports whether the rule reads the app configuration.
+func (r *Rule) UsesConfig() bool {
+	found := false
+	walk(r.tree, func(n ast.Node) {
+		if c, ok := n.(*ast.CallNode); ok {
+			if id, ok := c.Callee.(*ast.IdentifierNode); ok && id.Value == "appConfig" {
+				found = true
+			}
+		}
+	})
+	return found
+}
+
+// UsesConfig reports whether any rule of the set reads the app configuration.
+func (s *Set) UsesConfig() bool {
+	if s == nil {
+		return false
+	}
+	for _, r := range s.rules {
+		if r.UsesConfig() {
+			return true
+		}
+	}
+	return false
 }
 
 // hasRole is true when user has any of roles; false for anonymous callers.
@@ -212,7 +270,7 @@ func compile(op Op, key, src string, schema Schema) (*Rule, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", where, err)
 	}
-	prog, err := expr.Compile(src, expr.Env(compileEnv()), hasRoleFunc, hasConsentFunc, expr.AsBool())
+	prog, err := expr.Compile(src, compileOptions(expr.AsBool())...)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", where, err)
 	}

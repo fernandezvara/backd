@@ -848,6 +848,17 @@ func checkFunctions(reg *registry.Registry, cfg settings.Settings, log *slog.Log
 			return fmt.Errorf("%s/%s/%s declares secrets, but BACKD_SECRETS_KEY (or BACKD_SECRETS_KEY_FILE) is not set", fn.Realm, fn.Database, fn.Name)
 		}
 	}
+	// Functions that may change the app configuration are the ones to review.
+	for _, db := range reg.Databases() {
+		if db.Functions == nil {
+			continue
+		}
+		for _, name := range slices.Sorted(maps.Keys(db.Functions.Functions)) {
+			if fn := db.Functions.Functions[name]; fn.ConfigWrite {
+				log.Info("function may change the app configuration", "realm", db.Realm, "function", db.Name+"/"+name)
+			}
+		}
+	}
 	if !cfg.Dev {
 		for _, db := range reg.Databases() {
 			if db.Functions == nil {

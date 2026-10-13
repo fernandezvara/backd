@@ -416,3 +416,22 @@ Deno.test('createContext gives ctx.push when asked, and lists what was sent', as
   assertEquals(sentPushes().length, 1)
   assertEquals(createContext().ctx.push, undefined)
 })
+
+Deno.test('ctx.config reads the values the test gives, and ctx.admin.config changes them', async () => {
+  const { ctx, configChanges } = createContext({ config: { features: { export: { enabled: true } }, maintenance: { enabled: false } }, configWrite: true })
+  assertEquals(await ctx.config.get('features.export.enabled'), true)
+  assertEquals(await ctx.config.get('maintenance'), { enabled: false })
+  assertEquals(await ctx.config.get('nope.nothing'), undefined)
+  const r = await ctx.admin.config.set({ 'maintenance.enabled': true, 'features.export.enabled': true })
+  assertEquals(r.changed, true)
+  assertEquals(configChanges(), [{ path: 'maintenance.enabled', old: false, new: true }])
+  assertEquals((await ctx.config.all()).maintenance.enabled, true)
+  assertEquals((await ctx.admin.config.history())[0].changes[0].path, 'maintenance.enabled')
+})
+
+Deno.test('without config the function has no ctx.config, and without configWrite no ctx.admin.config', () => {
+  const { ctx } = createContext({ config: {} })
+  assertEquals(typeof ctx.config, 'object')
+  assertEquals(ctx.admin, undefined)
+  assertEquals(createContext().ctx.config, undefined)
+})

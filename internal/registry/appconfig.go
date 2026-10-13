@@ -314,3 +314,30 @@ func loadAppConfigRules(a *AppConfig, settings RealmSettings) []error {
 	}
 	return errs
 }
+
+// configLeaf is the check appConfig() in the database's rules makes, nil when the realm
+// declares no configuration.
+func (db *Database) configLeaf() func(string) bool {
+	if db.appConfig == nil {
+		return nil
+	}
+	return func(path string) bool { return db.appConfig.Paths[path].Leaf }
+}
+
+// checkConfigGrants checks what functions declare about the configuration (`config:` in
+// function.yaml) against the realm.
+func checkConfigGrants(rl *Realm, realmPath string) []error {
+	var errs []error
+	for _, dbName := range slices.Sorted(maps.Keys(rl.Databases)) {
+		db := rl.Databases[dbName]
+		if db.Functions == nil {
+			continue
+		}
+		for _, name := range slices.Sorted(maps.Keys(db.Functions.Functions)) {
+			if db.Functions.Functions[name].ConfigWrite && rl.AppConfig == nil {
+				errs = append(errs, fmt.Errorf("%s: %s/%s declares `config: write`, but this realm declares no app configuration (%s/%s)", filepath.Join(realmPath, RealmFile), dbName, name, AppConfigDir, appConfigSchemaFile))
+			}
+		}
+	}
+	return errs
+}

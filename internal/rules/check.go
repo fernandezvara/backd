@@ -87,6 +87,31 @@ func check(r *Rule, schema Schema) error {
 		}
 	})
 
+	// Configuration paths read with appConfig.
+	walk(r.tree, func(n ast.Node) {
+		c, ok := n.(*ast.CallNode)
+		if !ok {
+			return
+		}
+		if id, ok := c.Callee.(*ast.IdentifierNode); !ok || id.Value != "appConfig" {
+			return
+		}
+		s, lit := (*string)(nil), false
+		if len(c.Arguments) == 1 {
+			if str, ok := c.Arguments[0].(*ast.StringNode); ok {
+				s, lit = &str.Value, true
+			}
+		}
+		switch {
+		case !lit:
+			add("appConfig: give the key as one string literal, such as appConfig(\"features.export.enabled\")")
+		case schema.ConfigLeaf == nil:
+			add("appConfig: this realm declares no app configuration (app-config/schema.json)")
+		case !schema.ConfigLeaf(*s):
+			add("appConfig: %q is not a value of the app configuration (keys are dot paths of declared values)", *s)
+		}
+	})
+
 	// Every user field access must be guarded by a nil check.
 	checkGuards(r.tree, false, func(n ast.Node) {
 		add("%s needs a guard for anonymous callers, e.g. `user != nil && %s`", n.String(), n.String())

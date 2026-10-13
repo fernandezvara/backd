@@ -168,3 +168,56 @@ func TestAppConfigIsPartOfTheFingerprint(t *testing.T) {
 		t.Error("fingerprint isn't stable")
 	}
 }
+
+func TestAppConfigInRulesAndFunctions(t *testing.T) {
+	files := map[string]string{
+		"shop/realm.yaml":                "roles: {}\n",
+		"shop/app-config/schema.json":    appConfigSchema,
+		"shop/app/notes/schema.json":     `{"type":"object","properties":{"title":{"type":"string"}}}`,
+		"shop/app/notes/collection.yaml": "rules:\n  create: user != nil && appConfig(\"features.reports.enabled\") == true\n",
+		fnPrefix + "deno.json":           `{}`,
+		fnPrefix + "promo/function.yaml": "mode: async\nconfig: write\n",
+		fnPrefix + "promo/index.ts":      "export default () => 1;\n",
+	}
+	reg, err := Load(writeTree(t, files))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reg.Realms["shop"].Databases["app"].Collections["notes"].Rules.UsesConfig() {
+		t.Error("the collection's rules don't read the configuration")
+	}
+	if !reg.Realms["shop"].Databases["app"].Functions.Functions["promo"].ConfigWrite {
+		t.Error("config: write not read")
+	}
+
+	// A key the schema doesn't declare, a group instead of a value, and a realm without configuration.
+	for name, tc := range map[string]struct {
+		change func(map[string]string)
+		want   string
+	}{
+		"undeclared key": {func(f map[string]string) {
+			f["shop/app/notes/collection.yaml"] = "rules:\n  create: user != nil && appConfig(\"features.nope\") == true\n"
+		}, "not a value of the app configuration"},
+		"a group": {func(f map[string]string) {
+			f["shop/app/notes/collection.yaml"] = "rules:\n  create: user != nil && appConfig(\"features\") == true\n"
+		}, "not a value of the app configuration"},
+		"no configuration": {func(f map[string]string) {
+			delete(f, "shop/app-config/schema.json")
+		}, "declares no app configuration"},
+		"bad grant": {func(f map[string]string) {
+			f[fnPrefix+"promo/function.yaml"] = "mode: async\nconfig: admin\n"
+		}, "config: must be write"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := map[string]string{}
+			for k, v := range files {
+				f[k] = v
+			}
+			tc.change(f)
+			_, err := Load(writeTree(t, f))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}

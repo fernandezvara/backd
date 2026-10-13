@@ -424,3 +424,6 @@ func ParseVersion(s string) (int64, bool) {
 
 // FormatVersion writes a version in the form the API uses.
 func FormatVersion(v int64) string { return "c" + strconv.FormatInt(v, 10) }
+
+// Flat lists the values of a nested configuration by dot path.
+func Flat(values map[string]any) map[string]any { return flatten(values, "") }

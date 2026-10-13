@@ -97,6 +97,7 @@ type Function struct {
 	Idempotency           string      // optional or required
 	Invoke                *rules.Rule // nil: only API keys may invoke
 	Admin                 bool        // ctx.admin.db with full access
+	ConfigWrite           bool        // ctx.admin.config: may change the realm's app configuration
 	Internal              bool        // no HTTP route: only backd, scheduled runs and other functions call it
 	Email                 bool        // ctx.email.send: may send custom emails through the realm's templates and delivery function
 	// Push is set by `push:` in function.yaml: the function may send pushes (ctx.push.send).
@@ -179,6 +180,7 @@ type functionDoc struct {
 	Idempotency *string  `yaml:"idempotency"`
 	Invoke      *string  `yaml:"invoke"`
 	Admin       bool     `yaml:"admin"`
+	Config      string   `yaml:"config"`
 	Internal    bool     `yaml:"internal"`
 	DevOnly     bool     `yaml:"dev_only"`
 	Email       bool     `yaml:"email"`
@@ -579,6 +581,13 @@ func loadFunction(db *Database, settings RealmSettings, name, dir string) (*Func
 	}
 
 	fn.Admin = doc.Admin
+	switch doc.Config {
+	case "":
+	case "write":
+		fn.ConfigWrite = true
+	default:
+		add("config: must be write (any function can read the app configuration; write lets it change values), got %q", doc.Config)
+	}
 
 	fn.Internal = doc.Internal
 	fn.DevOnly = doc.DevOnly

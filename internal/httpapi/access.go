@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"github.com/fernandezvara/backd/internal/appconfig"
 	"net/http"
 	"strings"
 
@@ -210,7 +211,27 @@ func (d *documents) accessFor(r *http.Request) access {
 		mfa, methods := caller.SignInMethods()
 		a.values.User = &rules.User{ID: u.ID, Email: u.Email, EmailVerified: u.EmailVerified, Roles: u.Roles, MFA: mfa, Methods: methods, Consents: u.Consents}
 	}
+	// appConfig() in the collection's rules: the configuration is read once for the request,
+	// and only when a rule asks for it.
+	if c, ok := r.Context().Value(collectionKey{}).(*registry.Collection); ok && c.Rules.UsesConfig() {
+		a.values.Config = d.configValues(r, c.Realm)
+	}
 	return a
+}
+
+// configValues is the app configuration by dot path, for rules. A realm that can't be
+// read gets an empty one: rules reading it see null, so what depends on a flag is refused.
+func (d *documents) configValues(r *http.Request, realm string) map[string]any {
+	rl, svc := d.reg.Realms[realm], d.users(realm)
+	if rl == nil || rl.AppConfig == nil || svc == nil {
+		return map[string]any{}
+	}
+	view, err := (&appconfig.Service{Store: svc.Store, Config: rl.AppConfig, Now: d.now}).Current(r.Context())
+	if err != nil {
+		logger(r.Context()).Error("app configuration unreadable for a rule", "realm", realm, "error", err)
+		return map[string]any{}
+	}
+	return appconfig.Flat(view.Values)
 }
 
 // deny answers a request the rules don't allow: 401 for anonymous callers

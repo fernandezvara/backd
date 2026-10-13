@@ -56,7 +56,9 @@ var defaultNow = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 // File is a fixture.
 type File struct {
-	Now       string                    `yaml:"now"`
+	Now string `yaml:"now"`
+	// Config gives the app configuration values rules read with appConfig(), by dot path.
+	Config    map[string]any            `yaml:"config"`
 	Users     map[string]UserDef        `yaml:"users"`
 	Documents map[string]map[string]any `yaml:"documents"`
 	Tests     []Test                    `yaml:"tests"`
@@ -133,6 +135,7 @@ func Run(c *registry.Collection, declaredRoles []string, fixture []byte) (checks
 		return nil, []error{fmt.Errorf("invalid YAML: %w", err)}
 	}
 	r := &runner{c: c, roles: declaredRoles, now: defaultNow, users: map[string]*rules.User{"anonymous": nil}, docs: map[string]map[string]any{}}
+	r.config = f.Config
 	if f.Now != "" {
 		t, err := time.Parse(time.RFC3339, f.Now)
 		if err != nil {
@@ -159,6 +162,7 @@ type runner struct {
 	now      time.Time
 	users    map[string]*rules.User
 	docs     map[string]map[string]any // stored documents, as the server reads them
+	config   map[string]any            // app configuration values, by dot path
 	checks   []Check
 	problems []error
 }
@@ -457,7 +461,7 @@ func (r *runner) read(user *rules.User, now time.Time, doc map[string]any) decis
 	if rule == nil {
 		return decision{false, "no read rule"}
 	}
-	f, err := rule.Filter(rules.Values{User: user, Now: now})
+	f, err := rule.Filter(rules.Values{User: user, Now: now, Config: r.config})
 	switch {
 	case err != nil:
 		return decision{false, "read rule error: " + err.Error()}
@@ -504,7 +508,7 @@ func (r *runner) purge(user *rules.User, now time.Time, doc map[string]any) deci
 	if rule == nil {
 		return decision{false, "no purge rule"}
 	}
-	ok, err := rule.Allow(rules.Values{User: user, Document: doc, Now: now})
+	ok, err := rule.Allow(rules.Values{User: user, Document: doc, Now: now, Config: r.config})
 	switch {
 	case err != nil:
 		return decision{false, "rule " + rule.Key + " failed: " + err.Error()}
@@ -526,7 +530,7 @@ func (r *runner) filterRule(user *rules.User, now time.Time, op rules.Op, doc ma
 	if rule == nil {
 		return decision{false, "no " + string(op) + " rule"}
 	}
-	f, err := rule.Filter(rules.Values{User: user, Now: now})
+	f, err := rule.Filter(rules.Values{User: user, Now: now, Config: r.config})
 	switch {
 	case err != nil:
 		return decision{false, string(op) + " rule error: " + err.Error()}
@@ -557,7 +561,7 @@ func (r *runner) write(user *rules.User, now time.Time, op rules.Op, doc, data m
 	if rule == nil {
 		return decision{false, "no " + string(op) + " rule"}
 	}
-	ok, err := rule.Allow(rules.Values{User: user, Document: doc, Data: data, Now: now})
+	ok, err := rule.Allow(rules.Values{User: user, Document: doc, Data: data, Now: now, Config: r.config})
 	switch {
 	case err != nil:
 		return decision{false, "rule " + rule.Key + " failed: " + err.Error()}
