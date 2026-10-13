@@ -124,3 +124,19 @@ func TestOpenAPICommand(t *testing.T) {
 		t.Errorf("unknown realm: %d %s", code, stderr)
 	}
 }
+
+func TestOpenAPIAdminCommand(t *testing.T) {
+	dir := writeConfig(t, map[string]string{
+		"app/realm.yaml":                 "auth: enabled\nroles:\n  admin:\n    admin: true\n",
+		"app/main/notes/schema.json":     `{"type":"object","additionalProperties":false,"properties":{"title":{"type":"string"}}}`,
+		"app/main/notes/collection.yaml": "{}\n",
+	})
+	c := &cliEnv{t: t, env: map[string]string{"CONFIG_DIR": dir}}
+	code, stdout, stderr := c.run("", "openapi", "--realm", "app", "--admin")
+	if code != 0 || !strings.Contains(stdout, "/v1/app/_admin/users") || !strings.Contains(stdout, "/v1/app/_admin/data/main/notes") {
+		t.Fatalf("--admin: %d %.300s %s", code, stdout, stderr)
+	}
+	if strings.Contains(stdout, "/v1/app/_auth/login") {
+		t.Error("the admin document has client routes")
+	}
+}

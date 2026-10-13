@@ -113,10 +113,24 @@ func jsonRoundTrip(v any) any {
 	return out
 }
 
-// collection adds the collection's paths and schemas.
+// collection adds the collection's paths and schemas to the client API.
 func (b *builder) collection(db string, c *registry.Collection) {
+	b.collectionAt(db, c, false)
+}
+
+// collectionAt adds the collection's schemas and its paths: those clients use, subject to the
+// collection's rules, or (admin) the admin data routes, which are past the rules.
+func (b *builder) collectionAt(db string, c *registry.Collection, admin bool) {
 	alias := pascal(db) + pascal(c.Name)
 	tag := db + "/" + c.Name
+	contract := "/v1/{realm}/{database}/{collection}"
+	base := "/v1/" + b.realm + "/" + db + "/" + c.Name
+	if admin {
+		tag = "data " + tag
+		contract = "/v1/{realm}/_admin/data/{database}/{collection}"
+		base = "/v1/" + b.realm + "/_admin/data/" + db + "/" + c.Name
+	}
+	allowed := func(op rules.Op) bool { return admin || b.allowed(c, op) }
 
 	// Schemas: the stored document (with id, _meta and file details) and what a client writes.
 	b.toSchemas(alias, c.RawSchema)
@@ -184,17 +198,17 @@ func (b *builder) collection(db string, c *registry.Collection) {
 		"replaceDocument": rules.Update, "patchDocument": rules.Update, "deleteDocument": rules.Delete,
 	}
 
-	prefix := "/v1/{realm}/{database}/{collection}"
+	prefix := contract
 	sub := func(item map[string]any, path string) {
 		cp := deepCopy(item).(map[string]any)
 		dropParams(cp, "realm", "database", "collection")
 		for method, op := range operations(cp) {
 			id, _ := op["operationId"].(string)
-			if need, ok := needs[id]; ok && !b.allowed(c, need) {
+			if need, ok := needs[id]; ok && !allowed(need) {
 				delete(cp, method)
 				continue
 			}
-			if id == "restoreDocument" && (c.SoftDelete == nil || !b.allowed(c, rules.Restore)) {
+			if strings.HasSuffix(strings.ToLower(id), "restoredocument") && (c.SoftDelete == nil || !allowed(rules.Restore)) {
 				delete(cp, method)
 				continue
 			}
@@ -214,7 +228,6 @@ func (b *builder) collection(db string, c *registry.Collection) {
 		b.uniqueIDs(cp, "")
 		b.paths[path] = cp
 	}
-	base := "/v1/" + b.realm + "/" + db + "/" + c.Name
 	for _, suffix := range []string{"", "/{id}", "/{id}/restore"} {
 		if item := b.staticPath(prefix + suffix); item != nil {
 			sub(item, base+suffix)

@@ -254,3 +254,57 @@ func TestGenerationIsDeterministic(t *testing.T) {
 		t.Error("unknown realm accepted")
 	}
 }
+
+func TestAdminDocument(t *testing.T) {
+	reg := load(t, map[string]string{
+		"app/realm.yaml":                             "auth: enabled\nroles:\n  admin:\n    admin: true\n",
+		"app/main/notes/schema.json":                 noteSchema,
+		"app/main/notes/collection.yaml":             "rules:\n  read: false\n  write: false\nsoft_delete: true\n",
+		"app/main/_functions/priv/function.yaml":     "internal: true\n",
+		"app/main/_functions/priv/index.js":          "export default () => 1;\n",
+		"app/main/_functions/priv/input.schema.json": `{"type":"object","properties":{"id":{"type":"string"}}}`,
+		"app/main/_functions/hook/function.yaml":     "mode: webhook\ninvoke: true\n",
+		"app/main/_functions/hook/index.js":          "export default () => 1;\n",
+	})
+	doc := generate2(t, reg, "app", Admin)
+	paths := pathsOf(doc)
+	has := func(p string) bool { return slices.Contains(paths, p) }
+	for _, want := range []string{
+		"/v1/app/_admin/users", "/v1/app/_admin/apikeys", "/v1/app/_admin/whoami",
+		"/v1/app/_admin/data/main/notes", "/v1/app/_admin/data/main/notes/{id}", "/v1/app/_admin/data/main/notes/{id}/restore",
+		"/v1/app/_admin/data/main/_batch", "/v1/app/_admin/functions/main/priv/invoke",
+	} {
+		if !has(want) {
+			t.Errorf("missing %s in %v", want, paths)
+		}
+	}
+	// A collection no client can reach is in the admin data routes; client routes and what the
+	// realm doesn't enable are not.
+	for _, absent := range []string{"/v1/app/main/notes", "/v1/app/_auth/login", "/v1/app/_admin/push", "/v1/app/_admin/storage", "/v1/app/_admin/functions/main/hook/invoke", "/v1/app/_admin/app-config"} {
+		if has(absent) {
+			t.Errorf("%s is in the admin document", absent)
+		}
+	}
+	invoke := doc["paths"].(map[string]any)["/v1/app/_admin/functions/main/priv/invoke"].(map[string]any)["post"].(map[string]any)
+	schema := invoke["requestBody"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)
+	in := schema["properties"].(map[string]any)["input"].(map[string]any)
+	if in["$ref"] != "#/components/schemas/MainPrivInput" {
+		t.Errorf("input = %v", in)
+	}
+	if _, err := Admin(load(t, map[string]string{"open/realm.yaml": "auth: disabled\n"}), "open"); err == nil {
+		t.Error("a realm with auth disabled has no admin API")
+	}
+}
+
+func generate2(t *testing.T, reg *registry.Registry, realm string, gen func(*registry.Registry, string) (*Document, error)) map[string]any {
+	t.Helper()
+	d, err := gen(reg, realm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(d.JSON, &doc); err != nil {
+		t.Fatal(err)
+	}
+	return doc
+}

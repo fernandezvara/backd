@@ -28,7 +28,11 @@ func openapiCommand(c *kli.CommandContext) error {
 	if err != nil {
 		return fmt.Errorf("invalid config:\n%w", err)
 	}
-	doc, err := openapigen.Public(reg, realm)
+	generate := openapigen.Public
+	if flag(c, "admin") {
+		generate = openapigen.Admin
+	}
+	doc, err := generate(reg, realm)
 	if err != nil {
 		return err
 	}

@@ -24,7 +24,7 @@ curl -H "Authorization: Bearer $BACKD_API_KEY" https://api.example.com/v1/shop/_
 | Configuration | `_config`, with the values typed from `app-config/schema.json` |
 | Batches, jobs, errors | The batch route of each database, the job route when a function is async, and the error codes |
 
-Not in it: internal functions, the admin API (`/_admin/…`), rules, and system collections.
+Not in it: internal functions, the admin API (`/_admin/…`), rules, and system collections. The admin API has its own document, [below](#the-admin-document).
 
 ## Getting it
 
@@ -45,3 +45,17 @@ docker run --rm -v "$PWD:/local" docker.io/openapitools/openapi-generator-cli ge
 backd's own CI builds Dart, Kotlin and Swift clients from the Shelf and workshop realms' documents with openapi-generator, so the output stays usable by real generators (`make openapi-clients`).
 
 A generated client calls the routes and types the documents; it doesn't do what the [JavaScript client](../../clients/js/) adds on top: the revalidation cache, retries, the sign-in flows that need PKCE and the browser's address bar, and file uploads in one call. Plan for sign-in with a provider and uploads to need a little hand-written code until hand-written clients exist for those platforms.
+
+## The admin document
+
+For internal tooling there is a second document, for the **admin API**: `backd openapi --realm <realm> --admin`, and `GET /v1/<realm>/_admin/openapi.json` for administrators with the `config` area (a read-only administrator reads it). It is never public, and a realm with `auth: disabled` has none.
+
+| In the document | Detail |
+|---|---|
+| Administration | Users, invitations, API keys, secrets, audit, jobs, schedules, configuration and the routes of what the realm enables (push, storage, consents, app configuration) |
+| Data past the rules | `/_admin/data/<database>/<collection>`, typed per collection with its schema, `_meta`, soft delete and files, whatever the collection's rules say |
+| Functions | `/_admin/functions/<database>/<name>/invoke` for every function an administrator may run by hand, **internal ones included**, with `input.schema.json` and `output.schema.json`, and pause and resume for scheduled ones |
+
+{{< hint style="warning" >}}
+It describes routes that reach every document and every internal function: generate admin clients for your own tooling, never for an application your users run.
+{{< /hint >}}

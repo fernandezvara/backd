@@ -2939,6 +2939,48 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/openapi.json:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [admin]
+      summary: The realm's admin API as OpenAPI
+      description: |
+        An OpenAPI 3.1 document for internal tooling, generated from the realm's configuration:
+        the administration routes (users, API keys, secrets, audit, jobs, configuration, and
+        what the realm enables), the data routes past the collections' rules typed per
+        collection, and **every function an administrator may run by hand, internal ones
+        included**, with their input and output schemas. The client API's document is
+        `/_openapi.json`. Needs the `config` area (a read-only administrator reads it).
+        `backd openapi --admin` makes the same document from `CONFIG_DIR`.
+      operationId: adminOpenAPI
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/ifNoneMatch" }
+      responses:
+        "200":
+          description: The document.
+          headers:
+            ETag: { schema: { type: string }, description: Identifies this document; send it back as `If-None-Match`. }
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [openapi, info, paths]
+                additionalProperties: true
+                properties:
+                  openapi: { type: string }
+                  info: { type: object }
+                  paths: { type: object }
+        "304":
+          description: The copy the caller holds (`If-None-Match`) is current.
+          headers:
+            ETag: { schema: { type: string } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/whoami:
     parameters: [{ $ref: "#/components/parameters/realm" }]
     get:

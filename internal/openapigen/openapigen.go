@@ -241,9 +241,13 @@ func (b *builder) addStatic(contractPath, rel string, subst map[string]string) {
 		return
 	}
 	cp := deepCopy(item).(map[string]any)
-	dropParams(cp, "realm", "database", "collection", "function")
+	drop := []string{"realm", "database", "collection", "function"}
+	for k := range subst {
+		drop = append(drop, strings.Trim(k, "{}"))
+	}
+	dropParams(cp, drop...)
 	for _, m := range operations(cp) {
-		dropParams(m, "realm", "database", "collection", "function")
+		dropParams(m, drop...)
 	}
 	path := "/v1/" + b.realm + "/" + rel
 	for k, v := range subst {
@@ -291,6 +295,12 @@ func dropParams(node map[string]any, names ...string) {
 	var kept []any
 	for _, p := range ps {
 		if m, ok := p.(map[string]any); ok {
+			// A path parameter declared inline.
+			if in, _ := m["in"].(string); in == "path" {
+				if n, _ := m["name"].(string); slices.Contains(names, n) {
+					continue
+				}
+			}
 			if ref, ok := m["$ref"].(string); ok {
 				drop := false
 				for _, n := range names {
@@ -346,6 +356,8 @@ func (b *builder) usedTags() []any {
 	for _, t := range slices.Sorted(keysOf(b.tags)) {
 		if d, ok := declared[t]; ok {
 			out = append(out, d)
+		} else if coll, ok := strings.CutPrefix(t, "data "); ok {
+			out = append(out, map[string]any{"name": t, "description": "The data routes of the " + coll + " collection: past its rules, for administrators."})
 		} else if db, rest, ok := strings.Cut(t, "/"); ok {
 			out = append(out, map[string]any{"name": t, "description": "Documents of the " + rest + " collection of the " + db + " database."})
 		} else if db, ok := strings.CutSuffix(t, " functions"); ok {
