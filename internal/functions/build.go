@@ -144,6 +144,11 @@ func bundle(ctx context.Context, dir string, fn *registry.Function, opts Options
 	if opts.Check {
 		args = append(args, "--check")
 	}
+	mapArgs, err := importMapArgs(dir)
+	if err != nil {
+		return nil, err
+	}
+	args = append(args, mapArgs...)
 	args = append(args, "./"+fn.Entry)
 	cmd := exec.CommandContext(ctx, opts.Deno, args...)
 	cmd.Dir = dir

@@ -232,6 +232,7 @@ func serve(ctx context.Context, a *app) error {
 
 	if reload != nil {
 		a.log.Warn("BACKD_DEV=true: the config reloads automatically when its files change (a change that doesn't validate is refused and the previous config keeps running) — local development only, never enable this in production")
+		reload.writeTypes(a)
 		go reload.Watch(ctx, devWatchInterval)
 	}
 	if !needsInternal && !a.withWorker && a.metrics == nil {

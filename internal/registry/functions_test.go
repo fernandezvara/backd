@@ -524,3 +524,45 @@ func TestRetryPolicy(t *testing.T) {
 		t.Errorf("waits = %v", waits)
 	}
 }
+
+func TestDefineFunctionNameMustMatchItsLocation(t *testing.T) {
+	fn := "shop/main/" + FunctionsDir + "/"
+	root := writeTree(t, map[string]string{
+		"shop/realm.yaml":          "",
+		fn + "ok/function.yaml":    "",
+		fn + "ok/index.ts":         "import { defineFunction } from \"@backd/functions\";\nexport default defineFunction(\"main/ok\", () => 1);\n",
+		fn + "bad/function.yaml":   "",
+		fn + "bad/index.ts":        "export default defineFunction(\n  'main/other', () => 1);\n",
+		fn + "plain/function.yaml": "",
+		fn + "plain/index.ts":      "export default () => 1;\n",
+	})
+	_, err := Load(root)
+	if err == nil {
+		t.Fatal("a mismatching defineFunction name was accepted")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, `defineFunction("main/other") doesn't match the function's location: use defineFunction("main/bad")`) {
+		t.Errorf("error = %v", msg)
+	}
+	if strings.Contains(msg, "main/ok") || strings.Contains(msg, "plain") {
+		t.Errorf("matching or plain functions reported: %v", msg)
+	}
+}
+
+func TestGeneratedTypesDoNotChangeTheSourceHash(t *testing.T) {
+	root := writeTree(t, map[string]string{"index.ts": "export default () => 1;\n"})
+	before, err := SourceHash(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, TypesFile), []byte("export {};\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	after, err := SourceHash(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before != after {
+		t.Error("backd.d.ts changed the source hash")
+	}
+}

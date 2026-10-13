@@ -78,4 +78,6 @@ Keywords that only validate (`minimum`, `pattern`, `maxLength`, other `format` v
 Commit `types.d.ts` and `realm.json`, and add `backd types --realm <realm> --out <dir> --check` to CI next to `backd config check`, so a schema change can't merge without its types.
 {{< /hint >}}
 
+For functions, `--functions` writes each functions project's `backd.d.ts` instead, with `defineFunction` ([Typed functions](../../functions/writing/#typed-functions)).
+
 The same document is available from a running instance at `GET /v1/{realm}/_admin/types` ([API reference](../../api/)).

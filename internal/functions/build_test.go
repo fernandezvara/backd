@@ -182,3 +182,51 @@ func mustManifest(t *testing.T, dir string) registry.Manifest {
 	}
 	return m
 }
+
+// A function written with defineFunction bundles with no setup in the project, whether its
+// deno.json has other imports, none, or maps the module itself; the generated types don't
+// make the build stale.
+func TestBuildDefineFunction(t *testing.T) {
+	bin := deno(t)
+	ctx := context.Background()
+	for name, denoJSON := range map[string]string{
+		"imports":  `{"imports": {"x": "./lib/x.ts"}}`,
+		"none":     "",
+		"explicit": `{"imports": {"@backd/functions": "./.backd/functions.js"}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			fn := "shop/app/" + registry.FunctionsDir + "/"
+			files := map[string]string{
+				"shop/realm.yaml":          "",
+				fn + "lib/x.ts":            "export const x = 7;\n",
+				fn + "typed/function.yaml": "",
+				fn + "typed/index.ts":      "import { defineFunction } from \"@backd/functions\";\nimport { x } from \"../lib/x.ts\";\nexport default defineFunction(\"app/typed\", () => ({ x }));\n",
+			}
+			if denoJSON != "" {
+				files[fn+"deno.json"] = denoJSON
+			}
+			write(t, root, files)
+			reg, err := registry.Load(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := WriteTypes(reg, "", "", false); err != nil {
+				t.Fatal(err)
+			}
+			if err := Build(ctx, reg, Options{Deno: bin}); err != nil {
+				t.Fatal(err)
+			}
+			reg, err = registry.Load(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := reg.CheckBundles(); err != nil {
+				t.Errorf("fresh build refused: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(root, "shop/app", registry.FunctionsDir, registry.TypesFile)); err != nil {
+				t.Errorf("backd.d.ts: %v", err)
+			}
+		})
+	}
+}

@@ -415,7 +415,7 @@ func registerRemote(cfg *kli.Config) {
 		boolean(cc, "json", "print it as JSON")
 	})
 	cfg.Command("types").ShortHelp("generate a realm's TypeScript types").
-		LongHelp("Generates TypeScript types from the realm's config: documents, where and order_by per collection, functions,\napp configuration, email and push templates and roles. They come from the same config the server enforces; nothing\nis checked at runtime from them. Reads CONFIG_DIR, or a running backd with --from (an admin of the realm, the config\narea; " + adminAPINote + ") and writes types.d.ts and realm.json into --out.\n\n--check writes nothing and exits non-zero when the files in --out are missing or stale, for CI. --diff writes\nnothing and prints what changed at the type level since they were generated (a field added, a type changed, a\ncollection removed, a function's input changed), for pull request reviews. Things TypeScript can't express are\ntyped unknown and listed as warnings on standard error.").
+		LongHelp("Generates TypeScript types from the realm's config: documents, where and order_by per collection, functions,\napp configuration, email and push templates and roles. They come from the same config the server enforces; nothing\nis checked at runtime from them. Reads CONFIG_DIR, or a running backd with --from (an admin of the realm, the config\narea; " + adminAPINote + ") and writes types.d.ts and realm.json into --out.\n\n--check writes nothing and exits non-zero when the files in --out are missing or stale, for CI. --diff writes\nnothing and prints what changed at the type level since they were generated (a field added, a type changed, a\ncollection removed, a function's input changed), for pull request reviews. Things TypeScript can't express are\ntyped unknown and listed as warnings on standard error.\n\n--functions writes each functions project's backd.d.ts instead (in <realm>/<database>/_functions/, from CONFIG_DIR only):\nthe registry defineFunction(\"<database>/<name>\", handler) takes its types from. In dev mode backd rewrites it after\nevery config reload.").
 		Func(act("types", typesCommand)).Config(func(cc *kli.CommandConfig) {
 		required(cc, "realm", "the realm")
 		optional(cc, "db", "only this database of the realm")
@@ -423,6 +423,7 @@ func registerRemote(cfg *kli.Config) {
 		optional(cc, "from", "read the config from this running backd instead of CONFIG_DIR")
 		boolean(cc, "check", "write nothing; fail when the generated files are missing or stale")
 		boolean(cc, "diff", "write nothing; print the type-level changes since the files were generated")
+		boolean(cc, "functions", "write each functions project's backd.d.ts (for defineFunction) instead of --out; with --check, only check")
 	})
 	appcfg := cfg.Command("app-config").ShortHelp("the realm's app configuration: values, history, rollback")
 	appcfg.SubCommand("get").ShortHelp("show the configuration with every value").

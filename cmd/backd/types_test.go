@@ -64,3 +64,30 @@ func TestTypesWritesChecksAndDiffs(t *testing.T) {
 		t.Errorf("--check without files: %d %s", code, stderr)
 	}
 }
+
+func TestTypesFunctions(t *testing.T) {
+	fnDir := "app/main/_functions/"
+	dir := writeConfig(t, map[string]string{
+		"app/realm.yaml":                 "auth: disabled\n",
+		"app/main/notes/schema.json":     `{"type":"object","additionalProperties":false,"properties":{"title":{"type":"string"}}}`,
+		"app/main/notes/collection.yaml": "{}\n",
+		fnDir + "hello/function.yaml":    "mode: sync\n",
+		fnDir + "hello/index.ts":         "export default () => 1;\n",
+	})
+	c := &cliEnv{t: t, env: map[string]string{"CONFIG_DIR": dir}}
+	if code, _, stderr := c.run("", "types", "--realm", "app", "--functions", "--check"); code == 0 || !strings.Contains(stderr, "missing or stale") {
+		t.Errorf("--check before generating: %d %s", code, stderr)
+	}
+	code, stdout, stderr := c.run("", "types", "--realm", "app", "--functions")
+	if code != 0 || !strings.Contains(stdout, "backd.d.ts") {
+		t.Fatalf("--functions: %d %s %s", code, stdout, stderr)
+	}
+	for _, f := range []string{"backd.d.ts", ".backd/functions.js"} {
+		if _, err := os.Stat(filepath.Join(dir, fnDir, f)); err != nil {
+			t.Errorf("%s not written: %v", f, err)
+		}
+	}
+	if code, stdout, _ := c.run("", "types", "--realm", "app", "--functions", "--check"); code != 0 || !strings.Contains(stdout, "up to date") {
+		t.Errorf("--check after generating: %d %s", code, stdout)
+	}
+}

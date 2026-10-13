@@ -100,7 +100,7 @@ func (r *Registry) Fingerprint() (string, error) {
 					}
 					return nil
 				}
-				if d.Type().IsRegular() {
+				if d.Type().IsRegular() && rel != filepath.Join(proj, TypesFile) {
 					files = append(files, filepath.ToSlash(rel))
 				}
 				return nil

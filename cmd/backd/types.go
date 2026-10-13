@@ -10,6 +10,7 @@ import (
 
 	"github.com/fernandezvara/kli"
 
+	"github.com/fernandezvara/backd/internal/functions"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/typegen"
 )
@@ -20,6 +21,9 @@ import (
 func typesCommand(c *kli.CommandContext) error {
 	realm, db, out := str(c, "realm"), str(c, "db"), str(c, "out")
 	check, diff := flag(c, "check"), flag(c, "diff")
+	if flag(c, "functions") {
+		return functionTypesCommand(c, realm, check)
+	}
 
 	var gen *typegen.Output
 	var err error
@@ -143,4 +147,49 @@ func unmarshalInfo(b []byte) (typegen.Info, error) {
 	var i typegen.Info
 	err := json.Unmarshal(b, &i)
 	return i, err
+}
+
+// functionTypesCommand handles `backd types --functions`: it writes backd.d.ts into each
+// functions project of the realm, or with --check says which are missing or stale.
+func functionTypesCommand(c *kli.CommandContext, realm string, check bool) error {
+	dir, err := configDir(c)
+	if err != nil {
+		return err
+	}
+	reg, err := registry.Load(dir)
+	if err != nil {
+		return fmt.Errorf("invalid config:\n%w", err)
+	}
+	if _, ok := reg.Realms[realm]; !ok {
+		return fmt.Errorf("unknown realm %q", realm)
+	}
+	fp, err := reg.Fingerprint()
+	if err != nil {
+		return err
+	}
+	changed, warnings, err := functions.WriteTypes(reg, realm, fp, check)
+	if err != nil {
+		return err
+	}
+	for _, w := range warnings {
+		fmt.Fprintf(c.Stderr(), "warning: %s\n", w)
+	}
+	if check {
+		if len(changed) > 0 {
+			for _, p := range changed {
+				fmt.Fprintf(c.Stdout(), "stale: %s\n", p)
+			}
+			return fmt.Errorf("function types are missing or stale: run `backd types --realm %s --functions` and commit the result", realm)
+		}
+		fmt.Fprintln(c.Stdout(), "function types are up to date")
+		return nil
+	}
+	if len(changed) == 0 {
+		fmt.Fprintln(c.Stdout(), "function types are up to date")
+		return nil
+	}
+	for _, p := range changed {
+		fmt.Fprintf(c.Stdout(), "wrote %s\n", p)
+	}
+	return nil
 }

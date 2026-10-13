@@ -29,3 +29,9 @@
 # Admin UI build output: embedded by internal/adminui (npm run build in ui/admin)
 /internal/adminui/dist/*
 !/internal/adminui/dist/.gitkeep
+
+# defineFunction's runtime stub and import map, written next to each functions project
+/examples/config/**/_functions/.backd/
+/examples/config/**/_functions/.backd-importmap.json
+/clients/js/test/integration/config/**/_functions/.backd/
+/clients/js/test/integration/config/**/_functions/.backd-importmap.json

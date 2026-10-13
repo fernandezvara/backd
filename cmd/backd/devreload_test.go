@@ -144,3 +144,31 @@ func TestSwapHandlerServesTheLatest(t *testing.T) {
 		t.Errorf("body = %q", rec.Body.String())
 	}
 }
+
+func TestReloadWritesFunctionTypes(t *testing.T) {
+	r, dir, _, _ := reloadFixture(t)
+	fn := filepath.Join(dir, "app/main/_functions/hello")
+	if err := os.MkdirAll(fn, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	edit(t, filepath.Join(fn, "function.yaml"), "mode: sync\n")
+	edit(t, filepath.Join(fn, "index.ts"), "export default () => 1;\n")
+	writeFuncManifest(t, filepath.Join(dir, "app/main/_functions"), "hello")
+	r.Poll(context.Background())
+	if len(r.Errors()) != 0 {
+		t.Fatalf("reload failed: %v", r.Errors())
+	}
+	types, err := os.ReadFile(filepath.Join(dir, "app/main/_functions/backd.d.ts"))
+	if err != nil {
+		t.Fatalf("backd.d.ts not written: %v", err)
+	}
+	if !strings.Contains(string(types), "defineFunction") || !strings.Contains(string(types), "hello") {
+		t.Errorf("backd.d.ts:\n%s", types)
+	}
+	// Writing it is not a change: no second reload.
+	before := r.app
+	r.Poll(context.Background())
+	if r.app != before {
+		t.Error("the generated file caused another reload")
+	}
+}

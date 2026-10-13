@@ -1,3 +1,9 @@
 # Local build artifacts (rebuilt by `backd functions build`; CI rebuilds
 # them too, so they don't need to be committed).
 config/*/*/_functions/.build/
+
+# What defineFunction runs on and the import map a build passes to Deno (rewritten by
+# `backd types --functions` and every build). backd.d.ts itself is committed, so CI can
+# check it with `backd types --functions --check`.
+config/*/*/_functions/.backd/
+config/*/*/_functions/.backd-importmap.json

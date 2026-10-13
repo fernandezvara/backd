@@ -143,3 +143,56 @@ func TestExamplesTypeCheck(t *testing.T) {
 		t.Errorf("tsc: %v\n%s", err, b)
 	}
 }
+
+// TestFunctionTypes type-checks fixtures against the generated backd.d.ts: the good one must
+// pass, and each bad one must fail.
+func TestFunctionTypes(t *testing.T) {
+	tsc, err := filepath.Abs("../../clients/js/node_modules/.bin/tsc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(tsc); err != nil {
+		t.Skip("tsc isn't installed (npm ci in clients/js)")
+	}
+	reg, err := registry.Load("testdata")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := GenerateFunctions(reg, "shop", "main", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "backd.d.ts"), []byte(out.Types), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	check := func(name string) (string, error) {
+		src, err := os.ReadFile(filepath.Join("fixtures", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		f := filepath.Join(dir, name)
+		if err := os.WriteFile(f, src, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		b, err := exec.Command(tsc, "--ignoreConfig", "--noEmit", "--strict", "--target", "es2022", "--moduleResolution", "bundler", "--module", "esnext", filepath.Join(dir, "backd.d.ts"), f).CombinedOutput()
+		return string(b), err
+	}
+	if b, err := check("pass.ts"); err != nil {
+		t.Errorf("pass.ts doesn't type-check:\n%s", b)
+	}
+	entries, err := os.ReadDir(filepath.Join("fixtures"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if !strings.HasPrefix(e.Name(), "fail_") {
+			continue
+		}
+		if b, err := check(e.Name()); err == nil {
+			t.Errorf("%s type-checks, it must not", e.Name())
+		} else if !strings.Contains(b, e.Name()) {
+			t.Errorf("%s fails somewhere else:\n%s", e.Name(), b)
+		}
+	}
+}
