@@ -252,11 +252,7 @@ func serve(ctx context.Context, a *app) error {
 	}
 	if needsInternal {
 		// The internal listener, for the executor and functions calling back.
-		var ih http.Handler = internalSwap
-		if ih == nil {
-			ih = a.internalHandler()
-		}
-		internal := &http.Server{Handler: ih}
+		internal := &http.Server{Handler: servedBy(a.internalHandler(), internalSwap)}
 		httpapi.ServerTimeouts(internal, a.cfg.MongoOpTimeout)
 		iln, err := net.Listen("tcp", a.cfg.InternalAddr)
 		if err != nil {

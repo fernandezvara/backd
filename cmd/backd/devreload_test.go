@@ -144,3 +144,22 @@ func TestSwapHandlerServesTheLatest(t *testing.T) {
 		t.Errorf("body = %q", rec.Body.String())
 	}
 }
+
+// Outside dev mode there is no swap handler, and the listener must serve the app's own: a nil
+// *swapHandler inside an interface is not nil and would panic on the first request.
+func TestServedByFallsBackToTheHandler(t *testing.T) {
+	own := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("own")) })
+	var none *swapHandler
+	rec := httptest.NewRecorder()
+	servedBy(own, none).ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	if rec.Body.String() != "own" {
+		t.Errorf("body = %q", rec.Body.String())
+	}
+	swap := &swapHandler{}
+	swap.Store(http.NotFoundHandler())
+	rec = httptest.NewRecorder()
+	servedBy(own, swap).ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("dev mode didn't serve the swap handler: %d", rec.Code)
+	}
+}
