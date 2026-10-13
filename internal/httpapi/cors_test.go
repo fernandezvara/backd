@@ -56,7 +56,7 @@ func TestCORSPreflight(t *testing.T) {
 		t.Errorf("allowed preflight: %d %v", rec.Code, h)
 	}
 	// Browser apps send Idempotency-Key and Prefer and read the answers about them.
-	for _, name := range []string{"Idempotency-Key", "Prefer", "If-Match"} {
+	for _, name := range []string{"Idempotency-Key", "Prefer", "If-Match", "If-None-Match"} {
 		if !strings.Contains(h.Get("Access-Control-Allow-Headers"), name) {
 			t.Errorf("preflight doesn't allow %s: %v", name, h.Get("Access-Control-Allow-Headers"))
 		}
@@ -141,12 +141,12 @@ func TestCachingHeaders(t *testing.T) {
 		wantVary           string
 		wantCache          string
 	}{
-		{"anonymous data", "GET", "/v1/shop/orders/items", nil, "Origin, Authorization, Cookie", ""},
+		{"anonymous data", "GET", "/v1/shop/orders/items", nil, "Origin, Authorization, Cookie", "private, no-cache"},
 		{"data with credentials", "GET", "/v1/shop/orders/items", map[string]string{"Authorization": "Bearer x"}, "Origin, Authorization, Cookie", "private, no-cache"},
 		{"one document with credentials", "GET", "/v1/shop/orders/items/nope", map[string]string{"Authorization": "Bearer x"}, "Origin, Authorization, Cookie", "private, no-cache"},
-		{"an origin that isn't allowed", "GET", "/v1/web/app/items", map[string]string{"Origin": "https://evil.example"}, "Origin, Authorization, Cookie", ""},
-		{"an allowed origin", "GET", "/v1/web/app/items", map[string]string{"Origin": "https://app.example.com"}, "Origin, Authorization, Cookie", ""},
-		{"unknown collection", "GET", "/v1/shop/orders/nope", nil, "Origin, Authorization, Cookie", ""},
+		{"an origin that isn't allowed", "GET", "/v1/web/app/items", map[string]string{"Origin": "https://evil.example"}, "Origin, Authorization, Cookie", "private, no-cache"},
+		{"an allowed origin", "GET", "/v1/web/app/items", map[string]string{"Origin": "https://app.example.com"}, "Origin, Authorization, Cookie", "private, no-cache"},
+		{"unknown collection", "GET", "/v1/shop/orders/nope", nil, "Origin, Authorization, Cookie", "private, no-cache"},
 		{"preflight from an origin that isn't allowed", "OPTIONS", "/v1/web/app/items",
 			map[string]string{"Origin": "https://evil.example", "Access-Control-Request-Method": "GET"}, "Origin", ""},
 		{"preflight from an allowed origin", "OPTIONS", "/v1/web/app/items",

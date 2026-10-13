@@ -3835,8 +3835,10 @@ paths:
       parameters:
         - { $ref: "#/components/parameters/deleted" }
         - { $ref: "#/components/parameters/fileLinks" }
+        - { $ref: "#/components/parameters/ifNoneMatch" }
       responses:
         "200": { $ref: "#/components/responses/Document" }
+        "304": { $ref: "#/components/responses/NotModified" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -4504,8 +4506,10 @@ paths:
       parameters:
         - { $ref: "#/components/parameters/deleted" }
         - { $ref: "#/components/parameters/fileLinks" }
+        - { $ref: "#/components/parameters/ifNoneMatch" }
       responses:
         "200": { $ref: "#/components/responses/Document" }
+        "304": { $ref: "#/components/responses/NotModified" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -5262,6 +5266,15 @@ components:
       in: header
       description: '`"<version>"`, a list of them, or `*`. The write fails with 412 unless the current version matches.'
       schema: { type: string }
+    ifNoneMatch:
+      name: If-None-Match
+      in: header
+      description: >-
+        The `ETag` of a copy you already hold (a list of them, or `*`; a `W/`
+        prefix is ignored). When the document, as this caller may read it, still
+        has that tag the answer is `304` with no body. Read rules run first: a
+        document the caller can no longer read is still `404`.
+      schema: { type: string }
     deleted:
       name: deleted
       in: query
@@ -5301,8 +5314,12 @@ components:
   headers:
     ETag:
       required: true
-      description: '`"<version>"`, the document''s `_meta.version`.'
-      schema: { type: string, pattern: '^"[0-9]+"$' }
+      description: >-
+        `"<version>"`, the document''s `_meta.version`; a response that differs
+        from the full document for the caller (hidden fields) adds `.r` and 8 hex
+        characters, such as `"12.r1a2b3c4d"`. Send it back in `If-Match` to guard
+        a write, or in `If-None-Match` to revalidate a read.
+      schema: { type: string, pattern: '^"[0-9]+(\.r[0-9a-f]{8})?"$' }
     NoStore:
       required: true
       schema: { const: no-store }
@@ -5314,9 +5331,9 @@ components:
       schema: { type: string, pattern: "Origin.*Authorization" }
     DataCacheControl:
       description: >-
-        Sent when the request carries credentials: shared caches must not
-        store the response, and browsers must revalidate it.
-      schema: { const: "private, no-cache" }
+        Shared caches must not store the response, and browsers must revalidate
+        it (`no-store` with `?file_links=true`, whose links expire).
+      schema: { enum: ["private, no-cache", "private, no-store"] }
     RetryAfter:
       required: true
       description: Seconds to wait before retrying.
@@ -5422,6 +5439,15 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Document" }
+
+    NotModified:
+      description: >-
+        The copy the caller holds (`If-None-Match`) is current. No body.
+        Never sent with `?file_links=true`.
+      headers:
+        ETag: { $ref: "#/components/headers/ETag" }
+        Vary: { $ref: "#/components/headers/DataVary" }
+        Cache-Control: { $ref: "#/components/headers/DataCacheControl" }
 
   schemas:
     Timestamp:

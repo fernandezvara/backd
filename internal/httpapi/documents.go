@@ -214,11 +214,19 @@ func (d *documents) get(w http.ResponseWriter, r *http.Request) {
 		if !d.addFileLinks(w, r, c, []map[string]any{out}) {
 			return
 		}
-		w.Header().Set("ETag", etag(version(doc))) // links are made per response: not part of the version
+		// Links are made per response and expire: not part of the version, so
+		// this answer is never 304 and never stored.
+		w.Header().Set("ETag", etag(version(doc)))
+		w.Header().Set("Cache-Control", "private, no-store")
 		writeJSON(w, http.StatusOK, out)
 		return
 	}
-	writeDocument(w, http.StatusOK, doc)
+	tag := docETag(version(doc), "") // nothing is redacted per caller yet
+	readHeaders(w, tag)
+	if notModified(w, r, tag) {
+		return
+	}
+	writeJSON(w, http.StatusOK, render(doc))
 }
 
 type listResponse struct {

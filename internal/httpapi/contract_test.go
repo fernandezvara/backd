@@ -1258,6 +1258,18 @@ func TestContract(t *testing.T) {
 			req("DELETE", base+"/"+mine+"/_files/avatar", "", with(ada, "If-Match", "bad"), 400)
 			req("GET", base+"/"+mine+"?file_links=true", "", ada, 200)
 			req("GET", base+"?file_links=true", "", ada, 200)
+			// Conditional GET: the current tag revalidates, a stale one doesn't, and
+			// a caller without read access still gets 404, never 304.
+			cur := req("GET", base+"/"+mine, "", ada, 200)["_meta"].(map[string]any)["version"].(float64)
+			tag := fmt.Sprintf(`"%d"`, int64(cur))
+			req("GET", base+"/"+mine, "", with(ada, "If-None-Match", tag), 304)
+			req("GET", base+"/"+mine, "", with(ada, "If-None-Match", `"0"`), 200)
+			req("GET", base+"/"+mine, "", with(carl, "If-None-Match", tag), 404)
+			req("GET", base+"/"+mine+"?file_links=true", "", with(ada, "If-None-Match", tag), 200)
+		} else {
+			doc := req("POST", base, `{"title": "cond"}`, key, 201)
+			tag := fmt.Sprintf(`"%d"`, int64(doc["_meta"].(map[string]any)["version"].(float64)))
+			req("GET", base+"/"+doc["id"].(string), "", with(key, "If-None-Match", tag), 304)
 		}
 	}
 	// Direct uploads: start, PUT to the bucket as a browser would, complete.

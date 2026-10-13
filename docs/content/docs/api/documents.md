@@ -1,6 +1,6 @@
 ---
 title: "Documents"
-description: "Create, read, replace, patch and delete documents; versions and If-Match."
+description: "Create, read, replace, patch and delete documents; versions, If-Match and If-None-Match."
 icon: "description"
 weight: 310
 toc: true
@@ -51,7 +51,7 @@ Documents are returned as bare JSON objects:
     - `updated_by` is who made the last write, in the same form.
 
     Realms with `auth: disabled` don't have them. Documents stored before these fields existed don't gain `owner` or `created_by`; their next write adds `updated_by`.
-- Single-document responses carry `ETag: "<version>"`, for example `ETag: "3"`.
+- Single-document responses carry `ETag: "<version>"`, for example `ETag: "3"`, and answer `304` to a matching [`If-None-Match`](#revalidating-a-read-if-none-match).
 - Documents written before versioning existed have no `version`. They get `version: 1` on their next write.
 - `id`, `_id` and `_meta` in request bodies are always ignored.
 
@@ -103,6 +103,23 @@ A document that fails its schema returns `400 validation_error` with one detail 
   }
 }
 ```
+
+## Revalidating a read (`If-None-Match`)
+
+A client that already holds a document can ask whether it is still current. Send the `ETag` you got in `If-None-Match`:
+
+```http
+GET /v1/shop/main/orders/ord_1
+If-None-Match: "3"
+```
+
+- **`304 Not Modified`** with no body when the document, as this caller may read it, still has that tag. The response repeats `ETag`, `Cache-Control` and `Vary`.
+- **`200`** with the document and its new `ETag` otherwise.
+- **`404`** when the document is gone or the caller may no longer read it: the [read rule](../../auth/rules/) runs before the tag is compared, so a revalidation never confirms a document the caller can't see.
+- The header can list several tags (`"3", "4"`) or be `*`; a `W/` prefix is ignored.
+- A response with `?file_links=true` is never `304`: its links are made per response and expire.
+
+`If-None-Match` is for reads, `If-Match` is for writes: the first says "send it only if it changed", the second "write only if it didn't". The `ETag` of a response that differs from the stored document for the caller carries a suffix (`"3.r1a2b3c4d"`); send it back unchanged, `If-Match` only looks at the version.
 
 ## Concurrency and `If-Match`
 

@@ -86,7 +86,7 @@ Tune the numbers in `nginx/backd.conf.template` to your traffic:
 
 - Limits are counted per nginx instance. With several instances, the effective limit multiplies; use your load balancer's or CDN's rate limiting if you need a global one.
 - IPv6 clients are counted per address (/128), and one client often controls a whole /64. `backd`'s own login throttling groups IPv6 addresses by /64.
-- Public collections that anonymous users can read can still be scraped within the `api` limit; cache them at a CDN if that matters. Document responses carry the `Vary` and `Cache-Control` headers that make this safe (see [Caching](../../api/#caching)).
+- Public collections that anonymous users can read can still be scraped within the `api` limit; document responses are `private, no-cache` by default, so a CDN revalidates them with `If-None-Match` rather than serving them blind (see [Caching](../../api/#caching)).
 
 ## Admin API
 
