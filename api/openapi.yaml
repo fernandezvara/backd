@@ -3192,6 +3192,53 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_config:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+    get:
+      tags: [documents]
+      summary: Read the app configuration
+      description: |
+        The realm's app configuration (declared in `app-config/`) as the caller may read
+        it: defaults filled in, and only the keys whose read rules allow it (the rule of
+        a key is its own ANDed with every ancestor's; a key with no rule is hidden).
+        Hidden keys are absent, with no error. `paths` selects groups or keys, and a
+        path the schema doesn't declare is `400 invalid_path`. The `ETag` is weak and
+        covers the returned values, so `If-None-Match` answers `304`. `cache_ttl` is how
+        many seconds a client may use the copy without asking again
+        (`app_config.cache_ttl` in `realm.yaml`, 300 by default). An anonymous request
+        whose keys are all readable by a rule that is literally `true` is
+        `Cache-Control: public, max-age=<cache_ttl>` (with `Vary: Authorization`), so a
+        CDN may serve it; everything else is `private, no-cache`. Answers `404` when
+        the realm declares no configuration.
+      operationId: readAppConfig
+      security: [{}, { session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: paths, in: query, description: "Comma-separated key or group paths, in dot notation.", schema: { type: string } }
+        - { $ref: "#/components/parameters/ifNoneMatch" }
+      responses:
+        "200":
+          description: The readable configuration.
+          headers:
+            ETag: { schema: { type: string } }
+            Vary: { $ref: "#/components/headers/DataVary" }
+            Cache-Control: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [values, version, cache_ttl]
+                properties:
+                  values: { type: object, description: "The readable keys, nested like the schema." }
+                  version: { type: string, description: "The configuration version, such as `c3`." }
+                  cache_ttl: { type: integer, description: "Seconds the copy may be used without revalidating." }
+        "304": { $ref: "#/components/responses/NotModified" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_consents:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -6123,7 +6170,7 @@ components:
               type: string
               pattern: "^[a-z][a-z0-9_]{0,63}$"
               description: |
-                backd's codes: invalid_json, validation_error, invalid_query,
+                backd's codes: invalid_json, validation_error, invalid_query, invalid_path,
                 invalid_header, precondition_required, unauthenticated,
                 invalid_credentials, forbidden,
                 not_found, method_not_allowed, conflict, email_taken,

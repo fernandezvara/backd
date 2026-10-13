@@ -29,6 +29,8 @@ const appConfigSchema = `{
 const appConfigRules = `read:
   maintenance: "true"
   features: user != nil
+  features.export: hasRole(user, "staff")
+  internal: hasRole(user, "staff") || user != nil && user.email_verified
 `
 
 func (f *rulesFixture) configDo(t *testing.T, method, path, body string, cred string, extra map[string]string) (int, map[string]any, http.Header) {
@@ -59,7 +61,7 @@ func TestAppConfigAdmin(t *testing.T) {
 		keys[k["path"].(string)] = k
 	}
 	if keys["maintenance.enabled"]["public"] != true || keys["features.export.enabled"]["readable"] != true ||
-		keys["features.export.enabled"]["public"] != false || keys["internal.ratio"]["readable"] != false {
+		keys["features.export.enabled"]["public"] != false || keys["internal.ratio"]["readable"] != true {
 		t.Errorf("keys = %v", keys)
 	}
 

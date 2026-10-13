@@ -1506,6 +1506,18 @@ func TestContract(t *testing.T) {
 	if !excluded {
 		t.Errorf("scope doesn't list the excluded collection: %v", scope["collections"])
 	}
+	// Reading the app configuration, anonymously and signed in, with revalidation.
+	req("GET", "/v1/acme/_config", "", nil, 200)
+	req("GET", "/v1/acme/_config?paths=maintenance", "", ada, 200)
+	req("GET", "/v1/acme/_config?paths=nope", "", nil, 400)
+	req("GET", "/v1/acme/_config", "", with(nil, "Authorization", "Bearer nope"), 401)
+	req("GET", "/v1/nope/_config", "", nil, 404)
+	cfgTag := ""
+	{
+		rec, _ := f.doH(t, "GET", "/v1/acme/_config", "", nil)
+		cfgTag = rec.Header().Get("ETag")
+	}
+	req("GET", "/v1/acme/_config", "", with(nil, "If-None-Match", cfgTag), 304)
 	// App configuration: read, change with If-Match, history and rollback.
 	cfg := ad + "/app-config"
 	req("GET", cfg, "", nil, 401)

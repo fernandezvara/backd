@@ -10,6 +10,7 @@ const (
 	codeInvalidJSON       = "invalid_json"
 	codeValidation        = "validation_error"
 	codeInvalidQuery      = "invalid_query"
+	codeInvalidPath       = "invalid_path"
 	codeUnauthenticated   = "unauthenticated"
 	codeInvalidCreds      = "invalid_credentials"
 	codeForbidden         = "forbidden"

@@ -652,3 +652,19 @@ func TestRulesSectionOfCollectionYAML(t *testing.T) {
 		}
 	}
 }
+
+func TestAppConfigCacheTTL(t *testing.T) {
+	s, errs := parseRealmSettings([]byte("app_config:\n  cache_ttl: 90s\n"))
+	if len(errs) > 0 || s.AppConfigCacheTTL != 90*time.Second {
+		t.Fatalf("ttl = %v, %v", s.AppConfigCacheTTL, errs)
+	}
+	s, errs = parseRealmSettings([]byte("{}\n"))
+	if len(errs) > 0 || s.AppConfigTTL() != DefaultAppConfigCacheTTL {
+		t.Fatalf("default = %v, %v", s.AppConfigTTL(), errs)
+	}
+	for _, bad := range []string{"0s", "2d", "soon"} {
+		if _, errs := parseRealmSettings([]byte("app_config:\n  cache_ttl: " + bad + "\n")); len(errs) == 0 {
+			t.Errorf("cache_ttl %s accepted", bad)
+		}
+	}
+}
