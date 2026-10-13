@@ -15,3 +15,6 @@ openapi.yaml:
     - '#/paths/~1v1~1{realm}~1_admin~1data~1{database}~1{collection}~1_files~1{field}'
     - '#/paths/~1v1~1{realm}~1_admin~1data~1{database}~1{collection}~1{id}~1restore'
     - '#/paths/~1v1~1{realm}~1{database}~1{collection}~1{id}~1restore'
+    # `_consents` is not a database name either: the public consent texts never match a function or job route.
+    - '#/paths/~1v1~1{realm}~1{database}~1_func~1{function}'
+    - '#/paths/~1v1~1{realm}~1{database}~1_jobs~1{id}'
