@@ -9,7 +9,7 @@ async function registerDevice(name: string) {
   const client = createClient({ url, realm: REALM })
   await client.auth.login({ email: users.support, password: PASSWORD })
   const device = await client.push.register({ platform: 'android', token: `test-e2e-${Date.now().toString(36)}`, name })
-  await client.auth.logout().catch(() => undefined)
+  // The session stays: a device goes with the session that registered it.
   return device
 }
 
