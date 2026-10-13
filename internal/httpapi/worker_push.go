@@ -82,6 +82,23 @@ func (w *Worker) deliverUnit(ctx context.Context, log *slog.Logger, svc *auth.Us
 	for _, d := range found {
 		devices[d.ID] = d
 	}
+	// A unit can wait out a retry backoff for hours: a device whose session ended meanwhile (it
+	// expired, and the sweep hasn't removed the device yet) gets nothing.
+	userIDs := make([]string, len(pj.Recipients))
+	for i, r := range pj.Recipients {
+		userIDs[i] = r.UserID
+	}
+	live, err := svc.Store.LiveDevicesOf(ctx, userIDs, svc.Clock())
+	if err != nil {
+		w.retryUnit(ctx, log, svc, job, nil, err)
+		return
+	}
+	liveIDs := map[string]bool{}
+	for _, list := range live {
+		for _, d := range list {
+			liveIDs[d.ID] = true
+		}
+	}
 	// What this attempt still owes: every device, until something answers for it.
 	pending := make(map[string]bool, len(ids))
 	var delta auth.PushDelta
@@ -91,6 +108,10 @@ func (w *Worker) deliverUnit(ctx context.Context, log *slog.Logger, svc *auth.Us
 			d, ok := devices[id]
 			if !ok {
 				delta.Invalid++ // removed since the unit was made: signed out, or reported dead
+				continue
+			}
+			if !liveIDs[id] {
+				delta.Failed++ // its session ended: nothing is sent to a signed-out device
 				continue
 			}
 			token, err := svc.OpenToken(d.Token)

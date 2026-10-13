@@ -119,6 +119,7 @@ func TestPushSettingsErrors(t *testing.T) {
 		"stale":            {"push:\n  android: {provider: capture}\n  devices: {stale_after: 1h}\n", "stale_after"},
 		"timeout":          {"push:\n  android: {provider: capture}\n  delivery: {timeout: 0s}\n", "delivery.timeout"},
 		"parallelism":      {"push:\n  android: {provider: capture}\n  delivery: {parallelism: 0}\n", "delivery.parallelism"},
+		"parallelism cap":  {"push:\n  android: {provider: capture}\n  delivery: {parallelism: 100000}\n", "delivery.parallelism: at most 200"},
 		"attempts":         {"push:\n  android: {provider: capture}\n  delivery: {retry: {attempts: 0}}\n", "delivery.retry.attempts"},
 		"per minute":       {"push:\n  android: {provider: capture}\n  limits: {per_user: {per_minute: 0}}\n", "per_minute"},
 		"retention":        {"push:\n  android: {provider: capture}\n  send_retention: 1h\n", "send_retention"},

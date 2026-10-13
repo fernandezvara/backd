@@ -36,6 +36,7 @@ const (
 	DefaultMaxDevicesPerUser = 10
 	DefaultDeviceStaleAfter  = 60 * 24 * time.Hour
 	maxDevicesPerUserLimit   = 100
+	maxPushParallelism       = 200
 )
 
 // DefaultWebEndpointHosts are the push services of the major browsers.
@@ -338,6 +339,10 @@ func parsePush(d *pushDoc) (*PushSettings, []error) {
 	if dl := d.Delivery; dl != nil {
 		span("delivery.timeout", dl.Timeout, time.Second, &p.Delivery.Timeout)
 		positive("delivery.parallelism", dl.Parallelism, &p.Delivery.Parallelism)
+		if dl.Parallelism != nil && *dl.Parallelism > maxPushParallelism {
+			add("delivery.parallelism: at most %d, got %d", maxPushParallelism, *dl.Parallelism)
+			p.Delivery.Parallelism = DefaultPushParallelism
+		}
 		if r := dl.Retry; r != nil {
 			positive("delivery.retry.attempts", r.Attempts, &p.Delivery.RetryAttempts)
 			span("delivery.retry.backoff", r.Backoff, time.Second, &p.Delivery.RetryBackoff)

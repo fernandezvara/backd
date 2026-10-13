@@ -178,3 +178,17 @@ func eachDelivery(ctx context.Context, deliveries []push.Delivery, parallelism i
 // statusOf maps an HTTP status the providers share: ok, throttled or transient, and what is
 // left as a permanent failure.
 func transient(status int) bool { return status == http.StatusTooManyRequests || status >= 500 }
+
+// scrub makes a transport error safe to log: the URL of a request holds a device's token (APNs)
+// or the secret path of a push subscription (Web Push), so only the host and the cause stay.
+func scrub(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		host := ue.URL
+		if u, perr := url.Parse(ue.URL); perr == nil {
+			host = u.Host
+		}
+		return fmt.Errorf("%s %s: %w", ue.Op, host, ue.Err)
+	}
+	return err
+}

@@ -473,3 +473,22 @@ func TestPushTestSendAndRecords(t *testing.T) {
 		t.Errorf("a plain user: %d", rec.Code)
 	}
 }
+
+// A unit that waits out a retry for hours doesn't reach a device whose session ended meanwhile.
+func TestPushNotDeliveredAfterTheSessionEnded(t *testing.T) {
+	f := newPushSendFixture(t)
+	f.register(t, f.ada, "phone")
+	code, out := f.send(t, `{"user": "`+f.adaID+`", "title": "Hi", "body": "There"}`)
+	if code != 202 || out["queued"] != float64(1) {
+		t.Fatalf("send: %d %v", code, out)
+	}
+	// Planned; then the session passes its expiry before a worker gets to the unit.
+	f.svc.Now = func() time.Time { return time.Now().Add(400 * 24 * time.Hour) }
+	f.drain(t)
+	if got := f.sender.delivered(); len(got) != 0 {
+		t.Errorf("delivered to a device without a live session: %+v", got)
+	}
+	if rec := f.record(t, out["send_id"].(string)); rec.Failed != 1 || rec.Sent != 0 || rec.CompletedAt.IsZero() {
+		t.Errorf("record: %+v", rec)
+	}
+}

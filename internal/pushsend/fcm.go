@@ -83,7 +83,7 @@ func (s *fcmSender) Send(ctx context.Context, req push.Request) ([]push.DeviceRe
 		hr.Header.Set("Content-Type", "application/json")
 		res, err := client.Do(hr)
 		if err != nil {
-			return push.DeviceResult{}, err
+			return push.DeviceResult{}, scrub(err)
 		}
 		defer res.Body.Close()
 		out, _ := io.ReadAll(io.LimitReader(res.Body, 1<<16))
@@ -163,7 +163,7 @@ func (s *fcmSender) accessToken(ctx context.Context, client *http.Client, sa ser
 	hr.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	res, err := client.Do(hr)
 	if err != nil {
-		return "", err
+		return "", scrub(err)
 	}
 	defer res.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(res.Body, 1<<16))

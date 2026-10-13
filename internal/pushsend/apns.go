@@ -85,7 +85,7 @@ func (s *apnsSender) Send(ctx context.Context, req push.Request) ([]push.DeviceR
 		}
 		res, err := client.Do(hr)
 		if err != nil {
-			return push.DeviceResult{}, err
+			return push.DeviceResult{}, scrub(err)
 		}
 		defer res.Body.Close()
 		out, _ := io.ReadAll(io.LimitReader(res.Body, 1<<14))

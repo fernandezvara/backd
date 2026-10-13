@@ -15,6 +15,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"io"
 	"math/big"
 	"net/http"
@@ -460,22 +461,21 @@ func TestWebPushSender(t *testing.T) {
 }
 
 func TestDirectModeRefusesPrivateAddresses(t *testing.T) {
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(201) }))
-	defer srv.Close()
-	u, _ := url.Parse(srv.URL)
-	vapid, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	ua, _ := ecdh.P256().GenerateKey(rand.Reader)
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	srv := apnsServer(t, func(*http.Request) (int, string) { return 200, "" })
 	roots := x509.NewCertPool()
 	roots.AddCert(srv.Certificate())
+	cfg := map[string]string{"key": pemOf(t, key), "key_id": "k", "team_id": "t", "topic": "x"}
+	deliver := []push.Delivery{{DeviceID: "d", Token: "ok", Message: message("Hi")}}
 	// 127.0.0.1 is private: without AllowAddr, nothing is dialed.
-	s := Senders(Config{TLS: &tls.Config{RootCAs: roots}})["webpush"]
-	tok, _ := json.Marshal(map[string]any{"endpoint": srv.URL + "/x", "keys": map[string]string{
-		"p256dh": b64.EncodeToString(ua.PublicKey().Bytes()), "auth": b64.EncodeToString(make([]byte, 16))}})
-	_, err := s.Send(context.Background(), push.Request{Platform: "web", Config: map[string]string{
-		"private_key": b64.EncodeToString(vapid.D.FillBytes(make([]byte, 32))), "subject": "mailto:a@b.c", "public_key": "x", "allowed_hosts": u.Hostname()},
-		Deliveries: []push.Delivery{{DeviceID: "d", Token: string(tok), Message: message("Hi")}}})
-	if err == nil {
+	s := Senders(Config{APNsBase: srv.URL, TLS: &tls.Config{RootCAs: roots}})["apns"]
+	if _, err := s.Send(context.Background(), push.Request{Platform: "ios", Config: cfg, Deliveries: deliver}); err == nil {
 		t.Error("a private address was dialed")
+	}
+	// And a host the unit didn't name is refused even when addresses are allowed.
+	other := Senders(Config{APNsBase: srv.URL, TLS: &tls.Config{RootCAs: roots}, AllowAddr: true})["apns"]
+	if _, err := other.Send(context.Background(), push.Request{Platform: "ios", Config: cfg, Deliveries: deliver}); err != nil {
+		t.Errorf("the named host: %v", err)
 	}
 }
 
@@ -500,4 +500,50 @@ func TestEncryptPayloadsAreIndependent(t *testing.T) {
 		t.Error("a short auth secret accepted")
 	}
 	_ = time.Second
+}
+
+// A transport error never carries a device's token (APNs puts it in the path) or a
+// subscription's secret URL: the worker logs these.
+func TestErrorsDoNotCarryTokensOrSubscriptionURLs(t *testing.T) {
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	// Nothing listens on this address: every request fails at the transport.
+	closed := httptest.NewTLSServer(http.NotFoundHandler())
+	base := closed.URL
+	closed.Close()
+	s := Senders(Config{APNsBase: base, AllowAddr: true})["apns"]
+	_, err := s.Send(context.Background(), push.Request{Platform: "ios", Config: map[string]string{"key": pemOf(t, key), "key_id": "k", "team_id": "t", "topic": "x"},
+		Deliveries: []push.Delivery{{DeviceID: "d", Token: "SECRET-DEVICE-TOKEN-0123456789", Message: message("Hi")}}})
+	if err == nil || strings.Contains(err.Error(), "SECRET-DEVICE-TOKEN") {
+		t.Errorf("an APNs transport error: %v", err)
+	}
+	// What a Web Push request would fail with: the secret path is not in what is kept.
+	raw := &url.Error{Op: "Post", URL: "https://fcm.googleapis.com/fcm/send/SECRET-SUBSCRIPTION-PATH", Err: errors.New("connection reset")}
+	got := scrub(raw)
+	if strings.Contains(got.Error(), "SECRET-SUBSCRIPTION-PATH") || !strings.Contains(got.Error(), "fcm.googleapis.com") || !strings.Contains(got.Error(), "connection reset") {
+		t.Errorf("scrub: %v", got)
+	}
+	if plain := errors.New("x"); scrub(plain) != plain {
+		t.Error("an error that is not a transport error changed")
+	}
+}
+
+// A subscription that points at another port of an allowed host is never called.
+func TestWebPushNeverCallsAnotherPort(t *testing.T) {
+	called := false
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { called = true }))
+	defer srv.Close()
+	u, _ := url.Parse(srv.URL) // 127.0.0.1:<random port>
+	vapid, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	ua, _ := ecdh.P256().GenerateKey(rand.Reader)
+	roots := x509.NewCertPool()
+	roots.AddCert(srv.Certificate())
+	s := Senders(Config{TLS: &tls.Config{RootCAs: roots}})["webpush"] // the real rules: standard port only
+	sub, _ := json.Marshal(map[string]any{"endpoint": srv.URL + "/x", "keys": map[string]string{
+		"p256dh": b64.EncodeToString(ua.PublicKey().Bytes()), "auth": b64.EncodeToString(make([]byte, 16))}})
+	rs, err := s.Send(context.Background(), push.Request{Platform: "web", Config: map[string]string{
+		"private_key": b64.EncodeToString(vapid.D.FillBytes(make([]byte, 32))), "subject": "mailto:a@b.c", "public_key": "x", "allowed_hosts": u.Hostname()},
+		Deliveries: []push.Delivery{{DeviceID: "d", Token: string(sub), Message: message("Hi")}}})
+	if got := results(t, rs, err); got["d"] != "failed" || called {
+		t.Errorf("another port: %v called=%v", got, called)
+	}
 }

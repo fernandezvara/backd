@@ -86,8 +86,8 @@ func (s *Users) RegisterDevice(ctx context.Context, p Principal, in DeviceInput)
 	if err != nil {
 		return Device{}, err
 	}
-	if len(in.Name) > 100 {
-		return Device{}, &InvalidDeviceError{Reason: "name: at most 100 characters"}
+	if len(in.Name) > 100 || strings.ContainsFunc(in.Name, func(r rune) bool { return r < ' ' || r == 0x7f }) {
+		return Device{}, &InvalidDeviceError{Reason: "name: at most 100 characters, without control characters"}
 	}
 	if err := s.RateLimit(ctx, "device:"+p.Session.ID, deviceRegistrationsPerHour, time.Hour); err != nil {
 		return Device{}, err

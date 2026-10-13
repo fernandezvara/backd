@@ -56,7 +56,7 @@ func (s *webSender) Send(ctx context.Context, req push.Request) ([]push.DeviceRe
 			continue
 		}
 		u, err := url.Parse(sub.Endpoint)
-		if err != nil || u.Scheme != "https" || u.Host == "" || !hostAllowed(u.Hostname(), allowed) {
+		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || (!s.cfg.AllowAddr && u.Port() != "" && u.Port() != "443") || !hostAllowed(u.Hostname(), allowed) {
 			continue // answered as failed below: never called
 		}
 		subs[i] = &sub
@@ -106,7 +106,7 @@ func (s *webSender) Send(ctx context.Context, req push.Request) ([]push.DeviceRe
 		}
 		res, err := client.Do(hr)
 		if err != nil {
-			return push.DeviceResult{}, err
+			return push.DeviceResult{}, scrub(err)
 		}
 		defer res.Body.Close()
 		_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, 1<<14))

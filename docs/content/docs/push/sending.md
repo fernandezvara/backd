@@ -77,6 +77,10 @@ A device the sender gave no result for counts as failed. A failure of the call a
 
 - **Idempotent planning.** If a worker dies mid-batch, the batch runs again from where it was: units have deterministic ids, so none is made twice and nobody is charged twice.
 
+{{< hint style="warning" title="A function that pushes is a function anyone may call" >}}
+A function with `push` sends **as your realm**, to whoever it names. If anonymous or low-trust callers can invoke it, don't let them choose the recipients or the text: take the user from the caller's own session (`ctx.user.id`) or from your own data, keep the kind fixed, and gate it with an `invoke` rule. The per-user limits stop a flood on one phone, not a function that reaches everyone.
+{{< /hint >}}
+
 ## Limits
 
 Per user, `push.limits.per_user` (**5 a minute and 24 a day** by default), counted once per push however many devices the user has. **Silent pushes count too, and nobody is exempt:** there is no urgent flag and no administrator bypass. A user over their limit is skipped and counted as `limited`; there is no per-call cap, so very large sends are kept in check by batching, these limits and `push.delivery.parallelism`.

@@ -71,6 +71,7 @@ func TestRegisterDeviceRules(t *testing.T) {
 		"empty":     {Platform: "android"},
 		"too big":   {Platform: "android", Token: string(make([]byte, MaxDeviceTokenBytes+1))},
 		"long name": {Platform: "android", Token: "x", Name: string(make([]byte, 101))},
+		"escape":    {Platform: "android", Token: "x", Name: "Pixel\x1b[2J"},
 		"port":      {Platform: "web", Token: `{"endpoint":"https://fcm.googleapis.com:8443/x","keys":{"p256dh":"AAAA","auth":"AAAA"}}`},
 		"userinfo":  {Platform: "web", Token: `{"endpoint":"https://u:p@fcm.googleapis.com/x","keys":{"p256dh":"AAAA","auth":"AAAA"}}`},
 		"lookalike": {Platform: "web", Token: `{"endpoint":"https://evilfcm.googleapis.com.evil.example/x","keys":{"p256dh":"AAAA","auth":"AAAA"}}`},
