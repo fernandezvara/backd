@@ -1533,6 +1533,17 @@ paths:
                   user: { $ref: "#/components/schemas/User" }
                   new_user: { type: boolean, description: "With a challenge from a provider sign-in: whether it made the user." }
                   profile: { type: object, description: "With `new_user`: what the provider said of the person." }
+                  consent_required: { const: true, description: "Instead of the session, when the user has consents to accept: the sign-in goes on at `POST /_auth/consents/accept` with `challenge`. The recovery codes are in this answer all the same." }
+                  challenge: { type: string }
+                  consents:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [name, version]
+                      properties:
+                        name: { type: string }
+                        version: { type: string }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
