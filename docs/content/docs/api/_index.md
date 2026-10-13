@@ -38,7 +38,7 @@ Responses depend on who is asking, so `backd` tells caches (browsers, proxies, C
 | Document reads without credentials, in a collection with [`cache.public`](../configuration/config-dir/#public-caching) | `Cache-Control: public, max-age=<n>` (at most 3600), so a CDN may store them |
 | A document read with `?file_links=true` | `Cache-Control: private, no-store`: the links expire, so the response is never stored or revalidated |
 
-Revalidation is cheap: document and list reads answer `304 Not Modified` to a matching `If-None-Match` (see [Revalidating a read](../api/documents/#revalidating-a-read-if-none-match)). Errors on these routes carry the same headers.
+Revalidation is cheap: document and list reads answer `304 Not Modified` to a matching `If-None-Match`. See [Caching and conditional GET](caching/) and [Revalidating a read](documents/#revalidating-a-read-if-none-match). Errors on these routes carry the same headers.
 
 {{< hint style="tip" title="Already done for you" >}}
 You don't configure any of this: `backd` sets `Vary` and `Cache-Control` on every response, so a shared cache can't serve one caller's data to another. Never strip these headers at your proxy.

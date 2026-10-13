@@ -119,7 +119,7 @@ If-None-Match: "3"
 - The header can list several tags (`"3", "4"`) or be `*`; a `W/` prefix is ignored.
 - A response with `?file_links=true` is never `304`: its links are made per response and expire.
 
-`If-None-Match` is for reads, `If-Match` is for writes: the first says "send it only if it changed", the second "write only if it didn't". The `ETag` of a response that differs from the stored document for the caller carries a suffix (`"3.r1a2b3c4d"`); send it back unchanged, `If-Match` only looks at the version.
+See [Caching and conditional GET](../caching/) for lists, public caching and the client's built-in cache. `If-None-Match` is for reads, `If-Match` is for writes: the first says "send it only if it changed", the second "write only if it didn't". The `ETag` of a response that differs from the stored document for the caller carries a suffix (`"3.r1a2b3c4d"`); send it back unchanged, `If-Match` only looks at the version.
 
 ## Concurrency and `If-Match`
 
