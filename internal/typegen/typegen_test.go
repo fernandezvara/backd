@@ -104,9 +104,10 @@ func TestDiff(t *testing.T) {
 	}
 }
 
-// TestExamplesTypeCheck generates the types of every example realm and checks them with the
-// TypeScript compiler of the JavaScript client, when it is installed.
-func TestExamplesTypeCheck(t *testing.T) {
+// tscPath returns the TypeScript compiler of the JavaScript client, or skips the test when
+// it (or node, which it runs on) isn't installed.
+func tscPath(t *testing.T) string {
+	t.Helper()
 	tsc, err := filepath.Abs("../../clients/js/node_modules/.bin/tsc")
 	if err != nil {
 		t.Fatal(err)
@@ -114,6 +115,16 @@ func TestExamplesTypeCheck(t *testing.T) {
 	if _, err := os.Stat(tsc); err != nil {
 		t.Skip("tsc isn't installed (npm ci in clients/js)")
 	}
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("node isn't installed")
+	}
+	return tsc
+}
+
+// TestExamplesTypeCheck generates the types of every example realm and checks them with the
+// TypeScript compiler of the JavaScript client, when it is installed.
+func TestExamplesTypeCheck(t *testing.T) {
+	tsc := tscPath(t)
 	dir := t.TempDir()
 	var files []string
 	for _, ex := range []string{"shelf", "workshop", "shop", "blog", "expenses"} {
