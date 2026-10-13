@@ -194,11 +194,26 @@ func registerRemote(cfg *kli.Config) {
 		Config(func(cc *kli.CommandConfig) {
 			remote(cc)
 			optional(cc, "email", "the email to sign in with (asked for on a terminal)")
+			boolean(cc, "magic-link", "sign in with a code sent to the email instead of a password (the realm needs magic_link)")
 		})
 	cfg.Command("logout").ShortHelp("end the stored session and forget it").
 		Func(act("logout", logoutAction)).Config(remote)
 	cfg.Command("whoami").ShortHelp("show who the stored session belongs to").
 		Func(act("whoami", whoamiAction)).Config(remote)
+
+	acc := cfg.Command("account").ShortHelp("manage your own sign-in security: the second factor and its recovery codes").
+		LongHelp("Acts on the signed-in user with the session `backd login` stored (not an API key). Each\nchange asks for a fresh proof that it is you: your authenticator code if you have one,\nelse your password. Codes and passwords are read from the terminal, or from the lines of\nstandard input when it isn't one.")
+	acc.SubCommand("mfa-status").ShortHelp("show whether two-step verification is on").
+		Func(act("account mfa-status", accountMFAStatus)).Config(remote)
+	acc.SubCommand("mfa-enable").ShortHelp("set an authenticator app up: shows a QR code and the recovery codes once").
+		Func(act("account mfa-enable", accountMFAEnable)).Config(remote)
+	acc.SubCommand("mfa-disable").ShortHelp("turn two-step verification off (not for roles that require it)").
+		Func(act("account mfa-disable", accountMFADisable)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		boolean(cc, "yes", "confirm that you want it off")
+	})
+	acc.SubCommand("recovery-codes").ShortHelp("replace the recovery codes with new ones, shown once").
+		Func(act("account recovery-codes", accountRecoveryCodes)).Config(remote)
 
 	u := cfg.Command("user").ShortHelp("manage a realm's users").
 		LongHelp(adminAPINote + " The first administrator of a realm is\ncreated with `backd bootstrap`. Passwords are read from the terminal without\necho, or as the first line of standard input when it isn't a terminal. Emails\ncan't be changed.")

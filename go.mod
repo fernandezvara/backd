@@ -8,10 +8,12 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager v0.4.13
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.0
 	github.com/aws/smithy-go v1.28.1
+	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc
 	github.com/expr-lang/expr v1.17.8
 	github.com/fernandezvara/kli v0.3.0
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/go-jose/go-jose/v4 v4.1.5
+	github.com/pquerna/otp v1.5.0
 	github.com/prometheus/client_golang v1.24.1
 	github.com/rs/xid v1.6.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
@@ -37,11 +39,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.4 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/klauspost/compress v1.19.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/pquerna/otp v1.5.0 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.70.1 // indirect
 	github.com/prometheus/procfs v0.21.1 // indirect

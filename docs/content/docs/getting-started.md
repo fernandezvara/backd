@@ -189,6 +189,7 @@ docker build -t backd .
 | `backd databases [--collections]` | Print the MongoDB databases (or collections) the config uses, one per line (needs only `CONFIG_DIR`; see [least-privilege deployments](../operations/#least-privilege-deployments)) |
 | `backd bootstrap --realm <realm> --email <email>` | Create a realm's first administrator (see [Command-line administration](../auth/cli/)) |
 | `backd login --realm <realm>`, `logout`, `whoami` | Sign in to a running `backd` as an administrator and keep the session for the commands below |
+| `backd account <command> --realm <realm>` | Manage your own [second factor](../auth/mfa/) and recovery codes |
 | `backd user <command> --realm <realm> …` | Manage a realm's users through the admin API (see [Users and passwords](../auth/users/)) |
 | `backd apikey <command> --realm <realm> …` | Manage a realm's API keys through the admin API (see [API keys](../auth/api-keys/)) |
 
@@ -205,7 +206,7 @@ export MONGO_URI='mongodb://localhost:27017/?replicaSet=rs0'   # a single-node r
 backd provision
 backd bootstrap --realm demo --email me@example.com          # the first administrator; asks for a password
 HTTP_ADDR=127.0.0.1:9090 backd serve &
-backd login --realm demo --url http://127.0.0.1:9090 --email me@example.com
+backd login --realm demo --url http://127.0.0.1:9090 --email me@example.com   # also sets up the authenticator app the template requires of admins
 KEY=$(backd apikey create --realm demo --name local --expires 1d)
 curl http://127.0.0.1:9090/v1/demo/main/posts -H "Authorization: Bearer $KEY"
 ```
