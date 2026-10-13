@@ -690,6 +690,42 @@ func TestContract(t *testing.T) {
 		ch = req("POST", a+"/login", login, nil, 200)["challenge"].(string)
 		req("POST", a+"/mfa/verify", `{"challenge": "`+ch+`", "method": "recovery_code", "code": "abcde-abcde"}`, nil, 200)
 		req("POST", "/v1/nope/_auth/mfa/verify", `{"challenge": "x", "method": "totp", "code": "1"}`, nil, 404)
+		// Setting a second factor up and managing it, as the signed-in user.
+		pw2 := "dev-p4ssw0rd!"
+		if _, err := f.svc.Create(ctx, "enroll2@example.com", &pw2); err != nil {
+			t.Fatal(err)
+		}
+		tok := req("POST", a+"/login", `{"email": "enroll2@example.com", "password": "dev-p4ssw0rd!"}`, nil, 200)["token"].(string)
+		mine := map[string]string{"Authorization": "Bearer " + tok}
+		jsonMine := map[string]string{"Authorization": "Bearer " + tok, "Content-Type": "application/json"}
+		req("GET", a+"/mfa", "", mine, 200)
+		req("GET", a+"/mfa", "", nil, 401)
+		setup := req("POST", a+"/mfa/totp/setup", "", mine, 200)
+		req("POST", a+"/mfa/totp/setup", "", nil, 401)
+		confirmBody := func(c string) string { return `{"setup_id": "` + setup["setup_id"].(string) + `", "code": "` + c + `"}` }
+		req("POST", a+"/mfa/totp/confirm", confirmBody("000000"), jsonMine, 400)
+		req("POST", a+"/mfa/totp/confirm", `{}`, jsonMine, 400)
+		req("POST", a+"/mfa/totp/confirm", confirmBody("000000"), map[string]string{"Content-Type": "application/json"}, 401)
+		good, _ := totp.GenerateCode(setup["secret"].(string), f.svc.Clock())
+		req("POST", a+"/mfa/totp/confirm", confirmBody(good), jsonMine, 200)
+		req("POST", a+"/mfa/totp/setup", "", mine, 409)
+		req("POST", a+"/mfa/recovery-codes", "", mine, 200)
+		req("POST", a+"/mfa/recovery-codes", "", nil, 401)
+		f.svc.Settings.MFA.RequiredAll = true
+		req("DELETE", a+"/mfa/totp", "", mine, 403)
+		f.svc.Settings.MFA.RequiredAll = false
+		req("DELETE", a+"/mfa/totp", "", nil, 401)
+		req("DELETE", a+"/mfa/totp", "", mine, 204)
+		req("DELETE", a+"/mfa/totp", "", mine, 409)
+		req("POST", a+"/mfa/recovery-codes", "", mine, 409)
+		f.svc.Settings.MFA.Off = true
+		req("POST", a+"/mfa/totp/setup", "", mine, 403)
+		req("POST", a+"/mfa/totp/confirm", `{"setup_id": "x", "code": "123456"}`, jsonMine, 403)
+		f.svc.Settings.MFA.Off = false
+		cipher := f.svc.Cipher
+		f.svc.Cipher = nil
+		req("POST", a+"/mfa/totp/setup", "", mine, 503)
+		f.svc.Cipher = cipher
 		// A required role without a second factor is asked to set one up, at sign-up too.
 		// (Without email, so that the verification message doesn't spend the address's budget.)
 		f.svc.Settings.MFA.RequiredAll = true

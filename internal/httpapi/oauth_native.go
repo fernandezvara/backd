@@ -25,6 +25,11 @@ const (
 	codeInvalidChallenge  = "invalid_challenge"
 	codeInvalidCode       = "invalid_code"
 	codeMFALocked         = "mfa_locked"
+	codeMFADisabled       = "mfa_disabled"
+	codeMFAUnavailable    = "mfa_unavailable"
+	codeMFARequiredByRole = "mfa_required_by_role"
+	codeMFAAlreadyEnabled = "mfa_already_enabled"
+	codeMFANotEnabled     = "mfa_not_enabled"
 )
 
 func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {

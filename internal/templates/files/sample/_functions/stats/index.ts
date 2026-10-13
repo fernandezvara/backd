@@ -8,7 +8,7 @@
 
 type Context = {
   db: (name: string) => { collection: (name: string) => Collection };
-  user: { id: string; email: string; email_verified: boolean; roles: string[] } | null;
+  user: { id: string; email: string; email_verified: boolean; roles: string[]; mfa: boolean; methods: string[] } | null;
 };
 
 type Collection = {

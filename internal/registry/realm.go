@@ -304,6 +304,11 @@ type realmDoc struct {
 		AllowedRedirects []string `yaml:"allowed_redirects"`
 		AppURL           string   `yaml:"app_url"`
 	} `yaml:"sign_in"`
+	// MFA are the second-factor settings (design/mfa-passwordless.md §3).
+	MFA *struct {
+		Enabled *bool  `yaml:"enabled"`
+		Issuer  string `yaml:"issuer"`
+	} `yaml:"mfa"`
 	Account *struct {
 		RequireVerifiedEmail bool   `yaml:"require_verified_email"`
 		WelcomeEmail         bool   `yaml:"welcome_email"`
@@ -660,6 +665,21 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 			}
 			if len(s.Providers) > 0 && len(s.SignInRedirects) == 0 && (s.Email == nil || len(s.Email.AllowedRedirects) == 0) {
 				errs = append(errs, errors.New("providers: need sign_in.allowed_redirects (or email.allowed_redirects): the origins and app schemes a sign-in may send the user back to"))
+			}
+		}
+	}
+
+	if m := doc.MFA; m != nil {
+		switch {
+		case !s.AuthEnabled:
+			errs = append(errs, errors.New("mfa: only applies when auth is enabled"))
+		default:
+			if m.Enabled != nil {
+				s.MFA.Off = !*m.Enabled
+			}
+			s.MFA.Issuer = strings.TrimSpace(m.Issuer)
+			if len(s.MFA.Issuer) > 64 || strings.ContainsAny(s.MFA.Issuer, ":\n\r") {
+				errs = append(errs, errors.New("mfa.issuer: must be at most 64 characters and have no colon or line break (authenticator apps show it as the name of the account)"))
 			}
 		}
 	}

@@ -115,6 +115,11 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 		// What the function gave, for the template and for the delivery function.
 		data.Data, extra = custom.Data, maps.Clone(custom.Data)
 	}
+	if job.Email.Event != "" {
+		// A security notice: which change it reports (backd's own words, nothing secret).
+		data.Data["event"], extra["event"] = job.Email.Event, job.Email.Event
+		data.Data["codes_left"], extra["codes_left"] = job.Email.CodesLeft, job.Email.CodesLeft
+	}
 	if purpose := email.TokenPurpose(kind); purpose != "" && !notice {
 		base := es.PublicURL
 		if base == "" {

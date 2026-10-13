@@ -137,3 +137,23 @@ func TestOnSignupMustBeAnInternalAsyncFunction(t *testing.T) {
 		}
 	}
 }
+
+func TestMFASettings(t *testing.T) {
+	s, errs := parseRealmSettings([]byte("auth: enabled\nmfa:\n  issuer: \" Acme Co \"\n"))
+	if len(errs) > 0 || s.MFA.Off || s.MFA.Issuer != "Acme Co" {
+		t.Errorf("default: %+v %v", s.MFA, errs)
+	}
+	s, errs = parseRealmSettings([]byte("auth: enabled\nmfa:\n  enabled: false\n"))
+	if len(errs) > 0 || !s.MFA.Off {
+		t.Errorf("off: %+v %v", s.MFA, errs)
+	}
+	for name, yaml := range map[string]string{
+		"auth disabled": "auth: disabled\nmfa:\n  enabled: true\n",
+		"bad issuer":    "auth: enabled\nmfa:\n  issuer: \"a:b\"\n",
+		"unknown key":   "auth: enabled\nmfa:\n  colour: red\n",
+	} {
+		if _, errs := parseRealmSettings([]byte(yaml)); len(errs) == 0 {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

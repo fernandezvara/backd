@@ -19,6 +19,7 @@ type challengeDoc struct {
 	Factor    string            `bson:"factor,omitempty"`
 	NewUser   bool              `bson:"new_user,omitempty"`
 	Profile   map[string]string `bson:"profile,omitempty"`
+	Secret    string            `bson:"secret,omitempty"`
 	Attempts  int               `bson:"attempts"`
 	CreatedAt time.Time         `bson:"created_at"`
 	ExpiresAt time.Time         `bson:"expires_at"`

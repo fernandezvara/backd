@@ -199,3 +199,105 @@ func TestRulesAndFunctionsSeeHowTheSessionWasMade(t *testing.T) {
 		t.Errorf("old session: %v %v", env, err)
 	}
 }
+
+// enrollFixture is a signed-in user with no second factor.
+func newEnrollHTTP(t *testing.T) (*authFixture, string) {
+	t.Helper()
+	f := newAuthFixture(t)
+	f.svc.Realm = "acme"
+	f.svc.Cipher, _ = auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
+	token, _ := f.signup(t, "ivy@example.com")
+	return f, token
+}
+
+// send is a request with a bearer token and a JSON body.
+func (f *authFixture) send(t *testing.T, token, method, path, body string) (int, map[string]any) {
+	t.Helper()
+	hdr := bearer(token)
+	hdr["Content-Type"] = "application/json"
+	rec, out := f.doH(t, method, path, body, hdr)
+	return rec.Code, out
+}
+
+func TestEnrollingTOTPOverHTTP(t *testing.T) {
+	f, token := newEnrollHTTP(t)
+	code, st := f.as(t, token, "GET", authBase+"/mfa")
+	if code != 200 || st["enabled"] != false || st["available"] != true || st["required"] != false || st["recovery_codes_left"] != float64(0) {
+		t.Fatalf("status: %d %v", code, st)
+	}
+	if rec, _ := f.do(t, "GET", authBase+"/mfa", ""); rec.Code != 401 {
+		t.Error("status without a session")
+	}
+	code, setup := f.send(t, token, "POST", authBase+"/mfa/totp/setup", "")
+	secret, _ := setup["secret"].(string)
+	if code != 200 || secret == "" || !strings.HasPrefix(setup["otpauth_uri"].(string), "otpauth://totp/acme:ivy@example.com") ||
+		!strings.HasPrefix(setup["qr"].(string), "data:image/png;base64,") || setup["setup_id"] == "" {
+		t.Fatalf("setup: %d %v", code, setup)
+	}
+	body := func(c string) string { return `{"setup_id": "` + setup["setup_id"].(string) + `", "code": "` + c + `"}` }
+	if code, out := f.send(t, token, "POST", authBase+"/mfa/totp/confirm", body("000000")); code != 400 || errCode(out) != "invalid_code" {
+		t.Errorf("wrong code: %d %v", code, out)
+	}
+	good, _ := totp.GenerateCode(secret, f.svc.Clock())
+	code, out := f.send(t, token, "POST", authBase+"/mfa/totp/confirm", body(good))
+	codes, _ := out["recovery_codes"].([]any)
+	if code != 200 || len(codes) != 10 {
+		t.Fatalf("confirm: %d %v", code, out)
+	}
+	if code, st = f.as(t, token, "GET", authBase+"/mfa"); code != 200 || st["enabled"] != true || st["recovery_codes_left"] != float64(10) {
+		t.Errorf("status after: %d %v", code, st)
+	}
+	// A second setup is a conflict; regenerating gives new codes; disabling turns it off.
+	if code, out := f.send(t, token, "POST", authBase+"/mfa/totp/setup", ""); code != 409 || errCode(out) != "mfa_already_enabled" {
+		t.Errorf("setup again: %d %v", code, out)
+	}
+	code, out = f.send(t, token, "POST", authBase+"/mfa/recovery-codes", "")
+	if again, _ := out["recovery_codes"].([]any); code != 200 || len(again) != 10 || again[0] == codes[0] {
+		t.Errorf("regenerate: %d %v", code, out)
+	}
+	if code, _ := f.send(t, token, "DELETE", authBase+"/mfa/totp", ""); code != 204 {
+		t.Errorf("disable: %d", code)
+	}
+	if code, out := f.send(t, token, "DELETE", authBase+"/mfa/totp", ""); code != 409 || errCode(out) != "mfa_not_enabled" {
+		t.Errorf("disable twice: %d %v", code, out)
+	}
+	if code, out := f.send(t, token, "POST", authBase+"/mfa/recovery-codes", ""); code != 409 || errCode(out) != "mfa_not_enabled" {
+		t.Errorf("regenerate when off: %d %v", code, out)
+	}
+}
+
+func TestMFARefusedWhenTheRealmTurnsItOff(t *testing.T) {
+	f, token := newEnrollHTTP(t)
+	f.svc.Settings.MFA.Off = true
+	code, st := f.as(t, token, "GET", authBase+"/mfa")
+	if code != 200 || st["available"] != false {
+		t.Errorf("status: %d %v", code, st)
+	}
+	if code, out := f.send(t, token, "POST", authBase+"/mfa/totp/setup", ""); code != 403 || errCode(out) != "mfa_disabled" {
+		t.Errorf("setup: %d %v", code, out)
+	}
+}
+
+func TestRequiredRoleKeepsMFAOn(t *testing.T) {
+	f := newMFAHTTP(t)
+	f.svc.Settings.MFA.RequiredAll = true
+	token := f.sessionOf(t)
+	if code, out := f.send(t, token, "DELETE", authBase+"/mfa/totp", ""); code != 403 || errCode(out) != "mfa_required_by_role" {
+		t.Errorf("disable: %d %v", code, out)
+	}
+	if code, st := f.as(t, token, "GET", authBase+"/mfa"); code != 200 || st["required"] != true || st["enabled"] != true {
+		t.Errorf("status: %d %v", code, st)
+	}
+}
+
+// sessionOf signs the enrolled user in through both steps.
+func (f *mfaHTTP) sessionOf(t *testing.T) string {
+	t.Helper()
+	ch := f.challenge(t)
+	code, _ := totp.GenerateCode(f.secret, f.svc.Clock())
+	rec, out := f.do(t, "POST", authBase+"/mfa/verify", `{"challenge": "`+ch+`", "method": "totp", "code": "`+code+`"}`)
+	if rec.Code != 200 {
+		t.Fatalf("verify: %d %v", rec.Code, out)
+	}
+	return out["token"].(string)
+}

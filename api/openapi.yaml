@@ -1101,6 +1101,165 @@ paths:
         "429": { $ref: "#/components/responses/TooManyRequests" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_auth/mfa:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [auth]
+      summary: The signed-in user's second-factor state
+      operationId: getMFA
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: >-
+            `enabled` says the user has a second factor; `available` that the realm lets users turn
+            one on; `required` that a role of the user requires one.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [available, enabled, methods, recovery_codes_left, required]
+                properties:
+                  available: { type: boolean, description: "The realm lets users turn a second factor on and the instance has a secrets key." }
+                  enabled: { type: boolean }
+                  methods: { type: array, items: { type: string, enum: [totp, recovery_code] } }
+                  recovery_codes_left: { type: integer }
+                  required: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/mfa/totp/setup:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Start setting up an authenticator app
+      description: |
+        Makes a TOTP secret (SHA-1, 6 digits, 30 seconds: what every authenticator app supports) and
+        holds it for 15 minutes until `POST /_auth/mfa/totp/confirm` proves the app received it. A new
+        setup replaces a pending one. The secret is shown here and in the QR code only.
+      operationId: setupTOTP
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The secret, as text, as an `otpauth://` URI and as a QR image.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [setup_id, secret, otpauth_uri, qr, expires_at]
+                properties:
+                  setup_id: { type: string }
+                  secret: { type: string, description: "Base32, to type into an app." }
+                  otpauth_uri: { type: string }
+                  qr: { type: string, description: "A PNG as a `data:image/png;base64,…` URI of the `otpauth_uri`." }
+                  expires_at: { $ref: "#/components/schemas/Timestamp" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403":
+          description: "`mfa_disabled`: the realm doesn't let users turn MFA on (`mfa.enabled: false`)."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: "`mfa_already_enabled`."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: "`mfa_unavailable`: the instance has no secrets key (`BACKD_SECRETS_KEY`) to encrypt the secret with."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/mfa/totp/confirm:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Turn TOTP on with its first code
+      description: |
+        Checks the first code of the app against the pending secret, turns TOTP on and answers with
+        the 10 recovery codes, **once**: they are kept only as keyed hashes. The user's other sessions
+        end, so a session from before can't pass a rule that requires `user.mfa`, and a
+        `security-notice` email says what happened. A wrong code is `400 invalid_code`; five end the setup.
+      operationId: confirmTOTP
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [setup_id, code]
+              properties:
+                setup_id: { type: string }
+                code: { type: string }
+      responses:
+        "200":
+          description: TOTP is on.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [recovery_codes]
+                properties:
+                  recovery_codes: { type: array, items: { type: string, description: "`xxxxx-xxxxx`" } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/mfa/totp:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    delete:
+      tags: [auth]
+      summary: Turn the second factor off
+      description: |
+        Removes the user's TOTP secret and recovery codes. Refused with `403 mfa_required_by_role`
+        while a role of the user requires MFA. A `security-notice` email says what happened.
+      operationId: disableTOTP
+      security: [{ session: [] }]
+      responses:
+        "204": { description: MFA is off. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/mfa/recovery-codes:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Replace the recovery codes
+      description: >-
+        Replaces every recovery code with 10 new ones, shown once; the old ones stop working.
+        `409 mfa_not_enabled` for a user without a second factor.
+      operationId: regenerateRecoveryCodes
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The new codes.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [recovery_codes]
+                properties:
+                  recovery_codes: { type: array, items: { type: string } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_auth/identities/{provider}:
     parameters:
       - { $ref: "#/components/parameters/realm" }

@@ -150,6 +150,16 @@ auth: enabled
 #     private_key: secret:APPLE_SIGN_IN_KEY    # the whole .p8 file
 #     revoke_on_delete: true         # revoke the user's Apple tokens when the account is deleted (default)
 
+# Two-step sign-in. Users may turn on an authenticator app (TOTP) and keep ten
+# recovery codes; a sign-in with any first factor (password, provider) then asks
+# for a code before it gives a session. Enabling it ends the user's other
+# sessions. Security notices (and the warning after wrong codes) are emails of the
+# kinds `security-notice` and `mfa-failed`; the built-in English text is used
+# when the realm's email folder has none.
+# mfa:
+#   enabled: true                  # false: users can't turn TOTP on (those who have it are still asked)
+#   issuer: Acme                   # the name authenticator apps show; the realm's name by default
+
 # Accounts. Each setting here but on_signup needs the `email:` section above.
 # account:
 #   require_verified_email: false  # true: no session until the address is verified (sign-up answers 202;

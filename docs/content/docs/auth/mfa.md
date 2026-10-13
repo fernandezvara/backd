@@ -10,6 +10,48 @@ A realm can ask for a **second factor** after the first one. The first factor is
 
 The second step is built **once** and shared by every first factor, so a user with MFA is asked for a code whether they signed in with a password or with Google.
 
+## Turning it on
+
+```yaml
+# realm.yaml
+mfa:
+  enabled: true      # default; false: users can't turn a second factor on
+  issuer: Acme       # the name authenticator apps show (default: the realm's name)
+```
+
+Users manage their own second factor with their session:
+
+| Endpoint | What it does |
+|---|---|
+| `GET /_auth/mfa` | `{ available, enabled, methods, recovery_codes_left, required }` |
+| `POST /_auth/mfa/totp/setup` | Makes a secret, kept 15 minutes: `{ setup_id, secret, otpauth_uri, qr, expires_at }`. `qr` is a PNG data URI to show as an `<img>`; `secret` is for typing in |
+| `POST /_auth/mfa/totp/confirm` | `{ setup_id, code }`: the first code of the app turns TOTP on and answers with the `recovery_codes`, **once** |
+| `DELETE /_auth/mfa/totp` | Turns it off and deletes the recovery codes; `403 mfa_required_by_role` while a role of the user requires it |
+| `POST /_auth/mfa/recovery-codes` | Replaces the 10 recovery codes with new ones, shown once |
+
+- The secret is SHA-1, 6 digits, 30 seconds, 160 bits: what every authenticator app supports. It is stored **encrypted** with the realm's key (`BACKD_SECRETS_KEY`), and the recovery codes only as **keyed hashes**: not even backd can show them again.
+- **Recovery codes** are ten of ten characters (`xxxxx-xxxxx`, without `0`, `O`, `1`, `I` or `L`), each good once. Save them somewhere other than the phone with the app.
+- **Enabling ends the user's other sessions**, so a session from before can't pass a rule that asks for `user.mfa`. The session that enabled it stays.
+- A setup allows 5 wrong codes and then ends; a new setup replaces a pending one.
+
+{{< hint style="warning" title="Needs the secrets key" >}}
+Enrolling needs the instance to have `BACKD_SECRETS_KEY`: the TOTP secrets are encrypted with it. Without it, `available` is `false` and setting TOTP up answers `503 mfa_unavailable`.
+{{< /hint >}}
+
+### Notices
+
+Each change sends a `security-notice` email (when the realm has [`email`](../../functions/email/)), and three wrong codes after a right password send `mfa-failed`, at most once an hour. They are written by `backd template realm` like the other emails; when the realm's folder has none, the built-in English text is used.
+
+| Event | When |
+|---|---|
+| `mfa-enabled` | TOTP was confirmed |
+| `mfa-disabled` | TOTP was turned off |
+| `recovery-codes-regenerated` | the codes were replaced |
+| `recovery-code-used` | a recovery code signed in (with the number left) |
+| `mfa-failed` | 3 wrong codes after a correct password: "your password was used; change it" |
+
+These are audited too: `user.mfa_enabled`, `user.mfa_disabled`, `user.recovery_codes_regenerated`, `user.recovery_code_used`, never the codes.
+
 ## How a sign-in goes
 
 ```mermaid

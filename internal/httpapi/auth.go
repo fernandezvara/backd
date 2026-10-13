@@ -55,6 +55,11 @@ func (a *authAPI) routes(r chi.Router) {
 			r.With(json).Post("/password", a.changePassword)
 			r.With(json).Post("/email", a.changeEmail)
 			r.Delete("/identities/{provider}", a.unlinkIdentity)
+			r.Get("/mfa", a.mfaStatus)
+			r.Post("/mfa/totp/setup", a.mfaSetup)
+			r.With(json).Post("/mfa/totp/confirm", a.mfaConfirm)
+			r.Delete("/mfa/totp", a.mfaDisable)
+			r.Post("/mfa/recovery-codes", a.mfaRecoveryCodes)
 			r.Get("/sessions", a.sessions)
 			r.Delete("/sessions/{id}", a.revokeSession)
 		})
@@ -431,6 +436,16 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 		writeError(w, r, http.StatusTooManyRequests, codeMFALocked, "too many wrong codes; try again later")
 	case errors.As(err, &badCode):
 		writeError(w, r, http.StatusBadRequest, codeInvalidCode, "the code is not valid", Detail{Path: "attempts_left", Reason: strconv.Itoa(badCode.AttemptsLeft)})
+	case errors.Is(err, auth.ErrMFADisabled):
+		writeError(w, r, http.StatusForbidden, codeMFADisabled, err.Error())
+	case errors.Is(err, auth.ErrMFAUnavailable):
+		writeError(w, r, http.StatusServiceUnavailable, codeMFAUnavailable, err.Error())
+	case errors.Is(err, auth.ErrMFARequiredByRole):
+		writeError(w, r, http.StatusForbidden, codeMFARequiredByRole, err.Error())
+	case errors.Is(err, auth.ErrMFAAlreadyEnabled):
+		writeError(w, r, http.StatusConflict, codeMFAAlreadyEnabled, err.Error())
+	case errors.Is(err, auth.ErrMFANotEnabled):
+		writeError(w, r, http.StatusConflict, codeMFANotEnabled, err.Error())
 	case errors.Is(err, auth.ErrInvalidChallenge):
 		writeError(w, r, http.StatusBadRequest, codeInvalidChallenge, "the challenge is invalid or expired: sign in again")
 	case errors.Is(err, auth.ErrInvalidCredentials):

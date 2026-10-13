@@ -72,6 +72,8 @@ An empty file, or one with only comments, is valid: every key has a default.
 | `providers` | none | The external identity providers users may sign in with (`google`, `microsoft`, `apple`), each with its client id and `secret:NAME` references. See [Sign in with providers](../../auth/providers/) |
 | `sign_in.allowed_redirects` | `email.allowed_redirects` | Origins and app schemes a provider sign-in may send the user back to |
 | `sign_in.app_url` | none | Where a sign-in goes back to when it has no `redirect_to`; within the allowed redirects |
+| `mfa.enabled` | `true` | `false`: users can't turn a second factor on (users who have one are still asked for it). See [Multi-factor authentication](../../auth/mfa/) |
+| `mfa.issuer` | the realm's name | The name authenticator apps show for the account |
 | `account.require_verified_email` | `false` | `true`: no session until the address is verified. See [Account](#account) |
 | `account.allow_email_change` | `false` | `true`: users may [change their own address](../../auth/sessions/#changing-the-email-address) |
 | `account.welcome_email` | `false` | `true`: send the `welcome` email once the address is verified |
