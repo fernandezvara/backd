@@ -1,6 +1,6 @@
 # Design: email delivery through functions
 
-- **Issues:** design 4.1b (#6) → features 4.2c (retries), 4.2e (localization), 4.2 (send email, #9), 4.2b (Postmark, #10), 4.2d (dev tooling), 4.2f (hosted pages), 4.2g (custom emails)
+- **Issues:** design 4.1b (#6) → features 4.2c (retries), 4.2e (localization), 4.2 (send email, #9), 4.2b (Postmark, #10), 4.2d (dev tooling), 4.2f (hosted pages), 4.2g (custom emails); 12.0 (the language list moves to the top level of `realm.yaml`, shared with push)
 - **Status:** decided
 - **Related designs:** [internal-functions.md](./internal-functions.md) (the delivery function is internal), [account-lifecycle.md](./account-lifecycle.md) (the flows that send these emails)
 
@@ -18,7 +18,7 @@ backd never talks to a mail server. Each realm names one **delivery function**: 
 | Content | backd renders per-realm templates **and** passes `kind` and `data`, so providers' own templates can be used |
 | Default templates | written by `backd template realm`, English, editable; required kinds must exist |
 | Template loading | parsed and checked at startup, held in memory, part of the config fingerprint |
-| Languages | `user.locale`; `email.default_locale` and `email.locales`; every listed locale fully translated |
+| Languages | `user.locale`; top-level `default_locale` and `locales` in `realm.yaml`, shared with push; every listed locale fully translated |
 | Queue | each email is a small backd **email job** (`kind`, `user_id`, `locale`, `redirect_to`); the worker calls the delivery function **directly**, so the message is never stored |
 | Tokens in links | created at send time by the worker; only the SHA-256 hash is stored |
 | Retries | a general `retry:` option for async functions; `FunctionError` (4xx) is permanent |
@@ -64,13 +64,13 @@ sequenceDiagram
 The `realm.yaml` written by `backd template realm` contains this section **commented**, explaining every key, the language fallback rule, where templates live and how to add a language.
 
 ```yaml
+default_locale: en                     # must be in locales; shared with push (push-notifications.md §6.1)
+locales: [en, es]                      # every listed locale needs every required template
 email:
   function: notifications/deliver        # <database>/<function>; must be internal: true and mode: async
   from: "Acme <no-reply@acme.example>"
   reply_to: "support@acme.example"       # optional
   public_url: https://api.acme.example   # optional; overrides BACKD_URL for this realm's links
-  default_locale: en                     # must be in locales
-  locales: [en, es]                      # every listed locale needs every required template
   redirect_delay: 3s                     # hosted pages: wait before redirecting
   redirects:                             # where hosted pages send users afterwards
     verify_email:   https://app.acme.example/welcome
@@ -92,7 +92,7 @@ email:
 - **`BACKD_URL`** (today CLI-only) also becomes backd's public address on `serve` and `worker`. Startup fails if a realm has `email:` and neither `BACKD_URL` nor `email.public_url` is set.
 - **Without an `email:` section** the realm behaves as today: email endpoints don't exist (`404`), sign-up keeps `409 email_taken`, and settings that need email (`require_verified_email`, `allow_email_change`, `welcome_email`, invitation emails) fail startup.
 
-**Startup checks:** the named function exists, is `internal: true` and `mode: async`; `from` is a valid address; `default_locale ∈ locales`; every required template exists for every listed locale and parses; every page template exists and parses; `redirects`, `links` and `public_url` are absolute URLs; every `redirects` and `links` value is within `allowed_redirects`.
+**Startup checks:** the named function exists, is `internal: true` and `mode: async`; `from` is a valid address; the top-level `default_locale` is listed in `locales` and `email.default_locale`/`email.locales` are not set; every required template exists for every listed locale and parses; every page template exists and parses; `redirects`, `links` and `public_url` are absolute URLs; every `redirects` and `links` value is within `allowed_redirects`.
 
 ## 5. The delivery function contract
 
@@ -165,10 +165,12 @@ export default async function deliver(ctx) {
 ## 7. Languages
 
 - Users have `locale` (BCP 47, e.g. `es`, `es-MX`). Every email to a user uses it.
+- The list lives at the top level of `realm.yaml` (`default_locale`, `locales`), not under `email:` (issue 12.0), so it exists with or without email and is shared with push notifications ([push-notifications.md](./push-notifications.md) §6). A realm without `email:` still maps `user.locale` against it; templates are checked only for the features that exist (email templates when `email:` is configured, push templates for push kinds).
+- `email.default_locale` and `email.locales` are no longer accepted: startup fails saying they moved to the top level.
 - **At sign-up** the locale comes from the request's `locale` field (the JS client can send the browser's language) or `Accept-Language`, and is mapped silently to the best listed value: exact (`es-MX`) → language (`es`) → `default_locale`. `user.locale` is always a listed value.
 - **Explicit change** through `PATCH /_auth/me {locale}`: an unlisted locale answers `400 invalid_locale` with the allowed list in `details`.
 - **Every listed locale must have every required template** (startup fails naming the missing files), so "allowed" means "fully translated".
-- Undeclared `email:` locales behave as `default_locale: en`, `locales: [en]`. Shipped defaults are English only.
+- Undeclared top-level locales behave as `default_locale: en`, `locales: [en]`. Shipped defaults are English only.
 
 ## 8. Tokens
 
@@ -298,6 +300,8 @@ await ctx.email.send({ to: [order.customer_email], kind: 'invoice', data: { invo
 **4.2c — retries:** `retry:` on async functions and cron; permanent vs retryable; attempts in history; `failed` after the last attempt. Tests for each path.
 
 **4.2e — localization:** `user.locale`; sign-up mapping; `PATCH /_auth/me` with `400 invalid_locale`; `default_locale`/`locales` checks; template completeness check. Tests.
+
+**12.0 — shared language list:** `default_locale` and `locales` at the top level of `realm.yaml`, valid with or without `email:`; the old `email.*` keys refused with a message that says where they went; admin config and OpenAPI follow; template, examples and docs migrated.
 
 **4.2 — send email:** `email:` config and startup checks; delivery contract; rendering from memory; tokens created at send time with hash-only storage and atomic redemption; limits with hashed keys; `BACKD_URL`; realms without email unchanged; tests with `email-capture` asserting the database never contains a token.
 

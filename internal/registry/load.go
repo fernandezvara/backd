@@ -158,10 +158,11 @@ func loadEmail(rl *Realm, realmPath string) []error {
 	if fn != nil {
 		rl.Settings.Email.Timeout = fn.Timeout
 	}
-	tpl, terrs := email.Load(filepath.Join(realmPath, email.DirName), es.Locales)
+	_, locales := rl.Settings.Languages()
+	tpl, terrs := email.Load(filepath.Join(realmPath, email.DirName), locales)
 	rl.Email = tpl
 	errs = append(errs, terrs...)
-	pages, perrs := email.LoadPages(filepath.Join(realmPath, email.PagesDirName), es.Locales)
+	pages, perrs := email.LoadPages(filepath.Join(realmPath, email.PagesDirName), locales)
 	rl.Pages = pages
 	return append(errs, perrs...)
 }

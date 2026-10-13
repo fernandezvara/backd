@@ -3,7 +3,7 @@ package registry
 import "testing"
 
 func TestBestLocale(t *testing.T) {
-	s := RealmSettings{Email: &EmailSettings{DefaultLocale: "en", Locales: []string{"en", "es", "pt-BR"}}}
+	s := RealmSettings{DefaultLocale: "en", Locales: []string{"en", "es", "pt-BR"}}
 	for _, tt := range []struct {
 		tags []string
 		want string
@@ -37,8 +37,34 @@ func TestBestLocale(t *testing.T) {
 		t.Errorf("no email: %q %v", def, list)
 	}
 	// A default other than English.
-	es := RealmSettings{Email: &EmailSettings{DefaultLocale: "es", Locales: []string{"es", "en"}}}
+	es := RealmSettings{DefaultLocale: "es", Locales: []string{"es", "en"}}
 	if es.BestLocale("fr") != "es" || es.BestLocale("en-GB") != "en" {
 		t.Errorf("default es: %q %q", es.BestLocale("fr"), es.BestLocale("en-GB"))
+	}
+}
+
+// The languages are the realm's, with or without email.
+func TestLanguagesWithoutEmail(t *testing.T) {
+	s, errs := parseRealmSettings([]byte("default_locale: es\nlocales: [es, en, pt-BR]\n"))
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	if s.Email != nil {
+		t.Fatal("email configured")
+	}
+	if def, list := s.Languages(); def != "es" || len(list) != 3 || s.BestLocale("pt") != "pt-BR" && s.BestLocale("pt") != "es" {
+		t.Errorf("languages: %q %v", def, list)
+	}
+	if s.BestLocale("en-GB") != "en" || s.BestLocale("fr") != "es" {
+		t.Errorf("mapping: %q %q", s.BestLocale("en-GB"), s.BestLocale("fr"))
+	}
+	for name, doc := range map[string]string{
+		"not listed": "default_locale: fr\nlocales: [es]\n",
+		"twice":      "locales: [en, en]\n",
+		"bad tag":    "locales: [english]\n",
+	} {
+		if _, errs := parseRealmSettings([]byte(doc)); len(errs) == 0 {
+			t.Errorf("%s: no error", name)
+		}
 	}
 }

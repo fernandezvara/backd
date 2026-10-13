@@ -55,6 +55,13 @@ auth: enabled
 # functions:
 #   max_concurrency: 50
 
+# Languages. One list for email and push: `default_locale` is the language
+# of the templates used when a user has none, and must be listed in
+# `locales`. Each listed language needs every email template (es.txt, ...),
+# every page in pages/ (es.html, ...) and every push template.
+# default_locale: en
+# locales: [en]
+
 # Email. backd never sends mail itself: it renders each message from the
 # templates in this realm's `email/` folder (written next to this file; edit
 # them freely) and hands it to ONE function of yours, which delivers it
@@ -70,9 +77,6 @@ auth: enabled
 #   reply_to: support@acme.example         # optional
 #   public_url: https://api.acme.example   # backd's public address, for links in emails;
 #                                          # overrides the BACKD_URL environment variable
-#   default_locale: en                     # language of the templates used when a user has none
-#   locales: [en]                          # each listed language needs every template (es.txt, ...)
-#                                          # and every page in pages/ (es.html, ...)
 #   redirect_delay: 3s                     # how long the result page waits before sending the user back to your app
 #   allowed_redirects:                     # where links may send users afterwards: origins, or an app's scheme
 #     - https://app.acme.example

@@ -190,7 +190,7 @@ Behind a reverse proxy or load balancer, set [`TRUSTED_PROXIES`](../../operation
 
 ### Language
 
-Every user has a `locale`, the language of the emails they receive. A realm lists the languages it supports in [`email.locales`](../../functions/email/#languages) (English only when it sends no email), with `email.default_locale` as the fallback.
+Every user has a `locale`, the language of the emails they receive. A realm lists the languages it supports in the top-level [`locales`](../../functions/email/#languages) of `realm.yaml` (English only when it lists none), with `default_locale` as the fallback.
 
 - **At sign-up** `backd` picks the best listed language for what was asked, silently and without ever failing: the `locale` in the body (such as `es` or `es-MX`), else the browser's `Accept-Language`, matched exactly (`es-MX`), then by language (`es`), else the realm's default. A page sends `locale: navigator.language` to use the browser's language; a browser's `Accept-Language` header is used when the body has none.
 - **To change it**, `PATCH /_auth/me` with `{"locale": "es"}`: the value must be a listed language (case is ignored). Anything else answers `400 invalid_locale` with the allowed languages in `details`: an explicit change is never mapped silently.

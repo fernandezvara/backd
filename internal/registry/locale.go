@@ -5,12 +5,11 @@ import (
 	"strings"
 )
 
-// Languages returns a realm's default language and the languages it
-// supports: email.default_locale and email.locales, or just English when it
-// configures no email.
+// Languages returns a realm's default language and the languages it supports: the top-level
+// default_locale and locales of realm.yaml, or just English when it sets none.
 func (s RealmSettings) Languages() (def string, list []string) {
-	if s.Email != nil {
-		return s.Email.DefaultLocale, s.Email.Locales
+	if s.DefaultLocale != "" && len(s.Locales) > 0 {
+		return s.DefaultLocale, s.Locales
 	}
 	return DefaultLocale, []string{DefaultLocale}
 }

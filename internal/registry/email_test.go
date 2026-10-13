@@ -46,14 +46,17 @@ const goodEmail = "email:\n  function: notify/deliver\n  from: \"Shop <no-reply@
 const goodDeliver = "internal: true\nmode: async\nsecrets: [POSTMARK_TOKEN]\n"
 
 func TestEmailSettings(t *testing.T) {
-	reg, err := Load(emailTree(t, goodEmail+"  reply_to: help@shop.example\n  locales: [en, es]\n  default_locale: en\n  limits:\n    per_recipient: {per_day: 5}\n    per_ip: {per_hour: 50}\n    per_function: {per_hour: 7, per_invocation: 3}\n    recipients_per_message: 4\n", goodDeliver, esTemplates(t)))
+	reg, err := Load(emailTree(t, "locales: [en, es]\ndefault_locale: en\n"+goodEmail+"  reply_to: help@shop.example\n  limits:\n    per_recipient: {per_day: 5}\n    per_ip: {per_hour: 50}\n    per_function: {per_hour: 7, per_invocation: 3}\n    recipients_per_message: 4\n", goodDeliver, esTemplates(t)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	e := reg.Realms["shop"].Settings.Email
 	if e == nil || e.Function != "notify/deliver" || e.From != "Shop <no-reply@shop.example>" || e.ReplyTo != "help@shop.example" ||
-		e.PublicURL != "https://api.shop.example" || e.DefaultLocale != "en" || strings.Join(e.Locales, ",") != "en,es" {
+		e.PublicURL != "https://api.shop.example" {
 		t.Fatalf("settings: %+v", e)
+	}
+	if def, list := reg.Realms["shop"].Settings.Languages(); def != "en" || strings.Join(list, ",") != "en,es" {
+		t.Errorf("languages: %q %v", def, list)
 	}
 	if e.Limits != (EmailLimits{PerKindPerHour: 3, PerDay: 5, PerIPPerHour: 50, PerFunctionPerHour: 7, PerInvocation: 3, RecipientsPerMessage: 4}) {
 		t.Errorf("limits: %+v", e.Limits)
@@ -176,16 +179,18 @@ func TestEmailErrors(t *testing.T) {
 		{"no from", "email:\n  function: notify/deliver\n", goodDeliver, nil, "email.from: is required"},
 		{"bad from", strings.Replace(goodEmail, "Shop <no-reply@shop.example>", "not an address", 1), goodDeliver, nil, "email.from"},
 		{"bad public url", strings.Replace(goodEmail, "https://api.shop.example/", "api.shop.example", 1), goodDeliver, nil, "email.public_url"},
-		{"bad locale", goodEmail + "  default_locale: English\n", goodDeliver, nil, "default_locale"},
-		{"locale not listed", goodEmail + "  locales: [es]\n", goodDeliver, nil, "locales: must include default_locale (en)"},
-		{"locale untranslated", goodEmail + "  locales: [en, fr]\n", goodDeliver, nil, "fr.subject.txt: missing"},
+		{"bad locale", "default_locale: English\n" + goodEmail, goodDeliver, nil, "default_locale: \"English\" isn't a language tag"},
+		{"locale moved", goodEmail + "  default_locale: en\n", goodDeliver, nil, "email.default_locale: moved to the top level"},
+		{"locales moved", goodEmail + "  locales: [en]\n", goodDeliver, nil, "email.locales: moved to the top level"},
+		{"locale not listed", "locales: [es]\n" + goodEmail, goodDeliver, nil, "locales: must include default_locale (en)"},
+		{"locale untranslated", "locales: [en, fr]\n" + goodEmail, goodDeliver, nil, "fr.subject.txt: missing"},
 		{"limit", goodEmail + "  limits:\n    per_ip: {per_hour: 0}\n", goodDeliver, nil, "limits.per_ip.per_hour: must be at least 1"},
 		{"redirect delay", goodEmail + "  redirect_delay: 5m\n", goodDeliver, nil, "redirect_delay"},
 		{"redirect not allowed", goodEmail + "  allowed_redirects: [https://app.shop.example]\n  redirects:\n    verify_email: https://evil.example/x\n", goodDeliver, nil, "redirects.verify_email"},
 		{"redirect unknown flow", goodEmail + "  allowed_redirects: [https://app.shop.example]\n  redirects:\n    welcome: https://app.shop.example/x\n", goodDeliver, nil, `unknown flow "welcome"`},
 		{"link without token", goodEmail + "  allowed_redirects: [https://app.shop.example]\n  links:\n    reset_password: https://app.shop.example/reset\n", goodDeliver, nil, "{token}"},
 		{"link outside", goodEmail + "  allowed_redirects: [https://app.shop.example]\n  links:\n    reset_password: https://evil.example/r?t={token}\n", goodDeliver, nil, "links.reset_password"},
-		{"page missing", goodEmail + "  locales: [en, fr]\n", goodDeliver, nil, "fr.html: missing"},
+		{"page missing", "locales: [en, fr]\n" + goodEmail, goodDeliver, nil, "fr.html: missing"},
 		{"function cap", goodEmail + "  limits:\n    per_function: {per_hour: 0}\n", goodDeliver, nil, "limits.per_function.per_hour: must be at least 1"},
 		{"recipients cap", goodEmail + "  limits:\n    recipients_per_message: 0\n", goodDeliver, nil, "limits.recipients_per_message"},
 		{"unknown key", goodEmail + "  smtp: x\n", goodDeliver, nil, "field smtp not found"},

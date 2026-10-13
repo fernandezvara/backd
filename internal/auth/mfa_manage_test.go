@@ -16,7 +16,7 @@ import (
 )
 
 func enrollEmail() *registry.EmailSettings {
-	return &registry.EmailSettings{Function: "app/deliver", From: "a@example.com", DefaultLocale: "en", Limits: registry.EmailLimits{PerKindPerHour: 100, PerDay: 100, PerIPPerHour: 100}}
+	return &registry.EmailSettings{Function: "app/deliver", From: "a@example.com", Limits: registry.EmailLimits{PerKindPerHour: 100, PerDay: 100, PerIPPerHour: 100}}
 }
 
 // enrollFixture is a realm with email and a user with no second factor.

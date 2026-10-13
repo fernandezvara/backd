@@ -68,7 +68,9 @@ An empty file, or one with only comments, is valid: every key has a default.
 | `admin.read_access.users` | `false` | `true`: read-only administrators (`admin: read`) can also read users (emails, roles, sessions). Users hold personal data, so a realm opts in. |
 | `admin.read_access.data` | `false` | `true`: read-only administrators can read documents through the admin data route. |
 | `admin.allowed_networks` | none (any network) | IP addresses or CIDR networks, IPv4 or IPv6, allowed to use the [admin API](../../auth/admin/). See [Network restrictions](#network-restrictions). |
-| `email` | none (no email) | How the realm sends email: the delivery function, the sender, backd's public address for links, languages, the pages the links open, where users go afterwards, and limits. backd never sends mail itself. See [Email](../../functions/email/) |
+| `default_locale` | `en` | The language used for a user who has none and for email and push templates that lack the user's. Must be in `locales`. See [Languages](../../functions/email/#languages) |
+| `locales` | `[default_locale]` | The languages the realm supports: each user's `locale` is one of them, and every listed language needs every email template and page. Shared by email and push notifications |
+| `email` | none (no email) | How the realm sends email: the delivery function, the sender, backd's public address for links, the pages the links open, where users go afterwards, and limits. backd never sends mail itself. See [Email](../../functions/email/) |
 | `providers` | none | The external identity providers users may sign in with (`google`, `microsoft`, `apple`), each with its client id and `secret:NAME` references. See [Sign in with providers](../../auth/providers/) |
 | `sign_in.allowed_redirects` | `email.allowed_redirects` | Origins and app schemes a provider sign-in may send the user back to |
 | `sign_in.app_url` | none | Where a sign-in goes back to when it has no `redirect_to`; within the allowed redirects |

@@ -226,7 +226,7 @@ func TestLoginWithAMagicLinkCode(t *testing.T) {
 	// (The realm has no delivery function: the email job only has to exist, and the code is made
 	// as the worker would make it.)
 	f.svc.Settings.MagicLink = registry.MagicLinkSettings{Enabled: true}
-	f.svc.Settings.Email = &registry.EmailSettings{Function: "app/deliver", From: "a@example.com", DefaultLocale: "en", Limits: registry.EmailLimits{PerKindPerHour: 100, PerDay: 100, PerIPPerHour: 100}}
+	f.svc.Settings.Email = &registry.EmailSettings{Function: "app/deliver", From: "a@example.com", Limits: registry.EmailLimits{PerKindPerHour: 100, PerDay: 100, PerIPPerHour: 100}}
 	ctx := context.Background()
 	if _, err := f.svc.Create(ctx, "ada@example.com", nil); err != nil {
 		t.Fatal(err)

@@ -68,6 +68,7 @@ func (f *functions) emailSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	es := rl.Settings.Email
+	defaultLocale, _ := rl.Settings.Languages()
 	invalid := func(path, reason string) {
 		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid email", Detail{Path: path, Reason: reason})
 	}
@@ -78,7 +79,7 @@ func (f *functions) emailSend(w http.ResponseWriter, r *http.Request) {
 	case slices.Contains(email.SystemKinds, in.Kind):
 		invalid("kind", "is a kind backd sends itself; a function sends the realm's own kinds")
 		return
-	case !rl.Email.Has(in.Kind, es.DefaultLocale):
+	case !rl.Email.Has(in.Kind, defaultLocale):
 		invalid("kind", "has no template in the realm's email folder (email/"+in.Kind+"/)")
 		return
 	case (in.ToUser == "") == (len(in.To) == 0):

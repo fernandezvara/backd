@@ -121,7 +121,7 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 		}
 	}
 	if !tpl.Has(kind, locale) {
-		locale = es.DefaultLocale
+		locale, _ = svc.Settings.Languages()
 	}
 	data := email.Data{Realm: realm, User: email.User{Email: address, Locale: locale}, Data: map[string]any{}}
 	extra := map[string]any{}

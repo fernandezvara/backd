@@ -92,6 +92,7 @@ func dur(d time.Duration) string {
 // realmConfig is realm.yaml as loaded, defaults applied. Seeded user emails
 // are personal data: they show only to whoever may read users.
 func realmConfig(s registry.RealmSettings, seesUsers bool) map[string]any {
+	defaultLocale, locales := s.Languages()
 	roles := map[string]any{}
 	for _, name := range slices.Sorted(mapKeys(s.Roles)) {
 		role := s.Roles[name]
@@ -118,6 +119,7 @@ func realmConfig(s registry.RealmSettings, seesUsers bool) map[string]any {
 			"allowed_networks": orStrings(s.AdminNetworks.Strings()),
 			"read_access":      map[string]any{"users": s.ReadAccess.Users, "data": s.ReadAccess.Data},
 		},
+		"default_locale": defaultLocale, "locales": orStrings(locales),
 		"roles":     roles,
 		"audit":     map[string]any{"retention": dur(s.AuditRetention)},
 		"functions": map[string]any{"max_concurrency": s.FunctionsMaxConcurrency, "log_retention": dur(s.FunctionsLogRetention), "job_retention": dur(s.FunctionsJobRetention)},
@@ -129,7 +131,6 @@ func realmConfig(s registry.RealmSettings, seesUsers bool) map[string]any {
 	if e := s.Email; e != nil {
 		out["email"] = map[string]any{
 			"function": e.Function, "from": e.From, "reply_to": e.ReplyTo, "public_url": e.PublicURL,
-			"default_locale": e.DefaultLocale, "locales": orStrings(e.Locales),
 			"redirects": e.Redirects, "allowed_redirects": orStrings(e.AllowedRedirects), "links": e.Links,
 		}
 	}

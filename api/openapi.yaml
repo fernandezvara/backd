@@ -693,7 +693,7 @@ paths:
               type: object
               additionalProperties: false
               properties:
-                locale: { type: string, description: "One of the realm's `email.locales`." }
+                locale: { type: string, description: "One of the realm's `locales` (top level of `realm.yaml`)." }
       responses:
         "200":
           description: The updated user.
@@ -5074,7 +5074,7 @@ components:
         email: { type: string }
         email_verified: { type: boolean }
         roles: { type: array, items: { type: string } }
-        locale: { type: string, description: "The user's language: one the realm lists (`email.locales`; English only without email). Used for the emails they get." }
+        locale: { type: string, description: "The user's language: one the realm lists (`locales` in `realm.yaml`; English only when it lists none). Used for the emails they get." }
         created_at: { $ref: "#/components/schemas/Timestamp" }
 
     Me:
@@ -5086,7 +5086,7 @@ components:
         email: { type: string }
         email_verified: { type: boolean }
         roles: { type: array, items: { type: string } }
-        locale: { type: string, description: "The user's language: one the realm lists (`email.locales`; English only without email). Used for the emails they get." }
+        locale: { type: string, description: "The user's language: one the realm lists (`locales` in `realm.yaml`; English only when it lists none). Used for the emails they get." }
         created_at: { $ref: "#/components/schemas/Timestamp" }
         sign_in_methods:
           type: array
@@ -5129,7 +5129,7 @@ components:
         email: { type: string }
         email_verified: { type: boolean }
         roles: { type: array, items: { type: string } }
-        locale: { type: string, description: "The user's language: one the realm lists (`email.locales`; English only without email). Used for the emails they get." }
+        locale: { type: string, description: "The user's language: one the realm lists (`locales` in `realm.yaml`; English only when it lists none). Used for the emails they get." }
         disabled: { type: boolean }
         admin_networks:
           description: CIDR networks this user's admin API requests must come from; empty means no restriction of their own.
