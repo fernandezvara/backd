@@ -173,12 +173,3 @@ func TestBuildWrongDeno(t *testing.T) {
 		t.Errorf("no functions: %v", err)
 	}
 }
-
-func mustManifest(t *testing.T, dir string) registry.Manifest {
-	t.Helper()
-	m, err := registry.ReadManifest(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return m
-}
