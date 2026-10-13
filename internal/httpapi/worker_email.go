@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"maps"
 	"strings"
@@ -152,6 +153,20 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 		extra["link"] = data.Link
 		extra["expires_at"] = data.ExpiresAt.Format(time.RFC3339)
 		mask = []string{token}
+	}
+	if kind == email.ReauthCode && job.Email.ChallengeID != "" {
+		// The code is made now and only its hash is kept; a retried job makes a new one.
+		code, expires, err := svc.MakeReauthCode(ctx, job.Email.ChallengeID)
+		switch {
+		case errors.Is(err, auth.ErrNotFound):
+			w.fail(ctx, log, svc, job, "the request for a code has expired")
+			return nil, nil, false
+		case err != nil:
+			log.Warn("make the re-authentication code; leaving the job to be retried", "error", err)
+			return nil, nil, false
+		}
+		data.Data["code"], data.ExpiresAt = code, expires.UTC()
+		mask = append(mask, code)
 	}
 	msg, err := tpl.Render(kind, locale, data)
 	if err != nil {

@@ -33,6 +33,10 @@ const (
 	// ChallengeTOTPSetup is a TOTP secret waiting for its first code (the user is
 	// setting authenticator app up).
 	ChallengeTOTPSetup = "totp_setup"
+	// ChallengeReauth is the token a re-authentication gave, bound to a session;
+	// ChallengeReauthCode a code emailed to a user with no other proof.
+	ChallengeReauth     = "reauth"
+	ChallengeReauthCode = "reauth_code"
 )
 
 // Challenge limits.
@@ -90,7 +94,11 @@ type AuthChallenge struct {
 	NewUser bool
 	Profile map[string]string
 	// Secret is a TOTP secret (SealToken form) of a ChallengeTOTPSetup.
-	Secret    string
+	Secret string
+	// SessionID is the session a re-authentication token or code is bound to; CodeHash is
+	// the keyed hash of the code of a ChallengeReauthCode (set when the email is made).
+	SessionID string
+	CodeHash  string
 	Attempts  int
 	CreatedAt time.Time
 	ExpiresAt time.Time

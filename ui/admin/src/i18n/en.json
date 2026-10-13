@@ -842,5 +842,14 @@
     },
     "collectionLabel": "Collection",
     "databaseLabel": "Database"
+  },
+  "proof": {
+    "intro": "This key outlives your session: confirm that it is you.",
+    "password": "Your password",
+    "totp": "Code from your authenticator app",
+    "recovery": "A recovery code",
+    "emailCode": "The code we emailed you",
+    "send": "Email me a code",
+    "resend": "Email me another code"
   }
 }

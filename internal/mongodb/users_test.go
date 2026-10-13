@@ -353,7 +353,7 @@ func TestSessionsOnMongoDB(t *testing.T) {
 		t.Fatalf("Sessions = %+v, %v", list, err)
 	}
 
-	if err := svc.ChangePassword(ctx, me, "dev-p4ssw0rd!", "dev-p4ssw0rd!2"); err != nil {
+	if err := svc.ChangePassword(ctx, me, "dev-p4ssw0rd!2"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.Authenticate(ctx, token2); !errors.Is(err, auth.ErrUnauthenticated) {

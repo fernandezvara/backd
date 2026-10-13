@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures'
-import { REALM } from './users'
+import { PASSWORD, REALM } from './users'
 
 const stamp = Date.now().toString(36)
 
@@ -12,6 +12,8 @@ test('API keys: create shows the key once, revoke asks for the name', async ({ p
   await dialog.getByLabel('Name').fill(name)
   await dialog.getByLabel('Expires in').fill('90d')
   await dialog.getByLabel('Allowed networks').fill('10.0.0.0/8, 192.168.0.0/16')
+  // A key outlives the session: the administrator proves who they are again.
+  await dialog.getByLabel('Your password').fill(PASSWORD)
   await dialog.getByRole('button', { name: 'Create' }).click()
 
   const shown = page.getByTestId('api-key')

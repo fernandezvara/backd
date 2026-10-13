@@ -453,8 +453,10 @@ var systemCollections = []systemCollection{
 		// _id is the SHA-256 of the value given to the caller.
 		validator: jsonSchema([]string{"_id", "kind", "user_id", "created_at", "expires_at"}, map[string]any{
 			"_id":        str(),
-			"kind":       map[string]any{"enum": bson.A{"mfa", "enroll", "totp_setup"}},
+			"kind":       map[string]any{"enum": bson.A{"mfa", "enroll", "totp_setup", "reauth", "reauth_code"}},
 			"secret":     str(),
+			"session_id": str(),
+			"code_hash":  str(),
 			"user_id":    str(),
 			"factor":     str(),
 			"new_user":   typ("bool"),

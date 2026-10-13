@@ -101,29 +101,42 @@ test('logout removes the token even when the server is unreachable', async () =>
 
 test('logoutAll, deleteAccount, changePassword, sessions, revokeSession', async () => {
   const sessions = [{ id: 's1', created_at: 'x', last_used_at: 'x', expires_at: 'x', current: true }]
-  const m = mockFetch([{ status: 204 }, { status: 204 }, { status: 204 }, { body: { items: sessions } }, { status: 204 }])
+  const m = mockFetch([
+    { body: { reauth_token: 'proof-1', expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString() } },
+    { status: 204 }, { status: 204 }, { status: 204 }, { body: { items: sessions } }, { status: 204 },
+  ])
   const { c, events } = clientWith(m)
   await c.storage.set('bds_1')
-  await c.auth.changePassword({ currentPassword: 'old', newPassword: 'new' })
-  assert.deepEqual(m.calls[0].body, { current_password: 'old', new_password: 'new' })
-  assert.equal(m.calls[0].url.pathname, '/v1/acme/_auth/password')
+  // A sensitive action carries the fresh proof the client holds; without one it doesn't.
+  assert.equal(c.auth.hasFreshProof(), false)
+  const proof = await c.auth.reauth({ method: 'password', password: 'old' })
+  assert.deepEqual(m.calls[0].body, { method: 'password', password: 'old' })
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_auth/reauth')
+  assert.equal(proof.reauthToken, 'proof-1')
+  assert.equal(c.auth.hasFreshProof(), true)
+  await c.auth.changePassword({ newPassword: 'new' })
+  assert.deepEqual(m.calls[1].body, { new_password: 'new' })
+  assert.equal(m.calls[1].headers['X-Backd-Reauth'], 'proof-1')
+  assert.equal(m.calls[1].url.pathname, '/v1/acme/_auth/password')
   assert.equal(await c.auth.token(), 'bds_1', 'this session stays valid')
 
   await c.auth.logoutAll()
-  assert.equal(m.calls[1].url.pathname, '/v1/acme/_auth/logout-all')
+  assert.equal(m.calls[2].url.pathname, '/v1/acme/_auth/logout-all')
   assert.equal(await c.auth.token(), null)
+  assert.equal(c.auth.hasFreshProof(), false, 'the proof ends with the session')
 
   await c.storage.set('bds_2')
-  await c.auth.deleteAccount({ password: 'pw' })
-  assert.equal(m.calls[2].method, 'DELETE')
-  assert.equal(m.calls[2].url.pathname, '/v1/acme/_auth/me')
-  assert.deepEqual(m.calls[2].body, { password: 'pw' })
+  await c.auth.deleteAccount()
+  assert.equal(m.calls[3].method, 'DELETE')
+  assert.equal(m.calls[3].url.pathname, '/v1/acme/_auth/me')
+  assert.equal(m.calls[3].body, undefined)
+  assert.equal(m.calls[3].headers['X-Backd-Reauth'], undefined)
   assert.equal(await c.auth.token(), null)
 
   await c.storage.set('bds_3')
   assert.deepEqual(await c.auth.sessions(), sessions)
   await c.auth.revokeSession('s/1')
-  assert.equal(m.calls[4].url.pathname, '/v1/acme/_auth/sessions/s%2F1')
+  assert.equal(m.calls[5].url.pathname, '/v1/acme/_auth/sessions/s%2F1')
   assert.deepEqual(events.map((e) => e[0]), ['SIGNED_OUT', 'SIGNED_OUT'])
 })
 
@@ -267,14 +280,39 @@ test('a bad token is a validation error with the invalid_token code, and limits 
   await assert.rejects(c.auth.requestPasswordReset({ email: 'ada@example.com' }), (/** @type {any} */ e) => e instanceof RetryableError && e.retryAfter === 30000)
 })
 
-test('requesting an email change sends the session and the password', async () => {
-  const m = mockFetch([{ body: session('bds_1') }, { status: 202, body: { status: 'accepted' } }])
+test('requesting an email change sends the session and the fresh proof', async () => {
+  const m = mockFetch([
+    { body: session('bds_1') },
+    { body: { reauth_token: 'proof-2', expires_at: new Date(Date.now() + 60000).toISOString() } },
+    { status: 202, body: { status: 'accepted' } },
+  ])
   const { c } = clientWith(m)
   await c.auth.login({ email: 'ada@example.com', password: 'dev-p4ssw0rd!' })
-  await c.auth.requestEmailChange({ newEmail: 'ada.new@example.com', password: 'dev-p4ssw0rd!', redirectTo: 'https://app.example/account' })
-  assert.equal(m.calls[1].url.pathname, '/v1/acme/_auth/email')
-  assert.equal(m.calls[1].headers.Authorization, 'Bearer bds_1')
-  assert.deepEqual(m.calls[1].body, { new_email: 'ada.new@example.com', password: 'dev-p4ssw0rd!', redirect_to: 'https://app.example/account' })
+  await c.auth.reauth({ method: 'password', password: 'dev-p4ssw0rd!' })
+  await c.auth.requestEmailChange({ newEmail: 'ada.new@example.com', redirectTo: 'https://app.example/account' })
+  assert.equal(m.calls[2].url.pathname, '/v1/acme/_auth/email')
+  assert.equal(m.calls[2].headers.Authorization, 'Bearer bds_1')
+  assert.equal(m.calls[2].headers['X-Backd-Reauth'], 'proof-2')
+  assert.deepEqual(m.calls[2].body, { new_email: 'ada.new@example.com', redirect_to: 'https://app.example/account' })
+})
+
+test('an expired proof is not sent, and a code can be asked for by email', async () => {
+  const m = mockFetch([
+    { body: { reauth_token: 'old', expires_at: new Date(Date.now() - 1000).toISOString() } },
+    { status: 204 },
+    { status: 202, body: { status: 'accepted' } },
+    { body: { reauth_token: 'p3', expires_at: new Date(Date.now() + 60000).toISOString() } },
+  ])
+  const { c } = clientWith(m)
+  await c.storage.set('bds_1')
+  await c.auth.reauth({ method: 'password', password: 'x' })
+  assert.equal(c.auth.hasFreshProof(), false)
+  await c.auth.changePassword({ newPassword: 'new-password-1' })
+  assert.equal(m.calls[1].headers['X-Backd-Reauth'], undefined)
+  await c.auth.requestReauthCode()
+  assert.equal(m.calls[2].url.pathname, '/v1/acme/_auth/reauth/email-code')
+  await c.auth.reauth({ method: 'email_code', code: '123456' })
+  assert.deepEqual(m.calls[3].body, { method: 'email_code', code: '123456' })
 })
 
 test('cookies: true keeps the session in a cookie, out of the client', async () => {

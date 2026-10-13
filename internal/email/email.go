@@ -39,16 +39,19 @@ const (
 	// after a right password.
 	SecurityNotice = "security-notice"
 	MFAFailed      = "mfa-failed"
+	// ReauthCode carries the 6-digit code that proves a user with no password and no
+	// second factor is there before a sensitive action ({{.Data.code}}, {{.ExpiresAt}}).
+	ReauthCode = "reauth-code"
 )
 
 // SystemKinds are the kinds backd knows; `backd template realm` writes an
 // English template for each.
-var SystemKinds = []string{VerifyEmail, ResetPassword, AccountExists, PasswordChanged, Welcome, ChangeEmail, EmailChanged, Invitation, SecurityNotice, MFAFailed}
+var SystemKinds = []string{VerifyEmail, ResetPassword, AccountExists, PasswordChanged, Welcome, ChangeEmail, EmailChanged, Invitation, SecurityNotice, MFAFailed, ReauthCode}
 
 // BuiltInKinds are system kinds a realm does not have to ship: when its email folder has
 // none, the built-in English text is used for every listed locale, so a realm that
 // existed before them keeps working. A folder of the kind replaces the built-in text.
-var BuiltInKinds = []string{SecurityNotice, MFAFailed}
+var BuiltInKinds = []string{SecurityNotice, MFAFailed, ReauthCode}
 
 // RequiredKinds must have a template in every realm that configures email.
 var RequiredKinds = []string{VerifyEmail, ResetPassword, AccountExists, PasswordChanged}
@@ -208,7 +211,7 @@ var sample = Data{
 	User:      User{Email: "ana@example.com", Locale: "en"},
 	Link:      "https://example.com/v1/sample/_auth/verify-email?token=sample",
 	ExpiresAt: time.Date(2030, 1, 2, 15, 4, 0, 0, time.UTC),
-	Data:      map[string]any{"event": "mfa-enabled", "codes_left": 3},
+	Data:      map[string]any{"event": "mfa-enabled", "codes_left": 3, "code": "123456"},
 }
 
 // Load reads <realm>/email/ (dir): one folder per kind, with

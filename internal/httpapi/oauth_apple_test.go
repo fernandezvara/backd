@@ -134,8 +134,8 @@ func TestUnlinkingAppleRevokesItsToken(t *testing.T) {
 	if a := f.finish(t, "apple", out["authorize_url"].(string), "", false); a.result.Query().Get("backd_linked") != "apple" {
 		t.Fatalf("link: %v", a.result)
 	}
-	if rec, _ := f.doH(t, "DELETE", "/v1/acme/_auth/identities/apple", "", bearer(f.ada)); rec.Code != 204 {
-		t.Fatalf("unlink: %d", rec.Code)
+	if code, _ := f.as(t, f.ada, "DELETE", "/v1/acme/_auth/identities/apple", ""); code != 204 {
+		t.Fatalf("unlink: %d", code)
 	}
 	for f.worker(t).RunOnce(context.Background()) {
 	}

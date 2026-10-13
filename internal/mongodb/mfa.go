@@ -20,6 +20,8 @@ type challengeDoc struct {
 	NewUser   bool              `bson:"new_user,omitempty"`
 	Profile   map[string]string `bson:"profile,omitempty"`
 	Secret    string            `bson:"secret,omitempty"`
+	SessionID string            `bson:"session_id,omitempty"`
+	CodeHash  string            `bson:"code_hash,omitempty"`
 	Attempts  int               `bson:"attempts"`
 	CreatedAt time.Time         `bson:"created_at"`
 	ExpiresAt time.Time         `bson:"expires_at"`
@@ -87,6 +89,33 @@ func (s *AuthStore) ClaimChallenge(ctx context.Context, id string, now time.Time
 func (s *AuthStore) CountChallengeAttempt(ctx context.Context, id string, now time.Time) (auth.AuthChallenge, error) {
 	var d challengeDoc
 	err := s.challenges().FindOneAndUpdate(ctx, unexpired(id, now), bson.D{{Key: "$inc", Value: bson.D{{Key: "attempts", Value: 1}}}},
+		options.FindOneAndUpdate().SetReturnDocument(options.After)).Decode(&d)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return auth.AuthChallenge{}, auth.ErrNotFound
+	}
+	if err != nil {
+		return auth.AuthChallenge{}, err
+	}
+	return d.challenge(), nil
+}
+
+func (s *AuthStore) ChallengeOfUser(ctx context.Context, userID, kind string, now time.Time) (auth.AuthChallenge, error) {
+	var d challengeDoc
+	err := s.challenges().FindOne(ctx,
+		bson.D{{Key: "user_id", Value: userID}, {Key: "kind", Value: kind}, {Key: "expires_at", Value: bson.D{{Key: "$gt", Value: now}}}},
+		options.FindOne().SetSort(bson.D{{Key: "created_at", Value: -1}})).Decode(&d)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return auth.AuthChallenge{}, auth.ErrNotFound
+	}
+	if err != nil {
+		return auth.AuthChallenge{}, err
+	}
+	return d.challenge(), nil
+}
+
+func (s *AuthStore) SetChallengeCode(ctx context.Context, id, codeHash string, now time.Time) (auth.AuthChallenge, error) {
+	var d challengeDoc
+	err := s.challenges().FindOneAndUpdate(ctx, unexpired(id, now), bson.D{{Key: "$set", Value: bson.D{{Key: "code_hash", Value: codeHash}}}},
 		options.FindOneAndUpdate().SetReturnDocument(options.After)).Decode(&d)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return auth.AuthChallenge{}, auth.ErrNotFound

@@ -41,7 +41,10 @@ test('password change expires other sessions', { skip }, async () => {
   const events = []
   other.auth.onAuthChange((e) => events.push(e))
 
-  await c.auth.changePassword({ currentPassword: password, newPassword: 'dev-p4ssw0rd!2' })
+  await assert.rejects(c.auth.changePassword({ newPassword: 'dev-p4ssw0rd!2' }), (/** @type {any} */ e) => e.code === 'reauth_required')
+  await assert.rejects(c.auth.reauth({ method: 'password', password: 'dev-p4ssw0rd!0' }), AuthenticationError)
+  await c.auth.reauth({ method: 'password', password })
+  await c.auth.changePassword({ newPassword: 'dev-p4ssw0rd!2' })
   await c.auth.me() // still valid
   await assert.rejects(other.auth.me(), AuthenticationError)
   assert.deepEqual(events, ['SESSION_EXPIRED'])
@@ -67,8 +70,9 @@ test('revoke a session, log out everywhere, delete the account', { skip }, async
 
   const again = client()
   await again.auth.login({ email: address, password })
-  await assert.rejects(again.auth.deleteAccount({ password: 'dev-p4ssw0rd!0' }), AuthenticationError)
-  await again.auth.deleteAccount({ password })
+  await assert.rejects(again.auth.deleteAccount(), (/** @type {any} */ e) => e.code === 'reauth_required')
+  await again.auth.reauth({ method: 'password', password })
+  await again.auth.deleteAccount()
   await assert.rejects(client().auth.login({ email: address, password }), AuthenticationError)
 })
 

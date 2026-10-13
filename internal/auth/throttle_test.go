@@ -162,12 +162,12 @@ func TestPasswordChecksThrottled(t *testing.T) {
 	svc := newUsers(store, &clock)
 	me, _, _ := svc.Signup(ctx, "ada@example.com", "dev-p4ssw0rd!", "")
 	for range 5 {
-		if err := svc.ChangePassword(ctx, me, "dev-p4ssw0rd!0", "dev-p4ssw0rd!2"); !errors.Is(err, ErrInvalidCredentials) {
+		if _, err := svc.Reauthenticate(ctx, me, ReauthPassword, "dev-p4ssw0rd!0", ""); !errors.Is(err, ErrInvalidCredentials) {
 			t.Fatal(err)
 		}
 	}
-	if err := svc.DeactivateAccount(ctx, me, "dev-p4ssw0rd!"); retryAfter(err) != time.Second {
-		t.Errorf("delete account after 5 wrong passwords: %v", err)
+	if _, err := svc.Reauthenticate(ctx, me, ReauthPassword, "dev-p4ssw0rd!", ""); retryAfter(err) != time.Second {
+		t.Errorf("re-authenticating after 5 wrong passwords: %v", err)
 	}
 	// The same counter guards login.
 	if _, _, err := svc.Login(ctx, "ada@example.com", "dev-p4ssw0rd!", ""); retryAfter(err) != time.Second {

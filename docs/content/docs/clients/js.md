@@ -61,20 +61,22 @@ A web app on another origin needs that origin listed in the realm's [CORS settin
 const session = await backd.auth.signup({ email: 'ada@example.com', password: 'dev-p4ssw0rd!', locale: navigator.language })
 // or: await backd.auth.login({ email, password })
 
-const me = await backd.auth.me()             // { id, email, email_verified, roles, locale, created_at }
+const me = await backd.auth.me()             // { id, email, email_verified, roles, locale, created_at, identities, reauth_methods }
 await backd.auth.updateMe({ locale: 'es' })  // must be a language the realm lists, else a ValidationError (invalid_locale)
-await backd.auth.changePassword({ currentPassword, newPassword })   // other sessions end
+await backd.auth.reauth({ method: 'password', password })         // a fresh proof, before sensitive actions (below)
+await backd.auth.changePassword({ newPassword })                   // other sessions end
 const sessions = await backd.auth.sessions() // [{ id, created_at, last_used_at, expires_at, current }]
 await backd.auth.revokeSession(sessions[1].id)
 await backd.auth.logout()                    // this session
 await backd.auth.logoutAll()                 // every session of the user
-await backd.auth.deleteAccount({ password }) // deactivates the account; all data is kept
+await backd.auth.deleteAccount()             // needs a fresh proof; deactivates the account, all data is kept
 ```
 
 - `signup` and `login` store the session token; every later request sends it as `Authorization: Bearer …`.
 - In realms with `signup: invite`, pass the invitation: `signup({ email, password, invitation })`.
 - In a realm that [requires verified addresses](../../auth/sessions/#email-verification), `signup` creates the account and then rejects with a `VerificationRequiredError`: there is no session yet, and the user logs in after following the link in the email. A `login` before that rejects with a `ForbiddenError` whose `code` is `email_not_verified`. `redirectTo` names where the page after the link may send the user (it must be within the realm's `email.allowed_redirects`).
 - `logout` always removes the stored token, even if the server can't be reached or already forgot the session.
+- **Sensitive actions need a fresh proof.** `changePassword`, `requestEmailChange`, `deleteAccount`, `unlinkProvider` and (for an administrator signed in with a session) `admin.apiKeys.create` answer `401 reauth_required` without one. `auth.reauth({ method, … })` takes the strongest proof the user has (`me.reauth_methods`: `totp` or `recovery_code` with a second factor, `password`, or `email_code` after `requestReauthCode()`), and the client sends the token it gave with those requests for the realm's `reauth.ttl` (5 minutes by default): one prompt covers a settings page. See [Re-authentication](../../auth/reauth/).
 
 The endpoints behind these calls, and their rules, are described in [Sign-up, login and sessions](../../auth/sessions/).
 
@@ -87,7 +89,7 @@ await backd.auth.resendVerification({ email })                  // 202 whatever 
 await backd.auth.verifyEmail(token)                             // the token of the verification link
 await backd.auth.requestPasswordReset({ email, redirectTo })    // 202 whatever the address is
 await backd.auth.resetPassword({ token, password })             // ends every session, verifies the address
-await backd.auth.requestEmailChange({ newEmail, password })     // signed in; needs the current password
+await backd.auth.requestEmailChange({ newEmail })               // signed in; needs a fresh proof (reauth)
 await backd.auth.confirmEmailChange(token)                      // the link sent to the new address
 await backd.auth.revertEmailChange(token)                       // the link sent to the old one
 await backd.auth.acceptInvitation({ token, password, locale })  // an emailed invitation

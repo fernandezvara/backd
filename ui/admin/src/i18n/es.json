@@ -842,5 +842,14 @@
     },
     "collectionLabel": "Colección",
     "databaseLabel": "Base de datos"
+  },
+  "proof": {
+    "intro": "Esta clave sobrevive a tu sesión: confirma que eres tú.",
+    "password": "Tu contraseña",
+    "totp": "Código de tu aplicación de autenticación",
+    "recovery": "Un código de recuperación",
+    "emailCode": "El código que te enviamos por correo",
+    "send": "Envíame un código por correo",
+    "resend": "Envíame otro código por correo"
   }
 }

@@ -414,7 +414,7 @@ paths:
       tags: [auth]
       summary: Ask to change the email address
       description: |
-        Needs the session **and** the current password. The change applies only
+        Needs the session and a fresh [re-authentication](#tag/auth) (`X-Backd-Reauth`). The change applies only
         when the new address confirms it with the link sent there; the answer is
         `202` whether or not the address is free, so it can't be used to find
         out who is registered. Only in a realm with `account.allow_email_change`
@@ -422,6 +422,7 @@ paths:
         reached.
       operationId: requestEmailChange
       security: [{ session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
       requestBody:
         required: true
         content:
@@ -429,10 +430,9 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [new_email, password]
+              required: [new_email]
               properties:
                 new_email: { type: string }
-                password: { type: string, description: The current password. }
                 redirect_to: { type: string, description: "Within the realm's `email.allowed_redirects`." }
       responses:
         "202":
@@ -708,26 +708,16 @@ paths:
       tags: [auth]
       summary: Delete the account (deactivates it)
       description: |
-        Needs the current password. The account is **deactivated**: it is
+        Needs a fresh [re-authentication](#tag/auth) (`X-Backd-Reauth`), and no body. The account is **deactivated**: it is
         disabled and every session ends, and all data is kept (an administrator
         can reactivate it). Deactivating is not erasing: erasing a user's data is an
         administrator's action (`DELETE /_admin/users/{id}`).
       operationId: deleteMe
       security: [{ session: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [password]
-              properties:
-                password: { type: string }
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
       responses:
         "204": { description: Account deactivated. }
-        "400": { $ref: "#/components/responses/Error" }
-        "401": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_auth/password:
@@ -735,9 +725,12 @@ paths:
     post:
       tags: [auth]
       summary: Change the password
-      description: The current session stays valid; every other session ends.
+      description: >-
+        Needs a fresh [re-authentication](#tag/auth) (`X-Backd-Reauth`). The current session stays valid;
+        every other session ends.
       operationId: changePassword
       security: [{ session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
       requestBody:
         required: true
         content:
@@ -745,14 +738,13 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [current_password, new_password]
+              required: [new_password]
               properties:
-                current_password: { type: string }
                 new_password: { type: string, minLength: 8, maxLength: 128 }
       responses:
         "204": { description: Password changed. }
         "400": { $ref: "#/components/responses/Error" }
-        "401": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_auth/sessions:
@@ -1143,6 +1135,7 @@ paths:
         `mfa_enrollment_required`, on that `challenge` (no session yet).
       operationId: setupTOTP
       security: [{ session: [] }, {}]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
       requestBody:
         required: false
         content:
@@ -1205,6 +1198,7 @@ paths:
         sign-in: the answer then carries the session too (its `methods` include `totp`).
       operationId: confirmTOTP
       security: [{ session: [] }, {}]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
       requestBody:
         required: true
         content:
@@ -1252,6 +1246,7 @@ paths:
         while a role of the user requires MFA. A `security-notice` email says what happened.
       operationId: disableTOTP
       security: [{ session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
       responses:
         "204": { description: MFA is off. }
         "401": { $ref: "#/components/responses/Unauthenticated" }
@@ -1269,6 +1264,7 @@ paths:
         `409 mfa_not_enabled` for a user without a second factor.
       operationId: regenerateRecoveryCodes
       security: [{ session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
       responses:
         "200":
           description: The new codes.
@@ -1285,6 +1281,83 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_auth/reauth:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Prove who you are again, before a sensitive action
+      description: |
+        Gives a token for the `X-Backd-Reauth` header of sensitive requests: changing or removing
+        the password or the address, deleting the account, unlinking a sign-in method, turning the
+        second factor on or off or replacing its recovery codes, and creating an API key as an
+        administrator signed in with a session.
+
+        The proof is the strongest the user has (`reauth_methods` of `GET /_auth/me`): `totp` or
+        `recovery_code` with a second factor (a password alone is not enough then), `password`
+        without one, `email_code` (a code sent by `POST /_auth/reauth/email-code`) for a user with
+        neither. The token is bound to the session, stored only as a hash, and works for the
+        realm's `reauth.ttl` and any number of actions in it. Wrong proofs count against the same
+        limits as signing in.
+      operationId: reauth
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [method]
+              properties:
+                method: { type: string, enum: [totp, recovery_code, password, email_code] }
+                code: { type: string, description: "For `totp`, `recovery_code` and `email_code`." }
+                password: { type: string, description: "For `password`." }
+      responses:
+        "200":
+          description: The token.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [reauth_token, expires_at]
+                properties:
+                  reauth_token: { type: string }
+                  expires_at: { $ref: "#/components/schemas/Timestamp" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/reauth/email-code:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Email a code to prove who you are
+      description: |
+        For a user with no password and no second factor: a 6-digit code is emailed (the
+        `reauth-code` message), good for 10 minutes and 5 attempts, to give to `POST /_auth/reauth`
+        with `method: email_code`. A new request replaces the earlier code. `400` for a user whose
+        proof is another one; `429` when an email limit is reached.
+      operationId: requestReauthCode
+      security: [{ session: [] }]
+      responses:
+        "202":
+          description: Accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status: { type: string, enum: [accepted] }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_auth/identities/{provider}:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -1296,11 +1369,13 @@ paths:
       tags: [auth]
       summary: Remove one of the user's sign-in methods
       description: |
-        Unlinks the user's sign-in method of that provider (`password` included). The last
-        one can't be removed (`409 last_sign_in_method`), so a user can't lock themselves
-        out. Audited as `identity.unlinked`.
+        Unlinks the user's sign-in method of that provider (`password` included). Needs a fresh
+        [re-authentication](#tag/auth) (`X-Backd-Reauth`). The last one can't be removed
+        (`409 last_sign_in_method`), so a user can't lock themselves out. Audited as
+        `identity.unlinked`.
       operationId: unlinkIdentity
       security: [{ session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
       responses:
         "204": { description: Sign-in method removed. }
         "401": { $ref: "#/components/responses/Unauthenticated" }
@@ -1827,8 +1902,13 @@ paths:
     post:
       tags: [admin]
       summary: Create an API key
+      description: >-
+        An administrator signed in with a session (not an admin key) needs a fresh
+        [re-authentication](#tag/auth) (`X-Backd-Reauth`): a key outlives the session and is not
+        asked for a second factor. They also get a `security-notice` email that a key was created.
       operationId: adminCreateAPIKey
       security: [{ apiKey: [] }, { session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
       requestBody:
         required: true
         content:
@@ -4537,6 +4617,15 @@ components:
       in: path
       required: true
       schema: { type: string }
+    reauth:
+      name: X-Backd-Reauth
+      in: header
+      required: false
+      description: >-
+        The token `POST /_auth/reauth` gave: a fresh proof of identity, bound to the session and
+        good for the realm's `reauth.ttl` (5 minutes by default), for as many requests as that
+        covers. Without a good one the action answers `401 reauth_required`.
+      schema: { type: string }
     database:
       name: database
       in: path
@@ -4810,7 +4899,7 @@ components:
     Me:
       type: object
       additionalProperties: false
-      required: [id, email, email_verified, roles, locale, created_at, identities]
+      required: [id, email, email_verified, roles, locale, created_at, identities, reauth_methods]
       properties:
         id: { type: string }
         email: { type: string }
@@ -4818,6 +4907,14 @@ components:
         roles: { type: array, items: { type: string } }
         locale: { type: string, description: "The user's language: one the realm lists (`email.locales`; English only without email). Used for the emails they get." }
         created_at: { $ref: "#/components/schemas/Timestamp" }
+        reauth_methods:
+          type: array
+          description: >-
+            The proofs `POST /_auth/reauth` takes from this user: `totp` and `recovery_code` with a
+            second factor, else `password`, else `email_code`. Empty when the user has no way to give
+            one (no password, no second factor, a realm that sends no email): sensitive actions then
+            don't ask.
+          items: { type: string, enum: [totp, recovery_code, password, email_code] }
         identities:
           type: array
           description: The user's sign-in methods, oldest first.

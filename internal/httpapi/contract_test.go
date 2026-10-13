@@ -484,6 +484,19 @@ func TestContract(t *testing.T) {
 	req("POST", a+"/reset-password", `{"token": "x"}`, map[string]string{"Content-Type": "text/plain"}, 415)
 	req("POST", "/v1/nope/_auth/reset-password", `{"token": "x", "password": "y"}`, nil, 404)
 
+	// proofOf is the headers of a request a sensitive action accepts: the session of tok and a
+	// fresh proof of it with the password.
+	proofOf := func(tok, password string) map[string]string {
+		p, err := f.svc.Authenticate(context.Background(), tok)
+		if err != nil {
+			t.Fatal(err)
+		}
+		g, err := f.svc.Reauthenticate(context.Background(), p, auth.ReauthPassword, password, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return map[string]string{"Authorization": "Bearer " + tok, reauthHeader: g.Token}
+	}
 	// Email change, undo and emailed invitations.
 	cctx := context.Background()
 	f.svc.Settings.Account.AllowEmailChange = true
@@ -491,15 +504,16 @@ func TestContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	changer := bearer(changerTok)
-	req("POST", a+"/email", `{"new_email": "changer.new@example.com", "password": "dev-p4ssw0rd!", "redirect_to": "https://app.acme.example/account"}`, changer, 202)
-	req("POST", a+"/email", `{"new_email": "changer@example.com", "password": "dev-p4ssw0rd!"}`, changer, 400)
-	req("POST", a+"/email", `{"new_email": "changer.new@example.com", "password": "dev-p4ssw0rd!"}`, nil, 401)
-	req("POST", a+"/email", `{"new_email": "x@example.com", "password": "dev-p4ssw0rd!"}`, with(changer, "Content-Type", "text/plain"), 415)
-	req("POST", "/v1/nope/_auth/email", `{"new_email": "x@example.com", "password": "dev-p4ssw0rd!"}`, changer, 404)
-	req("POST", a+"/email", `{"new_email": "changer.new@example.com", "password": "dev-p4ssw0rd!"}`, changer, 202)
-	req("POST", a+"/email", `{"new_email": "changer.new@example.com", "password": "dev-p4ssw0rd!"}`, changer, 202)
-	req("POST", a+"/email", `{"new_email": "changer.new@example.com", "password": "dev-p4ssw0rd!"}`, changer, 429)
+	changer := proofOf(changerTok, "dev-p4ssw0rd!")
+	req("POST", a+"/email", `{"new_email": "changer.new@example.com", "redirect_to": "https://app.acme.example/account"}`, changer, 202)
+	req("POST", a+"/email", `{"new_email": "changer@example.com"}`, changer, 400)
+	req("POST", a+"/email", `{"new_email": "changer.new@example.com"}`, nil, 401)
+	req("POST", a+"/email", `{"new_email": "changer.new@example.com"}`, bearer(changerTok), 401)
+	req("POST", a+"/email", `{"new_email": "x@example.com"}`, with(changer, "Content-Type", "text/plain"), 415)
+	req("POST", "/v1/nope/_auth/email", `{"new_email": "x@example.com"}`, changer, 404)
+	req("POST", a+"/email", `{"new_email": "changer.new@example.com"}`, changer, 202)
+	req("POST", a+"/email", `{"new_email": "changer.new@example.com"}`, changer, 202)
+	req("POST", a+"/email", `{"new_email": "changer.new@example.com"}`, changer, 429)
 	changeToken := func(address, purpose string) string {
 		tok, _, err := f.svc.NewEmailTokenFor(cctx, auth.EmailToken{Purpose: purpose, UserID: changerP.User.ID, Address: address}, time.Hour)
 		if err != nil {
@@ -696,8 +710,8 @@ func TestContract(t *testing.T) {
 			t.Fatal(err)
 		}
 		tok := req("POST", a+"/login", `{"email": "enroll2@example.com", "password": "dev-p4ssw0rd!"}`, nil, 200)["token"].(string)
-		mine := map[string]string{"Authorization": "Bearer " + tok}
-		jsonMine := map[string]string{"Authorization": "Bearer " + tok, "Content-Type": "application/json"}
+		mine := proofOf(tok, "dev-p4ssw0rd!")
+		jsonMine := with(mine, "Content-Type", "application/json")
 		req("GET", a+"/mfa", "", mine, 200)
 		req("GET", a+"/mfa", "", nil, 401)
 		setup := req("POST", a+"/mfa/totp/setup", "", mine, 200)
@@ -765,8 +779,9 @@ func TestContract(t *testing.T) {
 		t.Errorf("a password user's identities: %v", who["identities"])
 	}
 	// Sign-in methods: the only one can't be removed; a second one can, and a method the user lacks is a 404.
-	req("DELETE", a+"/identities/password", "", me, 409)
-	req("DELETE", a+"/identities/google", "", me, 404)
+	meOnce := proofOf(login["token"].(string), "dev-p4ssw0rd!")
+	req("DELETE", a+"/identities/password", "", meOnce, 409)
+	req("DELETE", a+"/identities/google", "", meOnce, 404)
 	req("DELETE", a+"/identities/google", "", nil, 401)
 	if err := f.svc.Store.PutIdentity(context.Background(), auth.Identity{ID: "idn1", UserID: who["id"].(string), Provider: "google", Subject: "g-1", Email: "g@example.com", EmailVerified: true, CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
 		t.Fatal(err)
@@ -774,7 +789,8 @@ func TestContract(t *testing.T) {
 	if ids := req("GET", a+"/me", "", me, 200)["identities"].([]any); len(ids) != 2 {
 		t.Errorf("identities after linking: %v", ids)
 	}
-	req("DELETE", a+"/identities/google", "", me, 204)
+	req("DELETE", a+"/identities/google", "", bearer(login["token"].(string)), 401)
+	req("DELETE", a+"/identities/google", "", meOnce, 204)
 	// The user's language: a listed one is accepted, any other is refused.
 	req("PATCH", a+"/me", `{"locale": "es"}`, with(me, "Content-Type", "application/json"), 200)
 	req("PATCH", a+"/me", `{"locale": "fr"}`, with(me, "Content-Type", "application/json"), 400)
@@ -785,11 +801,20 @@ func TestContract(t *testing.T) {
 		req(op[0], a+op[1], "", nil, 401)
 	}
 	req("DELETE", a+"/sessions/nope", "", me, 404)
-	req("POST", a+"/password", `{"current_password": "dev-p4ssw0rd!"}`, me, 400)
-	req("POST", a+"/password", `{"current_password": "dev-p4ssw0rd!0", "new_password": "dev-p4ssw0rd!2"}`, me, 401)
-	req("POST", a+"/password", `{"current_password": "dev-p4ssw0rd!", "new_password": "dev-p4ssw0rd!2"}`, me, 204)
-	req("DELETE", a+"/me", `{}`, me, 400)
-	req("DELETE", a+"/me", `{"password": "dev-p4ssw0rd!0"}`, me, 401)
+	meProof := proofOf(login["token"].(string), "dev-p4ssw0rd!")
+	req("POST", a+"/password", `{}`, with(meProof, "Content-Type", "application/json"), 400)
+	req("POST", a+"/password", `{"new_password": "dev-p4ssw0rd!2"}`, with(me, "Content-Type", "application/json"), 401)
+	req("POST", a+"/password", `{"new_password": "dev-p4ssw0rd!2"}`, with(meProof, "Content-Type", "application/json"), 204)
+	req("DELETE", a+"/me", "", me, 401)
+	// The proof of a password that no longer is theirs, and a method the user doesn't give.
+	req("POST", a+"/reauth", `{"method": "password", "password": "dev-p4ssw0rd!0"}`, with(me, "Content-Type", "application/json"), 401)
+	req("POST", a+"/reauth", `{"method": "email_code", "code": "123456"}`, with(me, "Content-Type", "application/json"), 400)
+	req("POST", a+"/reauth", `{"method": "sms"}`, with(me, "Content-Type", "application/json"), 400)
+	req("POST", a+"/reauth", `{"method": "password"}`, with(me, "Content-Type", "application/json"), 400)
+	req("POST", a+"/reauth", `{"method": "password", "password": "dev-p4ssw0rd!2"}`, nil, 401)
+	req("POST", a+"/reauth", `{"method": "password", "password": "dev-p4ssw0rd!2"}`, with(me, "Content-Type", "application/json"), 200)
+	req("POST", a+"/reauth/email-code", "", me, 400)
+	req("POST", a+"/reauth/email-code", "", nil, 401)
 	other := req("POST", a+"/login", `{"email": "new@example.com", "password": "dev-p4ssw0rd!2"}`, nil, 200)
 	otherTok := bearer(other["token"].(string))
 	otherSessions := req("GET", a+"/sessions", "", otherTok, 200)
@@ -802,7 +827,7 @@ func TestContract(t *testing.T) {
 	third := req("POST", a+"/login", `{"email": "new@example.com", "password": "dev-p4ssw0rd!2"}`, nil, 200)
 	req("POST", a+"/logout", "", bearer(third["token"].(string)), 204)
 	fourth := req("POST", a+"/login", `{"email": "new@example.com", "password": "dev-p4ssw0rd!2"}`, nil, 200)
-	req("DELETE", a+"/me", `{"password": "dev-p4ssw0rd!2"}`, bearer(fourth["token"].(string)), 204)
+	req("DELETE", a+"/me", "", proofOf(fourth["token"].(string), "dev-p4ssw0rd!2"), 204)
 
 	// Admin: every operation refuses callers without a key.
 	ad := admin
@@ -1619,6 +1644,44 @@ func TestContract(t *testing.T) {
 		req("DELETE", vp+"mark", "", key, 200)
 		req("DELETE", vp+"thumb", "", key, 200)
 
+	}
+
+	// A proof is not endless: wrong passwords are throttled like logins, and a code is emailed
+	// to a user who has no other proof, at most as often as the email limits allow.
+	{
+		ctx := context.Background()
+		pw := "dev-p4ssw0rd!"
+		if _, err := f.svc.Create(ctx, "hammer@example.com", &pw); err != nil {
+			t.Fatal(err)
+		}
+		hammer := with(map[string]string{"Authorization": "Bearer " + req("POST", a+"/login", `{"email": "hammer@example.com", "password": "dev-p4ssw0rd!"}`, nil, 200)["token"].(string)}, "Content-Type", "application/json")
+		for range 12 {
+			if rec, _ := f.doH(t, "POST", a+"/reauth", `{"method": "password", "password": "wrong-wrong-wrong"}`, hammer); rec.Code == 429 {
+				break
+			}
+		}
+		req("POST", a+"/reauth", `{"method": "password", "password": "wrong-wrong-wrong"}`, hammer, 429)
+		// Someone who signs in with a provider only has no password: a code by email.
+		u, err := f.svc.Create(ctx, "providers-only@example.com", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := f.svc.StartProviderSession(ctx, u, "google", false, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		codeHdr := map[string]string{"Authorization": "Bearer " + out.Token}
+		// (The address's hourly budget of emails went to the tests above.)
+		limits := f.svc.Settings.Email.Limits
+		f.svc.Settings.Email.Limits.PerIPPerHour = 1000
+		req("POST", a+"/reauth/email-code", "", codeHdr, 202)
+		f.svc.Settings.Email.Limits = limits
+		for range 6 {
+			if rec, _ := f.doH(t, "POST", a+"/reauth/email-code", "", codeHdr); rec.Code == 429 {
+				break
+			}
+		}
+		req("POST", a+"/reauth/email-code", "", codeHdr, 429)
 	}
 
 	c.verify(t, router)

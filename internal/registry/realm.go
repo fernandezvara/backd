@@ -127,6 +127,19 @@ type RealmSettings struct {
 	SignInAppURL string
 	// MFA are the multi-factor settings (mfa in realm.yaml).
 	MFA MFASettings
+	// ReauthTTL is how long a re-authentication token works (reauth.ttl).
+	ReauthTTL time.Duration
+}
+
+// DefaultReauthTTL is how long a re-authentication token works when the realm doesn't say.
+const DefaultReauthTTL = 5 * time.Minute
+
+// ReauthLifetime is the lifetime of a re-authentication token: the realm's, or the default.
+func (s RealmSettings) ReauthLifetime() time.Duration {
+	if s.ReauthTTL > 0 {
+		return s.ReauthTTL
+	}
+	return DefaultReauthTTL
 }
 
 // AccountSettings are the account lifecycle settings of a realm.
@@ -311,6 +324,11 @@ type realmDoc struct {
 		// RequiredRoles is a list of role names, or the string "all".
 		RequiredRoles yaml.Node `yaml:"required_roles"`
 	} `yaml:"mfa"`
+	// Reauth is how long a fresh proof of identity, asked for before a sensitive
+	// action, stays good.
+	Reauth *struct {
+		TTL string `yaml:"ttl"`
+	} `yaml:"reauth"`
 	Account *struct {
 		RequireVerifiedEmail bool   `yaml:"require_verified_email"`
 		WelcomeEmail         bool   `yaml:"welcome_email"`
@@ -684,6 +702,22 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 				errs = append(errs, errors.New("mfa.issuer: must be at most 64 characters and have no colon or line break (authenticator apps show it as the name of the account)"))
 			}
 
+		}
+	}
+
+	if r := doc.Reauth; r != nil {
+		if !s.AuthEnabled {
+			errs = append(errs, errors.New("reauth: only applies when auth is enabled"))
+		} else if r.TTL != "" {
+			d, err := ParseDuration(r.TTL)
+			switch {
+			case err != nil:
+				errs = append(errs, fmt.Errorf("reauth.ttl: %w", err))
+			case d < time.Minute || d > time.Hour:
+				errs = append(errs, fmt.Errorf("reauth.ttl: must be between 1m and 1h, got %s", r.TTL))
+			default:
+				s.ReauthTTL = d
+			}
 		}
 	}
 

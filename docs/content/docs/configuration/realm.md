@@ -74,6 +74,7 @@ An empty file, or one with only comments, is valid: every key has a default.
 | `sign_in.app_url` | none | Where a sign-in goes back to when it has no `redirect_to`; within the allowed redirects |
 | `mfa.enabled` | `true` | `false`: users can't turn a second factor on (users who have one are still asked for it). See [Multi-factor authentication](../../auth/mfa/) |
 | `mfa.issuer` | the realm's name | The name authenticator apps show for the account |
+| `reauth.ttl` | `5m` | How long a [re-authentication](../../auth/reauth/) token works (`1m` to `1h`) |
 | `mfa.required_roles` | none | Roles that must use a second factor, or `all`. A sign-in without one sets it up first. See [Required by role](../../auth/mfa/#required-by-role) |
 | `account.require_verified_email` | `false` | `true`: no session until the address is verified. See [Account](#account) |
 | `account.allow_email_change` | `false` | `true`: users may [change their own address](../../auth/sessions/#changing-the-email-address) |

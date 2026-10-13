@@ -783,6 +783,16 @@ func (a *adminAPI) listAPIKeys(w http.ResponseWriter, r *http.Request) {
 
 // createAPIKey creates a key; the key itself is in this response only.
 func (a *adminAPI) createAPIKey(w http.ResponseWriter, r *http.Request) {
+	// A key is a credential that outlives the session and bypasses MFA: an administrator
+	// signed in with a session proves who they are again before making one.
+	caller, _ := callerOf(r)
+	bySession := caller.Key == nil && caller.User != nil
+	if bySession {
+		if err := usersOf(r).CheckReauth(r.Context(), *caller.User, r.Header.Get(reauthHeader)); err != nil {
+			authError(w, r, err)
+			return
+		}
+	}
 	obj, ok := readObject(w, r)
 	if !ok {
 		return
@@ -836,6 +846,9 @@ func (a *adminAPI) createAPIKey(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		adminError(w, r, err)
 		return
+	}
+	if bySession {
+		usersOf(r).KeyCreatedBySession(r.Context(), *caller.User)
 	}
 	out := apiKeyJSON(k)
 	out["key"] = key

@@ -53,7 +53,8 @@ type rulesFixture struct {
 	adaID, bobID string
 	runner       *fakeRunner // the functions executor
 	callbackKey  []byte
-	internal     http.Handler // the internal listener, for functions calling back
+	internal     http.Handler      // the internal listener, for functions calling back
+	proofs       map[string]string // session token → re-authentication token (freshProof)
 }
 
 func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
@@ -246,9 +247,37 @@ func (f *rulesFixture) as(t *testing.T, cred, method, path, body string) (int, m
 	hdr := map[string]string{}
 	if cred != "" {
 		hdr = bearer(cred)
+		// Sensitive routes want a fresh proof; the fixture's users have the usual password,
+		// so a request made as one of them carries it (other routes ignore the header).
+		if tok := f.freshProof(t, cred); tok != "" {
+			hdr[reauthHeader] = tok
+		}
 	}
 	rec, out := f.doH(t, method, path, body, hdr)
 	return rec.Code, out
+}
+
+// freshProof re-authenticates the session of cred with the fixture's password and returns the
+// token, or "" when cred is not a session or the password is no longer its.
+func (f *rulesFixture) freshProof(t *testing.T, cred string) string {
+	t.Helper()
+	if !strings.HasPrefix(cred, auth.SessionTokenPrefix) {
+		return ""
+	}
+	if tok, ok := f.proofs[cred]; ok {
+		return tok
+	}
+	rec, out := f.doH(t, "POST", "/v1/acme/_auth/reauth", `{"method": "password", "password": "dev-p4ssw0rd!"}`,
+		map[string]string{"Authorization": "Bearer " + cred, "Content-Type": "application/json"})
+	tok := ""
+	if rec.Code == http.StatusOK {
+		tok, _ = out["reauth_token"].(string)
+	}
+	if f.proofs == nil {
+		f.proofs = map[string]string{}
+	}
+	f.proofs[cred] = tok
+	return tok
 }
 
 func ids(out map[string]any) []string {

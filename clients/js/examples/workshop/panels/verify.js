@@ -119,9 +119,10 @@ export function verifyPanel({ backd, fetch, realm }) {
     ch: null,
 
     changeAsk() {
-      return this.step('Ask to change the email address (needs the password)', async () => {
+      return this.step('Ask to change the email address (a fresh proof first: the password)', async () => {
         const newEmail = `moved-${Date.now().toString(36)}@example.com`
-        await visitor.auth.requestEmailChange({ newEmail, password: `${PASSWORD}2` })
+        await visitor.auth.reauth({ method: 'password', password: `${PASSWORD}2` })
+        await visitor.auth.requestEmailChange({ newEmail })
         this.ch = { newEmail, confirmed: false, sessionEnded: null, undone: false }
       })
     },

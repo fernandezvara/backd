@@ -1,0 +1,5 @@
+Hello,
+
+Your confirmation code for {{.User.Email}} on {{.Realm}} is {{.Data.code}}. It works for 10 minutes and only once.
+
+You are asked for it because of a change to your account that needs a fresh proof that it is you. If you didn't ask for it, ignore this message: nothing changes without the code.

@@ -30,13 +30,10 @@ var (
 // unique. The real address is freed for a new registration.
 func ErasedEmail(id string) string { return "erased-" + id + "@erased.invalid" }
 
-// DeactivateAccount handles a user deleting their own account: they must give
-// their password, and the account is disabled and its sessions end. Nothing is
-// erased: that is an administrator's action (Erase).
-func (s *Users) DeactivateAccount(ctx context.Context, p Principal, password string) error {
-	if err := s.checkPassword(ctx, p.User, password); err != nil {
-		return err
-	}
+// DeactivateAccount handles a user deleting their own account: it is disabled and its
+// sessions end. The caller has checked that the user proved who they are just now
+// (CheckReauth). Nothing is erased: that is an administrator's action (Erase).
+func (s *Users) DeactivateAccount(ctx context.Context, p Principal) error {
 	disabled := true
 	if err := s.Store.UpdateUser(ctx, p.User.ID, UserUpdate{Disabled: &disabled}, s.now()); err != nil {
 		return err

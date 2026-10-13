@@ -15,6 +15,10 @@ import (
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
+func enrollEmail() *registry.EmailSettings {
+	return &registry.EmailSettings{Function: "app/deliver", From: "a@example.com", DefaultLocale: "en", Limits: registry.EmailLimits{PerKindPerHour: 100, PerDay: 100, PerIPPerHour: 100}}
+}
+
 // enrollFixture is a realm with email and a user with no second factor.
 func enrollFixture(t *testing.T) (*Users, *authtest.MemStore, *time.Time, User) {
 	t.Helper()
@@ -23,7 +27,7 @@ func enrollFixture(t *testing.T) (*Users, *authtest.MemStore, *time.Time, User) 
 	svc := newUsers(store, &clock)
 	svc.Realm = "acme"
 	svc.Cipher, _ = NewSecretCipher([]byte("01234567890123456789012345678901"))
-	svc.Settings.Email = &registry.EmailSettings{Function: "app/deliver", From: "a@example.com", DefaultLocale: "en", Limits: registry.EmailLimits{PerKindPerHour: 100, PerDay: 100, PerIPPerHour: 100}}
+	svc.Settings.Email = enrollEmail()
 	u, err := svc.Create(context.Background(), "ada@example.com", ptr(mfaPassword))
 	if err != nil {
 		t.Fatal(err)

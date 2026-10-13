@@ -184,3 +184,19 @@ func TestMFARequiredRoles(t *testing.T) {
 		}
 	}
 }
+
+func TestReauthTTL(t *testing.T) {
+	s, errs := parseRealmSettings([]byte("auth: enabled\n"))
+	if len(errs) > 0 || s.ReauthLifetime() != 5*time.Minute {
+		t.Errorf("default: %v %v", s.ReauthLifetime(), errs)
+	}
+	s, errs = parseRealmSettings([]byte("auth: enabled\nreauth:\n  ttl: 10m\n"))
+	if len(errs) > 0 || s.ReauthLifetime() != 10*time.Minute {
+		t.Errorf("10m: %v %v", s.ReauthLifetime(), errs)
+	}
+	for _, ttl := range []string{"30s", "2h", "soon"} {
+		if _, errs := parseRealmSettings([]byte("auth: enabled\nreauth:\n  ttl: " + ttl + "\n")); len(errs) == 0 {
+			t.Errorf("%s: accepted", ttl)
+		}
+	}
+}

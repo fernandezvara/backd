@@ -79,6 +79,34 @@ func (m *MemStore) DeleteChallengesOfUser(_ context.Context, userID string, kind
 	return nil
 }
 
+func (m *MemStore) ChallengeOfUser(_ context.Context, userID, kind string, now time.Time) (auth.AuthChallenge, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var best auth.AuthChallenge
+	found := false
+	for _, c := range m.challenges {
+		if c.UserID == userID && c.Kind == kind && c.ExpiresAt.After(now) && (!found || c.CreatedAt.After(best.CreatedAt)) {
+			best, found = c, true
+		}
+	}
+	if !found {
+		return auth.AuthChallenge{}, auth.ErrNotFound
+	}
+	return best, nil
+}
+
+func (m *MemStore) SetChallengeCode(_ context.Context, id, codeHash string, now time.Time) (auth.AuthChallenge, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	c, ok := m.challenges[id]
+	if !ok || !c.ExpiresAt.After(now) {
+		return auth.AuthChallenge{}, auth.ErrNotFound
+	}
+	c.CodeHash = codeHash
+	m.challenges[id] = c
+	return c, nil
+}
+
 func (m *MemStore) MFAOf(_ context.Context, userID string) (auth.MFARecord, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

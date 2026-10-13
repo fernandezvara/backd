@@ -65,6 +65,7 @@ import { COOKIE_SESSION, memoryStorage } from './storage.js'
  * @property {Record<string, string>} [headers]
  * @property {boolean} [auth]            Send credentials; default true.
  * @property {boolean} [expire]          Treat a refused session token as expired; default true.
+ * @property {boolean} [reauth]          A sensitive action: send the fresh proof `client.auth.reauth()` gave, while it is good.
  * @property {AbortSignal} [signal]
  * @property {RetryOptions} [retry]
  */
@@ -124,6 +125,12 @@ export class Client {
     this.storage = options.storage ?? memoryStorage()
     /** @internal */
     this.oauthStorage = options.oauthStorage
+    /**
+     * The fresh proof of identity `client.auth.reauth()` gave, sent with the sensitive requests while it is good.
+     * @internal
+     * @type {{ token: string, expires: number } | undefined}
+     */
+    this.proof = undefined
     /** Sign-up, login and sessions. */
     this.auth = new Auth(this)
     if (options.completeOnLoad !== false) this.auth.completeOnLoad()
@@ -180,6 +187,7 @@ export class Client {
     if (req.rawBody !== undefined) headers['Content-Type'] = req.contentType ?? 'application/octet-stream'
     else if (req.body !== undefined) headers['Content-Type'] = req.contentType ?? 'application/json'
 
+    if (req.reauth && this.proof && this.proof.expires > Date.now()) headers['X-Backd-Reauth'] = this.proof.token
     let sentSession = false
     if (req.auth !== false) {
       if (this.apiKey) {

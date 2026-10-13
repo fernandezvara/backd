@@ -56,10 +56,12 @@ func (a *authAPI) routes(r chi.Router) {
 			r.Post("/logout-all", a.logoutAll)
 			r.Get("/me", a.me)
 			r.With(json).Patch("/me", a.updateMe)
-			r.With(json).Delete("/me", a.deleteMe)
+			r.Delete("/me", a.deleteMe)
 			r.With(json).Post("/password", a.changePassword)
 			r.With(json).Post("/email", a.changeEmail)
 			r.Delete("/identities/{provider}", a.unlinkIdentity)
+			r.With(json).Post("/reauth", a.reauth)
+			r.Post("/reauth/email-code", a.reauthEmailCode)
 			r.Get("/mfa", a.mfaStatus)
 			r.Delete("/mfa/totp", a.mfaDisable)
 			r.Post("/mfa/recovery-codes", a.mfaRecoveryCodes)
@@ -271,6 +273,12 @@ func (a *authAPI) me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out["identities"] = identitiesJSON(u, ids)
+	methods, err := usersOf(r).ReauthMethodsOf(r.Context(), u)
+	if err != nil {
+		authError(w, r, err)
+		return
+	}
+	out["reauth_methods"] = methods
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -336,11 +344,10 @@ func acceptLanguages(header string) []string {
 }
 
 func (a *authAPI) deleteMe(w http.ResponseWriter, r *http.Request) {
-	f, ok := readStrings(w, r, "password")
-	if !ok {
+	if !a.reauthed(w, r) {
 		return
 	}
-	if err := usersOf(r).DeactivateAccount(r.Context(), principalOf(r), f["password"]); err != nil {
+	if err := usersOf(r).DeactivateAccount(r.Context(), principalOf(r)); err != nil {
 		authError(w, r, err)
 		return
 	}
@@ -349,11 +356,14 @@ func (a *authAPI) deleteMe(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *authAPI) changePassword(w http.ResponseWriter, r *http.Request) {
-	f, ok := readStrings(w, r, "current_password", "new_password")
+	f, ok := readStrings(w, r, "new_password")
 	if !ok {
 		return
 	}
-	if err := usersOf(r).ChangePassword(r.Context(), principalOf(r), f["current_password"], f["new_password"]); err != nil {
+	if !a.reauthed(w, r) {
+		return
+	}
+	if err := usersOf(r).ChangePassword(r.Context(), principalOf(r), f["new_password"]); err != nil {
 		authError(w, r, err, "new_password")
 		return
 	}
@@ -444,6 +454,10 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 		w.Header().Set("Retry-After", strconv.Itoa(max(int((locked.RetryAfter+time.Second-1)/time.Second), 1)))
 		writeError(w, r, http.StatusTooManyRequests, codeMFALocked, "too many wrong codes; try again later")
 	case errors.As(err, &badCode):
+		if badCode.AttemptsLeft < 0 {
+			writeError(w, r, http.StatusBadRequest, codeInvalidCode, "the code is not valid")
+			break
+		}
 		writeError(w, r, http.StatusBadRequest, codeInvalidCode, "the code is not valid", Detail{Path: "attempts_left", Reason: strconv.Itoa(badCode.AttemptsLeft)})
 	case errors.Is(err, auth.ErrMFADisabled):
 		writeError(w, r, http.StatusForbidden, codeMFADisabled, err.Error())
@@ -455,6 +469,11 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 		writeError(w, r, http.StatusConflict, codeMFAAlreadyEnabled, err.Error())
 	case errors.Is(err, auth.ErrMFANotEnabled):
 		writeError(w, r, http.StatusConflict, codeMFANotEnabled, err.Error())
+	case errors.Is(err, auth.ErrReauthRequired):
+		w.Header().Set("WWW-Authenticate", `Bearer realm="`+chi.URLParam(r, "realm")+`", error="insufficient_user_authentication"`)
+		writeError(w, r, http.StatusUnauthorized, codeReauthRequired, "this action needs a fresh proof of identity: POST /_auth/reauth and send the token in "+reauthHeader)
+	case errors.Is(err, auth.ErrReauthMethod):
+		writeError(w, r, http.StatusBadRequest, codeValidation, "that proof is not accepted for this user", Detail{Path: "method", Reason: "use one of the user's reauth_methods"})
 	case errors.Is(err, auth.ErrInvalidChallenge):
 		writeError(w, r, http.StatusBadRequest, codeInvalidChallenge, "the challenge is invalid or expired: sign in again")
 	case errors.Is(err, auth.ErrInvalidCredentials):

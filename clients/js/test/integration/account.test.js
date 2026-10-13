@@ -45,8 +45,10 @@ test('email change: confirm at the new address, undo from the old one', { skip }
   const old = email('old')
   const next = email('new')
   await c.auth.signup({ email: old, password })
-  await assert.rejects(c.auth.requestEmailChange({ newEmail: next, password: 'wrong-password-1' }), AuthenticationError)
-  await c.auth.requestEmailChange({ newEmail: next, password })
+  await assert.rejects(c.auth.requestEmailChange({ newEmail: next }), (/** @type {any} */ e) => e.code === 'reauth_required')
+  await assert.rejects(c.auth.reauth({ method: 'password', password: 'wrong-password-1' }), AuthenticationError)
+  await c.auth.reauth({ method: 'password', password })
+  await c.auth.requestEmailChange({ newEmail: next })
   const confirm = await linkToken('change-email', next)
   await c.auth.confirmEmailChange(confirm.token)
   await assert.rejects(c.auth.me(), AuthenticationError) // the change ended the sessions

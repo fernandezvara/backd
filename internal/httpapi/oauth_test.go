@@ -312,8 +312,8 @@ func TestOAuthLinkingAProviderToTheSignedInUser(t *testing.T) {
 		t.Errorf("signed in as %v", o["user"])
 	}
 	// Removing the method; the password stays and is now the only one.
-	if rec, _ := f.doH(t, "DELETE", "/v1/acme/_auth/identities/google", "", bearer(f.ada)); rec.Code != 204 {
-		t.Errorf("unlink: %d", rec.Code)
+	if code, _ := f.as(t, f.ada, "DELETE", "/v1/acme/_auth/identities/google", ""); code != 204 {
+		t.Errorf("unlink: %d", code)
 	}
 }
 

@@ -90,6 +90,9 @@ func (a *authAPI) mfaSetup(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
+		if !a.reauthedAs(w, r, p) {
+			return
+		}
 		setup, err = svc.BeginTOTPSetup(r.Context(), p.User)
 	}
 	if err != nil {
@@ -136,6 +139,9 @@ func (a *authAPI) mfaConfirm(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !a.reauthedAs(w, r, p) {
+		return
+	}
 	codes, err := svc.ConfirmTOTP(r.Context(), p.User, p.Session.ID, f["setup_id"].(string), f["code"].(string))
 	if err != nil {
 		authError(w, r, err)
@@ -146,6 +152,9 @@ func (a *authAPI) mfaConfirm(w http.ResponseWriter, r *http.Request) {
 
 // mfaDisable handles DELETE /_auth/mfa/totp.
 func (a *authAPI) mfaDisable(w http.ResponseWriter, r *http.Request) {
+	if !a.reauthed(w, r) {
+		return
+	}
 	if err := usersOf(r).DisableMFA(r.Context(), principalOf(r).User); err != nil {
 		authError(w, r, err)
 		return
@@ -155,6 +164,9 @@ func (a *authAPI) mfaDisable(w http.ResponseWriter, r *http.Request) {
 
 // mfaRecoveryCodes handles POST /_auth/mfa/recovery-codes: the codes are replaced.
 func (a *authAPI) mfaRecoveryCodes(w http.ResponseWriter, r *http.Request) {
+	if !a.reauthed(w, r) {
+		return
+	}
 	codes, err := usersOf(r).RegenerateRecoveryCodes(r.Context(), principalOf(r).User)
 	if err != nil {
 		authError(w, r, err)

@@ -100,8 +100,10 @@ const send = await call('/_email/send', { body: { to: ['victim@example.com'], su
 stopped(`the internal route that sends custom emails isn't served on the public address (${send.status})`, send.status === 404 || send.status === 401 || send.status === 403)
 const change = await call('/_auth/email', { token: key, body: { email: email('eve2'), password: 'wrong-password-1!' } })
 stopped(`changing the address isn't possible where the realm doesn't allow it (${change.status})`, change.status === 404 || change.status === 403)
-const mismatch = await call('/_auth/password', { token: key, body: { current_password: 'wrong-password-1!', new_password: 'dev-p4ssw0rd!9' } })
-stopped(`changing the password needs the current one (${mismatch.status})`, mismatch.status === 401 || mismatch.status === 400)
+const mismatch = await call('/_auth/password', { token: key, body: { new_password: 'dev-p4ssw0rd!9' } })
+stopped(`a stolen session can't change the password without proving who it is again (${mismatch.status}, ${mismatch.json?.error?.code})`, mismatch.status === 401 && mismatch.json?.error?.code === 'reauth_required')
+const forged = await call('/_auth/password', { token: key, headers: { 'X-Backd-Reauth': 'made-up-proof' }, body: { new_password: 'dev-p4ssw0rd!9' } })
+stopped(`…nor with a proof it invented (${forged.status})`, forged.status === 401)
 
 console.log(unexpected === 0
   ? '\nEvery account attack above was stopped.'

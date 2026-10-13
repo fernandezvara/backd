@@ -19,11 +19,11 @@ mfa:
   issuer: Acme       # the name authenticator apps show (default: the realm's name)
 ```
 
-Users manage their own second factor with their session:
+Users manage their own second factor with their session, after a fresh [proof of identity](../reauth/) (`X-Backd-Reauth`): without one these answer `401 reauth_required`, so a stolen session can't turn a second factor on with the thief's phone and lock the user out.
 
 | Endpoint | What it does |
 |---|---|
-| `GET /_auth/mfa` | `{ available, enabled, methods, recovery_codes_left, required }` |
+| `GET /_auth/mfa` | `{ available, enabled, methods, recovery_codes_left, required }` (no proof needed) |
 | `POST /_auth/mfa/totp/setup` | Makes a secret, kept 15 minutes: `{ setup_id, secret, otpauth_uri, qr, expires_at }`. `qr` is a PNG data URI to show as an `<img>`; `secret` is for typing in |
 | `POST /_auth/mfa/totp/confirm` | `{ setup_id, code }`: the first code of the app turns TOTP on and answers with the `recovery_codes`, **once** |
 | `DELETE /_auth/mfa/totp` | Turns it off and deletes the recovery codes; `403 mfa_required_by_role` while a role of the user requires it |

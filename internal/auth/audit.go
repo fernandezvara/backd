@@ -57,6 +57,8 @@ const (
 	AuditRecoveryRegenerate = "user.recovery_codes_regenerated"
 	AuditRecoveryCodeUsed   = "user.recovery_code_used" // details: codes_left
 	AuditMFALocked          = "user.mfa_locked"
+	// A fresh proof of identity before a sensitive action; details: method (never a code).
+	AuditReauth = "user.reauth"
 	// The admin data route (documents written past the collections' rules);
 	// the target is database/collection/id, never content.
 	AuditDataCreate  = "data.create"

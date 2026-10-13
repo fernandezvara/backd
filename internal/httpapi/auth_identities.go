@@ -34,6 +34,9 @@ func identitiesJSON(u auth.User, ids []auth.Identity) []map[string]any {
 // unlinkIdentity handles DELETE /_auth/identities/{provider}: the user removes one of
 // their sign-in methods, never the last.
 func (a *authAPI) unlinkIdentity(w http.ResponseWriter, r *http.Request) {
+	if !a.reauthed(w, r) {
+		return
+	}
 	err := usersOf(r).Unlink(r.Context(), principalOf(r).User.ID, chi.URLParam(r, "provider"), "self")
 	switch {
 	case errors.Is(err, auth.ErrNotFound):

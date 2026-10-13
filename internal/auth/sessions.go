@@ -373,12 +373,9 @@ func (s *Users) RevokeSession(ctx context.Context, p Principal, id string) error
 	return s.endSession(ctx, p.User.ID, id, "revoked")
 }
 
-// ChangePassword replaces the caller's password after checking the
-// current one, and ends all of their other sessions.
-func (s *Users) ChangePassword(ctx context.Context, p Principal, current, next string) error {
-	if err := s.checkPassword(ctx, p.User, current); err != nil {
-		return err
-	}
+// ChangePassword replaces the caller's password and ends all of their other sessions.
+// The caller has checked that the user proved who they are just now (CheckReauth).
+func (s *Users) ChangePassword(ctx context.Context, p Principal, next string) error {
 	hash, err := s.hash(ctx, next)
 	if err != nil {
 		return err

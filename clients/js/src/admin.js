@@ -659,7 +659,7 @@ class AdminAPIKeys {
     if (expiresIn !== undefined) body.expires_in = expiresIn
     if (networks !== undefined) body.networks = networks
     if (scopes !== undefined) body.scopes = scopes
-    return (await this.admin._request({ method: 'POST', path: ['apikeys'], body, ...opts })).data
+    return (await this.admin._request({ method: 'POST', path: ['apikeys'], body, reauth: true, ...opts })).data
   }
 
   /**

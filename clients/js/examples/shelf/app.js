@@ -762,7 +762,9 @@ document.addEventListener('alpine:init', () => {
       this.busy = true
       this.accountMsg = null
       try {
-        await backd.auth.requestEmailChange({ newEmail: this.newEmail, password: this.pwd.current })
+        // A sensitive action: prove who you are again first (the client keeps the proof for 5 minutes).
+        await backd.auth.reauth({ method: 'password', password: this.pwd.current })
+        await backd.auth.requestEmailChange({ newEmail: this.newEmail })
         this.newEmail = ''
         this.accountMsg = 'Check the new address — a confirmation email was sent (the mailbox in dev).'
         await this.loadMailbox()
@@ -777,10 +779,8 @@ document.addEventListener('alpine:init', () => {
       this.busy = true
       this.accountMsg = null
       try {
-        await backd.auth.changePassword({
-          currentPassword: this.pwd.current,
-          newPassword: this.pwd.next,
-        })
+        await backd.auth.reauth({ method: 'password', password: this.pwd.current })
+        await backd.auth.changePassword({ newPassword: this.pwd.next })
         this.pwd = { current: '', next: '' }
         this.accountMsg = 'Password changed.'
       } catch (e) {
@@ -796,7 +796,8 @@ document.addEventListener('alpine:init', () => {
       if (!password) return
       this.busy = true
       try {
-        await backd.auth.deleteAccount({ password })
+        await backd.auth.reauth({ method: 'password', password })
+        await backd.auth.deleteAccount()
         await this.logout()
       } catch (e) {
         this.error = e.message

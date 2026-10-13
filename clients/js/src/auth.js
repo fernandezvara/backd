@@ -30,7 +30,7 @@ import { defaultOAuthStorage, loadPending, newPKCE, oauthError, parseReturn, sav
 
 /**
  * The signed-in user with their sign-in methods, oldest first.
- * @typedef {User & { identities: Identity[] }} Me
+ * @typedef {User & { identities: Identity[], reauth_methods: Array<'totp' | 'recovery_code' | 'password' | 'email_code'> }} Me
  */
 
 /**
@@ -280,7 +280,7 @@ export class Auth {
    * @returns {Promise<void>}
    */
   async unlinkProvider(provider, opts) {
-    await this.client.request({ method: 'DELETE', path: ['_auth', 'identities', provider], ...opts })
+    await this.client.request({ method: 'DELETE', path: ['_auth', 'identities', provider], reauth: true, ...opts })
   }
 
   /**
@@ -375,15 +375,15 @@ export class Auth {
 
   /**
    * Asks to change the signed-in user's email address (realms with
-   * `account.allow_email_change`). Needs the current password. Resolves
+   * `account.allow_email_change`). Needs a fresh proof: call {@link Auth#reauth} first. Resolves
    * whether or not the new address is free; nothing changes until the link
    * sent to the new address is used (see {@link Auth#confirmEmailChange}).
-   * @param {{ newEmail: string, password: string, redirectTo?: string }} input
+   * @param {{ newEmail: string, redirectTo?: string }} input
    * @param {RequestOptions} [opts]
    * @returns {Promise<void>}
    */
-  async requestEmailChange({ newEmail, password, redirectTo }, opts) {
-    await this.client.request({ method: 'POST', path: ['_auth', 'email'], body: compact({ new_email: newEmail, password, redirect_to: redirectTo }), ...opts })
+  async requestEmailChange({ newEmail, redirectTo }, opts) {
+    await this.client.request({ method: 'POST', path: ['_auth', 'email'], body: compact({ new_email: newEmail, redirect_to: redirectTo }), reauth: true, ...opts })
   }
 
   /**
@@ -485,28 +485,70 @@ export class Auth {
    * Deletes the signed-in user's account: it is **deactivated** (disabled, its
    * sessions end) and all data is kept. Erasing a user's data is an
    * administrator's action (`admin.users.delete`).
-   * @param {{ password: string }} input
+   * Needs a fresh proof: call {@link Auth#reauth} first (a `reauth_required` error otherwise).
    * @param {RequestOptions} [opts]
    * @returns {Promise<void>}
    */
-  async deleteAccount({ password }, opts) {
-    await this.client.request({ method: 'DELETE', path: ['_auth', 'me'], body: { password }, ...opts })
+  async deleteAccount(opts) {
+    await this.client.request({ method: 'DELETE', path: ['_auth', 'me'], reauth: true, ...opts })
     await this.signedOut('SIGNED_OUT')
   }
 
   /**
-   * Changes the password. This session stays valid; all others end.
-   * @param {{ currentPassword: string, newPassword: string }} input
+   * Changes the password. This session stays valid; all others end. Needs a fresh proof:
+   * call {@link Auth#reauth} first.
+   * @param {{ newPassword: string }} input
    * @param {RequestOptions} [opts]
    * @returns {Promise<void>}
    */
-  async changePassword({ currentPassword, newPassword }, opts) {
+  async changePassword({ newPassword }, opts) {
     await this.client.request({
       method: 'POST',
       path: ['_auth', 'password'],
-      body: { current_password: currentPassword, new_password: newPassword },
+      body: { new_password: newPassword },
+      reauth: true,
       ...opts,
     })
+  }
+
+  /**
+   * Proves who the signed-in user is again, before a sensitive action (changing the password or
+   * the address, deleting the account, unlinking a sign-in method, managing the second factor,
+   * creating an API key as an administrator). `method` is the strongest proof the user has (see
+   * `reauth_methods` of {@link Auth#me}): `totp` or `recovery_code` with a second factor,
+   * `password`, or `email_code` after {@link Auth#requestReauthCode}. The client keeps the proof
+   * and sends it with the sensitive requests while it is good (the realm's `reauth.ttl`, 5 minutes
+   * by default), so one prompt covers a settings page. A wrong proof is a `AuthenticationError`
+   * (`invalid_credentials`) or a `ValidationError` (`invalid_code`) and counts against the same
+   * limits as signing in.
+   * @param {{ method: 'totp' | 'recovery_code' | 'password' | 'email_code', code?: string, password?: string }} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ reauthToken: string, expiresAt: string }>}
+   */
+  async reauth(input, opts) {
+    const { data } = await this.client.request({
+      method: 'POST', path: ['_auth', 'reauth'], body: compact({ method: input.method, code: input.code, password: input.password }), ...opts,
+    })
+    this.client.proof = { token: data.reauth_token, expires: Date.parse(data.expires_at) }
+    return { reauthToken: data.reauth_token, expiresAt: data.expires_at }
+  }
+
+  /**
+   * Whether the client holds a proof that is still good (see {@link Auth#reauth}).
+   * @returns {boolean}
+   */
+  hasFreshProof() {
+    return Boolean(this.client.proof && this.client.proof.expires > Date.now())
+  }
+
+  /**
+   * Emails a code to a user who has no password and no second factor, to give to
+   * {@link Auth#reauth} with `method: 'email_code'`.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async requestReauthCode(opts) {
+    await this.client.request({ method: 'POST', path: ['_auth', 'reauth', 'email-code'], ...opts })
   }
 
   /**
@@ -564,6 +606,7 @@ export class Auth {
    * @returns {Promise<Session>}
    */
   async signedIn(session) {
+    this.client.proof = undefined
     await this.client.storage.set(session.token ?? COOKIE_SESSION)
     this.emit('SIGNED_IN', session)
     return session
@@ -574,6 +617,7 @@ export class Auth {
    * @param {AuthEvent} event
    */
   async signedOut(event) {
+    this.client.proof = undefined
     await this.client.storage.remove()
     this.emit(event, null)
   }

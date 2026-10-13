@@ -210,11 +210,23 @@ func newEnrollHTTP(t *testing.T) (*authFixture, string) {
 	return f, token
 }
 
-// send is a request with a bearer token and a JSON body.
+// send is a request with a bearer token and a JSON body, carrying the session's fresh proof
+// (made with the password the first time, or set by the test in f.proofs).
 func (f *authFixture) send(t *testing.T, token, method, path, body string) (int, map[string]any) {
 	t.Helper()
 	hdr := bearer(token)
 	hdr["Content-Type"] = "application/json"
+	if _, ok := f.proofs[token]; !ok {
+		if f.proofs == nil {
+			f.proofs = map[string]string{}
+		}
+		rec, out := f.doH(t, "POST", authBase+"/reauth", `{"method": "password", "password": "dev-p4ssw0rd!"}`, hdr)
+		f.proofs[token], _ = out["reauth_token"].(string)
+		_ = rec
+	}
+	if p := f.proofs[token]; p != "" {
+		hdr[reauthHeader] = p
+	}
 	rec, out := f.doH(t, method, path, body, hdr)
 	return rec.Code, out
 }
@@ -301,7 +313,21 @@ func (f *mfaHTTP) sessionOf(t *testing.T) string {
 	if rec.Code != 200 {
 		t.Fatalf("verify: %d %v", rec.Code, out)
 	}
-	return out["token"].(string)
+	token := out["token"].(string)
+	// A user with a second factor proves themselves with it: the next time step, since the
+	// current one was spent signing in.
+	next, _ := totp.GenerateCode(f.secret, f.svc.Clock().Add(30*time.Second))
+	hdr := bearer(token)
+	hdr["Content-Type"] = "application/json"
+	rec, out = f.doH(t, "POST", authBase+"/reauth", `{"method": "totp", "code": "`+next+`"}`, hdr)
+	if rec.Code != 200 {
+		t.Fatalf("reauth: %d %v", rec.Code, out)
+	}
+	if f.proofs == nil {
+		f.proofs = map[string]string{}
+	}
+	f.proofs[token] = out["reauth_token"].(string)
+	return token
 }
 
 func TestEnrollingFromAChallengeOverHTTP(t *testing.T) {

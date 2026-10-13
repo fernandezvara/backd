@@ -131,7 +131,7 @@ func TestPasswordResetRequestIsUniform(t *testing.T) {
 func TestPasswordChangedEmail(t *testing.T) {
 	f, w := newVerifyFixture(t)
 	ctx := context.Background()
-	code, _ := f.as(t, f.bob, "POST", "/v1/acme/_auth/password", `{"current_password": "dev-p4ssw0rd!", "new_password": "dev-p4ssw0rd!2"}`)
+	code, _ := f.as(t, f.bob, "POST", "/v1/acme/_auth/password", `{"new_password": "dev-p4ssw0rd!2"}`)
 	if code != 204 {
 		t.Fatalf("change: %d", code)
 	}

@@ -318,7 +318,7 @@ func (s *Users) DisableMFA(ctx context.Context, u User) error {
 	if err := s.Store.DeleteMFA(ctx, u.ID); err != nil {
 		return err
 	}
-	if err := s.Store.DeleteChallengesOfUser(ctx, u.ID); err != nil {
+	if err := s.Store.DeleteChallengesOfUser(ctx, u.ID, ChallengeMFA, ChallengeEnroll, ChallengeTOTPSetup); err != nil {
 		return err
 	}
 	s.Audit(ctx, AuditMFADisabled, userTarget(u.ID), nil)
@@ -370,6 +370,12 @@ func (s *Users) newRecoveryCodes(userID string) (codes, hashes []string, err err
 		codes, hashes = append(codes, code), append(hashes, h)
 	}
 	return codes, hashes, nil
+}
+
+// KeyCreatedBySession tells the signed-in administrator who made an API key that they did, by
+// email: a key outlives the session, so a stolen session making one is noticed.
+func (s *Users) KeyCreatedBySession(ctx context.Context, p Principal) {
+	s.securityNotice(ctx, p.User, "api-key-created", 0)
 }
 
 // securityNotice tells the user about a change to their sign-in security. A limit or a
