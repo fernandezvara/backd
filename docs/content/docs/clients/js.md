@@ -465,6 +465,36 @@ client.config.on("change", (paths) => rerender(paths));
 - **Clearing:** sign-out and signing in as another user drop every copy of the realm, so the next person on the same browser never sees the previous user's keys.
 - **`on("change")`** fires with the dot paths whose value changed when a read brings a different configuration.
 
+## Typed client
+
+`backd types` generates a TypeScript `Realm` interface from the config ([Generated types](../types/)). Pass it to `createClient` and everything the client returns or accepts is typed, with no change at run time:
+
+```ts
+import { createClient } from "backd-js";
+import type { Realm } from "./backd/types";
+
+const client = createClient<Realm>({ url: "https://api.example.com", realm: "shop" });
+
+const page = await client.db("main").collection("orders")
+  .list({ where: { status: "paid", total: { $gte: 100 } }, orderBy: "-total" });
+page.items[0].status;                                        // "new" | "paid" | "shipped"
+const r = await client.db("main").fn("place", { items });    // typed input and result
+client.config.get("shop.currency");                          // "eur" | "usd" | undefined
+```
+
+- **What's typed:** databases and collections by name, documents (with `_meta` and [file details](../../files/file-fields/)), what `create`, `replace` and `patch` accept, `where` (fields, and the operators each type allows) and `orderBy`, function calls (input, and result or [job](#functions) by mode; internal functions have no route and aren't offered) and configuration paths.
+- **Without the type parameter** everything works untyped, as before. The runtime package is the same for every realm.
+- **Stale-types warning (development).** Pass `types` the fingerprint from `realm.json`, and the client sends it as `X-Backd-Types`; when the server's config has moved on it answers `X-Backd-Types-Stale: true` and the client warns once on the console (or calls `onStaleTypes`). Nothing is refused. Send it only in development builds; without `types`, no header is sent. The fingerprint covers the whole realm, so generate without `--db`, or the warning never goes away.
+
+```ts
+import info from "./backd/realm.json";
+
+const client = createClient<Realm>({
+  url, realm: "shop",
+  types: import.meta.env.DEV ? info.fingerprint : undefined,
+});
+```
+
 ## Token storage
 
 By default the token is kept in memory: it is gone after a reload, and nothing on the page can read it from storage. To keep users signed in across reloads, choose a storage:

@@ -11,6 +11,12 @@ info:
     Every error response uses the `Error` envelope. `default` responses list
     errors that can happen on any operation (for example `413`, `415`, `500`,
     `503`, or `404` for an unknown realm).
+
+    Any `/v1/{realm}/…` request may carry `X-Backd-Types`, the fingerprint
+    of the types a development build was generated from (`realm.json`, made
+    by `backd types`). When it isn't the fingerprint of the types the running
+    config generates, the answer carries `X-Backd-Types-Stale: true` (and
+    nothing else changes); production builds send no header.
   license:
     name: MIT
     identifier: MIT

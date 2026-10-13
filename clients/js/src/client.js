@@ -44,6 +44,11 @@ import { COOKIE_SESSION, memoryStorage } from './storage.js'
  *   `localStorage` in browsers by default (a blocked one falls back to memory), `false` for memory only.
  * @property {typeof fetch} [fetch]       A fetch implementation; the global one by default.
  * @property {Record<string, string>} [headers] Extra headers for every request.
+ * @property {string} [types]             Development builds: the fingerprint of the generated types the app was
+ *   written against (`fingerprint` in `realm.json`, made by `backd types`). It is sent as `X-Backd-Types`; when the
+ *   server's config has moved on it answers `X-Backd-Types-Stale` and the client warns once. Leave it out in production:
+ *   nothing is sent then.
+ * @property {() => void} [onStaleTypes]  Called, once, when the server says the types are stale; logs a warning by default.
  */
 
 /**
@@ -94,12 +99,15 @@ import { COOKIE_SESSION, memoryStorage } from './storage.js'
 const isBrowser = () => typeof window !== 'undefined' && typeof window.document !== 'undefined'
 
 /**
- * Creates a client for one realm.
+ * Creates a client for one realm. Pass the realm's generated `Realm` type (from `backd types`) to type
+ * databases, collections, documents, `where`, `order_by`, function calls and configuration paths:
+ * `createClient<Realm>({ url, realm })`. It changes nothing at run time; without it everything is untyped.
+ * @template [R=undefined]
  * @param {ClientOptions} options
- * @returns {Client}
+ * @returns {R extends import('./typed.js').RealmShape ? import('./typed.js').TypedClient<R> : Client}
  */
 export function createClient(options) {
-  return new Client(options)
+  return /** @type {any} */ (new Client(options))
 }
 
 export class Client {
@@ -133,6 +141,12 @@ export class Client {
     this.retry = options.retry ?? { attempts: 0 }
     /** @internal */
     this.headers = options.headers ?? {}
+    /** @internal */
+    this.types = options.types
+    /** @internal */
+    this.onStaleTypes = options.onStaleTypes
+    /** @internal */
+    this.staleReported = false
     /** @readonly */
     this.storage = options.storage ?? memoryStorage()
     /** @internal */
@@ -225,6 +239,7 @@ export class Client {
     if (req.rawBody !== undefined) headers['Content-Type'] = req.contentType ?? 'application/octet-stream'
     else if (req.body !== undefined) headers['Content-Type'] = req.contentType ?? 'application/json'
 
+    if (this.types) headers['X-Backd-Types'] = this.types
     if (req.reauth && this.proof && this.proof.expires > Date.now()) headers['X-Backd-Reauth'] = this.proof.token
     let sentSession = false
     /** The signed-in caller as the cache knows it: entries read as another caller are never reused. */
@@ -282,6 +297,11 @@ export class Client {
           message: req.signal?.aborted ? 'request aborted' : 'network error: ' + String(cause),
           cause,
         })
+      }
+      if (this.types && !this.staleReported && res.headers.get('X-Backd-Types-Stale') === 'true') {
+        this.staleReported = true
+        if (this.onStaleTypes) this.onStaleTypes()
+        else console.warn('backd: the generated types are out of date with the server: run `backd types` and commit the result')
       }
       if (res.status === 304 && cache && held) {
         cache.hits++

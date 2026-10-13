@@ -120,7 +120,7 @@ func NewHandler(cfg Config) http.Handler {
 		maxBody = DefaultMaxBodyBytes
 	}
 	r := chi.NewRouter()
-	r.Use(withRequestID(cfg.Log), withTrustedProxies(cfg.TrustedProxies), requestMetrics(cfg.Metrics), accessLog, recoverer, securityHeaders, cors(cfg.Registry), limitBody(maxBody))
+	r.Use(withRequestID(cfg.Log), withTrustedProxies(cfg.TrustedProxies), requestMetrics(cfg.Metrics), accessLog, recoverer, securityHeaders, cors(cfg.Registry), typesStale(cfg.Registry), limitBody(maxBody))
 	r.NotFound(notFound)
 	r.MethodNotAllowed(methodNotAllowed)
 
