@@ -102,3 +102,14 @@ test('magic links and providers carry the consents of a new account', async () =
   await c.auth.signInWith('google', { redirectTo: 'https://app.example/in', consents: { terms: '2026-10' }, navigate: () => {} })
   assert.deepEqual(m.calls[1].body.consents, { terms: '2026-10' })
 })
+
+test('confirming an enrolment keeps the recovery codes when consents follow', async () => {
+  const m = mockFetch([
+    { body: { recovery_codes: ['aaaaa-bbbbb'], consent_required: true, challenge: 'ch-9', consents: [{ name: 'terms', version: '2026-10' }] } },
+  ])
+  const c = make(m)
+  const done = await c.auth.mfa.confirm({ setupId: 's1', code: '123456', challenge: 'ch-1' })
+  assert.deepEqual(done.recovery_codes, ['aaaaa-bbbbb'])
+  assert.equal(done.session, undefined)
+  assert.deepEqual(done.consent, { consentRequired: true, challenge: 'ch-9', consents: [{ name: 'terms', version: '2026-10' }] })
+})

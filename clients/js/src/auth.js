@@ -166,10 +166,12 @@ class Mfa {
 
   /**
    * Turns it on with the first code of the app. Resolves with the `recovery_codes`, shown once; with
-   * a `challenge` it also ends the sign-in and the client holds the session (`session` is it).
+   * a `challenge` it also ends the sign-in and the client holds the session (`session` is it), unless
+   * the user has consents to accept first: then `consent` is the {@link ConsentChallenge} to finish
+   * with {@link Auth#acceptConsents}.
    * @param {{ setupId: string, code: string, challenge?: string }} input
    * @param {RequestOptions} [opts]
-   * @returns {Promise<{ recovery_codes: string[], session?: Session }>}
+   * @returns {Promise<{ recovery_codes: string[], session?: Session, consent?: ConsentChallenge }>}
    */
   async confirm({ setupId, code, challenge }, opts) {
     /** @type {Record<string, unknown>} */
@@ -181,6 +183,9 @@ class Mfa {
     const { data } = await this.auth.client.request({
       method: 'POST', path: ['_auth', 'mfa', 'totp', 'confirm'], body, reauth: !challenge, auth: !challenge, ...opts,
     })
+    if (data.consent_required) {
+      return { recovery_codes: data.recovery_codes, consent: { consentRequired: true, challenge: data.challenge, consents: data.consents } }
+    }
     if (data.token || data.session_id) {
       const { recovery_codes: codes, ...session } = data
       return { recovery_codes: codes, session: /** @type {Session} */ (await this.auth.signedIn(session)) }
