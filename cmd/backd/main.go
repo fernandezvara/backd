@@ -189,6 +189,7 @@ func serve(ctx context.Context, a *app) error {
 	a.logStorageSecrets(ctx, a.realmUsers())
 	a.logProviders(ctx, a.realmUsers())
 	a.logPush(ctx, a.realmUsers())
+	a.logConsents(ctx, a.realmUsers())
 	if err := a.logAPIKeyExpiry(ctx, a.realmUsers(), time.Now()); err != nil {
 		return err
 	}
@@ -687,6 +688,30 @@ func (a *app) logPush(ctx context.Context, users func(string) *auth.Users) {
 			a.log.Warn("push notification secrets are not set: pushes answer 503 push_unavailable until they are (BACKD_SECRETS_KEY on this instance, then backd secret set)", "realm", rl.Name, "missing", missing, "secrets_key_configured", svc.Cipher != nil)
 		default:
 			a.log.Info("push notifications", "realm", rl.Name, "platforms", platforms)
+		}
+	}
+}
+
+// logConsents warns about consent versions that records refer to and whose texts are no
+// longer in the config: the proof of what a person accepted degrades, but the realm still
+// starts. It names the pairs, never a person.
+func (a *app) logConsents(ctx context.Context, users func(string) *auth.Users) {
+	for _, rl := range a.reg.SortedRealms() {
+		svc := users(rl.Name)
+		if len(rl.Settings.Consents) == 0 || svc == nil {
+			continue
+		}
+		refs, err := svc.Store.ConsentVersionsInUse(ctx)
+		if err != nil {
+			a.log.Warn("could not read the consent versions in use", "realm", rl.Name, "error", err)
+			continue
+		}
+		for _, ref := range refs {
+			c := rl.Settings.Consents[ref.Consent]
+			if c == nil || len(c.Texts[ref.Version]) == 0 {
+				a.log.Warn("consent records refer to a version whose text is not in the config: keep every published text (consents/<name>/<version>/<locale>.md), they are the proof of what was accepted",
+					"realm", rl.Name, "consent", ref.Consent, "version", ref.Version)
+			}
 		}
 	}
 }

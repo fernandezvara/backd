@@ -26,6 +26,9 @@ const error = ref('')
 const code = ref('')
 const setup = ref<{ setup_id: string; secret: string; qr: string } | null>(null)
 const recovery = ref<string[]>([])
+// The consents of the step, each ticked by the person before they can go on.
+const ticked = ref<Record<string, boolean>>({})
+const allTicked = () => (session.step?.consents ?? []).every((c) => ticked.value[c.name])
 
 // Only the realm's own pages are followed after signing in.
 const next = () => safeNext(route.query.next, props.realm)
@@ -36,6 +39,7 @@ async function submit() {
   try {
     const result = await session.signIn(props.realm, email.value.trim(), password.value, keep.value)
     password.value = ''
+    ticked.value = {}
     if (result === 'done') await router.replace(next())
   } catch (e) {
     error.value =
@@ -75,11 +79,32 @@ async function confirmSetup() {
   busy.value = true
   error.value = ''
   try {
-    recovery.value = await session.confirmEnrollment(setup.value!.setup_id, code.value)
+    const done = await session.confirmEnrollment(setup.value!.setup_id, code.value)
+    recovery.value = done.codes
     code.value = ''
     setup.value = null
   } catch (e) {
     error.value = e instanceof NotAdminError ? t('signIn.notAdmin') : t('signIn.codeFailed')
+  } finally {
+    busy.value = false
+  }
+}
+
+// After the recovery codes: the consents that were waiting, or the app.
+async function continueAfterRecovery() {
+  recovery.value = []
+  if (session.step?.kind !== 'consent') await router.replace(next())
+}
+
+async function acceptConsents() {
+  busy.value = true
+  error.value = ''
+  try {
+    await session.acceptConsents()
+    ticked.value = {}
+    await router.replace(next())
+  } catch (e) {
+    error.value = e instanceof NotAdminError ? t('signIn.notAdmin') : t('signIn.consent.failed')
   } finally {
     busy.value = false
   }
@@ -115,8 +140,23 @@ function cancel() {
       <ul class="grid grid-cols-2 gap-1 font-mono text-sm" data-testid="recovery-codes">
         <li v-for="c in recovery" :key="c">{{ c }}</li>
       </ul>
-      <AppButton @click="router.replace(next())">{{ t('signIn.recovery.continue') }}</AppButton>
+      <AppButton @click="continueAfterRecovery">{{ t('signIn.recovery.continue') }}</AppButton>
     </section>
+    <form v-else-if="session.step?.kind === 'consent'" class="space-y-4" data-testid="consent-step" @submit.prevent="acceptConsents">
+      <p class="text-sm">{{ t('signIn.consent.intro') }}</p>
+      <section v-for="c in session.step.consents" :key="c.name" class="space-y-2">
+        <h2 class="font-semibold">{{ c.name }} ({{ c.version }})</h2>
+        <pre class="max-h-48 overflow-auto whitespace-pre-wrap rounded border border-slate-200 p-2 text-xs dark:border-slate-700">{{ c.text }}</pre>
+        <label class="flex items-center gap-2 text-sm">
+          <input v-model="ticked[c.name]" type="checkbox" :data-testid="`accept-${c.name}`" />
+          {{ t('signIn.consent.accept', { name: c.name }) }}
+        </label>
+      </section>
+      <div class="flex gap-2">
+        <AppButton type="submit" :busy="busy" :disabled="!allTicked()">{{ t('signIn.consent.submit') }}</AppButton>
+        <AppButton type="button" variant="secondary" @click="cancel">{{ t('signIn.cancel') }}</AppButton>
+      </div>
+    </form>
     <form v-else-if="session.step?.kind === 'code'" class="space-y-4" @submit.prevent="verify">
       <p class="text-sm">{{ t('signIn.code.intro') }}</p>
       <TextField v-model="code" :label="t('signIn.code.label')" autocomplete="one-time-code" required />

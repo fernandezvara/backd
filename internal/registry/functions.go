@@ -940,11 +940,15 @@ func sortedKeys[V any](m map[string]V) []string {
 // FilesLinkKeySecret is the realm secret that signs backd's own links to files.
 const FilesLinkKeySecret = "BACKD_FILES_LINK_KEY"
 
+// ConsentPseudonymSecret is the realm secret that keys the pseudonym consent records keep of
+// an erased person (design/compliance.md §8).
+const ConsentPseudonymSecret = "BACKD_CONSENT_PSEUDONYM_KEY"
+
 // reservedRealmSecret reports whether a realm secret is one backd uses itself: with the
 // storage keys a function could read the bucket, and with the link key it could sign a
 // link to any file.
 func reservedRealmSecret(settings RealmSettings, name string) bool {
-	if name == FilesLinkKeySecret {
+	if name == FilesLinkKeySecret || name == ConsentPseudonymSecret {
 		return true
 	}
 	return settings.Storage != nil && slices.Contains(settings.Storage.SecretNames(), name)

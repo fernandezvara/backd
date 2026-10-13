@@ -42,6 +42,7 @@ type MemStore struct {
 	challenges  map[string]auth.AuthChallenge     // hash → pending step
 	mfa         map[string]auth.MFARecord         // user id → second factors
 	devices     map[string]auth.Device            // id → registered device
+	consents    []auth.ConsentRecord              // append-only consent history
 	sends       map[string]*memSend               // id → push send
 	outbox      []auth.PushOutboxEntry            // what the capture provider took
 	// FailPutIdentity, when set, is returned by PutIdentity.
@@ -983,6 +984,7 @@ func (m *MemStore) EraseUser(_ context.Context, id, placeholderEmail string, now
 	m.dropDevicesOf(id)
 	u.Email, u.ErasedAt, u.Disabled, u.EmailVerified, u.Roles, u.UpdatedAt = placeholderEmail, now, true, true, []string{}, now
 	u.Locale, u.PendingEmail, u.PreviousEmail, u.AdminNetworks, u.LoginNetworks = "", "", "", nil, nil
+	u.Consents = nil
 	m.users[id] = u
 	return nil
 }

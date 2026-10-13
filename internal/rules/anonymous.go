@@ -24,7 +24,7 @@ func (t tri) not() tri {
 
 // CanAllowAnonymous reports whether the rule may be true for a caller without
 // credentials: false only when it is false whatever the document holds, such
-// as `user != nil` or `hasRole(user, 'admin')`. It reads the rule's syntax
+// as `user != nil`, `hasRole(user, 'admin')` or `hasConsent(user, 'terms')`. It reads the rule's syntax
 // tree with three values; `document` and `now` are unknown.
 func (r *Rule) CanAllowAnonymous() bool { return anonymous(r.tree) != no }
 
@@ -72,7 +72,7 @@ func anonymous(n ast.Node) tri {
 		}
 	case *ast.CallNode:
 		// hasRole(user, …) is false for anonymous callers.
-		if id, ok := n.Callee.(*ast.IdentifierNode); ok && id.Value == "hasRole" {
+		if id, ok := n.Callee.(*ast.IdentifierNode); ok && (id.Value == "hasRole" || id.Value == "hasConsent") {
 			return no
 		}
 	}

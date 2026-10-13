@@ -31,7 +31,7 @@ func pushSendJSON(p auth.PushSend) map[string]any {
 		"id": p.ID, "kind": p.Kind, "sender": p.Sender, "created_at": formatTime(p.CreatedAt),
 		"users": users, "planned": p.Planned, "batches": p.Batches, "batches_done": p.BatchesDone,
 		"units": p.Units, "units_done": p.UnitsDone,
-		"queued": p.Queued, "limited": p.Limited, "no_devices": p.NoDevices,
+		"queued": p.Queued, "limited": p.Limited, "no_devices": p.NoDevices, "no_consent": p.NoConsent,
 		"sent": p.Sent, "invalid": p.Invalid, "failed": p.Failed,
 		"completed": !p.CompletedAt.IsZero(), "completed_at": completed,
 	}

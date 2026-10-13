@@ -199,3 +199,41 @@ func TestCustomEmailCaps(t *testing.T) {
 		t.Errorf("per recipient: %d %s", rec.Code, rec.Body)
 	}
 }
+
+// requires_consent skips a user who doesn't hold the consent and says so; one who does is mailed.
+func TestCustomEmailRequiresConsent(t *testing.T) {
+	f, _ := newVerifyFixture(t)
+	ctx := context.Background()
+	body := `{"kind": "order-shipped", "to_user": "` + f.adaID + `", "data": {"order_no": "A-1"}, "requires_consent": "marketing"}`
+
+	rec := f.emailAs(t, "app/notify", "inv-1", true, body, "")
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"no_consent"`) {
+		t.Fatalf("without the consent: %d %s", rec.Code, rec.Body)
+	}
+	before, _, _ := f.svc.Jobs(ctx, auth.JobFilter{Origin: "function:app/notify"})
+	if len(before) != 0 {
+		t.Errorf("a gated send queued %d jobs", len(before))
+	}
+
+	if _, err := f.svc.RecordConsent(ctx, f.adaID, auth.ConsentInput{Consent: "marketing", Version: "1", Action: auth.ConsentAccepted, Method: auth.ConsentMethodAPI}); err != nil {
+		t.Fatal(err)
+	}
+	if rec = f.emailAs(t, "app/notify", "inv-1", true, body, ""); rec.Code != 202 {
+		t.Fatalf("with the consent: %d %s", rec.Code, rec.Body)
+	}
+	if _, err := f.svc.RecordConsent(ctx, f.adaID, auth.ConsentInput{Consent: "marketing", Action: auth.ConsentWithdrawn, Method: auth.ConsentMethodAPI}); err != nil {
+		t.Fatal(err)
+	}
+	if rec = f.emailAs(t, "app/notify", "inv-1", true, body, ""); rec.Code != 200 {
+		t.Errorf("after withdrawing: %d %s", rec.Code, rec.Body)
+	}
+
+	for name, b := range map[string]string{
+		"to addresses":    `{"kind": "order-shipped", "to": ["a@example.org"], "requires_consent": "marketing"}`,
+		"unknown consent": `{"kind": "order-shipped", "to_user": "` + f.adaID + `", "requires_consent": "cookies"}`,
+	} {
+		if rec = f.emailAs(t, "app/notify", "inv-1", true, b, ""); rec.Code != 400 {
+			t.Errorf("%s: %d %s", name, rec.Code, rec.Body)
+		}
+	}
+}

@@ -117,6 +117,7 @@ paths:
                 locale: { type: string, description: "The language to use for the user, such as `es` or `es-MX`; mapped silently to one the realm lists." }
                 redirect_to: { type: string, description: "Where the page after the verification link may send the user: an absolute URL within the realm's `email.allowed_redirects` (`400 invalid_redirect` otherwise)." }
                 cookie: { type: boolean, description: "Keep the session in an HttpOnly cookie, as for login." }
+                consents: { $ref: "#/components/schemas/ConsentsGiven" }
       responses:
         "201": { $ref: "#/components/responses/SessionCreated" }
         "200":
@@ -1026,6 +1027,7 @@ paths:
                 code_challenge: { type: string, minLength: 43, maxLength: 43, description: The S256 PKCE challenge of the app's verifier. }
                 intent: { type: string, enum: [signin, link], default: signin }
                 invitation: { type: string }
+                consents: { $ref: "#/components/schemas/ConsentsGiven" }
                 locale: { type: string }
       responses:
         "200":
@@ -1148,6 +1150,7 @@ paths:
                 authorization_code: { type: string, description: "Apple only, required unless `revoke_on_delete: false`: the authorization code that came with the ID token." }
                 intent: { type: string, enum: [signin, link], default: signin }
                 invitation: { type: string, description: "An invitation token, for realms with `signup: invite`." }
+                consents: { $ref: "#/components/schemas/ConsentsGiven" }
                 locale: { type: string }
                 cookie: { type: boolean, description: "As in `POST /_auth/login`." }
       responses:
@@ -1161,6 +1164,7 @@ paths:
                   - { $ref: "#/components/schemas/ProviderSession" }
                   - { $ref: "#/components/schemas/MFAChallenge" }
                   - { $ref: "#/components/schemas/MFAEnrollmentChallenge" }
+                  - { $ref: "#/components/schemas/ConsentChallenge" }
                   - type: object
                     additionalProperties: false
                     required: [linked]
@@ -1230,6 +1234,128 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/consents/{name}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { name: name, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [auth]
+      summary: Withdraw an optional consent
+      description: |
+        Records the withdrawal (method `api`) and removes the consent from the user. As easy as
+        giving it, and idempotent. A required consent answers `409 consent_required_for_account`:
+        without it the account can't be used, so the way out is deleting the account.
+      operationId: withdrawConsent
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The user's consents after the withdrawal.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConsentState" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/consents/accept:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Accept the consents a sign-in is waiting for
+      description: |
+        Trades the `challenge` of a `consent_required` sign-in and the consents accepted for
+        the session. Every consent the challenge named must be there at its current version;
+        optional ones may come along. A request that leaves one out is `400 consent_required`
+        and the challenge stays valid. The records get the method `prompt`.
+      operationId: acceptConsentsChallenge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [challenge, consents]
+              properties:
+                challenge: { type: string }
+                consents: { $ref: "#/components/schemas/ConsentsGiven" }
+                cookie: { type: boolean, description: "Keep the session in an HttpOnly cookie, as for login." }
+      responses:
+        "200": { $ref: "#/components/responses/SignInResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/consents:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [auth]
+      summary: The user's consents and history
+      description: |
+        What the signed-in user holds, the required consents still to accept, and their
+        history (oldest first): what they accepted or withdrew, when and how. It stays open
+        past a `reaccept_by` date.
+      operationId: getConsents
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The consents.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/ConsentState" }
+                  - type: object
+                    required: [history]
+                    properties:
+                      history:
+                        type: array
+                        items:
+                          type: object
+                          additionalProperties: false
+                          required: [consent, version, action, method, locale, at]
+                          properties:
+                            consent: { type: string }
+                            version: { type: string }
+                            action: { type: string, enum: [accepted, withdrawn] }
+                            method: { type: string, enum: [signup, prompt, api, admin] }
+                            locale: { type: string }
+                            at: { $ref: "#/components/schemas/Timestamp" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [auth]
+      summary: Accept consents
+      description: |
+        A signed-in user accepts consents: the version an app just showed them, or an optional
+        consent. It works for a user who is refused with `403 consent_required` because the
+        `reaccept_by` date of a version has passed, which is how they get back in. The records
+        get the method `api`. Answers what the user holds and what is still to accept.
+      operationId: acceptConsents
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [consents]
+              properties:
+                consents: { $ref: "#/components/schemas/ConsentsGiven" }
+      responses:
+        "200":
+          description: The user's consents.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConsentState" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_auth/mfa/verify:
@@ -1407,6 +1533,17 @@ paths:
                   user: { $ref: "#/components/schemas/User" }
                   new_user: { type: boolean, description: "With a challenge from a provider sign-in: whether it made the user." }
                   profile: { type: object, description: "With `new_user`: what the provider said of the person." }
+                  consent_required: { const: true, description: "Instead of the session, when the user has consents to accept: the sign-in goes on at `POST /_auth/consents/accept` with `challenge`. The recovery codes are in this answer all the same." }
+                  challenge: { type: string }
+                  consents:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [name, version]
+                      properties:
+                        name: { type: string }
+                        version: { type: string }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
@@ -1569,6 +1706,7 @@ paths:
                 code_challenge: { type: string, minLength: 43, maxLength: 43, description: "The S256 PKCE challenge of a verifier only the app holds." }
                 redirect_to: { type: string }
                 locale: { type: string }
+                consents: { $ref: "#/components/schemas/ConsentsGiven" }
           application/x-www-form-urlencoded:
             schema:
               type: object
@@ -2276,6 +2414,84 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/users/{id}/consents:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    get:
+      tags: [admin]
+      summary: A user's consents and their history
+      description: |
+        The version of each consent the user holds, and every record of their history, oldest
+        first, with the hash of the text shown and the evidence of records made by an
+        administrator. Needs the `users` area.
+      operationId: adminUserConsents
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The consents.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [consents, history]
+                properties:
+                  consents: { $ref: "#/components/schemas/ConsentsGiven" }
+                  history:
+                    type: array
+                    items: { $ref: "#/components/schemas/AdminConsentRecord" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [admin]
+      summary: Record a consent given or withdrawn outside the app
+      description: |
+        For consents given on paper or by phone: the record has the method `admin` and the
+        `evidence` (a ticket, a form number), which is required, and is audited as
+        `user.consent_recorded`. `version` is required for `accepted` and must be a version
+        with a text. Needs the `users` area with write access.
+      operationId: adminRecordConsent
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [consent, action, evidence]
+              properties:
+                consent: { type: string }
+                version: { type: string }
+                action: { type: string, enum: [accepted, withdrawn] }
+                evidence: { type: string, maxLength: 500 }
+      responses:
+        "201":
+          description: The record.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [consent, version, action, method, evidence, at]
+                properties:
+                  consent: { type: string }
+                  version: { type: string }
+                  action: { type: string }
+                  method: { const: admin }
+                  evidence: { type: string }
+                  at: { $ref: "#/components/schemas/Timestamp" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/users/{id}/mfa:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -2972,6 +3188,168 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/StorageStatus" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_consents:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+    get:
+      tags: [auth]
+      summary: The consents the realm asks for
+      description: |
+        The consents declared in `realm.yaml`, with the version in force of each, whether
+        it is required, whether that version asks users to accept again (`reaccept`, with
+        the date after which open sessions are refused) and the languages its text exists
+        in. Public: a person reads the texts before they have an account. Needs a realm
+        with authentication enabled.
+      operationId: listConsents
+      security: [{}]
+      responses:
+        "200":
+          description: The consents.
+          headers:
+            Cache-Control: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [name, required, current, locales]
+                      properties:
+                        name: { type: string }
+                        required: { type: boolean }
+                        current:
+                          type: object
+                          additionalProperties: false
+                          required: [version, reaccept]
+                          properties:
+                            version: { type: string }
+                            reaccept: { type: boolean }
+                            reaccept_by: { type: string, format: date }
+                        locales: { type: array, items: { type: string } }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_consents/{name}/{version}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { name: name, in: path, required: true, schema: { type: string } }
+      - { name: version, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [auth]
+      summary: The exact text of a consent version
+      description: |
+        The text of one version in a language: the best match for `locale` among the
+        realm's languages, else the realm's default. `hash` is the SHA-256 of the text,
+        which consent records keep as proof of what was shown. Old versions stay
+        available as long as their text is in the config.
+      operationId: getConsentText
+      security: [{}]
+      parameters:
+        - { name: locale, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: The text.
+          headers:
+            Cache-Control: { schema: { type: string } }
+            Content-Language: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [name, version, locale, text, hash, current]
+                properties:
+                  name: { type: string }
+                  version: { type: string }
+                  locale: { type: string }
+                  text: { type: string, description: Markdown. }
+                  hash: { type: string, pattern: "^[0-9a-f]{64}$" }
+                  current: { type: boolean, description: The version in force. }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/consents/notify:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+    post:
+      tags: [admin]
+      summary: Ask users to review a new version of a consent
+      description: |
+        Queues the `consent-updated` email for every user who accepted an older version of
+        the consent than the current one (and, for a required consent, who accepted none).
+        Publishing a version never sends anything by itself. The email limits apply:
+        `limited` counts the messages skipped, and running it again later asks the users
+        who still hold an older version. Needs the `users` area with write access; audited
+        as `consents.notify`.
+      operationId: adminNotifyConsent
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [consent]
+              properties:
+                consent: { type: string, description: The consent's name. }
+      responses:
+        "200":
+          description: What the run did.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [consent, version, matched, queued, limited]
+                properties:
+                  consent: { type: string }
+                  version: { type: string }
+                  matched: { type: integer, description: Users who hold an older version. }
+                  queued: { type: integer }
+                  limited: { type: integer }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/compliance/scope:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+    get:
+      tags: [admin]
+      summary: What a user's data export takes from each collection
+      description: |
+        The personal data scope of the realm, as the export of a user's data builds it:
+        per collection whether documents are included (the ones the user owns, those
+        where they appear in a `pull` field of the erase policy, and the files they
+        hold), the fields when only some are exported, and the reason for every
+        exclusion or partial list (`personal_data` in `collection.yaml`), plus the
+        system data an export adds and what it never holds. Needs the `config` area
+        (read is enough).
+      operationId: adminComplianceScope
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The scope.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ComplianceScope" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
@@ -5422,7 +5800,7 @@ components:
       description: >-
         A session (a provider's also says whether it made the user), or the second step the user
         has to take: `mfa_required` to give a code, `mfa_enrollment_required` to set a second
-        factor up. Never both: a challenge is not a session.
+        factor up, `consent_required` to accept consents. Never both: a challenge is not a session.
       headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
       content:
         application/json:
@@ -5432,6 +5810,7 @@ components:
               - { $ref: "#/components/schemas/ProviderSession" }
               - { $ref: "#/components/schemas/MFAChallenge" }
               - { $ref: "#/components/schemas/MFAEnrollmentChallenge" }
+              - { $ref: "#/components/schemas/ConsentChallenge" }
     SessionCreated:
       description: The new user, signed in.
       headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
@@ -5468,6 +5847,40 @@ components:
       type: string
       format: date-time
       description: RFC3339 in UTC with millisecond precision.
+
+    ComplianceScope:
+      type: object
+      additionalProperties: false
+      required: [realm, auth, collections, system]
+      properties:
+        realm: { type: string }
+        auth: { type: boolean, description: "Whether the realm has users; without them there is nothing to export." }
+        collections:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [database, collection, export, owned, pull, files, declared]
+            properties:
+              database: { type: string }
+              collection: { type: string }
+              export: { type: string, enum: [include, exclude] }
+              owned: { type: boolean, description: "The documents whose `_meta.owner` is the user are exported." }
+              fields:
+                type: array
+                items: { type: string }
+                description: "Only these fields (plus `id` and `_meta`) are exported; absent means whole documents."
+              pull: { type: array, items: { type: string }, description: "Arrays that hold the user: documents where they appear are exported whoever owns them." }
+              files: { type: array, items: { type: string }, description: "File fields whose files are exported with their documents." }
+              reason: { type: string, description: "Why the collection is excluded or exported in part." }
+              declared: { type: boolean, description: "`personal_data` is in the collection's `collection.yaml`." }
+        system:
+          type: object
+          additionalProperties: false
+          required: [included, excluded]
+          properties:
+            included: { type: array, items: { type: string } }
+            excluded: { type: array, items: { type: string } }
 
     Status:
       type: object
@@ -5559,6 +5972,17 @@ components:
           type: array
           description: The user's sign-in methods, oldest first.
           items: { $ref: "#/components/schemas/Identity" }
+        consents: { $ref: "#/components/schemas/ConsentsGiven" }
+        to_accept:
+          type: array
+          description: "With consents declared in the realm: the required consents the user has to accept (again)."
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, version]
+            properties:
+              name: { type: string }
+              version: { type: string }
 
     Identity:
       type: object
@@ -5970,6 +6394,64 @@ components:
         challenge: { type: string }
         methods: { type: array, items: { type: string, enum: [totp, recovery_code] } }
 
+    ConsentsGiven:
+      type: object
+      description: >-
+        Consents accepted: the consent's name to the version, from `GET /_consents`. A required
+        consent must be there at its current version.
+      additionalProperties: { type: string }
+
+    ConsentChallenge:
+      type: object
+      additionalProperties: false
+      required: [consent_required, challenge, consents]
+      description: >-
+        The sign-in is done but the user has consents to accept (a new version asks for
+        re-acceptance, or they never accepted a required one): send the `challenge` with
+        `consents` to `POST /_auth/consents/accept`. It lives 5 minutes.
+      properties:
+        consent_required: { const: true }
+        challenge: { type: string }
+        consents:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, version]
+            properties:
+              name: { type: string }
+              version: { type: string }
+
+    AdminConsentRecord:
+      type: object
+      additionalProperties: false
+      required: [consent, version, action, method, locale, text_hash, at]
+      properties:
+        consent: { type: string }
+        version: { type: string }
+        action: { type: string, enum: [accepted, withdrawn] }
+        method: { type: string, enum: [signup, prompt, api, admin] }
+        locale: { type: string }
+        text_hash: { type: string, description: "SHA-256 of the text shown; empty for a withdrawal." }
+        evidence: { type: string }
+        at: { $ref: "#/components/schemas/Timestamp" }
+
+    ConsentState:
+      type: object
+      required: [consents, to_accept]
+      properties:
+        consents: { $ref: "#/components/schemas/ConsentsGiven" }
+        to_accept:
+          type: array
+          description: Required consents the user has to accept (again) at the version shown.
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, version]
+            properties:
+              name: { type: string }
+              version: { type: string }
+
     MFAEnrollmentChallenge:
       type: object
       additionalProperties: false
@@ -6021,7 +6503,7 @@ components:
     PushSend:
       type: object
       additionalProperties: false
-      required: [id, kind, sender, created_at, users, planned, batches, batches_done, units, units_done, queued, limited, no_devices, sent, invalid, failed, completed, completed_at]
+      required: [id, kind, sender, created_at, users, planned, batches, batches_done, units, units_done, queued, limited, no_devices, no_consent, sent, invalid, failed, completed, completed_at]
       properties:
         id: { type: string }
         kind: { type: string, description: "The template kind, or `raw`." }
@@ -6036,6 +6518,7 @@ components:
         queued: { type: integer, description: Users handed to delivery. }
         limited: { type: integer, description: Users over their per-user limit. }
         no_devices: { type: integer, description: Users with no device to reach. }
+        no_consent: { type: integer, description: "Users who don't hold the consent the send requires (`requires_consent`)." }
         sent: { type: integer, description: Devices the provider accepted. }
         invalid: { type: integer, description: Devices removed as dead. }
         failed: { type: integer, description: Devices not delivered to. }

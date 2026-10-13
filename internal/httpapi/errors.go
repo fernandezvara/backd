@@ -31,6 +31,7 @@ const (
 	codeUserErased        = "user_erased"
 	codeEmailLimited      = "email_limited"
 	codeEmailNotVerified  = "email_not_verified"
+	codeConsentRequired   = "consent_required"
 	codeInvalidRedirect   = "invalid_redirect"
 	codeWriteConflict     = "write_conflict"
 	codeVersionMismatch   = "version_mismatch"

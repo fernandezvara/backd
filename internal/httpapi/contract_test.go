@@ -1400,6 +1400,112 @@ func TestContract(t *testing.T) {
 	req("GET", ad+"/storage", "", key, 200)
 	req("GET", ad+"/storage", "", nil, 401)
 	req("GET", ad+"/storage", "", ada, 403)
+	// Public consent texts.
+	{
+		list := req("GET", "/v1/acme/_consents", "", nil, 200)
+		items := list["items"].([]any)
+		first := items[0].(map[string]any)
+		if len(items) != 1 || first["name"] != "marketing" || first["required"] != false || first["current"].(map[string]any)["version"] != "1" {
+			t.Errorf("consents = %v", list)
+		}
+		text := req("GET", "/v1/acme/_consents/marketing/1?locale=es-MX", "", nil, 200)
+		if text["locale"] != "es" || text["text"] != "Enviadme novedades por correo." || len(text["hash"].(string)) != 64 || text["current"] != true {
+			t.Errorf("text = %v", text)
+		}
+		req("GET", "/v1/acme/_consents/marketing/9", "", nil, 404)
+		req("GET", "/v1/acme/_consents/nope/1", "", nil, 404)
+		req("GET", "/v1/nope/_consents", "", nil, 404)
+	}
+	// Accepting consents: an optional one with a session, and a required one a sign-in waits for.
+	{
+		req("POST", "/v1/acme/_auth/consents", `{"consents": {"marketing": "1"}}`, nil, 401)
+		req("POST", "/v1/acme/_auth/consents", `{"consents": {}}`, ada, 400)
+		req("POST", "/v1/acme/_auth/consents", `{"consents": {"marketing": "1"}}`, ada, 200)
+		saved := f.svc.Settings.Consents
+		withTerms := map[string]*registry.Consent{}
+		for k, v := range saved {
+			withTerms[k] = v
+		}
+		withTerms["terms"] = &registry.Consent{
+			Name: "terms", Required: true, Current: "1",
+			Versions: map[string]*registry.ConsentVersion{"1": {}},
+			Texts:    map[string]map[string]registry.ConsentText{"1": {"en": {Body: "terms", Hash: strings.Repeat("b", 64)}}},
+		}
+		f.svc.Settings.Consents = withTerms
+		ch := req("POST", "/v1/acme/_auth/login", `{"email": "bob@example.com", "password": "dev-p4ssw0rd!"}`, nil, 200)
+		if ch["consent_required"] != true {
+			t.Fatalf("login asks no consent: %v", ch)
+		}
+		req("POST", "/v1/acme/_auth/consents/accept", `{"challenge": "`+ch["challenge"].(string)+`", "consents": {}}`, nil, 400)
+		req("POST", "/v1/acme/_auth/consents/accept", `{"challenge": "`+ch["challenge"].(string)+`", "consents": {"terms": "1"}}`, nil, 200)
+		f.svc.Settings.Consents = saved
+	}
+
+	// A user's own consents: read, withdraw, and what can't be withdrawn.
+	{
+		req("GET", "/v1/acme/_auth/consents", "", nil, 401)
+		mine := req("GET", "/v1/acme/_auth/consents", "", ada, 200)
+		if mine["consents"].(map[string]any)["marketing"] != "1" {
+			t.Errorf("consents = %v", mine)
+		}
+		req("DELETE", "/v1/acme/_auth/consents/marketing", "", nil, 401)
+		req("DELETE", "/v1/acme/_auth/consents/nope", "", ada, 404)
+		req("DELETE", "/v1/acme/_auth/consents/marketing", "", ada, 200)
+		req("DELETE", "/v1/acme/_auth/consents/marketing", "", ada, 200) // idempotent
+		saved := f.svc.Settings.Consents
+		required := map[string]*registry.Consent{"marketing": {Name: "marketing", Required: true, Current: "1",
+			Versions: saved["marketing"].Versions, Texts: saved["marketing"].Texts}}
+		f.svc.Settings.Consents = required
+		req("DELETE", "/v1/acme/_auth/consents/marketing", "", ada, 409)
+		f.svc.Settings.Consents = saved
+	}
+	// An administrator records a consent given on paper, and reads a user's history.
+	{
+		path := ad + "/users/" + f.adaID + "/consents"
+		req("GET", path, "", nil, 401)
+		req("GET", path, "", ada, 403)
+		req("GET", ad+"/users/nobody/consents", "", key, 404)
+		req("POST", path, `{"consent": "marketing", "version": "1", "action": "accepted", "evidence": "form 17"}`, nil, 401)
+		req("POST", path, `{"consent": "marketing", "version": "1", "action": "accepted", "evidence": "form 17"}`, ada, 403)
+		req("POST", ad+"/users/nobody/consents", `{"consent": "marketing", "version": "1", "action": "accepted", "evidence": "x"}`, key, 404)
+		req("POST", path, `{"consent": "marketing", "version": "1", "action": "accepted", "evidence": ""}`, key, 400)
+		rec := req("POST", path, `{"consent": "marketing", "version": "1", "action": "accepted", "evidence": "form 17"}`, key, 201)
+		if rec["method"] != "admin" || rec["evidence"] != "form 17" {
+			t.Errorf("record = %v", rec)
+		}
+		hist := req("GET", path, "", key, 200)
+		if hist["consents"].(map[string]any)["marketing"] != "1" || len(hist["history"].([]any)) == 0 {
+			t.Errorf("history = %v", hist)
+		}
+	}
+	// Asking users to review a consent: a run, a bad name, and the right to do it.
+	req("POST", ad+"/consents/notify", `{"consent": "marketing"}`, nil, 401)
+	req("POST", ad+"/consents/notify", `{"consent": "marketing"}`, ada, 403)
+	req("POST", ad+"/consents/notify", `{"consent": "nope"}`, key, 400)
+	notified := req("POST", ad+"/consents/notify", `{"consent": "marketing"}`, key, 200)
+	if notified["version"] != "1" || notified["queued"] != float64(0) {
+		t.Errorf("notify = %v", notified)
+	}
+	{
+		saved := f.svc.Settings.Email
+		f.svc.Settings.Email = nil
+		req("POST", ad+"/consents/notify", `{"consent": "marketing"}`, key, 409)
+		f.svc.Settings.Email = saved
+	}
+	// The personal data scope: what an export would take from each collection.
+	req("GET", ad+"/compliance/scope", "", nil, 401)
+	req("GET", ad+"/compliance/scope", "", ada, 403)
+	scope := req("GET", ad+"/compliance/scope", "", key, 200)
+	excluded := false
+	for _, c := range scope["collections"].([]any) {
+		c := c.(map[string]any)
+		if c["collection"] == "private" {
+			excluded = c["export"] == "exclude" && c["reason"] == "fraud scores, exempt from access requests"
+		}
+	}
+	if !excluded {
+		t.Errorf("scope doesn't list the excluded collection: %v", scope["collections"])
+	}
 	req("POST", ad+"/storage/reconcile", `{}`, key, 200)
 	req("POST", ad+"/storage/reconcile", `{"delete": true}`, key, 200)
 	req("POST", ad+"/storage/reconcile", `{"delete": 5}`, key, 400)

@@ -38,3 +38,10 @@ Out of scope:
 - Weaknesses in how you deploy it, such as serving without TLS or leaking API keys.
 
 Before exposing backd, go through the [hardening checklist](https://fernandezvara.github.io/backd/docs/operations/checklist/) (Operations → Hardening checklist in the documentation). The security model is under Authentication → Security model, and a tested production reference deployment is in [`deploy/production`](deploy/production) (Operations → Production deployment).
+
+## Consents and personal data
+
+- Consent records are append-only (no route updates or deletes them), keep the SHA-256 of the exact text shown, and hold an IP address and user agent only when `compliance.consent_proof` lists them. At erasure those two are removed and the user id becomes an HMAC of the address under the realm secret `BACKD_CONSENT_PSEUDONYM_KEY`; the records are removed after `compliance.consent_retention`.
+- The consent challenge of a sign-in is random, single-use, expires in 5 minutes and is stored only as a hash. After a `reaccept_by` date, a session that has not accepted can only read its consent state, accept, sign out or delete the account.
+- Administrators record consents with a required `evidence`, audited. `evidence` should be a reference, not personal data.
+- `GET /_consents` serves public texts and nothing about people; the personal data scope report (`/_admin/compliance/scope`) needs the `config` area.

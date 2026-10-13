@@ -79,6 +79,9 @@ An empty file, or one with only comments, is valid: every key has a default.
 | `mfa.issuer` | the realm's name | The name authenticator apps show for the account |
 | `magic_link.enabled` | `false` | Let users sign in with a link or a code emailed to them (needs `email:` and `BACKD_SECRETS_KEY`). See [Magic links](../../auth/magic-links/) |
 | `magic_link.signup` | `false` | An address with no account may make one (verified) by using a link or code, when the realm's `signup` is `open` |
+| `consents` | none | The consents the realm asks for, each with `required`, `current` and per-version `reaccept`; texts live in `consents/<name>/<version>/<locale>.md`. See [Consents](../../auth/consents/) |
+| `compliance.consent_proof` | `[ip, user_agent]` | What each consent record keeps besides time, method and text hash |
+| `compliance.consent_retention` | `3y` | How long consent records are kept after their user was erased; `0` deletes them at erasure |
 | `reauth.ttl` | `5m` | How long a [re-authentication](../../auth/reauth/) token works (`1m` to `1h`) |
 | `mfa.required_roles` | none | Roles that must use a second factor, or `all`. A sign-in without one sets it up first. See [Required by role](../../auth/mfa/#required-by-role) |
 | `account.require_verified_email` | `false` | `true`: no session until the address is verified. See [Account](#account) |

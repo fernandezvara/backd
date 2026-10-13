@@ -93,6 +93,8 @@ func (a *authAPI) providerUnavailable(w http.ResponseWriter, r *http.Request, wh
 // startInput is what a start call carries.
 type startInput struct {
 	redirectTo, challenge, intent, invitation, locale string
+	// consents are accepted for the account the sign-in may make (POST only).
+	consents map[string]string
 }
 
 func (a *authAPI) oauthStartGet(w http.ResponseWriter, r *http.Request) {
@@ -113,12 +115,16 @@ func (a *authAPI) oauthStartPost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	consents, ok := takeConsents(w, r, obj)
+	if !ok {
+		return
+	}
 	f, ok := fields(w, r, obj, map[string]string{"redirect_to": "string?", "code_challenge": "string", "intent": "string?", "invitation": "string?", "locale": "string?"})
 	if !ok {
 		return
 	}
 	str := func(k string) string { v, _ := f[k].(string); return v }
-	in := startInput{redirectTo: str("redirect_to"), challenge: str("code_challenge"), intent: str("intent"), invitation: str("invitation"), locale: str("locale")}
+	in := startInput{redirectTo: str("redirect_to"), challenge: str("code_challenge"), intent: str("intent"), invitation: str("invitation"), locale: str("locale"), consents: consents}
 	if in.intent == "" {
 		in.intent = auth.IntentSignIn
 	}
@@ -182,8 +188,12 @@ func (a *authAPI) startOAuth(w http.ResponseWriter, r *http.Request, in startInp
 		a.providerUnavailable(w, r, "this provider's secrets are not set")
 		return "", false
 	}
+	if err := svc.ValidateConsents(in.consents); err != nil {
+		authError(w, r, err)
+		return "", false
+	}
 	st := auth.OAuthState{Provider: p.Name, Intent: in.intent, CodeChallenge: in.challenge, RedirectTo: in.redirectTo, LinkUserID: who.User.ID,
-		Locales: append([]string{in.locale}, acceptLanguages(r.Header.Get("Accept-Language"))...)}
+		Locales: append([]string{in.locale}, acceptLanguages(r.Header.Get("Accept-Language"))...), Consents: in.consents}
 	if in.invitation != "" {
 		st.InvitationID = auth.HashToken(in.invitation)
 	}
@@ -281,6 +291,7 @@ func (a *authAPI) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	res, err := svc.ResolveProviderLogin(r.Context(), auth.ProviderLogin{
 		Provider: p.Name, Subject: claims.Subject, Email: claims.Email, EmailVerified: claims.EmailVerified, TrustsEmail: p.TrustsEmail(),
 		Intent: st.Intent, LinkUserID: st.LinkUserID, Invitation: st.InvitationID, Locales: st.Locales, IP: clientIP(r),
+		Consents: st.Consents, UserAgent: r.UserAgent(),
 		Profile: profileOf(claims, firstAuthorization(p, get("user"))),
 	})
 	if err != nil {

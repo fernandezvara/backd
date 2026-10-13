@@ -37,6 +37,17 @@ func (w *Worker) runErase(ctx context.Context, log *slog.Logger, realm string, s
 		w.eraseFailed(ctx, log, svc, job, err)
 		return
 	}
+	// What proves consent stays, pseudonymized, for the retention the realm chose; the address
+	// is still in the job, which is what keys the pseudonym.
+	if n, err := svc.ReduceConsentRecords(ctx, e.UserID, e.Email); err != nil {
+		w.eraseFailed(ctx, log, svc, job, err)
+		return
+	} else if n > 0 {
+		if err := svc.Store.AddEraseCount(ctx, job.ID, "consent_records", n); err != nil {
+			w.eraseFailed(ctx, log, svc, job, err)
+			return
+		}
+	}
 	if err := svc.Store.ClearEraseEmail(ctx, job.ID); err != nil {
 		w.eraseFailed(ctx, log, svc, job, err)
 		return

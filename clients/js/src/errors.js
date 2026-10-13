@@ -52,12 +52,13 @@ export class VerificationRequiredError extends BackdError {}
  * Not an HTTP error: a password login (or sign-up) that needs a second step before it gives a
  * session. `auth.login()` and `auth.signup()` promise a session, so they throw this instead;
  * `auth.signIn()` returns the step as a value. `code` is `mfa_required` (finish with
- * `auth.verifyMfa(error.challenge, method, code)`; `methods` says which) or
- * `mfa_enrollment_required` (set a second factor up with `auth.mfa.setup({ challenge })`).
+ * `auth.verifyMfa(error.challenge, method, code)`; `methods` says which),
+ * `mfa_enrollment_required` (set a second factor up with `auth.mfa.setup({ challenge })`) or
+ * `consent_required` (accept `consents` with `auth.acceptConsents(error.challenge, consents)`).
  */
 export class SecondStepRequiredError extends BackdError {
   /**
-   * @param {ConstructorParameters<typeof BackdError>[0] & { challenge: string, methods?: string[] }} init
+   * @param {ConstructorParameters<typeof BackdError>[0] & { challenge: string, methods?: string[], consents?: Array<{ name: string, version: string }> }} init
    */
   constructor(init) {
     super(init)
@@ -65,6 +66,30 @@ export class SecondStepRequiredError extends BackdError {
     this.challenge = init.challenge
     /** @type {string[]} */
     this.methods = init.methods ?? []
+    /** With `code: 'consent_required'`: the consents to accept, `{ name, version }`. */
+    this.consents = init.consents ?? []
+  }
+}
+
+/**
+ * `consent_required`: consents have to be accepted. At sign-up (`400`) a required consent is
+ * missing or outdated; on a request of a signed-in user (`403`) a version's `reaccept_by` date has
+ * passed. `consents` lists what to accept: `{ name, version }`. Show the texts
+ * (`client.consents.text`) and send the acceptance with `client.consents.accept`.
+ */
+export class ConsentRequiredError extends BackdError {
+  /**
+   * @param {ConstructorParameters<typeof BackdError>[0]} init
+   */
+  constructor(init) {
+    super(init)
+    /** @type {Array<{ name: string, version: string }>} */
+    this.consents = []
+    for (const d of init.details ?? []) {
+      const name = /^consents\.(.+)$/.exec(d.path)?.[1]
+      const version = /version (\S+)$/.exec(d.reason)?.[1]
+      if (name && version) this.consents.push({ name, version })
+    }
   }
 }
 
@@ -132,13 +157,15 @@ export async function errorFromResponse(res) {
   const e = body.error ?? {}
   const Class = errorClassFor(res.status)
   const retryAfter = parseRetryAfter(res.headers.get('Retry-After'))
-  return new Class({
+  const code = e.code ?? 'http_' + res.status
+  const Typed = code === 'consent_required' ? ConsentRequiredError : Class
+  return new Typed({
     status: res.status,
-    code: e.code ?? 'http_' + res.status,
+    code,
     message: e.message ?? res.statusText ?? 'request failed',
     details: e.details ?? [],
     requestId: e.request_id ?? res.headers.get('X-Request-ID') ?? undefined,
-    ...(Class === RetryableError ? { retryAfter } : {}),
+    ...(Typed === RetryableError ? { retryAfter } : {}),
   })
 }
 

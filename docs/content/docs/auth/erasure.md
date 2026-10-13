@@ -53,6 +53,7 @@ A "delete my data" button belongs in your backend: it checks your own rules (no 
 | Sign-in methods, sessions | password hash, hashed session tokens | deleted |
 | Email tokens, the user's queued emails | the user id; addresses of an email change | deleted |
 | Documents | whatever you store | the collections' policies |
+| [Consent records](../consents/) | the consent, version, text hash, action, method and time of each acceptance or withdrawal; the IP address and user agent when `compliance.consent_proof` lists them | **reduced**, not deleted: address and agent removed, the user id replaced by a keyed pseudonym of the address; removed after `compliance.consent_retention` (3 years by default; `0` deletes them at once) |
 | Login and email counters | hashes of the address, expiring within a day | expire on their own |
 | [Audit trail](../audit/) | `user:<id>` as actor or target, never addresses | kept for `audit.retention` (365 days by default); the id is a pseudonym after the tombstone |
 | [Function history](../../functions/logs/), [async jobs](../../functions/jobs/), idempotency records | actor `user:<id>`; a job's input and output; a function's console output | left to their retention: `functions.log_retention` (7 days), `functions.job_retention` (24 hours), 24 hours |

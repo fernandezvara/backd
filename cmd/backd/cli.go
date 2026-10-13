@@ -386,6 +386,34 @@ func registerRemote(cfg *kli.Config) {
 		boolean(cc, "delete", "remove the unreferenced objects instead of only reporting them")
 		boolean(cc, "json", "print the report as JSON")
 	})
+	cons := cfg.Command("consents").ShortHelp("manage the consents users accept")
+	cons.SubCommand("notify").ShortHelp("email the users who hold an older version of a consent").
+		LongHelp("Queues the `consent-updated` email for every user who accepted an older version of the consent than the\ncurrent one (and, for a required consent, who accepted none). Publishing a version never sends anything by itself:\nthis is the only way, and the email limits apply, so a large realm may need to run it again later. Needs the\nusers area with write access. Audited as consents.notify. " + adminAPINote).
+		Func(act("consents notify", consentsNotify)).Config(func(cc *kli.CommandConfig) {
+		required(cc, "realm", "the realm whose users to notify")
+		required(cc, "consent", "the consent whose current version to ask them to review")
+		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+		boolean(cc, "json", "print the result as JSON")
+	})
+	cons.SubCommand("record").ShortHelp("record a consent given or withdrawn outside the app").
+		LongHelp("Records, for one user, a consent they gave or withdrew on paper, by phone or in a way the app can't see.\nThe record has the method `admin` and the evidence, which is required: a ticket, a form number, anything that\nproves it. Use --action accepted with --version, or --action withdrawn. Needs the users area with write access.\nAudited as user.consent_recorded. " + adminAPINote).
+		Func(act("consents record", consentsRecord)).Config(func(cc *kli.CommandConfig) {
+		required(cc, "realm", "the realm of the user")
+		required(cc, "email", "the user's email address")
+		required(cc, "consent", "the consent's name")
+		required(cc, "action", "accepted or withdrawn")
+		required(cc, "evidence", "the reference that proves it (a ticket, a form number)")
+		optional(cc, "version", "the version accepted (for accepted)")
+		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+	})
+	comp := cfg.Command("compliance").ShortHelp("privacy: what a user's data export covers")
+	comp.SubCommand("scope").ShortHelp("show what a user's data export takes from each collection").
+		LongHelp("Asks the running backd for the realm's personal data scope: per collection whether the documents a user owns\n(and those where they appear in an erase policy's `pull` field, and the files they hold) are exported, which fields\nwhen only some are, and the reason for every exclusion (`personal_data` in collection.yaml), then the system data\nan export adds and what it never holds. Needs the config area (read is enough). " + adminAPINote).
+		Func(act("compliance scope", complianceScopeCmd)).Config(func(cc *kli.CommandConfig) {
+		required(cc, "realm", "the realm whose scope to show")
+		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+		boolean(cc, "json", "print it as JSON")
+	})
 	files := cfg.Command("files").ShortHelp("work on the image files documents hold")
 	files.SubCommand("regenerate").ShortHelp("make the image versions of a file field again when they no longer match its declaration").
 		LongHelp("Starts a job that goes through every document of a file field and makes again, on a worker, the image\nversions whose copies no longer match the field's `versions:` in collection.yaml: copies made with other\nparameters (after you changed the declaration), copies that failed or never finished, and versions added later\nthat a file has no copy of. Copies a function generated with its own parameters, versions only functions\nmake, and files that are not pictures are left alone. --missing-only makes only the copies that do not exist.\nThe job runs in the background (one per field at a time), makes at most --rate files a second, keeps serving\nthe old copy of a file until its new one is ready, and can be cancelled and resumed: running it again skips\nwhat matches already. This command follows its progress on stderr; --no-wait only starts it. Needs the config\narea with write access. Audited as files.versions.regenerate. " + adminAPINote).

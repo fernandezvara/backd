@@ -14,7 +14,7 @@ Every send leaves one record, kept for `push.send_retention` (30 days by default
 |---|---|
 | `id`, `kind`, `sender`, `created_at` | The send, its template kind (`raw` for a message the function wrote), who sent it (`function:<database>/<name>` or `admin:<actor>`) and when |
 | `users` | How many users were named; `null` for an audience |
-| `queued`, `limited`, `no_devices` | Users handed to delivery, users over their limit, users with no device to reach (a silent push skips browsers) |
+| `queued`, `limited`, `no_devices`, `no_consent` | Users handed to delivery, users over their limit, users with no device to reach (a silent push skips browsers), users who don't hold the [consent](../../auth/consents/) the send requires |
 | `sent`, `invalid`, `failed` | Devices the provider accepted, devices removed as dead, devices not delivered to |
 | `planned`, `batches`, `batches_done`, `units`, `units_done` | How far the work is |
 | `completed`, `completed_at` | Everything is done |
@@ -34,6 +34,7 @@ The admin interface shows the same on its **Push** page ([Admin interface](../..
 |---|---|
 | `limited` > 0 | The user was over `push.limits.per_user`. Nobody is exempt, test sends included |
 | `no_devices` > 0 | The user has no device whose session is alive (or only browsers, for a silent push) |
+| `no_consent` > 0 | The send has `requires_consent` and these users never gave that consent, or withdrew it |
 | `invalid` > 0 | The provider said the token is dead; the device was removed and the app registers again at its next launch |
 | `failed` > 0 | The provider refused it for good, or the unit ran out of attempts. The worker's log says why, without tokens |
 | not `completed` | Batches or units are still running, or waiting out a retry backoff |
@@ -53,7 +54,7 @@ On the metrics endpoint, labeled by realm:
 
 | Metric | Labels | Counts |
 |---|---|---|
-| `backd_push_users_total` | `outcome`: `queued`, `limited`, `no_devices` | Users, as batches are planned |
+| `backd_push_users_total` | `outcome`: `queued`, `limited`, `no_devices`, `no_consent` | Users, as batches are planned |
 | `backd_push_deliveries_total` | `status`: `sent`, `invalid`, `failed` | Devices, as units are delivered |
 | `backd_push_devices_pruned_total` | `reason`: `invalid`, `stale`, `session`, `cap`, `moved` | Devices removed from the registry |
 

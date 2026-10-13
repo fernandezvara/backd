@@ -47,6 +47,8 @@ type PushAudience struct {
 	Locale        string
 	CreatedBefore time.Time
 	CreatedAfter  time.Time
+	// Consent: only users who hold this consent (any version).
+	Consent string
 }
 
 // PushRecipient is a user of a delivery unit with the devices to deliver to.
@@ -67,10 +69,13 @@ type PushJob struct {
 	Audience  *PushAudience
 	After     string
 	NextBatch int
+	// RequiresConsent skips users who don't hold the consent, in a batch or a plan.
+	RequiresConsent string
 	// Deliver: who gets it, and how many users of the unit's chunk were not delivered to.
 	Recipients []PushRecipient
 	Limited    int
 	NoDevices  int
+	NoConsent  int
 }
 
 // PushSend is the record of one send: totals, never content.
@@ -93,6 +98,7 @@ type PushSend struct {
 	Queued    int // users handed to delivery
 	Limited   int // users over their limits
 	NoDevices int // users with no device to reach
+	NoConsent int // users who don't hold the consent the send requires
 	Sent      int // devices
 	Invalid   int // devices removed as dead
 	Failed    int // devices not delivered to
@@ -103,9 +109,9 @@ type PushSend struct {
 // PushDelta is what to add to a send's totals. DoneBatch and DoneUnit name the batch or unit
 // that finished: it is counted once, however many times the same update runs.
 type PushDelta struct {
-	Units, Queued, Limited, NoDevices int
-	Sent, Invalid, Failed             int
-	DoneBatch, DoneUnit               string
+	Units, Queued, Limited, NoDevices, NoConsent int
+	Sent, Invalid, Failed                        int
+	DoneBatch, DoneUnit                          string
 }
 
 // PushUserFilter selects users for an audience page.
@@ -146,6 +152,9 @@ type PushSendInput struct {
 	Messages map[string]push.Message
 	Users    []string
 	Audience *PushAudience
+	// RequiresConsent names a consent a user must hold to be sent to; the others are
+	// counted as no_consent.
+	RequiresConsent string
 }
 
 // PushStarted is what starting a send reports.
@@ -155,8 +164,8 @@ type PushStarted struct {
 	Users, Jobs int
 	// Known says Queued, Limited and NoDevices are final: a send that fits one batch is
 	// planned at once.
-	Known                     bool
-	Queued, Limited, NoDevice int
+	Known                                bool
+	Queued, Limited, NoDevice, NoConsent int
 }
 
 func (s *Users) pushSendRetention() time.Duration {
@@ -191,20 +200,20 @@ func (s *Users) StartPushSend(ctx context.Context, in PushSendInput, requestID s
 	}
 	switch {
 	case in.Audience != nil:
-		_, err := s.EnqueueJob(ctx, s.pushJob(rec.ID+"-plan", requestID, PushJob{Kind: PushPlan, SendID: rec.ID, Messages: in.Messages, Audience: in.Audience}))
+		_, err := s.EnqueueJob(ctx, s.pushJob(rec.ID+"-plan", requestID, PushJob{Kind: PushPlan, SendID: rec.ID, Messages: in.Messages, Audience: in.Audience, RequiresConsent: in.RequiresConsent}))
 		started.Jobs = 1
 		return started, err
 	case len(in.Users) == 0:
 		return started, s.finishEmptyPush(ctx, rec.ID)
 	case len(in.Users) <= PushBatchSize:
-		counts, err := s.PlanPushBatch(ctx, rec.ID+"-b0", rec.ID, in.Users, in.Messages, requestID)
-		started.Known, started.Queued, started.Limited, started.NoDevice = true, counts.Queued, counts.Limited, counts.NoDevices
+		counts, err := s.PlanPushBatchRequiring(ctx, rec.ID+"-b0", rec.ID, in.Users, in.Messages, requestID, in.RequiresConsent)
+		started.Known, started.Queued, started.Limited, started.NoDevice, started.NoConsent = true, counts.Queued, counts.Limited, counts.NoDevices, counts.NoConsent
 		started.Jobs = counts.Units
 		return started, err
 	}
 	for i := 0; i*PushBatchSize < len(in.Users); i++ {
 		users := in.Users[i*PushBatchSize : min((i+1)*PushBatchSize, len(in.Users))]
-		_, err := s.EnqueueJobID(ctx, s.pushJob(fmt.Sprintf("%s-b%d", rec.ID, i), requestID, PushJob{Kind: PushBatch, SendID: rec.ID, Messages: in.Messages, Users: users}))
+		_, err := s.EnqueueJobID(ctx, s.pushJob(fmt.Sprintf("%s-b%d", rec.ID, i), requestID, PushJob{Kind: PushBatch, SendID: rec.ID, Messages: in.Messages, Users: users, RequiresConsent: in.RequiresConsent}))
 		if err != nil {
 			return started, err
 		}
@@ -261,7 +270,7 @@ func (s *Users) EnqueueJobID(ctx context.Context, j Job) (created bool, err erro
 
 // PushCounts is what planning a batch decided.
 type PushCounts struct {
-	Queued, Limited, NoDevices int
+	Queued, Limited, NoDevices, NoConsent int
 	// Units is the delivery units of the batch, those made now and those that existed.
 	Units int
 }
@@ -270,6 +279,13 @@ type PushCounts struct {
 // batch of users. Unit ids derive from the batch's, so a batch that runs again continues where
 // it was and makes nothing twice; the batch's totals are added once, when it ends.
 func (s *Users) PlanPushBatch(ctx context.Context, batchID, sendID string, users []string, messages map[string]push.Message, requestID string) (PushCounts, error) {
+	return s.PlanPushBatchRequiring(ctx, batchID, sendID, users, messages, requestID, "")
+}
+
+// PlanPushBatchRequiring is PlanPushBatch for a send that requires a consent: users who
+// don't hold it are counted as no_consent and get nothing (before the limits are applied,
+// so they don't count against them).
+func (s *Users) PlanPushBatchRequiring(ctx context.Context, batchID, sendID string, users []string, messages map[string]push.Message, requestID, requiresConsent string) (PushCounts, error) {
 	var total PushCounts
 	for i := 0; i*PushUnitSize < len(users); i++ {
 		chunk := users[i*PushUnitSize : min((i+1)*PushUnitSize, len(users))]
@@ -282,14 +298,17 @@ func (s *Users) PlanPushBatch(ctx context.Context, batchID, sendID string, users
 			total.Queued += len(existing.Push.Recipients)
 			total.Limited += existing.Push.Limited
 			total.NoDevices += existing.Push.NoDevices
+			total.NoConsent += existing.Push.NoConsent
 			continue
 		}
-		unit, c, err := s.planUnit(ctx, sendID, chunk, messages)
+		unit, c, err := s.planUnit(ctx, sendID, chunk, messages, requiresConsent)
 		if err != nil {
 			return total, err
 		}
 		total.Limited += c.Limited
 		total.NoDevices += c.NoDevices
+		total.NoConsent += c.NoConsent
+		s.Metrics.PushUsers(s.Realm, "no_consent", c.NoConsent)
 		s.Metrics.PushUsers(s.Realm, "limited", c.Limited)
 		s.Metrics.PushUsers(s.Realm, "no_devices", c.NoDevices)
 		if len(unit.Recipients) == 0 {
@@ -302,14 +321,14 @@ func (s *Users) PlanPushBatch(ctx context.Context, batchID, sendID string, users
 		s.Metrics.PushUsers(s.Realm, "queued", len(unit.Recipients))
 		total.Units++
 	}
-	if _, err := s.Store.AddPushSend(ctx, sendID, PushDelta{Units: total.Units, Queued: total.Queued, Limited: total.Limited, NoDevices: total.NoDevices, DoneBatch: batchID}, s.now()); err != nil {
+	if _, err := s.Store.AddPushSend(ctx, sendID, PushDelta{Units: total.Units, Queued: total.Queued, Limited: total.Limited, NoDevices: total.NoDevices, NoConsent: total.NoConsent, DoneBatch: batchID}, s.now()); err != nil {
 		return total, err
 	}
 	return total, nil
 }
 
 // planUnit decides who of a chunk of users gets the push.
-func (s *Users) planUnit(ctx context.Context, sendID string, chunk []string, messages map[string]push.Message) (PushJob, PushCounts, error) {
+func (s *Users) planUnit(ctx context.Context, sendID string, chunk []string, messages map[string]push.Message, requiresConsent string) (PushJob, PushCounts, error) {
 	var c PushCounts
 	unit := PushJob{Kind: PushDeliver, SendID: sendID, Messages: map[string]push.Message{}}
 	users, err := s.Store.UsersByIDs(ctx, chunk)
@@ -331,6 +350,10 @@ func (s *Users) planUnit(ctx context.Context, sendID string, chunk []string, mes
 	}
 	for _, id := range chunk {
 		u, ok := byID[id]
+		if requiresConsent != "" && ok && u.Consents[requiresConsent] == "" {
+			c.NoConsent++
+			continue
+		}
 		var ids []string
 		for _, d := range devices[id] {
 			if silent && d.Platform == registry.PlatformWeb {
@@ -357,7 +380,7 @@ func (s *Users) planUnit(ctx context.Context, sendID string, chunk []string, mes
 		unit.Recipients = append(unit.Recipients, PushRecipient{UserID: id, Locale: locale, Devices: ids})
 		unit.Messages[locale] = messages[locale]
 	}
-	unit.Limited, unit.NoDevices = c.Limited, c.NoDevices
+	unit.Limited, unit.NoDevices, unit.NoConsent = c.Limited, c.NoDevices, c.NoConsent
 	return unit, c, nil
 }
 
@@ -395,7 +418,7 @@ func (s *Users) PlanPushAudience(ctx context.Context, job Job) error {
 		if len(ids) == 0 {
 			return s.Store.SetPushPlanned(ctx, pj.SendID, next, s.now())
 		}
-		batch := s.pushJob(fmt.Sprintf("%s-b%d", pj.SendID, next), job.RequestID, PushJob{Kind: PushBatch, SendID: pj.SendID, Messages: pj.Messages, Users: ids})
+		batch := s.pushJob(fmt.Sprintf("%s-b%d", pj.SendID, next), job.RequestID, PushJob{Kind: PushBatch, SendID: pj.SendID, Messages: pj.Messages, Users: ids, RequiresConsent: pj.RequiresConsent})
 		if _, err := s.EnqueueJobID(ctx, batch); err != nil {
 			return err
 		}

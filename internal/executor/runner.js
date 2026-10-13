@@ -140,7 +140,7 @@ if (env.callback?.token && env.callback.email) {
 if (env.callback?.token && env.callback.push) {
   // Sends a push notification to users through the realm's templates and providers:
   // user, users or audience; kind (a template of the realm) or title and body; data and the
-  // message fields. Returns { send_id, users, jobs, queued, limited, no_devices } (the counts
+  // message fields. Returns { send_id, users, jobs, queued, limited, no_devices, no_consent } (the counts
   // are null until a send of more than one batch has been planned) and, with wait: true, the
   // totals of the delivery too. A message that can't be sent (an unknown kind, an invalid
   // field, a payload over a provider's limit) throws a FunctionError with its status and code.

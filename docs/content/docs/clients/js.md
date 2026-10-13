@@ -412,6 +412,42 @@ const { permission } = await backd.push.subscribeWeb({ registration: await navig
 
 It needs a user session. The service worker, the mobile apps' raw endpoints and the rest are in [Push notifications → From apps](../../push/client/).
 
+## Consents
+
+A realm can ask people to accept [consents](../../auth/consents/): versioned texts such as terms, a privacy notice or marketing. `client.consents` reads them and records the answers.
+
+```js
+// Before an account exists: what the realm asks for, and the exact text
+const list = await backd.consents.current()
+// [{ name: 'terms', required: true, current: { version: '2026-10', reaccept: true }, locales: ['en', 'es'] }, …]
+const terms = await backd.consents.text('terms', '2026-10', 'es')   // { text, hash, locale, … }
+
+// At sign-up: the name and the version shown. Every required consent must be there
+await backd.auth.signup({ email, password, consents: { terms: '2026-10', marketing: '1' } })
+
+// Signed in: what the user holds, accept or withdraw
+await backd.consents.state()                       // { consents, to_accept, history }
+await backd.consents.accept({ marketing: '1' })
+await backd.consents.withdraw('marketing')         // optional consents only
+```
+
+- **At sign-in** a user who has to accept something (a required consent they never accepted, or a new version that asks for re-acceptance) gets a `ConsentChallenge` from `auth.signIn()`: `{ consentRequired: true, challenge, consents }`. `auth.login()` and `auth.signup()` promise a session, so they throw a `SecondStepRequiredError` with `code: 'consent_required'` and the same `challenge` and `consents`. Show the texts and finish with `auth.acceptConsents(challenge, { terms: '2026-10' })`, which stores the session.
+- **After a `reaccept_by` date**, a request of a user who hasn't accepted rejects with a `ConsentRequiredError` (`403`): show the prompt and send `client.consents.accept(...)`, which stays open for them.
+- **Sign-ups through a magic link or a provider** take `consents` as an option (`auth.magicLink.request(email, { consents })`, `auth.signInWith(provider, { consents })`, `auth.signInWithIdToken(provider, { …, consents })`); a new account made without them gets the challenge at its first sign-in.
+
+```js
+import { ConsentRequiredError, SecondStepRequiredError } from 'backd-js'
+
+try {
+  await backd.auth.login({ email, password })
+} catch (err) {
+  if (err instanceof SecondStepRequiredError && err.code === 'consent_required') {
+    const accepted = await showConsentDialog(err.consents)        // { terms: '2026-10' }
+    await backd.auth.acceptConsents(err.challenge, accepted)
+  } else throw err
+}
+```
+
 ## Token storage
 
 By default the token is kept in memory: it is gone after a reload, and nothing on the page can read it from storage. To keep users signed in across reloads, choose a storage:
@@ -471,6 +507,7 @@ Every answer that isn't 2xx throws a `BackdError`, or one of its subclasses:
 | `NotFoundError` | 404 | `not_found` |
 | `ConflictError` | 409 | `email_taken`, `conflict`, `write_conflict` |
 | `VersionMismatchError` | 412 | `version_mismatch` |
+| `ConsentRequiredError` | 400, 403 | `consent_required`; `consents` lists what to accept, as `{ name, version }` |
 | `RetryableError` | 429, 503 | `too_many_requests`, `unavailable`; `retryAfter` in milliseconds |
 | `NetworkError` | 0 | `network_error`, `aborted` |
 

@@ -27,7 +27,7 @@ func (w *Worker) runPush(ctx context.Context, log *slog.Logger, realm string, sv
 	case auth.PushPlan:
 		w.finishPlanning(ctx, log, svc, job, svc.PlanPushAudience(ctx, job))
 	case auth.PushBatch:
-		_, err := svc.PlanPushBatch(ctx, job.ID, job.Push.SendID, job.Push.Users, job.Push.Messages, job.RequestID)
+		_, err := svc.PlanPushBatchRequiring(ctx, job.ID, job.Push.SendID, job.Push.Users, job.Push.Messages, job.RequestID, job.Push.RequiresConsent)
 		w.finishPlanning(ctx, log, svc, job, err)
 	case auth.PushDeliver:
 		w.deliverUnit(ctx, log, svc, job)

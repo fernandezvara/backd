@@ -1,5 +1,6 @@
 import { Admin } from './admin.js'
 import { Push } from './push.js'
+import { Consents } from './consents.js'
 import { Auth } from './auth.js'
 import { Database } from './data.js'
 import { xhrFetch } from './xhr.js'
@@ -152,6 +153,8 @@ export class Client {
     this.admin = new Admin(this)
     /** Push notifications: register this device so that functions can reach the signed-in user. */
     this.push = new Push(this)
+    /** The consents the realm asks for: their texts, and what the signed-in user holds. */
+    this.consents = new Consents(this)
   }
 
   /** Whether the client was created with an API key. */

@@ -830,7 +830,7 @@ func rulesUser(c auth.Caller) *rules.User {
 	}
 	u := c.User.User
 	mfa, methods := c.SignInMethods()
-	return &rules.User{ID: u.ID, Email: u.Email, EmailVerified: u.EmailVerified, Roles: u.Roles, MFA: mfa, Methods: methods}
+	return &rules.User{ID: u.ID, Email: u.Email, EmailVerified: u.EmailVerified, Roles: u.Roles, MFA: mfa, Methods: methods, Consents: u.Consents}
 }
 
 // userEnvelope is ctx.user: the user the call acts as, or null.
@@ -844,7 +844,11 @@ func userEnvelope(c auth.Caller) json.RawMessage {
 		roles = []string{}
 	}
 	mfa, methods := c.SignInMethods()
-	data, _ := json.Marshal(map[string]any{"id": u.ID, "email": u.Email, "email_verified": u.EmailVerified, "roles": roles, "mfa": mfa, "methods": methods})
+	consents := u.Consents
+	if consents == nil {
+		consents = map[string]string{}
+	}
+	data, _ := json.Marshal(map[string]any{"id": u.ID, "email": u.Email, "email_verified": u.EmailVerified, "roles": roles, "mfa": mfa, "methods": methods, "consents": consents})
 	return data
 }
 

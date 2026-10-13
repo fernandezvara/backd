@@ -46,7 +46,7 @@ All names start with `backd_`; durations are in seconds.
 | `sessions_created_total` | `realm` | Sessions started by sign-up and login. |
 | `sessions_ended_total` | `realm`, `reason` | Sessions ended on purpose: `logout`, `logout_all`, `revoked`, `password_changed`, `password_reset`, `password_set`, `email_changed`, `email_reverted`, `disabled`, `deactivated`, `erased` or `deleted`. Sessions that expire on their own are not counted. |
 | `rate_limited_total` | `realm`, `scope` | Times a limit stopped someone: `login` (the throttle), `function` (a function's `rate_limit`) and `email_function`, `email_invocation`, `email_ip`, `email_recipient` (the [email limits](../../functions/email/)). |
-| `push_users_total` | `realm`, `outcome` | Users of [push sends](../../push/records/#metrics) by what planning did: `queued`, `limited`, `no_devices`. |
+| `push_users_total` | `realm`, `outcome` | Users of [push sends](../../push/records/#metrics) by what planning did: `queued`, `limited`, `no_devices`, `no_consent`. |
 | `push_deliveries_total` | `realm`, `status` | Devices a delivery unit answered for: `sent`, `invalid`, `failed`. |
 | `push_devices_pruned_total` | `realm`, `reason` | Devices removed from the registry: `invalid`, `stale`, `session`, `cap`, `moved`. |
 | `function_invocations_total` | `realm`, `function`, `mode`, `status` | Function runs that ended, sync and async, with the executor's status (`ok`, `error`, `timeout`, …). |

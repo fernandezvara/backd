@@ -28,6 +28,8 @@ type challengeDoc struct {
 	Email         string            `bson:"email,omitempty"`
 	Purpose       string            `bson:"purpose,omitempty"`
 	Locale        string            `bson:"locale,omitempty"`
+	Methods       []string          `bson:"methods,omitempty"`
+	Consents      map[string]string `bson:"consents,omitempty"`
 	Attempts      int               `bson:"attempts"`
 	CreatedAt     time.Time         `bson:"created_at"`
 	ExpiresAt     time.Time         `bson:"expires_at"`

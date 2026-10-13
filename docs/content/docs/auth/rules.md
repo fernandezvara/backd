@@ -70,11 +70,12 @@ YAML reads a value starting with `'`, `!`, `[` or `{` specially, so quote such r
 
 | Name | Available on | Meaning |
 |---|---|---|
-| `user` | all | The signed-in user: `user.id`, `user.email`, `user.email_verified`, `user.roles`, and how the session was made, `user.mfa` and `user.methods` (see [multi-factor authentication](../mfa/#how-the-session-remembers)). `nil` for anonymous callers |
+| `user` | all | The signed-in user: `user.id`, `user.email`, `user.email_verified`, `user.roles`, and how the session was made, `user.mfa` and `user.methods` (see [multi-factor authentication](../mfa/#how-the-session-remembers)), and `user.consents`, the version of each [consent](../consents/) the user holds. `nil` for anonymous callers |
 | `document` | read, update, delete | The stored document, including `document.id` and `document._meta.*` |
 | `data` | create, update | The document being written: the request body on create, the complete result on update |
 | `now` | all | The current time, only for comparing with a timestamp: `document._meta.created_at`, `document._meta.updated_at`, or a field the schema [stores as a date](../../configuration/config-dir/#dates) |
 | `hasRole(user, 'a', 'b', …)` | all | True if the user has any of the roles; false for anonymous callers |
+| `hasConsent(user, 'a', 'b', …)` | all | True if the user holds every named [consent](../consents/) (any version); false for anonymous callers |
 | `changed()` | update | The top-level fields whose value differs between `document` and `data` |
 
 Rules have no access to the request itself (headers, address) and can't look up other documents. For shared documents, store member ids in an array and check `user.id in document.members`.
@@ -100,7 +101,7 @@ Negations are literal: `!hasRole(user, 'banned')` is true for anonymous callers,
 
 ### Roles
 
-Role names must be declared in the realm's [`realm.yaml`](../../configuration/realm/#roles). Using an undeclared role, with `hasRole` or with `'x' in user.roles`, stops startup.
+Role names must be declared in the realm's [`realm.yaml`](../../configuration/realm/#roles). Using an undeclared role, with `hasRole` or with `'x' in user.roles`, stops startup. Consent names given to `hasConsent` must be declared under `consents:` and be string literals, and `hasConsent` needs no `user != nil` guard, like `hasRole`.
 
 ### Read rules are database filters
 

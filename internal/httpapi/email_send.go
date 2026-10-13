@@ -27,6 +27,9 @@ type emailSendInput struct {
 	BCC    []string       `json:"bcc"`
 	Data   map[string]any `json:"data"`
 	Locale string         `json:"locale"`
+	// RequiresConsent skips a to_user recipient who doesn't hold that consent: the
+	// answer says no_consent and nothing is queued.
+	RequiresConsent string `json:"requires_consent"`
 }
 
 // emailSend handles POST /v1/{realm}/_email/send on the internal listener:
@@ -85,6 +88,12 @@ func (f *functions) emailSend(w http.ResponseWriter, r *http.Request) {
 	case (in.ToUser == "") == (len(in.To) == 0):
 		invalid("to", "give exactly one of to_user (a user's id) and to (addresses)")
 		return
+	case in.RequiresConsent != "" && in.ToUser == "":
+		invalid("requires_consent", "needs to_user: consents belong to users, not to addresses")
+		return
+	case in.RequiresConsent != "" && rl.Settings.Consents[in.RequiresConsent] == nil:
+		invalid("requires_consent", "is not a consent of this realm")
+		return
 	}
 	count := len(in.To) + len(in.CC) + len(in.BCC)
 	if in.ToUser != "" {
@@ -112,6 +121,11 @@ func (f *functions) emailSend(w http.ResponseWriter, r *http.Request) {
 		u, err := svc.UserByID(r.Context(), in.ToUser)
 		if err != nil || u.Disabled {
 			writeError(w, r, http.StatusNotFound, codeNotFound, "user not found")
+			return
+		}
+		if in.RequiresConsent != "" && u.Consents[in.RequiresConsent] == "" {
+			// Withdrawn, or never given: nothing is sent, and the function is told.
+			writeJSON(w, http.StatusOK, map[string]any{"status": auth.EmailNoConsent})
 			return
 		}
 		req.UserID, req.Address, req.Locale = u.ID, u.Email, svc.LocaleOf(u)

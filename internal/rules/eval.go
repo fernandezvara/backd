@@ -73,7 +73,7 @@ func (r *Rule) prepareFilter() error {
 			return
 		}
 		if !refs(n, "document") {
-			r.consts[n], err = expr.Compile(n.String(), expr.Env(compileEnv()), hasRoleFunc)
+			r.consts[n], err = expr.Compile(n.String(), expr.Env(compileEnv()), hasRoleFunc, hasConsentFunc)
 			return
 		}
 		for _, c := range children(n) {

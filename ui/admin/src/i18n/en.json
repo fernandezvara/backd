@@ -60,6 +60,7 @@
     "cancel": "Cancel",
     "code": {"intro": "Enter the code of your authenticator app, or a recovery code.", "label": "Code", "submit": "Verify"},
     "enroll": {"intro": "This account must use two-step verification. Set up an authenticator app to continue.", "start": "Set up an authenticator app", "qrAlt": "QR code to scan with your authenticator app", "secret": "Or type this secret:", "label": "Code shown by the app", "submit": "Turn it on and sign in"},
+    "consent": {"intro": "Please read and accept to continue.", "accept": "I accept the {name}", "submit": "Accept and sign in", "failed": "The consents could not be accepted. Try signing in again."},
     "recovery": {"title": "Recovery codes", "body": "Each works once and they are shown only now. Save them somewhere safe, not on the phone with the app.", "continue": "I saved them, continue"},
     "title": "Sign in to {realm}",
     "email": "Email",

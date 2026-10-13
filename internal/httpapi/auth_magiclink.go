@@ -36,6 +36,10 @@ func (a *authAPI) requestMagicLink(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	consents, ok := takeConsents(w, r, obj)
+	if !ok {
+		return
+	}
 	f, ok := fields(w, r, obj, map[string]string{"email": "string", "redirect_to": "string?", "code_challenge": "string", "locale": "string?"})
 	if !ok {
 		return
@@ -64,6 +68,7 @@ func (a *authAPI) requestMagicLink(w http.ResponseWriter, r *http.Request) {
 	id, err := svc.RequestMagicLink(r.Context(), auth.MagicLinkInput{
 		Email: address, RedirectTo: redirectTo, CodeChallenge: challenge,
 		Locales: append([]string{locale}, acceptLanguages(r.Header.Get("Accept-Language"))...), IP: clientIP(r), RequestID: requestID(r.Context()),
+		Consents: consents,
 	})
 	if err != nil {
 		authError(w, r, err)

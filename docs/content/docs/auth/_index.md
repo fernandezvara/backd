@@ -26,6 +26,9 @@ Each realm with `auth: enabled` has its own pool of users and [API keys](api-key
 | Apple token revocation when an account is deleted | available |
 | [The profile handover and `account.on_signup`](providers/#the-profile-and-the-sign-up-hook) | available |
 | [Provider sign-in in the JavaScript client](../clients/js/#sign-in-with-google-microsoft-or-apple) | available |
+| [Consents](consents/): versioned texts, records, re-acceptance, withdrawal, rules and gating | available |
+| [Compliance](compliance/): personal data scope, retention and recipes | available |
+| Personal data export as a downloadable package | planned |
 | Other OpenID Connect providers | planned |
 
 See the [security model](security/) for what `backd` protects, and the [hardening checklist](../operations/checklist/) before exposing a realm.

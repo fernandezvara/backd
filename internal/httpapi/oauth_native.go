@@ -41,6 +41,10 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	consents, ok := takeConsents(w, r, obj)
+	if !ok {
+		return
+	}
 	f, ok := fields(w, r, obj, map[string]string{
 		"id_token": "string", "nonce": "string", "authorization_code": "string?", "intent": "string?",
 		"invitation": "string?", "locale": "string?", "cookie": "bool?",
@@ -107,7 +111,12 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 	login := auth.ProviderLogin{
 		Provider: p.Name, Subject: claims.Subject, Email: claims.Email, EmailVerified: claims.EmailVerified, TrustsEmail: p.TrustsEmail(),
 		Intent: intent, LinkUserID: who.User.ID, Locales: append([]string{str("locale")}, acceptLanguages(r.Header.Get("Accept-Language"))...), IP: clientIP(r),
-		Profile: profileOf(claims, nil),
+		Profile:  profileOf(claims, nil),
+		Consents: consents, UserAgent: r.UserAgent(),
+	}
+	if err := svc.ValidateConsents(consents); err != nil {
+		authError(w, r, err)
+		return
 	}
 	if inv := str("invitation"); inv != "" {
 		login.Invitation = auth.HashToken(inv)

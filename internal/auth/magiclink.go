@@ -58,6 +58,8 @@ type MagicLinkInput struct {
 	CodeChallenge string
 	Locales       []string
 	IP, RequestID string
+	// Consents are accepted for the account a new address gets when the link is used.
+	Consents map[string]string
 }
 
 // RequestMagicLink makes a request and asks for its email, returning the request id the
@@ -76,6 +78,9 @@ func (s *Users) RequestMagicLink(ctx context.Context, in MagicLinkInput) (string
 	if !ValidPKCEChallenge(in.CodeChallenge) {
 		return "", errors.New("code_challenge: must be the S256 PKCE challenge of a verifier")
 	}
+	if err := s.ValidateConsents(in.Consents); err != nil {
+		return "", err
+	}
 	requestID, err := randomValue()
 	if err != nil {
 		return "", err
@@ -83,7 +88,7 @@ func (s *Users) RequestMagicLink(ctx context.Context, in MagicLinkInput) (string
 	now := s.now()
 	c := AuthChallenge{
 		ID: HashToken(requestID), Kind: ChallengeMagicLink, CodeChallenge: in.CodeChallenge, RedirectTo: in.RedirectTo,
-		Locale: s.Settings.BestLocale(in.Locales...), CreatedAt: now, ExpiresAt: now.Add(MagicLinkTTL),
+		Locale: s.Settings.BestLocale(in.Locales...), Consents: in.Consents, CreatedAt: now, ExpiresAt: now.Add(MagicLinkTTL),
 	}
 	send := true
 	kind := email.MagicLink
@@ -317,6 +322,12 @@ func (s *Users) magicLinkUser(ctx context.Context, c AuthChallenge, ip string) (
 			return User{}, false, err
 		default:
 			newUser = true
+			if len(c.Consents) > 0 {
+				if err := s.recordGiven(ctx, u.ID, c.Consents, ConsentMethodSignup, ConsentContext{IP: ip}, u.Locale); err != nil {
+					return User{}, false, err
+				}
+				u.Consents = mergeConsents(u.Consents, c.Consents)
+			}
 			s.AuditAs(ctx, userTarget(u.ID), AuditUserSignup, userTarget(u.ID), map[string]any{"method": MagicLinkLoginMethod, "roles": u.Roles})
 			s.queueOnSignup(ctx, u, MagicLinkLoginMethod, nil)
 		}

@@ -36,14 +36,16 @@ type userDoc struct {
 	Locale        string     `bson:"locale,omitempty"`
 	AdminNetworks []string   `bson:"admin_networks,omitempty"`
 	LoginNetworks []string   `bson:"login_networks,omitempty"`
-	CreatedAt     time.Time  `bson:"created_at"`
-	UpdatedAt     time.Time  `bson:"updated_at"`
+	// Consents is the summary of the user's consent records: consent name to accepted version.
+	Consents  map[string]string `bson:"consents,omitempty"`
+	CreatedAt time.Time         `bson:"created_at"`
+	UpdatedAt time.Time         `bson:"updated_at"`
 }
 
 func (d userDoc) user() auth.User {
 	return auth.User{
 		ID: d.ID, Email: d.Email, EmailVerified: d.EmailVerified, PendingEmail: d.PendingEmail, PreviousEmail: d.PreviousEmail, ErasedAt: utcOrZero(d.ErasedAt), Roles: d.Roles, Disabled: d.Disabled, Locale: d.Locale,
-		AdminNetworks: networks(d.AdminNetworks), LoginNetworks: networks(d.LoginNetworks),
+		AdminNetworks: networks(d.AdminNetworks), LoginNetworks: networks(d.LoginNetworks), Consents: d.Consents,
 		CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC(),
 	}
 }
@@ -279,7 +281,7 @@ func (s *AuthStore) EraseUser(ctx context.Context, id, placeholderEmail string, 
 		}},
 		{Key: "$unset", Value: bson.D{
 			{Key: "locale", Value: ""}, {Key: "pending_email", Value: ""}, {Key: "previous_email", Value: ""},
-			{Key: "admin_networks", Value: ""}, {Key: "login_networks", Value: ""},
+			{Key: "admin_networks", Value: ""}, {Key: "login_networks", Value: ""}, {Key: "consents", Value: ""},
 		}},
 	})
 }

@@ -51,6 +51,9 @@ const (
 	// device, with its token sealed and looked up by the hash of the token (or, for a web
 	// subscription, of its endpoint).
 	DevicesCollection = "devices"
+	// ConsentRecordsCollection is the append-only history of consents accepted and
+	// withdrawn: the proof, with the hash of the text shown.
+	ConsentRecordsCollection = "consent_records"
 	// PushSendsCollection holds one record per push send: its totals, never a message.
 	PushSendsCollection = "push_sends"
 	// PushOutboxCollection holds what the capture provider took instead of sending: development
@@ -115,6 +118,7 @@ var systemCollections = []systemCollection{
 			"roles":          map[string]any{"bsonType": "array", "items": str()},
 			"disabled":       typ("bool"),
 			"locale":         str(),
+			"consents":       typ("object"),
 			"admin_networks": map[string]any{"bsonType": "array", "items": str()},
 			"login_networks": map[string]any{"bsonType": "array", "items": str()},
 			"created_at":     typ("date"),
@@ -462,7 +466,7 @@ var systemCollections = []systemCollection{
 		// _id is the SHA-256 of the value given to the caller.
 		validator: jsonSchema([]string{"_id", "kind", "user_id", "created_at", "expires_at"}, map[string]any{
 			"_id":            str(),
-			"kind":           map[string]any{"enum": bson.A{"mfa", "enroll", "totp_setup", "reauth", "reauth_code", "magic_link"}},
+			"kind":           map[string]any{"enum": bson.A{"mfa", "enroll", "totp_setup", "reauth", "reauth_code", "magic_link", "consent"}},
 			"token_hash":     str(),
 			"code_challenge": str(),
 			"redirect_to":    str(),
@@ -474,6 +478,8 @@ var systemCollections = []systemCollection{
 			"code_hash":      str(),
 			"user_id":        str(),
 			"factor":         str(),
+			"methods":        map[string]any{"bsonType": "array", "items": str()},
+			"consents":       typ("object"),
 			"new_user":       typ("bool"),
 			"profile":        typ("object"),
 			"attempts":       typ("int"),
@@ -519,6 +525,30 @@ var systemCollections = []systemCollection{
 		},
 	},
 	{
+		name: ConsentRecordsCollection,
+		validator: jsonSchema([]string{"_id", "user", "consent", "version", "action", "method", "at"}, map[string]any{
+			"_id":        str(),
+			"user":       str(),
+			"consent":    str(),
+			"version":    str(),
+			"locale":     str(),
+			"text_hash":  str(),
+			"action":     map[string]any{"enum": bson.A{"accepted", "withdrawn"}},
+			"method":     map[string]any{"enum": bson.A{"signup", "prompt", "api", "admin"}},
+			"evidence":   str(),
+			"at":         typ("date"),
+			"ip":         str(),
+			"user_agent": str(),
+			"expires_at": typ("date"),
+		}),
+		indexes: []systemIndex{
+			// Set at erasure: the retention after which a worker-less TTL removes the record.
+			{keys: bson.D{{Key: "expires_at", Value: 1}}, ttl: true, sparse: true},
+			{keys: bson.D{{Key: "user", Value: 1}, {Key: "at", Value: 1}}},
+			{keys: bson.D{{Key: "consent", Value: 1}, {Key: "version", Value: 1}}},
+		},
+	},
+	{
 		name: PushOutboxCollection,
 		validator: jsonSchema([]string{"_id", "send_id", "device_id", "platform", "status", "message", "created_at", "expires_at"}, map[string]any{
 			"_id":        str(),
@@ -549,6 +579,7 @@ var systemCollections = []systemCollection{
 			"queued":         typ("int"),
 			"limited":        typ("int"),
 			"no_devices":     typ("int"),
+			"no_consent":     typ("int"),
 			"sent":           typ("int"),
 			"invalid":        typ("int"),
 			"failed":         typ("int"),

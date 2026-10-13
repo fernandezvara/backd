@@ -54,7 +54,9 @@ export type Context = {
       bcc?: string[];
       data?: Record<string, unknown>;
       locale?: string;
-    }): Promise<{ id: string; status: string }>;
+      /** With to_user: skip a user who doesn't hold this consent (answers status "no_consent"). */
+      requires_consent?: string;
+    }): Promise<{ id?: string; status: string }>;
   };
   error(status: number, code: string, message: string): Error;
 };

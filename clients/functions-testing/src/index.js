@@ -563,7 +563,7 @@ export class FunctionError extends Error {
 /**
  * @typedef {object} ContextOptions
  * @property {any} [input]              ctx.input.
- * @property {{id: string, email: string, email_verified?: boolean, roles?: string[]} | null} [user] ctx.user.
+ * @property {{id: string, email: string, email_verified?: boolean, roles?: string[], consents?: Record<string, string>} | null} [user] ctx.user.
  * @property {Record<string, string>} [secrets]  ctx.secrets.
  * @property {string | null} [idempotencyKey]
  * @property {string} [requestId]
@@ -571,11 +571,14 @@ export class FunctionError extends Error {
  * @property {boolean} [admin]          Also give ctx.admin.db (function.yaml's admin: true).
  * @property {string[]} [calls]         function.yaml's `calls`: ctx.call refuses any other name with `call_not_declared`, as backd does.
  * @property {boolean | { kinds?: string[], audience?: boolean }} [push]  Give the function ctx.push.send (function.yaml's `push:`); the object is what it declares: the `kinds` it may name and whether it may send to an `audience`.
- * @property {boolean | { perInvocation?: number, recipientsPerMessage?: number }} [email]  Give the function ctx.email.send (function.yaml's `email: true`); the object sets the realm's caps (`email.limits`) the fake enforces.
+ * @property {boolean | { perInvocation?: number, recipientsPerMessage?: number, consents?: Record<string, string[]> }} [email]  Give the function ctx.email.send (function.yaml's `email: true`); the object sets the realm's caps (`email.limits`) the fake enforces, and the consents each user id holds, for sends that `requires_consent`.
  */
 
 /** The kinds backd sends itself: a function can't send them. */
-const SYSTEM_EMAIL_KINDS = ['verify-email', 'reset-password', 'account-exists', 'password-changed', 'welcome', 'change-email', 'email-changed', 'invitation']
+const SYSTEM_EMAIL_KINDS = [
+  'verify-email', 'reset-password', 'account-exists', 'password-changed', 'welcome', 'change-email', 'email-changed', 'invitation',
+  'security-notice', 'mfa-failed', 'reauth-code', 'mfa-reset', 'magic-link', 'no-account', 'consent-updated',
+]
 
 /**
  * An error `ctx.email.send` throws when one of the realm's caps is reached
@@ -600,10 +603,13 @@ export class EmailLimitError extends Error {
  * function may write to, so a function that takes the recipient or the
  * text from its input is a spam relay; test that yours doesn't (see the
  * docs, Functions -> Email). `sent()` lists what was sent.
+ * With `requires_consent` (a `to_user` only) the fake answers `{ status: 'no_consent' }` and
+ * records nothing, unless `consents` says the user holds it.
  * `createContext({ email: true })` uses one.
- * @param {{ perInvocation?: number, recipientsPerMessage?: number }} [opts] The realm's `email.limits` (defaults 50 and 10).
+ * @param {{ perInvocation?: number, recipientsPerMessage?: number, consents?: Record<string, string[]> }} [opts]
+ *   The realm's `email.limits` (defaults 50 and 10), and the consents each user id holds (none by default).
  */
-export function fakeEmail({ perInvocation = 50, recipientsPerMessage = 10 } = {}) {
+export function fakeEmail({ perInvocation = 50, recipientsPerMessage = 10, consents = {} } = {}) {
   /** @type {Array<Record<string, any>>} */
   const sent = []
   let attempts = 0
@@ -621,6 +627,10 @@ export function fakeEmail({ perInvocation = 50, recipientsPerMessage = 10 } = {}
       const addresses = [...(msg.to ?? []), ...(msg.cc ?? []), ...(msg.bcc ?? [])]
       if (!addresses.every((a) => typeof a === 'string' && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a))) throw invalid('to, cc and bcc are arrays of email addresses')
       if (addresses.length + (hasUser ? 1 : 0) > recipientsPerMessage) throw invalid(`at most ${recipientsPerMessage} recipients per message`)
+      if (msg.requires_consent !== undefined) {
+        if (typeof msg.requires_consent !== 'string' || !hasUser) throw invalid('requires_consent needs to_user: consents belong to users, not to addresses')
+        if (!(consents[msg.to_user] ?? []).includes(msg.requires_consent)) return { status: 'no_consent' }
+      }
       if (++attempts > perInvocation) throw new EmailLimitError(`too many emails (invocation limit of ${perInvocation})`)
       sent.push(structuredClone(msg))
       return { id: `email-job-${sent.length}`, status: 'queued' }
@@ -637,10 +647,13 @@ export function fakeEmail({ perInvocation = 50, recipientsPerMessage = 10 } = {}
  * and `kind` or `title` and `body`. Failures are a `FunctionError` with backd's codes
  * (`invalid_push_message`, `unknown_push_kind`, `payload_too_large`, `push_audience_not_declared`).
  * It sends nothing and counts no limits: `sent()` lists what the function asked for.
+ * With `requires_consent`, users who don't hold the consent (`consents` maps a user id to the
+ * consents it holds) are counted in `no_consent` and not in `queued`.
  * `createContext({ push: true })` uses one.
- * @param {{ kinds?: string[], audience?: boolean }} [opts] What `push:` declares in function.yaml.
+ * @param {{ kinds?: string[], audience?: boolean, consents?: Record<string, string[]> }} [opts]
+ *   What `push:` declares in function.yaml, and the consents each user id holds (none by default).
  */
-export function fakePush({ kinds, audience = false } = {}) {
+export function fakePush({ kinds, audience = false, consents = {} } = {}) {
   /** @type {Array<Record<string, any>>} */
   const sent = []
   /** @param {string} reason @param {string} [field] */
@@ -682,9 +695,13 @@ export function fakePush({ kinds, audience = false } = {}) {
       if (JSON.stringify({ title: msg.title, body: msg.body, data: msg.data, link: msg.link, platform: msg.platform }).length > 3993) {
         throw new FunctionError(413, 'payload_too_large', 'the message is over what a provider takes')
       }
+      if (msg.requires_consent !== undefined && typeof msg.requires_consent !== 'string') throw invalid('must be a consent name', 'requires_consent')
       sent.push(structuredClone(msg))
-      const users = msg.user !== undefined ? 1 : Array.isArray(msg.users) ? new Set(msg.users).size : null
-      return { send_id: `ps_test${sent.length}`, users, jobs: 1, queued: users, limited: users === null ? null : 0, no_devices: users === null ? null : 0 }
+      const named = msg.user !== undefined ? [msg.user] : Array.isArray(msg.users) ? [...new Set(msg.users)] : null
+      const users = named === null ? null : named.length
+      const noConsent = named === null || msg.requires_consent === undefined ? 0 : named.filter((u) => !(consents[u] ?? []).includes(msg.requires_consent)).length
+      const queued = users === null ? null : users - noConsent
+      return { send_id: `ps_test${sent.length}`, users, jobs: 1, queued, limited: users === null ? null : 0, no_devices: users === null ? null : 0, no_consent: users === null ? null : noConsent }
     },
     sent: () => structuredClone(sent),
   }

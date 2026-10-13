@@ -265,6 +265,19 @@ func (s *Users) startSessionWith(ctx context.Context, u User, methods []string, 
 // Authenticate resolves a session token to its user. It extends the
 // session's idle timeout, writing at most once per minute.
 func (s *Users) Authenticate(ctx context.Context, token string) (Principal, error) {
+	p, err := s.AuthenticateIgnoringConsents(ctx, token)
+	if err != nil {
+		return Principal{}, err
+	}
+	if err := s.gateConsents(p.User); err != nil {
+		return Principal{}, err
+	}
+	return p, nil
+}
+
+// AuthenticateIgnoringConsents is Authenticate without the consent deadline: for the few
+// routes a person needs to accept what is missing, or to leave (see consents_signin.go).
+func (s *Users) AuthenticateIgnoringConsents(ctx context.Context, token string) (Principal, error) {
 	if !strings.HasPrefix(token, SessionTokenPrefix) {
 		return Principal{}, ErrUnauthenticated
 	}

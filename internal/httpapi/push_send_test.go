@@ -492,3 +492,45 @@ func TestPushNotDeliveredAfterTheSessionEnded(t *testing.T) {
 		t.Errorf("record: %+v", rec)
 	}
 }
+
+// requires_consent skips the users who don't hold the consent, and the send's record counts them.
+func TestPushRequiresConsent(t *testing.T) {
+	f := newPushSendFixture(t)
+	ctx := context.Background()
+	f.register(t, f.ada, "ada-phone")
+	f.register(t, f.bob, "bob-phone")
+	if _, err := f.svc.RecordConsent(ctx, f.adaID, auth.ConsentInput{Consent: "marketing", Version: "1", Action: auth.ConsentAccepted, Method: auth.ConsentMethodAPI}); err != nil {
+		t.Fatal(err)
+	}
+
+	code, out := f.send(t, `{"users": ["`+f.adaID+`", "`+f.bobID+`"], "title": "News", "body": "Hello", "requires_consent": "marketing"}`)
+	if code != 202 || out["queued"] != float64(1) || out["no_consent"] != float64(1) || out["no_devices"] != float64(0) {
+		t.Fatalf("send: %d %v", code, out)
+	}
+	f.drain(t)
+	got := f.sender.delivered()
+	if len(got) != 1 || got[0].Token != "ada-phone" {
+		t.Fatalf("deliveries: %+v", got)
+	}
+	if rec := f.record(t, out["send_id"].(string)); rec.NoConsent != 1 || rec.Queued != 1 || rec.CompletedAt.IsZero() {
+		t.Errorf("record: %+v", rec)
+	}
+
+	// An audience can be selected by consent, and a send can still require it.
+	code, out = f.send(t, `{"audience": {"consent": "marketing"}, "title": "News", "body": "Hello", "wait": true}`)
+	f.drain(t)
+	delivered := f.sender.delivered()
+	last := delivered[len(delivered)-1]
+	if code != 202 || last.Token != "ada-phone" || len(delivered) != 2 {
+		t.Errorf("audience by consent: %d %v %+v", code, out, delivered)
+	}
+
+	for name, body := range map[string]string{
+		"unknown consent":     `{"user": "` + f.adaID + `", "title": "x", "body": "y", "requires_consent": "cookies"}`,
+		"unknown in audience": `{"audience": {"consent": "cookies"}, "title": "x", "body": "y"}`,
+	} {
+		if code, out := f.send(t, body); code != 400 || errCode(out) != "invalid_push_message" {
+			t.Errorf("%s: %d %v", name, code, out)
+		}
+	}
+}

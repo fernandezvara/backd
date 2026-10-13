@@ -93,6 +93,7 @@ func Load(root string) (*Registry, error) {
 		errs = append(errs, loadEmail(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadOnSignup(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadPush(reg.Realms[realmName], filepath.Join(root, realmName))...)
+		errs = append(errs, loadConsents(reg.Realms[realmName], filepath.Join(root, realmName))...)
 	}
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
@@ -372,6 +373,7 @@ func loadRules(c *Collection, settings RealmSettings, dir string) error {
 		ArrayField:    c.ArrayField,
 		DateField:     c.DateField,
 		Roles:         roles,
+		Consents:      settings.ConsentNames(),
 	})
 	if len(errs) > 0 {
 		for i, e := range errs {

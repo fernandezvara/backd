@@ -92,14 +92,24 @@ export const useSession = defineStore('session', () => {
     idle = watchIdle(idleSeconds.value, () => void signOut('idle'))
   }
 
-  /** What the sign-in waits for after a right password: a code of the second factor, or setting one up. */
-  const step = ref<{ kind: 'code' | 'enroll'; challenge: string } | null>(null)
+  /** What the sign-in waits for after a right password: a code of the second factor, setting one up, or consents to accept. */
+  const step = ref<{ kind: 'code' | 'enroll' | 'consent'; challenge: string; consents?: { name: string; version: string; text: string }[] } | null>(null)
 
-  /** Signs in; resolves with what is still needed: nothing (`done`), a code, or an enrolment. */
-  async function signIn(forRealm: string, emailAddress: string, password: string, keepInTab: boolean): Promise<'done' | 'code' | 'enroll'> {
+  /** The step that asks for consents: their texts are public, and shown as they are. */
+  async function toConsentStep(c: Client, challenge: string, consents: { name: string; version: string }[]) {
+    const withText = await Promise.all(consents.map(async (x) => ({ ...x, text: (await c.consents.text(x.name, x.version)).text })))
+    step.value = { kind: 'consent', challenge, consents: withText }
+  }
+
+  /** Signs in; resolves with what is still needed: nothing (`done`), a code, an enrolment or consents. */
+  async function signIn(forRealm: string, emailAddress: string, password: string, keepInTab: boolean): Promise<'done' | 'code' | 'enroll' | 'consent'> {
     begin(forRealm, keepInTab)
     const c = client.value!
     const result = await c.auth.signIn({ email: emailAddress, password })
+    if ('consentRequired' in result) {
+      await toConsentStep(c, result.challenge, result.consents)
+      return 'consent'
+    }
     if ('challenge' in result) {
       step.value = { kind: 'mfaRequired' in result ? 'code' : 'enroll', challenge: result.challenge }
       return step.value.kind
@@ -123,13 +133,29 @@ export const useSession = defineStore('session', () => {
     return client.value!.auth.mfa.setup({ challenge: step.value!.challenge })
   }
 
-  /** Confirms the first code: the sign-in ends here, and the recovery codes come back to be shown. */
-  async function confirmEnrollment(setupId: string, code: string): Promise<string[]> {
+  /**
+   * Confirms the first code: the recovery codes come back to be shown. The sign-in ends here, unless the
+   * user has consents to accept first (`next` is then `consent`, and `step` holds them).
+   */
+  async function confirmEnrollment(setupId: string, code: string): Promise<{ codes: string[]; next: 'done' | 'consent' }> {
     const c = client.value!
     const done = await c.auth.mfa.confirm({ challenge: step.value!.challenge, setupId, code: code.trim() })
+    if (done.consent) {
+      await toConsentStep(c, done.consent.challenge, done.consent.consents)
+      return { codes: done.recovery_codes, next: 'consent' }
+    }
     step.value = null
     await adopt(c)
-    return done.recovery_codes
+    return { codes: done.recovery_codes, next: 'done' }
+  }
+
+  /** Accepts the consents the step names (the person has ticked them) and ends the sign-in. */
+  async function acceptConsents() {
+    const c = client.value!
+    const accepted = Object.fromEntries((step.value!.consents ?? []).map((x) => [x.name, x.version]))
+    await c.auth.acceptConsents(step.value!.challenge, accepted)
+    step.value = null
+    await adopt(c)
   }
 
   /** Gives up a sign-in that waits for its second step. */
@@ -190,5 +216,5 @@ export const useSession = defineStore('session', () => {
     idleSeconds.value = n
   }
 
-  return { realm, client, access, ended, signedIn, email, idleSeconds, readable, writable, canRead, canWrite, step, signIn, verifyCode, startEnrollment, confirmEnrollment, cancelStep, restore, signOut, expired, setIdleSeconds }
+  return { realm, client, access, ended, signedIn, email, idleSeconds, readable, writable, canRead, canWrite, step, signIn, verifyCode, startEnrollment, confirmEnrollment, acceptConsents, cancelStep, restore, signOut, expired, setIdleSeconds }
 })

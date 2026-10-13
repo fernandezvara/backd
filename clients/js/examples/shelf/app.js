@@ -48,6 +48,11 @@ document.addEventListener('alpine:init', () => {
     step: null, // { kind: 'mfa' | 'enroll', challenge, methods, setup, recovery }
     code: '',
     magicSent: false,
+    // Chapter 17: the consents the realm asks for (name, required, version and
+    // text), what the sign-up form ticked, and what the account page shows.
+    consentList: [],
+    ticked: {}, // name → true
+    consentState: null,
     // The account page: my second factor, and what setting it up shows.
     mfa: null,
     mfaSetup: null,
@@ -124,6 +129,7 @@ document.addEventListener('alpine:init', () => {
         this.mode = 'signup'
         window.location.hash = '#auth'
       }
+      await this.loadConsentTexts()
       // ?s=<token> is the public share view — no session needed.
       const s = params.get('s')
       if (s) await this.openShare(s)
@@ -142,7 +148,7 @@ document.addEventListener('alpine:init', () => {
         this.open = e instanceof NotFoundError
       }
       await this.refilter()
-      if (this.user) await Promise.all([this.loadMine(), this.loadDrafts(), this.loadInvites(), this.loadShares(), this.loadNotifs(), this.ensureMember(), this.loadAdmin(), this.loadMfa()])
+      if (this.user) await Promise.all([this.loadMine(), this.loadDrafts(), this.loadInvites(), this.loadShares(), this.loadNotifs(), this.ensureMember(), this.loadAdmin(), this.loadMfa(), this.loadConsents()])
       if (this.user) await this.loadNames()
       this.syncView()
     },
@@ -163,10 +169,18 @@ document.addEventListener('alpine:init', () => {
       try {
         const credentials = { email: this.email, password: this.password }
         if (this.mode === 'signup' && this.invitation) credentials.invitation = this.invitation
+        // Chapter 17: the consents ticked, by name and the version shown.
+        if (this.mode === 'signup' && this.consentList.length) {
+          const missing = this.consentList.filter((c) => c.required && !this.ticked[c.name])
+          if (missing.length) throw new Error('Please accept: ' + missing.map((c) => c.name).join(', '))
+          credentials.consents = Object.fromEntries(this.consentList.filter((c) => this.ticked[c.name]).map((c) => [c.name, c.version]))
+        }
         // `signIn` hands back the second step as a value; signup rejects with it.
         const result = this.mode === 'signup'
           ? await backd.auth.signup(credentials).catch((e) => {
-              if (e instanceof SecondStepRequiredError) return { challenge: e.challenge, enrollmentRequired: e.code === 'mfa_enrollment_required', methods: e.methods }
+              if (e instanceof SecondStepRequiredError) {
+                return { challenge: e.challenge, enrollmentRequired: e.code === 'mfa_enrollment_required', consentRequired: e.code === 'consent_required', consents: e.consents, methods: e.methods }
+              }
               throw e
             })
           : await backd.auth.signIn(credentials)
@@ -192,6 +206,17 @@ document.addEventListener('alpine:init', () => {
     async startStep(result) {
       this.mode = 'login'
       window.location.hash = '#auth'
+      if (result.consentRequired) {
+        // Chapter 17: terms to accept before the session: show their texts.
+        const consents = []
+        for (const c of result.consents) {
+          const t = await backd.consents.text(c.name, c.version)
+          consents.push({ ...c, text: t.text })
+        }
+        this.ticked = {}
+        this.step = { kind: 'consent', challenge: result.challenge, consents }
+        return
+      }
       if (!result.enrollmentRequired) {
         this.step = { kind: 'mfa', challenge: result.challenge, methods: result.methods, setup: null, recovery: false }
         return
@@ -215,6 +240,7 @@ document.addEventListener('alpine:init', () => {
       await this.loadNames()
       await this.loadAdmin()
       await this.loadMfa()
+      await this.loadConsents()
       window.location.hash = '#mine'
     },
 
@@ -241,6 +267,11 @@ document.addEventListener('alpine:init', () => {
       try {
         const done = await backd.auth.mfa.confirm({ challenge: this.step.challenge, setupId: this.step.setup.setup_id, code: this.code.trim() })
         this.recoveryCodes = done.recovery_codes
+        if (done.consent) {
+          // The terms come before the session (chapter 17); the codes wait on the account page.
+          await this.startStep(done.consent)
+          return
+        }
         await this.signedIn(done.session)
         window.location.hash = '#account' // where the recovery codes are shown
       } catch (e) {
@@ -927,6 +958,65 @@ document.addEventListener('alpine:init', () => {
       const answer = prompt(useCode ? 'Code from your authenticator app:' : 'Confirm with your password:')
       if (!answer) throw new Error('cancelled')
       return useCode ? { method: 'totp', code: answer.trim() } : { method: 'password', password: answer }
+    },
+
+    // --- consents (chapter 17) --------------------------------------------------
+
+    // What the realm asks for, with the text of each current version (public).
+    async loadConsentTexts() {
+      try {
+        const list = await backd.consents.current()
+        this.consentList = await Promise.all(list.map(async (c) => ({
+          name: c.name, required: c.required, version: c.current.version,
+          text: (await backd.consents.text(c.name, c.current.version)).text,
+        })))
+      } catch {
+        this.consentList = [] // a realm without consents, or without auth
+      }
+    },
+
+    // The sign-in step: accept what it names (and, if ticked, the optional ones).
+    async submitConsents() {
+      this.busy = true
+      this.error = null
+      try {
+        const accepted = {}
+        for (const c of this.step.consents) {
+          if (!this.ticked[c.name]) throw new Error('Please accept the ' + c.name)
+          accepted[c.name] = c.version
+        }
+        for (const c of this.consentList) if (!c.required && this.ticked[c.name]) accepted[c.name] = c.version
+        const session = await backd.auth.acceptConsents(this.step.challenge, accepted)
+        await this.signedIn(session)
+        if (this.recoveryCodes) window.location.hash = '#account'
+      } catch (e) {
+        this.error = e.message
+      } finally {
+        this.busy = false
+      }
+    },
+
+    async loadConsents() {
+      try {
+        this.consentState = await backd.consents.state()
+      } catch {
+        this.consentState = null
+      }
+    },
+
+    // The account page's switch for an optional consent (the digest by email).
+    async toggleConsent(c) {
+      this.busy = true
+      this.error = null
+      try {
+        this.consentState = this.consentState.consents[c.name]
+          ? await backd.consents.withdraw(c.name)
+          : await backd.consents.accept({ [c.name]: c.version })
+      } catch (e) {
+        this.error = e.message
+      } finally {
+        this.busy = false
+      }
     },
 
     async loadMfa() {

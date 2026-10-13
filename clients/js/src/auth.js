@@ -1,4 +1,5 @@
 import { AuthenticationError, SecondStepRequiredError, ValidationError, VerificationRequiredError } from './errors.js'
+/** @typedef {import('./errors.js').ConsentRequiredError} ConsentRequiredError */
 import { COOKIE_SESSION } from './storage.js'
 import { defaultOAuthStorage, loadPending, newPKCE, oauthError, parseReturn, savePending, withoutReturn } from './oauth.js'
 
@@ -30,7 +31,8 @@ import { defaultOAuthStorage, loadPending, newPKCE, oauthError, parseReturn, sav
 
 /**
  * The signed-in user with their sign-in methods, oldest first.
- * @typedef {User & { identities: Identity[], reauth_methods: Array<'totp' | 'recovery_code' | 'password' | 'email_code'>, sign_in_methods: string[] }} Me
+ * With `consents` declared in the realm it also has `consents` (name to the version held) and `to_accept` (the required ones still to accept).
+ * @typedef {User & { identities: Identity[], reauth_methods: Array<'totp' | 'recovery_code' | 'password' | 'email_code'>, sign_in_methods: string[], consents?: Record<string, string>, to_accept?: Array<{ name: string, version: string }> }} Me
  */
 
 /**
@@ -78,8 +80,18 @@ import { defaultOAuthStorage, loadPending, newPKCE, oauthError, parseReturn, sav
  */
 
 /**
+ * A sign-in that is done but has consents to accept first (a required one never accepted, or a new
+ * version that asks for re-acceptance): show their texts (`client.consents.text`) and send the
+ * acceptance with {@link Auth#acceptConsents}.
+ * @typedef {object} ConsentChallenge
+ * @property {true} consentRequired
+ * @property {string} challenge
+ * @property {Array<{ name: string, version: string }>} consents
+ */
+
+/**
  * What a first factor leads to: a session, or a second step.
- * @typedef {Session | MfaChallenge | EnrollmentChallenge} SignInResult
+ * @typedef {Session | MfaChallenge | EnrollmentChallenge | ConsentChallenge} SignInResult
  */
 
 /**
@@ -90,6 +102,8 @@ import { defaultOAuthStorage, loadPending, newPKCE, oauthError, parseReturn, sav
  *   the realm's `sign_in.app_url`.
  * @property {string} [invitation]    An invitation token, for realms with `signup: invite`.
  * @property {string} [locale]
+ * @property {Record<string, string>} [consents]  Consents accepted for the account the sign-in may make
+ *   (name to version); a new account made without them is asked at its first sign-in.
  * @property {(url: string) => void | Promise<void>} [navigate]  How to go to the provider; `location.assign` by default.
  *   Apps that open a browser session (React Native, Capacitor) pass their own.
  */
@@ -153,10 +167,12 @@ class Mfa {
 
   /**
    * Turns it on with the first code of the app. Resolves with the `recovery_codes`, shown once; with
-   * a `challenge` it also ends the sign-in and the client holds the session (`session` is it).
+   * a `challenge` it also ends the sign-in and the client holds the session (`session` is it), unless
+   * the user has consents to accept first: then `consent` is the {@link ConsentChallenge} to finish
+   * with {@link Auth#acceptConsents}.
    * @param {{ setupId: string, code: string, challenge?: string }} input
    * @param {RequestOptions} [opts]
-   * @returns {Promise<{ recovery_codes: string[], session?: Session }>}
+   * @returns {Promise<{ recovery_codes: string[], session?: Session, consent?: ConsentChallenge }>}
    */
   async confirm({ setupId, code, challenge }, opts) {
     /** @type {Record<string, unknown>} */
@@ -168,6 +184,9 @@ class Mfa {
     const { data } = await this.auth.client.request({
       method: 'POST', path: ['_auth', 'mfa', 'totp', 'confirm'], body, reauth: !challenge, auth: !challenge, ...opts,
     })
+    if (data.consent_required) {
+      return { recovery_codes: data.recovery_codes, consent: { consentRequired: true, challenge: data.challenge, consents: data.consents } }
+    }
     if (data.token || data.session_id) {
       const { recovery_codes: codes, ...session } = data
       return { recovery_codes: codes, session: /** @type {Session} */ (await this.auth.signedIn(session)) }
@@ -207,7 +226,9 @@ class MagicLink {
    * created (see {@link Auth#ready}); the code is typed in this app with {@link MagicLink#verifyCode}.
    * The PKCE verifier waits in the tab's storage for both.
    * @param {string} email
-   * @param {{ redirectTo?: string, locale?: string }} [options]
+   * `consents` are accepted for the account a new address gets (a new account made without them is asked
+   * at its first sign-in).
+   * @param {{ redirectTo?: string, locale?: string, consents?: Record<string, string> }} [options]
    * @param {RequestOptions} [opts]
    * @returns {Promise<{ requestId: string }>}
    */
@@ -217,7 +238,7 @@ class MagicLink {
     const { verifier, challenge } = newPKCE()
     const { data } = await this.auth.client.request({
       method: 'POST', path: ['_auth', 'magic-link'], auth: false, ...opts,
-      body: compact({ email, redirect_to: redirectTo, code_challenge: challenge, locale: options.locale }),
+      body: compact({ email, redirect_to: redirectTo, code_challenge: challenge, locale: options.locale, consents: options.consents }),
     })
     savePending(this.auth.oauthStorage(), { verifier, provider: 'magic-link', intent: 'signin', requestId: data.request_id })
     return { requestId: data.request_id }
@@ -229,7 +250,7 @@ class MagicLink {
    * a request that is unknown, used or expired is `invalid_magic_link`.
    * @param {string} code
    * @param {RequestOptions} [opts]
-   * @returns {Promise<ProviderSession | MfaChallenge | EnrollmentChallenge>}
+   * @returns {Promise<ProviderSession | MfaChallenge | EnrollmentChallenge | ConsentChallenge>}
    */
   async verifyCode(code, opts) {
     const storage = this.auth.oauthStorage()
@@ -248,7 +269,7 @@ class MagicLink {
 
 /** Sign-up, login and session management: `client.auth`. */
 export class Auth {
-  /** @type {Promise<ProviderSession | MfaChallenge | EnrollmentChallenge | { linked: string } | null> | undefined} */
+  /** @type {Promise<ProviderSession | MfaChallenge | EnrollmentChallenge | ConsentChallenge | { linked: string } | null> | undefined} */
   #completed = undefined
 
   /** @param {Client} client */
@@ -264,7 +285,7 @@ export class Auth {
      * (`new_user`, `profile`), `{ linked }`, or `null` for an ordinary visit; rejects with the
      * `BackdError` of a failed sign-in (`wrong_device` when the page is not where it was started).
      * It never settles before the client is created and is the same promise for every reader.
-     * @type {Promise<ProviderSession | MfaChallenge | EnrollmentChallenge | { linked: string } | null>}
+     * @type {Promise<ProviderSession | MfaChallenge | EnrollmentChallenge | ConsentChallenge | { linked: string } | null>}
      */
     this.ready = Promise.resolve(null)
     /** The signed-in user's second factor: `client.auth.mfa`. */
@@ -291,6 +312,7 @@ export class Auth {
   async step(data) {
     if (data?.mfa_required) return { mfaRequired: true, challenge: data.challenge, methods: data.methods }
     if (data?.mfa_enrollment_required) return { enrollmentRequired: true, challenge: data.challenge }
+    if (data?.consent_required) return { consentRequired: true, challenge: data.challenge, consents: data.consents }
     return this.signedIn(data)
   }
 
@@ -312,6 +334,24 @@ export class Auth {
     const body = { challenge, method, code }
     if (this.client.cookies) body.cookie = true
     const { data } = await this.client.request({ method: 'POST', path: ['_auth', 'mfa', 'verify'], body, auth: false, ...opts })
+    return /** @type {any} */ (await this.signedIn(data))
+  }
+
+  /**
+   * Finishes a sign-in that answered with a {@link ConsentChallenge}: the consents the user accepted,
+   * as `{ name: version }`, with every one the challenge named at its version. Resolves with the
+   * session (a provider's also has `new_user`). Rejects with a {@link ConsentRequiredError} when
+   * one is missing (the challenge stays valid) and `invalid_challenge` after five minutes.
+   * @param {string} challenge
+   * @param {Record<string, string>} consents
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<Session & { new_user?: boolean, profile?: Profile }>}
+   */
+  async acceptConsents(challenge, consents, opts) {
+    /** @type {Record<string, unknown>} */
+    const body = { challenge, consents }
+    if (this.client.cookies) body.cookie = true
+    const { data } = await this.client.request({ method: 'POST', path: ['_auth', 'consents', 'accept'], body, auth: false, ...opts })
     return /** @type {any} */ (await this.signedIn(data))
   }
 
@@ -364,13 +404,17 @@ export class Auth {
    * in after following the link in the email they were sent.
    * A user whose role requires a second factor has no session yet: this rejects with a
    * {@link SecondStepRequiredError} (`mfa_enrollment_required`) carrying the challenge.
-   * @param {{ email: string, password: string, invitation?: string, locale?: string, redirectTo?: string }} input
+   * `consents` are the consents accepted, as the consent's name and the version shown (`{ terms: '2026-10' }`):
+   * every required one of the realm must be there at its current version, or this rejects with a
+   * {@link ConsentRequiredError} that lists them.
+   * @param {{ email: string, password: string, invitation?: string, locale?: string, redirectTo?: string, consents?: Record<string, string> }} input
    * @param {RequestOptions} [opts]
    * @returns {Promise<Session>}
    */
-  async signup({ email, password, invitation, locale, redirectTo }, opts) {
-    /** @type {Record<string, string | boolean>} */
+  async signup({ email, password, invitation, locale, redirectTo, consents }, opts) {
+    /** @type {Record<string, unknown>} */
     const body = { email, password }
+    if (consents) body.consents = consents
     if (this.client.cookies) body.cookie = true
     if (invitation) body.invitation = invitation
     if (locale) body.locale = locale
@@ -389,6 +433,12 @@ export class Auth {
    * @returns {Session}
    */
   session(result) {
+    if ('consentRequired' in result) {
+      throw new SecondStepRequiredError({
+        status: 200, code: 'consent_required', challenge: result.challenge, consents: result.consents,
+        message: 'consents must be accepted: show client.consents.text(name, version) and call auth.acceptConsents(challenge, consents)',
+      })
+    }
     if ('challenge' in result) {
       const enroll = 'enrollmentRequired' in result
       throw new SecondStepRequiredError({
@@ -462,7 +512,7 @@ export class Auth {
     const redirectTo = options.redirectTo ?? (here ? here.origin + here.pathname : undefined)
     // Without a page of its own the realm's `sign_in.app_url` is where the flow ends (or the server refuses).
     const { verifier, challenge } = newPKCE()
-    const body = compact({ redirect_to: redirectTo, code_challenge: challenge, intent, invitation: options.invitation, locale: options.locale })
+    const body = compact({ redirect_to: redirectTo, code_challenge: challenge, intent, invitation: options.invitation, locale: options.locale, consents: options.consents })
     const { data } = await this.client.request({
       method: 'POST', path: ['_auth', 'oauth', provider, 'start'], body, auth: intent === 'link', ...opts,
     })
@@ -497,7 +547,7 @@ export class Auth {
    * verifier to redeem the code with: that rejects with a `ValidationError` whose `code` is `wrong_device`.
    * @param {string | URL} [href]  The address to read; the page's own by default.
    * @param {RequestOptions} [opts]
-   * @returns {Promise<ProviderSession | MfaChallenge | EnrollmentChallenge | { linked: string } | null>}
+   * @returns {Promise<ProviderSession | MfaChallenge | EnrollmentChallenge | ConsentChallenge | { linked: string } | null>}
    */
   async completeSignIn(href = globalThis.location?.href, opts) {
     if (arguments.length === 0 && this.#completed) return this.#completed
@@ -538,9 +588,9 @@ export class Auth {
    * `authorizationCode` its SDK gave. Rejects with `invalid_token` (a `AuthenticationError`) when the token
    * does not verify, and with `account_exists`, `signup_closed`, … as {@link Auth.completeSignIn} does.
    * @param {string} provider
-   * @param {{ idToken: string, nonce: string, authorizationCode?: string, invitation?: string, locale?: string }} input
+   * @param {{ idToken: string, nonce: string, authorizationCode?: string, invitation?: string, locale?: string, consents?: Record<string, string> }} input
    * @param {RequestOptions} [opts]
-   * @returns {Promise<ProviderSession | MfaChallenge | EnrollmentChallenge>}
+   * @returns {Promise<ProviderSession | MfaChallenge | EnrollmentChallenge | ConsentChallenge>}
    */
   async signInWithIdToken(provider, input, opts) {
     const { data } = await this.client.request({
@@ -563,11 +613,11 @@ export class Auth {
     return data
   }
 
-  /** @param {{ idToken: string, nonce: string, authorizationCode?: string, invitation?: string, locale?: string }} input */
+  /** @param {{ idToken: string, nonce: string, authorizationCode?: string, invitation?: string, locale?: string, consents?: Record<string, string> }} input */
   #idTokenBody(input) {
     return compact({
       id_token: input.idToken, nonce: input.nonce, authorization_code: input.authorizationCode,
-      invitation: input.invitation, locale: input.locale, cookie: this.client.cookies ? true : undefined,
+      invitation: input.invitation, locale: input.locale, consents: input.consents, cookie: this.client.cookies ? true : undefined,
     })
   }
 
