@@ -54,7 +54,6 @@ type builder struct {
 	// responses added by collections.
 	responses map[string]any
 	tags      map[string]bool
-	tagDocs   []any
 	ids       map[string]bool
 }
 
