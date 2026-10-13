@@ -222,6 +222,10 @@ func registerRemote(cfg *kli.Config) {
 	user("change-email", "change the user's email at once (needs email in realm.yaml); revokes all sessions", true, userChangeEmail, func(cc *kli.CommandConfig) {
 		required(cc, "new-email", "the new email address")
 	})
+	user("identities", "list the user's ways to sign in: a password and the providers they use", true, userIdentities, nil)
+	user("unlink-identity", "remove one of the user's ways to sign in, never the last (password included)", true, userUnlinkIdentity, func(cc *kli.CommandConfig) {
+		required(cc, "provider", "the sign-in method to remove: password, google, microsoft, apple…")
+	})
 	user("owned", "show what erasing the user would do, per collection that declares a policy", true, userOwned, nil)
 	user("verify-email", "mark the email as verified", true, userPatch(map[string]bool{"email_verified": true}, "email of %s marked as verified\n"), nil)
 	user("disable", "block sign-in and revoke all sessions", true, userPatch(map[string]bool{"disabled": true}, "%s disabled; all of their sessions were revoked\n"), nil)

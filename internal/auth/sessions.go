@@ -135,6 +135,7 @@ func (s *Users) signup(ctx context.Context, email, password, invitation string, 
 		return User{}, err
 	}
 	s.AuditAs(ctx, userTarget(u.ID), AuditUserSignup, userTarget(u.ID), map[string]any{"invited": invitation != "", "roles": u.Roles})
+	s.queueOnSignup(ctx, u, ProviderPassword, nil)
 	return u, nil
 }
 
@@ -164,8 +165,11 @@ func (s *Users) Login(ctx context.Context, email, password, ip string) (Principa
 		return Principal{}, "", err
 	}
 	p, token, err := s.startSession(ctx, u)
-	if err == nil && s.Settings.IsAdmin(u.Roles) {
-		s.AuditAs(ctx, userTarget(u.ID), AuditAdminLogin, userTarget(u.ID), map[string]any{"session_id": p.Session.ID})
+	if err == nil {
+		s.touchIdentity(ctx, u.ID, ProviderPassword)
+		if s.Settings.IsAdmin(u.Roles) {
+			s.AuditAs(ctx, userTarget(u.ID), AuditAdminLogin, userTarget(u.ID), map[string]any{"session_id": p.Session.ID})
+		}
 	}
 	return p, token, err
 }

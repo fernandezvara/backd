@@ -40,6 +40,9 @@
       <button type="submit" :disabled="busy" x-text="mode === 'login' ? 'Log in' : 'Create account'"></button>
       <button type="button" class="link" @click="mode = mode === 'login' ? 'signup' : 'login'"
         x-text="mode === 'login' ? 'No account? Sign up' : 'Have an account? Log in'"></button>
+      <template x-for="provider in providers" :key="provider">
+        <button type="button" class="link" @click="continueWith(provider)" x-text="'Continue with ' + provider.charAt(0).toUpperCase() + provider.slice(1)"></button>
+      </template>
     </form>
 
     <!-- Signed in: write a post. -->

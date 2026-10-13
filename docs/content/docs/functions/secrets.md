@@ -26,7 +26,7 @@ Realm administrators manage values through the [admin API](../../auth/admin/#sec
 
 ```sh
 backd secret set --realm blog --database shop --name STRIPE_KEY --url https://api.example.com
-# Password: (the value, read without echo — or piped in, e.g. printf '%s' "$KEY" | backd secret set …)
+# Secret: (the value, read without echo — or piped in, e.g. printf '%s' "$KEY" | backd secret set …)
 backd secret set --realm blog --name SHARED_WEBHOOK_SECRET --url https://api.example.com   # realm scope: no --database
 backd secret list --realm blog
 backd secret delete --realm blog --database shop --name STRIPE_KEY

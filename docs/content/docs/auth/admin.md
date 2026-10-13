@@ -72,6 +72,8 @@ Paths are relative to `/v1/{realm}/_admin`. Bodies are JSON (`Content-Type: appl
 | `GET /users/{id}` | none | `200` with the user |
 | `PATCH /users/{id}` | `{"email_verified"?: bool, "disabled"?: bool}` | `200` with the user |
 | `DELETE /users/{id}` | none | `202` with the erase job: [**erases** the user](../erasure/) (irreversible) |
+| `GET /users/{id}/identities` | none | `200` with the user's sign-in methods, oldest first (`provider`, `email`, `email_verified`, `created_at`, `last_used_at`; never a subject, a hash or a token), as [`GET /_auth/me`](../sessions/#sign-in-methods) lists them for the user |
+| `DELETE /users/{id}/identities/{provider}` | none | `204`; removes one of the user's [sign-in methods](../providers/) (`password` included). `409 last_sign_in_method` for the last one, `404` for a provider the user doesn't have; audited as `identity.unlinked` with `by: admin`. Removing Apple also [revokes the user's Apple tokens](../providers/#apple-and-account-deletion) |
 | `GET /users/{id}/sessions` | none | `200` with the user's unexpired sessions, newest first (`id`, `created_at`, `last_used_at`, `expires_at`; never a token) |
 | `DELETE /users/{id}/sessions/{session_id}` | none | `204`; the session's token stops working at once; audited as `session.revoke`. `404` for an unknown session |
 | `POST /users/{id}/password` | `{"password"}` | `204` |

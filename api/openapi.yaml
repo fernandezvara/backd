@@ -645,6 +645,11 @@ paths:
     get:
       tags: [auth]
       summary: The signed-in user
+      description: |
+        The user, with their sign-in methods (`identities`): a password and any number of
+        external providers. Each says the address the provider reported (the password's is
+        the user's own), when it was linked and when it was last used (`null` before the
+        first use is recorded). The provider's subject, hashes and tokens are never shown.
       operationId: me
       security: [{ session: [] }]
       responses:
@@ -653,7 +658,7 @@ paths:
           headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/User" }
+              schema: { $ref: "#/components/schemas/Me" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         default: { $ref: "#/components/responses/Error" }
     patch:
@@ -772,6 +777,298 @@ paths:
         "204": { description: Session ended. }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/oauth/{provider}/start:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/oauthProvider" }
+    get:
+      tags: [auth]
+      summary: Start signing in with a provider (a redirect)
+      description: |
+        Begins the redirect flow for a provider the realm lists under `providers:`
+        (`google`, `microsoft`, `apple`): remembers the attempt (a random `state`, a
+        nonce and PKCE for the provider, kept for 10 minutes and good for one callback)
+        and answers `302` to the provider's sign-in page. After the user signs in, the
+        provider sends them to the callback, which sends them on to `redirect_to` with a
+        one-time `backd_code` or a `backd_error` (see the callback). `redirect_to` must be
+        within the realm's `sign_in.allowed_redirects` (or `email.allowed_redirects`);
+        when it is absent the realm's `sign_in.app_url` is used, and a realm that has none
+        answers `400 invalid_redirect`. `code_challenge` is the S256 challenge of a verifier only the app holds.
+        Linking a provider to a signed-in user needs `POST`, which carries the session.
+        At most 30 starts a minute per address (`429`).
+      operationId: oauthStart
+      parameters:
+        - { name: redirect_to, in: query, schema: { type: string }, description: "Where the flow ends; the realm's `sign_in.app_url` when absent." }
+        - { name: code_challenge, in: query, required: true, schema: { type: string, minLength: 43, maxLength: 43 } }
+        - { name: invitation, in: query, schema: { type: string }, description: "An invitation token, for realms with `signup: invite`." }
+        - { name: locale, in: query, schema: { type: string } }
+      responses:
+        "302":
+          description: To the provider.
+          headers:
+            Location: { schema: { type: string } }
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503":
+          description: "`provider_unavailable`: a secret of the provider is not set, or backd's public address (`BACKD_URL`) is unknown."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [auth]
+      summary: Start signing in with a provider, or linking one
+      description: |
+        The same as `GET`, with the answer in JSON: `authorize_url` is where the app sends
+        the user. It is the only way to **link** a provider to the signed-in user
+        (`intent: "link"`, with the session in `Authorization`): a browser navigation
+        can't carry that header. The flow then ends at `redirect_to?backd_linked=<provider>`
+        instead of a login code.
+      operationId: oauthStartJSON
+      security: [{}, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [code_challenge]
+              properties:
+                redirect_to: { type: string, description: "Where the flow ends; the realm's `sign_in.app_url` when absent." }
+                code_challenge: { type: string, minLength: 43, maxLength: 43, description: The S256 PKCE challenge of the app's verifier. }
+                intent: { type: string, enum: [signin, link], default: signin }
+                invitation: { type: string }
+                locale: { type: string }
+      responses:
+        "200":
+          description: Where to send the user.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [authorize_url]
+                properties:
+                  authorize_url: { type: string }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503":
+          description: "`provider_unavailable`."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/oauth/{provider}/callback:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/oauthProvider" }
+    get:
+      tags: [auth]
+      summary: Where the provider sends the user back to
+      description: |
+        The address registered with the provider as the redirect URI (the realm's public
+        address plus this path). It finds the attempt by its `state` (one use), asks the
+        provider for the user's ID token, verifies it and decides who the person is
+        (linking, sign-up and the other rules of provider sign-in, described in the docs),
+        then answers `302` to the app's `redirect_to` with one of:
+
+        - `backd_code`: a one-time login code (valid one minute, bound to the app's PKCE
+          challenge) to redeem at `POST /_auth/token`;
+        - `backd_linked=<provider>`: the provider account was added to the signed-in user;
+        - `backd_error=<code>`: `cancelled`, `account_exists` (with `backd_provider`), `signup_closed`,
+          `invitation_invalid`, `link_conflict`, `email_not_verified`, `email_required`,
+          `signin_refused` or `provider_error`.
+
+        An attempt that can't be traced to an app (the `state` is unknown, used, expired or
+        for another provider) can't be sent anywhere: the answer is the realm's
+        `pages/oauth-error/<locale>.html` page (the built-in one without it), with `400`.
+        A session never appears in a URL.
+      operationId: oauthCallback
+      parameters:
+        - { name: state, in: query, schema: { type: string } }
+        - { name: code, in: query, schema: { type: string } }
+        - { name: error, in: query, schema: { type: string } }
+      responses:
+        "302": { $ref: "#/components/responses/BackToApp" }
+        "400": { $ref: "#/components/responses/HostedPage" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [auth]
+      summary: The provider's callback as a form post
+      description: |
+        The same, for providers that answer with `response_mode=form_post` (Apple): the
+        fields come in an `application/x-www-form-urlencoded` body and the redirect to
+        the app is `303`, so the browser follows it with a `GET`.
+      operationId: oauthCallbackForm
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                state: { type: string }
+                code: { type: string }
+                error: { type: string }
+      responses:
+        "303": { $ref: "#/components/responses/BackToApp" }
+        "400": { $ref: "#/components/responses/HostedPage" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/oauth/{provider}/id-token:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/oauthProvider" }
+    post:
+      tags: [auth]
+      summary: Sign in with the ID token a mobile app already holds
+      description: |
+        For apps that sign in with the platform (Sign in with Apple, Google Sign-In,
+        MSAL): the app sends the provider's ID token and the nonce it started the
+        sign-in with, and gets a session at once, under the same rules as the redirect
+        flow (linking by verified address, the sign-up modes, disabled users and
+        networks). backd verifies the token's signature, issuer, audience (the web
+        client and the `native_client_ids`, for Apple the `bundle_ids`), expiry and nonce:
+        the app sends the raw nonce, and the token may carry it raw or as its SHA-256
+        (hex or base64url), as the SDKs do. With `"intent": "link"` and the session in
+        `Authorization`, the provider account is added to the signed-in user instead
+        (`{"linked": "<provider>"}`). At most 30 a minute per address.
+        For Apple (unless the provider sets `revoke_on_delete: false`) the app also sends the
+        `authorization_code` the Apple SDK gave with the token: backd trades it, as the app,
+        for Apple's refresh token and keeps it sealed, to revoke it when the account is
+        erased or Apple is unlinked. A code that is not of the same person and app as the
+        token is `401 invalid_token`; a missing one is `400`.
+      operationId: oauthIDToken
+      security: [{}, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [id_token, nonce]
+              properties:
+                id_token: { type: string }
+                nonce: { type: string, description: The raw nonce the sign-in was started with. }
+                authorization_code: { type: string, description: "Apple only, required unless `revoke_on_delete: false`: the authorization code that came with the ID token." }
+                intent: { type: string, enum: [signin, link], default: signin }
+                invitation: { type: string, description: "An invitation token, for realms with `signup: invite`." }
+                locale: { type: string }
+                cookie: { type: boolean, description: "As in `POST /_auth/login`." }
+      responses:
+        "200":
+          description: "A session (as a login's, with `new_user` and, for a new user, `profile`), or `{\"linked\": \"<provider>\"}` for `intent: link`."
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/ProviderSession" }
+                  - type: object
+                    additionalProperties: false
+                    required: [linked]
+                    properties:
+                      linked: { type: string }
+        "400":
+          description: "An invalid body, `invitation_invalid` (sign-up needs a valid invitation) or `email_required` (the provider gave no address)."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          description: "`invalid_token`: the ID token does not verify; or no session for `intent: link`."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: "`signup_closed`, `email_not_verified` or `signin_refused` (the account can't sign in), or a cookie session from an origin that isn't allowed."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "`account_exists`: an account has the address and can't be linked automatically (sign in another way and link from there); or `link_conflict`."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503":
+          description: "`provider_unavailable`: the provider's keys could not be fetched."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/token:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Redeem a login code for a session
+      description: |
+        Trades the one-time `code` (`backd_code`) a sign-in ended with, and the PKCE `code_verifier` the
+        app's `code_challenge` came from, for a session, like a login. The code is used up
+        even when the verifier is wrong, so a stolen code can't be tried again; an unknown,
+        expired, used or wrongly verified code and a user who can no longer sign in are all
+        `401 invalid_credentials`. At most 30 a minute per address.
+      operationId: redeemLoginCode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [code, code_verifier]
+              properties:
+                code: { type: string }
+                code_verifier: { type: string }
+                cookie: { type: boolean, description: "As in `POST /_auth/login`." }
+      responses:
+        "200": { $ref: "#/components/responses/ProviderSession" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/identities/{provider}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - name: provider
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[a-z][a-z0-9-]{0,31}$' }
+    delete:
+      tags: [auth]
+      summary: Remove one of the user's sign-in methods
+      description: |
+        Unlinks the user's sign-in method of that provider (`password` included). The last
+        one can't be removed (`409 last_sign_in_method`), so a user can't lock themselves
+        out. Audited as `identity.unlinked`.
+      operationId: unlinkIdentity
+      security: [{ session: [] }]
+      responses:
+        "204": { description: Sign-in method removed. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   # ── /_admin ───────────────────────────────────────────────────────────
@@ -1070,6 +1367,64 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/users/{id}/identities:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    get:
+      tags: [admin]
+      summary: A user's sign-in methods
+      description: |
+        The user's ways to sign in, oldest first, as `GET /_auth/me` lists them for the user:
+        a password and the providers they use, with the address each reported and when it was
+        linked and last used. Never a provider's subject, a hash or a token. Needs the `users` area.
+      operationId: adminUserIdentities
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The sign-in methods.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Identity" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/users/{id}/identities/{provider}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+      - { $ref: "#/components/parameters/oauthProvider" }
+    delete:
+      tags: [admin]
+      summary: Remove one of a user's sign-in methods
+      description: |
+        Unlinks the user's sign-in method of that provider (`password` included), for example to
+        undo a link made by mistake. The last one can't be removed (`409 last_sign_in_method`),
+        and a provider the user doesn't have is `404`. Audited as `identity.unlinked`, with the
+        administrator as the actor. Removing Apple also revokes the user's Apple tokens.
+        Needs the `users` area to change.
+      operationId: adminUnlinkUserIdentity
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "204":
+          description: Sign-in method removed.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_admin/users/{id}/roles/{role}:
@@ -3932,6 +4287,12 @@ components:
         `true` adds `url` and `expires_at` to every file of the documents read: a
         link for apps to show or download it. Never stored, and not part of the ETag.
       schema: { type: string, enum: ["true"] }
+    oauthProvider:
+      name: provider
+      in: path
+      required: true
+      description: A provider of the realm's `providers:` (`google`, `microsoft` or `apple`).
+      schema: { type: string, pattern: '^[a-z][a-z0-9-]{0,31}$' }
     fileField:
       name: field
       in: path
@@ -4019,6 +4380,12 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    BackToApp:
+      description: Back to the app's `redirect_to`, with the outcome in its query.
+      headers:
+        Location: { schema: { type: string } }
+        Cache-Control: { $ref: "#/components/headers/NoStore" }
+        Referrer-Policy: { description: Always `no-referrer`., schema: { type: string } }
     HostedPage:
       description: A page of the realm's `pages/` folder, with no external resources.
       headers:
@@ -4034,6 +4401,12 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Session" }
+    ProviderSession:
+      description: A new session from a provider sign-in, and whether it made the user.
+      headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ProviderSession" }
     SessionCreated:
       description: The new user, signed in.
       headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
@@ -4121,6 +4494,33 @@ components:
         roles: { type: array, items: { type: string } }
         locale: { type: string, description: "The user's language: one the realm lists (`email.locales`; English only without email). Used for the emails they get." }
         created_at: { $ref: "#/components/schemas/Timestamp" }
+
+    Me:
+      type: object
+      additionalProperties: false
+      required: [id, email, email_verified, roles, locale, created_at, identities]
+      properties:
+        id: { type: string }
+        email: { type: string }
+        email_verified: { type: boolean }
+        roles: { type: array, items: { type: string } }
+        locale: { type: string, description: "The user's language: one the realm lists (`email.locales`; English only without email). Used for the emails they get." }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        identities:
+          type: array
+          description: The user's sign-in methods, oldest first.
+          items: { $ref: "#/components/schemas/Identity" }
+
+    Identity:
+      type: object
+      additionalProperties: false
+      required: [provider, email, email_verified, created_at, last_used_at]
+      properties:
+        provider: { type: string, description: "`password`, `google`, `microsoft`, `apple` or the name of a configured provider." }
+        email: { type: string, description: "The address the provider reported at the last sign-in; for `password`, the user's own." }
+        email_verified: { type: boolean }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        last_used_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
 
     AdminUser:
       type: object
@@ -4507,6 +4907,31 @@ components:
         session_id: { type: string }
         expires_at: { $ref: "#/components/schemas/Timestamp" }
         user: { $ref: "#/components/schemas/User" }
+
+    ProviderSession:
+      type: object
+      additionalProperties: false
+      required: [session_id, expires_at, user, new_user]
+      description: >-
+        A login's answer, from a sign-in with a provider. `new_user` says whether the sign-in
+        made the user; only then `profile` is present, with what the provider said of the
+        person (fields it did not give are left out). It is handed over once and kept nowhere:
+        use `account.on_signup` to create the app's profile document without depending on the client.
+      properties:
+        token: { type: string, pattern: "^bds_" }
+        token_type: { const: Bearer }
+        session_id: { type: string }
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
+        user: { $ref: "#/components/schemas/User" }
+        new_user: { type: boolean }
+        profile:
+          type: object
+          additionalProperties: false
+          properties:
+            name: { type: string }
+            given_name: { type: string }
+            family_name: { type: string }
+            picture: { type: string, description: A URL. }
 
     SessionInfo:
       type: object

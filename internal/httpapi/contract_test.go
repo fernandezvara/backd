@@ -22,6 +22,8 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/oauth"
+	"github.com/fernandezvara/backd/internal/oauth/oauthtest"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage"
 	"github.com/fernandezvara/backd/internal/storage/storagetest"
@@ -332,7 +334,18 @@ func (c *contract) verify(t *testing.T, router chi.Routes) {
 // checks each response against api/openapi.yaml.
 func TestContract(t *testing.T) {
 	c := loadContract(t)
-	f := newRulesFixture(t)
+	idp := oauthtest.New(t)
+	oauthSvc := idp.Service()
+	live := oauthSvc.Endpoints
+	oauthSvc.Endpoints = func(p *registry.Provider) oauth.Endpoints { // a provider whose keys can't be fetched
+		e := live(p)
+		if p.ClientID == "dead-client" {
+			e.JWKS = "http://127.0.0.1:1/keys"
+		}
+		return e
+	}
+	f := newRulesFixture(t, func(cfg *Config) { cfg.OAuth = oauthSvc })
+	setUpProviders(t, f)
 	router := f.h.(chi.Routes)
 	f.h = c.wrap(t, f.h)
 
@@ -560,7 +573,106 @@ func TestContract(t *testing.T) {
 	}
 	req("POST", a+"/login", `{"email": "victim@example.com", "password": "dev-p4ssw0rd!0"}`, nil, 429)
 
-	req("GET", a+"/me", "", me, 200)
+	// Sign-in with providers: the redirect flow end to end, and each way it can stop.
+	{
+		verifier, challenge, _ := auth.NewPKCE()
+		o := a + "/oauth"
+		redirect := url.QueryEscape("https://app.acme.example/signed-in")
+		start := o + "/google/start?redirect_to=" + redirect + "&code_challenge=" + challenge
+		idp.SetUser(map[string]any{"iss": "https://accounts.google.com", "aud": "g-client", "sub": "g-contract", "email": "oauth@example.com", "email_verified": true})
+		rec, _ := f.doH(t, "GET", start, "", nil)
+		if rec.Code != 302 {
+			t.Fatalf("oauth start: %d", rec.Code)
+		}
+		req("GET", start, "", nil, 302)
+		req("GET", o+"/github/start?redirect_to="+redirect+"&code_challenge="+challenge, "", nil, 404)
+		req("GET", o+"/google/start?redirect_to="+redirect, "", nil, 400)
+		req("POST", o+"/google/start", `{"redirect_to": "https://app.acme.example/x", "code_challenge": "`+challenge+`"}`, nil, 200)
+		req("POST", o+"/google/start", `{"redirect_to": "https://app.acme.example/x", "code_challenge": "`+challenge+`", "intent": "link"}`, nil, 401)
+		req("POST", o+"/google/start", `{"redirect_to": "https://evil.example/x", "code_challenge": "`+challenge+`"}`, nil, 400)
+		req("POST", "/v1/nope/_auth/oauth/google/start", `{"redirect_to": "https://app.acme.example/x", "code_challenge": "`+challenge+`"}`, nil, 404)
+		// The provider sends the user back; the app redeems the code.
+		back, _ := url.Parse(idp.Authorize(rec.Header().Get("Location")))
+		cb, _ := f.doH(t, "GET", back.Path+"?"+back.RawQuery, "", nil)
+		to, _ := url.Parse(cb.Header().Get("Location"))
+		if cb.Code != 302 || to.Query().Get("backd_code") == "" {
+			t.Fatalf("oauth callback: %d %v", cb.Code, to)
+		}
+		req("POST", a+"/token", `{"code": "`+to.Query().Get("backd_code")+`", "code_verifier": "`+verifier+`"}`, nil, 200)
+		req("POST", a+"/token", `{"code": "`+to.Query().Get("backd_code")+`", "code_verifier": "`+verifier+`"}`, nil, 401)
+		req("POST", a+"/token", `{"code": "x"}`, nil, 400)
+		req("POST", a+"/token", `{"code": "x", "code_verifier": "y", "cookie": true}`, map[string]string{"Origin": "https://evil.example"}, 403)
+		// A state that leads nowhere is a page; Apple's answer is a form post.
+		req("GET", o+"/google/callback?state=nope&code=x", "", nil, 400)
+		req("POST", o+"/apple/callback", "state=nope&code=x", map[string]string{"Content-Type": "application/x-www-form-urlencoded"}, 400)
+		req("GET", "/v1/nope/_auth/oauth/google/callback?state=x", "", nil, 404)
+		req("POST", "/v1/nope/_auth/oauth/google/callback", "state=x", map[string]string{"Content-Type": "application/x-www-form-urlencoded"}, 404)
+		idp.SetUser(map[string]any{"iss": "https://appleid.apple.com", "aud": "com.acme.web", "sub": "a-contract", "email": "apple@example.com", "email_verified": "true"})
+		arec, _ := f.doH(t, "GET", o+"/apple/start?redirect_to="+redirect+"&code_challenge="+challenge, "", nil)
+		aback, _ := url.Parse(idp.Authorize(arec.Header().Get("Location")))
+		if p := req("POST", aback.Path, aback.RawQuery, map[string]string{"Content-Type": "application/x-www-form-urlencoded"}, 303); p != nil {
+			t.Errorf("apple callback body: %v", p)
+		}
+		// Native sign-in with the ID token the app holds.
+		native := func(claims map[string]any, extra string) string {
+			return `{"id_token": "` + idp.IDToken(t, claims) + `", "nonce": "n1"` + extra + `}`
+		}
+		nativeClaims := func(sub, email string, verified bool) map[string]any {
+			return map[string]any{"iss": "https://accounts.google.com", "aud": "g-native", "sub": sub, "email": email, "email_verified": verified, "nonce": "n1"}
+		}
+		ex := o + "/google/id-token"
+		req("POST", ex, native(nativeClaims("g-n", "native@example.com", true), ""), nil, 200)
+		req("POST", ex, native(nativeClaims("g-n", "native@example.com", true), `, "cookie": true`), map[string]string{"Origin": "https://evil.example"}, 403)
+		req("POST", ex, native(nativeClaims("g-n2", "ada@example.com", false), ""), nil, 409)
+		req("POST", ex, native(nativeClaims("g-n3", "", true), ""), nil, 400)
+		req("POST", ex, `{"id_token": "x"}`, nil, 400)
+		req("POST", ex, `{"id_token": "bad", "nonce": "n1"}`, nil, 401)
+		req("POST", ex, native(nativeClaims("g-n", "native@example.com", true), `, "intent": "link"`), nil, 401)
+		req("POST", ex, native(nativeClaims("g-link", "x@gmail.example", true), `, "intent": "link"`), ada, 200)
+		req("POST", ex, native(nativeClaims("g-link", "x@gmail.example", true), `, "intent": "link"`), bearer(f.bob), 409)
+		req("POST", o+"/github/id-token", native(nativeClaims("g-n", "n@example.com", true), ""), nil, 404)
+		f.svc.Settings.Signup = registry.SignupClosed
+		req("POST", ex, native(nativeClaims("g-closed", "closed@example.com", true), ""), nil, 403)
+		f.svc.Settings.Signup = registry.SignupOpen
+		f.svc.Settings.Providers["dead"] = &registry.Provider{Name: "google", ClientID: "dead-client", ClientSecret: "GOOGLE_SECRET"}
+		req("POST", o+"/dead/id-token", native(nativeClaims("g-n", "native@example.com", true), ""), nil, 503)
+		// A provider whose secret was never set can't be offered.
+		f.svc.Settings.Providers["unset"] = &registry.Provider{Name: "google", ClientID: "g-client", ClientSecret: "NEVER_SET"}
+		req("GET", o+"/unset/start?redirect_to="+redirect+"&code_challenge="+challenge, "", nil, 503)
+		req("POST", o+"/unset/start", `{"redirect_to": "https://app.acme.example/x", "code_challenge": "`+challenge+`"}`, nil, 503)
+		// Too many starts from one address.
+		for range 40 {
+			if rec, _ := f.doH(t, "GET", start, "", nil); rec.Code == 429 {
+				break
+			}
+		}
+		req("GET", start, "", nil, 429)
+		req("POST", o+"/google/start", `{"redirect_to": "https://app.acme.example/x", "code_challenge": "`+challenge+`"}`, nil, 429)
+		req("POST", a+"/token", `{"code": "x", "code_verifier": "y"}`, nil, 401)
+		for range 31 {
+			f.doH(t, "POST", a+"/token", `{"code": "x", "code_verifier": "y"}`, map[string]string{"Content-Type": "application/json"})
+		}
+		req("POST", a+"/token", `{"code": "x", "code_verifier": "y"}`, nil, 429)
+		for range 31 {
+			f.doH(t, "POST", ex, `{"id_token": "bad", "nonce": "n1"}`, map[string]string{"Content-Type": "application/json"})
+		}
+		req("POST", ex, `{"id_token": "bad", "nonce": "n1"}`, nil, 429)
+	}
+	who := req("GET", a+"/me", "", me, 200)
+	if ids, _ := who["identities"].([]any); len(ids) != 1 || ids[0].(map[string]any)["provider"] != "password" {
+		t.Errorf("a password user's identities: %v", who["identities"])
+	}
+	// Sign-in methods: the only one can't be removed; a second one can, and a method the user lacks is a 404.
+	req("DELETE", a+"/identities/password", "", me, 409)
+	req("DELETE", a+"/identities/google", "", me, 404)
+	req("DELETE", a+"/identities/google", "", nil, 401)
+	if err := f.svc.Store.PutIdentity(context.Background(), auth.Identity{ID: "idn1", UserID: who["id"].(string), Provider: "google", Subject: "g-1", Email: "g@example.com", EmailVerified: true, CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if ids := req("GET", a+"/me", "", me, 200)["identities"].([]any); len(ids) != 2 {
+		t.Errorf("identities after linking: %v", ids)
+	}
+	req("DELETE", a+"/identities/google", "", me, 204)
 	// The user's language: a listed one is accepted, any other is refused.
 	req("PATCH", a+"/me", `{"locale": "es"}`, with(me, "Content-Type", "application/json"), 200)
 	req("PATCH", a+"/me", `{"locale": "fr"}`, with(me, "Content-Type", "application/json"), 400)
@@ -689,6 +801,24 @@ func TestContract(t *testing.T) {
 	req("DELETE", ad+"/users/"+temp.ID+"/sessions/x", "", nil, 401)
 	req("DELETE", ad+"/users/"+temp.ID+"/sessions/x", "", ada, 403)
 	req("DELETE", ad+"/users/"+temp.ID+"/sessions/"+sessList["items"].([]any)[0].(map[string]any)["id"].(string), "", key, 204)
+	// The user's sign-in methods.
+	idents := req("GET", ad+"/users/"+temp.ID+"/identities", "", key, 200)
+	if items, _ := idents["items"].([]any); len(items) != 1 || items[0].(map[string]any)["provider"] != "password" {
+		t.Errorf("identities of a password user: %v", idents)
+	}
+	req("GET", ad+"/users/"+temp.ID+"/identities", "", nil, 401)
+	req("GET", ad+"/users/"+temp.ID+"/identities", "", ada, 403)
+	req("GET", ad+"/users/nope/identities", "", key, 404)
+	req("DELETE", ad+"/users/"+temp.ID+"/identities/password", "", key, 409)
+	req("DELETE", ad+"/users/"+temp.ID+"/identities/google", "", key, 404)
+	req("DELETE", ad+"/users/"+temp.ID+"/identities/google", "", nil, 401)
+	req("DELETE", ad+"/users/"+temp.ID+"/identities/google", "", ada, 403)
+	req("DELETE", ad+"/users/nope/identities/google", "", key, 404)
+	now := time.Now()
+	if err := f.svc.Store.PutIdentity(context.Background(), auth.Identity{ID: "idn-admin", UserID: temp.ID, Provider: "google", Subject: "g-admin", Email: "g@example.com", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	req("DELETE", ad+"/users/"+temp.ID+"/identities/google", "", key, 204)
 	req("GET", ad+"/whoami", "", key, 200)
 	req("GET", ad+"/whoami", "", nil, 401)
 	req("GET", ad+"/whoami", "", ada, 403)
@@ -722,7 +852,7 @@ func TestContract(t *testing.T) {
 	req("PUT", ad+"/secrets/KEY", `{"value": "x", "database": "nope"}`, json(key), 400)
 	req("PUT", ad+"/secrets/KEY", `{"value": "x"}`, nil, 401)
 	req("PUT", ad+"/secrets/KEY", `{"value": "x"}`, with(ada, "Content-Type", "application/json"), 403)
-	if out := req("GET", ad+"/secrets", "", key, 200); len(out["items"].([]any)) != 2 {
+	if out := req("GET", ad+"/secrets", "", key, 200); len(out["items"].([]any)) != 2+3 { // plus the provider secrets of setUpProviders
 		t.Errorf("secrets listed: %v", out["items"])
 	}
 	req("DELETE", ad+"/secrets/SHARED", "", key, 204)

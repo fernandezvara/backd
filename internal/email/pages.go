@@ -27,6 +27,12 @@ const (
 	PageAcceptInvitation   = "accept-invitation"
 	PageResult             = "result"
 	PageInvalidToken       = "invalid-token"
+	// PageOAuthError is shown when a provider sends the user back with a sign-in
+	// attempt backd can't trace to an app. A realm may write its own
+	// (<realm>/pages/oauth-error/<locale>.html); without one the built-in English
+	// page is shown. It is not among PageKinds: a realm that only sends email
+	// doesn't need it.
+	PageOAuthError = "oauth-error"
 )
 
 // PageKinds are the pages every realm that sends email has, in every
@@ -35,6 +41,26 @@ var PageKinds = []string{PageVerifyEmail, PageResetPassword, PageConfirmEmailCha
 
 //go:embed all:pagedefaults
 var pageDefaults embed.FS
+
+// OptionalPageKinds are pages a realm may have in addition to PageKinds.
+var OptionalPageKinds = []string{PageOAuthError}
+
+// RenderBuiltin renders the built-in English page of a kind.
+func RenderBuiltin(kind string, d PageData) (string, error) {
+	data, err := DefaultPage(kind)
+	if err != nil {
+		return "", err
+	}
+	tpl, err := htmltemplate.New(kind).Parse(string(data))
+	if err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	if err := tpl.Execute(&b, d); err != nil {
+		return "", err
+	}
+	return b.String(), nil
+}
 
 // DefaultPage returns the English template of a hosted page.
 func DefaultPage(kind string) ([]byte, error) {
@@ -128,6 +154,32 @@ func LoadPages(dir string, locales []string) (*Pages, []error) {
 			}
 			var b strings.Builder
 			if err := tpl.Execute(&b, samplePage); err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", file, err))
+				continue
+			}
+			if p.byKind[kind] == nil {
+				p.byKind[kind] = map[string]*htmltemplate.Template{}
+			}
+			p.byKind[kind][loc] = tpl
+		}
+	}
+	for _, kind := range OptionalPageKinds {
+		for _, loc := range locales {
+			file := filepath.Join(dir, kind, loc+".html")
+			data, err := os.ReadFile(file)
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			tpl, err := htmltemplate.New(kind + "/" + loc).Option("missingkey=error").Parse(string(data))
+			if err == nil {
+				var b strings.Builder
+				err = tpl.Execute(&b, samplePage)
+			}
+			if err != nil {
 				errs = append(errs, fmt.Errorf("%s: %w", file, err))
 				continue
 			}

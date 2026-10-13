@@ -51,6 +51,8 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 			r.Use(users, a.loadUser, a.guardTarget)
 			r.Get("/", a.getUser)
 			r.Get("/owned", a.owned)
+			r.Get("/identities", a.userIdentities)
+			r.Delete("/identities/{provider}", a.unlinkUserIdentity)
 			r.Get("/sessions", a.userSessions)
 			r.Delete("/sessions/{session_id}", a.revokeUserSession)
 			r.With(json).Patch("/", a.updateUser)

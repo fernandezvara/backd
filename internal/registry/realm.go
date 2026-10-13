@@ -117,6 +117,14 @@ type RealmSettings struct {
 	Storage *StorageSettings
 	// Account is how the realm's accounts behave (account in realm.yaml).
 	Account AccountSettings
+	// Providers are the external identity providers (providers in realm.yaml),
+	// by name; SignInRedirects are where a sign-in may send the user back to
+	// (sign_in.allowed_redirects, normalized like email.allowed_redirects).
+	Providers       map[string]*Provider
+	SignInRedirects []string
+	// SignInAppURL (sign_in.app_url) is where a sign-in goes back to when its
+	// redirect_to is absent: the app's own address, within the allowed redirects.
+	SignInAppURL string
 }
 
 // AccountSettings are the account lifecycle settings of a realm.
@@ -136,6 +144,17 @@ type AccountSettings struct {
 	ResetPasswordTTL time.Duration
 	// PurgeUnverifiedAfter deletes accounts that never verified; 0 is off.
 	PurgeUnverifiedAfter time.Duration
+	// OnSignup is the internal, async function (<database>/<function>) called for every
+	// new user (account.on_signup), to create the app's profile document; OnSignupTimeout
+	// is its timeout.
+	OnSignup        string
+	OnSignupTimeout time.Duration
+}
+
+// OnSignupDatabaseAndName splits OnSignup.
+func (a AccountSettings) OnSignupDatabaseAndName() (string, string) {
+	db, name, _ := strings.Cut(a.OnSignup, "/")
+	return db, name
 }
 
 // TokenLifetime is how long a token of this purpose works in the realm.
@@ -276,11 +295,19 @@ type realmDoc struct {
 	} `yaml:"roles"`
 	Email   *emailDoc   `yaml:"email"`
 	Storage *storageDoc `yaml:"storage"`
+	// Providers are the external identity providers users may sign in with, and
+	// SignIn the settings that go with signing in.
+	Providers map[string]*providerDoc `yaml:"providers"`
+	SignIn    *struct {
+		AllowedRedirects []string `yaml:"allowed_redirects"`
+		AppURL           string   `yaml:"app_url"`
+	} `yaml:"sign_in"`
 	Account *struct {
 		RequireVerifiedEmail bool   `yaml:"require_verified_email"`
 		WelcomeEmail         bool   `yaml:"welcome_email"`
 		AllowEmailChange     bool   `yaml:"allow_email_change"`
 		PurgeUnverifiedAfter string `yaml:"purge_unverified_after"`
+		OnSignup             string `yaml:"on_signup"`
 		Tokens               *struct {
 			VerifyEmail       string `yaml:"verify_email"`
 			ResetPassword     string `yaml:"reset_password"`
@@ -603,6 +630,38 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 		}
 	}
 
+	if len(doc.Providers) > 0 || doc.SignIn != nil {
+		if !s.AuthEnabled {
+			errs = append(errs, errors.New("providers: only apply when auth is enabled"))
+		} else {
+			var es []error
+			s.Providers, es = parseProviders(doc.Providers)
+			errs = append(errs, es...)
+			if si := doc.SignIn; si != nil {
+				for i, o := range si.AllowedRedirects {
+					norm, ok := normalizeRedirectOrigin(o)
+					switch {
+					case !ok:
+						errs = append(errs, fmt.Errorf("sign_in.allowed_redirects[%d]: %q must be an origin such as https://app.example.com (no path), or an app scheme such as acme://", i, o))
+					case slices.Contains(s.SignInRedirects, norm):
+						errs = append(errs, fmt.Errorf("sign_in.allowed_redirects[%d]: %q is listed twice", i, o))
+					default:
+						s.SignInRedirects = append(s.SignInRedirects, norm)
+					}
+				}
+				if si.AppURL != "" {
+					s.SignInAppURL = si.AppURL
+					if !s.SignInRedirectAllowed(si.AppURL) {
+						errs = append(errs, fmt.Errorf("sign_in.app_url: %q must be within sign_in.allowed_redirects (or email.allowed_redirects when it has none)", si.AppURL))
+					}
+				}
+			}
+			if len(s.Providers) > 0 && len(s.SignInRedirects) == 0 && (s.Email == nil || len(s.Email.AllowedRedirects) == 0) {
+				errs = append(errs, errors.New("providers: need sign_in.allowed_redirects (or email.allowed_redirects): the origins and app schemes a sign-in may send the user back to"))
+			}
+		}
+	}
+
 	s.Account.VerifyEmailTTL = DefaultVerifyEmailTTL
 	s.Account.ResetPasswordTTL = DefaultResetPasswordTTL
 	s.Account.ChangeEmailTTL = 24 * time.Hour
@@ -632,6 +691,14 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 				}
 			}
 			dur("purge_unverified_after", a.PurgeUnverifiedAfter, &s.Account.PurgeUnverifiedAfter)
+			if a.OnSignup != "" {
+				db, name, ok := strings.Cut(a.OnSignup, "/")
+				if !ok || !namePattern.MatchString(db) || !namePattern.MatchString(name) {
+					errs = append(errs, fmt.Errorf("account.on_signup: must be <database>/<function> (the internal, async function called for every new user), got %q", a.OnSignup))
+				} else {
+					s.Account.OnSignup = a.OnSignup
+				}
+			}
 			if a.Tokens != nil {
 				dur("tokens.verify_email", a.Tokens.VerifyEmail, &s.Account.VerifyEmailTTL)
 				dur("tokens.reset_password", a.Tokens.ResetPassword, &s.Account.ResetPasswordTTL)
@@ -945,6 +1012,10 @@ var schemePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.-]*$`)
 // AllowedRedirect reports whether raw is an absolute URL on one of the
 // allowed origins or app schemes: where a page may send a user.
 func (e EmailSettings) AllowedRedirect(raw string) bool {
+	return redirectAllowed(e.AllowedRedirects, raw)
+}
+
+func redirectAllowed(allowed []string, raw string) bool {
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme == "" || u.User != nil || strings.ContainsAny(raw, " \t\r\n") {
 		return false
@@ -954,9 +1025,9 @@ func (e EmailSettings) AllowedRedirect(raw string) bool {
 		if u.Host == "" {
 			return false
 		}
-		return slices.Contains(e.AllowedRedirects, scheme+"://"+strings.ToLower(u.Host))
+		return slices.Contains(allowed, scheme+"://"+strings.ToLower(u.Host))
 	}
-	return slices.Contains(e.AllowedRedirects, scheme+"://")
+	return slices.Contains(allowed, scheme+"://")
 }
 
 var localePattern = regexp.MustCompile(`^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$`)

@@ -208,6 +208,7 @@ func (s *Users) AcceptInvitation(ctx context.Context, token, password, locale st
 		return EmailToken{}, err
 	}
 	s.AuditAs(ctx, userTarget(u.ID), AuditUserSignup, userTarget(u.ID), map[string]any{"invited": true, "emailed": true, "roles": u.Roles})
+	s.queueOnSignup(ctx, u, ProviderPassword, nil)
 	return t, nil
 }
 

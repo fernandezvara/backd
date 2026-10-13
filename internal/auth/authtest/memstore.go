@@ -4,6 +4,7 @@ package authtest
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"slices"
 	"sort"
 	"strings"
@@ -26,6 +27,8 @@ type MemStore struct {
 	invites     map[string]auth.Invitation // id → invitation
 	audit       []auth.AuditRecord
 	journal     map[string]auth.FileJournalEntry
+	oauthStates map[string]auth.OAuthState
+	loginCodes  map[string]auth.LoginCode
 	deletions   map[string]auth.FileDeletion
 	usage       map[string]auth.StorageUsageTotals
 	declared    map[string]string
@@ -42,7 +45,7 @@ type MemStore struct {
 
 // NewMemStore returns an empty store.
 func NewMemStore() *MemStore {
-	return &MemStore{users: map[string]auth.User{}, identities: map[string]auth.Identity{}, sessions: map[string]auth.Session{}, keys: map[string]auth.APIKey{}, attempts: map[string]memAttempts{}, invites: map[string]auth.Invitation{}, secrets: map[string]auth.Secret{}, schedules: map[string]auth.ScheduleState{}, checks: map[string]auth.CheckReport{}, journal: map[string]auth.FileJournalEntry{}, deletions: map[string]auth.FileDeletion{}, jobs: map[string]memJob{}, idempotency: map[string]auth.IdempotencyRecord{}}
+	return &MemStore{users: map[string]auth.User{}, identities: map[string]auth.Identity{}, sessions: map[string]auth.Session{}, keys: map[string]auth.APIKey{}, attempts: map[string]memAttempts{}, invites: map[string]auth.Invitation{}, secrets: map[string]auth.Secret{}, schedules: map[string]auth.ScheduleState{}, checks: map[string]auth.CheckReport{}, journal: map[string]auth.FileJournalEntry{}, oauthStates: map[string]auth.OAuthState{}, loginCodes: map[string]auth.LoginCode{}, deletions: map[string]auth.FileDeletion{}, jobs: map[string]memJob{}, idempotency: map[string]auth.IdempotencyRecord{}}
 }
 
 func secretKey(database, name string) string { return database + "\x00" + name }
@@ -260,12 +263,85 @@ func (m *MemStore) PutIdentity(_ context.Context, id auth.Identity) error {
 	}
 	k := id.Provider + "/" + id.Subject
 	if cur, ok := m.identities[k]; ok {
+		if cur.UserID != id.UserID {
+			return auth.ErrIdentityExists
+		}
 		cur.PasswordHash, cur.UpdatedAt = id.PasswordHash, id.UpdatedAt
 		m.identities[k] = cur
 		return nil
 	}
+	for _, other := range m.identities {
+		if other.UserID == id.UserID && other.Provider == id.Provider {
+			return auth.ErrIdentityExists
+		}
+	}
 	m.identities[k] = id
 	return nil
+}
+
+func (m *MemStore) ListIdentities(_ context.Context, userID string) ([]auth.Identity, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []auth.Identity
+	for _, i := range m.identities {
+		if i.UserID == userID {
+			out = append(out, i)
+		}
+	}
+	sort.SliceStable(out, func(a, b int) bool { return out[a].CreatedAt.Before(out[b].CreatedAt) })
+	return out, nil
+}
+
+func (m *MemStore) IdentityOf(_ context.Context, userID, provider string) (auth.Identity, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, i := range m.identities {
+		if i.UserID == userID && i.Provider == provider {
+			return i, nil
+		}
+	}
+	return auth.Identity{}, auth.ErrNotFound
+}
+
+func (m *MemStore) UpdateIdentity(_ context.Context, id string, upd auth.IdentityUpdate, now time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for k, i := range m.identities {
+		if i.ID != id {
+			continue
+		}
+		if upd.Email != nil {
+			i.Email = *upd.Email
+		}
+		if upd.EmailVerified != nil {
+			i.EmailVerified = *upd.EmailVerified
+		}
+		if upd.LastUsedAt != nil {
+			i.LastUsedAt = *upd.LastUsedAt
+		}
+		if upd.AppleRefreshToken != nil {
+			i.AppleRefreshToken = *upd.AppleRefreshToken
+		}
+		if upd.AppleClientID != nil {
+			i.AppleClientID = *upd.AppleClientID
+		}
+		i.UpdatedAt = now
+		m.identities[k] = i
+		return nil
+	}
+	return auth.ErrNotFound
+}
+
+func (m *MemStore) DeleteIdentity(_ context.Context, userID, provider string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for k, i := range m.identities {
+		if i.UserID == userID && i.Provider == provider {
+			delete(m.identities, k)
+			return nil
+		}
+	}
+	return auth.ErrNotFound
 }
 
 func (m *MemStore) Identity(_ context.Context, provider, subject string) (auth.Identity, error) {
@@ -954,6 +1030,32 @@ func (m *MemStore) ClearEraseEmail(_ context.Context, jobID string) error {
 	return nil
 }
 
+func (m *MemStore) ClearJobInput(_ context.Context, jobID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	j, ok := m.jobs[jobID]
+	if !ok {
+		return auth.ErrNotFound
+	}
+	j.Input = json.RawMessage(`{}`)
+	m.jobs[jobID] = j
+	return nil
+}
+
+func (m *MemStore) ClearRevokeToken(_ context.Context, jobID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	j, ok := m.jobs[jobID]
+	if !ok || j.Revoke == nil {
+		return auth.ErrNotFound
+	}
+	r := *j.Revoke
+	r.Token = ""
+	j.Revoke = &r
+	m.jobs[jobID] = j
+	return nil
+}
+
 func (m *MemStore) ReopenJob(_ context.Context, id string, expiresAt time.Time) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1303,4 +1405,40 @@ func (m *MemStore) StorageUsageOf(_ context.Context, owner string) (auth.Storage
 		user = m.usage["user:"+owner]
 	}
 	return m.usage[""], user, nil
+}
+
+func (m *MemStore) PutOAuthState(_ context.Context, st auth.OAuthState) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.oauthStates[st.ID] = st
+	return nil
+}
+
+func (m *MemStore) ClaimOAuthState(_ context.Context, id string, now time.Time) (auth.OAuthState, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	st, ok := m.oauthStates[id]
+	delete(m.oauthStates, id)
+	if !ok || !st.ExpiresAt.After(now) {
+		return auth.OAuthState{}, auth.ErrNotFound
+	}
+	return st, nil
+}
+
+func (m *MemStore) PutLoginCode(_ context.Context, lc auth.LoginCode) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.loginCodes[lc.ID] = lc
+	return nil
+}
+
+func (m *MemStore) ClaimLoginCode(_ context.Context, id string, now time.Time) (auth.LoginCode, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	lc, ok := m.loginCodes[id]
+	delete(m.loginCodes, id)
+	if !ok || !lc.ExpiresAt.After(now) {
+		return auth.LoginCode{}, auth.ErrNotFound
+	}
+	return lc, nil
 }

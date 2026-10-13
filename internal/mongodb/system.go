@@ -35,6 +35,12 @@ const (
 	// IdempotencyCollection ties an Idempotency-Key to its outcome
 	// (roadmap F12), scoped to the function and the caller.
 	IdempotencyCollection = "idempotency"
+	// OAuthStatesCollection and LoginCodesCollection hold the short-lived records of
+	// the redirect sign-in flow: an attempt waiting for the provider, and a one-time
+	// login code (any first factor's) waiting to be redeemed. Both are keyed by a hash
+	// and expire by TTL.
+	OAuthStatesCollection = "oauth_states"
+	LoginCodesCollection  = "login_codes"
 	// SchemaChecksCollection holds the latest schema check report of each
 	// collection (roadmap #26), replaced by the next finished check.
 	SchemaChecksCollection = "schema_checks"
@@ -108,14 +114,23 @@ var systemCollections = []systemCollection{
 		validator: jsonSchema([]string{"_id", "user_id", "provider", "subject", "created_at", "updated_at"}, map[string]any{
 			"_id":           str(),
 			"user_id":       str(),
-			"provider":      map[string]any{"enum": bson.A{"password"}},
+			"provider":      map[string]any{"bsonType": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$"},
 			"subject":       str(),
 			"password_hash": str(),
-			"created_at":    typ("date"),
-			"updated_at":    typ("date"),
+			// What an external provider reported (never for a password), and the
+			// last sign-in; an Apple identity also holds its encrypted refresh token.
+			"email":               str(),
+			"email_verified":      typ("bool"),
+			"last_used_at":        typ("date"),
+			"apple_refresh_token": str(),
+			"apple_client_id":     str(),
+			"created_at":          typ("date"),
+			"updated_at":          typ("date"),
 		}),
 		indexes: []systemIndex{
 			{keys: bson.D{{Key: "provider", Value: 1}, {Key: "subject", Value: 1}}, unique: true},
+			// One identity per provider per user.
+			{keys: bson.D{{Key: "user_id", Value: 1}, {Key: "provider", Value: 1}}, unique: true},
 			{keys: bson.D{{Key: "user_id", Value: 1}}},
 		},
 	},
@@ -403,6 +418,40 @@ var systemCollections = []systemCollection{
 			"job_id":       str(),         // an async call's job, once done
 			"created_at":   typ("date"),
 			"expires_at":   typ("date"),
+		}),
+		indexes: []systemIndex{{keys: bson.D{{Key: "expires_at", Value: 1}}, ttl: true}},
+	},
+	{
+		name: OAuthStatesCollection,
+		// _id is the SHA-256 of the state value the provider echoes.
+		validator: jsonSchema([]string{"_id", "provider", "intent", "code_challenge", "verifier", "nonce", "redirect_to", "created_at", "expires_at"}, map[string]any{
+			"_id":            str(),
+			"provider":       str(),
+			"intent":         map[string]any{"enum": bson.A{"signin", "link"}},
+			"code_challenge": str(),
+			"verifier":       str(),
+			"nonce":          str(),
+			"redirect_to":    str(),
+			"invitation_id":  str(),
+			"link_user_id":   str(),
+			"locales":        typ("array"),
+			"created_at":     typ("date"),
+			"expires_at":     typ("date"),
+		}),
+		indexes: []systemIndex{{keys: bson.D{{Key: "expires_at", Value: 1}}, ttl: true}},
+	},
+	{
+		name: LoginCodesCollection,
+		// _id is the SHA-256 of the login code.
+		validator: jsonSchema([]string{"_id", "user_id", "method", "code_challenge", "created_at", "expires_at"}, map[string]any{
+			"_id":            str(),
+			"user_id":        str(),
+			"method":         str(),
+			"code_challenge": str(),
+			"new_user":       typ("bool"),
+			"profile":        typ("object"),
+			"created_at":     typ("date"),
+			"expires_at":     typ("date"),
 		}),
 		indexes: []systemIndex{{keys: bson.D{{Key: "expires_at", Value: 1}}, ttl: true}},
 	},

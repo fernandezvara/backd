@@ -43,9 +43,10 @@ The overview page lists the level (full, read-only or custom) and the areas the 
 
 {{< screenshot src="admin-ui/user.png" alt="A user: status, roles with the only-in-the-database warning, networks and sessions" >}}
 
-The **Users** page lists the realm's users, a page at a time, and searches by email as you type. Opening a user shows their status, whether the address is verified, the roles they hold, their networks and their active sessions (never a token). With the `users` area an administrator can also:
+The **Users** page lists the realm's users, a page at a time, and searches by email as you type. Opening a user shows their status, whether the address is verified, the roles they hold, their networks, their ways to sign in (a password and any [providers](../providers/): the address each reported, when it was linked and last used) and their active sessions (never a token). With the `users` area an administrator can also:
 
 - **create** a user, with or without a password (without one they can't sign in until a password is set);
+- **remove a way to sign in** (asks for the method's name; the last one can't be removed);
 - **disable** or **enable** them (disabling ends their sessions), mark the address **verified**, **set a password** (which ends their sessions) and **change the email** (offered only when the realm sends email, because both addresses are told);
 - **add and remove roles**, from the roles `realm.yaml` declares. An assignment that `realm.yaml` doesn't list for that user is marked *only in the database*: a rebuilt realm wouldn't have it. Reading which roles are declared and seeded needs the `config` area; without it the role is typed by name and the server checks it;
 - **revoke a session**: its token stops working at once;

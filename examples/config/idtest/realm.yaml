@@ -1,0 +1,71 @@
+# The idtest realm: sign-in with real Google, Microsoft and Apple
+# providers, for the manual checks of design/identity-providers-testing.md
+# and the providers example app (clients/js/examples/providers).
+#
+# Fill in every placeholder below with the ids from each provider's
+# console, set the three secrets with `backd secret set`, and add the
+# public origin the app is reached at to sign_in.allowed_redirects.
+# Until then the realm still loads (backd starts with a "provider's
+# secrets are not set" warning) and each "Continue with …" button fails
+# at the provider.
+#
+# The callback URL to register in each console:
+#   {BACKD_URL}/v1/idtest/_auth/oauth/<provider>/callback
+# Apple needs a public https host (never localhost): put the local stack
+# behind a tunnel (`cloudflared tunnel`, `ngrok http 8443`) or use a
+# staging host, set BACKD_URL to it and list its origin below.
+
+auth: enabled
+signup: open
+
+# Cookie sessions, so checks 5.8 and 12.4 of the testing guide can run.
+sessions:
+  cookie:
+    enabled: true
+    same_site: lax
+
+# The realm's administrators: `backd bootstrap --realm idtest --email <email>`
+# creates the first one; needed for `backd secret set`, user and identity
+# management and the audit commands the testing guide uses.
+roles:
+  admin:
+    description: Manages users, invitations, API keys and secrets
+    admin: true
+
+sign_in:
+  # Origins (no path) and app schemes a sign-in may send the user back to.
+  # The local stack serves the app at https://localhost:8443/example/providers/;
+  # add the origin of your tunnel or staging host when testing for real.
+  allowed_redirects:
+    - https://localhost:8443
+    - "idtest://"                          # a mobile app's deep-link scheme
+    # - https://YOUR-PUBLIC-HOST.example   # tunnel or staging origin
+
+providers:
+  # console.cloud.google.com → APIs & Services → Credentials → OAuth client (web)
+  google:
+    client_id: YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com
+    client_secret: secret:GOOGLE_CLIENT_SECRET
+    native_client_ids: []
+    # native_client_ids: [YOUR_GOOGLE_NATIVE_CLIENT_ID.apps.googleusercontent.com]
+  # entra.microsoft.com → App registrations (platform: Web); enable the
+  # optional `email` claim on the ID token in Token configuration.
+  microsoft:
+    client_id: "00000000-0000-0000-0000-000000000000"  # Application (client) ID
+    client_secret: secret:MICROSOFT_CLIENT_SECRET
+    tenant: common                   # common | organizations | consumers | <tenant id>
+  # developer.apple.com → Identifiers (Services ID) and Keys (Sign in with Apple)
+  apple:
+    services_id: com.example.idtest.web    # the web client id
+    bundle_ids: [com.example.idtest.ios]   # iOS apps, for the id-token endpoint
+    team_id: TEAMID0000              # 10 upper-case letters/digits, as the console shows
+    key_id: KEYID00000
+    private_key: secret:APPLE_SIGN_IN_KEY  # the whole AuthKey_<KEYID>.p8 file
+    # revoke_on_delete: false        # skip storing Apple refresh tokens (no iOS app)
+
+# Set the secrets from the shell (values never touch this file):
+#   backd login --realm idtest --url "$BACKD_URL" --email <admin email>
+#   printf '%s\n' "$GOOGLE_SECRET"    | backd secret set --realm idtest --name GOOGLE_CLIENT_SECRET
+#   printf '%s\n' "$MICROSOFT_SECRET" | backd secret set --realm idtest --name MICROSOFT_CLIENT_SECRET
+#   backd secret set --realm idtest --name APPLE_SIGN_IN_KEY < AuthKey_<KEYID>.p8
+#

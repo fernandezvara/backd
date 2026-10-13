@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>backd providers example</title>
+  <link rel="stylesheet" href="../blog/style.css">
+  <link rel="stylesheet" href="style.css">
+  <!-- Resolves `import … from 'backd-js'`, as a bundler would; nginx
+       serves clients/js/src at /example/client/. -->
+  <script type="importmap">{ "imports": { "backd-js": "/example/client/index.js" } }</script>
+  <!-- The app registers its component on alpine:init, so it loads before Alpine. -->
+  <script type="module" src="app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.17.4/dist/cdn.min.js"></script>
+</head>
+<body>
+  <main x-data="app" x-cloak>
+    <header>
+      <h1>Sign in with a provider</h1>
+      <template x-if="user">
+        <p class="who">
+          <span x-text="user.email"></span>
+          <button class="link" @click="logout" :disabled="busy">Log out</button>
+        </p>
+      </template>
+    </header>
+
+    <p class="muted">
+      Realm <code>idtest</code>. Configure the providers in
+      <code>examples/config/idtest/realm.yaml</code>; see
+      <code>design/identity-providers-testing.md</code> for the consoles and the checks.
+    </p>
+
+    <p class="notice" x-show="notice" x-text="notice" role="status"></p>
+    <p class="error" x-show="error" x-text="error" role="alert"></p>
+
+    <!-- Signed out: pick a provider. -->
+    <div class="card" x-show="!user">
+      <h2>Continue with…</h2>
+      <template x-for="provider in providers" :key="provider">
+        <p><button @click="continueWith(provider)" :disabled="busy"
+          x-text="'Continue with ' + provider.charAt(0).toUpperCase() + provider.slice(1)"></button></p>
+      </template>
+    </div>
+
+    <!-- Signed in: the user's ways to sign in, and linking more. -->
+    <div x-show="user">
+      <section class="card">
+        <h2>Ways to sign in</h2>
+        <table>
+          <thead>
+            <tr><th>Method</th><th>Address</th><th>Verified</th><th>Linked</th><th>Last used</th><th></th></tr>
+          </thead>
+          <tbody>
+            <template x-for="identity in user?.identities ?? []" :key="identity.provider">
+              <tr>
+                <td x-text="identity.provider"></td>
+                <td x-text="identity.email"></td>
+                <td x-text="identity.email_verified ? 'yes' : 'no'"></td>
+                <td x-text="new Date(identity.created_at).toLocaleString()"></td>
+                <td x-text="identity.last_used_at ? new Date(identity.last_used_at).toLocaleString() : '—'"></td>
+                <td><button class="link danger" @click="unlink(identity.provider)" :disabled="busy"
+                  :title="(user?.identities?.length ?? 0) < 2 ? 'The last way to sign in cannot be removed' : 'Remove ' + identity.provider">Remove</button></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h2>Link another provider</h2>
+        <p class="muted">Linking asks the provider to sign you in, then adds it to this account.</p>
+        <template x-for="provider in providers" :key="provider">
+          <p x-show="!linked(provider)"><button @click="link(provider)" :disabled="busy"
+            x-text="'Link ' + provider"></button></p>
+        </template>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

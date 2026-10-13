@@ -78,7 +78,7 @@ func userCreate(c *userCtx) error {
 	body := map[string]any{"email": c.email}
 	noPassword := flag(c.cmd, "no-password")
 	if !noPassword {
-		p, err := readSecret(c.uio, true)
+		p, err := readSecret(c.uio, true, "Password")
 		if err != nil {
 			return err
 		}
@@ -124,7 +124,7 @@ func userList(c *userCtx) error {
 }
 
 func userSetPassword(c *userCtx) error {
-	p, err := readSecret(c.uio, true)
+	p, err := readSecret(c.uio, true, "Password")
 	if err != nil {
 		return err
 	}
@@ -423,9 +423,9 @@ func (a *app) users(ctx context.Context, realm string) (*auth.Users, error) {
 
 // readSecret reads a password from the terminal without echo, twice when
 // confirm is set; otherwise it reads the first line of stdin.
-func readSecret(uio userIO, confirm bool) (string, error) {
+func readSecret(uio userIO, confirm bool, prompt string) (string, error) {
 	if f, ok := uio.stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
-		fmt.Fprint(uio.stderr, "Password: ")
+		fmt.Fprintf(uio.stderr, "%s: ", prompt)
 		p1, err := term.ReadPassword(int(f.Fd()))
 		fmt.Fprintln(uio.stderr)
 		if err != nil {
@@ -450,4 +450,48 @@ func readSecret(uio userIO, confirm bool) (string, error) {
 		return "", errors.New("no password on standard input")
 	}
 	return strings.TrimRight(line, "\r\n"), nil
+}
+
+// userIdentities lists the user's sign-in methods.
+func userIdentities(c *userCtx) error {
+	u, err := c.find()
+	if err != nil {
+		return err
+	}
+	var out struct {
+		Items []struct {
+			Provider      string  `json:"provider"`
+			Email         string  `json:"email"`
+			EmailVerified bool    `json:"email_verified"`
+			CreatedAt     string  `json:"created_at"`
+			LastUsedAt    *string `json:"last_used_at"`
+		} `json:"items"`
+	}
+	if err := c.t.call("GET", "_admin/users/"+url.PathEscape(u.ID)+"/identities", nil, nil, &out); err != nil {
+		return err
+	}
+	w := tabwriter.NewWriter(c.uio.stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(w, "PROVIDER\tEMAIL\tVERIFIED\tLINKED\tLAST USED")
+	for _, i := range out.Items {
+		last := "-"
+		if i.LastUsedAt != nil {
+			last = *i.LastUsedAt
+		}
+		fmt.Fprintf(w, "%s\t%s\t%t\t%s\t%s\n", i.Provider, i.Email, i.EmailVerified, i.CreatedAt, last)
+	}
+	return w.Flush()
+}
+
+// userUnlinkIdentity removes one of the user's sign-in methods.
+func userUnlinkIdentity(c *userCtx) error {
+	provider := str(c.cmd, "provider")
+	u, err := c.find()
+	if err != nil {
+		return err
+	}
+	if err := c.t.call("DELETE", "_admin/users/"+url.PathEscape(u.ID)+"/identities/"+url.PathEscape(provider), nil, nil, nil); err != nil {
+		return err
+	}
+	fmt.Fprintf(c.uio.stdout, "%s can no longer sign in with %s\n", u.Email, provider)
+	return nil
 }

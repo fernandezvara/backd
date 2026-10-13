@@ -239,6 +239,21 @@
       "removed": "{role} quitado.",
       "unlisted": "Nombre de un rol declarado en realm.yaml"
     },
+    "identities": {
+      "title": "Formas de iniciar sesión",
+      "provider": "Método",
+      "email": "Dirección",
+      "linked": "Vinculado",
+      "lastUsed": "Último uso",
+      "never": "Sin registro",
+      "verified": "verificada",
+      "unverified": "sin verificar",
+      "unlink": "Quitar",
+      "unlinked": "{provider} quitado.",
+      "unlinkTitle": "¿Quitar la forma de iniciar sesión con {provider}?",
+      "unlinkBody": "La persona ya no podrá iniciar sesión con ella. La última forma de iniciar sesión no se puede quitar. Quitar Apple también revoca los tokens de Apple de la persona.",
+      "loadFailed": "No se pudieron cargar las formas de iniciar sesión."
+    },
     "sessions": {
       "title": "Sesiones",
       "none": "No hay sesiones activas.",

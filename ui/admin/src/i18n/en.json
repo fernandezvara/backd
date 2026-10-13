@@ -239,6 +239,21 @@
       "removed": "{role} removed.",
       "unlisted": "Name of a role declared in realm.yaml"
     },
+    "identities": {
+      "title": "Ways to sign in",
+      "provider": "Method",
+      "email": "Address",
+      "linked": "Linked",
+      "lastUsed": "Last used",
+      "never": "Not recorded",
+      "verified": "verified",
+      "unverified": "not verified",
+      "unlink": "Remove",
+      "unlinked": "{provider} removed.",
+      "unlinkTitle": "Remove the way to sign in with {provider}?",
+      "unlinkBody": "The user can no longer sign in with it. The last way to sign in can't be removed. Removing Apple also revokes the user's Apple tokens.",
+      "loadFailed": "The ways to sign in could not be loaded."
+    },
     "sessions": {
       "title": "Sessions",
       "none": "No active sessions.",

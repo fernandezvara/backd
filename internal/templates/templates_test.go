@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -49,7 +50,7 @@ func emailFiles(realm string, created bool) []File {
 			out = append(out, File{Path: realm + "/email/" + kind + "/" + name, Created: created})
 		}
 	}
-	for _, kind := range email.PageKinds {
+	for _, kind := range append(slices.Clone(email.PageKinds), email.OptionalPageKinds...) {
 		out = append(out, File{Path: realm + "/pages/" + kind + "/en.html", Created: created})
 	}
 	return out
@@ -164,7 +165,7 @@ func TestProject(t *testing.T) {
 			t.Errorf("missing %s", p)
 		}
 	}
-	if want := len(wantPaths) + len(email.SystemKinds)*3 + len(email.PageKinds) - 2; len(got) != want { // the two email files listed above are among the 24
+	if want := len(wantPaths) + len(email.SystemKinds)*3 + len(email.PageKinds) + len(email.OptionalPageKinds) - 2; len(got) != want { // the two email files listed above are among the 24
 		t.Errorf("got %d files, want %d: %v", len(got), want, files)
 	}
 

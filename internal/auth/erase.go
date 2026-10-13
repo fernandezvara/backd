@@ -87,6 +87,10 @@ func (s *Users) Erase(ctx context.Context, id, requestID string) (Job, error) {
 		}
 		return Job{}, ErrAlreadyErased
 	}
+	// Apple wants the user's tokens revoked: queue it before the identities go.
+	if err := s.queueAppleRevocation(ctx, id); err != nil {
+		return Job{}, err
+	}
 	job, err := s.EnqueueJob(ctx, Job{
 		Database: eraseDatabase, Function: eraseFunction, CallerActor: "admin", Origin: EraseOrigin,
 		TimeoutMS: eraseLease.Milliseconds(), RequestID: requestID, Erase: &EraseJob{UserID: id, Email: u.Email},

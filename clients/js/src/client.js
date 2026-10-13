@@ -27,6 +27,11 @@ import { COOKIE_SESSION, memoryStorage } from './storage.js'
  * @property {boolean} [cookies]          Browser apps: keep the session in an HttpOnly cookie that scripts can't read,
  *   instead of a token. The realm must enable `sessions.cookie` and list the app's origin in `cors.origins`; the
  *   app's page (or the API) must be on a site the cookie's SameSite setting allows. The admin API doesn't take cookies.
+ * @property {import('./oauth.js').OAuthStorage} [oauthStorage] Where the sign-in with a provider keeps its PKCE verifier while the
+ *   user is at the provider; the tab's `sessionStorage` by default.
+ * @property {boolean} [completeOnLoad] Browser apps: finish a sign-in with a provider (or a link) that the page's
+ *   address carries (`backd_code`, `backd_error`, `backd_linked`) as soon as the client is created, and resolve
+ *   `client.auth.ready` with the outcome. On by default; `false` leaves it to `client.auth.completeSignIn()`.
  * @property {RetryOptions} [retry]       Retries for 429/503; off by default.
  * @property {typeof fetch} [fetch]       A fetch implementation; the global one by default.
  * @property {Record<string, string>} [headers] Extra headers for every request.
@@ -117,8 +122,11 @@ export class Client {
     this.headers = options.headers ?? {}
     /** @readonly */
     this.storage = options.storage ?? memoryStorage()
+    /** @internal */
+    this.oauthStorage = options.oauthStorage
     /** Sign-up, login and sessions. */
     this.auth = new Auth(this)
+    if (options.completeOnLoad !== false) this.auth.completeOnLoad()
     /** Users, roles, invitations and API keys; needs an admin `apiKey` or an admin user's session. */
     this.admin = new Admin(this)
   }

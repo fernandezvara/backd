@@ -1,6 +1,6 @@
 module github.com/fernandezvara/backd
 
-go 1.27.1
+go 1.27.2
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.47.1
@@ -11,6 +11,7 @@ require (
 	github.com/expr-lang/expr v1.17.8
 	github.com/fernandezvara/kli v0.3.0
 	github.com/go-chi/chi/v5 v5.3.2
+	github.com/go-jose/go-jose/v4 v4.1.5
 	github.com/prometheus/client_golang v1.24.1
 	github.com/rs/xid v1.6.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3

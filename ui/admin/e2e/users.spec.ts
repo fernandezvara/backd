@@ -53,6 +53,24 @@ test('a full administrator creates, finds and manages a user', async ({ page, si
   await expect(page.getByRole('button', { name: 'Change email' })).toHaveCount(0)
 })
 
+test('the ways to sign in are listed, and the last one stays', async ({ page, signIn }) => {
+  const email = fresh()
+  await signIn('admin')
+  await page.getByRole('link', { name: 'Users' }).click()
+  await createUser(page, email)
+  const table = page.getByTestId('user-identities')
+  await expect(table.getByRole('row')).toHaveCount(2) // header + the password
+  await expect(table).toContainText('password')
+  await expect(table).toContainText(email)
+  // Removing it asks for the method's name, and the server refuses to remove the only one.
+  await table.getByRole('button', { name: 'Remove' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel(/Type/).fill('password')
+  await dialog.getByRole('button', { name: 'Remove' }).click()
+  await expect(page.getByRole('alert').filter({ hasText: 'only way to sign in' })).toBeVisible()
+  await expect(table).toContainText('password')
+})
+
 test('sessions are listed and revoked', async ({ page, signIn, request }) => {
   const email = fresh()
   await signIn('admin')

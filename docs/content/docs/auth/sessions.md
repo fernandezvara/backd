@@ -87,7 +87,8 @@ All request bodies are JSON objects sent with `Content-Type: application/json`. 
 | `POST /_auth/reset-password` | no | `{"token", "password"}` | `204`; sets the password and ends every session |
 | `POST /_auth/logout` | yes | none | `204`; ends this session |
 | `POST /_auth/logout-all` | yes | none | `204`; ends all of the user's sessions, including this one |
-| `GET /_auth/me` | yes | none | `200` with the user |
+| `GET /_auth/me` | yes | none | `200` with the user and their [sign-in methods](#sign-in-methods) |
+| `DELETE /_auth/identities/{provider}` | yes | none | `204`; removes a [sign-in method](#sign-in-methods), never the last |
 | `PATCH /_auth/me` | yes | `{"locale"?}` | `200` with the user; changes the user's [language](#language) |
 | `DELETE /_auth/me` | yes | `{"password"}` | `204`; **deactivates** the account (see [Deleting and erasing users](../erasure/)) |
 | `POST /_auth/email` | yes | `{"new_email", "password", "redirect_to"?}` | `202`; asks to [change the address](#changing-the-email-address), only in realms with `account.allow_email_change` |
@@ -171,8 +172,15 @@ Behind a reverse proxy or load balancer, set [`TRUSTED_PROXIES`](../../operation
 `GET /_auth/me` returns the signed-in user:
 
 ```json
-{"id": "dars2ql90v600434mf0g", "email": "ada@example.com", "email_verified": false, "roles": [], "locale": "en", "created_at": "2026-09-26T12:58:18.838Z"}
+{"id": "dars2ql90v600434mf0g", "email": "ada@example.com", "email_verified": false, "roles": [], "locale": "en", "created_at": "2026-09-26T12:58:18.838Z",
+ "identities": [{"provider": "password", "email": "ada@example.com", "email_verified": false, "created_at": "2026-09-26T12:58:18.838Z", "last_used_at": "2026-10-08T07:30:02.511Z"}]}
 ```
+
+### Sign-in methods
+
+`identities` lists the user's ways of signing in, oldest first: `provider` (`password` today), the `email` it reports (a password has none of its own, so it shows the user's), `email_verified`, when it was linked (`created_at`) and when it was last used (`last_used_at`, `null` until a use is recorded; a password's is set at each login). The provider's own user id, hashes and tokens are never shown.
+
+`DELETE /_auth/identities/{provider}` removes one (`204`). The last one can't be removed (`409 last_sign_in_method`), so a user can't lock themselves out, and a provider the user doesn't have is `404`. Removing is audited as [`identity.unlinked`](../audit/).
 
 ### Language
 
@@ -252,6 +260,7 @@ An invitation [sent by email](../admin/#emailing-an-invitation) opens a page whe
 | 403 | `forbidden` | Sign-up is closed in this realm, or needs a valid invitation |
 | 403 | `email_not_verified` | The password is right but the realm requires a verified address |
 | 404 | `not_found` | Unknown realm, realm with `auth: disabled`, or a session id that isn't yours |
+| 409 | `last_sign_in_method` | Removing the user's only way to sign in |
 | 409 | `email_taken` | Sign-up with a registered email, in a realm that issues a session at sign-up |
 | 429 | `too_many_requests` | Too many failed logins or password checks; wait `Retry-After` seconds |
 | 503 | `unavailable` | Too many password operations at once; retry after the `Retry-After` delay |

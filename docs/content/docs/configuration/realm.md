@@ -69,10 +69,14 @@ An empty file, or one with only comments, is valid: every key has a default.
 | `admin.read_access.data` | `false` | `true`: read-only administrators can read documents through the admin data route. |
 | `admin.allowed_networks` | none (any network) | IP addresses or CIDR networks, IPv4 or IPv6, allowed to use the [admin API](../../auth/admin/). See [Network restrictions](#network-restrictions). |
 | `email` | none (no email) | How the realm sends email: the delivery function, the sender, backd's public address for links, languages, the pages the links open, where users go afterwards, and limits. backd never sends mail itself. See [Email](../../functions/email/) |
+| `providers` | none | The external identity providers users may sign in with (`google`, `microsoft`, `apple`), each with its client id and `secret:NAME` references. See [Sign in with providers](../../auth/providers/) |
+| `sign_in.allowed_redirects` | `email.allowed_redirects` | Origins and app schemes a provider sign-in may send the user back to |
+| `sign_in.app_url` | none | Where a sign-in goes back to when it has no `redirect_to`; within the allowed redirects |
 | `account.require_verified_email` | `false` | `true`: no session until the address is verified. See [Account](#account) |
 | `account.allow_email_change` | `false` | `true`: users may [change their own address](../../auth/sessions/#changing-the-email-address) |
 | `account.welcome_email` | `false` | `true`: send the `welcome` email once the address is verified |
 | `account.purge_unverified_after` | off | Delete accounts that never verified after this long (at least `1m`; never accounts with roles) |
+| `account.on_signup` | none | An internal, async function (`<database>/<function>`) called for every new user, with `{user_id, provider, profile?}`, to create the app's profile document. See [The profile and the sign-up hook](../../auth/providers/#the-profile-and-the-sign-up-hook) |
 | `account.tokens.verify_email` | `48h` | How long the verification link works |
 | `account.tokens.reset_password` | `1h` | How long a [password reset](../../auth/sessions/#password-reset) link works |
 | `account.tokens.change_email` | `24h` | How long the confirmation link of an [email change](../../auth/sessions/#changing-the-email-address) works |
@@ -83,7 +87,7 @@ An empty file, or one with only comments, is valid: every key has a default.
 
 Durations are a whole number of days (`30d`) or Go durations (`12h`, `90m`), with a minimum of one minute.
 
-`signup`, `sessions`, `password`, `login_throttle`, `roles`, `admin`, `audit`, `email`, `account`, `functions.log_retention` and `functions.job_retention` only apply when `auth` is `enabled`. Setting them in a realm with `auth: disabled` is an error, so a realm can't carry settings that do nothing. `cors` and `functions.max_concurrency` apply either way.
+`signup`, `sessions`, `password`, `login_throttle`, `roles`, `admin`, `audit`, `email`, `providers`, `sign_in`, `account`, `functions.log_retention` and `functions.job_retention` only apply when `auth` is `enabled`. Setting them in a realm with `auth: disabled` is an error, so a realm can't carry settings that do nothing. `cors` and `functions.max_concurrency` apply either way.
 
 ## CORS
 

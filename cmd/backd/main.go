@@ -186,6 +186,7 @@ func serve(ctx context.Context, a *app) error {
 	}
 	a.logSecurityWarnings()
 	a.logStorageSecrets(ctx, a.realmUsers())
+	a.logProviders(ctx, a.realmUsers())
 	if err := a.logAPIKeyExpiry(ctx, a.realmUsers(), time.Now()); err != nil {
 		return err
 	}
@@ -622,6 +623,39 @@ func (a *app) logStorageSecrets(ctx context.Context, users func(string) *auth.Us
 	}
 }
 
+// logProviders says which sign-in providers each realm offers and the callback address
+// to register with each, and warns about one whose secrets are not set: it answers
+// 503 provider_unavailable until they are. It never stops startup.
+func (a *app) logProviders(ctx context.Context, users func(string) *auth.Users) {
+	for _, rl := range a.reg.SortedRealms() {
+		svc := users(rl.Name)
+		if len(rl.Settings.Providers) == 0 || svc == nil {
+			continue
+		}
+		base := a.cfg.BackdURL
+		if e := rl.Settings.Email; e != nil && e.PublicURL != "" {
+			base = e.PublicURL
+		}
+		for _, name := range slices.Sorted(maps.Keys(rl.Settings.Providers)) {
+			p := rl.Settings.Providers[name]
+			refs := make([]registry.SecretRef, 0, 2)
+			for _, n := range p.SecretNames() {
+				refs = append(refs, registry.SecretRef{Realm: true, Name: n})
+			}
+			_, missing, err := svc.ResolveSecrets(ctx, refs, "")
+			callback := strings.TrimSuffix(base, "/") + registry.ProviderCallbackPath(rl.Name, name)
+			switch {
+			case err != nil:
+				a.log.Warn("could not read the secrets of a sign-in provider", "realm", rl.Name, "provider", name, "error", err)
+			case len(missing) > 0:
+				a.log.Warn("a sign-in provider's secrets are not set: it answers 503 provider_unavailable until they are (BACKD_SECRETS_KEY on this instance, then backd secret set)", "realm", rl.Name, "provider", name, "missing", missing, "secrets_key_configured", svc.Cipher != nil, "callback_url", callback)
+			default:
+				a.log.Info("sign-in provider", "realm", rl.Name, "provider", name, "callback_url", callback)
+			}
+		}
+	}
+}
+
 // logAPIKeyExpiry reports API keys that never expire, that expire within
 // keyExpiryNotice, and that have expired but are still stored. It logs key
 // names, never keys or hashes.
@@ -753,6 +787,12 @@ func checkFunctions(reg *registry.Registry, cfg settings.Settings, log *slog.Log
 	for _, name := range reg.RealmNames() {
 		if e := reg.Realms[name].Settings.Email; e != nil && e.PublicURL == "" && cfg.BackdURL == "" {
 			return fmt.Errorf("realm %s configures email, but backd's public address is unknown: set BACKD_URL (or email.public_url in its realm.yaml), the base of the links in its emails", name)
+		}
+	}
+	for _, name := range reg.RealmNames() {
+		s := reg.Realms[name].Settings
+		if len(s.Providers) > 0 && cfg.BackdURL == "" && (s.Email == nil || s.Email.PublicURL == "") {
+			return fmt.Errorf("realm %s lets users sign in with providers, but backd's public address is unknown: set BACKD_URL (or email.public_url in its realm.yaml), the base of the callback address registered with each provider", name)
 		}
 	}
 	warnAnonymousFunctionsWithoutRateLimit(reg, log)

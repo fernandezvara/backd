@@ -18,6 +18,7 @@ export {
   VerificationRequiredError,
 } from './errors.js'
 export { memoryStorage, localStorageStorage } from './storage.js'
+export { parseReturn as parseOAuthReturn } from './oauth.js'
 
 /**
  * @typedef {import('./client.js').ClientOptions} ClientOptions
@@ -26,6 +27,13 @@ export { memoryStorage, localStorageStorage } from './storage.js'
  * @typedef {import('./storage.js').TokenStorage} TokenStorage
  * @typedef {import('./auth.js').User} User
  * @typedef {import('./auth.js').Session} Session
+ * @typedef {import('./auth.js').Me} Me
+ * @typedef {import('./auth.js').Identity} Identity
+ * @typedef {import('./auth.js').Profile} Profile
+ * @typedef {import('./auth.js').ProviderSession} ProviderSession
+ * @typedef {import('./auth.js').SignInWithOptions} SignInWithOptions
+ * @typedef {import('./oauth.js').OAuthStorage} OAuthStorage
+ * @typedef {import('./oauth.js').OAuthReturn} OAuthReturn
  * @typedef {import('./auth.js').SessionInfo} SessionInfo
  * @typedef {import('./auth.js').AuthEvent} AuthEvent
  * @typedef {import('./errors.js').ErrorDetail} ErrorDetail

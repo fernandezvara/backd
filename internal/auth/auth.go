@@ -49,14 +49,38 @@ type User struct {
 }
 
 // Identity is one way a user signs in.
+//
+// A user has at most one identity per provider (the store enforces it) and
+// any number of providers. The password identity has no email of its own: the
+// user's is the one that counts.
 type Identity struct {
 	ID           string
 	UserID       string
 	Provider     string
 	Subject      string // unique per provider
 	PasswordHash string // ProviderPassword only: argon2id, PHC string format
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// Email and EmailVerified are what an external provider last reported.
+	Email         string
+	EmailVerified bool
+	// LastUsedAt is the last successful sign-in with this identity; zero if
+	// none was recorded yet.
+	LastUsedAt time.Time
+	// AppleRefreshToken is Apple's refresh token, sealed with the realm's secrets cipher
+	// (see SealToken) and kept only to revoke it when the account goes away; AppleClientID
+	// is the client id it was issued to.
+	AppleRefreshToken string
+	AppleClientID     string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+// IdentityUpdate changes the set fields of an identity.
+type IdentityUpdate struct {
+	Email             *string
+	EmailVerified     *bool
+	LastUsedAt        *time.Time
+	AppleRefreshToken *string
+	AppleClientID     *string
 }
 
 // UserUpdate changes the set fields of a user.
@@ -75,6 +99,11 @@ type UserUpdate struct {
 var (
 	ErrNotFound   = errors.New("user not found")
 	ErrEmailTaken = errors.New("email is already registered")
+	// ErrIdentityExists means the user already has an identity of that provider,
+	// or that provider account belongs to another user.
+	ErrIdentityExists = errors.New("identity already exists")
+	// ErrLastSignInMethod means unlinking would leave the user no way to sign in.
+	ErrLastSignInMethod = errors.New("the last sign-in method can't be removed")
 	// ErrBusy means no password-hashing slot freed up before the deadline.
 	ErrBusy = errors.New("too many password operations in progress; try again later")
 )
@@ -115,6 +144,11 @@ type Store interface {
 	// AddEraseCount adds n to the erase job's count under key
 	// ("<database>/<collection>/<operation>"), atomically.
 	AddEraseCount(ctx context.Context, jobID, key string, n int64) error
+	// ClearJobInput replaces a job's input with an empty object: what it held (a new user's
+	// profile) is not kept after the job has run.
+	ClearJobInput(ctx context.Context, jobID string) error
+	// ClearRevokeToken removes the sealed token a revoke job held.
+	ClearRevokeToken(ctx context.Context, jobID string) error
 	// ClearEraseEmail removes the email an erase job held.
 	ClearEraseEmail(ctx context.Context, jobID string) error
 	// ReopenJob queues a job that ended in failure again, with a fresh
@@ -124,9 +158,26 @@ type Store interface {
 	DeleteUser(ctx context.Context, id string) error
 	// PutIdentity creates the identity, or, when one with the same provider
 	// and subject exists, updates its credentials and UpdatedAt (keeping its
-	// ID and CreatedAt).
+	// ID and CreatedAt). ErrIdentityExists when the user already has another
+	// identity of the provider, or the provider account belongs to another user.
 	PutIdentity(ctx context.Context, id Identity) error
 	Identity(ctx context.Context, provider, subject string) (Identity, error)
+	// ListIdentities returns a user's identities, oldest first.
+	ListIdentities(ctx context.Context, userID string) ([]Identity, error)
+	// IdentityOf returns a user's identity of a provider; ErrNotFound if none.
+	IdentityOf(ctx context.Context, userID, provider string) (Identity, error)
+	// UpdateIdentity applies upd to the identity with that id and sets UpdatedAt
+	// to now; ErrNotFound if none.
+	UpdateIdentity(ctx context.Context, id string, upd IdentityUpdate, now time.Time) error
+	// DeleteIdentity removes a user's identity of a provider; ErrNotFound if none.
+	DeleteIdentity(ctx context.Context, userID, provider string) error
+	// PutOAuthState stores a sign-in attempt; ClaimOAuthState deletes and returns the
+	// unexpired attempt with that id (ErrNotFound if none), so a state works once.
+	PutOAuthState(ctx context.Context, st OAuthState) error
+	ClaimOAuthState(ctx context.Context, id string, now time.Time) (OAuthState, error)
+	// PutLoginCode and ClaimLoginCode are the same for the one-time login codes.
+	PutLoginCode(ctx context.Context, lc LoginCode) error
+	ClaimLoginCode(ctx context.Context, id string, now time.Time) (LoginCode, error)
 	// DeleteSessions revokes every session of the user and says how many.
 	DeleteSessions(ctx context.Context, userID string) (int64, error)
 

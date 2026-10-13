@@ -59,7 +59,7 @@ func bootstrap(ctx context.Context, users *auth.Users, realm, email, role string
 	} else if !errors.Is(err, auth.ErrNotFound) {
 		return err
 	}
-	pw, err := readSecret(uio, true)
+	pw, err := readSecret(uio, true, "Password")
 	if err != nil {
 		return err
 	}

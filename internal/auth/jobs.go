@@ -60,6 +60,8 @@ type Job struct {
 	Check *CheckJob
 	// Image is set on the job that makes a file's image versions (origin ImageOrigin).
 	Image *ImageJob
+	// Revoke is set on a job that revokes a user's Apple refresh token (origin RevokeOrigin).
+	Revoke *RevokeJob
 	// Exclusive, when set, lets only one job of that name be unfinished at a
 	// time: enqueuing another fails with ErrJobExclusive.
 	Exclusive     string
@@ -229,7 +231,7 @@ func (s *Users) CancelJob(ctx context.Context, id string) (Job, error) {
 	if !found {
 		return Job{}, ErrNotFound
 	}
-	if j.Email != nil || j.Erase != nil {
+	if j.Email != nil || j.Erase != nil || j.Revoke != nil {
 		return Job{}, ErrJobNotFunction
 	}
 	if j.Status == JobDone {
@@ -258,7 +260,7 @@ func (s *Users) RerunJob(ctx context.Context, id string, timeoutMS int64) (Job, 
 	if !found {
 		return Job{}, ErrNotFound
 	}
-	if j.Email != nil || j.Erase != nil || j.Check != nil || j.Image != nil {
+	if j.Email != nil || j.Erase != nil || j.Check != nil || j.Image != nil || j.Revoke != nil {
 		return Job{}, ErrJobNotFunction
 	}
 	if j.Status != JobDone {

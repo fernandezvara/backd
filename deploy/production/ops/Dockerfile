@@ -4,7 +4,7 @@
 # the same checkout: provisioning records its fingerprint, and backd in
 # verify mode refuses to start if its own differs. Used by the provision,
 # backup and restore jobs; build context is the repository root.
-FROM docker.io/library/golang:1.27.1-alpine AS build
+FROM docker.io/library/golang:1.27.2-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum* ./
 RUN go mod download
