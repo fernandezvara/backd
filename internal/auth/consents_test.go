@@ -269,7 +269,7 @@ func TestConsentRecordsAtErasure(t *testing.T) {
 	if err != nil || !strings.HasPrefix(p1, "erased:") || len(p1) != len("erased:")+64 {
 		t.Fatalf("pseudonym = %q %v", p1, err)
 	}
-	if strings.Contains(p1, "ada") {
+	if strings.Contains(p1, "@") || strings.Contains(p1, "example.com") { // "ada" can be hex
 		t.Error("the pseudonym holds the address")
 	}
 	recs, _ := svc.ConsentHistory(ctx, p1)
