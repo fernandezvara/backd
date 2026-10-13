@@ -12,6 +12,7 @@ The data model is a directory tree under `CONFIG_DIR`, loaded once at startup. D
 $CONFIG_DIR/<realm>/
     realm.yaml           # required — realm settings
     email/<kind>/        # optional — email templates (see Functions → Email)
+    app-config/          # optional — app configuration: schema.json and rules.yaml
     <database>/<collection>/
         schema.json      # required — JSON Schema draft 2020-12
         indexes.json     # optional — index declarations
@@ -24,6 +25,7 @@ $CONFIG_DIR/<realm>/
 - Each directory inside a realm is a **database**, stored in the MongoDB database `<realm>__<database>`.
 - Each directory inside a database is a **collection**, stored in a MongoDB collection of the same name. It must contain a `schema.json`.
 - A realm's `email` folder holds its [email templates](../../functions/email/#templates), and `pages` is reserved for the pages backd will serve; neither is a database, so they are never read as one and can't be database names.
+- A realm's `app-config` folder declares its [app configuration](#app-configuration), and is not a database either.
 - A database's `_functions` directory holds its [functions](../../functions/), not a collection.
 - Other plain files at the realm and database levels are ignored, as are hidden entries (names starting with `.`).
 - Changing the config requires a restart. There is no hot-reload.
@@ -237,6 +239,45 @@ Building and delivering the export package is a later step: today the scope is d
 
 `files:` declares the fields of a document that carry files, kept in the realm's [storage](../../files/storage/): `max_size`, `types`, `multiple`, `max_files`, `download`, [`versions`](../../files/file-fields/#image-versions) and more. See [File fields](../../files/file-fields/). Don't declare them in `schema.json`: backd adds their schema.
 
+## App configuration
+
+A realm can declare one configuration for its client apps (feature flags, maintenance switches, limits) in `<realm>/app-config/`, with the same JSON Schema validation as collections and read rules in the same expression language. It needs a realm with auth enabled.
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "maintenance": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": false },
+        "message": { "type": "string", "maxLength": 500, "default": "" }
+      }
+    },
+    "features": {
+      "type": "object", "additionalProperties": false,
+      "properties": { "export": { "type": "object", "additionalProperties": false,
+        "properties": { "enabled": { "type": "boolean", "default": true } } } }
+    }
+  }
+}
+```
+
+```yaml
+# rules.yaml
+read:
+  maintenance: "true"                  # anyone, without a session
+  features: user != nil                # signed-in users
+  features.export: hasRole(user, "beta")
+```
+
+- **`schema.json`:** keys are paths in dot notation (`features.export.enabled`), and a subset is a branch (`features`). Every object sets `additionalProperties: false` and declares its properties; every value has a `default`, or allows `null` among its types, so clients always get a complete configuration. `$ref`, `allOf`, `anyOf`, `oneOf` and other composition keywords are not supported. The defaults take at most 64 KiB, and none may be a `secret:` reference.
+- **`rules.yaml`:** `read:` maps a path to a rule that sees `user` and `now`, with `hasRole`, `hasConsent` and the realm's roles and consents; there is no document. A path's effective rule is its own ANDed with every ancestor's, so deeper paths can only narrow. A path with no rule on it or on an ancestor can't be read by clients.
+- **Startup** fails on an uncompilable schema or rule, an object missing `additionalProperties: false`, a value without a default, a rules path the schema doesn't declare, a default that doesn't satisfy the schema, a `secret:` reference or defaults over the size cap. Both files are part of the config fingerprint.
+
+Configuration is readable by whoever its rules allow, and sits in the browser's cache: never put a secret in it. This page declares what may exist; changing and reading values are separate steps.
+
 ## Errors
 
 Any invalid config stops startup with a non-zero exit. Every error is reported at once, each naming the offending file or directory. Examples of invalid config:
@@ -249,4 +290,5 @@ Any invalid config stops startup with a non-zero exit. Every error is reported a
 - a schema that declares a system field;
 - an invalid `indexes.json`;
 - an invalid [`rules:` section](../../auth/rules/#checks-at-startup), or a leftover `rules.yaml` (rules live in `collection.yaml` now);
+- an invalid [app configuration](#app-configuration);
 - an invalid [`collection.yaml`](#collectionyaml) (an unknown field, a required field removed, a value that breaks the schema).

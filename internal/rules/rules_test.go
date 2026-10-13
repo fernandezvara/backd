@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 var testSchema = Schema{
@@ -236,5 +237,30 @@ func TestRestoreAndPurgeRules(t *testing.T) {
 	// A restore rule becomes a database filter, so it follows read's limits.
 	if _, errs := parseYAML("read: 'true'\nrestore: document.tags == nil\n", testSchema); len(errs) == 0 {
 		t.Log("(array comparison accepted by the test schema)")
+	}
+}
+
+func TestCompileConfig(t *testing.T) {
+	ok, err := CompileConfig(`user != nil && hasRole(user, "beta") && now.Year() >= 2026`, []string{"beta"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok.AlwaysTrue() {
+		t.Error("a role rule is not always true")
+	}
+	u := &User{Roles: []string{"beta"}}
+	if got, err := ok.Allow(Values{User: u, Now: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}); err != nil || !got {
+		t.Errorf("allow = %v, %v", got, err)
+	}
+	if got, _ := ok.Allow(Values{Now: time.Now()}); got {
+		t.Error("anonymous callers pass a role rule")
+	}
+	if r, err := CompileConfig("true", nil, nil); err != nil || !r.AlwaysTrue() {
+		t.Errorf("true: %v, %v", r, err)
+	}
+	for _, src := range []string{`document.x == 1`, `data.x == 1`, `hasRole(user, "ghost")`, `user.id == "a"`, `hasConsent(user, "ghost")`} {
+		if _, err := CompileConfig(src, []string{"beta"}, nil); err == nil {
+			t.Errorf("%q compiled", src)
+		}
 	}
 }

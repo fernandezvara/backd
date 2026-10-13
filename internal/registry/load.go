@@ -94,6 +94,7 @@ func Load(root string) (*Registry, error) {
 		errs = append(errs, loadOnSignup(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadPush(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadConsents(reg.Realms[realmName], filepath.Join(root, realmName))...)
+		errs = append(errs, loadAppConfig(reg.Realms[realmName], filepath.Join(root, realmName))...)
 	}
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)

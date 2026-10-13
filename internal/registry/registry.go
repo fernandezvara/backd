@@ -34,11 +34,13 @@ type Realm struct {
 	Pages *email.Pages
 	// Push holds the parsed push templates of <realm>/push/; nil when the realm has no push: section.
 	Push *push.Templates
+	// AppConfig is the realm's declared app configuration (<realm>/app-config/); nil when it has none.
+	AppConfig *AppConfig
 }
 
 // ReservedDirs are folders of a realm that hold something other than a
 // database: they are never read as databases.
-var ReservedDirs = []string{email.DirName, email.PagesDirName, push.DirName, ConsentsDir}
+var ReservedDirs = []string{email.DirName, email.PagesDirName, push.DirName, ConsentsDir, AppConfigDir}
 
 // Database is one application's data, stored in one MongoDB database.
 type Database struct {

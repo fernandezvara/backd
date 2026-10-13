@@ -34,6 +34,9 @@ const (
 	// Invoke is a function's invoke rule (function.yaml): it decides who
 	// may call the function and sees only `user`.
 	Invoke Op = "invoke"
+	// Config is the read rule of a path of the realm's app configuration
+	// (app-config/rules.yaml): it sees `user` and `now`, with no document.
+	Config Op = "config"
 )
 
 // Ops lists the operations in a fixed order.
@@ -180,6 +183,21 @@ var hasConsentFunc = expr.Function("hasConsent", hasConsent, new(func(*User, ...
 func CompileInvoke(src string, roles []string) (*Rule, error) {
 	none := func(string) bool { return false }
 	return compile(Invoke, string(Invoke), src, Schema{DocumentField: none, DataField: none, ScalarField: none, ArrayField: none, Roles: roles})
+}
+
+// CompileConfig compiles and checks the read rule of a path of the app
+// configuration. It may use `user`, `now`, hasRole with the realm's roles and
+// hasConsent with its consents; there is no document.
+func CompileConfig(src string, roles, consents []string) (*Rule, error) {
+	none := func(string) bool { return false }
+	return compile(Config, "read", src, Schema{DocumentField: none, DataField: none, ScalarField: none, ArrayField: none, Roles: roles, Consents: consents})
+}
+
+// AlwaysTrue reports whether the rule is literally `true`: it allows everyone,
+// with or without a session, so what it guards can be cached publicly.
+func (r *Rule) AlwaysTrue() bool {
+	b, ok := r.tree.(*ast.BoolNode)
+	return ok && b.Value
 }
 
 func compile(op Op, key, src string, schema Schema) (*Rule, error) {

@@ -27,6 +27,10 @@ func check(r *Rule, schema Schema) error {
 				add("`%s` is not available in invoke rules: they see only `user`", n.Value)
 				return
 			}
+			if r.Op == Config && (n.Value == "document" || n.Value == "data" || n.Value == "changed") {
+				add("`%s` is not available in app configuration rules: they see `user` and `now`", n.Value)
+				return
+			}
 			switch n.Value {
 			case "document":
 				if r.Op == Create {
@@ -102,7 +106,7 @@ func check(r *Rule, schema Schema) error {
 		}
 	})
 	walk(r.tree, func(n ast.Node) {
-		if id, ok := n.(*ast.IdentifierNode); ok && id.Value == "now" && !allowed[n] {
+		if id, ok := n.(*ast.IdentifierNode); ok && id.Value == "now" && !allowed[n] && r.Op != Config {
 			add("`now` can only be compared with a timestamp: document._meta.created_at, document._meta.updated_at, or a field stored as a date (x-backd-store: date)")
 		}
 	})
