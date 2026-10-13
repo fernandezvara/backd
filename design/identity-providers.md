@@ -39,6 +39,7 @@ The keys are top level in `realm.yaml` (`auth:` is already the `enabled`/`disabl
 ```yaml
 sign_in:
   allowed_redirects: [https://app.acme.example, "acme://"]
+  app_url: https://app.acme.example   # optional: where a sign-in without redirect_to goes back to
 providers:
   google:
     client_id: 1234.apps.googleusercontent.com
@@ -61,7 +62,7 @@ providers:
 - Secrets are realm-level entries managed with `backd secret set --realm <r> --name NAME` (encrypted, admin-only, audited); rotation needs no restart.
 - backd generates Apple's client-secret JWT (ES256, signed with `private_key`) and renews it before it expires.
 - **`redirect_to` targets** come from `sign_in.allowed_redirects` (a new realm-level list of origins and app schemes, same syntax as `email.allowed_redirects`). When it is absent, sign-in uses `email.allowed_redirects`; when both are absent, `start` refuses every `redirect_to`. One list can serve both.
-- **Names:** `google`, `microsoft` and `apple` are reserved and imply their type. Any other provider name must declare `type: oidc` (§3.1) and match `[a-z][a-z0-9-]{0,31}`. The name is what `identities.provider`, the URLs and the audit use; renaming a provider in `realm.yaml` orphans its identities (documented).
+- **Names:** `google`, `microsoft` and `apple` are reserved and imply their type; `password` and `email` (backd's own sign-in methods) are reserved too and can't name a provider. Any other provider name must declare `type: oidc` (§3.1) and match `[a-z][a-z0-9-]{0,31}`. The name is what `identities.provider`, the URLs and the audit use; renaming a provider in `realm.yaml` orphans its identities (documented).
 - **Scopes are fixed:** `openid email profile` (Apple: `name email`, with `response_mode=form_post`). backd never asks for access to a provider's APIs and never for `offline_access`; a generic OIDC provider may list extra `scopes:` that its issuer needs.
 - **Startup checks:** strict parsing; required keys present; `tenant` valid; identifiers well formed; names valid and not duplicated. A referenced secret that is not set → startup warning and that provider answers `503 provider_unavailable` until it is set.
 
@@ -146,7 +147,7 @@ sequenceDiagram
     B-->>App: session (+ profile for new users)
 ```
 
-- `start` requires `redirect_to` and a PKCE `code_challenge` (S256 only).
+- `start` takes `redirect_to` (optional when the realm sets `sign_in.app_url`, which is then used; neither is `400 invalid_redirect`) and requires a PKCE `code_challenge` (S256 only).
 - **Two forms of `start`:** `GET …/start?redirect_to&code_challenge[&invitation]` answers `302` to the provider (sign-in, no session). `POST …/start` with the same parameters as a JSON body answers `200 {"authorize_url": "…"}` and is the only form for `intent: "link"`, because it needs the session in `Authorization` and a browser navigation can't send it; the app then navigates to `authorize_url`. The JS client uses `POST` for both.
 - The callback accepts **GET and POST** (Apple uses a form POST).
 - The login code is bound to the app's PKCE challenge: a stolen code is useless without the verifier.

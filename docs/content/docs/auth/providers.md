@@ -22,6 +22,7 @@ This page covers the **redirect** sign-in and the **native** sign-in of mobile a
 ```yaml
 sign_in:
   allowed_redirects: [https://app.acme.example, "acme://"]
+  app_url: https://app.acme.example/signed-in   # optional: where a sign-in without redirect_to ends
 providers:
   google:
     client_id: 1234.apps.googleusercontent.com
@@ -42,13 +43,14 @@ providers:
 | Key | Meaning |
 |---|---|
 | `sign_in.allowed_redirects` | Origins (`https://app.acme.example`, no path) and app schemes (`acme://`) a sign-in may send the user back to. Without it, `email.allowed_redirects` is used. A realm with providers needs one of the two |
+| `sign_in.app_url` | Where a sign-in goes back to when its `redirect_to` is absent (for example a sign-in started from a device with no page of its own). Must be within the allowed redirects. Without it, `start` needs `redirect_to` (`400 invalid_redirect`) |
 | `providers.google.client_id`, `client_secret` | The OAuth client (type *Web application*) and the secret that holds its secret |
 | `providers.google.native_client_ids` | Optional: the client ids of your mobile apps, accepted by the [ID-token sign-in](#native-apps-the-id-token) |
 | `providers.microsoft.client_id`, `client_secret`, `tenant` | The application (client) id, its secret, and which accounts are accepted: `common` (any), `organizations` (work and school), `consumers` (personal) or one tenant id |
 | `providers.apple.services_id`, `team_id`, `key_id`, `private_key` | The Services ID (web client id), the team and key that sign Apple's client secret, and the secret that holds the key. backd signs and renews the client secret itself |
 | `providers.apple.bundle_ids`, `revoke_on_delete` | Optional: your iOS apps, and whether Apple's tokens are kept and [revoked](#apple-and-account-deletion) when an account is deleted (default `true`) |
 
-`google`, `microsoft` and `apple` are reserved names; any other name is not a provider yet. A provider whose secret is not set answers `503 provider_unavailable`, and `backd` warns about it at startup. A realm with providers needs `BACKD_URL` (or `email.public_url`): startup refuses without it.
+`google`, `microsoft` and `apple` are reserved names, and so are `password` and `email` (backd's own sign-in methods); any other name is not a provider yet. A provider whose secret is not set answers `503 provider_unavailable`, and `backd` warns about it at startup. A realm with providers needs `BACKD_URL` (or `email.public_url`): startup refuses without it.
 
 ## The flow
 
@@ -68,7 +70,7 @@ sequenceDiagram
     B-->>App: a session
 ```
 
-1. The app makes a random PKCE **verifier** and its S256 **challenge**, and sends the browser to `GET /v1/{realm}/_auth/oauth/{provider}/start?redirect_to=…&code_challenge=…` (or calls `POST` and navigates to the `authorize_url` it returns). `redirect_to` must be within the allowed redirects.
+1. The app makes a random PKCE **verifier** and its S256 **challenge**, and sends the browser to `GET /v1/{realm}/_auth/oauth/{provider}/start?redirect_to=…&code_challenge=…` (or calls `POST` and navigates to the `authorize_url` it returns). `redirect_to` must be within the allowed redirects, and may be left out when the realm sets `sign_in.app_url`.
 2. The user signs in at the provider, which sends them to backd's callback. backd checks the `state` (good for one use, ten minutes), exchanges the code for an ID token with the provider, and verifies its signature, issuer, audience, expiry and nonce.
 3. backd sends the browser to `redirect_to` with `?backd_code=…` (a one-time login code, valid a minute) or `?backd_error=…`. The parameters carry the `backd_` prefix so that they can't collide with the ones your page already uses; add `backd_provider` (with `account_exists`, the provider that was used) and `backd_linked` (after a link, the provider).
 4. The app redeems it: `POST /v1/{realm}/_auth/token` with `{"code", "code_verifier"}`. The answer is a session, like a login's (`{"cookie": true}` works too). The code is used up even when the verifier is wrong, so a stolen code is useless without the verifier only your app holds.

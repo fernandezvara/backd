@@ -132,6 +132,7 @@ auth: enabled
 # work: a user can hold a password and several providers at once.
 # sign_in:
 #   allowed_redirects: [https://app.acme.example, "acme://"]
+#   app_url: https://app.acme.example   # where a sign-in without redirect_to goes back to (within the list)
 # providers:
 #   google:                          # console.cloud.google.com → APIs & Services → Credentials → OAuth client (web)
 #     client_id: 1234.apps.googleusercontent.com

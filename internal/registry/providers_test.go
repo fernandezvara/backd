@@ -9,6 +9,7 @@ import (
 const providersYAML = `auth: enabled
 sign_in:
   allowed_redirects: [https://app.acme.example, "acme://"]
+  app_url: https://app.acme.example/signed-in
 providers:
   google:
     client_id: 1234.apps.googleusercontent.com
@@ -50,6 +51,9 @@ func TestProvidersAreParsed(t *testing.T) {
 	if !s.SignInRedirectAllowed("https://app.acme.example/welcome") || !s.SignInRedirectAllowed("acme://done") || s.SignInRedirectAllowed("https://evil.example/x") {
 		t.Error("sign_in.allowed_redirects")
 	}
+	if s.SignInAppURL != "https://app.acme.example/signed-in" {
+		t.Errorf("sign_in.app_url: %q", s.SignInAppURL)
+	}
 	if ProviderCallbackPath("acme", "google") != "/v1/acme/_auth/oauth/google/callback" {
 		t.Error("callback path")
 	}
@@ -82,6 +86,9 @@ func TestProviderErrors(t *testing.T) {
 		{"duplicate native id", "providers:\n  google: {client_id: abc, client_secret: secret:S, native_client_ids: [x1, x1]}\n", "listed twice"},
 		{"unknown key", "providers:\n  google: {client_id: abc, client_secret: secret:S, colour: red}\n", "colour"},
 		{"no redirects", "auth: enabled\nproviders:\n  google: {client_id: abc, client_secret: secret:S}\n", "need sign_in.allowed_redirects"},
+		{"reserved name password", "providers:\n  password: {client_id: abc}\n", "is reserved"},
+		{"reserved name email", "providers:\n  email: {client_id: abc}\n", "is reserved"},
+		{"app url outside", "auth: enabled\nsign_in:\n  allowed_redirects: [https://app.example]\n  app_url: https://other.example/home\n", "sign_in.app_url"},
 		{"bad redirect", "auth: enabled\nsign_in:\n  allowed_redirects: [https://app.example/path]\n", "must be an origin"},
 		{"auth disabled", "auth: disabled\nproviders:\n  google: {client_id: abc, client_secret: secret:S}\n", "only apply when auth is enabled"},
 	}

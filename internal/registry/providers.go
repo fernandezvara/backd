@@ -22,6 +22,10 @@ const (
 // BuiltinProviders are the providers backd knows, sorted.
 var BuiltinProviders = []string{ProviderApple, ProviderGoogle, ProviderMicrosoft}
 
+// ReservedProviderNames are the names of backd's own sign-in methods (an identity's
+// provider is `password`, and magic links will record `email`): no provider may take them.
+var ReservedProviderNames = []string{"password", "email"}
+
 var (
 	clientIDPattern    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._~+-]{0,254}$`)
 	guidPattern        = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -104,6 +108,10 @@ func parseProviders(docs map[string]*providerDoc) (map[string]*Provider, []error
 		}
 		if d == nil {
 			add("is empty: it needs at least its client_id (see `backd template realm`)")
+			continue
+		}
+		if slices.Contains(ReservedProviderNames, name) {
+			add("is reserved for backd's own sign-in methods (%s) and can't name a provider", strings.Join(ReservedProviderNames, ", "))
 			continue
 		}
 		if d.Type != "" {

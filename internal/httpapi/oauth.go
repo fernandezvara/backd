@@ -113,7 +113,7 @@ func (a *authAPI) oauthStartPost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"redirect_to": "string", "code_challenge": "string", "intent": "string?", "invitation": "string?", "locale": "string?"})
+	f, ok := fields(w, r, obj, map[string]string{"redirect_to": "string?", "code_challenge": "string", "intent": "string?", "invitation": "string?", "locale": "string?"})
 	if !ok {
 		return
 	}
@@ -154,6 +154,13 @@ func (a *authAPI) startOAuth(w http.ResponseWriter, r *http.Request, in startInp
 	if len(details) > 0 {
 		writeError(w, r, http.StatusBadRequest, codeValidation, "the sign-in isn't described", details...)
 		return "", false
+	}
+	if in.redirectTo == "" {
+		in.redirectTo = svc.Settings.SignInAppURL
+		if in.redirectTo == "" {
+			writeError(w, r, http.StatusBadRequest, codeInvalidRedirect, "redirect_to is required: the realm has no sign_in.app_url to go back to")
+			return "", false
+		}
 	}
 	if !svc.Settings.SignInRedirectAllowed(in.redirectTo) {
 		writeError(w, r, http.StatusBadRequest, codeInvalidRedirect, "redirect_to isn't within the realm's sign_in.allowed_redirects (or email.allowed_redirects)")

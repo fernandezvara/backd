@@ -131,6 +131,7 @@ Use a **new** account each time unless the step says otherwise. After each step 
 | 3.11 | Register a wrong redirect URI at the provider, then try | The **provider** shows its own error page (`redirect_uri_mismatch`, `AADSTS50011`, `invalid_request`); backd never sees the callback. This is the most common setup mistake: compare with the `callback_url` in the log |
 | 3.12 | `curl -i "$BACKD_URL/v1/idtest/_auth/oauth/google/start?redirect_to=https://evil.example/&code_challenge=$(printf x | openssl dgst -sha256 -binary | basenc --base64url | tr -d =)"` | `400 invalid_redirect`; nothing is stored (`oauth_states` count unchanged) |
 | 3.13 | Same, without `code_challenge` | `400 validation_error` naming `code_challenge` |
+| 3.14 | With `sign_in.app_url` set in the realm, start without `redirect_to` (`curl -i "$BACKD_URL/v1/idtest/_auth/oauth/google/start?code_challenge=…"`) and finish the sign-in | The flow ends at the `app_url` with `?backd_code=`. Without `app_url` in the realm the same start is `400 invalid_redirect` |
 
 **Apple specifics.** Apple answers with an HTTP **POST** (a form) to the callback and redirects the browser
 with `303`: if the browser ends on the app with `?backd_code=`, that works; if it ends on a blank page or an HTTP 405,

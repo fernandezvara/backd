@@ -122,6 +122,9 @@ type RealmSettings struct {
 	// (sign_in.allowed_redirects, normalized like email.allowed_redirects).
 	Providers       map[string]*Provider
 	SignInRedirects []string
+	// SignInAppURL (sign_in.app_url) is where a sign-in goes back to when its
+	// redirect_to is absent: the app's own address, within the allowed redirects.
+	SignInAppURL string
 }
 
 // AccountSettings are the account lifecycle settings of a realm.
@@ -297,6 +300,7 @@ type realmDoc struct {
 	Providers map[string]*providerDoc `yaml:"providers"`
 	SignIn    *struct {
 		AllowedRedirects []string `yaml:"allowed_redirects"`
+		AppURL           string   `yaml:"app_url"`
 	} `yaml:"sign_in"`
 	Account *struct {
 		RequireVerifiedEmail bool   `yaml:"require_verified_email"`
@@ -643,6 +647,12 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 						errs = append(errs, fmt.Errorf("sign_in.allowed_redirects[%d]: %q is listed twice", i, o))
 					default:
 						s.SignInRedirects = append(s.SignInRedirects, norm)
+					}
+				}
+				if si.AppURL != "" {
+					s.SignInAppURL = si.AppURL
+					if !s.SignInRedirectAllowed(si.AppURL) {
+						errs = append(errs, fmt.Errorf("sign_in.app_url: %q must be within sign_in.allowed_redirects (or email.allowed_redirects when it has none)", si.AppURL))
 					}
 				}
 			}

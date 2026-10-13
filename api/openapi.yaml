@@ -792,14 +792,15 @@ paths:
         nonce and PKCE for the provider, kept for 10 minutes and good for one callback)
         and answers `302` to the provider's sign-in page. After the user signs in, the
         provider sends them to the callback, which sends them on to `redirect_to` with a
-        one-time `code` or an `error` (see the callback). `redirect_to` must be within
-        the realm's `sign_in.allowed_redirects` (or `email.allowed_redirects`) and
-        `code_challenge` is the S256 challenge of a verifier only the app holds.
+        one-time `backd_code` or a `backd_error` (see the callback). `redirect_to` must be
+        within the realm's `sign_in.allowed_redirects` (or `email.allowed_redirects`);
+        when it is absent the realm's `sign_in.app_url` is used, and a realm that has none
+        answers `400 invalid_redirect`. `code_challenge` is the S256 challenge of a verifier only the app holds.
         Linking a provider to a signed-in user needs `POST`, which carries the session.
         At most 30 starts a minute per address (`429`).
       operationId: oauthStart
       parameters:
-        - { name: redirect_to, in: query, required: true, schema: { type: string } }
+        - { name: redirect_to, in: query, schema: { type: string }, description: "Where the flow ends; the realm's `sign_in.app_url` when absent." }
         - { name: code_challenge, in: query, required: true, schema: { type: string, minLength: 43, maxLength: 43 } }
         - { name: invitation, in: query, schema: { type: string }, description: "An invitation token, for realms with `signup: invite`." }
         - { name: locale, in: query, schema: { type: string } }
@@ -837,9 +838,9 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [redirect_to, code_challenge]
+              required: [code_challenge]
               properties:
-                redirect_to: { type: string }
+                redirect_to: { type: string, description: "Where the flow ends; the realm's `sign_in.app_url` when absent." }
                 code_challenge: { type: string, minLength: 43, maxLength: 43, description: The S256 PKCE challenge of the app's verifier. }
                 intent: { type: string, enum: [signin, link], default: signin }
                 invitation: { type: string }

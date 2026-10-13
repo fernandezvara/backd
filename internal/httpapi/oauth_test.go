@@ -474,3 +474,23 @@ func TestOAuthAppleAnswersWithAForm(t *testing.T) {
 		t.Errorf("authorize URL: %s", rec.Header().Get("Location"))
 	}
 }
+
+func TestOAuthStartWithoutRedirectGoesToTheAppURL(t *testing.T) {
+	f := newOAuthFixture(t)
+	f.svc.Settings.SignInAppURL = "https://app.acme.example/signed-in"
+	a := f.signIn(t, "google", googleUser("g-app", "app@example.com", true), url.Values{"redirect_to": {""}})
+	if a.result == nil || a.result.Host != "app.acme.example" || a.result.Path != "/signed-in" || a.result.Query().Get("backd_code") == "" {
+		t.Fatalf("the sign-in ended at %v, want the app_url with a code", a.result)
+	}
+	// Linking posts its body: the same fallback.
+	_, challenge, _ := auth.NewPKCE()
+	body := `{"code_challenge": "` + challenge + `"}`
+	if rec, out := f.doH(t, "POST", oauthBase+"/google/start", body, map[string]string{"Content-Type": "application/json"}); rec.Code != 200 || out["authorize_url"] == nil {
+		t.Errorf("POST start without redirect_to: %d %v", rec.Code, out)
+	}
+	// Without an app_url it is refused as an invalid redirect.
+	f.svc.Settings.SignInAppURL = ""
+	if rec, out := f.doH(t, "POST", oauthBase+"/google/start", body, map[string]string{"Content-Type": "application/json"}); rec.Code != 400 || errCode(out) != "invalid_redirect" {
+		t.Errorf("no redirect_to and no app_url: %d %v", rec.Code, out)
+	}
+}
