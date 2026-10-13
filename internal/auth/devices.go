@@ -29,6 +29,8 @@ var (
 	ErrPushNotConfigured = errors.New("push notifications are not configured in this realm")
 	// ErrPlatformNotEnabled: the realm has no provider for the platform.
 	ErrPlatformNotEnabled = errors.New("that platform is not enabled in this realm")
+	// ErrPushUnavailable: a secret the realm's push providers need is not set.
+	ErrPushUnavailable = errors.New("push notifications are unavailable: a secret the providers need is not set")
 	// ErrWebKeyUnavailable: the realm has no web platform or no VAPID public key yet.
 	ErrWebKeyUnavailable = errors.New("web push is not enabled in this realm")
 )

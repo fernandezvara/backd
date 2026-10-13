@@ -92,26 +92,45 @@ auth: enabled
 #     per_function: { per_hour: 200, per_invocation: 50 }   # custom emails from functions (email: true)
 #     recipients_per_message: 10
 
-# Push notifications. A platform is enabled by giving it a block; the app registers
-# each device of a signed-in user (POST /_auth/devices) and backd keeps the registry.
-# Needs BACKD_SECRETS_KEY (device tokens are stored encrypted). Without this section the
-# realm accepts no devices.
+# Push notifications. backd sends pushes itself, through built-in providers: FCM for
+# Android, APNs for iOS and Web Push for browsers (`capture` stores deliveries instead of
+# sending, for local development). A platform is enabled by giving it a block; the app
+# registers each device of a signed-in user (POST /_auth/devices) and a function sends with
+# ctx.push.send. Credentials are realm secrets, written secret:NAME and set with
+# `backd secret set --realm <name> --name NAME`; the instance needs BACKD_SECRETS_KEY.
+# Messages come from templates in push/<kind>/<locale>.yaml (see push/example/), in the
+# languages listed above. Without this section the realm accepts no devices.
 # push:
 #   android:
 #     provider: fcm
+#     credentials: secret:FCM_SERVICE_ACCOUNT   # the service-account JSON (Firebase console)
 #   ios:
-#     provider: apns                       # or fcm, for apps on the FCM SDK
+#     provider: apns                            # or fcm, with `credentials` as above
+#     key: secret:APNS_KEY                      # the .p8 signing key
+#     key_id: "AB12CD34EF"
+#     team_id: "T123456789"
+#     topic: com.acme.app                       # the app's bundle id
+#     sandbox: false                            # true: api.sandbox.push.apple.com (development builds)
 #   web:
 #     provider: webpush
-#     public_key: "BEl62iU..."             # the VAPID public key browsers subscribe with
-#     endpoint_hosts:                      # hosts a web subscription may point at; defaults shown
+#     public_key: "BEl62iU..."                  # the VAPID public key; `backd push web-keys` makes the pair
+#     private_key: secret:VAPID_PRIVATE_KEY
+#     subject: secret:VAPID_SUBJECT             # mailto: or https: contact for the browsers' push services
+#     endpoint_hosts:                           # hosts a web subscription may point at; defaults shown
 #       - fcm.googleapis.com
 #       - updates.push.services.mozilla.com
 #       - web.push.apple.com
 #       - "*.notify.windows.com"
 #   devices:
-#     max_per_user: 10                     # the least recently seen goes above this
-#     stale_after: 60d                     # a device not seen for this long is removed
+#     max_per_user: 10                          # the least recently seen goes above this
+#     stale_after: 60d                          # a device not seen for this long is removed
+#   delivery:                                   # the built-in senders; defaults shown
+#     timeout: 60s                              # per delivery unit
+#     retry: { attempts: 5, backoff: 30s }
+#     parallelism: 20                           # provider requests in flight per worker
+#   limits:
+#     per_user: { per_minute: 5, per_day: 24 }  # no exemption of any kind
+#   send_retention: 30d                         # how long the record of a send is kept
 
 # Files. A realm that lets documents carry files brings its own S3-compatible
 # bucket (backd has no storage of its own). The bucket stays private: files are

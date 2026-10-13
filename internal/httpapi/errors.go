@@ -22,6 +22,7 @@ const (
 	codePushNotConfigured = "push_not_configured"
 	codePlatformDisabled  = "platform_not_enabled"
 	codeInvalidDevice     = "invalid_device"
+	codePushUnavailable   = "push_unavailable"
 	codeLastMethod        = "last_sign_in_method"
 	codeProviderUnavail   = "provider_unavailable"
 	codeInvalidToken      = "invalid_token"

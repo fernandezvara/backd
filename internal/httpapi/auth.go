@@ -478,6 +478,8 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 		writeError(w, r, http.StatusBadRequest, codeInvalidCode, "the code is not valid", Detail{Path: "attempts_left", Reason: strconv.Itoa(badCode.AttemptsLeft)})
 	case errors.Is(err, auth.ErrPushNotConfigured):
 		writeError(w, r, http.StatusNotFound, codePushNotConfigured, err.Error())
+	case errors.Is(err, auth.ErrPushUnavailable):
+		writeError(w, r, http.StatusServiceUnavailable, codePushUnavailable, err.Error())
 	case errors.Is(err, auth.ErrPlatformNotEnabled):
 		writeError(w, r, http.StatusBadRequest, codePlatformDisabled, err.Error(), Detail{Path: "platform", Reason: "isn't enabled in this realm's push settings"})
 	case errors.Is(err, auth.ErrWebKeyUnavailable):

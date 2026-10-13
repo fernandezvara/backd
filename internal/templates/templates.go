@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/fernandezvara/backd/internal/email"
+	"github.com/fernandezvara/backd/internal/push"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -87,10 +88,16 @@ func Realm(configDir, realm string, sample bool) ([]File, error) {
 		}
 		out = append(out, more...)
 	}
+	// An example push template, used once the realm configures `push:`.
+	more, err := write(configDir, realm+"/"+push.DirName+"/example/en.yaml", "files/push/example.yaml")
+	if err != nil {
+		return out, err
+	}
+	out = append(out, more...)
 	if !sample {
 		return out, nil
 	}
-	more, err := writeSample(configDir, realm+"/"+sampleDatabase)
+	more, err = writeSample(configDir, realm+"/"+sampleDatabase)
 	return append(out, more...), err
 }
 
@@ -101,7 +108,7 @@ func Database(configDir, realm, database string, sample bool) ([]File, error) {
 		return nil, fmt.Errorf("invalid database name %q: must be lowercase letters and digits, optionally separated by single '-' or '_'", database)
 	}
 	if slices.Contains(registry.ReservedDirs, database) {
-		return nil, fmt.Errorf("%q can't be a database name: a realm's %s folder holds something else (email templates)", database, database)
+		return nil, fmt.Errorf("%q can't be a database name: a realm's %s folder holds something else (email or push templates)", database, database)
 	}
 	if name := realm + "__" + database; len(name) >= 64 {
 		return nil, fmt.Errorf("MongoDB database name %q must be shorter than 64 characters", name)
