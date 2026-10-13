@@ -55,6 +55,13 @@ auth: enabled
 # functions:
 #   max_concurrency: 50
 
+# Languages. One list for email and push: `default_locale` is the language
+# of the templates used when a user has none, and must be listed in
+# `locales`. Each listed language needs every email template (es.txt, ...),
+# every page in pages/ (es.html, ...) and every push template.
+# default_locale: en
+# locales: [en]
+
 # Email. backd never sends mail itself: it renders each message from the
 # templates in this realm's `email/` folder (written next to this file; edit
 # them freely) and hands it to ONE function of yours, which delivers it
@@ -70,9 +77,6 @@ auth: enabled
 #   reply_to: support@acme.example         # optional
 #   public_url: https://api.acme.example   # backd's public address, for links in emails;
 #                                          # overrides the BACKD_URL environment variable
-#   default_locale: en                     # language of the templates used when a user has none
-#   locales: [en]                          # each listed language needs every template (es.txt, ...)
-#                                          # and every page in pages/ (es.html, ...)
 #   redirect_delay: 3s                     # how long the result page waits before sending the user back to your app
 #   allowed_redirects:                     # where links may send users afterwards: origins, or an app's scheme
 #     - https://app.acme.example
@@ -87,6 +91,46 @@ auth: enabled
 #     per_ip: { per_hour: 20 }
 #     per_function: { per_hour: 200, per_invocation: 50 }   # custom emails from functions (email: true)
 #     recipients_per_message: 10
+
+# Push notifications. backd sends pushes itself, through built-in providers: FCM for
+# Android, APNs for iOS and Web Push for browsers (`capture` stores deliveries instead of
+# sending, for local development). A platform is enabled by giving it a block; the app
+# registers each device of a signed-in user (POST /_auth/devices) and a function sends with
+# ctx.push.send. Credentials are realm secrets, written secret:NAME and set with
+# `backd secret set --realm <name> --name NAME`; the instance needs BACKD_SECRETS_KEY.
+# Messages come from templates in push/<kind>/<locale>.yaml (see push/example/), in the
+# languages listed above. Without this section the realm accepts no devices.
+# push:
+#   android:
+#     provider: fcm
+#     credentials: secret:FCM_SERVICE_ACCOUNT   # the service-account JSON (Firebase console)
+#   ios:
+#     provider: apns                            # or fcm, with `credentials` as above
+#     key: secret:APNS_KEY                      # the .p8 signing key
+#     key_id: "AB12CD34EF"
+#     team_id: "T123456789"
+#     topic: com.acme.app                       # the app's bundle id
+#     sandbox: false                            # true: api.sandbox.push.apple.com (development builds)
+#   web:
+#     provider: webpush
+#     public_key: "BEl62iU..."                  # the VAPID public key; `backd push web-keys` makes the pair
+#     private_key: secret:VAPID_PRIVATE_KEY
+#     subject: secret:VAPID_SUBJECT             # mailto: or https: contact for the browsers' push services
+#     endpoint_hosts:                           # hosts a web subscription may point at; defaults shown
+#       - fcm.googleapis.com
+#       - updates.push.services.mozilla.com
+#       - web.push.apple.com
+#       - "*.notify.windows.com"
+#   devices:
+#     max_per_user: 10                          # the least recently seen goes above this
+#     stale_after: 60d                          # a device not seen for this long is removed
+#   delivery:                                   # the built-in senders; defaults shown
+#     timeout: 60s                              # per delivery unit
+#     retry: { attempts: 5, backoff: 30s }
+#     parallelism: 20                           # provider requests in flight per worker
+#   limits:
+#     per_user: { per_minute: 5, per_day: 24 }  # no exemption of any kind
+#   send_retention: 30d                         # how long the record of a send is kept
 
 # Files. A realm that lets documents carry files brings its own S3-compatible
 # bucket (backd has no storage of its own). The bucket stays private: files are

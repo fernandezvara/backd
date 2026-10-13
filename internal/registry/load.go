@@ -17,6 +17,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/fernandezvara/backd/internal/email"
+	"github.com/fernandezvara/backd/internal/push"
 	"github.com/fernandezvara/backd/internal/rules"
 )
 
@@ -91,11 +92,53 @@ func Load(root string) (*Registry, error) {
 	for _, realmName := range reg.RealmNames() {
 		errs = append(errs, loadEmail(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadOnSignup(reg.Realms[realmName], filepath.Join(root, realmName))...)
+		errs = append(errs, loadPush(reg.Realms[realmName], filepath.Join(root, realmName))...)
 	}
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
 	return reg, nil
+}
+
+// loadPush loads a realm's push templates and checks what functions declare against them.
+func loadPush(rl *Realm, realmPath string) []error {
+	file := filepath.Join(realmPath, RealmFile)
+	var errs []error
+	if rl.Settings.Push == nil {
+		// A function can't send pushes through a realm that has none.
+		for _, dbName := range slices.Sorted(maps.Keys(rl.Databases)) {
+			if db := rl.Databases[dbName]; db.Functions != nil {
+				for _, name := range slices.Sorted(maps.Keys(db.Functions.Functions)) {
+					if db.Functions.Functions[name].Push != nil {
+						errs = append(errs, fmt.Errorf("%s: %s/%s declares `push`, but this realm has no push section (a function sends through the realm's providers and templates)", file, dbName, name))
+					}
+				}
+			}
+		}
+		return errs
+	}
+	_, locales := rl.Settings.Languages()
+	tpl, terrs := push.Load(filepath.Join(realmPath, push.DirName), locales)
+	rl.Push = tpl
+	errs = append(errs, terrs...)
+	for _, dbName := range slices.Sorted(maps.Keys(rl.Databases)) {
+		db := rl.Databases[dbName]
+		if db.Functions == nil {
+			continue
+		}
+		for _, name := range slices.Sorted(maps.Keys(db.Functions.Functions)) {
+			fp := db.Functions.Functions[name].Push
+			if fp == nil {
+				continue
+			}
+			for _, kind := range fp.Kinds {
+				if !tpl.HasKind(kind) {
+					errs = append(errs, fmt.Errorf("%s: %s/%s declares the push kind %q, which has no templates (push/%s/<locale>.yaml for every language of the realm)", file, dbName, name, kind, kind))
+				}
+			}
+		}
+	}
+	return errs
 }
 
 // loadOnSignup checks that account.on_signup names a function that can run in the background
@@ -158,10 +201,11 @@ func loadEmail(rl *Realm, realmPath string) []error {
 	if fn != nil {
 		rl.Settings.Email.Timeout = fn.Timeout
 	}
-	tpl, terrs := email.Load(filepath.Join(realmPath, email.DirName), es.Locales)
+	_, locales := rl.Settings.Languages()
+	tpl, terrs := email.Load(filepath.Join(realmPath, email.DirName), locales)
 	rl.Email = tpl
 	errs = append(errs, terrs...)
-	pages, perrs := email.LoadPages(filepath.Join(realmPath, email.PagesDirName), es.Locales)
+	pages, perrs := email.LoadPages(filepath.Join(realmPath, email.PagesDirName), locales)
 	rl.Pages = pages
 	return append(errs, perrs...)
 }

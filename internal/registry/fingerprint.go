@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/fernandezvara/backd/internal/email"
+	"github.com/fernandezvara/backd/internal/push"
 )
 
 const fingerprintSalt = "backd-config-v1\x00"
@@ -46,6 +47,17 @@ func (r *Registry) Fingerprint() (string, error) {
 					return nil
 				})
 			}
+		}
+		if rl.Settings.Push != nil {
+			// The templates backd writes its pushes from.
+			_ = filepath.WalkDir(filepath.Join(r.Root, rl.Name, push.DirName), func(path string, d fs.DirEntry, err error) error {
+				if err == nil && d.Type().IsRegular() && !strings.HasPrefix(d.Name(), ".") {
+					if rel, err := filepath.Rel(r.Root, path); err == nil {
+						files = append(files, filepath.ToSlash(rel))
+					}
+				}
+				return nil
+			})
 		}
 		for _, db := range rl.Databases {
 			for _, c := range db.Collections {

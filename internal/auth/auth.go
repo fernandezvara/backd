@@ -225,6 +225,51 @@ type Store interface {
 	// and says how many.
 	DeleteOtherSessions(ctx context.Context, userID, keepID string) (int64, error)
 
+	// PutDevice registers a device: a new one, or, when the token's hash exists, that device
+	// moved to this user and session (a new id, so the earlier owner's id is dead) with the
+	// new token and name. It returns what is stored and whether it moved from another user.
+	PutDevice(ctx context.Context, d Device) (Device, bool, error)
+	// ListDevices returns the user's devices, most recently seen first.
+	ListDevices(ctx context.Context, userID string) ([]Device, error)
+	// DeleteDevice removes one of the user's devices; ErrNotFound if it isn't theirs.
+	DeleteDevice(ctx context.Context, userID, id string) error
+	// DeleteOldestDevices removes the user's least recently seen devices beyond keep, never
+	// the device keepID, and says how many.
+	DeleteOldestDevices(ctx context.Context, userID string, keep int, keepID string) (int64, error)
+	// DeleteStaleDevices removes the devices last seen before the time.
+	DeleteStaleDevices(ctx context.Context, before time.Time) (int64, error)
+	// DeleteOrphanedDevices removes the devices whose session doesn't exist or has expired.
+	DeleteOrphanedDevices(ctx context.Context, now time.Time) (int64, error)
+	// DevicesByIDs returns the devices that exist among the ids. LiveDevicesOf returns the
+	// devices of the users whose registering session exists and hasn't expired, by user id,
+	// most recently seen first. DeleteDeviceByID removes a device whatever its owner.
+	DevicesByIDs(ctx context.Context, ids []string) ([]Device, error)
+	LiveDevicesOf(ctx context.Context, userIDs []string, now time.Time) (map[string][]Device, error)
+	DeleteDeviceByID(ctx context.Context, id string) error
+	// DeleteDevicesOfPlatform removes every device of a platform, and says how many.
+	DeleteDevicesOfPlatform(ctx context.Context, platform string) (int64, error)
+	// UsersByIDs returns the users that exist among the ids. AudienceUserIDs returns the ids
+	// of up to limit active users (not disabled, not erased) matching the audience, after the
+	// id `after`, in id order.
+	UsersByIDs(ctx context.Context, ids []string) ([]User, error)
+	AudienceUserIDs(ctx context.Context, a PushAudience, after string, limit int) ([]string, error)
+	// The record of a push send. AddPushSend adds the delta atomically (a finished batch or
+	// unit named in it counts once), sets CompletedAt when everything is done and returns the
+	// record. SetPushPlanned says every batch exists, and how many; SetPushPlanPosition keeps
+	// a planner job's place; UpdatePushRecipients replaces what a delivery unit still has to do.
+	CreatePushSend(ctx context.Context, p PushSend) error
+	PushSendByID(ctx context.Context, id string) (PushSend, error)
+	// PutPushOutbox stores a delivery the capture provider took; ListPushOutbox returns the
+	// newest ones.
+	PutPushOutbox(ctx context.Context, e PushOutboxEntry) error
+	ListPushOutbox(ctx context.Context, limit int) ([]PushOutboxEntry, error)
+	// ListPushSends returns sends newest first, and whether more follow.
+	ListPushSends(ctx context.Context, f PushSendFilter) ([]PushSend, bool, error)
+	AddPushSend(ctx context.Context, id string, d PushDelta, now time.Time) (PushSend, error)
+	SetPushPlanned(ctx context.Context, id string, batches int, now time.Time) error
+	SetPushPlanPosition(ctx context.Context, jobID, after string, nextBatch int) error
+	UpdatePushRecipients(ctx context.Context, jobID string, recipients []PushRecipient) error
+
 	// CreateAPIKey stores a key; ErrKeyNameTaken if the name exists.
 	CreateAPIKey(ctx context.Context, k APIKey) error
 	// APIKeyByHash returns the key with that hash; ErrKeyNotFound if none.

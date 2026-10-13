@@ -380,6 +380,17 @@ await backd.db('shop').fn('charge', { amount: 1250 }, { idempotencyKey: `order-$
 
 `fn`'s third argument also accepts `{ idempotencyKey, respondAsync, retry, signal, headers }`, same as [collections calls](#retries). `webhook` functions aren't called through `fn` — they're invoked by the sender, not the client.
 
+## Push notifications
+
+`client.push` registers this device so that functions can push the signed-in user: `register({ platform, token })`, `devices()`, `unregister()`, `registerOnLaunch(getToken)` and, for browsers, `subscribeWeb({ registration })`, which asks for the permission and does nothing when it is denied.
+
+```js
+backd.push.registerOnLaunch(async () => ({ platform: 'android', token: await getFcmToken() }))
+const { permission } = await backd.push.subscribeWeb({ registration: await navigator.serviceWorker.ready })
+```
+
+It needs a user session. The service worker, the mobile apps' raw endpoints and the rest are in [Push notifications → From apps](../../push/client/).
+
 ## Token storage
 
 By default the token is kept in memory: it is gone after a reload, and nothing on the page can read it from storage. To keep users signed in across reloads, choose a storage:

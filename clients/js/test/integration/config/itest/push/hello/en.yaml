@@ -1,0 +1,3 @@
+title: "Hello {{.Data.name}}"
+body: "A push sent by a function of the itest realm."
+link: "itest://hello/{{.Data.name}}"

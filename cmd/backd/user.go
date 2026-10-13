@@ -452,6 +452,23 @@ func readSecret(uio userIO, confirm bool, prompt string) (string, error) {
 	return strings.TrimRight(line, "\r\n"), nil
 }
 
+// readSecretValue reads the value of a secret: a hidden prompt on a terminal, and all of
+// standard input otherwise, so a file (a service account's JSON, a .p8 key) can be piped in.
+// Only the line ending at the very end is dropped.
+func readSecretValue(uio userIO, prompt string) (string, error) {
+	if f, ok := uio.stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		return readSecret(uio, false, prompt)
+	}
+	data, err := io.ReadAll(io.LimitReader(uio.stdin, 1<<20))
+	if err != nil {
+		return "", err
+	}
+	if len(data) == 0 {
+		return "", errors.New("no secret on standard input")
+	}
+	return strings.TrimRight(string(data), "\r\n"), nil
+}
+
 // userIdentities lists the user's sign-in methods.
 func userIdentities(c *userCtx) error {
 	u, err := c.find()

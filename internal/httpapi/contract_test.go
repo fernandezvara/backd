@@ -1826,6 +1826,110 @@ func TestContract(t *testing.T) {
 		req("POST", verify, body("nope", "000000", verifier), nil, 429)
 	}
 
+	// Devices for push notifications: nothing without a push: section, then a registry.
+	{
+		dev := a + "/devices"
+		req("POST", dev, `{"platform": "android", "token": "contract-token"}`, ada, 404)
+		req("GET", dev, "", ada, 404)
+		req("GET", dev+"/web-key", "", nil, 404)
+		req("GET", ad+"/users/"+temp.ID+"/devices", "", key, 404)
+		pushOff := req("GET", ad+"/push", "", key, 200)
+		if pushOff["enabled"] != false {
+			t.Errorf("push status without push: %v", pushOff)
+		}
+		req("GET", ad+"/push", "", nil, 401)
+		req("GET", ad+"/push", "", ada, 403)
+		req("GET", ad+"/push/sends", "", key, 404)
+		req("DELETE", ad+"/push/devices?platform=web", "", key, 404)
+		req("GET", ad+"/push/sends/ps_none", "", key, 404)
+		req("POST", ad+"/push/test", `{"email": "ada@example.com", "title": "Hi", "body": "There"}`, key, 404)
+		f.svc.Settings.Push = &registry.PushSettings{
+			Platforms:         map[string]registry.PushPlatform{"android": {Provider: "fcm"}, "web": {Provider: "webpush"}},
+			WebEndpointHosts:  registry.DefaultWebEndpointHosts,
+			WebPublicKey:      "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U",
+			MaxDevicesPerUser: 10,
+			StaleAfter:        60 * 24 * time.Hour,
+		}
+		f.svc.Settings.Push.Limits = registry.PushLimits{PerMinute: 5, PerDay: 24}
+		f.svc.Settings.Push.Delivery = registry.PushDelivery{Timeout: time.Minute, RetryAttempts: 3, RetryBackoff: 30 * time.Second, Parallelism: 4}
+		f.svc.Settings.Push.SendRetention = 30 * 24 * time.Hour
+		f.reg.Realms["acme"].Settings.Push = f.svc.Settings.Push
+		if f.svc.Cipher == nil {
+			f.svc.Cipher, _ = auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
+		}
+		made := req("POST", dev, `{"platform": "android", "token": "contract-token", "name": "Contract phone"}`, ada, 200)
+		req("POST", dev, `{"platform": "ios", "token": "contract-token"}`, ada, 400)
+		req("POST", dev, `{"platform": "android", "token": "contract-token"}`, nil, 401)
+		listed := req("GET", dev, "", ada, 200)
+		if items, _ := listed["items"].([]any); len(items) != 1 {
+			t.Errorf("devices: %v", listed)
+		}
+		req("GET", dev, "", nil, 401)
+		req("GET", dev+"/web-key", "", nil, 200)
+		req("DELETE", dev+"/nope", "", ada, 404)
+		req("DELETE", dev+"/x", "", nil, 401)
+		// An administrator sees the user's devices and removes one.
+		req("GET", ad+"/users/"+temp.ID+"/devices", "", key, 200)
+		req("GET", ad+"/users/"+temp.ID+"/devices", "", nil, 401)
+		req("GET", ad+"/users/"+temp.ID+"/devices", "", ada, 403)
+		req("DELETE", ad+"/users/"+temp.ID+"/devices/nope", "", key, 404)
+		req("DELETE", ad+"/users/"+temp.ID+"/devices/x", "", nil, 401)
+		req("DELETE", ad+"/users/"+temp.ID+"/devices/x", "", ada, 403)
+		req("DELETE", dev+"/"+made["id"].(string), "", ada, 204)
+		// Thirty registrations an hour per session.
+		for range 30 {
+			f.doH(t, "POST", dev, `{"platform": "android", "token": "contract-token-2"}`, map[string]string{"Authorization": ada["Authorization"], "Content-Type": "application/json"})
+		}
+		req("POST", dev, `{"platform": "android", "token": "contract-token-2"}`, ada, 429)
+		// A device of the temporary user, removed by an administrator.
+		tmp, _, err := f.svc.Login(context.Background(), temp.Email, "dev-p4ssw0rd!", "203.0.113.51")
+		if err != nil {
+			t.Fatal(err)
+		}
+		d, err := f.svc.RegisterDevice(context.Background(), tmp, auth.DeviceInput{Platform: "android", Token: "temp-token"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		req("DELETE", ad+"/users/"+temp.ID+"/devices/"+d.ID, "", key, 204)
+
+		// What the capture provider took: nothing while the realm has no capture platform.
+		req("GET", "/v1/acme/_dev/push", "", nil, 404)
+		f.svc.Settings.Push.Platforms["android"] = registry.PushPlatform{Provider: "capture"}
+		req("GET", "/v1/acme/_dev/push?limit=5", "", nil, 200)
+		f.svc.Settings.Push.Platforms["android"] = registry.PushPlatform{Provider: "fcm"}
+		// The sends of the realm, and a test push to a user.
+		sent := req("POST", ad+"/push/test", `{"email": "`+temp.Email+`", "title": "Hi", "body": "There", "data": {"a": "b"}}`, key, 202)
+		req("POST", ad+"/push/test", `{"email": "`+temp.Email+`", "title": "Hi", "body": "`+strings.Repeat("x", 4300)+`"}`, key, 413)
+		req("POST", ad+"/push/test", `{"email": "`+temp.Email+`", "title": "Hi"}`, key, 400)
+		req("POST", ad+"/push/test", `{"email": "nobody@example.com", "title": "Hi", "body": "There"}`, key, 404)
+		req("POST", ad+"/push/test", `{"email": "ada@example.com", "title": "Hi", "body": "There"}`, nil, 401)
+		req("POST", ad+"/push/test", `{"email": "ada@example.com", "title": "Hi", "body": "There"}`, ada, 403)
+		f.svc.Settings.Push.Platforms["android"] = registry.PushPlatform{Provider: "fcm", Credentials: "NOT_SET"}
+		req("POST", ad+"/push/test", `{"email": "`+temp.Email+`", "title": "Hi", "body": "There"}`, key, 503)
+		f.svc.Settings.Push.Platforms["android"] = registry.PushPlatform{Provider: "fcm"}
+		status := req("GET", ad+"/push", "", key, 200)
+		if status["enabled"] != true || len(status["platforms"].([]any)) != 2 {
+			t.Errorf("push status: %v", status)
+		}
+		sends := req("GET", ad+"/push/sends?kind=raw&limit=5", "", key, 200)
+		if items, _ := sends["items"].([]any); len(items) < 1 {
+			t.Errorf("sends: %v", sends)
+		}
+		req("GET", ad+"/push/sends?nope=1", "", key, 400)
+		req("DELETE", ad+"/push/devices", "", key, 400)
+		req("DELETE", ad+"/push/devices?platform=windows", "", key, 400)
+		req("DELETE", ad+"/push/devices?platform=web", "", nil, 401)
+		req("DELETE", ad+"/push/devices?platform=web", "", ada, 403)
+		req("DELETE", ad+"/push/devices?platform=web", "", key, 200)
+		req("GET", ad+"/push/sends", "", nil, 401)
+		req("GET", ad+"/push/sends", "", ada, 403)
+		sendID := sent["send_id"].(string)
+		req("GET", ad+"/push/sends/"+sendID, "", key, 200)
+		req("GET", ad+"/push/sends/ps_nope", "", key, 404)
+		req("GET", ad+"/push/sends/"+sendID, "", nil, 401)
+		req("GET", ad+"/push/sends/"+sendID, "", ada, 403)
+	}
+
 	c.verify(t, router)
 
 }

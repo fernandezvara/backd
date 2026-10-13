@@ -137,6 +137,28 @@ if (env.callback?.token && env.callback.email) {
     },
   });
 }
+if (env.callback?.token && env.callback.push) {
+  // Sends a push notification to users through the realm's templates and providers:
+  // user, users or audience; kind (a template of the realm) or title and body; data and the
+  // message fields. Returns { send_id, users, jobs, queued, limited, no_devices } (the counts
+  // are null until a send of more than one batch has been planned) and, with wait: true, the
+  // totals of the delivery too. A message that can't be sent (an unknown kind, an invalid
+  // field, a payload over a provider's limit) throws a FunctionError with its status and code.
+  const pusher = client(env.callback.token);
+  ctx.push = Object.freeze({
+    send: async (message) => {
+      try {
+        const { data } = await pusher.request({ method: "POST", path: ["_push", "send"], body: message });
+        return data;
+      } catch (e) {
+        if (e && Number.isInteger(e.status) && e.status >= 400 && e.status <= 499 && typeof e.code === "string") {
+          throw new FunctionError(e.status, e.code, e.message, e.details?.length ? e.details : undefined);
+        }
+        throw e;
+      }
+    },
+  });
+}
 if (env.callback?.admin_token) {
   const admin = client(env.callback.admin_token);
   ctx.admin = Object.freeze({ db: (name) => admin.db(name) });

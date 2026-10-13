@@ -277,6 +277,45 @@ func registerRemote(cfg *kli.Config) {
 		optional(cc, "login", "where the user may log in and use their session from (same format)")
 	})
 
+	pu := cfg.Command("push").ShortHelp("see a realm's push notification devices").
+		LongHelp(adminAPINote + " Devices are registered by the users' apps (POST /_auth/devices); tokens are never shown.")
+	pu.SubCommand("devices").ShortHelp("list a user's registered devices").
+		Func(act("push devices", userAction(true, pushDevices))).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "email", "the user's email")
+	})
+	pu.SubCommand("sends").ShortHelp("list the realm's push sends, or show one with --id").
+		LongHelp("A send's record holds counts, never a message, a user or a token. Needs the functions area.").
+		Func(act("push sends", pushSends)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		optional(cc, "id", "show this send (ps_…) with its progress")
+		optional(cc, "kind", "list only sends of this template kind (raw for raw messages)")
+		optional(cc, "function", "list only the sends of this function: <database>/<name>")
+		optional(cc, "limit", "how many sends to list (1 to 200, default 50)")
+	})
+	pu.SubCommand("test").ShortHelp("send one user a test push (needs the users area; audited; counts toward their limits)").
+		Func(act("push test", userAction(true, pushTest))).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "email", "the user's email")
+		optional(cc, "kind", "a template kind of the realm")
+		optional(cc, "data", "the data for the template, as a JSON object of strings")
+		optional(cc, "title", "the title of a raw push (with --body)")
+		optional(cc, "body", "the body of a raw push")
+	})
+	pu.SubCommand("web-keys").ShortHelp("make the realm's VAPID key pair for web push").
+		LongHelp("Stores the private key as the realm secret VAPID_PRIVATE_KEY and prints the public key with the\npush.web snippet for realm.yaml. It refuses to replace an existing key without --rotate; rotating\nremoves every web device of the realm, because browsers made their subscriptions under the old\npublic key (apps subscribe again at their next launch).").
+		Func(act("push web-keys", pushWebKeys)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		optional(cc, "name", "the secret that holds the private key (default VAPID_PRIVATE_KEY)")
+		boolean(cc, "rotate", "replace an existing key pair and remove the realm's web devices")
+	})
+	pu.SubCommand("remove-device").ShortHelp("remove one of a user's devices (audited)").
+		Func(act("push remove-device", userAction(true, pushRemoveDevice))).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "email", "the user's email")
+		required(cc, "id", "the device's id, from `backd push devices`")
+	})
+
 	k := cfg.Command("apikey").ShortHelp("manage a realm's API keys").
 		LongHelp(adminAPINote + "\n\nAPI keys give server-side services full access to their realm's data.\nStore them as secrets.")
 	k.SubCommand("create").ShortHelp("create an API key and print it once").

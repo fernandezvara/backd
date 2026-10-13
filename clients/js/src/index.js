@@ -2,6 +2,7 @@ export { createClient, Client } from './client.js'
 export { Auth } from './auth.js'
 export { Database, Collection, ifMatchValue } from './data.js'
 export { Admin } from './admin.js'
+export { Push } from './push.js'
 export { Files, versionStatus } from './files.js'
 export { Sha256, sha256Blob } from './sha256.js'
 export { Job, JobTimeoutError } from './functions.js'
@@ -37,6 +38,9 @@ export { parseReturn as parseOAuthReturn } from './oauth.js'
  * @typedef {import('./oauth.js').OAuthReturn} OAuthReturn
  * @typedef {import('./auth.js').SessionInfo} SessionInfo
  * @typedef {import('./auth.js').AuthEvent} AuthEvent
+ * @typedef {import('./push.js').Device} Device
+ * @typedef {import('./push.js').DeviceInput} DeviceInput
+ * @typedef {import('./push.js').PermissionState} PermissionState
  * @typedef {import('./errors.js').ErrorDetail} ErrorDetail
  * @typedef {import('./data.js').Meta} Meta
  * @typedef {import('./data.js').ListParams} ListParams
@@ -63,6 +67,8 @@ export { parseReturn as parseOAuthReturn } from './oauth.js'
  * @typedef {import('./admin.js').AdminAccess} AdminAccess
  * @typedef {import('./admin.js').AdminConfig} AdminConfig
  * @typedef {import('./admin.js').UserSession} UserSession
+ * @typedef {import('./admin.js').PushSend} PushSend
+ * @typedef {import('./admin.js').PushStatus} PushStatus
  * @typedef {import('./admin.js').UserPage} UserPage
  * @typedef {import('./admin.js').Invitation} Invitation
  * @typedef {import('./admin.js').NewInvitation} NewInvitation

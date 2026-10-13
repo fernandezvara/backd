@@ -693,7 +693,7 @@ paths:
               type: object
               additionalProperties: false
               properties:
-                locale: { type: string, description: "One of the realm's `email.locales`." }
+                locale: { type: string, description: "One of the realm's `locales` (top level of `realm.yaml`)." }
       responses:
         "200":
           description: The updated user.
@@ -801,6 +801,162 @@ paths:
       security: [{ session: [] }]
       responses:
         "204": { description: Session ended. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_dev/push:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [auth]
+      summary: What the capture push provider took (development only)
+      description: |
+        The deliveries the `capture` provider stored instead of sending, newest first, with the
+        message and the outcome each device was given. **No authentication**, like the email
+        outbox: it exists only in a realm with a capture provider, which startup refuses outside
+        `BACKD_DEV=true`; anywhere else it answers `404`. The Mailbox's Push tab reads it.
+      operationId: devPushOutbox
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: The captured deliveries.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, realm]
+                properties:
+                  realm: { type: string }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [id, send_id, user_id, device_id, platform, status, attempt, created_at, message]
+                      properties:
+                        id: { type: string }
+                        send_id: { type: string }
+                        user_id: { type: string }
+                        device_id: { type: string }
+                        platform: { type: string, enum: [android, ios, web] }
+                        status: { type: string, enum: [sent, invalid, retry, failed] }
+                        attempt: { type: integer }
+                        created_at: { $ref: "#/components/schemas/Timestamp" }
+                        message:
+                          type: object
+                          additionalProperties: false
+                          properties:
+                            kind: { type: string }
+                            title: { type: string }
+                            body: { type: string }
+                            link: { type: string }
+                            data: { type: [object, "null"], additionalProperties: { type: string } }
+                            badge: { type: [integer, "null"] }
+                            sound: { type: string }
+                            group: { type: string }
+                            priority: { type: string }
+                            silent: { type: boolean }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/devices:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Register a device for push notifications
+      description: |
+        Registers the device the app runs on, or refreshes it: apps call this at **each launch** and
+        after signing in. `token` is what the platform's push service gave the app (the FCM
+        registration token, the APNs device token) or, for `web`, the browser's push subscription as
+        JSON (`endpoint` and `keys`). A token belongs to one user: registering one that exists moves it
+        to the caller, so a second-hand phone never receives the previous user's pushes. The device is
+        removed with the session that registered it, after `push.devices.stale_after` unseen, and when
+        the user has more than `push.devices.max_per_user` (the least recently seen goes). At most 30
+        registrations an hour per session. Needs a session: an API key can't register devices. The
+        answer never contains the token.
+      operationId: registerDevice
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [platform, token]
+              properties:
+                platform: { type: string, enum: [android, ios, web] }
+                token: { type: string, maxLength: 4096 }
+                name: { type: string, maxLength: 100, description: "A label to show the user, such as Ana's Pixel." }
+      responses:
+        "200":
+          description: The device.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Device" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      tags: [auth]
+      summary: The user's registered devices
+      operationId: listDevices
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: Devices, most recently seen first. Never a token.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Device" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/devices/web-key:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [auth]
+      summary: The public key browsers subscribe with
+      description: The VAPID public key for `pushManager.subscribe`. Public and cacheable; `404` when the realm has no web platform.
+      operationId: getWebPushKey
+      responses:
+        "200":
+          description: The key.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [public_key]
+                properties:
+                  public_key: { type: string }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/devices/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    delete:
+      tags: [auth]
+      summary: Remove one of the user's devices
+      description: Someone else's device is a `404`.
+      operationId: removeDevice
+      security: [{ session: [] }]
+      responses:
+        "204": { description: Device removed. }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
@@ -1826,6 +1982,262 @@ paths:
       responses:
         "204":
           description: Session ended.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/push:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [admin]
+      summary: How the realm's push is configured
+      description: |
+        Whether the realm has a `push:` section, the platforms it enables with their provider, the
+        realm secrets those providers need that are **not set** (pushes answer `503 push_unavailable`
+        until they are), and the limits and retention. Never a secret's value. Needs the `functions`
+        area (read).
+      operationId: adminPushStatus
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: "The state: `enabled: false` is all there is for a realm without `push:`."
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [enabled]
+                properties:
+                  enabled: { type: boolean }
+                  platforms:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [platform, provider]
+                      properties:
+                        platform: { type: string, enum: [android, ios, web] }
+                        provider: { type: string, enum: [fcm, apns, webpush, capture] }
+                  missing_secrets: { type: array, items: { type: string } }
+                  limits:
+                    type: object
+                    additionalProperties: false
+                    properties:
+                      per_minute: { type: integer }
+                      per_day: { type: integer }
+                  devices:
+                    type: object
+                    additionalProperties: false
+                    properties:
+                      max_per_user: { type: integer }
+                      stale_after: { type: string }
+                  delivery:
+                    type: object
+                    additionalProperties: false
+                    properties:
+                      timeout: { type: string }
+                      attempts: { type: integer }
+                      parallelism: { type: integer }
+                  send_retention: { type: string }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/push/sends:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [admin]
+      summary: The realm's push sends
+      description: |
+        One record per send, newest first: its totals (users queued, limited or with no device;
+        devices sent, removed as dead or failed) and how far its batches and delivery units are.
+        **Titles, bodies, data and tokens are never stored in a record**; it expires after
+        `push.send_retention`. Needs the `functions` area (read).
+      operationId: adminListPushSends
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { name: kind, in: query, schema: { type: string }, description: "A template kind, or `raw`." }
+        - { name: function, in: query, schema: { type: string }, description: "`<database>/<name>` of the function that sent." }
+        - { name: since, in: query, schema: { type: string, format: date-time } }
+        - { name: until, in: query, schema: { type: string, format: date-time } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200 } }
+        - { name: skip, in: query, schema: { type: integer, minimum: 0 } }
+      responses:
+        "200":
+          description: The sends.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, limit, skip, has_more]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/PushSend" }
+                  limit: { type: integer }
+                  skip: { type: integer }
+                  has_more: { type: boolean }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/push/sends/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    get:
+      tags: [admin]
+      summary: One push send
+      operationId: adminGetPushSend
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The send.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PushSend" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/push/devices:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    delete:
+      tags: [admin]
+      summary: Remove every device of a platform
+      description: |
+        Removes all the realm's devices of a platform at once. It is what rotating the VAPID key
+        (`backd push web-keys --rotate`) does for `web`: browsers made their subscriptions under
+        the old public key, so they are useless, and apps subscribe again at their next launch.
+        Audited as `push.devices_removed`. Needs the `users` area.
+      operationId: adminRemovePushDevices
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { name: platform, in: query, required: true, schema: { type: string, enum: [android, ios, web] } }
+      responses:
+        "200":
+          description: How many devices went.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [platform, removed]
+                properties:
+                  platform: { type: string }
+                  removed: { type: integer }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/push/test:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [admin]
+      summary: Send one user a test push
+      description: |
+        Sends a push to one user, the way a function would: rendered in every language and
+        checked against the providers. It goes through the same limits as any push and **counts
+        toward the user's**; it is audited as `push.test`. The record of the send names the
+        administrator as its sender. Needs the `users` area.
+      operationId: adminTestPush
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                user: { type: string, description: "The user's id. Give this or `email`." }
+                email: { type: string, format: email }
+                kind: { type: string, description: "A template kind of the realm; without it, `title` and `body`." }
+                title: { type: string }
+                body: { type: string }
+                link: { type: string }
+                data: { type: object, additionalProperties: { type: string } }
+                silent: { type: boolean }
+                platform: { type: object, additionalProperties: { type: object } }
+      responses:
+        "202":
+          description: "Planned: how many users were queued, limited or had no device."
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [send_id, users, queued, limited, no_devices]
+                properties:
+                  send_id: { type: string }
+                  users: { type: integer }
+                  queued: { type: integer }
+                  limited: { type: integer }
+                  no_devices: { type: integer }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/users/{id}/devices:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    get:
+      tags: [admin]
+      summary: A user's registered devices
+      description: The devices the user registered for push notifications, most recently seen first. Never a token. Needs the `users` area; `404 push_not_configured` in a realm without `push:`.
+      operationId: adminUserDevices
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The devices.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Device" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/users/{id}/devices/{device_id}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+      - { name: device_id, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [admin]
+      summary: Remove a user's device
+      description: The device stops receiving pushes at once. Audited as `device.removed`. Needs the `users` area.
+      operationId: adminRemoveUserDevice
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "204":
+          description: Device removed.
           headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
@@ -5074,7 +5486,7 @@ components:
         email: { type: string }
         email_verified: { type: boolean }
         roles: { type: array, items: { type: string } }
-        locale: { type: string, description: "The user's language: one the realm lists (`email.locales`; English only without email). Used for the emails they get." }
+        locale: { type: string, description: "The user's language: one the realm lists (`locales` in `realm.yaml`; English only when it lists none). Used for the emails they get." }
         created_at: { $ref: "#/components/schemas/Timestamp" }
 
     Me:
@@ -5086,7 +5498,7 @@ components:
         email: { type: string }
         email_verified: { type: boolean }
         roles: { type: array, items: { type: string } }
-        locale: { type: string, description: "The user's language: one the realm lists (`email.locales`; English only without email). Used for the emails they get." }
+        locale: { type: string, description: "The user's language: one the realm lists (`locales` in `realm.yaml`; English only when it lists none). Used for the emails they get." }
         created_at: { $ref: "#/components/schemas/Timestamp" }
         sign_in_methods:
           type: array
@@ -5129,7 +5541,7 @@ components:
         email: { type: string }
         email_verified: { type: boolean }
         roles: { type: array, items: { type: string } }
-        locale: { type: string, description: "The user's language: one the realm lists (`email.locales`; English only without email). Used for the emails they get." }
+        locale: { type: string, description: "The user's language: one the realm lists (`locales` in `realm.yaml`; English only when it lists none). Used for the emails they get." }
         disabled: { type: boolean }
         admin_networks:
           description: CIDR networks this user's admin API requests must come from; empty means no restriction of their own.
@@ -5565,6 +5977,41 @@ components:
         last_used_at: { $ref: "#/components/schemas/Timestamp" }
         expires_at: { $ref: "#/components/schemas/Timestamp" }
         current: { type: boolean }
+
+    PushSend:
+      type: object
+      additionalProperties: false
+      required: [id, kind, sender, created_at, users, planned, batches, batches_done, units, units_done, queued, limited, no_devices, sent, invalid, failed, completed, completed_at]
+      properties:
+        id: { type: string }
+        kind: { type: string, description: "The template kind, or `raw`." }
+        sender: { type: string, description: "`function:<database>/<name>` or `admin:<actor>`." }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        users: { type: [integer, "null"], description: "Users named; null for an audience." }
+        planned: { type: boolean, description: "Every batch exists." }
+        batches: { type: integer }
+        batches_done: { type: integer }
+        units: { type: integer }
+        units_done: { type: integer }
+        queued: { type: integer, description: Users handed to delivery. }
+        limited: { type: integer, description: Users over their per-user limit. }
+        no_devices: { type: integer, description: Users with no device to reach. }
+        sent: { type: integer, description: Devices the provider accepted. }
+        invalid: { type: integer, description: Devices removed as dead. }
+        failed: { type: integer, description: Devices not delivered to. }
+        completed: { type: boolean }
+        completed_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
+
+    Device:
+      type: object
+      additionalProperties: false
+      required: [id, platform, name, created_at, last_seen]
+      properties:
+        id: { type: string }
+        platform: { type: string, enum: [android, ios, web] }
+        name: { type: [string, "null"] }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        last_seen: { $ref: "#/components/schemas/Timestamp" }
 
     OwnedReport:
       type: object

@@ -81,6 +81,79 @@ for (const button of document.querySelectorAll('.tabs button')) {
     for (const b of document.querySelectorAll('.tabs button')) b.setAttribute('aria-pressed', String(b === button))
   })
 }
-$('refresh').addEventListener('click', load)
+// --- Push -----------------------------------------------------------------
+
+let pushes = []
+let pushSelected = null
+
+function showPush(entry) {
+  pushSelected = entry?.id ?? null
+  $('push-empty').hidden = entry !== undefined && entry !== null
+  $('push-message').hidden = !entry
+  if (entry) {
+    const m = entry.message
+    $('push-title').textContent = m.silent ? '(silent: data only)' : m.title
+    $('push-body').textContent = m.body
+    $('push-link').textContent = m.link || '—'
+    $('push-data').textContent = JSON.stringify(m.data ?? {}, null, 2)
+    $('push-status').textContent = `${entry.status} (attempt ${entry.attempt})`
+    $('push-to').textContent = `user ${entry.user_id} · ${entry.platform} device ${entry.device_id}`
+    $('push-send').textContent = `${entry.send_id}${m.kind ? ` · ${m.kind}` : ''}`
+  }
+  renderPush()
+}
+
+function renderPush() {
+  $('push-list').replaceChildren(
+    ...pushes.map((entry) => {
+      const li = document.createElement('li')
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'secondary'
+      if (entry.id === pushSelected) button.setAttribute('aria-current', 'true')
+      const title = document.createElement('strong')
+      title.textContent = entry.message.silent ? '(silent)' : entry.message.title
+      const meta = document.createElement('small')
+      meta.textContent = `${entry.platform} · ${entry.status} · ${new Date(entry.created_at).toLocaleTimeString()}`
+      button.append(title, meta)
+      button.addEventListener('click', () => showPush(entry))
+      li.append(button)
+      return li
+    }),
+  )
+}
+
+async function loadPush() {
+  if ($('push-view').hidden) return
+  try {
+    const res = await fetch(`${window.location.origin}/v1/${encodeURIComponent(realm)}/_dev/push?limit=100`)
+    if (!res.ok) throw new Error(res.status === 404 ? "this realm has no push provider 'capture' (push.<platform>.provider: capture, with BACKD_DEV=true)" : `HTTP ${res.status}`)
+    const { items } = await res.json()
+    $('push-error').hidden = true
+    const changed = items.length !== pushes.length || items[0]?.id !== pushes[0]?.id
+    pushes = items
+    if (changed) {
+      if (pushSelected === null || !pushes.some((p) => p.id === pushSelected)) showPush(pushes[0])
+      else renderPush()
+    }
+  } catch (e) {
+    $('push-error').hidden = false
+    $('push-error').textContent = `Couldn't read the pushes of ${realm}: ${e.message}`
+  }
+}
+
+function view(name) {
+  const isPush = name === 'push'
+  $('email-view').hidden = isPush
+  $('push-view').hidden = !isPush
+  $('show-email').setAttribute('aria-pressed', String(!isPush))
+  $('show-push').setAttribute('aria-pressed', String(isPush))
+  if (isPush) loadPush()
+}
+$('show-email').addEventListener('click', () => view('email'))
+$('show-push').addEventListener('click', () => view('push'))
+if (new URLSearchParams(window.location.search).get('tab') === 'push') view('push')
+
+$('refresh').addEventListener('click', () => { load(); loadPush() })
 await load()
-setInterval(load, 2000)
+setInterval(() => { load(); loadPush() }, 2000)

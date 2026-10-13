@@ -1,0 +1,4 @@
+# What confirm_settlement pushes to the person who paid: {{.Data.from}} is who confirmed it
+# and {{.Data.amount}} the amount, as the function wrote them.
+title: "{{.Data.from}} confirmed your payment"
+body: "Your settlement of {{.Data.amount}} is now counted in the balances."

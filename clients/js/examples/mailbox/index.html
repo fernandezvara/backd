@@ -13,6 +13,11 @@
 <body>
   <main>
     <header><h1>backd mailbox</h1></header>
+    <nav class="kinds" aria-label="What to show">
+      <button type="button" id="show-email" aria-pressed="true">Email</button>
+      <button type="button" id="show-push" aria-pressed="false">Push</button>
+    </nav>
+    <section id="email-view">
     <p class="muted">
       The emails the <code id="realm">workshop</code> realm would have sent, captured by its
       <code>email-capture</code> function instead (local development only). Links work: click through
@@ -41,6 +46,33 @@
         </div>
       </section>
     </div>
+    </section>
+    <!-- Push: what the realm's `capture` provider took instead of sending (development only). -->
+    <section id="push-view" hidden>
+      <p class="muted">
+        The pushes the <code>capture</code> provider took instead of sending, with the outcome each
+        device was given. Tokens starting <code>test-invalid-</code>, <code>test-retry-</code>,
+        <code>test-fail-</code> or <code>test-retry-always-</code> steer it.
+      </p>
+      <p class="error" id="push-error" role="alert" hidden></p>
+      <div class="mailbox">
+        <ul id="push-list" aria-label="Captured pushes"></ul>
+        <section aria-live="polite">
+          <p class="muted" id="push-empty">No pushes yet. Register a device and send one.</p>
+          <div id="push-message" hidden>
+            <dl>
+              <dt>Title</dt><dd id="push-title"></dd>
+              <dt>Body</dt><dd id="push-body"></dd>
+              <dt>Link</dt><dd id="push-link"></dd>
+              <dt>Data</dt><dd><pre id="push-data"></pre></dd>
+              <dt>Status</dt><dd id="push-status"></dd>
+              <dt>To</dt><dd id="push-to"></dd>
+              <dt>Send</dt><dd id="push-send"></dd>
+            </dl>
+          </div>
+        </section>
+      </div>
+    </section>
   </main>
 </body>
 </html>

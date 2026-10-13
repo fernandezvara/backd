@@ -273,6 +273,10 @@ services:
       BACKD_CALLBACK_URL: http://backd:8081
       BACKD_CALLBACK_KEY: ${BACKD_CALLBACK_KEY:?run ./setup.sh}
       BACKD_SECRETS_KEY: ${BACKD_SECRETS_KEY:?run ./setup.sh}
+      # Push notifications reach FCM, APNs and the browsers' push services through egress
+      # (docs: Push notifications), like a function's outbound calls.
+      EXECUTOR_PROXY: http://egress:3128
+      BACKD_EGRESS_KEY: ${BACKD_EGRESS_KEY:?run ./setup.sh}
       LOG_LEVEL: info
       # The private metrics port (docs: Operations -> Metrics); only
       # Prometheus, on `func`, has the token.

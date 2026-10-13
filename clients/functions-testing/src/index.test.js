@@ -1,4 +1,4 @@
-import { callTimedOut, createContext, EmailLimitError, emailMessage, fakeEmail, fakeJob, FunctionError, MemoryStore, resetIds } from './index.js'
+import { callTimedOut, createContext, EmailLimitError, emailMessage, fakeEmail, fakeJob, fakePush, FunctionError, MemoryStore, resetIds } from './index.js'
 import { BackdError, NotFoundError, VersionMismatchError } from '../../js/src/errors.js'
 
 // No test-framework dependency, matching the JS client's "no runtime
@@ -349,4 +349,48 @@ Deno.test('files: declared versions start pending, empty or skipped, and a funct
   const text = await notes.put('plain words', { type: 'text/plain' })
   assertEquals(text.photo.versions.thumb, { status: 'skipped', reason: 'not_an_image' })
   assertEquals((await assertRejects(() => notes.version('thumb').regenerate(), BackdError)).code, 'not_an_image')
+})
+
+async function pushRefused(push, message, status, code) {
+  try {
+    await push.send(message)
+  } catch (e) {
+    assert(e instanceof FunctionError, `a FunctionError, got ${e}`)
+    assertEquals([e.status, e.code], [status, code])
+    return
+  }
+  throw new Error(`accepted ${JSON.stringify(message)}`)
+}
+
+Deno.test('fakePush records what backd would queue and refuses what it would refuse', async () => {
+  const push = fakePush({ kinds: ['order-shipped'] })
+  const r = await push.send({ user: 'u1', kind: 'order-shipped', data: { order_no: 'A-1' }, group: 'order-1' })
+  assertEquals([r.users, r.queued, r.limited, r.no_devices, r.jobs], [1, 1, 0, 0, 1])
+  await push.send({ users: ['u1', 'u2', 'u1'], title: 'Hi', body: 'There' })
+  await push.send({ user: 'u1', silent: true, data: { sync: '1' } })
+  assertEquals(push.sent().map((m) => m.kind ?? 'raw'), ['order-shipped', 'raw', 'raw'])
+  assertEquals((await push.send({ users: ['a', 'b'], title: 'x', body: 'y' })).users, 2)
+
+  await pushRefused(push, { title: 'x', body: 'y' }, 400, 'invalid_push_message') // nobody
+  await pushRefused(push, { user: 'a', users: ['b'], title: 'x', body: 'y' }, 400, 'invalid_push_message')
+  await pushRefused(push, { user: 'a', kind: 'other' }, 400, 'unknown_push_kind')
+  await pushRefused(push, { user: 'a', kind: 'order-shipped', title: 'x' }, 400, 'invalid_push_message')
+  await pushRefused(push, { user: 'a', title: 'x' }, 400, 'invalid_push_message') // no body
+  await pushRefused(push, { user: 'a', title: 'x', body: 'y', data: { n: 1 } }, 400, 'invalid_push_message')
+  await pushRefused(push, { user: 'a', title: 'x', body: 'y', group: 'a b' }, 400, 'invalid_push_message')
+  await pushRefused(push, { user: 'a', silent: true }, 400, 'invalid_push_message')
+  await pushRefused(push, { user: 'a', silent: true, title: 'x', data: { a: 'b' } }, 400, 'invalid_push_message')
+  await pushRefused(push, { audience: 'all', title: 'x', body: 'y' }, 403, 'push_audience_not_declared')
+  await pushRefused(push, { user: 'a', title: 'x', body: 'y'.repeat(4100) }, 413, 'payload_too_large')
+
+  const wide = fakePush({ audience: true })
+  const all = await wide.send({ audience: { roles: ['member'] }, title: 'x', body: 'y' })
+  assertEquals([all.users, all.queued], [null, null])
+})
+
+Deno.test('createContext gives ctx.push when asked, and lists what was sent', async () => {
+  const { ctx, sentPushes } = createContext({ push: { kinds: ['order-shipped'] } })
+  await ctx.push.send({ user: 'u1', kind: 'order-shipped', data: { order_no: 'A-1' } })
+  assertEquals(sentPushes().length, 1)
+  assertEquals(createContext().ctx.push, undefined)
 })

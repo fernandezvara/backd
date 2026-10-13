@@ -22,7 +22,7 @@ func TestSignupHashesTheSameWhetherOrNotTheAddressIsRegistered(t *testing.T) {
 		Hasher: hasher,
 		Settings: registry.RealmSettings{
 			AuthEnabled: true, Signup: registry.SignupOpen, PasswordMinLength: 12,
-			Email:   &registry.EmailSettings{Function: "app/deliver", From: "a@example.com", DefaultLocale: "en", Limits: registry.EmailLimits{PerKindPerHour: 1000, PerDay: 1000, PerIPPerHour: 1000}},
+			Email:   &registry.EmailSettings{Function: "app/deliver", From: "a@example.com", Limits: registry.EmailLimits{PerKindPerHour: 1000, PerDay: 1000, PerIPPerHour: 1000}},
 			Account: registry.AccountSettings{RequireVerifiedEmail: true, VerifyEmailTTL: time.Hour},
 		},
 	}

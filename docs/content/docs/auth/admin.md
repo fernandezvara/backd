@@ -76,6 +76,8 @@ Paths are relative to `/v1/{realm}/_admin`. Bodies are JSON (`Content-Type: appl
 | `DELETE /users/{id}/identities/{provider}` | none | `204`; removes one of the user's [sign-in methods](../providers/) (`password` included). `409 last_sign_in_method` for the last one, `404` for a provider the user doesn't have; audited as `identity.unlinked` with `by: admin`. Removing Apple also [revokes the user's Apple tokens](../providers/#apple-and-account-deletion) |
 | `POST /users/{id}/mfa/reset` | none | `204`; removes the user's [second factor](../mfa/#when-a-user-loses-it) and recovery codes and ends all of their sessions; never on yourself (`403 self_reset_not_allowed`), `409 mfa_not_enabled` when there is none |
 | `GET /users/{id}/mfa` | none | `200` with the user's [second factor](../mfa/): `enabled`, `methods`, `recovery_codes_left`, `required`; never a secret or a code |
+| `GET /users/{id}/devices` | none | `200` with the user's [push devices](../../push/devices/), most recently seen first (`id`, `platform`, `name`, `created_at`, `last_seen`; never a token); `404 push_not_configured` without `push:` |
+| `DELETE /users/{id}/devices/{device_id}` | none | `204`; the device stops receiving pushes; audited as `device.removed`. `404` for an unknown device |
 | `GET /users/{id}/sessions` | none | `200` with the user's unexpired sessions, newest first (`id`, `created_at`, `last_used_at`, `expires_at`; never a token) |
 | `DELETE /users/{id}/sessions/{session_id}` | none | `204`; the session's token stops working at once; audited as `session.revoke`. `404` for an unknown session |
 | `POST /users/{id}/password` | `{"password"}` | `204` |

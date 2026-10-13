@@ -11,6 +11,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/fernandezvara/backd/internal/email"
+	"github.com/fernandezvara/backd/internal/push"
 	"github.com/fernandezvara/backd/internal/rules"
 )
 
@@ -31,11 +32,13 @@ type Realm struct {
 	// Pages are the hosted pages the links in emails open (<realm>/pages/);
 	// nil when the realm doesn't configure email.
 	Pages *email.Pages
+	// Push holds the parsed push templates of <realm>/push/; nil when the realm has no push: section.
+	Push *push.Templates
 }
 
 // ReservedDirs are folders of a realm that hold something other than a
 // database: they are never read as databases.
-var ReservedDirs = []string{email.DirName, email.PagesDirName}
+var ReservedDirs = []string{email.DirName, email.PagesDirName, push.DirName}
 
 // Database is one application's data, stored in one MongoDB database.
 type Database struct {

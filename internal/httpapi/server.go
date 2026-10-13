@@ -14,14 +14,18 @@ import (
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/metrics"
 	"github.com/fernandezvara/backd/internal/oauth"
+	"github.com/fernandezvara/backd/internal/push"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
 // Config holds the handler dependencies.
 type Config struct {
-	Log      *slog.Logger
-	Registry *registry.Registry
-	Store    Store
+	// PushSenders deliver pushes, by provider name (fcm, apns, webpush, capture). The built-in
+	// senders are added by the process that runs workers; tests put theirs here.
+	PushSenders map[string]push.Sender
+	Log         *slog.Logger
+	Registry    *registry.Registry
+	Store       Store
 	// Ready reports whether backd can serve requests (e.g. MongoDB reachable).
 	Ready func(ctx context.Context) error
 	// Now is the clock for _meta timestamps; defaults to time.Now.

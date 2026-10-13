@@ -129,7 +129,7 @@ func TestRunDatabases(t *testing.T) {
 	if code := run([]string{"databases", "--collections"}, getenv, nil, &stdout, &stderr); code != 0 {
 		t.Fatalf("--collections: exit code %d, stderr %q", code, stderr.String())
 	}
-	want := "backd___deployment.realms\nblog___system.api_keys\nblog___system.audit\nblog___system.auth_challenges\nblog___system.email_tokens\nblog___system.file_deletions\nblog___system.file_journal\nblog___system.idempotency\nblog___system.identities\nblog___system.invitations\nblog___system.invocations\nblog___system.jobs\nblog___system.login_attempts\nblog___system.login_codes\nblog___system.mfa\nblog___system.oauth_states\nblog___system.schedules\nblog___system.schema_checks\nblog___system.secrets\n" +
+	want := "backd___deployment.realms\nblog___system.api_keys\nblog___system.audit\nblog___system.auth_challenges\nblog___system.devices\nblog___system.email_tokens\nblog___system.file_deletions\nblog___system.file_journal\nblog___system.idempotency\nblog___system.identities\nblog___system.invitations\nblog___system.invocations\nblog___system.jobs\nblog___system.login_attempts\nblog___system.login_codes\nblog___system.mfa\nblog___system.oauth_states\nblog___system.push_outbox\nblog___system.push_sends\nblog___system.schedules\nblog___system.schema_checks\nblog___system.secrets\n" +
 		"blog___system.sessions\nblog___system.storage_usage\nblog___system.users\nblog__cms.pages\nblog__main.posts\nshop__orders.items\n"
 	if stdout.String() != want {
 		t.Errorf("--collections: stdout = %q, want %q", stdout.String(), want)
@@ -211,6 +211,7 @@ func emailLines(realm, prefix, suffix string) string {
 	for _, kind := range append(slices.Clone(email.PageKinds), email.OptionalPageKinds...) {
 		b.WriteString(prefix + realm + "/pages/" + kind + "/en.html" + suffix + "\n")
 	}
+	b.WriteString(prefix + realm + "/push/example/en.yaml" + suffix + "\n")
 	return b.String()
 }
 

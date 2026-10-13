@@ -1,0 +1,14 @@
+# An example push notification template: <realm>/push/<kind>/<locale>.yaml. The kind is the
+# folder's name (this one is "example"); every language the realm lists in `locales` needs
+# its own file of every kind, so add es.yaml next to this one when you list es.
+#
+# Templates see the realm, the recipient's language and the `data` the function sent:
+#   {{.Realm}}  {{.User.Locale}}  {{.Data.name}}
+# They get no address or profile field: a lock screen is seen by others.
+#
+# A function sends it with ctx.push.send({ user, kind: "example", data: { name: "Ana" } })
+# once it declares `push: true` (or `push: { kinds: [example] }`) in its function.yaml.
+# Delete this folder if you don't use it: a realm without a `push:` section ignores it.
+title: "Hello {{.Data.name}}"
+body: "This is an example notification from {{.Realm}}."
+# link: "acme://home"     # optional: opened when the notification is tapped

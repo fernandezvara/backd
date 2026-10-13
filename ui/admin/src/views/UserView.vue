@@ -190,6 +190,36 @@ async function revokeSession(id: string) {
   }
 }
 
+// Push devices: only a realm with push: has any to show.
+interface DeviceRow {
+  id: string
+  platform: string
+  name: string | null
+  last_seen: string
+}
+const devices = ref<DeviceRow[]>([])
+const devicesError = ref('')
+// Whether the realm has push: the server says so (404 push_not_configured), whatever areas this level reads.
+const pushConfigured = ref(true)
+async function loadDevices() {
+  devicesError.value = ''
+  try {
+    devices.value = await admin.users.devices(props.id)
+  } catch (e) {
+    if ((e as { code?: string }).code === 'push_not_configured') pushConfigured.value = false
+    else devicesError.value = errorText(e, t('user.devices.loadFailed'))
+  }
+}
+async function removeDevice(id: string) {
+  try {
+    await admin.users.removeDevice(props.id, id)
+    toasts.push(t('user.devices.removed'))
+    await loadDevices()
+  } catch (e) {
+    toasts.push(errorText(e, t('common.unexpected')), 'error')
+  }
+}
+
 // Erasing: what the user owns is shown first, then the user's email is typed.
 const erasing = ref(false)
 const report = ref<OwnedReport>()
@@ -223,7 +253,10 @@ const statusText = computed(() => (erased.value ? t('users.erased') : user.value
 
 onMounted(async () => {
   await load()
-  if (user.value && !erased.value) await Promise.all([loadSessions(), loadIdentities(), loadMfa(), realmConfig.load()])
+  if (user.value && !erased.value) {
+    await Promise.all([loadSessions(), loadIdentities(), loadMfa(), realmConfig.load()])
+    await loadDevices()
+  }
 })
 </script>
 
@@ -358,6 +391,33 @@ onMounted(async () => {
                 <td class="px-3 py-2">{{ formatDate(s.expires_at) }}</td>
                 <td v-if="canWrite" class="px-3 py-2 text-right">
                   <button type="button" class="underline" @click="revokeSession(s.id)">{{ t('user.sessions.revoke') }}</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section v-if="pushConfigured" class="mt-8" aria-labelledby="devices-h">
+        <h2 id="devices-h" class="text-lg font-semibold">{{ t('user.devices.title') }}</h2>
+        <AppAlert v-if="devicesError" kind="error" class="mt-2">{{ devicesError }}</AppAlert>
+        <p v-else-if="!devices.length" class="mt-2 text-sm text-slate-600 dark:text-slate-400" data-testid="user-devices-none">{{ t('user.devices.none') }}</p>
+        <div v-else class="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+          <table class="w-full text-left text-sm" data-testid="user-devices">
+            <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
+              <tr>
+                <th scope="col" class="px-3 py-2">{{ t('user.devices.platform') }}</th>
+                <th scope="col" class="px-3 py-2">{{ t('user.devices.name') }}</th>
+                <th scope="col" class="px-3 py-2">{{ t('user.devices.lastSeen') }}</th>
+                <th v-if="canWrite" scope="col" class="px-3 py-2"><span class="sr-only">{{ t('user.devices.remove') }}</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="d in devices" :key="d.id" class="border-b border-slate-100 last:border-0 dark:border-slate-800">
+                <td class="px-3 py-2 font-mono text-xs">{{ d.platform }}</td>
+                <td class="px-3 py-2">{{ d.name ?? '—' }}</td>
+                <td class="px-3 py-2">{{ formatDate(d.last_seen) }}</td>
+                <td v-if="canWrite" class="px-3 py-2 text-right">
+                  <button type="button" class="underline" @click="removeDevice(d.id)">{{ t('user.devices.remove') }}</button>
                 </td>
               </tr>
             </tbody>

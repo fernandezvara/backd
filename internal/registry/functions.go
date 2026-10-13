@@ -92,24 +92,26 @@ type Function struct {
 	Memory                int64 // bytes
 	MaxOutput             int64 // bytes
 	Concurrency           int
-	RateLimit             *RateLimit     // nil: none
-	Retry                 *Retry         // nil: a single attempt
-	Idempotency           string         // optional or required
-	Invoke                *rules.Rule    // nil: only API keys may invoke
-	Admin                 bool           // ctx.admin.db with full access
-	Internal              bool           // no HTTP route: only backd, scheduled runs and other functions call it
-	Email                 bool           // ctx.email.send: may send custom emails through the realm's templates and delivery function
-	DevOnly               bool           // backd refuses to start with it unless BACKD_DEV=true (development helpers)
-	Calls                 []string       // functions of the same database this one may ctx.call
-	Schedule              *cron.Schedule // nil: not scheduled
-	ScheduleExpr          string
-	OnComplete            *OnComplete // nil: nothing is told when a job ends
-	Timezone              string      // IANA name the schedule is read in; "UTC" unless set. Empty when not scheduled
-	Overlap               string      // allow (default) or skip: what a scheduled time does while the previous run hasn't finished
-	Secrets               []SecretRef
-	Network               []string // hosts (host or host:port) the function may reach
-	InputSchema           *jsonschema.Schema
-	OutputSchema          *jsonschema.Schema
+	RateLimit             *RateLimit  // nil: none
+	Retry                 *Retry      // nil: a single attempt
+	Idempotency           string      // optional or required
+	Invoke                *rules.Rule // nil: only API keys may invoke
+	Admin                 bool        // ctx.admin.db with full access
+	Internal              bool        // no HTTP route: only backd, scheduled runs and other functions call it
+	Email                 bool        // ctx.email.send: may send custom emails through the realm's templates and delivery function
+	// Push is set by `push:` in function.yaml: the function may send pushes (ctx.push.send).
+	Push         *FunctionPush
+	DevOnly      bool           // backd refuses to start with it unless BACKD_DEV=true (development helpers)
+	Calls        []string       // functions of the same database this one may ctx.call
+	Schedule     *cron.Schedule // nil: not scheduled
+	ScheduleExpr string
+	OnComplete   *OnComplete // nil: nothing is told when a job ends
+	Timezone     string      // IANA name the schedule is read in; "UTC" unless set. Empty when not scheduled
+	Overlap      string      // allow (default) or skip: what a scheduled time does while the previous run hasn't finished
+	Secrets      []SecretRef
+	Network      []string // hosts (host or host:port) the function may reach
+	InputSchema  *jsonschema.Schema
+	OutputSchema *jsonschema.Schema
 }
 
 // Retry is an async function's retry policy: how often a failed attempt
@@ -180,6 +182,7 @@ type functionDoc struct {
 	Internal    bool     `yaml:"internal"`
 	DevOnly     bool     `yaml:"dev_only"`
 	Email       bool     `yaml:"email"`
+	Push        any      `yaml:"push"` // true, or a mapping with kinds and audience
 	Calls       []string `yaml:"calls"`
 	Schedule    *string  `yaml:"schedule"`
 	Timezone    *string  `yaml:"timezone"`
@@ -580,6 +583,11 @@ func loadFunction(db *Database, settings RealmSettings, name, dir string) (*Func
 	fn.Internal = doc.Internal
 	fn.DevOnly = doc.DevOnly
 	fn.Email = doc.Email
+	if fp, err := parseFunctionPush(doc.Push); err != nil {
+		add("%v", err)
+	} else {
+		fn.Push = fp
+	}
 	if fn.Internal && doc.Invoke != nil {
 		add("internal: a function with no HTTP route has no use for an invoke rule; remove one of them")
 	}

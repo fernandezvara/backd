@@ -7,3 +7,6 @@ mode: sync
 timeout: 10s
 invoke: "user != nil && user.email_verified"
 admin: true
+# The payer is pushed when the receiver confirms (kind settlement-confirmed).
+push:
+  kinds: [settlement-confirmed]

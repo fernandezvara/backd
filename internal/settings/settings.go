@@ -56,9 +56,14 @@ type Settings struct {
 	// key callback tokens are signed with (BACKD_CALLBACK_KEY).
 	ExecutorURL   string
 	ExecutorToken string
-	InternalAddr  string
-	CallbackURL   string
-	CallbackKey   string
+	// EgressProxy (EXECUTOR_PROXY) and EgressKey (BACKD_EGRESS_KEY) are how push providers are
+	// reached: through the egress proxy, with a token the worker signs for each delivery unit.
+	// Without a proxy the senders dial the providers directly, and only public addresses.
+	EgressProxy  string
+	EgressKey    string
+	InternalAddr string
+	CallbackURL  string
+	CallbackKey  string
 	// BackdURL is backd's public address (BACKD_URL), the base of the links
 	// in emails; a realm's email.public_url overrides it. No trailing slash.
 	BackdURL string
@@ -244,6 +249,16 @@ func Load(getenv func(string) string) (Settings, error) {
 
 	s.ExecutorURL = getenv("BACKD_EXECUTOR_URL")
 	s.ExecutorToken = getenv("BACKD_EXECUTOR_TOKEN")
+	s.EgressProxy = getenv("EXECUTOR_PROXY")
+	s.EgressKey = getenv("BACKD_EGRESS_KEY")
+	if s.EgressProxy != "" {
+		if !httpURL(s.EgressProxy) {
+			errs = append(errs, fmt.Errorf("EXECUTOR_PROXY must be an http(s) URL, got %q", s.EgressProxy))
+		}
+		if len(s.EgressKey) < minSecretLen {
+			errs = append(errs, fmt.Errorf("BACKD_EGRESS_KEY must be at least %d characters when EXECUTOR_PROXY is set", minSecretLen))
+		}
+	}
 	s.InternalAddr = orDefault(getenv("BACKD_INTERNAL_ADDR"), ":8081")
 	s.CallbackURL = getenv("BACKD_CALLBACK_URL")
 	s.CallbackKey = getenv("BACKD_CALLBACK_KEY")

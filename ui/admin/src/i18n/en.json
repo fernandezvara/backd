@@ -5,6 +5,7 @@
   },
   "common": {
     "cancel": "Cancel",
+    "close": "Close",
     "confirm": "Confirm",
     "signOut": "Sign out",
     "loading": "Loading...",
@@ -125,7 +126,61 @@
     "functions": "Functions",
     "config": "Configuration",
     "data": "Data",
-    "storage": "Storage"
+    "storage": "Storage",
+    "push": "Push"
+  },
+  "push": {
+    "title": "Push notifications",
+    "refresh": "Refresh",
+    "none": "This realm has no push notifications configured (push: in realm.yaml).",
+    "statusFailed": "The push configuration could not be loaded.",
+    "sendsFailed": "The sends could not be loaded.",
+    "missing": "These realm secrets are not set, so pushes are refused until they are: {names}. Set them with backd secret set.",
+    "config": "Configuration",
+    "limits": "Per-user limits",
+    "limitsValue": "{minute} a minute, {day} a day",
+    "devices": "Devices",
+    "devicesValue": "up to {max} a user, removed after {stale} unseen",
+    "retention": "Records kept",
+    "sends": "Sends",
+    "noSends": "No sends yet.",
+    "detail": "Send",
+    "work": "Work",
+    "workValue": "{done} of {batches} batches, {unitsDone} of {units} delivery units",
+    "named": "{n} named",
+    "noContent": "A record holds counts only: never a title, a body, data or a token.",
+    "usersValue": "{queued} queued, {limited} limited, {none} without a device",
+    "devicesCell": "{sent} sent, {invalid} removed, {failed} failed",
+    "filter": {
+      "kind": "Kind",
+      "function": "Function (database/name)",
+      "apply": "Filter"
+    },
+    "col": {
+      "created": "Sent",
+      "kind": "Kind",
+      "sender": "Sender",
+      "users": "Users",
+      "devices": "Devices",
+      "state": "State"
+    },
+    "state": {
+      "completed": "Completed",
+      "planning": "Planning",
+      "delivering": "Delivering"
+    },
+    "test": {
+      "open": "Send a test",
+      "title": "Send a test push",
+      "help": "Goes to one user's devices through the same limits as any push, and counts toward theirs. It is audited.",
+      "email": "User's email",
+      "kind": "Template kind",
+      "kindHelp": "Leave empty to write a title and a body.",
+      "titleField": "Title",
+      "bodyField": "Body",
+      "send": "Send",
+      "result": "Send {id}: {queued} queued, {limited} limited, {none} without a device."
+    }
   },
   "storage": {
     "title": "Storage",
@@ -280,6 +335,16 @@
       "revoke": "Revoke",
       "revoked": "Session revoked.",
       "loadFailed": "The sessions could not be loaded."
+    },
+    "devices": {
+      "title": "Devices",
+      "none": "No registered devices.",
+      "platform": "Platform",
+      "name": "Name",
+      "lastSeen": "Last seen",
+      "remove": "Remove",
+      "removed": "Device removed.",
+      "loadFailed": "The devices could not be loaded."
     },
     "networks": {
       "title": "Networks"

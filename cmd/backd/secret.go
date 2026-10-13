@@ -29,7 +29,7 @@ func secretSet(c *kli.CommandContext) error {
 		return err
 	}
 	name, database := str(c, "name"), str(c, "database")
-	value, err := readSecret(ioOf(c), false, "Secret")
+	value, err := readSecretValue(ioOf(c), "Secret")
 	if err != nil {
 		return err
 	}

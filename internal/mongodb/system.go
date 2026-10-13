@@ -47,6 +47,15 @@ const (
 	// holds one document per user with a second factor.
 	AuthChallengesCollection = "auth_challenges"
 	MFACollection            = "mfa"
+	// DevicesCollection holds the devices registered for push notifications: one document per
+	// device, with its token sealed and looked up by the hash of the token (or, for a web
+	// subscription, of its endpoint).
+	DevicesCollection = "devices"
+	// PushSendsCollection holds one record per push send: its totals, never a message.
+	PushSendsCollection = "push_sends"
+	// PushOutboxCollection holds what the capture provider took instead of sending: development
+	// only, with the message.
+	PushOutboxCollection = "push_outbox"
 	// SchemaChecksCollection holds the latest schema check report of each
 	// collection (roadmap #26), replaced by the next finished check.
 	SchemaChecksCollection = "schema_checks"
@@ -488,6 +497,71 @@ var systemCollections = []systemCollection{
 			"last_step":      map[string]any{"bsonType": bson.A{"int", "long"}},
 			"recovery_codes": map[string]any{"bsonType": "array", "items": str()},
 		}),
+	},
+	{
+		name: DevicesCollection,
+		validator: jsonSchema([]string{"_id", "user_id", "session_id", "platform", "token_hash", "token", "created_at", "last_seen"}, map[string]any{
+			"_id":        str(),
+			"user_id":    str(),
+			"session_id": str(),
+			"platform":   map[string]any{"enum": bson.A{"android", "ios", "web"}},
+			"token_hash": str(),
+			"token":      str(),
+			"name":       str(),
+			"created_at": typ("date"),
+			"last_seen":  typ("date"),
+		}),
+		indexes: []systemIndex{
+			{keys: bson.D{{Key: "token_hash", Value: 1}}, unique: true},
+			{keys: bson.D{{Key: "user_id", Value: 1}, {Key: "last_seen", Value: -1}}},
+			{keys: bson.D{{Key: "session_id", Value: 1}}},
+			{keys: bson.D{{Key: "last_seen", Value: 1}}},
+		},
+	},
+	{
+		name: PushOutboxCollection,
+		validator: jsonSchema([]string{"_id", "send_id", "device_id", "platform", "status", "message", "created_at", "expires_at"}, map[string]any{
+			"_id":        str(),
+			"send_id":    str(),
+			"user_id":    str(),
+			"device_id":  str(),
+			"platform":   str(),
+			"status":     str(),
+			"attempt":    typ("int"),
+			"message":    str(),
+			"created_at": typ("date"),
+			"expires_at": typ("date"),
+		}),
+		indexes: []systemIndex{{keys: bson.D{{Key: "expires_at", Value: 1}}, ttl: true}},
+	},
+	{
+		name: PushSendsCollection,
+		validator: jsonSchema([]string{"_id", "kind", "sender", "created_at", "expires_at"}, map[string]any{
+			"_id":            str(),
+			"kind":           str(),
+			"sender":         str(),
+			"users":          typ("int"),
+			"planned":        typ("bool"),
+			"batches":        typ("int"),
+			"units":          typ("int"),
+			"batches_done":   typ("int"),
+			"units_done":     typ("int"),
+			"queued":         typ("int"),
+			"limited":        typ("int"),
+			"no_devices":     typ("int"),
+			"sent":           typ("int"),
+			"invalid":        typ("int"),
+			"failed":         typ("int"),
+			"batch_ids_done": map[string]any{"bsonType": "array", "items": str()},
+			"unit_ids_done":  map[string]any{"bsonType": "array", "items": str()},
+			"created_at":     typ("date"),
+			"expires_at":     typ("date"),
+			"completed_at":   typ("date"),
+		}),
+		indexes: []systemIndex{
+			{keys: bson.D{{Key: "expires_at", Value: 1}}, ttl: true},
+			{keys: bson.D{{Key: "created_at", Value: -1}}},
+		},
 	},
 	{
 		name: LoginCodesCollection,

@@ -15,6 +15,7 @@ import (
 	"github.com/fernandezvara/backd/internal/imaging"
 	"github.com/fernandezvara/backd/internal/metrics"
 	"github.com/fernandezvara/backd/internal/oauth"
+	"github.com/fernandezvara/backd/internal/push"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage"
 )
@@ -44,6 +45,9 @@ type Worker struct {
 
 	lastScheduled map[string]time.Time // only touched by the schedule loop
 	lastPurge     map[string]time.Time // realm → last purge of unverified accounts; same
+	lastDevices   map[string]time.Time // realm → last sweep of stale and orphaned devices
+	// pushSenders deliver pushes, by provider.
+	pushSenders map[string]push.Sender
 }
 
 // NewWorker builds a worker from the same Config NewHandler uses. id
@@ -65,7 +69,7 @@ func NewWorker(cfg Config, id string) *Worker {
 	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, users: users, callbackKey: cfg.CallbackKey, objects: newRealmObjects(cfg.Registry, users)}
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, log: log, metrics: cfg.Metrics}
 	docs.imageMaxPixels = cfg.ImageMaxPixels
-	return &Worker{id: id, fns: fns, reg: cfg.Registry, backdURL: cfg.BackdURL, oauth: cfg.oauthService(), log: log, lastScheduled: map[string]time.Time{}, lastPurge: map[string]time.Time{}, images: newImageEngine(cfg)}
+	return &Worker{id: id, fns: fns, reg: cfg.Registry, backdURL: cfg.BackdURL, oauth: cfg.oauthService(), log: log, lastScheduled: map[string]time.Time{}, lastPurge: map[string]time.Time{}, lastDevices: map[string]time.Time{}, images: newImageEngine(cfg), pushSenders: pushSendersOf(cfg, users, now)}
 }
 
 // newImageEngine builds the engine from the instance's settings: the concurrency is the
@@ -121,6 +125,7 @@ func (w *Worker) scheduleLoop(ctx context.Context) {
 	for {
 		w.EnqueueDue(ctx)
 		w.PurgeDue(ctx)
+		w.SweepDevicesDue(ctx)
 		w.FilesDue(ctx)
 		select {
 		case <-ctx.Done():
@@ -149,6 +154,25 @@ func (w *Worker) PurgeDue(ctx context.Context) {
 		w.lastPurge[realm] = now
 		if _, err := svc.PurgeUnverified(auth.WithAuditSource(ctx, func() auth.AuditSource { return auth.AuditSource{Actor: auth.ActorSystem} })); err != nil {
 			w.log.Error("purge unverified accounts", "realm", realm, "error", err)
+		}
+	}
+}
+
+// SweepDevicesDue removes the push devices that went stale or lost their session in the
+// realms with push: (push.devices.stale_after). Running it in every worker is harmless.
+func (w *Worker) SweepDevicesDue(ctx context.Context) {
+	now := w.fns.docs.now()
+	for realm, rl := range w.reg.Realms {
+		if rl.Settings.Push == nil || now.Sub(w.lastDevices[realm]) < purgeInterval {
+			continue
+		}
+		svc := w.fns.docs.users(realm)
+		if svc == nil {
+			continue
+		}
+		w.lastDevices[realm] = now
+		if _, _, err := svc.SweepDevices(ctx); err != nil {
+			w.log.Error("sweep devices", "realm", realm, "error", err)
 		}
 	}
 }
@@ -265,6 +289,10 @@ func (w *Worker) runJob(ctx context.Context, realm string, svc *auth.Users, job 
 	}
 	if job.Revoke != nil {
 		w.runRevoke(ctx, log, realm, svc, job) // not a function: a worker tells Apple itself
+		return
+	}
+	if job.Push != nil {
+		w.runPush(ctx, log, realm, svc, job) // not a function: a worker plans and delivers pushes itself
 		return
 	}
 	if job.Image != nil {
@@ -448,6 +476,9 @@ func (w *Worker) watchCancellation(ctx context.Context, svc *auth.Users, jobID s
 func jobKind(j auth.Job) string {
 	if j.Revoke != nil {
 		return "revoke"
+	}
+	if j.Push != nil {
+		return "push"
 	}
 	return metrics.JobKind(j.Email != nil, j.Erase != nil, j.Check != nil, j.Image != nil, j.Scheduled)
 }

@@ -17,13 +17,13 @@ toc: true
 Email is configured in [`realm.yaml`](../../configuration/realm/); `backd template realm` writes the section commented, with every key explained. A realm without `email` sends no email at all.
 
 ```yaml
+default_locale: en                       # top level: the realm's languages, see below
+locales: [en]                            # every listed language needs every template and page
 email:
   function: notifications/deliver        # <database>/<function>
   from: "Acme <no-reply@acme.example>"
   reply_to: support@acme.example         # optional
   public_url: https://api.acme.example   # optional: backd's public address, for links
-  default_locale: en
-  locales: [en]                          # every listed language needs every template and page
   redirect_delay: 3s                     # optional: how long the result page waits
   allowed_redirects: [https://app.acme.example, "acme://"]   # where users may be sent afterwards
   redirects:                             # optional: where, per flow, when the request didn't say
@@ -67,7 +67,7 @@ The link in an email opens a **page served by backd**, so an app only chooses wh
 
 - **`GET` shows the page, `POST` acts.** Opening the link only shows a form (a button, or a form with a new password) and never uses the token up, so mail scanners and link previewers that open every link can't spoil it. The token is used when the person submits the form. A session is never issued by these pages: after verifying or resetting, users sign in as usual.
 - **One error page.** A token that is expired, already used, unknown or for another flow shows the same `invalid-token` page, so the page tells nobody which case it was.
-- **Pages are templates** you own: `backd template realm` writes them to `<realm>/pages/<kind>/<locale>.html` (`verify-email`, `reset-password`, `confirm-email-change`, `revert-email-change`, `accept-invitation`, `result` and `invalid-token`). Every listed locale needs every page, and they are parsed and test-rendered at startup like the email templates. A page can use `{{.Realm}}`, `{{.Locale}}`, `{{.Action}}` (where the form posts), `{{.Token}}` (the hidden field), `{{.Error}}` and `{{.ErrorCode}}` (`password_mismatch` or `password_policy`, to say it in the page's own words), `{{.Kind}}`, `{{.Redirect}}`, `{{.DelaySeconds}}` and `{{.BackURL}}`. The page is in the language of the browser's `Accept-Language`, matched against `email.locales`.
+- **Pages are templates** you own: `backd template realm` writes them to `<realm>/pages/<kind>/<locale>.html` (`verify-email`, `reset-password`, `confirm-email-change`, `revert-email-change`, `accept-invitation`, `result` and `invalid-token`). Every listed locale needs every page, and they are parsed and test-rendered at startup like the email templates. A page can use `{{.Realm}}`, `{{.Locale}}`, `{{.Action}}` (where the form posts), `{{.Token}}` (the hidden field), `{{.Error}}` and `{{.ErrorCode}}` (`password_mismatch` or `password_policy`, to say it in the page's own words), `{{.Kind}}`, `{{.Redirect}}`, `{{.DelaySeconds}}` and `{{.BackURL}}`. The page is in the language of the browser's `Accept-Language`, matched against the realm's `locales`.
 - **Where users go next.** After a success the `result` page waits `redirect_delay` (3 seconds by default, at most 30) and sends the user to the `redirect_to` the request stored with the token, or else to `email.redirects.<flow>` (`verify_email`, `reset_password`, `change_email`, `invitation`). Both must be within `email.allowed_redirects`: origins such as `https://app.acme.example` or an app's own scheme such as `acme://`. The address is checked when the email is requested and again when the page uses it.
 - **Your own pages instead.** `email.links.<flow>` replaces backd's address in the email with one of your app's pages, which must be within `allowed_redirects` and contain `{token}` once (`https://app.acme.example/reset?token={token}`). That page sends the token to the JSON endpoint of the same flow, `POST /v1/<realm>/_auth/<flow>` with `{"token"}` (and `{"password"}` for `reset-password` and `accept-invitation`), which answers `204`, or `400 invalid_token` for any token that doesn't work.
 
@@ -81,13 +81,16 @@ Your reverse proxy's own access log may record the full address, token included.
 
 ## Languages
 
-Every user has a `locale`, and every email to them is rendered in it. A realm lists the languages it supports in `email.locales` and picks the fallback with `email.default_locale` (English only when neither is set).
+Every user has a `locale`, and every email to them is rendered in it. A realm lists the languages it supports at the top level of `realm.yaml`, not under `email:`, because push notifications use the same list: `locales` names them and `default_locale` the fallback (English only when neither is set).
 
 ```yaml
+default_locale: en
+locales: [en, es]     # every listed language needs every template
 email:
-  default_locale: en
-  locales: [en, es]     # every listed language needs every template
+  # …
 ```
+
+`email.default_locale` and `email.locales` are no longer accepted: startup fails and says they moved to the top level. The list works in a realm without `email:` too, where it only decides the language of each user.
 
 - **Allowed means translated.** Every listed language needs every required template (`es.subject.txt`, `es.txt`, `es.html` for each kind), or startup fails naming the missing files. To add a language, copy a kind's English files, translate them, and list it.
 - **At sign-up** the user's language is the best listed match for the `locale` in the request or the browser's `Accept-Language`: exact (`es-MX`), then the language (`es`), then the default, never failing. **Changing it** later is an explicit request, `PATCH /_auth/me {"locale"}`, and must name a listed language. See [Sessions](../../auth/sessions/#language).
@@ -187,7 +190,7 @@ email:
 
 Every message, with its working links, shows up in `outbox`: read it with the API (`GET /v1/<realm>/notifications/outbox`, readable by anyone, since it exists only on a development machine) or in the Mailbox.
 
-**The Mailbox** is a small web app of the [local stack](../../getting-started/) (`make example`, then <https://localhost:8443/example/mailbox/>): it lists a realm's captured emails (`?realm=<realm>`, the `workshop` realm by default; the two expenses examples use it too, since they require verified addresses) and shows each one, text and HTML, with a button that opens its link, so you can click through verification and password reset by hand. The workshop realm is configured exactly like this, and its function is the tested one the template writes:
+**The Mailbox** (it also has a **Push** tab: see [Local development](../../push/local/)) is a small web app of the [local stack](../../getting-started/) (`make example`, then <https://localhost:8443/example/mailbox/>): it lists a realm's captured emails (`?realm=<realm>`, the `workshop` realm by default; the two expenses examples use it too, since they require verified addresses) and shows each one, text and HTML, with a button that opens its link, so you can click through verification and password reset by hand. The workshop realm is configured exactly like this, and its function is the tested one the template writes:
 
 {{< example-file path="workshop/notifications/_functions/email-capture/function.yaml" >}}
 

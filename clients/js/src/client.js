@@ -1,4 +1,5 @@
 import { Admin } from './admin.js'
+import { Push } from './push.js'
 import { Auth } from './auth.js'
 import { Database } from './data.js'
 import { xhrFetch } from './xhr.js'
@@ -136,6 +137,8 @@ export class Client {
     if (options.completeOnLoad !== false) this.auth.completeOnLoad()
     /** Users, roles, invitations and API keys; needs an admin `apiKey` or an admin user's session. */
     this.admin = new Admin(this)
+    /** Push notifications: register this device so that functions can reach the signed-in user. */
+    this.push = new Push(this)
   }
 
   /** Whether the client was created with an API key. */

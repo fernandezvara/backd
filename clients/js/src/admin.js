@@ -337,6 +337,8 @@ export class Admin {
     this.secrets = new AdminSecrets(this)
     /** The realm's function invocation history (read-only). */
     this.invocations = new AdminInvocations(this)
+    /** Push notifications: how they are configured, the records of what was sent, a test send. */
+    this.push = new AdminPush(this)
   }
 
   /**
@@ -501,6 +503,28 @@ class AdminUsers {
    */
   async resetMfa(id, opts) {
     await this.admin._request({ method: 'POST', path: ['users', id, 'mfa', 'reset'], ...opts })
+  }
+
+  /**
+   * The devices a user registered for push notifications, most recently seen first. Never a token.
+   * Rejects with a `NotFoundError` (`push_not_configured`) in a realm without `push:`.
+   * @param {string} id
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<import('./push.js').Device[]>}
+   */
+  async devices(id, opts) {
+    return (await this.admin._request({ method: 'GET', path: ['users', id, 'devices'], ...opts })).data.items
+  }
+
+  /**
+   * Removes one of a user's devices: it stops receiving pushes at once. Audited.
+   * @param {string} id
+   * @param {string} deviceId
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async removeDevice(id, deviceId, opts) {
+    await this.admin._request({ method: 'DELETE', path: ['users', id, 'devices', deviceId], ...opts })
   }
 
   /**
@@ -855,6 +879,100 @@ class AdminJobs {
    */
   async rerun(id, opts) {
     return (await this.admin._request({ method: 'POST', path: ['jobs', id, 'rerun'], ...opts })).data
+  }
+}
+
+/**
+ * One push send's record: totals, never a message, a user or a token.
+ * @typedef {object} PushSend
+ * @property {string} id
+ * @property {string} kind  The template kind, or `raw`.
+ * @property {string} sender  `function:<database>/<name>` or `admin:<actor>`.
+ * @property {string} created_at
+ * @property {number | null} users  Users named; null for an audience.
+ * @property {boolean} planned
+ * @property {number} batches
+ * @property {number} batches_done
+ * @property {number} units
+ * @property {number} units_done
+ * @property {number} queued
+ * @property {number} limited
+ * @property {number} no_devices
+ * @property {number} sent
+ * @property {number} invalid
+ * @property {number} failed
+ * @property {boolean} completed
+ * @property {string | null} completed_at
+ */
+
+/**
+ * How the realm's push is configured (`GET /_admin/push`).
+ * @typedef {object} PushStatus
+ * @property {boolean} enabled
+ * @property {Array<{ platform: 'android' | 'ios' | 'web', provider: string }>} [platforms]
+ * @property {string[]} [missing_secrets]  Realm secrets the providers need that are not set.
+ * @property {{ per_minute: number, per_day: number }} [limits]
+ * @property {{ max_per_user: number, stale_after: string }} [devices]
+ * @property {{ timeout: string, attempts: number, parallelism: number }} [delivery]
+ * @property {string} [send_retention]
+ */
+
+class AdminPush {
+  /** @param {Admin} admin */
+  constructor(admin) {
+    /** @internal */
+    this.admin = admin
+  }
+
+  /**
+   * Whether the realm has `push:`, its platforms and providers, and the realm secrets they need
+   * that are not set (pushes answer `503 push_unavailable` until they are). Never a value.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<PushStatus>}
+   */
+  async status(opts) {
+    return (await this.admin._request({ method: 'GET', path: ['push'], ...opts })).data
+  }
+
+  /**
+   * The realm's sends, newest first.
+   * @param {{ kind?: string, function?: string, since?: string, until?: string, limit?: number, skip?: number }} [params]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ items: PushSend[], limit: number, skip: number, has_more: boolean }>}
+   */
+  async sends(params = {}, opts) {
+    return (await this.admin._request({ method: 'GET', path: ['push', 'sends'], query: { ...params }, ...opts })).data
+  }
+
+  /**
+   * One send.
+   * @param {string} id
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<PushSend>}
+   */
+  async send(id, opts) {
+    return (await this.admin._request({ method: 'GET', path: ['push', 'sends', id], ...opts })).data
+  }
+
+  /**
+   * Sends one user a test push, through the same limits as any push (it counts toward theirs);
+   * audited. Give `user` (an id) or `email`, and `kind` (a template) or `title` and `body`.
+   * @param {{ user?: string, email?: string, kind?: string, title?: string, body?: string, link?: string, data?: Record<string, string>, silent?: boolean }} message
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ send_id: string, users: number, queued: number, limited: number, no_devices: number }>}
+   */
+  async test(message, opts) {
+    return (await this.admin._request({ method: 'POST', path: ['push', 'test'], body: message, ...opts })).data
+  }
+
+  /**
+   * Removes every device of a platform (what rotating the VAPID key does for `web`); audited.
+   * @param {'android' | 'ios' | 'web'} platform
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ platform: string, removed: number }>}
+   */
+  async removeDevices(platform, opts) {
+    return (await this.admin._request({ method: 'DELETE', path: ['push', 'devices'], query: { platform }, ...opts })).data
   }
 }
 

@@ -129,6 +129,15 @@ type RealmSettings struct {
 	MFA MFASettings
 	// ReauthTTL is how long a re-authentication token works (reauth.ttl).
 	ReauthTTL time.Duration
+	// DefaultLocale and Locales are the languages of the realm (default_locale and locales in
+	// realm.yaml): users' languages are mapped to them, and email and push templates exist for
+	// each. Read them with Languages.
+	DefaultLocale string
+	Locales       []string
+
+	// Push holds the push notification settings: nil without a push: section.
+	Push *PushSettings
+
 	// MagicLink are the settings of sign-in by emailed link and code (magic_link in realm.yaml).
 	MagicLink MagicLinkSettings
 }
@@ -213,7 +222,7 @@ const (
 	DefaultEmailPerFunctionPerHour   = 200
 	DefaultEmailPerInvocation        = 50
 	DefaultEmailRecipientsPerMessage = 10
-	// DefaultLocale is email.default_locale when not set.
+	// DefaultLocale is the realm's default_locale when it sets none.
 	DefaultLocale = "en"
 )
 
@@ -221,13 +230,11 @@ const (
 // its messages and who they come from. backd renders the messages and never
 // sends one itself.
 type EmailSettings struct {
-	Function      string // <database>/<function>: internal and async
-	From          string // "Name <address>" or an address
-	ReplyTo       string // optional
-	PublicURL     string // overrides BACKD_URL for this realm's links; no trailing slash
-	DefaultLocale string
-	Locales       []string // every one needs every required template
-	Limits        EmailLimits
+	Function  string // <database>/<function>: internal and async
+	From      string // "Name <address>" or an address
+	ReplyTo   string // optional
+	PublicURL string // overrides BACKD_URL for this realm's links; no trailing slash
+	Limits    EmailLimits
 	// RedirectDelay is how long a hosted result page waits before it sends the
 	// user on (email.redirect_delay).
 	RedirectDelay time.Duration
@@ -319,8 +326,12 @@ type realmDoc struct {
 		Admin       adminDoc    `yaml:"admin"`
 		Users       []roleEntry `yaml:"users"`
 	} `yaml:"roles"`
-	Email   *emailDoc   `yaml:"email"`
-	Storage *storageDoc `yaml:"storage"`
+	// DefaultLocale and Locales are the languages of the realm, for email and push.
+	DefaultLocale string      `yaml:"default_locale"`
+	Locales       []string    `yaml:"locales"`
+	Email         *emailDoc   `yaml:"email"`
+	Push          *pushDoc    `yaml:"push"`
+	Storage       *storageDoc `yaml:"storage"`
 	// Providers are the external identity providers users may sign in with, and
 	// SignIn the settings that go with signing in.
 	Providers map[string]*providerDoc `yaml:"providers"`
@@ -367,10 +378,12 @@ type realmDoc struct {
 
 // emailDoc mirrors the email section of realm.yaml.
 type emailDoc struct {
-	Function         string            `yaml:"function"`
-	From             string            `yaml:"from"`
-	ReplyTo          string            `yaml:"reply_to"`
-	PublicURL        string            `yaml:"public_url"`
+	Function  string `yaml:"function"`
+	From      string `yaml:"from"`
+	ReplyTo   string `yaml:"reply_to"`
+	PublicURL string `yaml:"public_url"`
+	// DefaultLocale and Locales moved to the top level of realm.yaml; they are read
+	// only to say so.
 	DefaultLocale    string            `yaml:"default_locale"`
 	Locales          []string          `yaml:"locales"`
 	RedirectDelay    string            `yaml:"redirect_delay"`
@@ -653,12 +666,28 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 		}
 	}
 
+	if doc.DefaultLocale != "" || len(doc.Locales) > 0 {
+		var lerrs []error
+		s.DefaultLocale, s.Locales, lerrs = parseLanguages(doc.DefaultLocale, doc.Locales)
+		errs = append(errs, lerrs...)
+	}
+
 	if e := doc.Email; e != nil {
 		if !s.AuthEnabled {
 			errs = append(errs, errors.New("email: only applies when auth is enabled"))
 		} else {
 			var es []error
 			s.Email, es = parseEmail(e)
+			errs = append(errs, es...)
+		}
+	}
+
+	if pd := doc.Push; pd != nil {
+		if !s.AuthEnabled {
+			errs = append(errs, errors.New("push: only applies when auth is enabled (devices belong to users)"))
+		} else {
+			var es []error
+			s.Push, es = parsePush(pd)
 			errs = append(errs, es...)
 		}
 	}
@@ -938,10 +967,40 @@ func NormalizeEmail(v string) (string, error) {
 	return e, nil
 }
 
+// parseLanguages checks the realm's languages: the default (en when not set) and the list
+// (just the default when not set).
+func parseLanguages(def string, list []string) (string, []string, []error) {
+	var errs []error
+	if def == "" {
+		def = DefaultLocale
+	}
+	if !localePattern.MatchString(def) {
+		errs = append(errs, fmt.Errorf("default_locale: %q isn't a language tag such as en or es-MX", def))
+	}
+	locales := []string{def}
+	if len(list) > 0 {
+		locales = nil
+		for i, l := range list {
+			switch {
+			case !localePattern.MatchString(l):
+				errs = append(errs, fmt.Errorf("locales[%d]: %q isn't a language tag such as en or es-MX", i, l))
+			case slices.Contains(locales, l):
+				errs = append(errs, fmt.Errorf("locales[%d]: %q is listed twice", i, l))
+			default:
+				locales = append(locales, l)
+			}
+		}
+		if !slices.Contains(locales, def) {
+			errs = append(errs, fmt.Errorf("locales: must include default_locale (%s)", def))
+		}
+	}
+	return def, locales, errs
+}
+
 // parseEmail checks the email section of realm.yaml.
 func parseEmail(d *emailDoc) (*EmailSettings, []error) {
 	e := &EmailSettings{
-		Function: d.Function, From: d.From, ReplyTo: d.ReplyTo, DefaultLocale: DefaultLocale,
+		Function: d.Function, From: d.From, ReplyTo: d.ReplyTo,
 		Limits: EmailLimits{PerKindPerHour: DefaultEmailPerKindPerHour, PerDay: DefaultEmailPerDay, PerIPPerHour: DefaultEmailPerIPPerHour,
 			PerFunctionPerHour: DefaultEmailPerFunctionPerHour, PerInvocation: DefaultEmailPerInvocation, RecipientsPerMessage: DefaultEmailRecipientsPerMessage},
 	}
@@ -971,27 +1030,10 @@ func parseEmail(d *emailDoc) (*EmailSettings, []error) {
 		}
 	}
 	if d.DefaultLocale != "" {
-		e.DefaultLocale = d.DefaultLocale
+		add("default_locale: moved to the top level of realm.yaml (default_locale and locales are shared by email and push)")
 	}
-	if !localePattern.MatchString(e.DefaultLocale) {
-		add("default_locale: %q isn't a language tag such as en or es-MX", e.DefaultLocale)
-	}
-	e.Locales = []string{e.DefaultLocale}
 	if len(d.Locales) > 0 {
-		e.Locales = nil
-		for i, l := range d.Locales {
-			switch {
-			case !localePattern.MatchString(l):
-				add("locales[%d]: %q isn't a language tag such as en or es-MX", i, l)
-			case slices.Contains(e.Locales, l):
-				add("locales[%d]: %q is listed twice", i, l)
-			default:
-				e.Locales = append(e.Locales, l)
-			}
-		}
-		if !slices.Contains(e.Locales, e.DefaultLocale) {
-			add("locales: must include default_locale (%s)", e.DefaultLocale)
-		}
+		add("locales: moved to the top level of realm.yaml (default_locale and locales are shared by email and push)")
 	}
 	if l := d.Limits; l != nil {
 		limit := func(key string, v *int, dst *int) {

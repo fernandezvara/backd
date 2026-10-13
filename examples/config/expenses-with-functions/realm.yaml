@@ -30,6 +30,18 @@ email:
 account:
   require_verified_email: true
 
+# Push notifications: the receiver confirming a settlement pushes the payer (the
+# confirm_settlement function). Locally the realm uses the `capture` provider, which
+# stores each delivery instead of sending it: read them in the Push tab of the
+# Mailbox (https://localhost:8443/example/mailbox/?realm=expenses-with-functions&tab=push).
+# The provider is development only (the local stack runs backd in dev mode); a real
+# deployment sets `fcm`, `apns` or `webpush` with their credentials (docs: Push notifications).
+push:
+  android:
+    provider: capture
+  web:
+    provider: capture
+
 # The realm's administrators: `backd bootstrap --realm expenses-with-functions
 # --email <email>` creates the first one; they manage users and API keys through
 # the admin API.

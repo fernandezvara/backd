@@ -5,6 +5,7 @@
   },
   "common": {
     "cancel": "Cancelar",
+    "close": "Cerrar",
     "confirm": "Confirmar",
     "signOut": "Cerrar sesión",
     "loading": "Cargando...",
@@ -125,7 +126,61 @@
     "functions": "Funciones",
     "config": "Configuración",
     "data": "Datos",
-    "storage": "Almacenamiento"
+    "storage": "Almacenamiento",
+    "push": "Push"
+  },
+  "push": {
+    "title": "Notificaciones push",
+    "refresh": "Actualizar",
+    "none": "Este realm no tiene notificaciones push configuradas (push: en realm.yaml).",
+    "statusFailed": "No se pudo cargar la configuración de push.",
+    "sendsFailed": "No se pudieron cargar los envíos.",
+    "missing": "Estos secretos del realm no están definidos, así que los pushes se rechazan hasta que lo estén: {names}. Defínelos con backd secret set.",
+    "config": "Configuración",
+    "limits": "Límites por usuario",
+    "limitsValue": "{minute} por minuto, {day} al día",
+    "devices": "Dispositivos",
+    "devicesValue": "hasta {max} por usuario, se eliminan tras {stale} sin verse",
+    "retention": "Registros guardados",
+    "sends": "Envíos",
+    "noSends": "Aún no hay envíos.",
+    "detail": "Envío",
+    "work": "Trabajo",
+    "workValue": "{done} de {batches} lotes, {unitsDone} de {units} unidades de entrega",
+    "named": "{n} indicados",
+    "noContent": "Un registro solo guarda cuentas: nunca un título, un cuerpo, datos ni un token.",
+    "usersValue": "{queued} en cola, {limited} limitados, {none} sin dispositivo",
+    "devicesCell": "{sent} enviados, {invalid} eliminados, {failed} fallidos",
+    "filter": {
+      "kind": "Tipo",
+      "function": "Función (base/nombre)",
+      "apply": "Filtrar"
+    },
+    "col": {
+      "created": "Enviado",
+      "kind": "Tipo",
+      "sender": "Remitente",
+      "users": "Usuarios",
+      "devices": "Dispositivos",
+      "state": "Estado"
+    },
+    "state": {
+      "completed": "Completado",
+      "planning": "Planificando",
+      "delivering": "Entregando"
+    },
+    "test": {
+      "open": "Enviar una prueba",
+      "title": "Enviar un push de prueba",
+      "help": "Llega a los dispositivos de un usuario con los mismos límites que cualquier push, y cuenta para los suyos. Queda auditado.",
+      "email": "Email del usuario",
+      "kind": "Tipo de plantilla",
+      "kindHelp": "Déjalo vacío para escribir un título y un cuerpo.",
+      "titleField": "Título",
+      "bodyField": "Cuerpo",
+      "send": "Enviar",
+      "result": "Envío {id}: {queued} en cola, {limited} limitados, {none} sin dispositivo."
+    }
   },
   "storage": {
     "title": "Almacenamiento",
@@ -280,6 +335,16 @@
       "revoke": "Revocar",
       "revoked": "Sesión revocada.",
       "loadFailed": "No se han podido cargar las sesiones."
+    },
+    "devices": {
+      "title": "Dispositivos",
+      "none": "No hay dispositivos registrados.",
+      "platform": "Plataforma",
+      "name": "Nombre",
+      "lastSeen": "Visto por última vez",
+      "remove": "Eliminar",
+      "removed": "Dispositivo eliminado.",
+      "loadFailed": "No se pudieron cargar los dispositivos."
     },
     "networks": {
       "title": "Redes"

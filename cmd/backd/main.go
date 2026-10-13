@@ -29,6 +29,7 @@ import (
 	"github.com/fernandezvara/backd/internal/httpapi"
 	"github.com/fernandezvara/backd/internal/metrics"
 	"github.com/fernandezvara/backd/internal/mongodb"
+	"github.com/fernandezvara/backd/internal/pushsend"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/rules"
 	"github.com/fernandezvara/backd/internal/settings"
@@ -187,6 +188,7 @@ func serve(ctx context.Context, a *app) error {
 	a.logSecurityWarnings()
 	a.logStorageSecrets(ctx, a.realmUsers())
 	a.logProviders(ctx, a.realmUsers())
+	a.logPush(ctx, a.realmUsers())
 	if err := a.logAPIKeyExpiry(ctx, a.realmUsers(), time.Now()); err != nil {
 		return err
 	}
@@ -486,6 +488,7 @@ func (a *app) handlerConfig() httpapi.Config {
 		DisableAdminAPI:   a.cfg.DisableAdminAPI,
 		UI:                ui,
 		Metrics:           a.metrics,
+		PushSenders:       pushsend.Senders(pushsend.Config{Proxy: a.cfg.EgressProxy, EgressKey: []byte(a.cfg.EgressKey)}),
 	}
 }
 
@@ -656,6 +659,38 @@ func (a *app) logProviders(ctx context.Context, users func(string) *auth.Users) 
 	}
 }
 
+// logPush reports, for each realm with push notifications, the platforms and the secrets
+// their providers need that are not set: pushes (not device registration) answer
+// 503 push_unavailable until they are. It never stops startup.
+func (a *app) logPush(ctx context.Context, users func(string) *auth.Users) {
+	for _, rl := range a.reg.SortedRealms() {
+		svc := users(rl.Name)
+		p := rl.Settings.Push
+		if p == nil || svc == nil {
+			continue
+		}
+		var platforms []string
+		for _, name := range registry.Platforms {
+			if pp, ok := p.Platforms[name]; ok {
+				platforms = append(platforms, name+"="+pp.Provider)
+			}
+		}
+		refs := make([]registry.SecretRef, 0, 4)
+		for _, n := range p.SecretNames() {
+			refs = append(refs, registry.SecretRef{Realm: true, Name: n})
+		}
+		_, missing, err := svc.ResolveSecrets(ctx, refs, "")
+		switch {
+		case err != nil:
+			a.log.Warn("could not read the secrets of push notifications", "realm", rl.Name, "error", err)
+		case len(missing) > 0:
+			a.log.Warn("push notification secrets are not set: pushes answer 503 push_unavailable until they are (BACKD_SECRETS_KEY on this instance, then backd secret set)", "realm", rl.Name, "missing", missing, "secrets_key_configured", svc.Cipher != nil)
+		default:
+			a.log.Info("push notifications", "realm", rl.Name, "platforms", platforms)
+		}
+	}
+}
+
 // logAPIKeyExpiry reports API keys that never expire, that expire within
 // keyExpiryNotice, and that have expired but are still stored. It logs key
 // names, never keys or hashes.
@@ -812,6 +847,18 @@ func checkFunctions(reg *registry.Registry, cfg settings.Settings, log *slog.Log
 	for _, name := range reg.RealmNames() {
 		if e := reg.Realms[name].Settings.Email; e != nil && e.PublicURL == "" && cfg.BackdURL == "" {
 			return fmt.Errorf("realm %s configures email, but backd's public address is unknown: set BACKD_URL (or email.public_url in its realm.yaml), the base of the links in its emails", name)
+		}
+	}
+	for _, name := range reg.RealmNames() {
+		if reg.Realms[name].Settings.Push != nil && len(cfg.SecretsKey) == 0 {
+			return fmt.Errorf("realm %s configures push notifications, which keep device tokens encrypted and read the providers' credentials from the realm's secrets: set BACKD_SECRETS_KEY (or BACKD_SECRETS_KEY_FILE)", name)
+		}
+		if p := reg.Realms[name].Settings.Push; p != nil && !cfg.Dev {
+			for _, platform := range registry.Platforms {
+				if p.Platforms[platform].Provider == registry.PushProviderCapture {
+					return fmt.Errorf("realm %s: push.%s uses provider capture, which stores every message's content: only BACKD_DEV=true (local development) allows it", name, platform)
+				}
+			}
 		}
 	}
 	for _, name := range reg.RealmNames() {
