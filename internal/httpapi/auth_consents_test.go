@@ -192,6 +192,28 @@ func TestConsentDeadlineRefusesOpenSessions(t *testing.T) {
 	}
 }
 
+// A person who won't accept a new version can still leave: deleting the account is not
+// behind the consent they are refusing.
+func TestConsentGateLeavesTheAccountDeletionOpen(t *testing.T) {
+	f := consentFixture(t)
+	token, out := f.signupWith(t, "ada@example.com", `, "consents": {"terms": "2"}`)
+	if err := f.store.SetUserConsent(t.Context(), out["user"].(map[string]any)["id"].(string), "terms", "1"); err != nil {
+		t.Fatal(err)
+	}
+	*f.clock = time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
+	if rec, _ := f.doH(t, "GET", authBase+"/sessions", "", bearer(token)); rec.Code != http.StatusForbidden {
+		t.Fatalf("the gate is not closed: %d", rec.Code)
+	}
+	body := `{"password": "dev-p4ssw0rd!"}`
+	rec, _ := f.doH(t, "DELETE", authBase+"/me", body, map[string]string{"Authorization": "Bearer " + token, "Content-Type": "application/json"})
+	if rec.Code == http.StatusForbidden && errCode(decodeBody(rec)) == "consent_required" {
+		t.Errorf("deleting the account is refused by the consent gate: %s", rec.Body)
+	}
+	if rec.Code != http.StatusNoContent && rec.Code != http.StatusOK && rec.Code != http.StatusAccepted {
+		t.Logf("delete answered %d %s (anything but the consent gate is fine here)", rec.Code, rec.Body)
+	}
+}
+
 func TestConsentWithdrawalAndHistory(t *testing.T) {
 	f := consentFixture(t)
 	token, _ := f.signupWith(t, "ada@example.com", `, "consents": {"terms": "2", "marketing": "1"}`)

@@ -106,7 +106,7 @@ POST /v1/shelf/_auth/consents/accept
 
 The answer is the session, as for a login. Leaving a consent out is `400 consent_required` and the challenge stays valid. Records get the method `prompt`.
 
-**Open sessions** continue until the `reaccept_by` date of the version (UTC, the whole day included). After it, requests of a user who hasn't accepted answer `403 consent_required`, except these, which stay open so the person can accept or leave: `GET /_auth/me` (its `to_accept` lists what is missing), `POST /_auth/consents`, `POST /_auth/logout` and `logout-all`.
+**Open sessions** continue until the `reaccept_by` date of the version (UTC, the whole day included). After it, requests of a user who hasn't accepted answer `403 consent_required`, except these, which stay open so the person can accept or leave: `GET /_auth/me` (its `to_accept` lists what is missing), `GET` and `POST /_auth/consents`, `POST /_auth/logout` and `logout-all`, and `DELETE /_auth/me`: someone who won't accept a new version can still delete their account. This holds for the admin API too: an administrator who hasn't accepted is refused until they do (the Admin UI shows the consent step at sign-in).
 
 ```http
 POST /v1/shelf/_auth/consents
@@ -161,7 +161,7 @@ backd consents record --realm shelf --email ada@example.com --consent marketing 
   --version 1 --action accepted --evidence "paper form 17"
 ```
 
-The record has the method `admin` and the `evidence` (required), and is audited as `user.consent_recorded`. `GET /_admin/users/{id}/consents` lists a user's whole history, with the hash of each text and the evidence, for answering a request.
+The record has the method `admin` and the `evidence` (required), and is audited as `user.consent_recorded`. Write a **reference** (a ticket or form number), not personal data: the evidence stays with the record, reduced as it is, after an erase. `GET /_admin/users/{id}/consents` lists a user's whole history, with the hash of each text and the evidence, for answering a request.
 
 ## Erasure and retention
 

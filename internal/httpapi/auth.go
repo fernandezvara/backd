@@ -67,12 +67,14 @@ func (a *authAPI) routes(r chi.Router) {
 			r.Get("/me", a.me)
 			r.With(json).Post("/consents", a.acceptConsents)
 			r.Get("/consents", a.consentsGet)
+			// Leaving: a person who won't accept a new version must be able to delete the
+			// account (withdrawing a required consent points them here).
+			r.Delete("/me", a.deleteMe)
 			r.Delete("/consents/{name}", a.consentsWithdraw)
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(a.requireSession)
 			r.With(json).Patch("/me", a.updateMe)
-			r.Delete("/me", a.deleteMe)
 			r.With(json).Post("/password", a.changePassword)
 			r.Delete("/password", a.removePassword)
 			r.With(json).Post("/email", a.changeEmail)
