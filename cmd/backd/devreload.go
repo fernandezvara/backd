@@ -29,6 +29,15 @@ func (s *swapHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	(*s.h.Load()).ServeHTTP(w, r)
 }
 
+// servedBy is the handler a listener serves: the reloader's swappable one in dev mode (swap is
+// not nil), else the handler itself. A nil *swapHandler must never be wrapped in the interface.
+func servedBy(h http.Handler, swap *swapHandler) http.Handler {
+	if swap != nil {
+		return swap
+	}
+	return h
+}
+
 // reloadEvent describes one successful live reload.
 type reloadEvent struct {
 	Fingerprint string
