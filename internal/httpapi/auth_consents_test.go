@@ -6,6 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pquerna/otp/totp"
+
+	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -186,5 +189,38 @@ func TestConsentDeadlineRefusesOpenSessions(t *testing.T) {
 	}
 	if rec, _ := f.doH(t, "POST", authBase+"/logout", "", bearer(token)); rec.Code != http.StatusNoContent {
 		t.Errorf("logout = %d", rec.Code)
+	}
+}
+
+// The recovery codes of an enrolment are shown once: when a consent step follows, they
+// travel with it.
+func TestEnrolmentKeepsTheRecoveryCodesWhenConsentsFollow(t *testing.T) {
+	f := consentFixture(t)
+	f.svc.Cipher, _ = auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
+	f.svc.Settings.MFA.RequiredAll = true
+	if _, err := f.svc.Create(t.Context(), "root@example.com", ptr("dev-p4ssw0rd!")); err != nil {
+		t.Fatal(err)
+	}
+	rec, out := f.do(t, "POST", authBase+"/login", `{"email": "root@example.com", "password": "dev-p4ssw0rd!"}`)
+	if rec.Code != http.StatusOK || out["mfa_enrollment_required"] != true {
+		t.Fatalf("login = %d %v", rec.Code, out)
+	}
+	challenge := out["challenge"].(string)
+	rec, out = f.do(t, "POST", authBase+"/mfa/totp/setup", `{"challenge": "`+challenge+`"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("setup = %d %v", rec.Code, out)
+	}
+	code, err := totp.GenerateCode(out["secret"].(string), f.svc.Clock())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, out = f.do(t, "POST", authBase+"/mfa/totp/confirm", `{"challenge": "`+challenge+`", "setup_id": "`+out["setup_id"].(string)+`", "code": "`+code+`"}`)
+	if rec.Code != http.StatusOK || out["consent_required"] != true || len(out["recovery_codes"].([]any)) != 10 || out["token"] != nil {
+		t.Fatalf("confirm = %d %v", rec.Code, out)
+	}
+	// The consent step then ends the sign-in.
+	rec, out = f.do(t, "POST", authBase+"/consents/accept", `{"challenge": "`+out["challenge"].(string)+`", "consents": {"terms": "2"}}`)
+	if rec.Code != http.StatusOK || out["token"] == nil {
+		t.Fatalf("accept = %d %v", rec.Code, out)
 	}
 }

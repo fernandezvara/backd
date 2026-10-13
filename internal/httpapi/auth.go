@@ -261,7 +261,12 @@ func (a *authAPI) answerSignIn(w http.ResponseWriter, r *http.Request, out auth.
 func (a *authAPI) answerSignInWith(w http.ResponseWriter, r *http.Request, out auth.Redeemed, status int, useCookie, provider bool, extra map[string]any) {
 	svc := usersOf(r)
 	if c := out.Challenge; c != nil {
-		writeJSON(w, http.StatusOK, challengeJSON(c))
+		// What the step carries along (recovery codes shown once) must not be lost with it.
+		body := challengeJSON(c)
+		for k, v := range extra {
+			body[k] = v
+		}
+		writeJSON(w, http.StatusOK, body)
 		return
 	}
 	p, token := out.Principal, out.Token
