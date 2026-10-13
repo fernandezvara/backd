@@ -1,1 +1,1 @@
-{ "imports": {} }
+{ "imports": { "@backd/functions": "./.backd/functions.js" } }

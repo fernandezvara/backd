@@ -41,7 +41,8 @@ type Info struct {
 	// Fingerprint identifies the generated types (a hash of types.d.ts without its header):
 	// what the JavaScript client sends to know whether its types are stale.
 	Fingerprint string `json:"fingerprint"`
-	// Config is the config directory's fingerprint the types were made from, when known.
+	// Config is the config directory's fingerprint, when a caller asks to record it; `backd types`
+	// leaves it out, so unrelated changes to the config don't touch the committed realm.json.
 	Config  string            `json:"config,omitempty"`
 	Entries map[string]string `json:"entries"`
 }

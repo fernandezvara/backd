@@ -42,6 +42,8 @@ jobs:
         run: npx --yes @redocly/cli@2 lint --config api/redocly.yaml api/openapi.yaml
       - name: Generated realm OpenAPI documents build Dart, Kotlin and Swift clients
         run: make openapi-clients
+      - name: The Shelf's generated types are current (backd types --check)
+        run: make shelf-types
       - name: Test (dockerized)
         run: make test
       - name: "@backd/functions-testing tests (dockerized)"

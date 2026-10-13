@@ -1,6 +1,6 @@
 COMPOSE_TEST = docker compose -f docker-compose.test.yml
 
-.PHONY: lint build ui ui-test ui-e2e test test-local vet lint-api openapi-clients js-test js-package js-integration functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour shelf-tour-ci example-attacks release-check
+.PHONY: lint build ui ui-test ui-e2e test test-local vet lint-api openapi-clients shelf-types shelf-types-update js-test js-package js-integration functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour shelf-tour-ci example-attacks release-check
 
 build:
 	go build -o bin/backd ./cmd/backd
@@ -41,8 +41,19 @@ js-integration:
 # @backd/functions-testing's own tests (needs Deno; the dockerized test
 # image already has it).
 functions-testing-test:
-	$(COMPOSE_TEST) run --rm --build --entrypoint deno tests test clients/functions-testing/src/ clients/functions-testing/examples/ examples/config/workshop/main/_functions/ examples/config/workshop/notifications/_functions/ examples/config/shelf/main/_functions/
+	$(COMPOSE_TEST) run --rm --build --entrypoint deno tests test clients/functions-testing/src/ clients/functions-testing/examples/ examples/config/workshop/main/_functions/ examples/config/workshop/notifications/_functions/
+	$(COMPOSE_TEST) run --rm --entrypoint deno tests test --config examples/config/shelf/main/_functions/deno.json examples/config/shelf/main/_functions/
 	$(COMPOSE_TEST) down -v
+
+# The Shelf's generated types are current: the app's (clients/js/examples/shelf/backd) and each
+# functions project's backd.d.ts. After a schema change: `make shelf-types-update`.
+shelf-types:
+	CONFIG_DIR=examples/config go run ./cmd/backd types --realm shelf --out clients/js/examples/shelf/backd --check
+	CONFIG_DIR=examples/config go run ./cmd/backd types --realm shelf --functions --check
+
+shelf-types-update:
+	CONFIG_DIR=examples/config go run ./cmd/backd types --realm shelf --out clients/js/examples/shelf/backd
+	CONFIG_DIR=examples/config go run ./cmd/backd types --realm shelf --functions
 
 # The admin UI (ui/admin): build it into internal/adminui/dist, where the Go
 # build embeds it (a Go build without it still works; /_ui/ answers 404).

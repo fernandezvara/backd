@@ -108,11 +108,7 @@ func typesFromConfig(c *kli.CommandContext, realm, db string) (*typegen.Output, 
 	if err != nil {
 		return nil, fmt.Errorf("invalid config:\n%w", err)
 	}
-	fp, err := reg.Fingerprint()
-	if err != nil {
-		return nil, err
-	}
-	return typegen.Generate(reg, typegen.Options{Realm: realm, Database: db, Config: fp})
+	return typegen.Generate(reg, typegen.Options{Realm: realm, Database: db})
 }
 
 func typesFromServer(c *kli.CommandContext, from, realm, db string) (*typegen.Output, error) {

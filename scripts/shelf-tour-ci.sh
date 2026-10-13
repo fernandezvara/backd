@@ -35,13 +35,14 @@ docker build -t backd:shelf-tour .
 docker build -f docker/executor/Dockerfile -t backd-executor:shelf-tour .
 
 # The starter folder, as the Tutorial's "The starter" section builds it.
-mkdir -p "$dir/app/lib" "$dir/client" "$dir/config"
+mkdir -p "$dir/app/lib" "$dir/app/backd" "$dir/client" "$dir/config"
 cp docs/static/tutorial/nginx.conf "$dir/"
 sed -e 's#ghcr.io/fernandezvara/backd-executor:[A-Za-z0-9._-]*#backd-executor:shelf-tour#' \
     -e 's#ghcr.io/fernandezvara/backd:[A-Za-z0-9._-]*#backd:shelf-tour#' \
     docs/static/tutorial/compose.yaml > "$compose"
 cp clients/js/examples/shelf/{index.html,app.js,style.css} "$dir/app/"
 cp clients/js/examples/shelf/lib/* "$dir/app/lib/"
+cp clients/js/examples/shelf/backd/* "$dir/app/backd/"
 cp clients/js/src/*.js "$dir/client/"
 cp -r examples/config/shelf "$dir/config/shelf"
 find "$dir/config" -name .build -prune -exec rm -rf {} +

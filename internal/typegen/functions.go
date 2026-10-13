@@ -36,9 +36,21 @@ export interface Page<D> {
   count?: number;
 }
 
+/** The files of one document's file field. */
+export interface FileField<D> {
+  /** Reads a file; without an id, the one a single field holds. */
+  get(fileId?: string): Promise<{ file?: FileDetails; bytes(): Promise<Uint8Array>; text(): Promise<string> }>;
+  /** Stores a file: replaces a single field's, is added to a multiple field's. Resolves with the document. */
+  put(data: Uint8Array | string, options?: { name?: string; type?: string; ifMatch?: number }): Promise<D>;
+  delete(fileId?: string, options?: { ifMatch?: number }): Promise<D>;
+  /** A link that works without credentials until it expires. */
+  link(fileId?: string): Promise<{ url: string; expires_at: string }>;
+}
+
 /** A collection of a database, typed from its schema. */
 export interface TypedCollection<D, I, W, O> {
   get(id: string): Promise<D>;
+  files(id: string, field: string): FileField<D>;
   list(params?: ListParams<W, O>): Promise<Page<D>>;
   iterate(params?: Omit<ListParams<W, O>, "skip" | "count">): AsyncGenerator<D, void, undefined>;
   create(doc: I, options?: { idempotencyKey?: string }): Promise<D>;
@@ -134,7 +146,7 @@ func GenerateFunctions(reg *registry.Registry, realm, database, config string) (
 			sec = strings.Join(secrets, " | ")
 		}
 		fmt.Fprintf(&flags, "  %s: { webhook: %t; admin: %t; config_write: %t; email: %t; push: %t; secrets: %s };\n",
-			member(n), fn.Mode == registry.ModeWebhook, fn.Admin || fn.ConfigWrite, fn.ConfigWrite, fn.Email, fn.Push != nil, sec)
+			member(n), fn.Mode == registry.ModeWebhook, fn.Admin, fn.ConfigWrite, fn.Email, fn.Push != nil, sec)
 	}
 	flags.WriteString("}\n")
 
@@ -181,14 +193,13 @@ export type Context<N extends FunctionName> = {
   progress(current: number, message?: string): void;
   error(status: number, code: string, message: string, details?: unknown): Error;
 } & (Flag<N, "webhook"> extends true ? { request: { body: string; headers: Readonly<Record<string, string>> } } : unknown)
-  & (Flag<N, "admin"> extends true
-    ? { admin: { db<D extends DatabaseName>(name: D): TypedDatabase<D> } & (Flag<N, "config_write"> extends true
-        ? { config: {
-            set(values: Partial<ConfigPaths>): Promise<ConfigWriteResult>;
-            reset(paths: (keyof ConfigPaths & string)[]): Promise<ConfigWriteResult>;
-            history(limit?: number): Promise<{ version: string; actor: string; kind: string; changes: ConfigChange[] }[]>;
-          } }
-        : unknown) }
+  & (Flag<N, "admin"> extends true ? { admin: { db<D extends DatabaseName>(name: D): TypedDatabase<D> } } : unknown)
+  & (Flag<N, "config_write"> extends true
+    ? { admin: { config: {
+        set(values: Partial<ConfigPaths>): Promise<ConfigWriteResult>;
+        reset(paths: (keyof ConfigPaths & string)[]): Promise<ConfigWriteResult>;
+        history(limit?: number): Promise<{ version: string; actor: string; kind: string; changes: ConfigChange[] }[]>;
+      } } }
     : unknown)
   & (Flag<N, "email"> extends true ? { email: { send(message: EmailMessage): Promise<{ id?: string; status: string }> } } : unknown)
   & (Flag<N, "push"> extends true ? { push: { send(message: PushMessage): Promise<Record<string, unknown>> } } : unknown);
