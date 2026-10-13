@@ -334,6 +334,12 @@ func (s *Users) magicLinkUser(ctx context.Context, c AuthChallenge, ip string) (
 		return User{}, false, &RefusedError{UserID: u.ID, Reason: "network"}
 	}
 	if !u.EmailVerified {
+		// Whatever was set on the account before the mailbox's owner showed up isn't theirs.
+		if c.UserID != "" {
+			if err := s.claimUnverified(ctx, u); err != nil {
+				return User{}, false, err
+			}
+		}
 		verified := true
 		if err := s.Store.UpdateUser(ctx, u.ID, UserUpdate{EmailVerified: &verified}, s.now()); err != nil {
 			return User{}, false, err
@@ -343,6 +349,50 @@ func (s *Users) magicLinkUser(ctx context.Context, c AuthChallenge, ip string) (
 	}
 	s.recordEmailIdentity(ctx, u)
 	return u, newUser, nil
+}
+
+// claimUnverified takes an account whose address was never verified away from whoever made it:
+// the owner of the mailbox is now signing in by a link, and the password, the linked providers,
+// the second factor and the sessions that exist were all set before the mailbox was proved
+// (a squatter's, if anyone's). Only the address's own sign-in method is left. It is the
+// counterpart of a provider refusing to link to such an account, and of a password reset
+// ending a squatter's access.
+func (s *Users) claimUnverified(ctx context.Context, u User) error {
+	ids, err := s.Store.ListIdentities(ctx, u.ID)
+	if err != nil {
+		return err
+	}
+	var removed []string
+	for _, i := range ids {
+		if i.Provider == ProviderEmail {
+			continue
+		}
+		if err := s.Store.DeleteIdentity(ctx, u.ID, i.Provider); err != nil && !errors.Is(err, ErrNotFound) {
+			return err
+		}
+		removed = append(removed, i.Provider)
+	}
+	hadMFA := false
+	if _, err := s.Store.MFAOf(ctx, u.ID); err == nil {
+		hadMFA = true
+		if err := s.Store.DeleteMFA(ctx, u.ID); err != nil && !errors.Is(err, ErrNotFound) {
+			return err
+		}
+	} else if !errors.Is(err, ErrNotFound) {
+		return err
+	}
+	if len(removed) == 0 && !hadMFA {
+		// A bare account: its sessions can only be the squatter's too.
+		return s.endSessions(ctx, u.ID, "claimed")
+	}
+	if err := s.Store.DeleteChallengesOfUser(ctx, u.ID); err != nil {
+		return err
+	}
+	if err := s.endSessions(ctx, u.ID, "claimed"); err != nil {
+		return err
+	}
+	s.Audit(ctx, AuditUserClaimed, userTarget(u.ID), map[string]any{"methods": removed, "mfa": hadMFA})
+	return nil
 }
 
 // recordEmailIdentity notes that the user signs in by email: an identity recorded the first

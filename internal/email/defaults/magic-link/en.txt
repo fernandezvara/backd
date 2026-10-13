@@ -6,4 +6,4 @@ Use this link to sign in to {{.Realm}} as {{.User.Email}}:
 
 Or type this code in the app you asked from: {{.Data.code}}
 
-Both work for 10 minutes and only once. If you didn't ask to sign in, ignore this message: nothing happens unless the link or the code is used.
+Both work for 10 minutes and only once. If you didn't ask to sign in, ignore this message: nothing happens unless the link or the code is used. Never read the code out or send it to anyone: nobody from {{.Realm}} will ask you for it.

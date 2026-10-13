@@ -110,12 +110,17 @@ func (s *Users) reauthSecondFactor(ctx context.Context, u User, method, code, ip
 	if err := s.checkThrottle(ctx, ks); err != nil {
 		return err
 	}
+	// One check at a time per user, as at sign-in: the limit is read and then written.
+	release, err := s.lockLogin(ctx, mfaUserKey(u.ID))
+	if err != nil {
+		return err
+	}
+	defer release()
 	if err := s.checkMFALock(ctx, u.ID); err != nil {
 		return err
 	}
 	var ok bool
 	var left int
-	var err error
 	if method == ReauthTOTP {
 		ok, err = s.checkTOTP(ctx, u.ID, code)
 	} else {

@@ -203,6 +203,13 @@ func (s *Users) VerifyMFA(ctx context.Context, challenge, method, code, ip strin
 	if err := s.checkThrottle(ctx, ks); err != nil {
 		return Verified{}, err
 	}
+	// One check at a time per user: the limits below are read, then written, and a burst of
+	// parallel guesses would all be read before any was counted.
+	release, err := s.lockLogin(ctx, mfaUserKey(c.UserID))
+	if err != nil {
+		return Verified{}, err
+	}
+	defer release()
 	if err := s.checkMFALock(ctx, c.UserID); err != nil {
 		return Verified{}, err
 	}

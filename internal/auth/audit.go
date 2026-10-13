@@ -22,6 +22,7 @@ const (
 	AuditUserVerifyEmail = "user.verify_email"      // details: verified
 	AuditPasswordReset   = "user.password_reset"    // by the link in an email; details: verified_address
 	AuditUserPurged      = "user.purged_unverified" // details: count; never addresses
+	AuditUserClaimed     = "user.claimed"           // an unverified account taken over by its mailbox's owner; details: methods, mfa
 	AuditUserDisable     = "user.disable"
 	AuditUserEnable      = "user.enable"
 	AuditUserDelete      = "user.delete"

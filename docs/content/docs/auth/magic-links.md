@@ -57,7 +57,7 @@ Opening the link on a phone while the app waits on a laptop lands on a page that
 
 | The address | What happens |
 |---|---|
-| belongs to a user | the link or code signs them in; an unverified address becomes **verified** (only the mailbox's owner could have used it) |
+| belongs to a user | the link or code signs them in; an unverified address becomes **verified** (only the mailbox's owner could have used it), and the account is **claimed**: the password, linked providers, second factor and sessions that existed before are removed, since someone who only knew the address may have set them (audited as `user.claimed`) |
 | has no account, `magic_link.signup: true` and the realm's `signup: open` | the account is made **when the link or code is used**, never at request time: verified, with `new_user: true`, running [`account.on_signup`](../providers/#the-profile-and-the-sign-up-hook) |
 | has no account otherwise | a `no-account` email ("someone tried to sign in with this address; there is no account") |
 | belongs to a disabled or erased user | nothing is sent |

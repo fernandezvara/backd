@@ -301,3 +301,42 @@ func TestMagicLinkRespectsLoginNetworks(t *testing.T) {
 		t.Errorf("outside the networks: %v", err)
 	}
 }
+
+// A squatter makes an account with the victim's address and leaves it unverified. When the
+// victim signs in by a link, what the squatter set up goes: the password, a provider, the second
+// factor and the sessions.
+func TestMagicLinkClaimsAnUnverifiedAccount(t *testing.T) {
+	ctx := context.Background()
+	f := newLinkFixture(t)
+	if _, _, err := f.svc.Signup(ctx, "victim@example.com", mfaPassword, ""); err != nil {
+		t.Fatal(err)
+	}
+	_, squatterToken, err := f.svc.Login(ctx, "victim@example.com", mfaPassword, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, _ := f.svc.Find(ctx, "victim@example.com")
+	if u.EmailVerified {
+		t.Fatal("a sign-up is verified")
+	}
+	if err := f.store.PutIdentity(ctx, Identity{ID: "i1", UserID: u.ID, Provider: "google", Subject: "g-squatter"}); err != nil {
+		t.Fatal(err)
+	}
+	verifier, challenge, _ := NewPKCE()
+	id, _, code := f.ask(t, "victim@example.com", challenge)
+	if _, err := f.svc.VerifyMagicLinkCode(ctx, id, code, verifier, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := f.svc.Login(ctx, "victim@example.com", mfaPassword, ""); !errors.Is(err, ErrInvalidCredentials) {
+		t.Errorf("the squatter's password still works: %v", err)
+	}
+	if _, err := f.store.IdentityOf(ctx, u.ID, "google"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("the squatter's provider is still linked: %v", err)
+	}
+	if _, err := f.svc.Authenticate(ctx, squatterToken); err == nil {
+		t.Error("the squatter's session survived")
+	}
+	if u, _ := f.svc.Find(ctx, "victim@example.com"); !u.EmailVerified {
+		t.Error("the address isn't verified")
+	}
+}
