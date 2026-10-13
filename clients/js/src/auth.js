@@ -31,7 +31,8 @@ import { defaultOAuthStorage, loadPending, newPKCE, oauthError, parseReturn, sav
 
 /**
  * The signed-in user with their sign-in methods, oldest first.
- * @typedef {User & { identities: Identity[], reauth_methods: Array<'totp' | 'recovery_code' | 'password' | 'email_code'>, sign_in_methods: string[] }} Me
+ * With `consents` declared in the realm it also has `consents` (name to the version held) and `to_accept` (the required ones still to accept).
+ * @typedef {User & { identities: Identity[], reauth_methods: Array<'totp' | 'recovery_code' | 'password' | 'email_code'>, sign_in_methods: string[], consents?: Record<string, string>, to_accept?: Array<{ name: string, version: string }> }} Me
  */
 
 /**
