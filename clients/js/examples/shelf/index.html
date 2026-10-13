@@ -464,6 +464,24 @@
             <p class="muted" x-show="error" x-text="error"></p>
           </form>
         </template>
+        <!-- Chapter 17: terms to accept before the session. -->
+        <template x-if="step && step.kind === 'consent'">
+          <form @submit.prevent="submitConsents">
+            <p>Please read and accept to continue.</p>
+            <template x-for="c in step.consents" :key="c.name">
+              <details open>
+                <summary x-text="c.name + ' (' + c.version + ')'"></summary>
+                <pre class="muted" x-text="c.text"></pre>
+                <label><input type="checkbox" x-model="ticked[c.name]"> I accept the <span x-text="c.name"></span></label>
+              </details>
+            </template>
+            <template x-for="c in consentList.filter((x) => !x.required)" :key="c.name">
+              <label><input type="checkbox" x-model="ticked[c.name]"> <span x-text="c.text.split('\n').filter((l) => l && !l.startsWith('#'))[0]"></span> <small class="muted">(optional)</small></label>
+            </template>
+            <button type="submit" :disabled="busy">Accept and sign in</button>
+            <p class="muted" x-show="error" x-text="error"></p>
+          </form>
+        </template>
         <template x-if="step && step.kind === 'enroll'">
           <form @submit.prevent="confirmEnrollment">
             <p>Your role needs a second factor. Scan this with an authenticator app, or type the secret, then enter the code it shows.</p>
@@ -482,6 +500,18 @@
             <input x-model="invitation" :required="mode === 'signup'" placeholder="bdi_… from your operator"></label>
           <label>Password <input type="password" x-model="password" required minlength="12"
                                :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"></label>
+          <!-- Chapter 17: the consents of the sign-up, with their texts. -->
+          <template x-if="mode === 'signup'">
+            <div>
+              <template x-for="c in consentList" :key="c.name">
+                <details>
+                  <summary><label><input type="checkbox" x-model="ticked[c.name]" :required="c.required">
+                    <span x-text="c.required ? 'I accept the ' + c.name : 'Send me the digest by email (optional)'"></span></label></summary>
+                  <pre class="muted" x-text="c.text"></pre>
+                </details>
+              </template>
+            </div>
+          </template>
           <button type="submit" :disabled="busy" x-text="mode === 'login' ? 'Sign in' : 'Create account'"></button>
           <p class="muted" x-show="mode === 'login'"><a href="#" @click.prevent="requestReset" :disabled="busy || !email">Forgot your password?</a></p>
           <p class="muted" x-show="accountMsg" x-text="accountMsg"></p>
@@ -515,6 +545,21 @@
           <label>New password <input type="password" x-model="pwd.next" required minlength="12" autocomplete="new-password"></label>
           <button type="submit" class="secondary" :disabled="busy">Change password</button>
         </form>
+        <hr>
+        <!-- Chapter 17: what I agreed to; the optional ones switch on and off. -->
+        <h3>Consents</h3>
+        <template x-if="consentState">
+          <div>
+            <template x-for="c in consentList" :key="c.name">
+              <label>
+                <input type="checkbox" role="switch" :checked="!!consentState.consents[c.name]"
+                       :disabled="busy || c.required" @change="toggleConsent(c)">
+                <span x-text="c.name + (c.required ? ' (required)' : '')"></span>
+                <small class="muted" x-show="consentState.consents[c.name]" x-text="'accepted: version ' + consentState.consents[c.name]"></small>
+              </label>
+            </template>
+          </div>
+        </template>
         <hr>
         <!-- Chapter 16: the second factor. -->
         <h3>Two-step sign-in</h3>

@@ -3,7 +3,10 @@ import { createContext } from "../../../../../../clients/functions-testing/src/i
 import handler from "./index.ts";
 
 Deno.test("notifies every member about assets published in the window", async () => {
-  const { ctx, store, fakeCall, calls, sentEmails } = createContext({ admin: true, email: true, input: { since_days: 7 } });
+  // Only u1 opted in to the digest by email (the marketing consent).
+  const { ctx, store, fakeCall, calls, sentEmails } = createContext({
+    admin: true, email: { consents: { u1: ["marketing"] } }, input: { since_days: 7 },
+  });
   store.seed("main", "assets", [
     { id: "a1", title: "Handbook", kind: "link", published_at: new Date().toISOString() },
     { id: "a2", title: "Old guide", kind: "link", published_at: "2001-01-01T00:00:00Z" },
@@ -24,8 +27,9 @@ Deno.test("notifies every member about assets published in the window", async ()
   if (!sent[0].text.includes("Handbook") || sent[0].text.includes("Old guide") || sent[0].text.includes("Draft")) {
     throw new Error(JSON.stringify(sent[0]));
   }
+  // Everyone gets the notification; the mail goes only to the member who opted in.
   const mails = sentEmails();
-  if (mails.length !== 2 || !mails.every((m) => m.kind === "shelf-digest" && m.data.count === 1 && m.data.assets.includes("Handbook"))) {
+  if (mails.length !== 1 || mails[0].to_user !== "u1" || !mails.every((m) => m.kind === "shelf-digest" && m.data.count === 1 && m.data.assets.includes("Handbook"))) {
     throw new Error(JSON.stringify(mails));
   }
 });

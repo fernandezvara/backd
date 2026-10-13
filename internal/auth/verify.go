@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/fernandezvara/backd/internal/email"
+	"github.com/fernandezvara/backd/internal/registry"
 )
 
 // SignupRequest is a sign-up from a client.
@@ -36,8 +37,12 @@ type SignupResult struct {
 // the verification email. The realm may also require the address to be
 // verified before any session: then there is none (Pending).
 func (s *Users) SignUp(ctx context.Context, r SignupRequest) (SignupResult, error) {
-	if err := s.checkSignupConsents(r.Consents); err != nil {
-		return SignupResult{}, err
+	// A closed realm, or an invite-only one asked without an invitation, answers that first:
+	// the consents are checked when the sign-up could otherwise go through.
+	if open := s.Settings.Signup == registry.SignupOpen || (s.Settings.Signup == registry.SignupInvite && r.Invitation != ""); open {
+		if err := s.checkSignupConsents(r.Consents); err != nil {
+			return SignupResult{}, err
+		}
 	}
 	u, err := s.signup(ctx, r.Email, r.Password, r.Invitation, append([]string{}, r.Locales...))
 	if errors.Is(err, ErrEmailTaken) && s.Settings.Account.RequireVerifiedEmail {

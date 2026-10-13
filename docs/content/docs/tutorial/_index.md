@@ -67,7 +67,7 @@ for f in pico.min.css alpine.min.js; do
 done
 
 # The JavaScript client the app imports (backd-js, as source).
-for f in admin auth client data errors files functions index oauth push sha256 storage xhr; do
+for f in admin auth cache client consents data errors files functions index oauth push sha256 storage xhr; do
   curl -fsSL "https://fernandezvara.github.io/backd/tutorial/client/$f.js" -o "client/$f.js"
 done
 ```
@@ -98,6 +98,7 @@ Working on a `backd` checkout instead? The same files live in the repository: `e
 | 14 | [Big files and thumbnails](14-big-files/) | direct uploads with a progress bar, `attachments`, a thumbnail declared as a version, made by a worker |
 | 15 | [Sharing and counting downloads](15-sharing-files/) | a `download` function, share links that carry files, the storage in the Admin view |
 | 16 | [A second factor and magic links](16-second-factor/) | sign-in by link and code, an authenticator app for the admin role, `user.mfa` in a rule, proofs before sensitive actions |
+| 17 | [Terms and consents](17-consents/) | versioned terms accepted at sign-up and sign-in, an optional consent the digest respects, what happens when the terms change |
 
 
 

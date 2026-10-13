@@ -30,9 +30,12 @@ export default async function handler(ctx: Context) {
     });
     // Chapter 10: the same news by email — the realm's shelf-digest
     // template, in the member's language, through email-capture in dev.
+    // Chapter 17: only members who opted in (the "marketing" consent) get the
+    // mail; the others are skipped by backd and told apart as no_consent.
     await ctx.email.send({
       kind: "shelf-digest",
       to_user: member.user_id as string,
+      requires_consent: "marketing",
       data: { count: page.items.length, since: since.slice(0, 10), assets: page.items.map((a) => a.title) },
     });
     notified++;

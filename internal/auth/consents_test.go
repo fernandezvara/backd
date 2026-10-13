@@ -327,3 +327,24 @@ func TestConsentRecordsAreDeletedAtErasureWithRetentionZero(t *testing.T) {
 		t.Errorf("keyless records = %+v", recs)
 	}
 }
+
+// A realm that doesn't let the sign-up in says so before it asks for consents.
+func TestSignupModeIsAnsweredBeforeConsents(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _ := consentUsers(t)
+	req := SignupRequest{Email: "ada@example.com", Password: "dev-p4ssw0rd!"}
+
+	svc.Settings.Signup = registry.SignupClosed
+	if _, err := svc.SignUp(ctx, req); !errors.Is(err, ErrSignupClosed) {
+		t.Errorf("closed realm: %v", err)
+	}
+	svc.Settings.Signup = registry.SignupInvite
+	if _, err := svc.SignUp(ctx, req); !errors.Is(err, ErrInvitationRequired) {
+		t.Errorf("invite realm without an invitation: %v", err)
+	}
+	var need *ConsentRequiredError
+	svc.Settings.Signup = registry.SignupOpen
+	if _, err := svc.SignUp(ctx, req); !errors.As(err, &need) {
+		t.Errorf("open realm without consents: %v", err)
+	}
+}

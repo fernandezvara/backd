@@ -571,7 +571,7 @@ export class FunctionError extends Error {
  * @property {boolean} [admin]          Also give ctx.admin.db (function.yaml's admin: true).
  * @property {string[]} [calls]         function.yaml's `calls`: ctx.call refuses any other name with `call_not_declared`, as backd does.
  * @property {boolean | { kinds?: string[], audience?: boolean }} [push]  Give the function ctx.push.send (function.yaml's `push:`); the object is what it declares: the `kinds` it may name and whether it may send to an `audience`.
- * @property {boolean | { perInvocation?: number, recipientsPerMessage?: number }} [email]  Give the function ctx.email.send (function.yaml's `email: true`); the object sets the realm's caps (`email.limits`) the fake enforces.
+ * @property {boolean | { perInvocation?: number, recipientsPerMessage?: number, consents?: Record<string, string[]> }} [email]  Give the function ctx.email.send (function.yaml's `email: true`); the object sets the realm's caps (`email.limits`) the fake enforces, and the consents each user id holds, for sends that `requires_consent`.
  */
 
 /** The kinds backd sends itself: a function can't send them. */

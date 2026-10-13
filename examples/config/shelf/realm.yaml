@@ -49,6 +49,18 @@ sign_in:
 mfa:
   required_roles: [admin]
 
+# Chapter 17 asks members to accept the terms to have an account, and lets
+# them opt in to the digest by email. The texts are files: consents/<name>/
+# <version>/<locale>.md. Keep every version you publish: the records name
+# the exact words (their SHA-256) each member accepted.
+consents:
+  terms:
+    required: true
+    current: "2026-10"
+  marketing:
+    required: false
+    current: "1"
+
 roles:
   admin:
     description: "Operators: users, invitations and API keys"

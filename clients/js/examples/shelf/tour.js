@@ -17,7 +17,7 @@
 import { execFileSync } from 'node:child_process'
 import { createHmac } from 'node:crypto'
 import { deflateSync } from 'node:zlib'
-import { createClient, AuthenticationError, ForbiddenError, NotFoundError, ValidationError, VersionMismatchError, versionStatus } from '../../src/index.js'
+import { createClient, AuthenticationError, ConflictError, ConsentRequiredError, ForbiddenError, NotFoundError, SecondStepRequiredError, ValidationError, VersionMismatchError, versionStatus } from '../../src/index.js'
 
 const url = process.env.BACKD_URL ?? 'http://localhost:8080'
 const PASSWORD = 'dev-p4ssw0rd!'
@@ -44,6 +44,14 @@ async function refused(/** @type {string} */ what, /** @type {() => Promise<unkn
 }
 const heading = (/** @type {string} */ text) => console.log(`\n${text}`)
 
+// The consents of chapter 17: the terms are required (the version in force), and the
+// members of the tour also opt in to the digest by email.
+const consentVersions = await (async () => {
+  const list = await createClient({ url, realm: 'shelf' }).consents.current()
+  return Object.fromEntries(list.map((c) => [c.name, c.current.version]))
+})()
+const ALL_CONSENTS = { terms: consentVersions.terms, marketing: consentVersions.marketing }
+
 /** Signs in; with no account yet, invites self through the operator and signs up. */
 async function signedIn(/** @type {string} */ email, /** @type {any} */ operator) {
   const backd = createClient({ url, realm: 'shelf' })
@@ -51,10 +59,16 @@ async function signedIn(/** @type {string} */ email, /** @type {any} */ operator
     await backd.auth.login({ email, password: PASSWORD })
     return backd
   } catch (err) {
-    if (/** @type {any} */ (err).status !== 401) throw err
+    const e = /** @type {any} */ (err)
+    if (e instanceof SecondStepRequiredError && e.code === 'consent_required') {
+      // An account from before the terms existed: accept them to get in.
+      await backd.auth.acceptConsents(e.challenge, ALL_CONSENTS)
+      return backd
+    }
+    if (e.status !== 401) throw err
   }
   const invite = await operator.admin.invitations.create({ email })
-  await backd.auth.signup({ email, password: PASSWORD, invitation: invite.token })
+  await backd.auth.signup({ email, password: PASSWORD, invitation: invite.token, consents: ALL_CONSENTS })
   return backd
 }
 
@@ -80,6 +94,8 @@ async function enrol(/** @type {any} */ backd, /** @type {any} */ result) {
   if (!result.enrollmentRequired) throw new Error(`expected the enrolment step, got ${JSON.stringify(result)}`)
   const setup = await backd.auth.mfa.setup({ challenge: result.challenge })
   const done = await backd.auth.mfa.confirm({ challenge: result.challenge, setupId: setup.setup_id, code: totp(setup.secret) })
+  // The operator has not accepted the terms yet (chapter 17): the session waits for them.
+  if (done.consent) await backd.auth.acceptConsents(done.consent.challenge, ALL_CONSENTS)
   return { secret: setup.secret, codes: /** @type {string[]} */ (done.recovery_codes) }
 }
 
@@ -384,6 +400,31 @@ await refused('deleting the account asks for a fresh proof (401 reauth_required)
 await member.auth.reauth({ method: 'recovery_code', code: memberOn.recovery_codes[1] })
 await member.auth.mfa.disable()
 check('the member turned it off again', !(await member.auth.mfa.status()).enabled)
+
+heading('Consents (ch17)')
+const listed17 = await anonymous.consents.current()
+const terms17 = listed17.find((c) => c.name === 'terms')
+check('the realm asks for the terms (required) and the digest (optional)', terms17?.required === true && listed17.find((c) => c.name === 'marketing')?.required === false, JSON.stringify(listed17))
+const text17 = await anonymous.consents.text('terms', consentVersions.terms)
+check('the exact text has a SHA-256, public', text17.hash.length === 64 && text17.text.includes('terms of use'), JSON.stringify(text17).slice(0, 200))
+const refusedInvite = await operator.admin.invitations.create({ email: `no-terms-${MEMBER}` })
+await refused('a sign-up without the terms is refused (400 consent_required)', () => createClient({ url, realm: 'shelf' }).auth.signup({ email: `no-terms-${MEMBER}`, password: PASSWORD, invitation: refusedInvite.token }), ConsentRequiredError, 'consent_required')
+const held = await member.consents.state()
+check('the member holds both, and has nothing left to accept', held.consents.terms === consentVersions.terms && held.consents.marketing === consentVersions.marketing && held.to_accept.length === 0, JSON.stringify(held))
+check('the history says how: at sign-up, or at the prompt', held.history.every((h) => ['signup', 'prompt'].includes(h.method)), JSON.stringify(held.history))
+await refused('the terms are required for the account: they cannot be withdrawn (409)', () => member.consents.withdraw('terms'), ConflictError, 'consent_required_for_account')
+
+// Withdrawing the digest stops the mail, though the digest function still runs for everyone.
+const countDigestMails = async () => (await operator.db('mail').collection('outbox').list({ where: { kind: 'shelf-digest', to: MEMBER }, limit: 50 })).items.length
+const mailsBefore = await countDigestMails()
+await member.consents.withdraw('marketing')
+check('the member withdrew the digest', (await member.consents.state()).consents.marketing === undefined)
+const job17 = /** @type {any} */ (await operator.admin.invokeFunction('main/digest', { input: { since_days: 7 } }))
+await job17.wait({ pollIntervalMs: 300, timeoutMs: 90000 })
+await new Promise((r) => setTimeout(r, 2500)) // the worker delivers the queued mails a moment later
+check('no digest mail followed the withdrawal', (await countDigestMails()) === mailsBefore, `${mailsBefore} → ${await countDigestMails()}`)
+const regiven = await member.consents.accept({ marketing: consentVersions.marketing })
+check('accepting it again is recorded', regiven.consents.marketing === consentVersions.marketing && (await member.consents.state()).history.length >= 4, JSON.stringify(regiven))
 
 heading('cleanup by hand (ch9)')
 const sweep = /** @type {any} */ (await operator.admin.invokeFunction('main/cleanup'))
