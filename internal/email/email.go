@@ -49,16 +49,19 @@ const (
 	// no account that someone asked to sign in with it.
 	MagicLink = "magic-link"
 	NoAccount = "no-account"
+	// ConsentUpdated asks people to review the new version of a consent
+	// ({{.Data.event}} is the consent's name); it is only sent by `backd consents notify`.
+	ConsentUpdated = "consent-updated"
 )
 
 // SystemKinds are the kinds backd knows; `backd template realm` writes an
 // English template for each.
-var SystemKinds = []string{VerifyEmail, ResetPassword, AccountExists, PasswordChanged, Welcome, ChangeEmail, EmailChanged, Invitation, SecurityNotice, MFAFailed, ReauthCode, MFAReset, MagicLink, NoAccount}
+var SystemKinds = []string{VerifyEmail, ResetPassword, AccountExists, PasswordChanged, Welcome, ChangeEmail, EmailChanged, Invitation, SecurityNotice, MFAFailed, ReauthCode, MFAReset, MagicLink, NoAccount, ConsentUpdated}
 
 // BuiltInKinds are system kinds a realm does not have to ship: when its email folder has
 // none, the built-in English text is used for every listed locale, so a realm that
 // existed before them keeps working. A folder of the kind replaces the built-in text.
-var BuiltInKinds = []string{SecurityNotice, MFAFailed, ReauthCode, MFAReset, MagicLink, NoAccount}
+var BuiltInKinds = []string{SecurityNotice, MFAFailed, ReauthCode, MFAReset, MagicLink, NoAccount, ConsentUpdated}
 
 // RequiredKinds must have a template in every realm that configures email.
 var RequiredKinds = []string{VerifyEmail, ResetPassword, AccountExists, PasswordChanged}

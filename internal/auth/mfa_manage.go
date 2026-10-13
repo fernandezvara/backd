@@ -297,11 +297,11 @@ func (s *Users) CompleteEnrollment(ctx context.Context, challenge, setupID, code
 	} else if err != nil {
 		return Verified{}, nil, err
 	}
-	p, token, err := s.startSessionWith(ctx, u, []string{c.Factor, MethodTOTP}, true)
+	out, err := s.finishSignIn(ctx, u, []string{c.Factor, MethodTOTP}, handover{newUser: c.NewUser, profile: c.Profile})
 	if err != nil {
 		return Verified{}, nil, err
 	}
-	return Verified{Redeemed: Redeemed{Principal: p, Token: token, NewUser: c.NewUser, Profile: c.Profile}, Factor: c.Factor, Method: MethodTOTP}, codes, nil
+	return Verified{Redeemed: out, Factor: c.Factor, Method: MethodTOTP}, codes, nil
 }
 
 // DisableMFA removes the user's second factor and recovery codes; refused while a role of

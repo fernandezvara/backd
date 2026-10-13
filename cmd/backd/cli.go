@@ -386,6 +386,15 @@ func registerRemote(cfg *kli.Config) {
 		boolean(cc, "delete", "remove the unreferenced objects instead of only reporting them")
 		boolean(cc, "json", "print the report as JSON")
 	})
+	cons := cfg.Command("consents").ShortHelp("manage the consents users accept")
+	cons.SubCommand("notify").ShortHelp("email the users who hold an older version of a consent").
+		LongHelp("Queues the `consent-updated` email for every user who accepted an older version of the consent than the\ncurrent one (and, for a required consent, who accepted none). Publishing a version never sends anything by itself:\nthis is the only way, and the email limits apply, so a large realm may need to run it again later. Needs the\nusers area with write access. Audited as consents.notify. " + adminAPINote).
+		Func(act("consents notify", consentsNotify)).Config(func(cc *kli.CommandConfig) {
+		required(cc, "realm", "the realm whose users to notify")
+		required(cc, "consent", "the consent whose current version to ask them to review")
+		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+		boolean(cc, "json", "print the result as JSON")
+	})
 	comp := cfg.Command("compliance").ShortHelp("privacy: what a user's data export covers")
 	comp.SubCommand("scope").ShortHelp("show what a user's data export takes from each collection").
 		LongHelp("Asks the running backd for the realm's personal data scope: per collection whether the documents a user owns\n(and those where they appear in an erase policy's `pull` field, and the files they hold) are exported, which fields\nwhen only some are, and the reason for every exclusion (`personal_data` in collection.yaml), then the system data\nan export adds and what it never holds. Needs the config area (read is enough). " + adminAPINote).

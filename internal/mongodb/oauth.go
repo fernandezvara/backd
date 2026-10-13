@@ -13,18 +13,20 @@ import (
 )
 
 type oauthStateDoc struct {
-	ID            string    `bson:"_id"`
-	Provider      string    `bson:"provider"`
-	Intent        string    `bson:"intent"`
-	CodeChallenge string    `bson:"code_challenge"`
-	Verifier      string    `bson:"verifier"`
-	Nonce         string    `bson:"nonce"`
-	RedirectTo    string    `bson:"redirect_to"`
-	InvitationID  string    `bson:"invitation_id,omitempty"`
-	LinkUserID    string    `bson:"link_user_id,omitempty"`
-	Locales       []string  `bson:"locales,omitempty"`
-	CreatedAt     time.Time `bson:"created_at"`
-	ExpiresAt     time.Time `bson:"expires_at"`
+	ID            string   `bson:"_id"`
+	Provider      string   `bson:"provider"`
+	Intent        string   `bson:"intent"`
+	CodeChallenge string   `bson:"code_challenge"`
+	Verifier      string   `bson:"verifier"`
+	Nonce         string   `bson:"nonce"`
+	RedirectTo    string   `bson:"redirect_to"`
+	InvitationID  string   `bson:"invitation_id,omitempty"`
+	LinkUserID    string   `bson:"link_user_id,omitempty"`
+	Locales       []string `bson:"locales,omitempty"`
+	// Consents are the consents accepted for a sign-up through the attempt.
+	Consents  map[string]string `bson:"consents,omitempty"`
+	CreatedAt time.Time         `bson:"created_at"`
+	ExpiresAt time.Time         `bson:"expires_at"`
 }
 
 type loginCodeDoc struct {

@@ -1416,6 +1416,45 @@ func TestContract(t *testing.T) {
 		req("GET", "/v1/acme/_consents/nope/1", "", nil, 404)
 		req("GET", "/v1/nope/_consents", "", nil, 404)
 	}
+	// Accepting consents: an optional one with a session, and a required one a sign-in waits for.
+	{
+		req("POST", "/v1/acme/_auth/consents", `{"consents": {"marketing": "1"}}`, nil, 401)
+		req("POST", "/v1/acme/_auth/consents", `{"consents": {}}`, ada, 400)
+		req("POST", "/v1/acme/_auth/consents", `{"consents": {"marketing": "1"}}`, ada, 200)
+		saved := f.svc.Settings.Consents
+		withTerms := map[string]*registry.Consent{}
+		for k, v := range saved {
+			withTerms[k] = v
+		}
+		withTerms["terms"] = &registry.Consent{
+			Name: "terms", Required: true, Current: "1",
+			Versions: map[string]*registry.ConsentVersion{"1": {}},
+			Texts:    map[string]map[string]registry.ConsentText{"1": {"en": {Body: "terms", Hash: strings.Repeat("b", 64)}}},
+		}
+		f.svc.Settings.Consents = withTerms
+		ch := req("POST", "/v1/acme/_auth/login", `{"email": "bob@example.com", "password": "dev-p4ssw0rd!"}`, nil, 200)
+		if ch["consent_required"] != true {
+			t.Fatalf("login asks no consent: %v", ch)
+		}
+		req("POST", "/v1/acme/_auth/consents/accept", `{"challenge": "`+ch["challenge"].(string)+`", "consents": {}}`, nil, 400)
+		req("POST", "/v1/acme/_auth/consents/accept", `{"challenge": "`+ch["challenge"].(string)+`", "consents": {"terms": "1"}}`, nil, 200)
+		f.svc.Settings.Consents = saved
+	}
+
+	// Asking users to review a consent: a run, a bad name, and the right to do it.
+	req("POST", ad+"/consents/notify", `{"consent": "marketing"}`, nil, 401)
+	req("POST", ad+"/consents/notify", `{"consent": "marketing"}`, ada, 403)
+	req("POST", ad+"/consents/notify", `{"consent": "nope"}`, key, 400)
+	notified := req("POST", ad+"/consents/notify", `{"consent": "marketing"}`, key, 200)
+	if notified["version"] != "1" || notified["queued"] != float64(0) {
+		t.Errorf("notify = %v", notified)
+	}
+	{
+		saved := f.svc.Settings.Email
+		f.svc.Settings.Email = nil
+		req("POST", ad+"/consents/notify", `{"consent": "marketing"}`, key, 409)
+		f.svc.Settings.Email = saved
+	}
 	// The personal data scope: what an export would take from each collection.
 	req("GET", ad+"/compliance/scope", "", nil, 401)
 	req("GET", ad+"/compliance/scope", "", ada, 403)

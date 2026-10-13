@@ -15,6 +15,10 @@ type SignupRequest struct {
 	Locales                     []string // most wanted first
 	RedirectTo                  string   // already checked against the realm's allowed redirects
 	ClientIP, RequestID         string
+	// Consents are the consents accepted at sign-up: name to version. Every required
+	// consent of the realm must be there at its current version.
+	Consents  map[string]string
+	UserAgent string
 }
 
 // SignupResult is what a sign-up gives back: a session, or (Pending) none
@@ -32,6 +36,9 @@ type SignupResult struct {
 // the verification email. The realm may also require the address to be
 // verified before any session: then there is none (Pending).
 func (s *Users) SignUp(ctx context.Context, r SignupRequest) (SignupResult, error) {
+	if err := s.checkSignupConsents(r.Consents); err != nil {
+		return SignupResult{}, err
+	}
 	u, err := s.signup(ctx, r.Email, r.Password, r.Invitation, append([]string{}, r.Locales...))
 	if errors.Is(err, ErrEmailTaken) && s.Settings.Account.RequireVerifiedEmail {
 		// No session is handed out in this realm, so the answer can be the
@@ -43,6 +50,12 @@ func (s *Users) SignUp(ctx context.Context, r SignupRequest) (SignupResult, erro
 	}
 	if err != nil {
 		return SignupResult{}, err
+	}
+	if len(r.Consents) > 0 {
+		if err := s.recordGiven(ctx, u.ID, r.Consents, ConsentMethodSignup, ConsentContext{IP: r.ClientIP, UserAgent: r.UserAgent}, u.Locale); err != nil {
+			return SignupResult{}, err
+		}
+		u.Consents = mergeConsents(u.Consents, r.Consents)
 	}
 	if !u.EmailVerified {
 		s.sendVerification(ctx, u, r.RedirectTo, r.ClientIP, r.RequestID)

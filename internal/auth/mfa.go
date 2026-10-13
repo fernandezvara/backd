@@ -12,6 +12,7 @@ import (
 	"github.com/pquerna/otp/hotp"
 
 	"github.com/fernandezvara/backd/internal/email"
+	"github.com/fernandezvara/backd/internal/registry"
 )
 
 // Multi-factor authentication: after a first factor (a password, a provider's ID token,
@@ -39,6 +40,8 @@ const (
 	ChallengeReauthCode = "reauth_code"
 	// ChallengeMagicLink is a request for a sign-in link and code (see magiclink.go).
 	ChallengeMagicLink = "magic_link"
+	// ChallengeConsent waits for a user to accept consents (see consents_signin.go).
+	ChallengeConsent = "consent"
 )
 
 // Challenge limits.
@@ -112,9 +115,13 @@ type AuthChallenge struct {
 	Email         string
 	Purpose       string
 	Locale        string
-	Attempts      int
-	CreatedAt     time.Time
-	ExpiresAt     time.Time
+	// Methods are how the session will say it was made (a ChallengeConsent keeps them
+	// while the user accepts); Consents are the acceptances a magic-link request carried.
+	Methods   []string
+	Consents  map[string]string
+	Attempts  int
+	CreatedAt time.Time
+	ExpiresAt time.Time
 }
 
 // MFARecord is a user's second-factor state: the TOTP secret (sealed), the last time step
@@ -133,6 +140,8 @@ type IssuedChallenge struct {
 	Token   string
 	Kind    string
 	Methods []string
+	// Consents are the consents and versions a ChallengeConsent waits for.
+	Consents []registry.ConsentRef
 }
 
 // handover is what the sign-in carries to its end.
@@ -156,11 +165,7 @@ func (s *Users) afterFirstFactor(ctx context.Context, u User, factor string, h h
 	case s.Settings.MFA.Required(u.Roles):
 		return s.issueChallenge(ctx, u, ChallengeEnroll, factor, h)
 	}
-	p, token, err := s.startSessionWith(ctx, u, []string{factor}, false)
-	if err != nil {
-		return Redeemed{}, err
-	}
-	return Redeemed{Principal: p, Token: token, NewUser: h.newUser, Profile: h.profile}, nil
+	return s.finishSignIn(ctx, u, []string{factor}, h)
 }
 
 func (s *Users) issueChallenge(ctx context.Context, u User, kind, factor string, h handover) (Redeemed, error) {
@@ -246,7 +251,7 @@ func (s *Users) VerifyMFA(ctx context.Context, challenge, method, code, ip strin
 	if method == MethodRecovery {
 		second = "recovery"
 	}
-	p, token, err := s.startSessionWith(ctx, u, []string{c.Factor, second}, true)
+	out, err := s.finishSignIn(ctx, u, []string{c.Factor, second}, handover{newUser: c.NewUser, profile: c.Profile})
 	if err != nil {
 		return Verified{}, err
 	}
@@ -254,7 +259,6 @@ func (s *Users) VerifyMFA(ctx context.Context, challenge, method, code, ip strin
 	if method == MethodRecovery {
 		s.recoveryCodeUsed(ctx, u, left)
 	}
-	out := Redeemed{Principal: p, Token: token, NewUser: c.NewUser, Profile: c.Profile}
 	if method == MethodRecovery {
 		out.RecoveryCodesLeft = &left
 	}

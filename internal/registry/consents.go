@@ -260,3 +260,40 @@ func loadConsents(rl *Realm, realmPath string) []error {
 func (s RealmSettings) ConsentNames() []string {
 	return slices.Sorted(mapKeys(s.Consents))
 }
+
+// ConsentRef names a consent and a version of it.
+type ConsentRef struct{ Name, Version string }
+
+// ConsentsToAccept lists the required consents a user must accept (again) to be
+// let in: the ones they hold no version of, and the ones they hold an older
+// version of when the current version asks for re-acceptance. held maps a consent
+// to the version the user accepted; the list is sorted by name.
+func (s RealmSettings) ConsentsToAccept(held map[string]string) []ConsentRef {
+	var out []ConsentRef
+	for _, name := range s.ConsentNames() {
+		c := s.Consents[name]
+		if !c.Required {
+			continue
+		}
+		have := held[name]
+		switch {
+		case have == c.Current:
+		case have == "" || c.Versions[c.Current].Reaccept:
+			out = append(out, ConsentRef{Name: name, Version: c.Current})
+		}
+	}
+	return out
+}
+
+// ConsentsPastDeadline is ConsentsToAccept restricted to the consents whose
+// current version has a reaccept_by date that has passed: from then on a user
+// who hasn't accepted them is refused until they do.
+func (s RealmSettings) ConsentsPastDeadline(held map[string]string, now time.Time) []ConsentRef {
+	var out []ConsentRef
+	for _, ref := range s.ConsentsToAccept(held) {
+		if by := s.Consents[ref.Name].Versions[ref.Version].ReacceptBy; !by.IsZero() && !now.Before(by.Add(24*time.Hour)) {
+			out = append(out, ref)
+		}
+	}
+	return out
+}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/rs/xid"
 
+	"github.com/fernandezvara/backd/internal/email"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -142,4 +143,67 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n]
+}
+
+// AuditConsentsNotified is the audit action of an administrator asking users to review a
+// consent; details: consent, version, queued, limited.
+const AuditConsentsNotified = "consents.notify"
+
+// ConsentNotice is what a notification run did.
+type ConsentNotice struct {
+	Consent string
+	Version string
+	// Matched is the users who hold an older version of the consent (or, for a required
+	// one, none): the ones the message is for.
+	Matched int
+	// Queued messages were handed to the email worker; Limited were skipped because an email
+	// limit was reached; the rest could not be sent to (disabled or erased users).
+	Queued  int
+	Limited int
+}
+
+// NotifyConsentUpdated queues the consent-updated email for every user who holds an older
+// version of the consent than the current one (and, for a required consent, who holds none).
+// It never runs by itself: publishing a version sends nothing. The email limits apply, so a
+// large realm may need more than one run; users already told are not told again until the
+// version changes, because the run only goes by what each user holds.
+func (s *Users) NotifyConsentUpdated(ctx context.Context, consent string) (ConsentNotice, error) {
+	c := s.Settings.Consents[consent]
+	if c == nil {
+		return ConsentNotice{}, fmt.Errorf("%w: %q", ErrUnknownConsent, consent)
+	}
+	if s.Settings.Email == nil {
+		return ConsentNotice{}, ErrEmailNotConfigured
+	}
+	out := ConsentNotice{Consent: consent, Version: c.Current}
+	after := ""
+	for {
+		page, more, err := s.Store.ListUsersPage(ctx, "", after, 0, 200)
+		if err != nil {
+			return out, err
+		}
+		for _, u := range page {
+			after = u.Email
+			held := u.Consents[consent]
+			if u.Disabled || !u.ErasedAt.IsZero() || held == c.Current || (held == "" && !c.Required) {
+				continue
+			}
+			out.Matched++
+			_, err := s.QueueEmail(ctx, EmailRequest{Kind: email.ConsentUpdated, UserID: u.ID, Address: u.Email, Locale: s.LocaleOf(u), Notice: true, Event: consent})
+			var limited *EmailLimitedError
+			switch {
+			case errors.As(err, &limited):
+				out.Limited++
+			case err != nil:
+				return out, err
+			default:
+				out.Queued++
+			}
+		}
+		if !more || len(page) == 0 {
+			break
+		}
+	}
+	s.Audit(ctx, AuditConsentsNotified, "consent:"+consent, map[string]any{"version": c.Current, "matched": out.Matched, "queued": out.Queued, "limited": out.Limited})
+	return out, nil
 }

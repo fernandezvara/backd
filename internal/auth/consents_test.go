@@ -31,11 +31,20 @@ func consentUsers(t *testing.T) (*Users, *authtest.MemStore, *time.Time) {
 	return svc, store, &clock
 }
 
+func mustCreate(t *testing.T, svc *Users, email string) User {
+	t.Helper()
+	u, err := svc.Create(context.Background(), email, ptr("dev-p4ssw0rd!"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u
+}
+
 func TestRecordConsent(t *testing.T) {
 	ctx := context.Background()
 	svc, store, clock := consentUsers(t)
-	ada := signedIn(t, svc, "ada@example.com")
-	id := ada.User.ID
+	ada := mustCreate(t, svc, "ada@example.com")
+	id := ada.ID
 
 	rec, err := svc.RecordConsent(ctx, id, ConsentInput{Consent: "terms", Version: "2", Action: ConsentAccepted, Method: ConsentMethodAPI, Locale: "es-MX", IP: "203.0.113.9", UserAgent: "test/1"})
 	if err != nil {
@@ -82,14 +91,122 @@ func TestConsentProofIsConfigurable(t *testing.T) {
 	ctx := context.Background()
 	svc, _, _ := consentUsers(t)
 	svc.Settings.Compliance = registry.ComplianceSettings{ConsentProof: []string{registry.ProofIP}}
-	ada := signedIn(t, svc, "ada@example.com")
-	rec, err := svc.RecordConsent(ctx, ada.User.ID, ConsentInput{Consent: "terms", Version: "2", Action: ConsentAccepted, Method: ConsentMethodAPI, IP: "203.0.113.9", UserAgent: "test/1"})
+	ada := mustCreate(t, svc, "ada@example.com")
+	rec, err := svc.RecordConsent(ctx, ada.ID, ConsentInput{Consent: "terms", Version: "2", Action: ConsentAccepted, Method: ConsentMethodAPI, IP: "203.0.113.9", UserAgent: "test/1"})
 	if err != nil || rec.IP != "203.0.113.9" || rec.UserAgent != "" {
 		t.Errorf("record = %+v %v", rec, err)
 	}
 	svc.Settings.Compliance = registry.ComplianceSettings{ConsentProof: []string{}}
-	rec, _ = svc.RecordConsent(ctx, ada.User.ID, ConsentInput{Consent: "terms", Version: "2", Action: ConsentAccepted, Method: ConsentMethodAPI, IP: "203.0.113.9", UserAgent: "test/1"})
+	rec, _ = svc.RecordConsent(ctx, ada.ID, ConsentInput{Consent: "terms", Version: "2", Action: ConsentAccepted, Method: ConsentMethodAPI, IP: "203.0.113.9", UserAgent: "test/1"})
 	if rec.IP != "" || rec.UserAgent != "" {
 		t.Errorf("no proof: %+v", rec)
+	}
+}
+
+// A magic link request carries consents for the account a new address gets; without
+// them the new user is asked at their first sign-in, like anyone who never accepted.
+func TestMagicLinkSignupConsents(t *testing.T) {
+	ctx := context.Background()
+	f := newLinkFixture(t)
+	f.svc.Settings.Signup = registry.SignupOpen
+	f.svc.Settings.MagicLink.Signup = true
+	f.svc.Settings.Consents = map[string]*registry.Consent{
+		"terms": {
+			Name: "terms", Required: true, Current: "1",
+			Versions: map[string]*registry.ConsentVersion{"1": {}},
+			Texts:    map[string]map[string]registry.ConsentText{"1": {"en": {Body: "terms", Hash: "h1"}}},
+		},
+	}
+	verifier, challenge, _ := NewPKCE()
+
+	// A request naming a consent that doesn't exist is refused before anything is sent.
+	if _, err := f.svc.RequestMagicLink(ctx, MagicLinkInput{Email: "new@example.com", CodeChallenge: challenge, Consents: map[string]string{"nope": "1"}}); err == nil {
+		t.Error("an unknown consent was accepted")
+	}
+
+	// With the consents: the account has them, and the link ends in a session.
+	id, err := f.svc.RequestMagicLink(ctx, MagicLinkInput{Email: "new@example.com", CodeChallenge: challenge, IP: "203.0.113.5", Consents: map[string]string{"terms": "1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var job Job
+	for _, j := range f.jobs(t) {
+		if j.Email != nil && j.Email.ChallengeID == HashToken(id) {
+			job = j
+		}
+	}
+	token, _, _, err := f.svc.MakeMagicLinkSecrets(ctx, job.Email.ChallengeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	login, _, err := f.svc.UseMagicLink(ctx, token, "203.0.113.5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	red, err := f.svc.RedeemLoginCode(ctx, login, verifier)
+	if err != nil || red.Token == "" || !red.NewUser || red.Challenge != nil {
+		t.Fatalf("redeem: %+v %v", red, err)
+	}
+	hist, _ := f.svc.ConsentHistory(ctx, red.Principal.User.ID)
+	if len(hist) != 1 || hist[0].Method != ConsentMethodSignup || hist[0].IP != "203.0.113.5" {
+		t.Errorf("history = %+v", hist)
+	}
+
+	// Without them: a challenge to accept.
+	_, token2, _ := f.ask(t, "other@example.com", challenge)
+	login2, _, _ := f.svc.UseMagicLink(ctx, token2, "")
+	red, err = f.svc.RedeemLoginCode(ctx, login2, verifier)
+	if err != nil || red.Challenge == nil || red.Challenge.Kind != ChallengeConsent || len(red.Challenge.Consents) != 1 {
+		t.Fatalf("redeem without consents: %+v %v", red, err)
+	}
+}
+
+func TestNotifyConsentUpdated(t *testing.T) {
+	ctx := context.Background()
+	svc, store, _ := consentUsers(t)
+	svc.Settings.Email = enrollEmail()
+	svc.Settings.Consents["terms"].Required = true
+	mk := func(email string, held map[string]string, mutate func(*User)) User {
+		u := mustCreate(t, svc, email)
+		for name, v := range held {
+			if err := store.SetUserConsent(ctx, u.ID, name, v); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if mutate != nil {
+			mutate(&u)
+		}
+		return u
+	}
+	mk("current@example.com", map[string]string{"terms": "2"}, nil)
+	mk("older@example.com", map[string]string{"terms": "1"}, nil)
+	mk("never@example.com", nil, nil) // a required consent they never accepted
+	off := mk("off@example.com", map[string]string{"terms": "1"}, nil)
+	yes := true
+	if err := store.UpdateUser(ctx, off.ID, UserUpdate{Disabled: &yes}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := svc.NotifyConsentUpdated(ctx, "terms")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Version != "2" || res.Matched != 2 || res.Queued != 2 || res.Limited != 0 {
+		t.Errorf("terms run = %+v", res)
+	}
+	n := 0
+	jobs, _, _ := svc.Jobs(ctx, JobFilter{Limit: 100})
+	for _, j := range jobs {
+		if j.Email != nil && j.Email.Kind == "consent-updated" && j.Email.Event == "terms" {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Errorf("consent-updated jobs = %d", n)
+	}
+	// An optional consent only reaches people who hold an older version of it.
+	res, err = svc.NotifyConsentUpdated(ctx, "nope")
+	if !errors.Is(err, ErrUnknownConsent) {
+		t.Errorf("unknown consent: %+v %v", res, err)
 	}
 }

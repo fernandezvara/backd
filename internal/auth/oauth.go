@@ -67,8 +67,10 @@ type OAuthState struct {
 	InvitationID  string // HashToken of the invitation token, if one was passed
 	LinkUserID    string // IntentLink: whose identity is being added
 	Locales       []string
-	CreatedAt     time.Time
-	ExpiresAt     time.Time
+	// Consents are the consents the app accepted for a sign-up through this attempt.
+	Consents  map[string]string
+	CreatedAt time.Time
+	ExpiresAt time.Time
 }
 
 // LoginCode is the one-time code the app gets in place of a session: it is redeemed
@@ -231,6 +233,9 @@ type ProviderLogin struct {
 	Invitation string
 	Locales    []string
 	IP         string
+	// Consents and UserAgent: what a sign-up through the login accepted, and the proof's context.
+	Consents  map[string]string
+	UserAgent string
 	// Profile is what the provider says of the person (CleanProfile's fields): handed to
 	// the app and to account.on_signup when the login makes a new user, and kept nowhere else.
 	Profile map[string]string
@@ -422,6 +427,14 @@ func (s *Users) signUpWithProvider(ctx context.Context, in ProviderLogin, email 
 		_ = s.Store.DeleteUser(context.WithoutCancel(ctx), u.ID)
 		restore()
 		return ProviderResult{}, err
+	}
+	if len(in.Consents) > 0 {
+		if err := s.recordGiven(ctx, u.ID, in.Consents, ConsentMethodSignup, ConsentContext{IP: in.IP, UserAgent: in.UserAgent}, u.Locale); err != nil {
+			_ = s.Store.DeleteUser(context.WithoutCancel(ctx), u.ID)
+			restore()
+			return ProviderResult{}, err
+		}
+		u.Consents = mergeConsents(u.Consents, in.Consents)
 	}
 	s.AuditAs(ctx, userTarget(u.ID), AuditUserSignup, userTarget(u.ID), map[string]any{"provider": in.Provider, "invited": in.Invitation != "", "roles": u.Roles})
 	s.queueOnSignup(ctx, u, in.Provider, in.Profile)

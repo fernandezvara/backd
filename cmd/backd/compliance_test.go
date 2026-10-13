@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -32,4 +33,25 @@ func TestComplianceScope(t *testing.T) {
 		}
 	}
 	c.expect(0, `"export":"exclude"`, "", "compliance", "scope", "--realm", "acme", "--url", srv.URL, "--json")
+}
+
+func TestConsentsNotify(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" || r.URL.Path != "/v1/acme/_admin/consents/notify" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		_, _ = w.Write([]byte(`{"consent":"terms","version":"2026-10","matched":5,"queued":3,"limited":2}`))
+	}))
+	defer srv.Close()
+	c := &cliEnv{t: t, env: map[string]string{"BACKD_CREDENTIALS": filepath.Join(t.TempDir(), "backd", "credentials"), "BACKD_API_KEY": "bdk_x"}}
+	out := c.expect(0, "terms 2026-10: 5 users hold an older version; 3 emails queued, 2 skipped", "", "consents", "notify", "--realm", "acme", "--consent", "terms", "--url", srv.URL)
+	_ = out
+	if got["consent"] != "terms" {
+		t.Errorf("body = %v", got)
+	}
+	c.expect(0, `"queued":3`, "", "consents", "notify", "--realm", "acme", "--consent", "terms", "--url", srv.URL, "--json")
+	c.expect(2, "", "consent", "consents", "notify", "--realm", "acme", "--url", srv.URL)
 }

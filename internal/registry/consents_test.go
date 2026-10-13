@@ -118,3 +118,39 @@ func TestConsentsErrors(t *testing.T) {
 		t.Errorf("missing es text: %v", err)
 	}
 }
+
+func TestConsentsToAccept(t *testing.T) {
+	reg, err := Load(writeTree(t, consentTree(consentRealm, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := reg.Realms["shop"].Settings
+	for name, tc := range map[string]struct {
+		held map[string]string
+		want []ConsentRef
+	}{
+		"nothing held":        {nil, []ConsentRef{{"terms", "2026-10"}}},
+		"current":             {map[string]string{"terms": "2026-10"}, nil},
+		"older, reaccept":     {map[string]string{"terms": "2026-03"}, []ConsentRef{{"terms", "2026-10"}}},
+		"optional is ignored": {map[string]string{"terms": "2026-10", "marketing": ""}, nil},
+	} {
+		got := s.ConsentsToAccept(tc.held)
+		if len(got) != len(tc.want) || (len(got) > 0 && got[0] != tc.want[0]) {
+			t.Errorf("%s: %v, want %v", name, got, tc.want)
+		}
+	}
+	// reaccept_by 2026-11-15 covers that whole day (UTC): the deadline is the day after.
+	held := map[string]string{"terms": "2026-03"}
+	for when, want := range map[time.Time]int{
+		time.Date(2026, 11, 15, 23, 0, 0, 0, time.UTC): 0,
+		time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC):  1,
+	} {
+		if got := len(s.ConsentsPastDeadline(held, when)); got != want {
+			t.Errorf("past deadline at %s = %d, want %d", when, got, want)
+		}
+	}
+	// Someone who never accepted is gated once the current version's date has passed too.
+	if got := s.ConsentsPastDeadline(nil, time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)); len(got) != 1 {
+		t.Errorf("a missing consent past the version's date = %v", got)
+	}
+}

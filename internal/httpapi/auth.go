@@ -46,6 +46,7 @@ func (a *authAPI) routes(r chi.Router) {
 		// The public key a browser subscribes with: no session, cacheable.
 		r.Get("/devices/web-key", a.webKey)
 		r.With(json).Post("/login", a.login)
+		r.With(json).Post("/consents/accept", a.consentsAccept)
 		r.With(json).Post("/mfa/verify", a.mfaVerify)
 		// A magic link: JSON asks for one, a form (the page's button) uses it.
 		r.Post("/magic-link", a.magicLinkPost)
@@ -60,10 +61,14 @@ func (a *authAPI) routes(r chi.Router) {
 		a.hostedRoutes(r)
 		a.oauthRoutes(r, json)
 		r.Group(func(r chi.Router) {
-			r.Use(a.requireSession)
+			r.Use(a.requireSessionIgnoringConsents)
 			r.Post("/logout", a.logout)
 			r.Post("/logout-all", a.logoutAll)
 			r.Get("/me", a.me)
+			r.With(json).Post("/consents", a.acceptConsents)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(a.requireSession)
 			r.With(json).Patch("/me", a.updateMe)
 			r.Delete("/me", a.deleteMe)
 			r.With(json).Post("/password", a.changePassword)
@@ -105,8 +110,18 @@ func principalOf(r *http.Request) auth.Principal {
 // requireSession authenticates the Bearer session token. The realm comes
 // from the path, so a token from another realm is simply unknown here.
 func (a *authAPI) requireSession(next http.Handler) http.Handler {
+	return a.sessionMiddleware(next, false)
+}
+
+// requireSessionIgnoringConsents is requireSession for the routes that stay open to a user
+// who must still accept consents: the consent routes, sign-out and the account's state.
+func (a *authAPI) requireSessionIgnoringConsents(next http.Handler) http.Handler {
+	return a.sessionMiddleware(next, true)
+}
+
+func (a *authAPI) sessionMiddleware(next http.Handler, ignoreConsents bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p, ok := a.authenticateRequest(w, r)
+		p, ok := a.authenticate(w, r, ignoreConsents)
 		if !ok {
 			return
 		}
@@ -116,13 +131,23 @@ func (a *authAPI) requireSession(next http.Handler) http.Handler {
 
 // authenticateRequest resolves the request's session, or answers why it can't.
 func (a *authAPI) authenticateRequest(w http.ResponseWriter, r *http.Request) (auth.Principal, bool) {
+	return a.authenticate(w, r, false)
+}
+
+// authenticate is authenticateRequest; ignoreConsents skips the consent deadline, for the
+// routes a person needs to accept what is missing, or to leave.
+func (a *authAPI) authenticate(w http.ResponseWriter, r *http.Request, ignoreConsents bool) (auth.Principal, bool) {
 	svc := usersOf(r)
 	token, src, headerOK := credentialOf(r, svc.Settings)
 	if !headerOK || src == noCredential {
 		unauthenticated(w, r, false, "authentication required")
 		return auth.Principal{}, false
 	}
-	p, err := svc.Authenticate(r.Context(), token)
+	authenticate := svc.Authenticate
+	if ignoreConsents {
+		authenticate = svc.AuthenticateIgnoringConsents
+	}
+	p, err := authenticate(r.Context(), token)
 	if err != nil {
 		if src == fromCookie {
 			clearSessionCookie(w, r, svc.Settings)
@@ -161,6 +186,10 @@ func (a *authAPI) signup(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	consents, ok := takeConsents(w, r, obj)
+	if !ok {
+		return
+	}
 	f, ok := fields(w, r, obj, map[string]string{"email": "string", "password": "string", "invitation": "string?", "locale": "string?", "redirect_to": "string?", "cookie": "bool?"})
 	if !ok {
 		return
@@ -184,7 +213,8 @@ func (a *authAPI) signup(w http.ResponseWriter, r *http.Request) {
 	// The language asked for in the request comes first, then the browser's.
 	res, err := usersOf(r).SignUp(r.Context(), auth.SignupRequest{
 		Email: email, Password: password, Invitation: invitation, RedirectTo: redirectTo, ClientIP: clientIP(r), RequestID: requestID(r.Context()),
-		Locales: append([]string{requested}, acceptLanguages(r.Header.Get("Accept-Language"))...),
+		Locales:  append([]string{requested}, acceptLanguages(r.Header.Get("Accept-Language"))...),
+		Consents: consents, UserAgent: r.UserAgent(),
 	})
 	if err != nil {
 		authError(w, r, err, "password")
@@ -256,6 +286,13 @@ func challengeJSON(c *auth.IssuedChallenge) map[string]any {
 	if c.Kind == auth.ChallengeEnroll {
 		return map[string]any{"mfa_enrollment_required": true, "challenge": c.Token}
 	}
+	if c.Kind == auth.ChallengeConsent {
+		list := make([]map[string]string, len(c.Consents))
+		for i, ref := range c.Consents {
+			list[i] = map[string]string{"name": ref.Name, "version": ref.Version}
+		}
+		return map[string]any{"consent_required": true, "challenge": c.Token, "consents": list}
+	}
 	return map[string]any{"mfa_required": true, "challenge": c.Token, "methods": c.Methods}
 }
 
@@ -298,6 +335,11 @@ func (a *authAPI) me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out["sign_in_methods"] = signIn
+	if len(usersOf(r).Settings.Consents) > 0 {
+		for k, v := range consentStateJSON(usersOf(r), u) {
+			out[k] = v
+		}
+	}
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -465,6 +507,8 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 	var locked *auth.MFALockedError
 	var badCode *auth.InvalidCodeError
 	var badDevice *auth.InvalidDeviceError
+	var needConsent *auth.ConsentRequiredError
+	var badConsents *auth.InvalidConsentsError
 	switch {
 	case errors.As(err, &te):
 		secs := int((te.RetryAfter + time.Second - 1) / time.Second)
@@ -489,6 +533,27 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 		writeError(w, r, http.StatusNotFound, codePushNotConfigured, err.Error())
 	case errors.As(err, &badDevice):
 		writeError(w, r, http.StatusBadRequest, codeInvalidDevice, "invalid device", Detail{Path: "token", Reason: badDevice.Reason})
+	case errors.As(err, &needConsent):
+		details := make([]Detail, len(needConsent.Consents))
+		for i, c := range needConsent.Consents {
+			details[i] = Detail{Path: "consents." + c.Name, Reason: "must be accepted at version " + c.Version}
+		}
+		if needConsent.Session {
+			writeError(w, r, http.StatusForbidden, codeConsentRequired, "consents must be accepted to continue: accept them with POST /_auth/consents", details...)
+		} else {
+			writeError(w, r, http.StatusBadRequest, codeConsentRequired, "required consents must be accepted", details...)
+		}
+	case errors.As(err, &badConsents):
+		details := make([]Detail, len(badConsents.Reasons))
+		for i, reason := range badConsents.Reasons {
+			path, msg, _ := strings.Cut(reason, ": ")
+			details[i] = Detail{Path: path, Reason: msg}
+		}
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid consents", details...)
+	case errors.Is(err, auth.ErrUnknownConsent), errors.Is(err, auth.ErrUnknownConsentVersion):
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid consents", Detail{Path: "consents", Reason: err.Error()})
+	case errors.Is(err, auth.ErrConsentRequiredForAccount):
+		writeError(w, r, http.StatusConflict, "consent_required_for_account", err.Error())
 	case errors.Is(err, auth.ErrMFADisabled):
 		writeError(w, r, http.StatusForbidden, codeMFADisabled, err.Error())
 	case errors.Is(err, auth.ErrMFAUnavailable):

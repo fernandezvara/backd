@@ -466,7 +466,7 @@ var systemCollections = []systemCollection{
 		// _id is the SHA-256 of the value given to the caller.
 		validator: jsonSchema([]string{"_id", "kind", "user_id", "created_at", "expires_at"}, map[string]any{
 			"_id":            str(),
-			"kind":           map[string]any{"enum": bson.A{"mfa", "enroll", "totp_setup", "reauth", "reauth_code", "magic_link"}},
+			"kind":           map[string]any{"enum": bson.A{"mfa", "enroll", "totp_setup", "reauth", "reauth_code", "magic_link", "consent"}},
 			"token_hash":     str(),
 			"code_challenge": str(),
 			"redirect_to":    str(),
@@ -478,6 +478,8 @@ var systemCollections = []systemCollection{
 			"code_hash":      str(),
 			"user_id":        str(),
 			"factor":         str(),
+			"methods":        map[string]any{"bsonType": "array", "items": str()},
+			"consents":       typ("object"),
 			"new_user":       typ("bool"),
 			"profile":        typ("object"),
 			"attempts":       typ("int"),
