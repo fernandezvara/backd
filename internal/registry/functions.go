@@ -559,7 +559,7 @@ func loadFunction(db *Database, settings RealmSettings, name, dir string) (*Func
 	}
 
 	if doc.Invoke != nil {
-		r, err := rules.CompileInvoke(*doc.Invoke, roleNames(settings))
+		r, err := rules.CompileInvoke(*doc.Invoke, roleNames(settings), db.configLeaf())
 		if err != nil {
 			add("%v", err)
 		}

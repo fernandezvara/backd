@@ -811,7 +811,11 @@ func (f *functions) mayInvoke(w http.ResponseWriter, r *http.Request, fn *regist
 	}
 	allowed := false
 	if fn.Invoke != nil {
-		ok, err := fn.Invoke.Allow(rules.Values{User: rulesUser(c), Now: f.docs.now()})
+		vals := rules.Values{User: rulesUser(c), Now: f.docs.now()}
+		if fn.Invoke.UsesConfig() {
+			vals.Config = f.docs.configValues(r, fn.Realm)
+		}
+		ok, err := fn.Invoke.Allow(vals)
 		if err != nil {
 			logger(r.Context()).Debug("invoke rule failed", "error", err)
 		}

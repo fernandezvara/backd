@@ -4,6 +4,9 @@
 // mint `share` links, and `?s=<token>` resolves one publicly through
 // `share-open` — the holes the rules chapter left, closed.
 //
+// Chapter 18 reads the realm's app configuration: a maintenance banner anyone
+// sees, and a switch that hides the export button (the server enforces it too).
+//
 // Chapter 16 adds a way in without a password (a link or code by email) and
 // a second factor: the step after the password, and the account page's
 // security section.
@@ -53,6 +56,10 @@ document.addEventListener('alpine:init', () => {
     consentList: [],
     ticked: {}, // name → true
     consentState: null,
+    // Chapter 18: the app configuration (`client.config`): the banner everyone
+    // sees, and the switch that shows the export button.
+    maintenance: { enabled: false, message: '' },
+    exportEnabled: true,
     // The account page: my second factor, and what setting it up shows.
     mfa: null,
     mfaSetup: null,
@@ -130,6 +137,10 @@ document.addEventListener('alpine:init', () => {
         window.location.hash = '#auth'
       }
       await this.loadConsentTexts()
+      await this.loadConfig()
+      // Back on the tab: the copy is fresh for its cache_ttl, then revalidated with a 304.
+      window.addEventListener('focus', () => this.loadConfig())
+      backd.config.on('change', () => this.readConfig())
       // ?s=<token> is the public share view — no session needed.
       const s = params.get('s')
       if (s) await this.openShare(s)
@@ -151,6 +162,45 @@ document.addEventListener('alpine:init', () => {
       if (this.user) await Promise.all([this.loadMine(), this.loadDrafts(), this.loadInvites(), this.loadShares(), this.loadNotifs(), this.ensureMember(), this.loadAdmin(), this.loadMfa(), this.loadConsents()])
       if (this.user) await this.loadNames()
       this.syncView()
+    },
+
+    // Chapter 18: what the user may read of the configuration. Fresh copies cost
+    // no request; a stale one is revalidated, usually with a 304.
+    async loadConfig() {
+      try {
+        await backd.config.load(['maintenance', 'features'])
+      } catch {
+        // Offline or refused: the banner and the button keep their last state.
+      }
+      this.readConfig()
+    },
+
+    readConfig() {
+      this.maintenance = {
+        enabled: backd.config.getSync('maintenance.enabled', false) === true,
+        message: backd.config.getSync('maintenance.message', ''),
+      }
+      // Signed out, `features` isn't readable: the button isn't there either.
+      this.exportEnabled = backd.config.getSync('features.export.enabled', false) === true
+    },
+
+    // The export function answers one JSON document; the browser saves it.
+    async exportMine() {
+      this.busy = true
+      this.error = null
+      try {
+        const out = await main.fn('export')
+        const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' })
+        const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'my-assets.json' })
+        a.click()
+        URL.revokeObjectURL(a.href)
+      } catch (e) {
+        // The switch was turned off since the page last looked: the server refused.
+        this.error = e.message
+        await this.loadConfig()
+      } finally {
+        this.busy = false
+      }
     },
 
     syncView() {
@@ -241,6 +291,7 @@ document.addEventListener('alpine:init', () => {
       await this.loadAdmin()
       await this.loadMfa()
       await this.loadConsents()
+      await this.loadConfig() // a member reads more of it than a visitor
       window.location.hash = '#mine'
     },
 
@@ -320,6 +371,7 @@ document.addEventListener('alpine:init', () => {
       this.drafts = []
       window.location.hash = '#gallery'
       await this.refilter()
+      await this.loadConfig() // the copies were dropped with the session: read what a visitor may
     },
 
     // `{"tags": "docs"}` finds documents whose tags array contains "docs".

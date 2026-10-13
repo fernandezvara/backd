@@ -115,3 +115,22 @@ func TestAppConfigInCollectionRules(t *testing.T) {
 		t.Errorf("get with the flag back on = %d", rec.Code)
 	}
 }
+
+// An invoke rule reads the configuration too: a function behind a switch.
+func TestAppConfigInInvokeRule(t *testing.T) {
+	f := newRulesFixture(t)
+	call := func() int {
+		rec, _ := f.doH(t, "POST", "/v1/acme/app/_func/gated", `{}`, jsonHdr(f.ada))
+		return rec.Code
+	}
+	if code := call(); code != 200 {
+		t.Fatalf("with the switch on = %d", code)
+	}
+	code, out, _ := f.configDo(t, "PATCH", "/app-config", `{"set": {"features.export.enabled": false}}`, f.key, map[string]string{"If-Match": `"c0"`})
+	if code != 200 {
+		t.Fatalf("PATCH = %d %v", code, out)
+	}
+	if code := call(); code != 403 {
+		t.Errorf("with the switch off = %d, want 403", code)
+	}
+}

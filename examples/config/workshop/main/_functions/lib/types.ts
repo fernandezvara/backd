@@ -37,7 +37,17 @@ export type Context = {
   request: { body: string; headers: Record<string, string> };
   db(name: string): Database;
   /** Present for `admin: true` functions, and always for scheduled runs. */
-  admin: { db(name: string): Database };
+  admin: {
+    db(name: string): Database;
+    /** Present for functions with `config: write`: change the realm's app configuration. */
+    config: {
+      set(values: Record<string, unknown>): Promise<{ version: string; changed: boolean; changes: { path: string; old: unknown; new: unknown }[] }>;
+      reset(paths: string[]): Promise<{ version: string; changed: boolean; changes: { path: string; old: unknown; new: unknown }[] }>;
+      history(limit?: number): Promise<{ version: string; actor: string; kind: string; changes: { path: string; old: unknown; new: unknown }[] }[]>;
+    };
+  };
+  /** The realm's app configuration, whole and with no read rules (when the realm declares one). */
+  config: { get(path: string): Promise<unknown>; all(): Promise<Record<string, unknown>> };
   /** Calls a function of this database listed in `calls`: its output (sync) or a job handle (async). */
   call(name: string, input?: unknown, options?: { idempotencyKey?: string }): Promise<any>;
   /** Starts a named step of a long job; the Jobs page and `job.steps` show where it is. */

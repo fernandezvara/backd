@@ -99,6 +99,7 @@ Working on a `backd` checkout instead? The same files live in the repository: `e
 | 15 | [Sharing and counting downloads](15-sharing-files/) | a `download` function, share links that carry files, the storage in the Admin view |
 | 16 | [A second factor and magic links](16-second-factor/) | sign-in by link and code, an authenticator app for the admin role, `user.mfa` in a rule, proofs before sensitive actions |
 | 17 | [Terms and consents](17-consents/) | versioned terms accepted at sign-up and sign-in, an optional consent the digest respects, what happens when the terms change |
+| 18 | [App configuration](18-app-config/) | a maintenance banner and an export switch declared in `app-config/`, changed by cron functions and administrators, read with a client cache, enforced in an `invoke` rule |
 
 
 

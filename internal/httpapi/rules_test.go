@@ -87,6 +87,9 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 		fnDir + "echo/function.yaml":  "invoke: \"user != nil && user.email_verified\"\n",
 		fnDir + "echo/index.js":       "",
 		fnDir + "typed/function.yaml": "invoke: \"true\"\n",
+		// An invoke rule that reads the app configuration (see functions_config_test.go).
+		fnDir + "gated/function.yaml": "invoke: \"user != nil && appConfig('features.export.enabled') == true\"\n",
+		fnDir + "gated/index.js":      "",
 		// A collection with an erase policy.
 		"acme/app/orders/schema.json":     `{"type": "object", "properties": {"buyer": {"type": "string"}, "phone": {"type": "string"}, "members": {"type": "array", "items": {"type": "string"}}, "paid_by": {"type": "string"}}, "additionalProperties": false}`,
 		"acme/app/orders/collection.yaml": "on_owner_delete:\n  action: anonymize\n  remove: [phone]\n  replace: {buyer: \"Erased customer\"}\n  pull: {members: email}\n  unset: {paid_by: id}\n",

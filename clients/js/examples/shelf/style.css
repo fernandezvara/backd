@@ -82,3 +82,6 @@ main.publiclink #shared-view { display: block !important; }
 .files li { display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap; }
 progress { margin: 0; height: .5rem; }
 label.sm { font-size: .85rem; }
+
+/* Chapter 18: the maintenance banner. */
+.banner { padding: .6rem .9rem; border-radius: var(--pico-border-radius); background: var(--pico-mark-background-color); }

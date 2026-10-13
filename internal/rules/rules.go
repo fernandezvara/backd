@@ -237,10 +237,12 @@ func hasConsent(params ...any) (any, error) {
 var hasConsentFunc = expr.Function("hasConsent", hasConsent, new(func(*User, ...string) bool))
 
 // CompileInvoke compiles and checks a function's invoke rule. It may use
-// `user` and hasRole with the realm's roles; there is no document.
-func CompileInvoke(src string, roles []string) (*Rule, error) {
+// `user`, hasRole with the realm's roles and appConfig with the values
+// configLeaf says exist (nil when the realm declares no app configuration);
+// there is no document.
+func CompileInvoke(src string, roles []string, configLeaf func(string) bool) (*Rule, error) {
 	none := func(string) bool { return false }
-	return compile(Invoke, string(Invoke), src, Schema{DocumentField: none, DataField: none, ScalarField: none, ArrayField: none, Roles: roles})
+	return compile(Invoke, string(Invoke), src, Schema{DocumentField: none, DataField: none, ScalarField: none, ArrayField: none, Roles: roles, ConfigLeaf: configLeaf})
 }
 
 // CompileConfig compiles and checks the read rule of a path of the app

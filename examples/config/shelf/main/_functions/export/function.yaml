@@ -1,0 +1,10 @@
+# Lists the caller's own assets as one JSON document (chapter 18).
+#
+# The switch is enforced here, in the invoke rule: with features.export.enabled
+# off, the server refuses the call whatever the app shows. `appConfig()` reads
+# the configuration once for the request.
+invoke: user != nil && appConfig("features.export.enabled") == true
+rate_limit:
+  per: user
+  limit: 10
+  window: 1m

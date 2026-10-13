@@ -44,6 +44,9 @@
 
   <main class="container" x-cloak :class="{ publiclink: sharedDoc || shareErr }">
 
+    <!-- view: maintenance banner (ch18) — a public branch of the app configuration. -->
+    <p class="banner" x-show="maintenance.enabled" role="status"><strong>Maintenance.</strong> <span x-text="maintenance.message"></span></p>
+
     <p class="error" x-show="error" x-text="error" role="alert"></p>
 
     <!-- view: shared asset (ch5) — what ?s=<token> shows a stranger. -->
@@ -185,6 +188,8 @@
         <h2>My assets</h2>
         <p>Yours, whether published or not.</p>
       </hgroup>
+      <!-- ch18: shown while features.export.enabled is on; the function refuses when it is off. -->
+      <p x-show="exportEnabled"><button id="export" class="secondary outline sm" @click="exportMine" :disabled="busy">Export my assets</button></p>
 
       <article>
         <header>
