@@ -64,6 +64,7 @@ An empty file, or one with only comments, is valid: every key has a default.
 | `login_throttle.max_delay` | `15m` | The longest anyone waits; the wait starts at 1 second and doubles with each failure. At least `1s`, and not more than `window`. |
 | `cors.origins` | none (CORS off) | Browser origins allowed to call this realm, as `scheme://host[:port]`. `*` allows any origin and must be the only entry. See [CORS](#cors). |
 | `roles` | none | Roles that access rules can check. See below. |
+| `openapi.public` | `false` | `true` serves the realm's [OpenAPI document](../../api/openapi/) at `/v1/<realm>/_openapi.json` to everyone, not only to its administrators. |
 | `app_config.cache_ttl` | `5m` | How long clients may use the [app configuration](../config-dir/#app-configuration) without asking again, from `1s` to `1d`. |
 | `audit.retention` | `365d` | How long [audit records](../../auth/audit/) are kept, at least `1d`. |
 | `admin.read_access.users` | `false` | `true`: read-only administrators (`admin: read`) can also read users (emails, roles, sessions). Users hold personal data, so a realm opts in. |

@@ -1,6 +1,6 @@
 COMPOSE_TEST = docker compose -f docker-compose.test.yml
 
-.PHONY: lint build ui ui-test ui-e2e test test-local vet lint-api js-test js-package js-integration functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour shelf-tour-ci example-attacks release-check
+.PHONY: lint build ui ui-test ui-e2e test test-local vet lint-api openapi-clients js-test js-package js-integration functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour shelf-tour-ci example-attacks release-check
 
 build:
 	go build -o bin/backd ./cmd/backd
@@ -61,6 +61,11 @@ ui-e2e:
 # Lint api/openapi.yaml (needs Node). The Go contract tests check the server against it.
 lint-api:
 	npx --yes @redocly/cli@2 lint --config api/redocly.yaml api/openapi.yaml
+
+# The example realms' generated OpenAPI documents lint clean and build Dart, Kotlin and
+# Swift clients with openapi-generator (needs docker).
+openapi-clients:
+	scripts/check-openapi-clients.sh
 
 docs:
 	hugo --source docs --minify

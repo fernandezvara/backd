@@ -91,3 +91,36 @@ func TestTypesFunctions(t *testing.T) {
 		t.Errorf("--check after generating: %d %s", code, stdout)
 	}
 }
+
+func TestOpenAPICommand(t *testing.T) {
+	dir := typesConfig(t)
+	out := filepath.Join(t.TempDir(), "openapi.json")
+	c := &cliEnv{t: t, env: map[string]string{"CONFIG_DIR": dir}}
+
+	code, stdout, stderr := c.run("", "openapi", "--realm", "app")
+	if code != 0 || !strings.Contains(stdout, `"openapi": "3.1.0"`) || !strings.Contains(stdout, "/v1/app/main/notes") {
+		t.Fatalf("stdout: %d %.300s %s", code, stdout, stderr)
+	}
+	if code, _, stderr := c.run("", "openapi", "--realm", "app", "--check"); code == 0 || !strings.Contains(stderr, "--out") {
+		t.Errorf("--check without --out: %d %s", code, stderr)
+	}
+	if code, _, stderr := c.run("", "openapi", "--realm", "app", "--out", out, "--check"); code == 0 || !strings.Contains(stderr, "doesn't exist") {
+		t.Errorf("--check without file: %d %s", code, stderr)
+	}
+	if code, _, stderr := c.run("", "openapi", "--realm", "app", "--out", out); code != 0 {
+		t.Fatalf("--out: %d %s", code, stderr)
+	}
+	if code, stdout, _ := c.run("", "openapi", "--realm", "app", "--out", out, "--check"); code != 0 || !strings.Contains(stdout, "up to date") {
+		t.Errorf("--check fresh: %d %s", code, stdout)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "app/main/notes/schema.json"),
+		[]byte(`{"type":"object","additionalProperties":false,"properties":{"title":{"type":"string"},"done":{"type":"boolean"}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, stderr := c.run("", "openapi", "--realm", "app", "--out", out, "--check"); code == 0 || !strings.Contains(stderr, "stale") {
+		t.Errorf("--check stale: %d %s", code, stderr)
+	}
+	if code, _, stderr := c.run("", "openapi", "--realm", "nope"); code == 0 || !strings.Contains(stderr, "unknown realm") {
+		t.Errorf("unknown realm: %d %s", code, stderr)
+	}
+}

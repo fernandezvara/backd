@@ -1,0 +1,332 @@
+package openapigen
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+
+	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/internal/rules"
+)
+
+func pascal(s string) string {
+	var b strings.Builder
+	up := true
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z':
+			if up {
+				r -= 'a' - 'A'
+			}
+			b.WriteRune(r)
+			up = false
+		case r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+			up = false
+		default:
+			up = true
+		}
+	}
+	return b.String()
+}
+
+// addFileDetails declares what backd stores about an uploaded file.
+func (b *builder) addFileDetails() {
+	b.extra["FileDetails"] = map[string]any{
+		"type":        "object",
+		"description": "What backd stores about an uploaded file. Only uploads write it.",
+		"required":    []any{"id", "name", "size", "type", "sha256", "uploaded_at"},
+		"properties": map[string]any{
+			"id":          map[string]any{"type": "string"},
+			"name":        map[string]any{"type": "string"},
+			"size":        map[string]any{"type": "integer"},
+			"type":        map[string]any{"type": "string"},
+			"sha256":      map[string]any{"type": "string"},
+			"uploaded_at": map[string]any{"$ref": "#/components/schemas/Timestamp"},
+			"width":       map[string]any{"type": "integer"},
+			"height":      map[string]any{"type": "integer"},
+			"versions":    map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "object"}},
+			"url":         map[string]any{"type": "string"},
+			"expires_at":  map[string]any{"$ref": "#/components/schemas/Timestamp"},
+		},
+	}
+}
+
+// toSchemas converts a JSON Schema document (draft 2020-12, with local $refs into its own
+// $defs) into OpenAPI component schemas under the given name: the root as name, each $def as
+// name_<def>. It returns the root's reference.
+func (b *builder) toSchemas(name string, raw map[string]any) {
+	doc := deepCopy(jsonRoundTrip(raw)).(map[string]any)
+	names := map[string]string{"#": name}
+	for _, k := range []string{"$defs", "definitions"} {
+		if defs, ok := doc[k].(map[string]any); ok {
+			for d := range defs {
+				names["#/"+k+"/"+d] = name + "_" + pascal(d)
+			}
+		}
+	}
+	var fix func(v any)
+	fix = func(v any) {
+		switch t := v.(type) {
+		case map[string]any:
+			if ref, ok := t["$ref"].(string); ok {
+				if to, ok := names[ref]; ok {
+					t["$ref"] = "#/components/schemas/" + to
+				}
+			}
+			for _, e := range t {
+				fix(e)
+			}
+		case []any:
+			for _, e := range t {
+				fix(e)
+			}
+		}
+	}
+	for _, k := range []string{"$defs", "definitions"} {
+		if defs, ok := doc[k].(map[string]any); ok {
+			for d, s := range defs {
+				fix(s)
+				b.extra[name+"_"+pascal(d)] = s
+			}
+			delete(doc, k)
+		}
+	}
+	delete(doc, "$schema")
+	delete(doc, "$id")
+	fix(doc)
+	b.extra[name] = doc
+}
+
+// jsonRoundTrip turns json.Number and friends into plain JSON values.
+func jsonRoundTrip(v any) any {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return v
+	}
+	var out any
+	if json.Unmarshal(data, &out) != nil {
+		return v
+	}
+	return out
+}
+
+// collection adds the collection's paths and schemas.
+func (b *builder) collection(db string, c *registry.Collection) {
+	alias := pascal(db) + pascal(c.Name)
+	tag := db + "/" + c.Name
+
+	// Schemas: the stored document (with id, _meta and file details) and what a client writes.
+	b.toSchemas(alias, c.RawSchema)
+	props := func(schema map[string]any) map[string]any {
+		p, _ := schema["properties"].(map[string]any)
+		if p == nil {
+			p = map[string]any{}
+			schema["properties"] = p
+		}
+		return p
+	}
+	doc := b.extra[alias].(map[string]any)
+	input := deepCopy(doc).(map[string]any)
+	for fileField, f := range c.Files {
+		if f == nil {
+			continue
+		}
+		ref := map[string]any{"$ref": "#/components/schemas/FileDetails"}
+		if f.Multiple {
+			props(doc)[fileField] = map[string]any{"type": "array", "items": ref}
+		} else {
+			props(doc)[fileField] = ref
+		}
+		delete(props(input), fileField)
+		if req, ok := input["required"].([]any); ok {
+			var kept []any
+			for _, r := range req {
+				if r != fileField {
+					kept = append(kept, r)
+				}
+			}
+			input["required"] = kept
+		}
+	}
+	props(doc)["id"] = map[string]any{"type": "string"}
+	props(doc)["_meta"] = map[string]any{"$ref": "#/components/schemas/Meta"}
+	req, _ := doc["required"].([]any)
+	doc["required"] = append(req, "id", "_meta")
+	if _, ok := doc["type"]; !ok {
+		doc["type"] = "object"
+	}
+	b.extra[alias] = doc
+	b.extra[alias+"Input"] = input
+	// Lists: the contract's page with this collection's documents.
+	list := deepCopy(b.components("schemas")["DocumentList"]).(map[string]any)
+	rewriteRefs(list, map[string]string{"#/components/schemas/Document": "#/components/schemas/" + alias})
+	b.extra[alias+"List"] = list
+	// The single-document response of the contract, typed.
+	resp := deepCopy(b.components("responses")["Document"]).(map[string]any)
+	rewriteRefs(resp, map[string]string{"#/components/schemas/Document": "#/components/schemas/" + alias})
+	b.responses[alias+"Document"] = resp
+
+	mapping := map[string]string{
+		"#/components/schemas/Document":     "#/components/schemas/" + alias,
+		"#/components/schemas/DocumentBody": "#/components/schemas/" + alias + "Input",
+		"#/components/schemas/DocumentList": "#/components/schemas/" + alias + "List",
+		"#/components/responses/Document":   "#/components/responses/" + alias + "Document",
+	}
+	opNames := map[string]string{
+		"listDocuments": "list" + alias, "createDocument": "create" + alias, "getDocument": "get" + alias,
+		"replaceDocument": "replace" + alias, "patchDocument": "patch" + alias, "deleteDocument": "delete" + alias,
+	}
+	needs := map[string]rules.Op{
+		"listDocuments": rules.Read, "getDocument": rules.Read, "createDocument": rules.Create,
+		"replaceDocument": rules.Update, "patchDocument": rules.Update, "deleteDocument": rules.Delete,
+	}
+
+	prefix := "/v1/{realm}/{database}/{collection}"
+	sub := func(item map[string]any, path string) {
+		cp := deepCopy(item).(map[string]any)
+		dropParams(cp, "realm", "database", "collection")
+		for method, op := range operations(cp) {
+			id, _ := op["operationId"].(string)
+			if need, ok := needs[id]; ok && !b.allowed(c, need) {
+				delete(cp, method)
+				continue
+			}
+			if id == "restoreDocument" && (c.SoftDelete == nil || !b.allowed(c, rules.Restore)) {
+				delete(cp, method)
+				continue
+			}
+			rewriteRefs(op, mapping)
+			op["tags"] = []any{tag}
+			b.tags[tag] = true
+			if n, ok := opNames[id]; ok {
+				op["operationId"] = n
+			} else if id != "" {
+				op["operationId"] = id + alias
+			}
+			dropParams(op, "realm", "database", "collection")
+		}
+		if len(operations(cp)) == 0 {
+			return
+		}
+		b.uniqueIDs(cp, "")
+		b.paths[path] = cp
+	}
+	base := "/v1/" + b.realm + "/" + db + "/" + c.Name
+	for _, suffix := range []string{"", "/{id}", "/{id}/restore"} {
+		if item := b.staticPath(prefix + suffix); item != nil {
+			sub(item, base+suffix)
+		}
+	}
+	// File endpoints, one set per file field.
+	for _, field := range slices.Sorted(keysOf(c.Files)) {
+		for _, suffix := range []string{
+			"/_files/{field}", "/_files/{field}/uploads", "/{id}/_files/{field}/uploads",
+			"/_files/{field}/uploads/{uploadID}/complete", "/{id}/_files/{field}", "/{id}/_files/{field}/{fileID}",
+			"/{id}/_files/{field}/{fileID}/versions/{version}",
+		} {
+			item := b.staticPath(prefix + suffix)
+			if item == nil {
+				continue
+			}
+			cp := deepCopy(item).(map[string]any)
+			dropParams(cp, "fileField")
+			for _, op := range operations(cp) {
+				dropParams(op, "fileField")
+			}
+			path := base + strings.ReplaceAll(suffix, "{field}", field)
+			b.addFileItem(path, tag, alias+pascal(field), cp, mapping)
+		}
+	}
+}
+
+// addFileItem registers a file endpoint's path item, typed like the collection's others.
+func (b *builder) addFileItem(path, tag, alias string, cp map[string]any, mapping map[string]string) {
+	dropParams(cp, "realm", "database", "collection", "fileField")
+	for _, op := range operations(cp) {
+		rewriteRefs(op, mapping)
+		dropParams(op, "realm", "database", "collection", "fileField")
+		op["tags"] = []any{tag}
+		b.tags[tag] = true
+	}
+	b.uniqueIDs(cp, alias)
+	b.paths[path] = cp
+}
+
+// function adds a function's route, with its schemas as the call's input and output.
+func (b *builder) function(db string, fn *registry.Function) {
+	item := b.staticPath("/v1/{realm}/{database}/_func/{function}")
+	if item == nil {
+		return
+	}
+	cp := deepCopy(item).(map[string]any)
+	dropParams(cp, "realm", "database", "function")
+	alias := pascal(db) + pascal(fn.Name)
+	tag := db + " functions"
+	for _, op := range operations(cp) {
+		dropParams(op, "realm", "database", "function")
+		op["tags"] = []any{tag}
+		op["operationId"] = b.claim("call" + alias)
+		op["summary"] = "Call " + db + "/" + fn.Name
+		if in := b.functionSchema(fn, registry.InputSchemaFile, alias+"Input"); in != "" && fn.Mode != registry.ModeWebhook {
+			if rb, ok := op["requestBody"].(map[string]any); ok {
+				if content, ok := rb["content"].(map[string]any); ok {
+					content["application/json"] = map[string]any{"schema": map[string]any{"$ref": in}}
+				}
+			}
+		}
+		if out := b.functionSchema(fn, registry.OutputSchemaFile, alias+"Output"); out != "" && fn.Mode == registry.ModeSync {
+			if responses, ok := op["responses"].(map[string]any); ok {
+				if ok200, ok := responses["200"].(map[string]any); ok {
+					ok200["content"] = map[string]any{"application/json": map[string]any{"schema": map[string]any{"$ref": out}}}
+				}
+			}
+		}
+	}
+	b.tags[tag] = true
+	b.paths["/v1/"+b.realm+"/"+db+"/_func/"+fn.Name] = cp
+}
+
+// functionSchema registers a function's schema file as a component and returns its reference,
+// or "" when the function has none.
+func (b *builder) functionSchema(fn *registry.Function, file, name string) string {
+	data, err := os.ReadFile(filepath.Join(fn.Dir, file))
+	if err != nil {
+		return ""
+	}
+	var raw map[string]any
+	if json.Unmarshal(data, &raw) != nil {
+		return ""
+	}
+	b.toSchemas(name, raw)
+	return "#/components/schemas/" + name
+}
+
+// configSchema declares the realm's configuration: the contract's `_config` answers values as
+// an object, which the declared schema describes exactly.
+func (b *builder) configSchema() {
+	ac := b.rl.AppConfig
+	if ac == nil {
+		return
+	}
+	b.toSchemas("AppConfigValues", ac.RawSchema)
+	item, ok := b.paths["/v1/"+b.realm+"/_config"].(map[string]any)
+	if !ok {
+		return
+	}
+	get, _ := item["get"].(map[string]any)
+	responses, _ := get["responses"].(map[string]any)
+	ok200, _ := responses["200"].(map[string]any)
+	content, _ := ok200["content"].(map[string]any)
+	appJSON, _ := content["application/json"].(map[string]any)
+	schema, _ := appJSON["schema"].(map[string]any)
+	props, _ := schema["properties"].(map[string]any)
+	if values, ok := props["values"].(map[string]any); ok {
+		for k := range values {
+			delete(values, k)
+		}
+		values["$ref"] = "#/components/schemas/AppConfigValues"
+	}
+}

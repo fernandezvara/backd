@@ -8,7 +8,7 @@ toc: true
 
 ## OpenAPI specification
 
-The whole HTTP API is described in [`api/openapi.yaml`](https://github.com/fernandezvara/backd/blob/main/api/openapi.yaml) (OpenAPI 3.1): every endpoint, status, response body and header. The server is tested against it on every change (see [API contract](../development/contract/)), so it can be used to generate or check clients. Collections' fields depend on your configuration, so documents appear there as open objects with exactly described `id` and `_meta`.
+The whole HTTP API is described in [`api/openapi.yaml`](https://github.com/fernandezvara/backd/blob/main/api/openapi.yaml) (OpenAPI 3.1): every endpoint, status, response body and header. The server is tested against it on every change (see [API contract](../development/contract/)), so it can be used to generate or check clients. Collections' fields depend on your configuration, so documents appear there as open objects with exactly described `id` and `_meta`. For the exact API of **your** realm, with each collection's schema, use its [generated document](openapi/).
 
 ## Request IDs
 

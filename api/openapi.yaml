@@ -3242,6 +3242,53 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_openapi.json:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [documents]
+      summary: The realm's client API as OpenAPI
+      description: |
+        An OpenAPI 3.1 document describing what a client of this realm can use, generated from
+        its configuration: the collections clients can reach (a collection whose rules are all
+        literally `false` is left out, and so is an operation whose rule is), with their schemas,
+        `_meta` and the features they enable (files, soft delete, conditional reads); the
+        sign-in methods the realm enables; its non-internal functions with their input and output
+        schemas; its app configuration; batches and jobs. Internal functions, the admin API, rules
+        and system collections are not in it (the admin document is `/_admin/openapi.json`).
+        It is what generators of typed clients for other platforms read.
+
+        Realm administrators (the `config` area) read it; `openapi.public: true` in `realm.yaml`
+        makes it public, and a realm with `auth: disabled` serves it to everyone.
+        `backd openapi --realm <realm>` makes the same document from `CONFIG_DIR`.
+      operationId: realmOpenAPI
+      security: [{}, { session: [] }, { apiKey: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/ifNoneMatch" }
+      responses:
+        "200":
+          description: The document.
+          headers:
+            ETag: { schema: { type: string }, description: Identifies this document; send it back as `If-None-Match`. }
+            Cache-Control: { schema: { type: string }, description: "`public, max-age=60` when anyone may read it, `private, no-store` otherwise." }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [openapi, info, paths]
+                additionalProperties: true
+                properties:
+                  openapi: { type: string }
+                  info: { type: object }
+                  paths: { type: object }
+        "304":
+          description: The copy the caller holds (`If-None-Match`) is current.
+          headers:
+            ETag: { schema: { type: string } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_config:
     parameters:
       - { $ref: "#/components/parameters/realm" }

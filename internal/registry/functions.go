@@ -28,13 +28,13 @@ import (
 
 // Function layout inside a database directory.
 const (
-	FunctionsDir     = "_functions" // one Deno project per database
-	BuildDir         = ".build"     // bundles and their manifest, written by `backd functions build`
+	FunctionsDir = "_functions" // one Deno project per database
+	BuildDir     = ".build"     // bundles and their manifest, written by `backd functions build`
 	// TypesFile is the generated registry of the project's types (`backd types --functions`): it
 	// shapes no bundle, so it is not part of the source hash or the config fingerprint.
 	TypesFile = "backd.d.ts"
 	// RuntimeDir holds what `defineFunction` runs on (a hidden folder, never part of the config).
-	RuntimeDir = ".backd"
+	RuntimeDir       = ".backd"
 	ManifestFile     = "manifest.json"
 	FunctionFile     = "function.yaml"
 	libDir           = "lib" // shared code of the project; not a function

@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
-	"net/url"
 
 	"github.com/fernandezvara/kli"
 

@@ -95,6 +95,9 @@ type RealmSettings struct {
 	// UserNetworks are the network restrictions realm.yaml sets per user
 	// email (in a role's user entries).
 	UserNetworks map[string]UserNetworks
+	// OpenAPIPublic makes the realm's OpenAPI document readable without credentials
+	// (openapi.public: true); otherwise only the realm's administrators read it.
+	OpenAPIPublic bool
 	// AppConfigCacheTTL is how long clients treat the app configuration as fresh
 	// (app_config.cache_ttl); zero when not set: use AppConfigTTL.
 	AppConfigCacheTTL time.Duration
@@ -335,6 +338,9 @@ type realmDoc struct {
 	AppConfig *struct {
 		CacheTTL *string `yaml:"cache_ttl"`
 	} `yaml:"app_config"`
+	OpenAPI *struct {
+		Public bool `yaml:"public"`
+	} `yaml:"openapi"`
 	Roles map[string]*struct {
 		Description string      `yaml:"description"`
 		Admin       adminDoc    `yaml:"admin"`
@@ -604,6 +610,9 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 		}
 	}
 
+	if o := doc.OpenAPI; o != nil {
+		s.OpenAPIPublic = o.Public
+	}
 	if a := doc.AppConfig; a != nil && a.CacheTTL != nil {
 		d, err := ParseDuration(*a.CacheTTL)
 		switch {

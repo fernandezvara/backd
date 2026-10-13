@@ -158,9 +158,13 @@ func NewHandler(cfg Config) http.Handler {
 	authRoutes.routes(r)
 	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users, callbackKey: cfg.CallbackKey, objects: newRealmObjects(cfg.Registry, users), baseURL: cfg.BackdURL, maxUpload: maxUploadOf(cfg), imageMaxPixels: cfg.ImageMaxPixels}
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, executorToken: cfg.ExecutorToken, log: cfg.Log, dev: cfg.Dev, concurrency: limiterFor(cfg.Registry), metrics: cfg.Metrics}
+	spec := &openAPI{reg: cfg.Registry}
 	if !cfg.DisableAdminAPI {
-		(&adminAPI{users: users, reg: cfg.Registry, fns: fns, fingerprint: cfg.ConfigFingerprint, reloadErrors: cfg.ReloadErrors, imageMaxPixels: cfg.ImageMaxPixels}).routes(r, authRoutes.resolveRealm, withTimeout(opTimeout))
+		admin := &adminAPI{users: users, reg: cfg.Registry, fns: fns, fingerprint: cfg.ConfigFingerprint, reloadErrors: cfg.ReloadErrors, imageMaxPixels: cfg.ImageMaxPixels}
+		admin.routes(r, authRoutes.resolveRealm, withTimeout(opTimeout))
+		spec.protected = noStore(authRoutes.resolveRealm(withTimeout(opTimeout)(admin.requireAdmin(admin.need(registry.RightConfig)(http.HandlerFunc(spec.serve))))))
 	}
+	spec.route(r)
 	if cfg.UI != nil {
 		r.Handle("/_ui", http.RedirectHandler("/_ui/", http.StatusMovedPermanently))
 		r.Handle("/_ui/*", cfg.UI)
