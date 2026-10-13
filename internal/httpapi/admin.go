@@ -41,6 +41,7 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		r.With(a.needRead(registry.RightConfig), requireContentType("application/json")).Post("/config/check", a.checkConfig)
 		r.With(a.needRead(registry.RightConfig)).Post("/storage/check", a.checkStorage)
 		r.With(a.needRead(registry.RightConfig)).Get("/storage", a.storageStatus)
+		r.With(a.needRead(registry.RightConfig)).Get("/compliance/scope", a.complianceScope)
 		r.With(a.need(registry.RightConfig), requireContentType("application/json")).Post("/storage/reconcile", a.reconcileStorage)
 		r.With(a.need(registry.RightConfig), requireContentType("application/json")).Post("/files/versions/regenerate", a.regenerateVersions)
 		users, invites, keys := a.need(registry.RightUsers), a.need(registry.RightInvitations), a.need(registry.RightAPIKeys)

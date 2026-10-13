@@ -82,6 +82,8 @@ func (p *ErasurePolicy) IndexedFields() []string {
 type erasureDoc struct {
 	SoftDelete *softDeleteDoc `yaml:"soft_delete"`
 	Cache      *cacheDoc      `yaml:"cache"`
+	// PersonalData overrides what a user's data export takes from the collection.
+	PersonalData *personalDataDoc `yaml:"personal_data"`
 	// Files is read by parseFiles, which checks it; here it is only allowed.
 	Files map[string]*fileFieldDoc `yaml:"files"`
 	// Rules is read by loadRules, which checks it; here it is only allowed.
@@ -121,6 +123,14 @@ func loadErasure(c *Collection, settings RealmSettings, path string) error {
 		return err
 	}
 	c.Cache = cp
+	if doc.PersonalData != nil && !settings.AuthEnabled {
+		return fmt.Errorf("%s: personal_data only applies when the realm has auth enabled (realm.yaml has `auth: disabled`: it has no users)", path)
+	}
+	pd, err := doc.PersonalData.policy(c, path)
+	if err != nil {
+		return err
+	}
+	c.PersonalData = pd
 	d := doc.OnOwnerDelete
 	if d == nil {
 		return nil

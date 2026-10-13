@@ -30,6 +30,14 @@
 #   public: true
 #   max_age: 60
 #
+# What a user's data export takes from this collection (docs: Configuration ->
+# collection.yaml). By default: the documents the user owns, whole. Commented out.
+#
+# personal_data:
+#   export: include              # include (default) | exclude
+#   fields: [title, notes]       # only these fields (plus id and _meta); leave out for all
+#   reason: "scores are internal"  # required to exclude, and when fields leave data out
+#
 # What happens to this collection when an administrator erases a user
 # (`backd user delete`, docs: Auth -> Erasing users). Everything below is
 # commented out: with no `on_owner_delete`, an erase leaves this collection

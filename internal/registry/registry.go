@@ -65,6 +65,7 @@ type Collection struct {
 	Erasure       *ErasurePolicy        // from collection.yaml; nil: an erase leaves the collection alone
 	ErasurePath   string                // path of collection.yaml, for error messages
 	SoftDelete    *SoftDelete           // from collection.yaml; nil: DELETE removes the document
+	PersonalData  *PersonalData         // from collection.yaml's personal_data:; nil: owned documents, whole
 	Cache         *CachePolicy          // from collection.yaml's cache:; nil: responses are private, no-cache
 	Files         map[string]*FileField // file fields from collection.yaml's files:; their schema is already in Schema and RawSchema
 }

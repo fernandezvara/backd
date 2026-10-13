@@ -2976,6 +2976,34 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/compliance/scope:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+    get:
+      tags: [admin]
+      summary: What a user's data export takes from each collection
+      description: |
+        The personal data scope of the realm, as the export of a user's data builds it:
+        per collection whether documents are included (the ones the user owns, those
+        where they appear in a `pull` field of the erase policy, and the files they
+        hold), the fields when only some are exported, and the reason for every
+        exclusion or partial list (`personal_data` in `collection.yaml`), plus the
+        system data an export adds and what it never holds. Needs the `config` area
+        (read is enough).
+      operationId: adminComplianceScope
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The scope.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ComplianceScope" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/files/versions/regenerate:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -5468,6 +5496,40 @@ components:
       type: string
       format: date-time
       description: RFC3339 in UTC with millisecond precision.
+
+    ComplianceScope:
+      type: object
+      additionalProperties: false
+      required: [realm, auth, collections, system]
+      properties:
+        realm: { type: string }
+        auth: { type: boolean, description: "Whether the realm has users; without them there is nothing to export." }
+        collections:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [database, collection, export, owned, pull, files, declared]
+            properties:
+              database: { type: string }
+              collection: { type: string }
+              export: { type: string, enum: [include, exclude] }
+              owned: { type: boolean, description: "The documents whose `_meta.owner` is the user are exported." }
+              fields:
+                type: array
+                items: { type: string }
+                description: "Only these fields (plus `id` and `_meta`) are exported; absent means whole documents."
+              pull: { type: array, items: { type: string }, description: "Arrays that hold the user: documents where they appear are exported whoever owns them." }
+              files: { type: array, items: { type: string }, description: "File fields whose files are exported with their documents." }
+              reason: { type: string, description: "Why the collection is excluded or exported in part." }
+              declared: { type: boolean, description: "`personal_data` is in the collection's `collection.yaml`." }
+        system:
+          type: object
+          additionalProperties: false
+          required: [included, excluded]
+          properties:
+            included: { type: array, items: { type: string } }
+            excluded: { type: array, items: { type: string } }
 
     Status:
       type: object

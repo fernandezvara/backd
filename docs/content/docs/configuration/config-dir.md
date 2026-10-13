@@ -138,6 +138,7 @@ This optional file holds a collection's policy, in sections that can each be lef
 | `files:` | The fields of a document that carry files | [File fields](../../files/file-fields/) |
 | `soft_delete:` | Whether deleted documents stay recoverable | [Soft delete](#soft-delete) |
 | `cache:` | Whether anonymous reads may be stored by shared caches (CDNs) | [Public caching](#public-caching) |
+| `personal_data:` | What a user's data export takes from the collection | [Personal data scope](#personal-data-scope) |
 | `on_owner_delete:` | What an administrator's **erase** does to the collection when a user is erased (`backd user delete`) | below |
 
 ```yaml
@@ -207,6 +208,26 @@ rules:
 {{< hint style="warning" >}}
 A document that stops being readable by anonymous callers (unpublished, deleted) can still be served by a CDN until its `max_age` runs out. Use a short `max_age` for content you may need to withdraw.
 {{< /hint >}}
+
+### Personal data scope
+
+A user's right to a copy of their data is answered from the same model as erasure: **the documents whose `_meta.owner` is the user** (whatever their `on_owner_delete` action), the documents where the user's id or email appears in a `pull` field, and the files those documents hold. `personal_data:` overrides that per collection:
+
+```yaml
+personal_data:
+  export: include                 # include (default) | exclude
+  fields: [title, notes]          # optional: only these fields, plus id and _meta
+  reason: "scores are internal"   # required to exclude, and when fields leave data out
+```
+
+- **`export: exclude`** needs a `reason`: what exempts the data (fraud scores, legal holds). Keep it true: a request can ask why something was not given.
+- **`fields`** narrows the export to those fields, for collections that mix the user's data with other people's (comments, reviews). Every field must exist in `schema.json` and `reason` is required.
+- **`backd` refuses to start** on unknown fields, a missing reason, or `personal_data` in a realm with `auth: disabled`.
+- **Read and `reveal` rules do not limit the scope**: an access request covers data *about* the person, whatever the app shows them.
+
+See what an export would take with `backd compliance scope --realm <r>` (or `GET /_admin/compliance/scope`): per collection what is included, which fields, and every exclusion with its reason, plus the system data an export adds (account, identities, sessions, devices, MFA status, consents, audit records about the user, invocations they made) and what it never holds (password hashes, tokens, secrets, function inputs, outputs and logs).
+
+Building and delivering the export package is a later step: today the scope is declared, checked and reported. Backd provides the mechanisms; legal bases, deadlines and texts are yours.
 
 ### Files and erasure
 

@@ -386,6 +386,14 @@ func registerRemote(cfg *kli.Config) {
 		boolean(cc, "delete", "remove the unreferenced objects instead of only reporting them")
 		boolean(cc, "json", "print the report as JSON")
 	})
+	comp := cfg.Command("compliance").ShortHelp("privacy: what a user's data export covers")
+	comp.SubCommand("scope").ShortHelp("show what a user's data export takes from each collection").
+		LongHelp("Asks the running backd for the realm's personal data scope: per collection whether the documents a user owns\n(and those where they appear in an erase policy's `pull` field, and the files they hold) are exported, which fields\nwhen only some are, and the reason for every exclusion (`personal_data` in collection.yaml), then the system data\nan export adds and what it never holds. Needs the config area (read is enough). " + adminAPINote).
+		Func(act("compliance scope", complianceScopeCmd)).Config(func(cc *kli.CommandConfig) {
+		required(cc, "realm", "the realm whose scope to show")
+		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+		boolean(cc, "json", "print it as JSON")
+	})
 	files := cfg.Command("files").ShortHelp("work on the image files documents hold")
 	files.SubCommand("regenerate").ShortHelp("make the image versions of a file field again when they no longer match its declaration").
 		LongHelp("Starts a job that goes through every document of a file field and makes again, on a worker, the image\nversions whose copies no longer match the field's `versions:` in collection.yaml: copies made with other\nparameters (after you changed the declaration), copies that failed or never finished, and versions added later\nthat a file has no copy of. Copies a function generated with its own parameters, versions only functions\nmake, and files that are not pictures are left alone. --missing-only makes only the copies that do not exist.\nThe job runs in the background (one per field at a time), makes at most --rate files a second, keeps serving\nthe old copy of a file until its new one is ready, and can be cancelled and resumed: running it again skips\nwhat matches already. This command follows its progress on stderr; --no-wait only starts it. Needs the config\narea with write access. Audited as files.versions.regenerate. " + adminAPINote).

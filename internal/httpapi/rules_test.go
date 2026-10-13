@@ -65,11 +65,12 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 		"acme/app/posts/schema.json":     postsSchema,
 		"acme/app/posts/collection.yaml": rulesSection(postsRules),
 		// Public caching of anonymous reads (see public_cache_test.go).
-		"acme/app/news/schema.json":     postsSchema,
-		"acme/app/news/collection.yaml": "cache: {public: true, max_age: 60}\nsoft_delete: true\n" + rulesSection("read: document.published == true || user != nil\ncreate: user != nil\nrestore: hasRole(user, 'staff')\n"),
-		"acme/app/notes/schema.json":     postsSchema,
-		"acme/app/notes/collection.yaml": rulesSection("read: user != nil\nwrite: user != nil\n"),
-		"acme/app/private/schema.json":   postsSchema,
+		"acme/app/news/schema.json":        postsSchema,
+		"acme/app/news/collection.yaml":    "cache: {public: true, max_age: 60}\nsoft_delete: true\n" + rulesSection("read: document.published == true || user != nil\ncreate: user != nil\nrestore: hasRole(user, 'staff')\n"),
+		"acme/app/notes/schema.json":       postsSchema,
+		"acme/app/notes/collection.yaml":   rulesSection("read: user != nil\nwrite: user != nil\n"),
+		"acme/app/private/schema.json":     postsSchema,
+		"acme/app/private/collection.yaml": "personal_data:\n  export: exclude\n  reason: fraud scores, exempt from access requests\n",
 		// A collection that soft-deletes (see soft_delete_test.go).
 		// …and one that soft-deletes without a restore rule (nobody sees its trash).
 		"acme/app/archive/schema.json":     postsSchema,

@@ -1400,6 +1400,20 @@ func TestContract(t *testing.T) {
 	req("GET", ad+"/storage", "", key, 200)
 	req("GET", ad+"/storage", "", nil, 401)
 	req("GET", ad+"/storage", "", ada, 403)
+	// The personal data scope: what an export would take from each collection.
+	req("GET", ad+"/compliance/scope", "", nil, 401)
+	req("GET", ad+"/compliance/scope", "", ada, 403)
+	scope := req("GET", ad+"/compliance/scope", "", key, 200)
+	excluded := false
+	for _, c := range scope["collections"].([]any) {
+		c := c.(map[string]any)
+		if c["collection"] == "private" {
+			excluded = c["export"] == "exclude" && c["reason"] == "fraud scores, exempt from access requests"
+		}
+	}
+	if !excluded {
+		t.Errorf("scope doesn't list the excluded collection: %v", scope["collections"])
+	}
 	req("POST", ad+"/storage/reconcile", `{}`, key, 200)
 	req("POST", ad+"/storage/reconcile", `{"delete": true}`, key, 200)
 	req("POST", ad+"/storage/reconcile", `{"delete": 5}`, key, 400)
