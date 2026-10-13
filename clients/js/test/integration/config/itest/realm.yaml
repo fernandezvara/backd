@@ -9,6 +9,12 @@ roles:
 cors:
   origins: [http://localhost:5173]
 
+# Consents, for the consents integration test: an optional one, so the other tests sign up as before.
+consents:
+  marketing:
+    required: false
+    current: "1"
+
 # Push notifications, for the push integration test: the capture provider stores each delivery
 # in the realm's push_outbox, which GET /_dev/push reads (development only).
 push:

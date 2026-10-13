@@ -100,6 +100,8 @@ export const useSession = defineStore('session', () => {
     begin(forRealm, keepInTab)
     const c = client.value!
     const result = await c.auth.signIn({ email: emailAddress, password })
+    // Consents are accepted in the app, not here: say so (the client throws an error that names them).
+    if ('consentRequired' in result) c.auth.session(result)
     if ('challenge' in result) {
       step.value = { kind: 'mfaRequired' in result ? 'code' : 'enroll', challenge: result.challenge }
       return step.value.kind

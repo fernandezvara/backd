@@ -3,6 +3,7 @@ export { Auth } from './auth.js'
 export { Database, Collection, ifMatchValue } from './data.js'
 export { Admin } from './admin.js'
 export { Push } from './push.js'
+export { Consents } from './consents.js'
 export { Files, versionStatus } from './files.js'
 export { Sha256, sha256Blob } from './sha256.js'
 export { Job, JobTimeoutError } from './functions.js'
@@ -18,6 +19,7 @@ export {
   NetworkError,
   VerificationRequiredError,
   SecondStepRequiredError,
+  ConsentRequiredError,
 } from './errors.js'
 export { memoryStorage, localStorageStorage } from './storage.js'
 export { parseReturn as parseOAuthReturn } from './oauth.js'
@@ -38,6 +40,10 @@ export { parseReturn as parseOAuthReturn } from './oauth.js'
  * @typedef {import('./oauth.js').OAuthReturn} OAuthReturn
  * @typedef {import('./auth.js').SessionInfo} SessionInfo
  * @typedef {import('./auth.js').AuthEvent} AuthEvent
+ * @typedef {import('./auth.js').ConsentChallenge} ConsentChallenge
+ * @typedef {import('./consents.js').ConsentInfo} ConsentInfo
+ * @typedef {import('./consents.js').ConsentText} ConsentText
+ * @typedef {import('./consents.js').ConsentState} ConsentState
  * @typedef {import('./push.js').Device} Device
  * @typedef {import('./push.js').DeviceInput} DeviceInput
  * @typedef {import('./push.js').PermissionState} PermissionState
