@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "items"
+  ],
+  "properties": {
+    "status": {
+      "enum": [
+        "new",
+        "paid",
+        "shipped"
+      ]
+    },
+    "total": {
+      "type": "number",
+      "minimum": 0
+    },
+    "note": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "paid_at": {
+      "type": "string",
+      "format": "date-time",
+      "x-backd-store": "date"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "address": {
+      "$ref": "#/$defs/address"
+    },
+    "legacy": {
+      "not": {
+        "type": "null"
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "sku",
+          "qty"
+        ],
+        "properties": {
+          "sku": {
+            "type": "string"
+          },
+          "qty": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "address": {
+      "type": "object",
+      "required": [
+        "city"
+      ],
+      "properties": {
+        "city": {
+          "type": "string"
+        },
+        "line2": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

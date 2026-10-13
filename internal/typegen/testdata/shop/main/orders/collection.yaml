@@ -1,0 +1,7 @@
+rules:
+  read: user != nil
+  create: user != nil
+files:
+  receipt:
+    max_size: 2MiB
+    types: [application/pdf]

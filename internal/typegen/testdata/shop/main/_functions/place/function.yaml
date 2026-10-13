@@ -1,0 +1,2 @@
+mode: sync
+invoke: user != nil

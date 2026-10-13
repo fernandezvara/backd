@@ -2891,6 +2891,48 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/types:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [admin]
+      summary: The realm's TypeScript types
+      description: |
+        The TypeScript types of the config this instance runs: documents, `where` and `order_by`
+        per collection, functions, app configuration, templates and roles, exactly what
+        `backd types` writes from `CONFIG_DIR`. `info` is the `realm.json` that goes with them
+        (the types' fingerprint and the type-level entries `backd types --diff` compares), and
+        `warnings` lists what a schema says that TypeScript can't express. `db` limits it to one
+        database. Needs the `config` area (a read-only administrator reads it).
+      operationId: adminTypes
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { name: db, in: query, required: false, schema: { type: string }, description: Only this database. }
+      responses:
+        "200":
+          description: The generated types.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [types, info, warnings]
+                properties:
+                  types: { type: string, description: The contents of types.d.ts. }
+                  info:
+                    type: object
+                    required: [generator, realm, fingerprint, entries]
+                    properties:
+                      generator: { type: string }
+                      realm: { type: string }
+                      fingerprint: { type: string }
+                      config: { type: string }
+                      entries: { type: object, additionalProperties: { type: string } }
+                  warnings: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/whoami:
     parameters: [{ $ref: "#/components/parameters/realm" }]
     get:

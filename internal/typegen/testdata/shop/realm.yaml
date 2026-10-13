@@ -1,0 +1,12 @@
+auth: enabled
+roles:
+  admin:
+    admin: true
+  member: {}
+storage:
+  provider: minio
+  endpoint: https://minio.example.com
+  bucket: shop-files
+  prefix: shop
+  access_key: secret:STORAGE_ACCESS_KEY
+  secret_key: secret:STORAGE_SECRET_KEY

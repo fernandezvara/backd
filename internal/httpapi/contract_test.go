@@ -946,6 +946,10 @@ func TestContract(t *testing.T) {
 	req("GET", ad+"/config", "", key, 200)
 	req("GET", ad+"/config", "", nil, 401)
 	req("GET", ad+"/config", "", ada, 403)
+	req("GET", ad+"/types", "", key, 200)
+	req("GET", ad+"/types?db=nope", "", key, 400)
+	req("GET", ad+"/types", "", nil, 401)
+	req("GET", ad+"/types", "", ada, 403)
 	req("GET", ad+"/users?q=ada", "", key, 200)
 	req("GET", ad+"/users?q=", "", key, 400)
 	// A user made for the purpose, so ending its session disturbs nobody else.

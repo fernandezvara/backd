@@ -1,0 +1,29 @@
+{
+  "type": "object",
+  "properties": {
+    "maintenance": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "shop": {
+      "type": "object",
+      "properties": {
+        "currency": {
+          "enum": [
+            "eur",
+            "usd"
+          ],
+          "default": "eur"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
