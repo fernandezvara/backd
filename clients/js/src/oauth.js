@@ -65,6 +65,7 @@ export function challengeOf(verifier) {
  * @property {string} verifier
  * @property {string} provider
  * @property {'signin' | 'link'} intent
+ * @property {string} [requestId]   A magic-link request waiting for its code.
  * @property {number} at
  */
 

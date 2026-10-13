@@ -80,6 +80,49 @@ await backd.auth.deleteAccount()             // needs a fresh proof; deactivates
 
 The endpoints behind these calls, and their rules, are described in [Sign-up, login and sessions](../../auth/sessions/).
 
+### Two-step sign-in and magic links
+
+A user with a [second factor](../../auth/mfa/) doesn't get a session from their password alone. `signIn()` returns the step as a value; `login()` and `signup()`, which promise a session, reject with a `SecondStepRequiredError` carrying the `challenge`.
+
+```js
+const result = await backd.auth.signIn({ email, password })
+if (result.mfaRequired) {
+  // result.methods: ['totp', 'recovery_code']
+  const session = await backd.auth.verifyMfa(result.challenge, 'totp', code)   // stores the session
+} else if (result.enrollmentRequired) {
+  // the user's role requires a second factor and they have none: set one up, no session yet
+  const setup = await backd.auth.mfa.setup({ challenge: result.challenge })    // { secret, otpauth_uri, qr (a PNG data URI) }
+  const done = await backd.auth.mfa.confirm({ challenge: result.challenge, setupId: setup.setup_id, code })
+  // done.recovery_codes (shown once) and done.session
+} else {
+  // result is the session
+}
+```
+
+The same steps come back from `completeSignIn()` / `auth.ready` after a provider or a magic link, and from `signInWithIdToken()`.
+
+```js
+// A signed-in user's own second factor; changes need a fresh proof (see below).
+await backd.auth.mfa.status()                    // { enabled, methods, recovery_codes_left, required }
+const setup = await backd.auth.mfa.setup()       // show setup.qr, or the secret
+const { recovery_codes } = await backd.auth.mfa.confirm({ setupId: setup.setup_id, code })
+await backd.auth.mfa.regenerateRecoveryCodes()
+await backd.auth.mfa.disable()                   // not for a role that requires it
+
+// The proof, asked for only when the server wants it, then the action once more:
+await backd.auth.withProof(async (methods) => ({ method: 'password', password: await ask() }),
+  () => backd.auth.mfa.disable())
+
+// A link and a code by email (the realm needs magic_link); no return route is needed.
+await backd.auth.magicLink.request('ada@example.com')   // the link comes back to this page
+const result = await backd.auth.magicLink.verifyCode('123456')   // or type the code here
+
+await backd.auth.password.set({ newPassword })    // an account that signs in another way may have none
+await backd.auth.password.remove()                // 409 last_sign_in_method when nothing else is left
+```
+
+Errors: `invalid_code` (a `ValidationError`, `details` has the attempts left), `invalid_challenge`, `mfa_locked` (a `RetryableError`, 429), `reauth_required` and, for a link or code, `invalid_magic_link`. A link opened on another device reports `wrong_device`, as for a provider. See [Multi-factor authentication](../../auth/mfa/), [Magic links](../../auth/magic-links/) and [Re-authentication](../../auth/reauth/).
+
 ### Account flows by email
 
 In a realm with [`email`](../../functions/email/), the links in the emails open pages of `backd` that need no code. An app that wants **its own pages** points the links at them (`email.links` in `realm.yaml`) and posts the token from the link with these calls, none of which needs a session or starts one:

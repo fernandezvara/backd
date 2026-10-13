@@ -16,6 +16,7 @@ export {
   RetryableError,
   NetworkError,
   VerificationRequiredError,
+  SecondStepRequiredError,
 } from './errors.js'
 export { memoryStorage, localStorageStorage } from './storage.js'
 export { parseReturn as parseOAuthReturn } from './oauth.js'

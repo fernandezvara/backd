@@ -1,4 +1,4 @@
-import { AuthenticationError, ValidationError, VerificationRequiredError } from './errors.js'
+import { AuthenticationError, SecondStepRequiredError, ValidationError, VerificationRequiredError } from './errors.js'
 import { COOKIE_SESSION } from './storage.js'
 import { defaultOAuthStorage, loadPending, newPKCE, oauthError, parseReturn, savePending, withoutReturn } from './oauth.js'
 
@@ -30,7 +30,7 @@ import { defaultOAuthStorage, loadPending, newPKCE, oauthError, parseReturn, sav
 
 /**
  * The signed-in user with their sign-in methods, oldest first.
- * @typedef {User & { identities: Identity[], reauth_methods: Array<'totp' | 'recovery_code' | 'password' | 'email_code'> }} Me
+ * @typedef {User & { identities: Identity[], reauth_methods: Array<'totp' | 'recovery_code' | 'password' | 'email_code'>, sign_in_methods: string[] }} Me
  */
 
 /**
@@ -57,6 +57,29 @@ import { defaultOAuthStorage, loadPending, newPKCE, oauthError, parseReturn, sav
 /**
  * The session a sign-in with a provider gives: a login's, and whether it made the user.
  * @typedef {Session & { new_user: boolean, profile?: Profile }} ProviderSession
+ */
+
+/**
+ * A sign-in that needs a code of the user's second factor before it gives a session: send it
+ * with {@link Auth#verifyMfa}.
+ * @typedef {object} MfaChallenge
+ * @property {true} mfaRequired
+ * @property {string} challenge
+ * @property {Array<'totp' | 'recovery_code'>} methods
+ */
+
+/**
+ * A sign-in of a user whose role requires a second factor and who has none: set one up with
+ * `auth.mfa.setup({ challenge })` and `auth.mfa.confirm({ challenge, setupId, code })`, which
+ * gives the session.
+ * @typedef {object} EnrollmentChallenge
+ * @property {true} enrollmentRequired
+ * @property {string} challenge
+ */
+
+/**
+ * What a first factor leads to: a session, or a second step.
+ * @typedef {Session | MfaChallenge | EnrollmentChallenge} SignInResult
  */
 
 /**
@@ -99,9 +122,133 @@ function compact(fields) {
   return Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined))
 }
 
+/** The signed-in user's second factor (`client.auth.mfa`). Changes need a fresh proof: see {@link Auth#reauth}. */
+class Mfa {
+  /** @param {Auth} auth */
+  constructor(auth) {
+    this.auth = auth
+  }
+
+  /**
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ available: boolean, enabled: boolean, methods: string[], recovery_codes_left: number, required: boolean }>}
+   */
+  async status(opts) {
+    return (await this.auth.client.request({ method: 'GET', path: ['_auth', 'mfa'], ...opts })).data
+  }
+
+  /**
+   * Starts setting an authenticator app up: the secret, the `otpauth_uri` and `qr` (a PNG data URI).
+   * With the `challenge` of an {@link EnrollmentChallenge} there is no session yet.
+   * @param {{ challenge?: string }} [input]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ setup_id: string, secret: string, otpauth_uri: string, qr: string, expires_at: string }>}
+   */
+  async setup(input = {}, opts) {
+    const { challenge } = input
+    return (await this.auth.client.request({
+      method: 'POST', path: ['_auth', 'mfa', 'totp', 'setup'], body: challenge ? { challenge } : undefined, reauth: !challenge, auth: !challenge, ...opts,
+    })).data
+  }
+
+  /**
+   * Turns it on with the first code of the app. Resolves with the `recovery_codes`, shown once; with
+   * a `challenge` it also ends the sign-in and the client holds the session (`session` is it).
+   * @param {{ setupId: string, code: string, challenge?: string }} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ recovery_codes: string[], session?: Session }>}
+   */
+  async confirm({ setupId, code, challenge }, opts) {
+    /** @type {Record<string, unknown>} */
+    const body = { setup_id: setupId, code }
+    if (challenge) {
+      body.challenge = challenge
+      if (this.auth.client.cookies) body.cookie = true
+    }
+    const { data } = await this.auth.client.request({
+      method: 'POST', path: ['_auth', 'mfa', 'totp', 'confirm'], body, reauth: !challenge, auth: !challenge, ...opts,
+    })
+    if (data.token || data.session_id) {
+      const { recovery_codes: codes, ...session } = data
+      return { recovery_codes: codes, session: /** @type {Session} */ (await this.auth.signedIn(session)) }
+    }
+    return { recovery_codes: data.recovery_codes }
+  }
+
+  /**
+   * Turns it off (not for a role that requires it: `mfa_required_by_role`).
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async disable(opts) {
+    await this.auth.client.request({ method: 'DELETE', path: ['_auth', 'mfa', 'totp'], reauth: true, ...opts })
+  }
+
+  /**
+   * Replaces the recovery codes; the new ones are shown once.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<string[]>}
+   */
+  async regenerateRecoveryCodes(opts) {
+    return (await this.auth.client.request({ method: 'POST', path: ['_auth', 'mfa', 'recovery-codes'], reauth: true, ...opts })).data.recovery_codes
+  }
+}
+
+/** Sign-in by a link or a code emailed to the user (`client.auth.magicLink`). */
+class MagicLink {
+  /** @param {Auth} auth */
+  constructor(auth) {
+    this.auth = auth
+  }
+
+  /**
+   * Asks for a message with a link and a 6-digit code. Always resolves, whatever the address is. The
+   * link ends at the current page (or `redirectTo`), where the client finishes the sign-in when it is
+   * created (see {@link Auth#ready}); the code is typed in this app with {@link MagicLink#verifyCode}.
+   * The PKCE verifier waits in the tab's storage for both.
+   * @param {string} email
+   * @param {{ redirectTo?: string, locale?: string }} [options]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ requestId: string }>}
+   */
+  async request(email, options = {}, opts) {
+    const here = globalThis.location
+    const redirectTo = options.redirectTo ?? (here ? here.origin + here.pathname : undefined)
+    const { verifier, challenge } = newPKCE()
+    const { data } = await this.auth.client.request({
+      method: 'POST', path: ['_auth', 'magic-link'], auth: false, ...opts,
+      body: compact({ email, redirect_to: redirectTo, code_challenge: challenge, locale: options.locale }),
+    })
+    savePending(this.auth.oauthStorage(), { verifier, provider: 'magic-link', intent: 'signin', requestId: data.request_id })
+    return { requestId: data.request_id }
+  }
+
+  /**
+   * Signs in with the code of the message, in the app that asked. The answer is the session or a
+   * second step, like {@link Auth#login}'s. A wrong code is `invalid_code` (five end the request);
+   * a request that is unknown, used or expired is `invalid_magic_link`.
+   * @param {string} code
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<ProviderSession | MfaChallenge | EnrollmentChallenge>}
+   */
+  async verifyCode(code, opts) {
+    const storage = this.auth.oauthStorage()
+    const pending = loadPending(storage)
+    if (!pending || !pending.requestId) {
+      throw new ValidationError({ status: 400, code: 'no_request', message: 'ask for a link first, in this tab: request(email)' })
+    }
+    /** @type {Record<string, unknown>} */
+    const body = { request_id: pending.requestId, code: code.trim(), code_verifier: pending.verifier }
+    if (this.auth.client.cookies) body.cookie = true
+    const { data } = await this.auth.client.request({ method: 'POST', path: ['_auth', 'magic-link', 'verify'], body, auth: false, ...opts })
+    storage.remove()
+    return /** @type {any} */ (await this.auth.step(data))
+  }
+}
+
 /** Sign-up, login and session management: `client.auth`. */
 export class Auth {
-  /** @type {Promise<ProviderSession | { linked: string } | null> | undefined} */
+  /** @type {Promise<ProviderSession | MfaChallenge | EnrollmentChallenge | { linked: string } | null> | undefined} */
   #completed = undefined
 
   /** @param {Client} client */
@@ -117,9 +264,75 @@ export class Auth {
      * (`new_user`, `profile`), `{ linked }`, or `null` for an ordinary visit; rejects with the
      * `BackdError` of a failed sign-in (`wrong_device` when the page is not where it was started).
      * It never settles before the client is created and is the same promise for every reader.
-     * @type {Promise<ProviderSession | { linked: string } | null>}
+     * @type {Promise<ProviderSession | MfaChallenge | EnrollmentChallenge | { linked: string } | null>}
      */
     this.ready = Promise.resolve(null)
+    /** The signed-in user's second factor: `client.auth.mfa`. */
+    this.mfa = new Mfa(this)
+    /** Sign-in by an emailed link and code: `client.auth.magicLink`. */
+    this.magicLink = new MagicLink(this)
+    /** Setting and removing the password of an account that may sign in another way. */
+    this.password = {
+      /** @param {{ newPassword: string }} input @param {RequestOptions} [opts] */
+      set: (input, opts) => this.changePassword(input, opts),
+      /** @param {RequestOptions} [opts] */
+      remove: async (opts) => {
+        await this.client.request({ method: 'DELETE', path: ['_auth', 'password'], reauth: true, ...opts })
+      },
+    }
+  }
+
+  /**
+   * What a first factor answered: the session (stored), or the second step the user has to take.
+   * @internal
+   * @param {any} data
+   * @returns {Promise<SignInResult>}
+   */
+  async step(data) {
+    if (data?.mfa_required) return { mfaRequired: true, challenge: data.challenge, methods: data.methods }
+    if (data?.mfa_enrollment_required) return { enrollmentRequired: true, challenge: data.challenge }
+    return this.signedIn(data)
+  }
+
+  /**
+   * Finishes a sign-in that answered with an {@link MfaChallenge}: the code of the user's
+   * authenticator app (`totp`) or a recovery code (`recovery_code`). Resolves with the session (a
+   * provider's also has `new_user`, a recovery code `recovery_codes_left`). Rejects with
+   * `invalid_code` (a `ValidationError`; `details` has the attempts left), `invalid_challenge`
+   * after five wrong ones or five minutes, and `mfa_locked` (a `RetryableError`, 429) after ten wrong
+   * codes in an hour.
+   * @param {string} challenge
+   * @param {'totp' | 'recovery_code'} method
+   * @param {string} code
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<Session & { new_user?: boolean, profile?: Profile, recovery_codes_left?: number }>}
+   */
+  async verifyMfa(challenge, method, code, opts) {
+    /** @type {Record<string, unknown>} */
+    const body = { challenge, method, code }
+    if (this.client.cookies) body.cookie = true
+    const { data } = await this.client.request({ method: 'POST', path: ['_auth', 'mfa', 'verify'], body, auth: false, ...opts })
+    return /** @type {any} */ (await this.signedIn(data))
+  }
+
+  /**
+   * Runs a sensitive action, asking the user for a fresh proof when the server wants one: `ask`
+   * gets the proofs the user can give (`totp`, `recovery_code`, `password` or `email_code`) and
+   * resolves with the one to use, as {@link Auth#reauth} takes it; the action is then tried once more.
+   * @template T
+   * @param {(methods: string[]) => Promise<{ method: 'totp' | 'recovery_code' | 'password' | 'email_code', code?: string, password?: string }>} ask
+   * @param {() => Promise<T>} action
+   * @returns {Promise<T>}
+   */
+  async withProof(ask, action) {
+    try {
+      return await action()
+    } catch (err) {
+      if (!(err instanceof AuthenticationError) || err.code !== 'reauth_required') throw err
+    }
+    const me = await this.me()
+    await this.reauth(await ask(me.reauth_methods ?? []))
+    return action()
   }
 
   /**
@@ -149,6 +362,8 @@ export class Auth {
    * creates the account but starts no session: this rejects with a
    * {@link VerificationRequiredError}, nothing is stored, and the user signs
    * in after following the link in the email they were sent.
+   * A user whose role requires a second factor has no session yet: this rejects with a
+   * {@link SecondStepRequiredError} (`mfa_enrollment_required`) carrying the challenge.
    * @param {{ email: string, password: string, invitation?: string, locale?: string, redirectTo?: string }} input
    * @param {RequestOptions} [opts]
    * @returns {Promise<Session>}
@@ -164,19 +379,50 @@ export class Auth {
     if (status === 202) {
       throw new VerificationRequiredError({ status, code: 'verification_required', message: 'the account was created: verify the email address, then sign in' })
     }
-    return this.signedIn(data)
+    return this.session(await this.step(data))
   }
 
   /**
-   * Signs in with email and password.
+   * Turns a step into the session a method promises, or throws {@link SecondStepRequiredError}.
+   * @internal
+   * @param {SignInResult} result
+   * @returns {Session}
+   */
+  session(result) {
+    if ('challenge' in result) {
+      const enroll = 'enrollmentRequired' in result
+      throw new SecondStepRequiredError({
+        status: 200, code: enroll ? 'mfa_enrollment_required' : 'mfa_required', challenge: result.challenge,
+        methods: enroll ? [] : result.methods,
+        message: enroll ? 'this account must set up a second factor: auth.mfa.setup({ challenge })' : 'a code of the second factor is needed: auth.verifyMfa(challenge, method, code)',
+      })
+    }
+    return result
+  }
+
+  /**
+   * Signs in with email and password. The answer is the session, or, for a user with a second
+   * factor, an {@link MfaChallenge} to finish with {@link Auth#verifyMfa}, or an
+   * {@link EnrollmentChallenge}: check `'challenge' in result`. Nothing is stored until a session.
+   * @param {{ email: string, password: string }} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<SignInResult>}
+   */
+  async signIn({ email, password }, opts) {
+    const body = this.client.cookies ? { email, password, cookie: true } : { email, password }
+    const { data } = await this.client.request({ method: 'POST', path: ['_auth', 'login'], body, auth: false, ...opts })
+    return this.step(data)
+  }
+
+  /**
+   * Signs in with email and password and promises a session: a user who needs a second step makes
+   * this reject with a {@link SecondStepRequiredError} (use {@link Auth#signIn} to get the step as a value).
    * @param {{ email: string, password: string }} input
    * @param {RequestOptions} [opts]
    * @returns {Promise<Session>}
    */
-  async login({ email, password }, opts) {
-    const body = this.client.cookies ? { email, password, cookie: true } : { email, password }
-    const { data } = await this.client.request({ method: 'POST', path: ['_auth', 'login'], body, auth: false, ...opts })
-    return this.signedIn(data)
+  async login(input, opts) {
+    return this.session(await this.signIn(input, opts))
   }
 
   /**
@@ -220,15 +466,18 @@ export class Auth {
     const { data } = await this.client.request({
       method: 'POST', path: ['_auth', 'oauth', provider, 'start'], body, auth: intent === 'link', ...opts,
     })
-    savePending(this.#oauthStorage(), { verifier, provider, intent })
+    savePending(this.oauthStorage(), { verifier, provider, intent })
     const authorizeUrl = /** @type {string} */ (data.authorize_url)
     if (options.navigate) await options.navigate(authorizeUrl)
     else if (here) here.assign(authorizeUrl)
     return { authorizeUrl }
   }
 
-  /** @returns {import('./oauth.js').OAuthStorage} */
-  #oauthStorage() {
+  /**
+   * @internal
+   * @returns {import('./oauth.js').OAuthStorage}
+   */
+  oauthStorage() {
     return (this._oauthStorage ??= this.client.oauthStorage ?? defaultOAuthStorage())
   }
 
@@ -248,13 +497,13 @@ export class Auth {
    * verifier to redeem the code with: that rejects with a `ValidationError` whose `code` is `wrong_device`.
    * @param {string | URL} [href]  The address to read; the page's own by default.
    * @param {RequestOptions} [opts]
-   * @returns {Promise<ProviderSession | { linked: string } | null>}
+   * @returns {Promise<ProviderSession | MfaChallenge | EnrollmentChallenge | { linked: string } | null>}
    */
   async completeSignIn(href = globalThis.location?.href, opts) {
     if (arguments.length === 0 && this.#completed) return this.#completed
     const ret = parseReturn(href)
     if (!ret || !href) return null
-    const storage = this.#oauthStorage()
+    const storage = this.oauthStorage()
     const pending = loadPending(storage)
     storage.remove()
     if (globalThis.history?.replaceState && globalThis.location && String(href) === globalThis.location.href) {
@@ -269,7 +518,7 @@ export class Auth {
     const body = { code: ret.code, code_verifier: pending.verifier }
     if (this.client.cookies) body.cookie = true
     const { data } = await this.client.request({ method: 'POST', path: ['_auth', 'token'], body, auth: false, ...opts })
-    return /** @type {ProviderSession} */ (await this.signedIn(data))
+    return /** @type {any} */ (await this.step(data))
   }
 
   /**
@@ -291,13 +540,13 @@ export class Auth {
    * @param {string} provider
    * @param {{ idToken: string, nonce: string, authorizationCode?: string, invitation?: string, locale?: string }} input
    * @param {RequestOptions} [opts]
-   * @returns {Promise<ProviderSession>}
+   * @returns {Promise<ProviderSession | MfaChallenge | EnrollmentChallenge>}
    */
   async signInWithIdToken(provider, input, opts) {
     const { data } = await this.client.request({
       method: 'POST', path: ['_auth', 'oauth', provider, 'id-token'], body: this.#idTokenBody(input), auth: false, ...opts,
     })
-    return /** @type {ProviderSession} */ (await this.signedIn(data))
+    return /** @type {any} */ (await this.step(data))
   }
 
   /**

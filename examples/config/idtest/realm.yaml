@@ -32,6 +32,15 @@ roles:
     description: Manages users, invitations, API keys and secrets
     admin: true
 
+# Two-step verification and magic links (design/mfa-passwordless.md): the app's
+# password form asks for the code of an authenticator app, and the account
+# section turns it on. Uncomment to require it of the administrators, or to
+# try sign-in by an emailed link (that needs an `email:` section too).
+# mfa:
+#   required_roles: [admin]
+# magic_link:
+#   enabled: true
+
 sign_in:
   # Origins (no path) and app schemes a sign-in may send the user back to.
   # The local stack serves the app at https://localhost:8443/example/providers/;

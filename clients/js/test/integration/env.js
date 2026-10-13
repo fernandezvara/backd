@@ -54,3 +54,21 @@ export async function linkToken(kind, address, { after = '' } = {}) {
   }
   throw new Error(`no ${kind} email for ${address} in the outbox`)
 }
+
+/**
+ * Waits for an email of a kind to an address and returns the 6-digit code in its text.
+ * @param {string} kind
+ * @param {string} address
+ * @param {{ after?: string }} [opts]
+ */
+export async function mailCode(kind, address, { after = '' } = {}) {
+  const outbox = mailClient().db('notifications').collection('outbox')
+  for (let i = 0; i < 100; i++) {
+    const page = await outbox.list({ orderBy: '-_meta.created_at', limit: 100 })
+    const mail = page.items.find((m) => m.kind === kind && m.to.includes(address.toLowerCase()) && m.id > after)
+    const found = mail?.text.match(/\b(\d{6})\b/)
+    if (mail && found) return { code: found[1], id: mail.id }
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  throw new Error(`no ${kind} email with a code for ${address} in the outbox`)
+}

@@ -48,6 +48,26 @@ export class ForbiddenError extends BackdError {}
  */
 export class VerificationRequiredError extends BackdError {}
 
+/**
+ * Not an HTTP error: a password login (or sign-up) that needs a second step before it gives a
+ * session. `auth.login()` and `auth.signup()` promise a session, so they throw this instead;
+ * `auth.signIn()` returns the step as a value. `code` is `mfa_required` (finish with
+ * `auth.verifyMfa(error.challenge, method, code)`; `methods` says which) or
+ * `mfa_enrollment_required` (set a second factor up with `auth.mfa.setup({ challenge })`).
+ */
+export class SecondStepRequiredError extends BackdError {
+  /**
+   * @param {ConstructorParameters<typeof BackdError>[0] & { challenge: string, methods?: string[] }} init
+   */
+  constructor(init) {
+    super(init)
+    /** @type {string} */
+    this.challenge = init.challenge
+    /** @type {string[]} */
+    this.methods = init.methods ?? []
+  }
+}
+
 /** 404: unknown realm, collection, document, user or session. */
 export class NotFoundError extends BackdError {}
 
