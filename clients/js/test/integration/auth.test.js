@@ -13,8 +13,10 @@ test('sign-up, me, sessions, logout', { skip }, async () => {
   const s = await c.auth.signup({ email: address.toUpperCase(), password })
   assert.match(String(s.token), /^bds_/)
   assert.equal(s.user.email, address)
-  const { identities, reauth_methods: reauthMethods, sign_in_methods: signInMethods, ...me } = await c.auth.me()
+  // The realm declares an optional consent, so `me` also says what the user holds and has to accept.
+  const { identities, reauth_methods: reauthMethods, sign_in_methods: signInMethods, consents, to_accept: toAccept, ...me } = await c.auth.me()
   assert.deepEqual(me, s.user)
+  assert.deepEqual([consents, toAccept], [{}, []])
   assert.deepEqual(identities.map((i) => i.provider), ['password'])
   assert.deepEqual(reauthMethods, ['password'])
   assert.deepEqual(signInMethods, ['password'])
