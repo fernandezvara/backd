@@ -186,16 +186,12 @@ func parseCompliance(n yaml.Node) (ComplianceSettings, []error) {
 	}
 	if doc.ConsentRetention != nil {
 		v := *doc.ConsentRetention
-		switch {
-		case v == "0":
+		if v == "0" {
 			out.ConsentRetentionSet = true
-		default:
-			d, err := parseRetention(v)
-			if err != nil {
-				errs = append(errs, fmt.Errorf("compliance.consent_retention: %w", err))
-			} else {
-				out.ConsentRetention, out.ConsentRetentionSet = d, true
-			}
+		} else if d, err := parseRetention(v); err != nil {
+			errs = append(errs, fmt.Errorf("compliance.consent_retention: %w", err))
+		} else {
+			out.ConsentRetention, out.ConsentRetentionSet = d, true
 		}
 	}
 	return out, errs
