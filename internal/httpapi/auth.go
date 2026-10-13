@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"maps"
 	"net/http"
 	"slices"
 	"sort"
@@ -41,6 +42,10 @@ func (a *authAPI) routes(r chi.Router) {
 		r.With(json).Post("/signup", a.signup)
 		r.With(json).Post("/login", a.login)
 		r.With(json).Post("/mfa/verify", a.mfaVerify)
+		// Both act on a session, or on the challenge of a sign-in that must set a second
+		// factor up: they look for either themselves.
+		r.Post("/mfa/totp/setup", a.mfaSetup)
+		r.Post("/mfa/totp/confirm", a.mfaConfirm)
 		r.With(json).Post("/verify-email/resend", a.resendVerification)
 		r.With(json).Post("/reset-password/request", a.requestPasswordReset)
 		a.hostedRoutes(r)
@@ -56,8 +61,6 @@ func (a *authAPI) routes(r chi.Router) {
 			r.With(json).Post("/email", a.changeEmail)
 			r.Delete("/identities/{provider}", a.unlinkIdentity)
 			r.Get("/mfa", a.mfaStatus)
-			r.Post("/mfa/totp/setup", a.mfaSetup)
-			r.With(json).Post("/mfa/totp/confirm", a.mfaConfirm)
 			r.Delete("/mfa/totp", a.mfaDisable)
 			r.Post("/mfa/recovery-codes", a.mfaRecoveryCodes)
 			r.Get("/sessions", a.sessions)
@@ -206,6 +209,11 @@ func (a *authAPI) login(w http.ResponseWriter, r *http.Request) {
 // that asks for the next step. provider says the sign-in is a provider's, whose answer
 // also says whether it made the user.
 func (a *authAPI) answerSignIn(w http.ResponseWriter, r *http.Request, out auth.Redeemed, status int, useCookie, provider bool) {
+	a.answerSignInWith(w, r, out, status, useCookie, provider, nil)
+}
+
+// answerSignInWith is answerSignIn with more fields in the session's answer.
+func (a *authAPI) answerSignInWith(w http.ResponseWriter, r *http.Request, out auth.Redeemed, status int, useCookie, provider bool, extra map[string]any) {
 	svc := usersOf(r)
 	if c := out.Challenge; c != nil {
 		writeJSON(w, http.StatusOK, challengeJSON(c))
@@ -224,6 +232,7 @@ func (a *authAPI) answerSignIn(w http.ResponseWriter, r *http.Request, out auth.
 	if out.RecoveryCodesLeft != nil {
 		body["recovery_codes_left"] = *out.RecoveryCodesLeft
 	}
+	maps.Copy(body, extra)
 	writeJSON(w, status, body)
 }
 

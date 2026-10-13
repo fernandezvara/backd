@@ -702,7 +702,9 @@ func TestContract(t *testing.T) {
 		req("GET", a+"/mfa", "", nil, 401)
 		setup := req("POST", a+"/mfa/totp/setup", "", mine, 200)
 		req("POST", a+"/mfa/totp/setup", "", nil, 401)
-		confirmBody := func(c string) string { return `{"setup_id": "` + setup["setup_id"].(string) + `", "code": "` + c + `"}` }
+		confirmBody := func(c string) string {
+			return `{"setup_id": "` + setup["setup_id"].(string) + `", "code": "` + c + `"}`
+		}
 		req("POST", a+"/mfa/totp/confirm", confirmBody("000000"), jsonMine, 400)
 		req("POST", a+"/mfa/totp/confirm", `{}`, jsonMine, 400)
 		req("POST", a+"/mfa/totp/confirm", confirmBody("000000"), map[string]string{"Content-Type": "application/json"}, 401)
@@ -731,9 +733,24 @@ func TestContract(t *testing.T) {
 		f.svc.Settings.MFA.RequiredAll = true
 		withEmail := f.svc.Settings.Email
 		f.svc.Settings.Email = nil
-		req("POST", a+"/signup", `{"email": "enroll@example.com", "password": "dev-p4ssw0rd!"}`, nil, 200)
+		enrolling := req("POST", a+"/signup", `{"email": "enroll@example.com", "password": "dev-p4ssw0rd!"}`, nil, 200)["challenge"].(string)
 		f.svc.Settings.Email = withEmail
 		req("POST", a+"/login", `{"email": "enroll@example.com", "password": "dev-p4ssw0rd!"}`, nil, 200)
+		// …which the challenge does, without a session: setup, then the first code.
+		jsonOnly := map[string]string{"Content-Type": "application/json"}
+		req("POST", a+"/mfa/totp/setup", `{"challenge": "nope"}`, jsonOnly, 400)
+		cs := req("POST", a+"/mfa/totp/setup", `{"challenge": "`+enrolling+`"}`, jsonOnly, 200)
+		cbody := func(c string) string {
+			return `{"challenge": "` + enrolling + `", "setup_id": "` + cs["setup_id"].(string) + `", "code": "` + c + `"}`
+		}
+		req("POST", a+"/mfa/totp/confirm", cbody("000000"), jsonOnly, 400)
+		req("POST", a+"/mfa/totp/confirm", `{"challenge": "nope", "setup_id": "x", "code": "123456"}`, jsonOnly, 400)
+		first, _ := totp.GenerateCode(cs["secret"].(string), f.svc.Clock())
+		done := req("POST", a+"/mfa/totp/confirm", cbody(first), jsonOnly, 200)
+		if done["token"] == nil || done["recovery_codes"] == nil {
+			t.Errorf("enrolling from a challenge: %v", done)
+		}
+		req("POST", a+"/mfa/totp/confirm", cbody(first), jsonOnly, 400)
 		f.svc.Settings.MFA.RequiredAll = false
 		// Ten wrong codes in a row lock the user for a while.
 		for range 10 {
@@ -894,6 +911,21 @@ func TestContract(t *testing.T) {
 	req("GET", ad+"/users/"+temp.ID+"/identities", "", nil, 401)
 	req("GET", ad+"/users/"+temp.ID+"/identities", "", ada, 403)
 	req("GET", ad+"/users/nope/identities", "", key, 404)
+	// The user's second factor, and who must set one up.
+	if st := req("GET", ad+"/users/"+temp.ID+"/mfa", "", key, 200); st["enabled"] != false || st["required"] != false {
+		t.Errorf("mfa of a user with none: %v", st)
+	}
+	req("GET", ad+"/users/"+temp.ID+"/mfa", "", nil, 401)
+	req("GET", ad+"/users/"+temp.ID+"/mfa", "", ada, 403)
+	req("GET", ad+"/users/nope/mfa", "", key, 404)
+	f.svc.Settings.MFA.RequiredAll = true
+	over := req("GET", ad+"/mfa", "", key, 200)
+	if over["required_all"] != true || over["total_without_mfa"].(float64) < 1 || len(over["users_without_mfa"].([]any)) < 1 {
+		t.Errorf("mfa overview: %v", over)
+	}
+	f.svc.Settings.MFA.RequiredAll = false
+	req("GET", ad+"/mfa", "", nil, 401)
+	req("GET", ad+"/mfa", "", ada, 403)
 	req("DELETE", ad+"/users/"+temp.ID+"/identities/password", "", key, 409)
 	req("DELETE", ad+"/users/"+temp.ID+"/identities/google", "", key, 404)
 	req("DELETE", ad+"/users/"+temp.ID+"/identities/google", "", nil, 401)

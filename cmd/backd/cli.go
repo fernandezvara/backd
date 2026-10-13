@@ -226,6 +226,9 @@ func registerRemote(cfg *kli.Config) {
 	user("unlink-identity", "remove one of the user's ways to sign in, never the last (password included)", true, userUnlinkIdentity, func(cc *kli.CommandConfig) {
 		required(cc, "provider", "the sign-in method to remove: password, google, microsoft, apple…")
 	})
+	user("mfa-status", "show a user's second factor; without --email, who must set one up", false, userMFAStatus, func(cc *kli.CommandConfig) {
+		optional(cc, "email", "the user to show (default: the users of required roles who have no second factor yet)")
+	})
 	user("owned", "show what erasing the user would do, per collection that declares a policy", true, userOwned, nil)
 	user("verify-email", "mark the email as verified", true, userPatch(map[string]bool{"email_verified": true}, "email of %s marked as verified\n"), nil)
 	user("disable", "block sign-in and revoke all sessions", true, userPatch(map[string]bool{"disabled": true}, "%s disabled; all of their sessions were revoked\n"), nil)

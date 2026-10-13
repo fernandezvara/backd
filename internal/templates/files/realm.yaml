@@ -159,6 +159,9 @@ auth: enabled
 # mfa:
 #   enabled: true                  # false: users can't turn TOTP on (those who have it are still asked)
 #   issuer: Acme                   # the name authenticator apps show; the realm's name by default
+#   required_roles: [admin]        # roles that must use it (or `all`): a sign-in without a second
+#                                  # factor sets one up first. Name your admin roles here: a stolen
+#                                  # password is then not enough to administer the realm
 
 # Accounts. Each setting here but on_signup needs the `email:` section above.
 # account:

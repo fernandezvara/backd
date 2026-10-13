@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/auth/authtest"
@@ -356,4 +357,57 @@ func TestLoginRefusesASecondStep(t *testing.T) {
 	if _, err := os.Stat(creds); err == nil {
 		t.Error("a session was stored")
 	}
+}
+
+func TestUserMFAStatus(t *testing.T) {
+	root := writeConfig(t, map[string]string{
+		"acme/realm.yaml":            "mfa:\n  required_roles: [editor]\nroles:\n  ops:\n    admin: true\n    users: [ada@example.com]\n  editor:\n    users: [bob@example.com, cy@example.com, dan@example.com]\n",
+		"acme/app/notes/schema.json": `{}`,
+	})
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	store := authtest.NewMemStore()
+	svc := &auth.Users{
+		Store:    store,
+		Hasher:   auth.NewHasher(2, auth.Argon2Params{Memory: 64, Time: 1, Threads: 1}),
+		Settings: reg.Realms["acme"].Settings,
+	}
+	pw := "dev-p4ssw0rd!"
+	ids := map[string]string{}
+	for _, e := range []string{"ada@example.com", "bob@example.com", "cy@example.com", "dan@example.com"} {
+		u, err := svc.Create(ctx, e, &pw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids[e] = u.ID
+	}
+	// Cy has set a second factor up; Dan is disabled.
+	if err := store.PutMFA(ctx, auth.MFARecord{UserID: ids["cy@example.com"], Secret: "k.n.c", EnabledAt: time.Now(), RecoveryCodes: []string{"a", "b"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetDisabled(ctx, "dan@example.com", true); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(httpapi.NewHandler(httpapi.Config{
+		Log: slog.New(slog.NewJSONHandler(io.Discard, nil)), Registry: reg, Ready: func(context.Context) error { return nil },
+		Users: func(realm string) *auth.Users {
+			if realm == "acme" {
+				return svc
+			}
+			return nil
+		},
+	}))
+	defer srv.Close()
+	c := &cliEnv{t: t, env: map[string]string{"BACKD_CREDENTIALS": filepath.Join(t.TempDir(), "credentials")}}
+	c.expect(0, "logged in", pw+"\n", "login", "--realm", "acme", "--url", srv.URL, "--email", "ada@example.com")
+	out := c.expect(0, "required for the roles: editor", "", "user", "mfa-status", "--realm", "acme")
+	if !strings.Contains(out, "1 user(s) have none yet") || !strings.Contains(out, "bob@example.com (editor)") || strings.Contains(out, "cy@") || strings.Contains(out, "dan@") {
+		t.Errorf("overview: %s", out)
+	}
+	c.expect(0, "bob@example.com: second factor off; required by role: true; recovery codes left: 0", "", "user", "mfa-status", "--realm", "acme", "--email", "bob@example.com")
+	c.expect(0, "cy@example.com: second factor on; required by role: true; recovery codes left: 2", "", "user", "mfa-status", "--realm", "acme", "--email", "cy@example.com")
+	c.expect(1, "user not found", "", "user", "mfa-status", "--realm", "acme", "--email", "nobody@example.com")
 }

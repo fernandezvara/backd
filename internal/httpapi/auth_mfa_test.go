@@ -234,7 +234,9 @@ func TestEnrollingTOTPOverHTTP(t *testing.T) {
 		!strings.HasPrefix(setup["qr"].(string), "data:image/png;base64,") || setup["setup_id"] == "" {
 		t.Fatalf("setup: %d %v", code, setup)
 	}
-	body := func(c string) string { return `{"setup_id": "` + setup["setup_id"].(string) + `", "code": "` + c + `"}` }
+	body := func(c string) string {
+		return `{"setup_id": "` + setup["setup_id"].(string) + `", "code": "` + c + `"}`
+	}
 	if code, out := f.send(t, token, "POST", authBase+"/mfa/totp/confirm", body("000000")); code != 400 || errCode(out) != "invalid_code" {
 		t.Errorf("wrong code: %d %v", code, out)
 	}
@@ -300,4 +302,42 @@ func (f *mfaHTTP) sessionOf(t *testing.T) string {
 		t.Fatalf("verify: %d %v", rec.Code, out)
 	}
 	return out["token"].(string)
+}
+
+func TestEnrollingFromAChallengeOverHTTP(t *testing.T) {
+	f := newAuthFixture(t)
+	f.svc.Realm = "acme"
+	f.svc.Cipher, _ = auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
+	f.svc.Settings.MFA.RequiredAll = true
+	rec, out := f.do(t, "POST", authBase+"/signup", `{"email": "kim@example.com", "password": "dev-p4ssw0rd!"}`)
+	challenge, _ := out["challenge"].(string)
+	if rec.Code != 200 || out["mfa_enrollment_required"] != true || challenge == "" {
+		t.Fatalf("signup: %d %v", rec.Code, out)
+	}
+	// The challenge is no session for anything but the two steps of enrolling.
+	if code, _ := f.as(t, challenge, "GET", authBase+"/mfa"); code != 401 {
+		t.Errorf("challenge as a session: %d", code)
+	}
+	rec, setup := f.doH(t, "POST", authBase+"/mfa/totp/setup", `{"challenge": "`+challenge+`"}`, map[string]string{"Content-Type": "application/json"})
+	if rec.Code != 200 || setup["secret"] == nil {
+		t.Fatalf("setup: %d %v", rec.Code, setup)
+	}
+	// No challenge and no session: unauthenticated; a body that is not JSON: refused.
+	if rec, _ := f.doH(t, "POST", authBase+"/mfa/totp/setup", "", nil); rec.Code != 401 {
+		t.Errorf("setup with nothing: %d", rec.Code)
+	}
+	if rec, out := f.doH(t, "POST", authBase+"/mfa/totp/setup", "challenge=x", map[string]string{"Content-Type": "text/plain"}); rec.Code != 415 {
+		t.Errorf("setup with text: %d %v", rec.Code, out)
+	}
+	code, _ := totp.GenerateCode(setup["secret"].(string), f.svc.Clock())
+	body := `{"challenge": "` + challenge + `", "setup_id": "` + setup["setup_id"].(string) + `", "code": "` + code + `"}`
+	rec, done := f.doH(t, "POST", authBase+"/mfa/totp/confirm", body, map[string]string{"Content-Type": "application/json"})
+	token, _ := done["token"].(string)
+	codes, _ := done["recovery_codes"].([]any)
+	if rec.Code != 200 || !strings.HasPrefix(token, "bds_") || len(codes) != 10 || done["user"] == nil {
+		t.Fatalf("confirm: %d %v", rec.Code, done)
+	}
+	if c, me := f.as(t, token, "GET", authBase+"/me"); c != 200 || me["email"] != "kim@example.com" {
+		t.Errorf("me: %d %v", c, me)
+	}
 }

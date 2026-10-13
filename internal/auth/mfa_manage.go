@@ -59,6 +59,45 @@ func (s *Users) MFAStatusOf(ctx context.Context, u User) (MFAStatus, error) {
 	return st, nil
 }
 
+// UsersWithoutRequiredMFA lists, up to limit, the users whose role requires a second factor
+// and who have none, oldest first by address, and says how many there are in all. Erased and
+// disabled users are not counted: they can't sign in.
+func (s *Users) UsersWithoutRequiredMFA(ctx context.Context, limit int) ([]User, int, error) {
+	if !s.Settings.MFA.RequiredAll && len(s.Settings.MFA.RequiredRoles) == 0 {
+		return nil, 0, nil
+	}
+	have, err := s.Store.MFAUserIDs(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	enrolled := make(map[string]bool, len(have))
+	for _, id := range have {
+		enrolled[id] = true
+	}
+	var out []User
+	total := 0
+	after := ""
+	for {
+		page, more, err := s.Store.ListUsersPage(ctx, "", after, 0, 500)
+		if err != nil {
+			return nil, 0, err
+		}
+		for _, u := range page {
+			if u.Disabled || !u.ErasedAt.IsZero() || enrolled[u.ID] || !s.Settings.MFA.Required(u.Roles) {
+				continue
+			}
+			total++
+			if len(out) < limit {
+				out = append(out, u)
+			}
+		}
+		if !more || len(page) == 0 {
+			return out, total, nil
+		}
+		after = page[len(page)-1].Email
+	}
+}
+
 // TOTPSetup is a secret an authenticator app is to be given.
 type TOTPSetup struct {
 	SetupID string
@@ -198,6 +237,71 @@ func (s *Users) enableMFA(ctx context.Context, u User, sealed string, step int64
 	s.Audit(ctx, AuditMFAEnabled, userTarget(u.ID), nil)
 	s.securityNotice(ctx, u, "mfa-enabled", 0)
 	return codes, nil
+}
+
+// enrollChallenge resolves the challenge of a sign-in that must set a second factor up to
+// its user. Any other challenge, an unknown, used or expired one, is ErrInvalidChallenge.
+func (s *Users) enrollChallenge(ctx context.Context, token string) (AuthChallenge, User, error) {
+	if token == "" {
+		return AuthChallenge{}, User{}, ErrInvalidChallenge
+	}
+	c, err := s.Store.GetChallenge(ctx, HashToken(token), s.now())
+	if errors.Is(err, ErrNotFound) || (err == nil && c.Kind != ChallengeEnroll) {
+		return AuthChallenge{}, User{}, ErrInvalidChallenge
+	}
+	if err != nil {
+		return AuthChallenge{}, User{}, err
+	}
+	u, err := s.Store.UserByID(ctx, c.UserID)
+	if errors.Is(err, ErrNotFound) || (err == nil && (u.Disabled || !u.ErasedAt.IsZero())) {
+		return AuthChallenge{}, User{}, ErrInvalidChallenge
+	}
+	return c, u, err
+}
+
+// BeginEnrollment starts the TOTP setup of a user whose sign-in is waiting for one (their
+// role requires MFA): the same secret and QR as BeginTOTPSetup, asked for with the challenge
+// the first factor gave instead of a session.
+func (s *Users) BeginEnrollment(ctx context.Context, challenge string) (TOTPSetup, error) {
+	_, u, err := s.enrollChallenge(ctx, challenge)
+	if err != nil {
+		return TOTPSetup{}, err
+	}
+	return s.BeginTOTPSetup(ctx, u)
+}
+
+// CompleteEnrollment confirms the TOTP setup of a waiting sign-in with its first code, and
+// finishes the sign-in: the outcome is the session the first factor was waiting for, with
+// the second one recorded, and the recovery codes, shown once. Five wrong codes end the
+// challenge.
+func (s *Users) CompleteEnrollment(ctx context.Context, challenge, setupID, code string) (Verified, []string, error) {
+	c, u, err := s.enrollChallenge(ctx, challenge)
+	if err != nil {
+		return Verified{}, nil, err
+	}
+	codes, err := s.ConfirmTOTP(ctx, u, "", setupID, code)
+	var bad *InvalidCodeError
+	if errors.As(err, &bad) {
+		cur, cerr := s.Store.CountChallengeAttempt(ctx, c.ID, s.now())
+		if errors.Is(cerr, ErrNotFound) || (cerr == nil && cur.Attempts >= MaxChallengeAttempts) {
+			_ = s.Store.DeleteChallenge(ctx, c.ID)
+			return Verified{}, nil, ErrInvalidChallenge
+		}
+	}
+	if err != nil {
+		return Verified{}, nil, err
+	}
+	// One use: the sign-in ends here, whoever got here first.
+	if _, err := s.Store.ClaimChallenge(ctx, c.ID, s.now()); errors.Is(err, ErrNotFound) {
+		return Verified{}, nil, ErrInvalidChallenge
+	} else if err != nil {
+		return Verified{}, nil, err
+	}
+	p, token, err := s.startSessionWith(ctx, u, []string{c.Factor, MethodTOTP}, true)
+	if err != nil {
+		return Verified{}, nil, err
+	}
+	return Verified{Redeemed: Redeemed{Principal: p, Token: token, NewUser: c.NewUser, Profile: c.Profile}, Factor: c.Factor, Method: MethodTOTP}, codes, nil
 }
 
 // DisableMFA removes the user's second factor and recovery codes; refused while a role of

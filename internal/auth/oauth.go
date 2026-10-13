@@ -74,8 +74,8 @@ type OAuthState struct {
 // LoginCode is the one-time code the app gets in place of a session: it is redeemed
 // with the PKCE verifier its challenge came from.
 type LoginCode struct {
-	ID            string // HashToken(code)
-	UserID        string
+	ID     string // HashToken(code)
+	UserID string
 	// Method is the first factor the code stands for: the provider's name (magic links will
 	// add their own), so that a second step can be asked for after the code is redeemed.
 	Method        string

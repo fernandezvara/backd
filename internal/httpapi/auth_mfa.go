@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"bytes"
+	"io"
 	"net/http"
 	"strings"
 
@@ -48,9 +50,48 @@ func (a *authAPI) mfaStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// optionalObject reads a JSON object body that may be absent (an empty object then).
+func optionalObject(w http.ResponseWriter, r *http.Request) (map[string]any, bool) {
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, codeInvalidJSON, "could not read request body")
+		return nil, false
+	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		return map[string]any{}, true
+	}
+	if !contentTypeIs(r, "application/json") {
+		writeError(w, r, http.StatusUnsupportedMediaType, codeUnsupportedMedia, "Content-Type must be application/json")
+		return nil, false
+	}
+	r.Body = io.NopCloser(bytes.NewReader(data))
+	return readObject(w, r)
+}
+
 // mfaSetup handles POST /_auth/mfa/totp/setup: a new TOTP secret, pending until confirmed.
+// It acts on the session of the request, or on the `challenge` of a sign-in that must set
+// a second factor up.
 func (a *authAPI) mfaSetup(w http.ResponseWriter, r *http.Request) {
-	setup, err := usersOf(r).BeginTOTPSetup(r.Context(), principalOf(r).User)
+	obj, ok := optionalObject(w, r)
+	if !ok {
+		return
+	}
+	f, ok := fields(w, r, obj, map[string]string{"challenge": "string?"})
+	if !ok {
+		return
+	}
+	svc := usersOf(r)
+	var setup auth.TOTPSetup
+	var err error
+	if challenge, _ := f["challenge"].(string); challenge != "" {
+		setup, err = svc.BeginEnrollment(r.Context(), challenge)
+	} else {
+		p, ok := a.authenticateRequest(w, r)
+		if !ok {
+			return
+		}
+		setup, err = svc.BeginTOTPSetup(r.Context(), p.User)
+	}
 	if err != nil {
 		authError(w, r, err)
 		return
@@ -61,14 +102,41 @@ func (a *authAPI) mfaSetup(w http.ResponseWriter, r *http.Request) {
 }
 
 // mfaConfirm handles POST /_auth/mfa/totp/confirm: the first code turns TOTP on and gives
-// the recovery codes, once.
+// the recovery codes, once. With a `challenge` it also ends the sign-in that waited for it:
+// the answer then has the session.
 func (a *authAPI) mfaConfirm(w http.ResponseWriter, r *http.Request) {
-	f, ok := readStrings(w, r, "setup_id", "code")
+	if !contentTypeIs(r, "application/json") {
+		writeError(w, r, http.StatusUnsupportedMediaType, codeUnsupportedMedia, "Content-Type must be application/json")
+		return
+	}
+	obj, ok := readObject(w, r)
 	if !ok {
 		return
 	}
-	p := principalOf(r)
-	codes, err := usersOf(r).ConfirmTOTP(r.Context(), p.User, p.Session.ID, f["setup_id"], f["code"])
+	f, ok := fields(w, r, obj, map[string]string{"setup_id": "string", "code": "string", "challenge": "string?", "cookie": "bool?"})
+	if !ok {
+		return
+	}
+	svc := usersOf(r)
+	if challenge, _ := f["challenge"].(string); challenge != "" {
+		asked, _ := f["cookie"].(bool)
+		useCookie, ok := askedForCookie(w, r, svc.Settings, asked)
+		if !ok {
+			return
+		}
+		v, codes, err := svc.CompleteEnrollment(r.Context(), challenge, f["setup_id"].(string), f["code"].(string))
+		if err != nil {
+			authError(w, r, err)
+			return
+		}
+		a.answerSignInWith(w, r, v.Redeemed, http.StatusOK, useCookie, v.Factor != auth.ProviderPassword, map[string]any{"recovery_codes": codes})
+		return
+	}
+	p, ok := a.authenticateRequest(w, r)
+	if !ok {
+		return
+	}
+	codes, err := svc.ConfirmTOTP(r.Context(), p.User, p.Session.ID, f["setup_id"].(string), f["code"].(string))
 	if err != nil {
 		authError(w, r, err)
 		return

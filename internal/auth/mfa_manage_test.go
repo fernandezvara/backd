@@ -277,3 +277,84 @@ func TestWrongCodesAfterTheRightPasswordWarnTheUserOncePerHour(t *testing.T) {
 		t.Errorf("after the hour: %d", count())
 	}
 }
+
+func TestEnrollingFromASignInThatMustSetItUp(t *testing.T) {
+	ctx := context.Background()
+	svc, store, clock, u := enrollFixture(t)
+	svc.Settings.MFA.RequiredAll = true
+	sessions := func() int { s, _ := svc.UserSessions(ctx, u.ID); return len(s) }
+	out, err := svc.SignIn(ctx, "ada@example.com", mfaPassword, "")
+	if err != nil || out.Challenge == nil || out.Challenge.Kind != ChallengeEnroll {
+		t.Fatalf("sign-in: %+v %v", out, err)
+	}
+	if sessions() != 0 {
+		t.Fatal("a session exists before the second factor")
+	}
+	// An MFA challenge (or nothing) is not an enrollment challenge.
+	if _, err := svc.BeginEnrollment(ctx, ""); !errors.Is(err, ErrInvalidChallenge) {
+		t.Errorf("empty: %v", err)
+	}
+	setup, err := svc.BeginEnrollment(ctx, out.Challenge.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bad *InvalidCodeError
+	if _, _, err := svc.CompleteEnrollment(ctx, out.Challenge.Token, setup.SetupID, "000000"); !errors.As(err, &bad) {
+		t.Fatalf("wrong code: %v", err)
+	}
+	if sessions() != 0 {
+		t.Fatal("a wrong code gave a session")
+	}
+	v, codes, err := svc.CompleteEnrollment(ctx, out.Challenge.Token, setup.SetupID, totpAt(t, setup.Secret, *clock))
+	if err != nil || len(codes) != RecoveryCodeCount || v.Token == "" || !v.Principal.Session.MFA ||
+		len(v.Principal.Session.Methods) != 2 || v.Principal.Session.Methods[1] != "totp" || v.Factor != ProviderPassword {
+		t.Fatalf("complete: %+v %v %v", v, codes, err)
+	}
+	if _, err := store.MFAOf(ctx, u.ID); err != nil {
+		t.Errorf("not enabled: %v", err)
+	}
+	// The sign-in ended: the challenge is spent.
+	if _, err := svc.BeginEnrollment(ctx, out.Challenge.Token); !errors.Is(err, ErrInvalidChallenge) {
+		t.Errorf("a spent challenge: %v", err)
+	}
+	// From now on the user is asked for a code like anyone with a second factor.
+	again, _ := svc.SignIn(ctx, "ada@example.com", mfaPassword, "")
+	if again.Challenge == nil || again.Challenge.Kind != ChallengeMFA {
+		t.Errorf("next sign-in: %+v", again)
+	}
+}
+
+func TestEnrollmentChallengeAllowsFiveWrongCodes(t *testing.T) {
+	ctx := context.Background()
+	svc, _, clock, _ := enrollFixture(t)
+	svc.Settings.MFA.RequiredAll = true
+	out, _ := svc.SignIn(ctx, "ada@example.com", mfaPassword, "")
+	setup, _ := svc.BeginEnrollment(ctx, out.Challenge.Token)
+	for range MaxChallengeAttempts - 1 {
+		if _, _, err := svc.CompleteEnrollment(ctx, out.Challenge.Token, setup.SetupID, "000000"); err == nil {
+			t.Fatal("accepted")
+		}
+	}
+	// The fifth wrong code ends the sign-in: even the right code is refused after.
+	if _, _, err := svc.CompleteEnrollment(ctx, out.Challenge.Token, setup.SetupID, "000000"); !errors.Is(err, ErrInvalidChallenge) {
+		t.Errorf("fifth: %v", err)
+	}
+	if _, _, err := svc.CompleteEnrollment(ctx, out.Challenge.Token, setup.SetupID, totpAt(t, setup.Secret, *clock)); !errors.Is(err, ErrInvalidChallenge) {
+		t.Errorf("after: %v", err)
+	}
+}
+
+func TestHandOverSurvivesEnrollment(t *testing.T) {
+	ctx := context.Background()
+	svc, _, clock, u := enrollFixture(t)
+	svc.Settings.MFA.RequiredAll = true
+	out, err := svc.StartProviderSession(ctx, u, "google", true, map[string]string{"name": "Ada"})
+	if err != nil || out.Challenge == nil || out.Challenge.Kind != ChallengeEnroll {
+		t.Fatalf("native: %+v %v", out, err)
+	}
+	setup, _ := svc.BeginEnrollment(ctx, out.Challenge.Token)
+	v, _, err := svc.CompleteEnrollment(ctx, out.Challenge.Token, setup.SetupID, totpAt(t, setup.Secret, *clock))
+	if err != nil || !v.NewUser || v.Profile["name"] != "Ada" || v.Factor != "google" || v.Principal.Session.Methods[0] != "google" {
+		t.Errorf("hand-over: %+v %v", v, err)
+	}
+}

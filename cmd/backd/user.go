@@ -495,3 +495,66 @@ func userUnlinkIdentity(c *userCtx) error {
 	fmt.Fprintf(c.uio.stdout, "%s can no longer sign in with %s\n", u.Email, provider)
 	return nil
 }
+
+// userMFAStatus shows one user's second factor, or who must still set one up.
+func userMFAStatus(c *userCtx) error {
+	c.email = str(c.cmd, "email")
+	if c.email != "" {
+		u, err := c.find()
+		if err != nil {
+			return err
+		}
+		var st struct {
+			Enabled           bool `json:"enabled"`
+			Available         bool `json:"available"`
+			Required          bool `json:"required"`
+			RecoveryCodesLeft int  `json:"recovery_codes_left"`
+		}
+		if err := c.t.call("GET", "_admin/users/"+url.PathEscape(u.ID)+"/mfa", nil, nil, &st); err != nil {
+			return err
+		}
+		fmt.Fprintf(c.uio.stdout, "%s: second factor %s; required by role: %t; recovery codes left: %d\n", u.Email, onOff(st.Enabled), st.Required, st.RecoveryCodesLeft)
+		return nil
+	}
+	var out struct {
+		Enabled      bool     `json:"enabled"`
+		RequiredAll  bool     `json:"required_all"`
+		RequiredRole []string `json:"required_roles"`
+		Users        []struct {
+			Email string   `json:"email"`
+			Roles []string `json:"roles"`
+		} `json:"users_without_mfa"`
+		Total int `json:"total_without_mfa"`
+	}
+	if err := c.t.call("GET", "_admin/mfa", nil, nil, &out); err != nil {
+		return err
+	}
+	switch {
+	case out.RequiredAll:
+		fmt.Fprintln(c.uio.stdout, "MFA is required for every user")
+	case len(out.RequiredRole) > 0:
+		fmt.Fprintf(c.uio.stdout, "MFA is required for the roles: %s\n", strings.Join(out.RequiredRole, ", "))
+	default:
+		fmt.Fprintln(c.uio.stdout, "MFA is required for no role (mfa.required_roles in realm.yaml)")
+		return nil
+	}
+	if out.Total == 0 {
+		fmt.Fprintln(c.uio.stdout, "every user who must use it has set it up")
+		return nil
+	}
+	fmt.Fprintf(c.uio.stdout, "%d user(s) have none yet and will be asked at their next sign-in:\n", out.Total)
+	for _, u := range out.Users {
+		fmt.Fprintf(c.uio.stdout, "  %s (%s)\n", u.Email, strings.Join(u.Roles, ", "))
+	}
+	if out.Total > len(out.Users) {
+		fmt.Fprintf(c.uio.stdout, "  … and %d more\n", out.Total-len(out.Users))
+	}
+	return nil
+}
+
+func onOff(b bool) string {
+	if b {
+		return "on"
+	}
+	return "off"
+}

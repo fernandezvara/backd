@@ -157,3 +157,30 @@ func TestMFASettings(t *testing.T) {
 		}
 	}
 }
+
+func TestMFARequiredRoles(t *testing.T) {
+	roles := "roles:\n  owner:\n    admin: true\n  staff: {}\n"
+	s, errs := parseRealmSettings([]byte("auth: enabled\n" + roles + "mfa:\n  required_roles: [owner, staff]\n"))
+	if len(errs) > 0 || len(s.MFA.RequiredRoles) != 2 || s.MFA.RequiredAll {
+		t.Fatalf("list: %+v %v", s.MFA, errs)
+	}
+	if !s.MFA.Required([]string{"staff"}) || s.MFA.Required([]string{"other"}) || s.MFA.Required(nil) {
+		t.Error("Required")
+	}
+	s, errs = parseRealmSettings([]byte("auth: enabled\n" + roles + "mfa:\n  required_roles: all\n"))
+	if len(errs) > 0 || !s.MFA.RequiredAll || !s.MFA.Required(nil) {
+		t.Errorf("all: %+v %v", s.MFA, errs)
+	}
+	for name, yaml := range map[string]string{
+		"undeclared role":  "auth: enabled\n" + roles + "mfa:\n  required_roles: [ghost]\n",
+		"duplicate":        "auth: enabled\n" + roles + "mfa:\n  required_roles: [owner, owner]\n",
+		"all in a list":    "auth: enabled\n" + roles + "mfa:\n  required_roles: [all]\n",
+		"a word":           "auth: enabled\n" + roles + "mfa:\n  required_roles: everyone\n",
+		"a map":            "auth: enabled\n" + roles + "mfa:\n  required_roles: {owner: true}\n",
+		"required but off": "auth: enabled\n" + roles + "mfa:\n  enabled: false\n  required_roles: [owner]\n",
+	} {
+		if _, errs := parseRealmSettings([]byte(yaml)); len(errs) == 0 {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

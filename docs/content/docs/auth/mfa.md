@@ -52,6 +52,25 @@ Each change sends a `security-notice` email (when the realm has [`email`](../../
 
 These are audited too: `user.mfa_enabled`, `user.mfa_disabled`, `user.recovery_codes_regenerated`, `user.recovery_code_used`, never the codes.
 
+## Required by role
+
+```yaml
+mfa:
+  required_roles: [admin, finance]     # roles that must use it, or `all`
+```
+
+- A user holding one of the roles (or any user, with `all`) who has no second factor gets `mfa_enrollment_required` and a challenge after the first factor. The challenge allows only two things, **without a session**:
+  1. `POST /_auth/mfa/totp/setup` with `{"challenge"}` answers like the signed-in setup;
+  2. `POST /_auth/mfa/totp/confirm` with `{"challenge", "setup_id", "code"}` turns it on and answers with the **session** and the `recovery_codes`. The session's `methods` include `totp`.
+- The enrollment challenge lives 5 minutes and allows 5 wrong codes, like a challenge for a code.
+- **Existing sessions** of such users keep working until they expire; nothing is revoked when a role starts to require MFA or a user is given such a role. Their next sign-in enrolls them. `backd user mfa-status --realm <realm>` lists who has not yet.
+- A user in a required role can't turn the second factor off (`403 mfa_required_by_role`).
+- At startup, outside dev mode, `backd` warns about admin roles that `required_roles` doesn't cover.
+
+{{< hint style="note" >}}
+`required_roles` must name roles the realm declares, and conflicts with `mfa.enabled: false`: both are startup errors.
+{{< /hint >}}
+
 ## How a sign-in goes
 
 ```mermaid

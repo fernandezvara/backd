@@ -1138,8 +1138,20 @@ paths:
         Makes a TOTP secret (SHA-1, 6 digits, 30 seconds: what every authenticator app supports) and
         holds it for 15 minutes until `POST /_auth/mfa/totp/confirm` proves the app received it. A new
         setup replaces a pending one. The secret is shown here and in the QR code only.
+
+        It acts on the session of the request or, in a sign-in that answered
+        `mfa_enrollment_required`, on that `challenge` (no session yet).
       operationId: setupTOTP
-      security: [{ session: [] }]
+      security: [{ session: [] }, {}]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                challenge: { type: string, description: "The challenge of a sign-in that must set a second factor up." }
       responses:
         "200":
           description: The secret, as text, as an `otpauth://` URI and as a QR image.
@@ -1156,6 +1168,7 @@ paths:
                   otpauth_uri: { type: string }
                   qr: { type: string, description: "A PNG as a `data:image/png;base64,…` URI of the `otpauth_uri`." }
                   expires_at: { $ref: "#/components/schemas/Timestamp" }
+        "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403":
           description: "`mfa_disabled`: the realm doesn't let users turn MFA on (`mfa.enabled: false`)."
@@ -1187,8 +1200,11 @@ paths:
         the 10 recovery codes, **once**: they are kept only as keyed hashes. The user's other sessions
         end, so a session from before can't pass a rule that requires `user.mfa`, and a
         `security-notice` email says what happened. A wrong code is `400 invalid_code`; five end the setup.
+
+        With the `challenge` of a sign-in that answered `mfa_enrollment_required` it also ends that
+        sign-in: the answer then carries the session too (its `methods` include `totp`).
       operationId: confirmTOTP
-      security: [{ session: [] }]
+      security: [{ session: [] }, {}]
       requestBody:
         required: true
         content:
@@ -1200,9 +1216,11 @@ paths:
               properties:
                 setup_id: { type: string }
                 code: { type: string }
+                challenge: { type: string, description: "The challenge of a sign-in that must set a second factor up." }
+                cookie: { type: boolean, description: "With a `challenge`: as in `POST /_auth/login`." }
       responses:
         "200":
-          description: TOTP is on.
+          description: TOTP is on, and, with a `challenge`, the session of the sign-in.
           headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
           content:
             application/json:
@@ -1212,6 +1230,13 @@ paths:
                 required: [recovery_codes]
                 properties:
                   recovery_codes: { type: array, items: { type: string, description: "`xxxxx-xxxxx`" } }
+                  token: { type: string, pattern: "^bds_" }
+                  token_type: { const: Bearer }
+                  session_id: { type: string }
+                  expires_at: { $ref: "#/components/schemas/Timestamp" }
+                  user: { $ref: "#/components/schemas/User" }
+                  new_user: { type: boolean, description: "With a challenge from a provider sign-in: whether it made the user." }
+                  profile: { type: object, description: "With `new_user`: what the provider said of the person." }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
@@ -1611,6 +1636,79 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/users/{id}/mfa:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    get:
+      tags: [admin]
+      summary: A user's second-factor state
+      description: |
+        Whether the user has a second factor, which, and how many recovery codes are left, as
+        `GET /_auth/mfa` shows it to the user. Never a secret or a code. Needs the `users` area.
+      operationId: adminUserMFA
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The state.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [available, enabled, methods, recovery_codes_left, required]
+                properties:
+                  available: { type: boolean }
+                  enabled: { type: boolean }
+                  methods: { type: array, items: { type: string, enum: [totp, recovery_code] } }
+                  recovery_codes_left: { type: integer }
+                  required: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/mfa:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [admin]
+      summary: Who must set a second factor up
+      description: |
+        The roles the realm requires MFA for (`mfa.required_roles`) and the users of those roles
+        who have none yet, up to 200 (`total_without_mfa` counts them all); disabled and erased
+        users are not listed. Their next sign-in asks them to set one up. Needs the `users` area.
+      operationId: adminMFAOverview
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The overview.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [enabled, required_all, required_roles, users_without_mfa, total_without_mfa]
+                properties:
+                  enabled: { type: boolean, description: "`false` when the realm lets no user turn a second factor on." }
+                  required_all: { type: boolean }
+                  required_roles: { type: array, items: { type: string } }
+                  users_without_mfa:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [id, email, roles]
+                      properties:
+                        id: { type: string }
+                        email: { type: string }
+                        roles: { type: array, items: { type: string } }
+                  total_without_mfa: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_admin/users/{id}/identities/{provider}:

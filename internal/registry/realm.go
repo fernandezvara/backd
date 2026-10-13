@@ -308,6 +308,8 @@ type realmDoc struct {
 	MFA *struct {
 		Enabled *bool  `yaml:"enabled"`
 		Issuer  string `yaml:"issuer"`
+		// RequiredRoles is a list of role names, or the string "all".
+		RequiredRoles yaml.Node `yaml:"required_roles"`
 	} `yaml:"mfa"`
 	Account *struct {
 		RequireVerifiedEmail bool   `yaml:"require_verified_email"`
@@ -681,6 +683,7 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 			if len(s.MFA.Issuer) > 64 || strings.ContainsAny(s.MFA.Issuer, ":\n\r") {
 				errs = append(errs, errors.New("mfa.issuer: must be at most 64 characters and have no colon or line break (authenticator apps show it as the name of the account)"))
 			}
+
 		}
 	}
 
@@ -789,6 +792,13 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 			}
 		}
 		s.Roles[name] = role
+	}
+	// Which roles must use MFA: after the roles, which it names.
+	if m := doc.MFA; m != nil && s.AuthEnabled {
+		errs = append(errs, s.parseRequiredRoles(m.RequiredRoles)...)
+		if s.MFA.Off && (s.MFA.RequiredAll || len(s.MFA.RequiredRoles) > 0) {
+			errs = append(errs, errors.New("mfa.required_roles: needs mfa.enabled (users can't set a second factor up while it is off)"))
+		}
 	}
 	return s, errs
 }
