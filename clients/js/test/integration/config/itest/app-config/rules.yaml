@@ -1,0 +1,3 @@
+read:
+  maintenance: "true"
+  features: user != nil

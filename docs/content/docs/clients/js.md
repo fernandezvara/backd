@@ -448,6 +448,23 @@ try {
 }
 ```
 
+## App configuration
+
+`client.config` reads the realm's [app configuration](../../configuration/app-config/): feature flags, maintenance switches, limits. The server answers only what the signed-in user's rules allow, with defaults filled in.
+
+```js
+await client.config.load(["features", "maintenance"]);        // or load() for everything readable
+client.config.get("maintenance.enabled");                      // from the copy held
+await client.config.get("beta.new_editor", { refresh: true }); // force a fetch
+client.config.on("change", (paths) => rerender(paths));
+```
+
+- **`load(paths?)`** fetches and keeps a copy, with no request while it is fresh. **`get(path)`** returns the value from the copy held; for a key whose group was never loaded it fetches that group first, and only then returns a promise. **`getSync(path, fallback)`** never asks: it returns the copy's value, or `fallback` (the client doesn't know the server's defaults).
+- **Freshness:** a copy is fresh for the `cache_ttl` the server sent (5 minutes by default). After that, reads return the copy at once and revalidate it in the background with `If-None-Match`, which usually costs a `304`. `refresh: true` forces a fetch.
+- **Where copies live:** per realm and per user, in `localStorage` in browsers and in memory elsewhere (`configStorage: false` for memory only, or any object with `getItem`, `setItem` and `removeItem`). Blocked storage falls back to memory. The copy of a page that has just reloaded is restored by the first `load()`.
+- **Clearing:** sign-out and signing in as another user drop every copy of the realm, so the next person on the same browser never sees the previous user's keys.
+- **`on("change")`** fires with the dot paths whose value changed when a read brings a different configuration.
+
 ## Token storage
 
 By default the token is kept in memory: it is gone after a reload, and nothing on the page can read it from storage. To keep users signed in across reloads, choose a storage:
