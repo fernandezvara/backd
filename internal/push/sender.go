@@ -23,14 +23,20 @@ type Delivery struct {
 }
 
 // Request is what a sender is asked to do: deliver to the devices of one platform with the
-// realm's credentials for the provider (the values of the secrets the platform names).
+// realm's configuration for the provider.
 type Request struct {
-	Realm       string
-	SendID      string
-	Attempt     int // 1 for the first try of the unit
-	Platform    string
-	Provider    string
-	Credentials map[string]string // secret name → value
+	Realm    string
+	SendID   string
+	Attempt  int // 1 for the first try of the unit
+	Platform string
+	Provider string
+	// Config is the platform's block of realm.yaml with the secrets it names read: credentials
+	// (FCM's service-account JSON), key (APNs' .p8 key), private_key and subject (Web Push),
+	// and key_id, team_id, topic, sandbox ("true"), public_key and allowed_hosts (comma
+	// separated: where a web subscription may point).
+	Config map[string]string
+	// Parallelism is how many provider requests may be in flight at once.
+	Parallelism int
 	Deliveries  []Delivery
 }
 

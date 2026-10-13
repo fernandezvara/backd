@@ -39,7 +39,7 @@ func newDomain() domain {
 		jobs:            snap,
 		pushUsers:       counter("push_users_total", "Users a push send reached the planning of, by realm and outcome: queued (handed to delivery), limited (over their per-user limit) or no_devices.", "realm", "outcome"),
 		pushDeliveries:  counter("push_deliveries_total", "Devices a delivery unit answered for, by realm and status: sent, invalid (removed as dead) or failed.", "realm", "status"),
-		pushPruned:      counter("push_devices_pruned_total", "Devices removed from the registry, by realm and reason: invalid (the provider said the token is dead), stale (not seen for stale_after), session (their session ended unnoticed), cap (above max_per_user) or moved (a token another user registered).", "realm", "reason"),
+		pushPruned:      counter("push_devices_pruned_total", "Devices removed from the registry, by realm and reason: invalid (the provider said the token is dead), stale (not seen for stale_after), session (their session ended unnoticed), cap (above max_per_user), moved (a token another user registered) or rotated (every web device, when the VAPID key was rotated).", "realm", "reason"),
 		jobsDone:        counter("jobs_completed_total", "Jobs a worker finished, by realm, kind (function, schedule, email, erase) and the result's status. Email and erase outcomes are here: kind email or erase.", "realm", "kind", "status"),
 		egress:          counter("egress_requests_total", "Requests to the egress proxy, by decision: allowed, denied_credentials, denied_host or denied_address.", "outcome"),
 		execRuns:        counter("executor_runs_total", "Function runs the executor handled, by the status they ended with (busy: refused at its process limit).", "status"),

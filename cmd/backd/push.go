@@ -1,6 +1,10 @@
 package main
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -150,5 +154,59 @@ func pushTest(c *userCtx) error {
 		true:  "queued for delivery; see it with `backd push sends --id " + out.SendID + "`",
 		false: fmt.Sprintf("nothing queued (limited %d, no devices %d)", out.Limited, out.NoDevices),
 	}[out.Queued > 0])
+	return nil
+}
+
+// webKeysSecret is the realm secret that holds the VAPID private key.
+const webKeysSecret = "VAPID_PRIVATE_KEY"
+
+// pushWebKeys makes the realm's VAPID key pair: the private key becomes a realm secret, the
+// public one is printed with the realm.yaml snippet. It refuses to replace a key without
+// --rotate, and rotating removes every web device: browsers made their subscriptions under the
+// old public key, so they all need to subscribe again.
+func pushWebKeys(c *kli.CommandContext) error {
+	t, err := targetOf(c, false)
+	if err != nil {
+		return err
+	}
+	out := ioOf(c)
+	name := orDefault(str(c, "name"), webKeysSecret)
+	rotate := flag(c, "rotate")
+	var page struct{ Items []secret }
+	if err := t.call("GET", "_admin/secrets", nil, nil, &page); err != nil {
+		return err
+	}
+	exists := false
+	for _, s := range page.Items {
+		exists = exists || (s.Database == "" && s.Name == name)
+	}
+	if exists && !rotate {
+		return fmt.Errorf("the realm secret %s exists: a new key pair would make every web subscription useless. Use --rotate to replace it (every web device is then removed and apps subscribe again at their next launch)", name)
+	}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return err
+	}
+	pub, err := key.PublicKey.ECDH()
+	if err != nil {
+		return err
+	}
+	private := base64.RawURLEncoding.EncodeToString(key.D.FillBytes(make([]byte, 32)))
+	public := base64.RawURLEncoding.EncodeToString(pub.Bytes())
+	if err := t.call("PUT", "_admin/secrets/"+url.PathEscape(name), nil, map[string]any{"value": private}, nil); err != nil {
+		return err
+	}
+	if exists {
+		var res struct {
+			Removed int `json:"removed"`
+		}
+		if err := t.call("DELETE", "_admin/push/devices", url.Values{"platform": {"web"}}, nil, &res); err != nil {
+			return fmt.Errorf("the key was replaced, but the web devices could not be removed: %w", err)
+		}
+		fmt.Fprintf(out.stderr, "rotated: %d web devices removed; apps subscribe again at their next launch\n", res.Removed)
+	}
+	fmt.Fprintf(out.stdout, "The private key is the realm secret %s. Put the public key in realm.yaml:\n\n", name)
+	fmt.Fprintf(out.stdout, "push:\n  web:\n    provider: webpush\n    public_key: %s\n    private_key: secret:%s\n    subject: secret:VAPID_SUBJECT\n\n", public, name)
+	fmt.Fprintf(out.stdout, "and set the contact the browsers' push services may use:\n  backd secret set --realm %s --name VAPID_SUBJECT   # mailto:ops@example.com or https://example.com\n", str(c, "realm"))
 	return nil
 }

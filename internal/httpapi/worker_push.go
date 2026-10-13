@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"slices"
+	"strings"
 	"time"
 
 	"github.com/fernandezvara/backd/internal/auth"
@@ -122,12 +122,12 @@ func (w *Worker) deliverUnit(ctx context.Context, log *slog.Logger, svc *auth.Us
 			log.Warn("no sender for the push provider", "provider", pp.Provider, "platform", platform, "devices", len(list))
 			continue
 		}
-		creds, err := w.pushCredentials(rctx, svc, pp)
+		cfg, err := w.pushConfig(rctx, svc, platform, pp)
 		if err != nil {
 			wholesale = errors.Join(wholesale, err)
 			continue
 		}
-		results, err := sender.Send(rctx, push.Request{Realm: svc.Realm, SendID: pj.SendID, Attempt: job.Failures + 1, Platform: platform, Provider: pp.Provider, Credentials: creds, Deliveries: list})
+		results, err := sender.Send(rctx, push.Request{Realm: svc.Realm, SendID: pj.SendID, Attempt: job.Failures + 1, Platform: platform, Provider: pp.Provider, Config: cfg, Parallelism: settings.Delivery.Parallelism, Deliveries: list})
 		if err != nil {
 			wholesale = errors.Join(wholesale, err)
 			continue
@@ -234,11 +234,19 @@ func (w *Worker) retryUnit(ctx context.Context, log *slog.Logger, svc *auth.User
 	}
 }
 
-// pushCredentials reads the realm secrets a platform's provider needs.
-func (w *Worker) pushCredentials(ctx context.Context, svc *auth.Users, pp registry.PushPlatform) (map[string]string, error) {
+// pushConfig is a platform's block with the secrets it names read: what a sender needs.
+func (w *Worker) pushConfig(ctx context.Context, svc *auth.Users, platform string, pp registry.PushPlatform) (map[string]string, error) {
+	cfg := map[string]string{"key_id": pp.KeyID, "team_id": pp.TeamID, "topic": pp.Topic}
+	if pp.Sandbox {
+		cfg["sandbox"] = "true"
+	}
+	if p := svc.Settings.Push; p != nil && platform == registry.PlatformWeb {
+		cfg["public_key"] = p.WebPublicKey
+		cfg["allowed_hosts"] = strings.Join(p.WebEndpointHosts, ",")
+	}
 	names := pp.SecretNames()
 	if len(names) == 0 {
-		return nil, nil
+		return cfg, nil
 	}
 	refs := make([]registry.SecretRef, len(names))
 	for i, n := range names {
@@ -249,12 +257,12 @@ func (w *Worker) pushCredentials(ctx context.Context, svc *auth.Users, pp regist
 		return nil, err
 	}
 	if len(missing) > 0 {
-		slices.Sort(missing)
 		return nil, auth.ErrPushUnavailable
 	}
-	out := make(map[string]string, len(names))
-	for _, n := range names {
-		out[n] = values["realm."+n]
+	for field, name := range map[string]string{"credentials": pp.Credentials, "key": pp.Key, "private_key": pp.PrivateKey, "subject": pp.Subject} {
+		if name != "" {
+			cfg[field] = values["realm."+name]
+		}
 	}
-	return out, nil
+	return cfg, nil
 }

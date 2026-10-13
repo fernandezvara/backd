@@ -424,3 +424,11 @@ func (s *AuthStore) ListPushOutbox(ctx context.Context, limit int) ([]auth.PushO
 	}
 	return out, nil
 }
+
+func (s *AuthStore) DeleteDevicesOfPlatform(ctx context.Context, platform string) (int64, error) {
+	res, err := s.devices().DeleteMany(ctx, bson.D{{Key: "platform", Value: platform}})
+	if err != nil {
+		return 0, err
+	}
+	return res.DeletedCount, nil
+}

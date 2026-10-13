@@ -187,6 +187,25 @@ func (s *Users) RemoveDevice(ctx context.Context, userID, id, by string) error {
 	return nil
 }
 
+// RemoveDevicesOfPlatform removes every device of a platform, for an administrator: rotating a
+// realm's VAPID key makes every web subscription useless (browsers made them under the old
+// key), so they go at once and apps subscribe again at their next launch. It is audited.
+func (s *Users) RemoveDevicesOfPlatform(ctx context.Context, platform string) (int64, error) {
+	if s.Settings.Push == nil {
+		return 0, ErrPushNotConfigured
+	}
+	if platform != registry.PlatformAndroid && platform != registry.PlatformIOS && platform != registry.PlatformWeb {
+		return 0, &InvalidDeviceError{Reason: "platform: android, ios or web"}
+	}
+	n, err := s.Store.DeleteDevicesOfPlatform(ctx, platform)
+	if err != nil {
+		return 0, err
+	}
+	s.Metrics.PushPruned(s.Realm, "rotated", n)
+	s.Audit(ctx, AuditPushDevices, "realm:"+s.Realm, map[string]any{"platform": platform, "count": n})
+	return n, nil
+}
+
 // SweepDevices removes the devices not seen for push.devices.stale_after and those whose
 // session ended without anyone calling anything (it expired). Running it in every worker is
 // harmless.

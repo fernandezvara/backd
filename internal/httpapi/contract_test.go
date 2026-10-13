@@ -1834,6 +1834,7 @@ func TestContract(t *testing.T) {
 		req("GET", dev+"/web-key", "", nil, 404)
 		req("GET", ad+"/users/"+temp.ID+"/devices", "", key, 404)
 		req("GET", ad+"/push/sends", "", key, 404)
+		req("DELETE", ad+"/push/devices?platform=web", "", key, 404)
 		req("GET", ad+"/push/sends/ps_none", "", key, 404)
 		req("POST", ad+"/push/test", `{"email": "ada@example.com", "title": "Hi", "body": "There"}`, key, 404)
 		f.svc.Settings.Push = &registry.PushSettings{
@@ -1905,6 +1906,11 @@ func TestContract(t *testing.T) {
 			t.Errorf("sends: %v", sends)
 		}
 		req("GET", ad+"/push/sends?nope=1", "", key, 400)
+		req("DELETE", ad+"/push/devices", "", key, 400)
+		req("DELETE", ad+"/push/devices?platform=windows", "", key, 400)
+		req("DELETE", ad+"/push/devices?platform=web", "", nil, 401)
+		req("DELETE", ad+"/push/devices?platform=web", "", ada, 403)
+		req("DELETE", ad+"/push/devices?platform=web", "", key, 200)
 		req("GET", ad+"/push/sends", "", nil, 401)
 		req("GET", ad+"/push/sends", "", ada, 403)
 		sendID := sent["send_id"].(string)

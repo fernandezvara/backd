@@ -232,3 +232,16 @@ func (m *MemStore) ListPushOutbox(_ context.Context, limit int) ([]auth.PushOutb
 	}
 	return out, nil
 }
+
+func (m *MemStore) DeleteDevicesOfPlatform(_ context.Context, platform string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var n int64
+	for k, d := range m.devices {
+		if d.Platform == platform {
+			delete(m.devices, k)
+			n++
+		}
+	}
+	return n, nil
+}

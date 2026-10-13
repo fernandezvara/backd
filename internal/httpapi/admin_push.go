@@ -180,3 +180,23 @@ func (a *adminAPI) testPush(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{"send_id": started.SendID, "users": 1, "queued": started.Queued, "limited": started.Limited, "no_devices": started.NoDevice}
 	writeJSON(w, http.StatusAccepted, out)
 }
+
+// removePushDevices answers DELETE /push/devices?platform=: every device of a platform, for
+// a rotated VAPID key. Audited.
+func (a *adminAPI) removePushDevices(w http.ResponseWriter, r *http.Request) {
+	platform := r.URL.Query().Get("platform")
+	if platform == "" {
+		writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid query parameters", Detail{Path: "platform", Reason: "is required: android, ios or web"})
+		return
+	}
+	n, err := usersOf(r).RemoveDevicesOfPlatform(r.Context(), platform)
+	var bad *auth.InvalidDeviceError
+	switch {
+	case errors.As(err, &bad):
+		writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid query parameters", Detail{Path: "platform", Reason: bad.Reason})
+	case err != nil:
+		adminError(w, r, err)
+	default:
+		writeJSON(w, http.StatusOK, map[string]any{"platform": platform, "removed": n})
+	}
+}

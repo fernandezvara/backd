@@ -302,6 +302,13 @@ func registerRemote(cfg *kli.Config) {
 		optional(cc, "title", "the title of a raw push (with --body)")
 		optional(cc, "body", "the body of a raw push")
 	})
+	pu.SubCommand("web-keys").ShortHelp("make the realm's VAPID key pair for web push").
+		LongHelp("Stores the private key as the realm secret VAPID_PRIVATE_KEY and prints the public key with the\npush.web snippet for realm.yaml. It refuses to replace an existing key without --rotate; rotating\nremoves every web device of the realm, because browsers made their subscriptions under the old\npublic key (apps subscribe again at their next launch).").
+		Func(act("push web-keys", pushWebKeys)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		optional(cc, "name", "the secret that holds the private key (default VAPID_PRIVATE_KEY)")
+		boolean(cc, "rotate", "replace an existing key pair and remove the realm's web devices")
+	})
 	pu.SubCommand("remove-device").ShortHelp("remove one of a user's devices (audited)").
 		Func(act("push remove-device", userAction(true, pushRemoveDevice))).Config(func(cc *kli.CommandConfig) {
 		remote(cc)

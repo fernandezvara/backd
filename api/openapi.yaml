@@ -2051,6 +2051,39 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/push/devices:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    delete:
+      tags: [admin]
+      summary: Remove every device of a platform
+      description: |
+        Removes all the realm's devices of a platform at once. It is what rotating the VAPID key
+        (`backd push web-keys --rotate`) does for `web`: browsers made their subscriptions under
+        the old public key, so they are useless, and apps subscribe again at their next launch.
+        Audited as `push.devices_removed`. Needs the `users` area.
+      operationId: adminRemovePushDevices
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { name: platform, in: query, required: true, schema: { type: string, enum: [android, ios, web] } }
+      responses:
+        "200":
+          description: How many devices went.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [platform, removed]
+                properties:
+                  platform: { type: string }
+                  removed: { type: integer }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/push/test:
     parameters: [{ $ref: "#/components/parameters/realm" }]
     post:

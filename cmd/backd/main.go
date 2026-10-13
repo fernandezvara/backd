@@ -29,6 +29,7 @@ import (
 	"github.com/fernandezvara/backd/internal/httpapi"
 	"github.com/fernandezvara/backd/internal/metrics"
 	"github.com/fernandezvara/backd/internal/mongodb"
+	"github.com/fernandezvara/backd/internal/pushsend"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/rules"
 	"github.com/fernandezvara/backd/internal/settings"
@@ -487,6 +488,7 @@ func (a *app) handlerConfig() httpapi.Config {
 		DisableAdminAPI:   a.cfg.DisableAdminAPI,
 		UI:                ui,
 		Metrics:           a.metrics,
+		PushSenders:       pushsend.Senders(pushsend.Config{Proxy: a.cfg.EgressProxy, EgressKey: []byte(a.cfg.EgressKey)}),
 	}
 }
 

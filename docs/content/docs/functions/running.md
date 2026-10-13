@@ -74,8 +74,8 @@ The executor and the internal listener must **never be published** to the intern
 | `EXECUTOR_ADDR` | executor | Listen address (default `:9100`) |
 | `EXECUTOR_DIR` | executor | Writable directory for the bundle cache (the image uses `/tmp/backd-executor`: mount a tmpfs) |
 | `EXECUTOR_MAX_PROCESSES` | executor | Functions running at once (default 64); beyond it, calls answer `503` |
-| `EXECUTOR_PROXY` | executor | `backd egress`'s base URL, e.g. `http://egress:3128`. Without it, function processes get no outbound network beyond `--allow-net` on this host |
-| `BACKD_EGRESS_KEY` | executor, egress | A shared secret, 32 characters or more, required with `EXECUTOR_PROXY`: the executor signs each invocation's egress credentials with it, egress verifies them |
+| `EXECUTOR_PROXY` | executor, `backd worker`, `backd serve --with-worker` | `backd egress`'s base URL, e.g. `http://egress:3128`. Without it, function processes get no outbound network beyond `--allow-net` on this host. A worker uses it too, to reach the [push providers](../../push/) (FCM, APNs, Web Push); without it the worker dials them directly, public addresses only |
+| `BACKD_EGRESS_KEY` | executor, egress, workers | A shared secret, 32 characters or more, required with `EXECUTOR_PROXY`: the executor signs each invocation's egress credentials with it, egress verifies them |
 | `EGRESS_ADDR` | egress | Listen address (default `:3128`) |
 | `EGRESS_ALLOW_PRIVATE` | egress | Comma-separated `host:port` exceptions to the private-address block; only `backd`'s internal listener belongs here |
 | `WORKER_CONCURRENCY` | `backd worker`, `backd serve --with-worker` | [Async jobs](../jobs/) one worker process runs at once (default 10) |

@@ -246,6 +246,8 @@ type Store interface {
 	DevicesByIDs(ctx context.Context, ids []string) ([]Device, error)
 	LiveDevicesOf(ctx context.Context, userIDs []string, now time.Time) (map[string][]Device, error)
 	DeleteDeviceByID(ctx context.Context, id string) error
+	// DeleteDevicesOfPlatform removes every device of a platform, and says how many.
+	DeleteDevicesOfPlatform(ctx context.Context, platform string) (int64, error)
 	// UsersByIDs returns the users that exist among the ids. AudienceUserIDs returns the ids
 	// of up to limit active users (not disabled, not erased) matching the audience, after the
 	// id `after`, in id order.
