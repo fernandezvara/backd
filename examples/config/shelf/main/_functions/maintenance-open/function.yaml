@@ -1,0 +1,9 @@
+# Opens and closes the maintenance window (chapter 18): two scheduled functions
+# that change app configuration, which is all a window is. `config: write` is
+# what lets a function do that; its changes are recorded with the function as
+# the actor. Internal: nobody calls it over HTTP; `backd functions invoke`
+# runs it by hand.
+internal: true
+mode: async
+schedule: "0 2 * * 6"   # Saturdays at 02:00 UTC
+config: write

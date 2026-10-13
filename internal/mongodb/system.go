@@ -54,6 +54,10 @@ const (
 	// ConsentRecordsCollection is the append-only history of consents accepted and
 	// withdrawn: the proof, with the hash of the text shown.
 	ConsentRecordsCollection = "consent_records"
+	// AppConfigCollection holds the realm's app configuration values (one document) and
+	// AppConfigHistoryCollection the versions that led to them (design/app-config.md §4).
+	AppConfigCollection        = "app_config"
+	AppConfigHistoryCollection = "app_config_history"
 	// PushSendsCollection holds one record per push send: its totals, never a message.
 	PushSendsCollection = "push_sends"
 	// PushOutboxCollection holds what the capture provider took instead of sending: development
@@ -523,6 +527,29 @@ var systemCollections = []systemCollection{
 			{keys: bson.D{{Key: "session_id", Value: 1}}},
 			{keys: bson.D{{Key: "last_seen", Value: 1}}},
 		},
+	},
+	{
+		name: AppConfigCollection,
+		validator: jsonSchema([]string{"_id", "version", "values", "updated_at"}, map[string]any{
+			"_id":        str(),
+			"version":    typ("long"),
+			"values":     str(),
+			"updated_at": typ("date"),
+			"updated_by": str(),
+		}),
+	},
+	{
+		name: AppConfigHistoryCollection,
+		validator: jsonSchema([]string{"_id", "at", "actor", "kind", "changes", "values"}, map[string]any{
+			"_id":            typ("long"),
+			"at":             typ("date"),
+			"actor":          str(),
+			"kind":           map[string]any{"enum": bson.A{"set", "rollback"}},
+			"rolled_back_to": typ("long"),
+			"changes":        str(),
+			"values":         str(),
+		}),
+		indexes: []systemIndex{{keys: bson.D{{Key: "at", Value: 1}}}},
 	},
 	{
 		name: ConsentRecordsCollection,

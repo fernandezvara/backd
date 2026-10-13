@@ -150,6 +150,10 @@ func (f *functions) internalRoutes(r chi.Router) {
 	r.With(noStore).Post("/v1/{realm}/_email/send", f.emailSend)
 	r.With(noStore).Post("/v1/{realm}/_push/send", f.pushSend)
 	r.With(noStore).Put("/v1/{realm}/_job/steps", f.putSteps)
+	// The app configuration as functions see it: no read rules, changed only with `config: write`.
+	r.With(noStore).Get("/v1/{realm}/_fn/config", f.configRead)
+	r.With(noStore).Patch("/v1/{realm}/_fn/config", f.configWrite)
+	r.With(noStore).Get("/v1/{realm}/_fn/config/history", f.configHistory)
 }
 
 func (f *functions) routes(r chi.Router) {
@@ -807,7 +811,11 @@ func (f *functions) mayInvoke(w http.ResponseWriter, r *http.Request, fn *regist
 	}
 	allowed := false
 	if fn.Invoke != nil {
-		ok, err := fn.Invoke.Allow(rules.Values{User: rulesUser(c), Now: f.docs.now()})
+		vals := rules.Values{User: rulesUser(c), Now: f.docs.now()}
+		if fn.Invoke.UsesConfig() {
+			vals.Config = f.docs.configValues(r, fn.Realm)
+		}
+		ok, err := fn.Invoke.Allow(vals)
 		if err != nil {
 			logger(r.Context()).Debug("invoke rule failed", "error", err)
 		}
@@ -855,7 +863,7 @@ func userEnvelope(c auth.Caller) json.RawMessage {
 // callback gives the function its tokens: ctx.db acts as the caller,
 // ctx.admin.db (admin: true only) has full access as the function.
 func (f *functions) callback(realm, database, name string, fn *registry.Function, c auth.Caller, expires time.Time, invID string, depth int, job *auth.Job) *executor.Callback {
-	claims := auth.CallbackClaims{Realm: realm, Function: database + "/" + name, Expires: expires, Calls: fn.Calls, Depth: depth, Inv: invID, Email: fn.Email, Push: fn.Push != nil}
+	claims := auth.CallbackClaims{Realm: realm, Function: database + "/" + name, Expires: expires, Calls: fn.Calls, Depth: depth, Inv: invID, Email: fn.Email, Push: fn.Push != nil, Config: fn.ConfigWrite}
 	if job != nil {
 		claims.Job, claims.Attempt = job.ID, job.Attempts
 	}
@@ -866,7 +874,10 @@ func (f *functions) callback(realm, database, name string, fn *registry.Function
 	if c.Key != nil {
 		claims.KeyHash = c.Key.Hash
 	}
-	cb := &executor.Callback{URL: f.callbackURL, Realm: realm, Database: database, Token: auth.SignCallback(f.docs.callbackKey, claims), Email: fn.Email, Push: fn.Push != nil, Progress: job != nil}
+	cb := &executor.Callback{URL: f.callbackURL, Realm: realm, Database: database, Token: auth.SignCallback(f.docs.callbackKey, claims), Email: fn.Email, Push: fn.Push != nil, Progress: job != nil, ConfigWrite: fn.ConfigWrite}
+	if rl := f.docs.reg.Realms[realm]; rl != nil && rl.AppConfig != nil {
+		cb.Config = true
+	}
 	if fn.Admin || (c.Func != nil && c.Func.Admin) {
 		cb.AdminToken = auth.SignCallback(f.docs.callbackKey, auth.CallbackClaims{Realm: realm, Function: database + "/" + name, Admin: true, Expires: expires})
 	}

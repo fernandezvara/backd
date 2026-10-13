@@ -1,6 +1,7 @@
 import { Admin } from './admin.js'
 import { Push } from './push.js'
 import { Consents } from './consents.js'
+import { Config } from './config.js'
 import { Auth } from './auth.js'
 import { Database } from './data.js'
 import { xhrFetch } from './xhr.js'
@@ -39,6 +40,8 @@ import { COOKIE_SESSION, memoryStorage } from './storage.js'
  * @property {boolean | import('./cache.js').CacheOptions} [cache] Keep the last body and `ETag` of document and list
  *   reads in memory and revalidate them with `If-None-Match`, so an unchanged read costs a `304`. On by default;
  *   `false` turns it off, an object sets `maxEntries` (200) and `maxBytes` (5 MB).
+ * @property {import('./config.js').ConfigStorage | false} [configStorage] Where `client.config` keeps its copies between page loads;
+ *   `localStorage` in browsers by default (a blocked one falls back to memory), `false` for memory only.
  * @property {typeof fetch} [fetch]       A fetch implementation; the global one by default.
  * @property {Record<string, string>} [headers] Extra headers for every request.
  */
@@ -155,6 +158,8 @@ export class Client {
     this.push = new Push(this)
     /** The consents the realm asks for: their texts, and what the signed-in user holds. */
     this.consents = new Consents(this)
+    /** The realm's app configuration: flags, switches and limits, cached per user. */
+    this.config = new Config(this, options.configStorage)
   }
 
   /** Whether the client was created with an API key. */

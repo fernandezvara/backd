@@ -1506,6 +1506,47 @@ func TestContract(t *testing.T) {
 	if !excluded {
 		t.Errorf("scope doesn't list the excluded collection: %v", scope["collections"])
 	}
+	// Reading the app configuration, anonymously and signed in, with revalidation.
+	req("GET", "/v1/acme/_config", "", nil, 200)
+	req("GET", "/v1/acme/_config?paths=maintenance", "", ada, 200)
+	req("GET", "/v1/acme/_config?paths=nope", "", nil, 400)
+	req("GET", "/v1/acme/_config", "", with(nil, "Authorization", "Bearer nope"), 401)
+	req("GET", "/v1/nope/_config", "", nil, 404)
+	cfgTag := ""
+	{
+		rec, _ := f.doH(t, "GET", "/v1/acme/_config", "", nil)
+		cfgTag = rec.Header().Get("ETag")
+	}
+	req("GET", "/v1/acme/_config", "", with(nil, "If-None-Match", cfgTag), 304)
+	// App configuration: read, change with If-Match, history and rollback.
+	cfg := ad + "/app-config"
+	req("GET", cfg, "", nil, 401)
+	req("GET", cfg, "", ada, 403)
+	req("GET", cfg, "", key, 200)
+	jkey := typed(key, "application/json")
+	req("PATCH", cfg, `{"set": {"maintenance.enabled": true}}`, jkey, 428)
+	req("PATCH", cfg, `{"set": {"maintenance.enabled": true}}`, with(jkey, "If-Match", "bad"), 400)
+	req("PATCH", cfg, `{"set": {"maintenance.enabled": "yes"}}`, with(jkey, "If-Match", `"c0"`), 400)
+	req("PATCH", cfg, `{"set": {"maintenance.enabled": true}}`, with(jkey, "If-Match", `"c9"`), 412)
+	req("PATCH", cfg, `{"set": {"maintenance.enabled": true}}`, with(jkey, "If-Match", `"c0"`), 200)
+	req("PATCH", cfg, `{"set": {"maintenance.enabled": true}}`, with(jkey, "If-Match", `"c1"`), 200)
+	req("PATCH", cfg, `{"reset": ["maintenance"]}`, with(jkey, "If-Match", `"c1"`), 200)
+	req("GET", cfg+"/history", "", key, 200)
+	req("GET", cfg+"/history", "", nil, 401)
+	req("GET", cfg+"/history", "", ada, 403)
+	req("GET", "/v1/nope/_admin/app-config", "", key, 404)
+	req("GET", "/v1/nope/_admin/app-config/history", "", key, 404)
+	req("PATCH", "/v1/nope/_admin/app-config", `{"reset": ["maintenance"]}`, with(jkey, "If-Match", `"c0"`), 404)
+	req("PATCH", cfg, `{"reset": ["maintenance"]}`, typed(nil, "application/json"), 401)
+	req("PATCH", cfg, `{"reset": ["maintenance"]}`, typed(ada, "application/json"), 403)
+	req("GET", cfg+"/history?limit=x", "", key, 400)
+	req("POST", cfg+"/rollback", `{"version": "c1"}`, with(jkey, "If-Match", `"c2"`), 200)
+	req("POST", cfg+"/rollback", `{"version": "c40"}`, with(jkey, "If-Match", `"c3"`), 404)
+	req("POST", cfg+"/rollback", `{"version": "c1"}`, with(jkey, "If-Match", `"c9"`), 412)
+	req("POST", cfg+"/rollback", `{"version": "c1"}`, jkey, 428)
+	req("POST", cfg+"/rollback", `{"version": "x"}`, with(jkey, "If-Match", `"c3"`), 400)
+	req("POST", cfg+"/rollback", `{"version": "c1"}`, typed(nil, "application/json"), 401)
+	req("POST", cfg+"/rollback", `{"version": "c1"}`, typed(ada, "application/json"), 403)
 	req("POST", ad+"/storage/reconcile", `{}`, key, 200)
 	req("POST", ad+"/storage/reconcile", `{"delete": true}`, key, 200)
 	req("POST", ad+"/storage/reconcile", `{"delete": 5}`, key, 400)

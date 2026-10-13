@@ -321,3 +321,46 @@ tests:
 		t.Errorf("%d assertions ran, want 10", len(checks))
 	}
 }
+
+func TestFixtureGivesAppConfig(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, content string) {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("acme/realm.yaml", "roles:\n  admin: {}\n")
+	write("acme/app-config/schema.json", `{"type":"object","additionalProperties":false,"properties":{"features":{"type":"object","additionalProperties":false,"properties":{"export":{"type":"boolean","default":true}}}}}`)
+	write("acme/app/posts/schema.json", schema)
+	write("acme/app/posts/collection.yaml", rulesSection("create: user != nil && appConfig(\"features.export\") == true\n"))
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := reg.Collection("acme", "app", "posts")
+	fixture := `
+config:
+  features.export: false
+users:
+  ada: {id: u1}
+tests:
+  - name: the switch is off
+    as: ada
+    create:
+      - data: {title: x}
+        expect: deny
+`
+	checks, problems := Run(c, roles, []byte(fixture))
+	if len(problems) > 0 || len(checks) != 1 || !checks[0].Pass {
+		t.Errorf("checks = %+v, problems = %v", checks, problems)
+	}
+	on := strings.Replace(fixture, "false", "true", 1)
+	checks, _ = Run(c, roles, []byte(on))
+	if len(checks) != 1 || checks[0].Pass {
+		t.Errorf("with the switch on the deny should fail: %+v", checks)
+	}
+}

@@ -68,6 +68,7 @@ func (d *documents) routes(r chi.Router) {
 		d.mountDocuments(r)
 	})
 	r.With(noStore, withTimeout(d.opTimeout), requireContentType("application/json")).Post("/v1/{realm}/{database}/_batch", d.batch)
+	r.With(dataCaching, withTimeout(d.opTimeout)).Get("/v1/{realm}/_config", d.readAppConfig)
 }
 
 // mountDocuments registers the document operations of one collection: the

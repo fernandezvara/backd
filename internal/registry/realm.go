@@ -36,7 +36,10 @@ const (
 	DefaultIdleTimeout    = 30 * 24 * time.Hour
 	DefaultMaxLifetime    = 90 * 24 * time.Hour
 	DefaultAuditRetention = 365 * 24 * time.Hour
-	minAuditRetention     = 24 * time.Hour
+	// DefaultAppConfigCacheTTL is how long a client may use the app configuration without asking.
+	DefaultAppConfigCacheTTL = 5 * time.Minute
+	maxAppConfigCacheTTL     = 24 * time.Hour
+	minAuditRetention        = 24 * time.Hour
 	// DefaultLogRetention is functions.log_retention's default: a short
 	// debugging window, not a log archive (see the docs).
 	DefaultLogRetention = 7 * 24 * time.Hour
@@ -92,6 +95,9 @@ type RealmSettings struct {
 	// UserNetworks are the network restrictions realm.yaml sets per user
 	// email (in a role's user entries).
 	UserNetworks map[string]UserNetworks
+	// AppConfigCacheTTL is how long clients treat the app configuration as fresh
+	// (app_config.cache_ttl); zero when not set: use AppConfigTTL.
+	AppConfigCacheTTL time.Duration
 	// AuditRetention is how long audit records are kept (audit.retention);
 	// DefaultAuditRetention when not set.
 	AuditRetention time.Duration
@@ -326,6 +332,9 @@ type realmDoc struct {
 	Audit *struct {
 		Retention *string `yaml:"retention"`
 	} `yaml:"audit"`
+	AppConfig *struct {
+		CacheTTL *string `yaml:"cache_ttl"`
+	} `yaml:"app_config"`
 	Roles map[string]*struct {
 		Description string      `yaml:"description"`
 		Admin       adminDoc    `yaml:"admin"`
@@ -592,6 +601,18 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 			errs = append(errs, fmt.Errorf("audit.retention: must be at least 1d, got %s", *a.Retention))
 		default:
 			s.AuditRetention = d
+		}
+	}
+
+	if a := doc.AppConfig; a != nil && a.CacheTTL != nil {
+		d, err := ParseDuration(*a.CacheTTL)
+		switch {
+		case err != nil:
+			errs = append(errs, fmt.Errorf("app_config.cache_ttl: %w", err))
+		case d < time.Second || d > maxAppConfigCacheTTL:
+			errs = append(errs, fmt.Errorf("app_config.cache_ttl: must be between 1s and 1d, got %s", *a.CacheTTL))
+		default:
+			s.AppConfigCacheTTL = d
 		}
 	}
 
@@ -1188,3 +1209,11 @@ func redirectAllowed(allowed []string, raw string) bool {
 }
 
 var localePattern = regexp.MustCompile(`^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$`)
+
+// AppConfigTTL is how long clients may use the app configuration without asking again.
+func (s RealmSettings) AppConfigTTL() time.Duration {
+	if s.AppConfigCacheTTL > 0 {
+		return s.AppConfigCacheTTL
+	}
+	return DefaultAppConfigCacheTTL
+}

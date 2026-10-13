@@ -426,6 +426,61 @@ check('no digest mail followed the withdrawal', (await countDigestMails()) === m
 const regiven = await member.consents.accept({ marketing: consentVersions.marketing })
 check('accepting it again is recorded', regiven.consents.marketing === consentVersions.marketing && (await member.consents.state()).history.length >= 4, JSON.stringify(regiven))
 
+heading('App configuration (ch18)')
+// The admin API for configuration: the operator's session token, as the admin UI would use it.
+const operatorToken = /** @type {string} */ (await operator.storage.get())
+const adminConfig = async (/** @type {string} */ method, /** @type {string} */ path, /** @type {any} */ body, /** @type {string} */ base) => {
+  const res = await fetch(`${url}/v1/shelf/_admin/app-config${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${operatorToken}`, 'Content-Type': 'application/json', ...(base ? { 'If-Match': `"${base}"` } : {}) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  return { status: res.status, body: /** @type {any} */ (await res.json().catch(() => ({}))) }
+}
+const currentVersion = async () => (await adminConfig('GET', '', undefined, '')).body.version
+// Start from the defaults, whatever an earlier run left.
+await adminConfig('PATCH', '', { reset: ['maintenance', 'features'] }, await currentVersion())
+
+const visitor = createClient({ url, realm: 'shelf' })
+const seen = await visitor.config.load()
+check('a visitor reads the public banner, nothing else', seen.maintenance?.enabled === false && seen.features === undefined, JSON.stringify(seen))
+const memberSeen = await member.config.load(['maintenance', 'features'])
+check('a member also reads the features', memberSeen.features?.export?.enabled === true, JSON.stringify(memberSeen))
+const exported = /** @type {any} */ (await main(member).fn('export'))
+check('a member exports their assets while the switch is on', typeof exported.count === 'number' && Array.isArray(exported.assets), JSON.stringify(exported).slice(0, 160))
+
+// The window, opened and closed by the cron functions (run by hand here).
+const changed17 = /** @type {string[][]} */ ([])
+visitor.config.on('change', (paths) => changed17.push(paths))
+const opened17 = /** @type {any} */ (await operator.admin.invokeFunction('main/maintenance-open', { input: { message: 'Back at 04:00' } }))
+await opened17.wait({ pollIntervalMs: 300, timeoutMs: 90000 })
+check('the window opens', (await visitor.config.get('maintenance.enabled', { refresh: true })) === true && visitor.config.getSync('maintenance.message') === 'Back at 04:00')
+check('the client announced which paths changed', changed17.length === 1 && changed17[0].includes('maintenance.enabled'), JSON.stringify(changed17))
+const closed17 = /** @type {any} */ (await operator.admin.invokeFunction('main/maintenance-close'))
+await closed17.wait({ pollIntervalMs: 300, timeoutMs: 90000 })
+check('the window closes: the group is back at its defaults', (await visitor.config.get('maintenance.enabled', { refresh: true })) === false && visitor.config.getSync('maintenance.message') === '')
+
+// The history names the function; revalidation costs a 304.
+const hist17 = (await adminConfig('GET', '/history?limit=5')).body.history
+check('the history names the function that opened the window', hist17.some((h) => h.actor === 'function:main/maintenance-open'), JSON.stringify(hist17.map((h) => h.actor)))
+const first17 = await fetch(`${url}/v1/shelf/_config?paths=maintenance`)
+const tag17 = first17.headers.get('ETag') ?? ''
+const again17 = await fetch(`${url}/v1/shelf/_config?paths=maintenance`, { headers: { 'If-None-Match': tag17 } })
+check('an unchanged banner revalidates with a 304, and is public for a CDN', again17.status === 304 && /public, max-age=\d+/.test(first17.headers.get('Cache-Control') ?? ''), `${again17.status} ${first17.headers.get('Cache-Control')}`)
+
+// The switch the server enforces.
+let version17 = await currentVersion()
+const off17 = await adminConfig('PATCH', '', { set: { 'features.export.enabled': false } }, version17)
+check('an administrator turns the export off', off17.status === 200 && off17.body.changed === true, JSON.stringify(off17))
+await refused('the export function refuses, whatever the app shows (403)', () => main(member).fn('export'), ForbiddenError, '')
+check('the member reads the switch as off', (await member.config.get('features.export.enabled', { refresh: true })) === false)
+const stale17 = await adminConfig('PATCH', '', { set: { 'maintenance.enabled': true } }, version17)
+check('a change based on an old version is refused (412)', stale17.status === 412, JSON.stringify(stale17))
+const invalid17 = await adminConfig('PATCH', '', { set: { 'maintenance.message': 'x'.repeat(500) } }, await currentVersion())
+check('a value that breaks the schema is refused, with its path (400)', invalid17.status === 400 && invalid17.body.error.details[0].path === 'maintenance.message', JSON.stringify(invalid17))
+const back17 = await adminConfig('POST', '/rollback', { version: version17 }, await currentVersion())
+check('a rollback restores the earlier state as a new version', back17.status === 200 && (await main(member).fn('export')).count >= 0, JSON.stringify(back17))
+
 heading('cleanup by hand (ch9)')
 const sweep = /** @type {any} */ (await operator.admin.invokeFunction('main/cleanup'))
 const swept = /** @type {any} */ (await sweep.wait({ pollIntervalMs: 300, timeoutMs: 90000 }))

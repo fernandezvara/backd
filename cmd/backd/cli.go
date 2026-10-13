@@ -414,6 +414,52 @@ func registerRemote(cfg *kli.Config) {
 		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
 		boolean(cc, "json", "print it as JSON")
 	})
+	appcfg := cfg.Command("app-config").ShortHelp("the realm's app configuration: values, history, rollback")
+	appcfg.SubCommand("get").ShortHelp("show the configuration with every value").
+		LongHelp("Asks the running backd for the realm's app configuration: every key with its effective value (the keys clients\ncan't read too), marking the ones that differ from their defaults, and the stored values that stopped validating\nafter a deploy. --key limits it to one key or group. Needs the config area (read is enough). " + adminAPINote).
+		Func(act("app-config get", appConfigGet)).Config(func(cc *kli.CommandConfig) {
+		required(cc, "realm", "the realm")
+		optional(cc, "key", "only this key or group, as a dot path")
+		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+		boolean(cc, "json", "print it as JSON")
+	})
+	appcfg.SubCommand("set").ShortHelp("change values").
+		LongHelp("Sets one value with --key and --value (JSON when it parses: true, 10, [\"a\"]; text otherwise), or several with\n--values '{\"a.b\": 1, \"c.d\": true}'. The result is validated as a whole against app-config/schema.json and applied\nor refused. The change is based on the version read just before (or --if-match). Needs the config area with write\naccess. Audited as appconfig.change. " + adminAPINote).
+		Func(act("app-config set", appConfigSet)).Config(func(cc *kli.CommandConfig) {
+		required(cc, "realm", "the realm")
+		optional(cc, "key", "the key to set, as a dot path")
+		optional(cc, "value", "its value")
+		optional(cc, "values", "several values, as a JSON object of key path to value")
+		optional(cc, "if-match", "the version the change is based on (default: the current one)")
+		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+		boolean(cc, "json", "print the result as JSON")
+	})
+	appcfg.SubCommand("reset").ShortHelp("return keys to their defaults").
+		LongHelp("Returns keys, or whole groups of keys, to the defaults declared in schema.json. Needs the config area with write\naccess. Audited as appconfig.change. " + adminAPINote).
+		Func(act("app-config reset", appConfigReset)).Config(func(cc *kli.CommandConfig) {
+		required(cc, "realm", "the realm")
+		required(cc, "keys", "the keys or groups to reset, comma separated")
+		optional(cc, "if-match", "the version the change is based on (default: the current one)")
+		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+		boolean(cc, "json", "print the result as JSON")
+	})
+	appcfg.SubCommand("history").ShortHelp("show who changed what").
+		LongHelp("The versions of the configuration, newest first, with the actor and every path's old and new value. The last 100\nversions or 90 days are kept, whichever is longer. Needs the config area (read is enough). " + adminAPINote).
+		Func(act("app-config history", appConfigHistory)).Config(func(cc *kli.CommandConfig) {
+		required(cc, "realm", "the realm")
+		optional(cc, "limit", "how many versions (default and most: 100)")
+		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+		boolean(cc, "json", "print it as JSON")
+	})
+	appcfg.SubCommand("rollback").ShortHelp("restore an earlier version").
+		LongHelp("Restores the values a version had (c0 is the defaults) as a new version, so the rollback is in the history too.\nValues that no longer fit the schema are refused. Needs the config area with write access. Audited as\nappconfig.change. " + adminAPINote).
+		Func(act("app-config rollback", appConfigRollback)).Config(func(cc *kli.CommandConfig) {
+		required(cc, "realm", "the realm")
+		required(cc, "version", "the version to restore, such as c2")
+		optional(cc, "if-match", "the version the change is based on (default: the current one)")
+		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+		boolean(cc, "json", "print the result as JSON")
+	})
 	files := cfg.Command("files").ShortHelp("work on the image files documents hold")
 	files.SubCommand("regenerate").ShortHelp("make the image versions of a file field again when they no longer match its declaration").
 		LongHelp("Starts a job that goes through every document of a file field and makes again, on a worker, the image\nversions whose copies no longer match the field's `versions:` in collection.yaml: copies made with other\nparameters (after you changed the declaration), copies that failed or never finished, and versions added later\nthat a file has no copy of. Copies a function generated with its own parameters, versions only functions\nmake, and files that are not pictures are left alone. --missing-only makes only the copies that do not exist.\nThe job runs in the background (one per field at a time), makes at most --rate files a second, keeps serving\nthe old copy of a file until its new one is ready, and can be cancelled and resumed: running it again skips\nwhat matches already. This command follows its progress on stderr; --no-wait only starts it. Needs the config\narea with write access. Audited as files.versions.regenerate. " + adminAPINote).

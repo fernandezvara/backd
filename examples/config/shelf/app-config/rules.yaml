@@ -1,0 +1,5 @@
+# Who may read what (chapter 18). A path with no rule, here or on an ancestor,
+# is not readable by apps.
+read:
+  maintenance: "true"     # everyone, without signing in: the banner
+  features: user != nil   # signed-in members

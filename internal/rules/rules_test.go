@@ -2,9 +2,11 @@ package rules
 
 import (
 	"errors"
+	"github.com/fernandezvara/backd/internal/storage"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 var testSchema = Schema{
@@ -236,5 +238,69 @@ func TestRestoreAndPurgeRules(t *testing.T) {
 	// A restore rule becomes a database filter, so it follows read's limits.
 	if _, errs := parseYAML("read: 'true'\nrestore: document.tags == nil\n", testSchema); len(errs) == 0 {
 		t.Log("(array comparison accepted by the test schema)")
+	}
+}
+
+func TestCompileConfig(t *testing.T) {
+	ok, err := CompileConfig(`user != nil && hasRole(user, "beta") && now.Year() >= 2026`, []string{"beta"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok.AlwaysTrue() {
+		t.Error("a role rule is not always true")
+	}
+	u := &User{Roles: []string{"beta"}}
+	if got, err := ok.Allow(Values{User: u, Now: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}); err != nil || !got {
+		t.Errorf("allow = %v, %v", got, err)
+	}
+	if got, _ := ok.Allow(Values{Now: time.Now()}); got {
+		t.Error("anonymous callers pass a role rule")
+	}
+	if r, err := CompileConfig("true", nil, nil); err != nil || !r.AlwaysTrue() {
+		t.Errorf("true: %v, %v", r, err)
+	}
+	for _, src := range []string{`document.x == 1`, `data.x == 1`, `hasRole(user, "ghost")`, `user.id == "a"`, `hasConsent(user, "ghost")`} {
+		if _, err := CompileConfig(src, []string{"beta"}, nil); err == nil {
+			t.Errorf("%q compiled", src)
+		}
+	}
+}
+
+func TestAppConfigInRules(t *testing.T) {
+	schema := testSchema
+	schema.ConfigLeaf = func(p string) bool { return p == "features.export.enabled" || p == "limits.max" }
+	set, errs := Parse(map[string]string{
+		"read":   `appConfig("features.export.enabled") == true && document.published == true`,
+		"create": `user != nil && appConfig("limits.max") > 3`,
+	}, schema)
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	cfg := map[string]any{"features.export.enabled": true, "limits.max": float64(5)}
+	f, err := set.For(Read).Filter(Values{Config: cfg})
+	if _, isCond := f.(storage.Condition); err != nil || !isCond {
+		t.Errorf("filter with the flag on = %v, %v", f, err)
+	}
+	off, _ := set.For(Read).Filter(Values{Config: map[string]any{"features.export.enabled": false}})
+	if c, ok := off.(storage.Const); !ok || bool(c) {
+		t.Errorf("filter with the flag off = %#v, want a constant false", off)
+	}
+	if !set.For(Read).UsesConfig() || !set.UsesConfig() {
+		t.Error("UsesConfig is false")
+	}
+	if ok, err := set.For(Create).Allow(Values{User: &User{ID: "u"}, Config: cfg}); err != nil || !ok {
+		t.Errorf("create = %v, %v", ok, err)
+	}
+	if ok, _ := set.For(Create).Allow(Values{User: &User{ID: "u"}, Config: map[string]any{"limits.max": float64(1)}}); ok {
+		t.Error("create allowed with a low limit")
+	}
+	// A key that isn't declared, or isn't a literal, is refused; so is any use without a configuration.
+	for _, src := range []string{`appConfig("nope") == true`, `appConfig(user.id) == true`, `appConfig("features.export.enabled", 1)`} {
+		if _, errs := Parse(map[string]string{"create": "user != nil && " + src}, schema); len(errs) == 0 {
+			t.Errorf("%s compiled", src)
+		}
+	}
+	if _, errs := Parse(map[string]string{"read": `appConfig("a") == true`}, testSchema); len(errs) == 0 {
+		t.Error("appConfig compiled in a realm without configuration")
 	}
 }

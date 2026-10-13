@@ -76,6 +76,7 @@ YAML reads a value starting with `'`, `!`, `[` or `{` specially, so quote such r
 | `now` | all | The current time, only for comparing with a timestamp: `document._meta.created_at`, `document._meta.updated_at`, or a field the schema [stores as a date](../../configuration/config-dir/#dates) |
 | `hasRole(user, 'a', 'b', …)` | all | True if the user has any of the roles; false for anonymous callers |
 | `hasConsent(user, 'a', 'b', …)` | all | True if the user holds every named [consent](../consents/) (any version); false for anonymous callers |
+| `appConfig("a.b")` | all | The value of a key of the realm's [app configuration](../../configuration/app-config/#in-rules), read once for the request. The key is a string literal naming a declared value, or startup fails. Use it for kill switches that must hold on the server: `appConfig("features.export.enabled") == true` |
 | `changed()` | update | The top-level fields whose value differs between `document` and `data` |
 
 Rules have no access to the request itself (headers, address) and can't look up other documents. For shared documents, store member ids in an array and check `user.id in document.members`.
@@ -195,6 +196,8 @@ Uploads and removals of [file fields](../../files/file-fields/) follow the `upda
 ## Testing rules
 
 `backd rules test` checks your rules without MongoDB and without starting `backd`. It reads a fixture, `rules.test.yaml`, next to each `collection.yaml`: named callers, stored documents, and for each caller which documents they may read, create, update, delete, restore and purge. It prints what fails and exits non-zero, so it fits a CI step before packaging. It needs only `CONFIG_DIR`.
+
+A rule that reads the [app configuration](../../configuration/app-config/#in-rules) gets its values from a top-level `config:` in the fixture, by dot path (`features.export.enabled: false`).
 
 ```yaml
 # rules.test.yaml

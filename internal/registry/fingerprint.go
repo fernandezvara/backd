@@ -70,6 +70,11 @@ func (r *Registry) Fingerprint() (string, error) {
 				return nil
 			})
 		}
+		if rl.AppConfig != nil {
+			// What the configuration may hold and who may read it.
+			add(filepath.Join(rl.Name, AppConfigDir, appConfigSchemaFile))
+			add(filepath.Join(rl.Name, AppConfigDir, appConfigRulesFile))
+		}
 		for _, db := range rl.Databases {
 			for _, c := range db.Collections {
 				for _, f := range []string{schemaFile, indexesFile, CollectionFile} {

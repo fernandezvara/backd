@@ -20,7 +20,7 @@ func TestCompileInvoke(t *testing.T) {
 		{"hasRole(user, 'staff')", nil, false},
 		{"user != nil && 'staff' in user.roles", &User{ID: "u1"}, false},
 	} {
-		r, err := CompileInvoke(tt.src, roles)
+		r, err := CompileInvoke(tt.src, roles, nil)
 		if err != nil {
 			t.Errorf("%s: %v", tt.src, err)
 			continue
@@ -39,7 +39,7 @@ func TestCompileInvoke(t *testing.T) {
 		"now > now":                 "`now` can only be compared",
 		"1 + 1":                     "expected bool",
 	} {
-		if _, err := CompileInvoke(src, roles); err == nil || !strings.Contains(err.Error(), want) {
+		if _, err := CompileInvoke(src, roles, nil); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: %v, want %q", src, err, want)
 		}
 	}

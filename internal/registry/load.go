@@ -72,6 +72,8 @@ func Load(root string) (*Registry, error) {
 		}
 		realm := &Realm{Name: realmName, Settings: settings, Databases: map[string]*Database{}}
 		reg.Realms[realmName] = realm
+		// Before the databases: their rules may read the configuration.
+		errs = append(errs, loadAppConfig(realm, realmPath)...)
 
 		dbDirs, err := subdirs(realmPath)
 		if err != nil {
@@ -94,6 +96,7 @@ func Load(root string) (*Registry, error) {
 		errs = append(errs, loadOnSignup(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadPush(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadConsents(reg.Realms[realmName], filepath.Join(root, realmName))...)
+		errs = append(errs, checkConfigGrants(reg.Realms[realmName], filepath.Join(root, realmName))...)
 	}
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
@@ -220,7 +223,7 @@ func loadDatabase(rl *Realm, name, path string) (*Database, []error) {
 	if len(mongoName) >= maxMongoDBNameLen {
 		return nil, []error{fmt.Errorf("%s: MongoDB database name %q must be shorter than %d characters", path, mongoName, maxMongoDBNameLen)}
 	}
-	db := &Database{Realm: realm, Name: name, MongoName: mongoName, Collections: map[string]*Collection{}}
+	db := &Database{Realm: realm, Name: name, MongoName: mongoName, Collections: map[string]*Collection{}, appConfig: rl.AppConfig}
 
 	collDirs, err := subdirs(path)
 	if err != nil {
@@ -310,6 +313,7 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 		Schema:        compiled,
 		Fields:        fieldIndex(raw),
 		Files:         files,
+		configLeaf:    db.configLeaf(),
 	}
 	if err := loadIndexes(coll, filepath.Join(dir, indexesFile)); err != nil {
 		return nil, err
@@ -374,6 +378,7 @@ func loadRules(c *Collection, settings RealmSettings, dir string) error {
 		DateField:     c.DateField,
 		Roles:         roles,
 		Consents:      settings.ConsentNames(),
+		ConfigLeaf:    c.configLeaf,
 	})
 	if len(errs) > 0 {
 		for i, e := range errs {

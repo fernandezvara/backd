@@ -159,10 +159,47 @@ if (env.callback?.token && env.callback.push) {
     },
   });
 }
+if (env.callback?.token && env.callback.config) {
+  // The app configuration, whole and with no read rules: every function reads it.
+  // get(path) takes a key or a group by dot path and returns undefined for a key that
+  // doesn't exist; all() returns the nested values. Read as the call starts using it.
+  const reader = client(env.callback.token);
+  const all = async () => (await reader.request({ method: "GET", path: ["_fn", "config"] })).data.values;
+  ctx.config = Object.freeze({
+    all,
+    get: async (path) => String(path).split(".").reduce((v, k) => (v !== null && typeof v === "object" ? v[k] : undefined), await all()),
+  });
+}
+let adminCtx;
 if (env.callback?.admin_token) {
   const admin = client(env.callback.admin_token);
-  ctx.admin = Object.freeze({ db: (name) => admin.db(name) });
+  adminCtx = { db: (name) => admin.db(name) };
 }
+if (env.callback?.token && env.callback.config_write) {
+  // Changes values as this function: set({ "a.b": 1 }), reset(["a.b"]) and history(limit).
+  // Validated as a whole and atomic; a value that doesn't fit throws a FunctionError with
+  // code validation_error and the failing paths in its details.
+  const writer = client(env.callback.token);
+  const call = async (req) => {
+    try {
+      return (await writer.request(req)).data;
+    } catch (e) {
+      if (e && Number.isInteger(e.status) && e.status >= 400 && e.status <= 499 && typeof e.code === "string") {
+        throw new FunctionError(e.status, e.code, e.message, e.details?.length ? e.details : undefined);
+      }
+      throw e;
+    }
+  };
+  adminCtx = {
+    ...(adminCtx ?? {}),
+    config: Object.freeze({
+      set: (values) => call({ method: "PATCH", path: ["_fn", "config"], body: { set: values } }),
+      reset: (paths) => call({ method: "PATCH", path: ["_fn", "config"], body: { reset: paths } }),
+      history: async (limit) => (await call({ method: "GET", path: ["_fn", "config", "history"], query: limit === undefined ? {} : { limit } })).history,
+    }),
+  };
+}
+if (adminCtx) ctx.admin = Object.freeze(adminCtx);
 // Steps and progress: kept here and sent with the result; for an async job
 // backd also takes them live (coalesced), so a running job shows how far it got.
 let flusher = null;

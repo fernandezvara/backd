@@ -34,11 +34,13 @@ type Realm struct {
 	Pages *email.Pages
 	// Push holds the parsed push templates of <realm>/push/; nil when the realm has no push: section.
 	Push *push.Templates
+	// AppConfig is the realm's declared app configuration (<realm>/app-config/); nil when it has none.
+	AppConfig *AppConfig
 }
 
 // ReservedDirs are folders of a realm that hold something other than a
 // database: they are never read as databases.
-var ReservedDirs = []string{email.DirName, email.PagesDirName, push.DirName, ConsentsDir}
+var ReservedDirs = []string{email.DirName, email.PagesDirName, push.DirName, ConsentsDir, AppConfigDir}
 
 // Database is one application's data, stored in one MongoDB database.
 type Database struct {
@@ -47,6 +49,8 @@ type Database struct {
 	MongoName   string // <realm>__<database>
 	Collections map[string]*Collection
 	Functions   *Functions // from _functions/; nil when the database has none
+	// appConfig is the realm's, for the rules of its collections that read it.
+	appConfig *AppConfig
 }
 
 // Collection is a set of documents validated by one JSON Schema.
@@ -67,6 +71,7 @@ type Collection struct {
 	SoftDelete    *SoftDelete           // from collection.yaml; nil: DELETE removes the document
 	PersonalData  *PersonalData         // from collection.yaml's personal_data:; nil: owned documents, whole
 	Cache         *CachePolicy          // from collection.yaml's cache:; nil: responses are private, no-cache
+	configLeaf    func(string) bool     // appConfig() in rules: whether a path is a value of the realm's configuration
 	Files         map[string]*FileField // file fields from collection.yaml's files:; their schema is already in Schema and RawSchema
 }
 

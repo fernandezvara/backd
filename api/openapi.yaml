@@ -3192,6 +3192,53 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_config:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+    get:
+      tags: [documents]
+      summary: Read the app configuration
+      description: |
+        The realm's app configuration (declared in `app-config/`) as the caller may read
+        it: defaults filled in, and only the keys whose read rules allow it (the rule of
+        a key is its own ANDed with every ancestor's; a key with no rule is hidden).
+        Hidden keys are absent, with no error. `paths` selects groups or keys, and a
+        path the schema doesn't declare is `400 invalid_path`. The `ETag` is weak and
+        covers the returned values, so `If-None-Match` answers `304`. `cache_ttl` is how
+        many seconds a client may use the copy without asking again
+        (`app_config.cache_ttl` in `realm.yaml`, 300 by default). An anonymous request
+        whose keys are all readable by a rule that is literally `true` is
+        `Cache-Control: public, max-age=<cache_ttl>` (with `Vary: Authorization`), so a
+        CDN may serve it; everything else is `private, no-cache`. Answers `404` when
+        the realm declares no configuration.
+      operationId: readAppConfig
+      security: [{}, { session: [] }, { apiKey: [] }]
+      parameters:
+        - { name: paths, in: query, description: "Comma-separated key or group paths, in dot notation.", schema: { type: string } }
+        - { $ref: "#/components/parameters/ifNoneMatch" }
+      responses:
+        "200":
+          description: The readable configuration.
+          headers:
+            ETag: { schema: { type: string } }
+            Vary: { $ref: "#/components/headers/DataVary" }
+            Cache-Control: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [values, version, cache_ttl]
+                properties:
+                  values: { type: object, description: "The readable keys, nested like the schema." }
+                  version: { type: string, description: "The configuration version, such as `c3`." }
+                  cache_ttl: { type: integer, description: "Seconds the copy may be used without revalidating." }
+        "304": { $ref: "#/components/responses/NotModified" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_consents:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -3352,6 +3399,148 @@ paths:
               schema: { $ref: "#/components/schemas/ComplianceScope" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/app-config:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+    get:
+      tags: [admin]
+      summary: The app configuration with every value and its latest history
+      description: |
+        The realm's app configuration as it is now (declared in `app-config/`): every
+        key with its effective value, including the keys clients can't read, the
+        values that differ from the defaults, stored values that stopped validating
+        after a deploy (they read as their defaults until fixed or reset), the declared
+        keys with whether clients can read them, and the 20 latest versions. The
+        `ETag` is the version, to send as `If-Match` with a change. Needs the `config`
+        area (read is enough). Answers `404` when the realm declares no configuration.
+      operationId: adminGetAppConfig
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The configuration.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+            ETag: { description: "The configuration version, such as `\"c3\"`.", schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppConfig" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [admin]
+      summary: Change app configuration values
+      description: |
+        Sets values and returns keys to their defaults, as one change: the result is
+        validated as a whole against `app-config/schema.json` and applied atomically,
+        or nothing is. `If-Match` carries the version the change is based on (`412`
+        when it is stale, `428` when missing). A change that leaves every value as it
+        was makes no new version (`changed: false`). `set` names keys (not groups of
+        keys) by dot path; `reset` names keys or groups. Audited as `appconfig.change`
+        with the paths, never the values. Needs the `config` area with write access.
+      operationId: adminPatchAppConfig
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { name: If-Match, in: header, required: true, description: "The configuration version being changed, such as `\"c3\"`.", schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AppConfigChange" }
+      responses:
+        "200":
+          description: The new version, or the same one when nothing changed.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+            ETag: { description: "The configuration version.", schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppConfigResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/VersionMismatch" }
+        "428": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/app-config/history:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+    get:
+      tags: [admin]
+      summary: The app configuration's history
+      description: |
+        The versions of the configuration, newest first, with who made each change and
+        the paths with their old and new values. The last 100 versions or 90 days are
+        kept, whichever is longer.
+      operationId: adminAppConfigHistory
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { name: limit, in: query, description: "How many versions, at most 100.", schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        "200":
+          description: The history.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [history]
+                properties:
+                  history: { type: array, items: { $ref: "#/components/schemas/AppConfigEntry" } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/app-config/rollback:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+    post:
+      tags: [admin]
+      summary: Restore an earlier version of the app configuration
+      description: |
+        Restores the values a version had (0 is the defaults) as a new version, so the
+        rollback is itself in the history. Validated against the schema as it is now:
+        values an earlier version held that no longer fit are refused (`400`), and a
+        version the history no longer holds answers `404`. `If-Match` is required as
+        for a change.
+      operationId: adminRollbackAppConfig
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { name: If-Match, in: header, required: true, description: "The configuration version being changed, such as `\"c3\"`.", schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [version]
+              properties:
+                version: { type: string, description: "The version to restore, such as `\"c2\"`; `\"c0\"` is the defaults." }
+      responses:
+        "200":
+          description: The new version.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+            ETag: { description: "The configuration version.", schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppConfigResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/VersionMismatch" }
+        "428": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_admin/files/versions/regenerate:
@@ -5882,6 +6071,80 @@ components:
             included: { type: array, items: { type: string } }
             excluded: { type: array, items: { type: string } }
 
+    AppConfig:
+      type: object
+      additionalProperties: false
+      required: [version, values, overrides, invalid, keys, history]
+      properties:
+        version: { type: string, description: "The configuration version, such as `c3`; `c0` before any change." }
+        values: { type: object, description: "Every key with its effective value, nested like the schema." }
+        overrides: { type: object, description: "The values that differ from their defaults." }
+        invalid:
+          type: array
+          description: "Stored values that no longer satisfy the schema: they read as their defaults until fixed or reset."
+          items:
+            type: object
+            additionalProperties: false
+            required: [path, reason]
+            properties:
+              path: { type: string }
+              reason: { type: string }
+        keys:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [path, leaf, readable, public]
+            properties:
+              path: { type: string }
+              leaf: { type: boolean, description: "A value (true) or a group of keys." }
+              description: { type: string }
+              readable: { type: boolean, description: "Some rule on the path or an ancestor lets clients read it." }
+              public: { type: boolean, description: "Every rule on the way is literally `true`: anyone, without a session." }
+        history: { type: array, items: { $ref: "#/components/schemas/AppConfigEntry" } }
+        updated_at: { type: string, format: date-time }
+        updated_by: { type: string }
+
+    AppConfigChange:
+      type: object
+      additionalProperties: false
+      properties:
+        set: { type: object, description: "Key path (dot notation) to value." }
+        reset:
+          type: array
+          items: { type: string }
+          description: "Key or group paths to return to their defaults."
+
+    AppConfigResult:
+      type: object
+      additionalProperties: false
+      required: [version, changed, changes]
+      properties:
+        version: { type: string }
+        changed: { type: boolean }
+        changes: { type: array, items: { $ref: "#/components/schemas/AppConfigValueChange" } }
+
+    AppConfigValueChange:
+      type: object
+      additionalProperties: false
+      required: [path, old, new]
+      properties:
+        path: { type: string }
+        old: { description: "The effective value before." }
+        new: { description: "The effective value after." }
+
+    AppConfigEntry:
+      type: object
+      additionalProperties: false
+      required: [version, at, actor, kind, changes]
+      properties:
+        version: { type: string }
+        at: { type: string, format: date-time }
+        actor: { type: string, description: "`user:<id>`, `key:<name>` or `function:<database>/<name>`." }
+        kind: { type: string, enum: [set, rollback] }
+        rolled_back_to: { type: string, description: "For a rollback: the version restored." }
+        changes: { type: array, items: { $ref: "#/components/schemas/AppConfigValueChange" } }
+
     Status:
       type: object
       additionalProperties: false
@@ -5907,8 +6170,9 @@ components:
               type: string
               pattern: "^[a-z][a-z0-9_]{0,63}$"
               description: |
-                backd's codes: invalid_json, validation_error, invalid_query,
-                invalid_header, unauthenticated, invalid_credentials, forbidden,
+                backd's codes: invalid_json, validation_error, invalid_query, invalid_path,
+                invalid_header, precondition_required, unauthenticated,
+                invalid_credentials, forbidden,
                 not_found, method_not_allowed, conflict, email_taken,
                 write_conflict, version_mismatch, payload_too_large,
                 unsupported_media_type, too_many_requests, internal_error,

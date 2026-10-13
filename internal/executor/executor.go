@@ -125,6 +125,10 @@ type Callback struct {
 	AdminToken string `json:"admin_token,omitempty"`
 	Email      bool   `json:"email,omitempty"` // ctx.email.send
 	Push       bool   `json:"push,omitempty"`  // ctx.push.send
+	// Config says the realm has app configuration (ctx.config); ConfigWrite that the function
+	// may change it (ctx.admin.config).
+	Config      bool `json:"config,omitempty"`
+	ConfigWrite bool `json:"config_write,omitempty"`
 	// Progress says the run is an async job's attempt: the runner reports its
 	// steps live with Token (PUT /v1/{realm}/_job/steps).
 	Progress bool `json:"progress,omitempty"`
