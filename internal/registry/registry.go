@@ -38,7 +38,7 @@ type Realm struct {
 
 // ReservedDirs are folders of a realm that hold something other than a
 // database: they are never read as databases.
-var ReservedDirs = []string{email.DirName, email.PagesDirName, push.DirName}
+var ReservedDirs = []string{email.DirName, email.PagesDirName, push.DirName, ConsentsDir}
 
 // Database is one application's data, stored in one MongoDB database.
 type Database struct {

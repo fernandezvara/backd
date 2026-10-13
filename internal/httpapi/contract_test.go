@@ -1400,6 +1400,22 @@ func TestContract(t *testing.T) {
 	req("GET", ad+"/storage", "", key, 200)
 	req("GET", ad+"/storage", "", nil, 401)
 	req("GET", ad+"/storage", "", ada, 403)
+	// Public consent texts.
+	{
+		list := req("GET", "/v1/acme/_consents", "", nil, 200)
+		items := list["items"].([]any)
+		first := items[0].(map[string]any)
+		if len(items) != 1 || first["name"] != "marketing" || first["required"] != false || first["current"].(map[string]any)["version"] != "1" {
+			t.Errorf("consents = %v", list)
+		}
+		text := req("GET", "/v1/acme/_consents/marketing/1?locale=es-MX", "", nil, 200)
+		if text["locale"] != "es" || text["text"] != "Enviadme novedades por correo." || len(text["hash"].(string)) != 64 || text["current"] != true {
+			t.Errorf("text = %v", text)
+		}
+		req("GET", "/v1/acme/_consents/marketing/9", "", nil, 404)
+		req("GET", "/v1/acme/_consents/nope/1", "", nil, 404)
+		req("GET", "/v1/nope/_consents", "", nil, 404)
+	}
 	// The personal data scope: what an export would take from each collection.
 	req("GET", ad+"/compliance/scope", "", nil, 401)
 	req("GET", ad+"/compliance/scope", "", ada, 403)

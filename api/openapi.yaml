@@ -2976,6 +2976,92 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_consents:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+    get:
+      tags: [auth]
+      summary: The consents the realm asks for
+      description: |
+        The consents declared in `realm.yaml`, with the version in force of each, whether
+        it is required, whether that version asks users to accept again (`reaccept`, with
+        the date after which open sessions are refused) and the languages its text exists
+        in. Public: a person reads the texts before they have an account. Needs a realm
+        with authentication enabled.
+      operationId: listConsents
+      security: [{}]
+      responses:
+        "200":
+          description: The consents.
+          headers:
+            Cache-Control: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [name, required, current, locales]
+                      properties:
+                        name: { type: string }
+                        required: { type: boolean }
+                        current:
+                          type: object
+                          additionalProperties: false
+                          required: [version, reaccept]
+                          properties:
+                            version: { type: string }
+                            reaccept: { type: boolean }
+                            reaccept_by: { type: string, format: date }
+                        locales: { type: array, items: { type: string } }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_consents/{name}/{version}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { name: name, in: path, required: true, schema: { type: string } }
+      - { name: version, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [auth]
+      summary: The exact text of a consent version
+      description: |
+        The text of one version in a language: the best match for `locale` among the
+        realm's languages, else the realm's default. `hash` is the SHA-256 of the text,
+        which consent records keep as proof of what was shown. Old versions stay
+        available as long as their text is in the config.
+      operationId: getConsentText
+      security: [{}]
+      parameters:
+        - { name: locale, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: The text.
+          headers:
+            Cache-Control: { schema: { type: string } }
+            Content-Language: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [name, version, locale, text, hash, current]
+                properties:
+                  name: { type: string }
+                  version: { type: string }
+                  locale: { type: string }
+                  text: { type: string, description: Markdown. }
+                  hash: { type: string, pattern: "^[0-9a-f]{64}$" }
+                  current: { type: boolean, description: The version in force. }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/compliance/scope:
     parameters:
       - { $ref: "#/components/parameters/realm" }

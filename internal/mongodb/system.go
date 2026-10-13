@@ -51,6 +51,9 @@ const (
 	// device, with its token sealed and looked up by the hash of the token (or, for a web
 	// subscription, of its endpoint).
 	DevicesCollection = "devices"
+	// ConsentRecordsCollection is the append-only history of consents accepted and
+	// withdrawn: the proof, with the hash of the text shown.
+	ConsentRecordsCollection = "consent_records"
 	// PushSendsCollection holds one record per push send: its totals, never a message.
 	PushSendsCollection = "push_sends"
 	// PushOutboxCollection holds what the capture provider took instead of sending: development
@@ -115,6 +118,7 @@ var systemCollections = []systemCollection{
 			"roles":          map[string]any{"bsonType": "array", "items": str()},
 			"disabled":       typ("bool"),
 			"locale":         str(),
+			"consents":       typ("object"),
 			"admin_networks": map[string]any{"bsonType": "array", "items": str()},
 			"login_networks": map[string]any{"bsonType": "array", "items": str()},
 			"created_at":     typ("date"),
@@ -516,6 +520,27 @@ var systemCollections = []systemCollection{
 			{keys: bson.D{{Key: "user_id", Value: 1}, {Key: "last_seen", Value: -1}}},
 			{keys: bson.D{{Key: "session_id", Value: 1}}},
 			{keys: bson.D{{Key: "last_seen", Value: 1}}},
+		},
+	},
+	{
+		name: ConsentRecordsCollection,
+		validator: jsonSchema([]string{"_id", "user", "consent", "version", "action", "method", "at"}, map[string]any{
+			"_id":        str(),
+			"user":       str(),
+			"consent":    str(),
+			"version":    str(),
+			"locale":     str(),
+			"text_hash":  str(),
+			"action":     map[string]any{"enum": bson.A{"accepted", "withdrawn"}},
+			"method":     map[string]any{"enum": bson.A{"signup", "prompt", "api", "admin"}},
+			"evidence":   str(),
+			"at":         typ("date"),
+			"ip":         str(),
+			"user_agent": str(),
+		}),
+		indexes: []systemIndex{
+			{keys: bson.D{{Key: "user", Value: 1}, {Key: "at", Value: 1}}},
+			{keys: bson.D{{Key: "consent", Value: 1}, {Key: "version", Value: 1}}},
 		},
 	},
 	{

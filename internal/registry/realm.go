@@ -140,6 +140,11 @@ type RealmSettings struct {
 
 	// MagicLink are the settings of sign-in by emailed link and code (magic_link in realm.yaml).
 	MagicLink MagicLinkSettings
+
+	// Consents are the consents the realm asks for (consents in realm.yaml), with the texts
+	// of every version once loaded; Compliance holds what their records keep and for how long.
+	Consents   map[string]*Consent
+	Compliance ComplianceSettings
 }
 
 // MagicLinkSettings are the realm's magic-link settings.
@@ -351,6 +356,9 @@ type realmDoc struct {
 		Enabled bool `yaml:"enabled"`
 		Signup  bool `yaml:"signup"`
 	} `yaml:"magic_link"`
+	// Consents and Compliance are the consent declarations and their record settings.
+	Consents   yaml.Node `yaml:"consents"`
+	Compliance yaml.Node `yaml:"compliance"`
 	// Reauth is how long a fresh proof of identity, asked for before a sensitive
 	// action, stays good.
 	Reauth *struct {
@@ -760,6 +768,18 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 			errs = append(errs, errors.New("magic_link.signup: has no effect while magic_link.enabled is false"))
 		default:
 			s.MagicLink = MagicLinkSettings{Enabled: m.Enabled, Signup: m.Signup}
+		}
+	}
+
+	if doc.Consents.Kind != 0 || doc.Compliance.Kind != 0 {
+		if !s.AuthEnabled {
+			errs = append(errs, errors.New("consents, compliance: only apply when auth is enabled (consents are recorded for users)"))
+		} else {
+			var es []error
+			s.Consents, es = parseConsents(doc.Consents)
+			errs = append(errs, es...)
+			s.Compliance, es = parseCompliance(doc.Compliance)
+			errs = append(errs, es...)
 		}
 	}
 

@@ -223,6 +223,20 @@ mfa:
 # reauth:
 #   ttl: 5m                        # 1m to 1h
 
+# Consents (docs: Authentication -> Consents). Versioned texts people accept and backd
+# keeps as proof. The texts are files: consents/<name>/<version>/<locale>.md for every
+# language of the realm; keep old versions, they are what was accepted.
+# consents:
+#   terms:
+#     required: true               # needed for an account
+#     current: "2026-10"           # the version new accounts accept
+#   marketing:
+#     required: false              # optional: given and withdrawn at will
+#     current: "1"
+# compliance:
+#   consent_proof: [ip, user_agent]  # what each record stores besides time, method and text hash
+#   consent_retention: 3y            # kept this long after erasure; 0 deletes them at erasure
+
 # Accounts. Each setting here but on_signup needs the `email:` section above.
 # account:
 #   require_verified_email: false  # true: no session until the address is verified (sign-up answers 202;

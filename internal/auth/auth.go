@@ -44,8 +44,11 @@ type User struct {
 	// restriction beyond the realm's.
 	AdminNetworks registry.Networks
 	LoginNetworks registry.Networks
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	// Consents is the version of each consent the user has accepted and not
+	// withdrawn: the summary of their consent records, for rules and sign-in.
+	Consents  map[string]string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // Identity is one way a user signs in.
@@ -240,6 +243,14 @@ type Store interface {
 	DeleteStaleDevices(ctx context.Context, before time.Time) (int64, error)
 	// DeleteOrphanedDevices removes the devices whose session doesn't exist or has expired.
 	DeleteOrphanedDevices(ctx context.Context, now time.Time) (int64, error)
+	// AppendConsentRecord adds a record to the user's append-only consent history and
+	// ListConsentRecords returns it, oldest first.
+	AppendConsentRecord(ctx context.Context, r ConsentRecord) error
+	ListConsentRecords(ctx context.Context, userID string) ([]ConsentRecord, error)
+	// SetUserConsent sets the version of a consent the user holds ("" removes it: withdrawn).
+	SetUserConsent(ctx context.Context, userID, consent, version string) error
+	// ConsentVersionsInUse lists the distinct consent and version pairs records refer to.
+	ConsentVersionsInUse(ctx context.Context) ([]ConsentRef, error)
 	// DevicesByIDs returns the devices that exist among the ids. LiveDevicesOf returns the
 	// devices of the users whose registering session exists and hasn't expired, by user id,
 	// most recently seen first. DeleteDeviceByID removes a device whatever its owner.

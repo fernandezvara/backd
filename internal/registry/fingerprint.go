@@ -59,6 +59,17 @@ func (r *Registry) Fingerprint() (string, error) {
 				return nil
 			})
 		}
+		if len(rl.Settings.Consents) > 0 {
+			// The exact texts users accept: changing one changes the config.
+			_ = filepath.WalkDir(filepath.Join(r.Root, rl.Name, ConsentsDir), func(path string, d fs.DirEntry, err error) error {
+				if err == nil && d.Type().IsRegular() && !strings.HasPrefix(d.Name(), ".") {
+					if rel, err := filepath.Rel(r.Root, path); err == nil {
+						files = append(files, filepath.ToSlash(rel))
+					}
+				}
+				return nil
+			})
+		}
 		for _, db := range rl.Databases {
 			for _, c := range db.Collections {
 				for _, f := range []string{schemaFile, indexesFile, CollectionFile} {
