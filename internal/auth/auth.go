@@ -11,8 +11,10 @@ package auth
 import (
 	"context"
 	"errors"
-	"github.com/fernandezvara/backd/internal/registry"
 	"time"
+
+	"github.com/fernandezvara/backd/internal/appconfig"
+	"github.com/fernandezvara/backd/internal/registry"
 )
 
 // ProviderPassword is the identity provider for email + password sign-in.
@@ -243,6 +245,8 @@ type Store interface {
 	DeleteStaleDevices(ctx context.Context, before time.Time) (int64, error)
 	// DeleteOrphanedDevices removes the devices whose session doesn't exist or has expired.
 	DeleteOrphanedDevices(ctx context.Context, now time.Time) (int64, error)
+	// The realm's app configuration state and history (internal/appconfig).
+	appconfig.Store
 	// AppendConsentRecord adds a record to the user's append-only consent history and
 	// ListConsentRecords returns it, oldest first.
 	AppendConsentRecord(ctx context.Context, r ConsentRecord) error

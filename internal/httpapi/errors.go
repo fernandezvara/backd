@@ -36,6 +36,7 @@ const (
 	codeWriteConflict     = "write_conflict"
 	codeVersionMismatch   = "version_mismatch"
 	codeInvalidHeader     = "invalid_header"
+	codePreconditionReq   = "precondition_required"
 	codePayloadTooLarge   = "payload_too_large"
 	codeUnsupportedMedia  = "unsupported_media_type"
 	codeInternal          = "internal_error"

@@ -232,6 +232,17 @@ curl -X PUT https://localhost:8443/v1/blog/_admin/secrets/STRIPE_KEY \
 
 Nothing here can be changed through the API: configuration is a reviewed, versioned artifact, and a change goes through your repository and a deploy.
 
+### App configuration
+
+A realm that [declares app configuration](../../configuration/config-dir/#app-configuration) has its values under `/v1/{realm}/_admin/app-config` (`404` without), in the `config` area: read-only administrators read, full administrators change.
+
+- **`GET`** shows every key with its effective value, the keys clients can't read included, the values that differ from the defaults, stored values that stopped validating after a deploy (they read as their defaults until fixed or reset), and the latest history. The `ETag` is the version, such as `"c3"`.
+- **`PATCH`** with `{"set": {"maintenance.enabled": true}, "reset": ["features.export"]}` and `If-Match: "c3"` validates the result as a whole against the schema and applies it atomically, or applies nothing (`400` with the failing paths). A stale version answers `412`, a missing `If-Match` `428`. A change that leaves every value as it was makes no version.
+- **`GET /app-config/history`** lists versions newest first: who (`user:<id>`, `key:<name>` or a function), when, and each path's old and new value. The last 100 versions or 90 days are kept, whichever is longer.
+- **`POST /app-config/rollback`** with `{"version": "c2"}` restores that version's values as a new version (`c0` is the defaults), if they still fit the schema.
+
+Every change is audited as `appconfig.change` with the version, the kind and the paths, never the values. The command line does the same with `backd app-config get|set|reset|history|rollback --realm <r>`.
+
 ### Data
 
 `/v1/{realm}/_admin/data/{database}/{collection}[/{id}]` (and `/data/{database}/_batch`) serve the [data routes](../../api/documents/)' operations to an administrator **past the collection's rules**: list, get, create, `PUT`, `PATCH`, `DELETE` (soft or hard as the collection decides, with `?purge=true` and `…/restore` for a [soft-deleting](../../configuration/config-dir/#soft-delete) one), and the `deleted` and `where` parameters of the data routes. Everything else is the same: the schema validates every write, `_meta.version`, `ETag` and `If-Match` work, errors have the same shape. It needs the `data` [area](#admin-rights): `admin: true` and an admin key have it, an area list has it only if it names `data`, and a read-only administrator reads only when `admin.read_access.data` is `true` (every change answers `403`).

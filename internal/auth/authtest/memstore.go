@@ -11,12 +11,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fernandezvara/backd/internal/appconfig"
 	"github.com/fernandezvara/backd/internal/auth"
 )
 
 // MemStore is an in-memory auth.Store. The zero value is not usable; use
 // NewMemStore.
 type MemStore struct {
+	// MemStore keeps the app configuration state and history.
+	appconfig.MemStore
+
 	mu          sync.Mutex
 	users       map[string]auth.User
 	identities  map[string]auth.Identity // provider/subject → identity

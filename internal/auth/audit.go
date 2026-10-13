@@ -31,6 +31,7 @@ const (
 	AuditUserNetworks    = "user.networks"        // details: admin_networks, login_networks
 	AuditSessionRevoke   = "session.revoke"       // by an administrator; details: session
 	AuditDeviceRemoved   = "device.removed"       // by an administrator; details: platform, device
+	AuditAppConfig       = "appconfig.change"     // details: version, kind (set, rollback), paths; never values
 	AuditPushTest        = "push.test"            // an administrator sent a test push; details: send, kind
 	AuditPushDevices     = "push.devices_removed" // an administrator removed every device of a platform (a rotated VAPID key); details: platform, count
 	AuditRoleAdd         = "role.add"             // details: role
@@ -123,6 +124,9 @@ type AuditRecord struct {
 	RequestID string
 	ClientIP  string
 }
+
+// ActorOf is who the context's audit source says is acting: "user:<id>", "key:<name>", or an Actor* constant.
+func ActorOf(ctx context.Context) string { return auditSource(ctx).Actor }
 
 // AuditFilter selects audit records. Zero fields match everything.
 type AuditFilter struct {

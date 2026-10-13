@@ -104,7 +104,7 @@ Both files are part of the config fingerprint.
 - **Storage:** values that differ from their defaults are stored in `<realm>___system.app_config` with a configuration **version**.
 - **Changing:**
   ```
-  PATCH /v1/{realm}/_admin/config
+  PATCH /v1/{realm}/_admin/app-config
   If-Match: "<version>"
   { "set": { "maintenance.enabled": true, "maintenance.message": "Back at 10:00" },
     "reset": ["features.reports"] }
@@ -115,11 +115,11 @@ Both files are part of the config fingerprint.
   - the answer is the new version.
 - **Who:**
   - full admins, with no reauth because these are routine operational changes, but always audited;
-  - read-only admins can read everything through `GET /v1/{realm}/_admin/config`, including keys clients can't see, along with the history.
-- **CLI:** `backd config get|set|reset|history|rollback --realm <r>`, for example `backd config set maintenance.enabled=true maintenance.message="Back at 10:00"`.
+  - read-only admins can read everything through `GET /v1/{realm}/_admin/app-config`, including keys clients can't see, along with the history.
+- **CLI:** `backd app-config get|set|reset|history|rollback --realm <r>`, for example `backd app-config set --key maintenance.enabled --value true`.
 - **History:** every change stores the version, the actor (admin or function), the time, and the changed paths with old and new values. The last 100 versions or 90 days are kept, whichever is longer.
-- **Rollback:** `backd config rollback <version>` and `POST /v1/{realm}/_admin/config/rollback` restore a previous state as a new change.
-- **Schema changes:** values that no longer validate after a deploy are reported at startup and in `GET /v1/{realm}/_admin/config`, and fall back to their defaults until fixed or reset. A deploy never breaks clients.
+- **Rollback:** `backd app-config rollback --version <version>` and `POST /v1/{realm}/_admin/app-config/rollback` restore a previous state as a new change.
+- **Schema changes:** values that no longer validate after a deploy are reported at startup and in `GET /v1/{realm}/_admin/app-config`, and fall back to their defaults until fixed or reset. A deploy never breaks clients.
 
 ## 5. Reading (issue 22.3)
 
