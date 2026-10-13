@@ -190,11 +190,11 @@ func (s *Users) RedeemLoginCode(ctx context.Context, code, verifier string) (Red
 	if err != nil {
 		return Redeemed{}, err
 	}
-	p, token, err := s.startSession(ctx, u)
-	if err != nil {
-		return Redeemed{}, err
+	method := lc.Method
+	if method == "" {
+		method = "oauth"
 	}
-	return Redeemed{Principal: p, Token: token, NewUser: lc.NewUser, Profile: lc.Profile}, nil
+	return s.afterFirstFactor(ctx, u, method, handover{newUser: lc.NewUser, profile: lc.Profile})
 }
 
 // Redeemed is the outcome of redeeming a login code: the session, whether the sign-in made the
@@ -204,12 +204,16 @@ type Redeemed struct {
 	Token     string
 	NewUser   bool
 	Profile   map[string]string
+	// Challenge is set instead of a session when the user needs a second step.
+	Challenge *IssuedChallenge
+	// RecoveryCodesLeft is set when a recovery code ended the sign-in: how many remain.
+	RecoveryCodesLeft *int
 }
 
 // StartProviderSession starts a session for a user a provider login resolved (the native
 // flow, which has no login code to redeem).
-func (s *Users) StartProviderSession(ctx context.Context, u User) (Principal, string, error) {
-	return s.startSession(ctx, u)
+func (s *Users) StartProviderSession(ctx context.Context, u User, provider string, newUser bool, profile map[string]string) (Redeemed, error) {
+	return s.afterFirstFactor(ctx, u, provider, handover{newUser: newUser, profile: profile})
 }
 
 // ProviderLogin is a person an external provider has vouched for.

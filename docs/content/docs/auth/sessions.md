@@ -80,7 +80,8 @@ All request bodies are JSON objects sent with `Content-Type: application/json`. 
 | Method and path | Needs a session | Body | Success |
 |---|---|---|---|
 | `POST /_auth/signup` | no | `{"email", "password", "invitation"?, "locale"?, "redirect_to"?}` | `201` with a session, or `202` without one when the realm [requires a verified email](#email-verification) |
-| `POST /_auth/login` | no | `{"email", "password"}` | `200` with a session |
+| `POST /_auth/login` | no | `{"email", "password"}` | `200` with a session, or with a [challenge](../mfa/) when the user has a second factor |
+| `POST /_auth/mfa/verify` | no | `{"challenge", "method", "code"}` | `200` with the session; the [second step](../mfa/) of a sign-in |
 | `POST /_auth/verify-email` | no | `{"token"}` | `204`; [verifies the address](#email-verification) |
 | `POST /_auth/verify-email/resend` | no | `{"email", "redirect_to"?}` | `202`, whatever the account |
 | `POST /_auth/reset-password/request` | no | `{"email", "redirect_to"?}` | `202`, whatever the account; [password reset](#password-reset) |

@@ -83,11 +83,11 @@ func (f *oauthFixture) loginOf(t *testing.T, userID string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, token, err := f.svc.StartProviderSession(context.Background(), u)
-	if err != nil || p.User.ID != userID {
+	out, err := f.svc.StartProviderSession(context.Background(), u, "apple", false, nil)
+	if err != nil || out.Principal.User.ID != userID {
 		t.Fatal(err)
 	}
-	return token
+	return out.Token
 }
 
 func TestErasingAUserRevokesTheirAppleToken(t *testing.T) {

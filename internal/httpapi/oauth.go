@@ -413,13 +413,7 @@ func (a *authAPI) loginCodeToken(w http.ResponseWriter, r *http.Request) {
 		authError(w, r, err)
 		return
 	}
-	p, token := red.Principal, red.Token
-	setActor(r.Context(), "user:"+p.User.ID)
-	if useCookie {
-		setSessionCookie(w, r, svc, p, token)
-		token = ""
-	}
-	writeJSON(w, http.StatusOK, providerSessionJSON(p, token, svc.LocaleOf(p.User), red.NewUser, red.Profile))
+	a.answerSignIn(w, r, red, http.StatusOK, useCookie, true)
 }
 
 // providerSessionJSON is a session given by a provider sign-in: a login's answer plus whether

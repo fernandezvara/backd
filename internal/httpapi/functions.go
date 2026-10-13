@@ -828,7 +828,8 @@ func rulesUser(c auth.Caller) *rules.User {
 		return nil
 	}
 	u := c.User.User
-	return &rules.User{ID: u.ID, Email: u.Email, EmailVerified: u.EmailVerified, Roles: u.Roles}
+	mfa, methods := c.SignInMethods()
+	return &rules.User{ID: u.ID, Email: u.Email, EmailVerified: u.EmailVerified, Roles: u.Roles, MFA: mfa, Methods: methods}
 }
 
 // userEnvelope is ctx.user: the user the call acts as, or null.
@@ -841,7 +842,8 @@ func userEnvelope(c auth.Caller) json.RawMessage {
 	if roles == nil {
 		roles = []string{}
 	}
-	data, _ := json.Marshal(map[string]any{"id": u.ID, "email": u.Email, "email_verified": u.EmailVerified, "roles": roles})
+	mfa, methods := c.SignInMethods()
+	data, _ := json.Marshal(map[string]any{"id": u.ID, "email": u.Email, "email_verified": u.EmailVerified, "roles": roles, "mfa": mfa, "methods": methods})
 	return data
 }
 
@@ -854,6 +856,7 @@ func (f *functions) callback(realm, database, name string, fn *registry.Function
 	}
 	if c.User != nil {
 		claims.UserID = c.User.User.ID
+		claims.MFA, claims.Methods = c.SignInMethods()
 	}
 	if c.Key != nil {
 		claims.KeyHash = c.Key.Hash

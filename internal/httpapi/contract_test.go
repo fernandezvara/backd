@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/pquerna/otp/totp"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"go.yaml.in/yaml/v3"
 
@@ -657,6 +658,54 @@ func TestContract(t *testing.T) {
 			f.doH(t, "POST", ex, `{"id_token": "bad", "nonce": "n1"}`, map[string]string{"Content-Type": "application/json"})
 		}
 		req("POST", ex, `{"id_token": "bad", "nonce": "n1"}`, nil, 429)
+	}
+	// A second factor: the login answers with a challenge, which the code turns into a session.
+	{
+		ctx := context.Background()
+		pw := "dev-p4ssw0rd!"
+		u, err := f.svc.Create(ctx, "second@example.com", &pw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		key, err := totp.Generate(totp.GenerateOpts{Issuer: "acme", AccountName: u.Email})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if f.svc.Cipher == nil {
+			f.svc.Cipher, _ = auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
+		}
+		sealed, _ := f.svc.SealToken(key.Secret())
+		recovery := f.svc.Cipher.MAC("recovery", f.svc.Realm, u.ID, "ABCDEABCDE")
+		if err := f.svc.Store.PutMFA(ctx, auth.MFARecord{UserID: u.ID, Secret: sealed, EnabledAt: time.Now(), RecoveryCodes: []string{recovery}}); err != nil {
+			t.Fatal(err)
+		}
+		login := `{"email": "second@example.com", "password": "dev-p4ssw0rd!"}`
+		ch := req("POST", a+"/login", login, nil, 200)["challenge"].(string)
+		req("POST", a+"/mfa/verify", `{"challenge": "`+ch+`", "method": "totp", "code": "000000"}`, nil, 400)
+		code, _ := totp.GenerateCode(key.Secret(), f.svc.Clock())
+		req("POST", a+"/mfa/verify", `{"challenge": "`+ch+`", "method": "totp", "code": "`+code+`"}`, nil, 200)
+		req("POST", a+"/mfa/verify", `{"challenge": "`+ch+`", "method": "totp", "code": "`+code+`"}`, nil, 400)
+		req("POST", a+"/mfa/verify", `{"challenge": "x"}`, nil, 400)
+		req("POST", a+"/mfa/verify", `{"challenge": "x", "method": "totp", "code": "1", "cookie": true}`, map[string]string{"Origin": "https://evil.example"}, 403)
+		ch = req("POST", a+"/login", login, nil, 200)["challenge"].(string)
+		req("POST", a+"/mfa/verify", `{"challenge": "`+ch+`", "method": "recovery_code", "code": "abcde-abcde"}`, nil, 200)
+		req("POST", "/v1/nope/_auth/mfa/verify", `{"challenge": "x", "method": "totp", "code": "1"}`, nil, 404)
+		// A required role without a second factor is asked to set one up, at sign-up too.
+		// (Without email, so that the verification message doesn't spend the address's budget.)
+		f.svc.Settings.MFA.RequiredAll = true
+		withEmail := f.svc.Settings.Email
+		f.svc.Settings.Email = nil
+		req("POST", a+"/signup", `{"email": "enroll@example.com", "password": "dev-p4ssw0rd!"}`, nil, 200)
+		f.svc.Settings.Email = withEmail
+		req("POST", a+"/login", `{"email": "enroll@example.com", "password": "dev-p4ssw0rd!"}`, nil, 200)
+		f.svc.Settings.MFA.RequiredAll = false
+		// Ten wrong codes in a row lock the user for a while.
+		for range 10 {
+			ch = req("POST", a+"/login", login, nil, 200)["challenge"].(string)
+			f.doH(t, "POST", a+"/mfa/verify", `{"challenge": "`+ch+`", "method": "totp", "code": "000000"}`, map[string]string{"Content-Type": "application/json"})
+		}
+		ch = req("POST", a+"/login", login, nil, 200)["challenge"].(string)
+		req("POST", a+"/mfa/verify", `{"challenge": "`+ch+`", "method": "totp", "code": "000000"}`, nil, 429)
 	}
 	who := req("GET", a+"/me", "", me, 200)
 	if ids, _ := who["identities"].([]any); len(ids) != 1 || ids[0].(map[string]any)["provider"] != "password" {

@@ -22,6 +22,9 @@ const (
 	codeInvitationInvalid = "invitation_invalid"
 	codeSignInRefused     = "signin_refused"
 	codeEmailRequired     = "email_required"
+	codeInvalidChallenge  = "invalid_challenge"
+	codeInvalidCode       = "invalid_code"
+	codeMFALocked         = "mfa_locked"
 )
 
 func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
@@ -111,17 +114,12 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.keepAppleToken(r, svc, p, res.User.ID, claims.Audience, refresh)
-	session, token, err := svc.StartProviderSession(r.Context(), res.User)
+	out, err := svc.StartProviderSession(r.Context(), res.User, p.Name, res.NewUser, res.Profile)
 	if err != nil {
 		authError(w, r, err)
 		return
 	}
-	setActor(r.Context(), "user:"+session.User.ID)
-	if useCookie {
-		setSessionCookie(w, r, svc, session, token)
-		token = ""
-	}
-	writeJSON(w, http.StatusOK, providerSessionJSON(session, token, svc.LocaleOf(session.User), res.NewUser, res.Profile))
+	a.answerSignIn(w, r, out, http.StatusOK, useCookie, true)
 }
 
 // nativeFailure answers a provider login the rules refuse, in JSON.

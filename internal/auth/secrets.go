@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -59,6 +60,7 @@ type SecretMeta struct {
 // value was encrypted with, for rotation, without revealing it.
 type SecretCipher struct {
 	aead  cipher.AEAD
+	mac   []byte
 	KeyID string
 }
 
@@ -79,7 +81,20 @@ func NewSecretCipher(raw []byte) (*SecretCipher, error) {
 		return nil, err
 	}
 	id := sha256.Sum256(append([]byte("backd-secrets-keyid|"), raw...))
-	return &SecretCipher{aead: aead, KeyID: hex.EncodeToString(id[:])[:16]}, nil
+	mac := sha256.Sum256(append([]byte("backd-secrets-mac|"), raw...))
+	return &SecretCipher{aead: aead, mac: mac[:], KeyID: hex.EncodeToString(id[:])[:16]}, nil
+}
+
+// MAC is a keyed hash (hex HMAC-SHA-256) of the parts, under a key derived from the master
+// key and kept apart from the encryption key: for values that must be compared but never
+// read back, such as recovery codes. The parts are length-prefixed, so ("a","bc") and
+// ("ab","c") differ.
+func (c *SecretCipher) MAC(parts ...string) string {
+	m := hmac.New(sha256.New, c.mac)
+	for _, p := range parts {
+		fmt.Fprintf(m, "%d:%s|", len(p), p)
+	}
+	return hex.EncodeToString(m.Sum(nil))
 }
 
 // Seal encrypts plaintext, returning base64 ciphertext and nonce.

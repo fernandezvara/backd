@@ -125,6 +125,8 @@ type RealmSettings struct {
 	// SignInAppURL (sign_in.app_url) is where a sign-in goes back to when its
 	// redirect_to is absent: the app's own address, within the allowed redirects.
 	SignInAppURL string
+	// MFA are the multi-factor settings (mfa in realm.yaml).
+	MFA MFASettings
 }
 
 // AccountSettings are the account lifecycle settings of a realm.
