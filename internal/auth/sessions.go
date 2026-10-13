@@ -380,8 +380,18 @@ func (s *Users) ChangePassword(ctx context.Context, p Principal, next string) er
 	if err != nil {
 		return err
 	}
+	_, had := s.Store.IdentityOf(ctx, p.User.ID, ProviderPassword)
 	if err := s.putPassword(ctx, p.User.ID, hash, s.now()); err != nil {
 		return err
+	}
+	if errors.Is(had, ErrNotFound) {
+		// An account that signed in without a password sets its first one.
+		s.Audit(ctx, AuditPasswordSet, userTarget(p.User.ID), nil)
+		if err := s.endOtherSessions(ctx, p.User.ID, p.Session.ID, "password_set"); err != nil {
+			return err
+		}
+		s.securityNotice(ctx, p.User, "password-set", 0)
+		return nil
 	}
 	s.Audit(ctx, AuditPasswordChange, userTarget(p.User.ID), nil)
 	if err := s.endOtherSessions(ctx, p.User.ID, p.Session.ID, "password_changed"); err != nil {

@@ -49,3 +49,22 @@ func (a *authAPI) unlinkIdentity(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
+
+// removePassword handles DELETE /_auth/password: the user stops having a password and signs in
+// with a link or a provider, never when that would leave them no way in.
+func (a *authAPI) removePassword(w http.ResponseWriter, r *http.Request) {
+	if !a.reauthed(w, r) {
+		return
+	}
+	err := usersOf(r).RemovePassword(r.Context(), principalOf(r))
+	switch {
+	case errors.Is(err, auth.ErrNotFound):
+		writeError(w, r, http.StatusNotFound, codeNotFound, "this account has no password")
+	case errors.Is(err, auth.ErrLastSignInMethod):
+		writeError(w, r, http.StatusConflict, codeLastMethod, "the password is your only way to sign in: add another one first (a provider, or magic links with a verified address)")
+	case err != nil:
+		authError(w, r, err)
+	default:
+		w.WriteHeader(http.StatusNoContent)
+	}
+}

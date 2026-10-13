@@ -17,6 +17,8 @@ const (
 	AuditUserSignup      = "user.signup"   // self-service sign-up
 	AuditUserPassword    = "user.password" // set by an administrator
 	AuditPasswordChange  = "user.password_change"
+	AuditPasswordSet     = "user.password_set"      // the user set a password on an account that had none
+	AuditPasswordRemoved = "user.password_removed"  // the user removed their password
 	AuditUserVerifyEmail = "user.verify_email"      // details: verified
 	AuditPasswordReset   = "user.password_reset"    // by the link in an email; details: verified_address
 	AuditUserPurged      = "user.purged_unverified" // details: count; never addresses

@@ -778,6 +778,29 @@ func TestContract(t *testing.T) {
 	if ids, _ := who["identities"].([]any); len(ids) != 1 || ids[0].(map[string]any)["provider"] != "password" {
 		t.Errorf("a password user's identities: %v", who["identities"])
 	}
+	// A user with a password and no other way in can't drop it; with a provider they can, once.
+	{
+		ctx := context.Background()
+		pw := "dev-p4ssw0rd!"
+		np, err := f.svc.Create(ctx, "nopass@example.com", &pw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tok := req("POST", a+"/login", `{"email": "nopass@example.com", "password": "dev-p4ssw0rd!"}`, nil, 200)["token"].(string)
+		req("DELETE", a+"/password", "", bearer(tok), 401)
+		req("DELETE", a+"/password", "", nil, 401)
+		proof := proofOf(tok, pw)
+		req("DELETE", a+"/password", "", proof, 409)
+		if err := f.svc.Store.PutIdentity(ctx, auth.Identity{ID: "idn-np", UserID: np.ID, Provider: "google", Subject: "g-nopass", Email: "nopass@example.com", EmailVerified: true, CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+		if got := req("GET", a+"/me", "", bearer(tok), 200)["sign_in_methods"].([]any); len(got) != 2 || got[0] != "password" || got[1] != "google" {
+			t.Errorf("sign_in_methods: %v", got)
+		}
+		req("DELETE", a+"/password", "", proof, 204)
+		req("DELETE", a+"/password", "", proof, 404)
+		req("POST", a+"/password", `{"new_password": "dev-p4ssw0rd!5"}`, with(proof, "Content-Type", "application/json"), 204)
+	}
 	// Sign-in methods: the only one can't be removed; a second one can, and a method the user lacks is a 404.
 	meOnce := proofOf(login["token"].(string), "dev-p4ssw0rd!")
 	req("DELETE", a+"/identities/password", "", meOnce, 409)

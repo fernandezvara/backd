@@ -172,3 +172,66 @@ func TestMagicLinkForANewcomerAndAMissingDestination(t *testing.T) {
 		t.Error("an unknown request was accepted")
 	}
 }
+
+// Someone who only ever signs in with links proves who they are with an emailed code, sets a
+// password, and can drop it again.
+func TestPasswordlessAccountLifecycle(t *testing.T) {
+	f, w := newMagicFixture(t)
+	f.svc.Settings.MagicLink.Signup = true
+	verifier, challenge, _ := auth.NewPKCE()
+	_, out := f.askMagic(t, `{"email": "kim@example.com", "code_challenge": "`+challenge+`"}`)
+	in := deliver(t, f, w)
+	rec, o := f.doH(t, "POST", magicPath+"/verify", `{"request_id": "`+out["request_id"].(string)+`", "code": "`+in.Data["code"].(string)+`", "code_verifier": "`+verifier+`"}`, map[string]string{"Content-Type": "application/json"})
+	token, _ := o["token"].(string)
+	if rec.Code != 200 || o["new_user"] != true || token == "" {
+		t.Fatalf("sign-in: %d %v", rec.Code, o)
+	}
+	code, me := f.as(t, token, "GET", "/v1/acme/_auth/me", "")
+	if code != 200 || len(me["sign_in_methods"].([]any)) != 1 || me["sign_in_methods"].([]any)[0] != "magic_link" || me["reauth_methods"].([]any)[0] != "email_code" {
+		t.Fatalf("me: %d %v", code, me)
+	}
+	ids := me["identities"].([]any)
+	if len(ids) != 1 || ids[0].(map[string]any)["provider"] != "email" || ids[0].(map[string]any)["email"] != "kim@example.com" {
+		t.Errorf("identities: %v", ids)
+	}
+	// The last way in can't go, and the sensitive actions ask for the emailed code.
+	hdr := jsonHdr(token)
+	if rec, o := f.doH(t, "POST", "/v1/acme/_auth/password", `{"new_password": "dev-p4ssw0rd!7"}`, hdr); rec.Code != 401 || errCode(o) != "reauth_required" {
+		t.Fatalf("a password without a proof: %d %v", rec.Code, o)
+	}
+	if rec, o := f.doH(t, "POST", "/v1/acme/_auth/reauth/email-code", "", hdr); rec.Code != 202 {
+		t.Fatalf("ask for a code: %d %v", rec.Code, o)
+	}
+	mail := deliver(t, f, w)
+	if mail.Kind != "reauth-code" || mail.To[0].Email != "kim@example.com" {
+		t.Fatalf("message: %+v", mail)
+	}
+	rec, o = f.doH(t, "POST", "/v1/acme/_auth/reauth", `{"method": "email_code", "code": "`+mail.Data["code"].(string)+`"}`, hdr)
+	proof, _ := o["reauth_token"].(string)
+	if rec.Code != 200 || proof == "" {
+		t.Fatalf("reauth: %d %v", rec.Code, o)
+	}
+	hdr[reauthHeader] = proof
+	if rec, _ := f.doH(t, "POST", "/v1/acme/_auth/password", `{"new_password": "dev-p4ssw0rd!7"}`, hdr); rec.Code != 204 {
+		t.Fatalf("set a password: %d", rec.Code)
+	}
+	if rec, o := f.doH(t, "POST", "/v1/acme/_auth/login", `{"email": "kim@example.com", "password": "dev-p4ssw0rd!7"}`, nil); rec.Code != 200 || o["token"] == nil {
+		t.Errorf("login with the new password: %d %v", rec.Code, o)
+	}
+	// With the password set, the proof is the password from now on; removing it is allowed
+	// while magic links remain.
+	if rec, o := f.doH(t, "DELETE", "/v1/acme/_auth/password", "", hdr); rec.Code != 204 {
+		t.Errorf("remove the password: %d %v", rec.Code, o)
+	}
+	if rec, o := f.doH(t, "POST", "/v1/acme/_auth/login", `{"email": "kim@example.com", "password": "dev-p4ssw0rd!7"}`, nil); rec.Code != 401 {
+		t.Errorf("login with the removed password: %d %v", rec.Code, o)
+	}
+	// And when links are off the user has no way left to remove.
+	f.svc.Settings.MagicLink.Enabled = false
+	if rec, _ := f.doH(t, "POST", "/v1/acme/_auth/password", `{"new_password": "dev-p4ssw0rd!8"}`, hdr); rec.Code != 204 {
+		t.Fatalf("set again: %d", rec.Code)
+	}
+	if rec, o := f.doH(t, "DELETE", "/v1/acme/_auth/password", "", hdr); rec.Code != 409 || errCode(o) != "last_sign_in_method" {
+		t.Errorf("the only way in: %d %v", rec.Code, o)
+	}
+}

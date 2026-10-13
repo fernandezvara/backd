@@ -100,6 +100,7 @@ All request bodies are JSON objects sent with `Content-Type: application/json`. 
 | `POST /_auth/reauth` | yes | `{"method", "code"? or "password"?}` | `200` with a `reauth_token`: a fresh [proof](../reauth/) for the sensitive actions |
 | `POST /_auth/reauth/email-code` | yes | none | `202`; emails the code that proves a user with no password and no second factor |
 | `POST /_auth/password` | yes + [proof](../reauth/) | `{"new_password"}` | `204`; ends all other sessions |
+| `DELETE /_auth/password` | yes + [proof](../reauth/) | none | `204`; removes the password of an account that has [another way in](../magic-links/#accounts-without-a-password) (`409 last_sign_in_method` otherwise) |
 | `GET /_auth/sessions` | yes | none | `200` with the user's sessions |
 | `DELETE /_auth/sessions/{id}` | yes | none | `204`; ends one of the user's sessions |
 

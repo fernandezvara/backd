@@ -66,6 +66,20 @@ The answer to a request is **the same for all of them**, in about the same work,
 
 Users who sign in by link get an **`email` sign-in method** the first time (shown in `GET /_auth/me`), so the rule that a user always keeps one way to sign in sees it like any other. The account rules apply as at any sign-in: `login_networks`, disabled users, and the second factor.
 
+## Accounts without a password
+
+A user who signs in by link or provider needs no password:
+
+| Endpoint | What it does |
+|---|---|
+| `DELETE /_auth/password` | Removes the password (needs a fresh [proof](../reauth/)). `409 last_sign_in_method` when nothing else would be left; ends the user's other sessions and sends a `security-notice` |
+| `POST /_auth/password` | Sets one again (proof needed), or use a [password reset](../sessions/#password-reset); the first password of an account that had none sends a `security-notice` (`password-set`) |
+| `GET /_auth/me` | `sign_in_methods` lists what the user signs in with now (`password`, `magic_link`, providers), for an account settings page |
+
+- A way in is **a provider**, or **a verified address in a realm with magic links**. A user who only has a password in a realm without magic links can't remove it, and neither can one whose address isn't verified.
+- The same rule covers [unlinking a provider](../sessions/#sign-in-methods): the last way in never goes, for the user or for an administrator.
+- A user with no password and no [second factor](../mfa/) proves themselves for sensitive actions with a code emailed to them (`POST /_auth/reauth/email-code`, see [Re-authentication](../reauth/)).
+
 ## Errors
 
 | Status and `code` | When |

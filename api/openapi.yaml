@@ -747,6 +747,26 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         default: { $ref: "#/components/responses/Error" }
 
+    delete:
+      tags: [auth]
+      summary: Remove the password
+      description: |
+        The user stops having a password and signs in with a link or a provider only. Needs a fresh
+        [re-authentication](#tag/auth) (`X-Backd-Reauth`). Refused with `409 last_sign_in_method`
+        when nothing else would be left: a way in is a provider, or a verified address in a realm
+        with [magic links](#tag/auth). Every other session of the user ends, and they are told by
+        email. `404` when the account has no password; set one again with `POST /_auth/password`
+        or a password reset.
+      operationId: removePassword
+      security: [{ session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
+      responses:
+        "204": { description: Password removed. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_auth/sessions:
     parameters: [{ $ref: "#/components/parameters/realm" }]
     get:
@@ -5060,7 +5080,7 @@ components:
     Me:
       type: object
       additionalProperties: false
-      required: [id, email, email_verified, roles, locale, created_at, identities, reauth_methods]
+      required: [id, email, email_verified, roles, locale, created_at, identities, reauth_methods, sign_in_methods]
       properties:
         id: { type: string }
         email: { type: string }
@@ -5068,6 +5088,13 @@ components:
         roles: { type: array, items: { type: string } }
         locale: { type: string, description: "The user's language: one the realm lists (`email.locales`; English only without email). Used for the emails they get." }
         created_at: { $ref: "#/components/schemas/Timestamp" }
+        sign_in_methods:
+          type: array
+          description: >-
+            The ways the user can sign in now, for an account settings page: `password`,
+            `magic_link` (the realm has them and the address is verified) and the providers
+            they use.
+          items: { type: string }
         reauth_methods:
           type: array
           description: >-

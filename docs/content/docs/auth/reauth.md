@@ -37,7 +37,7 @@ Send the token in the **`X-Backd-Reauth`** header. Without a good one these answ
 | Action | Endpoint |
 |---|---|
 | Turn the second factor on, off or replace its recovery codes | `POST /_auth/mfa/totp/setup`, `POST /_auth/mfa/totp/confirm`, `DELETE /_auth/mfa/totp`, `POST /_auth/mfa/recovery-codes` (not the enrollment a sign-in asks for) |
-| Change the password | `POST /_auth/password` with `{"new_password"}` |
+| Change, set or remove the password | `POST /_auth/password` with `{"new_password"}`, `DELETE /_auth/password` |
 | Change the address | `POST /_auth/email` with `{"new_email"}` |
 | Deactivate the account | `DELETE /_auth/me`, no body |
 | Remove a sign-in method | `DELETE /_auth/identities/{provider}` |

@@ -62,6 +62,7 @@ func (a *authAPI) routes(r chi.Router) {
 			r.With(json).Patch("/me", a.updateMe)
 			r.Delete("/me", a.deleteMe)
 			r.With(json).Post("/password", a.changePassword)
+			r.Delete("/password", a.removePassword)
 			r.With(json).Post("/email", a.changeEmail)
 			r.Delete("/identities/{provider}", a.unlinkIdentity)
 			r.With(json).Post("/reauth", a.reauth)
@@ -283,6 +284,12 @@ func (a *authAPI) me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out["reauth_methods"] = methods
+	signIn, err := usersOf(r).SignInMethods(r.Context(), u)
+	if err != nil {
+		authError(w, r, err)
+		return
+	}
+	out["sign_in_methods"] = signIn
 	writeJSON(w, http.StatusOK, out)
 }
 
