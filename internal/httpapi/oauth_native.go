@@ -26,6 +26,7 @@ const (
 	codeInvalidCode       = "invalid_code"
 	codeMFALocked         = "mfa_locked"
 	codeMFADisabled       = "mfa_disabled"
+	codeSelfReset         = "self_reset_not_allowed"
 	codeReauthRequired    = "reauth_required"
 	codeMFAUnavailable    = "mfa_unavailable"
 	codeMFARequiredByRole = "mfa_required_by_role"

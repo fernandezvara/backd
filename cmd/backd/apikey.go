@@ -61,11 +61,17 @@ func apikeyCreate(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	var k apiKey
-	if err := t.call("POST", "_admin/apikeys", nil, body, &k); err != nil {
+	// A key outlives the session and is not asked for a second factor: a person signed in with a
+	// session proves who they are again first.
+	uio := ioOf(c)
+	proof, err := t.proof(uio)
+	if err != nil {
 		return err
 	}
-	uio := ioOf(c)
+	var k apiKey
+	if _, err := t.callHeaders("POST", "_admin/apikeys", nil, body, &k, proof); err != nil {
+		return err
+	}
 	fmt.Fprintln(uio.stdout, k.Key)
 	msg := fmt.Sprintf("API key %q (role %s) created. Store it now as a secret: it can't be shown again.", k.Name, k.Role)
 	if len(k.Scopes) > 0 {

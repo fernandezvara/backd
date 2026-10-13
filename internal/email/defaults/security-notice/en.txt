@@ -4,7 +4,6 @@ Hello,
 {{else if eq .Data.event "mfa-disabled"}}Two-step verification was turned off for {{.User.Email}} on {{.Realm}}.
 {{else if eq .Data.event "recovery-codes-regenerated"}}The recovery codes of {{.User.Email}} on {{.Realm}} were replaced. The old ones no longer work.
 {{else if eq .Data.event "recovery-code-used"}}A recovery code was used to sign in to {{.User.Email}} on {{.Realm}}. Codes left: {{.Data.codes_left}}.
-{{else if eq .Data.event "mfa-reset"}}An administrator reset the two-step verification of {{.User.Email}} on {{.Realm}}. You may be asked to set it up again the next time you sign in.
 {{else if eq .Data.event "password-set"}}A password was set on {{.User.Email}} on {{.Realm}}.
 {{else if eq .Data.event "password-removed"}}The password of {{.User.Email}} on {{.Realm}} was removed: you sign in another way now.
 {{else if eq .Data.event "api-key-created"}}An API key was created for {{.Realm}} by {{.User.Email}}.

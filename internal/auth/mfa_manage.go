@@ -326,6 +326,43 @@ func (s *Users) DisableMFA(ctx context.Context, u User) error {
 	return nil
 }
 
+// ErrSelfMFAReset: an administrator can't reset their own second factor.
+var ErrSelfMFAReset = errors.New("an administrator can't reset their own second factor")
+
+// ResetMFA removes a user's second factor and recovery codes and ends all of their sessions,
+// on an administrator's say-so (or an operator's, with direct access): the user is asked to set
+// one up again at their next sign-in when a role requires it, and is told by email. actorID is
+// the administrator's user id (""), who can't reset themselves; ErrMFANotEnabled when the user
+// has none.
+func (s *Users) ResetMFA(ctx context.Context, userID, actorID string) error {
+	if actorID != "" && actorID == userID {
+		return ErrSelfMFAReset
+	}
+	u, err := s.Store.UserByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if _, err := s.Store.MFAOf(ctx, userID); errors.Is(err, ErrNotFound) {
+		return ErrMFANotEnabled
+	} else if err != nil {
+		return err
+	}
+	if err := s.Store.DeleteMFA(ctx, userID); err != nil {
+		return err
+	}
+	if err := s.Store.DeleteChallengesOfUser(ctx, userID); err != nil {
+		return err
+	}
+	if err := s.endSessions(ctx, userID, "mfa_reset"); err != nil {
+		return err
+	}
+	s.Audit(ctx, AuditMFAReset, userTarget(userID), nil)
+	if s.Settings.Email != nil && u.ErasedAt.IsZero() && !u.Disabled {
+		s.queueNotice(ctx, EmailRequest{Kind: email.MFAReset, UserID: u.ID, Address: u.Email, Locale: s.LocaleOf(u), Notice: true})
+	}
+	return nil
+}
+
 // RegenerateRecoveryCodes replaces every recovery code of the user and returns the new
 // ones, shown once.
 func (s *Users) RegenerateRecoveryCodes(ctx context.Context, u User) ([]string, error) {

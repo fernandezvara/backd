@@ -1746,6 +1746,36 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/users/{id}/mfa/reset:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    post:
+      tags: [admin]
+      summary: Remove a user's second factor
+      description: |
+        For a user who lost both their authenticator app and their recovery codes: removes the
+        TOTP secret and the recovery codes and **ends every session** of the user, who is told by
+        email (`mfa-reset`). A user in a role that requires MFA sets one up again at their next
+        sign-in. Audited as `user.mfa_reset` with the administrator as the actor. Needs the `users`
+        area, and an administrator can't reset their own second factor (`403
+        self_reset_not_allowed`): ask another administrator, or an operator with
+        `backd user mfa-reset --local`. There is no reset by email.
+      operationId: adminResetUserMFA
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "204": { description: The second factor was removed. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "`mfa_not_enabled`: the user has no second factor."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/mfa:
     parameters: [{ $ref: "#/components/parameters/realm" }]
     get:

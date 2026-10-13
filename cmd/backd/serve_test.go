@@ -127,7 +127,7 @@ func TestTemplatesServeSample(t *testing.T) {
 	stdin = "dev-p4ssw0rd!\n"
 	cli("bootstrap", "--realm", realm, "--email", "ops@example.com")
 	cli("login", "--realm", realm, "--url", srv.URL, "--email", "ops@example.com")
-	stdin = ""
+	// (A key is made by a person who proves it is them again: the password, on standard input.)
 	key := strings.TrimSpace(cli("apikey", "create", "--realm", realm, "--name", "test"))
 	do := func(method, body, auth string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, "/v1/"+realm+"/blog/posts", strings.NewReader(body))

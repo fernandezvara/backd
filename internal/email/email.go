@@ -42,16 +42,18 @@ const (
 	// ReauthCode carries the 6-digit code that proves a user with no password and no
 	// second factor is there before a sensitive action ({{.Data.code}}, {{.ExpiresAt}}).
 	ReauthCode = "reauth-code"
+	// MFAReset tells a user that an administrator removed their second factor.
+	MFAReset = "mfa-reset"
 )
 
 // SystemKinds are the kinds backd knows; `backd template realm` writes an
 // English template for each.
-var SystemKinds = []string{VerifyEmail, ResetPassword, AccountExists, PasswordChanged, Welcome, ChangeEmail, EmailChanged, Invitation, SecurityNotice, MFAFailed, ReauthCode}
+var SystemKinds = []string{VerifyEmail, ResetPassword, AccountExists, PasswordChanged, Welcome, ChangeEmail, EmailChanged, Invitation, SecurityNotice, MFAFailed, ReauthCode, MFAReset}
 
 // BuiltInKinds are system kinds a realm does not have to ship: when its email folder has
 // none, the built-in English text is used for every listed locale, so a realm that
 // existed before them keeps working. A folder of the kind replaces the built-in text.
-var BuiltInKinds = []string{SecurityNotice, MFAFailed, ReauthCode}
+var BuiltInKinds = []string{SecurityNotice, MFAFailed, ReauthCode, MFAReset}
 
 // RequiredKinds must have a template in every realm that configures email.
 var RequiredKinds = []string{VerifyEmail, ResetPassword, AccountExists, PasswordChanged}

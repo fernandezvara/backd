@@ -92,6 +92,9 @@ const (
 const (
 	// ActorConfig applies realm.yaml's role and network seeds.
 	ActorConfig = "config:realm.yaml"
+	// ActorInstance is an operator with direct access to the instance's database and key
+	// (`backd user mfa-reset --local`).
+	ActorInstance = "instance"
 	// ActorBootstrap is `backd bootstrap`.
 	ActorBootstrap = "cli:bootstrap"
 	// ActorSystem is backd itself, in the background (purging unverified accounts).

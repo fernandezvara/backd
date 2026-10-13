@@ -362,3 +362,53 @@ func TestHandOverSurvivesEnrollment(t *testing.T) {
 		t.Errorf("hand-over: %+v %v", v, err)
 	}
 }
+
+func TestResettingASecondFactor(t *testing.T) {
+	ctx := context.Background()
+	svc, store, clock, u := enrollFixture(t)
+	if err := svc.ResetMFA(ctx, u.ID, "admin-1"); !errors.Is(err, ErrMFANotEnabled) {
+		t.Errorf("none to reset: %v", err)
+	}
+	if err := svc.ResetMFA(ctx, "nope", ""); !errors.Is(err, ErrNotFound) {
+		t.Errorf("unknown user: %v", err)
+	}
+	setup, _ := svc.BeginTOTPSetup(ctx, u)
+	codes, err := svc.ConfirmTOTP(ctx, u, "", setup.SetupID, totpAt(t, setup.Secret, *clock))
+	if err != nil || len(codes) == 0 {
+		t.Fatal(err)
+	}
+	_, tok, _ := svc.Login(ctx, "ada@example.com", mfaPassword, "")
+	_ = tok
+	out, _ := svc.SignIn(ctx, "ada@example.com", mfaPassword, "")
+	// An administrator can't reset their own.
+	if err := svc.ResetMFA(ctx, u.ID, u.ID); !errors.Is(err, ErrSelfMFAReset) {
+		t.Errorf("own reset: %v", err)
+	}
+	if _, err := store.MFAOf(ctx, u.ID); err != nil {
+		t.Fatal("the refused reset removed it")
+	}
+	if err := svc.ResetMFA(ctx, u.ID, "admin-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MFAOf(ctx, u.ID); !errors.Is(err, ErrNotFound) {
+		t.Error("still has a second factor")
+	}
+	// The pending challenge died with it, and so did every session.
+	if _, err := svc.VerifyMFA(ctx, out.Challenge.Token, MethodTOTP, "000000", ""); !errors.Is(err, ErrInvalidChallenge) {
+		t.Errorf("a challenge after the reset: %v", err)
+	}
+	if sessions, _ := svc.UserSessions(ctx, u.ID); len(sessions) != 0 {
+		t.Errorf("sessions after the reset: %d", len(sessions))
+	}
+	if p, _, err := svc.Login(ctx, "ada@example.com", mfaPassword, ""); err != nil || p.Session.MFA {
+		t.Errorf("signing in after the reset: %v", err)
+	}
+	if got := strings.Join(notices(t, svc), " "); !strings.Contains(got, "mfa-reset:") {
+		t.Errorf("no mfa-reset email in %s", got)
+	}
+	// In a required role they enrol again at the next sign-in.
+	svc.Settings.MFA.RequiredAll = true
+	if o, _ := svc.SignIn(ctx, "ada@example.com", mfaPassword, ""); o.Challenge == nil || o.Challenge.Kind != ChallengeEnroll {
+		t.Errorf("after the reset in a required role: %+v", o)
+	}
+}

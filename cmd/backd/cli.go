@@ -229,6 +229,20 @@ func registerRemote(cfg *kli.Config) {
 	user("mfa-status", "show a user's second factor; without --email, who must set one up", false, userMFAStatus, func(cc *kli.CommandConfig) {
 		optional(cc, "email", "the user to show (default: the users of required roles who have no second factor yet)")
 	})
+	u.SubCommand("mfa-reset").ShortHelp("remove a user's second factor and recovery codes and end their sessions").
+		LongHelp(adminAPINote + " An administrator can't reset their own second factor; for the only administrator of a\nrealm who lost it, --local acts on the instance's database directly (it needs\nCONFIG_DIR and MONGO_URI where backd runs, and is audited as `instance`).").
+		Func(act("user mfa-reset", func(c *kli.CommandContext) error {
+			if flag(c, "local") {
+				return userMFAResetLocal(c)
+			}
+			return userAction(true, userMFAReset)(c)
+		})).
+		Config(func(cc *kli.CommandConfig) {
+			remote(cc)
+			required(cc, "email", "the user's email")
+			boolean(cc, "local", "break glass: act on the instance's database directly instead of the admin API")
+			boolean(cc, "yes", "confirm the reset, which ends all of the user's sessions")
+		})
 	user("owned", "show what erasing the user would do, per collection that declares a policy", true, userOwned, nil)
 	user("verify-email", "mark the email as verified", true, userPatch(map[string]bool{"email_verified": true}, "email of %s marked as verified\n"), nil)
 	user("disable", "block sign-in and revoke all sessions", true, userPatch(map[string]bool{"disabled": true}, "%s disabled; all of their sessions were revoked\n"), nil)

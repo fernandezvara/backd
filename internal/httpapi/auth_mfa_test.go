@@ -367,3 +367,42 @@ func TestEnrollingFromAChallengeOverHTTP(t *testing.T) {
 		t.Errorf("me: %d %v", c, me)
 	}
 }
+
+func TestAdminResetsASecondFactor(t *testing.T) {
+	f := newRulesFixture(t)
+	f.svc.Realm = "acme"
+	f.svc.Cipher, _ = auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
+	f.svc.Settings.Email = nil
+	// Bob holds an admin role and has a second factor; so does Ada.
+	f.bobHolds(t, "support")
+	for _, id := range []string{f.adaID, f.bobID} {
+		if err := f.svc.Store.PutMFA(context.Background(), auth.MFARecord{UserID: id, Secret: "k.n.c", EnabledAt: time.Now(), RecoveryCodes: []string{"x"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const admin = "/v1/acme/_admin"
+	// Not on yourself, whatever your rights.
+	rec, out := f.doH(t, "POST", admin+"/users/"+f.bobID+"/mfa/reset", "", jsonHdr(f.bob))
+	if rec.Code != http.StatusForbidden || errCode(out) != "self_reset_not_allowed" {
+		t.Errorf("own reset: %d %v", rec.Code, out)
+	}
+	if rec, _ := f.doH(t, "POST", admin+"/users/"+f.adaID+"/mfa/reset", "", nil); rec.Code != http.StatusUnauthorized {
+		t.Errorf("no credential: %d", rec.Code)
+	}
+	if rec, out := f.doH(t, "POST", admin+"/users/"+f.adaID+"/mfa/reset", "", jsonHdr(f.carl)); rec.Code != http.StatusForbidden {
+		t.Errorf("a plain user: %d %v", rec.Code, out)
+	}
+	// An administrator with the users area resets someone else's, and they are signed out.
+	if rec, out := f.doH(t, "POST", admin+"/users/"+f.adaID+"/mfa/reset", "", jsonHdr(f.key)); rec.Code != http.StatusNoContent {
+		t.Fatalf("by the key: %d %v", rec.Code, out)
+	}
+	if code, _ := f.as(t, f.ada, "GET", "/v1/acme/_auth/me", ""); code != http.StatusUnauthorized {
+		t.Errorf("ada's session after the reset: %d", code)
+	}
+	if rec, out := f.doH(t, "POST", admin+"/users/"+f.adaID+"/mfa/reset", "", jsonHdr(f.key)); rec.Code != http.StatusConflict || errCode(out) != "mfa_not_enabled" {
+		t.Errorf("twice: %d %v", rec.Code, out)
+	}
+	if rec, _ := f.doH(t, "POST", admin+"/users/nope/mfa/reset", "", jsonHdr(f.key)); rec.Code != http.StatusNotFound {
+		t.Errorf("unknown: %d", rec.Code)
+	}
+}

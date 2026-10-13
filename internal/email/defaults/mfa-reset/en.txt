@@ -1,0 +1,5 @@
+Hello,
+
+An administrator reset the two-step verification of {{.User.Email}} on {{.Realm}}: your authenticator app and recovery codes no longer work, and you were signed out everywhere. You may be asked to set it up again the next time you sign in.
+
+If you didn't ask for this, tell the people who run this service.

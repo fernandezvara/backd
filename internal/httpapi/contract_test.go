@@ -943,6 +943,24 @@ func TestContract(t *testing.T) {
 	req("GET", ad+"/users/"+temp.ID+"/mfa", "", nil, 401)
 	req("GET", ad+"/users/"+temp.ID+"/mfa", "", ada, 403)
 	req("GET", ad+"/users/nope/mfa", "", key, 404)
+	// Resetting it: one is made for the user, then removed; not twice, not for nobody, not for yourself.
+	req("POST", ad+"/users/"+temp.ID+"/mfa/reset", "", key, 409)
+	if err := f.svc.Store.PutMFA(context.Background(), auth.MFARecord{UserID: temp.ID, Secret: "k.n.c", EnabledAt: time.Now(), RecoveryCodes: []string{"x"}}); err != nil {
+		t.Fatal(err)
+	}
+	req("POST", ad+"/users/"+temp.ID+"/mfa/reset", "", nil, 401)
+	req("POST", ad+"/users/"+temp.ID+"/mfa/reset", "", ada, 403)
+	req("POST", ad+"/users/nope/mfa/reset", "", key, 404)
+	req("POST", ad+"/users/"+temp.ID+"/mfa/reset", "", key, 204)
+	selfAdmin, err := f.svc.Create(context.Background(), "self-admin@example.com", ptr("dev-p4ssw0rd!"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.AddRole(context.Background(), selfAdmin.Email, "staff"); err != nil {
+		t.Fatal(err)
+	}
+	selfTok := req("POST", a+"/login", `{"email": "self-admin@example.com", "password": "dev-p4ssw0rd!"}`, nil, 200)["token"].(string)
+	req("POST", ad+"/users/"+selfAdmin.ID+"/mfa/reset", "", bearer(selfTok), 403)
 	f.svc.Settings.MFA.RequiredAll = true
 	over := req("GET", ad+"/mfa", "", key, 200)
 	if over["required_all"] != true || over["total_without_mfa"].(float64) < 1 || len(over["users_without_mfa"].([]any)) < 1 {

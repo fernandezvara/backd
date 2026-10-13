@@ -1,7 +1,10 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
+
+	"github.com/fernandezvara/backd/internal/auth"
 )
 
 // mfaOverviewLimit caps the users GET /_admin/mfa names.
@@ -47,4 +50,25 @@ func (a *adminAPI) userMFA(w http.ResponseWriter, r *http.Request) {
 		"available": st.Available, "enabled": st.Enabled, "methods": st.Methods,
 		"recovery_codes_left": st.RecoveryCodesLeft, "required": st.Required,
 	})
+}
+
+// resetUserMFA answers POST /users/{id}/mfa/reset: an administrator removes the user's second
+// factor and recovery codes, which ends all of their sessions. It is the way back for someone
+// who lost both their authenticator and their recovery codes; it is never available on yourself.
+func (a *adminAPI) resetUserMFA(w http.ResponseWriter, r *http.Request) {
+	actor := ""
+	if c, ok := callerOf(r); ok && c.Key == nil && c.User != nil {
+		actor = c.User.User.ID
+	}
+	err := usersOf(r).ResetMFA(r.Context(), adminUserOf(r).ID, actor)
+	switch {
+	case errors.Is(err, auth.ErrSelfMFAReset):
+		writeError(w, r, http.StatusForbidden, codeSelfReset, "an administrator can't reset their own second factor: ask another administrator, or an operator with access to the instance")
+	case errors.Is(err, auth.ErrMFANotEnabled):
+		writeError(w, r, http.StatusConflict, codeMFANotEnabled, "the user has no second factor")
+	case err != nil:
+		adminError(w, r, err)
+	default:
+		w.WriteHeader(http.StatusNoContent)
+	}
 }

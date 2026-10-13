@@ -558,3 +558,55 @@ func onOff(b bool) string {
 	}
 	return "off"
 }
+
+// userMFAReset removes a user's second factor through the admin API.
+func userMFAReset(c *userCtx) error {
+	if !flag(c.cmd, "yes") {
+		return errors.New("resetting a second factor ends all of the user's sessions and can't be undone: add --yes to confirm")
+	}
+	u, err := c.find()
+	if err != nil {
+		return err
+	}
+	if err := c.t.call("POST", "_admin/users/"+url.PathEscape(u.ID)+"/mfa/reset", nil, nil, nil); err != nil {
+		return err
+	}
+	fmt.Fprintf(c.uio.stdout, "second factor of %s removed; their sessions ended\n", u.Email)
+	return nil
+}
+
+// userMFAResetLocal is the break-glass form: it acts on the database directly, like
+// `backd bootstrap`, so an operator can recover the only administrator of a realm.
+func userMFAResetLocal(c *kli.CommandContext) error {
+	if !flag(c, "yes") {
+		return errors.New("resetting a second factor ends all of the user's sessions and can't be undone: add --yes to confirm")
+	}
+	ctx := context.Background()
+	uio := ioOf(c)
+	a, err := setup(ctx, c.Getenv, uio.stderr)
+	if err != nil {
+		return err
+	}
+	defer a.close()
+	users, err := a.users(ctx, str(c, "realm"))
+	if err != nil {
+		return err
+	}
+	u, err := users.Find(ctx, str(c, "email"))
+	if err != nil {
+		return fmt.Errorf("user not found: %s", str(c, "email"))
+	}
+	ctx = auth.WithAuditSource(ctx, func() auth.AuditSource { return auth.AuditSource{Actor: auth.ActorInstance} })
+	if err := users.ResetMFA(ctx, u.ID, ""); err != nil {
+		return mfaResetError(u.Email, err)
+	}
+	fmt.Fprintf(uio.stdout, "second factor of %s removed; their sessions ended (audited as %s)\n", u.Email, auth.ActorInstance)
+	return nil
+}
+
+func mfaResetError(email string, err error) error {
+	if errors.Is(err, auth.ErrMFANotEnabled) {
+		return fmt.Errorf("%s has no second factor", email)
+	}
+	return err
+}
