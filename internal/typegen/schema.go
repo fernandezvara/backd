@@ -249,7 +249,7 @@ var identStart = func(r rune) bool { return r == '_' || r == '$' || (r >= 'a' &&
 func member(n string) string {
 	ok := n != ""
 	for i, r := range n {
-		if !(identStart(r) || (i > 0 && r >= '0' && r <= '9')) {
+		if !identStart(r) && (i == 0 || r < '0' || r > '9') {
 			ok = false
 		}
 	}
