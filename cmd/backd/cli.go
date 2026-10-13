@@ -284,6 +284,24 @@ func registerRemote(cfg *kli.Config) {
 		remote(cc)
 		required(cc, "email", "the user's email")
 	})
+	pu.SubCommand("sends").ShortHelp("list the realm's push sends, or show one with --id").
+		LongHelp("A send's record holds counts, never a message, a user or a token. Needs the functions area.").
+		Func(act("push sends", pushSends)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		optional(cc, "id", "show this send (ps_…) with its progress")
+		optional(cc, "kind", "list only sends of this template kind (raw for raw messages)")
+		optional(cc, "function", "list only the sends of this function: <database>/<name>")
+		optional(cc, "limit", "how many sends to list (1 to 200, default 50)")
+	})
+	pu.SubCommand("test").ShortHelp("send one user a test push (needs the users area; audited; counts toward their limits)").
+		Func(act("push test", userAction(true, pushTest))).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "email", "the user's email")
+		optional(cc, "kind", "a template kind of the realm")
+		optional(cc, "data", "the data for the template, as a JSON object of strings")
+		optional(cc, "title", "the title of a raw push (with --body)")
+		optional(cc, "body", "the body of a raw push")
+	})
 	pu.SubCommand("remove-device").ShortHelp("remove one of a user's devices (audited)").
 		Func(act("push remove-device", userAction(true, pushRemoveDevice))).Config(func(cc *kli.CommandConfig) {
 		remote(cc)

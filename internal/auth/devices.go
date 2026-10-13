@@ -97,7 +97,7 @@ func (s *Users) RegisterDevice(ctx context.Context, p Principal, in DeviceInput)
 		return Device{}, err
 	}
 	now := s.now()
-	d, err := s.Store.PutDevice(ctx, Device{
+	d, moved, err := s.Store.PutDevice(ctx, Device{
 		ID: xid.New().String(), UserID: p.User.ID, SessionID: p.Session.ID, Platform: in.Platform,
 		Name: strings.TrimSpace(in.Name), TokenHash: HashToken(identity), Token: sealed, CreatedAt: now, LastSeen: now,
 	})
@@ -105,9 +105,14 @@ func (s *Users) RegisterDevice(ctx context.Context, p Principal, in DeviceInput)
 		return Device{}, err
 	}
 	// The cap: the least recently seen devices beyond it go, never the one just registered.
-	if _, err := s.Store.DeleteOldestDevices(ctx, p.User.ID, push.MaxDevicesPerUser, d.ID); err != nil {
+	if moved {
+		s.Metrics.PushPruned(s.Realm, "moved", 1)
+	}
+	capped, err := s.Store.DeleteOldestDevices(ctx, p.User.ID, push.MaxDevicesPerUser, d.ID)
+	if err != nil {
 		return Device{}, err
 	}
+	s.Metrics.PushPruned(s.Realm, "cap", capped)
 	return d, nil
 }
 
@@ -194,6 +199,8 @@ func (s *Users) SweepDevices(ctx context.Context) (stale, orphaned int64, err er
 	if stale, err = s.Store.DeleteStaleDevices(ctx, now.Add(-push.StaleAfter)); err != nil {
 		return 0, 0, err
 	}
+	s.Metrics.PushPruned(s.Realm, "stale", stale)
 	orphaned, err = s.Store.DeleteOrphanedDevices(ctx, now)
+	s.Metrics.PushPruned(s.Realm, "session", orphaned)
 	return stale, orphaned, err
 }

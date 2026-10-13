@@ -192,6 +192,11 @@ func (w *Worker) applyPush(ctx context.Context, log *slog.Logger, svc *auth.User
 	if done {
 		delta.DoneUnit = job.ID
 	}
+	m := w.fns.metrics
+	m.PushDeliveries(svc.Realm, "sent", delta.Sent)
+	m.PushDeliveries(svc.Realm, "invalid", delta.Invalid)
+	m.PushDeliveries(svc.Realm, "failed", delta.Failed)
+	m.PushPruned(svc.Realm, "invalid", int64(delta.Invalid))
 	if _, err := svc.Store.AddPushSend(ctx, job.Push.SendID, delta, time.Now()); err != nil && !errors.Is(err, auth.ErrPushSendNotFound) {
 		log.Warn("could not record what a push unit did", "error", err)
 	}

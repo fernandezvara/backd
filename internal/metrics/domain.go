@@ -20,13 +20,14 @@ type domain struct {
 	fnReplays  *prometheus.CounterVec
 	execErrors *prometheus.CounterVec
 
-	jobsDone, jobsRetried, jobsExpired *prometheus.CounterVec
-	refreshErrors                      prometheus.Counter
-	egress                             *prometheus.CounterVec
-	execRuns                           *prometheus.CounterVec
-	execTime                           prometheus.Histogram
-	execRunning                        prometheus.Gauge
-	jobs                               *jobSnapshot
+	jobsDone, jobsRetried, jobsExpired    *prometheus.CounterVec
+	refreshErrors                         prometheus.Counter
+	egress                                *prometheus.CounterVec
+	execRuns                              *prometheus.CounterVec
+	execTime                              prometheus.Histogram
+	execRunning                           prometheus.Gauge
+	jobs                                  *jobSnapshot
+	pushUsers, pushDeliveries, pushPruned *prometheus.CounterVec
 }
 
 func newDomain() domain {
@@ -36,6 +37,9 @@ func newDomain() domain {
 	snap := &jobSnapshot{stats: map[string][]JobStat{}, needsAttention: map[string]int64{}}
 	return domain{
 		jobs:            snap,
+		pushUsers:       counter("push_users_total", "Users a push send reached the planning of, by realm and outcome: queued (handed to delivery), limited (over their per-user limit) or no_devices.", "realm", "outcome"),
+		pushDeliveries:  counter("push_deliveries_total", "Devices a delivery unit answered for, by realm and status: sent, invalid (removed as dead) or failed.", "realm", "status"),
+		pushPruned:      counter("push_devices_pruned_total", "Devices removed from the registry, by realm and reason: invalid (the provider said the token is dead), stale (not seen for stale_after), session (their session ended unnoticed), cap (above max_per_user) or moved (a token another user registered).", "realm", "reason"),
 		jobsDone:        counter("jobs_completed_total", "Jobs a worker finished, by realm, kind (function, schedule, email, erase) and the result's status. Email and erase outcomes are here: kind email or erase.", "realm", "kind", "status"),
 		egress:          counter("egress_requests_total", "Requests to the egress proxy, by decision: allowed, denied_credentials, denied_host or denied_address.", "outcome"),
 		execRuns:        counter("executor_runs_total", "Function runs the executor handled, by the status they ended with (busy: refused at its process limit).", "status"),
@@ -66,7 +70,28 @@ func newDomain() domain {
 }
 
 func (d domain) collectors() []prometheus.Collector {
-	return []prometheus.Collector{newJobsCollector(d.jobs), d.jobsDone, d.jobsRetried, d.jobsExpired, d.refreshErrors, d.egress, d.execRuns, d.execTime, d.execRunning, d.sessionsStarted, d.sessionsEnded, d.rateLimited, d.fnCalls, d.fnTime, d.fnRefusals, d.fnReplays, d.execErrors}
+	return []prometheus.Collector{newJobsCollector(d.jobs), d.jobsDone, d.jobsRetried, d.jobsExpired, d.refreshErrors, d.egress, d.execRuns, d.execTime, d.execRunning, d.sessionsStarted, d.sessionsEnded, d.rateLimited, d.fnCalls, d.fnTime, d.fnRefusals, d.fnReplays, d.execErrors, d.pushUsers, d.pushDeliveries, d.pushPruned}
+}
+
+// PushUsers counts n users by what planning a push did with them.
+func (m *Metrics) PushUsers(realm, outcome string, n int) {
+	if m != nil && n > 0 {
+		m.pushUsers.WithLabelValues(realm, outcome).Add(float64(n))
+	}
+}
+
+// PushDeliveries counts n devices by the status a delivery unit gave them.
+func (m *Metrics) PushDeliveries(realm, status string, n int) {
+	if m != nil && n > 0 {
+		m.pushDeliveries.WithLabelValues(realm, status).Add(float64(n))
+	}
+}
+
+// PushPruned counts n devices removed from the registry for a reason.
+func (m *Metrics) PushPruned(realm, reason string, n int64) {
+	if m != nil && n > 0 {
+		m.pushPruned.WithLabelValues(realm, reason).Add(float64(n))
+	}
 }
 
 // SessionStarted counts a new session.

@@ -339,7 +339,7 @@ func TestPushAudienceIsPagedIntoBatches(t *testing.T) {
 		if err := f.svc.Store.CreateSession(ctx, sess); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := f.svc.Store.PutDevice(ctx, auth.Device{ID: "d-" + id, UserID: id, SessionID: sess.ID, Platform: "android", TokenHash: "th-" + id, Token: "x", CreatedAt: now, LastSeen: now}); err != nil {
+		if _, _, err := f.svc.Store.PutDevice(ctx, auth.Device{ID: "d-" + id, UserID: id, SessionID: sess.ID, Platform: "android", TokenHash: "th-" + id, Token: "x", CreatedAt: now, LastSeen: now}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -419,4 +419,57 @@ func decodeBody(rec *httptest.ResponseRecorder) map[string]any {
 	var out map[string]any
 	_ = json.Unmarshal(rec.Body.Bytes(), &out)
 	return out
+}
+
+func TestPushTestSendAndRecords(t *testing.T) {
+	f := newPushSendFixture(t)
+	const admin = "/v1/acme/_admin"
+	f.register(t, f.ada, "ada-phone")
+	// A test send to one user: audited, counted toward their limits, delivered.
+	rec, out := f.doH(t, "POST", admin+"/push/test", `{"user": "`+f.adaID+`", "title": "Test", "body": "Does it ring?", "data": {"k": "v"}}`, jsonHdr(f.key))
+	if rec.Code != 202 || out["queued"] != float64(1) || out["send_id"] == nil {
+		t.Fatalf("test send: %d %v", rec.Code, out)
+	}
+	id := out["send_id"].(string)
+	f.drain(t)
+	got := f.sender.delivered()
+	if len(got) != 1 || got[0].Message.Title != "Test" || got[0].Message.Data["k"] != "v" {
+		t.Fatalf("delivery: %+v", got)
+	}
+	// The record shows who sent it and the totals, and nothing of the message.
+	rec, out = f.doH(t, "GET", admin+"/push/sends/"+id, "", bearer(f.key))
+	if rec.Code != 200 || out["sent"] != float64(1) || out["completed"] != true || out["kind"] != "raw" || !strings.HasPrefix(out["sender"].(string), "admin:") {
+		t.Fatalf("record: %d %v", rec.Code, out)
+	}
+	if body := rec.Body.String(); strings.Contains(body, "Does it ring") || strings.Contains(body, "ada-phone") || strings.Contains(body, f.adaID) {
+		t.Errorf("the record holds content: %s", body)
+	}
+	if got := f.auditActions(t, "push."); len(got) != 1 {
+		t.Errorf("audit: %v", got)
+	}
+	// It counted: three a minute in this fixture, so two more and the next is limited.
+	for i := 0; i < 2; i++ {
+		_, out = f.doH(t, "POST", admin+"/push/test", `{"user": "`+f.adaID+`", "title": "T", "body": "B"}`, jsonHdr(f.key))
+		if out["queued"] != float64(1) {
+			t.Fatalf("send %d: %v", i, out)
+		}
+	}
+	_, out = f.doH(t, "POST", admin+"/push/test", `{"user": "`+f.adaID+`", "title": "T", "body": "B"}`, jsonHdr(f.key))
+	if out["limited"] != float64(1) || out["queued"] != float64(0) {
+		t.Errorf("the test send is not counted: %v", out)
+	}
+	// The list, with its filters.
+	rec, out = f.doH(t, "GET", admin+"/push/sends?kind=raw", "", bearer(f.key))
+	items, _ := out["items"].([]any)
+	if rec.Code != 200 || len(items) != 4 {
+		t.Errorf("list: %d %d", rec.Code, len(items))
+	}
+	rec, out = f.doH(t, "GET", admin+"/push/sends?function=app/notify", "", bearer(f.key))
+	if items, _ = out["items"].([]any); rec.Code != 200 || len(items) != 0 {
+		t.Errorf("by function: %d %v", rec.Code, out)
+	}
+	// Needs the right areas.
+	if rec, _ := f.doH(t, "POST", admin+"/push/test", `{"user": "`+f.adaID+`", "title": "T", "body": "B"}`, jsonHdr(f.carl)); rec.Code != http.StatusForbidden {
+		t.Errorf("a plain user: %d", rec.Code)
+	}
 }

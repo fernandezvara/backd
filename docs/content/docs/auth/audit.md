@@ -21,6 +21,7 @@ Each realm with `auth: enabled` keeps an **audit trail**: one record per securit
 | `user.email_changed` | A user's address changes: confirmed by the new address, or set by an administrator | `by` (`self` or `admin`) |
 | `user.email_change_reverted` | The old address undid a change | |
 | `user.purged_unverified` | A worker deletes accounts that never verified their address | `count`, `older_than` |
+| `push.test` | An administrator sent a [test push](../../push/records/#the-test-send) to a user | `send`, `kind` |
 | `device.removed` | An administrator removes a user's push device | `platform`, `device` |
 | `user.claimed` | A link or code verified an address that was never verified, and took the account away from whoever made it: password, providers, second factor and sessions are removed | `methods`, `mfa` |
 | `function.invoke_manual` | An administrator runs a function by hand ([admin API](../admin/)) | `as` (the user's **id**, never their email, or null) |

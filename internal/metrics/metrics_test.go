@@ -113,3 +113,34 @@ func TestToken(t *testing.T) {
 		t.Errorf("unknown path without a token = %d", rec.Code)
 	}
 }
+
+func TestPushMetrics(t *testing.T) {
+	var nilMetrics *Metrics
+	nilMetrics.PushUsers("shop", "queued", 3)
+	nilMetrics.PushDeliveries("shop", "sent", 3)
+	nilMetrics.PushPruned("shop", "invalid", 3)
+	m := New("v", "c")
+	m.PushUsers("shop", "queued", 98)
+	m.PushUsers("shop", "limited", 2)
+	m.PushUsers("shop", "no_devices", 0) // nothing to add: no series
+	m.PushDeliveries("shop", "sent", 90)
+	m.PushDeliveries("shop", "invalid", 8)
+	m.PushPruned("shop", "invalid", 8)
+	m.PushPruned("shop", "cap", 1)
+	_, body := scrape(t, m, "", nil)
+	for _, want := range []string{
+		`backd_push_users_total{outcome="queued",realm="shop"} 98`,
+		`backd_push_users_total{outcome="limited",realm="shop"} 2`,
+		`backd_push_deliveries_total{realm="shop",status="sent"} 90`,
+		`backd_push_deliveries_total{realm="shop",status="invalid"} 8`,
+		`backd_push_devices_pruned_total{realm="shop",reason="invalid"} 8`,
+		`backd_push_devices_pruned_total{realm="shop",reason="cap"} 1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	if strings.Contains(body, `outcome="no_devices"`) {
+		t.Error("a zero count made a series")
+	}
+}

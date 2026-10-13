@@ -1931,6 +1931,122 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/push/sends:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [admin]
+      summary: The realm's push sends
+      description: |
+        One record per send, newest first: its totals (users queued, limited or with no device;
+        devices sent, removed as dead or failed) and how far its batches and delivery units are.
+        **Titles, bodies, data and tokens are never stored in a record**; it expires after
+        `push.send_retention`. Needs the `functions` area (read).
+      operationId: adminListPushSends
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { name: kind, in: query, schema: { type: string }, description: "A template kind, or `raw`." }
+        - { name: function, in: query, schema: { type: string }, description: "`<database>/<name>` of the function that sent." }
+        - { name: since, in: query, schema: { type: string, format: date-time } }
+        - { name: until, in: query, schema: { type: string, format: date-time } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200 } }
+        - { name: skip, in: query, schema: { type: integer, minimum: 0 } }
+      responses:
+        "200":
+          description: The sends.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, limit, skip, has_more]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/PushSend" }
+                  limit: { type: integer }
+                  skip: { type: integer }
+                  has_more: { type: boolean }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/push/sends/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    get:
+      tags: [admin]
+      summary: One push send
+      operationId: adminGetPushSend
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The send.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PushSend" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/push/test:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [admin]
+      summary: Send one user a test push
+      description: |
+        Sends a push to one user, the way a function would: rendered in every language and
+        checked against the providers. It goes through the same limits as any push and **counts
+        toward the user's**; it is audited as `push.test`. The record of the send names the
+        administrator as its sender. Needs the `users` area.
+      operationId: adminTestPush
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                user: { type: string, description: "The user's id. Give this or `email`." }
+                email: { type: string, format: email }
+                kind: { type: string, description: "A template kind of the realm; without it, `title` and `body`." }
+                title: { type: string }
+                body: { type: string }
+                link: { type: string }
+                data: { type: object, additionalProperties: { type: string } }
+                silent: { type: boolean }
+                platform: { type: object, additionalProperties: { type: object } }
+      responses:
+        "202":
+          description: "Planned: how many users were queued, limited or had no device."
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [send_id, users, queued, limited, no_devices]
+                properties:
+                  send_id: { type: string }
+                  users: { type: integer }
+                  queued: { type: integer }
+                  limited: { type: integer }
+                  no_devices: { type: integer }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/users/{id}/devices:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -5713,6 +5829,30 @@ components:
         last_used_at: { $ref: "#/components/schemas/Timestamp" }
         expires_at: { $ref: "#/components/schemas/Timestamp" }
         current: { type: boolean }
+
+    PushSend:
+      type: object
+      additionalProperties: false
+      required: [id, kind, sender, created_at, users, planned, batches, batches_done, units, units_done, queued, limited, no_devices, sent, invalid, failed, completed, completed_at]
+      properties:
+        id: { type: string }
+        kind: { type: string, description: "The template kind, or `raw`." }
+        sender: { type: string, description: "`function:<database>/<name>` or `admin:<actor>`." }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        users: { type: [integer, "null"], description: "Users named; null for an audience." }
+        planned: { type: boolean, description: "Every batch exists." }
+        batches: { type: integer }
+        batches_done: { type: integer }
+        units: { type: integer }
+        units_done: { type: integer }
+        queued: { type: integer, description: Users handed to delivery. }
+        limited: { type: integer, description: Users over their per-user limit. }
+        no_devices: { type: integer, description: Users with no device to reach. }
+        sent: { type: integer, description: Devices the provider accepted. }
+        invalid: { type: integer, description: Devices removed as dead. }
+        failed: { type: integer, description: Devices not delivered to. }
+        completed: { type: boolean }
+        completed_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
 
     Device:
       type: object

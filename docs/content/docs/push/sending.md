@@ -86,5 +86,5 @@ Per user, `push.limits.per_user` (**5 a minute and 24 a day** by default), count
 `wait: true` waits for the totals within the function's time limit and returns what it has then, with `sent`, `invalid`, `failed` and `completed`. Don't use it for large sends.
 
 {{< hint style="note" >}}
-The jobs of a send hold the rendered message and the user ids until the realm's `functions.job_retention` expires them. The send's own record (planned: [records and test send](../#turning-it-on)) holds counts only: no title, body, data or token.
+The jobs of a send hold the rendered message and the user ids until the realm's `functions.job_retention` expires them. The send's own [record](../records/) holds counts only: no title, body, data or token.
 {{< /hint >}}

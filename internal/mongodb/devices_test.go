@@ -19,7 +19,7 @@ func TestAuthStoreDevices(t *testing.T) {
 	for _, d := range []auth.Device{
 		dev("d1", "u1", "s1", "h1", -3*time.Hour), dev("d2", "u1", "s1", "h2", -2*time.Hour), dev("d3", "u1", "s2", "h3", -time.Hour),
 	} {
-		if _, err := s.PutDevice(ctx, d); err != nil {
+		if _, _, err := s.PutDevice(ctx, d); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -30,13 +30,13 @@ func TestAuthStoreDevices(t *testing.T) {
 	// The same owner re-registering keeps the id and creation time, and refreshes the rest.
 	again := dev("dX", "u1", "s2", "h1", 0)
 	again.Name = "Phone"
-	got, err := s.PutDevice(ctx, again)
+	got, _, err := s.PutDevice(ctx, again)
 	if err != nil || got.ID != "d1" || got.SessionID != "s2" || got.Name != "Phone" || !got.CreatedAt.Equal(now) {
 		t.Fatalf("refresh: %+v %v", got, err)
 	}
 	// Another user's registration of the token moves it: a new id, the old one is dead.
-	moved, err := s.PutDevice(ctx, dev("dM", "u2", "s9", "h1", 0))
-	if err != nil || moved.ID != "dM" || moved.UserID != "u2" {
+	moved, wasMoved, err := s.PutDevice(ctx, dev("dM", "u2", "s9", "h1", 0))
+	if err != nil || !wasMoved || moved.ID != "dM" || moved.UserID != "u2" {
 		t.Fatalf("move: %+v %v", moved, err)
 	}
 	if err := s.DeleteDevice(ctx, "u1", "d1"); !errors.Is(err, auth.ErrNotFound) {
@@ -59,10 +59,10 @@ func TestAuthStoreDevices(t *testing.T) {
 		t.Errorf("devices of an ended session: %+v", left)
 	}
 	// Stale ones, and those whose session is gone or expired.
-	_, _ = s.PutDevice(ctx, dev("d4", "u3", "live", "h4", -90*24*time.Hour))
-	_, _ = s.PutDevice(ctx, dev("d5", "u3", "live", "h5", 0))
-	_, _ = s.PutDevice(ctx, dev("d6", "u3", "expired", "h6", 0))
-	_, _ = s.PutDevice(ctx, dev("d7", "u3", "missing", "h7", 0))
+	_, _, _ = s.PutDevice(ctx, dev("d4", "u3", "live", "h4", -90*24*time.Hour))
+	_, _, _ = s.PutDevice(ctx, dev("d5", "u3", "live", "h5", 0))
+	_, _, _ = s.PutDevice(ctx, dev("d6", "u3", "expired", "h6", 0))
+	_, _, _ = s.PutDevice(ctx, dev("d7", "u3", "missing", "h7", 0))
 	_ = s.CreateSession(ctx, auth.Session{ID: "live", UserID: "u3", TokenHash: "tl", CreatedAt: now, LastUsedAt: now, ExpiresAt: now.Add(time.Hour)})
 	_ = s.CreateSession(ctx, auth.Session{ID: "expired", UserID: "u3", TokenHash: "te", CreatedAt: now, LastUsedAt: now, ExpiresAt: now.Add(-time.Minute)})
 	if n, err := s.DeleteStaleDevices(ctx, now.Add(-60*24*time.Hour)); err != nil || n != 1 {

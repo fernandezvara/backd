@@ -149,7 +149,7 @@ func TestAuthStoreAudienceAndLiveDevices(t *testing.T) {
 	_ = s.CreateSession(ctx, auth.Session{ID: "live", UserID: "a1", TokenHash: "t1", CreatedAt: now, LastUsedAt: now, ExpiresAt: now.Add(time.Hour)})
 	_ = s.CreateSession(ctx, auth.Session{ID: "dead", UserID: "a1", TokenHash: "t2", CreatedAt: now, LastUsedAt: now, ExpiresAt: now.Add(-time.Hour)})
 	for _, d := range []struct{ id, session, hash string }{{"d1", "live", "h1"}, {"d2", "dead", "h2"}, {"d3", "gone", "h3"}} {
-		if _, err := s.PutDevice(ctx, auth.Device{ID: d.id, UserID: "a1", SessionID: d.session, Platform: "android", TokenHash: d.hash, Token: "x", CreatedAt: now, LastSeen: now}); err != nil {
+		if _, _, err := s.PutDevice(ctx, auth.Device{ID: d.id, UserID: "a1", SessionID: d.session, Platform: "android", TokenHash: d.hash, Token: "x", CreatedAt: now, LastSeen: now}); err != nil {
 			t.Fatal(err)
 		}
 	}

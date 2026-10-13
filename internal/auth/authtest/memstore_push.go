@@ -192,3 +192,26 @@ func (m *MemStore) UpdatePushRecipients(_ context.Context, jobID string, recipie
 	m.jobs[jobID] = j
 	return nil
 }
+
+func (m *MemStore) ListPushSends(_ context.Context, f auth.PushSendFilter) ([]auth.PushSend, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var all []auth.PushSend
+	for _, s := range m.sends {
+		switch {
+		case f.Kind != "" && s.Kind != f.Kind, f.Sender != "" && s.Sender != f.Sender,
+			!f.Since.IsZero() && s.CreatedAt.Before(f.Since), !f.Until.IsZero() && !s.CreatedAt.Before(f.Until):
+			continue
+		}
+		all = append(all, s.PushSend)
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].ID > all[j].ID })
+	if f.Skip >= len(all) {
+		return nil, false, nil
+	}
+	all = all[f.Skip:]
+	if f.Limit > 0 && len(all) > f.Limit {
+		return all[:f.Limit], true, nil
+	}
+	return all, false, nil
+}

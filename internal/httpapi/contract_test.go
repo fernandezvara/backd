@@ -1833,6 +1833,9 @@ func TestContract(t *testing.T) {
 		req("GET", dev, "", ada, 404)
 		req("GET", dev+"/web-key", "", nil, 404)
 		req("GET", ad+"/users/"+temp.ID+"/devices", "", key, 404)
+		req("GET", ad+"/push/sends", "", key, 404)
+		req("GET", ad+"/push/sends/ps_none", "", key, 404)
+		req("POST", ad+"/push/test", `{"email": "ada@example.com", "title": "Hi", "body": "There"}`, key, 404)
 		f.svc.Settings.Push = &registry.PushSettings{
 			Platforms:         map[string]registry.PushPlatform{"android": {Provider: "fcm"}, "web": {Provider: "webpush"}},
 			WebEndpointHosts:  registry.DefaultWebEndpointHosts,
@@ -1840,6 +1843,10 @@ func TestContract(t *testing.T) {
 			MaxDevicesPerUser: 10,
 			StaleAfter:        60 * 24 * time.Hour,
 		}
+		f.svc.Settings.Push.Limits = registry.PushLimits{PerMinute: 5, PerDay: 24}
+		f.svc.Settings.Push.Delivery = registry.PushDelivery{Timeout: time.Minute, RetryAttempts: 3, RetryBackoff: 30 * time.Second, Parallelism: 4}
+		f.svc.Settings.Push.SendRetention = 30 * 24 * time.Hour
+		f.reg.Realms["acme"].Settings.Push = f.svc.Settings.Push
 		if f.svc.Cipher == nil {
 			f.svc.Cipher, _ = auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
 		}
@@ -1877,6 +1884,29 @@ func TestContract(t *testing.T) {
 			t.Fatal(err)
 		}
 		req("DELETE", ad+"/users/"+temp.ID+"/devices/"+d.ID, "", key, 204)
+
+		// The sends of the realm, and a test push to a user.
+		sent := req("POST", ad+"/push/test", `{"email": "`+temp.Email+`", "title": "Hi", "body": "There", "data": {"a": "b"}}`, key, 202)
+		req("POST", ad+"/push/test", `{"email": "`+temp.Email+`", "title": "Hi", "body": "`+strings.Repeat("x", 4300)+`"}`, key, 413)
+		req("POST", ad+"/push/test", `{"email": "`+temp.Email+`", "title": "Hi"}`, key, 400)
+		req("POST", ad+"/push/test", `{"email": "nobody@example.com", "title": "Hi", "body": "There"}`, key, 404)
+		req("POST", ad+"/push/test", `{"email": "ada@example.com", "title": "Hi", "body": "There"}`, nil, 401)
+		req("POST", ad+"/push/test", `{"email": "ada@example.com", "title": "Hi", "body": "There"}`, ada, 403)
+		f.svc.Settings.Push.Platforms["android"] = registry.PushPlatform{Provider: "fcm", Credentials: "NOT_SET"}
+		req("POST", ad+"/push/test", `{"email": "`+temp.Email+`", "title": "Hi", "body": "There"}`, key, 503)
+		f.svc.Settings.Push.Platforms["android"] = registry.PushPlatform{Provider: "fcm"}
+		sends := req("GET", ad+"/push/sends?kind=raw&limit=5", "", key, 200)
+		if items, _ := sends["items"].([]any); len(items) < 1 {
+			t.Errorf("sends: %v", sends)
+		}
+		req("GET", ad+"/push/sends?nope=1", "", key, 400)
+		req("GET", ad+"/push/sends", "", nil, 401)
+		req("GET", ad+"/push/sends", "", ada, 403)
+		sendID := sent["send_id"].(string)
+		req("GET", ad+"/push/sends/"+sendID, "", key, 200)
+		req("GET", ad+"/push/sends/ps_nope", "", key, 404)
+		req("GET", ad+"/push/sends/"+sendID, "", nil, 401)
+		req("GET", ad+"/push/sends/"+sendID, "", ada, 403)
 	}
 
 	c.verify(t, router)

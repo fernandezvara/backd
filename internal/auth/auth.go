@@ -227,8 +227,8 @@ type Store interface {
 
 	// PutDevice registers a device: a new one, or, when the token's hash exists, that device
 	// moved to this user and session (a new id, so the earlier owner's id is dead) with the
-	// new token and name. It returns what is stored.
-	PutDevice(ctx context.Context, d Device) (Device, error)
+	// new token and name. It returns what is stored and whether it moved from another user.
+	PutDevice(ctx context.Context, d Device) (Device, bool, error)
 	// ListDevices returns the user's devices, most recently seen first.
 	ListDevices(ctx context.Context, userID string) ([]Device, error)
 	// DeleteDevice removes one of the user's devices; ErrNotFound if it isn't theirs.
@@ -257,6 +257,8 @@ type Store interface {
 	// a planner job's place; UpdatePushRecipients replaces what a delivery unit still has to do.
 	CreatePushSend(ctx context.Context, p PushSend) error
 	PushSendByID(ctx context.Context, id string) (PushSend, error)
+	// ListPushSends returns sends newest first, and whether more follow.
+	ListPushSends(ctx context.Context, f PushSendFilter) ([]PushSend, bool, error)
 	AddPushSend(ctx context.Context, id string, d PushDelta, now time.Time) (PushSend, error)
 	SetPushPlanned(ctx context.Context, id string, batches int, now time.Time) error
 	SetPushPlanPosition(ctx context.Context, jobID, after string, nextBatch int) error

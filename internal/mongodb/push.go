@@ -339,3 +339,44 @@ func (s *AuthStore) AudienceUserIDs(ctx context.Context, a auth.PushAudience, af
 	}
 	return out, nil
 }
+
+func (s *AuthStore) ListPushSends(ctx context.Context, f auth.PushSendFilter) ([]auth.PushSend, bool, error) {
+	filter := bson.D{}
+	if f.Kind != "" {
+		filter = append(filter, bson.E{Key: "kind", Value: f.Kind})
+	}
+	if f.Sender != "" {
+		filter = append(filter, bson.E{Key: "sender", Value: f.Sender})
+	}
+	created := bson.D{}
+	if !f.Since.IsZero() {
+		created = append(created, bson.E{Key: "$gte", Value: f.Since})
+	}
+	if !f.Until.IsZero() {
+		created = append(created, bson.E{Key: "$lt", Value: f.Until})
+	}
+	if len(created) > 0 {
+		filter = append(filter, bson.E{Key: "created_at", Value: created})
+	}
+	limit := f.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	cur, err := s.pushSends().Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "_id", Value: -1}}).SetSkip(int64(f.Skip)).SetLimit(int64(limit+1)))
+	if err != nil {
+		return nil, false, err
+	}
+	var docs []pushSendDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, false, err
+	}
+	more := len(docs) > limit
+	if more {
+		docs = docs[:limit]
+	}
+	out := make([]auth.PushSend, len(docs))
+	for i, d := range docs {
+		out[i] = d.send()
+	}
+	return out, more, nil
+}

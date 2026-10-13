@@ -26,15 +26,19 @@ func (m *MemStore) dropDevicesOfSession(sessionID string) {
 	}
 }
 
-func (m *MemStore) PutDevice(_ context.Context, d auth.Device) (auth.Device, error) {
+func (m *MemStore) PutDevice(_ context.Context, d auth.Device) (auth.Device, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.devices == nil {
 		m.devices = map[string]auth.Device{}
 	}
+	moved := false
 	for k, old := range m.devices {
 		if old.TokenHash != d.TokenHash {
 			continue
+		}
+		if old.UserID != d.UserID {
+			moved = true
 		}
 		if old.UserID == d.UserID {
 			// The same owner: refreshed in place, keeping its id and creation time.
@@ -46,7 +50,7 @@ func (m *MemStore) PutDevice(_ context.Context, d auth.Device) (auth.Device, err
 		delete(m.devices, k)
 	}
 	m.devices[d.ID] = d
-	return d, nil
+	return d, moved, nil
 }
 
 func (m *MemStore) ListDevices(_ context.Context, userID string) ([]auth.Device, error) {

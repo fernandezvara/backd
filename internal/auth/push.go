@@ -111,6 +111,14 @@ type PushDelta struct {
 // PushUserFilter selects users for an audience page.
 type PushUserFilter = PushAudience
 
+// PushSendFilter selects sends to list. Sender is "function:<database>/<name>" or "admin:<id>";
+// zero fields match everything.
+type PushSendFilter struct {
+	Kind, Sender string
+	Since, Until time.Time
+	Limit, Skip  int
+}
+
 var (
 	// ErrPushSendNotFound: no send has that id.
 	ErrPushSendNotFound = errors.New("push send not found")
@@ -267,6 +275,8 @@ func (s *Users) PlanPushBatch(ctx context.Context, batchID, sendID string, users
 		}
 		total.Limited += c.Limited
 		total.NoDevices += c.NoDevices
+		s.Metrics.PushUsers(s.Realm, "limited", c.Limited)
+		s.Metrics.PushUsers(s.Realm, "no_devices", c.NoDevices)
 		if len(unit.Recipients) == 0 {
 			continue // nobody to deliver to: no unit
 		}
@@ -274,6 +284,7 @@ func (s *Users) PlanPushBatch(ctx context.Context, batchID, sendID string, users
 			return total, err
 		}
 		total.Queued += len(unit.Recipients)
+		s.Metrics.PushUsers(s.Realm, "queued", len(unit.Recipients))
 		total.Units++
 	}
 	if _, err := s.Store.AddPushSend(ctx, sendID, PushDelta{Units: total.Units, Queued: total.Queued, Limited: total.Limited, NoDevices: total.NoDevices, DoneBatch: batchID}, s.now()); err != nil {
@@ -382,6 +393,14 @@ func (s *Users) PlanPushAudience(ctx context.Context, job Job) error {
 			return s.Store.SetPushPlanned(ctx, pj.SendID, next, s.now())
 		}
 	}
+}
+
+// PushSends lists the realm's sends, newest first.
+func (s *Users) PushSends(ctx context.Context, f PushSendFilter) ([]PushSend, bool, error) {
+	if s.Settings.Push == nil {
+		return nil, false, ErrPushNotConfigured
+	}
+	return s.Store.ListPushSends(ctx, f)
 }
 
 // PushSendByID returns a send's record.

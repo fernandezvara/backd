@@ -38,12 +38,14 @@ func (s *AuthStore) dropDevicesOf(ctx context.Context, userID string) error {
 	return err
 }
 
-func (s *AuthStore) PutDevice(ctx context.Context, d auth.Device) (auth.Device, error) {
+func (s *AuthStore) PutDevice(ctx context.Context, d auth.Device) (auth.Device, bool, error) {
 	// A token that belongs to someone else moves: the earlier owner's document goes and a new
 	// one (a new id) is made, so an id of the first owner never reaches the second.
-	if _, err := s.devices().DeleteMany(ctx, bson.D{{Key: "token_hash", Value: d.TokenHash}, {Key: "user_id", Value: bson.D{{Key: "$ne", Value: d.UserID}}}}); err != nil {
-		return auth.Device{}, err
+	res, err := s.devices().DeleteMany(ctx, bson.D{{Key: "token_hash", Value: d.TokenHash}, {Key: "user_id", Value: bson.D{{Key: "$ne", Value: d.UserID}}}})
+	if err != nil {
+		return auth.Device{}, false, err
 	}
+	moved := res.DeletedCount > 0
 	set := bson.D{{Key: "session_id", Value: d.SessionID}, {Key: "platform", Value: d.Platform}, {Key: "token", Value: d.Token}, {Key: "last_seen", Value: d.LastSeen}}
 	if d.Name != "" {
 		set = append(set, bson.E{Key: "name", Value: d.Name})
@@ -59,11 +61,11 @@ func (s *AuthStore) PutDevice(ctx context.Context, d auth.Device) (auth.Device, 
 			continue
 		}
 		if err != nil {
-			return auth.Device{}, err
+			return auth.Device{}, false, err
 		}
-		return doc.device(), nil
+		return doc.device(), moved, nil
 	}
-	return auth.Device{}, errors.New("the device could not be registered: try again")
+	return auth.Device{}, false, errors.New("the device could not be registered: try again")
 }
 
 func (s *AuthStore) ListDevices(ctx context.Context, userID string) ([]auth.Device, error) {

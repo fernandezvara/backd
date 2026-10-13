@@ -129,57 +129,11 @@ func (f *functions) pushSend(w http.ResponseWriter, r *http.Request) {
 		send.Audience = aud
 	}
 	// What.
-	kind := in.Kind
-	if kind != "" && kind != push.RawKind && !declared.AllowsKind(kind) {
-		writeError(w, r, http.StatusBadRequest, codeUnknownPushKind, "this function didn't declare the push kind "+kind+" in its function.yaml")
-		return
-	}
-	msg, err := pushMessage(in)
-	if err != nil {
-		invalid("data", err.Error())
-		return
-	}
-	var targets []push.Target
-	for _, p := range registry.Platforms {
-		if pp, ok := rl.Settings.Push.Platforms[p]; ok {
-			targets = append(targets, push.Target{Platform: p, Provider: pp.Provider})
-		}
-	}
-	_, locales := rl.Settings.Languages()
-	prepared, err := push.Prepare(rl.Push, realm, locales, targets, kind, msg)
-	var (
-		vErr *push.ValidationError
-		tl   *push.TooLargeError
-	)
-	switch {
-	case errors.Is(err, push.ErrUnknownKind):
-		writeError(w, r, http.StatusBadRequest, codeUnknownPushKind, err.Error())
-		return
-	case errors.As(err, &tl):
-		writeError(w, r, http.StatusRequestEntityTooLarge, codePayloadTooLarge, err.Error(), Detail{Path: "message", Reason: err.Error()})
-		return
-	case errors.As(err, &vErr):
-		invalid(vErr.Field, vErr.Reason)
-		return
-	case err != nil:
-		logger(r.Context()).Error("prepare a push", "error", err)
-		writeError(w, r, http.StatusInternalServerError, codeInternal, "internal error")
+	prepared, ok := preparePush(w, r, svc, rl, realm, in, declared.AllowsKind)
+	if !ok {
 		return
 	}
 	send.Messages = prepared
-	// The providers' secrets must be set: a send that no provider could deliver is refused now.
-	if refs := secretRefs(rl.Settings.Push.SecretNames()); len(refs) > 0 {
-		_, missing, err := svc.ResolveSecrets(r.Context(), refs, "")
-		if err != nil {
-			logger(r.Context()).Error("read the push secrets", "error", err)
-			writeError(w, r, http.StatusInternalServerError, codeInternal, "internal error")
-			return
-		}
-		if len(missing) > 0 {
-			writeError(w, r, http.StatusServiceUnavailable, codePushUnavailable, auth.ErrPushUnavailable.Error())
-			return
-		}
-	}
 	started, err := svc.StartPushSend(r.Context(), send, requestID(r.Context()))
 	if err != nil {
 		logger(r.Context()).Error("start a push send", "function", fnName, "error", err)
@@ -304,4 +258,64 @@ func secretRefs(names []string) []registry.SecretRef {
 		refs[i] = registry.SecretRef{Realm: true, Name: n}
 	}
 	return refs
+}
+
+// preparePush renders the message of a send in every language and checks it against the
+// providers, and that the secrets they need are set. It answers the error itself and says
+// false when the send can't go on. allowed says whether the sender may name a kind.
+func preparePush(w http.ResponseWriter, r *http.Request, svc *auth.Users, rl *registry.Realm, realm string, in pushSendInput, allowed func(kind string) bool) (map[string]push.Message, bool) {
+	kind := in.Kind
+	if kind != "" && kind != push.RawKind && !allowed(kind) {
+		writeError(w, r, http.StatusBadRequest, codeUnknownPushKind, "this function didn't declare the push kind "+kind+" in its function.yaml")
+		return nil, false
+	}
+	invalid := func(path, reason string) {
+		writeError(w, r, http.StatusBadRequest, codeInvalidPushMsg, "invalid push message", Detail{Path: path, Reason: reason})
+	}
+	msg, err := pushMessage(in)
+	if err != nil {
+		invalid("data", err.Error())
+		return nil, false
+	}
+	var targets []push.Target
+	for _, p := range registry.Platforms {
+		if pp, ok := rl.Settings.Push.Platforms[p]; ok {
+			targets = append(targets, push.Target{Platform: p, Provider: pp.Provider})
+		}
+	}
+	_, locales := rl.Settings.Languages()
+	prepared, err := push.Prepare(rl.Push, realm, locales, targets, kind, msg)
+	var (
+		vErr *push.ValidationError
+		tl   *push.TooLargeError
+	)
+	switch {
+	case errors.Is(err, push.ErrUnknownKind):
+		writeError(w, r, http.StatusBadRequest, codeUnknownPushKind, err.Error())
+		return nil, false
+	case errors.As(err, &tl):
+		writeError(w, r, http.StatusRequestEntityTooLarge, codePayloadTooLarge, err.Error(), Detail{Path: "message", Reason: err.Error()})
+		return nil, false
+	case errors.As(err, &vErr):
+		invalid(vErr.Field, vErr.Reason)
+		return nil, false
+	case err != nil:
+		logger(r.Context()).Error("prepare a push", "error", err)
+		writeError(w, r, http.StatusInternalServerError, codeInternal, "internal error")
+		return nil, false
+	}
+	// The providers' secrets must be set: a send that no provider could deliver is refused now.
+	if refs := secretRefs(rl.Settings.Push.SecretNames()); len(refs) > 0 {
+		_, missing, err := svc.ResolveSecrets(r.Context(), refs, "")
+		if err != nil {
+			logger(r.Context()).Error("read the push secrets", "error", err)
+			writeError(w, r, http.StatusInternalServerError, codeInternal, "internal error")
+			return nil, false
+		}
+		if len(missing) > 0 {
+			writeError(w, r, http.StatusServiceUnavailable, codePushUnavailable, auth.ErrPushUnavailable.Error())
+			return nil, false
+		}
+	}
+	return prepared, true
 }
