@@ -35,7 +35,7 @@ Users manage their own second factor with their session, after a fresh [proof of
 - A setup allows 5 wrong codes and then ends; a new setup replaces a pending one.
 
 {{< hint style="warning" title="Needs the secrets key" >}}
-Enrolling needs the instance to have `BACKD_SECRETS_KEY`: the TOTP secrets are encrypted with it. Without it, `available` is `false` and setting TOTP up answers `503 mfa_unavailable`.
+Enrolling needs the instance to have `BACKD_SECRETS_KEY`: the TOTP secrets are encrypted with it. Without it, `available` is `false` and setting TOTP up answers `503 mfa_unavailable`. A realm that requires a second factor of some roles on an instance without the key logs an error at startup: those users can't sign in until it is set.
 {{< /hint >}}
 
 ### Notices

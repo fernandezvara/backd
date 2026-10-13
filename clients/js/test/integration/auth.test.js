@@ -13,9 +13,11 @@ test('sign-up, me, sessions, logout', { skip }, async () => {
   const s = await c.auth.signup({ email: address.toUpperCase(), password })
   assert.match(String(s.token), /^bds_/)
   assert.equal(s.user.email, address)
-  const { identities, ...me } = await c.auth.me()
+  const { identities, reauth_methods: reauthMethods, sign_in_methods: signInMethods, ...me } = await c.auth.me()
   assert.deepEqual(me, s.user)
   assert.deepEqual(identities.map((i) => i.provider), ['password'])
+  assert.deepEqual(reauthMethods, ['password'])
+  assert.deepEqual(signInMethods, ['password'])
 
   await assert.rejects(client().auth.signup({ email: address, password }), ConflictError)
   await assert.rejects(client().auth.signup({ email: 'not-an-email', password }), (/** @type {any} */ e) => e instanceof ValidationError && e.details[0].path === 'email')
@@ -97,6 +99,8 @@ test('sign-in methods: me lists them, the last one stays, and a realm without pr
   assert.equal(me.identities[0].email, me.email)
   assert.ok(me.identities[0].last_used_at === null || typeof me.identities[0].last_used_at === 'string')
   // The only way to sign in can't be removed; a provider the user doesn't have isn't there.
+  // (Removing a way in asks for a fresh proof first.)
+  await c.auth.reauth({ method: 'password', password })
   await assert.rejects(c.auth.unlinkProvider('password'), (/** @type {any} */ e) => e instanceof ConflictError && e.code === 'last_sign_in_method')
   await assert.rejects(c.auth.unlinkProvider('google'), (/** @type {any} */ e) => e instanceof NotFoundError)
   // The test realm lists no providers: starting one, or sending a token, is a 404.

@@ -757,6 +757,10 @@ func (a *app) syncRoles(ctx context.Context) error {
 		case rep.Admins == 0:
 			a.log.Warn("no user holds an admin role of the realm, in realm.yaml or the database: create the first administrator with `backd bootstrap`", "realm", rl.Name)
 		}
+		if (rl.Settings.MFA.RequiredAll || len(rl.Settings.MFA.RequiredRoles) > 0) && len(a.cfg.SecretsKey) == 0 {
+			a.log.Error("the realm requires a second factor but this instance has no BACKD_SECRETS_KEY: those users can't sign in (503 mfa_unavailable) until it is set",
+				"realm", rl.Name, "roles", rl.Settings.MFA.RequiredRoles, "all", rl.Settings.MFA.RequiredAll)
+		}
 		if !a.cfg.Dev {
 			if open := unprotectedAdminRoles(rl.Settings); len(open) > 0 {
 				a.log.Warn("admin roles that don't require a second factor: add them to mfa.required_roles in realm.yaml so that a stolen password is not enough",

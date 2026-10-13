@@ -1735,7 +1735,23 @@ func TestContract(t *testing.T) {
 		}
 		magic, mform := a+"/magic-link", map[string]string{"Content-Type": "application/x-www-form-urlencoded"}
 		verifier, challenge, _ := auth.NewPKCE()
+		// The worker started above makes the secrets of a request when it writes the email, and a
+		// second time would invalidate the first: wait until it is done with the request's job,
+		// then make the ones the test knows.
 		secrets := func(requestID string) (string, string) {
+			for range 200 {
+				pending := false
+				jobs, _, _ := f.svc.Jobs(ctx, auth.JobFilter{Limit: 100})
+				for _, j := range jobs {
+					if j.Email != nil && j.Email.ChallengeID == auth.HashToken(requestID) && (j.Status == auth.JobQueued || j.Status == auth.JobRunning) {
+						pending = true
+					}
+				}
+				if !pending {
+					break
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
 			tok, code, _, err := f.svc.MakeMagicLinkSecrets(ctx, auth.HashToken(requestID))
 			if err != nil {
 				t.Fatal(err)

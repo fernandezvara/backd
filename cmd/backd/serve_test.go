@@ -74,7 +74,8 @@ func TestTemplatesServeSample(t *testing.T) {
 	}
 	realm := "t" + xid.New().String()
 	env := map[string]string{"CONFIG_DIR": t.TempDir(), "MONGO_URI": uri, "LOG_LEVEL": "error", "PASSWORD_HASH_CONCURRENCY": "1",
-		"BACKD_CREDENTIALS": filepath.Join(t.TempDir(), "credentials")}
+		"BACKD_CREDENTIALS": filepath.Join(t.TempDir(), "credentials"),
+		"BACKD_SECRETS_KEY": "local-dev-secrets-key-not-a-secret-0123456789abc"}
 	getenv := func(k string) string { return env[k] }
 	t.Cleanup(func() {
 		ctx := context.Background()
