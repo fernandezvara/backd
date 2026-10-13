@@ -182,6 +182,8 @@ GET /v1/shop/orders/items?limit=10&skip=20
 
 By default documents are ordered by `id`, which is creation order. The endpoint also supports filtering (`where`), sorting (`order_by`), counting (`count`) and paging with a cursor (`after`, from the `next_cursor` of the previous page). See [Querying](../querying/).
 
+A list response carries a weak `ETag` (`W/"…"`) over the whole page: the id, version and view of every returned document, `has_more`, the cursor and the total. Send it back in `If-None-Match` and an unchanged page answers `304` with no body. The query and the rules always run, so a document that was added, removed, edited, or hidden from or revealed to the caller changes the tag. A list with `?file_links=true` has no tag and is never `304`.
+
 ## Replace (PUT)
 
 The body becomes the complete new document and is validated as a whole. Fields that aren't in the body are removed. `id` and `_meta.created_at` are kept.

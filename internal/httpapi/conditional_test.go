@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -82,5 +83,73 @@ func TestConditionalGetDocument(t *testing.T) {
 	rec, _ = f.doH(t, "PATCH", doc, `{"age": 4}`, map[string]string{"If-Match": `"2.r1a2b3c4d"`})
 	if rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"3"` {
 		t.Errorf("suffixed If-Match = %d %v", rec.Code, rec.Header())
+	}
+}
+
+func TestConditionalGetList(t *testing.T) {
+	f := newFixture(t)
+	_, a := f.do(t, "POST", items, `{"name": "a"}`)
+	f.do(t, "POST", items, `{"name": "b"}`)
+
+	rec, _ := f.do(t, "GET", items+"?count=true", "")
+	tag := rec.Header().Get("ETag")
+	if rec.Code != http.StatusOK || !strings.HasPrefix(tag, `W/"`) || rec.Header().Get("Cache-Control") != "private, no-cache" {
+		t.Fatalf("list = %d %v", rec.Code, rec.Header())
+	}
+	get := func(path, inm string) *httptest.ResponseRecorder {
+		rec, _ := f.doH(t, "GET", path, "", map[string]string{"If-None-Match": inm})
+		return rec
+	}
+	rec = get(items+"?count=true", tag)
+	if rec.Code != http.StatusNotModified || rec.Body.Len() != 0 || rec.Header().Get("ETag") != tag {
+		t.Errorf("matching list tag = %d %q %v", rec.Code, rec.Body, rec.Header())
+	}
+	if rec = get(items+"?count=true", strings.TrimPrefix(tag, "W/")); rec.Code != http.StatusNotModified {
+		t.Errorf("strong spelling of the tag = %d", rec.Code)
+	}
+
+	// An edit, an addition and a removal each change it.
+	f.do(t, "PATCH", items+"/"+a["id"].(string), `{"age": 1}`)
+	rec = get(items+"?count=true", tag)
+	edited := rec.Header().Get("ETag")
+	if rec.Code != http.StatusOK || edited == tag {
+		t.Errorf("after edit = %d tag %s (was %s)", rec.Code, edited, tag)
+	}
+	_, c := f.do(t, "POST", items, `{"name": "c"}`)
+	rec = get(items+"?count=true", edited)
+	added := rec.Header().Get("ETag")
+	if rec.Code != http.StatusOK || added == edited {
+		t.Errorf("after add = %d", rec.Code)
+	}
+	f.do(t, "DELETE", items+"/"+c["id"].(string), "")
+	if rec = get(items+"?count=true", added); rec.Code != http.StatusOK || rec.Header().Get("ETag") == added {
+		t.Errorf("after delete = %d", rec.Code)
+	}
+
+	// A different page has a different tag, and the cursor is part of it.
+	p1, _ := f.do(t, "GET", items+"?limit=1", "")
+	p2, _ := f.do(t, "GET", items+"?limit=1&skip=1", "")
+	if p1.Header().Get("ETag") == p2.Header().Get("ETag") {
+		t.Error("two pages share a tag")
+	}
+}
+
+func TestListETagCoversEveryPart(t *testing.T) {
+	doc := func(id string, v int64) map[string]any {
+		return map[string]any{"id": id, "_meta": map[string]any{"version": v}}
+	}
+	n := int64(2)
+	base := listETag([]map[string]any{doc("a", 1), doc("b", 1)}, "", false, "", nil)
+	for name, other := range map[string]string{
+		"version":        listETag([]map[string]any{doc("a", 1), doc("b", 2)}, "", false, "", nil),
+		"order":          listETag([]map[string]any{doc("b", 1), doc("a", 1)}, "", false, "", nil),
+		"representation": listETag([]map[string]any{doc("a", 1), doc("b", 1)}, ".r12345678", false, "", nil),
+		"has_more":       listETag([]map[string]any{doc("a", 1), doc("b", 1)}, "", true, "", nil),
+		"cursor":         listETag([]map[string]any{doc("a", 1), doc("b", 1)}, "", false, "b", nil),
+		"total":          listETag([]map[string]any{doc("a", 1), doc("b", 1)}, "", false, "", &n),
+	} {
+		if other == base {
+			t.Errorf("%s doesn't change the list tag", name)
+		}
 	}
 }

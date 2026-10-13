@@ -37,7 +37,7 @@ Responses depend on who is asking, so `backd` tells caches (browsers, proxies, C
 | `/_auth`, `/_admin`, and [function](../functions/) calls (`_func`, `_jobs`) | `Cache-Control: no-store`: tokens, account data and function results are never cached |
 | A document read with `?file_links=true` | `Cache-Control: private, no-store`: the links expire, so the response is never stored or revalidated |
 
-Revalidation is cheap: single-document reads answer `304 Not Modified` to a matching `If-None-Match` (see [Revalidating a read](../api/documents/#revalidating-a-read-if-none-match)). Errors on these routes carry the same headers.
+Revalidation is cheap: document and list reads answer `304 Not Modified` to a matching `If-None-Match` (see [Revalidating a read](../api/documents/#revalidating-a-read-if-none-match)). Errors on these routes carry the same headers.
 
 {{< hint style="tip" title="Already done for you" >}}
 You don't configure any of this: `backd` sets `Vary` and `Cache-Control` on every response, so a shared cache can't serve one caller's data to another. Never strip these headers at your proxy.

@@ -1266,10 +1266,15 @@ func TestContract(t *testing.T) {
 			req("GET", base+"/"+mine, "", with(ada, "If-None-Match", `"0"`), 200)
 			req("GET", base+"/"+mine, "", with(carl, "If-None-Match", tag), 404)
 			req("GET", base+"/"+mine+"?file_links=true", "", with(ada, "If-None-Match", tag), 200)
+			lrec, _ := f.doH(t, "GET", base, "", ada)
+			req("GET", base, "", with(ada, "If-None-Match", lrec.Header().Get("ETag")), 304)
+			req("GET", base+"?file_links=true", "", with(ada, "If-None-Match", lrec.Header().Get("ETag")), 200)
 		} else {
 			doc := req("POST", base, `{"title": "cond"}`, key, 201)
 			tag := fmt.Sprintf(`"%d"`, int64(doc["_meta"].(map[string]any)["version"].(float64)))
 			req("GET", base+"/"+doc["id"].(string), "", with(key, "If-None-Match", tag), 304)
+			lrec, _ := f.doH(t, "GET", base, "", key)
+			req("GET", base, "", with(key, "If-None-Match", lrec.Header().Get("ETag")), 304)
 		}
 	}
 	// Direct uploads: start, PUT to the bucket as a browser would, complete.

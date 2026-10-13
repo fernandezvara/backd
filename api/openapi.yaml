@@ -3743,6 +3743,7 @@ paths:
       security: [{}, { session: [] }, { apiKey: [] }]
       parameters:
         - { $ref: "#/components/parameters/fileLinks" }
+        - { $ref: "#/components/parameters/ifNoneMatch" }
         - name: where
           in: query
           description: >-
@@ -3775,11 +3776,13 @@ paths:
         "200":
           description: A page of documents.
           headers:
+            ETag: { $ref: "#/components/headers/ListETag" }
             Vary: { $ref: "#/components/headers/DataVary" }
             Cache-Control: { $ref: "#/components/headers/DataCacheControl" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/DocumentList" }
+        "304": { $ref: "#/components/responses/NotModified" }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
@@ -4415,6 +4418,7 @@ paths:
       security: [{ apiKey: [] }, { session: [] }]
       parameters:
         - { $ref: "#/components/parameters/fileLinks" }
+        - { $ref: "#/components/parameters/ifNoneMatch" }
         - name: where
           in: query
           description: >-
@@ -4447,11 +4451,13 @@ paths:
         "200":
           description: A page of documents.
           headers:
+            ETag: { $ref: "#/components/headers/ListETag" }
             Vary: { $ref: "#/components/headers/DataVary" }
             Cache-Control: { $ref: "#/components/headers/DataCacheControl" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/DocumentList" }
+        "304": { $ref: "#/components/responses/NotModified" }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
@@ -5320,6 +5326,12 @@ components:
         characters, such as `"12.r1a2b3c4d"`. Send it back in `If-Match` to guard
         a write, or in `If-None-Match` to revalidate a read.
       schema: { type: string, pattern: '^"[0-9]+(\.r[0-9a-f]{8})?"$' }
+    ListETag:
+      description: >-
+        A weak validator over the page: the id, version and tag of every
+        returned document, `has_more`, the cursor and the total. Absent with
+        `?file_links=true`. Send it in `If-None-Match` to revalidate the page.
+      schema: { type: string, pattern: '^W/"[0-9a-f]{32}"$' }
     NoStore:
       required: true
       schema: { const: no-store }
@@ -5445,7 +5457,7 @@ components:
         The copy the caller holds (`If-None-Match`) is current. No body.
         Never sent with `?file_links=true`.
       headers:
-        ETag: { $ref: "#/components/headers/ETag" }
+        ETag: { schema: { type: string } }
         Vary: { $ref: "#/components/headers/DataVary" }
         Cache-Control: { $ref: "#/components/headers/DataCacheControl" }
 

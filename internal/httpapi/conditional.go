@@ -64,3 +64,24 @@ func notModified(w http.ResponseWriter, r *http.Request, tag string) bool {
 	w.WriteHeader(http.StatusNotModified)
 	return true
 }
+
+// listETag is the weak validator of a list page: a hash over every returned
+// document's id, version and representation tag, then has_more, the next
+// cursor and the total when they are included. Any document added, removed,
+// edited, hidden or revealed for the caller changes it.
+func listETag(items []map[string]any, representation string, hasMore bool, cursor string, total *int64) string {
+	h := sha256.New()
+	for _, doc := range items {
+		id, _ := doc["id"].(string)
+		h.Write([]byte(id))
+		h.Write([]byte{0})
+		h.Write([]byte(strconv.FormatInt(version(doc), 10)))
+		h.Write([]byte(representation))
+		h.Write([]byte{'\n'})
+	}
+	h.Write([]byte("more=" + strconv.FormatBool(hasMore) + "\ncursor=" + cursor))
+	if total != nil {
+		h.Write([]byte("\ntotal=" + strconv.FormatInt(*total, 10)))
+	}
+	return `W/"` + hex.EncodeToString(h.Sum(nil))[:32] + `"`
+}

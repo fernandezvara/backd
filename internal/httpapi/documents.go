@@ -265,13 +265,25 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 	for _, doc := range page.Items {
 		resp.Items = append(resp.Items, render(doc))
 	}
-	if !d.addFileLinks(w, r, c, resp.Items) {
-		return
-	}
 	if page.HasMore && len(page.Items) > 0 {
 		if ok, _ := query.Cursorable(q.Sort, c.Fields); ok {
 			resp.NextCursor = query.EncodeCursor(q.Sort, page.Items[len(page.Items)-1])
 		}
+	}
+	if r.URL.Query().Get("file_links") == "true" && len(c.Files) > 0 {
+		// Links are made per response and expire: never 304, never stored.
+		if !d.addFileLinks(w, r, c, resp.Items) {
+			return
+		}
+		w.Header().Set("Cache-Control", "private, no-store")
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+	// The query and the rules have run: the validator covers what this caller sees.
+	tag := listETag(page.Items, "", resp.HasMore, resp.NextCursor, resp.Total) // nothing is redacted per caller yet
+	readHeaders(w, tag)
+	if notModified(w, r, tag) {
+		return
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
