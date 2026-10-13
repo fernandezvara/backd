@@ -61,6 +61,12 @@ A first draft of the rules of `expenses/collection.yaml` set `read: false`, mean
 
 One visible consequence: editing or deleting *someone else's* entry now answers `404`, not `403` as it does in [expenses without functions](../expenses/#what-the-rules-enforce) — there, the reader's copy of `members` let them see the entry (read succeeds, then the write is refused); here, a direct read of someone else's entry was never allowed in the first place, so the document doesn't exist as far as they're concerned, same as a stranger's private draft in the [blog example](../blog/).
 
+## Pushing the payer
+
+`confirm_settlement` also tells the person who paid. Its `function.yaml` declares `push: { kinds: [settlement-confirmed] }`, and after the confirmation it calls `ctx.push.send({ user: entry._meta.owner, kind: "settlement-confirmed", data: { from, amount } })`: the settlement's owner is the payer, so the function needs no lookup, and the text comes from the realm's `push/settlement-confirmed/en.yaml` template. A push that can't be sent (no device, a limit, a provider down) is logged and never undoes the confirmation.
+
+The realm uses the **`capture`** provider, so nothing leaves the machine: open the Mailbox's **Push** tab (<https://localhost:8443/example/mailbox/?realm=expenses-with-functions&tab=push>) to see what the payer's phone would have received. The page registers a demo device with `backd.push.registerOnLaunch`. See [Push notifications](../../push/).
+
 ## Known holes
 
 No holes are left. Hole 5, unchanged from [expenses without functions](../expenses/#known-holes), is closed by email verification rather than functions: the realm sets `account.require_verified_email`, so whoever signs up with an invited email without access to its mailbox never gets a session, and the rules and every function's `invoke` also check `user.email_verified`.

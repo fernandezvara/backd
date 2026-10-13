@@ -16,6 +16,22 @@ const backd = createClient({
   storage: localStorageStorage('backd-expenses-functions-example'),
 })
 const db = backd.db('main')
+
+// A demo device. The realm uses the `capture` push provider, which answers by token and stores
+// what it would have sent: this page registers a stand-in for a phone so that confirming a
+// settlement shows up in the Mailbox's Push tab. A real app registers its FCM, APNs or Web Push
+// token the same way (docs: Push notifications -> Devices).
+const demoToken = (() => {
+  try {
+    const key = 'backd-expenses-functions-push-token'
+    return localStorage.getItem(key) ?? (localStorage.setItem(key, `demo-${crypto.randomUUID()}`), localStorage.getItem(key))
+  } catch {
+    return `demo-${crypto.randomUUID()}`
+  }
+})()
+backd.push.registerOnLaunch(() => ({ platform: 'android', token: demoToken, name: 'This browser (demo)' }), {
+  onError: (err) => console.warn('push: could not register the demo device', err),
+})
 const groups = db.collection('groups')
 // No `expenses` collection reads here: a direct read only ever returns
 // your own entries (expenses/collection.yaml), so list_expenses is the only

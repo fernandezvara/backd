@@ -9,7 +9,7 @@ toc: true
 **backd sends pushes itself.** There are three lanes (FCM for Android, APNs for iOS and Web Push for browsers) and each is a small built-in sender in the worker: you configure credentials once, and your functions only say *who* gets *what*. backd keeps the device registry, the templates and their languages, the per-user limits, the retries per device and the records of what went out.
 
 {{< hint style="note" >}}
-Push is being built in steps. What is documented here is what exists: **the device registry**, the configuration, the templates, sending, and the records of what was sent, the providers' senders and local development. The client library and the example app are the one step still planned.
+Push is being built in steps. What is documented here is what exists: **the device registry**, the configuration, the templates, sending, and the records of what was sent, the providers' senders and local development. The JavaScript client and an example app close the set.
 {{< /hint >}}
 
 | Step | What it gives you | State |
@@ -19,6 +19,7 @@ Push is being built in steps. What is documented here is what exists: **the devi
 | [Sending](sending/) | `ctx.push.send`, audiences, batches, limits, retries per device | available |
 | Providers | Built-in senders: [FCM](fcm/) (Android, and iOS apps on the FCM SDK), [APNs](apns/) (iOS) and [Web Push](web-push/) (browsers), each with a setup guide | available |
 | [Records and test send](records/) | What was sent and why not, an audited test send, metrics | available |
+| [From apps](client/) | `client.push`: register, keep registered, subscribe a browser; the service worker; mobile apps | available |
 | [Local development](local/) | A capture provider with steerable outcomes, a Push tab in the Mailbox and `fakePush()` | available |
 
 ## Turning it on

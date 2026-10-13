@@ -1,0 +1,4 @@
+# Used by the push integration test: sends the caller a push from the template `hello`.
+invoke: "user != nil"
+push:
+  kinds: [hello]

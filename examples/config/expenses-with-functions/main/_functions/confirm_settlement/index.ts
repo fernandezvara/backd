@@ -14,6 +14,7 @@ import { relay } from "../lib/relay.ts";
 
 type Context = {
   admin: { db: (name: string) => Database };
+  push?: { send: (message: Record<string, unknown>) => Promise<unknown> };
   user: { id: string; email: string } | null;
   input: unknown;
   error: (status: number, code: string, message: string) => Error;
@@ -25,8 +26,9 @@ type Entry = {
   id: string;
   kind: string;
   status?: string;
+  amount: number;
   split_between: string[];
-  _meta: { version: number };
+  _meta: { version: number; owner: string };
 };
 
 type Collection = {
@@ -54,9 +56,25 @@ export default async function handler(ctx: Context) {
     throw ctx.error(403, "not_the_receiver", "only the person the settlement was paid to may confirm it");
   }
 
+  let confirmed: Entry;
   try {
-    return await expenses.patch(id, { status: "confirmed" }, { ifMatch: entry._meta.version });
+    confirmed = await expenses.patch(id, { status: "confirmed" }, { ifMatch: entry._meta.version });
   } catch (err) {
     relay(err, ctx.error);
   }
+
+  // Tell the payer: a push to the user who wrote the settlement (its owner), through the realm's
+  // `settlement-confirmed` template. The confirmation already happened, so a push that can't be
+  // sent (no device, over the user's limits, a provider down) is logged and never fails it.
+  try {
+    await ctx.push!.send({
+      user: entry._meta.owner,
+      kind: "settlement-confirmed",
+      data: { from: ctx.user!.email, amount: (entry.amount / 100).toFixed(2) },
+      group: `settlement-${id}`,
+    });
+  } catch (err) {
+    console.log(`push not sent: ${(err as Error).message}`);
+  }
+  return confirmed;
 }

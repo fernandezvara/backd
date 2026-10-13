@@ -54,6 +54,10 @@ A token is at most 4 KiB. A web subscription must be an `https` endpoint on the 
 Call `POST /_auth/devices` at every launch: it is what keeps a device from going stale, and it is how a token moves when the phone changes hands.
 {{< /hint >}}
 
+## From apps
+
+The [JavaScript client](../client/) wraps these endpoints (`client.push`) and keeps a device registered at every launch and sign-in.
+
 ## For operators
 
 ```sh
