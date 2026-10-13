@@ -37,12 +37,24 @@ Public means anyone learns your collections' field names and your function names
 
 ## Generating clients
 
+**Typed clients for other platforms** come from the document with any generator that reads OpenAPI 3.1. These are the ones backd's CI builds from the example realms:
+
 ```sh
 docker run --rm -v "$PWD:/local" docker.io/openapitools/openapi-generator-cli generate \
   -i /local/shop.openapi.json -g dart -o /local/clients/dart     # or kotlin, swift5
 ```
 
+| Platform | Generator (`-g`) |
+|---|---|
+| Dart / Flutter | `dart` |
+| Kotlin | `kotlin` |
+| Swift | `swift5` |
+
+Regenerate whenever the document changes: `backd openapi --realm <realm> --out <file> --check` in CI fails when the committed copy is stale, the same [drift check](../../clients/types/#keeping-the-types-current-drift) as for TypeScript types.
+
 backd's own CI builds Dart, Kotlin and Swift clients from the Shelf and workshop realms' documents with openapi-generator, so the output stays usable by real generators (`make openapi-clients`).
+
+### What generated clients don't do
 
 A generated client calls the routes and types the documents; it doesn't do what the [JavaScript client](../../clients/js/) adds on top: the revalidation cache, retries, the sign-in flows that need PKCE and the browser's address bar, and file uploads in one call. Plan for sign-in with a provider and uploads to need a little hand-written code until hand-written clients exist for those platforms.
 

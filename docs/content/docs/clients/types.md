@@ -62,10 +62,43 @@ Friendly aliases are generated too, for every collection: `MainOrders` (the docu
 
 Keywords that only validate (`minimum`, `pattern`, `maxLength`, other `format` values) don't change the type. A schema that uses `not`, `if`/`then`/`else`, `patternProperties`, `propertyNames`, `dependentSchemas`, `unevaluatedProperties`, `unevaluatedItems` or `contains`, or a `$ref` that isn't local, is typed `unknown`, and the generator prints a warning with the file and the place.
 
-## Keeping the types current
+## In TypeScript and in plain JavaScript
 
-- **`--check`** writes nothing and exits non-zero when the files are missing or differ from what the config produces now, printing what changed. Run it in CI.
-- **`--diff`** writes nothing and prints type-level changes since the files were generated, one per line: `+` added, `-` removed, `~` changed. It is what a pull request review wants to see:
+Apps and functions get the same types in both languages; JavaScript needs no build step, because editors read the JSDoc:
+
+```ts
+// TypeScript
+import type { Realm } from "./backd/types";
+const client = createClient<Realm>({ url, realm: "shop" });
+```
+
+```js
+// JavaScript, checked in the editor (or by tsc --checkJs)
+/** @typedef {import('./backd/types').Realm} Realm */
+/** @type {import('backd-js').TypedClient<Realm>} */
+const client = /** @type {any} */ (createClient({ url, realm: 'shop' }));
+```
+
+```js
+// A function in plain JavaScript: // @ts-check turns on the same checks as in TypeScript.
+// @ts-check
+import { defineFunction } from "@backd/functions";
+export default defineFunction("main/place", async (ctx) => ({ order_id: ctx.input.items[0] }));
+```
+
+## Keeping the types current (drift)
+
+Types are only useful while they match the config. backd gives three ways to notice when they don't, from the strictest to the softest:
+
+| Where | What |
+|---|---|
+| **CI** | `--check` fails when the generated files are missing or differ from what the config produces now, naming what changed |
+| **Pull request reviews** | `--diff` prints the type-level changes since the files were generated |
+| **Development** | in dev mode the function types are rewritten after every reload, and the app's [stale-types warning](../js/#typed-client) tells you when its copy is out of date |
+
+Nothing is enforced at run time: the server validates every request against the config whatever the client's types say.
+
+`--diff` prints one line per change, `+` added, `-` removed, `~` changed:
 
 ```text
 + field done of main/orders: boolean
@@ -74,10 +107,23 @@ Keywords that only validate (`minimum`, `pattern`, `maxLength`, other `format` v
 ~ function main/place input: { items: string[] } → { items: string[]; coupon?: string }
 ```
 
-{{< hint style="tip" title="Best practice" >}}
-Commit `types.d.ts` and `realm.json`, and add `backd types --realm <realm> --out <dir> --check` to CI next to `backd config check`, so a schema change can't merge without its types.
+A ready-made step for GitHub Actions (other CI systems: the same three commands):
+
+```yaml
+- name: Generated types are current
+  run: |
+    backd config check
+    backd types --realm shop --out src/backd --check
+    backd types --realm shop --functions --check
+    backd openapi --realm shop --out openapi/shop.json --check   # if you commit the OpenAPI document
+  env:
+    CONFIG_DIR: ./config
+```
+
+When it fails, run the commands without `--check` and commit the result; the failure output lists what changed. The Shelf tutorial's CI does exactly this (`make shelf-types`).
+
+{{< hint style="note" >}}
+`realm.json`'s fingerprint covers the whole realm. The app's stale-types warning compares it with the types of the **whole** realm, so generate the app's types without `--db`; with it, the warning never goes away.
 {{< /hint >}}
 
-The [JavaScript client](../js/#typed-client) takes the `Realm` interface as `createClient<Realm>()`. For functions, `--functions` writes each functions project's `backd.d.ts` instead, with `defineFunction` ([Typed functions](../../functions/writing/#typed-functions)).
-
-The same document is available from a running instance at `GET /v1/{realm}/_admin/types` ([API reference](../../api/)).
+The [JavaScript client](../js/#typed-client) takes the `Realm` interface as `createClient<Realm>()`. For functions, `--functions` writes each functions project's `backd.d.ts` instead, with `defineFunction` ([Typed functions](../../functions/writing/#typed-functions)). The same types are available from a running instance at `GET /v1/{realm}/_admin/types` ([API reference](../../api/)), and the realm's [OpenAPI document](../../api/openapi/) is the way to type clients in other languages.
