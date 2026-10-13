@@ -158,13 +158,7 @@ func TestExamplesTypeCheck(t *testing.T) {
 // TestFunctionTypes type-checks fixtures against the generated backd.d.ts: the good one must
 // pass, and each bad one must fail.
 func TestFunctionTypes(t *testing.T) {
-	tsc, err := filepath.Abs("../../clients/js/node_modules/.bin/tsc")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(tsc); err != nil {
-		t.Skip("tsc isn't installed (npm ci in clients/js)")
-	}
+	tsc := tscPath(t)
 	reg, err := registry.Load("testdata")
 	if err != nil {
 		t.Fatal(err)
