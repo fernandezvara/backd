@@ -3,6 +3,7 @@ import { Push } from './push.js'
 import { Auth } from './auth.js'
 import { Database } from './data.js'
 import { xhrFetch } from './xhr.js'
+import { RevalidationCache, cacheable } from './cache.js'
 import { NetworkError, RetryableError, errorFromResponse } from './errors.js'
 import { COOKIE_SESSION, memoryStorage } from './storage.js'
 
@@ -34,6 +35,9 @@ import { COOKIE_SESSION, memoryStorage } from './storage.js'
  *   address carries (`backd_code`, `backd_error`, `backd_linked`) as soon as the client is created, and resolve
  *   `client.auth.ready` with the outcome. On by default; `false` leaves it to `client.auth.completeSignIn()`.
  * @property {RetryOptions} [retry]       Retries for 429/503; off by default.
+ * @property {boolean | import('./cache.js').CacheOptions} [cache] Keep the last body and `ETag` of document and list
+ *   reads in memory and revalidate them with `If-None-Match`, so an unchanged read costs a `304`. On by default;
+ *   `false` turns it off, an object sets `maxEntries` (200) and `maxBytes` (5 MB).
  * @property {typeof fetch} [fetch]       A fetch implementation; the global one by default.
  * @property {Record<string, string>} [headers] Extra headers for every request.
  */
@@ -51,6 +55,7 @@ import { COOKIE_SESSION, memoryStorage } from './storage.js'
  * @property {AbortSignal} [signal]
  * @property {RetryOptions} [retry]
  * @property {Record<string, string>} [headers]
+ * @property {boolean} [cache]   `false` skips the client's revalidation cache for this read.
  */
 
 /**
@@ -69,6 +74,7 @@ import { COOKIE_SESSION, memoryStorage } from './storage.js'
  * @property {boolean} [reauth]          A sensitive action: send the fresh proof `client.auth.reauth()` gave, while it is good.
  * @property {AbortSignal} [signal]
  * @property {RetryOptions} [retry]
+ * @property {boolean} [cache]           `false` skips the revalidation cache for this read.
  */
 
 /**
@@ -78,6 +84,7 @@ import { COOKIE_SESSION, memoryStorage } from './storage.js'
  * @property {Headers} headers
  * @property {any} data   Parsed JSON, or undefined for empty bodies.
  * @property {Response} [response]   With `raw`: the answer, its body not read.
+ * @property {boolean} [fromCache]    The server answered `304` and `data` is the body kept from an earlier read.
  */
 
 const isBrowser = () => typeof window !== 'undefined' && typeof window.document !== 'undefined'
@@ -132,6 +139,12 @@ export class Client {
      * @type {{ token: string, expires: number } | undefined}
      */
     this.proof = undefined
+    /**
+     * Last body and ETag of document and list reads; absent when `cache: false`.
+     * @internal
+     * @type {RevalidationCache | undefined}
+     */
+    this.cache = options.cache === false ? undefined : new RevalidationCache(typeof options.cache === 'object' ? options.cache : {})
     /** Sign-up, login and sessions. */
     this.auth = new Auth(this)
     if (options.completeOnLoad !== false) this.auth.completeOnLoad()
@@ -144,6 +157,20 @@ export class Client {
   /** Whether the client was created with an API key. */
   get hasApiKey() {
     return Boolean(this.apiKey)
+  }
+
+  /**
+   * How the revalidation cache is doing: reads the server answered `304` to
+   * (`hits`), cacheable reads that came back in full (`misses`), and what is kept.
+   * @returns {import('./cache.js').CacheStats}
+   */
+  cacheStats() {
+    return this.cache?.stats() ?? { hits: 0, misses: 0, entries: 0, bytes: 0 }
+  }
+
+  /** Forgets everything the revalidation cache holds. */
+  clearCache() {
+    this.cache?.clear()
   }
 
   /**
@@ -192,17 +219,36 @@ export class Client {
 
     if (req.reauth && this.proof && this.proof.expires > Date.now()) headers['X-Backd-Reauth'] = this.proof.token
     let sentSession = false
+    /** The signed-in caller as the cache knows it: entries read as another caller are never reused. */
+    let owner = ''
     if (req.auth !== false) {
       if (this.apiKey) {
         headers.Authorization = 'Bearer ' + this.apiKey
+        owner = 'key:' + this.apiKey
       } else {
         const token = await this.storage.get()
         if (token) {
           if (token !== COOKIE_SESSION) headers.Authorization = 'Bearer ' + token // a cookie session is sent by the browser
           sentSession = true
+          owner = 'session:' + token
         }
       }
     }
+
+    // Revalidation: send the tag of the copy we hold, if any.
+    const cache = this.cache && req.cache !== false && cacheable(req) ? this.cache : undefined
+    const key = url.href
+    /** @type {import('./cache.js').Entry | undefined} */
+    let held
+    if (cache) {
+      cache.scope(owner)
+      // A caller's own If-None-Match is theirs to handle: the 304 goes back to them.
+      if (!Object.keys(headers).some((h) => h.toLowerCase() === 'if-none-match')) {
+        held = cache.get(key)
+        if (held) headers['If-None-Match'] = held.etag
+      }
+    }
+    const writesDocument = req.method !== 'GET' && req.method !== 'HEAD' && req.path.length === 3 && !req.path[0].startsWith('_') && !req.path[1].startsWith('_')
 
     const retry = req.retry ?? this.retry
     // Safe to repeat: reads, writes conditional on a version, and requests the server deduplicates by key.
@@ -229,9 +275,24 @@ export class Client {
           cause,
         })
       }
+      if (res.status === 304 && cache && held) {
+        cache.hits++
+        // The copy we hold is current; its headers (ETag, …) are the ones the 304 repeats.
+        return { status: 200, headers: held.headers, data: JSON.parse(held.text), fromCache: true }
+      }
+      // The caller asked with their own If-None-Match: the 304 is their answer.
+      if (res.status === 304) return { status: 304, headers: res.headers, data: undefined }
+      if (res.ok && writesDocument) this.cache?.dropPath(url.pathname) // a write changed it: what we hold is stale
       if (res.ok && req.raw) return { status: res.status, headers: res.headers, data: undefined, response: res }
       if (res.ok) {
         const text = await res.text()
+        if (cache) {
+          cache.misses++
+          const etag = res.headers.get('ETag')
+          const noStore = /no-store/i.test(res.headers.get('Cache-Control') ?? '')
+          if (etag && !noStore && text) cache.set(key, { etag, text, headers: res.headers })
+          else cache.delete(key)
+        }
         return { status: res.status, headers: res.headers, data: text ? JSON.parse(text) : undefined }
       }
       const err = await errorFromResponse(res)

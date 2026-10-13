@@ -70,6 +70,33 @@ test('versions, If-Match and replace', { skip }, async () => {
   assert.equal('slug' in without, false)
 })
 
+test('unchanged reads revalidate with 304 and see their rules', { skip }, async () => {
+  const ada = await user('ada')
+  const bob = await user('bob')
+  const posts = ada.c.db('app').collection('posts')
+  const tag = Math.random().toString(36).slice(2)
+  const mine = await posts.create({ title: 'mine', members: [], status: tag })
+
+  assert.equal((await posts.get(mine.id)).title, 'mine')
+  assert.equal((await posts.get(mine.id)).title, 'mine')
+  assert.equal(ada.c.cacheStats().hits, 1, 'the second read took a 304')
+  await posts.list({ where: { status: tag } })
+  await posts.list({ where: { status: tag } })
+  assert.equal(ada.c.cacheStats().hits, 2, 'and so did the list')
+
+  // A change is seen at once; the old tag is stale.
+  await posts.patch(mine.id, { title: 'changed' })
+  assert.equal((await posts.get(mine.id)).title, 'changed')
+  assert.equal((await posts.list({ where: { status: tag } })).items[0].title, 'changed')
+
+  // Losing access is a 404, never a 304 of the copy held.
+  const shared = await posts.create({ title: 'shared', members: [bob.id], status: tag })
+  const asBob = bob.c.db('app').collection('posts')
+  await asBob.get(shared.id)
+  await posts.patch(shared.id, { members: [] })
+  await assert.rejects(asBob.get(shared.id), NotFoundError)
+})
+
 test('pagination and iterate', { skip }, async () => {
   const { c } = await user('pages')
   const posts = c.db('app').collection('posts')

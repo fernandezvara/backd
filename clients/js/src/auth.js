@@ -856,6 +856,7 @@ export class Auth {
    */
   async signedIn(session) {
     this.client.proof = undefined
+    this.client.clearCache() // what was read as someone else (or no one) isn't theirs
     await this.client.storage.set(session.token ?? COOKIE_SESSION)
     this.emit('SIGNED_IN', session)
     return session
@@ -867,6 +868,7 @@ export class Auth {
    */
   async signedOut(event) {
     this.client.proof = undefined
+    this.client.clearCache()
     await this.client.storage.remove()
     this.emit(event, null)
   }

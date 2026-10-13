@@ -61,7 +61,7 @@ for await (const chunk of Deno.stdin.readable) {
 const env = JSON.parse(buf.slice(0, buf.indexOf("\n")));
 
 const client = (token) =>
-  createClient({ url: env.callback.url, realm: env.callback.realm, apiKey: token, headers: { "X-Request-ID": env.request_id ?? "" } });
+  createClient({ url: env.callback.url, realm: env.callback.realm, apiKey: token, cache: false, headers: { "X-Request-ID": env.request_id ?? "" } });
 
 const ctx = {
   input: env.input ?? null,

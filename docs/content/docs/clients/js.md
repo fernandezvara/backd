@@ -242,6 +242,27 @@ With TypeScript (or JSDoc), describe a collection's fields for typed documents:
 const posts = backd.db('main').collection('posts')
 ```
 
+### Revalidation cache
+
+The client remembers the last body and `ETag` of each document and list it read, in memory, and sends them back as `If-None-Match` on the next read of the same URL. When nothing changed the server answers `304` without a body and the client returns the copy it holds: the query and the [rules](../../auth/rules/) still run for every read, so you never see more than the caller may read now, only less data on the wire.
+
+```js
+const post = await posts.get(id)       // 200, kept with its ETag
+const again = await posts.get(id)      // sends If-None-Match; a 304 gives the same document
+backd.cacheStats()                     // { hits: 1, misses: 1, entries: 1, bytes: … }
+
+await posts.get(id, { cache: false })  // this read skips the cache
+createClient({ url, realm, cache: false })                         // no cache at all
+createClient({ url, realm, cache: { maxEntries: 50, maxBytes: 1e6 } })  // smaller bounds
+```
+
+- **Bounded:** 200 entries or 5 MB of bodies by default; the least recently used are dropped first.
+- **Only document and list reads** are kept. Reads with `fileLinks` (their links expire) and answers marked `no-store` never are.
+- **Per caller:** signing in, signing out or a different session or API key empties the cache, and so does `backd.clearCache()`. A successful write to a document drops its entry.
+- **Functions** reach the API with the cache off.
+
+For a client written by hand, or a mobile app, see [Revalidating a read](../../api/documents/#revalidating-a-read-if-none-match).
+
 ### Concurrent edits
 
 Every write increases `_meta.version`. Pass the version you read as `ifMatch`, and the write fails with a `VersionMismatchError` if someone changed the document in between:
