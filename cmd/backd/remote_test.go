@@ -321,3 +321,39 @@ func TestLoginArguments(t *testing.T) {
 		}
 	}
 }
+
+// A realm that asks for a second factor answers a login with a challenge, not a session:
+// the command must not store (or announce) one.
+func TestLoginRefusesASecondStep(t *testing.T) {
+	root := writeConfig(t, map[string]string{"acme/realm.yaml": "roles:\n  ops:\n    admin: true\n", "acme/app/notes/schema.json": `{}`})
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &auth.Users{
+		Store:    authtest.NewMemStore(),
+		Hasher:   auth.NewHasher(2, auth.Argon2Params{Memory: 64, Time: 1, Threads: 1}),
+		Settings: reg.Realms["acme"].Settings,
+	}
+	svc.Settings.MFA.RequiredAll = true
+	pw := "dev-p4ssw0rd!"
+	if _, err := svc.Create(context.Background(), "ada@example.com", &pw); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(httpapi.NewHandler(httpapi.Config{
+		Log: slog.New(slog.NewJSONHandler(io.Discard, nil)), Registry: reg, Ready: func(context.Context) error { return nil },
+		Users: func(realm string) *auth.Users {
+			if realm == "acme" {
+				return svc
+			}
+			return nil
+		},
+	}))
+	defer srv.Close()
+	creds := filepath.Join(t.TempDir(), "backd", "credentials")
+	c := &cliEnv{t: t, env: map[string]string{"BACKD_CREDENTIALS": creds}}
+	c.expect(1, "asks for a second factor", pw+"\n", "login", "--realm", "acme", "--url", srv.URL, "--email", "ada@example.com")
+	if _, err := os.Stat(creds); err == nil {
+		t.Error("a session was stored")
+	}
+}
