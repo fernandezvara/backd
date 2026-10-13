@@ -657,6 +657,7 @@ func TestParseIfMatch(t *testing.T) {
 		{[]string{`"3"`}, true, map[int64]bool{3: true, 2: false}},
 		{[]string{`"1", "2"`, `"5"`}, true, map[int64]bool{1: true, 2: true, 5: true, 3: false}},
 		{[]string{`W/"3"`}, true, map[int64]bool{3: false}},
+		{[]string{`"3.r1a2b3c4d"`}, true, map[int64]bool{3: true, 4: false}},
 	}
 	for _, tt := range tests {
 		c, err := parseIfMatch(tt.in)

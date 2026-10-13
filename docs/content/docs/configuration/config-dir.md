@@ -137,6 +137,7 @@ This optional file holds a collection's policy, in sections that can each be lef
 | `rules:` | Who may read, create, update and delete documents. **Without it only API keys reach the collection.** | [Access rules](../../auth/rules/) |
 | `files:` | The fields of a document that carry files | [File fields](../../files/file-fields/) |
 | `soft_delete:` | Whether deleted documents stay recoverable | [Soft delete](#soft-delete) |
+| `cache:` | Whether anonymous reads may be stored by shared caches (CDNs) | [Public caching](#public-caching) |
 | `on_owner_delete:` | What an administrator's **erase** does to the collection when a user is erased (`backd user delete`) | below |
 
 ```yaml
@@ -186,6 +187,26 @@ soft_delete:
 - **Unique indexes** from `indexes.json` get `_meta.deleted_at` as their last key, so live documents stay unique among themselves, a deleted one never clashes with anything, and documents that existed before count as live. Turning `soft_delete` on for a collection that already has a unique index builds the new index next to the old one, and `backd provision` warns about the old one: it also covers deleted documents, so **drop it** once the new one exists (`db.<collection>.dropIndex("<name>")`) or a deleted document's values stay taken. `backd` never drops an index itself.
 - **Erasing a user** still deletes, anonymizes and clears documents that are in the trash: it works on everything the user owns.
 - It doesn't need users: a realm with `auth: disabled` can soft-delete, though it has no rules to restrict the trash.
+
+### Public caching
+
+Document responses are `private, no-cache` by default: browsers keep them but revalidate with `If-None-Match`, and shared caches never store them. A collection whose content anyone may read can let a CDN serve it:
+
+```yaml
+cache:
+  public: true
+  max_age: 60        # seconds, 1 to 3600
+rules:
+  read: document.published == true
+```
+
+- **Only requests without credentials** get `Cache-Control: public, max-age=60` (plus the `ETag`): no `Authorization` header and no cookie. The same documents read by a signed-in user, or with an API key, stay `private, no-cache`. `Vary` keeps the two apart.
+- **Never public:** the trash (`?deleted=`), and responses with `?file_links=true`.
+- **`backd` refuses to start** when `public: true` is declared without a `max_age` between 1 and 3600, in a collection with no `read` rule, with one anonymous callers can never satisfy (`user != nil`, `hasRole(…)`), or one that depends on `now`.
+
+{{< hint style="warning" >}}
+A document that stops being readable by anonymous callers (unpublished, deleted) can still be served by a CDN until its `max_age` runs out. Use a short `max_age` for content you may need to withdraw.
+{{< /hint >}}
 
 ### Files and erasure
 

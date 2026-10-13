@@ -377,6 +377,19 @@ func TestContract(t *testing.T) {
 		return out
 	}
 
+	// Public caching: anonymous reads of an opted-in collection are public and revalidate.
+	{
+		const news = "/v1/acme/app/news"
+		id := req("POST", news, `{"title": "t", "published": true}`, ada, 201)["id"].(string)
+		prec, _ := f.doH(t, "GET", news+"/"+id, "", nil)
+		if prec.Header().Get("Cache-Control") != "public, max-age=60" {
+			t.Errorf("public document: %v", prec.Header())
+		}
+		req("GET", news+"/"+id, "", map[string]string{"If-None-Match": prec.Header().Get("ETag")}, 304)
+		req("GET", news, "", nil, 200)
+		req("GET", news, "", ada, 200)
+	}
+
 	// Soft delete: delete, trash views, restore and purge.
 	{
 		const b = "/v1/acme/app/bin"
@@ -1258,6 +1271,23 @@ func TestContract(t *testing.T) {
 			req("DELETE", base+"/"+mine+"/_files/avatar", "", with(ada, "If-Match", "bad"), 400)
 			req("GET", base+"/"+mine+"?file_links=true", "", ada, 200)
 			req("GET", base+"?file_links=true", "", ada, 200)
+			// Conditional GET: the current tag revalidates, a stale one doesn't, and
+			// a caller without read access still gets 404, never 304.
+			cur := req("GET", base+"/"+mine, "", ada, 200)["_meta"].(map[string]any)["version"].(float64)
+			tag := fmt.Sprintf(`"%d"`, int64(cur))
+			req("GET", base+"/"+mine, "", with(ada, "If-None-Match", tag), 304)
+			req("GET", base+"/"+mine, "", with(ada, "If-None-Match", `"0"`), 200)
+			req("GET", base+"/"+mine, "", with(carl, "If-None-Match", tag), 404)
+			req("GET", base+"/"+mine+"?file_links=true", "", with(ada, "If-None-Match", tag), 200)
+			lrec, _ := f.doH(t, "GET", base, "", ada)
+			req("GET", base, "", with(ada, "If-None-Match", lrec.Header().Get("ETag")), 304)
+			req("GET", base+"?file_links=true", "", with(ada, "If-None-Match", lrec.Header().Get("ETag")), 200)
+		} else {
+			doc := req("POST", base, `{"title": "cond"}`, key, 201)
+			tag := fmt.Sprintf(`"%d"`, int64(doc["_meta"].(map[string]any)["version"].(float64)))
+			req("GET", base+"/"+doc["id"].(string), "", with(key, "If-None-Match", tag), 304)
+			lrec, _ := f.doH(t, "GET", base, "", key)
+			req("GET", base, "", with(key, "If-None-Match", lrec.Header().Get("ETag")), 304)
 		}
 	}
 	// Direct uploads: start, PUT to the bucket as a browser would, complete.
@@ -1968,7 +1998,7 @@ func TestContractDetectsViolations(t *testing.T) {
 		{"missing _meta", "GET", docPath, 200, jsonHdr("ETag", `"1"`), `{"id": "d1"}`, "_meta"},
 		{"data without Vary", "GET", docPath, 200, jsonHdr("ETag", `"1"`), doc, "Vary"},
 		{"data not varying on Authorization", "GET", docPath, 200, jsonHdr("ETag", `"1"`, "Vary", "Origin"), doc, "Vary"},
-		{"data cacheable by shared caches", "GET", docPath, 200, jsonHdr("ETag", `"1"`, "Vary", "Origin, Authorization", "Cache-Control", "public, max-age=60"), doc, "Cache-Control"},
+		{"data cacheable by shared caches", "GET", docPath, 200, jsonHdr("ETag", `"1"`, "Vary", "Origin, Authorization", "Cache-Control", "max-age=60"), doc, "Cache-Control"},
 		{"extra user field", "GET", "/v1/{realm}/_auth/me", 200, jsonHdr("Cache-Control", "no-store"),
 			`{"id": "u", "email": "a@x.io", "email_verified": false, "roles": [], "created_at": "2026-09-26T12:00:00.000Z", "password_hash": "x"}`, "password_hash"},
 		{"cacheable account data", "GET", "/v1/{realm}/_auth/me", 200, jsonHdr(),

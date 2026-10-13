@@ -238,15 +238,14 @@ func securityHeaders(next http.Handler) http.Handler {
 }
 
 // dataCaching sets the caching headers of document routes. Responses
-// depend on the caller, so caches must key them on Authorization; those
-// to requests with credentials are private to that caller: shared caches
-// never store them, and browsers revalidate before reusing them.
+// depend on the caller, so caches must key them on Authorization and
+// Cookie; every one is private by default: shared caches never store it,
+// and browsers revalidate before reusing it (a collection can opt in to
+// public caching of anonymous reads, which replaces this header).
 func dataCaching(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		addVary(w.Header(), "Authorization", "Cookie") // a realm with session cookies authenticates by Cookie
-		if r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != "" {
-			w.Header().Set("Cache-Control", "private, no-cache")
-		}
+		w.Header().Set("Cache-Control", "private, no-cache")
 		next.ServeHTTP(w, r)
 	})
 }

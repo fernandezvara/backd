@@ -20,6 +20,16 @@
 # soft_delete:
 #   retention: 30d
 #
+# Public caching (docs: API -> Caching). Responses are `private, no-cache` by
+# default. For content anyone may read, requests without credentials can be
+# stored by a CDN for `max_age` seconds (at most 3600). Needs a `read` rule that
+# lets anonymous callers in and doesn't depend on `now`; startup refuses it
+# otherwise. A document that stops being public can stay cached for that long.
+#
+# cache:
+#   public: true
+#   max_age: 60
+#
 # What happens to this collection when an administrator erases a user
 # (`backd user delete`, docs: Auth -> Erasing users). Everything below is
 # commented out: with no `on_owner_delete`, an erase leaves this collection

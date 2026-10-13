@@ -47,7 +47,9 @@ func parseIfMatch(values []string) (ifMatch, error) {
 			case strings.HasPrefix(tag, "W/"):
 				// weak: never matches
 			default:
-				n, err := strconv.ParseInt(strings.Trim(tag, `"`), 10, 64)
+				// "12.r1a2b3c4d" (a partial view's tag) guards version 12.
+				num, _, _ := strings.Cut(strings.Trim(tag, `"`), ".r")
+				n, err := strconv.ParseInt(num, 10, 64)
 				if len(tag) < 3 || tag[0] != '"' || tag[len(tag)-1] != '"' || err != nil || n < 0 {
 					return ifMatch{}, fmt.Errorf(`If-Match must be "*" or quoted document versions such as "3", got %s`, tag)
 				}
