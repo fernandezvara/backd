@@ -815,6 +815,11 @@ func checkFunctions(reg *registry.Registry, cfg settings.Settings, log *slog.Log
 		}
 	}
 	for _, name := range reg.RealmNames() {
+		if reg.Realms[name].Settings.Push != nil && len(cfg.SecretsKey) == 0 {
+			return fmt.Errorf("realm %s configures push notifications, which keep device tokens encrypted and read the providers' credentials from the realm's secrets: set BACKD_SECRETS_KEY (or BACKD_SECRETS_KEY_FILE)", name)
+		}
+	}
+	for _, name := range reg.RealmNames() {
 		if reg.Realms[name].Settings.MagicLink.Enabled && len(cfg.SecretsKey) == 0 {
 			return fmt.Errorf("realm %s enables magic links, which keep the address of a request that has no account sealed: set BACKD_SECRETS_KEY (or BACKD_SECRETS_KEY_FILE)", name)
 		}

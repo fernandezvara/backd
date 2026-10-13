@@ -135,6 +135,9 @@ type RealmSettings struct {
 	DefaultLocale string
 	Locales       []string
 
+	// Push holds the push notification settings: nil without a push: section.
+	Push *PushSettings
+
 	// MagicLink are the settings of sign-in by emailed link and code (magic_link in realm.yaml).
 	MagicLink MagicLinkSettings
 }
@@ -327,6 +330,7 @@ type realmDoc struct {
 	DefaultLocale string      `yaml:"default_locale"`
 	Locales       []string    `yaml:"locales"`
 	Email         *emailDoc   `yaml:"email"`
+	Push          *pushDoc    `yaml:"push"`
 	Storage       *storageDoc `yaml:"storage"`
 	// Providers are the external identity providers users may sign in with, and
 	// SignIn the settings that go with signing in.
@@ -674,6 +678,16 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 		} else {
 			var es []error
 			s.Email, es = parseEmail(e)
+			errs = append(errs, es...)
+		}
+	}
+
+	if pd := doc.Push; pd != nil {
+		if !s.AuthEnabled {
+			errs = append(errs, errors.New("push: only applies when auth is enabled (devices belong to users)"))
+		} else {
+			var es []error
+			s.Push, es = parsePush(pd)
 			errs = append(errs, es...)
 		}
 	}

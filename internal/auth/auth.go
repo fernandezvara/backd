@@ -225,6 +225,22 @@ type Store interface {
 	// and says how many.
 	DeleteOtherSessions(ctx context.Context, userID, keepID string) (int64, error)
 
+	// PutDevice registers a device: a new one, or, when the token's hash exists, that device
+	// moved to this user and session (a new id, so the earlier owner's id is dead) with the
+	// new token and name. It returns what is stored.
+	PutDevice(ctx context.Context, d Device) (Device, error)
+	// ListDevices returns the user's devices, most recently seen first.
+	ListDevices(ctx context.Context, userID string) ([]Device, error)
+	// DeleteDevice removes one of the user's devices; ErrNotFound if it isn't theirs.
+	DeleteDevice(ctx context.Context, userID, id string) error
+	// DeleteOldestDevices removes the user's least recently seen devices beyond keep, never
+	// the device keepID, and says how many.
+	DeleteOldestDevices(ctx context.Context, userID string, keep int, keepID string) (int64, error)
+	// DeleteStaleDevices removes the devices last seen before the time.
+	DeleteStaleDevices(ctx context.Context, before time.Time) (int64, error)
+	// DeleteOrphanedDevices removes the devices whose session doesn't exist or has expired.
+	DeleteOrphanedDevices(ctx context.Context, now time.Time) (int64, error)
+
 	// CreateAPIKey stores a key; ErrKeyNameTaken if the name exists.
 	CreateAPIKey(ctx context.Context, k APIKey) error
 	// APIKeyByHash returns the key with that hash; ErrKeyNotFound if none.

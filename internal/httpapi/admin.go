@@ -57,6 +57,8 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 			r.Post("/mfa/reset", a.resetUserMFA)
 			r.Delete("/identities/{provider}", a.unlinkUserIdentity)
 			r.Get("/sessions", a.userSessions)
+			r.Get("/devices", a.userDevices)
+			r.Delete("/devices/{device_id}", a.removeUserDevice)
 			r.Delete("/sessions/{session_id}", a.revokeUserSession)
 			r.With(json).Patch("/", a.updateUser)
 			r.Delete("/", a.deleteUser)

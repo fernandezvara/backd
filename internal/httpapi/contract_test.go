@@ -1826,6 +1826,59 @@ func TestContract(t *testing.T) {
 		req("POST", verify, body("nope", "000000", verifier), nil, 429)
 	}
 
+	// Devices for push notifications: nothing without a push: section, then a registry.
+	{
+		dev := a + "/devices"
+		req("POST", dev, `{"platform": "android", "token": "contract-token"}`, ada, 404)
+		req("GET", dev, "", ada, 404)
+		req("GET", dev+"/web-key", "", nil, 404)
+		req("GET", ad+"/users/"+temp.ID+"/devices", "", key, 404)
+		f.svc.Settings.Push = &registry.PushSettings{
+			Platforms:         map[string]registry.PushPlatform{"android": {Provider: "fcm"}, "web": {Provider: "webpush"}},
+			WebEndpointHosts:  registry.DefaultWebEndpointHosts,
+			WebPublicKey:      "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U",
+			MaxDevicesPerUser: 10,
+			StaleAfter:        60 * 24 * time.Hour,
+		}
+		if f.svc.Cipher == nil {
+			f.svc.Cipher, _ = auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
+		}
+		made := req("POST", dev, `{"platform": "android", "token": "contract-token", "name": "Contract phone"}`, ada, 200)
+		req("POST", dev, `{"platform": "ios", "token": "contract-token"}`, ada, 400)
+		req("POST", dev, `{"platform": "android", "token": "contract-token"}`, nil, 401)
+		listed := req("GET", dev, "", ada, 200)
+		if items, _ := listed["items"].([]any); len(items) != 1 {
+			t.Errorf("devices: %v", listed)
+		}
+		req("GET", dev, "", nil, 401)
+		req("GET", dev+"/web-key", "", nil, 200)
+		req("DELETE", dev+"/nope", "", ada, 404)
+		req("DELETE", dev+"/x", "", nil, 401)
+		// An administrator sees the user's devices and removes one.
+		req("GET", ad+"/users/"+temp.ID+"/devices", "", key, 200)
+		req("GET", ad+"/users/"+temp.ID+"/devices", "", nil, 401)
+		req("GET", ad+"/users/"+temp.ID+"/devices", "", ada, 403)
+		req("DELETE", ad+"/users/"+temp.ID+"/devices/nope", "", key, 404)
+		req("DELETE", ad+"/users/"+temp.ID+"/devices/x", "", nil, 401)
+		req("DELETE", ad+"/users/"+temp.ID+"/devices/x", "", ada, 403)
+		req("DELETE", dev+"/"+made["id"].(string), "", ada, 204)
+		// Thirty registrations an hour per session.
+		for range 30 {
+			f.doH(t, "POST", dev, `{"platform": "android", "token": "contract-token-2"}`, map[string]string{"Authorization": ada["Authorization"], "Content-Type": "application/json"})
+		}
+		req("POST", dev, `{"platform": "android", "token": "contract-token-2"}`, ada, 429)
+		// A device of the temporary user, removed by an administrator.
+		tmp, _, err := f.svc.Login(context.Background(), temp.Email, "dev-p4ssw0rd!", "203.0.113.51")
+		if err != nil {
+			t.Fatal(err)
+		}
+		d, err := f.svc.RegisterDevice(context.Background(), tmp, auth.DeviceInput{Platform: "android", Token: "temp-token"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		req("DELETE", ad+"/users/"+temp.ID+"/devices/"+d.ID, "", key, 204)
+	}
+
 	c.verify(t, router)
 
 }

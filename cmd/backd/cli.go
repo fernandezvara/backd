@@ -277,6 +277,20 @@ func registerRemote(cfg *kli.Config) {
 		optional(cc, "login", "where the user may log in and use their session from (same format)")
 	})
 
+	pu := cfg.Command("push").ShortHelp("see a realm's push notification devices").
+		LongHelp(adminAPINote + " Devices are registered by the users' apps (POST /_auth/devices); tokens are never shown.")
+	pu.SubCommand("devices").ShortHelp("list a user's registered devices").
+		Func(act("push devices", userAction(true, pushDevices))).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "email", "the user's email")
+	})
+	pu.SubCommand("remove-device").ShortHelp("remove one of a user's devices (audited)").
+		Func(act("push remove-device", userAction(true, pushRemoveDevice))).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "email", "the user's email")
+		required(cc, "id", "the device's id, from `backd push devices`")
+	})
+
 	k := cfg.Command("apikey").ShortHelp("manage a realm's API keys").
 		LongHelp(adminAPINote + "\n\nAPI keys give server-side services full access to their realm's data.\nStore them as secrets.")
 	k.SubCommand("create").ShortHelp("create an API key and print it once").

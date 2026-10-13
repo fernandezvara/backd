@@ -426,6 +426,9 @@ func (s *AuthStore) Identity(ctx context.Context, provider, subject string) (aut
 }
 
 func (s *AuthStore) DeleteSessions(ctx context.Context, userID string) (int64, error) {
+	if err := s.dropDevicesOf(ctx, userID); err != nil {
+		return 0, err
+	}
 	res, err := s.sessions().DeleteMany(ctx, bson.D{{Key: "user_id", Value: userID}})
 	if err != nil {
 		return 0, err
@@ -520,10 +523,14 @@ func (s *AuthStore) DeleteSession(ctx context.Context, userID, id string) error 
 	if res.DeletedCount == 0 {
 		return auth.ErrNotFound
 	}
-	return nil
+	_, err = s.devices().DeleteMany(ctx, bson.D{{Key: "session_id", Value: id}})
+	return err
 }
 
 func (s *AuthStore) DeleteOtherSessions(ctx context.Context, userID, keepID string) (int64, error) {
+	if _, err := s.devices().DeleteMany(ctx, bson.D{{Key: "user_id", Value: userID}, {Key: "session_id", Value: bson.D{{Key: "$ne", Value: keepID}}}}); err != nil {
+		return 0, err
+	}
 	res, err := s.sessions().DeleteMany(ctx, bson.D{{Key: "user_id", Value: userID}, {Key: "_id", Value: bson.D{{Key: "$ne", Value: keepID}}}})
 	if err != nil {
 		return 0, err

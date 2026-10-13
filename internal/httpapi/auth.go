@@ -40,6 +40,8 @@ func (a *authAPI) routes(r chi.Router) {
 		r.Use(noStore, a.resolveRealm, withTimeout(a.opTimeout))
 		json := requireContentType("application/json")
 		r.With(json).Post("/signup", a.signup)
+		// The public key a browser subscribes with: no session, cacheable.
+		r.Get("/devices/web-key", a.webKey)
 		r.With(json).Post("/login", a.login)
 		r.With(json).Post("/mfa/verify", a.mfaVerify)
 		// A magic link: JSON asks for one, a form (the page's button) uses it.
@@ -71,6 +73,9 @@ func (a *authAPI) routes(r chi.Router) {
 			r.Delete("/mfa/totp", a.mfaDisable)
 			r.Post("/mfa/recovery-codes", a.mfaRecoveryCodes)
 			r.Get("/sessions", a.sessions)
+			r.With(json).Post("/devices", a.registerDevice)
+			r.Get("/devices", a.devices)
+			r.Delete("/devices/{id}", a.removeDevice)
 			r.Delete("/sessions/{id}", a.revokeSession)
 		})
 	})
@@ -456,6 +461,7 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 	var el *auth.EmailLimitedError
 	var locked *auth.MFALockedError
 	var badCode *auth.InvalidCodeError
+	var badDevice *auth.InvalidDeviceError
 	switch {
 	case errors.As(err, &te):
 		secs := int((te.RetryAfter + time.Second - 1) / time.Second)
@@ -470,6 +476,14 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 			break
 		}
 		writeError(w, r, http.StatusBadRequest, codeInvalidCode, "the code is not valid", Detail{Path: "attempts_left", Reason: strconv.Itoa(badCode.AttemptsLeft)})
+	case errors.Is(err, auth.ErrPushNotConfigured):
+		writeError(w, r, http.StatusNotFound, codePushNotConfigured, err.Error())
+	case errors.Is(err, auth.ErrPlatformNotEnabled):
+		writeError(w, r, http.StatusBadRequest, codePlatformDisabled, err.Error(), Detail{Path: "platform", Reason: "isn't enabled in this realm's push settings"})
+	case errors.Is(err, auth.ErrWebKeyUnavailable):
+		writeError(w, r, http.StatusNotFound, codePushNotConfigured, err.Error())
+	case errors.As(err, &badDevice):
+		writeError(w, r, http.StatusBadRequest, codeInvalidDevice, "invalid device", Detail{Path: "token", Reason: badDevice.Reason})
 	case errors.Is(err, auth.ErrMFADisabled):
 		writeError(w, r, http.StatusForbidden, codeMFADisabled, err.Error())
 	case errors.Is(err, auth.ErrMFAUnavailable):

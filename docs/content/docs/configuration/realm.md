@@ -72,6 +72,7 @@ An empty file, or one with only comments, is valid: every key has a default.
 | `locales` | `[default_locale]` | The languages the realm supports: each user's `locale` is one of them, and every listed language needs every email template and page. Shared by email and push notifications |
 | `email` | none (no email) | How the realm sends email: the delivery function, the sender, backd's public address for links, the pages the links open, where users go afterwards, and limits. backd never sends mail itself. See [Email](../../functions/email/) |
 | `providers` | none | The external identity providers users may sign in with (`google`, `microsoft`, `apple`), each with its client id and `secret:NAME` references. See [Sign in with providers](../../auth/providers/) |
+| `push` | none (no push) | Push notifications: the platforms and their providers, the web subscription hosts and the device limits. Needs `BACKD_SECRETS_KEY`. See [Push notifications](../../push/) |
 | `sign_in.allowed_redirects` | `email.allowed_redirects` | Origins and app schemes a provider sign-in may send the user back to |
 | `sign_in.app_url` | none | Where a sign-in goes back to when it has no `redirect_to`; within the allowed redirects |
 | `mfa.enabled` | `true` | `false`: users can't turn a second factor on (users who have one are still asked for it). See [Multi-factor authentication](../../auth/mfa/) |

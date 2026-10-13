@@ -41,6 +41,7 @@ type MemStore struct {
 	idempotency map[string]auth.IdempotencyRecord // id → record
 	challenges  map[string]auth.AuthChallenge     // hash → pending step
 	mfa         map[string]auth.MFARecord         // user id → second factors
+	devices     map[string]auth.Device            // id → registered device
 	// FailPutIdentity, when set, is returned by PutIdentity.
 	FailPutIdentity error
 }
@@ -255,6 +256,7 @@ func (m *MemStore) DeleteUser(_ context.Context, id string) error {
 		}
 	}
 	m.dropSecondFactors(id)
+	m.dropDevicesOf(id)
 	return nil
 }
 
@@ -418,6 +420,7 @@ func (m *MemStore) DeleteSession(_ context.Context, userID, id string) error {
 		return auth.ErrNotFound
 	}
 	delete(m.sessions, id)
+	m.dropDevicesOfSession(id)
 	return nil
 }
 
@@ -428,6 +431,7 @@ func (m *MemStore) DeleteOtherSessions(_ context.Context, userID, keepID string)
 	for k, s := range m.sessions {
 		if s.UserID == userID && k != keepID {
 			delete(m.sessions, k)
+			m.dropDevicesOfSession(k)
 			n++
 		}
 	}
@@ -974,6 +978,7 @@ func (m *MemStore) EraseUser(_ context.Context, id, placeholderEmail string, now
 		}
 	}
 	m.dropSecondFactors(id)
+	m.dropDevicesOf(id)
 	u.Email, u.ErasedAt, u.Disabled, u.EmailVerified, u.Roles, u.UpdatedAt = placeholderEmail, now, true, true, []string{}, now
 	u.Locale, u.PendingEmail, u.PreviousEmail, u.AdminNetworks, u.LoginNetworks = "", "", "", nil, nil
 	m.users[id] = u

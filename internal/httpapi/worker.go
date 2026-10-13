@@ -44,6 +44,7 @@ type Worker struct {
 
 	lastScheduled map[string]time.Time // only touched by the schedule loop
 	lastPurge     map[string]time.Time // realm → last purge of unverified accounts; same
+	lastDevices   map[string]time.Time // realm → last sweep of stale and orphaned devices
 }
 
 // NewWorker builds a worker from the same Config NewHandler uses. id
@@ -65,7 +66,7 @@ func NewWorker(cfg Config, id string) *Worker {
 	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, users: users, callbackKey: cfg.CallbackKey, objects: newRealmObjects(cfg.Registry, users)}
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, log: log, metrics: cfg.Metrics}
 	docs.imageMaxPixels = cfg.ImageMaxPixels
-	return &Worker{id: id, fns: fns, reg: cfg.Registry, backdURL: cfg.BackdURL, oauth: cfg.oauthService(), log: log, lastScheduled: map[string]time.Time{}, lastPurge: map[string]time.Time{}, images: newImageEngine(cfg)}
+	return &Worker{id: id, fns: fns, reg: cfg.Registry, backdURL: cfg.BackdURL, oauth: cfg.oauthService(), log: log, lastScheduled: map[string]time.Time{}, lastPurge: map[string]time.Time{}, lastDevices: map[string]time.Time{}, images: newImageEngine(cfg)}
 }
 
 // newImageEngine builds the engine from the instance's settings: the concurrency is the
@@ -121,6 +122,7 @@ func (w *Worker) scheduleLoop(ctx context.Context) {
 	for {
 		w.EnqueueDue(ctx)
 		w.PurgeDue(ctx)
+		w.SweepDevicesDue(ctx)
 		w.FilesDue(ctx)
 		select {
 		case <-ctx.Done():
@@ -149,6 +151,25 @@ func (w *Worker) PurgeDue(ctx context.Context) {
 		w.lastPurge[realm] = now
 		if _, err := svc.PurgeUnverified(auth.WithAuditSource(ctx, func() auth.AuditSource { return auth.AuditSource{Actor: auth.ActorSystem} })); err != nil {
 			w.log.Error("purge unverified accounts", "realm", realm, "error", err)
+		}
+	}
+}
+
+// SweepDevicesDue removes the push devices that went stale or lost their session in the
+// realms with push: (push.devices.stale_after). Running it in every worker is harmless.
+func (w *Worker) SweepDevicesDue(ctx context.Context) {
+	now := w.fns.docs.now()
+	for realm, rl := range w.reg.Realms {
+		if rl.Settings.Push == nil || now.Sub(w.lastDevices[realm]) < purgeInterval {
+			continue
+		}
+		svc := w.fns.docs.users(realm)
+		if svc == nil {
+			continue
+		}
+		w.lastDevices[realm] = now
+		if _, _, err := svc.SweepDevices(ctx); err != nil {
+			w.log.Error("sweep devices", "realm", realm, "error", err)
 		}
 	}
 }

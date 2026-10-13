@@ -30,6 +30,7 @@ const (
 	AuditUserErased      = "user.erased"         // details: job_id and counts, or needs_attention
 	AuditUserNetworks    = "user.networks"       // details: admin_networks, login_networks
 	AuditSessionRevoke   = "session.revoke"      // by an administrator; details: session
+	AuditDeviceRemoved   = "device.removed"      // by an administrator; details: platform, device
 	AuditRoleAdd         = "role.add"            // details: role
 	AuditRoleRemove      = "role.remove"         // details: role
 	AuditAPIKeyCreate    = "apikey.create"       // details: role, expires_at, networks

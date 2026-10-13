@@ -805,6 +805,105 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_auth/devices:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Register a device for push notifications
+      description: |
+        Registers the device the app runs on, or refreshes it: apps call this at **each launch** and
+        after signing in. `token` is what the platform's push service gave the app (the FCM
+        registration token, the APNs device token) or, for `web`, the browser's push subscription as
+        JSON (`endpoint` and `keys`). A token belongs to one user: registering one that exists moves it
+        to the caller, so a second-hand phone never receives the previous user's pushes. The device is
+        removed with the session that registered it, after `push.devices.stale_after` unseen, and when
+        the user has more than `push.devices.max_per_user` (the least recently seen goes). At most 30
+        registrations an hour per session. Needs a session: an API key can't register devices. The
+        answer never contains the token.
+      operationId: registerDevice
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [platform, token]
+              properties:
+                platform: { type: string, enum: [android, ios, web] }
+                token: { type: string, maxLength: 4096 }
+                name: { type: string, maxLength: 100, description: "A label to show the user, such as Ana's Pixel." }
+      responses:
+        "200":
+          description: The device.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Device" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      tags: [auth]
+      summary: The user's registered devices
+      operationId: listDevices
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: Devices, most recently seen first. Never a token.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Device" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/devices/web-key:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [auth]
+      summary: The public key browsers subscribe with
+      description: The VAPID public key for `pushManager.subscribe`. Public and cacheable; `404` when the realm has no web platform.
+      operationId: getWebPushKey
+      responses:
+        "200":
+          description: The key.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [public_key]
+                properties:
+                  public_key: { type: string }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/devices/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    delete:
+      tags: [auth]
+      summary: Remove one of the user's devices
+      description: Someone else's device is a `404`.
+      operationId: removeDevice
+      security: [{ session: [] }]
+      responses:
+        "204": { description: Device removed. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_auth/oauth/{provider}/start:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -1826,6 +1925,55 @@ paths:
       responses:
         "204":
           description: Session ended.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/users/{id}/devices:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    get:
+      tags: [admin]
+      summary: A user's registered devices
+      description: The devices the user registered for push notifications, most recently seen first. Never a token. Needs the `users` area; `404 push_not_configured` in a realm without `push:`.
+      operationId: adminUserDevices
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The devices.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Device" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/users/{id}/devices/{device_id}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+      - { name: device_id, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [admin]
+      summary: Remove a user's device
+      description: The device stops receiving pushes at once. Audited as `device.removed`. Needs the `users` area.
+      operationId: adminRemoveUserDevice
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "204":
+          description: Device removed.
           headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
@@ -5565,6 +5713,17 @@ components:
         last_used_at: { $ref: "#/components/schemas/Timestamp" }
         expires_at: { $ref: "#/components/schemas/Timestamp" }
         current: { type: boolean }
+
+    Device:
+      type: object
+      additionalProperties: false
+      required: [id, platform, name, created_at, last_seen]
+      properties:
+        id: { type: string }
+        platform: { type: string, enum: [android, ios, web] }
+        name: { type: [string, "null"] }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        last_seen: { $ref: "#/components/schemas/Timestamp" }
 
     OwnedReport:
       type: object
