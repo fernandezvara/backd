@@ -1,0 +1,5 @@
+/* Extra rules on top of the shared example stylesheet (../blog/style.css). */
+.notice { background: #dafbe1; border: 1px solid #2da44e; border-radius: 6px; padding: .6rem .8rem; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+th, td { text-align: left; padding: .3rem .5rem; border-bottom: 1px solid #d0d7de; }
+th { color: #656d76; font-weight: 600; }
