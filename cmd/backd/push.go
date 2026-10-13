@@ -191,7 +191,11 @@ func pushWebKeys(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	private := base64.RawURLEncoding.EncodeToString(key.D.FillBytes(make([]byte, 32)))
+	scalar, err := key.Bytes()
+	if err != nil {
+		return err
+	}
+	private := base64.RawURLEncoding.EncodeToString(scalar)
 	public := base64.RawURLEncoding.EncodeToString(pub.Bytes())
 	if err := t.call("PUT", "_admin/secrets/"+url.PathEscape(name), nil, map[string]any{"value": private}, nil); err != nil {
 		return err

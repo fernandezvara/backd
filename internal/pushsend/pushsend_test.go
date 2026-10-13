@@ -132,9 +132,8 @@ func TestFCMSender(t *testing.T) {
 	for _, tok := range []string{"ok", "dead", "bad-token", "bad-payload", "busy", "throttled"} {
 		req.Deliveries = append(req.Deliveries, push.Delivery{DeviceID: "d-" + tok, Token: tok, Message: message("Hi")})
 	}
-	got := results(t, nil, nil)
 	rs, err := senders["fcm"].Send(context.Background(), req)
-	got = results(t, rs, err)
+	got := results(t, rs, err)
 	want := map[string]string{"d-ok": "sent", "d-dead": "invalid", "d-bad-token": "invalid", "d-bad-payload": "failed", "d-busy": "retry", "d-throttled": "retry"}
 	for id, w := range want {
 		if got[id] != w {
@@ -248,9 +247,8 @@ func TestAPNsSender(t *testing.T) {
 		m.Badge = &badge
 		req.Deliveries = append(req.Deliveries, push.Delivery{DeviceID: "d-" + tok, Token: tok, Message: m})
 	}
-	got := results(t, nil, nil)
 	rs, err := s.Send(context.Background(), req)
-	got = results(t, rs, err)
+	got := results(t, rs, err)
 	want := map[string]string{"d-ok": "sent", "d-gone": "invalid", "d-bad": "invalid", "d-payload": "failed", "d-busy": "retry"}
 	for id, w := range want {
 		if got[id] != w {
@@ -377,7 +375,7 @@ func TestWebPushSender(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	vapidPriv := b64.EncodeToString(vapid.D.FillBytes(make([]byte, 32)))
+	vapidPriv := b64.EncodeToString(vapidScalar(vapid))
 	vapidPub, _ := vapid.ECDH()
 	uaPriv, _ := ecdh.P256().GenerateKey(rand.Reader)
 	authSecret := make([]byte, 16)
@@ -541,9 +539,18 @@ func TestWebPushNeverCallsAnotherPort(t *testing.T) {
 	sub, _ := json.Marshal(map[string]any{"endpoint": srv.URL + "/x", "keys": map[string]string{
 		"p256dh": b64.EncodeToString(ua.PublicKey().Bytes()), "auth": b64.EncodeToString(make([]byte, 16))}})
 	rs, err := s.Send(context.Background(), push.Request{Platform: "web", Config: map[string]string{
-		"private_key": b64.EncodeToString(vapid.D.FillBytes(make([]byte, 32))), "subject": "mailto:a@b.c", "public_key": "x", "allowed_hosts": u.Hostname()},
+		"private_key": b64.EncodeToString(vapidScalar(vapid)), "subject": "mailto:a@b.c", "public_key": "x", "allowed_hosts": u.Hostname()},
 		Deliveries: []push.Delivery{{DeviceID: "d", Token: string(sub), Message: message("Hi")}}})
 	if got := results(t, rs, err); got["d"] != "failed" || called {
 		t.Errorf("another port: %v called=%v", got, called)
 	}
+}
+
+// vapidScalar is the 32 bytes of a P-256 private key, as backd push web-keys stores them.
+func vapidScalar(k *ecdsa.PrivateKey) []byte {
+	b, err := k.Bytes()
+	if err != nil {
+		panic(err)
+	}
+	return b
 }
