@@ -101,24 +101,26 @@ The rules behind each flow are in [Sign-up, login and sessions](../../auth/sessi
 
 ### Sign in with Google, Microsoft or Apple
 
-In a realm that lists [providers](../../auth/providers/), signing in is two calls: one on the page with the buttons, one on the page backd sends the user back to (they can be the same page).
+In a realm that lists [providers](../../auth/providers/), signing in is one call on the page with the buttons. backd sends the user back to a page of your app (the current one by default, so no return route is needed), and the client finishes the sign-in when it is created there.
 
 ```js
 // A "Continue with Google" button: PKCE is handled, the browser goes to the provider.
 await backd.auth.signInWith('google', { redirectTo: 'https://app.acme.example/signed-in' })
 
-// On the return page, on every load: null when there is nothing to finish.
+// On the page the user comes back to, whenever the app starts: `ready` is the outcome of the
+// sign-in the address carried, or null on an ordinary visit.
 try {
-  const session = await backd.auth.completeSignIn()
+  const session = await backd.auth.ready
   if (session?.new_user) await createProfile(session.profile)   // { name, given_name, family_name, picture } as the provider gave them
 } catch (err) {
   if (err.code === 'account_exists') showLinkHelp(err.details[0].reason)   // the provider
 }
 ```
 
-- `completeSignIn()` trades the one-time code for a session (stored like a login's) and resolves with it, plus `new_user` and, for a new user, the `profile`. Use [`account.on_signup`](../../auth/providers/#the-profile-and-the-sign-up-hook) to create the profile document on the server instead of depending on the page. It reads the address of the page and removes the outcome from the address bar.
+- The client reads the `backd_code` (or `backd_error`, `backd_linked`) that backd added to the address, removes it from the address bar and trades the one-time code for a session (stored like a login's) and resolves with it, plus `new_user` and, for a new user, the `profile`. Use [`account.on_signup`](../../auth/providers/#the-profile-and-the-sign-up-hook) to create the profile document on the server instead of depending on the page. `completeOnLoad: false` in `createClient` turns this off, and `completeSignIn()` does the same on demand.
+- A page opened where the sign-in was not started (the link was opened on another device or in another tab) has no verifier to redeem the code with: `ready` rejects with a `ValidationError`, `code: "wrong_device"`; show "open this on the device where you asked".
 - Failures reject with the error the code means: `account_exists` and `link_conflict` are a `ConflictError`; `signup_closed`, `email_not_verified` and `signin_refused` a `ForbiddenError`; `cancelled` an `AuthenticationError`; `invitation_invalid` and `email_required` a `ValidationError`; `provider_error` a `BackdError`. `code` is the code.
-- The PKCE verifier waits in the tab's `sessionStorage` between the two pages (`oauthStorage` in `createClient` replaces it). `navigate(url)` in the options replaces `location.assign` for apps that open a browser session of their own (React Native, Capacitor); `redirectTo` may be an app scheme (`acme://signed-in`) there, and `completeSignIn(url)` takes the address the app was opened with.
+- The PKCE verifier waits in the tab's `sessionStorage` between the two pages (`oauthStorage` in `createClient` replaces it). `redirectTo` is the current page unless given; the realm's `sign_in.app_url` takes over only when the client sends none. `navigate(url)` in the options replaces `location.assign` for apps that open a browser session of their own (React Native, Capacitor); `redirectTo` may be an app scheme (`acme://signed-in`) there, and `completeSignIn(url)` takes the address the app was opened with.
 - `signInWith(provider, { invitation, locale })` passes an invitation for realms with `signup: invite`.
 
 For a signed-in user:

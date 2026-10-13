@@ -256,7 +256,7 @@ Paths are relative to `/v1/{realm}`: `/_auth/oauth/{provider}/start` is `/v1/{re
 
 **#145 — profile and `on_signup`:** `profile` and `new_user` in responses for new users; `account.on_signup` internal hook for every sign-up, retried and never failing the sign-up; masking; tests.
 
-**#146 — JS client:** `client.auth.signInWith(provider, { redirectTo })` (PKCE handled, uses `POST …/start`, returns after redemption), `completeSignIn()` on the return page, `linkProvider()`, `unlinkProvider()`, `identities`, native `signInWithIdToken()`; error codes as `BackdError`s; example app buttons; unit and integration tests.
+**#146 — JS client:** `client.auth.signInWith(provider, { redirectTo })` (PKCE handled, uses `POST …/start`; `redirectTo` is the current page by default, `sign_in.app_url` outside a browser), the client finishes the sign-in on its own when it is created on the page the user comes back to (`completeOnLoad`, default on; the outcome is the promise `client.auth.ready`, `wrong_device` when the page is not where the sign-in started) with `completeSignIn()` still callable, `linkProvider()`, `unlinkProvider()`, `identities`, native `signInWithIdToken()`; error codes as `BackdError`s; example app buttons; unit and integration tests.
 
 **#157 — generic OpenID Connect:** `type: oidc` providers with an issuer, discovery, the derived host list and `link_by_email` (default false); tests with a fake OIDC provider, including a discovery document that names a foreign host.
 

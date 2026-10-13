@@ -55,7 +55,7 @@ account:
 
 `app.idtest.example` stands for a page that can receive the redirect. The simplest is the blog example
 (`clients/js/examples/blog`) served from the same origin as the API with `PROVIDERS` set in its `app.js`;
-or any static page that calls `completeSignIn()`. Where this guide says "the app", it means that page.
+or any static page that creates the client (it finishes the sign-in itself: `client.auth.ready`). Where this guide says "the app", it means that page.
 
 Set the secrets from your shell (the values never touch a file):
 

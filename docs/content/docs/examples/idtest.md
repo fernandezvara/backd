@@ -43,7 +43,7 @@ The app is plain JavaScript with [Alpine.js](https://alpinejs.dev/) and the [Jav
 
 | File | Contents |
 |---|---|
-| `app.js` | `signInWith`/`completeSignIn` for the redirect flow, `linkProvider`/`unlinkProvider`, the `backd_error` messages |
+| `app.js` | `signInWith` and `auth.ready` for the redirect flow, `linkProvider`/`unlinkProvider`, the `backd_error` messages |
 | `index.html`, `style.css` | The page |
 
 `native_client_ids` (Google, Microsoft) and `bundle_ids` (Apple) are only needed for native apps using the [ID-token sign-in](../../auth/providers/#native-apps-the-id-token); this example uses the redirect flow and leaves them empty.

@@ -41,7 +41,6 @@ test('signInWith starts the flow, keeps the verifier and sends the browser to th
   assert.equal(call.body.invitation, 'bdi_x')
   assert.match(call.body.code_challenge, /^[A-Za-z0-9_-]{43}$/)
   assert.equal('locale' in call.body, false)
-  await assert.rejects(clientOf(mockFetch([])).auth.signInWith('google'), /redirectTo/)
 })
 
 test('completeSignIn trades the code for a session, once, with the verifier it kept', async () => {
@@ -63,7 +62,7 @@ test('completeSignIn trades the code for a session, once, with the verifier it k
   assert.equal(await c.auth.token(), 'bds_abc')
   assert.deepEqual(events, ['SIGNED_IN'])
   // The verifier is spent: coming back again with a code has nothing to finish it with.
-  await assert.rejects(c.auth.completeSignIn('https://app.test/in?backd_code=again'), (/** @type {any} */ e) => e instanceof ValidationError && e.code === 'sign_in_not_started')
+  await assert.rejects(c.auth.completeSignIn('https://app.test/in?backd_code=again'), (/** @type {any} */ e) => e instanceof ValidationError && e.code === 'wrong_device')
   assert.equal(store.get(), null)
 })
 
@@ -118,7 +117,7 @@ test('a sign-in kept in the tab survives the navigation: the verifier goes throu
   // An attempt that waited longer than the server keeps it is gone.
   const old = memory()
   old.set(JSON.stringify({ verifier: 'v', provider: 'google', intent: 'signin', at: Date.now() - 11 * 60 * 1000 }))
-  await assert.rejects(clientOf(mockFetch([]), { oauthStorage: old }).auth.completeSignIn('https://app.test/in?backd_code=c'), (/** @type {any} */ e) => e.code === 'sign_in_not_started')
+  await assert.rejects(clientOf(mockFetch([]), { oauthStorage: old }).auth.completeSignIn('https://app.test/in?backd_code=c'), (/** @type {any} */ e) => e.code === 'wrong_device')
 })
 
 test('cookie sessions ask for a cookie when redeeming', async () => {
@@ -158,4 +157,79 @@ test('linkProviderWithIdToken links to the signed-in user', async () => {
   assert.deepEqual(await c.auth.linkProviderWithIdToken('google', { idToken: 't', nonce: 'n' }), { linked: 'google' })
   assert.equal(m.calls[0].body.intent, 'link')
   assert.equal(m.calls[0].headers.Authorization, 'Bearer bds_have')
+})
+
+/**
+ * Runs fn with a page at `href`, as a browser would give it to the client.
+ * @param {string} href
+ * @param {() => Promise<void>} fn
+ */
+async function atPage(href, fn) {
+  const u = new URL(href)
+  /** @type {string[]} */
+  const replaced = []
+  const g = /** @type {any} */ (globalThis)
+  const saved = { location: g.location, history: g.history }
+  const page = { href: u.href, origin: u.origin, pathname: u.pathname, assign() {} }
+  g.location = page
+  g.history = { replaceState: (/** @type {unknown} */ _s, /** @type {string} */ _t, /** @type {string} */ url) => { replaced.push(url); page.href = url } }
+  try {
+    await fn()
+  } finally {
+    g.location = saved.location
+    g.history = saved.history
+  }
+  return replaced
+}
+
+test('ready: the client finishes the sign-in the page carries, and cleans the address', async () => {
+  const store = memory()
+  store.set(JSON.stringify({ verifier: 'v'.repeat(43), provider: 'google', intent: 'signin', at: Date.now() }))
+  const m = mockFetch([{ body: { ...session, new_user: true, profile: { name: 'Ada' } } }])
+  const replaced = await atPage('https://app.test/home?tab=2&backd_code=the-code', async () => {
+    const c = clientOf(m, { oauthStorage: store })
+    const out = /** @type {any} */ (await c.auth.ready)
+    assert.equal(out.new_user, true)
+    assert.equal(out.profile.name, 'Ada')
+    assert.equal(m.calls[0].url.pathname, '/v1/acme/_auth/token')
+    assert.equal(await c.auth.token(), 'bds_abc')
+    // A later explicit call gets the same outcome instead of nothing.
+    assert.equal(await c.auth.completeSignIn(), out)
+  })
+  assert.deepEqual(replaced, ['https://app.test/home?tab=2'])
+})
+
+test('ready: an ordinary visit resolves with null and a failed sign-in rejects', async () => {
+  await atPage('https://app.test/home?utm=1', async () => {
+    assert.equal(await clientOf(mockFetch([])).auth.ready, null)
+  })
+  await atPage('https://app.test/home?backd_error=account_exists&backd_provider=google', async () => {
+    const c = clientOf(mockFetch([]))
+    await assert.rejects(c.auth.ready, (/** @type {any} */ e) => e instanceof ConflictError && e.code === 'account_exists')
+  })
+  await atPage('https://app.test/home?backd_linked=apple', async () => {
+    assert.deepEqual(await clientOf(mockFetch([])).auth.ready, { linked: 'apple' })
+  })
+})
+
+test('ready: a page that is not where the sign-in started reports wrong_device', async () => {
+  await atPage('https://app.test/home?backd_code=c', async () => {
+    const c = clientOf(mockFetch([])) // no verifier in this tab's storage
+    await assert.rejects(c.auth.ready, (/** @type {any} */ e) => e instanceof ValidationError && e.code === 'wrong_device')
+  })
+})
+
+test('signInWith outside a browser sends no redirect_to: the realm falls back to its app_url', async () => {
+  const m = mockFetch([{ body: { authorize_url: 'https://p/x' } }])
+  await clientOf(m).auth.signInWith('google', { navigate: () => {} })
+  assert.equal('redirect_to' in m.calls[0].body, false)
+})
+
+test('completeOnLoad: false leaves the address alone', async () => {
+  const replaced = await atPage('https://app.test/home?backd_error=cancelled', async () => {
+    const c = clientOf(mockFetch([]), { completeOnLoad: false })
+    assert.equal(await c.auth.ready, null)
+    await assert.rejects(c.auth.completeSignIn(), (/** @type {any} */ e) => e.code === 'cancelled')
+  })
+  assert.equal(replaced.length, 1) // only the explicit call cleaned it
 })

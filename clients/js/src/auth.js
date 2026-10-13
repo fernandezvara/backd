@@ -63,7 +63,8 @@ import { defaultOAuthStorage, loadPending, newPKCE, oauthError, parseReturn, sav
  * Options of the redirect sign-in.
  * @typedef {object} SignInWithOptions
  * @property {string} [redirectTo]    Where backd sends the browser back to (it must be within the realm's
- *   `sign_in.allowed_redirects`); this page, without its query, by default.
+ *   `sign_in.allowed_redirects`); this page, without its query, by default, and outside a browser
+ *   the realm's `sign_in.app_url`.
  * @property {string} [invitation]    An invitation token, for realms with `signup: invite`.
  * @property {string} [locale]
  * @property {(url: string) => void | Promise<void>} [navigate]  How to go to the provider; `location.assign` by default.
@@ -100,6 +101,9 @@ function compact(fields) {
 
 /** Sign-up, login and session management: `client.auth`. */
 export class Auth {
+  /** @type {Promise<ProviderSession | { linked: string } | null> | undefined} */
+  #completed = undefined
+
   /** @param {Client} client */
   constructor(client) {
     /** @internal */
@@ -108,6 +112,29 @@ export class Auth {
     this.listeners = new Set()
     /** @type {import('./oauth.js').OAuthStorage | undefined} */
     this._oauthStorage = undefined
+    /**
+     * The outcome of the sign-in the page was opened to finish, if any: resolves with the session
+     * (`new_user`, `profile`), `{ linked }`, or `null` for an ordinary visit; rejects with the
+     * `BackdError` of a failed sign-in (`wrong_device` when the page is not where it was started).
+     * It never settles before the client is created and is the same promise for every reader.
+     * @type {Promise<ProviderSession | { linked: string } | null>}
+     */
+    this.ready = Promise.resolve(null)
+  }
+
+  /**
+   * Finishes the sign-in the page's address carries, once, when the client is created (see the
+   * `completeOnLoad` option); the outcome is {@link Auth.ready}.
+   * @internal
+   */
+  completeOnLoad() {
+    const href = globalThis.location?.href
+    if (!href || !parseReturn(href)) return
+    this.ready = this.completeSignIn(href)
+    this.#completed = this.ready
+    // A page that never reads `ready` must not trip the runtime's unhandled-rejection report:
+    // the failure is still there for whoever does.
+    this.ready.catch(() => {})
   }
 
   /**
@@ -187,7 +214,7 @@ export class Auth {
   async #startOAuth(provider, intent, options, opts) {
     const here = globalThis.location
     const redirectTo = options.redirectTo ?? (here ? here.origin + here.pathname : undefined)
-    if (!redirectTo) throw new TypeError('signInWith: `redirectTo` is required outside a browser')
+    // Without a page of its own the realm's `sign_in.app_url` is where the flow ends (or the server refuses).
     const { verifier, challenge } = newPKCE()
     const body = compact({ redirect_to: redirectTo, code_challenge: challenge, intent, invitation: options.invitation, locale: options.locale })
     const { data } = await this.client.request({
@@ -213,12 +240,18 @@ export class Auth {
    * (`account_exists` and `link_conflict` are a `ConflictError`, `signup_closed`, `email_not_verified`
    * and `signin_refused` a `ForbiddenError`, `cancelled` an `AuthenticationError`, …; `code` is the
    * code). Resolves with null on an ordinary visit that has nothing to finish, so it can be called on
-   * every page load. In a browser it removes the outcome from the address bar.
+   * every page load. In a browser it removes the outcome from the address bar. The client already does
+   * this when it is created (see {@link Auth.ready}), so an app rarely calls it; a page that finds the
+   * outcome gone from its address (`ready` took it) gets the same outcome when it calls this with no
+   * address.
+   * A page opened where the sign-in was not started (another device, browser or tab) has no PKCE
+   * verifier to redeem the code with: that rejects with a `ValidationError` whose `code` is `wrong_device`.
    * @param {string | URL} [href]  The address to read; the page's own by default.
    * @param {RequestOptions} [opts]
    * @returns {Promise<ProviderSession | { linked: string } | null>}
    */
   async completeSignIn(href = globalThis.location?.href, opts) {
+    if (arguments.length === 0 && this.#completed) return this.#completed
     const ret = parseReturn(href)
     if (!ret || !href) return null
     const storage = this.#oauthStorage()
@@ -230,7 +263,7 @@ export class Auth {
     if (ret.error) throw oauthError(ret.error, ret.provider ?? pending?.provider)
     if (ret.linked) return { linked: ret.linked }
     if (!pending) {
-      throw new ValidationError({ status: 400, code: 'sign_in_not_started', message: 'there is no sign-in waiting on this page: start it with signInWith(), in this tab' })
+      throw new ValidationError({ status: 400, code: 'wrong_device', message: 'this page was not where the sign-in started: open the link on the device and tab where you started it' })
     }
     /** @type {Record<string, unknown>} */
     const body = { code: ret.code, code_verifier: pending.verifier }

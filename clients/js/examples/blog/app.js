@@ -47,9 +47,9 @@ document.addEventListener('alpine:init', () => {
           this.load()
         }
       })
-      // Back from a provider: finish the sign-in the buttons started (null on any other visit).
+      // Back from a provider: the client finished the sign-in the buttons started (null on any other visit).
       try {
-        await backd.auth.completeSignIn()
+        await backd.auth.ready
       } catch (err) {
         this.error = err.code === 'account_exists' ? 'An account with that address exists: log in with your password first, then link the provider.' : err.message
       }
@@ -64,7 +64,7 @@ document.addEventListener('alpine:init', () => {
       await this.refreshStats()
     },
 
-    // Sends the browser to the provider; completeSignIn() in init() finishes it on the way back.
+    // Sends the browser to the provider; the client finishes it on the way back.
     async continueWith(provider) {
       this.error = ''
       try {

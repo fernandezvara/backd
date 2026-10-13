@@ -1,7 +1,8 @@
 // The providers example: Alpine.js + backd-js, no build step.
 // One button per provider configured in examples/config/idtest/realm.yaml.
 // The button starts the redirect flow; backd sends the user back to this
-// page with a one-time code that completeSignIn() redeems for a session.
+// page with a one-time code that the client redeems for a session on its own
+// (backd.auth.ready is the outcome).
 // Signed in, the page lists the user's sign-in methods and can link or
 // unlink providers. See design/identity-providers.md and its testing guide.
 import { createClient, localStorageStorage } from 'backd-js'
@@ -32,10 +33,10 @@ document.addEventListener('alpine:init', () => {
           this.error = 'Your session ended. Please sign in again.'
         }
       })
-      // Back from a provider: finish the sign-in (or linking) the buttons started.
-      // On an ordinary visit this resolves with null.
+      // Back from a provider: the client finished the sign-in (or linking) the buttons
+      // started when it was created; `ready` is its outcome (null on an ordinary visit).
       try {
-        const result = await backd.auth.completeSignIn()
+        const result = await backd.auth.ready
         if (result?.linked) {
           this.notice = `Linked ${result.linked}: it now signs in as you.`
         } else if (result) {
@@ -56,7 +57,7 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    // Sends the browser to the provider; completeSignIn() in init() finishes it.
+    // Sends the browser to the provider; the client finishes it when the page comes back.
     continueWith(provider) {
       return this.run(async () => {
         this.notice = ''
