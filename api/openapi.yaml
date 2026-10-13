@@ -6492,7 +6492,7 @@ components:
     PushSend:
       type: object
       additionalProperties: false
-      required: [id, kind, sender, created_at, users, planned, batches, batches_done, units, units_done, queued, limited, no_devices, sent, invalid, failed, completed, completed_at]
+      required: [id, kind, sender, created_at, users, planned, batches, batches_done, units, units_done, queued, limited, no_devices, no_consent, sent, invalid, failed, completed, completed_at]
       properties:
         id: { type: string }
         kind: { type: string, description: "The template kind, or `raw`." }
@@ -6507,6 +6507,7 @@ components:
         queued: { type: integer, description: Users handed to delivery. }
         limited: { type: integer, description: Users over their per-user limit. }
         no_devices: { type: integer, description: Users with no device to reach. }
+        no_consent: { type: integer, description: "Users who don't hold the consent the send requires (`requires_consent`)." }
         sent: { type: integer, description: Devices the provider accepted. }
         invalid: { type: integer, description: Devices removed as dead. }
         failed: { type: integer, description: Devices not delivered to. }

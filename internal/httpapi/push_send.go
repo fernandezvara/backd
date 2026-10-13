@@ -42,6 +42,8 @@ type pushSendInput struct {
 	Silent   bool                      `json:"silent"`
 	Platform map[string]map[string]any `json:"platform"`
 	Wait     bool                      `json:"wait"`
+	// RequiresConsent skips users who don't hold the consent: they count as no_consent.
+	RequiresConsent string `json:"requires_consent"`
 }
 
 // pushWaitStep is how often a send that waits looks at its record.
@@ -107,7 +109,11 @@ func (f *functions) pushSend(w http.ResponseWriter, r *http.Request) {
 		invalid("user", "give exactly one of user, users and audience")
 		return
 	}
-	send := auth.PushSendInput{Kind: in.Kind, Sender: "function:" + fnName}
+	if in.RequiresConsent != "" && rl.Settings.Consents[in.RequiresConsent] == nil {
+		invalid("requires_consent", "is not a consent of this realm")
+		return
+	}
+	send := auth.PushSendInput{Kind: in.Kind, Sender: "function:" + fnName, RequiresConsent: in.RequiresConsent}
 	if send.Kind == "" {
 		send.Kind = push.RawKind
 	}
@@ -126,6 +132,10 @@ func (f *functions) pushSend(w http.ResponseWriter, r *http.Request) {
 			invalid("audience", err.Error())
 			return
 		}
+		if aud.Consent != "" && rl.Settings.Consents[aud.Consent] == nil {
+			invalid("audience.consent", "is not a consent of this realm")
+			return
+		}
 		send.Audience = aud
 	}
 	// What.
@@ -140,12 +150,12 @@ func (f *functions) pushSend(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusInternalServerError, codeInternal, "internal error")
 		return
 	}
-	out := map[string]any{"send_id": started.SendID, "users": nil, "jobs": started.Jobs, "queued": nil, "limited": nil, "no_devices": nil}
+	out := map[string]any{"send_id": started.SendID, "users": nil, "jobs": started.Jobs, "queued": nil, "limited": nil, "no_devices": nil, "no_consent": nil}
 	if started.Users >= 0 {
 		out["users"] = started.Users
 	}
 	if started.Known {
-		out["queued"], out["limited"], out["no_devices"] = started.Queued, started.Limited, started.NoDevice
+		out["queued"], out["limited"], out["no_devices"], out["no_consent"] = started.Queued, started.Limited, started.NoDevice, started.NoConsent
 	}
 	if in.Wait {
 		f.waitForPush(r, svc, started.SendID, fc.Expires, out)
@@ -163,7 +173,7 @@ func (f *functions) waitForPush(r *http.Request, svc *auth.Users, id string, exp
 	for {
 		rec, err := svc.PushSendByID(r.Context(), id)
 		if err == nil {
-			out["queued"], out["limited"], out["no_devices"] = rec.Queued, rec.Limited, rec.NoDevices
+			out["queued"], out["limited"], out["no_devices"], out["no_consent"] = rec.Queued, rec.Limited, rec.NoDevices, rec.NoConsent
 			out["sent"], out["invalid"], out["failed"] = rec.Sent, rec.Invalid, rec.Failed
 			out["completed"] = !rec.CompletedAt.IsZero()
 			if rec.Users >= 0 {
@@ -215,7 +225,7 @@ func parseAudience(raw json.RawMessage) (*auth.PushAudience, error) {
 	var s string
 	if json.Unmarshal(raw, &s) == nil {
 		if s != "all" {
-			return nil, errors.New(`must be "all" or an object with roles, email_verified, locale, created_before or created_after`)
+			return nil, errors.New(`must be "all" or an object with roles, email_verified, locale, consent, created_before or created_after`)
 		}
 		return &auth.PushAudience{All: true}, nil
 	}
@@ -225,13 +235,14 @@ func parseAudience(raw json.RawMessage) (*auth.PushAudience, error) {
 		Locale        string   `json:"locale"`
 		CreatedBefore string   `json:"created_before"`
 		CreatedAfter  string   `json:"created_after"`
+		Consent       string   `json:"consent"`
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&d); err != nil {
-		return nil, errors.New("an object with roles, email_verified, locale, created_before and created_after (anything else is refused)")
+		return nil, errors.New("an object with roles, email_verified, locale, consent, created_before and created_after (anything else is refused)")
 	}
-	a := &auth.PushAudience{Roles: d.Roles, EmailVerified: d.EmailVerified, Locale: d.Locale}
+	a := &auth.PushAudience{Roles: d.Roles, EmailVerified: d.EmailVerified, Locale: d.Locale, Consent: d.Consent}
 	for field, v := range map[string]*string{"created_before": &d.CreatedBefore, "created_after": &d.CreatedAfter} {
 		if *v == "" {
 			continue
@@ -246,7 +257,7 @@ func parseAudience(raw json.RawMessage) (*auth.PushAudience, error) {
 			a.CreatedAfter = t
 		}
 	}
-	if len(a.Roles) == 0 && a.EmailVerified == nil && a.Locale == "" && a.CreatedBefore.IsZero() && a.CreatedAfter.IsZero() {
+	if len(a.Roles) == 0 && a.EmailVerified == nil && a.Locale == "" && a.Consent == "" && a.CreatedBefore.IsZero() && a.CreatedAfter.IsZero() {
 		return nil, errors.New(`name who: at least one field, or "all"`)
 	}
 	return a, nil

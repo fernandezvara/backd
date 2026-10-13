@@ -70,6 +70,7 @@ type pushSendRow struct {
 	Queued    int     `json:"queued"`
 	Limited   int     `json:"limited"`
 	NoDevices int     `json:"no_devices"`
+	NoConsent int     `json:"no_consent"`
 	Sent      int     `json:"sent"`
 	Invalid   int     `json:"invalid"`
 	Failed    int     `json:"failed"`
@@ -98,8 +99,8 @@ func pushSends(c *kli.CommandContext) error {
 			state = "completed " + *row.DoneAt
 		}
 		fmt.Fprintf(out.stdout, "send      %s\nkind      %s\nsender    %s\ncreated   %s\nstate     %s\n", row.ID, row.Kind, row.Sender, row.CreatedAt, state)
-		fmt.Fprintf(out.stdout, "users     queued %d, limited %d, no devices %d\ndevices   sent %d, invalid %d, failed %d\nwork      %d batches, %d of %d units done\n",
-			row.Queued, row.Limited, row.NoDevices, row.Sent, row.Invalid, row.Failed, row.Batches, row.UnitsDone, row.Units)
+		fmt.Fprintf(out.stdout, "users     queued %d, limited %d, no devices %d, no consent %d\ndevices   sent %d, invalid %d, failed %d\nwork      %d batches, %d of %d units done\n",
+			row.Queued, row.Limited, row.NoDevices, row.NoConsent, row.Sent, row.Invalid, row.Failed, row.Batches, row.UnitsDone, row.Units)
 		return nil
 	}
 	query := url.Values{}

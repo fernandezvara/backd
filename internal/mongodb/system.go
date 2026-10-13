@@ -579,6 +579,7 @@ var systemCollections = []systemCollection{
 			"queued":         typ("int"),
 			"limited":        typ("int"),
 			"no_devices":     typ("int"),
+			"no_consent":     typ("int"),
 			"sent":           typ("int"),
 			"invalid":        typ("int"),
 			"failed":         typ("int"),

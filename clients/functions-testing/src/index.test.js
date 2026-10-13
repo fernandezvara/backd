@@ -253,6 +253,14 @@ Deno.test('fakeEmail skips users without the consent a send requires', async () 
   assertEquals(refused, true)
 })
 
+Deno.test('fakePush counts the users who lack a required consent', async () => {
+  const push = fakePush({ consents: { u1: ['marketing'] } })
+  const r = await push.send({ users: ['u1', 'u2'], title: 'News', body: 'Hi', requires_consent: 'marketing' })
+  assertEquals([r.users, r.queued, r.no_consent], [2, 1, 1])
+  const all = await push.send({ users: ['u1', 'u2'], title: 'News', body: 'Hi' })
+  assertEquals([all.queued, all.no_consent], [2, 0])
+})
+
 Deno.test('ctx.step and ctx.progress are recorded, and refuse what backd refuses', () => {
   const { ctx, steps } = createContext()
   ctx.step('load', { total: 10, message: 'reading' })

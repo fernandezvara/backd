@@ -898,6 +898,7 @@ class AdminJobs {
  * @property {number} queued
  * @property {number} limited
  * @property {number} no_devices
+ * @property {number} no_consent
  * @property {number} sent
  * @property {number} invalid
  * @property {number} failed

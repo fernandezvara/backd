@@ -34,7 +34,18 @@ Give exactly one of:
 |---|---|
 | `user` | One user, by id |
 | `users` | Any number of users, by id. There is no per-call cap |
-| `audience` | Users that match a filter, for a function with `push: { audience: true }`: `"all"`, or an object with `roles` (holding any of them), `email_verified`, `locale`, `created_before` and `created_after`. Disabled and erased users never match |
+| `audience` | Users that match a filter, for a function with `push: { audience: true }`: `"all"`, or an object with `roles` (holding any of them), `email_verified`, `locale`, `consent` (users who hold that [consent](../../auth/consents/)), `created_before` and `created_after`. Disabled and erased users never match |
+
+### Gating by consent
+
+`requires_consent: "marketing"` skips the users who don't hold that [consent](../../auth/consents/): they are counted as `no_consent` in the result and in the send's record, and they don't count against their limits. It enforces a withdrawal even when the function's own code forgets to check, and works with `user`, `users` and `audience` alike.
+
+```ts
+await ctx.push.send({ audience: "all", title: "New arrivals", body: "…", requires_consent: "marketing" });
+// { …, queued: 980, no_consent: 20 }
+```
+
+A consent the realm doesn't declare is `400 invalid_push_message`.
 
 A list of a million ids can't go through a function call, which is what `audience` is for: backd pages through the matching users itself, so the audience is fixed batch by batch.
 

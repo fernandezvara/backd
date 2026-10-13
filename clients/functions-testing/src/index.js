@@ -647,10 +647,13 @@ export function fakeEmail({ perInvocation = 50, recipientsPerMessage = 10, conse
  * and `kind` or `title` and `body`. Failures are a `FunctionError` with backd's codes
  * (`invalid_push_message`, `unknown_push_kind`, `payload_too_large`, `push_audience_not_declared`).
  * It sends nothing and counts no limits: `sent()` lists what the function asked for.
+ * With `requires_consent`, users who don't hold the consent (`consents` maps a user id to the
+ * consents it holds) are counted in `no_consent` and not in `queued`.
  * `createContext({ push: true })` uses one.
- * @param {{ kinds?: string[], audience?: boolean }} [opts] What `push:` declares in function.yaml.
+ * @param {{ kinds?: string[], audience?: boolean, consents?: Record<string, string[]> }} [opts]
+ *   What `push:` declares in function.yaml, and the consents each user id holds (none by default).
  */
-export function fakePush({ kinds, audience = false } = {}) {
+export function fakePush({ kinds, audience = false, consents = {} } = {}) {
   /** @type {Array<Record<string, any>>} */
   const sent = []
   /** @param {string} reason @param {string} [field] */
@@ -692,9 +695,13 @@ export function fakePush({ kinds, audience = false } = {}) {
       if (JSON.stringify({ title: msg.title, body: msg.body, data: msg.data, link: msg.link, platform: msg.platform }).length > 3993) {
         throw new FunctionError(413, 'payload_too_large', 'the message is over what a provider takes')
       }
+      if (msg.requires_consent !== undefined && typeof msg.requires_consent !== 'string') throw invalid('must be a consent name', 'requires_consent')
       sent.push(structuredClone(msg))
-      const users = msg.user !== undefined ? 1 : Array.isArray(msg.users) ? new Set(msg.users).size : null
-      return { send_id: `ps_test${sent.length}`, users, jobs: 1, queued: users, limited: users === null ? null : 0, no_devices: users === null ? null : 0 }
+      const named = msg.user !== undefined ? [msg.user] : Array.isArray(msg.users) ? [...new Set(msg.users)] : null
+      const users = named === null ? null : named.length
+      const noConsent = named === null || msg.requires_consent === undefined ? 0 : named.filter((u) => !(consents[u] ?? []).includes(msg.requires_consent)).length
+      const queued = users === null ? null : users - noConsent
+      return { send_id: `ps_test${sent.length}`, users, jobs: 1, queued, limited: users === null ? null : 0, no_devices: users === null ? null : 0, no_consent: users === null ? null : noConsent }
     },
     sent: () => structuredClone(sent),
   }

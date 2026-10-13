@@ -30,6 +30,7 @@ type pushAudienceDoc struct {
 	Locale        string     `bson:"locale,omitempty"`
 	CreatedBefore *time.Time `bson:"created_before,omitempty"`
 	CreatedAfter  *time.Time `bson:"created_after,omitempty"`
+	Consent       string     `bson:"consent,omitempty"`
 }
 
 type pushJobDoc struct {
@@ -43,19 +44,22 @@ type pushJobDoc struct {
 	Recipients []pushRecipientDoc `bson:"recipients,omitempty"`
 	Limited    int32              `bson:"limited,omitempty"`
 	NoDevices  int32              `bson:"no_devices,omitempty"`
+	NoConsent  int32              `bson:"no_consent,omitempty"`
+	// RequiresConsent is the consent a send needs its users to hold.
+	RequiresConsent string `bson:"requires_consent,omitempty"`
 }
 
 func pushToDoc(p *auth.PushJob) *pushJobDoc {
 	if p == nil {
 		return nil
 	}
-	d := &pushJobDoc{Kind: p.Kind, SendID: p.SendID, Users: p.Users, After: p.After, NextBatch: int32(p.NextBatch), Limited: int32(p.Limited), NoDevices: int32(p.NoDevices)}
+	d := &pushJobDoc{Kind: p.Kind, SendID: p.SendID, Users: p.Users, After: p.After, NextBatch: int32(p.NextBatch), Limited: int32(p.Limited), NoDevices: int32(p.NoDevices), NoConsent: int32(p.NoConsent), RequiresConsent: p.RequiresConsent}
 	if len(p.Messages) > 0 {
 		b, _ := json.Marshal(p.Messages)
 		d.Messages = string(b)
 	}
 	if a := p.Audience; a != nil {
-		ad := &pushAudienceDoc{All: a.All, Roles: a.Roles, EmailVerified: a.EmailVerified, Locale: a.Locale}
+		ad := &pushAudienceDoc{All: a.All, Roles: a.Roles, EmailVerified: a.EmailVerified, Locale: a.Locale, Consent: a.Consent}
 		if !a.CreatedBefore.IsZero() {
 			t := a.CreatedBefore
 			ad.CreatedBefore = &t
@@ -76,12 +80,12 @@ func pushFromDoc(d *pushJobDoc) *auth.PushJob {
 	if d == nil {
 		return nil
 	}
-	p := &auth.PushJob{Kind: d.Kind, SendID: d.SendID, Users: d.Users, After: d.After, NextBatch: int(d.NextBatch), Limited: int(d.Limited), NoDevices: int(d.NoDevices)}
+	p := &auth.PushJob{Kind: d.Kind, SendID: d.SendID, Users: d.Users, After: d.After, NextBatch: int(d.NextBatch), Limited: int(d.Limited), NoDevices: int(d.NoDevices), NoConsent: int(d.NoConsent), RequiresConsent: d.RequiresConsent}
 	if d.Messages != "" {
 		_ = json.Unmarshal([]byte(d.Messages), &p.Messages)
 	}
 	if a := d.Audience; a != nil {
-		pa := &auth.PushAudience{All: a.All, Roles: a.Roles, EmailVerified: a.EmailVerified, Locale: a.Locale}
+		pa := &auth.PushAudience{All: a.All, Roles: a.Roles, EmailVerified: a.EmailVerified, Locale: a.Locale, Consent: a.Consent}
 		if a.CreatedBefore != nil {
 			pa.CreatedBefore = a.CreatedBefore.UTC()
 		}
@@ -127,6 +131,7 @@ type pushSendDoc struct {
 	Queued      int32      `bson:"queued"`
 	Limited     int32      `bson:"limited"`
 	NoDevices   int32      `bson:"no_devices"`
+	NoConsent   int32      `bson:"no_consent"`
 	Sent        int32      `bson:"sent"`
 	Invalid     int32      `bson:"invalid"`
 	Failed      int32      `bson:"failed"`
@@ -141,7 +146,7 @@ func (d pushSendDoc) send() auth.PushSend {
 	p := auth.PushSend{
 		ID: d.ID, Kind: d.Kind, Sender: d.Sender, Users: int(d.Users), Planned: d.Planned, Batches: int(d.Batches),
 		Units: int(d.Units), BatchesDone: int(d.BatchesDone), UnitsDone: int(d.UnitsDone), Queued: int(d.Queued),
-		Limited: int(d.Limited), NoDevices: int(d.NoDevices), Sent: int(d.Sent), Invalid: int(d.Invalid), Failed: int(d.Failed),
+		Limited: int(d.Limited), NoDevices: int(d.NoDevices), NoConsent: int(d.NoConsent), Sent: int(d.Sent), Invalid: int(d.Invalid), Failed: int(d.Failed),
 		CreatedAt: d.CreatedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC(),
 	}
 	if d.CompletedAt != nil {
@@ -202,7 +207,7 @@ func (s *AuthStore) AddPushSend(ctx context.Context, id string, d auth.PushDelta
 				{Key: "$push", Value: bson.D{{Key: "batch_ids_done", Value: d.DoneBatch}}},
 				{Key: "$inc", Value: bson.D{
 					{Key: "batches_done", Value: int32(1)}, {Key: "units", Value: int32(d.Units)}, {Key: "queued", Value: int32(d.Queued)},
-					{Key: "limited", Value: int32(d.Limited)}, {Key: "no_devices", Value: int32(d.NoDevices)},
+					{Key: "limited", Value: int32(d.Limited)}, {Key: "no_devices", Value: int32(d.NoDevices)}, {Key: "no_consent", Value: int32(d.NoConsent)},
 				}},
 			})
 		if err != nil {
@@ -312,6 +317,9 @@ func (s *AuthStore) AudienceUserIDs(ctx context.Context, a auth.PushAudience, af
 	}
 	if a.Locale != "" {
 		filter = append(filter, bson.E{Key: "locale", Value: a.Locale})
+	}
+	if a.Consent != "" {
+		filter = append(filter, bson.E{Key: "consents." + a.Consent, Value: bson.D{{Key: "$exists", Value: true}}})
 	}
 	created := bson.D{}
 	if !a.CreatedBefore.IsZero() {

@@ -79,6 +79,8 @@ func (m *MemStore) AudienceUserIDs(_ context.Context, a auth.PushAudience, after
 			continue
 		case a.Locale != "" && u.Locale != a.Locale:
 			continue
+		case a.Consent != "" && u.Consents[a.Consent] == "":
+			continue
 		case !a.CreatedBefore.IsZero() && !u.CreatedAt.Before(a.CreatedBefore):
 			continue
 		case !a.CreatedAfter.IsZero() && !u.CreatedAt.After(a.CreatedAfter):
@@ -135,12 +137,14 @@ func (m *MemStore) AddPushSend(_ context.Context, id string, d auth.PushDelta, n
 			s.Queued += d.Queued
 			s.Limited += d.Limited
 			s.NoDevices += d.NoDevices
+			s.NoConsent += d.NoConsent
 		}
 	} else {
 		s.Units += d.Units
 		s.Queued += d.Queued
 		s.Limited += d.Limited
 		s.NoDevices += d.NoDevices
+		s.NoConsent += d.NoConsent
 	}
 	s.Sent += d.Sent
 	s.Invalid += d.Invalid
