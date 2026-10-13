@@ -78,7 +78,7 @@ func userCreate(c *userCtx) error {
 	body := map[string]any{"email": c.email}
 	noPassword := flag(c.cmd, "no-password")
 	if !noPassword {
-		p, err := readSecret(c.uio, true)
+		p, err := readSecret(c.uio, true, "Password")
 		if err != nil {
 			return err
 		}
@@ -124,7 +124,7 @@ func userList(c *userCtx) error {
 }
 
 func userSetPassword(c *userCtx) error {
-	p, err := readSecret(c.uio, true)
+	p, err := readSecret(c.uio, true, "Password")
 	if err != nil {
 		return err
 	}
@@ -423,9 +423,9 @@ func (a *app) users(ctx context.Context, realm string) (*auth.Users, error) {
 
 // readSecret reads a password from the terminal without echo, twice when
 // confirm is set; otherwise it reads the first line of stdin.
-func readSecret(uio userIO, confirm bool) (string, error) {
+func readSecret(uio userIO, confirm bool, prompt string) (string, error) {
 	if f, ok := uio.stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
-		fmt.Fprint(uio.stderr, "Password: ")
+		fmt.Fprint(uio.stderr, fmt.Sprintf("%s: ", prompt))
 		p1, err := term.ReadPassword(int(f.Fd()))
 		fmt.Fprintln(uio.stderr)
 		if err != nil {

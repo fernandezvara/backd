@@ -62,7 +62,7 @@ func login(realm, flagURL, email string, getenv func(string) string, uio userIO)
 		}
 		email = strings.TrimSpace(line)
 	}
-	pw, err := readSecret(uio, false)
+	pw, err := readSecret(uio, false, "Password")
 	if err != nil {
 		return err
 	}
