@@ -171,7 +171,7 @@ admin_cli() {
     -e DRILL_PASSWORD="${DRILL_PASSWORD:-}" provision sh -c \
     "printf 'dev-p4ssw0rd!\n' | backd login --realm blog --email ops@example.com >/dev/null && $1"
 }
-key=$(admin_cli 'backd apikey create --realm blog --name svc-test --expires 1d' 2>/dev/null | grep -o 'bdk_[A-Za-z0-9_-]*')
+key=$(admin_cli "printf 'dev-p4ssw0rd!\n' | backd apikey create --realm blog --name svc-test --expires 1d" 2>/dev/null | grep -o 'bdk_[A-Za-z0-9_-]*')
 admin_cli 'backd audit --realm blog --limit 20' > "$work/audit.txt" 2>&1 || true
 check "the audit trail records the bootstrap and the key" \
   sh -c "grep -q 'realm.bootstrap.*cli:bootstrap' '$work/audit.txt' && grep -q 'apikey.create.*key:svc-test' '$work/audit.txt'"
@@ -186,7 +186,7 @@ echo "--- functions: executor, egress and worker (network placement, F4)"
 # Functions -> "Egress: the network allowlist, completed").
 printf 'dev-p4ssw0rd!5\n' | compose exec -T backd /backd bootstrap --realm netprobe --email np@example.com >/dev/null 2>&1
 netprobe_key=$(compose run --rm -T --no-deps -e BACKD_URL=http://backd-admin:8080 -e BACKD_CREDENTIALS=/tmp/np-credentials provision sh -c \
-  "printf 'dev-p4ssw0rd!5\n' | backd login --realm netprobe --email np@example.com >/dev/null && backd apikey create --realm netprobe --name probe --expires 1d" \
+  "printf 'dev-p4ssw0rd!5\n' | backd login --realm netprobe --email np@example.com >/dev/null && printf 'dev-p4ssw0rd!5\n' | backd apikey create --realm netprobe --name probe --expires 1d" \
   2>/dev/null | grep -o 'bdk_[A-Za-z0-9_-]*')
 resp=$(curl -s --cacert "$ca" -X POST -H "Authorization: Bearer $netprobe_key" -H 'Content-Type: application/json' -d '{}' "$base/v1/netprobe/app/_func/network_probe")
 check "layer 1: an undeclared host is refused" sh -c "echo '$resp' | grep -q '\"test\":\"unlisted-host\",\"reached\":false'"

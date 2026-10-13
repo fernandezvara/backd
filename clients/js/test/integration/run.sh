@@ -27,7 +27,8 @@ key() {
   printf 'dev-p4ssw0rd!\n' | compose exec -T backd /backd bootstrap --realm "$1" --email ops@example.com --role ops >/dev/null 2>"$err" ||
     grep -q 'already has an administrator' "$err" || { cat "$err" >&2; return 1; }
   printf 'dev-p4ssw0rd!\n' | compose exec -T backd /backd login --realm "$1" --url http://localhost:8080 --email ops@example.com >/dev/null 2>"$err" || { cat "$err" >&2; return 1; }
-  out=$(compose exec -T backd /backd apikey create --realm "$1" --name "tests-$run_id" --role admin 2>"$err") || { cat "$err" >&2; return 1; }
+  # (A key is made by a person who proves it is them again: the password, on standard input.)
+  out=$(printf 'dev-p4ssw0rd!\n' | compose exec -T backd /backd apikey create --realm "$1" --name "tests-$run_id" --role admin 2>"$err") || { cat "$err" >&2; return 1; }
   rm -f "$err"
   echo "$out" | grep -o 'bdk_[A-Za-z0-9_-]*' | head -1
 }
