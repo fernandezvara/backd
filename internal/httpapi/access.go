@@ -208,7 +208,7 @@ func (d *documents) accessFor(r *http.Request) access {
 	if caller.User != nil {
 		u := caller.User.User
 		mfa, methods := caller.SignInMethods()
-		a.values.User = &rules.User{ID: u.ID, Email: u.Email, EmailVerified: u.EmailVerified, Roles: u.Roles, MFA: mfa, Methods: methods}
+		a.values.User = &rules.User{ID: u.ID, Email: u.Email, EmailVerified: u.EmailVerified, Roles: u.Roles, MFA: mfa, Methods: methods, Consents: u.Consents}
 	}
 	return a
 }

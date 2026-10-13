@@ -1,8 +1,11 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 	"sort"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/fernandezvara/backd/internal/auth"
 )
@@ -110,4 +113,46 @@ func consentStateJSON(svc *auth.Users, u auth.User) map[string]any {
 		required = append(required, map[string]string{"name": ref.Name, "version": ref.Version})
 	}
 	return map[string]any{"consents": held, "to_accept": required}
+}
+
+// consentHistoryJSON is a user's records as they see them: what they accepted or withdrew,
+// when and how, never the address or the text's hash.
+func consentHistoryJSON(recs []auth.ConsentRecord) []map[string]any {
+	out := make([]map[string]any, 0, len(recs))
+	for _, r := range recs {
+		out = append(out, map[string]any{
+			"consent": r.Consent, "version": r.Version, "action": r.Action, "method": r.Method,
+			"locale": r.Locale, "at": formatTime(r.At),
+		})
+	}
+	return out
+}
+
+// consentsGet handles GET /_auth/consents: what the user holds, what is still to accept
+// and their history, oldest first.
+func (a *authAPI) consentsGet(w http.ResponseWriter, r *http.Request) {
+	svc := usersOf(r)
+	u := principalOf(r).User
+	hist, err := svc.ConsentHistory(r.Context(), u.ID)
+	if err != nil {
+		authError(w, r, err)
+		return
+	}
+	out := consentStateJSON(svc, u)
+	out["history"] = consentHistoryJSON(hist)
+	writeJSON(w, http.StatusOK, out)
+}
+
+// consentsWithdraw handles DELETE /_auth/consents/{name}: the user withdraws an optional consent.
+func (a *authAPI) consentsWithdraw(w http.ResponseWriter, r *http.Request) {
+	svc := usersOf(r)
+	u, err := svc.WithdrawConsent(r.Context(), principalOf(r).User, chi.URLParam(r, "name"), auth.ConsentContext{IP: clientIP(r), UserAgent: r.UserAgent()})
+	switch {
+	case errors.Is(err, auth.ErrUnknownConsent):
+		writeError(w, r, http.StatusNotFound, codeNotFound, "consent not found")
+	case err != nil:
+		authError(w, r, err)
+	default:
+		writeJSON(w, http.StatusOK, consentStateJSON(svc, u))
+	}
 }

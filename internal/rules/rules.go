@@ -49,6 +49,8 @@ type User struct {
 	// first factor and, with MFA, "totp" or "recovery". API keys are ["key"].
 	MFA     bool     `expr:"mfa"`
 	Methods []string `expr:"methods"`
+	// Consents maps each consent the user holds to the version they accepted.
+	Consents map[string]string `expr:"consents"`
 }
 
 // Schema describes what the rules of one collection may refer to.
@@ -71,6 +73,8 @@ type Schema struct {
 	DateField func(path string) bool
 	// Roles are the role names declared in realm.yaml.
 	Roles []string
+	// Consents are the consent names declared in realm.yaml, for hasConsent.
+	Consents []string
 }
 
 // Set is a collection's compiled rules. A nil rule denies the operation.
@@ -154,6 +158,23 @@ func hasRole(params ...any) (any, error) {
 
 var hasRoleFunc = expr.Function("hasRole", hasRole, new(func(*User, ...string) bool))
 
+// hasConsent is true when user holds any version of every consent named; false for
+// anonymous callers.
+func hasConsent(params ...any) (any, error) {
+	u, _ := params[0].(*User)
+	if u == nil {
+		return false, nil
+	}
+	for _, c := range params[1:] {
+		if u.Consents[c.(string)] == "" {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+var hasConsentFunc = expr.Function("hasConsent", hasConsent, new(func(*User, ...string) bool))
+
 // CompileInvoke compiles and checks a function's invoke rule. It may use
 // `user` and hasRole with the realm's roles; there is no document.
 func CompileInvoke(src string, roles []string) (*Rule, error) {
@@ -173,7 +194,7 @@ func compile(op Op, key, src string, schema Schema) (*Rule, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", where, err)
 	}
-	prog, err := expr.Compile(src, expr.Env(compileEnv()), hasRoleFunc, expr.AsBool())
+	prog, err := expr.Compile(src, expr.Env(compileEnv()), hasRoleFunc, hasConsentFunc, expr.AsBool())
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", where, err)
 	}

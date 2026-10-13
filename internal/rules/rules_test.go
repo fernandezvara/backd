@@ -21,6 +21,7 @@ var testSchema = Schema{
 	},
 	ArrayField: func(p string) bool { return p == "members" },
 	Roles:      []string{"admin", "editor"},
+	Consents:   []string{"terms", "marketing"},
 }
 
 func TestParseValid(t *testing.T) {

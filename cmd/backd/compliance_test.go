@@ -55,3 +55,29 @@ func TestConsentsNotify(t *testing.T) {
 	c.expect(0, `"queued":3`, "", "consents", "notify", "--realm", "acme", "--consent", "terms", "--url", srv.URL, "--json")
 	c.expect(2, "", "consent", "consents", "notify", "--realm", "acme", "--url", srv.URL)
 }
+
+func TestConsentsRecord(t *testing.T) {
+	var got map[string]any
+	var path string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "GET" && r.URL.Path == "/v1/acme/_admin/users":
+			_, _ = w.Write([]byte(`{"items":[{"id":"u1","email":"` + r.URL.Query().Get("email") + `"}]}`))
+		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/consents"):
+			path = r.URL.Path
+			_ = json.NewDecoder(r.Body).Decode(&got)
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"consent":"marketing","version":"1","action":"accepted","method":"admin","evidence":"form 17","at":"t"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	c := &cliEnv{t: t, env: map[string]string{"BACKD_CREDENTIALS": filepath.Join(t.TempDir(), "backd", "credentials"), "BACKD_API_KEY": "bdk_x"}}
+	c.expect(0, "recorded: accepted marketing 1 for ada@example.com (evidence: form 17)", "", "consents", "record",
+		"--realm", "acme", "--email", "ada@example.com", "--consent", "marketing", "--version", "1", "--action", "accepted", "--evidence", "form 17", "--url", srv.URL)
+	if path != "/v1/acme/_admin/users/u1/consents" || got["evidence"] != "form 17" || got["version"] != "1" {
+		t.Errorf("request: %s %v", path, got)
+	}
+	c.expect(2, "", "evidence", "consents", "record", "--realm", "acme", "--email", "ada@example.com", "--consent", "marketing", "--action", "withdrawn", "--url", srv.URL)
+}

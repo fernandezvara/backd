@@ -72,6 +72,8 @@ type UserDef struct {
 	// how it was created (default ["password"], with "totp" added when MFA is true).
 	MFA     bool     `yaml:"mfa"`
 	Methods []string `yaml:"methods"`
+	// Consents are the consents the user holds: name to the version accepted.
+	Consents map[string]string `yaml:"consents"`
 }
 
 // Test groups the assertions of one caller.
@@ -188,7 +190,7 @@ func (r *runner) load(f File) {
 				methods = append(methods, "totp")
 			}
 		}
-		r.users[name] = &rules.User{ID: u.ID, Email: u.Email, EmailVerified: verified, Roles: append([]string{}, u.Roles...), MFA: u.MFA, Methods: methods}
+		r.users[name] = &rules.User{ID: u.ID, Email: u.Email, EmailVerified: verified, Roles: append([]string{}, u.Roles...), MFA: u.MFA, Methods: methods, Consents: u.Consents}
 	}
 	for _, name := range slices.Sorted(maps.Keys(f.Documents)) {
 		if doc, err := r.stored(name, f.Documents[name]); err != nil {

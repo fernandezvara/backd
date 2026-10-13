@@ -66,6 +66,8 @@ func (a *authAPI) routes(r chi.Router) {
 			r.Post("/logout-all", a.logoutAll)
 			r.Get("/me", a.me)
 			r.With(json).Post("/consents", a.acceptConsents)
+			r.Get("/consents", a.consentsGet)
+			r.Delete("/consents/{name}", a.consentsWithdraw)
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(a.requireSession)

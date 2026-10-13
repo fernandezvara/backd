@@ -373,6 +373,7 @@ func loadRules(c *Collection, settings RealmSettings, dir string) error {
 		ArrayField:    c.ArrayField,
 		DateField:     c.DateField,
 		Roles:         roles,
+		Consents:      settings.ConsentNames(),
 	})
 	if len(errs) > 0 {
 		for i, e := range errs {

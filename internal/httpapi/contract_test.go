@@ -1441,6 +1441,43 @@ func TestContract(t *testing.T) {
 		f.svc.Settings.Consents = saved
 	}
 
+	// A user's own consents: read, withdraw, and what can't be withdrawn.
+	{
+		req("GET", "/v1/acme/_auth/consents", "", nil, 401)
+		mine := req("GET", "/v1/acme/_auth/consents", "", ada, 200)
+		if mine["consents"].(map[string]any)["marketing"] != "1" {
+			t.Errorf("consents = %v", mine)
+		}
+		req("DELETE", "/v1/acme/_auth/consents/marketing", "", nil, 401)
+		req("DELETE", "/v1/acme/_auth/consents/nope", "", ada, 404)
+		req("DELETE", "/v1/acme/_auth/consents/marketing", "", ada, 200)
+		req("DELETE", "/v1/acme/_auth/consents/marketing", "", ada, 200) // idempotent
+		saved := f.svc.Settings.Consents
+		required := map[string]*registry.Consent{"marketing": {Name: "marketing", Required: true, Current: "1",
+			Versions: saved["marketing"].Versions, Texts: saved["marketing"].Texts}}
+		f.svc.Settings.Consents = required
+		req("DELETE", "/v1/acme/_auth/consents/marketing", "", ada, 409)
+		f.svc.Settings.Consents = saved
+	}
+	// An administrator records a consent given on paper, and reads a user's history.
+	{
+		path := ad + "/users/" + f.adaID + "/consents"
+		req("GET", path, "", nil, 401)
+		req("GET", path, "", ada, 403)
+		req("GET", ad+"/users/nobody/consents", "", key, 404)
+		req("POST", path, `{"consent": "marketing", "version": "1", "action": "accepted", "evidence": "form 17"}`, nil, 401)
+		req("POST", path, `{"consent": "marketing", "version": "1", "action": "accepted", "evidence": "form 17"}`, ada, 403)
+		req("POST", ad+"/users/nobody/consents", `{"consent": "marketing", "version": "1", "action": "accepted", "evidence": "x"}`, key, 404)
+		req("POST", path, `{"consent": "marketing", "version": "1", "action": "accepted", "evidence": ""}`, key, 400)
+		rec := req("POST", path, `{"consent": "marketing", "version": "1", "action": "accepted", "evidence": "form 17"}`, key, 201)
+		if rec["method"] != "admin" || rec["evidence"] != "form 17" {
+			t.Errorf("record = %v", rec)
+		}
+		hist := req("GET", path, "", key, 200)
+		if hist["consents"].(map[string]any)["marketing"] != "1" || len(hist["history"].([]any)) == 0 {
+			t.Errorf("history = %v", hist)
+		}
+	}
 	// Asking users to review a consent: a run, a bad name, and the right to do it.
 	req("POST", ad+"/consents/notify", `{"consent": "marketing"}`, nil, 401)
 	req("POST", ad+"/consents/notify", `{"consent": "marketing"}`, ada, 403)

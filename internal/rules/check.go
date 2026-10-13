@@ -66,6 +66,23 @@ func check(r *Rule, schema Schema) error {
 		}
 	})
 
+	// Declared consent names.
+	walk(r.tree, func(n ast.Node) {
+		if c, ok := n.(*ast.CallNode); ok {
+			if id, ok := c.Callee.(*ast.IdentifierNode); ok && id.Value == "hasConsent" {
+				for _, a := range c.Arguments[1:] {
+					s, ok := a.(*ast.StringNode)
+					switch {
+					case !ok:
+						add("hasConsent: consent names must be string literals")
+					case !slices.Contains(schema.Consents, s.Value):
+						add("consent %q is not declared in realm.yaml", s.Value)
+					}
+				}
+			}
+		}
+	})
+
 	// Every user field access must be guarded by a nil check.
 	checkGuards(r.tree, false, func(n ast.Node) {
 		add("%s needs a guard for anonymous callers, e.g. `user != nil && %s`", n.String(), n.String())
@@ -181,8 +198,8 @@ func checkGuards(n ast.Node, guarded bool, report func(ast.Node)) {
 			return
 		}
 	case *ast.CallNode:
-		// hasRole(user, …) is false for anonymous callers: no guard needed.
-		if id, ok := n.Callee.(*ast.IdentifierNode); ok && id.Value == "hasRole" {
+		// hasRole(user, …) and hasConsent(user, …) are false for anonymous callers: no guard needed.
+		if id, ok := n.Callee.(*ast.IdentifierNode); ok && (id.Value == "hasRole" || id.Value == "hasConsent") {
 			for _, a := range n.Arguments[1:] {
 				checkGuards(a, guarded, report)
 			}

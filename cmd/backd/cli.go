@@ -395,6 +395,17 @@ func registerRemote(cfg *kli.Config) {
 		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
 		boolean(cc, "json", "print the result as JSON")
 	})
+	cons.SubCommand("record").ShortHelp("record a consent given or withdrawn outside the app").
+		LongHelp("Records, for one user, a consent they gave or withdrew on paper, by phone or in a way the app can't see.\nThe record has the method `admin` and the evidence, which is required: a ticket, a form number, anything that\nproves it. Use --action accepted with --version, or --action withdrawn. Needs the users area with write access.\nAudited as user.consent_recorded. " + adminAPINote).
+		Func(act("consents record", consentsRecord)).Config(func(cc *kli.CommandConfig) {
+		required(cc, "realm", "the realm of the user")
+		required(cc, "email", "the user's email address")
+		required(cc, "consent", "the consent's name")
+		required(cc, "action", "accepted or withdrawn")
+		required(cc, "evidence", "the reference that proves it (a ticket, a form number)")
+		optional(cc, "version", "the version accepted (for accepted)")
+		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+	})
 	comp := cfg.Command("compliance").ShortHelp("privacy: what a user's data export covers")
 	comp.SubCommand("scope").ShortHelp("show what a user's data export takes from each collection").
 		LongHelp("Asks the running backd for the realm's personal data scope: per collection whether the documents a user owns\n(and those where they appear in an erase policy's `pull` field, and the files they hold) are exported, which fields\nwhen only some are, and the reason for every exclusion (`personal_data` in collection.yaml), then the system data\nan export adds and what it never holds. Needs the config area (read is enough). " + adminAPINote).

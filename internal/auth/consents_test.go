@@ -210,3 +210,31 @@ func TestNotifyConsentUpdated(t *testing.T) {
 		t.Errorf("unknown consent: %+v %v", res, err)
 	}
 }
+
+func TestAdminRecordsAConsentWithEvidence(t *testing.T) {
+	ctx := context.Background()
+	svc, store, _ := consentUsers(t)
+	ada := mustCreate(t, svc, "ada@example.com")
+
+	if _, err := svc.RecordConsentFor(ctx, ada.ID, ConsentInput{Consent: "terms", Version: "2", Action: ConsentAccepted, Evidence: "  "}); err == nil {
+		t.Error("a record without evidence was accepted")
+	}
+	rec, err := svc.RecordConsentFor(ctx, ada.ID, ConsentInput{Consent: "terms", Version: "2", Action: ConsentAccepted, Method: ConsentMethodAPI, Evidence: "paper form 17"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.Method != ConsentMethodAdmin || rec.Evidence != "paper form 17" {
+		t.Errorf("record = %+v", rec)
+	}
+	u, _ := store.UserByID(ctx, ada.ID)
+	if u.Consents["terms"] != "2" {
+		t.Errorf("summary = %v", u.Consents)
+	}
+	trail, _, err := svc.AuditTrail(ctx, AuditFilter{Action: AuditConsentRecorded, Limit: 10})
+	if err != nil || len(trail) != 1 || trail[0].Details["evidence"] != "paper form 17" {
+		t.Errorf("audit = %+v %v", trail, err)
+	}
+	if _, err := svc.RecordConsentFor(ctx, "nobody", ConsentInput{Consent: "terms", Version: "2", Action: ConsentAccepted, Evidence: "x"}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("unknown user: %v", err)
+	}
+}

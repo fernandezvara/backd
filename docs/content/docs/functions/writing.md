@@ -51,7 +51,7 @@ CONFIG_DIR=./config backd template function --realm blog --database main --name 
 export default async function handler(ctx) {
   ctx.input            // the request body (sync/async only; see ctx.request for webhook)
   ctx.request           // webhook only: { body, headers } — see Webhooks
-  ctx.user             // { id, email, email_verified, roles, mfa, methods }, or null
+  ctx.user             // { id, email, email_verified, roles, mfa, methods, consents }, or null
   ctx.idempotencyKey   // the Idempotency-Key header, or null
   ctx.requestId        // the request's X-Request-ID
   ctx.secrets.STRIPE_KEY // a declared secret (see Secrets)
@@ -80,7 +80,7 @@ export default async function handler(ctx) {
 
 A function never receives the caller's session token, and nothing in the request can choose who the function acts as. `backd` authenticates the request first, exactly as for any other route, and only then runs the function (after the [`invoke` rule](../reference/#invoke-rules) allows the call). From that authenticated caller it builds two things, which the function gets and can't change:
 
-- **`ctx.user`**: `{ id, email, email_verified, roles, mfa, methods }` of the signed-in user, read from the database when the call starts; `mfa` and `methods` say how the session was made (a second factor was used; the first factor and the second) and are `false` and `["key"]` for an API key. It is `null` when there is no user: an anonymous call, or an API key that isn't acting on behalf of anyone.
+- **`ctx.user`**: `{ id, email, email_verified, roles, mfa, methods, consents }` of the signed-in user, read from the database when the call starts; `consents` maps each [consent](../../auth/consents/) the user holds to the version they accepted (an empty object for none); `mfa` and `methods` say how the session was made (a second factor was used; the first factor and the second) and are `false` and `["key"]` for an API key. It is `null` when there is no user: an anonymous call, or an API key that isn't acting on behalf of anyone.
 - **`ctx.db`**: a client that acts as the caller. Its credential is a short-lived token signed by `backd` with `BACKD_CALLBACK_KEY`, naming the realm, the function and the caller's user or API key. It works only on the internal listener (the public API refuses it), and stops working at the function's deadline plus 5 seconds.
 
 What that means for each kind of call:

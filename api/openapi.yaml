@@ -1236,6 +1236,31 @@ paths:
         "429": { $ref: "#/components/responses/TooManyRequests" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_auth/consents/{name}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { name: name, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [auth]
+      summary: Withdraw an optional consent
+      description: |
+        Records the withdrawal (method `api`) and removes the consent from the user. As easy as
+        giving it, and idempotent. A required consent answers `409 consent_required_for_account`:
+        without it the account can't be used, so the way out is deleting the account.
+      operationId: withdrawConsent
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The user's consents after the withdrawal.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConsentState" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_auth/consents/accept:
     parameters: [{ $ref: "#/components/parameters/realm" }]
     post:
@@ -1266,6 +1291,42 @@ paths:
 
   /v1/{realm}/_auth/consents:
     parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [auth]
+      summary: The user's consents and history
+      description: |
+        What the signed-in user holds, the required consents still to accept, and their
+        history (oldest first): what they accepted or withdrew, when and how. It stays open
+        past a `reaccept_by` date.
+      operationId: getConsents
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The consents.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/ConsentState" }
+                  - type: object
+                    required: [history]
+                    properties:
+                      history:
+                        type: array
+                        items:
+                          type: object
+                          additionalProperties: false
+                          required: [consent, version, action, method, locale, at]
+                          properties:
+                            consent: { type: string }
+                            version: { type: string }
+                            action: { type: string, enum: [accepted, withdrawn] }
+                            method: { type: string, enum: [signup, prompt, api, admin] }
+                            locale: { type: string }
+                            at: { $ref: "#/components/schemas/Timestamp" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        default: { $ref: "#/components/responses/Error" }
     post:
       tags: [auth]
       summary: Accept consents
@@ -2337,6 +2398,84 @@ paths:
                   items:
                     type: array
                     items: { $ref: "#/components/schemas/Identity" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/users/{id}/consents:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    get:
+      tags: [admin]
+      summary: A user's consents and their history
+      description: |
+        The version of each consent the user holds, and every record of their history, oldest
+        first, with the hash of the text shown and the evidence of records made by an
+        administrator. Needs the `users` area.
+      operationId: adminUserConsents
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The consents.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [consents, history]
+                properties:
+                  consents: { $ref: "#/components/schemas/ConsentsGiven" }
+                  history:
+                    type: array
+                    items: { $ref: "#/components/schemas/AdminConsentRecord" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [admin]
+      summary: Record a consent given or withdrawn outside the app
+      description: |
+        For consents given on paper or by phone: the record has the method `admin` and the
+        `evidence` (a ticket, a form number), which is required, and is audited as
+        `user.consent_recorded`. `version` is required for `accepted` and must be a version
+        with a text. Needs the `users` area with write access.
+      operationId: adminRecordConsent
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [consent, action, evidence]
+              properties:
+                consent: { type: string }
+                version: { type: string }
+                action: { type: string, enum: [accepted, withdrawn] }
+                evidence: { type: string, maxLength: 500 }
+      responses:
+        "201":
+          description: The record.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [consent, version, action, method, evidence, at]
+                properties:
+                  consent: { type: string }
+                  version: { type: string }
+                  action: { type: string }
+                  method: { const: admin }
+                  evidence: { type: string }
+                  at: { $ref: "#/components/schemas/Timestamp" }
+        "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -6272,9 +6411,22 @@ components:
               name: { type: string }
               version: { type: string }
 
-    ConsentState:
+    AdminConsentRecord:
       type: object
       additionalProperties: false
+      required: [consent, version, action, method, locale, text_hash, at]
+      properties:
+        consent: { type: string }
+        version: { type: string }
+        action: { type: string, enum: [accepted, withdrawn] }
+        method: { type: string, enum: [signup, prompt, api, admin] }
+        locale: { type: string }
+        text_hash: { type: string, description: "SHA-256 of the text shown; empty for a withdrawal." }
+        evidence: { type: string }
+        at: { $ref: "#/components/schemas/Timestamp" }
+
+    ConsentState:
+      type: object
       required: [consents, to_accept]
       properties:
         consents: { $ref: "#/components/schemas/ConsentsGiven" }

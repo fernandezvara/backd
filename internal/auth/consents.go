@@ -24,6 +24,10 @@ const (
 	ConsentMethodAdmin  = "admin"
 )
 
+// EmailNoConsent is the status a gated email or push answers for a user who doesn't hold
+// the consent it requires.
+const EmailNoConsent = "no_consent"
+
 // AuditConsentRecorded is the audit action of an administrator recording a consent for a user.
 const AuditConsentRecorded = "user.consent_recorded" // details: consent, version, action, evidence
 
@@ -206,4 +210,54 @@ func (s *Users) NotifyConsentUpdated(ctx context.Context, consent string) (Conse
 	}
 	s.Audit(ctx, AuditConsentsNotified, "consent:"+consent, map[string]any{"version": c.Current, "matched": out.Matched, "queued": out.Queued, "limited": out.Limited})
 	return out, nil
+}
+
+// WithdrawConsent records the withdrawal of an optional consent by the user. A required
+// consent can't be withdrawn without deleting the account (ErrConsentRequiredForAccount).
+func (s *Users) WithdrawConsent(ctx context.Context, u User, consent string, from ConsentContext) (User, error) {
+	c := s.Settings.Consents[consent]
+	if c == nil {
+		return u, fmt.Errorf("%w: %q", ErrUnknownConsent, consent)
+	}
+	if c.Required {
+		return u, ErrConsentRequiredForAccount
+	}
+	if u.Consents[consent] == "" {
+		return u, nil // nothing to withdraw: as easy as giving, and as idempotent
+	}
+	if _, err := s.RecordConsent(ctx, u.ID, ConsentInput{
+		Consent: consent, Action: ConsentWithdrawn, Method: ConsentMethodAPI, Locale: u.Locale, IP: from.IP, UserAgent: from.UserAgent,
+	}); err != nil {
+		return u, err
+	}
+	next := mergeConsents(u.Consents, nil)
+	delete(next, consent)
+	u.Consents = next
+	return u, nil
+}
+
+// RecordConsentFor records a consent given or withdrawn outside the app (on paper, by phone)
+// by an administrator, with the reference that proves it. Audited.
+func (s *Users) RecordConsentFor(ctx context.Context, userID string, in ConsentInput) (ConsentRecord, error) {
+	in.Method = ConsentMethodAdmin
+	if strings.TrimSpace(in.Evidence) == "" {
+		return ConsentRecord{}, &InvalidConsentsError{Reasons: []string{"evidence: is required: the reference that proves the consent (a ticket, a form number)"}}
+	}
+	if len(in.Evidence) > 500 {
+		return ConsentRecord{}, &InvalidConsentsError{Reasons: []string{"evidence: at most 500 characters"}}
+	}
+	u, err := s.Store.UserByID(ctx, userID)
+	if err != nil {
+		return ConsentRecord{}, err
+	}
+	if !u.ErasedAt.IsZero() {
+		return ConsentRecord{}, ErrNotFound
+	}
+	in.Locale = s.LocaleOf(u)
+	rec, err := s.RecordConsent(ctx, userID, in)
+	if err != nil {
+		return ConsentRecord{}, err
+	}
+	s.Audit(ctx, AuditConsentRecorded, userTarget(userID), map[string]any{"consent": rec.Consent, "version": rec.Version, "action": rec.Action, "evidence": rec.Evidence})
+	return rec, nil
 }

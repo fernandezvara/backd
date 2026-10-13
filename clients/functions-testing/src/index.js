@@ -563,7 +563,7 @@ export class FunctionError extends Error {
 /**
  * @typedef {object} ContextOptions
  * @property {any} [input]              ctx.input.
- * @property {{id: string, email: string, email_verified?: boolean, roles?: string[]} | null} [user] ctx.user.
+ * @property {{id: string, email: string, email_verified?: boolean, roles?: string[], consents?: Record<string, string>} | null} [user] ctx.user.
  * @property {Record<string, string>} [secrets]  ctx.secrets.
  * @property {string | null} [idempotencyKey]
  * @property {string} [requestId]
@@ -575,7 +575,10 @@ export class FunctionError extends Error {
  */
 
 /** The kinds backd sends itself: a function can't send them. */
-const SYSTEM_EMAIL_KINDS = ['verify-email', 'reset-password', 'account-exists', 'password-changed', 'welcome', 'change-email', 'email-changed', 'invitation']
+const SYSTEM_EMAIL_KINDS = [
+  'verify-email', 'reset-password', 'account-exists', 'password-changed', 'welcome', 'change-email', 'email-changed', 'invitation',
+  'security-notice', 'mfa-failed', 'reauth-code', 'mfa-reset', 'magic-link', 'no-account', 'consent-updated',
+]
 
 /**
  * An error `ctx.email.send` throws when one of the realm's caps is reached
@@ -600,10 +603,13 @@ export class EmailLimitError extends Error {
  * function may write to, so a function that takes the recipient or the
  * text from its input is a spam relay; test that yours doesn't (see the
  * docs, Functions -> Email). `sent()` lists what was sent.
+ * With `requires_consent` (a `to_user` only) the fake answers `{ status: 'no_consent' }` and
+ * records nothing, unless `consents` says the user holds it.
  * `createContext({ email: true })` uses one.
- * @param {{ perInvocation?: number, recipientsPerMessage?: number }} [opts] The realm's `email.limits` (defaults 50 and 10).
+ * @param {{ perInvocation?: number, recipientsPerMessage?: number, consents?: Record<string, string[]> }} [opts]
+ *   The realm's `email.limits` (defaults 50 and 10), and the consents each user id holds (none by default).
  */
-export function fakeEmail({ perInvocation = 50, recipientsPerMessage = 10 } = {}) {
+export function fakeEmail({ perInvocation = 50, recipientsPerMessage = 10, consents = {} } = {}) {
   /** @type {Array<Record<string, any>>} */
   const sent = []
   let attempts = 0
@@ -621,6 +627,10 @@ export function fakeEmail({ perInvocation = 50, recipientsPerMessage = 10 } = {}
       const addresses = [...(msg.to ?? []), ...(msg.cc ?? []), ...(msg.bcc ?? [])]
       if (!addresses.every((a) => typeof a === 'string' && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a))) throw invalid('to, cc and bcc are arrays of email addresses')
       if (addresses.length + (hasUser ? 1 : 0) > recipientsPerMessage) throw invalid(`at most ${recipientsPerMessage} recipients per message`)
+      if (msg.requires_consent !== undefined) {
+        if (typeof msg.requires_consent !== 'string' || !hasUser) throw invalid('requires_consent needs to_user: consents belong to users, not to addresses')
+        if (!(consents[msg.to_user] ?? []).includes(msg.requires_consent)) return { status: 'no_consent' }
+      }
       if (++attempts > perInvocation) throw new EmailLimitError(`too many emails (invocation limit of ${perInvocation})`)
       sent.push(structuredClone(msg))
       return { id: `email-job-${sent.length}`, status: 'queued' }

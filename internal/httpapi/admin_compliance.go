@@ -88,3 +88,55 @@ func (a *adminAPI) notifyConsent(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"consent": res.Consent, "version": res.Version, "matched": res.Matched, "queued": res.Queued, "limited": res.Limited})
 	}
 }
+
+// userConsents answers GET /users/{id}/consents: what the user holds and their whole
+// history, with the evidence of the records an administrator made.
+func (a *adminAPI) userConsents(w http.ResponseWriter, r *http.Request) {
+	svc, u := usersOf(r), adminUserOf(r)
+	hist, err := svc.ConsentHistory(r.Context(), u.ID)
+	if err != nil {
+		adminError(w, r, err)
+		return
+	}
+	items := make([]map[string]any, 0, len(hist))
+	for _, rec := range hist {
+		item := map[string]any{
+			"consent": rec.Consent, "version": rec.Version, "action": rec.Action, "method": rec.Method,
+			"locale": rec.Locale, "text_hash": rec.TextHash, "at": formatTime(rec.At),
+		}
+		if rec.Evidence != "" {
+			item["evidence"] = rec.Evidence
+		}
+		items = append(items, item)
+	}
+	held := map[string]string{}
+	for k, v := range u.Consents {
+		held[k] = v
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"consents": held, "history": items})
+}
+
+// recordUserConsent answers POST /users/{id}/consents: an administrator records a consent
+// the user gave, or withdrew, outside the app, with the evidence for it (method admin).
+func (a *adminAPI) recordUserConsent(w http.ResponseWriter, r *http.Request) {
+	obj, ok := readObject(w, r)
+	if !ok {
+		return
+	}
+	f, ok := fields(w, r, obj, map[string]string{"consent": "string", "version": "string?", "action": "string", "evidence": "string"})
+	if !ok {
+		return
+	}
+	version, _ := f["version"].(string)
+	rec, err := usersOf(r).RecordConsentFor(r.Context(), adminUserOf(r).ID, auth.ConsentInput{
+		Consent: f["consent"].(string), Version: version, Action: f["action"].(string), Evidence: f["evidence"].(string),
+	})
+	if err != nil {
+		authError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"consent": rec.Consent, "version": rec.Version, "action": rec.Action, "method": rec.Method,
+		"evidence": rec.Evidence, "at": formatTime(rec.At),
+	})
+}

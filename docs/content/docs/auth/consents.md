@@ -130,6 +130,39 @@ backd consents notify --realm shelf --consent terms
 
 It queues the `consent-updated` [email](../../functions/email/) (the consent's name is in `.Data.event`) for the users who accepted an older version, and for a required consent those who accepted none. The [email limits](../../functions/email/) apply, so a big realm may need to run it again later. Audited as `consents.notify`.
 
+## Withdrawing
+
+Withdrawing is as easy as giving. A signed-in user can see what they hold and withdraw an optional consent:
+
+```http
+GET /v1/shelf/_auth/consents
+DELETE /v1/shelf/_auth/consents/marketing
+```
+
+`GET` answers what the user holds, what is still `to_accept` and their `history`; `DELETE` records `withdrawn` (method `api`) and answers the same state. Withdrawing twice changes nothing. A **required** consent answers `409 consent_required_for_account`: without it the account can't be used, so the way out is [deleting the account](../sessions/).
+
+## Using consents
+
+- **In rules:** `user.consents` maps each consent to the version the user holds, and `hasConsent(user, 'marketing')` says whether they hold it ([rules](../rules/#what-rules-can-use)). `hasConsent` is false for anonymous callers.
+- **In functions:** `ctx.user.consents`.
+- **In emails:** `ctx.email.send({ …, requires_consent: "marketing" })` skips users who don't hold it and answers `{ status: "no_consent" }`, so a newsletter function stops reaching people who withdrew even when its code forgets to check ([email](../../functions/email/)).
+
+```yaml
+rules:
+  read: document.published || hasConsent(user, 'marketing')
+```
+
+## Recording what the app can't see
+
+For consents given on paper or by phone, an administrator records them with the evidence that proves it:
+
+```sh
+backd consents record --realm shelf --email ada@example.com --consent marketing \
+  --version 1 --action accepted --evidence "paper form 17"
+```
+
+The record has the method `admin` and the `evidence` (required), and is audited as `user.consent_recorded`. `GET /_admin/users/{id}/consents` lists a user's whole history, with the hash of each text and the evidence, for answering a request.
+
 ## Records
 
 Each acceptance or withdrawal is a record in the realm's system database, never updated or deleted by the app:

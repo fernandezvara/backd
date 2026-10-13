@@ -188,3 +188,42 @@ func TestConsentDeadlineRefusesOpenSessions(t *testing.T) {
 		t.Errorf("logout = %d", rec.Code)
 	}
 }
+
+func TestConsentWithdrawalAndHistory(t *testing.T) {
+	f := consentFixture(t)
+	token, _ := f.signupWith(t, "ada@example.com", `, "consents": {"terms": "2", "marketing": "1"}`)
+	auth := bearer(token)
+
+	rec, _ := f.doH(t, "GET", authBase+"/consents", "", auth)
+	body := decodeBody(rec)
+	hist := body["history"].([]any)
+	if rec.Code != http.StatusOK || body["consents"].(map[string]any)["marketing"] != "1" || len(hist) != 2 ||
+		hist[0].(map[string]any)["method"] != "signup" || hist[0].(map[string]any)["text_hash"] != nil {
+		t.Fatalf("consents = %d %v", rec.Code, body)
+	}
+
+	// An optional consent is withdrawn as easily as it was given, and again changes nothing.
+	for range 2 {
+		rec, _ = f.doH(t, "DELETE", authBase+"/consents/marketing", "", auth)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("withdraw = %d %s", rec.Code, rec.Body)
+		}
+		if _, held := decodeBody(rec)["consents"].(map[string]any)["marketing"]; held {
+			t.Errorf("still held: %s", rec.Body)
+		}
+	}
+	rec, _ = f.doH(t, "GET", authBase+"/consents", "", auth)
+	hist = decodeBody(rec)["history"].([]any)
+	if len(hist) != 3 || hist[2].(map[string]any)["action"] != "withdrawn" || hist[2].(map[string]any)["version"] != "1" {
+		t.Errorf("history after withdrawal = %v", hist)
+	}
+
+	// A required one is not withdrawn: the way out is deleting the account.
+	rec, out := f.doH(t, "DELETE", authBase+"/consents/terms", "", auth)
+	if rec.Code != http.StatusConflict || errCode(decodeBody(rec)) != "consent_required_for_account" {
+		t.Errorf("withdraw required = %d %v %s", rec.Code, out, rec.Body)
+	}
+	if rec, _ = f.doH(t, "DELETE", authBase+"/consents/nope", "", auth); rec.Code != http.StatusNotFound {
+		t.Errorf("unknown = %d", rec.Code)
+	}
+}
