@@ -122,10 +122,10 @@ func (f *oauthFixture) callback(t *testing.T, provider, back, verifier string) a
 // redeem trades the login code the flow ended with for a session.
 func (f *oauthFixture) redeem(t *testing.T, a attempt) (int, map[string]any) {
 	t.Helper()
-	if a.result == nil || a.result.Query().Get("code") == "" {
+	if a.result == nil || a.result.Query().Get("backd_code") == "" {
 		t.Fatalf("the flow ended without a code: %v (status %d)", a.result, a.status)
 	}
-	rec, out := f.do(t, "POST", oauthBase+"/token", `{"code": "`+a.result.Query().Get("code")+`", "code_verifier": "`+a.verifier+`"}`)
+	rec, out := f.do(t, "POST", "/v1/acme/_auth/token", `{"code": "`+a.result.Query().Get("backd_code")+`", "code_verifier": "`+a.verifier+`"}`)
 	return rec.Code, out
 }
 
@@ -133,7 +133,7 @@ func (a attempt) errorCode() string {
 	if a.result == nil {
 		return ""
 	}
-	return a.result.Query().Get("error")
+	return a.result.Query().Get("backd_error")
 }
 
 func TestOAuthSignInCreatesAndFindsAUser(t *testing.T) {
@@ -158,7 +158,7 @@ func TestOAuthSignInCreatesAndFindsAUser(t *testing.T) {
 		t.Errorf("me: %d %v", rec.Code, me)
 	}
 	// The code works once.
-	if rec, _ := f.do(t, "POST", oauthBase+"/token", `{"code": "`+a.result.Query().Get("code")+`", "code_verifier": "`+a.verifier+`"}`); rec.Code != 401 {
+	if rec, _ := f.do(t, "POST", "/v1/acme/_auth/token", `{"code": "`+a.result.Query().Get("backd_code")+`", "code_verifier": "`+a.verifier+`"}`); rec.Code != 401 {
 		t.Errorf("a code used twice: %d", rec.Code)
 	}
 	// Signing in again is the same user.
@@ -177,16 +177,16 @@ func TestOAuthSignInCreatesAndFindsAUser(t *testing.T) {
 func TestOAuthCodeNeedsItsVerifier(t *testing.T) {
 	f := newOAuthFixture(t)
 	a := f.signIn(t, "google", googleUser("g-1", "new@example.com", true), nil)
-	code := a.result.Query().Get("code")
-	if rec, _ := f.do(t, "POST", oauthBase+"/token", `{"code": "`+code+`", "code_verifier": "somebody-elses-verifier"}`); rec.Code != 401 {
+	code := a.result.Query().Get("backd_code")
+	if rec, _ := f.do(t, "POST", "/v1/acme/_auth/token", `{"code": "`+code+`", "code_verifier": "somebody-elses-verifier"}`); rec.Code != 401 {
 		t.Errorf("a wrong verifier: %d", rec.Code)
 	}
 	// ...and the code is gone: the right verifier can't redeem it any more.
-	if rec, _ := f.do(t, "POST", oauthBase+"/token", `{"code": "`+code+`", "code_verifier": "`+a.verifier+`"}`); rec.Code != 401 {
+	if rec, _ := f.do(t, "POST", "/v1/acme/_auth/token", `{"code": "`+code+`", "code_verifier": "`+a.verifier+`"}`); rec.Code != 401 {
 		t.Errorf("the code survived a wrong verifier: %d", rec.Code)
 	}
 	for body, want := range map[string]int{`{}`: 400, `{"code": "x"}`: 400, `{"code": "nope", "code_verifier": "x"}`: 401} {
-		if rec, _ := f.do(t, "POST", oauthBase+"/token", body); rec.Code != want {
+		if rec, _ := f.do(t, "POST", "/v1/acme/_auth/token", body); rec.Code != want {
 			t.Errorf("%s: %d, want %d", body, rec.Code, want)
 		}
 	}
@@ -204,7 +204,7 @@ func TestOAuthLinksVerifiedAddressesOnlyUnderTheRules(t *testing.T) {
 		t.Errorf("signed in as %v, want ada", out["user"])
 	}
 	// Google not asserting a verified address: explicit linking only.
-	if a := f.signIn(t, "google", googleUser("g-bob", "bob@example.com", false), nil); a.errorCode() != "account_exists" || a.result.Query().Get("provider") != "google" {
+	if a := f.signIn(t, "google", googleUser("g-bob", "bob@example.com", false), nil); a.errorCode() != "account_exists" || a.result.Query().Get("backd_provider") != "google" {
 		t.Errorf("unverified at the provider: %v", a.result)
 	}
 	// Microsoft is never trusted to link by address.
@@ -288,7 +288,7 @@ func TestOAuthLinkingAProviderToTheSignedInUser(t *testing.T) {
 		t.Fatalf("start: %d %v", rec.Code, out)
 	}
 	a := f.finish(t, "google", out["authorize_url"].(string), "", false)
-	if a.status != 302 || a.result.Query().Get("linked") != "google" || a.result.Query().Get("code") != "" {
+	if a.status != 302 || a.result.Query().Get("backd_linked") != "google" || a.result.Query().Get("backd_code") != "" {
 		t.Fatalf("callback: %d %v", a.status, a.result)
 	}
 	_, me := f.doH(t, "GET", "/v1/acme/_auth/me", "", bearer(f.ada))
@@ -377,7 +377,7 @@ func TestOAuthStartIsRateLimited(t *testing.T) {
 	if rec.Code != 429 || rec.Header().Get("Retry-After") == "" {
 		t.Errorf("the 31st start: %d", rec.Code)
 	}
-	if rec, _ := f.do(t, "POST", oauthBase+"/token", `{"code": "x", "code_verifier": "y"}`); rec.Code != 401 {
+	if rec, _ := f.do(t, "POST", "/v1/acme/_auth/token", `{"code": "x", "code_verifier": "y"}`); rec.Code != 401 {
 		t.Errorf("the token route has its own count: %d", rec.Code)
 	}
 }

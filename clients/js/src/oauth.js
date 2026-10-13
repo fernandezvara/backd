@@ -12,6 +12,8 @@ import { Sha256 } from './sha256.js'
  */
 
 const PENDING_KEY = 'backd.oauth.pending'
+/** What backd adds to the page's address is prefixed, so it can't collide with the app's own parameters. */
+const PARAM_PREFIX = 'backd_'
 const PENDING_LIFE_MS = 10 * 60 * 1000 // the server's state lives ten minutes
 
 /**
@@ -116,7 +118,7 @@ export function parseReturn(href) {
   /** @type {OAuthReturn} */
   const out = {}
   for (const k of /** @type {const} */ (['code', 'error', 'linked', 'provider'])) {
-    const v = q.get(k)
+    const v = q.get(PARAM_PREFIX + k)
     if (v) out[k] = v
   }
   return out.code || out.error || out.linked ? out : null
@@ -128,7 +130,7 @@ export function parseReturn(href) {
  */
 export function withoutReturn(href) {
   const u = new URL(String(href))
-  for (const k of ['code', 'error', 'linked', 'provider']) u.searchParams.delete(k)
+  for (const k of ['code', 'error', 'linked', 'provider']) u.searchParams.delete(PARAM_PREFIX + k)
   return u.toString()
 }
 
@@ -146,7 +148,7 @@ const ERRORS = {
 }
 
 /**
- * The error for an `?error=` code of the redirect flow, as the same classes the rest of the client
+ * The error for a `?backd_error=` code of the redirect flow, as the same classes the rest of the client
  * throws: `account_exists` and `link_conflict` are a `ConflictError`, `signup_closed`,
  * `email_not_verified` and `signin_refused` a `ForbiddenError`, `cancelled` an
  * `AuthenticationError`, and so on; `code` is the error code, and `details` names the provider.

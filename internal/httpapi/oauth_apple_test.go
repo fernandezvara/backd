@@ -131,7 +131,7 @@ func TestUnlinkingAppleRevokesItsToken(t *testing.T) {
 	f.idp.SetUser(appleUser("a-ada"))
 	body := `{"redirect_to": "` + appRedirect + `", "code_challenge": "` + func() string { _, c, _ := auth.NewPKCE(); return c }() + `", "intent": "link"}`
 	_, out := f.doH(t, "POST", oauthBase+"/apple/start", body, bearer(f.ada))
-	if a := f.finish(t, "apple", out["authorize_url"].(string), "", false); a.result.Query().Get("linked") != "apple" {
+	if a := f.finish(t, "apple", out["authorize_url"].(string), "", false); a.result.Query().Get("backd_linked") != "apple" {
 		t.Fatalf("link: %v", a.result)
 	}
 	if rec, _ := f.doH(t, "DELETE", "/v1/acme/_auth/identities/apple", "", bearer(f.ada)); rec.Code != 204 {

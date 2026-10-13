@@ -53,17 +53,17 @@ test('completeSignIn trades the code for a session, once, with the verifier it k
   /** @type {string[]} */
   const events = []
   c.auth.onAuthChange((e) => events.push(e))
-  const out = await c.auth.completeSignIn('https://app.test/in?code=the-code')
+  const out = await c.auth.completeSignIn('https://app.test/in?backd_code=the-code')
   assert.equal(/** @type {any} */ (out)?.new_user, true)
   assert.equal(/** @type {any} */ (out).profile.name, 'Ada Lovelace')
   const token = start.calls[1]
-  assert.equal(token.url.pathname, '/v1/acme/_auth/oauth/token')
+  assert.equal(token.url.pathname, '/v1/acme/_auth/token')
   assert.equal(token.body.code, 'the-code')
   assert.equal(challengeOf(token.body.code_verifier), challenge)
   assert.equal(await c.auth.token(), 'bds_abc')
   assert.deepEqual(events, ['SIGNED_IN'])
   // The verifier is spent: coming back again with a code has nothing to finish it with.
-  await assert.rejects(c.auth.completeSignIn('https://app.test/in?code=again'), (/** @type {any} */ e) => e instanceof ValidationError && e.code === 'sign_in_not_started')
+  await assert.rejects(c.auth.completeSignIn('https://app.test/in?backd_code=again'), (/** @type {any} */ e) => e instanceof ValidationError && e.code === 'sign_in_not_started')
   assert.equal(store.get(), null)
 })
 
@@ -72,7 +72,7 @@ test('completeSignIn: an ordinary visit has nothing to finish', async () => {
   assert.equal(await c.auth.completeSignIn('https://app.test/in'), null)
   assert.equal(await c.auth.completeSignIn('https://app.test/in?utm=1'), null)
   assert.equal(await c.auth.completeSignIn(undefined), null)
-  assert.deepEqual(parseOAuthReturn('https://app.test/?error=cancelled'), { error: 'cancelled' })
+  assert.deepEqual(parseOAuthReturn('https://app.test/?backd_error=cancelled'), { error: 'cancelled' })
   assert.equal(parseOAuthReturn('nonsense'), null)
 })
 
@@ -92,9 +92,9 @@ test('completeSignIn turns the error codes into the errors the client throws', a
     ['something_new', BackdError, 502],
   ]
   for (const [code, Class, status] of cases) {
-    await assert.rejects(c.auth.completeSignIn(`https://app.test/in?error=${code}`), (/** @type {any} */ e) => e instanceof /** @type {any} */ (Class) && e.status === status && e.code === (code === 'something_new' ? 'provider_error' : code))
+    await assert.rejects(c.auth.completeSignIn(`https://app.test/in?backd_error=${code}`), (/** @type {any} */ e) => e instanceof /** @type {any} */ (Class) && e.status === status && e.code === (code === 'something_new' ? 'provider_error' : code))
   }
-  await assert.rejects(c.auth.completeSignIn('https://app.test/in?error=account_exists&provider=google'), (/** @type {any} */ e) => e.details[0].path === 'provider' && e.details[0].reason === 'google')
+  await assert.rejects(c.auth.completeSignIn('https://app.test/in?backd_error=account_exists&backd_provider=google'), (/** @type {any} */ e) => e.details[0].path === 'provider' && e.details[0].reason === 'google')
 })
 
 test('linkProvider needs the session and ends with { linked }', async () => {
@@ -103,7 +103,7 @@ test('linkProvider needs the session and ends with { linked }', async () => {
   await c.auth.linkProvider('apple', { redirectTo: 'https://app.test/in', navigate: () => {} })
   assert.equal(m.calls[0].body.intent, 'link')
   assert.equal(m.calls[0].url.pathname, '/v1/acme/_auth/oauth/apple/start')
-  assert.deepEqual(await c.auth.completeSignIn('https://app.test/in?linked=apple'), { linked: 'apple' })
+  assert.deepEqual(await c.auth.completeSignIn('https://app.test/in?backd_linked=apple'), { linked: 'apple' })
 })
 
 test('a sign-in kept in the tab survives the navigation: the verifier goes through the storage', async () => {
@@ -113,12 +113,12 @@ test('a sign-in kept in the tab survives the navigation: the verifier goes throu
   assert.match(String(store.get()), /verifier/)
   const m = mockFetch([{ body: session }])
   const b = clientOf(m, { oauthStorage: store }) // the page after the redirect: a new client
-  await b.auth.completeSignIn('https://app.test/in?code=c')
+  await b.auth.completeSignIn('https://app.test/in?backd_code=c')
   assert.equal(m.calls[0].body.code_verifier.length, 43)
   // An attempt that waited longer than the server keeps it is gone.
   const old = memory()
   old.set(JSON.stringify({ verifier: 'v', provider: 'google', intent: 'signin', at: Date.now() - 11 * 60 * 1000 }))
-  await assert.rejects(clientOf(mockFetch([]), { oauthStorage: old }).auth.completeSignIn('https://app.test/in?code=c'), (/** @type {any} */ e) => e.code === 'sign_in_not_started')
+  await assert.rejects(clientOf(mockFetch([]), { oauthStorage: old }).auth.completeSignIn('https://app.test/in?backd_code=c'), (/** @type {any} */ e) => e.code === 'sign_in_not_started')
 })
 
 test('cookie sessions ask for a cookie when redeeming', async () => {
@@ -127,7 +127,7 @@ test('cookie sessions ask for a cookie when redeeming', async () => {
   const store = memory()
   store.set(JSON.stringify({ verifier: 'v', provider: 'google', intent: 'signin', at: Date.now() }))
   c.auth._oauthStorage = store
-  await c.auth.completeSignIn('https://app.test/in?code=c')
+  await c.auth.completeSignIn('https://app.test/in?backd_code=c')
   assert.equal(m.calls[0].body.cookie, true)
   assert.equal(m.calls[0].credentials, 'include')
 })

@@ -26,13 +26,22 @@ import (
 // make a minute.
 const oauthRateLimit = 30
 
+// The query parameters backd adds to the app's redirect_to. They carry the prefix so that
+// they can't collide with the app's own, since the app may be any page.
+const (
+	paramCode     = "backd_code"     // the one-time login code
+	paramError    = "backd_error"    // what went wrong
+	paramProvider = "backd_provider" // with account_exists: the provider that was used
+	paramLinked   = "backd_linked"   // a link succeeded: the provider
+)
+
 func (a *authAPI) oauthRoutes(r chi.Router, json func(http.Handler) http.Handler) {
 	r.Get("/oauth/{provider}/start", a.oauthStartGet)
 	r.With(json).Post("/oauth/{provider}/start", a.oauthStartPost)
 	r.Get("/oauth/{provider}/callback", a.oauthCallback)
 	r.Post("/oauth/{provider}/callback", a.oauthCallback) // Apple answers with a form
 	r.With(json).Post("/oauth/{provider}/id-token", a.oauthIDToken)
-	r.With(json).Post("/oauth/token", a.oauthToken)
+	r.With(json).Post("/token", a.loginCodeToken)
 }
 
 // provider returns the realm's provider named in the path, or answers 404.
@@ -219,14 +228,14 @@ func (a *authAPI) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	p, ok := svc.Settings.Providers[st.Provider]
 	if !ok {
-		back("error", oauthProviderError)
+		back(paramError, oauthProviderError)
 		return
 	}
 	if e := get("error"); e != "" {
 		if e == "access_denied" || e == "user_cancelled_authorize" {
-			back("error", oauthCancelled)
+			back(paramError, oauthCancelled)
 		} else {
-			back("error", oauthProviderError)
+			back(paramError, oauthProviderError)
 		}
 		return
 	}
@@ -235,14 +244,14 @@ func (a *authAPI) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	secrets, ok2, err := a.providerSecrets(r.Context(), svc, p)
 	if code == "" || !ok || !ok2 || err != nil {
 		logger(r.Context()).Error("sign-in with a provider can't go on", "provider", p.Name, "code_given", code != "", "secrets_set", ok2, "error", err)
-		back("error", oauthProviderError)
+		back(paramError, oauthProviderError)
 		return
 	}
 	secret := secrets[p.ClientSecret]
 	if p.Name == registry.ProviderApple {
 		if secret, err = a.oauth.AppleClientSecret(p, p.ClientID, secrets[p.PrivateKey]); err != nil {
 			logger(r.Context()).Error("sign Apple's client secret", "error", err)
-			back("error", oauthProviderError)
+			back(paramError, oauthProviderError)
 			return
 		}
 	}
@@ -253,13 +262,13 @@ func (a *authAPI) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	tokens, err := a.oauth.Exchange(r.Context(), p, p.ClientID, secret, code, callback, verifier)
 	if err != nil {
 		logger(r.Context()).Warn("the provider didn't give a token", "provider", p.Name, "error", err)
-		back("error", oauthProviderError)
+		back(paramError, oauthProviderError)
 		return
 	}
 	claims, err := a.oauth.Verify(r.Context(), p, tokens.IDToken, st.Nonce, false)
 	if err != nil {
 		logger(r.Context()).Warn("the provider's ID token is not valid", "provider", p.Name, "error", err)
-		back("error", oauthProviderError)
+		back(paramError, oauthProviderError)
 		return
 	}
 	res, err := svc.ResolveProviderLogin(r.Context(), auth.ProviderLogin{
@@ -273,17 +282,17 @@ func (a *authAPI) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	a.keepAppleToken(r, svc, p, res.User.ID, p.ClientID, tokens.RefreshToken)
 	if st.Intent == auth.IntentLink {
-		back("linked", p.Name)
+		back(paramLinked, p.Name)
 		return
 	}
-	loginCode, err := svc.IssueLoginCode(r.Context(), res.User.ID, st.CodeChallenge, res.NewUser, res.Profile)
+	loginCode, err := svc.IssueLoginCode(r.Context(), res.User.ID, p.Name, st.CodeChallenge, res.NewUser, res.Profile)
 	if err != nil {
 		logger(r.Context()).Error("issue a login code", "error", err)
-		back("error", oauthProviderError)
+		back(paramError, oauthProviderError)
 		return
 	}
 	setActor(r.Context(), "user:"+res.User.ID)
-	back("code", loginCode)
+	back(paramCode, loginCode)
 }
 
 // keepAppleToken keeps Apple's refresh token for revoking it when the account goes away
@@ -306,7 +315,7 @@ func (a *authAPI) oauthFailure(w http.ResponseWriter, r *http.Request, svc *auth
 		code = oauthSignInRefused
 		svc.Audit(r.Context(), auth.AuditSignInRefused, "user:"+refused.UserID, map[string]any{"provider": p.Name, "reason": refused.Reason})
 	case errors.Is(err, auth.ErrAccountExists):
-		a.redirectToApp(w, r, st.RedirectTo, "error", oauthAccountExists, "provider", p.Name)
+		a.redirectToApp(w, r, st.RedirectTo, paramError, oauthAccountExists, paramProvider, p.Name)
 		return
 	case errors.Is(err, auth.ErrSignupClosed):
 		code = oauthSignupClosed
@@ -321,7 +330,7 @@ func (a *authAPI) oauthFailure(w http.ResponseWriter, r *http.Request, svc *auth
 	default:
 		logger(r.Context()).Error("sign in with a provider", "provider", p.Name, "error", err)
 	}
-	a.redirectToApp(w, r, st.RedirectTo, "error", code)
+	a.redirectToApp(w, r, st.RedirectTo, paramError, code)
 }
 
 // redirectToApp sends the browser to the app's redirect_to (checked when the attempt
@@ -372,8 +381,8 @@ func (a *authAPI) oauthErrorPage(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(body))
 }
 
-// oauthToken redeems a login code for a session: POST /_auth/oauth/token.
-func (a *authAPI) oauthToken(w http.ResponseWriter, r *http.Request) {
+// loginCodeToken redeems a one-time login code for a session: POST /_auth/token.
+func (a *authAPI) loginCodeToken(w http.ResponseWriter, r *http.Request) {
 	obj, ok := readObject(w, r)
 	if !ok {
 		return

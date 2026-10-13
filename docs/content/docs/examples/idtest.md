@@ -37,13 +37,13 @@ With placeholders left in place the realm still loads — `backd` warns that a p
 make example
 ```
 
-Open <https://localhost:8443/example/providers/> and press a provider button: the browser goes to the provider and comes back to the page, which redeems the one-time code for a session and shows the result — a welcome line on the first sign-in, "Signed in" after that, or a readable message for every `?error=` outcome (`cancelled`, `account_exists`, `link_conflict`, …). Signed in, the page lists the account's sign-in methods (provider, address, verified, when it was linked and last used), removes any but the last, and links another provider to the same account.
+Open <https://localhost:8443/example/providers/> and press a provider button: the browser goes to the provider and comes back to the page, which redeems the one-time code for a session and shows the result — a welcome line on the first sign-in, "Signed in" after that, or a readable message for every `?backd_error=` outcome (`cancelled`, `account_exists`, `link_conflict`, …). Signed in, the page lists the account's sign-in methods (provider, address, verified, when it was linked and last used), removes any but the last, and links another provider to the same account.
 
 The app is plain JavaScript with [Alpine.js](https://alpinejs.dev/) and the [JavaScript client](../../clients/js/), with no build step:
 
 | File | Contents |
 |---|---|
-| `app.js` | `signInWith`/`completeSignIn` for the redirect flow, `linkProvider`/`unlinkProvider`, the `?error=` messages |
+| `app.js` | `signInWith`/`completeSignIn` for the redirect flow, `linkProvider`/`unlinkProvider`, the `backd_error` messages |
 | `index.html`, `style.css` | The page |
 
 `native_client_ids` (Google, Microsoft) and `bundle_ids` (Apple) are only needed for native apps using the [ID-token sign-in](../../auth/providers/#native-apps-the-id-token); this example uses the redirect flow and leaves them empty.

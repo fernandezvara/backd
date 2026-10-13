@@ -37,7 +37,7 @@ func TestAuthStoreOAuthStatesAndCodesWorkOnce(t *testing.T) {
 		t.Error("an unknown intent was stored")
 	}
 
-	if err := s.PutLoginCode(ctx, auth.LoginCode{ID: "c1", UserID: "u1", CodeChallenge: "ch", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}); err != nil {
+	if err := s.PutLoginCode(ctx, auth.LoginCode{ID: "c1", UserID: "u1", Method: "google", CodeChallenge: "ch", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}); err != nil {
 		t.Fatal(err)
 	}
 	lc, err := s.ClaimLoginCode(ctx, "c1", now)
@@ -47,7 +47,7 @@ func TestAuthStoreOAuthStatesAndCodesWorkOnce(t *testing.T) {
 	if _, err := s.ClaimLoginCode(ctx, "c1", now); !errors.Is(err, auth.ErrNotFound) {
 		t.Errorf("second code claim: %v", err)
 	}
-	_ = s.PutLoginCode(ctx, auth.LoginCode{ID: "c2", UserID: "u1", CodeChallenge: "ch", CreatedAt: now, ExpiresAt: now.Add(time.Minute)})
+	_ = s.PutLoginCode(ctx, auth.LoginCode{ID: "c2", UserID: "u1", Method: "google", CodeChallenge: "ch", CreatedAt: now, ExpiresAt: now.Add(time.Minute)})
 	if _, err := s.ClaimLoginCode(ctx, "c2", now.Add(time.Hour)); !errors.Is(err, auth.ErrNotFound) {
 		t.Errorf("expired code: %v", err)
 	}

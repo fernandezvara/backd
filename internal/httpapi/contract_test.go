@@ -595,13 +595,13 @@ func TestContract(t *testing.T) {
 		back, _ := url.Parse(idp.Authorize(rec.Header().Get("Location")))
 		cb, _ := f.doH(t, "GET", back.Path+"?"+back.RawQuery, "", nil)
 		to, _ := url.Parse(cb.Header().Get("Location"))
-		if cb.Code != 302 || to.Query().Get("code") == "" {
+		if cb.Code != 302 || to.Query().Get("backd_code") == "" {
 			t.Fatalf("oauth callback: %d %v", cb.Code, to)
 		}
-		req("POST", o+"/token", `{"code": "`+to.Query().Get("code")+`", "code_verifier": "`+verifier+`"}`, nil, 200)
-		req("POST", o+"/token", `{"code": "`+to.Query().Get("code")+`", "code_verifier": "`+verifier+`"}`, nil, 401)
-		req("POST", o+"/token", `{"code": "x"}`, nil, 400)
-		req("POST", o+"/token", `{"code": "x", "code_verifier": "y", "cookie": true}`, map[string]string{"Origin": "https://evil.example"}, 403)
+		req("POST", a+"/token", `{"code": "`+to.Query().Get("backd_code")+`", "code_verifier": "`+verifier+`"}`, nil, 200)
+		req("POST", a+"/token", `{"code": "`+to.Query().Get("backd_code")+`", "code_verifier": "`+verifier+`"}`, nil, 401)
+		req("POST", a+"/token", `{"code": "x"}`, nil, 400)
+		req("POST", a+"/token", `{"code": "x", "code_verifier": "y", "cookie": true}`, map[string]string{"Origin": "https://evil.example"}, 403)
 		// A state that leads nowhere is a page; Apple's answer is a form post.
 		req("GET", o+"/google/callback?state=nope&code=x", "", nil, 400)
 		req("POST", o+"/apple/callback", "state=nope&code=x", map[string]string{"Content-Type": "application/x-www-form-urlencoded"}, 400)
@@ -648,11 +648,11 @@ func TestContract(t *testing.T) {
 		}
 		req("GET", start, "", nil, 429)
 		req("POST", o+"/google/start", `{"redirect_to": "https://app.acme.example/x", "code_challenge": "`+challenge+`"}`, nil, 429)
-		req("POST", o+"/token", `{"code": "x", "code_verifier": "y"}`, nil, 401)
+		req("POST", a+"/token", `{"code": "x", "code_verifier": "y"}`, nil, 401)
 		for range 31 {
-			f.doH(t, "POST", o+"/token", `{"code": "x", "code_verifier": "y"}`, map[string]string{"Content-Type": "application/json"})
+			f.doH(t, "POST", a+"/token", `{"code": "x", "code_verifier": "y"}`, map[string]string{"Content-Type": "application/json"})
 		}
-		req("POST", o+"/token", `{"code": "x", "code_verifier": "y"}`, nil, 429)
+		req("POST", a+"/token", `{"code": "x", "code_verifier": "y"}`, nil, 429)
 		for range 31 {
 			f.doH(t, "POST", ex, `{"id_token": "bad", "nonce": "n1"}`, map[string]string{"Content-Type": "application/json"})
 		}

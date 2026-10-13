@@ -235,7 +235,7 @@ export class Auth {
     /** @type {Record<string, unknown>} */
     const body = { code: ret.code, code_verifier: pending.verifier }
     if (this.client.cookies) body.cookie = true
-    const { data } = await this.client.request({ method: 'POST', path: ['_auth', 'oauth', 'token'], body, auth: false, ...opts })
+    const { data } = await this.client.request({ method: 'POST', path: ['_auth', 'token'], body, auth: false, ...opts })
     return /** @type {ProviderSession} */ (await this.signedIn(data))
   }
 

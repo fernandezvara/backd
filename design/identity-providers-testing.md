@@ -123,17 +123,17 @@ Use a **new** account each time unless the step says otherwise. After each step 
 | 3.3 | Apple only: choose **Hide My Email** on the consent sheet | The user's address is the relay address; sign-in works; the name is empty or as you typed it (see 11.1) |
 | 3.4 | Sign out of backd, sign in again with the same account | The same user (same `id`), `new_user: false`, no `profile`, the identity's `last_used_at` moved |
 | 3.5 | Change the display name or picture at the provider, sign in again | Nothing changes in backd; `new_user: false` |
-| 3.6 | Press **Cancel** / **Deny** on the provider's consent page | Back at the app with `?error=cancelled`; `completeSignIn()` rejects with an `AuthenticationError`, `code: "cancelled"`; no user was created |
+| 3.6 | Press **Cancel** / **Deny** on the provider's consent page | Back at the app with `?backd_error=cancelled`; `completeSignIn()` rejects with an `AuthenticationError`, `code: "cancelled"`; no user was created |
 | 3.7 | Start a sign-in, then wait more than 10 minutes on the provider's page, then finish it | The browser lands on the **oauth-error page** (HTTP 400, "Sign-in didn't complete") because the `state` expired; nothing was created |
 | 3.8 | Finish a sign-in, then press **Back** in the browser and open the callback URL again (or replay it with `curl`) | The oauth-error page again: a `state` works once |
 | 3.9 | Open the callback with a made-up `state` | The oauth-error page; HTTP 400 |
-| 3.10 | In `realm.yaml` use a wrong client secret (or stop the secret with `backd secret delete`), then try | With a wrong secret: back at the app with `?error=provider_error`, the log has "the provider didn't give a token". With the secret deleted: the **start** answers `503 provider_unavailable` before the user leaves the app (secrets are cached for up to a minute per instance) |
+| 3.10 | In `realm.yaml` use a wrong client secret (or stop the secret with `backd secret delete`), then try | With a wrong secret: back at the app with `?backd_error=provider_error`, the log has "the provider didn't give a token". With the secret deleted: the **start** answers `503 provider_unavailable` before the user leaves the app (secrets are cached for up to a minute per instance) |
 | 3.11 | Register a wrong redirect URI at the provider, then try | The **provider** shows its own error page (`redirect_uri_mismatch`, `AADSTS50011`, `invalid_request`); backd never sees the callback. This is the most common setup mistake: compare with the `callback_url` in the log |
 | 3.12 | `curl -i "$BACKD_URL/v1/idtest/_auth/oauth/google/start?redirect_to=https://evil.example/&code_challenge=$(printf x | openssl dgst -sha256 -binary | basenc --base64url | tr -d =)"` | `400 invalid_redirect`; nothing is stored (`oauth_states` count unchanged) |
 | 3.13 | Same, without `code_challenge` | `400 validation_error` naming `code_challenge` |
 
 **Apple specifics.** Apple answers with an HTTP **POST** (a form) to the callback and redirects the browser
-with `303`: if the browser ends on the app with `?code=`, that works; if it ends on a blank page or an HTTP 405,
+with `303`: if the browser ends on the app with `?backd_code=`, that works; if it ends on a blank page or an HTTP 405,
 the callback route is not reachable for POST (check the reverse proxy). Apple also only sends the user's
 **name** the first time a person authorizes the app (see 11.1).
 
@@ -148,48 +148,48 @@ Prepare two backd users with passwords (`backd user create`), `ada@…` whose ad
 | # | Do | Expect |
 |---|---|---|
 | 4.1 | Sign in with **Google** as the account whose address is `ada@…` | Signed in as the **existing** ada (`user.id` unchanged); `new_user: false`; `identity.linked` in the audit; `/me` lists password **and** google. This is the automatic linking |
-| 4.2 | Sign in with **Google** as the account of `vic@…` (the unverified backd user) | `?error=account_exists&provider=google`; **no identity was added** to `vic` (`backd user identities`). This is the pre-hijacking guarantee. Then verify `vic`'s address (`backd user verify-email`) and try again: it links |
-| 4.3 | Sign in with **Microsoft** using an account whose address equals an existing verified backd user's | `?error=account_exists&provider=microsoft` (Microsoft never links by address) |
+| 4.2 | Sign in with **Google** as the account of `vic@…` (the unverified backd user) | `?backd_error=account_exists&backd_provider=google`; **no identity was added** to `vic` (`backd user identities`). This is the pre-hijacking guarantee. Then verify `vic`'s address (`backd user verify-email`) and try again: it links |
+| 4.3 | Sign in with **Microsoft** using an account whose address equals an existing verified backd user's | `?backd_error=account_exists&backd_provider=microsoft` (Microsoft never links by address) |
 | 4.4 | Same with **Apple** (a real address, not the relay) | Links, like Google, when the backd user is verified |
 | 4.5 | While signed in as a password user, link a provider (`backd.auth.linkProvider('google')`) | After the round trip `completeSignIn()` resolves `{ linked: 'google' }`; `/me` has the identity; the identity's address may differ from the user's; **the user's address is unchanged** |
 | 4.6 | Sign in with the linked Google account | The same user as in 4.5 |
-| 4.7 | While signed in as **another** backd user, try to link the Google account of 4.5 | `?error=link_conflict` |
-| 4.8 | While signed in as the user of 4.5, link a **second** Google account | `?error=link_conflict` (one identity per provider) |
+| 4.7 | While signed in as **another** backd user, try to link the Google account of 4.5 | `?backd_error=link_conflict` |
+| 4.8 | While signed in as the user of 4.5, link a **second** Google account | `?backd_error=link_conflict` (one identity per provider) |
 | 4.9 | `DELETE /_auth/identities/google` (`backd.auth.unlinkProvider`) as that user | `204`; `/me` no longer lists it; audit `identity.unlinked` with `by: self`. Signing in with that Google account now finds no identity: it is a new sign-in under the rules (it links again by address if they allow it, else `account_exists`, else a new user) |
 | 4.10 | For a user with a password and Google: remove Google (`204`), then try to remove the password | `409 last_sign_in_method`; the user can always sign in. Repeat the other way round with a user who signed up with Google and later got a password (password reset): remove the password, then try Google: the same `409` |
-| 4.11 | `signup: closed`, then sign in with a never-seen account | `?error=signup_closed`; no user |
+| 4.11 | `signup: closed`, then sign in with a never-seen account | `?backd_error=signup_closed`; no user |
 | 4.12 | `signup: invite`: sign in with a new account (a) without an invitation, (b) with an invitation (`backd` admin API / `signInWith('google', {invitation})`) bound to **another** address, (c) with an open invitation, (d) the same invitation again | (a) `invitation_invalid`; (b) `invitation_invalid` and the invitation **still works** for its own address; (c) signed in, the invitation is used up; (d) `invitation_invalid` |
-| 4.13 | `account.require_verified_email: true` (needs `email:`), sign in with Microsoft (unverified) | `?error=email_not_verified`; the user was created. Verify the address by the email flow, sign in again: it works |
-| 4.14 | Create a Microsoft/Google account with **no email** (a Microsoft account with only a phone number, or an Entra user with no mail attribute) | `?error=email_required`; no user. (Known limitation: accounts need an address) |
-| 4.15 | `backd user disable` a linked user, then sign in with their provider | `?error=signin_refused`; the audit has `identity.signin_refused` with `reason: disabled`. Enable them again: it works |
-| 4.16 | Give the user `login_networks` that excludes your address, sign in | `?error=signin_refused`, `reason: network` |
+| 4.13 | `account.require_verified_email: true` (needs `email:`), sign in with Microsoft (unverified) | `?backd_error=email_not_verified`; the user was created. Verify the address by the email flow, sign in again: it works |
+| 4.14 | Create a Microsoft/Google account with **no email** (a Microsoft account with only a phone number, or an Entra user with no mail attribute) | `?backd_error=email_required`; no user. (Known limitation: accounts need an address) |
+| 4.15 | `backd user disable` a linked user, then sign in with their provider | `?backd_error=signin_refused`; the audit has `identity.signin_refused` with `reason: disabled`. Enable them again: it works |
+| 4.16 | Give the user `login_networks` that excludes your address, sign in | `?backd_error=signin_refused`, `reason: network` |
 
 ## 5. The one-time code and the PKCE verifier
 
-Use the browser's network tab or `curl` to hold a code (the app's `?code=` in the address bar before `completeSignIn()` removes it; stop the app or block the request).
+Use the browser's network tab or `curl` to hold a code (the app's `?backd_code=` in the address bar before `completeSignIn()` removes it; stop the app or block the request).
 
 | # | Do | Expect |
 |---|---|---|
-| 5.1 | `POST /v1/idtest/_auth/oauth/token` with the code and a **wrong** verifier | `401 invalid_credentials` |
+| 5.1 | `POST /v1/idtest/_auth/token` with the code and a **wrong** verifier | `401 invalid_credentials` |
 | 5.2 | Then with the right verifier | `401` again: a wrong verifier **burns** the code |
 | 5.3 | A fresh code, redeemed twice with the right verifier | The second is `401` |
 | 5.4 | A fresh code, wait 70 seconds, redeem | `401` |
 | 5.5 | Tamper with the `redirect_to` in the callback URL | Ignored: backd uses the one stored with the attempt; the redirect goes where `start` said |
 | 5.6 | Start with an `intent=link` in a `GET` | `400` (linking needs `POST` with the session) |
 | 5.7 | `POST …/start` with `"intent": "link"` and no session | `401` |
-| 5.8 | `{"cookie": true}` on `POST /oauth/token` from the app's origin, in a realm with `sessions.cookie.enabled` | The answer has no `token`; an `HttpOnly` cookie is set; `GET /_auth/me` works with the cookie. From another origin: `403` |
+| 5.8 | `{"cookie": true}` on `POST /token` from the app's origin, in a realm with `sessions.cookie.enabled` | The answer has no `token`; an `HttpOnly` cookie is set; `GET /_auth/me` works with the cookie. From another origin: `403` |
 
 ## 6. Rate limits and the multi-instance case
 
 | # | Do | Expect |
 |---|---|---|
-| 6.1 | 31 `GET …/start` calls from one address within a minute (`for i in $(seq 31); do curl -s -o /dev/null -w '%{http_code}\n' …; done`) | `302` ×30 then `429` with `Retry-After`. Same for `POST /oauth/token` and `…/id-token`, each with its own count |
+| 6.1 | 31 `GET …/start` calls from one address within a minute (`for i in $(seq 31); do curl -s -o /dev/null -w '%{http_code}\n' …; done`) | `302` ×30 then `429` with `Retry-After`. Same for `POST /token` and `…/id-token`, each with its own count |
 | 6.2 | Two backd instances behind one load balancer with **no** stickiness: start a sign-in (it lands on A), let the callback land on B | The sign-in completes: the `state` lives in MongoDB. Repeat 10 times |
 
 ## 7. Microsoft tenants
 
 Change `tenant:` in `realm.yaml` (restart) and try with each account kind. "Accepted" means the flow completes;
-"rejected" means `?error=provider_error` and the log says `issuer`.
+"rejected" means `?backd_error=provider_error` and the log says `issuer`.
 
 | `tenant:` | Work/school account of your tenant | Work account of another tenant | Personal account |
 |---|---|---|---|
@@ -261,7 +261,7 @@ Prerequisite: `revoke_on_delete` is not set (default `true`), a worker runs.
 | 11.5 | Read the function's **logs** (`backd functions logs`, or the admin UI) | The profile's values appear as `***`, not in clear |
 | 11.6 | Read the hook's job after it finished (`db.getSiblingDB("idtest___system").jobs.find({origin: "backd:account.on_signup"})`) | The input is empty (`{}`): the profile is not kept |
 | 11.7 | Make the hook function throw | The sign-up still succeeded; the job is retried per its `retry:`; after the attempts it is listed as failed; the user exists and can sign in |
-| 11.8 | `mongosh`: search the realm's system database for the user's name | In `jobs` while the hook waits for a retry, and nowhere else (`users`, `identities`, `audit`, `oauth_codes`, `oauth_states` do not hold it) |
+| 11.8 | `mongosh`: search the realm's system database for the user's name | In `jobs` while the hook waits for a retry, and nowhere else (`users`, `identities`, `audit`, `login_codes`, `oauth_states` do not hold it) |
 
 ## 12. The JavaScript client and the example app
 
@@ -270,7 +270,7 @@ in `sign_in.allowed_redirects`.
 
 | # | Do | Expect |
 |---|---|---|
-| 12.1 | Click each "Continue with …" | The flow of section 3; the page returns signed in without a reload loop; the address bar shows no `?code=` |
+| 12.1 | Click each "Continue with …" | The flow of section 3; the page returns signed in without a reload loop; the address bar shows no `?backd_code=` |
 | 12.2 | Cause 4.2 (`account_exists`) from the page | The friendly message of the example appears; the console shows a `ConflictError` with `code: "account_exists"` and `details[0].reason: "google"` |
 | 12.3 | Reload the page in the middle of the provider's page (before returning), then continue | The sign-in completes (the verifier is in `sessionStorage`). In a **new tab** it cannot: `completeSignIn()` rejects with `code: "sign_in_not_started"` |
 | 12.4 | `createClient({ cookies: true })` against a realm with cookie sessions | The sign-in works and `localStorage` holds no token |

@@ -241,7 +241,7 @@ func TestLoginCodesWorkOnceWithTheirVerifier(t *testing.T) {
 	if err != nil || !ValidPKCEChallenge(challenge) || ValidPKCEChallenge("short") {
 		t.Fatal(err)
 	}
-	code, err := svc.IssueLoginCode(ctx, res.User.ID, challenge, false, nil)
+	code, err := svc.IssueLoginCode(ctx, res.User.ID, "google", challenge, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +253,7 @@ func TestLoginCodesWorkOnceWithTheirVerifier(t *testing.T) {
 		t.Errorf("a code used twice: %v", err)
 	}
 	// A wrong verifier burns the code: a thief who has the code can't try verifiers.
-	code, _ = svc.IssueLoginCode(ctx, res.User.ID, challenge, false, nil)
+	code, _ = svc.IssueLoginCode(ctx, res.User.ID, "google", challenge, false, nil)
 	if _, err := svc.RedeemLoginCode(ctx, code, "not-the-verifier"); !errors.Is(err, ErrInvalidCredentials) {
 		t.Errorf("wrong verifier: %v", err)
 	}
@@ -261,12 +261,12 @@ func TestLoginCodesWorkOnceWithTheirVerifier(t *testing.T) {
 		t.Errorf("the code survived a wrong verifier: %v", err)
 	}
 	// Expiry, and a user disabled in between.
-	code, _ = svc.IssueLoginCode(ctx, res.User.ID, challenge, false, nil)
+	code, _ = svc.IssueLoginCode(ctx, res.User.ID, "google", challenge, false, nil)
 	*clock = clock.Add(2 * time.Minute)
 	if _, err := svc.RedeemLoginCode(ctx, code, verifier); !errors.Is(err, ErrInvalidCredentials) {
 		t.Errorf("an expired code: %v", err)
 	}
-	code, _ = svc.IssueLoginCode(ctx, res.User.ID, challenge, false, nil)
+	code, _ = svc.IssueLoginCode(ctx, res.User.ID, "google", challenge, false, nil)
 	_ = svc.SetDisabled(ctx, "ada@example.com", true)
 	if _, err := svc.RedeemLoginCode(ctx, code, verifier); !errors.Is(err, ErrInvalidCredentials) {
 		t.Errorf("a disabled user: %v", err)
@@ -306,13 +306,13 @@ func TestLoginCodesHandTheProfileOverOnce(t *testing.T) {
 	res, _ := svc.ResolveProviderLogin(ctx, googleLogin("ada@example.com"))
 	verifier, challenge, _ := NewPKCE()
 	profile := map[string]string{"name": "Ada Lovelace", "given_name": "Ada"}
-	code, _ := svc.IssueLoginCode(ctx, res.User.ID, challenge, true, profile)
+	code, _ := svc.IssueLoginCode(ctx, res.User.ID, "google", challenge, true, profile)
 	red, err := svc.RedeemLoginCode(ctx, code, verifier)
 	if err != nil || !red.NewUser || red.Profile["name"] != "Ada Lovelace" || red.Profile["given_name"] != "Ada" {
 		t.Fatalf("redeem: %+v, %v", red, err)
 	}
 	// The profile only goes with a code that made the user.
-	code, _ = svc.IssueLoginCode(ctx, res.User.ID, challenge, false, profile)
+	code, _ = svc.IssueLoginCode(ctx, res.User.ID, "google", challenge, false, profile)
 	if red, _ = svc.RedeemLoginCode(ctx, code, verifier); red.NewUser || red.Profile != nil {
 		t.Errorf("a returning user's code carried a profile: %+v", red)
 	}

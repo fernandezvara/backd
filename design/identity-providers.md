@@ -25,7 +25,7 @@ Two standing rules shape the design:
 | Stored data | provider, subject, email, email_verified, timestamps; **no provider tokens**, except Apple's refresh token (encrypted, for revocation only) |
 | Profile | handed over once (sign-in response for new users, and the `account.on_signup` hook); never stored |
 | Network | provider calls from `serve` and the worker use backd's own HTTP client, which dials only the provider's allowed hosts (built-in list; the issuer's for generic OIDC) and never private addresses |
-| Pages | errors go back to the app as `?error=<code>`; one hosted fallback page, `oauth-error`; the full hosted sign-in page is #158 |
+| Pages | errors go back to the app as `?backd_error=<code>`; one hosted fallback page, `oauth-error`; the full hosted sign-in page is #158 |
 | Providers | built-ins `google`, `microsoft`, `apple`; any other name is `type: oidc` (§3.1) |
 | Redirect targets | `sign_in.allowed_redirects`, falling back to `email.allowed_redirects` |
 | Apple revocation | on account deletion and on unlinking, through Apple's REST API |
@@ -122,7 +122,7 @@ Today an identity is `{_id, user_id, provider: "password", subject: <user id>, p
 
 **Sign-in attempts:** `<realm>___system.oauth_states`, keyed by the SHA-256 of the `state` value, TTL 10 minutes, single use (an atomic delete on the callback), created by `backd provision` like the other system collections so that several instances work without sticky routing, holding: provider, intent (`signin` | `link`), the app's PKCE challenge, backd's own PKCE verifier and nonce for the provider, `redirect_to`, invitation token hash, linking user id (for `link`).
 
-**Login codes:** `<realm>___system.oauth_codes`, keyed by SHA-256 of the code, TTL 1 minute, single use, holding the user id, the app's PKCE challenge, `redirect_to`, and the one-time profile (for new users).
+**Login codes:** `<realm>___system.login_codes`, keyed by SHA-256 of the code, TTL 1 minute, single use, holding the user id, the first factor (`method`: the provider's name; it is what lets a second step follow the redemption), the app's PKCE challenge, `redirect_to`, and the one-time profile (for new users).
 
 ## 5. Redirect flow
 
@@ -131,7 +131,6 @@ sequenceDiagram
     participant App as App (browser or mobile)
     participant B as backd
     participant P as Provider
-    App->>B: GET or POST /_auth/oauth/{provider}/start (redirect_to, code_challenge, invitation, intent)
     App->>B: GET /_auth/oauth/{provider}/start?redirect_to&code_challenge[&intent=link][&invitation]
     B->>B: check redirect_to ∈ allowed_redirects, then store attempt (state, nonce, own PKCE)
     B-->>App: 302 to provider authorize URL (state, nonce, PKCE)
@@ -142,8 +141,8 @@ sequenceDiagram
     P-->>B: id_token (+ Apple refresh token)
     B->>B: verify id_token: signature (cached JWKS), iss, aud, exp, nonce
     B->>B: find or create user, or link (rules §6)
-    B-->>App: 302 redirect_to?code=<one-time login code>   (or ?error=<code>)
-    App->>B: POST /_auth/oauth/token { code, code_verifier }
+    B-->>App: 302 redirect_to?backd_code=<one-time login code>   (or ?backd_error=<code>)
+    App->>B: POST /_auth/token { code, code_verifier }
     B-->>App: session (+ profile for new users)
 ```
 
@@ -151,8 +150,9 @@ sequenceDiagram
 - **Two forms of `start`:** `GET …/start?redirect_to&code_challenge[&invitation]` answers `302` to the provider (sign-in, no session). `POST …/start` with the same parameters as a JSON body answers `200 {"authorize_url": "…"}` and is the only form for `intent: "link"`, because it needs the session in `Authorization` and a browser navigation can't send it; the app then navigates to `authorize_url`. The JS client uses `POST` for both.
 - The callback accepts **GET and POST** (Apple uses a form POST).
 - The login code is bound to the app's PKCE challenge: a stolen code is useless without the verifier.
-- `POST /_auth/oauth/token { code, code_verifier }` answers like a password login (session and user), plus `new_user` and, for new users, `profile`.
-- Existing account rules apply: a disabled user or a `login_networks` mismatch ends with `error=signin_refused` (one code, so it does not say why, as password login does not; the audit records the reason), and `require_verified_email` with `error=email_not_verified`.
+- **The parameters backd adds to `redirect_to` are prefixed** (`backd_code`, `backd_error`, `backd_provider`, `backd_linked`): `redirect_to` may be any page of the app, which has its own parameters. The code is **not specific to providers**: it is the one-time step every browser first factor ends with (`POST /_auth/token`, collection `login_codes`), so that a second step can be added after its redemption in one place ([mfa-passwordless.md](./mfa-passwordless.md)).
+- `POST /_auth/token { code, code_verifier }` answers like a password login (session and user), plus `new_user` and, for new users, `profile`.
+- Existing account rules apply: a disabled user or a `login_networks` mismatch ends with `backd_error=signin_refused` (one code, so it does not say why, as password login does not; the audit records the reason), and `require_verified_email` with `backd_error=email_not_verified`.
 
 ## 6. Linking and new users
 
@@ -160,14 +160,14 @@ sequenceDiagram
 |---|---|
 | `(provider, subject)` already linked | sign in as that user |
 | not linked, email matches a user, provider asserts verified, provider trusted (Google, Apple), backd user `email_verified: true` | **link automatically**, sign in |
-| not linked, email matches a user, any condition above false | `error=account_exists` (with `provider`) |
+| not linked, email matches a user, any condition above false | `backd_error=account_exists` (with `backd_provider`) |
 | not linked, no matching email, sign-up `open` | create the user and identity |
-| same, sign-up `invite` | create only with a valid invitation passed to `start` (bound email must match); else `error=invitation_invalid` |
-| same, sign-up `closed` | `error=signup_closed` |
+| same, sign-up `invite` | create only with a valid invitation passed to `start` (bound email must match); else `backd_error=invitation_invalid` |
+| same, sign-up `closed` | `backd_error=signup_closed` |
 | `intent=link`, identity free | attach to the signed-in user |
-| `intent=link`, identity belongs to another user, or the user already has an identity of this provider | `error=link_conflict` |
+| `intent=link`, identity belongs to another user, or the user already has an identity of this provider | `backd_error=link_conflict` |
 
-- New users from Google or Apple with a provider-verified email get `email_verified: true` (an Apple private-relay address counts: Apple verified it); from Microsoft and generic OIDC providers the email is stored unverified and email verification ([account-lifecycle.md §4.2](./account-lifecycle.md#42-email-verification)) applies unless the provider is configured with `link_by_email: true`. If a provider gives no email, the sign-in ends with `error=email_required`: users without an email address are not supported yet (they would be missing from the admin user list, which is sorted by email). With `require_verified_email: true`, an unverified Microsoft sign-in ends with `error=email_not_verified`.
+- New users from Google or Apple with a provider-verified email get `email_verified: true` (an Apple private-relay address counts: Apple verified it); from Microsoft and generic OIDC providers the email is stored unverified and email verification ([account-lifecycle.md §4.2](./account-lifecycle.md#42-email-verification)) applies unless the provider is configured with `link_by_email: true`. If a provider gives no email, the sign-in ends with `backd_error=email_required`: users without an email address are not supported yet (they would be missing from the admin user list, which is sorted by email). With `require_verified_email: true`, an unverified Microsoft sign-in ends with `backd_error=email_not_verified`.
 - New users get `locale` from the request like any sign-up.
 - **Automatic linking happens only on first sight of an identity;** later changes of the provider's email never relink or change the user.
 - **Unlinking:** `DELETE /_auth/identities/{provider}` removes an identity, **never the last sign-in method** (password or provider) — a user can't lock themselves out. An administrator can do the same on a user's behalf (§13), with the same rule. A provider-only user who wants a password uses password reset.
@@ -183,7 +183,7 @@ sequenceDiagram
 
 ## 8. Errors and the hosted page
 
-- The callback sends failures back to `redirect_to` as `?error=<code>`: `cancelled`, `account_exists` (+ `provider`), `signup_closed`, `invitation_invalid`, `link_conflict`, `email_not_verified`, `email_required`, `signin_refused`, `provider_error`. A successful `intent: link` ends at `redirect_to?linked=<provider>` instead of a login code. Nothing sensitive is included. The JS client maps them to `BackdError`s.
+- The callback sends failures back to `redirect_to` as `?backd_error=<code>`: `cancelled`, `account_exists` (+ `backd_provider`), `signup_closed`, `invitation_invalid`, `link_conflict`, `email_not_verified`, `email_required`, `signin_refused`, `provider_error`. A successful `intent: link` ends at `redirect_to?backd_linked=<provider>` instead of a login code. Nothing sensitive is included. The JS client maps them to `BackdError`s.
 - **One hosted page, `oauth-error`,** for attempts that can't be traced to an app (unknown, expired or tampered `state`). Localized, `<realm>/pages/oauth-error/<locale>.html`, written by `backd template realm`, same security headers as the other hosted pages.
 
 ## 9. Apple token revocation
@@ -229,7 +229,7 @@ Paths are relative to `/v1/{realm}`: `/_auth/oauth/{provider}/start` is `/v1/{re
 | `GET /_auth/oauth/{provider}/start` | begin sign-in (`302` to the provider) |
 | `POST /_auth/oauth/{provider}/start` | begin sign-in or linking; answers `{authorize_url}` (needs the session for `intent: link`) |
 | `GET`, `POST /_auth/oauth/{provider}/callback` | provider callback |
-| `POST /_auth/oauth/token` | redeem the one-time login code |
+| `POST /_auth/token` | redeem the one-time login code |
 | `POST /_auth/oauth/{provider}/id-token` | native sign-in |
 | `GET /_auth/me` | + linked identities (provider, email, linked at) |
 | `DELETE /_auth/identities/{provider}` | unlink (never the last method) |

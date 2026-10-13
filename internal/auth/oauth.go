@@ -76,6 +76,9 @@ type OAuthState struct {
 type LoginCode struct {
 	ID            string // HashToken(code)
 	UserID        string
+	// Method is the first factor the code stands for: the provider's name (magic links will
+	// add their own), so that a second step can be asked for after the code is redeemed.
+	Method        string
 	CodeChallenge string
 	// NewUser says the sign-in made the user, and Profile is what the provider said of them:
 	// the redemption hands both over once.
@@ -147,14 +150,14 @@ func (s *Users) TakeOAuthState(ctx context.Context, state string) (OAuthState, e
 }
 
 // IssueLoginCode makes the one-time code that lets the app, holding the PKCE verifier
-// of challenge, get a session for the user.
-func (s *Users) IssueLoginCode(ctx context.Context, userID, challenge string, newUser bool, profile map[string]string) (string, error) {
+// of challenge, get a session for the user; method is the first factor that proved them.
+func (s *Users) IssueLoginCode(ctx context.Context, userID, method, challenge string, newUser bool, profile map[string]string) (string, error) {
 	code, err := randomValue()
 	if err != nil {
 		return "", err
 	}
 	now := s.now()
-	lc := LoginCode{ID: HashToken(code), UserID: userID, CodeChallenge: challenge, NewUser: newUser, CreatedAt: now, ExpiresAt: now.Add(LoginCodeTTL)}
+	lc := LoginCode{ID: HashToken(code), UserID: userID, Method: method, CodeChallenge: challenge, NewUser: newUser, CreatedAt: now, ExpiresAt: now.Add(LoginCodeTTL)}
 	if newUser && len(profile) > 0 {
 		lc.Profile = profile
 	}

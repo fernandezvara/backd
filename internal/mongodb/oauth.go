@@ -30,6 +30,7 @@ type oauthStateDoc struct {
 type loginCodeDoc struct {
 	ID            string            `bson:"_id"`
 	UserID        string            `bson:"user_id"`
+	Method        string            `bson:"method"`
 	CodeChallenge string            `bson:"code_challenge"`
 	NewUser       bool              `bson:"new_user,omitempty"`
 	Profile       map[string]string `bson:"profile,omitempty"`
@@ -63,14 +64,14 @@ func (s *AuthStore) ClaimOAuthState(ctx context.Context, id string, now time.Tim
 
 // PutLoginCode stores a one-time login code.
 func (s *AuthStore) PutLoginCode(ctx context.Context, lc auth.LoginCode) error {
-	_, err := s.db.Collection(OAuthCodesCollection).InsertOne(ctx, loginCodeDoc(lc))
+	_, err := s.db.Collection(LoginCodesCollection).InsertOne(ctx, loginCodeDoc(lc))
 	return err
 }
 
 // ClaimLoginCode deletes and returns the unexpired code with that id.
 func (s *AuthStore) ClaimLoginCode(ctx context.Context, id string, now time.Time) (auth.LoginCode, error) {
 	var d loginCodeDoc
-	err := s.db.Collection(OAuthCodesCollection).FindOneAndDelete(ctx, bson.D{{Key: "_id", Value: id}, {Key: "expires_at", Value: bson.D{{Key: "$gt", Value: now}}}}).Decode(&d)
+	err := s.db.Collection(LoginCodesCollection).FindOneAndDelete(ctx, bson.D{{Key: "_id", Value: id}, {Key: "expires_at", Value: bson.D{{Key: "$gt", Value: now}}}}).Decode(&d)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return auth.LoginCode{}, auth.ErrNotFound
 	}

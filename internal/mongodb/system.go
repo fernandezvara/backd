@@ -35,11 +35,12 @@ const (
 	// IdempotencyCollection ties an Idempotency-Key to its outcome
 	// (roadmap F12), scoped to the function and the caller.
 	IdempotencyCollection = "idempotency"
-	// OAuthStatesCollection and OAuthCodesCollection hold the short-lived records of
+	// OAuthStatesCollection and LoginCodesCollection hold the short-lived records of
 	// the redirect sign-in flow: an attempt waiting for the provider, and a one-time
-	// login code waiting to be redeemed. Both are keyed by a hash and expire by TTL.
+	// login code (any first factor's) waiting to be redeemed. Both are keyed by a hash
+	// and expire by TTL.
 	OAuthStatesCollection = "oauth_states"
-	OAuthCodesCollection  = "oauth_codes"
+	LoginCodesCollection  = "login_codes"
 	// SchemaChecksCollection holds the latest schema check report of each
 	// collection (roadmap #26), replaced by the next finished check.
 	SchemaChecksCollection = "schema_checks"
@@ -440,11 +441,12 @@ var systemCollections = []systemCollection{
 		indexes: []systemIndex{{keys: bson.D{{Key: "expires_at", Value: 1}}, ttl: true}},
 	},
 	{
-		name: OAuthCodesCollection,
+		name: LoginCodesCollection,
 		// _id is the SHA-256 of the login code.
-		validator: jsonSchema([]string{"_id", "user_id", "code_challenge", "created_at", "expires_at"}, map[string]any{
+		validator: jsonSchema([]string{"_id", "user_id", "method", "code_challenge", "created_at", "expires_at"}, map[string]any{
 			"_id":            str(),
 			"user_id":        str(),
+			"method":         str(),
 			"code_challenge": str(),
 			"new_user":       typ("bool"),
 			"profile":        typ("object"),

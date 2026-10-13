@@ -63,15 +63,15 @@ sequenceDiagram
     App->>P: the user signs in
     P-->>B: callback (code, state)
     B->>P: exchange the code, check the ID token
-    B-->>App: 302 to redirect_to with ?code=
-    App->>B: POST oauth/token (code, code_verifier)
+    B-->>App: 302 to redirect_to with ?backd_code=
+    App->>B: POST token (code, code_verifier)
     B-->>App: a session
 ```
 
 1. The app makes a random PKCE **verifier** and its S256 **challenge**, and sends the browser to `GET /v1/{realm}/_auth/oauth/{provider}/start?redirect_to=…&code_challenge=…` (or calls `POST` and navigates to the `authorize_url` it returns). `redirect_to` must be within the allowed redirects.
 2. The user signs in at the provider, which sends them to backd's callback. backd checks the `state` (good for one use, ten minutes), exchanges the code for an ID token with the provider, and verifies its signature, issuer, audience, expiry and nonce.
-3. backd sends the browser to `redirect_to` with `?code=…` (a one-time login code, valid a minute) or `?error=…`.
-4. The app redeems it: `POST /v1/{realm}/_auth/oauth/token` with `{"code", "code_verifier"}`. The answer is a session, like a login's (`{"cookie": true}` works too). The code is used up even when the verifier is wrong, so a stolen code is useless without the verifier only your app holds.
+3. backd sends the browser to `redirect_to` with `?backd_code=…` (a one-time login code, valid a minute) or `?backd_error=…`. The parameters carry the `backd_` prefix so that they can't collide with the ones your page already uses; add `backd_provider` (with `account_exists`, the provider that was used) and `backd_linked` (after a link, the provider).
+4. The app redeems it: `POST /v1/{realm}/_auth/token` with `{"code", "code_verifier"}`. The answer is a session, like a login's (`{"cookie": true}` works too). The code is used up even when the verifier is wrong, so a stolen code is useless without the verifier only your app holds.
 
 **A session never appears in a URL**: only the short-lived code does.
 
@@ -87,7 +87,7 @@ curl -X POST "$API/v1/acme/_auth/oauth/google/id-token" -H "Content-Type: applic
 
 backd verifies the signature, issuer, expiry and nonce as for the redirect, and the **audience**: the token must have been issued to the web client or to one of the apps you listed (`native_client_ids` for Google and Microsoft, `bundle_ids` for Apple). The app generates the nonce, passes it to the SDK (some SDKs put its SHA-256 in the token, others the nonce itself) and sends the raw value; backd accepts either form, and always requires it.
 
-The same rules as the redirect flow decide who the person is, with JSON answers instead of `?error=`:
+The same rules as the redirect flow decide who the person is, with JSON answers instead of `?backd_error=`:
 
 | Status and `code` | When |
 |---|---|
@@ -104,7 +104,7 @@ With `"intent": "link"` and the session in `Authorization`, the call adds the pr
 
 Users hold sign-in data only; names and pictures belong in your own collections. So backd hands you what the provider says about a **new** person once, and stores none of it:
 
-- The answer that completes a provider sign-in (`POST /_auth/oauth/token`, or `…/id-token`) has `"new_user": true|false` and, when it made the user, `"profile": {"name", "given_name", "family_name", "picture"}` (fields the provider didn't give are left out). Apple sends the name only the first time a person authorizes the app, in the callback, and that is when you get it. Treat the profile as a hint: it is what the provider (or the browser, for Apple's name) said.
+- The answer that completes a provider sign-in (`POST /_auth/token`, or `…/id-token`) has `"new_user": true|false` and, when it made the user, `"profile": {"name", "given_name", "family_name", "picture"}` (fields the provider didn't give are left out). Apple sends the name only the first time a person authorizes the app, in the callback, and that is when you get it. Treat the profile as a hint: it is what the provider (or the browser, for Apple's name) said.
 - If the app crashes before saving it, it is gone: for that, name a function in `realm.yaml` and let backd call it:
 
 ```yaml
@@ -134,24 +134,24 @@ Run a worker (`backd worker`, or `serve --with-worker`) for this: without one th
 |---|---|
 | The provider account is already linked | Signs in as that user. The identity's address is updated; the user's own never is |
 | Its address matches an account, the provider is **Google or Apple**, says the address is verified, and the backd account's is verified too | Linked automatically, signed in |
-| Its address matches an account and any of those is not true | `error=account_exists`: sign in another way and link explicitly |
+| Its address matches an account and any of those is not true | `backd_error=account_exists`: sign in another way and link explicitly |
 | No account has the address | A user is created if the realm's `signup` allows it |
 
 - **Microsoft never links by address.** The address in a Microsoft token is whatever the tenant's administrator set, so it can't prove who the person is; the user is stored unverified and email verification applies.
 - **Pre-hijacking is closed:** an account made with someone's address, never verified, does not absorb that person's Google identity.
-- **Sign-up modes** apply: `open`; `invite` needs the invitation token passed to `start` (`invitation=…`, bound to an address it must match); `closed` is `error=signup_closed`.
-- New users from Google or Apple with a verified address are marked verified; an Apple private-relay address counts. A user needs an address: a provider that gives none ends with `error=email_required`.
-- **Linking a provider to a signed-in user** is `POST …/start` with the session in `Authorization` and `"intent": "link"`; it ends at `redirect_to?linked=<provider>`. A provider account that belongs to another user, or a second one of the same provider, is `link_conflict`.
+- **Sign-up modes** apply: `open`; `invite` needs the invitation token passed to `start` (`invitation=…`, bound to an address it must match); `closed` is `backd_error=signup_closed`.
+- New users from Google or Apple with a verified address are marked verified; an Apple private-relay address counts. A user needs an address: a provider that gives none ends with `backd_error=email_required`.
+- **Linking a provider to a signed-in user** is `POST …/start` with the session in `Authorization` and `"intent": "link"`; it ends at `redirect_to?backd_linked=<provider>`. A provider account that belongs to another user, or a second one of the same provider, is `link_conflict`.
 - Remove a method with `DELETE /_auth/identities/{provider}`; the last one can't be removed.
 
 ## Errors
 
-A failed attempt goes back to your app as `redirect_to?error=<code>`, with nothing sensitive in it:
+A failed attempt goes back to your app as `redirect_to?backd_error=<code>`, with nothing sensitive in it:
 
 | `error` | Meaning |
 |---|---|
 | `cancelled` | The user refused at the provider |
-| `account_exists` | An account has the address and can't be linked automatically (with `provider`) |
+| `account_exists` | An account has the address and can't be linked automatically (with `backd_provider`) |
 | `signup_closed`, `invitation_invalid` | Sign-up is closed, or needs a valid invitation |
 | `link_conflict` | The provider account belongs to another user, or the user has one of this provider already |
 | `email_not_verified` | The realm requires a verified address and the account's isn't |
