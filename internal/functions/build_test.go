@@ -174,15 +174,6 @@ func TestBuildWrongDeno(t *testing.T) {
 	}
 }
 
-func mustManifest(t *testing.T, dir string) registry.Manifest {
-	t.Helper()
-	m, err := registry.ReadManifest(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return m
-}
-
 // A function written with defineFunction bundles with no setup in the project, whether its
 // deno.json has other imports, none, or maps the module itself; the generated types don't
 // make the build stale.
