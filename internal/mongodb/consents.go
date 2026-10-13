@@ -22,6 +22,7 @@ type consentRecordDoc struct {
 	Method    string    `bson:"method"`
 	Evidence  string    `bson:"evidence,omitempty"`
 	At        time.Time `bson:"at"`
+	DeleteAt  time.Time `bson:"expires_at,omitempty"`
 	IP        string    `bson:"ip,omitempty"`
 	UserAgent string    `bson:"user_agent,omitempty"`
 }
@@ -33,7 +34,7 @@ func (s *AuthStore) consentRecords() *mongo.Collection {
 func (s *AuthStore) AppendConsentRecord(ctx context.Context, r auth.ConsentRecord) error {
 	_, err := s.consentRecords().InsertOne(ctx, consentRecordDoc{
 		ID: r.ID, UserID: r.UserID, Consent: r.Consent, Version: r.Version, Locale: r.Locale, TextHash: r.TextHash,
-		Action: r.Action, Method: r.Method, Evidence: r.Evidence, At: r.At, IP: r.IP, UserAgent: r.UserAgent,
+		Action: r.Action, Method: r.Method, Evidence: r.Evidence, At: r.At, DeleteAt: r.DeleteAt, IP: r.IP, UserAgent: r.UserAgent,
 	})
 	return err
 }
@@ -52,7 +53,7 @@ func (s *AuthStore) ListConsentRecords(ctx context.Context, userID string) ([]au
 	for i, d := range docs {
 		out[i] = auth.ConsentRecord{
 			ID: d.ID, UserID: d.UserID, Consent: d.Consent, Version: d.Version, Locale: d.Locale, TextHash: d.TextHash,
-			Action: d.Action, Method: d.Method, Evidence: d.Evidence, At: d.At.UTC(), IP: d.IP, UserAgent: d.UserAgent,
+			Action: d.Action, Method: d.Method, Evidence: d.Evidence, At: d.At.UTC(), DeleteAt: d.DeleteAt.UTC(), IP: d.IP, UserAgent: d.UserAgent,
 		}
 	}
 	return out, nil
@@ -99,4 +100,27 @@ func (s *AuthStore) ConsentVersionsInUse(ctx context.Context) ([]auth.ConsentRef
 		}
 	}
 	return out, nil
+}
+
+func (s *AuthStore) ReduceConsentRecords(ctx context.Context, userID, pseudonym string, deleteAt time.Time) (int64, error) {
+	set := bson.D{{Key: "user", Value: pseudonym}}
+	if !deleteAt.IsZero() {
+		set = append(set, bson.E{Key: "expires_at", Value: deleteAt})
+	}
+	res, err := s.consentRecords().UpdateMany(ctx, bson.D{{Key: "user", Value: userID}}, bson.D{
+		{Key: "$set", Value: set},
+		{Key: "$unset", Value: bson.D{{Key: "ip", Value: ""}, {Key: "user_agent", Value: ""}}},
+	})
+	if err != nil {
+		return 0, err
+	}
+	return res.ModifiedCount, nil
+}
+
+func (s *AuthStore) DeleteConsentRecordsOf(ctx context.Context, userID string) (int64, error) {
+	res, err := s.consentRecords().DeleteMany(ctx, bson.D{{Key: "user", Value: userID}})
+	if err != nil {
+		return 0, err
+	}
+	return res.DeletedCount, nil
 }

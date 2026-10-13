@@ -163,6 +163,23 @@ backd consents record --realm shelf --email ada@example.com --consent marketing 
 
 The record has the method `admin` and the `evidence` (required), and is audited as `user.consent_recorded`. `GET /_admin/users/{id}/consents` lists a user's whole history, with the hash of each text and the evidence, for answering a request.
 
+## Erasure and retention
+
+Proving that someone accepted a text may be a legal obligation long after their account is gone, and keeping personal data may be one too. `backd` keeps only what proves the consent, for a period you choose:
+
+- **At erasure** (`backd user delete`, or `DELETE /_admin/users/{id}`), the person's consent records lose their IP address and user agent, and the **user id is replaced by a pseudonym**: an HMAC-SHA-256 of the normalized email address, keyed by a realm secret (`BACKD_CONSENT_PSEUDONYM_KEY`, made by `backd` the first time an erase needs it, which needs `BACKD_SECRETS_KEY`). A later dispute from that address can be matched to the records, and the address itself is not kept. Without a secrets key the records keep the user id, which means nothing without the tombstone it belongs to.
+- **What stays:** the consent name, version, text hash, action, method, time and, for administrator records, the evidence. The summary on the user is cleared.
+- **After `compliance.consent_retention`** (3 years from the erasure by default), the database removes the records. `0` deletes them at erasure.
+
+```yaml
+compliance:
+  consent_retention: 3y     # or 90d, 12h… ; 0 deletes the records when the person is erased
+```
+
+{{< hint style="warning" >}}
+Changing or deleting `BACKD_CONSENT_PSEUDONYM_KEY` makes records of people erased earlier impossible to match to an address. The retention periods are legal decisions for you, not defaults to rely on.
+{{< /hint >}}
+
 ## Records
 
 Each acceptance or withdrawal is a record in the realm's system database, never updated or deleted by the app:

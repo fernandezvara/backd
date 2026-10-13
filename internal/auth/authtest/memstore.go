@@ -984,6 +984,7 @@ func (m *MemStore) EraseUser(_ context.Context, id, placeholderEmail string, now
 	m.dropDevicesOf(id)
 	u.Email, u.ErasedAt, u.Disabled, u.EmailVerified, u.Roles, u.UpdatedAt = placeholderEmail, now, true, true, []string{}, now
 	u.Locale, u.PendingEmail, u.PreviousEmail, u.AdminNetworks, u.LoginNetworks = "", "", "", nil, nil
+	u.Consents = nil
 	m.users[id] = u
 	return nil
 }

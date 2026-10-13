@@ -57,4 +57,22 @@ func TestAuthStoreConsents(t *testing.T) {
 	if err != nil || len(refs) != 2 {
 		t.Errorf("versions in use = %+v %v", refs, err)
 	}
+
+	// An erase keeps the proof, without the IP address, under a pseudonym, until it expires.
+	deleteAt := now.Add(24 * time.Hour)
+	n, err := s.ReduceConsentRecords(ctx, "u1", "erased:abc", deleteAt)
+	if err != nil || n != 3 {
+		t.Fatalf("reduce = %d %v", n, err)
+	}
+	if recs, _ := s.ListConsentRecords(ctx, "u1"); len(recs) != 0 {
+		t.Errorf("under the id: %+v", recs)
+	}
+	reduced, _ := s.ListConsentRecords(ctx, "erased:abc")
+	if len(reduced) != 3 || reduced[0].IP != "" || reduced[0].TextHash == "" || !reduced[0].DeleteAt.Equal(deleteAt) {
+		t.Errorf("reduced = %+v", reduced)
+	}
+	if n, err := s.DeleteConsentRecordsOf(ctx, "erased:abc"); err != nil || n != 3 {
+		t.Errorf("delete = %d %v", n, err)
+	}
+
 }

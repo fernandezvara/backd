@@ -539,8 +539,11 @@ var systemCollections = []systemCollection{
 			"at":         typ("date"),
 			"ip":         str(),
 			"user_agent": str(),
+			"expires_at": typ("date"),
 		}),
 		indexes: []systemIndex{
+			// Set at erasure: the retention after which a worker-less TTL removes the record.
+			{keys: bson.D{{Key: "expires_at", Value: 1}}, ttl: true, sparse: true},
 			{keys: bson.D{{Key: "user", Value: 1}, {Key: "at", Value: 1}}},
 			{keys: bson.D{{Key: "consent", Value: 1}, {Key: "version", Value: 1}}},
 		},

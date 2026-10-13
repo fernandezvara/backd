@@ -2,6 +2,10 @@ package auth
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -44,6 +48,8 @@ type ConsentRecord struct {
 	Method   string // ConsentMethodSignup, …
 	Evidence string // for the admin method: the reference given
 	At       time.Time
+	// DeleteAt is when a retention removes the record: set at erasure, zero before.
+	DeleteAt time.Time
 	// IP and UserAgent are stored only when the realm lists them in compliance.consent_proof.
 	IP        string
 	UserAgent string
@@ -260,4 +266,69 @@ func (s *Users) RecordConsentFor(ctx context.Context, userID string, in ConsentI
 	}
 	s.Audit(ctx, AuditConsentRecorded, userTarget(userID), map[string]any{"consent": rec.Consent, "version": rec.Version, "action": rec.Action, "evidence": rec.Evidence})
 	return rec, nil
+}
+
+// ConsentPseudonymSecret is the realm secret that keys the pseudonym consent records keep
+// of an erased person. backd makes it the first time an erase needs it; changing it
+// stops matching records to addresses made before.
+const ConsentPseudonymSecret = registry.ConsentPseudonymSecret
+
+// ConsentPseudonym is HMAC-SHA-256 over the normalized address under the realm's key: it
+// lets a later dispute from that address be matched to the records without keeping the
+// address. "" when the realm has no secrets key (nothing can be keyed).
+func (s *Users) ConsentPseudonym(ctx context.Context, address string) (string, error) {
+	if s.Cipher == nil {
+		return "", nil
+	}
+	norm, err := registry.NormalizeEmail(address)
+	if err != nil {
+		return "", err
+	}
+	ref := []registry.SecretRef{{Realm: true, Name: ConsentPseudonymSecret}}
+	values, missing, err := s.ResolveSecrets(ctx, ref, "")
+	if err != nil {
+		return "", err
+	}
+	if len(missing) > 0 {
+		raw := make([]byte, 32)
+		if _, err := rand.Read(raw); err != nil {
+			return "", err
+		}
+		if err := s.SetSecret(ctx, "", ConsentPseudonymSecret, hex.EncodeToString(raw), "backd:compliance"); err != nil {
+			return "", err
+		}
+		// Read it back: another instance may have made one at the same time.
+		if values, missing, err = s.ResolveSecrets(ctx, ref, ""); err != nil || len(missing) > 0 {
+			return "", errors.Join(err, errors.New("the consent pseudonym key could not be read back"))
+		}
+	}
+	m := hmac.New(sha256.New, []byte(values["realm."+ConsentPseudonymSecret]))
+	m.Write([]byte(norm))
+	return "erased:" + hex.EncodeToString(m.Sum(nil)), nil
+}
+
+// ReduceConsentRecords is what an erase leaves of a person's consent records
+// (design/compliance.md §8): the IP address and the user agent go, the user id becomes an
+// HMAC of the normalized address under a realm secret, and what proves consent stays (names,
+// versions, text hashes, actions, methods, times) until `compliance.consent_retention` has
+// passed, when the database removes them. With a retention of 0 they go at once. Safe to
+// repeat. It returns how many records it touched.
+func (s *Users) ReduceConsentRecords(ctx context.Context, userID, address string) (int64, error) {
+	retention := s.Settings.Compliance.Retention()
+	if retention == 0 {
+		return s.Store.DeleteConsentRecordsOf(ctx, userID)
+	}
+	pseudonym := userID
+	if address != "" {
+		var err error
+		if pseudonym, err = s.ConsentPseudonym(ctx, address); err != nil {
+			return 0, err
+		}
+	}
+	if pseudonym == "" {
+		// No secrets key: nothing can be keyed. The id is a random value that means
+		// nothing without the tombstone user it belongs to, so the records keep it.
+		pseudonym = userID
+	}
+	return s.Store.ReduceConsentRecords(ctx, userID, pseudonym, s.now().Add(retention))
 }

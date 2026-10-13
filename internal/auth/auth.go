@@ -247,6 +247,12 @@ type Store interface {
 	// ListConsentRecords returns it, oldest first.
 	AppendConsentRecord(ctx context.Context, r ConsentRecord) error
 	ListConsentRecords(ctx context.Context, userID string) ([]ConsentRecord, error)
+	// ReduceConsentRecords is what an erase leaves of a user's consent records: it removes
+	// their IP address and user agent and replaces the user id with a pseudonym, and, when
+	// deleteAt isn't zero, sets the time a retention will remove them. It says how many.
+	// DeleteConsentRecordsOf removes them all (a realm that keeps none after an erase).
+	ReduceConsentRecords(ctx context.Context, userID, pseudonym string, deleteAt time.Time) (int64, error)
+	DeleteConsentRecordsOf(ctx context.Context, userID string) (int64, error)
 	// SetUserConsent sets the version of a consent the user holds ("" removes it: withdrawn).
 	SetUserConsent(ctx context.Context, userID, consent, version string) error
 	// ConsentVersionsInUse lists the distinct consent and version pairs records refer to.

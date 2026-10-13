@@ -155,3 +155,37 @@ func TestEraseFailureAndResume(t *testing.T) {
 		t.Errorf("members after resuming: %v", m)
 	}
 }
+
+// An erase keeps what proves consent, reduced: no IP address or user agent, and under a
+// pseudonym of the address instead of the user.
+func TestEraseKeepsOnlyWhatProvesConsent(t *testing.T) {
+	f, w := newVerifyFixture(t)
+	ctx := context.Background()
+	f.svc.Cipher, _ = auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
+	if _, err := f.svc.RecordConsent(ctx, f.adaID, auth.ConsentInput{
+		Consent: "marketing", Version: "1", Action: auth.ConsentAccepted, Method: auth.ConsentMethodSignup, IP: "203.0.113.9", UserAgent: "Agent/1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if code, out := f.as(t, f.key, "DELETE", "/v1/acme/_admin/users/"+f.adaID, ""); code != 202 {
+		t.Fatalf("erase: %d %v", code, out)
+	}
+	if !w.RunOnce(ctx) {
+		t.Fatal("no erase job to run")
+	}
+	if recs, _ := f.svc.ConsentHistory(ctx, f.adaID); len(recs) != 0 {
+		t.Errorf("records still under the user: %+v", recs)
+	}
+	pseudonym, err := f.svc.ConsentPseudonym(ctx, "ada@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	recs, _ := f.svc.ConsentHistory(ctx, pseudonym)
+	if pseudonym == "" || len(recs) != 1 || recs[0].IP != "" || recs[0].UserAgent != "" || recs[0].Consent != "marketing" || recs[0].DeleteAt.IsZero() {
+		t.Errorf("reduced records under %q: %+v", pseudonym, recs)
+	}
+	u, _ := f.svc.UserByID(ctx, f.adaID)
+	if len(u.Consents) != 0 {
+		t.Errorf("the tombstone still holds consents: %v", u.Consents)
+	}
+}

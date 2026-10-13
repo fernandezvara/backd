@@ -3,6 +3,7 @@ package auth_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -236,5 +237,93 @@ func TestAdminRecordsAConsentWithEvidence(t *testing.T) {
 	}
 	if _, err := svc.RecordConsentFor(ctx, "nobody", ConsentInput{Consent: "terms", Version: "2", Action: ConsentAccepted, Evidence: "x"}); !errors.Is(err, ErrNotFound) {
 		t.Errorf("unknown user: %v", err)
+	}
+}
+
+func TestConsentRecordsAtErasure(t *testing.T) {
+	ctx := context.Background()
+	svc, store, clock := consentUsers(t)
+	svc.Cipher, _ = NewSecretCipher([]byte("01234567890123456789012345678901"))
+	svc.Settings.Compliance = registry.ComplianceSettings{ConsentRetention: 90 * 24 * time.Hour, ConsentRetentionSet: true}
+	ada := mustCreate(t, svc, "Ada@Example.com")
+	other := mustCreate(t, svc, "bob@example.com")
+	for _, id := range []string{ada.ID, other.ID} {
+		if _, err := svc.RecordConsent(ctx, id, ConsentInput{Consent: "terms", Version: "2", Action: ConsentAccepted, Method: ConsentMethodSignup, IP: "203.0.113.9", UserAgent: "Agent/1"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	n, err := svc.ReduceConsentRecords(ctx, ada.ID, "ada@example.com")
+	if err != nil || n != 1 {
+		t.Fatalf("reduce = %d %v", n, err)
+	}
+	// Nothing is left under the id, and Bob's records are untouched.
+	if recs, _ := svc.ConsentHistory(ctx, ada.ID); len(recs) != 0 {
+		t.Errorf("records under the id: %+v", recs)
+	}
+	if recs, _ := svc.ConsentHistory(ctx, other.ID); len(recs) != 1 || recs[0].IP == "" {
+		t.Errorf("another user's records changed: %+v", recs)
+	}
+	// They are under the pseudonym of the address (whatever its case), without the proof's IP and agent.
+	p1, err := svc.ConsentPseudonym(ctx, "ADA@example.com ")
+	if err != nil || !strings.HasPrefix(p1, "erased:") || len(p1) != len("erased:")+64 {
+		t.Fatalf("pseudonym = %q %v", p1, err)
+	}
+	if strings.Contains(p1, "ada") {
+		t.Error("the pseudonym holds the address")
+	}
+	recs, _ := svc.ConsentHistory(ctx, p1)
+	if len(recs) != 1 || recs[0].IP != "" || recs[0].UserAgent != "" || recs[0].Consent != "terms" || recs[0].Version != "2" ||
+		recs[0].TextHash == "" || recs[0].Method != ConsentMethodSignup || recs[0].Action != ConsentAccepted {
+		t.Fatalf("reduced record = %+v", recs)
+	}
+	if want := clock.Add(90 * 24 * time.Hour); !recs[0].DeleteAt.Equal(want) {
+		t.Errorf("deletes at %s, want %s", recs[0].DeleteAt, want)
+	}
+	// Repeating changes nothing, and another address has another pseudonym.
+	if n, err := svc.ReduceConsentRecords(ctx, ada.ID, ""); err != nil || n != 0 {
+		t.Errorf("repeat = %d %v", n, err)
+	}
+	if p2, _ := svc.ConsentPseudonym(ctx, "bob@example.com"); p2 == p1 {
+		t.Error("two addresses share a pseudonym")
+	}
+
+	// After the retention nothing is left.
+	if purged := store.PurgeConsentRecords(clock.Add(89 * 24 * time.Hour)); purged != 0 {
+		t.Errorf("purged early: %d", purged)
+	}
+	if purged := store.PurgeConsentRecords(clock.Add(91 * 24 * time.Hour)); purged != 1 {
+		t.Errorf("purged = %d", purged)
+	}
+	if recs, _ := svc.ConsentHistory(ctx, p1); len(recs) != 0 {
+		t.Errorf("records after the retention: %+v", recs)
+	}
+}
+
+func TestConsentRecordsAreDeletedAtErasureWithRetentionZero(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _ := consentUsers(t)
+	svc.Settings.Compliance = registry.ComplianceSettings{ConsentRetentionSet: true} // 0
+	ada := mustCreate(t, svc, "ada@example.com")
+	if _, err := svc.RecordConsent(ctx, ada.ID, ConsentInput{Consent: "terms", Version: "2", Action: ConsentAccepted, Method: ConsentMethodAPI}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := svc.ReduceConsentRecords(ctx, ada.ID, "ada@example.com"); err != nil || n != 1 {
+		t.Fatalf("reduce = %d %v", n, err)
+	}
+	if recs, _ := svc.ConsentHistory(ctx, ada.ID); len(recs) != 0 {
+		t.Errorf("records = %+v", recs)
+	}
+	// Without a secrets key the id stays as the pseudonym instead of failing the erase.
+	svc.Settings.Compliance = registry.ComplianceSettings{}
+	bob := mustCreate(t, svc, "bob@example.com")
+	if _, err := svc.RecordConsent(ctx, bob.ID, ConsentInput{Consent: "terms", Version: "2", Action: ConsentAccepted, Method: ConsentMethodAPI, IP: "203.0.113.9"}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := svc.ReduceConsentRecords(ctx, bob.ID, "bob@example.com"); err != nil || n != 1 {
+		t.Fatalf("keyless = %d %v", n, err)
+	}
+	if recs, _ := svc.ConsentHistory(ctx, bob.ID); len(recs) != 1 || recs[0].IP != "" {
+		t.Errorf("keyless records = %+v", recs)
 	}
 }

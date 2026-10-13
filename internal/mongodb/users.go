@@ -281,7 +281,7 @@ func (s *AuthStore) EraseUser(ctx context.Context, id, placeholderEmail string, 
 		}},
 		{Key: "$unset", Value: bson.D{
 			{Key: "locale", Value: ""}, {Key: "pending_email", Value: ""}, {Key: "previous_email", Value: ""},
-			{Key: "admin_networks", Value: ""}, {Key: "login_networks", Value: ""},
+			{Key: "admin_networks", Value: ""}, {Key: "login_networks", Value: ""}, {Key: "consents", Value: ""},
 		}},
 	})
 }

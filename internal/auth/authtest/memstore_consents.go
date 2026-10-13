@@ -2,6 +2,7 @@ package authtest
 
 import (
 	"context"
+	"time"
 
 	"github.com/fernandezvara/backd/internal/auth"
 )
@@ -62,4 +63,52 @@ func (m *MemStore) ConsentVersionsInUse(_ context.Context) ([]auth.ConsentRef, e
 		}
 	}
 	return out, nil
+}
+
+func (m *MemStore) ReduceConsentRecords(_ context.Context, userID, pseudonym string, deleteAt time.Time) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var n int64
+	for i, r := range m.consents {
+		if r.UserID != userID {
+			continue
+		}
+		r.UserID, r.IP, r.UserAgent, r.DeleteAt = pseudonym, "", "", deleteAt
+		m.consents[i] = r
+		n++
+	}
+	return n, nil
+}
+
+func (m *MemStore) DeleteConsentRecordsOf(_ context.Context, userID string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var n int64
+	kept := m.consents[:0]
+	for _, r := range m.consents {
+		if r.UserID == userID {
+			n++
+			continue
+		}
+		kept = append(kept, r)
+	}
+	m.consents = kept
+	return n, nil
+}
+
+// PurgeConsentRecords removes the records whose retention ended, as the database's TTL does.
+func (m *MemStore) PurgeConsentRecords(now time.Time) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	kept := m.consents[:0]
+	n := 0
+	for _, r := range m.consents {
+		if !r.DeleteAt.IsZero() && !now.Before(r.DeleteAt) {
+			n++
+			continue
+		}
+		kept = append(kept, r)
+	}
+	m.consents = kept
+	return n
 }
