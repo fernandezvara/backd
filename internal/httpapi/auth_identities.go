@@ -16,7 +16,7 @@ func identitiesJSON(u auth.User, ids []auth.Identity) []map[string]any {
 	out := make([]map[string]any, 0, len(ids))
 	for _, i := range ids {
 		email, verified := i.Email, i.EmailVerified
-		if i.Provider == auth.ProviderPassword {
+		if i.Provider == auth.ProviderPassword || i.Provider == auth.ProviderEmail {
 			email, verified = u.Email, u.EmailVerified
 		}
 		var lastUsed any

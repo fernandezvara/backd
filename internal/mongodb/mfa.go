@@ -13,18 +13,24 @@ import (
 )
 
 type challengeDoc struct {
-	ID        string            `bson:"_id"`
-	Kind      string            `bson:"kind"`
-	UserID    string            `bson:"user_id"`
-	Factor    string            `bson:"factor,omitempty"`
-	NewUser   bool              `bson:"new_user,omitempty"`
-	Profile   map[string]string `bson:"profile,omitempty"`
-	Secret    string            `bson:"secret,omitempty"`
-	SessionID string            `bson:"session_id,omitempty"`
-	CodeHash  string            `bson:"code_hash,omitempty"`
-	Attempts  int               `bson:"attempts"`
-	CreatedAt time.Time         `bson:"created_at"`
-	ExpiresAt time.Time         `bson:"expires_at"`
+	ID            string            `bson:"_id"`
+	Kind          string            `bson:"kind"`
+	UserID        string            `bson:"user_id"`
+	Factor        string            `bson:"factor,omitempty"`
+	NewUser       bool              `bson:"new_user,omitempty"`
+	Profile       map[string]string `bson:"profile,omitempty"`
+	Secret        string            `bson:"secret,omitempty"`
+	SessionID     string            `bson:"session_id,omitempty"`
+	CodeHash      string            `bson:"code_hash,omitempty"`
+	TokenHash     string            `bson:"token_hash,omitempty"`
+	CodeChallenge string            `bson:"code_challenge,omitempty"`
+	RedirectTo    string            `bson:"redirect_to,omitempty"`
+	Email         string            `bson:"email,omitempty"`
+	Purpose       string            `bson:"purpose,omitempty"`
+	Locale        string            `bson:"locale,omitempty"`
+	Attempts      int               `bson:"attempts"`
+	CreatedAt     time.Time         `bson:"created_at"`
+	ExpiresAt     time.Time         `bson:"expires_at"`
 }
 
 func (d challengeDoc) challenge() auth.AuthChallenge {
@@ -113,9 +119,29 @@ func (s *AuthStore) ChallengeOfUser(ctx context.Context, userID, kind string, no
 	return d.challenge(), nil
 }
 
-func (s *AuthStore) SetChallengeCode(ctx context.Context, id, codeHash string, now time.Time) (auth.AuthChallenge, error) {
+func (s *AuthStore) ChallengeByToken(ctx context.Context, tokenHash, kind string, now time.Time) (auth.AuthChallenge, error) {
+	if tokenHash == "" {
+		return auth.AuthChallenge{}, auth.ErrNotFound
+	}
 	var d challengeDoc
-	err := s.challenges().FindOneAndUpdate(ctx, unexpired(id, now), bson.D{{Key: "$set", Value: bson.D{{Key: "code_hash", Value: codeHash}}}},
+	err := s.challenges().FindOne(ctx,
+		bson.D{{Key: "token_hash", Value: tokenHash}, {Key: "kind", Value: kind}, {Key: "expires_at", Value: bson.D{{Key: "$gt", Value: now}}}}).Decode(&d)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return auth.AuthChallenge{}, auth.ErrNotFound
+	}
+	if err != nil {
+		return auth.AuthChallenge{}, err
+	}
+	return d.challenge(), nil
+}
+
+func (s *AuthStore) SetChallengeSecrets(ctx context.Context, id, tokenHash, codeHash string, now time.Time) (auth.AuthChallenge, error) {
+	var d challengeDoc
+	set := bson.D{{Key: "code_hash", Value: codeHash}}
+	if tokenHash != "" {
+		set = append(set, bson.E{Key: "token_hash", Value: tokenHash})
+	}
+	err := s.challenges().FindOneAndUpdate(ctx, unexpired(id, now), bson.D{{Key: "$set", Value: set}},
 		options.FindOneAndUpdate().SetReturnDocument(options.After)).Decode(&d)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return auth.AuthChallenge{}, auth.ErrNotFound

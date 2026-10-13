@@ -811,6 +811,11 @@ func checkFunctions(reg *registry.Registry, cfg settings.Settings, log *slog.Log
 		}
 	}
 	for _, name := range reg.RealmNames() {
+		if reg.Realms[name].Settings.MagicLink.Enabled && len(cfg.SecretsKey) == 0 {
+			return fmt.Errorf("realm %s enables magic links, which keep the address of a request that has no account sealed: set BACKD_SECRETS_KEY (or BACKD_SECRETS_KEY_FILE)", name)
+		}
+	}
+	for _, name := range reg.RealmNames() {
 		s := reg.Realms[name].Settings
 		if len(s.Providers) > 0 && cfg.BackdURL == "" && (s.Email == nil || s.Email.PublicURL == "") {
 			return fmt.Errorf("realm %s lets users sign in with providers, but backd's public address is unknown: set BACKD_URL (or email.public_url in its realm.yaml), the base of the callback address registered with each provider", name)

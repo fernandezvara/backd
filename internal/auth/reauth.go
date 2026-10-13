@@ -209,7 +209,7 @@ func (s *Users) MakeReauthCode(ctx context.Context, challengeID string) (string,
 		return "", time.Time{}, err
 	}
 	code := fmt.Sprintf("%06d", n.Int64())
-	c, err := s.Store.SetChallengeCode(ctx, challengeID, s.codeHash(challengeID, code), s.now())
+	c, err := s.Store.SetChallengeSecrets(ctx, challengeID, "", s.codeHash(challengeID, code), s.now())
 	if err != nil {
 		return "", time.Time{}, err
 	}

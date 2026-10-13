@@ -1702,6 +1702,91 @@ func TestContract(t *testing.T) {
 		req("POST", a+"/reauth/email-code", "", codeHdr, 429)
 	}
 
+	// Magic links: a request, the page its link opens, the button, the code typed in the app.
+	{
+		ctx := context.Background()
+		f.svc.Settings.MagicLink = registry.MagicLinkSettings{Enabled: true, Signup: true}
+		f.svc.Settings.SignInAppURL = "https://app.acme.example/signed-in"
+		if f.svc.Cipher == nil {
+			f.svc.Cipher, _ = auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
+		}
+		magic, mform := a+"/magic-link", map[string]string{"Content-Type": "application/x-www-form-urlencoded"}
+		verifier, challenge, _ := auth.NewPKCE()
+		secrets := func(requestID string) (string, string) {
+			tok, code, _, err := f.svc.MakeMagicLinkSecrets(ctx, auth.HashToken(requestID))
+			if err != nil {
+				t.Fatal(err)
+			}
+			return tok, code
+		}
+		// (Email limits are not what is under test here.)
+		limits := f.svc.Settings.Email.Limits
+		f.svc.Settings.Email.Limits = registry.EmailLimits{PerKindPerHour: 1000, PerDay: 1000, PerIPPerHour: 1000}
+		ask := func(address, extra string) map[string]any {
+			return req("POST", magic, `{"email": "`+address+`", "code_challenge": "`+challenge+`"`+extra+`}`, nil, 202)
+		}
+		first := ask("ada@example.com", `, "redirect_to": "https://app.acme.example/in"`)
+		tok, code := secrets(first["request_id"].(string))
+		req("GET", magic+"?token="+tok, "", nil, 200)
+		req("GET", magic+"?token=nope", "", nil, 400)
+		req("POST", magic, "token="+tok, mform, 303)
+		req("POST", magic, "token="+tok, mform, 400)
+		second := ask("ada@example.com", "")
+		_, code2 := secrets(second["request_id"].(string))
+		verify := magic + "/verify"
+		body := func(id, c, v string) string {
+			return `{"request_id": "` + id + `", "code": "` + c + `", "code_verifier": "` + v + `"}`
+		}
+		req("POST", verify, body(second["request_id"].(string), "000000", verifier), nil, 400)
+		req("POST", verify, `{"request_id": "x"}`, nil, 400)
+		req("POST", verify, body(second["request_id"].(string), code2, verifier), nil, 200)
+		req("POST", verify, body(second["request_id"].(string), code2, verifier), nil, 400)
+		_ = code
+		// A newcomer in a realm with sign-up by link makes the account when the code is used.
+		third := ask("magic-newcomer@example.com", "")
+		_, code3 := secrets(third["request_id"].(string))
+		if got := req("POST", verify, body(third["request_id"].(string), code3, verifier), nil, 200); got["new_user"] != true {
+			t.Errorf("a newcomer by code: %v", got)
+		}
+		// A link with nowhere to go answers a page that says to type the code, and isn't used up.
+		f.svc.Settings.SignInAppURL = ""
+		lost := ask("ada@example.com", "")
+		lostTok, _ := secrets(lost["request_id"].(string))
+		req("POST", magic, "token="+lostTok, mform, 200)
+		f.svc.Settings.SignInAppURL = "https://app.acme.example/signed-in"
+		// An account that can't sign in is refused when the link is used.
+		blocked, err := f.svc.Create(ctx, "magic-blocked@example.com", ptr("dev-p4ssw0rd!"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		fourth := ask("magic-blocked@example.com", "")
+		_, code4 := secrets(fourth["request_id"].(string))
+		if err := f.svc.SetDisabled(ctx, blocked.Email, true); err != nil {
+			t.Fatal(err)
+		}
+		req("POST", verify, body(fourth["request_id"].(string), code4, verifier), nil, 403)
+		// The text of the page and the refusals of the route.
+		req("POST", magic, `{"email": "ada@example.com", "code_challenge": "`+challenge+`", "redirect_to": "https://evil.example/"}`, nil, 400)
+		req("POST", magic, `{"email": "ada@example.com"}`, map[string]string{"Content-Type": "text/plain"}, 415)
+		req("POST", "/v1/nope/_auth/magic-link", `{"email": "a@example.com", "code_challenge": "`+challenge+`"}`, nil, 404)
+		f.svc.Settings.MagicLink.Enabled = false
+		req("POST", magic, `{"email": "ada@example.com", "code_challenge": "`+challenge+`"}`, nil, 403)
+		req("GET", magic+"?token=x", "", nil, 404)
+		req("POST", magic, "token=x", mform, 404)
+		req("POST", verify, body("x", "1", "v"), nil, 403)
+		f.svc.Settings.MagicLink.Enabled = true
+		f.svc.Settings.Email.Limits = limits
+		// Too many tries of the button, and of the code, from one address.
+		for range 31 {
+			f.doH(t, "POST", magic, "token=wrong", mform)
+		}
+		req("POST", magic, "token=wrong", mform, 429)
+		for range 40 {
+			f.doH(t, "POST", verify, body("nope", "000000", verifier), map[string]string{"Content-Type": "application/json"})
+		}
+		req("POST", verify, body("nope", "000000", verifier), nil, 429)
+	}
+
 	c.verify(t, router)
 
 }

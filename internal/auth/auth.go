@@ -155,10 +155,12 @@ type Store interface {
 	DeleteChallenge(ctx context.Context, id string) error
 	DeleteChallengesOfUser(ctx context.Context, userID string, kinds ...string) error
 	// ChallengeOfUser returns the newest unexpired challenge of a kind that a user has
-	// (ErrNotFound if none); SetChallengeCode stores the keyed hash of the code of an
-	// unexpired challenge and returns it.
+	// (ErrNotFound if none); ChallengeByToken the unexpired challenge of a kind whose link
+	// token has that hash; SetChallengeSecrets stores the hashes of a challenge's link token
+	// ("" leaves it) and code, and returns the unexpired challenge.
 	ChallengeOfUser(ctx context.Context, userID, kind string, now time.Time) (AuthChallenge, error)
-	SetChallengeCode(ctx context.Context, id, codeHash string, now time.Time) (AuthChallenge, error)
+	ChallengeByToken(ctx context.Context, tokenHash, kind string, now time.Time) (AuthChallenge, error)
+	SetChallengeSecrets(ctx context.Context, id, tokenHash, codeHash string, now time.Time) (AuthChallenge, error)
 	// MFAOf returns a user's second-factor record (ErrNotFound if none); PutMFA stores it,
 	// replacing; DeleteMFA removes it; MFAUserIDs lists the users that have one.
 	MFAOf(ctx context.Context, userID string) (MFARecord, error)

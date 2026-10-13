@@ -163,6 +163,14 @@ auth: enabled
 #                                  # factor sets one up first. Name your admin roles here: a stolen
 #                                  # password is then not enough to administer the realm
 
+# Magic links: sign in from an email. The message carries a link (same device) and a
+# 6-digit code (typed in the app, on any device), good for 10 minutes and once. Needs the
+# `email:` section above and BACKD_SECRETS_KEY. The link ends at the `redirect_to` of the
+# request, else `sign_in.app_url`.
+# magic_link:
+#   enabled: false
+#   signup: false                  # true: an address with no account may make one (verified), when `signup: open`
+
 # Re-authentication. Before a sensitive action (changing the password or the address,
 # deleting the account, turning the second factor on or off, creating an API key as a
 # signed-in administrator) a user proves who they are again, and the proof works for this long.

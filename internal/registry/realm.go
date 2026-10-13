@@ -129,6 +129,17 @@ type RealmSettings struct {
 	MFA MFASettings
 	// ReauthTTL is how long a re-authentication token works (reauth.ttl).
 	ReauthTTL time.Duration
+	// MagicLink are the settings of sign-in by emailed link and code (magic_link in realm.yaml).
+	MagicLink MagicLinkSettings
+}
+
+// MagicLinkSettings are the realm's magic-link settings.
+type MagicLinkSettings struct {
+	// Enabled turns the endpoints on; it needs the realm's email.
+	Enabled bool
+	// Signup lets an address that has no account make one (verified, by redeeming the link
+	// or code), when the realm's own sign-up is open.
+	Signup bool
 }
 
 // DefaultReauthTTL is how long a re-authentication token works when the realm doesn't say.
@@ -324,6 +335,11 @@ type realmDoc struct {
 		// RequiredRoles is a list of role names, or the string "all".
 		RequiredRoles yaml.Node `yaml:"required_roles"`
 	} `yaml:"mfa"`
+	// MagicLink lets users sign in with a link or a code sent to their address.
+	MagicLink *struct {
+		Enabled bool `yaml:"enabled"`
+		Signup  bool `yaml:"signup"`
+	} `yaml:"magic_link"`
 	// Reauth is how long a fresh proof of identity, asked for before a sensitive
 	// action, stays good.
 	Reauth *struct {
@@ -702,6 +718,19 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 				errs = append(errs, errors.New("mfa.issuer: must be at most 64 characters and have no colon or line break (authenticator apps show it as the name of the account)"))
 			}
 
+		}
+	}
+
+	if m := doc.MagicLink; m != nil {
+		switch {
+		case !s.AuthEnabled:
+			errs = append(errs, errors.New("magic_link: only applies when auth is enabled"))
+		case m.Enabled && s.Email == nil:
+			errs = append(errs, errors.New("magic_link.enabled: needs the email: section (the links and codes are sent by email)"))
+		case m.Signup && !m.Enabled:
+			errs = append(errs, errors.New("magic_link.signup: has no effect while magic_link.enabled is false"))
+		default:
+			s.MagicLink = MagicLinkSettings{Enabled: m.Enabled, Signup: m.Signup}
 		}
 	}
 

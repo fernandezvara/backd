@@ -37,6 +37,8 @@ const (
 	// ChallengeReauthCode a code emailed to a user with no other proof.
 	ChallengeReauth     = "reauth"
 	ChallengeReauthCode = "reauth_code"
+	// ChallengeMagicLink is a request for a sign-in link and code (see magiclink.go).
+	ChallengeMagicLink = "magic_link"
 )
 
 // Challenge limits.
@@ -99,9 +101,20 @@ type AuthChallenge struct {
 	// the keyed hash of the code of a ChallengeReauthCode (set when the email is made).
 	SessionID string
 	CodeHash  string
-	Attempts  int
-	CreatedAt time.Time
-	ExpiresAt time.Time
+	// A magic-link request: TokenHash is the hash of the link's token and CodeHash the code's;
+	// CodeChallenge the PKCE challenge of the app that asked; RedirectTo where the link ends
+	// ("" for the realm's app_url); Email the address when it has no user yet (sealed);
+	// Purpose says what is sent (MagicLinkPurposeLink or MagicLinkPurposeNoAccount); Locale
+	// the language for a new user.
+	TokenHash     string
+	CodeChallenge string
+	RedirectTo    string
+	Email         string
+	Purpose       string
+	Locale        string
+	Attempts      int
+	CreatedAt     time.Time
+	ExpiresAt     time.Time
 }
 
 // MFARecord is a user's second-factor state: the TOTP secret (sealed), the last time step

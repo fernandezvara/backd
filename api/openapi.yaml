@@ -1358,6 +1358,137 @@ paths:
         "429": { $ref: "#/components/responses/TooManyRequests" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_auth/magic-link:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Ask for a link and a code to sign in with, or use the link
+      description: |
+        With a JSON body: asks for an email with **a link** (opened on the same device, which ends at
+        `redirect_to` with a one-time login code in `backd_code`, to redeem at `POST /_auth/token`)
+        and **a 6-digit code** (typed in the app that asked, with `POST /_auth/magic-link/verify`),
+        both good for 10 minutes and once. Redeeming one uses up the other. The answer is the same
+        `202` for every address: a registered one gets the message, one with no account gets a
+        `no-account` message (or, with `magic_link.signup` and the realm's sign-up open, the same
+        message: the account is made, verified, when the link or code is used), one that can't sign in
+        gets nothing. Email limits that are reached are not told either. `redirect_to` is within the
+        realm's `sign_in.allowed_redirects` (or `email.allowed_redirects`); without it the link goes to
+        `sign_in.app_url`, and a realm with neither has the code only.
+
+        With a form body (`application/x-www-form-urlencoded` with `token`): what the page's button
+        posts: it signs in and answers `303` to the app with `backd_code` (or `backd_error`:
+        `signin_refused`, `signup_closed`). A link with nowhere to go answers a page saying to type
+        the code, and isn't used up.
+      operationId: magicLink
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email, code_challenge]
+              properties:
+                email: { type: string }
+                code_challenge: { type: string, minLength: 43, maxLength: 43, description: "The S256 PKCE challenge of a verifier only the app holds." }
+                redirect_to: { type: string }
+                locale: { type: string }
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "202":
+          description: A request was made; the same for every address.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [request_id]
+                properties:
+                  request_id: { type: string, description: "Kept by the app, with its verifier, to redeem the code." }
+        "200": { $ref: "#/components/responses/HostedPage" }
+        "303": { $ref: "#/components/responses/BackToApp" }
+        "400":
+          description: >-
+            An invalid body or `redirect_to` (JSON, `validation_error`, `invalid_redirect`), or, for the
+            page's form, a link that is expired, used or unknown (the realm's `invalid-token` page).
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+            text/html:
+              schema: { type: string }
+        "403":
+          description: "`magic_link_disabled`: the realm doesn't have magic links."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      tags: [auth]
+      summary: The page a sign-in link opens
+      description: |
+        The link in the `magic-link` message. Shows a page with a button; it never uses the link up, so
+        mail scanners can't spoil it. The page is the realm's `pages/magic-link/<locale>.html` (the
+        built-in one without it). A link that is expired, used or unknown shows the realm's
+        `invalid-token` page (`400`).
+      operationId: magicLinkPage
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema: { type: string }
+        - name: Accept-Language
+          in: header
+          schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/HostedPage" }
+        "400": { $ref: "#/components/responses/HostedPage" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/magic-link/verify:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Sign in with the code from the email
+      description: |
+        The 6-digit code, typed in the app that asked, with the `request_id` it got and the
+        `code_verifier` of its PKCE challenge: the code works only in the app that made the request.
+        The answer is the first factor's own: a session (with `new_user`, and the user's `profile`
+        absent), or the [MFA challenge](#tag/auth) when the user has a second factor. Five wrong tries
+        end the request (`400 invalid_code`, then `invalid_magic_link`); an unknown, used or expired
+        request is `400 invalid_magic_link`.
+      operationId: verifyMagicLinkCode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [request_id, code, code_verifier]
+              properties:
+                request_id: { type: string }
+                code: { type: string }
+                code_verifier: { type: string }
+                cookie: { type: boolean, description: "As in `POST /_auth/login`." }
+      responses:
+        "200": { $ref: "#/components/responses/SignInResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_auth/identities/{provider}:
     parameters:
       - { $ref: "#/components/parameters/realm" }

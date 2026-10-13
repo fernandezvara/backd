@@ -26,6 +26,8 @@ const (
 	codeInvalidCode       = "invalid_code"
 	codeMFALocked         = "mfa_locked"
 	codeMFADisabled       = "mfa_disabled"
+	codeMagicLinkDisabled = "magic_link_disabled"
+	codeInvalidMagicLink  = "invalid_magic_link"
 	codeSelfReset         = "self_reset_not_allowed"
 	codeReauthRequired    = "reauth_required"
 	codeMFAUnavailable    = "mfa_unavailable"

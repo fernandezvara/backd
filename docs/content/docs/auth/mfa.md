@@ -6,7 +6,7 @@ weight: 535
 toc: true
 ---
 
-A realm can ask for a **second factor** after the first one. The first factor is whatever the user used to say who they are: a password, a [provider](../providers/) or (later) a magic link. The second factor is a one-time code from an authenticator app, or one of ten recovery codes.
+A realm can ask for a **second factor** after the first one. The first factor is whatever the user used to say who they are: a password, a [provider](../providers/) or a [magic link](../magic-links/). The second factor is a one-time code from an authenticator app, or one of ten recovery codes.
 
 The second step is built **once** and shared by every first factor, so a user with MFA is asked for a code whether they signed in with a password or with Google.
 
@@ -105,7 +105,7 @@ What a first factor answers depends on the user:
 | has a second factor | `200 { "mfa_required": true, "challenge": "…", "methods": ["totp", "recovery_code"] }` |
 | holds a role the realm requires MFA for, and has no second factor yet | `200 { "mfa_enrollment_required": true, "challenge": "…" }` |
 
-The first factors that can end in a challenge are `POST /_auth/login`, `POST /_auth/signup` (a new user in a required role), the redemption of a provider's [login code](../providers/#the-flow) (`POST /_auth/token`) and `POST /_auth/oauth/{provider}/id-token`. A challenge is **only** given after the first factor was right, so it says nothing about accounts to someone who doesn't have it.
+The first factors that can end in a challenge are `POST /_auth/login`, `POST /_auth/signup` (a new user in a required role), the redemption of a [login code](../providers/#the-flow) (`POST /_auth/token`: providers and magic links), `POST /_auth/magic-link/verify` and `POST /_auth/oauth/{provider}/id-token`. A challenge is **only** given after the first factor was right, so it says nothing about accounts to someone who doesn't have it.
 
 {{< hint style="warning" title="A challenge is not a session" >}}
 It carries no token, sets no cookie and is accepted by nothing but `POST /_auth/mfa/verify` (and, for `mfa_enrollment_required`, the enrollment of a second factor). Don't store it as a session in your app.

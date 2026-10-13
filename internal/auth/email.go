@@ -112,7 +112,7 @@ func (s *Users) QueueEmail(ctx context.Context, r EmailRequest) (Job, error) {
 			return Job{}, err
 		}
 	}
-	if r.UserID == "" && r.InvitationID == "" && r.Custom == nil {
+	if r.UserID == "" && r.InvitationID == "" && r.Custom == nil && r.ChallengeID == "" {
 		// Only the limits were applied: nobody gets a message.
 		return Job{}, nil
 	}

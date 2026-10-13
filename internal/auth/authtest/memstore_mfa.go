@@ -95,12 +95,26 @@ func (m *MemStore) ChallengeOfUser(_ context.Context, userID, kind string, now t
 	return best, nil
 }
 
-func (m *MemStore) SetChallengeCode(_ context.Context, id, codeHash string, now time.Time) (auth.AuthChallenge, error) {
+func (m *MemStore) ChallengeByToken(_ context.Context, tokenHash, kind string, now time.Time) (auth.AuthChallenge, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, c := range m.challenges {
+		if tokenHash != "" && c.TokenHash == tokenHash && c.Kind == kind && c.ExpiresAt.After(now) {
+			return c, nil
+		}
+	}
+	return auth.AuthChallenge{}, auth.ErrNotFound
+}
+
+func (m *MemStore) SetChallengeSecrets(_ context.Context, id, tokenHash, codeHash string, now time.Time) (auth.AuthChallenge, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	c, ok := m.challenges[id]
 	if !ok || !c.ExpiresAt.After(now) {
 		return auth.AuthChallenge{}, auth.ErrNotFound
+	}
+	if tokenHash != "" {
+		c.TokenHash = tokenHash
 	}
 	c.CodeHash = codeHash
 	m.challenges[id] = c

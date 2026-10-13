@@ -33,6 +33,11 @@ const (
 	// page is shown. It is not among PageKinds: a realm that only sends email
 	// doesn't need it.
 	PageOAuthError = "oauth-error"
+	// PageMagicLink is what a magic link opens: a button that signs in (Kind "confirm"), or,
+	// when the request has nowhere to send the browser, the instruction to type the code in the
+	// app (Kind "type-code"). Optional like PageOAuthError: the built-in English page is
+	// used when a realm has none.
+	PageMagicLink = "magic-link"
 )
 
 // PageKinds are the pages every realm that sends email has, in every
@@ -43,7 +48,7 @@ var PageKinds = []string{PageVerifyEmail, PageResetPassword, PageConfirmEmailCha
 var pageDefaults embed.FS
 
 // OptionalPageKinds are pages a realm may have in addition to PageKinds.
-var OptionalPageKinds = []string{PageOAuthError}
+var OptionalPageKinds = []string{PageOAuthError, PageMagicLink}
 
 // RenderBuiltin renders the built-in English page of a kind.
 func RenderBuiltin(kind string, d PageData) (string, error) {

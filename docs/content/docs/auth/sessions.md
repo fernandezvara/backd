@@ -81,6 +81,8 @@ All request bodies are JSON objects sent with `Content-Type: application/json`. 
 |---|---|---|---|
 | `POST /_auth/signup` | no | `{"email", "password", "invitation"?, "locale"?, "redirect_to"?}` | `201` with a session, or `202` without one when the realm [requires a verified email](#email-verification) |
 | `POST /_auth/login` | no | `{"email", "password"}` | `200` with a session, or with a [challenge](../mfa/) when the user has a second factor |
+| `POST /_auth/magic-link` | no | `{"email", "code_challenge", "redirect_to"?}` | `202 {"request_id"}`, the same for every address: a [link and a code](../magic-links/) by email |
+| `POST /_auth/magic-link/verify` | no | `{"request_id", "code", "code_verifier"}` | `200` with a session (or a [challenge](../mfa/)): the code typed in the app that asked |
 | `POST /_auth/mfa/verify` | no | `{"challenge", "method", "code"}` | `200` with the session; the [second step](../mfa/) of a sign-in |
 | `POST /_auth/verify-email` | no | `{"token"}` | `204`; [verifies the address](#email-verification) |
 | `POST /_auth/verify-email/resend` | no | `{"email", "redirect_to"?}` | `202`, whatever the account |

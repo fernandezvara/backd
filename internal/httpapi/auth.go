@@ -42,6 +42,10 @@ func (a *authAPI) routes(r chi.Router) {
 		r.With(json).Post("/signup", a.signup)
 		r.With(json).Post("/login", a.login)
 		r.With(json).Post("/mfa/verify", a.mfaVerify)
+		// A magic link: JSON asks for one, a form (the page's button) uses it.
+		r.Post("/magic-link", a.magicLinkPost)
+		r.Get("/magic-link", a.magicLinkPage)
+		r.With(json).Post("/magic-link/verify", a.magicLinkVerify)
 		// Both act on a session, or on the challenge of a sign-in that must set a second
 		// factor up: they look for either themselves.
 		r.Post("/mfa/totp/setup", a.mfaSetup)
@@ -474,6 +478,10 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 		writeError(w, r, http.StatusUnauthorized, codeReauthRequired, "this action needs a fresh proof of identity: POST /_auth/reauth and send the token in "+reauthHeader)
 	case errors.Is(err, auth.ErrReauthMethod):
 		writeError(w, r, http.StatusBadRequest, codeValidation, "that proof is not accepted for this user", Detail{Path: "method", Reason: "use one of the user's reauth_methods"})
+	case errors.Is(err, auth.ErrMagicLinkDisabled):
+		writeError(w, r, http.StatusForbidden, codeMagicLinkDisabled, err.Error())
+	case errors.Is(err, auth.ErrInvalidMagicLink):
+		writeError(w, r, http.StatusBadRequest, codeInvalidMagicLink, err.Error())
 	case errors.Is(err, auth.ErrInvalidChallenge):
 		writeError(w, r, http.StatusBadRequest, codeInvalidChallenge, "the challenge is invalid or expired: sign in again")
 	case errors.Is(err, auth.ErrInvalidCredentials):

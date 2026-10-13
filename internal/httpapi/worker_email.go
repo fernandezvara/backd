@@ -63,6 +63,19 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 			return nil, nil, false
 		}
 		address, locale = custom.To[0], job.Email.Locale
+	} else if job.Email.ChallengeID != "" && job.Email.UserID == "" {
+		// A request for a sign-in link of an address that has no account: the address is in
+		// the request, sealed.
+		_, to, err := svc.MagicLinkEmailFor(ctx, job.Email.ChallengeID)
+		switch {
+		case err == auth.ErrNotFound:
+			w.fail(ctx, log, svc, job, "the request has expired")
+			return nil, nil, false
+		case err != nil || to == "":
+			log.Warn("read the request's address; leaving the job to be retried", "error", err)
+			return nil, nil, false
+		}
+		address, locale = to, job.Email.Locale
 	} else if job.Email.InvitationID != "" {
 		// An invitation: there is no user yet, the invited address is the
 		// recipient, and the token lives as long as the invitation.
@@ -154,6 +167,32 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 		extra["expires_at"] = data.ExpiresAt.Format(time.RFC3339)
 		mask = []string{token}
 	}
+	if kind == email.MagicLink && job.Email.ChallengeID != "" {
+		// The link and the code are made now and only their hashes are kept; a retried job
+		// makes new ones.
+		base := es.PublicURL
+		if base == "" {
+			base = w.backdURL
+		}
+		if base == "" {
+			w.fail(ctx, log, svc, job, "backd's public address is unknown (BACKD_URL or email.public_url)")
+			return nil, nil, false
+		}
+		token, code, expires, err := svc.MakeMagicLinkSecrets(ctx, job.Email.ChallengeID)
+		switch {
+		case errors.Is(err, auth.ErrNotFound):
+			w.fail(ctx, log, svc, job, "the request has expired")
+			return nil, nil, false
+		case err != nil:
+			log.Warn("make the sign-in link; leaving the job to be retried", "error", err)
+			return nil, nil, false
+		}
+		data.Link = strings.TrimRight(base, "/") + "/v1/" + realm + "/_auth/magic-link?token=" + token
+		data.Data["code"], data.ExpiresAt = code, expires.UTC()
+		// A delivery function with its own templates needs the same values the default ones use.
+		extra["link"], extra["code"], extra["expires_at"] = data.Link, code, data.ExpiresAt.Format(time.RFC3339)
+		mask = append(mask, token, code)
+	}
 	if kind == email.ReauthCode && job.Email.ChallengeID != "" {
 		// The code is made now and only its hash is kept; a retried job makes a new one.
 		code, expires, err := svc.MakeReauthCode(ctx, job.Email.ChallengeID)
@@ -166,6 +205,7 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 			return nil, nil, false
 		}
 		data.Data["code"], data.ExpiresAt = code, expires.UTC()
+		extra["code"], extra["expires_at"] = code, data.ExpiresAt.Format(time.RFC3339)
 		mask = append(mask, code)
 	}
 	msg, err := tpl.Render(kind, locale, data)
