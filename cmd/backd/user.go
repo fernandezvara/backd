@@ -425,7 +425,7 @@ func (a *app) users(ctx context.Context, realm string) (*auth.Users, error) {
 // confirm is set; otherwise it reads the first line of stdin.
 func readSecret(uio userIO, confirm bool, prompt string) (string, error) {
 	if f, ok := uio.stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
-		fmt.Fprint(uio.stderr, fmt.Sprintf("%s: ", prompt))
+		fmt.Fprintf(uio.stderr, "%s: ", prompt)
 		p1, err := term.ReadPassword(int(f.Fd()))
 		fmt.Fprintln(uio.stderr)
 		if err != nil {
