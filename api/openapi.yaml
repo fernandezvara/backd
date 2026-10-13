@@ -5344,8 +5344,10 @@ components:
     DataCacheControl:
       description: >-
         Shared caches must not store the response, and browsers must revalidate
-        it (`no-store` with `?file_links=true`, whose links expire).
-      schema: { enum: ["private, no-cache", "private, no-store"] }
+        it (`no-store` with `?file_links=true`, whose links expire). Only a
+        request without credentials, to a collection with `cache.public` in its
+        `collection.yaml`, gets `public, max-age=<seconds>` (at most 3600).
+      schema: { type: string, pattern: '^(private, no-cache|private, no-store|public, max-age=[0-9]+)$' }
     RetryAfter:
       required: true
       description: Seconds to wait before retrying.

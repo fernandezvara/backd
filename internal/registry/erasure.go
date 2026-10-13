@@ -81,6 +81,7 @@ func (p *ErasurePolicy) IndexedFields() []string {
 
 type erasureDoc struct {
 	SoftDelete *softDeleteDoc `yaml:"soft_delete"`
+	Cache      *cacheDoc      `yaml:"cache"`
 	// Files is read by parseFiles, which checks it; here it is only allowed.
 	Files map[string]*fileFieldDoc `yaml:"files"`
 	// Rules is read by loadRules, which checks it; here it is only allowed.
@@ -115,6 +116,11 @@ func loadErasure(c *Collection, settings RealmSettings, path string) error {
 		return err
 	}
 	c.SoftDelete = sd
+	cp, err := doc.Cache.policy(c, path)
+	if err != nil {
+		return err
+	}
+	c.Cache = cp
 	d := doc.OnOwnerDelete
 	if d == nil {
 		return nil

@@ -35,6 +35,7 @@ Responses depend on who is asking, so `backd` tells caches (browsers, proxies, C
 | Document routes (`/v1/{realm}/{database}/{collection}…`) | Also `Vary: Authorization`, so a response cached for an anonymous caller is never served to a signed-in one, or the other way around |
 | Document routes | Also `Vary: Cookie` (realms with session cookies) and `Cache-Control: private, no-cache`: shared caches never store the response, and browsers revalidate it before reusing it |
 | `/_auth`, `/_admin`, and [function](../functions/) calls (`_func`, `_jobs`) | `Cache-Control: no-store`: tokens, account data and function results are never cached |
+| Document reads without credentials, in a collection with [`cache.public`](../configuration/config-dir/#public-caching) | `Cache-Control: public, max-age=<n>` (at most 3600), so a CDN may store them |
 | A document read with `?file_links=true` | `Cache-Control: private, no-store`: the links expire, so the response is never stored or revalidated |
 
 Revalidation is cheap: document and list reads answer `304 Not Modified` to a matching `If-None-Match` (see [Revalidating a read](../api/documents/#revalidating-a-read-if-none-match)). Errors on these routes carry the same headers.

@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/fernandezvara/backd/internal/registry"
 )
 
 // Conditional GET (design/conditional-get.md): reads carry an ETag, and a
@@ -84,4 +86,21 @@ func listETag(items []map[string]any, representation string, hasMore bool, curso
 		h.Write([]byte("\ntotal=" + strconv.FormatInt(*total, 10)))
 	}
 	return `W/"` + hex.EncodeToString(h.Sum(nil))[:32] + `"`
+}
+
+// publicCache lets shared caches store the response when the collection opted
+// in (cache.public) and the caller is anonymous: no Authorization header, no
+// cookie, and rules that ruled the request without a user. Only the default
+// view is public; trash views and signed file links never are.
+func (d *documents) publicCache(w http.ResponseWriter, r *http.Request, c *registry.Collection, view trashView) {
+	if c.Cache == nil || !c.Cache.Public || view != viewLive {
+		return
+	}
+	if r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != "" {
+		return
+	}
+	if a := d.accessFor(r); !a.ruled || a.caller.User != nil {
+		return
+	}
+	w.Header().Set("Cache-Control", "public, max-age="+strconv.Itoa(c.Cache.MaxAge))
 }

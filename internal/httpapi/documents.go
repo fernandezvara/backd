@@ -223,6 +223,7 @@ func (d *documents) get(w http.ResponseWriter, r *http.Request) {
 	}
 	tag := docETag(version(doc), "") // nothing is redacted per caller yet
 	readHeaders(w, tag)
+	d.publicCache(w, r, c, view)
 	if notModified(w, r, tag) {
 		return
 	}
@@ -282,6 +283,7 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 	// The query and the rules have run: the validator covers what this caller sees.
 	tag := listETag(page.Items, "", resp.HasMore, resp.NextCursor, resp.Total) // nothing is redacted per caller yet
 	readHeaders(w, tag)
+	d.publicCache(w, r, c, view)
 	if notModified(w, r, tag) {
 		return
 	}

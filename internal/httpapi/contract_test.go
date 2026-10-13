@@ -377,6 +377,19 @@ func TestContract(t *testing.T) {
 		return out
 	}
 
+	// Public caching: anonymous reads of an opted-in collection are public and revalidate.
+	{
+		const news = "/v1/acme/app/news"
+		id := req("POST", news, `{"title": "t", "published": true}`, ada, 201)["id"].(string)
+		prec, _ := f.doH(t, "GET", news+"/"+id, "", nil)
+		if prec.Header().Get("Cache-Control") != "public, max-age=60" {
+			t.Errorf("public document: %v", prec.Header())
+		}
+		req("GET", news+"/"+id, "", map[string]string{"If-None-Match": prec.Header().Get("ETag")}, 304)
+		req("GET", news, "", nil, 200)
+		req("GET", news, "", ada, 200)
+	}
+
 	// Soft delete: delete, trash views, restore and purge.
 	{
 		const b = "/v1/acme/app/bin"
@@ -1985,7 +1998,7 @@ func TestContractDetectsViolations(t *testing.T) {
 		{"missing _meta", "GET", docPath, 200, jsonHdr("ETag", `"1"`), `{"id": "d1"}`, "_meta"},
 		{"data without Vary", "GET", docPath, 200, jsonHdr("ETag", `"1"`), doc, "Vary"},
 		{"data not varying on Authorization", "GET", docPath, 200, jsonHdr("ETag", `"1"`, "Vary", "Origin"), doc, "Vary"},
-		{"data cacheable by shared caches", "GET", docPath, 200, jsonHdr("ETag", `"1"`, "Vary", "Origin, Authorization", "Cache-Control", "public, max-age=60"), doc, "Cache-Control"},
+		{"data cacheable by shared caches", "GET", docPath, 200, jsonHdr("ETag", `"1"`, "Vary", "Origin, Authorization", "Cache-Control", "max-age=60"), doc, "Cache-Control"},
 		{"extra user field", "GET", "/v1/{realm}/_auth/me", 200, jsonHdr("Cache-Control", "no-store"),
 			`{"id": "u", "email": "a@x.io", "email_verified": false, "roles": [], "created_at": "2026-09-26T12:00:00.000Z", "password_hash": "x"}`, "password_hash"},
 		{"cacheable account data", "GET", "/v1/{realm}/_auth/me", 200, jsonHdr(),
