@@ -65,7 +65,7 @@ services:
       mongo: { condition: service_healthy }
 ```
 
-After changing schemas, rules or `realm.yaml`, restart `backd` (`docker compose up -d --build backd`). After changing a function, run `backd functions build` first: `backd` refuses stale bundles — or run `backd` locally (not in the container) with `BACKD_DEV=true` to rebuild on save, and `backd functions invoke` to call one directly; see [Dev mode](../../functions/testing/#dev-mode).
+After changing schemas, rules or `realm.yaml`, restart `backd` (`docker compose up -d --build backd`). After changing a function, run `backd functions build` first: `backd` refuses stale bundles — or run `backd` locally (not in the container) with `BACKD_DEV=true` to reload the config and rebuild functions on save, and `backd functions invoke` to call one directly; see [Dev mode](../../functions/testing/#dev-mode).
 
 Before pushing, run the same checks CI will run:
 

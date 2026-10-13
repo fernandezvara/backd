@@ -57,6 +57,9 @@ type Config struct {
 	// ConfigFingerprint identifies the config this instance runs; /readyz
 	// reports it so operators can check every instance runs the same one.
 	ConfigFingerprint string
+	// ReloadErrors returns what stopped the last live reload of the config (BACKD_DEV), for
+	// the admin configuration view's warnings; nil when nothing reloads.
+	ReloadErrors func() []string
 	// Functions runs function calls (the executor client); nil: calls get 503.
 	Functions FunctionRunner
 	// CallbackKey signs the callback tokens functions reach data with; the
@@ -156,7 +159,7 @@ func NewHandler(cfg Config) http.Handler {
 	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users, callbackKey: cfg.CallbackKey, objects: newRealmObjects(cfg.Registry, users), baseURL: cfg.BackdURL, maxUpload: maxUploadOf(cfg), imageMaxPixels: cfg.ImageMaxPixels}
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, executorToken: cfg.ExecutorToken, log: cfg.Log, dev: cfg.Dev, concurrency: limiterFor(cfg.Registry), metrics: cfg.Metrics}
 	if !cfg.DisableAdminAPI {
-		(&adminAPI{users: users, reg: cfg.Registry, fns: fns, fingerprint: cfg.ConfigFingerprint, imageMaxPixels: cfg.ImageMaxPixels}).routes(r, authRoutes.resolveRealm, withTimeout(opTimeout))
+		(&adminAPI{users: users, reg: cfg.Registry, fns: fns, fingerprint: cfg.ConfigFingerprint, reloadErrors: cfg.ReloadErrors, imageMaxPixels: cfg.ImageMaxPixels}).routes(r, authRoutes.resolveRealm, withTimeout(opTimeout))
 	}
 	if cfg.UI != nil {
 		r.Handle("/_ui", http.RedirectHandler("/_ui/", http.StatusMovedPermanently))

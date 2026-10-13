@@ -31,14 +31,16 @@ At startup, `backd` (`serve`, `provision`) refuses to run when a database's bund
 
 ### Dev mode
 
-`BACKD_DEV=true` rebuilds function sources in the background as you edit them, instead of running `backd functions build` by hand after every change:
+`BACKD_DEV=true` follows your config files while you edit them: function code is rebuilt and schemas, rules and the other config are reloaded, with no restart and no `backd functions build` by hand:
 
 ```sh
 CONFIG_DIR=./config BACKD_DEV=true HTTP_ADDR=127.0.0.1:8080 backd serve
 ```
 
-- Every second, `backd` hashes each functions project's sources; when a hash changes it runs the same `deno bundle` that `backd functions build` does and starts serving the new bundle immediately — no restart. A broken source (e.g. a syntax error) is logged and retried on the next tick, and the last good bundle keeps serving.
-- Only function code is watched. `schema.json`, `collection.yaml`, `function.yaml` and `realm.yaml` still need a restart, the same as any other config change.
+- Every second, `backd` checks the files under `CONFIG_DIR` (hidden entries such as `.git` and `.build`, and `node_modules`, are skipped): `realm.yaml`; each collection's `schema.json`, `collection.yaml`, `rules.yaml` and `indexes.json`; `function.yaml` and function code; `app-config/`; email, push and page templates; consent texts.
+- When something changed, the whole config is loaded and validated exactly as at startup, function sources that changed are bundled with the same `deno bundle` that `backd functions build` does, and index changes are applied as at provisioning. Only then is the new config swapped in: requests already running finish on the old one, and the next ones use the new one. The log says `config reloaded` with the new fingerprint, the realms and the files that changed.
+- A change that doesn't validate (a syntax error in a function, a broken `schema.json`) is **refused**: the previous config keeps running, the errors are logged, and the realm's [configuration view](../../auth/admin/) in the admin API and UI shows them as a `reload_failed` warning until the files are fixed. A failed change isn't retried until a file changes again.
+- The `--with-worker` loop keeps the config it started with; restart to give it a new one.
 - `backd` refuses to start with `BACKD_DEV=true` unless `HTTP_ADDR` is bound to localhost (`127.0.0.1:port`, `[::1]:port` or `localhost:port`) — dev mode must never be reachable off the machine — and logs a warning while it runs, as a reminder this is a local-only, hot-reload exception. The one exception is a container whose ports are published on the host's `127.0.0.1` only (the local docker stack): it sets `BACKD_DEV_ANY_ADDR=true`, and `backd` logs a warning.
 - Functions with [`dev_only: true`](../reference/) run only in dev mode: without `BACKD_DEV=true`, `backd` refuses to start and names the function.
 {{< hint danger >}}

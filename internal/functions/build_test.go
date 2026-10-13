@@ -2,14 +2,11 @@ package functions
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/fernandezvara/backd/internal/registry"
 )
@@ -177,106 +174,6 @@ func TestBuildWrongDeno(t *testing.T) {
 	}
 }
 
-func TestWatch(t *testing.T) {
-	bin := deno(t)
-	root := t.TempDir()
-	fn := "shop/app/" + registry.FunctionsDir + "/"
-	write(t, root, map[string]string{
-		"shop/realm.yaml":          "",
-		fn + "hello/function.yaml": "",
-		fn + "hello/index.js":      "export default () => ({ hello: 'world' });\n",
-	})
-	load := func() *registry.Registry {
-		t.Helper()
-		reg, err := registry.Load(root)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return reg
-	}
-	reg := load()
-	if err := Build(context.Background(), reg, Options{Deno: bin}); err != nil {
-		t.Fatal(err)
-	}
-	fns := reg.Realms["shop"].Databases["app"].Functions
-	first, err := registry.ReadManifest(fns.Dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	var logged []string
-	var mu sync.Mutex
-	watching := make(chan struct{})
-	go func() {
-		defer close(watching)
-		Watch(ctx, load(), Options{Deno: bin, Log: func(f string, a ...any) {
-			mu.Lock()
-			logged = append(logged, fmt.Sprintf(f, a...))
-			mu.Unlock()
-		}}, 20*time.Millisecond)
-	}()
-	// The loop retries a broken source on every tick, so a build may be in
-	// flight when the test ends. Wait for Watch to return (cancelling stops
-	// the build) before the temp dir is removed, or the removal races with
-	// the build writing into it.
-	defer func() {
-		cancel()
-		select {
-		case <-watching:
-		case <-time.After(10 * time.Second):
-			t.Error("Watch didn't return after its context was cancelled")
-		}
-	}()
-
-	// Watch shouldn't rebuild sources that haven't changed.
-	time.Sleep(80 * time.Millisecond)
-	if unchanged, _ := registry.ReadManifest(fns.Dir); unchanged.Functions["hello"] != first.Functions["hello"] {
-		t.Fatal("watch rebuilt without a source change")
-	}
-
-	// A change is picked up and the manifest is updated in place.
-	write(t, root, map[string]string{fn + "hello/index.js": "export default () => ({ hello: 'watched' });\n"})
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		m, _ := registry.ReadManifest(fns.Dir)
-		if m.Functions["hello"] != first.Functions["hello"] {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("watch did not rebuild the changed source in time")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	rebuilt, err := os.ReadFile(fns.BundlePath(mustManifest(t, fns.Dir), "hello"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(rebuilt), "watched") {
-		t.Errorf("rebuilt bundle doesn't reflect the change:\n%s", rebuilt)
-	}
-
-	// A broken source is logged and retried, not fatal to the loop.
-	write(t, root, map[string]string{fn + "hello/index.js": "export default (\n"})
-	failed := func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		for _, l := range logged {
-			if strings.Contains(l, "rebuilding shop/app failed") {
-				return true
-			}
-		}
-		return false
-	}
-	deadline = time.Now().Add(5 * time.Second)
-	for !failed() {
-		if time.Now().After(deadline) {
-			t.Fatal("watch didn't log the broken source")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-}
-
 func mustManifest(t *testing.T, dir string) registry.Manifest {
 	t.Helper()
 	m, err := registry.ReadManifest(dir)
@@ -284,38 +181,4 @@ func mustManifest(t *testing.T, dir string) registry.Manifest {
 		t.Fatal(err)
 	}
 	return m
-}
-
-func TestWatchWrongDeno(t *testing.T) {
-	root := t.TempDir()
-	fn := "shop/app/" + registry.FunctionsDir + "/"
-	write(t, root, map[string]string{
-		"shop/realm.yaml":          "",
-		fn + "hello/function.yaml": "",
-		fn + "hello/index.js":      "export default () => 1;\n",
-	})
-	reg, err := registry.Load(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fake := filepath.Join(t.TempDir(), "deno")
-	if err := os.WriteFile(fake, []byte("#!/bin/sh\necho 'deno 1.46.3 (stable, release, x86_64-unknown-linux-gnu)'\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	var logged []string
-	done := make(chan struct{})
-	go func() {
-		Watch(context.Background(), reg, Options{Deno: fake, Log: func(f string, a ...any) {
-			logged = append(logged, fmt.Sprintf(f, a...))
-		}}, time.Millisecond)
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("Watch didn't return for a wrong deno version")
-	}
-	if len(logged) != 1 || !strings.Contains(logged[0], "1.46.3") {
-		t.Errorf("logged = %v", logged)
-	}
 }

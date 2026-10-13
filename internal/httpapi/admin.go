@@ -22,10 +22,11 @@ import (
 // adminAPI serves /v1/{realm}/_admin/…: user management for server-side
 // services holding one of the realm's API keys.
 type adminAPI struct {
-	users       func(realm string) *auth.Users
-	reg         *registry.Registry
-	fns         *functions // runs functions by hand (see adminInvoke)
-	fingerprint string     // the config this instance runs (readyz shows it too)
+	users        func(realm string) *auth.Users
+	reg          *registry.Registry
+	fns          *functions      // runs functions by hand (see adminInvoke)
+	fingerprint  string          // the config this instance runs (readyz shows it too)
+	reloadErrors func() []string // why the last live reload failed (BACKD_DEV); nil without one
 	// imageMaxPixels is the instance's image pixel limit, which a config check applies to the draft.
 	imageMaxPixels int64
 }

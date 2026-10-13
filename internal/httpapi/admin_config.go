@@ -61,8 +61,20 @@ func (a *adminAPI) config(w http.ResponseWriter, r *http.Request) {
 		"settings":    realmConfig(rl.Settings, seesUsers),
 		"databases":   databases,
 		"templates":   templateFiles(filepath.Join(a.reg.Root, name), rel),
-		"warnings":    configWarnings(rl.Settings),
+		"warnings":    a.warnings(rl.Settings),
 	})
+}
+
+// warnings are configWarnings plus, in dev mode, what stopped the last live reload: the
+// instance keeps running the previous config until the files are fixed.
+func (a *adminAPI) warnings(s registry.RealmSettings) []map[string]any {
+	out := configWarnings(s)
+	if a.reloadErrors != nil {
+		for _, msg := range a.reloadErrors() {
+			out = append(out, map[string]any{"code": "reload_failed", "message": "the last config change was not applied, the previous config keeps running: " + msg})
+		}
+	}
+	return out
 }
 
 func orEmpty(in []any) []any {

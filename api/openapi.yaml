@@ -2855,7 +2855,9 @@ paths:
         (defaults applied; seeded user emails only for whoever may read users),
         every database's collections (schema, indexes, rules, `collection.yaml` policy) and
         functions (`function.yaml`, secrets by name only), the email templates and hosted
-        pages found on disk, the configuration warnings and the config fingerprint. Each
+        pages found on disk, the configuration warnings and the config fingerprint. In dev
+        mode (`BACKD_DEV`) the warnings include `reload_failed` entries: why the last change to the
+        files was refused while the previous config keeps running. Each
         item carries the file it came from, relative to the config directory. Nothing here
         can be changed through the API: configuration is a reviewed, versioned artifact.
         Needs the `config` area (a read-only administrator reads it).
