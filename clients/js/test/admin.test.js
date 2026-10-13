@@ -405,3 +405,32 @@ test('storage.regenerateVersions starts the job for a field', async () => {
   assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/files/versions/regenerate')
   assert.deepEqual(m.calls[0].body, { database: 'app', collection: 'library', field: 'picture', version: 'thumb', missing_only: true, rate: 5 })
 })
+
+test('admin.push reads the status and the sends, and a test send, and users.devices lists devices', async () => {
+  const device = { id: 'd1', platform: 'android', name: null, created_at: 't', last_seen: 't' }
+  const send = { id: 'ps_1', kind: 'raw', sender: 'admin:key:k', created_at: 't', users: 1, planned: true, batches: 1, batches_done: 1, units: 1, units_done: 1, queued: 1, limited: 0, no_devices: 0, sent: 1, invalid: 0, failed: 0, completed: true, completed_at: 't' }
+  const m = mockFetch([
+    { body: { enabled: true, platforms: [{ platform: 'android', provider: 'capture' }], missing_secrets: [] } },
+    { body: { items: [send], limit: 50, skip: 0, has_more: false } },
+    { body: send },
+    { status: 202, body: { send_id: 'ps_2', users: 1, queued: 1, limited: 0, no_devices: 0 } },
+    { body: { platform: 'web', removed: 3 } },
+    { body: { items: [device] } },
+    { status: 204 },
+  ])
+  const c = createClient({ url: 'https://api.test', realm: 'acme', apiKey: 'bdk_x', fetch: m.fetch, dangerouslyAllowBrowser: true })
+  assert.equal((await c.admin.push.status()).platforms?.[0].provider, 'capture')
+  const page = await c.admin.push.sends({ kind: 'raw', limit: 5 })
+  assert.equal(page.items[0].id, 'ps_1')
+  assert.equal(m.calls[1].url.search, '?kind=raw&limit=5')
+  assert.equal((await c.admin.push.send('ps_1')).completed, true)
+  const test = await c.admin.push.test({ email: 'ada@example.com', title: 'Hi', body: 'There' })
+  assert.equal(test.send_id, 'ps_2')
+  assert.deepEqual(m.calls[3].body, { email: 'ada@example.com', title: 'Hi', body: 'There' })
+  assert.equal((await c.admin.push.removeDevices('web')).removed, 3)
+  assert.equal(m.calls[4].url.search, '?platform=web')
+  assert.deepEqual(await c.admin.users.devices('u1'), [device])
+  await c.admin.users.removeDevice('u1', 'd1')
+  assert.equal(m.calls[6].method, 'DELETE')
+  assert.equal(m.calls[6].url.pathname, '/v1/acme/_admin/users/u1/devices/d1')
+})

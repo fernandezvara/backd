@@ -1833,6 +1833,12 @@ func TestContract(t *testing.T) {
 		req("GET", dev, "", ada, 404)
 		req("GET", dev+"/web-key", "", nil, 404)
 		req("GET", ad+"/users/"+temp.ID+"/devices", "", key, 404)
+		pushOff := req("GET", ad+"/push", "", key, 200)
+		if pushOff["enabled"] != false {
+			t.Errorf("push status without push: %v", pushOff)
+		}
+		req("GET", ad+"/push", "", nil, 401)
+		req("GET", ad+"/push", "", ada, 403)
 		req("GET", ad+"/push/sends", "", key, 404)
 		req("DELETE", ad+"/push/devices?platform=web", "", key, 404)
 		req("GET", ad+"/push/sends/ps_none", "", key, 404)
@@ -1901,6 +1907,10 @@ func TestContract(t *testing.T) {
 		f.svc.Settings.Push.Platforms["android"] = registry.PushPlatform{Provider: "fcm", Credentials: "NOT_SET"}
 		req("POST", ad+"/push/test", `{"email": "`+temp.Email+`", "title": "Hi", "body": "There"}`, key, 503)
 		f.svc.Settings.Push.Platforms["android"] = registry.PushPlatform{Provider: "fcm"}
+		status := req("GET", ad+"/push", "", key, 200)
+		if status["enabled"] != true || len(status["platforms"].([]any)) != 2 {
+			t.Errorf("push status: %v", status)
+		}
 		sends := req("GET", ad+"/push/sends?kind=raw&limit=5", "", key, 200)
 		if items, _ := sends["items"].([]any); len(items) < 1 {
 			t.Errorf("sends: %v", sends)

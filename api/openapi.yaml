@@ -1988,6 +1988,64 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/push:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [admin]
+      summary: How the realm's push is configured
+      description: |
+        Whether the realm has a `push:` section, the platforms it enables with their provider, the
+        realm secrets those providers need that are **not set** (pushes answer `503 push_unavailable`
+        until they are), and the limits and retention. Never a secret's value. Needs the `functions`
+        area (read).
+      operationId: adminPushStatus
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: "The state: `enabled: false` is all there is for a realm without `push:`."
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [enabled]
+                properties:
+                  enabled: { type: boolean }
+                  platforms:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [platform, provider]
+                      properties:
+                        platform: { type: string, enum: [android, ios, web] }
+                        provider: { type: string, enum: [fcm, apns, webpush, capture] }
+                  missing_secrets: { type: array, items: { type: string } }
+                  limits:
+                    type: object
+                    additionalProperties: false
+                    properties:
+                      per_minute: { type: integer }
+                      per_day: { type: integer }
+                  devices:
+                    type: object
+                    additionalProperties: false
+                    properties:
+                      max_per_user: { type: integer }
+                      stale_after: { type: string }
+                  delivery:
+                    type: object
+                    additionalProperties: false
+                    properties:
+                      timeout: { type: string }
+                      attempts: { type: integer }
+                      parallelism: { type: integer }
+                  send_retention: { type: string }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/push/sends:
     parameters: [{ $ref: "#/components/parameters/realm" }]
     get:

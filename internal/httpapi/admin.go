@@ -45,6 +45,7 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		r.With(a.need(registry.RightConfig), requireContentType("application/json")).Post("/files/versions/regenerate", a.regenerateVersions)
 		users, invites, keys := a.need(registry.RightUsers), a.need(registry.RightInvitations), a.need(registry.RightAPIKeys)
 		secrets, audit, fns := a.need(registry.RightSecrets), a.need(registry.RightAudit), a.need(registry.RightFunctions)
+		r.With(fns).Get("/push", a.pushStatus)
 		r.With(fns).Get("/push/sends", a.listPushSends)
 		r.With(fns).Get("/push/sends/{id}", a.getPushSend)
 		r.With(users, json).Post("/push/test", a.testPush)

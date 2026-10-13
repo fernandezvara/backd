@@ -50,6 +50,7 @@ The **Users** page lists the realm's users, a page at a time, and searches by em
 - **disable** or **enable** them (disabling ends their sessions), mark the address **verified**, **set a password** (which ends their sessions) and **change the email** (offered only when the realm sends email, because both addresses are told);
 - **add and remove roles**, from the roles `realm.yaml` declares. An assignment that `realm.yaml` doesn't list for that user is marked *only in the database*: a rebuilt realm wouldn't have it. Reading which roles are declared and seeded needs the `config` area; without it the role is typed by name and the server checks it;
 - **revoke a session**: its token stops working at once;
+- **remove a device** registered for [push notifications](../../push/devices/) (the **Devices** section appears in a realm with `push:`): it stops receiving pushes at once, and the removal is audited;
 - **delete** the user: the dialog first shows what they own in every collection with a [policy](../erasure/), and asks for the user's email to be typed before it erases. Erasing is irreversible; disabling keeps the data.
 
 **Invitations** lists the pending ones (who they are for, who created them, when they expire). Creating one shows its token once, to copy; *Email an invitation* has backd send it (offered only when the realm sends email); *Revoke* asks for the word to be typed.
@@ -118,6 +119,10 @@ The **Data** area browses and fixes documents through the [admin data route](../
 - **Files:** a document of a collection with [file fields](../../files/file-fields/) has a **Files** section below its form (the form and the JSON tab leave those fields out: they are backd's, and a save keeps them). Each field shows its limits (size, types, how many), what it holds with a **preview** of the images, and **Download**, **Remove** (it asks for the file's name) and **Upload** controls. An upload goes through backd or straight to the bucket, as the field says, with a progress bar; every upload or removal is a change to the document (a new version, audited as `data.update`) that your unsaved edits survive, and the field's own refusals (too large, a type it doesn't take, too many files) appear as they are. They use the admin data route's `_files` routes, past the collection's rules like the rest of the Data area.
 
 A read-only level browses only when the realm's `admin.read_access.data` allows it, and then every form is read-only with no button that changes anything: the files can be downloaded, not changed. Creating a document here can't attach files, so a collection whose file field is **required** is created through the API (a [pending upload](../../files/transfers/#creating-a-document-with-its-files)) and its files managed here.
+
+## Push notifications
+
+The **Push** page (for realms with [`push:`](../../push/); the `functions` area) shows how push is configured (the platforms and their provider, the limits and retention) and an alert naming any realm **secret the providers need that is not set**, which is why pushes would answer `503`. Below it, the realm's **sends**, newest first, filterable by template kind and function; opening one shows its batches and units, who it reached (queued, limited, without a device) and what the devices answered (sent, removed as dead, failed). A record holds counts only: never a title, a body, data or a token. With the `users` area, **Send a test** pushes one user, through the same limits as any push (it counts toward theirs) and audited. The CLI equivalents are `backd push sends` and `backd push test`: see [Records, test send and metrics](../../push/records/).
 
 ## Storage
 

@@ -15,6 +15,7 @@ import (
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/push"
+	"github.com/fernandezvara/backd/internal/registry"
 )
 
 // pushSendJSON describes a send: its totals, never a message, a user or a token.
@@ -199,4 +200,39 @@ func (a *adminAPI) removePushDevices(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusOK, map[string]any{"platform": platform, "removed": n})
 	}
+}
+
+// pushStatus answers GET /push: how the realm's push is configured and whether it can send:
+// the platforms and their providers, the realm secrets they need that are not set, and the
+// limits. Never a secret's value.
+func (a *adminAPI) pushStatus(w http.ResponseWriter, r *http.Request) {
+	svc := usersOf(r)
+	p := svc.Settings.Push
+	if p == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"enabled": false})
+		return
+	}
+	platforms := []map[string]any{}
+	for _, name := range registry.Platforms {
+		if pp, ok := p.Platforms[name]; ok {
+			platforms = append(platforms, map[string]any{"platform": name, "provider": pp.Provider})
+		}
+	}
+	missing := []string{}
+	if refs := secretRefs(p.SecretNames()); len(refs) > 0 {
+		_, m, err := svc.ResolveSecrets(r.Context(), refs, "")
+		if err != nil {
+			adminError(w, r, err)
+			return
+		}
+		missing = append(missing, m...)
+		sort.Strings(missing)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"enabled": true, "platforms": platforms, "missing_secrets": missing,
+		"limits":         map[string]any{"per_minute": p.Limits.PerMinute, "per_day": p.Limits.PerDay},
+		"devices":        map[string]any{"max_per_user": p.MaxDevicesPerUser, "stale_after": p.StaleAfter.String()},
+		"delivery":       map[string]any{"timeout": p.Delivery.Timeout.String(), "attempts": p.Delivery.RetryAttempts, "parallelism": p.Delivery.Parallelism},
+		"send_retention": p.SendRetention.String(),
+	})
 }

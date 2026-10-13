@@ -24,7 +24,7 @@ const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map((m) 
 const SAME = new Set([
   'app.name', 'common.no', 'common.allRealm', 'realm.label', 'realm.current', 'users.roles', 'user.id', 'user.roles.title',
   'invitations.create.tokenLabel', 'audit.actor', 'functions.modes.sync', 'functions.modes.async', 'history.actor', 'history.ms',
-  'jobs.noResult', 'config.realm', 'config.roles.title', 'data.collection.json', 'data.doc.tabs.json', 'data.doc.id', 'data.doc.problem',
+  'jobs.noResult', 'nav.push', 'config.realm', 'config.roles.title', 'data.collection.json', 'data.doc.tabs.json', 'data.doc.id', 'data.doc.problem',
 ])
 
 describe('Spanish messages', () => {

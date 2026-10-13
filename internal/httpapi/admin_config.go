@@ -134,6 +134,17 @@ func realmConfig(s registry.RealmSettings, seesUsers bool) map[string]any {
 			"redirects": e.Redirects, "allowed_redirects": orStrings(e.AllowedRedirects), "links": e.Links,
 		}
 	}
+	if p := s.Push; p != nil {
+		platforms := map[string]any{}
+		for _, name := range registry.Platforms {
+			if pp, ok := p.Platforms[name]; ok {
+				platforms[name] = pp.Provider
+			}
+		}
+		out["push"] = map[string]any{
+			"platforms": platforms, "web_public_key": p.WebPublicKey != "", "endpoint_hosts": orStrings(p.WebEndpointHosts),
+		}
+	}
 	if st := s.Storage; st != nil {
 		var public any
 		if st.PublicEndpoint != "" {

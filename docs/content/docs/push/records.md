@@ -26,7 +26,7 @@ backd push sends --realm acme --function main/notify --limit 10
 backd push sends --realm acme --id ps_d3c9ljp8hc2g00b6s1m0
 ```
 
-The admin API: `GET /_admin/push/sends` (filters `kind`, `function`, `since`, `until`, `limit`, `skip`) and `GET /_admin/push/sends/{id}`. Both need the `functions` area, and read-only administrators may use them.
+The admin interface shows the same on its **Push** page ([Admin interface](../../auth/admin-ui/#push-notifications)). The admin API: `GET /_admin/push` (the configuration state and the secrets still missing), `GET /_admin/push/sends` (filters `kind`, `function`, `since`, `until`, `limit`, `skip`) and `GET /_admin/push/sends/{id}`. Both need the `functions` area, and read-only administrators may use them.
 
 ## Why a push didn't arrive
 

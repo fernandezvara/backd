@@ -67,6 +67,8 @@ export { parseReturn as parseOAuthReturn } from './oauth.js'
  * @typedef {import('./admin.js').AdminAccess} AdminAccess
  * @typedef {import('./admin.js').AdminConfig} AdminConfig
  * @typedef {import('./admin.js').UserSession} UserSession
+ * @typedef {import('./admin.js').PushSend} PushSend
+ * @typedef {import('./admin.js').PushStatus} PushStatus
  * @typedef {import('./admin.js').UserPage} UserPage
  * @typedef {import('./admin.js').Invitation} Invitation
  * @typedef {import('./admin.js').NewInvitation} NewInvitation

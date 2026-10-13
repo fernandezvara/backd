@@ -44,3 +44,9 @@ storage:
   quota:
     realm: 10MiB
     user: 5MiB
+
+# Push notifications, for the admin UI's Push view and the user page's devices (the
+# `capture` provider stores deliveries instead of sending: development only).
+push:
+  android:
+    provider: capture

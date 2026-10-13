@@ -22,6 +22,7 @@ const links = computed(() => [
   { name: 'data', label: t('nav.data'), show: session.canRead('data') },
   { name: 'storage', label: t('nav.storage'), show: session.canRead('config') && !!cfg.config?.settings.storage },
   { name: 'functions', label: t('nav.functions'), show: session.canRead('functions') },
+  { name: 'push', label: t('nav.push'), show: session.canRead('functions') && !!cfg.config?.settings.push },
   { name: 'secrets', label: t('nav.secrets'), show: session.canRead('secrets') },
   { name: 'audit', label: t('nav.audit'), show: session.canRead('audit') },
   { name: 'config', label: t('nav.config'), show: session.canRead('config') },
