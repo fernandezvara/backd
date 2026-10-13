@@ -207,7 +207,8 @@ func (d *documents) accessFor(r *http.Request) access {
 	a := access{ruled: true, caller: caller, values: rules.Values{Now: d.now().UTC()}}
 	if caller.User != nil {
 		u := caller.User.User
-		a.values.User = &rules.User{ID: u.ID, Email: u.Email, EmailVerified: u.EmailVerified, Roles: u.Roles}
+		mfa, methods := caller.SignInMethods()
+		a.values.User = &rules.User{ID: u.ID, Email: u.Email, EmailVerified: u.EmailVerified, Roles: u.Roles, MFA: mfa, Methods: methods}
 	}
 	return a
 }

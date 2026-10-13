@@ -70,7 +70,7 @@ YAML reads a value starting with `'`, `!`, `[` or `{` specially, so quote such r
 
 | Name | Available on | Meaning |
 |---|---|---|
-| `user` | all | The signed-in user: `user.id`, `user.email`, `user.email_verified`, `user.roles`. `nil` for anonymous callers |
+| `user` | all | The signed-in user: `user.id`, `user.email`, `user.email_verified`, `user.roles`, and how the session was made, `user.mfa` and `user.methods` (see [multi-factor authentication](../mfa/#how-the-session-remembers)). `nil` for anonymous callers |
 | `document` | read, update, delete | The stored document, including `document.id` and `document._meta.*` |
 | `data` | create, update | The document being written: the request body on create, the complete result on update |
 | `now` | all | The current time, only for comparing with a timestamp: `document._meta.created_at`, `document._meta.updated_at`, or a field the schema [stores as a date](../../configuration/config-dir/#dates) |
@@ -200,7 +200,7 @@ Uploads and removals of [file fields](../../files/file-fields/) follow the `upda
 now: 2026-10-04T12:00:00Z            # optional: what `now` is in the rules (default 2026-01-01)
 
 users:                               # callers; "anonymous" always exists
-  ada: { id: u1, email: ada@example.com }               # email_verified defaults to true
+  ada: { id: u1, email: ada@example.com }               # email_verified defaults to true; mfa to false
   bob: { id: u2, email: bob@example.com, roles: [staff] }   # roles must be declared in realm.yaml
 
 documents:                           # stored documents, by name

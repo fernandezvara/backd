@@ -47,6 +47,11 @@ type Session struct {
 	CreatedAt  time.Time
 	LastUsedAt time.Time
 	ExpiresAt  time.Time
+	// Methods are how the session was created: the first factor, plus "totp" or "recovery"
+	// when a second factor was used; MFA says it was. Empty for sessions from before
+	// they were recorded.
+	Methods []string
+	MFA     bool
 }
 
 // Principal is the authenticated caller of a request.
@@ -114,7 +119,14 @@ func (s *Users) Signup(ctx context.Context, email, password, invitation string, 
 	if err != nil {
 		return Principal{}, "", err
 	}
-	return s.startSession(ctx, u)
+	out, err := s.afterFirstFactor(ctx, u, ProviderPassword, handover{})
+	if err != nil {
+		return Principal{}, "", err
+	}
+	if out.Challenge != nil {
+		return Principal{}, "", ErrSecondStepRequired
+	}
+	return out.Principal, out.Token, nil
 }
 
 // signup creates the user and records it; Signup and SignUp differ in what
@@ -145,6 +157,19 @@ func (s *Users) signup(ctx context.Context, email, password, invitation string, 
 // Repeated failures for the email or from the client ip (may be empty)
 // are throttled with a *ThrottledError.
 func (s *Users) Login(ctx context.Context, email, password, ip string) (Principal, string, error) {
+	out, err := s.SignIn(ctx, email, password, ip)
+	if err != nil {
+		return Principal{}, "", err
+	}
+	if out.Challenge != nil {
+		return Principal{}, "", ErrSecondStepRequired
+	}
+	return out.Principal, out.Token, nil
+}
+
+// SignIn is Login for callers that can answer a second step: the outcome is a session,
+// or a challenge the user trades for one with VerifyMFA.
+func (s *Users) SignIn(ctx context.Context, email, password, ip string) (Redeemed, error) {
 	var u User
 	err := s.throttled(ctx, email, ip, func() error {
 		var err error
@@ -162,16 +187,11 @@ func (s *Users) Login(ctx context.Context, email, password, ip string) (Principa
 		return nil
 	})
 	if err != nil {
-		return Principal{}, "", err
+		return Redeemed{}, err
 	}
-	p, token, err := s.startSession(ctx, u)
-	if err == nil {
-		s.touchIdentity(ctx, u.ID, ProviderPassword)
-		if s.Settings.IsAdmin(u.Roles) {
-			s.AuditAs(ctx, userTarget(u.ID), AuditAdminLogin, userTarget(u.ID), map[string]any{"session_id": p.Session.ID})
-		}
-	}
-	return p, token, err
+	s.touchIdentity(ctx, u.ID, ProviderPassword)
+	out, err := s.afterFirstFactor(ctx, u, ProviderPassword, handover{})
+	return out, err
 }
 
 // verifyLogin returns the user if password is theirs, else
@@ -223,18 +243,22 @@ func (s *Users) dummyHash(ctx context.Context) (string, error) {
 	return h, nil
 }
 
-func (s *Users) startSession(ctx context.Context, u User) (Principal, string, error) {
+// startSessionWith starts a session that records how it was created.
+func (s *Users) startSessionWith(ctx context.Context, u User, methods []string, mfa bool) (Principal, string, error) {
 	token, err := NewSessionToken()
 	if err != nil {
 		return Principal{}, "", err
 	}
 	now := s.now()
-	sess := Session{ID: xid.New().String(), UserID: u.ID, TokenHash: HashToken(token), CreatedAt: now, LastUsedAt: now}
+	sess := Session{ID: xid.New().String(), UserID: u.ID, TokenHash: HashToken(token), CreatedAt: now, LastUsedAt: now, Methods: methods, MFA: mfa}
 	sess.ExpiresAt = s.expiry(u, now, now)
 	if err := s.Store.CreateSession(ctx, sess); err != nil {
 		return Principal{}, "", err
 	}
 	s.Metrics.SessionStarted(s.Realm)
+	if s.Settings.IsAdmin(u.Roles) && len(methods) > 0 {
+		s.AuditAs(ctx, userTarget(u.ID), AuditAdminLogin, userTarget(u.ID), map[string]any{"session_id": sess.ID})
+	}
 	return Principal{User: u, Session: sess}, token, nil
 }
 

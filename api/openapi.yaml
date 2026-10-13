@@ -119,6 +119,14 @@ paths:
                 cookie: { type: boolean, description: "Keep the session in an HttpOnly cookie, as for login." }
       responses:
         "201": { $ref: "#/components/responses/SessionCreated" }
+        "200":
+          description: >-
+            The account was created, but its roles require a second factor: `mfa_enrollment_required`
+            with the challenge to set it up (see `POST /_auth/login`).
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MFAEnrollmentChallenge" }
         "202":
           description: >-
             The account exists but has no session: the realm requires the
@@ -141,6 +149,12 @@ paths:
     post:
       tags: [auth]
       summary: Sign in with email and password
+      description: |
+        The first factor. A user without a second factor gets the session. A user who has one
+        (TOTP) gets `{mfa_required, challenge, methods}` instead, and trades the challenge and a
+        code for the session at `POST /_auth/mfa/verify`; a user in a role the realm requires to
+        use MFA who has none yet gets `{mfa_enrollment_required, challenge}`. A challenge is not
+        a session, and it is only given after the password was checked.
       operationId: login
       requestBody:
         required: true
@@ -160,7 +174,7 @@ paths:
                     returning the token. Only in realms with `sessions.cookie.enabled`, and only from this API's own
                     origin or one of the realm's `cors.origins` (`403` otherwise). The response then has no `token`.
       responses:
-        "200": { $ref: "#/components/responses/Session" }
+        "200": { $ref: "#/components/responses/SignInResult" }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
         "403":
@@ -977,6 +991,8 @@ paths:
               schema:
                 oneOf:
                   - { $ref: "#/components/schemas/ProviderSession" }
+                  - { $ref: "#/components/schemas/MFAChallenge" }
+                  - { $ref: "#/components/schemas/MFAEnrollmentChallenge" }
                   - type: object
                     additionalProperties: false
                     required: [linked]
@@ -1041,9 +1057,46 @@ paths:
                 code_verifier: { type: string }
                 cookie: { type: boolean, description: "As in `POST /_auth/login`." }
       responses:
-        "200": { $ref: "#/components/responses/ProviderSession" }
+        "200": { $ref: "#/components/responses/SignInResult" }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/mfa/verify:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Finish a sign-in with a second factor
+      description: |
+        Trades the `challenge` a first factor answered with and a code of the user's second
+        factor (`method`: `totp`, or `recovery_code`) for the session the first factor was
+        waiting for. The answer is the first factor's own (a provider's includes `new_user` and
+        `profile`); a recovery code adds `recovery_codes_left`.
+
+        A wrong code is `400 invalid_code` with the attempts left in `details`; a challenge
+        allows 5 attempts and lives 5 minutes, after which (and for an unknown or used one) the
+        answer is `400 invalid_challenge`, the same for all of them. Too many wrong codes for
+        one user in an hour, across challenges, is `429 mfa_locked` for 15 minutes. A time step
+        of a TOTP code is accepted once.
+      operationId: verifyMFA
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [challenge, method, code]
+              properties:
+                challenge: { type: string }
+                method: { type: string, enum: [totp, recovery_code] }
+                code: { type: string, description: "The 6 digits of the authenticator app, or a recovery code (`xxxxx-xxxxx`)." }
+                cookie: { type: boolean, description: "As in `POST /_auth/login`." }
+      responses:
+        "200": { $ref: "#/components/responses/SignInResult" }
+        "400": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
         default: { $ref: "#/components/responses/Error" }
@@ -4395,18 +4448,20 @@ components:
       content:
         text/html:
           schema: { type: string }
-    Session:
-      description: A new session.
+    SignInResult:
+      description: >-
+        A session (a provider's also says whether it made the user), or the second step the user
+        has to take: `mfa_required` to give a code, `mfa_enrollment_required` to set a second
+        factor up. Never both: a challenge is not a session.
       headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
       content:
         application/json:
-          schema: { $ref: "#/components/schemas/Session" }
-    ProviderSession:
-      description: A new session from a provider sign-in, and whether it made the user.
-      headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
-      content:
-        application/json:
-          schema: { $ref: "#/components/schemas/ProviderSession" }
+          schema:
+            oneOf:
+              - { $ref: "#/components/schemas/Session" }
+              - { $ref: "#/components/schemas/ProviderSession" }
+              - { $ref: "#/components/schemas/MFAChallenge" }
+              - { $ref: "#/components/schemas/MFAEnrollmentChallenge" }
     SessionCreated:
       description: The new user, signed in.
       headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
@@ -4907,6 +4962,30 @@ components:
         session_id: { type: string }
         expires_at: { $ref: "#/components/schemas/Timestamp" }
         user: { $ref: "#/components/schemas/User" }
+        recovery_codes_left: { type: integer, description: "Only when a recovery code ended the sign-in: how many remain." }
+
+    MFAChallenge:
+      type: object
+      additionalProperties: false
+      required: [mfa_required, challenge, methods]
+      description: >-
+        The first factor was right and the user has a second one: send the `challenge` with
+        a code to `POST /_auth/mfa/verify`. It lives 5 minutes and allows 5 attempts.
+      properties:
+        mfa_required: { const: true }
+        challenge: { type: string }
+        methods: { type: array, items: { type: string, enum: [totp, recovery_code] } }
+
+    MFAEnrollmentChallenge:
+      type: object
+      additionalProperties: false
+      required: [mfa_enrollment_required, challenge]
+      description: >-
+        The user's role requires a second factor and they have none yet: the challenge only
+        allows setting TOTP up and completes the sign-in when it is confirmed.
+      properties:
+        mfa_enrollment_required: { const: true }
+        challenge: { type: string }
 
     ProviderSession:
       type: object
@@ -4924,6 +5003,7 @@ components:
         expires_at: { $ref: "#/components/schemas/Timestamp" }
         user: { $ref: "#/components/schemas/User" }
         new_user: { type: boolean }
+        recovery_codes_left: { type: integer, description: "Only when a recovery code ended the sign-in: how many remain." }
         profile:
           type: object
           additionalProperties: false

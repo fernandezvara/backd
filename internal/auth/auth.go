@@ -144,6 +144,28 @@ type Store interface {
 	// AddEraseCount adds n to the erase job's count under key
 	// ("<database>/<collection>/<operation>"), atomically.
 	AddEraseCount(ctx context.Context, jobID, key string, n int64) error
+	// PutChallenge stores a pending step. GetChallenge returns the unexpired one with that
+	// id (ErrNotFound if none); ClaimChallenge does too and deletes it, in one atomic step,
+	// so a challenge works once; CountChallengeAttempt adds an attempt and returns the new
+	// state; DeleteChallenge and DeleteChallengesOfUser remove them.
+	PutChallenge(ctx context.Context, c AuthChallenge) error
+	GetChallenge(ctx context.Context, id string, now time.Time) (AuthChallenge, error)
+	ClaimChallenge(ctx context.Context, id string, now time.Time) (AuthChallenge, error)
+	CountChallengeAttempt(ctx context.Context, id string, now time.Time) (AuthChallenge, error)
+	DeleteChallenge(ctx context.Context, id string) error
+	DeleteChallengesOfUser(ctx context.Context, userID string, kinds ...string) error
+	// MFAOf returns a user's second-factor record (ErrNotFound if none); PutMFA stores it,
+	// replacing; DeleteMFA removes it; MFAUserIDs lists the users that have one.
+	MFAOf(ctx context.Context, userID string) (MFARecord, error)
+	PutMFA(ctx context.Context, rec MFARecord) error
+	DeleteMFA(ctx context.Context, userID string) error
+	MFAUserIDs(ctx context.Context) ([]string, error)
+	// AdvanceMFAStep moves the last accepted TOTP step forward to step, atomically; false
+	// when step is not greater than it (a replay).
+	AdvanceMFAStep(ctx context.Context, userID string, step int64) (bool, error)
+	// UseRecoveryCode removes the recovery code with that keyed hash, atomically, and says
+	// how many are left; ok is false when the user has no such code.
+	UseRecoveryCode(ctx context.Context, userID, hash string) (left int, ok bool, err error)
 	// ClearJobInput replaces a job's input with an empty object: what it held (a new user's
 	// profile) is not kept after the job has run.
 	ClearJobInput(ctx context.Context, jobID string) error

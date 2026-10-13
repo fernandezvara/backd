@@ -45,6 +45,10 @@ type User struct {
 	Email         string   `expr:"email"`
 	EmailVerified bool     `expr:"email_verified"`
 	Roles         []string `expr:"roles"`
+	// MFA says the session used a second factor; Methods are how it was created: the
+	// first factor and, with MFA, "totp" or "recovery". API keys are ["key"].
+	MFA     bool     `expr:"mfa"`
+	Methods []string `expr:"methods"`
 }
 
 // Schema describes what the rules of one collection may refer to.

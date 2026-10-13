@@ -23,6 +23,9 @@ type SignupResult struct {
 	Principal Principal
 	Token     string
 	Pending   bool
+	// Challenge is set instead of a session when the new user has to set a second factor
+	// up first (their roles require it).
+	Challenge *IssuedChallenge
 }
 
 // SignUp creates the account like Signup, and in a realm with email asks for
@@ -47,8 +50,11 @@ func (s *Users) SignUp(ctx context.Context, r SignupRequest) (SignupResult, erro
 	if s.Settings.Account.RequireVerifiedEmail && !u.EmailVerified {
 		return SignupResult{Pending: true}, nil
 	}
-	p, token, err := s.startSession(ctx, u)
-	return SignupResult{Principal: p, Token: token}, err
+	out, err := s.afterFirstFactor(ctx, u, ProviderPassword, handover{})
+	if err != nil {
+		return SignupResult{}, err
+	}
+	return SignupResult{Principal: out.Principal, Token: out.Token, Challenge: out.Challenge}, nil
 }
 
 // sendAccountExists tells the owner of a registered address that someone

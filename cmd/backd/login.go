@@ -26,9 +26,13 @@ func whoamiAction(c *kli.CommandContext) error {
 }
 
 type sessionAnswer struct {
-	Token     string `json:"token"`
-	ExpiresAt string `json:"expires_at"`
-	User      struct {
+	// MFARequired and MFAEnrollmentRequired are answers with no session: a second step is
+	// needed first.
+	MFARequired           bool   `json:"mfa_required"`
+	MFAEnrollmentRequired bool   `json:"mfa_enrollment_required"`
+	Token                 string `json:"token"`
+	ExpiresAt             string `json:"expires_at"`
+	User                  struct {
 		Email string   `json:"email"`
 		Roles []string `json:"roles"`
 	} `json:"user"`
@@ -70,6 +74,10 @@ func login(realm, flagURL, email string, getenv func(string) string, uio userIO)
 	var res sessionAnswer
 	if err := t.call("POST", "_auth/login", nil, map[string]string{"email": email, "password": pw}, &res); err != nil {
 		return err
+	}
+	if res.Token == "" {
+		// Never store a session that wasn't given.
+		return errors.New("the realm asks for a second factor, which this command can't give yet: sign in with the API or the JavaScript client, or use an API key")
 	}
 	if creds.Sessions[u] == nil {
 		creds.Sessions[u] = map[string]storedAuth{}

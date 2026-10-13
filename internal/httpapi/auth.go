@@ -40,6 +40,7 @@ func (a *authAPI) routes(r chi.Router) {
 		json := requireContentType("application/json")
 		r.With(json).Post("/signup", a.signup)
 		r.With(json).Post("/login", a.login)
+		r.With(json).Post("/mfa/verify", a.mfaVerify)
 		r.With(json).Post("/verify-email/resend", a.resendVerification)
 		r.With(json).Post("/reset-password/request", a.requestPasswordReset)
 		a.hostedRoutes(r)
@@ -171,13 +172,7 @@ func (a *authAPI) signup(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusAccepted, map[string]any{"status": "verification_required"})
 		return
 	}
-	p, token := res.Principal, res.Token
-	setActor(r.Context(), "user:"+p.User.ID)
-	if useCookie {
-		setSessionCookie(w, r, usersOf(r), p, token)
-		token = "" // the token stays in the cookie, out of the response
-	}
-	writeJSON(w, http.StatusCreated, sessionJSON(p, token, usersOf(r).LocaleOf(p.User)))
+	a.answerSignIn(w, r, auth.Redeemed{Principal: res.Principal, Token: res.Token, Challenge: res.Challenge}, http.StatusCreated, useCookie, false)
 }
 
 func (a *authAPI) login(w http.ResponseWriter, r *http.Request) {
@@ -194,17 +189,45 @@ func (a *authAPI) login(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	p, token, err := usersOf(r).Login(r.Context(), f["email"].(string), f["password"].(string), clientIP(r))
+	out, err := usersOf(r).SignIn(r.Context(), f["email"].(string), f["password"].(string), clientIP(r))
 	if err != nil {
 		authError(w, r, err)
 		return
 	}
+	a.answerSignIn(w, r, out, http.StatusOK, useCookie, false)
+}
+
+// answerSignIn writes what a first or second factor led to: the session, or the challenge
+// that asks for the next step. provider says the sign-in is a provider's, whose answer
+// also says whether it made the user.
+func (a *authAPI) answerSignIn(w http.ResponseWriter, r *http.Request, out auth.Redeemed, status int, useCookie, provider bool) {
+	svc := usersOf(r)
+	if c := out.Challenge; c != nil {
+		writeJSON(w, http.StatusOK, challengeJSON(c))
+		return
+	}
+	p, token := out.Principal, out.Token
 	setActor(r.Context(), "user:"+p.User.ID)
 	if useCookie {
-		setSessionCookie(w, r, usersOf(r), p, token)
-		token = ""
+		setSessionCookie(w, r, svc, p, token)
+		token = "" // the token stays in the cookie, out of the response
 	}
-	writeJSON(w, http.StatusOK, sessionJSON(p, token, usersOf(r).LocaleOf(p.User)))
+	body := sessionJSON(p, token, svc.LocaleOf(p.User))
+	if provider {
+		body = providerSessionJSON(p, token, svc.LocaleOf(p.User), out.NewUser, out.Profile)
+	}
+	if out.RecoveryCodesLeft != nil {
+		body["recovery_codes_left"] = *out.RecoveryCodesLeft
+	}
+	writeJSON(w, status, body)
+}
+
+// challengeJSON is the answer of a first factor whose user needs a second step.
+func challengeJSON(c *auth.IssuedChallenge) map[string]any {
+	if c.Kind == auth.ChallengeEnroll {
+		return map[string]any{"mfa_enrollment_required": true, "challenge": c.Token}
+	}
+	return map[string]any{"mfa_required": true, "challenge": c.Token, "methods": c.Methods}
 }
 
 func (a *authAPI) logout(w http.ResponseWriter, r *http.Request) {
@@ -396,11 +419,20 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 	var pe *auth.PolicyError
 	var te *auth.ThrottledError
 	var el *auth.EmailLimitedError
+	var locked *auth.MFALockedError
+	var badCode *auth.InvalidCodeError
 	switch {
 	case errors.As(err, &te):
 		secs := int((te.RetryAfter + time.Second - 1) / time.Second)
 		w.Header().Set("Retry-After", strconv.Itoa(max(secs, 1)))
 		writeError(w, r, http.StatusTooManyRequests, codeTooManyRequests, "too many failed attempts; retry later")
+	case errors.As(err, &locked):
+		w.Header().Set("Retry-After", strconv.Itoa(max(int((locked.RetryAfter+time.Second-1)/time.Second), 1)))
+		writeError(w, r, http.StatusTooManyRequests, codeMFALocked, "too many wrong codes; try again later")
+	case errors.As(err, &badCode):
+		writeError(w, r, http.StatusBadRequest, codeInvalidCode, "the code is not valid", Detail{Path: "attempts_left", Reason: strconv.Itoa(badCode.AttemptsLeft)})
+	case errors.Is(err, auth.ErrInvalidChallenge):
+		writeError(w, r, http.StatusBadRequest, codeInvalidChallenge, "the challenge is invalid or expired: sign in again")
 	case errors.Is(err, auth.ErrInvalidCredentials):
 		writeError(w, r, http.StatusUnauthorized, codeInvalidCreds, err.Error())
 	case errors.Is(err, auth.ErrSameEmail):

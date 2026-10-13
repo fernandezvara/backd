@@ -269,6 +269,9 @@ func (s *AuthStore) EraseUser(ctx context.Context, id, placeholderEmail string, 
 	if _, err := s.identities().DeleteMany(ctx, bson.D{{Key: "user_id", Value: id}}); err != nil {
 		return err
 	}
+	if err := s.dropSecondFactors(ctx, id); err != nil {
+		return err
+	}
 	return s.updateByID(ctx, id, bson.D{
 		{Key: "$set", Value: bson.D{
 			{Key: "email", Value: placeholderEmail}, {Key: "erased_at", Value: now}, {Key: "disabled", Value: true},
@@ -306,6 +309,9 @@ func (s *AuthStore) DeleteUser(ctx context.Context, id string) error {
 		return err
 	}
 	if _, err := s.identities().DeleteMany(ctx, bson.D{{Key: "user_id", Value: id}}); err != nil {
+		return err
+	}
+	if err := s.dropSecondFactors(ctx, id); err != nil {
 		return err
 	}
 	res, err := s.users().DeleteOne(ctx, bson.D{{Key: "_id", Value: id}})
@@ -434,12 +440,15 @@ type sessionDoc struct {
 	CreatedAt  time.Time `bson:"created_at"`
 	LastUsedAt time.Time `bson:"last_used_at"`
 	ExpiresAt  time.Time `bson:"expires_at"`
+	Methods    []string  `bson:"methods,omitempty"`
+	MFA        bool      `bson:"mfa,omitempty"`
 }
 
 func (d sessionDoc) session() auth.Session {
 	return auth.Session{
 		ID: d.ID, UserID: d.UserID, TokenHash: d.TokenHash,
 		CreatedAt: d.CreatedAt.UTC(), LastUsedAt: d.LastUsedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC(),
+		Methods: d.Methods, MFA: d.MFA,
 	}
 }
 
@@ -447,6 +456,7 @@ func (s *AuthStore) CreateSession(ctx context.Context, x auth.Session) error {
 	_, err := s.sessions().InsertOne(ctx, sessionDoc{
 		ID: x.ID, TokenHash: x.TokenHash, UserID: x.UserID,
 		CreatedAt: x.CreatedAt, LastUsedAt: x.LastUsedAt, ExpiresAt: x.ExpiresAt,
+		Methods: x.Methods, MFA: x.MFA,
 	})
 	return err
 }

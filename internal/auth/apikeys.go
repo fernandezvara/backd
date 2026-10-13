@@ -168,6 +168,20 @@ func (c Caller) BypassesRules() bool {
 	return (c.Key != nil && c.User == nil) || (c.Func != nil && c.Func.Admin)
 }
 
+// SignInMethods says how the user the caller acts as signed in, for rules (`user.mfa`,
+// `user.methods`) and functions (`ctx.user`): the first factor and any second one, and
+// whether a second one was used. An API key (also acting on behalf of a user) is
+// ["key"] and never MFA. The list is never nil.
+func (c Caller) SignInMethods() (mfa bool, methods []string) {
+	switch {
+	case c.Key != nil:
+		return false, []string{"key"}
+	case c.User != nil:
+		return c.User.Session.MFA, append([]string{}, c.User.Session.Methods...)
+	}
+	return false, []string{}
+}
+
 // Subject is who the caller acts as, for ownership fields: "user:<id>",
 // "key:<name>" or "anonymous".
 func (c Caller) Subject() string {

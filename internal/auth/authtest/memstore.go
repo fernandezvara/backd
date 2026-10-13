@@ -39,6 +39,8 @@ type MemStore struct {
 	emailTokens map[string]auth.EmailToken
 	jobs        map[string]memJob                 // id → job
 	idempotency map[string]auth.IdempotencyRecord // id → record
+	challenges  map[string]auth.AuthChallenge     // hash → pending step
+	mfa         map[string]auth.MFARecord         // user id → second factors
 	// FailPutIdentity, when set, is returned by PutIdentity.
 	FailPutIdentity error
 }
@@ -252,6 +254,7 @@ func (m *MemStore) DeleteUser(_ context.Context, id string) error {
 			delete(m.identities, k)
 		}
 	}
+	m.dropSecondFactors(id)
 	return nil
 }
 
@@ -970,6 +973,7 @@ func (m *MemStore) EraseUser(_ context.Context, id, placeholderEmail string, now
 			delete(m.identities, k)
 		}
 	}
+	m.dropSecondFactors(id)
 	u.Email, u.ErasedAt, u.Disabled, u.EmailVerified, u.Roles, u.UpdatedAt = placeholderEmail, now, true, true, []string{}, now
 	u.Locale, u.PendingEmail, u.PreviousEmail, u.AdminNetworks, u.LoginNetworks = "", "", "", nil, nil
 	m.users[id] = u

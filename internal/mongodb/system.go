@@ -41,6 +41,12 @@ const (
 	// and expire by TTL.
 	OAuthStatesCollection = "oauth_states"
 	LoginCodesCollection  = "login_codes"
+	// AuthChallengesCollection holds the steps between a first factor and a session
+	// (a second factor to give, a TOTP being set up, later magic links and
+	// re-authentication codes), keyed by a hash and expiring by TTL; MFACollection
+	// holds one document per user with a second factor.
+	AuthChallengesCollection = "auth_challenges"
+	MFACollection            = "mfa"
 	// SchemaChecksCollection holds the latest schema check report of each
 	// collection (roadmap #26), replaced by the next finished check.
 	SchemaChecksCollection = "schema_checks"
@@ -144,6 +150,8 @@ var systemCollections = []systemCollection{
 			"created_at":   typ("date"),
 			"last_used_at": typ("date"),
 			"expires_at":   typ("date"),
+			"methods":      map[string]any{"bsonType": "array", "items": str()},
+			"mfa":          typ("bool"),
 		}),
 		indexes: []systemIndex{
 			{keys: bson.D{{Key: "token_hash", Value: 1}}, unique: true},
@@ -439,6 +447,36 @@ var systemCollections = []systemCollection{
 			"expires_at":     typ("date"),
 		}),
 		indexes: []systemIndex{{keys: bson.D{{Key: "expires_at", Value: 1}}, ttl: true}},
+	},
+	{
+		name: AuthChallengesCollection,
+		// _id is the SHA-256 of the value given to the caller.
+		validator: jsonSchema([]string{"_id", "kind", "user_id", "created_at", "expires_at"}, map[string]any{
+			"_id":        str(),
+			"kind":       map[string]any{"enum": bson.A{"mfa", "enroll"}},
+			"user_id":    str(),
+			"factor":     str(),
+			"new_user":   typ("bool"),
+			"profile":    typ("object"),
+			"attempts":   typ("int"),
+			"created_at": typ("date"),
+			"expires_at": typ("date"),
+		}),
+		indexes: []systemIndex{
+			{keys: bson.D{{Key: "expires_at", Value: 1}}, ttl: true},
+			{keys: bson.D{{Key: "user_id", Value: 1}}},
+		},
+	},
+	{
+		name: MFACollection,
+		// _id is the user id; the TOTP secret is sealed and recovery codes are keyed hashes.
+		validator: jsonSchema([]string{"_id", "secret", "enabled_at"}, map[string]any{
+			"_id":            str(),
+			"secret":         str(),
+			"enabled_at":     typ("date"),
+			"last_step":      map[string]any{"bsonType": bson.A{"int", "long"}},
+			"recovery_codes": map[string]any{"bsonType": "array", "items": str()},
+		}),
 	},
 	{
 		name: LoginCodesCollection,

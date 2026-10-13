@@ -68,6 +68,10 @@ type UserDef struct {
 	Email         string   `yaml:"email"`
 	EmailVerified *bool    `yaml:"email_verified"` // default true
 	Roles         []string `yaml:"roles"`
+	// MFA says the user's session used a second factor (default false); Methods are
+	// how it was created (default ["password"], with "totp" added when MFA is true).
+	MFA     bool     `yaml:"mfa"`
+	Methods []string `yaml:"methods"`
 }
 
 // Test groups the assertions of one caller.
@@ -177,7 +181,14 @@ func (r *runner) load(f File) {
 			}
 		}
 		verified := u.EmailVerified == nil || *u.EmailVerified
-		r.users[name] = &rules.User{ID: u.ID, Email: u.Email, EmailVerified: verified, Roles: append([]string{}, u.Roles...)}
+		methods := append([]string{}, u.Methods...)
+		if u.Methods == nil {
+			methods = []string{"password"}
+			if u.MFA {
+				methods = append(methods, "totp")
+			}
+		}
+		r.users[name] = &rules.User{ID: u.ID, Email: u.Email, EmailVerified: verified, Roles: append([]string{}, u.Roles...), MFA: u.MFA, Methods: methods}
 	}
 	for _, name := range slices.Sorted(maps.Keys(f.Documents)) {
 		if doc, err := r.stored(name, f.Documents[name]); err != nil {

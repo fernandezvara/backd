@@ -39,6 +39,10 @@ type CallbackClaims struct {
 	Attempt int    `json:"t,omitempty"`
 	// Email says the function may send custom emails (function.yaml `email: true`).
 	Email bool `json:"m,omitempty"`
+	// MFA and Methods are how the session of the user the call acts as was created, so that
+	// rules in the function's own data calls see the same `user.mfa` and `user.methods`.
+	MFA     bool     `json:"x,omitempty"`
+	Methods []string `json:"y,omitempty"`
 }
 
 // ErrInvalidCallback means a callback token is malformed, forged or expired.
@@ -122,7 +126,7 @@ func (s *Users) CallbackCaller(ctx context.Context, c CallbackClaims) (Caller, e
 		if err != nil || u.Disabled {
 			return Caller{}, ErrInvalidCallback
 		}
-		caller.User = &Principal{User: u}
+		caller.User = &Principal{User: u, Session: Session{MFA: c.MFA, Methods: c.Methods}}
 	}
 	return caller, nil
 }
