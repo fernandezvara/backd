@@ -124,6 +124,7 @@ type Callback struct {
 	Token      string `json:"token,omitempty"`
 	AdminToken string `json:"admin_token,omitempty"`
 	Email      bool   `json:"email,omitempty"` // ctx.email.send
+	Push       bool   `json:"push,omitempty"`  // ctx.push.send
 	// Progress says the run is an async job's attempt: the runner reports its
 	// steps live with Token (PUT /v1/{realm}/_job/steps).
 	Progress bool `json:"progress,omitempty"`

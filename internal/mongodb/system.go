@@ -51,6 +51,8 @@ const (
 	// device, with its token sealed and looked up by the hash of the token (or, for a web
 	// subscription, of its endpoint).
 	DevicesCollection = "devices"
+	// PushSendsCollection holds one record per push send: its totals, never a message.
+	PushSendsCollection = "push_sends"
 	// SchemaChecksCollection holds the latest schema check report of each
 	// collection (roadmap #26), replaced by the next finished check.
 	SchemaChecksCollection = "schema_checks"
@@ -511,6 +513,35 @@ var systemCollections = []systemCollection{
 			{keys: bson.D{{Key: "user_id", Value: 1}, {Key: "last_seen", Value: -1}}},
 			{keys: bson.D{{Key: "session_id", Value: 1}}},
 			{keys: bson.D{{Key: "last_seen", Value: 1}}},
+		},
+	},
+	{
+		name: PushSendsCollection,
+		validator: jsonSchema([]string{"_id", "kind", "sender", "created_at", "expires_at"}, map[string]any{
+			"_id":            str(),
+			"kind":           str(),
+			"sender":         str(),
+			"users":          typ("int"),
+			"planned":        typ("bool"),
+			"batches":        typ("int"),
+			"units":          typ("int"),
+			"batches_done":   typ("int"),
+			"units_done":     typ("int"),
+			"queued":         typ("int"),
+			"limited":        typ("int"),
+			"no_devices":     typ("int"),
+			"sent":           typ("int"),
+			"invalid":        typ("int"),
+			"failed":         typ("int"),
+			"batch_ids_done": map[string]any{"bsonType": "array", "items": str()},
+			"unit_ids_done":  map[string]any{"bsonType": "array", "items": str()},
+			"created_at":     typ("date"),
+			"expires_at":     typ("date"),
+			"completed_at":   typ("date"),
+		}),
+		indexes: []systemIndex{
+			{keys: bson.D{{Key: "expires_at", Value: 1}}, ttl: true},
+			{keys: bson.D{{Key: "created_at", Value: -1}}},
 		},
 	},
 	{

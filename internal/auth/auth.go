@@ -240,6 +240,27 @@ type Store interface {
 	DeleteStaleDevices(ctx context.Context, before time.Time) (int64, error)
 	// DeleteOrphanedDevices removes the devices whose session doesn't exist or has expired.
 	DeleteOrphanedDevices(ctx context.Context, now time.Time) (int64, error)
+	// DevicesByIDs returns the devices that exist among the ids. LiveDevicesOf returns the
+	// devices of the users whose registering session exists and hasn't expired, by user id,
+	// most recently seen first. DeleteDeviceByID removes a device whatever its owner.
+	DevicesByIDs(ctx context.Context, ids []string) ([]Device, error)
+	LiveDevicesOf(ctx context.Context, userIDs []string, now time.Time) (map[string][]Device, error)
+	DeleteDeviceByID(ctx context.Context, id string) error
+	// UsersByIDs returns the users that exist among the ids. AudienceUserIDs returns the ids
+	// of up to limit active users (not disabled, not erased) matching the audience, after the
+	// id `after`, in id order.
+	UsersByIDs(ctx context.Context, ids []string) ([]User, error)
+	AudienceUserIDs(ctx context.Context, a PushAudience, after string, limit int) ([]string, error)
+	// The record of a push send. AddPushSend adds the delta atomically (a finished batch or
+	// unit named in it counts once), sets CompletedAt when everything is done and returns the
+	// record. SetPushPlanned says every batch exists, and how many; SetPushPlanPosition keeps
+	// a planner job's place; UpdatePushRecipients replaces what a delivery unit still has to do.
+	CreatePushSend(ctx context.Context, p PushSend) error
+	PushSendByID(ctx context.Context, id string) (PushSend, error)
+	AddPushSend(ctx context.Context, id string, d PushDelta, now time.Time) (PushSend, error)
+	SetPushPlanned(ctx context.Context, id string, batches int, now time.Time) error
+	SetPushPlanPosition(ctx context.Context, jobID, after string, nextBatch int) error
+	UpdatePushRecipients(ctx context.Context, jobID string, recipients []PushRecipient) error
 
 	// CreateAPIKey stores a key; ErrKeyNameTaken if the name exists.
 	CreateAPIKey(ctx context.Context, k APIKey) error

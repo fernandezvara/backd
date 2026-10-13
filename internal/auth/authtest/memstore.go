@@ -42,6 +42,7 @@ type MemStore struct {
 	challenges  map[string]auth.AuthChallenge     // hash → pending step
 	mfa         map[string]auth.MFARecord         // user id → second factors
 	devices     map[string]auth.Device            // id → registered device
+	sends       map[string]*memSend               // id → push send
 	// FailPutIdentity, when set, is returned by PutIdentity.
 	FailPutIdentity error
 }
