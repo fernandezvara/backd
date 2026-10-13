@@ -10,3 +10,8 @@ dd { margin: 0; overflow-wrap: anywhere; }
 .tabs { display: flex; gap: .4rem; margin-bottom: .5rem; }
 iframe { width: 100%; min-height: 22rem; border: 1px solid var(--pico-muted-border-color, #8884); background: #fff; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.kinds { display: flex; gap: .4rem; margin: .5rem 0 1rem; }
+#push-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
+#push-list button { width: 100%; text-align: left; display: grid; gap: .1rem; }
+#push-list button[aria-current="true"] { outline: 2px solid currentColor; }
+#push-list small { opacity: .7; }

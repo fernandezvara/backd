@@ -380,3 +380,47 @@ func (s *AuthStore) ListPushSends(ctx context.Context, f auth.PushSendFilter) ([
 	}
 	return out, more, nil
 }
+
+type pushOutboxDoc struct {
+	ID        string    `bson:"_id"`
+	SendID    string    `bson:"send_id"`
+	UserID    string    `bson:"user_id"`
+	DeviceID  string    `bson:"device_id"`
+	Platform  string    `bson:"platform"`
+	Status    string    `bson:"status"`
+	Attempt   int32     `bson:"attempt"`
+	Message   string    `bson:"message"` // JSON
+	CreatedAt time.Time `bson:"created_at"`
+	ExpiresAt time.Time `bson:"expires_at"`
+}
+
+func (s *AuthStore) PutPushOutbox(ctx context.Context, e auth.PushOutboxEntry) error {
+	msg, err := json.Marshal(e.Message)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Collection(PushOutboxCollection).InsertOne(ctx, pushOutboxDoc{
+		ID: e.ID, SendID: e.SendID, UserID: e.UserID, DeviceID: e.DeviceID, Platform: e.Platform, Status: e.Status,
+		Attempt: int32(e.Attempt), Message: string(msg), CreatedAt: e.CreatedAt, ExpiresAt: e.ExpiresAt,
+	})
+	return err
+}
+
+func (s *AuthStore) ListPushOutbox(ctx context.Context, limit int) ([]auth.PushOutboxEntry, error) {
+	cur, err := s.db.Collection(PushOutboxCollection).Find(ctx, bson.D{}, options.Find().SetSort(bson.D{{Key: "_id", Value: -1}}).SetLimit(int64(limit)))
+	if err != nil {
+		return nil, err
+	}
+	var docs []pushOutboxDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	out := make([]auth.PushOutboxEntry, len(docs))
+	for i, d := range docs {
+		e := auth.PushOutboxEntry{ID: d.ID, SendID: d.SendID, UserID: d.UserID, DeviceID: d.DeviceID, Platform: d.Platform, Status: d.Status,
+			Attempt: int(d.Attempt), CreatedAt: d.CreatedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC()}
+		_ = json.Unmarshal([]byte(d.Message), &e.Message)
+		out[i] = e
+	}
+	return out, nil
+}

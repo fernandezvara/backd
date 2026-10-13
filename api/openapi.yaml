@@ -805,6 +805,63 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_dev/push:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [auth]
+      summary: What the capture push provider took (development only)
+      description: |
+        The deliveries the `capture` provider stored instead of sending, newest first, with the
+        message and the outcome each device was given. **No authentication**, like the email
+        outbox: it exists only in a realm with a capture provider, which startup refuses outside
+        `BACKD_DEV=true`; anywhere else it answers `404`. The Mailbox's Push tab reads it.
+      operationId: devPushOutbox
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: The captured deliveries.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, realm]
+                properties:
+                  realm: { type: string }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [id, send_id, user_id, device_id, platform, status, attempt, created_at, message]
+                      properties:
+                        id: { type: string }
+                        send_id: { type: string }
+                        user_id: { type: string }
+                        device_id: { type: string }
+                        platform: { type: string, enum: [android, ios, web] }
+                        status: { type: string, enum: [sent, invalid, retry, failed] }
+                        attempt: { type: integer }
+                        created_at: { $ref: "#/components/schemas/Timestamp" }
+                        message:
+                          type: object
+                          additionalProperties: false
+                          properties:
+                            kind: { type: string }
+                            title: { type: string }
+                            body: { type: string }
+                            link: { type: string }
+                            data: { type: [object, "null"], additionalProperties: { type: string } }
+                            badge: { type: [integer, "null"] }
+                            sound: { type: string }
+                            group: { type: string }
+                            priority: { type: string }
+                            silent: { type: boolean }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_auth/devices:
     parameters: [{ $ref: "#/components/parameters/realm" }]
     post:

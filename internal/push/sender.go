@@ -16,6 +16,7 @@ const (
 
 // Delivery is one push to one device.
 type Delivery struct {
+	UserID   string
 	DeviceID string
 	Token    string
 	Message  Message
@@ -24,6 +25,9 @@ type Delivery struct {
 // Request is what a sender is asked to do: deliver to the devices of one platform with the
 // realm's credentials for the provider (the values of the secrets the platform names).
 type Request struct {
+	Realm       string
+	SendID      string
+	Attempt     int // 1 for the first try of the unit
 	Platform    string
 	Provider    string
 	Credentials map[string]string // secret name → value

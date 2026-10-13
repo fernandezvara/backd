@@ -257,6 +257,10 @@ type Store interface {
 	// a planner job's place; UpdatePushRecipients replaces what a delivery unit still has to do.
 	CreatePushSend(ctx context.Context, p PushSend) error
 	PushSendByID(ctx context.Context, id string) (PushSend, error)
+	// PutPushOutbox stores a delivery the capture provider took; ListPushOutbox returns the
+	// newest ones.
+	PutPushOutbox(ctx context.Context, e PushOutboxEntry) error
+	ListPushOutbox(ctx context.Context, limit int) ([]PushOutboxEntry, error)
 	// ListPushSends returns sends newest first, and whether more follow.
 	ListPushSends(ctx context.Context, f PushSendFilter) ([]PushSend, bool, error)
 	AddPushSend(ctx context.Context, id string, d PushDelta, now time.Time) (PushSend, error)

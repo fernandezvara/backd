@@ -165,3 +165,25 @@ func TestAuthStoreAudienceAndLiveDevices(t *testing.T) {
 		t.Errorf("deleted: %v", got)
 	}
 }
+
+func TestAuthStorePushOutbox(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	for i, title := range []string{"first", "second"} {
+		err := s.PutPushOutbox(ctx, auth.PushOutboxEntry{
+			ID: "po_" + string(rune('a'+i)), SendID: "ps_1", UserID: "u1", DeviceID: "d1", Platform: "android", Status: push.StatusSent, Attempt: 1,
+			Message: push.Message{Kind: "raw", Title: title, Body: "b", Data: map[string]string{"k": "v"}}, CreatedAt: now, ExpiresAt: now.Add(time.Hour),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.ListPushOutbox(ctx, 10)
+	if err != nil || len(got) != 2 || got[0].Message.Title != "second" || got[0].Message.Data["k"] != "v" || got[1].Status != push.StatusSent {
+		t.Fatalf("outbox: %+v %v", got, err)
+	}
+	if got, _ = s.ListPushOutbox(ctx, 1); len(got) != 1 {
+		t.Errorf("limit: %d", len(got))
+	}
+}

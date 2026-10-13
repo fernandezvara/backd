@@ -100,7 +100,7 @@ func (w *Worker) deliverUnit(ctx context.Context, log *slog.Logger, svc *auth.Us
 				continue
 			}
 			msg := pj.Messages[r.Locale]
-			byPlatform[d.Platform] = append(byPlatform[d.Platform], push.Delivery{DeviceID: id, Token: token, Message: msg})
+			byPlatform[d.Platform] = append(byPlatform[d.Platform], push.Delivery{UserID: r.UserID, DeviceID: id, Token: token, Message: msg})
 			pending[id] = true
 		}
 	}
@@ -127,7 +127,7 @@ func (w *Worker) deliverUnit(ctx context.Context, log *slog.Logger, svc *auth.Us
 			wholesale = errors.Join(wholesale, err)
 			continue
 		}
-		results, err := sender.Send(rctx, push.Request{Platform: platform, Provider: pp.Provider, Credentials: creds, Deliveries: list})
+		results, err := sender.Send(rctx, push.Request{Realm: svc.Realm, SendID: pj.SendID, Attempt: job.Failures + 1, Platform: platform, Provider: pp.Provider, Credentials: creds, Deliveries: list})
 		if err != nil {
 			wholesale = errors.Join(wholesale, err)
 			continue

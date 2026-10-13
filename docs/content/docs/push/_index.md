@@ -9,7 +9,7 @@ toc: true
 **backd sends pushes itself.** There are three lanes (FCM for Android, APNs for iOS and Web Push for browsers) and each is a small built-in sender in the worker: you configure credentials once, and your functions only say *who* gets *what*. backd keeps the device registry, the templates and their languages, the per-user limits, the retries per device and the records of what went out.
 
 {{< hint style="note" >}}
-Push is being built in steps. What is documented here is what exists: **the device registry**, the configuration, the templates, sending, and the records of what was sent. The providers' senders and their guides arrive with the next steps and are marked as planned.
+Push is being built in steps. What is documented here is what exists: **the device registry**, the configuration, the templates, sending, and the records of what was sent, and local development. The providers' senders and their guides arrive with the next steps and are marked as planned.
 {{< /hint >}}
 
 | Step | What it gives you | State |
@@ -17,9 +17,9 @@ Push is being built in steps. What is documented here is what exists: **the devi
 | [Devices](devices/) | Apps register the device of the signed-in user; backd keeps them accurate | available |
 | Messages and templates | Templates per language, the message fields and their checks | available |
 | [Sending](sending/) | `ctx.push.send`, audiences, batches, limits, retries per device | available |
-| Providers | Built-in FCM, APNs and Web Push senders; until they land, a push is planned and accounted for but no provider is called | planned |
+| Providers | Built-in FCM, APNs and Web Push senders; until they land only `capture` delivers, and a platform with another provider answers every device as failed | planned |
 | [Records and test send](records/) | What was sent and why not, an audited test send, metrics | available |
-| Local development | A capture provider and a Push tab in the Mailbox | planned |
+| [Local development](local/) | A capture provider with steerable outcomes, a Push tab in the Mailbox and `fakePush()` | available |
 
 ## Turning it on
 

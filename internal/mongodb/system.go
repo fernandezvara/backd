@@ -53,6 +53,9 @@ const (
 	DevicesCollection = "devices"
 	// PushSendsCollection holds one record per push send: its totals, never a message.
 	PushSendsCollection = "push_sends"
+	// PushOutboxCollection holds what the capture provider took instead of sending: development
+	// only, with the message.
+	PushOutboxCollection = "push_outbox"
 	// SchemaChecksCollection holds the latest schema check report of each
 	// collection (roadmap #26), replaced by the next finished check.
 	SchemaChecksCollection = "schema_checks"
@@ -514,6 +517,22 @@ var systemCollections = []systemCollection{
 			{keys: bson.D{{Key: "session_id", Value: 1}}},
 			{keys: bson.D{{Key: "last_seen", Value: 1}}},
 		},
+	},
+	{
+		name: PushOutboxCollection,
+		validator: jsonSchema([]string{"_id", "send_id", "device_id", "platform", "status", "message", "created_at", "expires_at"}, map[string]any{
+			"_id":        str(),
+			"send_id":    str(),
+			"user_id":    str(),
+			"device_id":  str(),
+			"platform":   str(),
+			"status":     str(),
+			"attempt":    typ("int"),
+			"message":    str(),
+			"created_at": typ("date"),
+			"expires_at": typ("date"),
+		}),
+		indexes: []systemIndex{{keys: bson.D{{Key: "expires_at", Value: 1}}, ttl: true}},
 	},
 	{
 		name: PushSendsCollection,

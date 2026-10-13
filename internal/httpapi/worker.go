@@ -69,7 +69,7 @@ func NewWorker(cfg Config, id string) *Worker {
 	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, users: users, callbackKey: cfg.CallbackKey, objects: newRealmObjects(cfg.Registry, users)}
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, log: log, metrics: cfg.Metrics}
 	docs.imageMaxPixels = cfg.ImageMaxPixels
-	return &Worker{id: id, fns: fns, reg: cfg.Registry, backdURL: cfg.BackdURL, oauth: cfg.oauthService(), log: log, lastScheduled: map[string]time.Time{}, lastPurge: map[string]time.Time{}, lastDevices: map[string]time.Time{}, images: newImageEngine(cfg), pushSenders: cfg.PushSenders}
+	return &Worker{id: id, fns: fns, reg: cfg.Registry, backdURL: cfg.BackdURL, oauth: cfg.oauthService(), log: log, lastScheduled: map[string]time.Time{}, lastPurge: map[string]time.Time{}, lastDevices: map[string]time.Time{}, images: newImageEngine(cfg), pushSenders: pushSendersOf(cfg, users, now)}
 }
 
 // newImageEngine builds the engine from the instance's settings: the concurrency is the

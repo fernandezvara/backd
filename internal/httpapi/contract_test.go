@@ -1885,6 +1885,11 @@ func TestContract(t *testing.T) {
 		}
 		req("DELETE", ad+"/users/"+temp.ID+"/devices/"+d.ID, "", key, 204)
 
+		// What the capture provider took: nothing while the realm has no capture platform.
+		req("GET", "/v1/acme/_dev/push", "", nil, 404)
+		f.svc.Settings.Push.Platforms["android"] = registry.PushPlatform{Provider: "capture"}
+		req("GET", "/v1/acme/_dev/push?limit=5", "", nil, 200)
+		f.svc.Settings.Push.Platforms["android"] = registry.PushPlatform{Provider: "fcm"}
 		// The sends of the realm, and a test push to a user.
 		sent := req("POST", ad+"/push/test", `{"email": "`+temp.Email+`", "title": "Hi", "body": "There", "data": {"a": "b"}}`, key, 202)
 		req("POST", ad+"/push/test", `{"email": "`+temp.Email+`", "title": "Hi", "body": "`+strings.Repeat("x", 4300)+`"}`, key, 413)

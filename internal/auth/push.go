@@ -111,6 +111,21 @@ type PushDelta struct {
 // PushUserFilter selects users for an audience page.
 type PushUserFilter = PushAudience
 
+// PushOutboxEntry is a delivery the capture provider stored instead of sending: development
+// only. Unlike a send's record it holds the message.
+type PushOutboxEntry struct {
+	ID        string
+	SendID    string
+	UserID    string
+	DeviceID  string
+	Platform  string
+	Status    string // push.Status*
+	Attempt   int
+	Message   push.Message
+	CreatedAt time.Time
+	ExpiresAt time.Time
+}
+
 // PushSendFilter selects sends to list. Sender is "function:<database>/<name>" or "admin:<id>";
 // zero fields match everything.
 type PushSendFilter struct {

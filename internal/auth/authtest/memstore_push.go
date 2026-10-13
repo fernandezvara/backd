@@ -215,3 +215,20 @@ func (m *MemStore) ListPushSends(_ context.Context, f auth.PushSendFilter) ([]au
 	}
 	return all, false, nil
 }
+
+func (m *MemStore) PutPushOutbox(_ context.Context, e auth.PushOutboxEntry) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.outbox = append(m.outbox, e)
+	return nil
+}
+
+func (m *MemStore) ListPushOutbox(_ context.Context, limit int) ([]auth.PushOutboxEntry, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]auth.PushOutboxEntry, 0, len(m.outbox))
+	for i := len(m.outbox) - 1; i >= 0 && len(out) < limit; i-- {
+		out = append(out, m.outbox[i])
+	}
+	return out, nil
+}

@@ -570,6 +570,7 @@ export class FunctionError extends Error {
  * @property {MemoryStore} [store]      Shared across several createContext calls, to seed data ctx.db reads.
  * @property {boolean} [admin]          Also give ctx.admin.db (function.yaml's admin: true).
  * @property {string[]} [calls]         function.yaml's `calls`: ctx.call refuses any other name with `call_not_declared`, as backd does.
+ * @property {boolean | { kinds?: string[], audience?: boolean }} [push]  Give the function ctx.push.send (function.yaml's `push:`); the object is what it declares: the `kinds` it may name and whether it may send to an `audience`.
  * @property {boolean | { perInvocation?: number, recipientsPerMessage?: number }} [email]  Give the function ctx.email.send (function.yaml's `email: true`); the object sets the realm's caps (`email.limits`) the fake enforces.
  */
 
@@ -629,6 +630,67 @@ export function fakeEmail({ perInvocation = 50, recipientsPerMessage = 10 } = {}
 }
 
 /**
+ * A fake of `ctx.push`: `send` records the push and refuses what backd would before queueing
+ * it: nobody (or more than one way) named, an audience from a function that didn't declare
+ * `audience: true`, a kind outside the declared `kinds`, a message with a field backd would not
+ * accept, and one over a provider's size. Like backd it takes `user`, `users` or `audience`,
+ * and `kind` or `title` and `body`. Failures are a `FunctionError` with backd's codes
+ * (`invalid_push_message`, `unknown_push_kind`, `payload_too_large`, `push_audience_not_declared`).
+ * It sends nothing and counts no limits: `sent()` lists what the function asked for.
+ * `createContext({ push: true })` uses one.
+ * @param {{ kinds?: string[], audience?: boolean }} [opts] What `push:` declares in function.yaml.
+ */
+export function fakePush({ kinds, audience = false } = {}) {
+  /** @type {Array<Record<string, any>>} */
+  const sent = []
+  /** @param {string} reason @param {string} [field] */
+  const invalid = (reason, field = 'message') => new FunctionError(400, 'invalid_push_message', `${field}: ${reason}`, [{ path: field, reason }])
+  return {
+    /** @param {Record<string, any>} [msg] */
+    send: async (msg = {}) => {
+      const who = ['user', 'users', 'audience'].filter((k) => msg[k] !== undefined && !(Array.isArray(msg[k]) && msg[k].length === 0))
+      if (who.length !== 1) throw invalid('give exactly one of user, users and audience', 'user')
+      if (msg.audience !== undefined && !audience) {
+        throw new FunctionError(403, 'push_audience_not_declared', "this function didn't declare `push: { audience: true }` in its function.yaml")
+      }
+      if (msg.audience !== undefined && msg.audience !== 'all' && (msg.audience === null || typeof msg.audience !== 'object')) {
+        throw invalid('must be "all" or an object', 'audience')
+      }
+      if (msg.user !== undefined && typeof msg.user !== 'string') throw invalid('must be a user id', 'user')
+      if (msg.users !== undefined && !(Array.isArray(msg.users) && msg.users.every((u) => typeof u === 'string'))) throw invalid('must be an array of user ids', 'users')
+      const raw = msg.kind === undefined || msg.kind === 'raw'
+      if (!raw) {
+        if (kinds !== undefined && !kinds.includes(msg.kind)) throw new FunctionError(400, 'unknown_push_kind', `this function didn't declare the push kind ${msg.kind}`)
+        if (msg.title !== undefined || msg.body !== undefined) throw invalid('a message with a kind takes its text from the template: give kind, or title and body', 'title')
+      }
+      if (msg.silent === true) {
+        if (!msg.data || Object.keys(msg.data).length === 0) throw invalid('a silent push carries only data: it is required', 'data')
+        for (const k of ['title', 'body', 'badge', 'sound']) if (msg[k] !== undefined) throw invalid(`a silent push takes no ${k}`, k)
+        if (!raw) throw invalid('a silent push has no template: it takes no kind', 'kind')
+      } else if (raw && (typeof msg.title !== 'string' || msg.title.trim() === '' || typeof msg.body !== 'string' || msg.body.trim() === '')) {
+        throw invalid('title and body are required', 'title')
+      }
+      if (msg.data !== undefined) {
+        if (msg.data === null || typeof msg.data !== 'object' || Array.isArray(msg.data)) throw invalid('must be an object of strings', 'data')
+        for (const [k, v] of Object.entries(msg.data)) if (typeof v !== 'string') throw invalid(`${k}: data values are strings`, 'data')
+        if (JSON.stringify(msg.data).length > 2048) throw invalid('at most 2048 bytes serialized', 'data')
+      }
+      if (msg.group !== undefined && !/^[A-Za-z0-9_-]{1,32}$/.test(msg.group)) throw invalid('1 to 32 letters, digits, _ or -', 'group')
+      if (msg.priority !== undefined && !['normal', 'high'].includes(msg.priority)) throw invalid('must be normal or high', 'priority')
+      if (msg.badge !== undefined && !(Number.isInteger(msg.badge) && msg.badge >= 0)) throw invalid('must be 0 or more', 'badge')
+      // The smallest provider limit (Web Push's 3,993 bytes), on the portable fields.
+      if (JSON.stringify({ title: msg.title, body: msg.body, data: msg.data, link: msg.link, platform: msg.platform }).length > 3993) {
+        throw new FunctionError(413, 'payload_too_large', 'the message is over what a provider takes')
+      }
+      sent.push(structuredClone(msg))
+      const users = msg.user !== undefined ? 1 : Array.isArray(msg.users) ? new Set(msg.users).size : null
+      return { send_id: `ps_test${sent.length}`, users, jobs: 1, queued: users, limited: users === null ? null : 0, no_devices: users === null ? null : 0 }
+    },
+    sent: () => structuredClone(sent),
+  }
+}
+
+/**
  * A message as the realm's delivery function receives it as `ctx.input`
  * (see the docs, Functions -> Email), for testing a delivery function:
  * `createContext({ input: emailMessage({ kind: 'reset-password' }) })`.
@@ -674,11 +736,11 @@ export function callTimedOut() {
  * in-memory store (a fresh one per call unless `store` is given, so
  * several calls in one test can share state). Also returns `fakeCall` to
  * fake what `ctx.call(name, ...)` answers, `calls` to list what the
- * function called, `sentEmails` to list what it sent with `ctx.email.send`, and `steps`
+ * function called, `sentEmails` to list what it sent with `ctx.email.send`, `sentPushes` to list what it sent with `ctx.push.send`, and `steps`
  * to list what it reported with `ctx.step` and `ctx.progress` (name, total, message, the
  * last `current`, and every `updates` entry).
  * @param {ContextOptions} [opts]
- * @returns {{ ctx: any, store: MemoryStore, fakeCall: (name: string, handler: (input: any, options: any) => any) => void, calls: (name: string) => Array<{ input: any, options: any }>, sentEmails: () => Array<Record<string, any>>, steps: () => Array<{ name: string, total: number | null, message: string | null, current: number, updates: Array<{ current: number, message: string | null }> }> }}
+ * @returns {{ ctx: any, store: MemoryStore, fakeCall: (name: string, handler: (input: any, options: any) => any) => void, calls: (name: string) => Array<{ input: any, options: any }>, sentEmails: () => Array<Record<string, any>>, sentPushes: () => Array<Record<string, any>>, steps: () => Array<{ name: string, total: number | null, message: string | null, current: number, updates: Array<{ current: number, message: string | null }> }> }}
  */
 export function createContext(opts = {}) {
   const store = opts.store ?? new MemoryStore()
@@ -748,10 +810,14 @@ export function createContext(opts = {}) {
   // ctx.email.send: records the email; checks what backd would refuse.
   const mail = fakeEmail(typeof opts.email === 'object' ? opts.email : {})
   if (opts.email) ctx.email = Object.freeze({ send: mail.send })
+  // ctx.push.send: records the push; checks what backd would refuse before queueing it.
+  const pushes = fakePush(typeof opts.push === 'object' ? opts.push : {})
+  if (opts.push) ctx.push = Object.freeze({ send: pushes.send })
   return {
     ctx: Object.freeze(ctx),
     store,
     sentEmails: mail.sent,
+    sentPushes: pushes.sent,
     steps: () => reported.map((st) => ({ ...st, updates: st.updates.map((u) => ({ ...u })) })),
     fakeCall: (name, handler) => void fakes.set(name, handler),
     calls: (name) => recorded.filter((c) => c.name === name).map(({ input, options }) => ({ input, options })),
