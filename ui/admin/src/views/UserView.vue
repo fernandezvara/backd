@@ -137,6 +137,38 @@ async function unlink() {
   }
 }
 
+// Second factor
+interface MfaState {
+  available: boolean
+  enabled: boolean
+  methods: string[]
+  recovery_codes_left: number
+  required: boolean
+}
+const mfa = ref<MfaState>()
+const mfaError = ref('')
+async function loadMfa() {
+  mfaError.value = ''
+  try {
+    mfa.value = await admin.users.mfa(props.id)
+  } catch (e) {
+    mfaError.value = errorText(e, t('user.mfa.loadFailed'))
+  }
+}
+const resetting = ref(false)
+async function resetMfa() {
+  try {
+    await admin.users.resetMfa(props.id)
+    toasts.push(t('user.mfa.resetDone', { email: user.value?.email ?? '' }))
+    await Promise.all([loadMfa(), loadSessions()])
+  } catch (e) {
+    // The server's refusal (not on yourself; none to reset) is shown as is.
+    toasts.push(errorText(e, t('common.unexpected')), 'error')
+  }
+}
+// An administrator can't reset their own second factor: the server refuses, so the button isn't offered.
+const isSelf = computed(() => session.email.toLowerCase() === user.value?.email.toLowerCase())
+
 // Sessions
 const sessions = ref<UserSession[]>([])
 const sessionsError = ref('')
@@ -191,7 +223,7 @@ const statusText = computed(() => (erased.value ? t('users.erased') : user.value
 
 onMounted(async () => {
   await load()
-  if (user.value && !erased.value) await Promise.all([loadSessions(), loadIdentities(), realmConfig.load()])
+  if (user.value && !erased.value) await Promise.all([loadSessions(), loadIdentities(), loadMfa(), realmConfig.load()])
 })
 </script>
 
@@ -294,6 +326,17 @@ onMounted(async () => {
         </div>
       </section>
 
+      <section class="mt-8" aria-labelledby="mfa-h">
+        <h2 id="mfa-h" class="text-lg font-semibold">{{ t('user.mfa.title') }}</h2>
+        <AppAlert v-if="mfaError" kind="error" class="mt-2">{{ mfaError }}</AppAlert>
+        <div v-else-if="mfa" class="mt-2 flex flex-wrap items-center gap-4 text-sm" data-testid="user-mfa">
+          <p data-testid="user-mfa-state">{{ mfa.enabled ? t('user.mfa.on', { left: mfa.recovery_codes_left }) : t('user.mfa.off') }}</p>
+          <p v-if="mfa.required" class="text-slate-600 dark:text-slate-400">{{ t('user.mfa.required') }}</p>
+          <AppButton v-if="canWrite && mfa.enabled && !isSelf" variant="danger" @click="resetting = true">{{ t('user.mfa.reset') }}</AppButton>
+          <p v-else-if="mfa.enabled && isSelf" class="text-slate-600 dark:text-slate-400">{{ t('user.mfa.self') }}</p>
+        </div>
+      </section>
+
       <section class="mt-8" aria-labelledby="sessions-h">
         <h2 id="sessions-h" class="text-lg font-semibold">{{ t('user.sessions.title') }}</h2>
         <AppAlert v-if="sessionsError" kind="error" class="mt-2">{{ sessionsError }}</AppAlert>
@@ -330,6 +373,7 @@ onMounted(async () => {
       <TextField v-model="email.value.value" type="email" :label="t('user.email.label')" :help="t('user.email.help')" autocomplete="off" required />
     </FormDialog>
 
+    <ConfirmDialog v-model:open="resetting" :title="t('user.mfa.resetTitle', { email: user.email })" :description="t('user.mfa.resetBody')" :expected="user.email" :action="t('user.mfa.reset')" @confirm="resetMfa" />
     <ConfirmDialog v-model:open="unlinkOpen" :title="t('user.identities.unlinkTitle', { provider: unlinking })" :description="t('user.identities.unlinkBody')" :expected="unlinking" :action="t('user.identities.unlink')" @confirm="unlink" />
     <ConfirmDialog v-model:open="erasing" :title="t('user.erase.title', { email: user.email })" :description="t('user.erase.body')" :expected="user.email" :action="t('user.erase.action')" :busy="erasingBusy" @confirm="erase">
       <AppAlert v-if="reportError" kind="error">{{ reportError }}</AppAlert>

@@ -55,6 +55,11 @@
     "invalid": "El nombre de un realm solo tiene letras minúsculas, dígitos, - y _."
   },
   "signIn": {
+    "codeFailed": "Ese código no es correcto. Prueba con el siguiente, o con un código de recuperación.",
+    "cancel": "Cancelar",
+    "code": {"intro": "Escribe el código de tu aplicación de autenticación, o un código de recuperación.", "label": "Código", "submit": "Verificar"},
+    "enroll": {"intro": "Esta cuenta debe usar verificación en dos pasos. Configura una aplicación de autenticación para continuar.", "start": "Configurar una aplicación de autenticación", "qrAlt": "Código QR para escanear con tu aplicación de autenticación", "secret": "O escribe este secreto:", "label": "Código que muestra la aplicación", "submit": "Activarla y entrar"},
+    "recovery": {"title": "Códigos de recuperación", "body": "Cada uno sirve una vez y solo se muestran ahora. Guárdalos en un lugar seguro, no en el teléfono con la aplicación.", "continue": "Los guardé, continuar"},
     "title": "Inicia sesión en {realm}",
     "email": "Correo electrónico",
     "password": "Contraseña",
@@ -238,6 +243,18 @@
       "added": "{role} añadido.",
       "removed": "{role} quitado.",
       "unlisted": "Nombre de un rol declarado en realm.yaml"
+    },
+    "mfa": {
+      "title": "Verificación en dos pasos",
+      "on": "Activada. Códigos de recuperación restantes: {left}.",
+      "off": "Desactivada.",
+      "required": "Un rol de este usuario la exige: la configurará en su próximo inicio de sesión.",
+      "reset": "Restablecer segundo factor",
+      "resetTitle": "¿Restablecer el segundo factor de {email}?",
+      "resetBody": "Su aplicación de autenticación y sus códigos de recuperación dejan de funcionar y todas sus sesiones terminan. Se le avisa por correo.",
+      "resetDone": "Se restableció el segundo factor de {email}.",
+      "self": "No puedes restablecer tu propio segundo factor: pide a otro administrador.",
+      "loadFailed": "No se pudo cargar el segundo factor."
     },
     "identities": {
       "title": "Formas de iniciar sesión",

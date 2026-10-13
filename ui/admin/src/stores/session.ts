@@ -92,11 +92,50 @@ export const useSession = defineStore('session', () => {
     idle = watchIdle(idleSeconds.value, () => void signOut('idle'))
   }
 
-  async function signIn(forRealm: string, emailAddress: string, password: string, keepInTab: boolean) {
+  /** What the sign-in waits for after a right password: a code of the second factor, or setting one up. */
+  const step = ref<{ kind: 'code' | 'enroll'; challenge: string } | null>(null)
+
+  /** Signs in; resolves with what is still needed: nothing (`done`), a code, or an enrolment. */
+  async function signIn(forRealm: string, emailAddress: string, password: string, keepInTab: boolean): Promise<'done' | 'code' | 'enroll'> {
     begin(forRealm, keepInTab)
     const c = client.value!
-    await c.auth.login({ email: emailAddress, password })
+    const result = await c.auth.signIn({ email: emailAddress, password })
+    if ('challenge' in result) {
+      step.value = { kind: 'mfaRequired' in result ? 'code' : 'enroll', challenge: result.challenge }
+      return step.value.kind
+    }
+    step.value = null
     await adopt(c)
+    return 'done'
+  }
+
+  /** The second step: the code of the authenticator app, or a recovery code (xxxxx-xxxxx). */
+  async function verifyCode(code: string) {
+    const c = client.value!
+    const trimmed = code.trim()
+    await c.auth.verifyMfa(step.value!.challenge, trimmed.includes('-') ? 'recovery_code' : 'totp', trimmed)
+    step.value = null
+    await adopt(c)
+  }
+
+  /** Starts setting an authenticator app up for a sign-in whose role requires one. */
+  function startEnrollment() {
+    return client.value!.auth.mfa.setup({ challenge: step.value!.challenge })
+  }
+
+  /** Confirms the first code: the sign-in ends here, and the recovery codes come back to be shown. */
+  async function confirmEnrollment(setupId: string, code: string): Promise<string[]> {
+    const c = client.value!
+    const done = await c.auth.mfa.confirm({ challenge: step.value!.challenge, setupId, code: code.trim() })
+    step.value = null
+    await adopt(c)
+    return done.recovery_codes
+  }
+
+  /** Gives up a sign-in that waits for its second step. */
+  function cancelStep() {
+    step.value = null
+    client.value = null
   }
 
   /** After a reload in the same tab: the opted-in token is still there. */
@@ -151,5 +190,5 @@ export const useSession = defineStore('session', () => {
     idleSeconds.value = n
   }
 
-  return { realm, client, access, ended, signedIn, email, idleSeconds, readable, writable, canRead, canWrite, signIn, restore, signOut, expired, setIdleSeconds }
+  return { realm, client, access, ended, signedIn, email, idleSeconds, readable, writable, canRead, canWrite, step, signIn, verifyCode, startEnrollment, confirmEnrollment, cancelStep, restore, signOut, expired, setIdleSeconds }
 })

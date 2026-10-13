@@ -55,6 +55,11 @@
     "invalid": "A realm name has lowercase letters, digits, - and _ only."
   },
   "signIn": {
+    "codeFailed": "That code is not right. Try the next one, or a recovery code.",
+    "cancel": "Cancel",
+    "code": {"intro": "Enter the code of your authenticator app, or a recovery code.", "label": "Code", "submit": "Verify"},
+    "enroll": {"intro": "This account must use two-step verification. Set up an authenticator app to continue.", "start": "Set up an authenticator app", "qrAlt": "QR code to scan with your authenticator app", "secret": "Or type this secret:", "label": "Code shown by the app", "submit": "Turn it on and sign in"},
+    "recovery": {"title": "Recovery codes", "body": "Each works once and they are shown only now. Save them somewhere safe, not on the phone with the app.", "continue": "I saved them, continue"},
     "title": "Sign in to {realm}",
     "email": "Email",
     "password": "Password",
@@ -238,6 +243,18 @@
       "added": "{role} added.",
       "removed": "{role} removed.",
       "unlisted": "Name of a role declared in realm.yaml"
+    },
+    "mfa": {
+      "title": "Two-step verification",
+      "on": "On. Recovery codes left: {left}.",
+      "off": "Off.",
+      "required": "A role of this user requires it: they set it up at their next sign-in.",
+      "reset": "Reset second factor",
+      "resetTitle": "Reset the second factor of {email}?",
+      "resetBody": "Their authenticator app and recovery codes stop working and every session of theirs ends. They are told by email.",
+      "resetDone": "The second factor of {email} was reset.",
+      "self": "You can't reset your own second factor: ask another administrator.",
+      "loadFailed": "The second factor could not be loaded."
     },
     "identities": {
       "title": "Ways to sign in",
