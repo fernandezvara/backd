@@ -13,9 +13,11 @@ test('sign-up, me, sessions, logout', { skip }, async () => {
   const s = await c.auth.signup({ email: address.toUpperCase(), password })
   assert.match(String(s.token), /^bds_/)
   assert.equal(s.user.email, address)
-  const { identities, ...me } = await c.auth.me()
+  const { identities, reauth_methods: reauthMethods, sign_in_methods: signInMethods, ...me } = await c.auth.me()
   assert.deepEqual(me, s.user)
   assert.deepEqual(identities.map((i) => i.provider), ['password'])
+  assert.deepEqual(reauthMethods, ['password'])
+  assert.deepEqual(signInMethods, ['password'])
 
   await assert.rejects(client().auth.signup({ email: address, password }), ConflictError)
   await assert.rejects(client().auth.signup({ email: 'not-an-email', password }), (/** @type {any} */ e) => e instanceof ValidationError && e.details[0].path === 'email')
@@ -41,7 +43,10 @@ test('password change expires other sessions', { skip }, async () => {
   const events = []
   other.auth.onAuthChange((e) => events.push(e))
 
-  await c.auth.changePassword({ currentPassword: password, newPassword: 'dev-p4ssw0rd!2' })
+  await assert.rejects(c.auth.changePassword({ newPassword: 'dev-p4ssw0rd!2' }), (/** @type {any} */ e) => e.code === 'reauth_required')
+  await assert.rejects(c.auth.reauth({ method: 'password', password: 'dev-p4ssw0rd!0' }), AuthenticationError)
+  await c.auth.reauth({ method: 'password', password })
+  await c.auth.changePassword({ newPassword: 'dev-p4ssw0rd!2' })
   await c.auth.me() // still valid
   await assert.rejects(other.auth.me(), AuthenticationError)
   assert.deepEqual(events, ['SESSION_EXPIRED'])
@@ -67,8 +72,9 @@ test('revoke a session, log out everywhere, delete the account', { skip }, async
 
   const again = client()
   await again.auth.login({ email: address, password })
-  await assert.rejects(again.auth.deleteAccount({ password: 'dev-p4ssw0rd!0' }), AuthenticationError)
-  await again.auth.deleteAccount({ password })
+  await assert.rejects(again.auth.deleteAccount(), (/** @type {any} */ e) => e.code === 'reauth_required')
+  await again.auth.reauth({ method: 'password', password })
+  await again.auth.deleteAccount()
   await assert.rejects(client().auth.login({ email: address, password }), AuthenticationError)
 })
 
@@ -93,6 +99,8 @@ test('sign-in methods: me lists them, the last one stays, and a realm without pr
   assert.equal(me.identities[0].email, me.email)
   assert.ok(me.identities[0].last_used_at === null || typeof me.identities[0].last_used_at === 'string')
   // The only way to sign in can't be removed; a provider the user doesn't have isn't there.
+  // (Removing a way in asks for a fresh proof first.)
+  await c.auth.reauth({ method: 'password', password })
   await assert.rejects(c.auth.unlinkProvider('password'), (/** @type {any} */ e) => e instanceof ConflictError && e.code === 'last_sign_in_method')
   await assert.rejects(c.auth.unlinkProvider('google'), (/** @type {any} */ e) => e instanceof NotFoundError)
   // The test realm lists no providers: starting one, or sending a token, is a 404.

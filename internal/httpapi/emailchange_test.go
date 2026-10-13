@@ -10,7 +10,7 @@ import (
 	"github.com/fernandezvara/backd/internal/auth"
 )
 
-const changeBody = `{"new_email": "Ada.New@Example.com", "password": "dev-p4ssw0rd!", "redirect_to": "https://app.acme.example/account"}`
+const changeBody = `{"new_email": "Ada.New@Example.com", "redirect_to": "https://app.acme.example/account"}`
 
 func newChangeFixture(t *testing.T) (*rulesFixture, *Worker) {
 	f, w := newVerifyFixture(t)
@@ -109,24 +109,23 @@ func TestEmailChangeRules(t *testing.T) {
 		want       int
 	}{
 		"no session":         {"", changeBody, 401},
-		"wrong password":     {f.ada, `{"new_email": "x@example.com", "password": "nope-nope-nope"}`, 401},
-		"the same address":   {f.ada, `{"new_email": "ADA@example.com", "password": "dev-p4ssw0rd!"}`, 400},
-		"an invalid address": {f.ada, `{"new_email": "nope", "password": "dev-p4ssw0rd!"}`, 400},
-		"a bad redirect":     {f.ada, `{"new_email": "x@example.com", "password": "dev-p4ssw0rd!", "redirect_to": "https://evil.example/"}`, 400},
+		"the same address":   {f.ada, `{"new_email": "ADA@example.com"}`, 400},
+		"an invalid address": {f.ada, `{"new_email": "nope"}`, 400},
+		"a bad redirect":     {f.ada, `{"new_email": "x@example.com", "redirect_to": "https://evil.example/"}`, 400},
 	} {
 		if code, _ := f.as(t, tc.cred, "POST", "/v1/acme/_auth/email", tc.body); code != tc.want {
 			t.Errorf("%s: %d, want %d", name, code, tc.want)
 		}
 	}
 	// An address someone else has: the same answer, and nothing is sent.
-	if code, _ := f.as(t, f.ada, "POST", "/v1/acme/_auth/email", `{"new_email": "bob@example.com", "password": "dev-p4ssw0rd!"}`); code != 202 {
+	if code, _ := f.as(t, f.ada, "POST", "/v1/acme/_auth/email", `{"new_email": "bob@example.com"}`); code != 202 {
 		t.Errorf("a taken address: %d", code)
 	}
 	if w.RunOnce(ctx) {
 		t.Error("a message was sent for an address that is taken")
 	}
 	// A confirmation that arrives after the address was registered elsewhere fails.
-	f.as(t, f.ada, "POST", "/v1/acme/_auth/email", `{"new_email": "late@example.com", "password": "dev-p4ssw0rd!"}`)
+	f.as(t, f.ada, "POST", "/v1/acme/_auth/email", `{"new_email": "late@example.com"}`)
 	token := tokenOf(t, deliver(t, f, w))
 	if _, _, err := f.svc.Signup(ctx, "late@example.com", "dev-p4ssw0rd!", ""); err != nil {
 		t.Fatal(err)
@@ -138,15 +137,15 @@ func TestEmailChangeRules(t *testing.T) {
 		t.Errorf("the address changed: %+v", u)
 	}
 	// A newer request supersedes an older link.
-	f.as(t, f.ada, "POST", "/v1/acme/_auth/email", `{"new_email": "first@example.com", "password": "dev-p4ssw0rd!"}`)
+	f.as(t, f.ada, "POST", "/v1/acme/_auth/email", `{"new_email": "first@example.com"}`)
 	first := tokenOf(t, deliver(t, f, w))
-	f.as(t, f.ada, "POST", "/v1/acme/_auth/email", `{"new_email": "second@example.com", "password": "dev-p4ssw0rd!"}`)
+	f.as(t, f.ada, "POST", "/v1/acme/_auth/email", `{"new_email": "second@example.com"}`)
 	deliver(t, f, w)
 	if rec := f.page(t, "POST", "/v1/acme/_auth/confirm-email-change", "application/json", `{"token": "`+first+`"}`, ""); rec.Code != 400 {
 		t.Errorf("a superseded link: %d", rec.Code)
 	}
 	// An expired undo link.
-	if code, _ := f.as(t, f.ada, "POST", "/v1/acme/_auth/email", `{"new_email": "third@example.com", "password": "dev-p4ssw0rd!"}`); code != 202 {
+	if code, _ := f.as(t, f.ada, "POST", "/v1/acme/_auth/email", `{"new_email": "third@example.com"}`); code != 202 {
 		t.Fatal(code)
 	}
 	confirm := tokenOf(t, deliver(t, f, w))

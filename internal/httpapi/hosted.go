@@ -334,8 +334,8 @@ func (a *authAPI) requestPasswordReset(w http.ResponseWriter, r *http.Request) {
 }
 
 // changeEmail handles POST /_auth/email: the signed-in user asks to change
-// their address. It needs the current password, and answers 202 whether or
-// not the new address is free; nothing changes until the new address
+// their address. It needs a fresh re-authentication (X-Backd-Reauth), and answers 202
+// whether or not the new address is free; nothing changes until the new address
 // confirms. A realm that doesn't allow it has no such route.
 func (a *authAPI) changeEmail(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.hostedRealm(r); !ok || !usersOf(r).Settings.Account.AllowEmailChange {
@@ -346,7 +346,7 @@ func (a *authAPI) changeEmail(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"new_email": "string", "password": "string", "redirect_to": "string?"})
+	f, ok := fields(w, r, obj, map[string]string{"new_email": "string", "redirect_to": "string?"})
 	if !ok {
 		return
 	}
@@ -359,7 +359,10 @@ func (a *authAPI) changeEmail(w http.ResponseWriter, r *http.Request) {
 	if !a.checkRedirect(w, r, redirectTo) {
 		return
 	}
-	if err := usersOf(r).RequestEmailChange(r.Context(), principalOf(r), f["password"].(string), next, redirectTo, clientIP(r), requestID(r.Context())); err != nil {
+	if !a.reauthed(w, r) {
+		return
+	}
+	if err := usersOf(r).RequestEmailChange(r.Context(), principalOf(r), next, redirectTo, clientIP(r), requestID(r.Context())); err != nil {
 		authError(w, r, err)
 		return
 	}

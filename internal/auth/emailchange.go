@@ -25,12 +25,9 @@ var (
 // is accepted and nothing is sent), so this can't be used to find out who is
 // registered. A reached email limit is an *EmailLimitedError: the caller is
 // signed in, so it may be told.
-func (s *Users) RequestEmailChange(ctx context.Context, p Principal, password, newAddress, redirectTo, ip, requestID string) error {
+func (s *Users) RequestEmailChange(ctx context.Context, p Principal, newAddress, redirectTo, ip, requestID string) error {
 	if s.Settings.Email == nil || !s.Settings.Account.AllowEmailChange {
 		return ErrEmailChangeDisabled
-	}
-	if err := s.checkPassword(ctx, p.User, password); err != nil {
-		return err
 	}
 	next, err := registry.NormalizeEmail(newAddress)
 	if err != nil {

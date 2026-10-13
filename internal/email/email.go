@@ -33,11 +33,32 @@ const (
 	ChangeEmail     = "change-email"
 	EmailChanged    = "email-changed"
 	Invitation      = "invitation"
+	// SecurityNotice tells the user a change to their sign-in security (a
+	// second factor on or off, a password set or removed, a key created); the
+	// template reads {{.Data.event}}. MFAFailed warns of wrong second-factor codes
+	// after a right password.
+	SecurityNotice = "security-notice"
+	MFAFailed      = "mfa-failed"
+	// ReauthCode carries the 6-digit code that proves a user with no password and no
+	// second factor is there before a sensitive action ({{.Data.code}}, {{.ExpiresAt}}).
+	ReauthCode = "reauth-code"
+	// MFAReset tells a user that an administrator removed their second factor.
+	MFAReset = "mfa-reset"
+	// MagicLink carries the link and the 6-digit code that sign a user in
+	// ({{.Link}}, {{.Data.code}}, {{.ExpiresAt}}); NoAccount tells the owner of an address with
+	// no account that someone asked to sign in with it.
+	MagicLink = "magic-link"
+	NoAccount = "no-account"
 )
 
 // SystemKinds are the kinds backd knows; `backd template realm` writes an
 // English template for each.
-var SystemKinds = []string{VerifyEmail, ResetPassword, AccountExists, PasswordChanged, Welcome, ChangeEmail, EmailChanged, Invitation}
+var SystemKinds = []string{VerifyEmail, ResetPassword, AccountExists, PasswordChanged, Welcome, ChangeEmail, EmailChanged, Invitation, SecurityNotice, MFAFailed, ReauthCode, MFAReset, MagicLink, NoAccount}
+
+// BuiltInKinds are system kinds a realm does not have to ship: when its email folder has
+// none, the built-in English text is used for every listed locale, so a realm that
+// existed before them keeps working. A folder of the kind replaces the built-in text.
+var BuiltInKinds = []string{SecurityNotice, MFAFailed, ReauthCode, MFAReset, MagicLink, NoAccount}
 
 // RequiredKinds must have a template in every realm that configures email.
 var RequiredKinds = []string{VerifyEmail, ResetPassword, AccountExists, PasswordChanged}
@@ -197,7 +218,7 @@ var sample = Data{
 	User:      User{Email: "ana@example.com", Locale: "en"},
 	Link:      "https://example.com/v1/sample/_auth/verify-email?token=sample",
 	ExpiresAt: time.Date(2030, 1, 2, 15, 4, 0, 0, time.UTC),
-	Data:      map[string]any{},
+	Data:      map[string]any{"event": "mfa-enabled", "codes_left": 3, "code": "123456"},
 }
 
 // Load reads <realm>/email/ (dir): one folder per kind, with
@@ -236,6 +257,24 @@ func Load(dir string, locales []string) (*Templates, []error) {
 			}
 		}
 	}
+	for _, kind := range BuiltInKinds {
+		if _, ok := t.byKind[kind]; ok {
+			continue
+		}
+		if _, statErr := os.Stat(filepath.Join(dir, kind)); statErr == nil {
+			continue // a folder with problems: they are reported above
+		}
+		for _, loc := range locales {
+			if tpl, kerrs := loadBuiltIn(kind, loc); tpl != nil {
+				if t.byKind[kind] == nil {
+					t.byKind[kind] = map[string]*template{}
+				}
+				t.byKind[kind][loc] = tpl
+			} else {
+				errs = append(errs, kerrs...)
+			}
+		}
+	}
 	for _, kind := range RequiredKinds {
 		if _, ok := t.byKind[kind]; !ok {
 			if _, statErr := os.Stat(filepath.Join(dir, kind)); statErr != nil {
@@ -244,6 +283,15 @@ func Load(dir string, locales []string) (*Templates, []error) {
 		}
 	}
 	return t, errs
+}
+
+// loadBuiltIn is the built-in English text of a kind, for a locale the realm lists.
+func loadBuiltIn(kind, locale string) (*template, []error) {
+	files, err := DefaultFiles(kind)
+	if err != nil {
+		return nil, []error{err}
+	}
+	return parseOne("built-in "+kind, kind, locale, string(files["en.subject.txt"]), string(files["en.txt"]), string(files["en.html"]))
 }
 
 func loadOne(kdir, kind, locale string) (*template, []error) {
@@ -265,6 +313,13 @@ func loadOne(kdir, kind, locale string) (*template, []error) {
 	if len(errs) > 0 {
 		return nil, errs
 	}
+	return parseOne(kdir, kind, locale, subject, text, html)
+}
+
+// parseOne parses and test-renders the three templates of a kind in a locale; where names
+// them in errors.
+func parseOne(kdir, kind, locale, subject, text, html string) (*template, []error) {
+	var errs []error
 	name := kind + "/" + locale
 	tpl := &template{}
 	var err error

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/tls"
 	"crypto/x509"
@@ -259,10 +260,80 @@ func (t *target) callHeaders(method, path string, query url.Values, body, out an
 	return res.Header, nil
 }
 
+// proof asks the signed-in user for a fresh proof of identity, the strongest they have
+// (their second factor's code, else the password, else a code sent by email), and returns the
+// header that sensitive requests carry. Nothing is asked of an API key, or of a user the server
+// asks nothing of.
+func (t *target) proof(uio userIO) (map[string]string, error) {
+	if t.fromKey {
+		return nil, nil
+	}
+	var me struct {
+		ReauthMethods []string `json:"reauth_methods"`
+	}
+	if err := t.call("GET", "_auth/me", nil, nil, &me); err != nil {
+		return nil, err
+	}
+	if len(me.ReauthMethods) == 0 {
+		return nil, nil
+	}
+	method := me.ReauthMethods[0]
+	body := map[string]string{"method": method}
+	switch method {
+	case "password":
+		pw, err := readSecret(uio, false, "Password (to confirm it is you)")
+		if err != nil {
+			return nil, err
+		}
+		body["password"] = pw
+	case "email_code":
+		if err := t.call("POST", "_auth/reauth/email-code", nil, nil, nil); err != nil {
+			return nil, err
+		}
+		fmt.Fprintln(uio.stderr, "a confirmation code was sent to your email address")
+		code, err := readLine(uio, "Code from the email")
+		if err != nil {
+			return nil, err
+		}
+		body["code"] = code
+	default: // totp: the code of the authenticator app
+		code, err := readLine(uio, "Code from your authenticator app (or a recovery code)")
+		if err != nil {
+			return nil, err
+		}
+		if strings.ContainsAny(code, "-") || len(strings.TrimSpace(code)) > 6 {
+			body["method"] = "recovery_code"
+		}
+		body["code"] = code
+	}
+	var out struct {
+		Token string `json:"reauth_token"`
+	}
+	if err := t.call("POST", "_auth/reauth", nil, body, &out); err != nil {
+		return nil, err
+	}
+	return map[string]string{"X-Backd-Reauth": out.Token}, nil
+}
+
+// readLine reads one line the user types (a code): from the terminal with a prompt, or the first
+// line of standard input when it isn't one.
+func readLine(uio userIO, prompt string) (string, error) {
+	if f, ok := uio.stdin.(*os.File); ok && isTerminal(f) {
+		fmt.Fprintf(uio.stderr, "%s: ", prompt)
+	}
+	line, err := bufio.NewReader(uio.stdin).ReadString('\n')
+	if err != nil && (!errors.Is(err, io.EOF) || line == "") {
+		return "", errors.New("no code given")
+	}
+	return strings.TrimSpace(line), nil
+}
+
 // explain adds a hint to errors a CLI user can act on.
 func (t *target) explain(path string, e *apiError) error {
 	admin := strings.HasPrefix(path, "_admin")
 	switch {
+	case e.Status == http.StatusUnauthorized && e.Code == "reauth_required":
+		return fmt.Errorf("%w\nthis needs a fresh proof that it is you", e)
 	case e.Status == http.StatusUnauthorized && !t.fromKey && t.credential != "":
 		return fmt.Errorf("%w\nthe stored session isn't accepted (expired, revoked, or not allowed from this network): run `backd login --realm %s --url %s`", e, t.realm, t.url)
 	case e.Status == http.StatusForbidden && admin:

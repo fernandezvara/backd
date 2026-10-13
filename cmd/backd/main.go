@@ -693,6 +693,21 @@ func (a *app) logAPIKeyExpiry(ctx context.Context, users func(string) *auth.User
 	return nil
 }
 
+// unprotectedAdminRoles lists the realm's admin roles that mfa.required_roles doesn't
+// cover. A realm that turned MFA off is not warned: it chose not to have it.
+func unprotectedAdminRoles(s registry.RealmSettings) []string {
+	if s.MFA.Off || s.MFA.RequiredAll {
+		return nil
+	}
+	var out []string
+	for _, r := range s.AdminRoles() {
+		if !s.MFA.Required([]string{r}) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 // hasRules reports whether any collection of the realm has access rules.
 func hasRules(rl *registry.Realm) bool {
 	for _, db := range rl.Databases {
@@ -742,6 +757,16 @@ func (a *app) syncRoles(ctx context.Context) error {
 		case rep.Admins == 0:
 			a.log.Warn("no user holds an admin role of the realm, in realm.yaml or the database: create the first administrator with `backd bootstrap`", "realm", rl.Name)
 		}
+		if (rl.Settings.MFA.RequiredAll || len(rl.Settings.MFA.RequiredRoles) > 0) && len(a.cfg.SecretsKey) == 0 {
+			a.log.Error("the realm requires a second factor but this instance has no BACKD_SECRETS_KEY: those users can't sign in (503 mfa_unavailable) until it is set",
+				"realm", rl.Name, "roles", rl.Settings.MFA.RequiredRoles, "all", rl.Settings.MFA.RequiredAll)
+		}
+		if !a.cfg.Dev {
+			if open := unprotectedAdminRoles(rl.Settings); len(open) > 0 {
+				a.log.Warn("admin roles that don't require a second factor: add them to mfa.required_roles in realm.yaml so that a stolen password is not enough",
+					"realm", rl.Name, "roles", open)
+			}
+		}
 		if len(rep.Undeclared) > 0 {
 			a.log.Warn("users have roles that realm.yaml no longer declares; rules can't use them",
 				"realm", rl.Name, "users", len(rep.Undeclared))
@@ -787,6 +812,11 @@ func checkFunctions(reg *registry.Registry, cfg settings.Settings, log *slog.Log
 	for _, name := range reg.RealmNames() {
 		if e := reg.Realms[name].Settings.Email; e != nil && e.PublicURL == "" && cfg.BackdURL == "" {
 			return fmt.Errorf("realm %s configures email, but backd's public address is unknown: set BACKD_URL (or email.public_url in its realm.yaml), the base of the links in its emails", name)
+		}
+	}
+	for _, name := range reg.RealmNames() {
+		if reg.Realms[name].Settings.MagicLink.Enabled && len(cfg.SecretsKey) == 0 {
+			return fmt.Errorf("realm %s enables magic links, which keep the address of a request that has no account sealed: set BACKD_SECRETS_KEY (or BACKD_SECRETS_KEY_FILE)", name)
 		}
 	}
 	for _, name := range reg.RealmNames() {

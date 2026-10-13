@@ -6,8 +6,10 @@ import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FormDialog from '@/components/FormDialog.vue'
+import ProofField from '@/components/ProofField.vue'
 import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
+import { useProof } from '@/lib/proof'
 import { errorText, formatDate, parseList } from '@/lib/format'
 import { useSession } from '@/stores/session'
 import { useToasts } from '@/stores/toasts'
@@ -17,6 +19,7 @@ const { t } = useI18n()
 const admin = useAdmin()
 const session = useSession()
 const toasts = useToasts()
+const proof = useProof()
 
 const canWrite = computed(() => session.canWrite('apikeys'))
 const keys = ref<APIKeyInfo[]>([])
@@ -56,11 +59,14 @@ function openCreate() {
   scopes.value = ''
   createError.value = ''
   creating.value = true
+  void proof.prepare()
 }
 async function create() {
   createBusy.value = true
   createError.value = ''
   try {
+    // A key outlives the session and is not asked for a second factor: prove who you are first.
+    await proof.prove()
     const made = await admin.apiKeys.create({
       name: name.value.trim(),
       role: role.value,
@@ -154,6 +160,7 @@ async function revoke() {
     <TextField v-model="expires" :label="t('apikeys.create.expires')" :help="t('apikeys.create.expiresHelp')" autocomplete="off" />
     <TextField v-model="networks" :label="t('apikeys.create.networks')" :help="t('apikeys.create.networksHelp')" autocomplete="off" />
     <TextField v-model="scopes" :label="t('apikeys.create.scopes')" :help="t('apikeys.create.scopesHelp')" autocomplete="off" />
+    <ProofField v-if="proof.needed.value" v-model="proof.value.value" :method="proof.method.value" :code-sent="proof.codeSent.value" @send-code="proof.sendCode" />
   </FormDialog>
 
   <FormDialog v-model:open="keyOpen" :title="t('apikeys.create.keyTitle')" :description="t('apikeys.create.keyBody')" :submit="t('apikeys.create.close')" @submit="keyOpen = false">

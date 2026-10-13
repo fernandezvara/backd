@@ -1,0 +1,3 @@
+Hello,
+
+Your password was used to sign in to {{.User.Email}} on {{.Realm}}, but the code from your authenticator app was wrong several times. If it was you, you can ignore this message. If it wasn't, someone knows your password: change it now.

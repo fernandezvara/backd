@@ -175,3 +175,17 @@ test('the users and invitations views have no accessibility violations', async (
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
   }
 })
+
+test('the second factor of a user is shown, and not offered to reset when there is none', async ({ page, signIn }) => {
+  const email = fresh()
+  await signIn('admin')
+  await page.getByRole('link', { name: 'Users' }).click()
+  await createUser(page, email)
+  await expect(page.getByTestId('user-mfa-state')).toHaveText('Off.')
+  await expect(page.getByRole('button', { name: 'Reset second factor' })).toHaveCount(0)
+  // The administrator's own page says why nothing can be reset there.
+  await page.getByRole('link', { name: 'All users' }).click()
+  await page.getByRole('link', { name: users.admin }).click()
+  await expect(page.getByTestId('user-mfa-state')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Reset second factor' })).toHaveCount(0)
+})

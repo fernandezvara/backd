@@ -226,3 +226,18 @@ func TestStorageOriginsForTheAdminUI(t *testing.T) {
 		t.Errorf("origins: %v", got)
 	}
 }
+
+func TestUnprotectedAdminRoles(t *testing.T) {
+	s := registry.RealmSettings{Roles: map[string]registry.Role{"owner": {Admin: registry.AllRights}, "staff": {}}}
+	if got := unprotectedAdminRoles(s); len(got) != 1 || got[0] != "owner" {
+		t.Errorf("none required: %v", got)
+	}
+	s.MFA.RequiredRoles = []string{"owner"}
+	if got := unprotectedAdminRoles(s); len(got) != 0 {
+		t.Errorf("owner required: %v", got)
+	}
+	s.MFA = registry.MFASettings{Off: true}
+	if got := unprotectedAdminRoles(s); len(got) != 0 {
+		t.Errorf("MFA off: %v", got)
+	}
+}

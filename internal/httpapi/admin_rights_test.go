@@ -23,6 +23,17 @@ func (f *rulesFixture) bobHolds(t *testing.T, roles ...string) {
 	}
 }
 
+// withProof is jsonHdr plus a fresh re-authentication of the session: what the creation of an API
+// key by a signed-in administrator needs.
+func (f *rulesFixture) withProof(t *testing.T, token string) map[string]string {
+	t.Helper()
+	h := jsonHdr(token)
+	if tok := f.freshProof(t, token); tok != "" {
+		h[reauthHeader] = tok
+	}
+	return h
+}
+
 func jsonHdr(token string) map[string]string {
 	return map[string]string{"Authorization": "Bearer " + token, "Content-Type": "application/json"}
 }
@@ -158,9 +169,9 @@ func TestAdminRightsNoEscalation(t *testing.T) {
 	// API keys: an admin key opens every area, so only a full administrator
 	// creates or revokes one.
 	f.bobHolds(t, "keeper")
-	rec, out := f.doH(t, "POST", admin+"/apikeys", `{"name":"mine","role":"admin"}`, jsonHdr(f.bob))
+	rec, out := f.doH(t, "POST", admin+"/apikeys", `{"name":"mine","role":"admin"}`, f.withProof(t, f.bob))
 	refused("a keeper creating an admin key", rec.Code, out)
-	if rec, out := f.doH(t, "POST", admin+"/apikeys", `{"name":"mine","role":"data"}`, jsonHdr(f.bob)); rec.Code != http.StatusCreated {
+	if rec, out := f.doH(t, "POST", admin+"/apikeys", `{"name":"mine","role":"data"}`, f.withProof(t, f.bob)); rec.Code != http.StatusCreated {
 		t.Errorf("a keeper creating a data key: %d %v", rec.Code, out)
 	}
 	if _, _, err := f.svc.CreateAPIKey(ctx, "root", auth.KeyOptions{Role: auth.KeyRoleAdmin}); err != nil {
@@ -172,7 +183,7 @@ func TestAdminRightsNoEscalation(t *testing.T) {
 		t.Errorf("a keeper revoking a data key: %d", rec.Code)
 	}
 	f.bobHolds(t, "staff")
-	if rec, out := f.doH(t, "POST", admin+"/apikeys", `{"name":"second","role":"admin"}`, jsonHdr(f.bob)); rec.Code != http.StatusCreated {
+	if rec, out := f.doH(t, "POST", admin+"/apikeys", `{"name":"second","role":"admin"}`, f.withProof(t, f.bob)); rec.Code != http.StatusCreated {
 		t.Errorf("a full administrator creating an admin key: %d %v", rec.Code, out)
 	}
 	if rec, _ := f.doH(t, "DELETE", admin+"/apikeys/root", "", bearer(f.bob)); rec.Code != http.StatusNoContent {

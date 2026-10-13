@@ -194,11 +194,26 @@ func registerRemote(cfg *kli.Config) {
 		Config(func(cc *kli.CommandConfig) {
 			remote(cc)
 			optional(cc, "email", "the email to sign in with (asked for on a terminal)")
+			boolean(cc, "magic-link", "sign in with a code sent to the email instead of a password (the realm needs magic_link)")
 		})
 	cfg.Command("logout").ShortHelp("end the stored session and forget it").
 		Func(act("logout", logoutAction)).Config(remote)
 	cfg.Command("whoami").ShortHelp("show who the stored session belongs to").
 		Func(act("whoami", whoamiAction)).Config(remote)
+
+	acc := cfg.Command("account").ShortHelp("manage your own sign-in security: the second factor and its recovery codes").
+		LongHelp("Acts on the signed-in user with the session `backd login` stored (not an API key). Each\nchange asks for a fresh proof that it is you: your authenticator code if you have one,\nelse your password. Codes and passwords are read from the terminal, or from the lines of\nstandard input when it isn't one.")
+	acc.SubCommand("mfa-status").ShortHelp("show whether two-step verification is on").
+		Func(act("account mfa-status", accountMFAStatus)).Config(remote)
+	acc.SubCommand("mfa-enable").ShortHelp("set an authenticator app up: shows a QR code and the recovery codes once").
+		Func(act("account mfa-enable", accountMFAEnable)).Config(remote)
+	acc.SubCommand("mfa-disable").ShortHelp("turn two-step verification off (not for roles that require it)").
+		Func(act("account mfa-disable", accountMFADisable)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		boolean(cc, "yes", "confirm that you want it off")
+	})
+	acc.SubCommand("recovery-codes").ShortHelp("replace the recovery codes with new ones, shown once").
+		Func(act("account recovery-codes", accountRecoveryCodes)).Config(remote)
 
 	u := cfg.Command("user").ShortHelp("manage a realm's users").
 		LongHelp(adminAPINote + " The first administrator of a realm is\ncreated with `backd bootstrap`. Passwords are read from the terminal without\necho, or as the first line of standard input when it isn't a terminal. Emails\ncan't be changed.")
@@ -226,6 +241,23 @@ func registerRemote(cfg *kli.Config) {
 	user("unlink-identity", "remove one of the user's ways to sign in, never the last (password included)", true, userUnlinkIdentity, func(cc *kli.CommandConfig) {
 		required(cc, "provider", "the sign-in method to remove: password, google, microsoft, apple…")
 	})
+	user("mfa-status", "show a user's second factor; without --email, who must set one up", false, userMFAStatus, func(cc *kli.CommandConfig) {
+		optional(cc, "email", "the user to show (default: the users of required roles who have no second factor yet)")
+	})
+	u.SubCommand("mfa-reset").ShortHelp("remove a user's second factor and recovery codes and end their sessions").
+		LongHelp(adminAPINote + " An administrator can't reset their own second factor; for the only administrator of a\nrealm who lost it, --local acts on the instance's database directly (it needs\nCONFIG_DIR and MONGO_URI where backd runs, and is audited as `instance`).").
+		Func(act("user mfa-reset", func(c *kli.CommandContext) error {
+			if flag(c, "local") {
+				return userMFAResetLocal(c)
+			}
+			return userAction(true, userMFAReset)(c)
+		})).
+		Config(func(cc *kli.CommandConfig) {
+			remote(cc)
+			required(cc, "email", "the user's email")
+			boolean(cc, "local", "break glass: act on the instance's database directly instead of the admin API")
+			boolean(cc, "yes", "confirm the reset, which ends all of the user's sessions")
+		})
 	user("owned", "show what erasing the user would do, per collection that declares a policy", true, userOwned, nil)
 	user("verify-email", "mark the email as verified", true, userPatch(map[string]bool{"email_verified": true}, "email of %s marked as verified\n"), nil)
 	user("disable", "block sign-in and revoke all sessions", true, userPatch(map[string]bool{"disabled": true}, "%s disabled; all of their sessions were revoked\n"), nil)

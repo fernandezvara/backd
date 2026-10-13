@@ -1,4 +1,6 @@
 rules:
   # Only the import function writes events. Admins may read the list (it's a
-  # record of what the feed delivered); nobody else needs it.
-  read: user != nil && hasRole(user, 'admin')
+  # record of what the feed delivered); nobody else needs it. Chapter 16: and
+  # only on a session that went through the second factor (`user.mfa`), so a
+  # stolen password alone doesn't open it.
+  read: user != nil && hasRole(user, 'admin') && user.mfa

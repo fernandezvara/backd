@@ -20,8 +20,9 @@ const authBase = "/v1/acme/_auth"
 
 type authFixture struct {
 	*fixture
-	svc   *auth.Users
-	store *authtest.MemStore
+	svc    *auth.Users
+	store  *authtest.MemStore
+	proofs map[string]string // session token → re-authentication token
 }
 
 // newAuthFixture serves realm "acme" with auth enabled and open sign-up.
@@ -253,15 +254,41 @@ func TestAuthPasswordAndDeleteMe(t *testing.T) {
 		return map[string]string{"Authorization": "Bearer " + tok, "Content-Type": "application/json"}
 	}
 
-	rec, out := f.doH(t, "POST", authBase+"/password", `{"current_password": "dev-p4ssw0rd!0", "new_password": "dev-p4ssw0rd!2"}`, jsonBearer(token))
-	if rec.Code != http.StatusUnauthorized || errCode(out) != "invalid_credentials" {
-		t.Errorf("wrong current password: %d %v", rec.Code, out)
+	// The proof comes first: a password change without one is refused, a wrong password
+	// gives none, the right one gives a token for the header.
+	rec, out := f.doH(t, "POST", authBase+"/password", `{"new_password": "dev-p4ssw0rd!2"}`, jsonBearer(token))
+	if rec.Code != http.StatusUnauthorized || errCode(out) != "reauth_required" {
+		t.Errorf("without proof: %d %v", rec.Code, out)
 	}
-	rec, out = f.doH(t, "POST", authBase+"/password", `{"current_password": "dev-p4ssw0rd!", "new_password": "short"}`, jsonBearer(token))
+	rec, out = f.doH(t, "POST", authBase+"/reauth", `{"method": "password", "password": "dev-p4ssw0rd!0"}`, jsonBearer(token))
+	if rec.Code != http.StatusUnauthorized || errCode(out) != "invalid_credentials" {
+		t.Errorf("wrong password: %d %v", rec.Code, out)
+	}
+	rec, out = f.doH(t, "POST", authBase+"/reauth", `{"method": "password", "password": "dev-p4ssw0rd!"}`, jsonBearer(token))
+	proof, _ := out["reauth_token"].(string)
+	if rec.Code != http.StatusOK || proof == "" || out["expires_at"] == nil {
+		t.Fatalf("reauth: %d %v", rec.Code, out)
+	}
+	withProof := func(tok string) map[string]string {
+		h := jsonBearer(tok)
+		h[reauthHeader] = proof
+		return h
+	}
+	// The proof belongs to the session that asked for it.
+	rec, out = f.doH(t, "POST", authBase+"/password", `{"new_password": "dev-p4ssw0rd!2"}`, withProof(other["token"].(string)))
+	if rec.Code != http.StatusUnauthorized || errCode(out) != "reauth_required" {
+		t.Errorf("another session's proof: %d %v", rec.Code, out)
+	}
+	rec, out = f.doH(t, "POST", authBase+"/password", `{"new_password": "short"}`, withProof(token))
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"path":"new_password"`) {
 		t.Errorf("weak new password: %d %v", rec.Code, out)
 	}
-	rec, _ = f.doH(t, "POST", authBase+"/password", `{"current_password": "dev-p4ssw0rd!", "new_password": "dev-p4ssw0rd!2"}`, jsonBearer(token))
+	// The old field is gone.
+	rec, _ = f.doH(t, "POST", authBase+"/password", `{"current_password": "dev-p4ssw0rd!", "new_password": "dev-p4ssw0rd!2"}`, withProof(token))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("current_password: %d", rec.Code)
+	}
+	rec, _ = f.doH(t, "POST", authBase+"/password", `{"new_password": "dev-p4ssw0rd!2"}`, withProof(token))
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("change password: %d", rec.Code)
 	}
@@ -272,11 +299,12 @@ func TestAuthPasswordAndDeleteMe(t *testing.T) {
 		t.Errorf("other session survived password change: %d", rec.Code)
 	}
 
-	rec, _ = f.doH(t, "DELETE", authBase+"/me", `{"password": "dev-p4ssw0rd!"}`, jsonBearer(token))
+	// The proof still holds (it lasts its ttl and covers several actions); deleting needs it too.
+	rec, _ = f.doH(t, "DELETE", authBase+"/me", "", jsonBearer(token))
 	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("delete with old password: %d", rec.Code)
+		t.Errorf("delete without proof: %d", rec.Code)
 	}
-	rec, _ = f.doH(t, "DELETE", authBase+"/me", `{"password": "dev-p4ssw0rd!2"}`, jsonBearer(token))
+	rec, _ = f.doH(t, "DELETE", authBase+"/me", "", withProof(token))
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("delete me: %d", rec.Code)
 	}

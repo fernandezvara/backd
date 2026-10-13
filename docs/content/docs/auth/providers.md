@@ -73,7 +73,7 @@ sequenceDiagram
 1. The app makes a random PKCE **verifier** and its S256 **challenge**, and sends the browser to `GET /v1/{realm}/_auth/oauth/{provider}/start?redirect_to=…&code_challenge=…` (or calls `POST` and navigates to the `authorize_url` it returns). `redirect_to` must be within the allowed redirects, and may be left out when the realm sets `sign_in.app_url`.
 2. The user signs in at the provider, which sends them to backd's callback. backd checks the `state` (good for one use, ten minutes), exchanges the code for an ID token with the provider, and verifies its signature, issuer, audience, expiry and nonce.
 3. backd sends the browser to `redirect_to` with `?backd_code=…` (a one-time login code, valid a minute) or `?backd_error=…`. The parameters carry the `backd_` prefix so that they can't collide with the ones your page already uses; add `backd_provider` (with `account_exists`, the provider that was used) and `backd_linked` (after a link, the provider).
-4. The app redeems it: `POST /v1/{realm}/_auth/token` with `{"code", "code_verifier"}`. The answer is a session, like a login's (`{"cookie": true}` works too). The code is used up even when the verifier is wrong, so a stolen code is useless without the verifier only your app holds.
+4. The app redeems it: `POST /v1/{realm}/_auth/token` with `{"code", "code_verifier"}`. The answer is a session, like a login's (`{"cookie": true}` works too). The same code and endpoint end a [magic link](../magic-links/). The code is used up even when the verifier is wrong, so a stolen code is useless without the verifier only your app holds.
 
 **A session never appears in a URL**: only the short-lived code does.
 

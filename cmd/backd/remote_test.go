@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/auth/authtest"
@@ -183,31 +184,31 @@ roles:
 
 	// API keys.
 	var key string
-	code, key, errOut := c.run("", "apikey", "create", "--realm", "acme", "--name", "billing", "--expires", "30d")
+	code, key, errOut := c.run(pw+"\n", "apikey", "create", "--realm", "acme", "--name", "billing", "--expires", "30d")
 	if code != 0 || !strings.HasPrefix(key, "bdk_") || !strings.Contains(errOut, "can't be shown again") || !strings.Contains(errOut, "It expires at") || !strings.Contains(errOut, "(role data)") {
 		t.Errorf("apikey create: code %d, stdout %q, stderr %q", code, key, errOut)
 	}
-	c.expect(1, "409 conflict", "", "apikey", "create", "--realm", "acme", "--name", "billing")
-	c.expect(1, "name: invalid API key name", "", "apikey", "create", "--realm", "acme", "--name", "Billing")
+	c.expect(1, "409 conflict", pw+"\n", "apikey", "create", "--realm", "acme", "--name", "billing")
+	c.expect(1, "name: invalid API key name", pw+"\n", "apikey", "create", "--realm", "acme", "--name", "Billing")
 	out = c.expect(0, "billing", "", "apikey", "list", "--realm", "acme")
 	if !strings.Contains(out, key[:10]+"…") || strings.Contains(out, strings.TrimSpace(key)) {
 		t.Errorf("apikey list:\n%s", out)
 	}
 	c.expect(0, `API key "billing" revoked`, "", "apikey", "revoke", "--realm", "acme", "--name", "billing")
 	c.expect(1, `no API key named "billing"`, "", "apikey", "revoke", "--realm", "acme", "--name", "billing")
-	c.expect(0, "Warning: it never expires", "", "apikey", "create", "--realm", "acme", "--name", "forever")
+	c.expect(0, "Warning: it never expires", pw+"\n", "apikey", "create", "--realm", "acme", "--name", "forever")
 	// Scopes: validated before the request, checked against the realm by the
 	// server, and listed.
-	c.expect(0, "It reaches only: read:app/notes, write:app", "", "apikey", "create", "--realm", "acme", "--name", "narrow", "--scopes", "read:app/notes,write:app", "--expires", "1d")
-	c.expect(2, "--scopes: invalid scope", "", "apikey", "create", "--realm", "acme", "--name", "bad", "--scopes", "everything")
-	c.expect(1, "the realm has no database nope", "", "apikey", "create", "--realm", "acme", "--name", "bad", "--scopes", "read:nope")
+	c.expect(0, "It reaches only: read:app/notes, write:app", pw+"\n", "apikey", "create", "--realm", "acme", "--name", "narrow", "--scopes", "read:app/notes,write:app", "--expires", "1d")
+	c.expect(2, "--scopes: invalid scope", pw+"\n", "apikey", "create", "--realm", "acme", "--name", "bad", "--scopes", "everything")
+	c.expect(1, "the realm has no database nope", pw+"\n", "apikey", "create", "--realm", "acme", "--name", "bad", "--scopes", "read:nope")
 	out = c.expect(0, "SCOPES", "", "apikey", "list", "--realm", "acme")
 	if !strings.Contains(out, "read:app/notes,write:app") || !strings.Contains(out, "all") {
 		t.Errorf("apikey list with scopes:\n%s", out)
 	}
 
-	c.expect(0, "(role data)", "", "apikey", "create", "--realm", "acme", "--name", "pinned", "--networks", "10.0.0.0/8,192.0.2.7", "--expires", "1d")
-	_, adminKey, _ := c.run("", "apikey", "create", "--realm", "acme", "--name", "tooling", "--role", "admin", "--expires", "1d")
+	c.expect(0, "(role data)", pw+"\n", "apikey", "create", "--realm", "acme", "--name", "pinned", "--networks", "10.0.0.0/8,192.0.2.7", "--expires", "1d")
+	_, adminKey, _ := c.run(pw+"\n", "apikey", "create", "--realm", "acme", "--name", "tooling", "--role", "admin", "--expires", "1d")
 	out = c.expect(0, "ROLE", "", "apikey", "list", "--realm", "acme")
 	if !strings.Contains(out, "tooling  admin") || !strings.Contains(out, "10.0.0.0/8,192.0.2.7/32") {
 		t.Errorf("apikey list without roles or networks:\n%s", out)
@@ -257,7 +258,7 @@ roles:
 	c.expect(1, `no secret named "realm.SHARED"`, "", "secret", "delete", "--realm", "acme", "--name", "SHARED")
 	c.expect(0, `secret "KEY" deleted`, "", "secret", "delete", "--realm", "acme", "--database", "app", "--name", "KEY")
 
-	_, dataKey, _ := c.run("", "apikey", "create", "--realm", "acme", "--name", "service", "--expires", "1d")
+	_, dataKey, _ := c.run(pw+"\n", "apikey", "create", "--realm", "acme", "--name", "service", "--expires", "1d")
 	c.env["BACKD_API_KEY"] = strings.TrimSpace(dataKey)
 	c.expect(1, "admin commands need a user holding an admin role", "", "user", "list", "--realm", "acme")
 	delete(c.env, "BACKD_API_KEY")
@@ -322,22 +323,36 @@ func TestLoginArguments(t *testing.T) {
 	}
 }
 
-// A realm that asks for a second factor answers a login with a challenge, not a session:
-// the command must not store (or announce) one.
-func TestLoginRefusesASecondStep(t *testing.T) {
-	root := writeConfig(t, map[string]string{"acme/realm.yaml": "roles:\n  ops:\n    admin: true\n", "acme/app/notes/schema.json": `{}`})
+func TestUserMFAStatus(t *testing.T) {
+	root := writeConfig(t, map[string]string{
+		"acme/realm.yaml":            "mfa:\n  required_roles: [editor]\nroles:\n  ops:\n    admin: true\n    users: [ada@example.com]\n  editor:\n    users: [bob@example.com, cy@example.com, dan@example.com]\n",
+		"acme/app/notes/schema.json": `{}`,
+	})
 	reg, err := registry.Load(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+	ctx := context.Background()
+	store := authtest.NewMemStore()
 	svc := &auth.Users{
-		Store:    authtest.NewMemStore(),
+		Store:    store,
 		Hasher:   auth.NewHasher(2, auth.Argon2Params{Memory: 64, Time: 1, Threads: 1}),
 		Settings: reg.Realms["acme"].Settings,
 	}
-	svc.Settings.MFA.RequiredAll = true
 	pw := "dev-p4ssw0rd!"
-	if _, err := svc.Create(context.Background(), "ada@example.com", &pw); err != nil {
+	ids := map[string]string{}
+	for _, e := range []string{"ada@example.com", "bob@example.com", "cy@example.com", "dan@example.com"} {
+		u, err := svc.Create(ctx, e, &pw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids[e] = u.ID
+	}
+	// Cy has set a second factor up; Dan is disabled.
+	if err := store.PutMFA(ctx, auth.MFARecord{UserID: ids["cy@example.com"], Secret: "k.n.c", EnabledAt: time.Now(), RecoveryCodes: []string{"a", "b"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetDisabled(ctx, "dan@example.com", true); err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(httpapi.NewHandler(httpapi.Config{
@@ -350,10 +365,24 @@ func TestLoginRefusesASecondStep(t *testing.T) {
 		},
 	}))
 	defer srv.Close()
-	creds := filepath.Join(t.TempDir(), "backd", "credentials")
-	c := &cliEnv{t: t, env: map[string]string{"BACKD_CREDENTIALS": creds}}
-	c.expect(1, "asks for a second factor", pw+"\n", "login", "--realm", "acme", "--url", srv.URL, "--email", "ada@example.com")
-	if _, err := os.Stat(creds); err == nil {
-		t.Error("a session was stored")
+	c := &cliEnv{t: t, env: map[string]string{"BACKD_CREDENTIALS": filepath.Join(t.TempDir(), "credentials")}}
+	c.expect(0, "logged in", pw+"\n", "login", "--realm", "acme", "--url", srv.URL, "--email", "ada@example.com")
+	out := c.expect(0, "required for the roles: editor", "", "user", "mfa-status", "--realm", "acme")
+	if !strings.Contains(out, "1 user(s) have none yet") || !strings.Contains(out, "bob@example.com (editor)") || strings.Contains(out, "cy@") || strings.Contains(out, "dan@") {
+		t.Errorf("overview: %s", out)
 	}
+	c.expect(0, "bob@example.com: second factor off; required by role: true; recovery codes left: 0", "", "user", "mfa-status", "--realm", "acme", "--email", "bob@example.com")
+	c.expect(0, "cy@example.com: second factor on; required by role: true; recovery codes left: 2", "", "user", "mfa-status", "--realm", "acme", "--email", "cy@example.com")
+	c.expect(1, "user not found", "", "user", "mfa-status", "--realm", "acme", "--email", "nobody@example.com")
+
+	// Resetting Cy's second factor ends their sessions; it must be confirmed and can't repeat.
+	c.expect(1, "add --yes to confirm", "", "user", "mfa-reset", "--realm", "acme", "--email", "cy@example.com")
+	c.expect(0, "second factor of cy@example.com removed", "", "user", "mfa-reset", "--realm", "acme", "--email", "cy@example.com", "--yes")
+	c.expect(1, "mfa_not_enabled", "", "user", "mfa-reset", "--realm", "acme", "--email", "cy@example.com", "--yes")
+	c.expect(0, "2 user(s) have none yet", "", "user", "mfa-status", "--realm", "acme")
+	// An administrator can't do it to themselves.
+	if err := store.PutMFA(ctx, auth.MFARecord{UserID: ids["ada@example.com"], Secret: "k.n.c", EnabledAt: time.Now(), RecoveryCodes: []string{"a"}}); err != nil {
+		t.Fatal(err)
+	}
+	c.expect(1, "self_reset_not_allowed", "", "user", "mfa-reset", "--realm", "acme", "--email", "ada@example.com", "--yes")
 }

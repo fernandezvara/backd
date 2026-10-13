@@ -193,8 +193,10 @@ heading('6. Email verification, password reset, email change and invitations (em
   }
   const tokenOf = (/** @type {any} */ mail) => new URL(mail?.link ?? `${url}?token=`).searchParams.get('token') ?? ''
   const moved = `moved-${address}`
-  await refused('changing the address needs the right password', () => relogin.auth.requestEmailChange({ newEmail: moved, password: 'wrong-password-1' }), AuthenticationError, 'invalid_credentials')
-  await relogin.auth.requestEmailChange({ newEmail: moved, password: `${PASSWORD}2` })
+  await refused('changing the address needs a fresh proof', () => relogin.auth.requestEmailChange({ newEmail: moved }), AuthenticationError, 'reauth_required')
+  await refused('a wrong password is no proof', () => relogin.auth.reauth({ method: 'password', password: 'wrong-password-1' }), AuthenticationError, 'invalid_credentials')
+  await relogin.auth.reauth({ method: 'password', password: `${PASSWORD}2` })
+  await relogin.auth.requestEmailChange({ newEmail: moved })
   await relogin.auth.confirmEmailChange(tokenOf(await waitMail('change-email', moved)))
   await refused('confirming ended the sessions', () => relogin.auth.me(), AuthenticationError, 'unauthenticated')
   check('the new address signs in', (await createClient({ url, realm: 'workshop' }).auth.login({ email: moved, password: `${PASSWORD}2` })).user.email === moved)

@@ -51,11 +51,13 @@ email:
   account-exists/   …
   password-changed/ …
   welcome/  change-email/  email-changed/  invitation/   …
+  security-notice/  mfa-failed/  mfa-reset/  reauth-code/  magic-link/  no-account/   …
 ```
 
 - A folder per **kind**, and per language a subject, a plain-text body and an HTML body. Edit them freely.
 - **Required kinds** (`verify-email`, `reset-password`, `account-exists`, `password-changed`) must exist whenever the realm configures `email`; **every listed locale needs every template**, or startup fails naming the missing files.
 - Subjects and text bodies use Go's `text/template`; HTML bodies use `html/template`, which escapes what it prints. Available: `{{.Realm}}`, `{{.User.Email}}`, `{{.User.Locale}}`, `{{.Link}}`, `{{.ExpiresAt}}` and `{{.Data}}`. Templates never receive text written by whoever caused the email, so `backd` can't be used to send someone else's words.
+- `security-notice` tells the user about a change to their [sign-in security](../../auth/mfa/#notices) and reads `{{.Data.event}}` (`mfa-enabled`, `mfa-disabled`, `recovery-codes-regenerated`, `recovery-code-used`, with `{{.Data.codes_left}}`). `mfa-failed` warns after wrong second-factor codes, `magic-link` carries the sign-in link and code of a [magic link](../../auth/magic-links/) (`{{.Link}}`, `{{.Data.code}}`), `no-account` tells the owner of an address with no account that someone tried to sign in with it, `mfa-reset` says an administrator removed the second factor and `reauth-code` carries the 6-digit code of a [re-authentication](../../auth/reauth/) (`{{.Data.code}}`). None is required: when the folder has none, the built-in English text is used for every listed locale, so a realm that predates them keeps working; add the folder to translate or change them.
 - `email-changed` goes to the old address with the link to undo the change, and, after an administrator's change, to the new address with no link: write `{{if .Link}}…{{else}}…{{end}}` as the default template does.
 - Templates are parsed and test-rendered at startup (a syntax error or an unknown field stops it), held in memory, and part of the [config fingerprint](../../operations/deploying/).
 

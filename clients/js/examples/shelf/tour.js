@@ -17,7 +17,7 @@
 import { execFileSync } from 'node:child_process'
 import { createHmac } from 'node:crypto'
 import { deflateSync } from 'node:zlib'
-import { createClient, AuthenticationError, ForbiddenError, NotFoundError, VersionMismatchError, versionStatus } from '../../src/index.js'
+import { createClient, AuthenticationError, ForbiddenError, NotFoundError, ValidationError, VersionMismatchError, versionStatus } from '../../src/index.js'
 
 const url = process.env.BACKD_URL ?? 'http://localhost:8080'
 const PASSWORD = 'dev-p4ssw0rd!'
@@ -58,32 +58,71 @@ async function signedIn(/** @type {string} */ email, /** @type {any} */ operator
   return backd
 }
 
+// The admin role requires a second factor (chapter 16): the operator's first
+// sign-in sets up an authenticator app, which the tour plays with a TOTP
+// computed from the secret (RFC 6238), and keeps the recovery codes to answer
+// the proof that sensitive actions ask for.
+const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+/** The 6-digit code of a base32 secret at a time. */
+function totp(/** @type {string} */ secret, at = Date.now()) {
+  let bits = ''
+  for (const ch of secret.replace(/=+$/, '').toUpperCase()) bits += B32.indexOf(ch).toString(2).padStart(5, '0')
+  const key = Buffer.from(bits.match(/.{8}/g).map((b) => parseInt(b, 2)))
+  const counter = Buffer.alloc(8)
+  counter.writeBigUInt64BE(BigInt(Math.floor(at / 30000)))
+  const mac = createHmac('sha1', key).update(counter).digest()
+  const o = mac[19] & 15
+  return String((mac.readUInt32BE(o) & 0x7fffffff) % 1000000).padStart(6, '0')
+}
+
+/** Finishes a sign-in whose first step was a password: set up the factor when asked for one. */
+async function enrol(/** @type {any} */ backd, /** @type {any} */ result) {
+  if (!result.enrollmentRequired) throw new Error(`expected the enrolment step, got ${JSON.stringify(result)}`)
+  const setup = await backd.auth.mfa.setup({ challenge: result.challenge })
+  const done = await backd.auth.mfa.confirm({ challenge: result.challenge, setupId: setup.setup_id, code: totp(setup.secret) })
+  return { secret: setup.secret, codes: /** @type {string[]} */ (done.recovery_codes) }
+}
+
+const composeArgs = process.env.SHELF_COMPOSE ? ['compose', '-f', process.env.SHELF_COMPOSE] : ['compose']
+function inStack(/** @type {string[]} */ args, /** @type {string} */ input = '') {
+  execFileSync('docker', [...composeArgs, 'exec', '-T', 'backd', '/backd', ...args], { input, stdio: ['pipe', 'ignore', 'pipe'] })
+}
+
 // The operator is a different case: signup is invite-only and only an admin
 // can invite, so on a fresh stack it exists only once bootstrap creates it.
 async function operatorClient() {
   const backd = createClient({ url, realm: 'shelf' })
+  /** @type {any} */
+  let result
   try {
-    await backd.auth.login({ email: OPERATOR, password: PASSWORD })
-    return backd
+    result = await backd.auth.signIn({ email: OPERATOR, password: PASSWORD })
   } catch (err) {
     if (/** @type {any} */ (err).status !== 401) throw err
+    try {
+      inStack(['bootstrap', '--realm', 'shelf', '--email', OPERATOR], PASSWORD + '\n')
+      console.log(`  (bootstrapped ${OPERATOR} through docker compose exec)`)
+    } catch (e) {
+      console.log(`no operator yet and bootstrap failed (${/** @type {any} */(e).message}).`)
+      console.log(`Run by hand in the stack's directory:\n  echo ${PASSWORD} | docker compose exec -T backd /backd bootstrap --realm shelf --email ${OPERATOR}`)
+      process.exit(1)
+    }
+    result = await backd.auth.signIn({ email: OPERATOR, password: PASSWORD })
   }
-  const compose = process.env.SHELF_COMPOSE ? ['compose', '-f', process.env.SHELF_COMPOSE] : ['compose']
-  const args = [...compose, 'exec', '-T', 'backd', '/backd', 'bootstrap', '--realm', 'shelf', '--email', OPERATOR]
-  try {
-    execFileSync('docker', args, { input: PASSWORD + '\n', stdio: ['pipe', 'ignore', 'pipe'] })
-    console.log(`  (bootstrapped ${OPERATOR} through docker compose exec)`)
-  } catch (e) {
-    console.log(`no operator yet and bootstrap failed (${/** @type {any} */(e).message}).`)
-    console.log(`Run by hand in the stack's directory:\n  echo ${PASSWORD} | docker compose exec -T backd /backd bootstrap --realm shelf --email ${OPERATOR}`)
-    process.exit(1)
+  if (result.mfaRequired) {
+    // A run on a stack the tour used before: its secret is gone. The break-glass
+    // reset (on the instance, never over HTTP) lets the operator enrol again.
+    inStack(['user', 'mfa-reset', '--local', '--realm', 'shelf', '--email', OPERATOR, '--yes'])
+    console.log(`  (reset the second factor of ${OPERATOR} on the instance)`)
+    result = await backd.auth.signIn({ email: OPERATOR, password: PASSWORD })
   }
-  await backd.auth.login({ email: OPERATOR, password: PASSWORD })
-  return backd
+  return { backd, ...(await enrol(backd, result)) }
 }
 
 const anonymous = createClient({ url, realm: 'shelf' })
-const operator = await operatorClient()
+const operatorLogin = await operatorClient()
+const operator = operatorLogin.backd
+/** A proof for a sensitive action: one of the operator's recovery codes, each good once. */
+const operatorProof = () => operator.auth.reauth({ method: 'recovery_code', code: /** @type {string} */ (operatorLogin.codes.shift()) })
 const curator = await signedIn(CURATOR, operator)
 const member = await signedIn(MEMBER, operator)
 const main = (/** @type {any} */ c) => c.db('main')
@@ -174,6 +213,7 @@ check('a wrong signature is refused (400 invalid signature)', wrong.status === 4
 
 heading('API keys and the audit trail (ch12)')
 const keyName = `tour-${Date.now().toString(36)}`
+await operatorProof()
 const key = /** @type {any} */ (await operator.admin.apiKeys.create({ name: keyName, expiresIn: '90d', scopes: ['read:main'] }))
 check('the key is shown once, prefixed bdk_', key.key.startsWith('bdk_'))
 const keyed = createClient({ url, realm: 'shelf', apiKey: key.key })
@@ -303,6 +343,47 @@ const usage = await operator.admin.storage.status()
 check('the operator sees the storage in use', usage.configured && usage.keys?.ok && usage.reachable?.ok && (usage.usage?.files ?? 0) >= 5 && (usage.usage?.bytes ?? 0) > 0, JSON.stringify(usage.usage))
 const dry = await operator.admin.storage.reconcile()
 check('reconcile reports without deleting', dry.delete === false && dry.deleted === 0, JSON.stringify(dry))
+
+heading('Magic links and a second factor (ch16)')
+const mailboxCode = async (/** @type {string} */ kind, /** @type {string} */ to) => {
+  for (let i = 0; i < 100; i++) {
+    const page = await operator.db('mail').collection('outbox').list({ where: { kind, to }, orderBy: '-_meta.created_at', limit: 1 })
+    const found = page.items[0]?.text.match(/\b(\d{6})\b/)
+    if (found) return found[1]
+    await new Promise((r) => setTimeout(r, 100))
+  }
+  throw new Error(`no ${kind} email with a code for ${to} in the mailbox`)
+}
+const linkClient = createClient({ url, realm: 'shelf' })
+await linkClient.auth.magicLink.request(MEMBER)
+const viaLink = /** @type {any} */ (await linkClient.auth.magicLink.verifyCode(await mailboxCode('magic-link', MEMBER)))
+check('the code of the magic-link email signs a member in, no password', viaLink.user?.email === MEMBER, JSON.stringify(viaLink))
+await refused('a stranger asking for a link is told nothing (and nothing is created)', async () => {
+  const c = createClient({ url, realm: 'shelf' })
+  await c.auth.magicLink.request(`stranger-${MEMBER}`)
+  await c.auth.magicLink.verifyCode('000000')
+}, Error, '')
+const opStatus = await operator.auth.mfa.status()
+check('the operator has a second factor, and the role requires it', opStatus.enabled && opStatus.required, JSON.stringify(opStatus))
+check('the import log opens for a session that used it (user.mfa)', Array.isArray((await main(operator).collection('imports').list()).items))
+await refused('a curator may not read the import log (not an admin)', () => main(curator).collection('imports').list(), ForbiddenError, '')
+
+// A member turns the second factor on themselves; a proof (the password) is asked first.
+await member.auth.reauth({ method: 'password', password: PASSWORD })
+const memberSetup = await member.auth.mfa.setup()
+const memberOn = await member.auth.mfa.confirm({ setupId: memberSetup.setup_id, code: totp(memberSetup.secret) })
+check('a member sets up an authenticator app and gets recovery codes', memberOn.recovery_codes.length >= 8, JSON.stringify(memberOn))
+const second = createClient({ url, realm: 'shelf' })
+const step = /** @type {any} */ (await second.auth.signIn({ email: MEMBER, password: PASSWORD }))
+check('the password alone no longer opens a session', step.mfaRequired === true && step.methods.includes('totp'), JSON.stringify(step))
+await refused('a wrong code is refused (invalid_code)', () => second.auth.verifyMfa(step.challenge, 'totp', '000000'), ValidationError, 'invalid_code')
+const memberSession = await second.auth.verifyMfa(step.challenge, 'recovery_code', memberOn.recovery_codes[0])
+check('a recovery code finishes the sign-in', memberSession.user.email === MEMBER, JSON.stringify(memberSession))
+await refused('deleting the account asks for a fresh proof (401 reauth_required)', () => second.auth.deleteAccount(), AuthenticationError, 'reauth_required')
+// With a second factor the proof is a code too: a recovery code, each good once.
+await member.auth.reauth({ method: 'recovery_code', code: memberOn.recovery_codes[1] })
+await member.auth.mfa.disable()
+check('the member turned it off again', !(await member.auth.mfa.status()).enabled)
 
 heading('cleanup by hand (ch9)')
 const sweep = /** @type {any} */ (await operator.admin.invokeFunction('main/cleanup'))

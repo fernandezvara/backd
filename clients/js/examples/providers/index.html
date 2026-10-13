@@ -34,8 +34,64 @@
     <p class="notice" x-show="notice" x-text="notice" role="status"></p>
     <p class="error" x-show="error" x-text="error" role="alert"></p>
 
-    <!-- Signed out: pick a provider. -->
-    <div class="card" x-show="!user">
+    <!-- A sign-in that needs a code of the second factor. -->
+    <div class="card" x-show="!user && step?.mfaRequired">
+      <h2>Two-step verification</h2>
+      <form @submit.prevent="submitCode">
+        <label>Code from your authenticator app, or a recovery code
+          <input x-model="code" autocomplete="one-time-code" required></label>
+        <button type="submit" :disabled="busy">Verify</button>
+      </form>
+    </div>
+
+    <!-- A role that requires a second factor and has none yet: set an app up first. -->
+    <div class="card" x-show="!user && step?.enrollmentRequired">
+      <h2>Set up two-step verification</h2>
+      <p x-show="!setup"><button @click="startEnrollment" :disabled="busy">Set up an authenticator app</button></p>
+      <template x-if="setup">
+        <div>
+          <img :src="setup.qr" alt="QR code to scan with your authenticator app" width="180" height="180">
+          <p class="muted">Or type this secret: <code x-text="setup.secret"></code></p>
+          <form @submit.prevent="finishEnrollment">
+            <label>Code shown by the app <input x-model="code" autocomplete="one-time-code" required></label>
+            <button type="submit" :disabled="busy">Turn it on and sign in</button>
+          </form>
+        </div>
+      </template>
+    </div>
+
+    <!-- The recovery codes of a setup, shown once. -->
+    <div class="card" x-show="recovery.length">
+      <h2>Recovery codes</h2>
+      <p class="muted">Each works once. They are shown only now: save them somewhere safe.</p>
+      <ul><template x-for="c in recovery" :key="c"><li><code x-text="c"></code></li></template></ul>
+      <button @click="recovery = []">I saved them</button>
+    </div>
+
+    <!-- Signed out: a password, a magic link, or a provider. -->
+    <div class="card" x-show="!user && !step">
+      <h2>Email and password</h2>
+      <form @submit.prevent="signInWithPassword">
+        <label>Email <input type="email" x-model="form.email" autocomplete="username" required></label>
+        <label>Password <input type="password" x-model="form.password" autocomplete="current-password" required></label>
+        <button type="submit" :disabled="busy">Sign in</button>
+      </form>
+    </div>
+
+    <div class="card" x-show="!user && !step">
+      <h2>A link or a code by email</h2>
+      <form @submit.prevent="sendLink" x-show="!mailLink.sent">
+        <label>Email <input type="email" x-model="mailLink.email" required></label>
+        <button type="submit" :disabled="busy">Send me a link</button>
+      </form>
+      <form @submit.prevent="submitLinkCode" x-show="mailLink.sent">
+        <p class="muted">Open the link on this device, or type the 6-digit code from the message.</p>
+        <label>Code <input x-model="code" autocomplete="one-time-code" inputmode="numeric" required></label>
+        <button type="submit" :disabled="busy">Sign in</button>
+      </form>
+    </div>
+
+    <div class="card" x-show="!user && !step">
       <h2>Continue with…</h2>
       <template x-for="provider in providers" :key="provider">
         <p><button @click="continueWith(provider)" :disabled="busy"
@@ -65,6 +121,22 @@
             </template>
           </tbody>
         </table>
+      </section>
+
+      <section class="card">
+        <h2>Two-step verification</h2>
+        <p x-show="mfa?.enabled">On. Recovery codes left: <span x-text="mfa?.recovery_codes_left"></span>.</p>
+        <p x-show="mfa && !mfa.enabled && !setup"><button @click="enableMfa" :disabled="busy">Turn it on</button></p>
+        <template x-if="setup && user">
+          <div>
+            <img :src="setup.qr" alt="QR code to scan with your authenticator app" width="180" height="180">
+            <p class="muted">Or type this secret: <code x-text="setup.secret"></code></p>
+            <form @submit.prevent="confirmMfa">
+              <label>Code shown by the app <input x-model="code" autocomplete="one-time-code" required></label>
+              <button type="submit" :disabled="busy">Confirm</button>
+            </form>
+          </div>
+        </template>
       </section>
 
       <section class="card">

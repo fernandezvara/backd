@@ -235,14 +235,18 @@ func TestChangePasswordAndDeleteAccount(t *testing.T) {
 	me, current, _ := svc.Signup(ctx, "ada@example.com", "dev-p4ssw0rd!", "")
 	_, other, _ := svc.Login(ctx, "ada@example.com", "dev-p4ssw0rd!", "")
 
-	if err := svc.ChangePassword(ctx, me, "dev-p4ssw0rd!0", "dev-p4ssw0rd!2"); !errors.Is(err, ErrInvalidCredentials) {
-		t.Errorf("wrong current password: %v", err)
+	// What proves the user is there (their password) is checked by Reauthenticate, before.
+	if _, err := svc.Reauthenticate(ctx, me, ReauthPassword, "dev-p4ssw0rd!0", ""); !errors.Is(err, ErrInvalidCredentials) {
+		t.Errorf("wrong password: %v", err)
+	}
+	if _, err := svc.Reauthenticate(ctx, me, ReauthPassword, "dev-p4ssw0rd!", ""); err != nil {
+		t.Errorf("right password: %v", err)
 	}
 	var pe *PolicyError
-	if err := svc.ChangePassword(ctx, me, "dev-p4ssw0rd!", "short"); !errors.As(err, &pe) {
+	if err := svc.ChangePassword(ctx, me, "short"); !errors.As(err, &pe) {
 		t.Errorf("weak new password: %v", err)
 	}
-	if err := svc.ChangePassword(ctx, me, "dev-p4ssw0rd!", "dev-p4ssw0rd!2"); err != nil {
+	if err := svc.ChangePassword(ctx, me, "dev-p4ssw0rd!2"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.Authenticate(ctx, current); err != nil {
@@ -255,10 +259,7 @@ func TestChangePasswordAndDeleteAccount(t *testing.T) {
 		t.Errorf("login with new password: %v", err)
 	}
 
-	if err := svc.DeactivateAccount(ctx, me, "dev-p4ssw0rd!"); !errors.Is(err, ErrInvalidCredentials) {
-		t.Errorf("delete with old password: %v", err)
-	}
-	if err := svc.DeactivateAccount(ctx, me, "dev-p4ssw0rd!2"); err != nil {
+	if err := svc.DeactivateAccount(ctx, me); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.Authenticate(ctx, current); !errors.Is(err, ErrUnauthenticated) {

@@ -481,6 +481,29 @@ class AdminUsers {
   }
 
   /**
+   * A user's second factor, as the user sees theirs: whether they have one, which, the recovery
+   * codes left, and whether a role of theirs requires one. Never a secret or a code.
+   * @param {string} id
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ available: boolean, enabled: boolean, methods: string[], recovery_codes_left: number, required: boolean }>}
+   */
+  async mfa(id, opts) {
+    return (await this.admin._request({ method: 'GET', path: ['users', id, 'mfa'], ...opts })).data
+  }
+
+  /**
+   * Removes a user's second factor and recovery codes, for one who lost both: it ends all of their
+   * sessions and tells them by email. Never on yourself (`self_reset_not_allowed`, a
+   * `ForbiddenError`); `mfa_not_enabled` (a `ConflictError`) when there is none.
+   * @param {string} id
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async resetMfa(id, opts) {
+    await this.admin._request({ method: 'POST', path: ['users', id, 'mfa', 'reset'], ...opts })
+  }
+
+  /**
    * Ends one of a user's sessions: its token stops working at once.
    * @param {string} id
    * @param {string} sessionId
@@ -659,7 +682,7 @@ class AdminAPIKeys {
     if (expiresIn !== undefined) body.expires_in = expiresIn
     if (networks !== undefined) body.networks = networks
     if (scopes !== undefined) body.scopes = scopes
-    return (await this.admin._request({ method: 'POST', path: ['apikeys'], body, ...opts })).data
+    return (await this.admin._request({ method: 'POST', path: ['apikeys'], body, reauth: true, ...opts })).data
   }
 
   /**

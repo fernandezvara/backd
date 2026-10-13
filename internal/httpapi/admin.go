@@ -46,12 +46,15 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		users, invites, keys := a.need(registry.RightUsers), a.need(registry.RightInvitations), a.need(registry.RightAPIKeys)
 		secrets, audit, fns := a.need(registry.RightSecrets), a.need(registry.RightAudit), a.need(registry.RightFunctions)
 		r.With(users).Get("/users", a.listUsers)
+		r.With(users).Get("/mfa", a.mfaOverview)
 		r.With(users, json).Post("/users", a.createUser)
 		r.Route("/users/{id}", func(r chi.Router) {
 			r.Use(users, a.loadUser, a.guardTarget)
 			r.Get("/", a.getUser)
 			r.Get("/owned", a.owned)
 			r.Get("/identities", a.userIdentities)
+			r.Get("/mfa", a.userMFA)
+			r.Post("/mfa/reset", a.resetUserMFA)
 			r.Delete("/identities/{provider}", a.unlinkUserIdentity)
 			r.Get("/sessions", a.userSessions)
 			r.Delete("/sessions/{session_id}", a.revokeUserSession)
@@ -781,6 +784,16 @@ func (a *adminAPI) listAPIKeys(w http.ResponseWriter, r *http.Request) {
 
 // createAPIKey creates a key; the key itself is in this response only.
 func (a *adminAPI) createAPIKey(w http.ResponseWriter, r *http.Request) {
+	// A key is a credential that outlives the session and bypasses MFA: an administrator
+	// signed in with a session proves who they are again before making one.
+	caller, _ := callerOf(r)
+	bySession := caller.Key == nil && caller.User != nil
+	if bySession {
+		if err := usersOf(r).CheckReauth(r.Context(), *caller.User, r.Header.Get(reauthHeader)); err != nil {
+			authError(w, r, err)
+			return
+		}
+	}
 	obj, ok := readObject(w, r)
 	if !ok {
 		return
@@ -834,6 +847,9 @@ func (a *adminAPI) createAPIKey(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		adminError(w, r, err)
 		return
+	}
+	if bySession {
+		usersOf(r).KeyCreatedBySession(r.Context(), *caller.User)
 	}
 	out := apiKeyJSON(k)
 	out["key"] = key

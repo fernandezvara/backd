@@ -144,7 +144,7 @@ test('signInWithIdToken sends the token and the raw nonce, and signs in', async 
   const m = mockFetch([{ body: { ...session, new_user: true } }, { status: 401, body: { error: { code: 'invalid_token', message: 'no', request_id: 'r' } } }])
   const c = clientOf(m)
   const s = await c.auth.signInWithIdToken('apple', { idToken: 'eyJ…', nonce: 'raw', authorizationCode: 'abc' })
-  assert.equal(s.new_user, true)
+  assert.equal(/** @type {any} */ (s).new_user, true)
   assert.deepEqual(m.calls[0].body, { id_token: 'eyJ…', nonce: 'raw', authorization_code: 'abc' })
   assert.equal(m.calls[0].url.pathname, '/v1/acme/_auth/oauth/apple/id-token')
   assert.equal(await c.auth.token(), 'bds_abc')

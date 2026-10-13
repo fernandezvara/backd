@@ -9,9 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rs/xid"
 
+	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/mongodb"
 )
 
@@ -120,11 +122,34 @@ func TestRunUserLifecycle(t *testing.T) {
 	c.expect(0, `role "owner" assigned`, "", "user", "add-role", "--realm", realm, "--email", "bob@example.com", "--role", "owner")
 	c.expect(0, `role "editor" removed`, "", "user", "remove-role", "--realm", realm, "--email", "ada@example.com", "--role", "editor")
 	c.expect(0, "login networks: 10.0.0.0/8", "", "user", "networks", "--realm", realm, "--email", "bob@example.com", "--login", "10.0.0.0/8")
-	key := c.expect(0, "bdk_", "", "apikey", "create", "--realm", realm, "--name", "tooling", "--role", "admin", "--expires", "1d")
+	// A key is made by a person who proves it is them again (the password, on standard input here).
+	c.expect(1, "no password on standard input", "", "apikey", "create", "--realm", realm, "--name", "tooling", "--role", "admin", "--expires", "1d")
+	key := c.expect(0, "bdk_", "dev-p4ssw0rd!\n", "apikey", "create", "--realm", realm, "--name", "tooling", "--role", "admin", "--expires", "1d")
 	c.env["BACKD_API_KEY"] = strings.TrimSpace(key)
 	c.expect(0, "tooling  admin", "", "apikey", "list", "--realm", realm)
 	delete(c.env, "BACKD_API_KEY")
 	c.expect(0, "logged out", "", "logout", "--realm", realm)
+
+	// Break glass: an operator with the instance's database resets a second factor directly,
+	// audited as the instance (not as an administrator), and it needs no session.
+	users, err := a.users(context.Background(), realm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adaUser, err := users.Find(context.Background(), "ada@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := users.Store.PutMFA(context.Background(), auth.MFARecord{UserID: adaUser.ID, Secret: "k.n.c", EnabledAt: time.Now(), RecoveryCodes: []string{"x"}}); err != nil {
+		t.Fatal(err)
+	}
+	c.expect(1, "add --yes to confirm", "", "user", "mfa-reset", "--local", "--realm", realm, "--email", "ada@example.com")
+	c.expect(0, "second factor of ada@example.com removed", "", "user", "mfa-reset", "--local", "--yes", "--realm", realm, "--email", "ada@example.com")
+	c.expect(1, "has no second factor", "", "user", "mfa-reset", "--local", "--yes", "--realm", realm, "--email", "ada@example.com")
+	trail, _, err := users.AuditTrail(context.Background(), auth.AuditFilter{Action: auth.AuditMFAReset, Limit: 5})
+	if err != nil || len(trail) != 1 || trail[0].Actor != auth.ActorInstance || trail[0].Target != "user:"+adaUser.ID {
+		t.Errorf("audit: %+v %v", trail, err)
+	}
 
 	// The seed comes back with the next provision.
 	c.expect(0, "", "", "provision")

@@ -4,11 +4,15 @@
 // mint `share` links, and `?s=<token>` resolves one publicly through
 // `share-open` — the holes the rules chapter left, closed.
 //
+// Chapter 16 adds a way in without a password (a link or code by email) and
+// a second factor: the step after the password, and the account page's
+// security section.
+//
 // Chapters 13–15 add files: an asset can carry one file (`file`, through backd)
 // and up to five attachments (straight to the bucket, with a progress bar), the
 // worker makes a thumbnail of an image (a declared version), downloads are counted by the
 // `download` function, and a shared asset comes with links to its files.
-import { createClient, localStorageStorage, NotFoundError, VersionMismatchError, versionStatus } from 'backd-js'
+import { createClient, localStorageStorage, NotFoundError, SecondStepRequiredError, VersionMismatchError, versionStatus } from 'backd-js'
 
 const backd = createClient({
   url: window.location.origin,
@@ -39,6 +43,15 @@ document.addEventListener('alpine:init', () => {
     email: '',
     password: '',
     invitation: '', // signup: invite — the token the operator hands over
+    // Chapter 16: the step after the password (a code of the second factor, or
+    // setting one up), and the code of a magic-link email.
+    step: null, // { kind: 'mfa' | 'enroll', challenge, methods, setup, recovery }
+    code: '',
+    magicSent: false,
+    // The account page: my second factor, and what setting it up shows.
+    mfa: null,
+    mfaSetup: null,
+    recoveryCodes: null,
 
     // Admin: invitations pending, and the token of the one just created.
     inviteEmail: '',
@@ -60,7 +73,7 @@ document.addEventListener('alpine:init', () => {
     // say who published it. Empty until that chapter exists.
     names: {},
     editing: null, // { id, version, title, url, body, tags } — the card being edited
-    pwd: { current: '', next: '' },
+    pwd: { next: '' },
     accountMsg: null,
 
     // Notifications: mine, newest first (functions write them; I can only
@@ -114,6 +127,14 @@ document.addEventListener('alpine:init', () => {
       // ?s=<token> is the public share view — no session needed.
       const s = params.get('s')
       if (s) await this.openShare(s)
+      // A magic link ends here with a code in the address: the client redeems it
+      // when it is created, and `ready` is the outcome — the session, or a step.
+      try {
+        const outcome = await backd.auth.ready
+        if (outcome && 'challenge' in outcome) await this.startStep(outcome)
+      } catch (e) {
+        this.error = e.message
+      }
       try {
         this.user = await backd.auth.me()
       } catch (e) {
@@ -121,7 +142,7 @@ document.addEventListener('alpine:init', () => {
         this.open = e instanceof NotFoundError
       }
       await this.refilter()
-      if (this.user) await Promise.all([this.loadMine(), this.loadDrafts(), this.loadInvites(), this.loadShares(), this.loadNotifs(), this.ensureMember(), this.loadAdmin()])
+      if (this.user) await Promise.all([this.loadMine(), this.loadDrafts(), this.loadInvites(), this.loadShares(), this.loadNotifs(), this.ensureMember(), this.loadAdmin(), this.loadMfa()])
       if (this.user) await this.loadNames()
       this.syncView()
     },
@@ -142,23 +163,120 @@ document.addEventListener('alpine:init', () => {
       try {
         const credentials = { email: this.email, password: this.password }
         if (this.mode === 'signup' && this.invitation) credentials.invitation = this.invitation
-        const session = this.mode === 'signup'
-          ? await backd.auth.signup(credentials)
-          : await backd.auth.login(credentials)
-        this.user = session.user
+        // `signIn` hands back the second step as a value; signup rejects with it.
+        const result = this.mode === 'signup'
+          ? await backd.auth.signup(credentials).catch((e) => {
+              if (e instanceof SecondStepRequiredError) return { challenge: e.challenge, enrollmentRequired: e.code === 'mfa_enrollment_required', methods: e.methods }
+              throw e
+            })
+          : await backd.auth.signIn(credentials)
         this.password = ''
         this.invitation = ''
-        await this.refilter()
-        await this.loadMine()
-        await this.loadDrafts()
-        await this.loadInvites()
-        await this.loadNotifs()
-        await this.ensureMember()
-        await this.loadNames()
-        await this.loadAdmin()
-        window.location.hash = '#mine'
+        await this.afterFirstStep(result)
       } catch (e) {
         this.error = e.message
+      } finally {
+        this.busy = false
+      }
+    },
+
+    // A session, or the step that comes before one.
+    async afterFirstStep(result) {
+      if ('challenge' in result) {
+        await this.startStep(result)
+        return
+      }
+      await this.signedIn(result)
+    },
+
+    async startStep(result) {
+      this.mode = 'login'
+      window.location.hash = '#auth'
+      if (!result.enrollmentRequired) {
+        this.step = { kind: 'mfa', challenge: result.challenge, methods: result.methods, setup: null, recovery: false }
+        return
+      }
+      // The role requires a second factor and the user has none: set one up now.
+      const setup = await backd.auth.mfa.setup({ challenge: result.challenge })
+      this.step = { kind: 'enroll', challenge: result.challenge, methods: [], setup, recovery: false }
+    },
+
+    async signedIn(session) {
+      this.user = session.user
+      this.step = null
+      this.code = ''
+      this.magicSent = false
+      await this.refilter()
+      await this.loadMine()
+      await this.loadDrafts()
+      await this.loadInvites()
+      await this.loadNotifs()
+      await this.ensureMember()
+      await this.loadNames()
+      await this.loadAdmin()
+      await this.loadMfa()
+      window.location.hash = '#mine'
+    },
+
+    // The code of the authenticator app (or a recovery code) after the password.
+    async submitCode() {
+      this.busy = true
+      this.error = null
+      try {
+        const method = this.step.recovery ? 'recovery_code' : 'totp'
+        await this.signedIn(await backd.auth.verifyMfa(this.step.challenge, method, this.code.trim()))
+      } catch (e) {
+        this.error = e.message
+        this.code = ''
+      } finally {
+        this.busy = false
+      }
+    },
+
+    // First sign-in of a role that requires a second factor: the first code
+    // proves the app works, and the recovery codes are shown once.
+    async confirmEnrollment() {
+      this.busy = true
+      this.error = null
+      try {
+        const done = await backd.auth.mfa.confirm({ challenge: this.step.challenge, setupId: this.step.setup.setup_id, code: this.code.trim() })
+        this.recoveryCodes = done.recovery_codes
+        await this.signedIn(done.session)
+        window.location.hash = '#account' // where the recovery codes are shown
+      } catch (e) {
+        this.error = e.message
+        this.code = ''
+      } finally {
+        this.busy = false
+      }
+    },
+
+    // --- magic link ----------------------------------------------------------
+
+    // Always answers the same, whoever the address is: the page doesn't tell.
+    async requestMagicLink() {
+      this.busy = true
+      this.error = null
+      try {
+        await backd.auth.magicLink.request(this.email)
+        this.magicSent = true
+      } catch (e) {
+        this.error = e.message
+      } finally {
+        this.busy = false
+      }
+    },
+
+    // Typed in this app, on any device that can read the mail. The link in the
+    // same email works only here, in this browser (the mailbox view shows both).
+    async submitMagicCode() {
+      this.busy = true
+      this.error = null
+      try {
+        await this.afterFirstStep(await backd.auth.magicLink.verifyCode(this.code.trim()))
+      } catch (e) {
+        this.error = e.message
+        this.code = ''
       } finally {
         this.busy = false
       }
@@ -762,7 +880,8 @@ document.addEventListener('alpine:init', () => {
       this.busy = true
       this.accountMsg = null
       try {
-        await backd.auth.requestEmailChange({ newEmail: this.newEmail, password: this.pwd.current })
+        // A sensitive action: prove who you are again first (the client keeps the proof for 5 minutes).
+        await backd.auth.withProof((methods) => this.askProof(methods), () => backd.auth.requestEmailChange({ newEmail: this.newEmail }))
         this.newEmail = ''
         this.accountMsg = 'Check the new address — a confirmation email was sent (the mailbox in dev).'
         await this.loadMailbox()
@@ -777,11 +896,8 @@ document.addEventListener('alpine:init', () => {
       this.busy = true
       this.accountMsg = null
       try {
-        await backd.auth.changePassword({
-          currentPassword: this.pwd.current,
-          newPassword: this.pwd.next,
-        })
-        this.pwd = { current: '', next: '' }
+        await backd.auth.withProof((methods) => this.askProof(methods), () => backd.auth.changePassword({ newPassword: this.pwd.next }))
+        this.pwd = { next: '' }
         this.accountMsg = 'Password changed.'
       } catch (e) {
         this.accountMsg = e.message
@@ -792,14 +908,71 @@ document.addEventListener('alpine:init', () => {
 
     async deleteAccount() {
       if (!confirm('Deactivate your account? Your assets follow the collection\'s erasure policy.')) return
-      const password = prompt('Confirm with your password:')
-      if (!password) return
       this.busy = true
       try {
-        await backd.auth.deleteAccount({ password })
+        await backd.auth.withProof((methods) => this.askProof(methods), () => backd.auth.deleteAccount())
         await this.logout()
       } catch (e) {
         this.error = e.message
+      } finally {
+        this.busy = false
+      }
+    },
+    // --- second factor and proofs (chapter 16) ------------------------------
+
+    // The server says which proofs it takes (`methods`); a person with a second
+    // factor gives a code, anyone else the password. null cancels the action.
+    async askProof(methods) {
+      const useCode = methods.includes('totp')
+      const answer = prompt(useCode ? 'Code from your authenticator app:' : 'Confirm with your password:')
+      if (!answer) throw new Error('cancelled')
+      return useCode ? { method: 'totp', code: answer.trim() } : { method: 'password', password: answer }
+    },
+
+    async loadMfa() {
+      try {
+        this.mfa = await backd.auth.mfa.status()
+      } catch {
+        this.mfa = null
+      }
+    },
+
+    async startMfa() {
+      this.busy = true
+      this.accountMsg = null
+      try {
+        this.mfaSetup = await backd.auth.withProof((methods) => this.askProof(methods), () => backd.auth.mfa.setup())
+      } catch (e) {
+        this.accountMsg = e.message
+      } finally {
+        this.busy = false
+      }
+    },
+
+    async confirmMfa() {
+      this.busy = true
+      this.accountMsg = null
+      try {
+        const done = await backd.auth.mfa.confirm({ setupId: this.mfaSetup.setup_id, code: this.code.trim() })
+        this.recoveryCodes = done.recovery_codes
+        this.mfaSetup = null
+        this.code = ''
+        await this.loadMfa()
+      } catch (e) {
+        this.accountMsg = e.message
+      } finally {
+        this.busy = false
+      }
+    },
+
+    async disableMfa() {
+      this.busy = true
+      this.accountMsg = null
+      try {
+        await backd.auth.withProof((methods) => this.askProof(methods), () => backd.auth.mfa.disable())
+        await this.loadMfa()
+      } catch (e) {
+        this.accountMsg = e.message
       } finally {
         this.busy = false
       }

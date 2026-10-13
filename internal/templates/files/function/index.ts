@@ -8,7 +8,7 @@
 
 type Context = {
   input: unknown;
-  user: { id: string; email: string; email_verified: boolean; roles: string[] } | null;
+  user: { id: string; email: string; email_verified: boolean; roles: string[]; mfa: boolean; methods: string[] } | null;
 };
 
 export default async function handler(ctx: Context) {

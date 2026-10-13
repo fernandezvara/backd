@@ -127,6 +127,30 @@ type RealmSettings struct {
 	SignInAppURL string
 	// MFA are the multi-factor settings (mfa in realm.yaml).
 	MFA MFASettings
+	// ReauthTTL is how long a re-authentication token works (reauth.ttl).
+	ReauthTTL time.Duration
+	// MagicLink are the settings of sign-in by emailed link and code (magic_link in realm.yaml).
+	MagicLink MagicLinkSettings
+}
+
+// MagicLinkSettings are the realm's magic-link settings.
+type MagicLinkSettings struct {
+	// Enabled turns the endpoints on; it needs the realm's email.
+	Enabled bool
+	// Signup lets an address that has no account make one (verified, by redeeming the link
+	// or code), when the realm's own sign-up is open.
+	Signup bool
+}
+
+// DefaultReauthTTL is how long a re-authentication token works when the realm doesn't say.
+const DefaultReauthTTL = 5 * time.Minute
+
+// ReauthLifetime is the lifetime of a re-authentication token: the realm's, or the default.
+func (s RealmSettings) ReauthLifetime() time.Duration {
+	if s.ReauthTTL > 0 {
+		return s.ReauthTTL
+	}
+	return DefaultReauthTTL
 }
 
 // AccountSettings are the account lifecycle settings of a realm.
@@ -304,6 +328,23 @@ type realmDoc struct {
 		AllowedRedirects []string `yaml:"allowed_redirects"`
 		AppURL           string   `yaml:"app_url"`
 	} `yaml:"sign_in"`
+	// MFA are the second-factor settings (design/mfa-passwordless.md §3).
+	MFA *struct {
+		Enabled *bool  `yaml:"enabled"`
+		Issuer  string `yaml:"issuer"`
+		// RequiredRoles is a list of role names, or the string "all".
+		RequiredRoles yaml.Node `yaml:"required_roles"`
+	} `yaml:"mfa"`
+	// MagicLink lets users sign in with a link or a code sent to their address.
+	MagicLink *struct {
+		Enabled bool `yaml:"enabled"`
+		Signup  bool `yaml:"signup"`
+	} `yaml:"magic_link"`
+	// Reauth is how long a fresh proof of identity, asked for before a sensitive
+	// action, stays good.
+	Reauth *struct {
+		TTL string `yaml:"ttl"`
+	} `yaml:"reauth"`
 	Account *struct {
 		RequireVerifiedEmail bool   `yaml:"require_verified_email"`
 		WelcomeEmail         bool   `yaml:"welcome_email"`
@@ -664,6 +705,51 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 		}
 	}
 
+	if m := doc.MFA; m != nil {
+		switch {
+		case !s.AuthEnabled:
+			errs = append(errs, errors.New("mfa: only applies when auth is enabled"))
+		default:
+			if m.Enabled != nil {
+				s.MFA.Off = !*m.Enabled
+			}
+			s.MFA.Issuer = strings.TrimSpace(m.Issuer)
+			if len(s.MFA.Issuer) > 64 || strings.ContainsAny(s.MFA.Issuer, ":\n\r") {
+				errs = append(errs, errors.New("mfa.issuer: must be at most 64 characters and have no colon or line break (authenticator apps show it as the name of the account)"))
+			}
+
+		}
+	}
+
+	if m := doc.MagicLink; m != nil {
+		switch {
+		case !s.AuthEnabled:
+			errs = append(errs, errors.New("magic_link: only applies when auth is enabled"))
+		case m.Enabled && s.Email == nil:
+			errs = append(errs, errors.New("magic_link.enabled: needs the email: section (the links and codes are sent by email)"))
+		case m.Signup && !m.Enabled:
+			errs = append(errs, errors.New("magic_link.signup: has no effect while magic_link.enabled is false"))
+		default:
+			s.MagicLink = MagicLinkSettings{Enabled: m.Enabled, Signup: m.Signup}
+		}
+	}
+
+	if r := doc.Reauth; r != nil {
+		if !s.AuthEnabled {
+			errs = append(errs, errors.New("reauth: only applies when auth is enabled"))
+		} else if r.TTL != "" {
+			d, err := ParseDuration(r.TTL)
+			switch {
+			case err != nil:
+				errs = append(errs, fmt.Errorf("reauth.ttl: %w", err))
+			case d < time.Minute || d > time.Hour:
+				errs = append(errs, fmt.Errorf("reauth.ttl: must be between 1m and 1h, got %s", r.TTL))
+			default:
+				s.ReauthTTL = d
+			}
+		}
+	}
+
 	s.Account.VerifyEmailTTL = DefaultVerifyEmailTTL
 	s.Account.ResetPasswordTTL = DefaultResetPasswordTTL
 	s.Account.ChangeEmailTTL = 24 * time.Hour
@@ -769,6 +855,13 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 			}
 		}
 		s.Roles[name] = role
+	}
+	// Which roles must use MFA: after the roles, which it names.
+	if m := doc.MFA; m != nil && s.AuthEnabled {
+		errs = append(errs, s.parseRequiredRoles(m.RequiredRoles)...)
+		if s.MFA.Off && (s.MFA.RequiredAll || len(s.MFA.RequiredRoles) > 0) {
+			errs = append(errs, errors.New("mfa.required_roles: needs mfa.enabled (users can't set a second factor up while it is off)"))
+		}
 	}
 	return s, errs
 }

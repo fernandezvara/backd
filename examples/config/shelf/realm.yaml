@@ -31,6 +31,24 @@ email:
 account:
   allow_email_change: true
 
+# Chapter 16 adds a way in without a password and a second factor. Members
+# can ask for a link (and a 6-digit code) by email instead of typing the
+# password; sign-up stays invite-only, so a link only signs in existing
+# members. Needs the email: section above and BACKD_SECRETS_KEY (the tutorial's
+# compose file sets one). The link comes back to the app, which finishes the
+# sign-in by itself.
+magic_link:
+  enabled: true
+sign_in:
+  app_url: http://localhost:8080/   # within email.allowed_redirects
+
+# The operators hold the keys to everything, so the admin role needs a second
+# factor: the first sign-in sets one up (an authenticator app), the next ones
+# ask for its code. Members who want it can turn it on themselves on the
+# account page.
+mfa:
+  required_roles: [admin]
+
 roles:
   admin:
     description: "Operators: users, invitations and API keys"

@@ -19,6 +19,13 @@ email:
 account:
   allow_email_change: true
 
+# Sign in by a link or a code from the outbox, and make accounts that way.
+magic_link:
+  enabled: true
+  signup: true
+sign_in:
+  app_url: http://localhost:5173/signed-in
+
 roles:
   ops:
     admin: true

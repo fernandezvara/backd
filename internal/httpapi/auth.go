@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"maps"
 	"net/http"
 	"slices"
 	"sort"
@@ -41,6 +42,14 @@ func (a *authAPI) routes(r chi.Router) {
 		r.With(json).Post("/signup", a.signup)
 		r.With(json).Post("/login", a.login)
 		r.With(json).Post("/mfa/verify", a.mfaVerify)
+		// A magic link: JSON asks for one, a form (the page's button) uses it.
+		r.Post("/magic-link", a.magicLinkPost)
+		r.Get("/magic-link", a.magicLinkPage)
+		r.With(json).Post("/magic-link/verify", a.magicLinkVerify)
+		// Both act on a session, or on the challenge of a sign-in that must set a second
+		// factor up: they look for either themselves.
+		r.Post("/mfa/totp/setup", a.mfaSetup)
+		r.Post("/mfa/totp/confirm", a.mfaConfirm)
 		r.With(json).Post("/verify-email/resend", a.resendVerification)
 		r.With(json).Post("/reset-password/request", a.requestPasswordReset)
 		a.hostedRoutes(r)
@@ -51,10 +60,16 @@ func (a *authAPI) routes(r chi.Router) {
 			r.Post("/logout-all", a.logoutAll)
 			r.Get("/me", a.me)
 			r.With(json).Patch("/me", a.updateMe)
-			r.With(json).Delete("/me", a.deleteMe)
+			r.Delete("/me", a.deleteMe)
 			r.With(json).Post("/password", a.changePassword)
+			r.Delete("/password", a.removePassword)
 			r.With(json).Post("/email", a.changeEmail)
 			r.Delete("/identities/{provider}", a.unlinkIdentity)
+			r.With(json).Post("/reauth", a.reauth)
+			r.Post("/reauth/email-code", a.reauthEmailCode)
+			r.Get("/mfa", a.mfaStatus)
+			r.Delete("/mfa/totp", a.mfaDisable)
+			r.Post("/mfa/recovery-codes", a.mfaRecoveryCodes)
 			r.Get("/sessions", a.sessions)
 			r.Delete("/sessions/{id}", a.revokeSession)
 		})
@@ -201,6 +216,11 @@ func (a *authAPI) login(w http.ResponseWriter, r *http.Request) {
 // that asks for the next step. provider says the sign-in is a provider's, whose answer
 // also says whether it made the user.
 func (a *authAPI) answerSignIn(w http.ResponseWriter, r *http.Request, out auth.Redeemed, status int, useCookie, provider bool) {
+	a.answerSignInWith(w, r, out, status, useCookie, provider, nil)
+}
+
+// answerSignInWith is answerSignIn with more fields in the session's answer.
+func (a *authAPI) answerSignInWith(w http.ResponseWriter, r *http.Request, out auth.Redeemed, status int, useCookie, provider bool, extra map[string]any) {
 	svc := usersOf(r)
 	if c := out.Challenge; c != nil {
 		writeJSON(w, http.StatusOK, challengeJSON(c))
@@ -219,6 +239,7 @@ func (a *authAPI) answerSignIn(w http.ResponseWriter, r *http.Request, out auth.
 	if out.RecoveryCodesLeft != nil {
 		body["recovery_codes_left"] = *out.RecoveryCodesLeft
 	}
+	maps.Copy(body, extra)
 	writeJSON(w, status, body)
 }
 
@@ -257,6 +278,18 @@ func (a *authAPI) me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out["identities"] = identitiesJSON(u, ids)
+	methods, err := usersOf(r).ReauthMethodsOf(r.Context(), u)
+	if err != nil {
+		authError(w, r, err)
+		return
+	}
+	out["reauth_methods"] = methods
+	signIn, err := usersOf(r).SignInMethods(r.Context(), u)
+	if err != nil {
+		authError(w, r, err)
+		return
+	}
+	out["sign_in_methods"] = signIn
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -322,11 +355,10 @@ func acceptLanguages(header string) []string {
 }
 
 func (a *authAPI) deleteMe(w http.ResponseWriter, r *http.Request) {
-	f, ok := readStrings(w, r, "password")
-	if !ok {
+	if !a.reauthed(w, r) {
 		return
 	}
-	if err := usersOf(r).DeactivateAccount(r.Context(), principalOf(r), f["password"]); err != nil {
+	if err := usersOf(r).DeactivateAccount(r.Context(), principalOf(r)); err != nil {
 		authError(w, r, err)
 		return
 	}
@@ -335,11 +367,14 @@ func (a *authAPI) deleteMe(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *authAPI) changePassword(w http.ResponseWriter, r *http.Request) {
-	f, ok := readStrings(w, r, "current_password", "new_password")
+	f, ok := readStrings(w, r, "new_password")
 	if !ok {
 		return
 	}
-	if err := usersOf(r).ChangePassword(r.Context(), principalOf(r), f["current_password"], f["new_password"]); err != nil {
+	if !a.reauthed(w, r) {
+		return
+	}
+	if err := usersOf(r).ChangePassword(r.Context(), principalOf(r), f["new_password"]); err != nil {
 		authError(w, r, err, "new_password")
 		return
 	}
@@ -430,7 +465,30 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 		w.Header().Set("Retry-After", strconv.Itoa(max(int((locked.RetryAfter+time.Second-1)/time.Second), 1)))
 		writeError(w, r, http.StatusTooManyRequests, codeMFALocked, "too many wrong codes; try again later")
 	case errors.As(err, &badCode):
+		if badCode.AttemptsLeft < 0 {
+			writeError(w, r, http.StatusBadRequest, codeInvalidCode, "the code is not valid")
+			break
+		}
 		writeError(w, r, http.StatusBadRequest, codeInvalidCode, "the code is not valid", Detail{Path: "attempts_left", Reason: strconv.Itoa(badCode.AttemptsLeft)})
+	case errors.Is(err, auth.ErrMFADisabled):
+		writeError(w, r, http.StatusForbidden, codeMFADisabled, err.Error())
+	case errors.Is(err, auth.ErrMFAUnavailable):
+		writeError(w, r, http.StatusServiceUnavailable, codeMFAUnavailable, err.Error())
+	case errors.Is(err, auth.ErrMFARequiredByRole):
+		writeError(w, r, http.StatusForbidden, codeMFARequiredByRole, err.Error())
+	case errors.Is(err, auth.ErrMFAAlreadyEnabled):
+		writeError(w, r, http.StatusConflict, codeMFAAlreadyEnabled, err.Error())
+	case errors.Is(err, auth.ErrMFANotEnabled):
+		writeError(w, r, http.StatusConflict, codeMFANotEnabled, err.Error())
+	case errors.Is(err, auth.ErrReauthRequired):
+		w.Header().Set("WWW-Authenticate", `Bearer realm="`+chi.URLParam(r, "realm")+`", error="insufficient_user_authentication"`)
+		writeError(w, r, http.StatusUnauthorized, codeReauthRequired, "this action needs a fresh proof of identity: POST /_auth/reauth and send the token in "+reauthHeader)
+	case errors.Is(err, auth.ErrReauthMethod):
+		writeError(w, r, http.StatusBadRequest, codeValidation, "that proof is not accepted for this user", Detail{Path: "method", Reason: "use one of the user's reauth_methods"})
+	case errors.Is(err, auth.ErrMagicLinkDisabled):
+		writeError(w, r, http.StatusForbidden, codeMagicLinkDisabled, err.Error())
+	case errors.Is(err, auth.ErrInvalidMagicLink):
+		writeError(w, r, http.StatusBadRequest, codeInvalidMagicLink, err.Error())
 	case errors.Is(err, auth.ErrInvalidChallenge):
 		writeError(w, r, http.StatusBadRequest, codeInvalidChallenge, "the challenge is invalid or expired: sign in again")
 	case errors.Is(err, auth.ErrInvalidCredentials):

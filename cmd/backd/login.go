@@ -14,7 +14,7 @@ import (
 )
 
 func loginAction(c *kli.CommandContext) error {
-	return login(str(c, "realm"), str(c, "url"), str(c, "email"), c.Getenv, ioOf(c))
+	return login(str(c, "realm"), str(c, "url"), str(c, "email"), flag(c, "magic-link"), c.Getenv, ioOf(c))
 }
 
 func logoutAction(c *kli.CommandContext) error {
@@ -26,19 +26,15 @@ func whoamiAction(c *kli.CommandContext) error {
 }
 
 type sessionAnswer struct {
-	// MFARequired and MFAEnrollmentRequired are answers with no session: a second step is
-	// needed first.
-	MFARequired           bool   `json:"mfa_required"`
-	MFAEnrollmentRequired bool   `json:"mfa_enrollment_required"`
-	Token                 string `json:"token"`
-	ExpiresAt             string `json:"expires_at"`
-	User                  struct {
+	Token     string `json:"token"`
+	ExpiresAt string `json:"expires_at"`
+	User      struct {
 		Email string   `json:"email"`
 		Roles []string `json:"roles"`
 	} `json:"user"`
 }
 
-func login(realm, flagURL, email string, getenv func(string) string, uio userIO) error {
+func login(realm, flagURL, email string, magicLink bool, getenv func(string) string, uio userIO) error {
 	creds, path, err := loadCredentials(getenv)
 	if err != nil {
 		return err
@@ -66,18 +62,38 @@ func login(realm, flagURL, email string, getenv func(string) string, uio userIO)
 		}
 		email = strings.TrimSpace(line)
 	}
-	pw, err := readSecret(uio, false, "Password")
-	if err != nil {
-		return err
+	if !isTerminal(uio.stdin) {
+		// The password and a code are two lines of the same input.
+		uio.stdin = bufio.NewReader(uio.stdin)
 	}
 	t := &target{url: u, realm: realm, http: hc}
 	var res sessionAnswer
-	if err := t.call("POST", "_auth/login", nil, map[string]string{"email": email, "password": pw}, &res); err != nil {
-		return err
+	if magicLink {
+		if err := magicLinkSignIn(t, uio, email, &res); err != nil {
+			return err
+		}
+	} else {
+		pw, err := readSecret(uio, false, "Password")
+		if err != nil {
+			return err
+		}
+		var out struct {
+			sessionAnswer
+			challengeAnswer
+		}
+		if err := t.call("POST", "_auth/login", nil, map[string]string{"email": email, "password": pw}, &out); err != nil {
+			return err
+		}
+		res = out.sessionAnswer
+		if res.Token == "" {
+			// Not a session yet: the second factor, or setting one up first.
+			if err := finishSignIn(t, uio, out.challengeAnswer, &res); err != nil {
+				return err
+			}
+		}
 	}
 	if res.Token == "" {
-		// Never store a session that wasn't given.
-		return errors.New("the realm asks for a second factor, which this command can't give yet: sign in with the API or the JavaScript client, or use an API key")
+		return errors.New("the server gave no session")
 	}
 	if creds.Sessions[u] == nil {
 		creds.Sessions[u] = map[string]storedAuth{}

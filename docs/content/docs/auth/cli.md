@@ -24,7 +24,7 @@ Two commands write to MongoDB directly instead: `backd bootstrap`, which creates
 | `backd template`, `backd databases`, `backd rules test` | `CONFIG_DIR` | `CONFIG_DIR` |
 | `backd functions build\|types` | `CONFIG_DIR` | `CONFIG_DIR` (`build` also needs Deno) |
 | `backd bootstrap --realm <realm> --email <email>` | MongoDB, once per realm | `CONFIG_DIR`, `MONGO_URI`, a provisioned realm |
-| `backd login`, `backd logout`, `backd whoami` | A running `backd` | Its URL |
+| `backd login`, `backd logout`, `backd whoami`, `backd account …` | A running `backd` | Its URL |
 | `backd user …`, `backd apikey …`, `backd audit …`, `backd secret set\|list\|delete`, `backd functions invoke\|history\|logs\|jobs`, `backd storage check\|usage\|reconcile` | A running `backd`, through the [admin API](../admin/) or the function's own route | Its URL, and a stored session or `BACKD_API_KEY` |
 | `backd secret rotate-key` | MongoDB, directly (not the admin API) | `CONFIG_DIR`, `MONGO_URI`, `BACKD_SECRETS_KEY`, `BACKD_SECRETS_NEW_KEY` |
 | `backd version` | Nothing | Nothing |
@@ -60,6 +60,19 @@ docker compose exec backd /backd bootstrap --realm blog --email ops@example.com
 
 At startup, `backd` warns about each realm that declares no admin role, or whose admin roles nobody holds.
 
+## Your own sign-in security
+
+`backd account` manages the signed-in user's own [second factor](../mfa/) with the session `backd login` stored (an API key is not a person). Each change asks for a fresh [proof](../reauth/): the authenticator code if the user has one, else the password.
+
+| Command | What it does |
+|---|---|
+| `backd account mfa-status` | Whether two-step verification is on, and the recovery codes left |
+| `backd account mfa-enable` | Sets an authenticator app up (QR code, first code) and shows the recovery codes once |
+| `backd account mfa-disable --yes` | Turns it off (refused for a role that requires it) |
+| `backd account recovery-codes` | Replaces the recovery codes, shown once |
+
+`backd apikey create` asks for the same proof when it runs with a session: an administrator's key outlives the session and bypasses MFA, so a person confirms it. With `BACKD_API_KEY` set there is nobody to ask.
+
 ## Logging in
 
 ```sh
@@ -74,6 +87,8 @@ backd whoami --realm blog
 
 `backd login` signs in through [`/_auth/login`](../sessions/), like any user, and keeps the session for the following commands. It is an ordinary session: the realm's idle timeout, maximum lifetime, [login throttling](../sessions/#brute-force-protection) and the user's `login_networks` all apply, and it shows up in the user's session list. `backd logout --realm blog` ends it on the server and forgets it.
 
+- **The second step.** A user with a [second factor](../mfa/) is asked for its code after the password (`Code from your authenticator app (or a recovery code)`); a user in a [required role](../mfa/#required-by-role) who has none sets one up in the terminal: the command shows a QR code made of block characters, the `otpauth://` address and the secret to type in, asks for the first code, and shows the **recovery codes once** (on a terminal it waits until you have saved them). The code is read from the terminal or from the next line of standard input, after the password.
+- **`--magic-link`.** `backd login --realm blog --email ops@example.com --magic-link` asks for a message instead of a password (the realm needs [`magic_link`](../magic-links/)) and then for the 6-digit code in it.
 - **Server:** `--url`, else the `BACKD_URL` environment variable, else the server of the last login.
 - **Email:** `--email`, or a prompt. When standard input isn't a terminal, `--email` is required and the password is the first line of standard input.
 - **Sessions are stored** per server and realm in `~/.config/backd/credentials` (or `$XDG_CONFIG_HOME/backd/credentials`, or the file named by `BACKD_CREDENTIALS`). The file is created readable only by you, in a directory only you can open. Anyone who can read it can act as you until the sessions expire, so log out on shared machines.

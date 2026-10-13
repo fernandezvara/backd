@@ -17,9 +17,12 @@ const (
 	AuditUserSignup      = "user.signup"   // self-service sign-up
 	AuditUserPassword    = "user.password" // set by an administrator
 	AuditPasswordChange  = "user.password_change"
+	AuditPasswordSet     = "user.password_set"      // the user set a password on an account that had none
+	AuditPasswordRemoved = "user.password_removed"  // the user removed their password
 	AuditUserVerifyEmail = "user.verify_email"      // details: verified
 	AuditPasswordReset   = "user.password_reset"    // by the link in an email; details: verified_address
 	AuditUserPurged      = "user.purged_unverified" // details: count; never addresses
+	AuditUserClaimed     = "user.claimed"           // an unverified account taken over by its mailbox's owner; details: methods, mfa
 	AuditUserDisable     = "user.disable"
 	AuditUserEnable      = "user.enable"
 	AuditUserDelete      = "user.delete"
@@ -57,6 +60,8 @@ const (
 	AuditRecoveryRegenerate = "user.recovery_codes_regenerated"
 	AuditRecoveryCodeUsed   = "user.recovery_code_used" // details: codes_left
 	AuditMFALocked          = "user.mfa_locked"
+	// A fresh proof of identity before a sensitive action; details: method (never a code).
+	AuditReauth = "user.reauth"
 	// The admin data route (documents written past the collections' rules);
 	// the target is database/collection/id, never content.
 	AuditDataCreate  = "data.create"
@@ -90,6 +95,9 @@ const (
 const (
 	// ActorConfig applies realm.yaml's role and network seeds.
 	ActorConfig = "config:realm.yaml"
+	// ActorInstance is an operator with direct access to the instance's database and key
+	// (`backd user mfa-reset --local`).
+	ActorInstance = "instance"
 	// ActorBootstrap is `backd bootstrap`.
 	ActorBootstrap = "cli:bootstrap"
 	// ActorSystem is backd itself, in the background (purging unverified accounts).

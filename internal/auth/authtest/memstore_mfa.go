@@ -79,6 +79,48 @@ func (m *MemStore) DeleteChallengesOfUser(_ context.Context, userID string, kind
 	return nil
 }
 
+func (m *MemStore) ChallengeOfUser(_ context.Context, userID, kind string, now time.Time) (auth.AuthChallenge, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var best auth.AuthChallenge
+	found := false
+	for _, c := range m.challenges {
+		if c.UserID == userID && c.Kind == kind && c.ExpiresAt.After(now) && (!found || c.CreatedAt.After(best.CreatedAt)) {
+			best, found = c, true
+		}
+	}
+	if !found {
+		return auth.AuthChallenge{}, auth.ErrNotFound
+	}
+	return best, nil
+}
+
+func (m *MemStore) ChallengeByToken(_ context.Context, tokenHash, kind string, now time.Time) (auth.AuthChallenge, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, c := range m.challenges {
+		if tokenHash != "" && c.TokenHash == tokenHash && c.Kind == kind && c.ExpiresAt.After(now) {
+			return c, nil
+		}
+	}
+	return auth.AuthChallenge{}, auth.ErrNotFound
+}
+
+func (m *MemStore) SetChallengeSecrets(_ context.Context, id, tokenHash, codeHash string, now time.Time) (auth.AuthChallenge, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	c, ok := m.challenges[id]
+	if !ok || !c.ExpiresAt.After(now) {
+		return auth.AuthChallenge{}, auth.ErrNotFound
+	}
+	if tokenHash != "" {
+		c.TokenHash = tokenHash
+	}
+	c.CodeHash = codeHash
+	m.challenges[id] = c
+	return c, nil
+}
+
 func (m *MemStore) MFAOf(_ context.Context, userID string) (auth.MFARecord, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

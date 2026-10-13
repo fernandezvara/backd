@@ -452,7 +452,30 @@
         <p x-show="mode === 'login'">Or <a href="#" @click.prevent="mode = 'signup'">create an account</a>.</p>
         <p x-show="mode === 'signup'">Or <a href="#" @click.prevent="mode = 'login'">sign in</a>.</p>
       </hgroup>
-      <article class="narrow">
+      <article class="narrow" x-show="step">
+        <!-- Chapter 16: the step after the password. -->
+        <template x-if="step && step.kind === 'mfa'">
+          <form @submit.prevent="submitCode">
+            <p x-text="step.recovery ? 'Enter one of your recovery codes.' : 'Enter the code from your authenticator app.'"></p>
+            <label>Code <input x-model="code" required autocomplete="one-time-code" inputmode="numeric" autofocus></label>
+            <button type="submit" :disabled="busy">Verify</button>
+            <p class="muted"><a href="#" @click.prevent="step.recovery = !step.recovery; code = ''"
+               x-text="step.recovery ? 'Use the authenticator app instead' : 'Use a recovery code'"></a></p>
+            <p class="muted" x-show="error" x-text="error"></p>
+          </form>
+        </template>
+        <template x-if="step && step.kind === 'enroll'">
+          <form @submit.prevent="confirmEnrollment">
+            <p>Your role needs a second factor. Scan this with an authenticator app, or type the secret, then enter the code it shows.</p>
+            <img :src="step.setup.qr" alt="QR code of the secret" width="180" height="180">
+            <p class="muted">Secret: <code x-text="step.setup.secret"></code></p>
+            <label>Code <input x-model="code" required autocomplete="one-time-code" inputmode="numeric"></label>
+            <button type="submit" :disabled="busy">Turn it on and sign in</button>
+            <p class="muted" x-show="error" x-text="error"></p>
+          </form>
+        </template>
+      </article>
+      <article class="narrow" x-show="!step">
         <form @submit.prevent="submitAuth">
           <label>Email <input type="email" x-model="email" required autocomplete="email"></label>
           <label x-show="mode === 'signup'">Invitation token
@@ -462,6 +485,17 @@
           <button type="submit" :disabled="busy" x-text="mode === 'login' ? 'Sign in' : 'Create account'"></button>
           <p class="muted" x-show="mode === 'login'"><a href="#" @click.prevent="requestReset" :disabled="busy || !email">Forgot your password?</a></p>
           <p class="muted" x-show="accountMsg" x-text="accountMsg"></p>
+        </form>
+        <!-- Chapter 16: a link and a code by email, instead of the password. -->
+        <hr x-show="mode === 'login'">
+        <form x-show="mode === 'login' && !magicSent" @submit.prevent="requestMagicLink">
+          <p class="muted">No password at hand? We can email you a link and a code (to the address above).</p>
+          <button type="submit" class="secondary" :disabled="busy || !email">Email me a link</button>
+        </form>
+        <form x-show="mode === 'login' && magicSent" @submit.prevent="submitMagicCode">
+          <p>If that address has an account, a message is on its way (in the tutorial's stack: the <em>Mailbox</em> in the admin view). Open the link in this browser, or type its code here.</p>
+          <label>Code <input x-model="code" required autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]{6}"></label>
+          <button type="submit" class="secondary" :disabled="busy">Sign in with the code</button>
         </form>
       </article>
     </section>
@@ -475,12 +509,39 @@
         <p class="muted" x-show="accountMsg" x-text="accountMsg"></p>
         <form @submit.prevent="requestEmailChange">
           <label>Change email <input type="email" placeholder="new@address" x-model="newEmail"></label>
-          <button type="submit" class="secondary" :disabled="busy || !newEmail || !pwd.current">Send confirmation</button>
+          <button type="submit" class="secondary" :disabled="busy || !newEmail">Send confirmation</button>
         </form>
         <form @submit.prevent="changePassword">
-          <label>Current password <input type="password" x-model="pwd.current" required autocomplete="current-password"></label>
           <label>New password <input type="password" x-model="pwd.next" required minlength="12" autocomplete="new-password"></label>
           <button type="submit" class="secondary" :disabled="busy">Change password</button>
+        </form>
+        <hr>
+        <!-- Chapter 16: the second factor. -->
+        <h3>Two-step sign-in</h3>
+        <template x-if="recoveryCodes">
+          <div>
+            <p><strong>Save these recovery codes.</strong> Each works once if you lose the app; they are not shown again.</p>
+            <pre x-text="recoveryCodes.join('\n')"></pre>
+            <button type="button" class="secondary" @click="recoveryCodes = null">I saved them</button>
+          </div>
+        </template>
+        <template x-if="mfa && !recoveryCodes">
+          <div>
+            <p x-show="mfa.enabled">On<span x-show="mfa.required"> (required for your role)</span>. <span x-text="mfa.recovery_codes_left"></span> recovery codes left.</p>
+            <p x-show="!mfa.enabled">Off. A code from an authenticator app will be asked after your password.</p>
+            <button type="button" class="secondary" x-show="!mfa.enabled && !mfaSetup" @click="startMfa" :disabled="busy">Turn it on</button>
+            <button type="button" class="secondary outline" x-show="mfa.enabled && !mfa.required" @click="disableMfa" :disabled="busy">Turn it off</button>
+          </div>
+        </template>
+        <form x-show="mfaSetup" @submit.prevent="confirmMfa">
+          <template x-if="mfaSetup">
+            <div>
+              <img :src="mfaSetup.qr" alt="QR code of the secret" width="180" height="180">
+              <p class="muted">Secret: <code x-text="mfaSetup.secret"></code></p>
+            </div>
+          </template>
+          <label>Code <input x-model="code" required autocomplete="one-time-code" inputmode="numeric"></label>
+          <button type="submit" :disabled="busy">Confirm</button>
         </form>
         <hr>
         <button type="button" class="contrast outline danger-zone" @click="deleteAccount" :disabled="busy">Delete my account</button>

@@ -156,3 +156,51 @@ func TestAuthStoreKeepsHowASessionWasMade(t *testing.T) {
 		t.Errorf("session = %+v, %v", got, err)
 	}
 }
+
+func TestAuthStoreFindsAChallengeByItsLinkToken(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Date(2126, 10, 14, 12, 0, 0, 0, time.UTC)
+	c := auth.AuthChallenge{ID: "r1", Kind: auth.ChallengeMagicLink, Purpose: auth.MagicLinkPurposeLink, UserID: "u1", CodeChallenge: "pkce", RedirectTo: "https://app.example/in",
+		Email: "sealed", Locale: "es", CreatedAt: now, ExpiresAt: now.Add(10 * time.Minute)}
+	if err := s.PutChallenge(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ChallengeByToken(ctx, "th", auth.ChallengeMagicLink, now); !errors.Is(err, auth.ErrNotFound) {
+		t.Fatalf("before the token is set: %v", err)
+	}
+	if _, err := s.ChallengeByToken(ctx, "", auth.ChallengeMagicLink, now); !errors.Is(err, auth.ErrNotFound) {
+		t.Fatalf("an empty token: %v", err)
+	}
+	got, err := s.SetChallengeSecrets(ctx, "r1", "th", "ch", now)
+	if err != nil || got.TokenHash != "th" || got.CodeHash != "ch" {
+		t.Fatalf("set: %+v %v", got, err)
+	}
+	got, err = s.ChallengeByToken(ctx, "th", auth.ChallengeMagicLink, now.Add(time.Minute))
+	if err != nil || got.ID != "r1" || got.CodeChallenge != "pkce" || got.RedirectTo != "https://app.example/in" || got.Email != "sealed" || got.Locale != "es" || got.Purpose != auth.MagicLinkPurposeLink {
+		t.Fatalf("by token: %+v %v", got, err)
+	}
+	if _, err := s.ChallengeByToken(ctx, "th", auth.ChallengeReauth, now); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("another kind: %v", err)
+	}
+	if _, err := s.ChallengeByToken(ctx, "th", auth.ChallengeMagicLink, now.Add(time.Hour)); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("expired: %v", err)
+	}
+	// Setting the code again keeps the token; a retried email makes a new pair.
+	got, err = s.SetChallengeSecrets(ctx, "r1", "", "ch2", now)
+	if err != nil || got.TokenHash != "th" || got.CodeHash != "ch2" {
+		t.Errorf("code only: %+v %v", got, err)
+	}
+	// Two requests can't have the same token.
+	_ = s.PutChallenge(ctx, auth.AuthChallenge{ID: "r2", Kind: auth.ChallengeMagicLink, Purpose: auth.MagicLinkPurposeLink, CreatedAt: now, ExpiresAt: now.Add(time.Minute)})
+	if _, err := s.SetChallengeSecrets(ctx, "r2", "th", "x", now); err == nil {
+		t.Error("two requests share a token")
+	}
+	// An address with no account is the challenge's, sealed, and goes with its TTL.
+	if _, err := s.ClaimChallenge(ctx, "r1", now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ChallengeByToken(ctx, "th", auth.ChallengeMagicLink, now); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("after the claim: %v", err)
+	}
+}

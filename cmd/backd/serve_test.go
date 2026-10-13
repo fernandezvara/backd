@@ -9,10 +9,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/pquerna/otp/totp"
 	"github.com/rs/xid"
 
 	"github.com/fernandezvara/backd/internal/auth"
@@ -72,7 +74,8 @@ func TestTemplatesServeSample(t *testing.T) {
 	}
 	realm := "t" + xid.New().String()
 	env := map[string]string{"CONFIG_DIR": t.TempDir(), "MONGO_URI": uri, "LOG_LEVEL": "error", "PASSWORD_HASH_CONCURRENCY": "1",
-		"BACKD_CREDENTIALS": filepath.Join(t.TempDir(), "credentials")}
+		"BACKD_CREDENTIALS": filepath.Join(t.TempDir(), "credentials"),
+		"BACKD_SECRETS_KEY": "local-dev-secrets-key-not-a-secret-0123456789abc"}
 	getenv := func(k string) string { return env[k] }
 	t.Cleanup(func() {
 		ctx := context.Background()
@@ -126,8 +129,30 @@ func TestTemplatesServeSample(t *testing.T) {
 	defer srv.Close()
 	stdin = "dev-p4ssw0rd!\n"
 	cli("bootstrap", "--realm", realm, "--email", "ops@example.com")
-	cli("login", "--realm", realm, "--url", srv.URL, "--email", "ops@example.com")
-	stdin = ""
+	// The template requires a second factor of its admin role: the first login sets it up, with
+	// the code of the secret it shows.
+	var loginOut, loginErr lockedBuffer
+	secretRe := regexp.MustCompile(`secret:\s+([A-Z2-7]+)`)
+	var secret string
+	enrol := &script{steps: []func() string{
+		func() string { return "dev-p4ssw0rd!\n" },
+		func() string {
+			m := secretRe.FindStringSubmatch(loginErr.String())
+			if m == nil {
+				t.Errorf("the login showed no secret: %q", loginErr.String())
+				return "000000\n"
+			}
+			secret = m[1]
+			c, _ := totp.GenerateCode(secret, time.Now())
+			return c + "\n"
+		},
+	}}
+	if code := run([]string{"login", "--realm", realm, "--url", srv.URL, "--email", "ops@example.com"}, getenv, enrol, &loginOut, &loginErr); code != 0 {
+		t.Fatalf("login: exit %d: %s%s", code, loginOut.String(), loginErr.String())
+	}
+	// A key is made by a person who proves it is them again: the code of the next time step.
+	next, _ := totp.GenerateCode(secret, time.Now().Add(30*time.Second))
+	stdin = next + "\n"
 	key := strings.TrimSpace(cli("apikey", "create", "--realm", realm, "--name", "test"))
 	do := func(method, body, auth string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, "/v1/"+realm+"/blog/posts", strings.NewReader(body))

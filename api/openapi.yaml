@@ -414,7 +414,7 @@ paths:
       tags: [auth]
       summary: Ask to change the email address
       description: |
-        Needs the session **and** the current password. The change applies only
+        Needs the session and a fresh [re-authentication](#tag/auth) (`X-Backd-Reauth`). The change applies only
         when the new address confirms it with the link sent there; the answer is
         `202` whether or not the address is free, so it can't be used to find
         out who is registered. Only in a realm with `account.allow_email_change`
@@ -422,6 +422,7 @@ paths:
         reached.
       operationId: requestEmailChange
       security: [{ session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
       requestBody:
         required: true
         content:
@@ -429,10 +430,9 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [new_email, password]
+              required: [new_email]
               properties:
                 new_email: { type: string }
-                password: { type: string, description: The current password. }
                 redirect_to: { type: string, description: "Within the realm's `email.allowed_redirects`." }
       responses:
         "202":
@@ -708,26 +708,16 @@ paths:
       tags: [auth]
       summary: Delete the account (deactivates it)
       description: |
-        Needs the current password. The account is **deactivated**: it is
+        Needs a fresh [re-authentication](#tag/auth) (`X-Backd-Reauth`), and no body. The account is **deactivated**: it is
         disabled and every session ends, and all data is kept (an administrator
         can reactivate it). Deactivating is not erasing: erasing a user's data is an
         administrator's action (`DELETE /_admin/users/{id}`).
       operationId: deleteMe
       security: [{ session: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [password]
-              properties:
-                password: { type: string }
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
       responses:
         "204": { description: Account deactivated. }
-        "400": { $ref: "#/components/responses/Error" }
-        "401": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_auth/password:
@@ -735,9 +725,12 @@ paths:
     post:
       tags: [auth]
       summary: Change the password
-      description: The current session stays valid; every other session ends.
+      description: >-
+        Needs a fresh [re-authentication](#tag/auth) (`X-Backd-Reauth`). The current session stays valid;
+        every other session ends.
       operationId: changePassword
       security: [{ session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
       requestBody:
         required: true
         content:
@@ -745,14 +738,33 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [current_password, new_password]
+              required: [new_password]
               properties:
-                current_password: { type: string }
                 new_password: { type: string, minLength: 8, maxLength: 128 }
       responses:
         "204": { description: Password changed. }
         "400": { $ref: "#/components/responses/Error" }
-        "401": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        default: { $ref: "#/components/responses/Error" }
+
+    delete:
+      tags: [auth]
+      summary: Remove the password
+      description: |
+        The user stops having a password and signs in with a link or a provider only. Needs a fresh
+        [re-authentication](#tag/auth) (`X-Backd-Reauth`). Refused with `409 last_sign_in_method`
+        when nothing else would be left: a way in is a provider, or a verified address in a realm
+        with [magic links](#tag/auth). Every other session of the user ends, and they are told by
+        email. `404` when the account has no password; set one again with `POST /_auth/password`
+        or a password reset.
+      operationId: removePassword
+      security: [{ session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
+      responses:
+        "204": { description: Password removed. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_auth/sessions:
@@ -1101,6 +1113,402 @@ paths:
         "429": { $ref: "#/components/responses/TooManyRequests" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_auth/mfa:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [auth]
+      summary: The signed-in user's second-factor state
+      operationId: getMFA
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: >-
+            `enabled` says the user has a second factor; `available` that the realm lets users turn
+            one on; `required` that a role of the user requires one.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [available, enabled, methods, recovery_codes_left, required]
+                properties:
+                  available: { type: boolean, description: "The realm lets users turn a second factor on and the instance has a secrets key." }
+                  enabled: { type: boolean }
+                  methods: { type: array, items: { type: string, enum: [totp, recovery_code] } }
+                  recovery_codes_left: { type: integer }
+                  required: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/mfa/totp/setup:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Start setting up an authenticator app
+      description: |
+        Makes a TOTP secret (SHA-1, 6 digits, 30 seconds: what every authenticator app supports) and
+        holds it for 15 minutes until `POST /_auth/mfa/totp/confirm` proves the app received it. A new
+        setup replaces a pending one. The secret is shown here and in the QR code only.
+
+        It acts on the session of the request or, in a sign-in that answered
+        `mfa_enrollment_required`, on that `challenge` (no session yet).
+      operationId: setupTOTP
+      security: [{ session: [] }, {}]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                challenge: { type: string, description: "The challenge of a sign-in that must set a second factor up." }
+      responses:
+        "200":
+          description: The secret, as text, as an `otpauth://` URI and as a QR image.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [setup_id, secret, otpauth_uri, qr, expires_at]
+                properties:
+                  setup_id: { type: string }
+                  secret: { type: string, description: "Base32, to type into an app." }
+                  otpauth_uri: { type: string }
+                  qr: { type: string, description: "A PNG as a `data:image/png;base64,…` URI of the `otpauth_uri`." }
+                  expires_at: { $ref: "#/components/schemas/Timestamp" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403":
+          description: "`mfa_disabled`: the realm doesn't let users turn MFA on (`mfa.enabled: false`)."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: "`mfa_already_enabled`."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: "`mfa_unavailable`: the instance has no secrets key (`BACKD_SECRETS_KEY`) to encrypt the secret with."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/mfa/totp/confirm:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Turn TOTP on with its first code
+      description: |
+        Checks the first code of the app against the pending secret, turns TOTP on and answers with
+        the 10 recovery codes, **once**: they are kept only as keyed hashes. The user's other sessions
+        end, so a session from before can't pass a rule that requires `user.mfa`, and a
+        `security-notice` email says what happened. A wrong code is `400 invalid_code`; five end the setup.
+
+        With the `challenge` of a sign-in that answered `mfa_enrollment_required` it also ends that
+        sign-in: the answer then carries the session too (its `methods` include `totp`).
+      operationId: confirmTOTP
+      security: [{ session: [] }, {}]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [setup_id, code]
+              properties:
+                setup_id: { type: string }
+                code: { type: string }
+                challenge: { type: string, description: "The challenge of a sign-in that must set a second factor up." }
+                cookie: { type: boolean, description: "With a `challenge`: as in `POST /_auth/login`." }
+      responses:
+        "200":
+          description: TOTP is on, and, with a `challenge`, the session of the sign-in.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [recovery_codes]
+                properties:
+                  recovery_codes: { type: array, items: { type: string, description: "`xxxxx-xxxxx`" } }
+                  token: { type: string, pattern: "^bds_" }
+                  token_type: { const: Bearer }
+                  session_id: { type: string }
+                  expires_at: { $ref: "#/components/schemas/Timestamp" }
+                  user: { $ref: "#/components/schemas/User" }
+                  new_user: { type: boolean, description: "With a challenge from a provider sign-in: whether it made the user." }
+                  profile: { type: object, description: "With `new_user`: what the provider said of the person." }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/mfa/totp:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    delete:
+      tags: [auth]
+      summary: Turn the second factor off
+      description: |
+        Removes the user's TOTP secret and recovery codes. Refused with `403 mfa_required_by_role`
+        while a role of the user requires MFA. A `security-notice` email says what happened.
+      operationId: disableTOTP
+      security: [{ session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
+      responses:
+        "204": { description: MFA is off. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/mfa/recovery-codes:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Replace the recovery codes
+      description: >-
+        Replaces every recovery code with 10 new ones, shown once; the old ones stop working.
+        `409 mfa_not_enabled` for a user without a second factor.
+      operationId: regenerateRecoveryCodes
+      security: [{ session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
+      responses:
+        "200":
+          description: The new codes.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [recovery_codes]
+                properties:
+                  recovery_codes: { type: array, items: { type: string } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/reauth:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Prove who you are again, before a sensitive action
+      description: |
+        Gives a token for the `X-Backd-Reauth` header of sensitive requests: changing or removing
+        the password or the address, deleting the account, unlinking a sign-in method, turning the
+        second factor on or off or replacing its recovery codes, and creating an API key as an
+        administrator signed in with a session.
+
+        The proof is the strongest the user has (`reauth_methods` of `GET /_auth/me`): `totp` or
+        `recovery_code` with a second factor (a password alone is not enough then), `password`
+        without one, `email_code` (a code sent by `POST /_auth/reauth/email-code`) for a user with
+        neither. The token is bound to the session, stored only as a hash, and works for the
+        realm's `reauth.ttl` and any number of actions in it. Wrong proofs count against the same
+        limits as signing in.
+      operationId: reauth
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [method]
+              properties:
+                method: { type: string, enum: [totp, recovery_code, password, email_code] }
+                code: { type: string, description: "For `totp`, `recovery_code` and `email_code`." }
+                password: { type: string, description: "For `password`." }
+      responses:
+        "200":
+          description: The token.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [reauth_token, expires_at]
+                properties:
+                  reauth_token: { type: string }
+                  expires_at: { $ref: "#/components/schemas/Timestamp" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/reauth/email-code:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Email a code to prove who you are
+      description: |
+        For a user with no password and no second factor: a 6-digit code is emailed (the
+        `reauth-code` message), good for 10 minutes and 5 attempts, to give to `POST /_auth/reauth`
+        with `method: email_code`. A new request replaces the earlier code. `400` for a user whose
+        proof is another one; `429` when an email limit is reached.
+      operationId: requestReauthCode
+      security: [{ session: [] }]
+      responses:
+        "202":
+          description: Accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status: { type: string, enum: [accepted] }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/magic-link:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Ask for a link and a code to sign in with, or use the link
+      description: |
+        With a JSON body: asks for an email with **a link** (opened on the same device, which ends at
+        `redirect_to` with a one-time login code in `backd_code`, to redeem at `POST /_auth/token`)
+        and **a 6-digit code** (typed in the app that asked, with `POST /_auth/magic-link/verify`),
+        both good for 10 minutes and once. Redeeming one uses up the other. The answer is the same
+        `202` for every address: a registered one gets the message, one with no account gets a
+        `no-account` message (or, with `magic_link.signup` and the realm's sign-up open, the same
+        message: the account is made, verified, when the link or code is used), one that can't sign in
+        gets nothing. Email limits that are reached are not told either. `redirect_to` is within the
+        realm's `sign_in.allowed_redirects` (or `email.allowed_redirects`); without it the link goes to
+        `sign_in.app_url`, and a realm with neither has the code only.
+
+        With a form body (`application/x-www-form-urlencoded` with `token`): what the page's button
+        posts: it signs in and answers `303` to the app with `backd_code` (or `backd_error`:
+        `signin_refused`, `signup_closed`). A link with nowhere to go answers a page saying to type
+        the code, and isn't used up.
+      operationId: magicLink
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email, code_challenge]
+              properties:
+                email: { type: string }
+                code_challenge: { type: string, minLength: 43, maxLength: 43, description: "The S256 PKCE challenge of a verifier only the app holds." }
+                redirect_to: { type: string }
+                locale: { type: string }
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "202":
+          description: A request was made; the same for every address.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [request_id]
+                properties:
+                  request_id: { type: string, description: "Kept by the app, with its verifier, to redeem the code." }
+        "200": { $ref: "#/components/responses/HostedPage" }
+        "303": { $ref: "#/components/responses/BackToApp" }
+        "400":
+          description: >-
+            An invalid body or `redirect_to` (JSON, `validation_error`, `invalid_redirect`), or, for the
+            page's form, a link that is expired, used or unknown (the realm's `invalid-token` page).
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+            text/html:
+              schema: { type: string }
+        "403":
+          description: "`magic_link_disabled`: the realm doesn't have magic links."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      tags: [auth]
+      summary: The page a sign-in link opens
+      description: |
+        The link in the `magic-link` message. Shows a page with a button; it never uses the link up, so
+        mail scanners can't spoil it. The page is the realm's `pages/magic-link/<locale>.html` (the
+        built-in one without it). A link that is expired, used or unknown shows the realm's
+        `invalid-token` page (`400`).
+      operationId: magicLinkPage
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema: { type: string }
+        - name: Accept-Language
+          in: header
+          schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/HostedPage" }
+        "400": { $ref: "#/components/responses/HostedPage" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/magic-link/verify:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Sign in with the code from the email
+      description: |
+        The 6-digit code, typed in the app that asked, with the `request_id` it got and the
+        `code_verifier` of its PKCE challenge: the code works only in the app that made the request.
+        The answer is the first factor's own: a session (with `new_user`, and the user's `profile`
+        absent), or the [MFA challenge](#tag/auth) when the user has a second factor. Five wrong tries
+        end the request (`400 invalid_code`, then `invalid_magic_link`); an unknown, used or expired
+        request is `400 invalid_magic_link`.
+      operationId: verifyMagicLinkCode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [request_id, code, code_verifier]
+              properties:
+                request_id: { type: string }
+                code: { type: string }
+                code_verifier: { type: string }
+                cookie: { type: boolean, description: "As in `POST /_auth/login`." }
+      responses:
+        "200": { $ref: "#/components/responses/SignInResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_auth/identities/{provider}:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -1112,11 +1520,13 @@ paths:
       tags: [auth]
       summary: Remove one of the user's sign-in methods
       description: |
-        Unlinks the user's sign-in method of that provider (`password` included). The last
-        one can't be removed (`409 last_sign_in_method`), so a user can't lock themselves
-        out. Audited as `identity.unlinked`.
+        Unlinks the user's sign-in method of that provider (`password` included). Needs a fresh
+        [re-authentication](#tag/auth) (`X-Backd-Reauth`). The last one can't be removed
+        (`409 last_sign_in_method`), so a user can't lock themselves out. Audited as
+        `identity.unlinked`.
       operationId: unlinkIdentity
       security: [{ session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
       responses:
         "204": { description: Sign-in method removed. }
         "401": { $ref: "#/components/responses/Unauthenticated" }
@@ -1454,6 +1864,109 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/users/{id}/mfa:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    get:
+      tags: [admin]
+      summary: A user's second-factor state
+      description: |
+        Whether the user has a second factor, which, and how many recovery codes are left, as
+        `GET /_auth/mfa` shows it to the user. Never a secret or a code. Needs the `users` area.
+      operationId: adminUserMFA
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The state.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [available, enabled, methods, recovery_codes_left, required]
+                properties:
+                  available: { type: boolean }
+                  enabled: { type: boolean }
+                  methods: { type: array, items: { type: string, enum: [totp, recovery_code] } }
+                  recovery_codes_left: { type: integer }
+                  required: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/users/{id}/mfa/reset:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    post:
+      tags: [admin]
+      summary: Remove a user's second factor
+      description: |
+        For a user who lost both their authenticator app and their recovery codes: removes the
+        TOTP secret and the recovery codes and **ends every session** of the user, who is told by
+        email (`mfa-reset`). A user in a role that requires MFA sets one up again at their next
+        sign-in. Audited as `user.mfa_reset` with the administrator as the actor. Needs the `users`
+        area, and an administrator can't reset their own second factor (`403
+        self_reset_not_allowed`): ask another administrator, or an operator with
+        `backd user mfa-reset --local`. There is no reset by email.
+      operationId: adminResetUserMFA
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "204": { description: The second factor was removed. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "`mfa_not_enabled`: the user has no second factor."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/mfa:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [admin]
+      summary: Who must set a second factor up
+      description: |
+        The roles the realm requires MFA for (`mfa.required_roles`) and the users of those roles
+        who have none yet, up to 200 (`total_without_mfa` counts them all); disabled and erased
+        users are not listed. Their next sign-in asks them to set one up. Needs the `users` area.
+      operationId: adminMFAOverview
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The overview.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [enabled, required_all, required_roles, users_without_mfa, total_without_mfa]
+                properties:
+                  enabled: { type: boolean, description: "`false` when the realm lets no user turn a second factor on." }
+                  required_all: { type: boolean }
+                  required_roles: { type: array, items: { type: string } }
+                  users_without_mfa:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [id, email, roles]
+                      properties:
+                        id: { type: string }
+                        email: { type: string }
+                        roles: { type: array, items: { type: string } }
+                  total_without_mfa: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/users/{id}/identities/{provider}:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -1570,8 +2083,13 @@ paths:
     post:
       tags: [admin]
       summary: Create an API key
+      description: >-
+        An administrator signed in with a session (not an admin key) needs a fresh
+        [re-authentication](#tag/auth) (`X-Backd-Reauth`): a key outlives the session and is not
+        asked for a second factor. They also get a `security-notice` email that a key was created.
       operationId: adminCreateAPIKey
       security: [{ apiKey: [] }, { session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
       requestBody:
         required: true
         content:
@@ -4280,6 +4798,15 @@ components:
       in: path
       required: true
       schema: { type: string }
+    reauth:
+      name: X-Backd-Reauth
+      in: header
+      required: false
+      description: >-
+        The token `POST /_auth/reauth` gave: a fresh proof of identity, bound to the session and
+        good for the realm's `reauth.ttl` (5 minutes by default), for as many requests as that
+        covers. Without a good one the action answers `401 reauth_required`.
+      schema: { type: string }
     database:
       name: database
       in: path
@@ -4553,7 +5080,7 @@ components:
     Me:
       type: object
       additionalProperties: false
-      required: [id, email, email_verified, roles, locale, created_at, identities]
+      required: [id, email, email_verified, roles, locale, created_at, identities, reauth_methods, sign_in_methods]
       properties:
         id: { type: string }
         email: { type: string }
@@ -4561,6 +5088,21 @@ components:
         roles: { type: array, items: { type: string } }
         locale: { type: string, description: "The user's language: one the realm lists (`email.locales`; English only without email). Used for the emails they get." }
         created_at: { $ref: "#/components/schemas/Timestamp" }
+        sign_in_methods:
+          type: array
+          description: >-
+            The ways the user can sign in now, for an account settings page: `password`,
+            `magic_link` (the realm has them and the address is verified) and the providers
+            they use.
+          items: { type: string }
+        reauth_methods:
+          type: array
+          description: >-
+            The proofs `POST /_auth/reauth` takes from this user: `totp` and `recovery_code` with a
+            second factor, else `password`, else `email_code`. Empty when the user has no way to give
+            one (no password, no second factor, a realm that sends no email): sensitive actions then
+            don't ask.
+          items: { type: string, enum: [totp, recovery_code, password, email_code] }
         identities:
           type: array
           description: The user's sign-in methods, oldest first.

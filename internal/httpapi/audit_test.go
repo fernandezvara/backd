@@ -63,10 +63,13 @@ roles:
 	}
 
 	secrets := []string{adaPassword}
-	call := func(ip, method, path, body, token string, want int) map[string]any {
+	call := func(ip, method, path, body, token string, want int, header ...string) map[string]any {
 		t.Helper()
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
 		req.RemoteAddr = ip + ":40000"
+		for i := 0; i+1 < len(header); i += 2 {
+			req.Header.Set(header[i], header[i+1])
+		}
 		if body != "" {
 			req.Header.Set("Content-Type", "application/json")
 		}
@@ -90,7 +93,9 @@ roles:
 	adaID := login["user"].(map[string]any)["id"].(string)
 	secrets = append(secrets, ada, auth.HashToken(ada))
 
-	key := call(in, "POST", base+"_admin/apikeys", `{"name": "tooling", "role": "admin", "expires_in": "1d", "networks": ["192.0.2.0/24"]}`, ada, 201)["key"].(string)
+	proof := call(in, "POST", base+"_auth/reauth", `{"method": "password", "password": "`+adaPassword+`"}`, ada, 200)["reauth_token"].(string)
+	secrets = append(secrets, proof, auth.HashToken(proof))
+	key := call(in, "POST", base+"_admin/apikeys", `{"name": "tooling", "role": "admin", "expires_in": "1d", "networks": ["192.0.2.0/24"]}`, ada, 201, reauthHeader, proof)["key"].(string)
 	secrets = append(secrets, key, auth.HashToken(key))
 
 	const bobPassword = "bob's first password"
@@ -113,8 +118,10 @@ roles:
 	const cyPassword, cyPassword2 = "cy's own password", "cy's changed password"
 	cyUp := call(in, "POST", base+"_auth/signup", `{"email": "cy@example.com", "password": "`+cyPassword+`", "invitation": "`+invToken+`"}`, "", 201)
 	cy, cyID := cyUp["token"].(string), cyUp["user"].(map[string]any)["id"].(string)
-	call(in, "POST", base+"_auth/password", `{"current_password": "`+cyPassword+`", "new_password": "`+cyPassword2+`"}`, cy, 204)
-	call(in, "DELETE", base+"_auth/me", `{"password": "`+cyPassword2+`"}`, cy, 204)
+	cyProof := call(in, "POST", base+"_auth/reauth", `{"method": "password", "password": "`+cyPassword+`"}`, cy, 200)["reauth_token"].(string)
+	secrets = append(secrets, cyProof, auth.HashToken(cyProof))
+	call(in, "POST", base+"_auth/password", `{"new_password": "`+cyPassword2+`"}`, cy, 204, reauthHeader, cyProof)
+	call(in, "DELETE", base+"_auth/me", "", cy, 204, reauthHeader, cyProof)
 	secrets = append(secrets, cyPassword, cyPassword2, cy)
 
 	call(in, "DELETE", u, "", ada, 202)

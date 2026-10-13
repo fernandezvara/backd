@@ -373,18 +373,25 @@ func (s *Users) RevokeSession(ctx context.Context, p Principal, id string) error
 	return s.endSession(ctx, p.User.ID, id, "revoked")
 }
 
-// ChangePassword replaces the caller's password after checking the
-// current one, and ends all of their other sessions.
-func (s *Users) ChangePassword(ctx context.Context, p Principal, current, next string) error {
-	if err := s.checkPassword(ctx, p.User, current); err != nil {
-		return err
-	}
+// ChangePassword replaces the caller's password and ends all of their other sessions.
+// The caller has checked that the user proved who they are just now (CheckReauth).
+func (s *Users) ChangePassword(ctx context.Context, p Principal, next string) error {
 	hash, err := s.hash(ctx, next)
 	if err != nil {
 		return err
 	}
+	_, had := s.Store.IdentityOf(ctx, p.User.ID, ProviderPassword)
 	if err := s.putPassword(ctx, p.User.ID, hash, s.now()); err != nil {
 		return err
+	}
+	if errors.Is(had, ErrNotFound) {
+		// An account that signed in without a password sets its first one.
+		s.Audit(ctx, AuditPasswordSet, userTarget(p.User.ID), nil)
+		if err := s.endOtherSessions(ctx, p.User.ID, p.Session.ID, "password_set"); err != nil {
+			return err
+		}
+		s.securityNotice(ctx, p.User, "password-set", 0)
+		return nil
 	}
 	s.Audit(ctx, AuditPasswordChange, userTarget(p.User.ID), nil)
 	if err := s.endOtherSessions(ctx, p.User.ID, p.Session.ID, "password_changed"); err != nil {

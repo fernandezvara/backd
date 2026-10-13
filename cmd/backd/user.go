@@ -495,3 +495,118 @@ func userUnlinkIdentity(c *userCtx) error {
 	fmt.Fprintf(c.uio.stdout, "%s can no longer sign in with %s\n", u.Email, provider)
 	return nil
 }
+
+// userMFAStatus shows one user's second factor, or who must still set one up.
+func userMFAStatus(c *userCtx) error {
+	c.email = str(c.cmd, "email")
+	if c.email != "" {
+		u, err := c.find()
+		if err != nil {
+			return err
+		}
+		var st struct {
+			Enabled           bool `json:"enabled"`
+			Available         bool `json:"available"`
+			Required          bool `json:"required"`
+			RecoveryCodesLeft int  `json:"recovery_codes_left"`
+		}
+		if err := c.t.call("GET", "_admin/users/"+url.PathEscape(u.ID)+"/mfa", nil, nil, &st); err != nil {
+			return err
+		}
+		fmt.Fprintf(c.uio.stdout, "%s: second factor %s; required by role: %t; recovery codes left: %d\n", u.Email, onOff(st.Enabled), st.Required, st.RecoveryCodesLeft)
+		return nil
+	}
+	var out struct {
+		Enabled      bool     `json:"enabled"`
+		RequiredAll  bool     `json:"required_all"`
+		RequiredRole []string `json:"required_roles"`
+		Users        []struct {
+			Email string   `json:"email"`
+			Roles []string `json:"roles"`
+		} `json:"users_without_mfa"`
+		Total int `json:"total_without_mfa"`
+	}
+	if err := c.t.call("GET", "_admin/mfa", nil, nil, &out); err != nil {
+		return err
+	}
+	switch {
+	case out.RequiredAll:
+		fmt.Fprintln(c.uio.stdout, "MFA is required for every user")
+	case len(out.RequiredRole) > 0:
+		fmt.Fprintf(c.uio.stdout, "MFA is required for the roles: %s\n", strings.Join(out.RequiredRole, ", "))
+	default:
+		fmt.Fprintln(c.uio.stdout, "MFA is required for no role (mfa.required_roles in realm.yaml)")
+		return nil
+	}
+	if out.Total == 0 {
+		fmt.Fprintln(c.uio.stdout, "every user who must use it has set it up")
+		return nil
+	}
+	fmt.Fprintf(c.uio.stdout, "%d user(s) have none yet and will be asked at their next sign-in:\n", out.Total)
+	for _, u := range out.Users {
+		fmt.Fprintf(c.uio.stdout, "  %s (%s)\n", u.Email, strings.Join(u.Roles, ", "))
+	}
+	if out.Total > len(out.Users) {
+		fmt.Fprintf(c.uio.stdout, "  … and %d more\n", out.Total-len(out.Users))
+	}
+	return nil
+}
+
+func onOff(b bool) string {
+	if b {
+		return "on"
+	}
+	return "off"
+}
+
+// userMFAReset removes a user's second factor through the admin API.
+func userMFAReset(c *userCtx) error {
+	if !flag(c.cmd, "yes") {
+		return errors.New("resetting a second factor ends all of the user's sessions and can't be undone: add --yes to confirm")
+	}
+	u, err := c.find()
+	if err != nil {
+		return err
+	}
+	if err := c.t.call("POST", "_admin/users/"+url.PathEscape(u.ID)+"/mfa/reset", nil, nil, nil); err != nil {
+		return err
+	}
+	fmt.Fprintf(c.uio.stdout, "second factor of %s removed; their sessions ended\n", u.Email)
+	return nil
+}
+
+// userMFAResetLocal is the break-glass form: it acts on the database directly, like
+// `backd bootstrap`, so an operator can recover the only administrator of a realm.
+func userMFAResetLocal(c *kli.CommandContext) error {
+	if !flag(c, "yes") {
+		return errors.New("resetting a second factor ends all of the user's sessions and can't be undone: add --yes to confirm")
+	}
+	ctx := context.Background()
+	uio := ioOf(c)
+	a, err := setup(ctx, c.Getenv, uio.stderr)
+	if err != nil {
+		return err
+	}
+	defer a.close()
+	users, err := a.users(ctx, str(c, "realm"))
+	if err != nil {
+		return err
+	}
+	u, err := users.Find(ctx, str(c, "email"))
+	if err != nil {
+		return fmt.Errorf("user not found: %s", str(c, "email"))
+	}
+	ctx = auth.WithAuditSource(ctx, func() auth.AuditSource { return auth.AuditSource{Actor: auth.ActorInstance} })
+	if err := users.ResetMFA(ctx, u.ID, ""); err != nil {
+		return mfaResetError(u.Email, err)
+	}
+	fmt.Fprintf(uio.stdout, "second factor of %s removed; their sessions ended (audited as %s)\n", u.Email, auth.ActorInstance)
+	return nil
+}
+
+func mfaResetError(email string, err error) error {
+	if errors.Is(err, auth.ErrMFANotEnabled) {
+		return fmt.Errorf("%s has no second factor", email)
+	}
+	return err
+}

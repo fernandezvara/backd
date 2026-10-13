@@ -81,6 +81,8 @@ All request bodies are JSON objects sent with `Content-Type: application/json`. 
 |---|---|---|---|
 | `POST /_auth/signup` | no | `{"email", "password", "invitation"?, "locale"?, "redirect_to"?}` | `201` with a session, or `202` without one when the realm [requires a verified email](#email-verification) |
 | `POST /_auth/login` | no | `{"email", "password"}` | `200` with a session, or with a [challenge](../mfa/) when the user has a second factor |
+| `POST /_auth/magic-link` | no | `{"email", "code_challenge", "redirect_to"?}` | `202 {"request_id"}`, the same for every address: a [link and a code](../magic-links/) by email |
+| `POST /_auth/magic-link/verify` | no | `{"request_id", "code", "code_verifier"}` | `200` with a session (or a [challenge](../mfa/)): the code typed in the app that asked |
 | `POST /_auth/mfa/verify` | no | `{"challenge", "method", "code"}` | `200` with the session; the [second step](../mfa/) of a sign-in |
 | `POST /_auth/verify-email` | no | `{"token"}` | `204`; [verifies the address](#email-verification) |
 | `POST /_auth/verify-email/resend` | no | `{"email", "redirect_to"?}` | `202`, whatever the account |
@@ -89,13 +91,16 @@ All request bodies are JSON objects sent with `Content-Type: application/json`. 
 | `POST /_auth/logout` | yes | none | `204`; ends this session |
 | `POST /_auth/logout-all` | yes | none | `204`; ends all of the user's sessions, including this one |
 | `GET /_auth/me` | yes | none | `200` with the user and their [sign-in methods](#sign-in-methods) |
-| `DELETE /_auth/identities/{provider}` | yes | none | `204`; removes a [sign-in method](#sign-in-methods), never the last |
+| `DELETE /_auth/identities/{provider}` | yes + [proof](../reauth/) | none | `204`; removes a [sign-in method](#sign-in-methods), never the last |
 | `PATCH /_auth/me` | yes | `{"locale"?}` | `200` with the user; changes the user's [language](#language) |
-| `DELETE /_auth/me` | yes | `{"password"}` | `204`; **deactivates** the account (see [Deleting and erasing users](../erasure/)) |
-| `POST /_auth/email` | yes | `{"new_email", "password", "redirect_to"?}` | `202`; asks to [change the address](#changing-the-email-address), only in realms with `account.allow_email_change` |
+| `DELETE /_auth/me` | yes + [proof](../reauth/) | none | `204`; **deactivates** the account (see [Deleting and erasing users](../erasure/)) |
+| `POST /_auth/email` | yes + [proof](../reauth/) | `{"new_email", "redirect_to"?}` | `202`; asks to [change the address](#changing-the-email-address), only in realms with `account.allow_email_change` |
 | `POST /_auth/confirm-email-change`, `POST /_auth/revert-email-change` | no | `{"token"}` | `204`; the links of an [email change](#changing-the-email-address) |
 | `POST /_auth/accept-invitation` | no | `{"token", "password", "locale"?}` | `204`; [accepts an emailed invitation](#accepting-an-invitation) |
-| `POST /_auth/password` | yes | `{"current_password", "new_password"}` | `204`; ends all other sessions |
+| `POST /_auth/reauth` | yes | `{"method", "code"? or "password"?}` | `200` with a `reauth_token`: a fresh [proof](../reauth/) for the sensitive actions |
+| `POST /_auth/reauth/email-code` | yes | none | `202`; emails the code that proves a user with no password and no second factor |
+| `POST /_auth/password` | yes + [proof](../reauth/) | `{"new_password"}` | `204`; ends all other sessions |
+| `DELETE /_auth/password` | yes + [proof](../reauth/) | none | `204`; removes the password of an account that has [another way in](../magic-links/#accounts-without-a-password) (`409 last_sign_in_method` otherwise) |
 | `GET /_auth/sessions` | yes | none | `200` with the user's sessions |
 | `DELETE /_auth/sessions/{id}` | yes | none | `204`; ends one of the user's sessions |
 
@@ -162,7 +167,7 @@ The throttle can be tuned but not turned off, and there is still no lockout: wha
 - Attempts refused with `429` don't count, so waiting as told is always enough.
 - A successful login clears the email's counter, but not the address's.
 - Unregistered emails are counted like registered ones, so the answers don't reveal which emails exist.
-- Wrong current passwords in `POST /_auth/password` and `DELETE /_auth/me` count against the account too, so a stolen session can't be used to guess the password.
+- Wrong passwords in `POST /_auth/reauth` count against the account too, so a stolen session can't be used to guess the password.
 - Counters are stored in the realm's system database, so all `backd` instances share them. They are deleted automatically one `window` (15 minutes by default) after the last failure.
 - Password checks for one account run **one at a time across all instances**: each takes a short lock kept in the system database (which expires by itself after 30 seconds if its instance dies). Parallel attempts can't all pass before a failure is counted, so many instances allow no more guesses than one. If the lock stays busy for 5 seconds the attempt gets `429` with `Retry-After: 1`.
 
@@ -191,11 +196,11 @@ Every user has a `locale`, the language of the emails they receive. A realm list
 - **To change it**, `PATCH /_auth/me` with `{"locale": "es"}`: the value must be a listed language (case is ignored). Anything else answers `400 invalid_locale` with the allowed languages in `details`: an explicit change is never mapped silently.
 - Users who signed up before languages existed use the realm's default.
 
-`DELETE /_auth/me` with `{"password": "…"}` **deactivates** the account: it is disabled and every session ends, and all data is kept. A wrong password returns `401 invalid_credentials`. Deactivating is not erasing: erasing a user's data is an administrator's action (see [Deleting and erasing users](../erasure/)), and until then the account's email stays registered.
+`DELETE /_auth/me` **deactivates** the account (it needs a fresh [proof of identity](../reauth/) in `X-Backd-Reauth`, and no body): it is disabled and every session ends, and all data is kept. Deactivating is not erasing: erasing a user's data is an administrator's action (see [Deleting and erasing users](../erasure/)), and until then the account's email stays registered.
 
 ### Change password
 
-`POST /_auth/password` with `{"current_password": "…", "new_password": "…"}` replaces the password. The current session stays valid and every other session ends. A wrong current password returns `401 invalid_credentials`; a new password that breaks the policy returns `400 validation_error` naming `new_password`.
+`POST /_auth/password` with `{"new_password": "…"}` replaces the password. It needs a fresh [proof of identity](../reauth/) (`X-Backd-Reauth`), which is where the current password is asked for. The current session stays valid and every other session ends. A password that breaks the policy returns `400 validation_error` naming `new_password`.
 
 In a realm with [`email`](../../functions/email/), the owner gets a `password-changed` email after this, after a [reset](#password-reset) and after an administrator sets a password ([`backd user set-password`](../users/)), so a change they didn't make doesn't go unnoticed.
 

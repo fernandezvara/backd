@@ -151,6 +151,13 @@ type EmailJob struct {
 	// InvitationID is the invitation an invitation email is for (there is no
 	// user yet): the worker takes the address from it.
 	InvitationID string
+	// Event and CodesLeft are what a security-notice says: which change it reports and, for
+	// a used recovery code, how many remain. Nothing secret.
+	Event     string
+	CodesLeft int
+	// ChallengeID is the pending step the email is for (a re-authentication code): the
+	// worker makes the secret at send time and keeps only its hash there.
+	ChallengeID string
 	// Custom is set on an email a function asked for with ctx.email.send. Unlike
 	// the account emails it stores what the function gave: the recipients'
 	// addresses and the data for the template, for as long as jobs are kept.

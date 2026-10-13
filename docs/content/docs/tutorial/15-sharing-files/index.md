@@ -84,4 +84,6 @@ Two operations to know before this has real data:
 - *Admin → Storage* shows the bytes and files in use, and `backd storage usage --realm shelf` prints the same.
 - `deno test` passes for `download` and `share-open`.
 
-That is the whole of Shelf: a team asset library with members, rules, invitations, functions, email, webhooks, files and an operator's console, all of it from configuration and a few small functions. The last stop is [Running it](../12-running/) if you haven't been through it, and then the [documentation](../../) for everything these chapters only touched.
+Next: chapter 16 — [a second factor and magic links](../16-second-factor/).
+
+That is the whole of Shelf: a team asset library with members, rules, invitations, functions, email, webhooks, files and an operator's console, all of it from configuration and a few small functions. Chapter 16 is the last addition; the last stop is [Running it](../12-running/) if you haven't been through it, and then the [documentation](../../) for everything these chapters only touched.

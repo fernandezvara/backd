@@ -10,6 +10,8 @@ import (
 
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/hotp"
+
+	"github.com/fernandezvara/backd/internal/email"
 )
 
 // Multi-factor authentication: after a first factor (a password, a provider's ID token,
@@ -28,6 +30,15 @@ const (
 	ChallengeMFA = "mfa"
 	// ChallengeEnroll waits for a user in a required role to set a second factor up.
 	ChallengeEnroll = "enroll"
+	// ChallengeTOTPSetup is a TOTP secret waiting for its first code (the user is
+	// setting authenticator app up).
+	ChallengeTOTPSetup = "totp_setup"
+	// ChallengeReauth is the token a re-authentication gave, bound to a session;
+	// ChallengeReauthCode a code emailed to a user with no other proof.
+	ChallengeReauth     = "reauth"
+	ChallengeReauthCode = "reauth_code"
+	// ChallengeMagicLink is a request for a sign-in link and code (see magiclink.go).
+	ChallengeMagicLink = "magic_link"
 )
 
 // Challenge limits.
@@ -82,11 +93,28 @@ type AuthChallenge struct {
 	Factor string
 	// NewUser and Profile are what a provider sign-in hands over with the session: kept
 	// until the second step ends it.
-	NewUser   bool
-	Profile   map[string]string
-	Attempts  int
-	CreatedAt time.Time
-	ExpiresAt time.Time
+	NewUser bool
+	Profile map[string]string
+	// Secret is a TOTP secret (SealToken form) of a ChallengeTOTPSetup.
+	Secret string
+	// SessionID is the session a re-authentication token or code is bound to; CodeHash is
+	// the keyed hash of the code of a ChallengeReauthCode (set when the email is made).
+	SessionID string
+	CodeHash  string
+	// A magic-link request: TokenHash is the hash of the link's token and CodeHash the code's;
+	// CodeChallenge the PKCE challenge of the app that asked; RedirectTo where the link ends
+	// ("" for the realm's app_url); Email the address when it has no user yet (sealed);
+	// Purpose says what is sent (MagicLinkPurposeLink or MagicLinkPurposeNoAccount); Locale
+	// the language for a new user.
+	TokenHash     string
+	CodeChallenge string
+	RedirectTo    string
+	Email         string
+	Purpose       string
+	Locale        string
+	Attempts      int
+	CreatedAt     time.Time
+	ExpiresAt     time.Time
 }
 
 // MFARecord is a user's second-factor state: the TOTP secret (sealed), the last time step
@@ -175,6 +203,13 @@ func (s *Users) VerifyMFA(ctx context.Context, challenge, method, code, ip strin
 	if err := s.checkThrottle(ctx, ks); err != nil {
 		return Verified{}, err
 	}
+	// One check at a time per user: the limits below are read, then written, and a burst of
+	// parallel guesses would all be read before any was counted.
+	release, err := s.lockLogin(ctx, mfaUserKey(c.UserID))
+	if err != nil {
+		return Verified{}, err
+	}
+	defer release()
 	if err := s.checkMFALock(ctx, c.UserID); err != nil {
 		return Verified{}, err
 	}
@@ -276,12 +311,29 @@ func (s *Users) secondFactorFailed(ctx context.Context, c AuthChallenge, ks []th
 	return &InvalidCodeError{AttemptsLeft: left}
 }
 
-// afterWrongCode is the hook for what a wrong second factor triggers (a warning email).
-func (s *Users) afterWrongCode(ctx context.Context, c AuthChallenge, attempts int) {}
+// mfaFailedAfter is how many wrong codes after a right password say someone may know the
+// password: the user is told, at most once an hour.
+const mfaFailedAfter = 3
+
+// afterWrongCode warns the user whose password was right and whose code was wrong.
+func (s *Users) afterWrongCode(ctx context.Context, c AuthChallenge, attempts int) {
+	if c.Factor != ProviderPassword || attempts < mfaFailedAfter || s.Settings.Email == nil {
+		return
+	}
+	if err := s.RateLimit(ctx, "mfa-failed:"+c.UserID, 1, time.Hour); err != nil {
+		return // told within the hour already
+	}
+	u, err := s.Store.UserByID(ctx, c.UserID)
+	if err != nil || u.Disabled {
+		return
+	}
+	s.queueNotice(ctx, EmailRequest{Kind: email.MFAFailed, UserID: u.ID, Address: u.Email, Locale: s.LocaleOf(u), Notice: true})
+}
 
 // recoveryCodeUsed tells the user a recovery code was spent.
 func (s *Users) recoveryCodeUsed(ctx context.Context, u User, left int) {
 	s.Audit(ctx, AuditRecoveryCodeUsed, userTarget(u.ID), map[string]any{"codes_left": left})
+	s.securityNotice(ctx, u, "recovery-code-used", left)
 }
 
 // checkTOTP says whether code is the user's current TOTP code, and spends its time step: a
