@@ -435,6 +435,19 @@ func TestAuthStoreTeamRoles(t *testing.T) {
 	if len(m.TeamRoles) != 1 || m.TeamRoles[0].Team != "sales" || m.TeamRoles[0].GrantedBy != "u9" || !m.TeamRoles[0].Until.Equal(now.Add(time.Hour)) {
 		t.Errorf("stored grant: %+v", m.TeamRoles)
 	}
+	// Ended grants are purged once they are older than the cut.
+	if n, err := s.PurgeExpiredTeamRoles(ctx, now.Add(-3*time.Hour)); err != nil || n != 0 {
+		t.Errorf("too early: %d %v", n, err)
+	}
+	if n, err := s.PurgeExpiredTeamRoles(ctx, now); err != nil || n != 1 {
+		t.Errorf("purge: %d %v", n, err)
+	}
+	if m, _ := s.OrgMember(ctx, "o1", "u4"); len(m.TeamRoles) != 0 {
+		t.Errorf("u4 after the purge: %+v", m.TeamRoles)
+	}
+	if m, _ := s.OrgMember(ctx, "o1", "u6"); len(m.TeamRoles) != 1 {
+		t.Errorf("u6 after the purge: %+v", m.TeamRoles)
+	}
 	// Deleting the team takes its grants and keeps the others.
 	if err := s.DeleteOrgTeam(ctx, "o1", "sales"); err != nil {
 		t.Fatal(err)

@@ -102,8 +102,9 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 			r.With(json).Patch("/teams/{team}", a.updateOrgTeam)
 			r.Delete("/teams/{team}", a.deleteOrgTeam)
 			r.Get("/teams/{team}/members", a.orgTeamMembers)
-			r.With(json).Post("/teams/{team}/roles", a.grantTeamRole(true))
-			r.With(json).Delete("/teams/{team}/roles", a.grantTeamRole(false))
+			r.With(json).Post("/teams/{team}/roles", teamRoleHandler(auth.TeamRoleGrantOp, true))
+			r.With(json).Patch("/teams/{team}/roles", teamRoleHandler(auth.TeamRoleWindowOp, true))
+			r.With(json).Delete("/teams/{team}/roles", teamRoleHandler(auth.TeamRoleRevokeOp, true))
 			r.Put("/teams/{team}/members/{user}", a.setOrgTeamMember(true))
 			r.Delete("/teams/{team}/members/{user}", a.setOrgTeamMember(false))
 			r.Get("/invitations", a.listOrgInvitations)
@@ -695,6 +696,14 @@ func fields(w http.ResponseWriter, r *http.Request, obj map[string]any, spec map
 				}
 			}
 			details = append(details, Detail{Path: name, Reason: "must be an integer"})
+		case kind == "time":
+			if str, isStr := v.(string); isStr {
+				if t, err := time.Parse(time.RFC3339, str); err == nil {
+					out[name] = t.UTC()
+					break
+				}
+			}
+			details = append(details, Detail{Path: name, Reason: "must be an RFC 3339 time"})
 		case kind == "bool":
 			if b, ok := v.(bool); ok {
 				out[name] = b

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/fernandezvara/backd/internal/auth"
 )
@@ -135,5 +136,113 @@ func TestTeamRolesAdminAndCap(t *testing.T) {
 	body = fmt.Sprintf(`{"user": %q, "role": "manager"}`, f.bobID)
 	if rec, out := f.doH(t, "POST", adm+"/"+ops+"/roles", body, jsonHdr(f.bob)); rec.Code != 409 || errCode(out) != "team_limit_reached" {
 		t.Errorf("the 51st: %d %v", rec.Code, out)
+	}
+}
+
+func TestTeamRoleWindowsAndDelegation(t *testing.T) {
+	f := newRulesFixture(t)
+	ctx := context.Background()
+	f.svc.Now = func() time.Time { return *f.clock }
+	org := f.orgOf(t, f.ada, "Windows")
+	teams := orgsPath + "/" + org + "/teams"
+	if _, err := f.svc.AdminAddMember(ctx, org, f.bobID, nil); err != nil {
+		t.Fatal(err)
+	}
+	mk := func(name string) string {
+		t.Helper()
+		rec, out := f.doH(t, "POST", teams, fmt.Sprintf(`{"name": %q}`, name), jsonHdr(f.ada))
+		if rec.Code != 201 {
+			t.Fatalf("team %s: %d %v", name, rec.Code, out)
+		}
+		return out["id"].(string)
+	}
+	sales, support := mk("Sales"), mk("Support")
+	at := func(d time.Duration) string { return f.clock.Add(d).UTC().Format(time.RFC3339) }
+	body := func(user, role string, from, until string) string {
+		b := fmt.Sprintf(`{"user": %q, "role": %q`, user, role)
+		if from != "" {
+			b += fmt.Sprintf(`, "from": %q`, from)
+		}
+		if until != "" {
+			b += fmt.Sprintf(`, "until": %q`, until)
+		}
+		return b + "}"
+	}
+	salesRoles := teams + "/" + sales + "/roles"
+
+	// A window must end after it starts.
+	if rec, out := f.doH(t, "POST", salesRoles, body(f.bobID, "manager", at(time.Hour), at(time.Hour)), jsonHdr(f.ada)); rec.Code != 400 {
+		t.Errorf("empty window: %d %v", rec.Code, out)
+	}
+	if rec, _ := f.doH(t, "POST", salesRoles, body(f.bobID, "manager", "tomorrow", ""), jsonHdr(f.ada)); rec.Code != 400 {
+		t.Errorf("not a time: %d", rec.Code)
+	}
+	// Bob becomes manager of Sales in an hour, for an hour.
+	rec, out := f.doH(t, "POST", salesRoles, body(f.bobID, "manager", at(time.Hour), at(2*time.Hour)), jsonHdr(f.ada))
+	if rec.Code != 200 || fmt.Sprint(out["roles_in_team"]) != "[]" {
+		t.Fatalf("grant with a window: %d %v", rec.Code, out)
+	}
+	// Not yet: he can't delegate, and he doesn't count as holder.
+	if rec, _ := f.doH(t, "POST", salesRoles, body(f.adaID, "delegate", "", ""), jsonHdr(f.bob)); rec.Code != 403 {
+		t.Errorf("before the window: %d", rec.Code)
+	}
+	_, out = f.doH(t, "GET", teams+"/"+sales+"/members?role=manager", "", bearer(f.bob))
+	if n := len(out["items"].([]any)); n != 0 {
+		t.Errorf("holders before the window: %v", out)
+	}
+
+	// Inside the window he delegates, but only `delegate`, and only in Sales.
+	*f.clock = f.clock.Add(90 * time.Minute)
+	if rec, out := f.doH(t, "POST", salesRoles, body(f.adaID, "delegate", "", at(30*time.Minute)), jsonHdr(f.bob)); rec.Code != 200 || fmt.Sprint(out["roles_in_team"]) != "[delegate]" {
+		t.Fatalf("delegate: %d %v", rec.Code, out)
+	}
+	if rec, _ := f.doH(t, "POST", salesRoles, body(f.adaID, "manager", "", ""), jsonHdr(f.bob)); rec.Code != 403 {
+		t.Errorf("a role not listed: %d", rec.Code)
+	}
+	if rec, _ := f.doH(t, "POST", teams+"/"+support+"/roles", body(f.adaID, "delegate", "", ""), jsonHdr(f.bob)); rec.Code != 403 {
+		t.Errorf("another team: %d", rec.Code)
+	}
+	// He changes the window, then revokes; patching what isn't held is a 404.
+	if rec, out := f.doH(t, "PATCH", salesRoles, body(f.adaID, "delegate", "", at(10*time.Minute)), jsonHdr(f.bob)); rec.Code != 200 {
+		t.Errorf("patch: %d %v", rec.Code, out)
+	}
+	if rec, _ := f.doH(t, "PATCH", salesRoles, body(f.adaID, "manager", "", ""), jsonHdr(f.ada)); rec.Code != 404 {
+		t.Errorf("patch what isn't held: %d", rec.Code)
+	}
+	// Ada holds the grant until the window ends, to the second.
+	*f.clock = f.clock.Add(10*time.Minute - time.Second)
+	_, out = f.doH(t, "GET", teams+"/"+sales+"/members?role=delegate", "", bearer(f.ada))
+	if n := len(out["items"].([]any)); n != 1 {
+		t.Errorf("one second before: %v", out)
+	}
+	*f.clock = f.clock.Add(time.Second)
+	_, out = f.doH(t, "GET", teams+"/"+sales+"/members?role=delegate", "", bearer(f.ada))
+	if n := len(out["items"].([]any)); n != 0 {
+		t.Errorf("at the end: %v", out)
+	}
+	// The history keeps it, marked as not active.
+	_, out = f.doH(t, "GET", orgsPath+"/"+org+"/members", "", bearer(f.ada))
+	for _, it := range out["items"].([]any) {
+		m := it.(map[string]any)
+		if m["user"] != f.adaID {
+			continue
+		}
+		grants := m["team_roles"].([]any)
+		if len(grants) != 1 || grants[0].(map[string]any)["active"] != false || grants[0].(map[string]any)["granted_by"] != f.bobID {
+			t.Errorf("history: %v", grants)
+		}
+	}
+	// Bob's own window closes: he can't delegate any more.
+	*f.clock = f.clock.Add(time.Hour)
+	if rec, _ := f.doH(t, "POST", salesRoles, body(f.adaID, "delegate", "", ""), jsonHdr(f.bob)); rec.Code != 403 {
+		t.Errorf("after the window: %d", rec.Code)
+	}
+	// Grants that ended more than 90 days ago are cleaned up; recent ones stay.
+	if n, err := f.svc.SweepTeamRoles(ctx); err != nil || n != 0 {
+		t.Fatalf("sweep too early: %d %v", n, err)
+	}
+	*f.clock = f.clock.Add(auth.TeamRoleHistory)
+	if n, err := f.svc.SweepTeamRoles(ctx); err != nil || n != 2 {
+		t.Errorf("sweep: %d %v", n, err)
 	}
 }

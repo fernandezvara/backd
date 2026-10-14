@@ -50,6 +50,32 @@ POST /v1/acme/_orgs/{org}/teams/{team}/roles
 
 Deleting a team removes the grants of its roles with it. Removing a member from the organization removes theirs.
 
+## Time windows
+
+A grant can carry `from` and `until` (RFC 3339), so access starts and ends on the second with nothing to run:
+
+```http
+POST /v1/acme/_orgs/{org}/teams/{team}/roles
+{ "user": "<user id>", "role": "delegate", "from": "2026-08-01T00:00:00Z", "until": "2026-08-15T00:00:00Z" }
+```
+
+- **Left out when not in force.** Memberships are read at each request, and a grant outside its window is left out of what rules see, of the listing, and of what the member may grant.
+- **`until` must be after `from`** (`400` otherwise); both are optional.
+- **`PATCH` on the same path replaces the window** of a held grant (`404` if it isn't held). Granting a role the member already holds changes nothing: use `PATCH`.
+- **History:** an ended grant stays in the member's `team_roles` (with `active: false` and who granted it) for 90 days, then a sweep removes it.
+
+## Let a team role give another
+
+`grants` on a team role lets its holders manage exactly those roles, **in the teams where they hold it**:
+
+```yaml
+team_roles:
+  manager:  { grants: [delegate] }
+  delegate: {}
+```
+
+A manager of Sales may give `delegate` in Sales, change the window of it and take it away. They can't give `manager`, and they can't act in Support, even if they hold `manager` there. Members with `manage: teams` can do all of it in any team. Each change is audited with who made it (`org.team_role_grant`, `org.team_role_change`, `org.team_role_revoke`), and the grant records `granted_by`.
+
 ## List who holds what
 
 ```http
@@ -62,7 +88,7 @@ Any member of the organization may list. The answer is a page of the members who
 |---|---|
 | Functions with `admin: true` | `ctx.admin.orgs.teams.members(org, team, { role })` |
 | JavaScript client | `client.orgs.teams(org).members(team, { role })` |
-| Administrators | `GET /_admin/orgs/{org}/teams/{team}/members`, `POST` and `DELETE …/roles` |
+| Administrators | `GET /_admin/orgs/{org}/teams/{team}/members`, `POST`, `PATCH` and `DELETE …/roles` |
 
 A member sees their own in `GET /_orgs/{org}`, as `team_roles` (team id to role names).
 

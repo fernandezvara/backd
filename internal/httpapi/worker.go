@@ -46,6 +46,7 @@ type Worker struct {
 	lastScheduled map[string]time.Time // only touched by the schedule loop
 	lastPurge     map[string]time.Time // realm → last purge of unverified accounts; same
 	lastDevices   map[string]time.Time // realm → last sweep of stale and orphaned devices
+	lastTeamRoles map[string]time.Time // realm → last cleanup of ended team role grants
 	// pushSenders deliver pushes, by provider.
 	pushSenders map[string]push.Sender
 }
@@ -69,7 +70,7 @@ func NewWorker(cfg Config, id string) *Worker {
 	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, users: users, callbackKey: cfg.CallbackKey, objects: newRealmObjects(cfg.Registry, users)}
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, log: log, metrics: cfg.Metrics}
 	docs.imageMaxPixels = cfg.ImageMaxPixels
-	return &Worker{id: id, fns: fns, reg: cfg.Registry, backdURL: cfg.BackdURL, oauth: cfg.oauthService(), log: log, lastScheduled: map[string]time.Time{}, lastPurge: map[string]time.Time{}, lastDevices: map[string]time.Time{}, images: newImageEngine(cfg), pushSenders: pushSendersOf(cfg, users, now)}
+	return &Worker{id: id, fns: fns, reg: cfg.Registry, backdURL: cfg.BackdURL, oauth: cfg.oauthService(), log: log, lastScheduled: map[string]time.Time{}, lastPurge: map[string]time.Time{}, lastDevices: map[string]time.Time{}, lastTeamRoles: map[string]time.Time{}, images: newImageEngine(cfg), pushSenders: pushSendersOf(cfg, users, now)}
 }
 
 // newImageEngine builds the engine from the instance's settings: the concurrency is the
@@ -126,6 +127,7 @@ func (w *Worker) scheduleLoop(ctx context.Context) {
 		w.EnqueueDue(ctx)
 		w.PurgeDue(ctx)
 		w.SweepDevicesDue(ctx)
+		w.SweepTeamRolesDue(ctx)
 		w.FilesDue(ctx)
 		select {
 		case <-ctx.Done():
@@ -173,6 +175,25 @@ func (w *Worker) SweepDevicesDue(ctx context.Context) {
 		w.lastDevices[realm] = now
 		if _, _, err := svc.SweepDevices(ctx); err != nil {
 			w.log.Error("sweep devices", "realm", realm, "error", err)
+		}
+	}
+}
+
+// SweepTeamRolesDue removes the team role grants that ended long ago (auth.TeamRoleHistory) in the
+// realms with organizations. Running it in every worker is harmless.
+func (w *Worker) SweepTeamRolesDue(ctx context.Context) {
+	now := w.fns.docs.now()
+	for realm, rl := range w.reg.Realms {
+		if rl.Settings.Organizations == nil || now.Sub(w.lastTeamRoles[realm]) < purgeInterval {
+			continue
+		}
+		svc := w.fns.docs.users(realm)
+		if svc == nil {
+			continue
+		}
+		w.lastTeamRoles[realm] = now
+		if _, err := svc.SweepTeamRoles(ctx); err != nil {
+			w.log.Error("sweep team roles", "realm", realm, "error", err)
 		}
 	}
 }

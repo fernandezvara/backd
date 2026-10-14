@@ -50,8 +50,9 @@ func (a *authAPI) orgRoutes(r chi.Router) {
 			r.Get("/teams/{team}/members", a.orgTeamMembers)
 			r.Put("/teams/{team}/members/{user}", a.addOrgTeamMember)
 			r.Delete("/teams/{team}/members/{user}", a.removeOrgTeamMember)
-			r.With(json).Post("/teams/{team}/roles", a.grantTeamRole(true))
-			r.With(json).Delete("/teams/{team}/roles", a.grantTeamRole(false))
+			r.With(json).Post("/teams/{team}/roles", teamRoleHandler(auth.TeamRoleGrantOp, false))
+			r.With(json).Patch("/teams/{team}/roles", teamRoleHandler(auth.TeamRoleWindowOp, false))
+			r.With(json).Delete("/teams/{team}/roles", teamRoleHandler(auth.TeamRoleRevokeOp, false))
 			r.Get("/invitations", a.listOrgInvitations)
 			r.With(json).Post("/invitations", a.createOrgInvitation)
 			r.Delete("/invitations/{id}", a.revokeOrgInvitation)
@@ -83,6 +84,8 @@ func orgError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, r, http.StatusConflict, codeSlugTaken, err.Error(), Detail{Path: "slug", Reason: "is used by another organization"})
 	case errors.Is(err, auth.ErrTeamNameTaken):
 		writeError(w, r, http.StatusConflict, "team_name_taken", err.Error(), Detail{Path: "name", Reason: "is used by another team of the organization"})
+	case errors.Is(err, auth.ErrTeamRoleNotHeld):
+		writeError(w, r, http.StatusNotFound, codeNotFound, err.Error())
 	case errors.Is(err, auth.ErrTeamLimit), errors.Is(err, auth.ErrMemberTeamsLimit), errors.Is(err, auth.ErrTeamRoleLimit):
 		writeError(w, r, http.StatusConflict, "team_limit_reached", err.Error())
 	case errors.Is(err, auth.ErrEmailNotConfigured):
@@ -332,34 +335,42 @@ func (a *authAPI) orgTeamMembers(w http.ResponseWriter, r *http.Request) {
 	teamMemberPage(w, list, more)
 }
 
-// teamRoleRequest reads the body of a team role request: the member and the role.
-func teamRoleRequest(w http.ResponseWriter, r *http.Request) (user, role string, ok bool) {
+// teamRoleRequest reads the body of a team role request: the member, the role and, to give or
+// re-window a grant, its window ("from" and "until", RFC 3339; absent is open).
+func teamRoleRequest(w http.ResponseWriter, r *http.Request, op auth.TeamRoleOp) (user, role string, win auth.TeamRoleWindow, ok bool) {
 	obj, ok := readObject(w, r)
 	if !ok {
-		return "", "", false
+		return "", "", win, false
 	}
-	f, ok := fields(w, r, obj, map[string]string{"user": "string", "role": "string"})
+	spec := map[string]string{"user": "string", "role": "string"}
+	if op != auth.TeamRoleRevokeOp {
+		spec["from"], spec["until"] = "time?", "time?"
+	}
+	f, ok := fields(w, r, obj, spec)
 	if !ok {
-		return "", "", false
+		return "", "", win, false
 	}
-	return f["user"].(string), f["role"].(string), true
+	win.From, _ = f["from"].(time.Time)
+	win.Until, _ = f["until"].(time.Time)
+	return f["user"].(string), f["role"].(string), win, true
 }
 
-// grantTeamRole handles POST and DELETE /_orgs/{org}/teams/{team}/roles.
-func (a *authAPI) grantTeamRole(grant bool) http.HandlerFunc {
+// teamRoleHandler handles POST, PATCH and DELETE on .../teams/{team}/roles, for people (who need
+// manage: teams or a team role that grants the role) and for administrators.
+func teamRoleHandler(op auth.TeamRoleOp, admin bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		user, role, ok := teamRoleRequest(w, r)
+		user, role, win, ok := teamRoleRequest(w, r, op)
 		if !ok {
 			return
 		}
-		svc, caller, org, team := usersOf(r), principalOf(r).User.ID, chi.URLParam(r, "org"), chi.URLParam(r, "team")
-		change := svc.RevokeTeamRole
-		if grant {
-			change = svc.GrantTeamRole
+		caller := ""
+		fail := adminTeamError
+		if !admin {
+			caller, fail = principalOf(r).User.ID, teamError
 		}
-		v, err := change(r.Context(), caller, org, team, user, role)
+		v, err := usersOf(r).SetTeamRole(r.Context(), caller, chi.URLParam(r, "org"), chi.URLParam(r, "team"), user, role, op, win)
 		if err != nil {
-			teamError(w, r, err)
+			fail(w, r, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, teamMemberJSON(v))
@@ -966,26 +977,6 @@ func (a *adminAPI) orgTeamMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	teamMemberPage(w, list, more)
-}
-
-func (a *adminAPI) grantTeamRole(grant bool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		user, role, ok := teamRoleRequest(w, r)
-		if !ok {
-			return
-		}
-		svc := usersOf(r)
-		change := svc.AdminRevokeTeamRole
-		if grant {
-			change = svc.AdminGrantTeamRole
-		}
-		v, err := change(r.Context(), chi.URLParam(r, "org"), chi.URLParam(r, "team"), user, role)
-		if err != nil {
-			adminTeamError(w, r, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, teamMemberJSON(v))
-	}
 }
 
 func (a *adminAPI) setOrgTeamMember(add bool) http.HandlerFunc {

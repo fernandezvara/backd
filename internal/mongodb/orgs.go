@@ -399,6 +399,18 @@ func (s *AuthStore) OrgMembersWithRoles(ctx context.Context, org string, roles [
 	return out, nil
 }
 
+// PurgeExpiredTeamRoles pulls the grants whose window ended before the instant.
+func (s *AuthStore) PurgeExpiredTeamRoles(ctx context.Context, before time.Time) (int64, error) {
+	ended := bson.D{{Key: "until", Value: bson.D{{Key: "$lt", Value: before}}}}
+	res, err := s.orgMembers().UpdateMany(ctx,
+		bson.D{{Key: "team_roles", Value: bson.D{{Key: "$elemMatch", Value: ended}}}},
+		bson.D{{Key: "$pull", Value: bson.D{{Key: "team_roles", Value: ended}}}})
+	if err != nil {
+		return 0, err
+	}
+	return res.ModifiedCount, nil
+}
+
 // OrgTeamHolders pages the members of a team and the holders of a team role in it.
 func (s *AuthStore) OrgTeamHolders(ctx context.Context, org, team, role string, now time.Time, after string, limit int) ([]auth.OrgMember, bool, error) {
 	held := bson.D{{Key: "team", Value: team}}

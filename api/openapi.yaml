@@ -1562,8 +1562,10 @@ paths:
       summary: Give a member a team role
       description: |
         The member must belong to the organization, not to the team: a team role can be held
-        outside it. Granting what is already held changes nothing. At most 50 team role grants
-        per member (`409 team_limit_reached`). Any member of the organization may list; granting and revoking need `manage` of teams.
+        outside it. `from` and `until` set the window it counts in. Granting what is already held
+        changes nothing (use `PATCH` for the window). At most 50 team role grants per member
+        (`409 team_limit_reached`). Needs `manage` of teams, or a team role of that team whose
+        `grants` lists this role (only in that team).
       operationId: grantOrganizationTeamRole
       security: [{ session: [] }]
       requestBody:
@@ -1584,17 +1586,42 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
-    delete:
+    patch:
       tags: [organizations]
-      summary: Take a team role from a member
-      description: Access through the role ends at the member's next request. Any member of the organization may list; granting and revoking need `manage` of teams.
-      operationId: revokeOrganizationTeamRole
+      summary: Change the window of a team role grant
+      description: |
+        Replaces `from` and `until` of a grant the member holds (absent means open); `404` when
+        the member doesn't hold the role in the team. Needs `manage` of teams, or a team role of that team that grants this role.
+      operationId: changeOrganizationTeamRoleWindow
       security: [{ session: [] }]
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/OrganizationTeamRoleInput" }
+      responses:
+        "200":
+          description: The member as seen from the team.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationTeamMember" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [organizations]
+      summary: Take a team role from a member
+      description: Access through the role ends at the member's next request. Needs `manage` of teams, or a team role of that team whose `grants` lists this role.
+      operationId: revokeOrganizationTeamRole
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationTeamRoleRef" }
       responses:
         "200":
           description: The member as seen from the team.
@@ -3670,17 +3697,42 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
-    delete:
+    patch:
       tags: [admin]
-      summary: Take a team role from a member
-      description: Access through the role ends at the member's next request. Needs the `users` area (write access to grant and revoke).
-      operationId: adminRevokeOrganizationTeamRole
+      summary: Change the window of a team role grant
+      description: |
+        Replaces `from` and `until` of a grant the member holds (absent means open); `404` when
+        the member doesn't hold the role in the team. Needs the `users` area with write access.
+      operationId: adminChangeOrganizationTeamRoleWindow
       security: [{ apiKey: [] }, { session: [] }]
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/OrganizationTeamRoleInput" }
+      responses:
+        "200":
+          description: The member as seen from the team.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationTeamMember" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      summary: Take a team role from a member
+      description: Access through the role ends at the member's next request. Needs the `users` area with write access.
+      operationId: adminRevokeOrganizationTeamRole
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationTeamRoleRef" }
       responses:
         "200":
           description: The member as seen from the team.
@@ -7870,6 +7922,14 @@ components:
         has_more: { type: boolean }
         next: { type: string, description: "Pass as `after` for the next page." }
 
+    OrganizationTeamRoleRef:
+      type: object
+      additionalProperties: false
+      required: [user, role]
+      properties:
+        user: { type: string, description: "A member of the organization." }
+        role: { type: string, description: "A team role declared in `organizations.team_roles`." }
+
     OrganizationTeamRoleInput:
       type: object
       additionalProperties: false
@@ -7877,6 +7937,8 @@ components:
       properties:
         user: { type: string, description: "A member of the organization." }
         role: { type: string, description: "A team role declared in `organizations.team_roles`." }
+        from: { type: string, format: date-time, description: "The grant counts from then; from now when absent." }
+        until: { type: string, format: date-time, description: "...until then, to the second; for ever when absent. After `from`." }
 
     OrganizationMembers:
       type: object

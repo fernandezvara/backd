@@ -252,6 +252,21 @@ func (m *MemStore) ListOrgMembers(_ context.Context, org, after string, limit in
 	return all, false, nil
 }
 
+func (m *MemStore) PurgeExpiredTeamRoles(_ context.Context, before time.Time) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var n int64
+	for k, mem := range m.org().members {
+		kept := slices.DeleteFunc(slices.Clone(mem.TeamRoles), func(g auth.TeamRoleGrant) bool { return !g.Until.IsZero() && g.Until.Before(before) })
+		if len(kept) != len(mem.TeamRoles) {
+			n += int64(len(mem.TeamRoles) - len(kept))
+			mem.TeamRoles = kept
+			m.org().members[k] = mem
+		}
+	}
+	return n, nil
+}
+
 func (m *MemStore) OrgTeamHolders(_ context.Context, org, team, role string, now time.Time, after string, limit int) ([]auth.OrgMember, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -343,6 +343,9 @@ type Store interface {
 	// OrgTeamHolders returns a page, sorted by user id, of the members of the team and the
 	// members holding a team role in it that counts at now; with role, only its holders.
 	OrgTeamHolders(ctx context.Context, org, team, role string, now time.Time, after string, limit int) (members []OrgMember, more bool, err error)
+	// PurgeExpiredTeamRoles removes the team role grants whose window ended before the instant,
+	// and says how many it removed.
+	PurgeExpiredTeamRoles(ctx context.Context, before time.Time) (int64, error)
 	// OrgMembersWithRoles returns the members holding any of the roles directly.
 	OrgMembersWithRoles(ctx context.Context, org string, roles []string) ([]OrgMember, error)
 	// OrgMembershipsOf returns up to limit memberships of a user; CountOrgMembershipsOf counts them.

@@ -2340,6 +2340,11 @@ func TestContract(t *testing.T) {
 		if err := f.svc.Store.PutOrgMember(context.Background(), held); err != nil {
 			t.Fatal(err)
 		}
+		req("PATCH", tp+"/roles", role, withJSON(nil), 401)
+		req("PATCH", tp+"/roles", role, withJSON(carl), 403)
+		req("PATCH", tp+"/roles", `{"user": "x", "role": "manager", "from": "soon"}`, withJSON(ada), 400)
+		req("PATCH", tp+"/roles", fmt.Sprintf(`{"user": %q, "role": "delegate"}`, f.adaID), withJSON(ada), 404)
+		req("PATCH", tp+"/roles", fmt.Sprintf(`{"user": %q, "role": "manager", "until": "2099-01-01T00:00:00Z"}`, f.adaID), withJSON(ada), 200)
 		req("DELETE", tp+"/roles", role, withJSON(nil), 401)
 		req("DELETE", tp+"/roles", role, withJSON(carl), 403)
 		req("DELETE", tp+"/roles", `{}`, withJSON(ada), 400)
@@ -2419,6 +2424,7 @@ func TestContract(t *testing.T) {
 		req("POST", ap+"/roles", `{}`, withJSON(key), 400)
 		req("POST", admTeams+"/nosuch/roles", role, withJSON(key), 404)
 		req("POST", ap+"/roles", role, withJSON(key), 200)
+		req("PATCH", ap+"/roles", `{"user": "`+f.adaID+`", "role": "delegate", "until": "2099-01-01T00:00:00Z"}`, withJSON(key), 200)
 		held.TeamRoles = nil
 		for i := 0; i < registry.MaxTeamRolesPerMember; i++ {
 			held.TeamRoles = append(held.TeamRoles, teamGrant(fmt.Sprintf("filler%d", i), "delegate"))
@@ -2431,6 +2437,10 @@ func TestContract(t *testing.T) {
 		if err := f.svc.Store.PutOrgMember(context.Background(), held); err != nil {
 			t.Fatal(err)
 		}
+		req("PATCH", ap+"/roles", role, withJSON(nil), 401)
+		req("PATCH", ap+"/roles", role, withJSON(ada), 403)
+		req("PATCH", ap+"/roles", `{"user": "x", "role": "delegate", "until": "soon"}`, withJSON(key), 400)
+		req("PATCH", admTeams+"/nosuch/roles", role, withJSON(key), 404)
 		req("DELETE", ap+"/roles", role, withJSON(nil), 401)
 		req("DELETE", ap+"/roles", role, withJSON(ada), 403)
 		req("DELETE", ap+"/roles", `{}`, withJSON(key), 400)
