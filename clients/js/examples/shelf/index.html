@@ -318,7 +318,7 @@
 
       <div x-show="user">
         <form @submit.prevent="createTeam" class="inline">
-          <input id="team-name" x-model="teamName" placeholder="A new team's name" required maxlength="100">
+          <input id="team-name" x-model="teamName" placeholder="A new team's name" :required="!!user" maxlength="100">
           <button type="submit" :disabled="busy">Create team</button>
         </form>
         <p class="muted" x-show="!teams.length">You are not in a team yet: create one, or open an invitation link.</p>
@@ -347,7 +347,7 @@
               </template>
             </ul>
             <form @submit.prevent="addPin" x-show="holds('editor', 'admin', 'owner')">
-              <input x-model="pinDraft.title" placeholder="Title" required maxlength="200">
+              <input x-model="pinDraft.title" placeholder="Title" :required="holds('editor', 'admin', 'owner')" maxlength="200">
               <input x-model="pinDraft.url" type="url" placeholder="https://…">
               <input x-model="pinDraft.note" placeholder="Why it matters">
               <button type="submit" :disabled="busy">Pin</button>
@@ -368,7 +368,7 @@
           <article x-show="holds('admin', 'owner')">
             <header>Invite</header>
             <form class="inline" @submit.prevent="inviteToTeam(true)">
-              <input id="invite-email" x-model="invite.email" type="email" placeholder="ana@example.com" required>
+              <input id="invite-email" x-model="invite.email" type="email" placeholder="ana@example.com" :required="holds('admin', 'owner')">
               <select x-model="invite.roles"><option value="editor">editor</option><option value="member">member</option><option value="admin">admin</option></select>
               <button type="submit" :disabled="busy">Send by email</button>
             </form>

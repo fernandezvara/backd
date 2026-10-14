@@ -116,7 +116,7 @@ func provisionOneWith(t *testing.T, schema, config string) (*registry.Collection
 	realm := testRealm(t, client)
 	realmYAML := "roles:\n  admin: {}\n  a: {}\n  editor: {}\n  staff: {}\n  curator: {}\n  ops: {}\n"
 	if strings.Contains(config, "organization:") {
-		realmYAML += "organizations:\n  roles:\n    owner: {manage: [org, members, roles, teams]}\n    editor: {}\n    viewer: {}\n    member: {}\n"
+		realmYAML += "organizations:\n  roles:\n    owner: {manage: [org, members, roles, teams]}\n    admin: {}\n    editor: {}\n    viewer: {}\n    member: {}\n"
 	}
 	files := map[string]string{"app/items": schema}
 	if strings.Contains(config, "files:") {
@@ -152,6 +152,8 @@ func compileRules(t *testing.T, c *registry.Collection, content string) *rules.S
 		ScalarField:   c.ScalarField,
 		ArrayField:    c.ArrayField,
 		Roles:         diffRoles,
+		OrgRoles:      []string{"owner", "admin", "editor", "viewer", "member"},
+		InOrgs:        c.InOrganizations(),
 	})
 	if len(errs) > 0 {
 		t.Fatalf("%s: %v", content, errs)
