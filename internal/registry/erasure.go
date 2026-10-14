@@ -82,7 +82,7 @@ func (p *ErasurePolicy) IndexedFields() []string {
 type erasureDoc struct {
 	SoftDelete *softDeleteDoc `yaml:"soft_delete"`
 	Cache      *cacheDoc      `yaml:"cache"`
-	// CustomID makes the collection take its ids from the client.
+	// CustomID is read by loadCustomID, before the rules; here it is only allowed.
 	CustomID *customIDDoc `yaml:"custom_id"`
 	// PersonalData overrides what a user's data export takes from the collection.
 	PersonalData *personalDataDoc `yaml:"personal_data"`
@@ -125,11 +125,6 @@ func loadErasure(c *Collection, settings RealmSettings, path string) error {
 		return err
 	}
 	c.Cache = cp
-	cid, err := doc.CustomID.settings(path, settings.AuthEnabled)
-	if err != nil {
-		return err
-	}
-	c.CustomID = cid
 	if doc.PersonalData != nil && !settings.AuthEnabled {
 		return fmt.Errorf("%s: personal_data only applies when the realm has auth enabled (realm.yaml has `auth: disabled`: it has no users)", path)
 	}

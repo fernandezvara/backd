@@ -114,7 +114,11 @@ func (r *memRepo) Create(_ context.Context, doc storage.Document) error {
 	if r.s.fail != nil {
 		return r.s.fail
 	}
-	r.coll()[doc["id"].(string)] = clone(doc).(map[string]any)
+	id := doc["id"].(string)
+	if _, taken := r.coll()[id]; taken {
+		return &storage.ConflictError{Fields: []string{"id"}}
+	}
+	r.coll()[id] = clone(doc).(map[string]any)
 	return nil
 }
 
@@ -298,12 +302,18 @@ const items = "/v1/shop/orders/items"
 
 func TestCreateAndGet(t *testing.T) {
 	f := newFixture(t)
-	rec, body := f.do(t, "POST", items, `{"name": "Widget", "age": 3, "price": 12.5, "id": "mine", "_meta": {"x": 1}}`)
+	// A collection that generates its ids refuses one; _meta is still ignored.
+	if rec, body := f.do(t, "POST", items, `{"name": "Widget", "age": 3, "price": 12.5, "id": "mine"}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("create with an id = %d %v, want 400 id_not_allowed", rec.Code, body)
+	} else if code, _ := errorOf(body); code != "id_not_allowed" {
+		t.Errorf("code = %q", code)
+	}
+	rec, body := f.do(t, "POST", items, `{"name": "Widget", "age": 3, "price": 12.5, "_meta": {"x": 1}}`)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create = %d %s", rec.Code, rec.Body)
 	}
 	id, _ := body["id"].(string)
-	if len(id) != 20 || id == "mine" {
+	if len(id) != 20 {
 		t.Errorf("id = %q, want a server-generated xid", id)
 	}
 	if loc := rec.Header().Get("Location"); loc != items+"/"+id {

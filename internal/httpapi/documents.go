@@ -18,6 +18,7 @@ import (
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/jsonnum"
+	"github.com/fernandezvara/backd/internal/metrics"
 	"github.com/fernandezvara/backd/internal/query"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/rules"
@@ -60,6 +61,9 @@ type documents struct {
 	// with callback tokens signed with callbackKey (and nothing else).
 	internal    bool
 	callbackKey []byte
+	// dups limits the creates of custom ids that exist, per caller.
+	dups    dupLimiter
+	metrics *metrics.Metrics
 }
 
 func (d *documents) routes(r chi.Router) {
@@ -146,6 +150,11 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer claim.release(r.Context())
+	id, problem := newID(c, r, body)
+	if problem != nil {
+		writeError(w, r, problem.status, problem.code, problem.reason, Detail{Path: "id", Reason: problem.reason})
+		return
+	}
 	stripSystemFields(body)
 	refs, details := takeFileRefs(c, body)
 	if len(details) > 0 {
@@ -165,12 +174,20 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	doc := c.DatesToStorage(jsonnum.Normalize(body).(map[string]any))
+	if id != "" {
+		doc["id"] = id // the create rule sees data.id
+	}
 	if !allowWrite(w, r, d.accessFor(r), c, rules.Create, nil, doc) {
+		return
+	}
+	if d.dupBlocked(w, r, c) {
 		return
 	}
 
 	now := d.timestamp()
-	doc["id"] = xid.New().String()
+	if id == "" {
+		doc["id"] = xid.New().String()
+	}
 	meta := map[string]any{"created_at": now, "updated_at": now, "version": int64(1)}
 	stampCreate(r, meta)
 	doc["_meta"] = meta
@@ -180,6 +197,10 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 	if err := repo.Create(r.Context(), doc); err != nil {
 		if pending != nil {
 			pending.release(r)
+		}
+		if id != "" && isIDConflict(err) {
+			d.idTaken(w, r, c, "a document with this id already exists", Detail{Path: "id", Reason: "already exists"})
+			return
 		}
 		storageError(w, r, err)
 		return

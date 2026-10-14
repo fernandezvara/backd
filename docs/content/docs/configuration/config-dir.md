@@ -211,7 +211,8 @@ custom_id: user            # the id must be the creating user's id (the realm ne
 - **`backd data check`** reports stored documents whose id doesn't match the pattern (path `id`, never the value), for example after adding `custom_id` to a collection that already holds generated ids. Existing documents are never changed.
 - Collections without `custom_id` are unchanged.
 
-Creating documents with their own id is the next planned step of this feature: until then the declaration is validated and checked, and creates still get generated ids.
+- **Creating** sends the id in the body of the `POST`; an id that exists is `409 id_taken`, and the `create` rule runs first and can read it as `data.id`. See [Custom ids](../../api/documents/#custom-ids).
+- **Ids never change.** To change one, create a new document and delete the old one.
 
 ### Public caching
 

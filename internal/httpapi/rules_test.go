@@ -83,6 +83,11 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 		"acme/app/archive/collection.yaml": "soft_delete: true\n" + rulesSection("read: user != nil\ncreate: user != nil\ndelete: user != nil\n"),
 		"acme/app/bin/schema.json":         postsSchema,
 		"acme/app/bin/collection.yaml":     "soft_delete:\n  retention: 7d\n" + rulesSection("read: user != nil\ncreate: user != nil\nupdate: user != nil && document._meta.owner == user.id\ndelete: user != nil && document._meta.owner == user.id\nrestore: user != nil && (document._meta.owner == user.id || hasRole(user, 'staff'))\npurge: hasRole(user, 'staff')\n"),
+		// Custom ids (see customid_test.go).
+		"acme/app/invoices/schema.json":     postsSchema,
+		"acme/app/invoices/collection.yaml": "custom_id:\n  pattern: 'INV-[0-9]{4}'\n  duplicate_limit: 3\n" + rulesSection("read: user != nil\ncreate: user != nil && data.id != 'INV-9999'\n"),
+		"acme/app/cards/schema.json":        postsSchema,
+		"acme/app/cards/collection.yaml":    "custom_id: user\n" + rulesSection("read: user != nil\ncreate: user != nil\n"),
 		// Functions (see functions_test.go).
 		fnDir + "echo/function.yaml":  "invoke: \"user != nil && user.email_verified\"\n",
 		fnDir + "echo/index.js":       "",

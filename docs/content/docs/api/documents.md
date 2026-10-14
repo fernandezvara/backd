@@ -53,7 +53,7 @@ Documents are returned as bare JSON objects:
     Realms with `auth: disabled` don't have them. Documents stored before these fields existed don't gain `owner` or `created_by`; their next write adds `updated_by`.
 - Single-document responses carry `ETag: "<version>"`, for example `ETag: "3"`, and answer `304` to a matching [`If-None-Match`](#revalidating-a-read-if-none-match).
 - Documents written before versioning existed have no `version`. They get `version: 1` on their next write.
-- `id`, `_id` and `_meta` in request bodies are always ignored.
+- `_id` and `_meta` in request bodies are always ignored, and so is `id` on `PUT` and `PATCH`. On a create, `id` is [the client's choice](#custom-ids) in a collection that declares `custom_id`, and refused in one that doesn't.
 
 ## Create
 
@@ -65,6 +65,28 @@ Content-Type: application/json
 ```
 
 The body is validated against the collection's `schema.json`. The response is `201 Created` with the stored document and a `Location` header pointing at it.
+
+### Custom ids
+
+A collection that declares [`custom_id`](../../configuration/config-dir/#custom-ids) takes the id from the client, which must send it in the body:
+
+```http
+POST /v1/shop/billing/invoices
+Content-Type: application/json
+
+{ "id": "INV-2026-0042", "customer": "Ada", "total": 120 }
+```
+
+```
+201 Created
+Location: /v1/shop/billing/invoices/INV-2026-0042
+```
+
+- **It never overwrites.** An id that exists is `409 id_taken`, and `PUT` and `PATCH` stay update-only (`404` for an id that doesn't exist).
+- **Mistakes with the id** are `400`: `id_required` (a collection with `custom_id` and no `id`), `invalid_id` (outside the safety envelope or the pattern, or not the creating user's id with `custom_id: user`; the detail says which check, and never echoes other data) and `id_not_allowed` (an `id` sent to a collection that generates its ids).
+- **The order of the checks is fixed:** the id is validated, then the `create` rule runs (and sees the id as `data.id`), and only then is the document inserted. A caller the rule doesn't allow gets `403` for every id, so only callers allowed to create can learn that an id exists.
+- **Duplicates are limited.** After the collection's `duplicate_limit` (20 by default) answers of `id_taken` in a minute, a caller gets `429` with `Retry-After`, for any create in that collection. The count is per caller (user, API key or address) and per backd instance. `backd_id_conflicts_total` counts them per collection.
+- The same applies to [batch](#batch-writes) creates (`"id"` on the operation), `ctx.db` and `ctx.admin.db` in [functions](../../functions/), and the admin data route. The admin routes skip the `create` rule, not the id checks.
 
 ### Safe retries with `Idempotency-Key`
 
