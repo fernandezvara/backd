@@ -255,6 +255,7 @@ export interface Realm {
       "mfa-failed": Record<string, unknown>;
       "mfa-reset": Record<string, unknown>;
       "no-account": Record<string, unknown>;
+      "org-invitation": Record<string, unknown>;
       "password-changed": Record<string, unknown>;
       "reauth-code": Record<string, unknown>;
       "reset-password": Record<string, unknown>;
