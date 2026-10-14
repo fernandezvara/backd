@@ -133,9 +133,11 @@ export type MainImportsWhere = {
 export type MainImportsOrderByField = "id" | "-id" | "_meta.created_at" | "-_meta.created_at" | "_meta.updated_at" | "-_meta.updated_at" | "_meta.version" | "-_meta.version" | "_meta.owner" | "-_meta.owner" | "_meta.created_by" | "-_meta.created_by" | "_meta.updated_by" | "-_meta.updated_by" | "asset_id" | "-asset_id" | "event_id" | "-event_id";
 export type MainImportsOrderBy = MainImportsOrderByField | `${MainImportsOrderByField},${string}`;
 /** main/members */
-export type MainMembers = { id: string; _meta: Meta } & { email: string; name?: string; user_id: string; [key: string]: unknown; };
+export type MainMembers = { id: string; _meta: Meta } & { email: string; name?: string; [key: string]: unknown; };
 /** main/members */
-export type MainMembersInput = { email: string; name?: string; user_id: string; [key: string]: unknown; };
+export type MainMembersInput = { email: string; name?: string; [key: string]: unknown; };
+/** main/members: the id is chosen by the client and never changes; it must be the id of the signed-in user */
+export type MainMembersCreate = { id: string } & { email: string; name?: string; [key: string]: unknown; };
 export type MainMembersWhere = {
   id?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
   "_meta.created_at"?: DateTimeString | (Ops<DateTimeString> & NullOps & RangeOps<DateTimeString>);
@@ -146,11 +148,10 @@ export type MainMembersWhere = {
   "_meta.updated_by"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
   email?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
   name?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
-  user_id?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
   $or?: Array<MainMembersWhere>;
   $and?: Array<MainMembersWhere>;
 };
-export type MainMembersOrderByField = "id" | "-id" | "_meta.created_at" | "-_meta.created_at" | "_meta.updated_at" | "-_meta.updated_at" | "_meta.version" | "-_meta.version" | "_meta.owner" | "-_meta.owner" | "_meta.created_by" | "-_meta.created_by" | "_meta.updated_by" | "-_meta.updated_by" | "email" | "-email" | "name" | "-name" | "user_id" | "-user_id";
+export type MainMembersOrderByField = "id" | "-id" | "_meta.created_at" | "-_meta.created_at" | "_meta.updated_at" | "-_meta.updated_at" | "_meta.version" | "-_meta.version" | "_meta.owner" | "-_meta.owner" | "_meta.created_by" | "-_meta.created_by" | "_meta.updated_by" | "-_meta.updated_by" | "email" | "-email" | "name" | "-name";
 export type MainMembersOrderBy = MainMembersOrderByField | `${MainMembersOrderByField},${string}`;
 /** main/notifications */
 export type MainNotifications = { id: string; _meta: Meta } & { asset_id?: string; kind: string; read_at?: DateTimeString | null; text: string; to_user: string; [key: string]: unknown; };
@@ -213,7 +214,7 @@ export interface Realm {
       collections: {
         assets: { doc: MainAssets; input: MainAssetsInput; create: MainAssetsInput; where: MainAssetsWhere; order_by: MainAssetsOrderBy };
         imports: { doc: MainImports; input: MainImportsInput; create: MainImportsInput; where: MainImportsWhere; order_by: MainImportsOrderBy };
-        members: { doc: MainMembers; input: MainMembersInput; create: MainMembersInput; where: MainMembersWhere; order_by: MainMembersOrderBy };
+        members: { doc: MainMembers; input: MainMembersInput; create: MainMembersCreate; where: MainMembersWhere; order_by: MainMembersOrderBy };
         notifications: { doc: MainNotifications; input: MainNotificationsInput; create: MainNotificationsInput; where: MainNotificationsWhere; order_by: MainNotificationsOrderBy };
         shares: { doc: MainShares; input: MainSharesInput; create: MainSharesInput; where: MainSharesWhere; order_by: MainSharesOrderBy };
       };

@@ -49,7 +49,7 @@ This tutorial ran on a dev stack: `BACKD_DEV` on, `email-capture` storing mail, 
 | `assets` | members: published + their own drafts; curators: every draft | members create/edit/delete their own drafts; `publish` stamps `published_at` |
 | `shares` | the creator | only `share` creates; the creator deletes |
 | `notifications` | the recipient (may set `read_at`) | only `notify` |
-| `members` | every member | each member their own row |
+| `members` | every member | each member their own document (its id is the user's id) |
 | `imports` | nobody | only `import` |
 | `mail/outbox` | anyone (dev only) | only `email-capture` |
 

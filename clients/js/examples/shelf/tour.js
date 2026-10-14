@@ -18,7 +18,7 @@ import { execFileSync } from 'node:child_process'
 import { createHmac } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { deflateSync } from 'node:zlib'
-import { createClient, AuthenticationError, ConflictError, ConsentRequiredError, ForbiddenError, NotFoundError, SecondStepRequiredError, ValidationError, VersionMismatchError, versionStatus } from '../../src/index.js'
+import { createClient, AuthenticationError, ConflictError, ConsentRequiredError, ForbiddenError, IdTakenError, InvalidIdError, NotFoundError, SecondStepRequiredError, ValidationError, VersionMismatchError, versionStatus } from '../../src/index.js'
 
 const url = process.env.BACKD_URL ?? 'http://localhost:8080'
 const PASSWORD = 'dev-p4ssw0rd!'
@@ -180,8 +180,12 @@ await refused('a revoked link is gone', () => main(anonymous).fn('share-open', {
 heading('The digest as a job, with email (ch8, ch9, ch10)')
 // What the app does on every sign-in: the members directory a function reads.
 const me = await member.auth.me()
-const myDir = await main(member).collection('members').list({ where: { user_id: me.id }, limit: 1 })
-if (myDir.items.length === 0) await main(member).collection('members').create({ user_id: me.id, email: MEMBER })
+const myDir = await main(member).collection('members').get(me.id).catch((e) => (e.status === 404 ? null : Promise.reject(e)))
+if (!myDir) await main(member).collection('members').create({ id: me.id, email: MEMBER })
+// Custom ids (chapter 8): the document is the user's own, once, and nobody else's.
+check('the member document has the user id', myDir ? myDir.id === me.id : true, '')
+await refused('a member cannot create the document of another user', () => main(member).collection('members').create({ id: 'someone-else', email: MEMBER }), InvalidIdError, 'invalid_id')
+await refused('a second document for the same user is refused', () => main(member).collection('members').create({ id: me.id, email: MEMBER }), IdTakenError, 'id_taken')
 const job = /** @type {any} */ (await operator.admin.invokeFunction('main/digest', { input: { since_days: 7 } }))
 const result = /** @type {any} */ (await job.wait({ pollIntervalMs: 300, timeoutMs: 90000 }))
 check('the digest job ran and notified', result.notified >= 1, JSON.stringify(result))

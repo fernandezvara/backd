@@ -1,12 +1,15 @@
 rules:
-  # Every member may read the directory (the app and the digest
-  # function need it); a member writes their own document, and may not move it
-  # to another user_id.
+  # Every member may read the directory (the app and the digest function need
+  # it). A member's document is keyed by their user id (custom_id: user), so
+  # backd itself makes sure a member creates only their own, once; the rules
+  # keep the address honest and let a member change only their own document.
   read: user != nil
-  create: user != nil && data.user_id == user.id && data.email == user.email
-  update: >
-    user != nil && document.user_id == user.id
-    && !('user_id' in changed())
+  create: user != nil && data.email == user.email
+  update: user != nil && document.id == user.id
+
+# One document per user, with the user's own id as its id (chapter 8): no
+# user_id field and no unique index to keep one per user.
+custom_id: user
 
 # Data a user owns — gone when the user is erased (see "Deleting and
 # erasing users" in the auth docs).

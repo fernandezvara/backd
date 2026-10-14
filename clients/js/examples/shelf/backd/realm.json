@@ -1,12 +1,13 @@
 {
   "generator": "1",
   "realm": "shelf",
-  "fingerprint": "15c3660dc4a76d58120a625429696920b46069d1e7fb19d686158fdef2d69be1",
+  "fingerprint": "21d7b7eb883a0c7fd791555affa72126704471fef4b7d39f8b710cd8c1dce958",
   "entries": {
     "collection mail/outbox": "",
     "collection main/assets": "",
     "collection main/imports": "",
     "collection main/members": "",
+    "collection main/members id": " user=true",
     "collection main/notifications": "",
     "collection main/shares": "",
     "config features.export.enabled": "boolean",
@@ -43,7 +44,6 @@
     "field main/imports event_id": "string (required)",
     "field main/members email": "string (required)",
     "field main/members name": "string",
-    "field main/members user_id": "string (required)",
     "field main/notifications asset_id": "string",
     "field main/notifications kind": "string (required)",
     "field main/notifications read_at": "DateTimeString | null",

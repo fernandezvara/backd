@@ -13,8 +13,8 @@ Deno.test("notifies every member about assets published in the window", async ()
     { id: "a3", title: "Draft", kind: "note" },
   ]);
   store.seed("main", "members", [
-    { user_id: "u1", email: "ana@shelf.example" },
-    { user_id: "u2", email: "ben@shelf.example" },
+    { id: "u1", email: "ana@shelf.example" },
+    { id: "u2", email: "ben@shelf.example" },
   ]);
   fakeCall("notify", () => ({ id: "n" }));
 
@@ -36,7 +36,7 @@ Deno.test("notifies every member about assets published in the window", async ()
 
 Deno.test("a quiet period notifies nobody", async () => {
   const { ctx, store, calls } = createContext({ admin: true, input: { since_days: 7 } });
-  store.seed("main", "members", [{ user_id: "u1", email: "ana@shelf.example" }]);
+  store.seed("main", "members", [{ id: "u1", email: "ana@shelf.example" }]);
 
   const out = (await handler(ctx as never)) as { notified: number; skipped: boolean };
   if (out.notified !== 0 || !out.skipped || calls("notify").length !== 0) throw new Error(JSON.stringify(out));

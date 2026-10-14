@@ -44,7 +44,7 @@ On a checkout, `backd template realm --realm shelf` writes all of `email/` and `
 ```ts
 await ctx.email.send({
   kind: "shelf-digest",              // email/shelf-digest/
-  to_user: member.user_id,           // their language; backd looks the user up
+  to_user: member.id,                // their language; backd looks the user up
   data: { count: 3, since: "2026-10-01", assets: ["Handbook", "…"] },
 })
 ```
