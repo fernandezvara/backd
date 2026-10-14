@@ -169,3 +169,59 @@ func TestAuthStoreOrgInvitations(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAuthStoreOrgTeams(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	if err := s.CreateOrgTeam(ctx, auth.OrgTeam{ID: "t1", Org: "o1", Name: "Editors", Roles: []string{"editor"}, CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateOrgTeam(ctx, auth.OrgTeam{ID: "t2", Org: "o1", Name: "Editors", CreatedAt: now}); !errors.Is(err, auth.ErrTeamNameTaken) {
+		t.Errorf("duplicate name: %v", err)
+	}
+	// The same name in another organization is fine.
+	if err := s.CreateOrgTeam(ctx, auth.OrgTeam{ID: "t3", Org: "o2", Name: "Editors", CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateOrgTeam(ctx, auth.OrgTeam{ID: "t4", Org: "o1", Name: "Admins", Roles: []string{"admin"}, CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	list, err := s.ListOrgTeams(ctx, "o1")
+	if err != nil || len(list) != 2 || list[0].Name != "Admins" {
+		t.Fatalf("list: %+v %v", list, err)
+	}
+	if err := s.UpdateOrgTeam(ctx, auth.OrgTeam{ID: "t4", Org: "o1", Name: "Editors"}); !errors.Is(err, auth.ErrTeamNameTaken) {
+		t.Errorf("rename to a taken name: %v", err)
+	}
+	if err := s.UpdateOrgTeam(ctx, auth.OrgTeam{ID: "t4", Org: "o1", Name: "Leads", Roles: []string{"editor", "admin"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateOrgTeam(ctx, auth.OrgTeam{ID: "t4", Org: "o2", Name: "x"}); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("another organization's team: %v", err)
+	}
+	by, _ := s.OrgTeamsByIDs(ctx, "o1", []string{"t1", "t3", "t4"})
+	if len(by) != 2 {
+		t.Errorf("by ids: %+v", by)
+	}
+	// Deleting a team takes it out of the memberships.
+	for _, u := range []string{"u1", "u2"} {
+		if err := s.PutOrgMember(ctx, auth.OrgMember{Org: "o1", User: u, JoinedAt: now, Teams: []string{"t1", "t4"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	in, _ := s.OrgMembersInTeams(ctx, "o1", []string{"t1"})
+	if len(in) != 2 {
+		t.Errorf("in teams: %+v", in)
+	}
+	if err := s.DeleteOrgTeam(ctx, "o1", "t1"); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := s.OrgMember(ctx, "o1", "u1")
+	if len(m.Teams) != 1 || m.Teams[0] != "t4" {
+		t.Errorf("teams after delete: %v", m.Teams)
+	}
+	if err := s.DeleteOrgTeam(ctx, "o1", "t1"); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("again: %v", err)
+	}
+}

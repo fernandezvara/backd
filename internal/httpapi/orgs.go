@@ -38,6 +38,12 @@ func (a *authAPI) orgRoutes(r chi.Router) {
 			r.With(json).Patch("/members/{user}", a.updateOrgMember)
 			r.Delete("/members/{user}", a.removeOrgMember)
 			r.Post("/leave", a.leaveOrg)
+			r.Get("/teams", a.listOrgTeams)
+			r.With(json).Post("/teams", a.createOrgTeam)
+			r.With(json).Patch("/teams/{team}", a.updateOrgTeam)
+			r.Delete("/teams/{team}", a.deleteOrgTeam)
+			r.Put("/teams/{team}/members/{user}", a.addOrgTeamMember)
+			r.Delete("/teams/{team}/members/{user}", a.removeOrgTeamMember)
 			r.Get("/invitations", a.listOrgInvitations)
 			r.With(json).Post("/invitations", a.createOrgInvitation)
 			r.Delete("/invitations/{id}", a.revokeOrgInvitation)
@@ -63,6 +69,10 @@ func orgError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, r, http.StatusConflict, codeLastOrgManager, err.Error())
 	case errors.Is(err, auth.ErrSlugTaken):
 		writeError(w, r, http.StatusConflict, codeSlugTaken, err.Error(), Detail{Path: "slug", Reason: "is used by another organization"})
+	case errors.Is(err, auth.ErrTeamNameTaken):
+		writeError(w, r, http.StatusConflict, "team_name_taken", err.Error(), Detail{Path: "name", Reason: "is used by another team of the organization"})
+	case errors.Is(err, auth.ErrTeamLimit), errors.Is(err, auth.ErrMemberTeamsLimit):
+		writeError(w, r, http.StatusConflict, "team_limit_reached", err.Error())
 	case errors.Is(err, auth.ErrEmailNotConfigured):
 		writeError(w, r, http.StatusConflict, codeConflict, err.Error())
 	case errors.Is(err, auth.ErrInvalidOrgInvitation):
@@ -645,4 +655,184 @@ func (a *adminAPI) newOrgInvitationLink(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, invitationResultJSON(res, svc.Clock()))
+}
+
+func teamJSON(t auth.OrgTeam) map[string]any {
+	return map[string]any{"id": t.ID, "name": t.Name, "roles": nonNil(t.Roles), "created_at": formatTime(t.CreatedAt)}
+}
+
+func writeTeams(w http.ResponseWriter, list []auth.OrgTeam) {
+	items := make([]map[string]any, len(list))
+	for i, t := range list {
+		items[i] = teamJSON(t)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+// teamError is orgError for the routes of one team: an unknown team is a 404.
+func teamError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, auth.ErrNotFound) {
+		writeError(w, r, http.StatusNotFound, codeNotFound, "team not found")
+		return
+	}
+	orgError(w, r, err)
+}
+
+// adminTeamError is teamError for administrators, who are told a member isn't one.
+func adminTeamError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, auth.ErrNotFound) {
+		writeError(w, r, http.StatusNotFound, codeNotFound, "team not found")
+		return
+	}
+	adminOrgError(w, r, err)
+}
+
+// listOrgTeams handles GET /_orgs/{org}/teams.
+func (a *authAPI) listOrgTeams(w http.ResponseWriter, r *http.Request) {
+	list, err := usersOf(r).OrgTeams(r.Context(), principalOf(r).User.ID, chi.URLParam(r, "org"))
+	if err != nil {
+		orgError(w, r, err)
+		return
+	}
+	writeTeams(w, list)
+}
+
+// createOrgTeam handles POST /_orgs/{org}/teams.
+func (a *authAPI) createOrgTeam(w http.ResponseWriter, r *http.Request) {
+	obj, ok := readObject(w, r)
+	if !ok {
+		return
+	}
+	f, ok := fields(w, r, obj, map[string]string{"name": "string", "roles": "strings?"})
+	if !ok {
+		return
+	}
+	roles, _ := f["roles"].([]string)
+	t, err := usersOf(r).CreateOrgTeam(r.Context(), principalOf(r).User.ID, chi.URLParam(r, "org"), f["name"].(string), roles)
+	if err != nil {
+		orgError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, teamJSON(t))
+}
+
+func teamPatch(w http.ResponseWriter, r *http.Request) (name *string, roles []string, setRoles, ok bool) {
+	obj, ok := readObject(w, r)
+	if !ok {
+		return nil, nil, false, false
+	}
+	f, ok := fields(w, r, obj, map[string]string{"name": "string?", "roles": "strings?"})
+	if !ok {
+		return nil, nil, false, false
+	}
+	if v, has := f["name"].(string); has {
+		name = &v
+	}
+	roles, setRoles = f["roles"].([]string)
+	return name, roles, setRoles, true
+}
+
+// updateOrgTeam handles PATCH /_orgs/{org}/teams/{team}.
+func (a *authAPI) updateOrgTeam(w http.ResponseWriter, r *http.Request) {
+	name, roles, set, ok := teamPatch(w, r)
+	if !ok {
+		return
+	}
+	t, err := usersOf(r).UpdateOrgTeam(r.Context(), principalOf(r).User.ID, chi.URLParam(r, "org"), chi.URLParam(r, "team"), name, roles, set)
+	if err != nil {
+		teamError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, teamJSON(t))
+}
+
+// deleteOrgTeam handles DELETE /_orgs/{org}/teams/{team}.
+func (a *authAPI) deleteOrgTeam(w http.ResponseWriter, r *http.Request) {
+	err := usersOf(r).DeleteOrgTeam(r.Context(), principalOf(r).User.ID, chi.URLParam(r, "org"), chi.URLParam(r, "team"))
+	if err != nil {
+		teamError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// addOrgTeamMember handles PUT /_orgs/{org}/teams/{team}/members/{user}.
+func (a *authAPI) addOrgTeamMember(w http.ResponseWriter, r *http.Request) {
+	v, err := usersOf(r).AddOrgTeamMember(r.Context(), principalOf(r).User.ID, chi.URLParam(r, "org"), chi.URLParam(r, "team"), chi.URLParam(r, "user"))
+	if err != nil {
+		teamError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, memberJSON(v, nil))
+}
+
+// removeOrgTeamMember handles DELETE /_orgs/{org}/teams/{team}/members/{user}.
+func (a *authAPI) removeOrgTeamMember(w http.ResponseWriter, r *http.Request) {
+	v, err := usersOf(r).RemoveOrgTeamMember(r.Context(), principalOf(r).User.ID, chi.URLParam(r, "org"), chi.URLParam(r, "team"), chi.URLParam(r, "user"))
+	if err != nil {
+		teamError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, memberJSON(v, nil))
+}
+
+// Administrators.
+
+func (a *adminAPI) listOrgTeams(w http.ResponseWriter, r *http.Request) {
+	list, err := usersOf(r).AdminOrgTeams(r.Context(), chi.URLParam(r, "org"))
+	if err != nil {
+		adminOrgError(w, r, err)
+		return
+	}
+	writeTeams(w, list)
+}
+
+func (a *adminAPI) createOrgTeam(w http.ResponseWriter, r *http.Request) {
+	obj, ok := readObject(w, r)
+	if !ok {
+		return
+	}
+	f, ok := fields(w, r, obj, map[string]string{"name": "string", "roles": "strings?"})
+	if !ok {
+		return
+	}
+	roles, _ := f["roles"].([]string)
+	t, err := usersOf(r).AdminCreateOrgTeam(r.Context(), chi.URLParam(r, "org"), f["name"].(string), roles)
+	if err != nil {
+		adminOrgError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, teamJSON(t))
+}
+
+func (a *adminAPI) updateOrgTeam(w http.ResponseWriter, r *http.Request) {
+	name, roles, set, ok := teamPatch(w, r)
+	if !ok {
+		return
+	}
+	t, err := usersOf(r).AdminUpdateOrgTeam(r.Context(), chi.URLParam(r, "org"), chi.URLParam(r, "team"), name, roles, set)
+	if err != nil {
+		adminTeamError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, teamJSON(t))
+}
+
+func (a *adminAPI) deleteOrgTeam(w http.ResponseWriter, r *http.Request) {
+	if err := usersOf(r).AdminDeleteOrgTeam(r.Context(), chi.URLParam(r, "org"), chi.URLParam(r, "team")); err != nil {
+		adminTeamError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *adminAPI) setOrgTeamMember(add bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		v, err := usersOf(r).AdminSetOrgTeamMember(r.Context(), chi.URLParam(r, "org"), chi.URLParam(r, "team"), chi.URLParam(r, "user"), add)
+		if err != nil {
+			adminTeamError(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, memberJSON(v, nil))
+	}
 }

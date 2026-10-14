@@ -56,6 +56,28 @@ What each role may do follows two rules. With `manage: roles` any role can be gi
 
 The last member who can manage the organization (`manage: org`) can't leave, be removed or lose that role: `409 last_org_manager`. Access ends at once when someone leaves or is removed; documents they created stay.
 
+## Teams
+
+A team is a group of members that **carries organization roles**: everyone in it holds those roles in addition to their own. Teams don't own documents, and access rules see roles, never team names.
+
+| Request | Who | Answers |
+|---|---|---|
+| `GET /_orgs/{org}/teams` | members | `200` with the teams |
+| `POST /_orgs/{org}/teams` `{"name", "roles"?}` | `manage: teams` | `201` |
+| `PATCH /_orgs/{org}/teams/{team}` `{"name"?, "roles"?}` | `manage: teams` | `200` |
+| `DELETE /_orgs/{org}/teams/{team}` | `manage: teams` | `204` |
+| `PUT` and `DELETE /_orgs/{org}/teams/{team}/members/{user}` | `manage: teams` | `200` with the member |
+
+- **Effective roles** are the direct roles plus the roles of the member's teams, read at each request, so a change applies at the next one. The members list shows where each role comes from (`direct`, `default` or the team's name) and marks, in `overlap`, a role held both directly and through a team.
+- **Granting rules apply to teams too:** a team carries only roles the caller could give, and putting someone in a team gives them its roles, so the caller must be able to give those. An administrator can't put themselves in the owners' team.
+- **The organization keeps a manager:** changing a team's roles, deleting it or taking a member out of it can't leave the organization without anyone who can manage it (`409 last_org_manager`).
+- **Leaving** the organization removes the member from its teams; **deleting a team** removes it from every membership.
+- **Caps:** `max_teams_per_org` and `max_teams_per_member` (`409 team_limit_reached`); names are unique in an organization (`409 team_name_taken`).
+
+{{< hint style="tip" title="Best practice" >}}
+Give **management** roles (`owner`, `admin`) directly and **access** roles (`editor`, `viewer`) through teams. A member who holds `editor` both ways keeps it after being taken out of the team, so removal looks done and isn't; the members list marks those roles in `overlap`.
+{{< /hint >}}
+
 ## Invitations
 
 People join an organization by accepting an invitation. A manager (`manage: members`) creates one:

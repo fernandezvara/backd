@@ -461,6 +461,87 @@ type orgTeamDoc struct {
 
 func (s *AuthStore) orgTeams() *mongo.Collection { return s.db.Collection(OrgTeamsCollection) }
 
+func (d orgTeamDoc) team() auth.OrgTeam {
+	return auth.OrgTeam{ID: d.ID, Org: d.Org, Name: d.Name, Roles: nonNilStrings(d.Roles), CreatedAt: d.CreatedAt.UTC()}
+}
+
+func nonNilStrings(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
+}
+
+func (s *AuthStore) CreateOrgTeam(ctx context.Context, t auth.OrgTeam) error {
+	_, err := s.orgTeams().InsertOne(ctx, orgTeamDoc{ID: t.ID, Org: t.Org, Name: t.Name, Roles: nonNilStrings(t.Roles), CreatedAt: t.CreatedAt})
+	if mongo.IsDuplicateKeyError(err) {
+		return auth.ErrTeamNameTaken
+	}
+	return err
+}
+
+func (s *AuthStore) UpdateOrgTeam(ctx context.Context, t auth.OrgTeam) error {
+	res, err := s.orgTeams().UpdateOne(ctx, bson.D{{Key: "_id", Value: t.ID}, {Key: "org", Value: t.Org}},
+		bson.D{{Key: "$set", Value: bson.D{{Key: "name", Value: t.Name}, {Key: "roles", Value: nonNilStrings(t.Roles)}}}})
+	switch {
+	case mongo.IsDuplicateKeyError(err):
+		return auth.ErrTeamNameTaken
+	case err != nil:
+		return err
+	case res.MatchedCount == 0:
+		return auth.ErrNotFound
+	}
+	return nil
+}
+
+func (s *AuthStore) DeleteOrgTeam(ctx context.Context, org, id string) error {
+	res, err := s.orgTeams().DeleteOne(ctx, bson.D{{Key: "_id", Value: id}, {Key: "org", Value: org}})
+	if err != nil {
+		return err
+	}
+	if res.DeletedCount == 0 {
+		return auth.ErrNotFound
+	}
+	_, err = s.orgMembers().UpdateMany(ctx, bson.D{{Key: "org", Value: org}, {Key: "teams", Value: id}},
+		bson.D{{Key: "$pull", Value: bson.D{{Key: "teams", Value: id}}}})
+	return err
+}
+
+func (s *AuthStore) ListOrgTeams(ctx context.Context, org string) ([]auth.OrgTeam, error) {
+	cur, err := s.orgTeams().Find(ctx, bson.D{{Key: "org", Value: org}}, options.Find().SetSort(bson.D{{Key: "name", Value: 1}}))
+	if err != nil {
+		return nil, err
+	}
+	var docs []orgTeamDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	out := make([]auth.OrgTeam, len(docs))
+	for i, d := range docs {
+		out[i] = d.team()
+	}
+	return out, nil
+}
+
+func (s *AuthStore) OrgMembersInTeams(ctx context.Context, org string, teams []string) ([]auth.OrgMember, error) {
+	if len(teams) == 0 {
+		return nil, nil
+	}
+	cur, err := s.orgMembers().Find(ctx, bson.D{{Key: "org", Value: org}, {Key: "teams", Value: bson.D{{Key: "$in", Value: teams}}}})
+	if err != nil {
+		return nil, err
+	}
+	var docs []orgMemberDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	out := make([]auth.OrgMember, len(docs))
+	for i, d := range docs {
+		out[i] = d.member()
+	}
+	return out, nil
+}
+
 func (s *AuthStore) OrgTeamsByIDs(ctx context.Context, org string, ids []string) ([]auth.OrgTeam, error) {
 	if len(ids) == 0 {
 		return nil, nil

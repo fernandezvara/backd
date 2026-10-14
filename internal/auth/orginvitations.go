@@ -548,7 +548,7 @@ func (s *Users) AcceptOrgInvitation(ctx context.Context, p Principal, token stri
 		return Membership{}, err
 	}
 	s.Audit(ctx, AuditOrgInviteAccept, orgTarget(inv.Org), map[string]any{"invitation": inv.ID, "user": p.User.ID, "roles": used.Roles, "teams": m.Teams})
-	return s.membership(pv.Org, m), nil
+	return s.membership(ctx, pv.Org, m)
 }
 
 // OrgInvitationEmail is what the worker needs to write the message of an invitation.

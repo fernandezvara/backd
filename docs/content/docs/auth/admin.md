@@ -93,6 +93,9 @@ Paths are relative to `/v1/{realm}/_admin`. Bodies are JSON (`Content-Type: appl
 | `POST /orgs/{org}/members` | `{"user", "roles"?}` | `200` with the member: adds the user **without an invitation**, or gives an existing member the roles. `404` for an unknown user, `409 org_limit_reached` at their membership cap. Audited as `org.member_add` |
 | `PATCH /orgs/{org}/members/{user}` | `{"roles": [...]}` | `200`: replaces the member's direct roles. `409 last_org_manager` when it would leave the organization without a manager. Audited as `org.roles` |
 | `DELETE /orgs/{org}/members/{user}` | none | `204`; `409 last_org_manager` for the last manager (assign another first). Audited as `org.member_remove` |
+| `GET /orgs/{org}/teams`, `POST /orgs/{org}/teams` | `{"name", "roles"?}` | The organization's [teams](../../api/organizations/#teams); `201` on create, `409 team_name_taken` or `team_limit_reached`. Audited as `org.team_create` |
+| `PATCH` and `DELETE /orgs/{org}/teams/{team}` | `{"name"?, "roles"?}` | `200` / `204`; `409 last_org_manager` when no manager would be left. Audited as `org.team_update`, `org.team_delete` |
+| `PUT` and `DELETE /orgs/{org}/teams/{team}/members/{user}` | none | `200` with the member; `404` when the user isn't a member. Audited as `org.team_member_add`, `org.team_member_remove` |
 | `GET /orgs/{org}/invitations` | none | `200` with the organization's [invitations](../../api/organizations/#invitations), never tokens |
 | `POST /orgs/{org}/invitations` | `{"binding", "user"?, "email"?, "roles"?, "teams"?, "send"?, "expires_in"?, "max_uses"?}` | `201` with the invitation and its `token` and `link`, which are shown only now; any role may be given, but an open link never one that manages the organization. Audited as `org.invitation_create` |
 | `POST /orgs/{org}/invitations/{id}/link` | none | `200` with a new token and link; the old one stops working |

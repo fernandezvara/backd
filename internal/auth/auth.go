@@ -365,6 +365,17 @@ type Store interface {
 	DeleteOrgInvitation(ctx context.Context, org, id string) error
 	// OrgTeamsByIDs returns the teams of the organization with these ids that exist.
 	OrgTeamsByIDs(ctx context.Context, org string, ids []string) ([]OrgTeam, error)
+	// CreateOrgTeam inserts a team; ErrTeamNameTaken when the organization has one of that name.
+	CreateOrgTeam(ctx context.Context, t OrgTeam) error
+	// UpdateOrgTeam replaces a team's name and roles; ErrTeamNameTaken, ErrNotFound.
+	UpdateOrgTeam(ctx context.Context, t OrgTeam) error
+	// DeleteOrgTeam removes the team and takes its id out of every membership of the
+	// organization; ErrNotFound if none.
+	DeleteOrgTeam(ctx context.Context, org, id string) error
+	// ListOrgTeams returns an organization's teams sorted by name.
+	ListOrgTeams(ctx context.Context, org string) ([]OrgTeam, error)
+	// OrgMembersInTeams returns the members who belong to any of the teams.
+	OrgMembersInTeams(ctx context.Context, org string, teams []string) ([]OrgMember, error)
 
 	// LoginAttempts returns the failure counter of key (zero if none).
 	LoginAttempts(ctx context.Context, key string) (Attempts, error)

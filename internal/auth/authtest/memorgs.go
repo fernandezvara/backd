@@ -212,6 +212,88 @@ func (m *MemStore) DeleteOrgMember(_ context.Context, org, user string) error {
 	return nil
 }
 
+func (m *MemStore) CreateOrgTeam(_ context.Context, t auth.OrgTeam) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o := m.org()
+	if o.teams == nil {
+		o.teams = map[string]auth.OrgTeam{}
+	}
+	for _, x := range o.teams {
+		if x.Org == t.Org && x.Name == t.Name {
+			return auth.ErrTeamNameTaken
+		}
+	}
+	o.teams[t.ID] = t
+	return nil
+}
+
+func (m *MemStore) UpdateOrgTeam(_ context.Context, t auth.OrgTeam) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o := m.org()
+	cur, ok := o.teams[t.ID]
+	if !ok || cur.Org != t.Org {
+		return auth.ErrNotFound
+	}
+	for id, x := range o.teams {
+		if id != t.ID && x.Org == t.Org && x.Name == t.Name {
+			return auth.ErrTeamNameTaken
+		}
+	}
+	cur.Name, cur.Roles = t.Name, t.Roles
+	o.teams[t.ID] = cur
+	return nil
+}
+
+func (m *MemStore) DeleteOrgTeam(_ context.Context, org, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o := m.org()
+	if t, ok := o.teams[id]; !ok || t.Org != org {
+		return auth.ErrNotFound
+	}
+	delete(o.teams, id)
+	for k, mem := range o.members {
+		if mem.Org == org && slices.Contains(mem.Teams, id) {
+			mem.Teams = slices.DeleteFunc(slices.Clone(mem.Teams), func(t string) bool { return t == id })
+			o.members[k] = mem
+		}
+	}
+	return nil
+}
+
+func (m *MemStore) ListOrgTeams(_ context.Context, org string) ([]auth.OrgTeam, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []auth.OrgTeam
+	for _, t := range m.org().teams {
+		if t.Org == org {
+			out = append(out, t)
+		}
+	}
+	slices.SortFunc(out, func(a, b auth.OrgTeam) int { return cmp.Compare(a.Name, b.Name) })
+	return out, nil
+}
+
+func (m *MemStore) OrgMembersInTeams(_ context.Context, org string, teams []string) ([]auth.OrgMember, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []auth.OrgMember
+	for _, mem := range m.org().members {
+		if mem.Org != org {
+			continue
+		}
+		for _, t := range mem.Teams {
+			if slices.Contains(teams, t) {
+				out = append(out, mem)
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
 // PutOrgTeam stores a team, for tests: teams are managed through the service.
 func (m *MemStore) PutOrgTeam(t auth.OrgTeam) {
 	m.mu.Lock()

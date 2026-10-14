@@ -2242,6 +2242,103 @@ func TestContract(t *testing.T) {
 		req("POST", adm+"/"+madeID+"/owner", `{}`, key, 400)
 		req("POST", adm+"/"+madeID+"/owner", `{"user": "nosuchuser"}`, key, 404)
 		// A user at the limit of memberships can't be added to another organization.
+		// Teams.
+		teamsPath := orgs + "/" + id + "/teams"
+		req("GET", teamsPath, "", nil, 401)
+		req("GET", teamsPath, "", carl, 403)
+		req("GET", teamsPath, "", ada, 200)
+		req("POST", teamsPath, `{"name": "Editors", "roles": ["editor"]}`, nil, 401)
+		req("POST", teamsPath, `{"name": "Editors"}`, carl, 403)
+		req("POST", teamsPath, `{}`, ada, 400)
+		req("POST", "/v1/acme/_orgs/nosuch/teams", `{"name": "x"}`, ada, 403)
+		team := req("POST", teamsPath, `{"name": "Editors", "roles": ["editor"]}`, ada, 201)
+		teamID := team["id"].(string)
+		req("POST", teamsPath, `{"name": "Editors"}`, ada, 409)
+		tp := teamsPath + "/" + teamID
+		req("PATCH", tp, `{"name": "Writers"}`, withJSON(nil), 401)
+		req("PATCH", tp, `{"name": "Writers"}`, withJSON(carl), 403)
+		req("PATCH", tp, `{"roles": ["wizard"]}`, withJSON(ada), 400)
+		req("PATCH", teamsPath+"/nosuch", `{"name": "x"}`, withJSON(ada), 404)
+		req("PATCH", tp, `{"name": "Writers"}`, withJSON(ada), 200)
+		tm := tp + "/members/" + f.adaID
+		req("PUT", tm, "", nil, 401)
+		req("PUT", tm, "", carl, 403)
+		req("PUT", teamsPath+"/nosuch/members/"+f.adaID, "", ada, 404)
+		req("PUT", tp+"/members/nosuchuser", "", ada, 403)
+		req("PUT", tm, "", ada, 200)
+		f.svc.Settings.Organizations.MaxTeamsPerMember = 0
+		req("PUT", tp+"/members/"+f.adaID, "", ada, 200) // already in: nothing to count
+		f.svc.Settings.Organizations.MaxTeamsPerMember = registry.DefaultMaxTeamsPerMember
+		req("DELETE", tm, "", nil, 401)
+		req("DELETE", tm, "", carl, 403)
+		req("DELETE", teamsPath+"/nosuch/members/"+f.adaID, "", ada, 404)
+		req("DELETE", tm, "", ada, 200)
+		bosses := req("POST", teamsPath, `{"name": "Bosses", "roles": ["owner"]}`, ada, 201)["id"].(string)
+		f.svc.Settings.Organizations.MaxTeamsPerMember = 0
+		req("PUT", teamsPath+"/"+bosses+"/members/"+f.adaID, "", ada, 409)
+		f.svc.Settings.Organizations.MaxTeamsPerMember = registry.DefaultMaxTeamsPerMember
+		req("DELETE", tp, "", nil, 401)
+		req("DELETE", tp, "", carl, 403)
+		req("DELETE", teamsPath+"/nosuch", "", ada, 404)
+		req("DELETE", tp, "", ada, 204)
+		req("GET", "/v1/nope/_orgs/x/teams", "", ada, 404)
+		req("POST", "/v1/nope/_orgs/x/teams", `{"name": "x"}`, ada, 404)
+		// A team that keeps the organization its manager can't lose that, by any route.
+		mgr := req("POST", teamsPath, `{"name": "Managers", "roles": ["owner"]}`, ada, 201)["id"].(string)
+		req("PUT", teamsPath+"/"+mgr+"/members/"+f.adaID, "", ada, 200)
+		if _, err := f.svc.AdminSetMemberRoles(context.Background(), id, f.adaID, nil); err != nil {
+			t.Fatal(err)
+		}
+		req("PATCH", teamsPath+"/"+mgr, `{"roles": []}`, withJSON(ada), 409)
+		req("DELETE", teamsPath+"/"+mgr+"/members/"+f.adaID, "", ada, 409)
+		req("DELETE", teamsPath+"/"+mgr, "", ada, 409)
+		admMgr := adm + "/" + id + "/teams/" + mgr
+		req("PATCH", admMgr, `{"roles": []}`, withJSON(key), 409)
+		req("DELETE", admMgr+"/members/"+f.adaID, "", key, 409)
+		req("DELETE", admMgr, "", key, 409)
+		if _, err := f.svc.AdminSetMemberRoles(context.Background(), id, f.adaID, []string{"owner"}); err != nil {
+			t.Fatal(err)
+		}
+		req("DELETE", teamsPath+"/"+mgr, "", ada, 204)
+		// The only manager is kept: ada is the owner only directly, so the team of owners
+		// going away or losing the role is fine, but the organization's last manager is not.
+		req("PATCH", teamsPath+"/"+bosses, `{"roles": []}`, withJSON(ada), 200)
+		req("DELETE", teamsPath+"/"+bosses, "", ada, 204)
+		admTeams := adm + "/" + id + "/teams"
+		req("GET", admTeams, "", nil, 401)
+		req("GET", admTeams, "", ada, 403)
+		req("GET", adm+"/nosuch/teams", "", key, 404)
+		req("GET", admTeams, "", key, 200)
+		req("POST", admTeams, `{"name": "Ops"}`, nil, 401)
+		req("POST", admTeams, `{"name": "Ops"}`, ada, 403)
+		req("POST", admTeams, `{}`, key, 400)
+		req("POST", adm+"/nosuch/teams", `{"name": "Ops"}`, key, 404)
+		opsTeam := req("POST", admTeams, `{"name": "Ops", "roles": ["owner"]}`, key, 201)["id"].(string)
+		req("POST", admTeams, `{"name": "Ops"}`, key, 409)
+		ap := admTeams + "/" + opsTeam
+		req("PATCH", ap, `{"name": "Ops2"}`, withJSON(nil), 401)
+		req("PATCH", ap, `{"name": "Ops2"}`, withJSON(ada), 403)
+		req("PATCH", admTeams+"/nosuch", `{"name": "x"}`, withJSON(key), 404)
+		req("PATCH", ap, `{"roles": ["wizard"]}`, withJSON(key), 400)
+		req("PATCH", ap, `{"name": "Ops2"}`, withJSON(key), 200)
+		am := ap + "/members/" + f.adaID
+		req("PUT", am, "", nil, 401)
+		req("PUT", am, "", ada, 403)
+		req("PUT", admTeams+"/nosuch/members/"+f.adaID, "", key, 404)
+		req("PUT", ap+"/members/nosuchuser", "", key, 404)
+		req("PUT", am, "", key, 200)
+		req("DELETE", am, "", key, 200)
+		f.svc.Settings.Organizations.MaxTeamsPerMember = 0
+		req("PUT", am, "", key, 409)
+		f.svc.Settings.Organizations.MaxTeamsPerMember = registry.DefaultMaxTeamsPerMember
+		req("DELETE", am, "", nil, 401)
+		req("DELETE", am, "", ada, 403)
+		req("DELETE", admTeams+"/nosuch/members/"+f.adaID, "", key, 404)
+		req("DELETE", am, "", key, 200)
+		req("DELETE", ap, "", nil, 401)
+		req("DELETE", ap, "", ada, 403)
+		req("DELETE", admTeams+"/nosuch", "", key, 404)
+		req("DELETE", ap, "", key, 204)
 		// Invitations. The realm's email limits are lifted for the sends and brought back for 429.
 		inv := orgs + "/" + id + "/invitations"
 		lim := &f.svc.Settings.Email.Limits

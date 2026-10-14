@@ -59,6 +59,11 @@ var (
 	ErrSlugTaken = errors.New("that slug is taken")
 	// ErrOrgUserNotFound: the user an administrator named doesn't exist.
 	ErrOrgUserNotFound = errors.New("user not found")
+	// ErrTeamNameTaken: the organization has a team of that name.
+	ErrTeamNameTaken = errors.New("the organization has a team with that name")
+	// ErrTeamLimit and ErrMemberTeamsLimit: max_teams_per_org and max_teams_per_member.
+	ErrTeamLimit        = errors.New("the organization has the most teams it may")
+	ErrMemberTeamsLimit = errors.New("that member belongs to the most teams a member may")
 	// ErrOrgNotActive: the organization is deleted.
 	ErrOrgNotActive = errors.New("the organization is not active")
 )
@@ -294,7 +299,7 @@ func (s *Users) createOrg(ctx context.Context, o *registry.OrgSettings, name, sl
 		return Membership{}, err
 	}
 	s.Audit(ctx, AuditOrgCreate, orgTarget(org.ID), map[string]any{"by": by, "creator": creator})
-	return s.membership(org, m), nil
+	return s.membership(ctx, org, m)
 }
 
 func orgTarget(id string) string { return "org:" + id }
@@ -318,8 +323,12 @@ func (s *Users) checkMembershipCap(ctx context.Context, o *registry.OrgSettings,
 	return nil
 }
 
-func (s *Users) membership(org Org, m OrgMember) Membership {
-	return Membership{Org: org, Member: m, Roles: s.effective(m, s.now(), nil)}
+func (s *Users) membership(ctx context.Context, org Org, m OrgMember) (Membership, error) {
+	teamRoles, err := s.teamRolesOf(ctx, org.ID, m.Teams)
+	if err != nil {
+		return Membership{}, err
+	}
+	return Membership{Org: org, Member: m, Roles: s.effective(m, s.now(), teamRoles)}, nil
 }
 
 // MyOrgs lists the organizations a user belongs to, with their effective roles. Deleted
@@ -344,7 +353,11 @@ func (s *Users) MyOrgs(ctx context.Context, userID string) ([]Membership, error)
 	var out []Membership
 	for _, m := range members {
 		if org, ok := orgs[m.Org]; ok && org.Status != OrgDeleted {
-			out = append(out, s.membership(org, m))
+			mem, err := s.membership(ctx, org, m)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, mem)
 		}
 	}
 	slices.SortFunc(out, func(a, b Membership) int { return strings.Compare(a.Org.Name+a.Org.ID, b.Org.Name+b.Org.ID) })
@@ -371,7 +384,7 @@ func (s *Users) MembershipOf(ctx context.Context, userID, orgID string) (Members
 	if err != nil {
 		return Membership{}, err
 	}
-	return s.membership(org, m), nil
+	return s.membership(ctx, org, m)
 }
 
 // caps are what the caller's effective roles let them manage in the organization.
@@ -444,9 +457,31 @@ func (s *Users) memberViews(ctx context.Context, viewer Membership, orgID, after
 	// An administrator has no membership.
 	showEmail := viewer.Member.User == "" || o.MembersVisibleTo == registry.MembersVisibleToMembers || s.caps(viewer).Any()
 	now := s.now()
+	var teamIDs []string
+	for _, m := range list {
+		for _, t := range m.Teams {
+			if !slices.Contains(teamIDs, t) {
+				teamIDs = append(teamIDs, t)
+			}
+		}
+	}
+	teams, err := s.Store.OrgTeamsByIDs(ctx, orgID, teamIDs)
+	if err != nil {
+		return nil, false, err
+	}
+	byID := map[string]OrgTeam{}
+	for _, t := range teams {
+		byID[t.ID] = t
+	}
 	out := make([]MemberView, len(list))
 	for i, m := range list {
-		v := MemberView{Member: m, Effective: s.effective(m, now, nil)}
+		roles := map[string][]string{}
+		for _, id := range m.Teams {
+			if t, ok := byID[id]; ok {
+				roles[t.Name] = t.Roles
+			}
+		}
+		v := MemberView{Member: m, Effective: s.effective(m, now, roles)}
 		for _, e := range v.Effective {
 			if slices.Contains(e.Origin, "direct") && len(e.Origin) > 1 {
 				v.Overlap = append(v.Overlap, e.Role)
@@ -531,11 +566,22 @@ func (s *Users) setRoles(ctx context.Context, callerCaps registry.OrgCaps, by, o
 		return MemberView{}, err
 	}
 	if len(added) == 0 && len(removed) == 0 {
-		return s.viewOf(tm), nil
+		return s.viewOf(ctx, tm)
 	}
-	if !s.capsOfRoles(roles).Has(registry.CapOrg) && targetCaps.Has(registry.CapOrg) {
-		if err := s.keepManager(ctx, orgID, target); err != nil {
+	if targetCaps.Has(registry.CapOrg) && !s.capsOfRoles(roles).Has(registry.CapOrg) {
+		// Losing the direct role: still a manager through a team, or someone else is.
+		held := slices.Clone(roles)
+		byTeam, err := s.teamRolesOf(ctx, orgID, tm.Teams)
+		if err != nil {
 			return MemberView{}, err
+		}
+		for _, rs := range byTeam {
+			held = append(held, rs...)
+		}
+		if !s.capsOfRoles(held).Has(registry.CapOrg) {
+			if err := s.keepManager(ctx, orgID, target); err != nil {
+				return MemberView{}, err
+			}
 		}
 	}
 	var grants []RoleGrant
@@ -554,11 +600,21 @@ func (s *Users) setRoles(ctx context.Context, callerCaps registry.OrgCaps, by, o
 		return MemberView{}, err
 	}
 	s.Audit(ctx, AuditOrgRoles, orgTarget(orgID), map[string]any{"user": target, "added": added, "removed": removed})
-	return s.viewOf(tm), nil
+	return s.viewOf(ctx, tm)
 }
 
-func (s *Users) viewOf(m OrgMember) MemberView {
-	return MemberView{Member: m, Effective: s.effective(m, s.now(), nil)}
+func (s *Users) viewOf(ctx context.Context, m OrgMember) (MemberView, error) {
+	teamRoles, err := s.teamRolesOf(ctx, m.Org, m.Teams)
+	if err != nil {
+		return MemberView{}, err
+	}
+	v := MemberView{Member: m, Effective: s.effective(m, s.now(), teamRoles)}
+	for _, e := range v.Effective {
+		if slices.Contains(e.Origin, "direct") && len(e.Origin) > 1 {
+			v.Overlap = append(v.Overlap, e.Role)
+		}
+	}
+	return v, nil
 }
 
 // AdminAddMember adds a member directly, as an administrator (no invitation, audited).
@@ -614,7 +670,7 @@ func (s *Users) addMember(ctx context.Context, o *registry.OrgSettings, org Org,
 			return MemberView{}, err
 		}
 	}
-	return s.viewOf(m), nil
+	return s.viewOf(ctx, m)
 }
 
 // AdminAssignOwner gives a user the creator roles of an organization, for one left without a
@@ -706,20 +762,53 @@ func (s *Users) removeMember(ctx context.Context, orgID string, m OrgMember, act
 // keepManager returns ErrLastOrgManager when user is the only member who can manage the
 // organization.
 func (s *Users) keepManager(ctx context.Context, orgID, user string) error {
+	return s.keepManagerWith(ctx, orgID, user, nil)
+}
+
+// keepManagerWith is keepManager with the roles of some teams taken as given (team id → roles;
+// a team missing from a non-nil map is gone), for a change to a team that hasn't been made yet.
+func (s *Users) keepManagerWith(ctx context.Context, orgID, skip string, teamRoles map[string][]string) error {
 	o := s.Settings.Organizations
-	var managers []string
+	teams, err := s.Store.ListOrgTeams(ctx, orgID)
+	if err != nil {
+		return err
+	}
+	roles := map[string][]string{} // team id → roles, as they will be
+	for _, t := range teams {
+		roles[t.ID] = t.Roles
+	}
+	if teamRoles != nil {
+		roles = teamRoles
+	}
+	var managerRoles, managerTeams []string
 	for name, r := range o.Roles {
 		if r.Manage.Has(registry.CapOrg) {
-			managers = append(managers, name)
+			managerRoles = append(managerRoles, name)
 		}
 	}
-	list, err := s.Store.OrgMembersWithRoles(ctx, orgID, managers)
+	for id, rs := range roles {
+		if o.CapsOf(rs).Has(registry.CapOrg) {
+			managerTeams = append(managerTeams, id)
+		}
+	}
+	direct, err := s.Store.OrgMembersWithRoles(ctx, orgID, managerRoles)
+	if err != nil {
+		return err
+	}
+	inTeams, err := s.Store.OrgMembersInTeams(ctx, orgID, managerTeams)
 	if err != nil {
 		return err
 	}
 	now := s.now()
-	for _, m := range list {
-		if m.User != user && o.CapsOf(m.DirectRoles(now)).Has(registry.CapOrg) {
+	for _, m := range append(direct, inTeams...) {
+		if m.User == skip {
+			continue
+		}
+		eff := m.DirectRoles(now)
+		for _, t := range m.Teams {
+			eff = append(eff, roles[t]...)
+		}
+		if o.CapsOf(eff).Has(registry.CapOrg) {
 			return nil
 		}
 	}
@@ -831,7 +920,11 @@ func (s *Users) RuleOrgs(ctx context.Context, userID string, mfa bool) (map[stri
 		if !ok || !org.Counts(mfa) {
 			continue
 		}
-		eff := s.effective(m, now, nil)
+		teamRoles, err := s.teamRolesOf(ctx, m.Org, m.Teams)
+		if err != nil {
+			return nil, err
+		}
+		eff := s.effective(m, now, teamRoles)
 		roles := make([]string, 0, len(eff))
 		for _, e := range eff {
 			if o.Declared(e.Role) { // a role the realm no longer declares grants nothing
@@ -854,4 +947,21 @@ func nonNilStrings(s []string) []string {
 func (s *Users) OrgActive(ctx context.Context, id string) bool {
 	org, err := s.Store.OrgByID(ctx, id)
 	return err == nil && (org.Status == OrgActive || org.Status == OrgOrphaned)
+}
+
+// teamRolesOf returns the roles of the teams a member belongs to, by team name. A team that no
+// longer exists carries nothing.
+func (s *Users) teamRolesOf(ctx context.Context, org string, ids []string) (map[string][]string, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	teams, err := s.Store.OrgTeamsByIDs(ctx, org, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string][]string{}
+	for _, t := range teams {
+		out[t.Name] = t.Roles
+	}
+	return out, nil
 }
