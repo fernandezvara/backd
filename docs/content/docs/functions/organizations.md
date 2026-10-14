@@ -23,6 +23,7 @@ if (org.claims.plan === "free" && org.roles.includes("member")) { /* … */ }
 | `name` | the organization's name |
 | `roles` | the effective roles: direct, default and through teams |
 | `teams` | the ids of the member's teams |
+| `team_roles` | the [team roles](../../organizations/team-roles/) that count now, as `{ team, role, from?, until? }`: windows that aren't open are left out, and so are roles that require a second factor the session lacks |
 | `claims` | the organization's [claims](../../api/organizations/#creating-and-reading) |
 | `counts` | whether the membership counts for this session: false when the organization requires a second factor and the session used none |
 | `require_mfa` | the organization's setting |
@@ -36,6 +37,8 @@ The memberships are read once, when the call starts, and are the same data [acce
 ```ts
 await ctx.db("main").collection("projects").create({ title: "Plan" }, { org: orgId });
 ```
+
+In a collection with [teams](../../organizations/team-roles/#documents-that-belong-to-a-team) name the team too, `{ org: orgId, team: teamId }`: the caller must belong to it or hold a team role in it (`403 not_team_member`).
 
 `ctx.admin.db` (a function with `admin: true`) may use any active organization, as the admin data route does.
 
@@ -58,6 +61,7 @@ await ctx.admin.orgs.invitations.create(org.id, { binding: "email", email: input
 | `assignOwner(id, user)` | makes the user a manager (for an orphaned organization) |
 | `teams.list(id)`, `create`, `update`, `delete`, `addMember`, `removeMember` | [teams](../../api/organizations/#teams) |
 | `teams.members(id, team, { role? })` | the team's members and the holders of its [team roles](../../organizations/team-roles/), in force now |
+| `teams.grantRole(id, team, { user, role, from?, until? })`, `setRoleWindow`, `revokeRole(id, team, { user, role })` | give, re-window and take away a team role (RFC 3339 times); audited with the function as the actor |
 | `invitations.create(id, input)`, `list(id)`, `delete(id, invitation)` | [invitations](../../api/organizations/#invitations); `create` answers the `token` and `link` |
 
 Errors of backd's own (an unknown organization, a name taken, the last manager) throw a `FunctionError` with its status and code. Review a function with `admin: true` as privileged code.

@@ -1373,6 +1373,42 @@ class AdminOrgs {
   }
 
   /**
+   * Gives a member a team role in a team, for the window `from`..`until`, as an administrator.
+   * @param {string} id
+   * @param {string} team
+   * @param {import('./orgs.js').TeamRoleInput} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgTeamMember>}
+   */
+  async grantTeamRole(id, team, input, opts) {
+    return (await this.admin._request({ method: 'POST', path: ['orgs', id, 'teams', team, 'roles'], body: input, ...opts })).data
+  }
+
+  /**
+   * Replaces the window of a team role a member holds.
+   * @param {string} id
+   * @param {string} team
+   * @param {import('./orgs.js').TeamRoleInput} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgTeamMember>}
+   */
+  async setTeamRoleWindow(id, team, input, opts) {
+    return (await this.admin._request({ method: 'PATCH', path: ['orgs', id, 'teams', team, 'roles'], body: input, ...opts })).data
+  }
+
+  /**
+   * Takes a team role from a member.
+   * @param {string} id
+   * @param {string} team
+   * @param {{ user: string, role: string }} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgTeamMember>}
+   */
+  async revokeTeamRole(id, team, input, opts) {
+    return (await this.admin._request({ method: 'DELETE', path: ['orgs', id, 'teams', team, 'roles'], body: input, ...opts })).data
+  }
+
+  /**
    * Status, binding, uses and expiry of an organization's invitations; never tokens.
    * @param {string} id
    * @param {RequestOptions} [opts]

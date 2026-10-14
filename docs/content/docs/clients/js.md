@@ -574,6 +574,9 @@ await backd.orgs.members(org.id).update(userId, ['editor'])   // direct roles
 await backd.orgs.teams(org.id).create({ name: 'Editors', roles: ['editor'] })
 await backd.orgs.teams(org.id).addMember(team.id, userId)
 const { items } = await backd.orgs.teams(org.id).members(team.id, { role: 'manager' })   // members and holders of a team role, in force now
+await backd.orgs.teams(org.id).grantRole(team.id, { user: userId, role: 'delegate', until: '2026-08-15T00:00:00Z' })
+await backd.orgs.teams(org.id).setRoleWindow(team.id, { user: userId, role: 'delegate', until: '2026-08-31T00:00:00Z' })
+await backd.orgs.teams(org.id).revokeRole(team.id, { user: userId, role: 'delegate' })
 
 // An invitation answers the link once: show it, send it, or let the server email it.
 const inv = await backd.orgs.invitations(org.id).create({ binding: 'email', email: 'ana@example.com', roles: ['editor'], send: true })
@@ -592,7 +595,16 @@ await projects.create({ title: 'Plan' })
 const { items } = await projects.list({ where: { status: 'open' } })
 ```
 
-`org` in the options of `create` and `batch` does the same for one call. Changing the realm's mind is an administrator's job: documents move between organizations only through the [admin API](../../auth/admin/#data).
+`org` in the options of `create` and `batch` does the same for one call.
+
+In a collection with [teams](../../organizations/team-roles/#documents-that-belong-to-a-team), `inTeam(id)` narrows a collection of an organization further: creates go to that team (the caller must belong to it or hold a team role in it, or the create throws `NotTeamMemberError`) and lists show only its documents.
+
+```js
+const requests = backd.db('main').collection('requests').inOrg(org.id).inTeam(sales.id)
+await requests.create({ title: 'Leave' })
+```
+
+Moving documents between organizations or teams is an administrator's job: only through the [admin API](../../auth/admin/#data).
 
 - **Deleting** an organization and **turning `require_mfa` on** ask for a fresh proof of identity: wrap them in [`backd.auth.withProof`](#sign-up-login-and-sessions), as other sensitive actions.
 - **A second factor.** `mfa_met` is false for a session without one in an organization that requires it; the organization's calls then throw `OrgRequiresMFAError`. Leaving is still allowed.
@@ -611,6 +623,8 @@ Every answer that isn't 2xx throws a `BackdError`, or one of its subclasses:
 | `ConflictError` | 409 | `email_taken`, `conflict`, `write_conflict` |
 | `IdTakenError` (a `ConflictError`) | 409 | `id_taken`: a document with that [custom id](#custom-ids) exists, and nothing was overwritten |
 | `NotOrgMemberError`, `OrgRequiresMFAError`, `OrgRoleRequiresMFAError` (`ForbiddenError`s) | 403 | `not_org_member` (also for an unknown organization), `org_requires_mfa`, `org_role_requires_mfa` (`details` names the role) |
+| `NotTeamMemberError` (a `ForbiddenError`) | 403 | `not_team_member`: not a member of the team and no team role there (the same for an unknown team) |
+| `TeamError` (a `ValidationError`) | 400 | `team_required`, `team_not_allowed` |
 | `LastOrgManagerError` (a `ConflictError`) | 409 | `last_org_manager`: the organization needs someone who can manage it |
 | `VersionMismatchError` | 412 | `version_mismatch` |
 | `ConsentRequiredError` | 400, 403 | `consent_required`; `consents` lists what to accept, as `{ name, version }` |

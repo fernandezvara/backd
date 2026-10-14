@@ -59,7 +59,9 @@ func IsRoleRequiresMFA(err error) (*RoleRequiresMFAError, bool) {
 type resolved struct {
 	Roles     []EffectiveRole
 	TeamRoles map[string][]string
-	Withheld  []WithheldRole
+	// TeamGrants are the team role grants that count, with their windows.
+	TeamGrants []TeamRoleGrant
+	Withheld   []WithheldRole
 }
 
 // resolve computes the roles of a member that count for a session with or without a second
@@ -90,6 +92,7 @@ func (s *Users) resolve(ctx context.Context, m OrgMember, mfa bool) (resolved, e
 			continue
 		}
 		out.TeamRoles[g.Team] = append(out.TeamRoles[g.Team], g.Role)
+		out.TeamGrants = append(out.TeamGrants, g)
 	}
 	return out, nil
 }

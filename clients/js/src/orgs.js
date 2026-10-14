@@ -50,6 +50,16 @@
  */
 
 /**
+ * A team role to give, change or take away: the member and the role, and the window it counts
+ * in (`from` and `until`, RFC 3339; absent is open).
+ * @typedef {object} TeamRoleInput
+ * @property {string} user   A member of the organization (they need not belong to the team).
+ * @property {string} role   A team role the realm declares.
+ * @property {string} [from]
+ * @property {string} [until]
+ */
+
+/**
  * A member or role holder of one team.
  * @typedef {OrgMember & { in_team: boolean, roles_in_team: string[] }} OrgTeamMember
  */
@@ -325,6 +335,41 @@ export class OrgTeams {
   async members(team, params = {}, opts) {
     const query = { role: params.role, limit: params.limit, after: params.after }
     return (await this.client.request({ method: 'GET', path: ['_orgs', this.org, 'teams', team, 'members'], query, ...opts })).data
+  }
+
+  /**
+   * Gives a member a team role in a team: with `manage: teams`, any; otherwise a holder of a team
+   * role of that team whose `grants` lists it. `from` and `until` set the window it counts in.
+   * `OrgRoleRequiresMFAError` when the role that lets the caller does and the session has no second factor.
+   * @param {string} team
+   * @param {TeamRoleInput} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgTeamMember>}
+   */
+  async grantRole(team, input, opts) {
+    return (await this.client.request({ method: 'POST', path: ['_orgs', this.org, 'teams', team, 'roles'], body: input, ...opts })).data
+  }
+
+  /**
+   * Replaces the window of a team role the member holds (`NotFoundError` if they don't).
+   * @param {string} team
+   * @param {TeamRoleInput} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgTeamMember>}
+   */
+  async setRoleWindow(team, input, opts) {
+    return (await this.client.request({ method: 'PATCH', path: ['_orgs', this.org, 'teams', team, 'roles'], body: input, ...opts })).data
+  }
+
+  /**
+   * Takes a team role from a member: access through it ends at their next request.
+   * @param {string} team
+   * @param {{ user: string, role: string }} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgTeamMember>}
+   */
+  async revokeRole(team, input, opts) {
+    return (await this.client.request({ method: 'DELETE', path: ['_orgs', this.org, 'teams', team, 'roles'], body: input, ...opts })).data
   }
 
   /**

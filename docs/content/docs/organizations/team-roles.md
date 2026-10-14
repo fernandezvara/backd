@@ -131,11 +131,13 @@ GET /v1/acme/_orgs/{org}/teams/{team}/members?role=manager
 
 Any member of the organization may list. The answer is a page of the members who belong to the team and of those who hold a team role in it; with `role`, only the holders of that role. Each item is a member as in the [members list](../../api/organizations/#members), plus `in_team` and `roles_in_team` (the team roles they hold there now). Emails follow [`members_visible_to`](../../configuration/realm/#organizations).
 
-| Where | Call |
-|---|---|
-| Functions with `admin: true` | `ctx.admin.orgs.teams.members(org, team, { role })` |
-| JavaScript client | `client.orgs.teams(org).members(team, { role })` |
-| Administrators | `GET /_admin/orgs/{org}/teams/{team}/members`, `POST`, `PATCH` and `DELETE …/roles` |
+| Where | Listing | Giving, re-windowing and taking away |
+|---|---|---|
+| Functions with `admin: true` | `ctx.admin.orgs.teams.members(org, team, { role })` | `grantRole`, `setRoleWindow`, `revokeRole` of `ctx.admin.orgs.teams` |
+| JavaScript client | `client.orgs.teams(org).members(team, { role })` | `grantRole`, `setRoleWindow`, `revokeRole` of `client.orgs.teams(org)` |
+| Administrators | `GET /_admin/orgs/{org}/teams/{team}/members` | `POST`, `PATCH` and `DELETE …/roles` |
+
+`ctx.user.orgs[org].team_roles` lists the ones that count for the caller now, with their windows, and the [generated types](../../clients/types/) name the team roles (`team_roles`) and `_meta.team`.
 
 A member sees their own in `GET /_orgs/{org}`, as `team_roles` (team id to role names).
 

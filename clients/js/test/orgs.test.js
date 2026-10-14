@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createClient, OrgRequiresMFAError, OrgRoleRequiresMFAError, NotOrgMemberError, LastOrgManagerError, IdTakenError } from '../src/index.js'
+import { createClient, OrgRequiresMFAError, OrgRoleRequiresMFAError, NotTeamMemberError, TeamError, NotOrgMemberError, LastOrgManagerError, IdTakenError } from '../src/index.js'
 import { mockFetch, errorBody } from './helpers.js'
 
 /** @param {ReturnType<typeof mockFetch>} m @param {object} [extra] */
@@ -109,6 +109,39 @@ test('documents are created and listed in an organization with inOrg', async () 
   assert.equal(m.calls[2].url.searchParams.get('org'), 'o2')
 })
 
+test('documents are created and listed in a team with inTeam', async () => {
+  const m = mockFetch([
+    { status: 201, body: { id: 'd1', _meta: { org: 'o1', team: 't1' } } },
+    { body: { items: [], limit: 50, skip: 0, has_more: false } },
+    { status: 201, body: { id: 'd2' } },
+  ])
+  const requests = make(m).db('app').collection('requests')
+  await requests.inOrg('o1').inTeam('t1').create({ title: 'x' })
+  assert.equal(m.calls[0].url.searchParams.get('org'), 'o1')
+  assert.equal(m.calls[0].url.searchParams.get('team'), 't1')
+  await requests.inOrg('o1').inTeam('t1').list()
+  assert.equal(m.calls[1].url.searchParams.get('team'), 't1')
+  // Moving to another organization drops the team, and an explicit one wins.
+  await requests.inOrg('o1').inTeam('t1').create({ title: 'y' }, { team: 't2' })
+  assert.equal(m.calls[2].url.searchParams.get('team'), 't2')
+  assert.equal(requests.inOrg('o1').inTeam('t1').inOrg('o2').team, undefined)
+})
+
+test('team roles are granted, re-windowed and revoked', async () => {
+  const m = mockFetch([{ body: { user: 'u2', in_team: false, roles_in_team: ['manager'] } }, { body: { user: 'u2' } }, { body: { user: 'u2' } }])
+  const teams = make(m).orgs.teams('o1')
+  const granted = await teams.grantRole('t1', { user: 'u2', role: 'manager', until: '2030-01-01T00:00:00Z' })
+  assert.equal(granted.roles_in_team[0], 'manager')
+  assert.equal(m.calls[0].method, 'POST')
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_orgs/o1/teams/t1/roles')
+  assert.deepEqual(m.calls[0].body, { user: 'u2', role: 'manager', until: '2030-01-01T00:00:00Z' })
+  await teams.setRoleWindow('t1', { user: 'u2', role: 'manager' })
+  assert.equal(m.calls[1].method, 'PATCH')
+  await teams.revokeRole('t1', { user: 'u2', role: 'manager' })
+  assert.equal(m.calls[2].method, 'DELETE')
+  assert.deepEqual(m.calls[2].body, { user: 'u2', role: 'manager' })
+})
+
 test('the new codes are typed errors', async () => {
   const m = mockFetch([
     { status: 403, body: errorBody('org_requires_mfa', 'second factor') },
@@ -116,6 +149,8 @@ test('the new codes are typed errors', async () => {
     { status: 409, body: errorBody('last_org_manager', 'last') },
     { status: 409, body: errorBody('id_taken', 'taken') },
     { status: 403, body: errorBody('org_role_requires_mfa', 'role needs a second factor') },
+    { status: 403, body: errorBody('not_team_member', 'not in that team') },
+    { status: 400, body: errorBody('team_required', 'name a team') },
   ])
   const c = make(m)
   await assert.rejects(c.orgs.get('o1'), (e) => e instanceof OrgRequiresMFAError && e.status === 403)
@@ -123,4 +158,6 @@ test('the new codes are typed errors', async () => {
   await assert.rejects(c.orgs.leave('o1'), (e) => e instanceof LastOrgManagerError && e.code === 'last_org_manager')
   await assert.rejects(c.orgs.create({ name: 'x' }), (e) => e instanceof IdTakenError)
   await assert.rejects(c.orgs.update('o1', { name: 'x' }), (e) => e instanceof OrgRoleRequiresMFAError && !(e instanceof OrgRequiresMFAError))
+  await assert.rejects(c.orgs.teams('o1').members('t1'), (e) => e instanceof NotTeamMemberError)
+  await assert.rejects(c.db('app').collection('requests').create({}), (e) => e instanceof TeamError && e.code === 'team_required')
 })

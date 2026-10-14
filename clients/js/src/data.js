@@ -17,6 +17,7 @@ import { Job } from './functions.js'
  * @property {string} [created_by] `user:<id>`, `key:<name>` or `anonymous`.
  * @property {string} [updated_by] `user:<id>`, `key:<name>` or `anonymous`.
  * @property {string} [org]        The organization the document belongs to (collections with `organization`).
+ * @property {string} [team]       The team of the organization the document belongs to (collections with `team`).
  * @property {string} [deleted_at] RFC3339 timestamp; only on soft-deleted documents (collections with `soft_delete`).
  * @property {string} [deleted_by] Who deleted it, like `updated_by`.
  * @property {string} [purge_at]   RFC3339 timestamp: when it is removed for good (`soft_delete.retention`).
@@ -82,8 +83,9 @@ import { Job } from './functions.js'
  * document. The client also retries such a request itself after a network
  * error, `429` or `503` (see `retry`).
  * `org` is the organization a document of a collection with `organization` is created in (the
- * caller must be a member; `?org=` on the wire).
- * @typedef {RequestOptions & { idempotencyKey?: string, org?: string }} CreateOptions
+ * caller must be a member; `?org=` on the wire), and `team` the team of it (a member, or a holder
+ * of a team role there; `?team=`).
+ * @typedef {RequestOptions & { idempotencyKey?: string, org?: string, team?: string }} CreateOptions
  */
 
 /**
@@ -191,14 +193,17 @@ export class Collection {
    * @param {string} database
    * @param {string} name
    * @param {string} [org] The organization lists and creates are scoped to (see {@link Collection#inOrg}).
+   * @param {string} [team] The team of it (see {@link Collection#inTeam}).
    */
-  constructor(client, database, name, org) {
+  constructor(client, database, name, org, team) {
     /** @internal */
     this.client = client
     /** @internal */
     this.path = [database, name]
     /** @internal */
     this.org = org
+    /** @internal */
+    this.team = team
   }
 
   /**
@@ -213,13 +218,25 @@ export class Collection {
   }
 
   /**
+   * The same collection scoped to a team of an organization (call `inOrg` first): `create` puts
+   * documents in that team and `list` and `iterate` show only its documents (the read rule still
+   * decides what is seen). The caller must belong to the team or hold a team role in it: a
+   * create answers `NotTeamMemberError` otherwise.
+   * @param {string} team
+   * @returns {Collection<T>}
+   */
+  inTeam(team) {
+    return new Collection(this.client, /** @type {string} */ (this.path[0]), /** @type {string} */ (this.path[1]), this.org, team)
+  }
+
+  /**
    * One page of documents the caller may read.
    * @param {ListParams} [params]
    * @param {RequestOptions} [opts]
    * @returns {Promise<Page<T>>}
    */
   async list(params = {}, opts) {
-    const query = this.org === undefined ? listQuery(params) : { ...listQuery(params), org: this.org }
+    const query = { ...listQuery(params), ...scopeQuery(this.org, this.team) }
     const { data } = await this.client.request({ method: 'GET', path: this.path, query, ...opts })
     return data
   }
@@ -275,7 +292,9 @@ export class Collection {
    * @returns {Promise<Doc<T>>}
    */
   async create(doc, opts) {
-    const scoped = this.org === undefined || opts?.org !== undefined ? opts : { ...opts, org: this.org }
+    const scoped = { ...opts }
+    if (scoped.org === undefined && this.org !== undefined) scoped.org = this.org
+    if (scoped.team === undefined && this.team !== undefined) scoped.team = this.team
     return (await this.client.request({ method: 'POST', path: this.path, body: doc, ...keyed(scoped) })).data
   }
 
@@ -457,14 +476,29 @@ function listQuery(p) {
 }
 
 /**
+ * The `org` and `team` query parameters of a scope, the ones that are set.
+ * @param {string} [org]
+ * @param {string} [team]
+ * @returns {Record<string, string>}
+ */
+function scopeQuery(org, team) {
+  /** @type {Record<string, string>} */
+  const q = {}
+  if (org !== undefined) q.org = org
+  if (team !== undefined) q.team = team
+  return q
+}
+
+/**
  * Turns `idempotencyKey` into an Idempotency-Key header.
  * @param {CreateOptions} [opts]
  * @returns {RequestOptions & { query?: Record<string, string> }}
  */
 function keyed(opts = {}) {
-  const { idempotencyKey, org, ...rest } = opts
+  const { idempotencyKey, org, team, ...rest } = opts
+  const scope = scopeQuery(org, team)
   /** @type {RequestOptions & { query?: Record<string, string> }} */
-  const out = org === undefined ? rest : { ...rest, query: { org } }
+  const out = Object.keys(scope).length === 0 ? rest : { ...rest, query: scope }
   return idempotencyKey === undefined ? out : { ...out, headers: { ...out.headers, 'Idempotency-Key': idempotencyKey } }
 }
 

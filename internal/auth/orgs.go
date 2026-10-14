@@ -191,8 +191,10 @@ type Membership struct {
 	Org    Org
 	Member OrgMember
 	Roles  []EffectiveRole
-	// TeamRoles are the team roles that count now, by team id.
-	TeamRoles map[string][]string
+	// TeamRoles are the team roles that count now, by team id, and TeamGrants the same grants
+	// with their windows.
+	TeamRoles  map[string][]string
+	TeamGrants []TeamRoleGrant
 	// Withheld are the roles the member holds that don't count for this session because they
 	// require a second factor it didn't use.
 	Withheld []WithheldRole
@@ -346,7 +348,7 @@ func (s *Users) membership(ctx context.Context, org Org, m OrgMember) (Membershi
 	if err != nil {
 		return Membership{}, err
 	}
-	return Membership{Org: org, Member: m, Roles: r.Roles, TeamRoles: r.TeamRoles, Withheld: r.Withheld}, nil
+	return Membership{Org: org, Member: m, Roles: r.Roles, TeamRoles: r.TeamRoles, TeamGrants: r.TeamGrants, Withheld: r.Withheld}, nil
 }
 
 // MyOrgs lists the organizations a user belongs to, with their effective roles. Deleted

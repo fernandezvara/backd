@@ -36,6 +36,8 @@ export interface Meta {
   updated_by?: string;
   /** The organization the document belongs to, in collections that have them. */
   org?: string;
+  /** The team of the organization the document belongs to, in collections that have them. */
+  team?: string;
   deleted_at?: DateTimeString;
   deleted_by?: string;
   purge_at?: DateTimeString;
@@ -294,6 +296,7 @@ export interface Realm {
   };
   roles: "admin" | "curator";
   org_roles: "admin" | "editor" | "member" | "owner";
+  team_roles: never;
 }
 
 /** The user a function runs for, or null for an anonymous caller and scheduled runs. */
@@ -311,6 +314,8 @@ export interface CallOrg {
   /** Effective roles: direct, default and through teams. */
   roles: string[];
   teams: string[];
+  /** The team roles that count now, with their windows. */
+  team_roles: { team: string; role: string; from?: string; until?: string }[];
   claims: Record<string, unknown>;
   /** False when the organization requires a second factor and this session used none. */
   counts: boolean;
@@ -346,6 +351,11 @@ export interface OrgAdmin {
     delete(id: string, team: string): Promise<void>;
     /** Members of the team and holders of its roles in force now; with role, only its holders. */
     members(id: string, team: string, options?: { role?: string; limit?: number; after?: string }): Promise<{ items: OrgTeamMember[]; has_more: boolean; next?: string }>;
+    /** Gives a member a team role in a team, for the window from..until (RFC 3339). */
+    grantRole(id: string, team: string, input: { user: string; role: string; from?: string; until?: string }): Promise<OrgTeamMember>;
+    /** Replaces the window of a team role the member holds. */
+    setRoleWindow(id: string, team: string, input: { user: string; role: string; from?: string; until?: string }): Promise<OrgTeamMember>;
+    revokeRole(id: string, team: string, input: { user: string; role: string }): Promise<OrgTeamMember>;
     addMember(id: string, team: string, user: string): Promise<OrgMember>;
     removeMember(id: string, team: string, user: string): Promise<OrgMember>;
   };

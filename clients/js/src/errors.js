@@ -113,6 +113,18 @@ export class OrgRequiresMFAError extends ForbiddenError {}
  */
 export class OrgRoleRequiresMFAError extends ForbiddenError {}
 
+/**
+ * 403 `not_team_member`: the create names a team the caller doesn't belong to and holds no team
+ * role in (the same answer for an unknown team and one of another organization).
+ */
+export class NotTeamMemberError extends ForbiddenError {}
+
+/**
+ * 400 `team_required` or `team_not_allowed`: the create of a collection with a required team
+ * names none, or names one in a collection that has no teams (`code` says which).
+ */
+export class TeamError extends ValidationError {}
+
 /** 403 `not_org_member`: not a member of the organization, or there is no such organization. */
 export class NotOrgMemberError extends ForbiddenError {}
 
@@ -189,6 +201,11 @@ function typedClass(code, fallback) {
       return OrgRequiresMFAError
     case 'org_role_requires_mfa':
       return OrgRoleRequiresMFAError
+    case 'not_team_member':
+      return NotTeamMemberError
+    case 'team_required':
+    case 'team_not_allowed':
+      return TeamError
     case 'not_org_member':
       return NotOrgMemberError
     case 'last_org_manager':

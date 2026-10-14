@@ -124,3 +124,64 @@ func TestFunctionsCreateInOrganizations(t *testing.T) {
 		t.Errorf("with admin access: %d %v", code, out)
 	}
 }
+
+// ctx.admin.orgs.teams grants and lists team roles, ctx.user.orgs shows the ones that count, and
+// ctx.db creates in a team with the same checks as HTTP.
+func TestFunctionsTeamRoles(t *testing.T) {
+	f := newRulesFixture(t)
+	*f.clock = f.clock.Truncate(time.Second) // the API takes whole seconds
+	f.svc.Now = func() time.Time { return *f.clock }
+	admin := auth.CallbackClaims{Admin: true}
+	org := f.orgOf(t, f.ada, "Departments")
+	if _, err := f.svc.AdminAddMember(context.Background(), org, f.bobID, nil); err != nil {
+		t.Fatal(err)
+	}
+	code, out := f.orgsCall(t, "POST", "/"+org+"/teams", `{"name": "Sales"}`, admin)
+	if code != 201 {
+		t.Fatalf("team: %d %v", code, out)
+	}
+	sales := out["id"].(string)
+	roles := "/" + org + "/teams/" + sales + "/roles"
+	// Not yet open: the grant is stored, and ctx.user.orgs leaves it out.
+	from := f.clock.Add(time.Hour).UTC().Format(time.RFC3339)
+	const millis = "2006-01-02T15:04:05.000Z" // how the API shows times
+	fromShown := f.clock.Add(time.Hour).UTC().Format(millis)
+	if code, out := f.orgsCall(t, "POST", roles, `{"user": "`+f.bobID+`", "role": "manager", "from": "`+from+`"}`, admin); code != 200 {
+		t.Fatalf("grant: %d %v", code, out)
+	}
+	teamRolesOf := func() []any {
+		t.Helper()
+		env := f.functionsUserEnvelope(t, f.bobID)
+		return env["orgs"].(map[string]any)[org].(map[string]any)["team_roles"].([]any)
+	}
+	if got := teamRolesOf(); len(got) != 0 {
+		t.Errorf("before the window: %v", got)
+	}
+	*f.clock = f.clock.Add(time.Hour)
+	got := teamRolesOf()
+	if len(got) != 1 || got[0].(map[string]any)["role"] != "manager" || got[0].(map[string]any)["team"] != sales || got[0].(map[string]any)["from"] != fromShown {
+		t.Errorf("inside the window: %v", got)
+	}
+	// Listing, re-windowing and revoking.
+	if code, out := f.orgsCall(t, "GET", "/"+org+"/teams/"+sales+"/members?role=manager", "", admin); code != 200 || len(out["items"].([]any)) != 1 {
+		t.Errorf("members: %d %v", code, out)
+	}
+	until := f.clock.Add(time.Minute).UTC().Format(time.RFC3339)
+	untilShown := f.clock.Add(time.Minute).UTC().Format(millis)
+	if code, out := f.orgsCall(t, "PATCH", roles, `{"user": "`+f.bobID+`", "role": "manager", "until": "`+until+`"}`, admin); code != 200 {
+		t.Errorf("window: %d %v", code, out)
+	}
+	if got := teamRolesOf(); len(got) != 1 || got[0].(map[string]any)["until"] != untilShown || got[0].(map[string]any)["from"] != nil {
+		t.Errorf("after re-windowing: %v", got)
+	}
+	if code, out := f.orgsCall(t, "DELETE", roles, `{"user": "`+f.bobID+`", "role": "manager"}`, admin); code != 200 {
+		t.Errorf("revoke: %d %v", code, out)
+	}
+	if got := teamRolesOf(); len(got) != 0 {
+		t.Errorf("after revoking: %v", got)
+	}
+	// Not a function with admin access: nothing.
+	if code, _ := f.orgsCall(t, "POST", roles, `{"user": "`+f.bobID+`", "role": "manager"}`, auth.CallbackClaims{}); code != 403 {
+		t.Errorf("without admin access: %d", code)
+	}
+}

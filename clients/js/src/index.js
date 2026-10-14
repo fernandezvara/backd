@@ -20,6 +20,8 @@ export {
   InvalidIdError,
   OrgRequiresMFAError,
   OrgRoleRequiresMFAError,
+  NotTeamMemberError,
+  TeamError,
   NotOrgMemberError,
   LastOrgManagerError,
   VersionMismatchError,
@@ -95,6 +97,7 @@ export { parseReturn as parseOAuthReturn } from './oauth.js'
  * @typedef {import('./orgs.js').OrgTeam} OrgTeam
  * @typedef {import('./orgs.js').OrgTeamMember} OrgTeamMember
  * @typedef {import('./orgs.js').OrgTeamRoleGrant} OrgTeamRoleGrant
+ * @typedef {import('./orgs.js').TeamRoleInput} TeamRoleInput
  * @typedef {import('./orgs.js').OrgInvitation} OrgInvitation
  * @typedef {import('./orgs.js').NewOrgInvitation} NewOrgInvitation
  * @typedef {import('./orgs.js').InviteInput} OrgInviteInput

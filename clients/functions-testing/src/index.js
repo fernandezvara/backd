@@ -1005,6 +1005,40 @@ function fakeOrgs(seed) {
         }
         return { items, has_more: false }
       },
+      grantRole: async (id, teamID, input) => {
+        const o = need(id)
+        team(o, teamID)
+        const m = o.members.get(input.user)
+        if (!m) throw err(404, 'not_found', 'that user is not a member of the organization')
+        if (!input.role) throw err(400, 'validation_error', 'role is required')
+        m.teamRoles = m.teamRoles ?? []
+        if (!m.teamRoles.some((g) => g.team === teamID && g.role === input.role)) {
+          m.teamRoles.push({ team: teamID, role: input.role, ...(input.from ? { from: input.from } : {}), ...(input.until ? { until: input.until } : {}) })
+        }
+        note('teams.grantRole', id, { team: teamID, user: input.user, role: input.role })
+        return { ...memberView(id, input.user, m), in_team: m.teams.includes(teamID), roles_in_team: m.teamRoles.filter((g) => g.team === teamID).map((g) => g.role) }
+      },
+      setRoleWindow: async (id, teamID, input) => {
+        const o = need(id)
+        team(o, teamID)
+        const g = o.members.get(input.user)?.teamRoles?.find((x) => x.team === teamID && x.role === input.role)
+        if (!g) throw err(404, 'not_found', 'the member doesn\'t hold that role in the team')
+        delete g.from
+        delete g.until
+        if (input.from) g.from = input.from
+        if (input.until) g.until = input.until
+        note('teams.setRoleWindow', id, { team: teamID, user: input.user, role: input.role })
+        return memberView(id, input.user, o.members.get(input.user))
+      },
+      revokeRole: async (id, teamID, input) => {
+        const o = need(id)
+        team(o, teamID)
+        const m = o.members.get(input.user)
+        if (!m) throw err(404, 'not_found', 'that user is not a member of the organization')
+        m.teamRoles = (m.teamRoles ?? []).filter((g) => !(g.team === teamID && g.role === input.role))
+        note('teams.revokeRole', id, { team: teamID, user: input.user, role: input.role })
+        return memberView(id, input.user, m)
+      },
       addMember: async (id, teamID, user) => {
         const o = need(id)
         team(o, teamID)

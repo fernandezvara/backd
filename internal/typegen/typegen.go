@@ -128,6 +128,8 @@ export interface Meta {
   updated_by?: string;
   /** The organization the document belongs to, in collections that have them. */
   org?: string;
+  /** The team of the organization the document belongs to, in collections that have them. */
+  team?: string;
   deleted_at?: DateTimeString;
   deleted_by?: string;
   purge_at?: DateTimeString;
@@ -237,6 +239,16 @@ func (g *gen) realm(rl *registry.Realm, o Options) string {
 			g.entries["org role "+r] = ""
 		}
 		fmt.Fprintf(&tree, "  org_roles: %s;\n", strings.Join(orgRoles, " | "))
+		// ...and the team roles, held within one team.
+		teamRoles := []string{}
+		for _, r := range o.TeamRoleNames() {
+			teamRoles = append(teamRoles, literal(r))
+			g.entries["team role "+r] = ""
+		}
+		if len(teamRoles) == 0 {
+			teamRoles = append(teamRoles, "never")
+		}
+		fmt.Fprintf(&tree, "  team_roles: %s;\n", strings.Join(teamRoles, " | "))
 	}
 	tree.WriteString("}\n")
 
