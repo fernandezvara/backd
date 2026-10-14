@@ -7,9 +7,12 @@ Declare realms, databases and collections as directories on disk, each collectio
 
 - **Config-driven data model** — realms, databases and collections declared as directories, with a JSON Schema per collection and config validation at startup (`backd config check`). [Configuration](https://fernandezvara.github.io/backd/docs/configuration/)
 - **Document API** — schema-validated CRUD plus `where`, `order_by`, pagination and counts over an allowlisted query language; optimistic concurrency via `ETag`/`If-Match`. [HTTP API](https://fernandezvara.github.io/backd/docs/api/)
-- **Built-in auth** — users, sessions and API keys per realm, per-document access rules, brute-force protection and an audit trail. [Authentication](https://fernandezvara.github.io/backd/docs/auth/)
+- **Built-in auth** — users, sessions and API keys per realm, sign-in with Google, Microsoft and Apple, a second factor and magic links, per-document access rules, consents, brute-force protection and an audit trail. [Authentication](https://fernandezvara.github.io/backd/docs/auth/)
 - **Server-side functions** — isolated Deno processes for privileged logic: sync calls, background jobs, cron schedules, webhooks, encrypted secrets and a network allowlist. [Functions](https://fernandezvara.github.io/backd/docs/functions/)
-- **JavaScript client** — typed client for the document API and functions. [Clients](https://fernandezvara.github.io/backd/docs/clients/)
+- **Files and push** — documents carry files in your own S3-compatible storage, with image versions and quotas; push notifications reach FCM, APNs and browsers. [Files](https://fernandezvara.github.io/backd/docs/files/), [Push](https://fernandezvara.github.io/backd/docs/push/)
+- **App configuration** — values your apps read, with a schema, read rules, history and rollback, and conditional GET. [App configuration](https://fernandezvara.github.io/backd/docs/configuration/app-config/)
+- **Types and OpenAPI** — `backd types` generates TypeScript from the config, and `backd openapi` an OpenAPI 3.1 document per realm. [Typing](https://fernandezvara.github.io/backd/docs/clients/types/)
+- **JavaScript client** — typed client (`backd-js`, released on the same version as the server) for the document API, auth and functions. [Clients](https://fernandezvara.github.io/backd/docs/clients/)
 - **Production path** — tested reference deployment (TLS, least-privilege MongoDB, encrypted backups) and a config fingerprint so every instance runs the same configuration. [Operations](https://fernandezvara.github.io/backd/docs/operations/)
 
 ## Quick start

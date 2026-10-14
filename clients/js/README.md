@@ -25,6 +25,22 @@ const admin = createClient({ url, realm: 'blog', apiKey: process.env.BACKD_API_K
 const user = await admin.users.find('ada@example.com')
 ```
 
+## Versions
+
+`backd-js` is released on the **same version as the backd server** (backd-js 0.8.2 goes with backd v0.8.2). The [upgrade notes](https://fernandezvara.github.io/backd/docs/operations/) say what each release changed.
+
+## Types
+
+`backd types` generates `types.d.ts` from the realm's config, and the client takes it as a type:
+
+```ts
+import { createClient } from 'backd-js'
+import type { Realm } from './backd/types'
+
+const backd = createClient<Realm>({ url, realm: 'blog' })
+backd.db('main').collection('posts').list({ where: { published: true } })   // fields and operators checked
+```
+
 ## Examples
 
 [`examples/blog`](examples/blog) is a small blog built with Alpine.js: sign up, log in, write, publish and delete posts. [`examples/expenses-without-functions`](examples/expenses-without-functions) shares expenses between users, and shows the limits of access rules. From the repository root:
