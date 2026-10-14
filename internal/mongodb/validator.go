@@ -70,8 +70,6 @@ func Validator(schema map[string]any) (map[string]any, []Omission) {
 			"owner":      map[string]any{"bsonType": []any{"string", "null"}},
 			"created_by": map[string]any{"bsonType": "string"},
 			"updated_by": map[string]any{"bsonType": "string"},
-			// The organization the document belongs to, in collections that have them.
-			"org": map[string]any{"bsonType": "string"},
 		},
 	}
 	out["properties"] = props
