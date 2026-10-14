@@ -56,6 +56,17 @@ What each role may do follows two rules. With `manage: roles` any role can be gi
 
 The last member who can manage the organization (`manage: org`) can't leave, be removed or lose that role: `409 last_org_manager`. Access ends at once when someone leaves or is removed; documents they created stay.
 
+## Requiring a second factor
+
+An organization can require its members to use [multi-factor authentication](../../auth/mfa/): `PATCH /_orgs/{org}` with `{"require_mfa": true}`, by `manage: org`, with a fresh proof of identity, when the realm's [`allow_require_mfa`](../../configuration/realm/#organizations) is true. It is audited as `org.require_mfa`. The caller's own session needs a second factor too, or their access would end at once.
+
+- **A session without a second factor doesn't count** as a member there. Rule helpers (`inOrg`, `hasOrgRole`, `orgClaims`) are false for it and leave the organization out of lists; `?org=` on a create answers `403 not_org_member`; and the organization's own routes answer `403 org_requires_mfa`, so the app can start the enrollment.
+- **Leaving stays possible** without one.
+- **`GET /_orgs` marks it:** each organization has `require_mfa` and `mfa_met` (false when this session used no second factor).
+- **Other organizations are unaffected:** the requirement is enforced where it matters, not at sign-in, so one strict organization doesn't force a second factor everywhere.
+- **Managers see who is missing one:** the members list carries `mfa` for them.
+- **API keys** acting on behalf of a user have no second factor, so they can't reach these organizations.
+
 ## Teams
 
 A team is a group of members that **carries organization roles**: everyone in it holds those roles in addition to their own. Teams don't own documents, and access rules see roles, never team names.

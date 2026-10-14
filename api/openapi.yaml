@@ -1058,8 +1058,12 @@ paths:
         default: { $ref: "#/components/responses/Error" }
     patch:
       tags: [organizations]
-      summary: Rename an organization or change its slug
-      description: "Needs a role with `manage: org`."
+      summary: Rename an organization, change its slug or its second-factor requirement
+      description: |
+        Needs a role with `manage: org`. `require_mfa: true` makes members' sessions count only when
+        they used a second factor: it needs a fresh proof of identity (`401 reauth_required`),
+        `organizations.allow_require_mfa` (`409 require_mfa_not_allowed`) and a session of the
+        caller that has a second factor itself (`403 org_requires_mfa`). Audited as `org.require_mfa`.
       operationId: updateOrganization
       security: [{ session: [] }]
       requestBody:
@@ -1072,6 +1076,7 @@ paths:
               properties:
                 name: { type: string, minLength: 1, maxLength: 100 }
                 slug: { type: string, maxLength: 63, description: "An empty string removes the slug." }
+                require_mfa: { type: boolean }
       responses:
         "200":
           description: The organization.
@@ -7504,13 +7509,14 @@ components:
       type: object
       description: An organization as a member sees it.
       additionalProperties: false
-      required: [id, name, slug, status, require_mfa, claims, created_at, roles, effective_roles, teams]
+      required: [id, name, slug, status, require_mfa, mfa_met, claims, created_at, roles, effective_roles, teams]
       properties:
         id: { type: string }
         name: { type: string }
         slug: { type: [string, "null"] }
         status: { type: string, enum: [active, orphaned, deleted] }
         require_mfa: { type: boolean }
+        mfa_met: { type: boolean, description: "False when the organization requires a second factor and this session used none: the app asks for one. Such a session answers `403 org_requires_mfa` on the organization's routes, except leaving." }
         claims: { type: object, description: "Set by realm administrators and functions; at most 1 KiB." }
         created_at: { type: string, format: date-time }
         roles: { type: array, items: { type: string }, description: "The member's effective role names." }
@@ -7636,6 +7642,7 @@ components:
         teams: { type: array, items: { type: string } }
         effective_roles: { type: array, items: { $ref: "#/components/schemas/RoleOrigin" } }
         overlap: { type: array, items: { type: string }, description: "Roles held directly and also through a team or by default." }
+        mfa: { type: boolean, description: "Whether the member has a second factor. Only for members who manage the organization." }
         joined_at: { type: string, format: date-time }
         invited_by: { type: string }
 

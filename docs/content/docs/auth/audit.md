@@ -46,6 +46,7 @@ Each realm with `auth: enabled` keeps an **audit trail**: one record per securit
 | `org.member_add`, `org.member_remove`, `org.member_leave`, `org.roles` | A member is added without an invitation, removed, leaves, or has roles changed | `user`, `roles`, `by` / `added`, `removed` |
 | `org.team_create`, `org.team_update`, `org.team_delete`, `org.team_member_add`, `org.team_member_remove` | A team is made, changed or deleted, or someone joins or leaves it | `team`, `name`, `roles` / `user` |
 | `org.invitation_create`, `org.invitation_link`, `org.invitation_accept`, `org.invitation_revoke` | An organization invitation is made, given a new link, accepted or revoked | `invitation`, `binding`, `roles`, `teams`, `sent` / `user` |
+| `org.require_mfa` | An organization turns its second-factor requirement on or off | `value` |
 | `org.delete`, `org.deleted`, `org.reactivate` | An organization is deleted (access ends), its cleanup ends, or it is brought back | `by`, `job_id` / `counts` (documents removed per collection; never content) / `slug` |
 | `org.claims`, `org.owner_assign` | Claims are replaced; a manager is assigned | `keys` / `user` |
 | `apikey.create`, `apikey.revoke` | An API key is created or revoked | `role`, `networks`, `expires_at` |

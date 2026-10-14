@@ -59,6 +59,10 @@ var (
 	ErrSlugTaken = errors.New("that slug is taken")
 	// ErrOrgUserNotFound: the user an administrator named doesn't exist.
 	ErrOrgUserNotFound = errors.New("user not found")
+	// ErrOrgRequiresMFA: the organization requires a second factor and the session used none.
+	ErrOrgRequiresMFA = errors.New("this organization requires a second factor: sign in again with one")
+	// ErrRequireMFANotAllowed: realm.yaml's organizations.allow_require_mfa is false.
+	ErrRequireMFANotAllowed = errors.New("this realm doesn't let organizations require a second factor (organizations.allow_require_mfa)")
 	// ErrTeamNameTaken: the organization has a team of that name.
 	ErrTeamNameTaken = errors.New("the organization has a team with that name")
 	// ErrTeamLimit and ErrMemberTeamsLimit: max_teams_per_org and max_teams_per_member.
@@ -437,6 +441,9 @@ type MemberView struct {
 	Effective []EffectiveRole
 	// Overlap lists roles held directly and through a team (or by default).
 	Overlap []string
+	// MFA says whether the member has a second factor; set only for viewers who manage the
+	// organization (nil otherwise).
+	MFA *bool
 }
 
 // Members lists an organization's members to a member, a page at a time sorted by user id.
@@ -455,7 +462,8 @@ func (s *Users) memberViews(ctx context.Context, viewer Membership, orgID, after
 		return nil, false, err
 	}
 	// An administrator has no membership.
-	showEmail := viewer.Member.User == "" || o.MembersVisibleTo == registry.MembersVisibleToMembers || s.caps(viewer).Any()
+	manager := viewer.Member.User == "" || s.caps(viewer).Any()
+	showEmail := o.MembersVisibleTo == registry.MembersVisibleToMembers || manager
 	now := s.now()
 	var teamIDs []string
 	for _, m := range list {
@@ -491,6 +499,10 @@ func (s *Users) memberViews(ctx context.Context, viewer Membership, orgID, after
 			if u, err := s.Store.UserByID(ctx, m.User); err == nil && u.ErasedAt.IsZero() {
 				v.Email = u.Email
 			}
+		}
+		if manager {
+			has := s.memberHasMFA(ctx, m.User)
+			v.MFA = &has
 		}
 		out[i] = v
 	}
@@ -964,4 +976,62 @@ func (s *Users) teamRolesOf(ctx context.Context, org string, ids []string) (map[
 		out[t.Name] = t.Roles
 	}
 	return out, nil
+}
+
+// AuditOrgRequireMFA is recorded when an organization turns its second-factor requirement on or off.
+const AuditOrgRequireMFA = "org.require_mfa" // details: value
+
+// SetOrgRequireMFA turns an organization's second-factor requirement on or off. It needs
+// manage: org (and the caller has proved who they are just now, which the HTTP layer checks).
+// Turning it on needs the realm to allow it and the caller's own session to have a second factor,
+// since without one their access would end at once.
+func (s *Users) SetOrgRequireMFA(ctx context.Context, p Principal, orgID string, on bool) (Membership, error) {
+	o, err := s.orgs()
+	if err != nil {
+		return Membership{}, err
+	}
+	m, err := s.MembershipOf(ctx, p.User.ID, orgID)
+	if err != nil {
+		return Membership{}, err
+	}
+	if !s.caps(m).Has(registry.CapOrg) {
+		return Membership{}, ErrOrgForbidden
+	}
+	if on && !o.AllowRequireMFA {
+		return Membership{}, ErrRequireMFANotAllowed
+	}
+	if on && !p.Session.MFA {
+		return Membership{}, ErrOrgRequiresMFA
+	}
+	if m.Org.RequireMFA == on {
+		return m, nil
+	}
+	org, err := s.Store.UpdateOrg(ctx, orgID, OrgUpdate{RequireMFA: &on}, s.now())
+	if err != nil {
+		return Membership{}, err
+	}
+	s.Audit(ctx, AuditOrgRequireMFA, orgTarget(orgID), map[string]any{"value": on})
+	m.Org = org
+	return m, nil
+}
+
+// OrgNeedsMFA reports whether the user is a member of an organization that requires a second
+// factor: what the HTTP layer asks before it serves a session without one.
+func (s *Users) OrgNeedsMFA(ctx context.Context, userID, orgID string) bool {
+	if s.Settings.Organizations == nil {
+		return false
+	}
+	org, err := s.Store.OrgByID(ctx, orgID)
+	if err != nil || !org.RequireMFA || org.Status == OrgDeleted {
+		return false
+	}
+	_, err = s.Store.OrgMember(ctx, orgID, userID)
+	return err == nil
+}
+
+// MemberHasMFA says whether a user has a second factor, for the managers' view of who is
+// missing one.
+func (s *Users) memberHasMFA(ctx context.Context, userID string) bool {
+	_, err := s.Store.MFAOf(ctx, userID)
+	return err == nil
 }

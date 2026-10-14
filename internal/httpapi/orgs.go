@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -21,6 +22,7 @@ const (
 	codeLastOrgManager = "last_org_manager"
 	codeSlugTaken      = "slug_taken"
 	codeOrgLimit       = "org_limit_reached"
+	codeOrgRequiresMFA = "org_requires_mfa"
 )
 
 func (a *authAPI) orgRoutes(r chi.Router) {
@@ -33,6 +35,7 @@ func (a *authAPI) orgRoutes(r chi.Router) {
 		r.With(json).Post("/invitations/preview", a.previewOrgInvitation)
 		r.With(json).Post("/invitations/accept", a.acceptOrgInvitation)
 		r.Route("/{org}", func(r chi.Router) {
+			r.Use(a.orgMFAGate)
 			r.Get("/", a.getOrg)
 			r.With(json).Patch("/", a.updateOrg)
 			r.Delete("/", a.deleteOrg)
@@ -63,6 +66,10 @@ func orgError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, r, http.StatusNotFound, codeNotFound, err.Error())
 	case errors.Is(err, auth.ErrNotOrgMember):
 		writeError(w, r, http.StatusForbidden, codeNotOrgMember, "you are not a member of that organization")
+	case errors.Is(err, auth.ErrOrgRequiresMFA):
+		writeError(w, r, http.StatusForbidden, codeOrgRequiresMFA, err.Error())
+	case errors.Is(err, auth.ErrRequireMFANotAllowed):
+		writeError(w, r, http.StatusConflict, "require_mfa_not_allowed", err.Error())
 	case errors.Is(err, auth.ErrOrgForbidden), errors.Is(err, auth.ErrOrgCreateNotAllowed):
 		writeError(w, r, http.StatusForbidden, codeForbidden, err.Error())
 	case errors.Is(err, auth.ErrOrgLimit), errors.Is(err, auth.ErrMembershipLimit):
@@ -123,8 +130,11 @@ func roleOriginsJSON(list []auth.EffectiveRole) []map[string]any {
 	return out
 }
 
-func membershipJSON(m auth.Membership) map[string]any {
+func membershipJSON(m auth.Membership, sessionMFA bool) map[string]any {
 	out := orgJSON(m.Org)
+	// A session without a second factor doesn't count as a member of an organization that
+	// requires one: the app uses this to ask for it.
+	out["mfa_met"] = !m.Org.RequireMFA || sessionMFA
 	out["roles"] = m.RoleNames()
 	out["effective_roles"] = roleOriginsJSON(m.Roles)
 	out["teams"] = nonNil(m.Member.Teams)
@@ -147,6 +157,9 @@ func memberJSON(v auth.MemberView, now func() string) map[string]any {
 	if v.Member.InvitedBy != "" {
 		out["invited_by"] = v.Member.InvitedBy
 	}
+	if v.MFA != nil {
+		out["mfa"] = *v.MFA
+	}
 	return out
 }
 
@@ -166,7 +179,7 @@ func (a *authAPI) createOrg(w http.ResponseWriter, r *http.Request) {
 		orgError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, membershipJSON(m))
+	writeJSON(w, http.StatusCreated, membershipJSON(m, principalOf(r).Session.MFA))
 }
 
 // listOrgs handles GET /_orgs: the caller's organizations.
@@ -178,7 +191,7 @@ func (a *authAPI) listOrgs(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]map[string]any, len(list))
 	for i, m := range list {
-		items[i] = membershipJSON(m)
+		items[i] = membershipJSON(m, principalOf(r).Session.MFA)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
@@ -190,7 +203,7 @@ func (a *authAPI) getOrg(w http.ResponseWriter, r *http.Request) {
 		orgError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, membershipJSON(m))
+	writeJSON(w, http.StatusOK, membershipJSON(m, principalOf(r).Session.MFA))
 }
 
 // updateOrg handles PATCH /_orgs/{org}: name and slug.
@@ -199,7 +212,7 @@ func (a *authAPI) updateOrg(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"name": "string?", "slug": "string?"})
+	f, ok := fields(w, r, obj, map[string]string{"name": "string?", "slug": "string?", "require_mfa": "bool?"})
 	if !ok {
 		return
 	}
@@ -210,12 +223,24 @@ func (a *authAPI) updateOrg(w http.ResponseWriter, r *http.Request) {
 	if v, ok := f["slug"].(string); ok {
 		slug = &v
 	}
-	m, err := usersOf(r).UpdateOrg(r.Context(), principalOf(r).User.ID, chi.URLParam(r, "org"), name, slug)
+	svc, p, org := usersOf(r), principalOf(r), chi.URLParam(r, "org")
+	on, setMFA := f["require_mfa"].(bool)
+	// Changing what every member must hold is a sensitive act: a fresh proof first.
+	if setMFA && !a.reauthed(w, r) {
+		return
+	}
+	m, err := svc.UpdateOrg(r.Context(), p.User.ID, org, name, slug)
 	if err != nil {
 		orgError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, membershipJSON(m))
+	if setMFA {
+		if m, err = svc.SetOrgRequireMFA(r.Context(), p, org, on); err != nil {
+			orgError(w, r, err)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, membershipJSON(m, principalOf(r).Session.MFA))
 }
 
 // pageParams reads limit and after from the query.
@@ -331,7 +356,7 @@ func (a *adminAPI) createOrg(w http.ResponseWriter, r *http.Request) {
 		adminOrgError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, membershipJSON(m))
+	writeJSON(w, http.StatusCreated, membershipJSON(m, true))
 }
 
 // adminGetOrg handles GET /orgs/{org}.
@@ -614,7 +639,7 @@ func (a *authAPI) acceptOrgInvitation(w http.ResponseWriter, r *http.Request) {
 		orgError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, membershipJSON(m))
+	writeJSON(w, http.StatusOK, membershipJSON(m, principalOf(r).Session.MFA))
 }
 
 // Administrators.
@@ -933,5 +958,23 @@ func (a *adminAPI) orgOwned(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"org": orgJSON(o), "collections": items, "to_delete": toDelete, "to_keep": toKeep,
+	})
+}
+
+// orgMFAGate refuses a session without a second factor on the routes of an organization that
+// requires one, for its members: leaving stays possible, and everyone else gets the answers
+// they got before (a non-member must not learn that the organization exists).
+func (a *authAPI) orgMFAGate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := principalOf(r)
+		if p.Session.MFA || (r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/leave")) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if usersOf(r).OrgNeedsMFA(r.Context(), p.User.ID, chi.URLParam(r, "org")) {
+			writeError(w, r, http.StatusForbidden, codeOrgRequiresMFA, auth.ErrOrgRequiresMFA.Error())
+			return
+		}
+		next.ServeHTTP(w, r)
 	})
 }
