@@ -561,6 +561,41 @@ await backd.auth.logout()                     // also clears the cookie
 - The client keeps only a hint that a session exists (in the `storage` you choose, default memory). If the server stops accepting the cookie, the next request signs the client out (`SESSION_EXPIRED`), as with tokens.
 - Not combined with `apiKey`, and not for the admin API, which needs an `Authorization` header (see [Sessions](../../auth/sessions/#session-cookies)).
 
+## Organizations
+
+`backd.orgs` is the [organizations API](../../api/organizations/): the groups of users a person belongs to, with their members, teams and invitations.
+
+```js
+const org = await backd.orgs.create({ name: 'Acme Corp', slug: 'acme' })
+const mine = await backd.orgs.list()                // each with roles, require_mfa and mfa_met
+
+await backd.orgs.members(org.id).list()
+await backd.orgs.members(org.id).update(userId, ['editor'])   // direct roles
+await backd.orgs.teams(org.id).create({ name: 'Editors', roles: ['editor'] })
+await backd.orgs.teams(org.id).addMember(team.id, userId)
+
+// An invitation answers the link once: show it, send it, or let the server email it.
+const inv = await backd.orgs.invitations(org.id).create({ binding: 'email', email: 'ana@example.com', roles: ['editor'], send: true })
+inv.link   // https://app.acme.example/join?token=…
+
+// The person who got the link:
+const offer = await backd.orgs.invitations.preview(token)   // { org, roles, teams }
+await backd.orgs.invitations.accept(token)
+```
+
+**Documents belong to an organization** when their collection says so: `inOrg(id)` scopes a collection, so creates go there and lists show only that organization's documents (the read rule still decides what is seen).
+
+```js
+const projects = backd.db('main').collection('projects').inOrg(org.id)
+await projects.create({ title: 'Plan' })
+const { items } = await projects.list({ where: { status: 'open' } })
+```
+
+`org` in the options of `create` and `batch` does the same for one call. Changing the realm's mind is an administrator's job: documents move between organizations only through the [admin API](../../auth/admin/#data).
+
+- **Deleting** an organization and **turning `require_mfa` on** ask for a fresh proof of identity: wrap them in [`backd.auth.withProof`](#sign-up-login-and-sessions), as other sensitive actions.
+- **A second factor.** `mfa_met` is false for a session without one in an organization that requires it; the organization's calls then throw `OrgRequiresMFAError`. Leaving is still allowed.
+
 ## Errors
 
 Every answer that isn't 2xx throws a `BackdError`, or one of its subclasses:
@@ -574,6 +609,8 @@ Every answer that isn't 2xx throws a `BackdError`, or one of its subclasses:
 | `NotFoundError` | 404 | `not_found` |
 | `ConflictError` | 409 | `email_taken`, `conflict`, `write_conflict` |
 | `IdTakenError` (a `ConflictError`) | 409 | `id_taken`: a document with that [custom id](#custom-ids) exists, and nothing was overwritten |
+| `NotOrgMemberError`, `OrgRequiresMFAError` (`ForbiddenError`s) | 403 | `not_org_member` (also for an unknown organization), `org_requires_mfa` |
+| `LastOrgManagerError` (a `ConflictError`) | 409 | `last_org_manager`: the organization needs someone who can manage it |
 | `VersionMismatchError` | 412 | `version_mismatch` |
 | `ConsentRequiredError` | 400, 403 | `consent_required`; `consents` lists what to accept, as `{ name, version }` |
 | `RetryableError` | 429, 503 | `too_many_requests`, `unavailable`; `retryAfter` in milliseconds |

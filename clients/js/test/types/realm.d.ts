@@ -131,4 +131,5 @@ export interface Realm {
     };
   };
   roles: "admin" | "member";
+  org_roles: "owner" | "member";
 }

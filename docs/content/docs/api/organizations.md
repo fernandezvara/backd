@@ -124,6 +124,10 @@ The answer always has `id`, `token` and `link` (the realm's [`invitation_link`](
 Deleting is not undoable for `delete` collections: reactivating an organization doesn't bring their documents back. Look at the report first.
 {{< /hint >}}
 
+## JavaScript client
+
+`backd.orgs` and `collection.inOrg(id)` wrap all of this: see [the client](../../clients/js/#organizations).
+
 ## Functions
 
 Functions see the caller's memberships in `ctx.user.orgs`, create documents in an organization with `ctx.db`, and, with `admin: true`, manage organizations with `ctx.admin.orgs`: see [Organizations in functions](../../functions/organizations/).

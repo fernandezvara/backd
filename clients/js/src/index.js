@@ -5,6 +5,7 @@ export { Admin } from './admin.js'
 export { Push } from './push.js'
 export { Consents } from './consents.js'
 export { Config } from './config.js'
+export { Orgs, OrgMembers, OrgTeams, OrgInvitations } from './orgs.js'
 export { Files, versionStatus } from './files.js'
 export { Sha256, sha256Blob } from './sha256.js'
 export { Job, JobTimeoutError } from './functions.js'
@@ -17,6 +18,9 @@ export {
   ConflictError,
   IdTakenError,
   InvalidIdError,
+  OrgRequiresMFAError,
+  NotOrgMemberError,
+  LastOrgManagerError,
   VersionMismatchError,
   RetryableError,
   NetworkError,
