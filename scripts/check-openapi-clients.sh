@@ -9,7 +9,7 @@ GENERATOR=${GENERATOR:-docker.io/openapitools/openapi-generator-cli:v7.10.0}
 REDOCLY=${REDOCLY:-@redocly/cli@2}
 root=$(cd "$(dirname "$0")/.." && pwd)
 work=$(mktemp -d "${TMPDIR:-/tmp}/backd-openapi.XXXXXX")
-trap 'rm -rf "$work"' EXIT
+trap 'rm -rf "$work" 2>/dev/null || true' EXIT
 
 cd "$root"
 go build -o "$work/backd" ./cmd/backd
@@ -26,7 +26,7 @@ for realm in shelf workshop; do
     || { cat "$work/$realm-admin.log"; echo "openapi-generator failed for the $realm admin document" >&2; exit 1; }
   for gen in dart kotlin swift5; do
     out="$work/$realm-$gen"
-    "$DOCKER" run --rm -v "$work:/local" "$GENERATOR" generate \
+    "$DOCKER" run --rm --user "$(id -u):$(id -g)" -v "$work:/local" "$GENERATOR" generate \
       -i "/local/$realm.json" -g "$gen" -o "/local/$realm-$gen" >"$work/$realm-$gen.log" 2>&1 \
       || { cat "$work/$realm-$gen.log"; echo "openapi-generator failed for $realm / $gen" >&2; exit 1; }
     files=$(find "$out" -type f | wc -l)
