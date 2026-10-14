@@ -61,15 +61,15 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 	t.Helper()
 	root := t.TempDir()
 	for p, content := range map[string]string{
-		"acme/realm.yaml":                 "signup: open\nlocales: [en, es]\nsessions:\n  cookie:\n    enabled: true\ncors:\n  origins: [https://app.acme.example]\nroles:\n  admin: {}\n  staff:\n    admin: true\n  support:\n    admin: [users, invitations]\n  keeper:\n    admin: [apikeys, secrets]\n  auditor:\n    admin: [audit]\n  runner:\n    admin: [functions]\n  viewer:\n    admin: read\n  lookout:\n    admin: [read, secrets]\nconsents:\n  marketing:\n    required: false\n    current: \"1\"\nemail:\n  function: app/deliver\n  from: \"Acme <no-reply@acme.example>\"\n  public_url: https://api.acme.example\n  allowed_redirects: [https://app.acme.example]\n  redirects:\n    verify_email: https://app.acme.example/verified\n  links:\n    change_email: https://app.acme.example/confirm?token={token}\n",
-		"acme/app/posts/schema.json":      postsSchema,
-		"acme/app/posts/collection.yaml":  rulesSection(postsRules),
+		"acme/realm.yaml":                  "signup: open\nlocales: [en, es]\nsessions:\n  cookie:\n    enabled: true\ncors:\n  origins: [https://app.acme.example]\nroles:\n  admin: {}\n  staff:\n    admin: true\n  support:\n    admin: [users, invitations]\n  keeper:\n    admin: [apikeys, secrets]\n  auditor:\n    admin: [audit]\n  runner:\n    admin: [functions]\n  viewer:\n    admin: read\n  lookout:\n    admin: [read, secrets]\nconsents:\n  marketing:\n    required: false\n    current: \"1\"\nemail:\n  function: app/deliver\n  from: \"Acme <no-reply@acme.example>\"\n  public_url: https://api.acme.example\n  allowed_redirects: [https://app.acme.example]\n  redirects:\n    verify_email: https://app.acme.example/verified\n  links:\n    change_email: https://app.acme.example/confirm?token={token}\norganizations:\n  roles:\n    owner: {manage: [org, members, roles, teams]}\n    admin: {manage: [members, teams]}\n    editor: {}\n    member: {}\n  default_roles: [member]\n  max_created_per_user: 3\n  invitation_link: https://app.acme.example/join?token={token}&org={org}\n",
+		"acme/app/posts/schema.json":       postsSchema,
+		"acme/app/posts/collection.yaml":   rulesSection(postsRules),
 		"acme/app/exports/schema.json":     postsSchema,
 		"acme/app/exports/collection.yaml": rulesSection("read: user != nil && appConfig(\"features.export.enabled\") == true\ncreate: user != nil && appConfig(\"features.export.enabled\") == true\n"),
-		"acme/app-config/schema.json":     appConfigSchema,
-		"acme/app-config/rules.yaml":      appConfigRules,
-		"acme/consents/marketing/1/en.md": "Send me news by email.",
-		"acme/consents/marketing/1/es.md": "Enviadme novedades por correo.",
+		"acme/app-config/schema.json":      appConfigSchema,
+		"acme/app-config/rules.yaml":       appConfigRules,
+		"acme/consents/marketing/1/en.md":  "Send me news by email.",
+		"acme/consents/marketing/1/es.md":  "Enviadme novedades por correo.",
 		// Public caching of anonymous reads (see public_cache_test.go).
 		"acme/app/news/schema.json":        postsSchema,
 		"acme/app/news/collection.yaml":    "cache: {public: true, max_age: 60}\nsoft_delete: true\n" + rulesSection("read: document.published == true || user != nil\ncreate: user != nil\nrestore: hasRole(user, 'staff')\n"),

@@ -34,7 +34,7 @@ An admin role can open the whole admin API (`admin: true`), only some of its are
 
 | Area | Endpoints |
 |---|---|
-| `users` | `/users` and everything under `/users/{id}`: reading, disabling, erasing, passwords, addresses, roles and networks |
+| `users` | `/users` and everything under `/users/{id}`: reading, disabling, erasing, passwords, addresses, roles and networks; and `/orgs`, the realm's [organizations](../../api/organizations/) |
 | `invitations` | `/invitations` |
 | `apikeys` | `/apikeys` |
 | `secrets` | `/secrets` |
@@ -86,6 +86,15 @@ Paths are relative to `/v1/{realm}/_admin`. Bodies are JSON (`Content-Type: appl
 | `PUT /users/{id}/roles/{role}` | none | `200` with the user |
 | `DELETE /users/{id}/roles/{role}` | none | `200` with the user |
 | `PUT /users/{id}/networks` | `{"admin_networks": [...], "login_networks": [...]}` | `200` with the user |
+| `GET /orgs?status=` | none | `200` with the realm's [organizations](../../api/organizations/), newest first (`status`: `active`, `orphaned`, `deleted`). Needs the `users` area |
+| `POST /orgs` | `{"name", "owner", "slug"?}` | `201`: creates an organization for the user `owner` (a user id), who holds the realm's `creator_roles`; the create rule and `max_created_per_user` don't apply. `404` for an unknown user, `409 slug_taken`. Audited as `org.create`. Needs the `users` area with write access |
+| `GET /orgs/{org}` | none | `200` with the organization and its claims; `404` if unknown |
+| `GET /orgs/{org}/members` | none | `200` with a page of members, with emails (`limit`, `after`) |
+| `POST /orgs/{org}/members` | `{"user", "roles"?}` | `200` with the member: adds the user **without an invitation**, or gives an existing member the roles. `404` for an unknown user, `409 org_limit_reached` at their membership cap. Audited as `org.member_add` |
+| `PATCH /orgs/{org}/members/{user}` | `{"roles": [...]}` | `200`: replaces the member's direct roles. `409 last_org_manager` when it would leave the organization without a manager. Audited as `org.roles` |
+| `DELETE /orgs/{org}/members/{user}` | none | `204`; `409 last_org_manager` for the last manager (assign another first). Audited as `org.member_remove` |
+| `PUT /orgs/{org}/claims` | a JSON object, at most 1 KiB | `200`: replaces the organization's claims, which members and rules read. Audited as `org.claims`, with the keys |
+| `POST /orgs/{org}/owner` | `{"user"}` | `200`: gives the user the realm's `creator_roles` in the organization; an `orphaned` organization becomes `active`. Audited as `org.owner_assign` |
 | `GET /whoami` | none | `200` with what this credential may do: `level`, the areas it may `write` and `read`, and `read_access` (see [the read-only level](#the-read-only-level)) |
 | `POST /storage/check` | none | `200` with the report of a [storage check](../../files/storage/#checking-it) (`ok`, one entry per step with its `level` and `detail`, what the storage does with a signed SHA-256, the bucket's CORS and encryption where exposed): it stores a few small objects under `<prefix>/<realm>/_check/` and deletes them. `404` when the realm has no `storage:`; `503 storage_unavailable` when its keys aren't set. Needs the `config` area (read is enough). Audited as `storage.check` |
 | `GET /storage` | none | `200` with the realm's [storage status](../../files/maintenance/#usage): its configuration (the keys by name), whether the keys are set and the bucket answers, the running totals of bytes and files (the realm's and the 20 users holding the most), the deletion queue and the unfinished uploads. `{"configured": false}` without `storage:`. Needs the `config` area (read is enough) |

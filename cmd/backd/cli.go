@@ -316,6 +316,50 @@ func registerRemote(cfg *kli.Config) {
 		required(cc, "id", "the device's id, from `backd push devices`")
 	})
 
+	og := cfg.Command("orgs").ShortHelp("manage a realm's organizations").
+		LongHelp(adminAPINote + " Needs the users area. People create and manage organizations through the realm's /_orgs API; this is for administrators.")
+	og.SubCommand("list").ShortHelp("list the realm's organizations").
+		Func(act("orgs list", orgsList)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		cc.Define("status").String().Flag("status").Default("").OneOf("", "active", "orphaned", "deleted").Description("only organizations with this status (orphaned: no manager left)")
+	})
+	og.SubCommand("show").ShortHelp("show an organization with its claims").
+		Func(act("orgs show", orgsShow)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+	})
+	og.SubCommand("create").ShortHelp("create an organization owned by a user").
+		Func(act("orgs create", orgsCreate)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "name", "the organization's name")
+		optional(cc, "slug", "a unique short name: lowercase letters, digits and '-'")
+		required(cc, "owner", "the email of the user who becomes its owner")
+	})
+	og.SubCommand("members").ShortHelp("list an organization's members with their roles").
+		Func(act("orgs members", orgsMembers)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+	})
+	og.SubCommand("add-member").ShortHelp("add a user to an organization without an invitation (audited)").
+		Func(act("orgs add-member", orgsAddMember)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+		required(cc, "email", "the user's email")
+		optional(cc, "roles", "organization roles, comma-separated")
+	})
+	og.SubCommand("assign-owner").ShortHelp("make a user a manager of an organization (for an orphaned one)").
+		Func(act("orgs assign-owner", orgsAssignOwner)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+		required(cc, "email", "the user's email")
+	})
+	og.SubCommand("claims-set").ShortHelp("replace an organization's claims (at most 1 KiB of JSON)").
+		Func(act("orgs claims-set", orgsClaimsSet)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+		required(cc, "claims", "a JSON object, for example '{\"plan\": \"pro\"}'")
+	})
+
 	k := cfg.Command("apikey").ShortHelp("manage a realm's API keys").
 		LongHelp(adminAPINote + "\n\nAPI keys give server-side services full access to their realm's data.\nStore them as secrets.")
 	k.SubCommand("create").ShortHelp("create an API key and print it once").

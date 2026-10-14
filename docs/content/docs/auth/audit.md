@@ -41,6 +41,9 @@ Each realm with `auth: enabled` keeps an **audit trail**: one record per securit
 | `identity.unlinked` | A user (or an administrator) removes a sign-in method | `provider`, `by` (`self` or `admin`) |
 | `identity.signin_refused` | A provider sign-in for an account that can't sign in (the app is only told `signin_refused`) | `provider`, `reason` (`disabled`, `network`, `erased`, …) |
 | `role.add`, `role.remove` | A role is assigned or taken away, through the API or from `realm.yaml` seeds | `role` |
+| `org.create`, `org.update` | An organization is created (by a user or an administrator) or renamed | `by`, `creator` / `fields` |
+| `org.member_add`, `org.member_remove`, `org.member_leave`, `org.roles` | A member is added without an invitation, removed, leaves, or has roles changed | `user`, `roles`, `by` / `added`, `removed` |
+| `org.claims`, `org.owner_assign` | Claims are replaced; a manager is assigned | `keys` / `user` |
 | `apikey.create`, `apikey.revoke` | An API key is created or revoked | `role`, `networks`, `expires_at` |
 | `invitation.create`, `invitation.revoke` | An invitation is created or revoked | `bound_to_email` (whether it is), `expires_at` |
 | `invitation.sent` | An invitation is emailed to its address | `expires_at` |

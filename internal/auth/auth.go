@@ -320,6 +320,34 @@ type Store interface {
 	// DeleteInvitation removes an invitation by id; ErrNotFound if none.
 	DeleteInvitation(ctx context.Context, id string) error
 
+	// Organizations (design/organizations.md). CreateOrg inserts the organization and its first
+	// member together (ErrSlugTaken when the slug is in use by one that isn't deleted).
+	CreateOrg(ctx context.Context, o Org, first OrgMember) error
+	// OrgByID returns the organization, deleted ones too; ErrNotFound if none.
+	OrgByID(ctx context.Context, id string) (Org, error)
+	// OrgsByIDs returns the organizations that exist, by id.
+	OrgsByIDs(ctx context.Context, ids []string) (map[string]Org, error)
+	// UpdateOrg applies upd, sets UpdatedAt and returns the result; ErrSlugTaken, ErrNotFound.
+	UpdateOrg(ctx context.Context, id string, upd OrgUpdate, now time.Time) (Org, error)
+	// ListOrgs returns organizations, optionally of one status, newest first.
+	ListOrgs(ctx context.Context, status string) ([]Org, error)
+	// CountOrgsCreatedBy counts the organizations a user created, deleted ones included.
+	CountOrgsCreatedBy(ctx context.Context, userID string) (int, error)
+	// OrgMember returns a membership; ErrNotFound if none.
+	OrgMember(ctx context.Context, org, user string) (OrgMember, error)
+	// ListOrgMembers returns a page of an organization's members sorted by user id: those
+	// after `after`, at most limit; more says whether others follow.
+	ListOrgMembers(ctx context.Context, org, after string, limit int) (members []OrgMember, more bool, err error)
+	// OrgMembersWithRoles returns the members holding any of the roles directly.
+	OrgMembersWithRoles(ctx context.Context, org string, roles []string) ([]OrgMember, error)
+	// OrgMembershipsOf returns up to limit memberships of a user; CountOrgMembershipsOf counts them.
+	OrgMembershipsOf(ctx context.Context, user string, limit int) ([]OrgMember, error)
+	CountOrgMembershipsOf(ctx context.Context, user string) (int, error)
+	// PutOrgMember creates or replaces a membership (unique per organization and user).
+	PutOrgMember(ctx context.Context, m OrgMember) error
+	// DeleteOrgMember removes a membership; ErrNotFound if none.
+	DeleteOrgMember(ctx context.Context, org, user string) error
+
 	// LoginAttempts returns the failure counter of key (zero if none).
 	LoginAttempts(ctx context.Context, key string) (Attempts, error)
 	// RecordLoginFailure increments key's counter atomically, setting its

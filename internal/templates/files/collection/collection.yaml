@@ -30,6 +30,15 @@
 #   public: true
 #   max_age: 60
 #
+# Organizations (docs: Configuration -> Organizations). Documents can belong to an
+# organization of the realm (`organizations:` in realm.yaml): `required` says every
+# document does, `optional` that some do. The collection must say what happens to its
+# documents when an organization is deleted. Commented out.
+#
+# organization: required         # required | optional | none (default)
+# on_org_delete:
+#   action: delete               # delete | keep
+#
 # What a user's data export takes from this collection (docs: Configuration ->
 # collection.yaml). By default: the documents the user owns, whole. Commented out.
 #

@@ -49,6 +49,7 @@ type MemStore struct {
 	consents    []auth.ConsentRecord              // append-only consent history
 	sends       map[string]*memSend               // id → push send
 	outbox      []auth.PushOutboxEntry            // what the capture provider took
+	orgState    *memOrgs                          // organizations and their members
 	// FailPutIdentity, when set, is returned by PutIdentity.
 	FailPutIdentity error
 }

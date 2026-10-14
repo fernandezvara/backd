@@ -44,7 +44,7 @@ Principles carried over:
 | Structure | flat organizations; teams are role groups, not a second level |
 | Reuse | organization roles reuse the realm roles machinery (declaration, capabilities, granting rules, assignment, audit, invitations); one resolver for effective roles |
 | Inheritance | a user's organization roles come from direct grants, from teams and from the organization's `default_roles`; organizations and teams never carry **realm** roles |
-| Callers | API keys have no memberships; realm admins use `/_admin`; their data-API session is an ordinary user |
+| Callers | API keys have no memberships of their own (a key acting on behalf of a user uses that user's); realm admins use `/_admin`; their data-API session is an ordinary user |
 | Slugs and caps | a slug is released when the organization is deleted; deleted organizations still count against `max_created_per_user` |
 
 ### 2.1 What already exists and is reused
@@ -156,15 +156,15 @@ All of these are under `/v1/{realm}/_orgs` and require a session. **A non-member
 
 ### 5.1 Granting rules
 
-- **`manage: members`:** can invite, remove members and revoke invitations. It can only grant roles **the caller holds**, and can't remove or change a member who holds a capability the caller lacks, so an admin can't remove an owner.
+- **`manage: members`:** can invite, remove members and revoke invitations. It can only grant roles **whose capabilities the caller holds** (the rule realm roles follow for admin areas: a role that opens nothing can be given by anyone with `manage: members`, and `owner` only by someone who can do everything it can), and can't remove or change a member who holds a capability the caller lacks, so an admin can't remove an owner.
 - **`manage: roles`:** can grant or remove any role, including roles with capabilities.
 - **`manage: teams`:** see §8.
 - **`manage: org`:** covers rename, slug, `require_mfa` and deletion.
 
 ### 5.2 Realm admins
 
-- **Admin API:** `GET`, `POST` and `DELETE /_admin/orgs[/{org}]`; members and teams under `/_admin/orgs/{org}/...`; `PUT /_admin/orgs/{org}/claims`; `POST /_admin/orgs/{org}/owner` to assign a manager to an orphaned organization.
-- **CLI:** `backd orgs list|show|create|members|claims set|assign-owner|delete|owned`.
+- **Admin API:** needs the `users` area (organizations are people grouped, so no area of their own); `GET`, `POST` and `DELETE /_admin/orgs[/{org}]`; members and teams under `/_admin/orgs/{org}/...`; `PUT /_admin/orgs/{org}/claims`; `POST /_admin/orgs/{org}/owner` to assign a manager to an orphaned organization.
+- **CLI:** `backd orgs list|show|create|members|add-member|claims-set|assign-owner|delete|owned|reactivate` (every value is a flag, so `claims-set` and `add-member` are single words).
 - **Reactivating:** `POST /_admin/orgs/{org}/reactivate` (`backd orgs reactivate`) sets a `deleted` organization back to `active` **without members**, since memberships were removed; the realm admin then assigns an owner (`POST /_admin/orgs/{org}/owner`). Documents under `keep` become visible again to members; documents under `delete` are gone. Audited.
 - **Bypassing invitations:** realm admins and `ctx.admin` can create organizations for any user and **add members directly**. This is administrative power and is audited.
 
@@ -177,7 +177,7 @@ All of these are under `/v1/{realm}/_orgs` and require a session. **A non-member
   - **Missing organization:** `required` without `?org=` answers `400 org_required`.
   - **Collections with `none`:** `?org=` answers `400 org_not_allowed`.
 - **Updating:** `_meta.org` can't be changed by PATCH or PUT (`400 immutable_field`). Use a transfer (§10).
-- **Who can't:** API keys have no memberships, so `?org=` with a key answers `403 not_org_member`; they reach organization data only through `ctx.admin.db` in functions or the admin API. A realm admin's session in the data API is an ordinary user: realm admin power lives in `/_admin`.
+- **Who can't:** an API key without a user has no memberships, so `?org=` with it answers `403 not_org_member` (a key acting on behalf of a user uses that user's memberships, without MFA); they reach organization data only through `ctx.admin.db` in functions or the admin API. A realm admin's session in the data API is an ordinary user: realm admin power lives in `/_admin`.
 - **Batches:** a batch create takes `?org=` (and `?team=`) from the request for all its operations; operations don't carry their own.
 - **Files and exports:** files follow the rules of the document that holds them; exports and counts follow the read rule like lists.
 - **Querying:** `_meta.org` is an allowed query field. `GET .../{collection}?org=<id>` is shorthand for that filter, ANDed with `where`; the read rule still decides visibility, so an organization the caller can't see just returns an empty list. This is how apps switch between organizations.

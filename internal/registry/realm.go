@@ -136,6 +136,8 @@ type RealmSettings struct {
 	SignInAppURL string
 	// MFA are the multi-factor settings (mfa in realm.yaml).
 	MFA MFASettings
+	// Organizations is the organizations section; nil when the realm doesn't enable them.
+	Organizations *OrgSettings
 	// ReauthTTL is how long a re-authentication token works (reauth.ttl).
 	ReauthTTL time.Duration
 	// DefaultLocale and Locales are the languages of the realm (default_locale and locales in
@@ -346,6 +348,8 @@ type realmDoc struct {
 		Admin       adminDoc    `yaml:"admin"`
 		Users       []roleEntry `yaml:"users"`
 	} `yaml:"roles"`
+	// Organizations is read by orgsDoc.apply, after the roles and the sign-in redirects.
+	Organizations *orgsDoc `yaml:"organizations"`
 	// DefaultLocale and Locales are the languages of the realm, for email and push.
 	DefaultLocale string      `yaml:"default_locale"`
 	Locales       []string    `yaml:"locales"`
@@ -772,6 +776,10 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 		}
 	}
 
+	if doc.Organizations != nil {
+		errs = append(errs, doc.Organizations.apply(&s)...)
+	}
+
 	if m := doc.MFA; m != nil {
 		switch {
 		case !s.AuthEnabled:
@@ -889,8 +897,8 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 	s.UserNetworks = map[string]UserNetworks{}
 	for _, name := range slices.Sorted(maps.Keys(doc.Roles)) {
 		r := doc.Roles[name]
-		if !namePattern.MatchString(name) {
-			errs = append(errs, fmt.Errorf("roles: invalid role name %q: must be lowercase letters and digits, optionally separated by single '-' or '_'", name))
+		if msg := roleNameProblem(name); msg != "" {
+			errs = append(errs, fmt.Errorf("roles: invalid role name %q: %s", name, msg))
 			continue
 		}
 		role := Role{}

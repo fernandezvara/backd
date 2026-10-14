@@ -321,6 +321,9 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 	if err := loadCustomID(coll, settings, filepath.Join(dir, CollectionFile)); err != nil {
 		return nil, err
 	}
+	if err := loadOrganization(coll, settings, filepath.Join(dir, CollectionFile)); err != nil {
+		return nil, err
+	}
 	if err := loadRules(coll, settings, dir); err != nil {
 		return nil, err
 	}

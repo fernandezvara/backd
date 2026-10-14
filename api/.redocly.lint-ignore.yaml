@@ -18,3 +18,5 @@ openapi.yaml:
     # `_consents` is not a database name either: the public consent texts never match a function or job route.
     - '#/paths/~1v1~1{realm}~1{database}~1_func~1{function}'
     - '#/paths/~1v1~1{realm}~1{database}~1_jobs~1{id}'
+    # `_orgs` is not a database name either: organization routes never match a batch or a document route.
+    - '#/paths/~1v1~1{realm}~1{database}~1_batch'

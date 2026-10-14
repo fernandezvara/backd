@@ -59,21 +59,27 @@ type Collection struct {
 	Database      string
 	MongoDatabase string // <realm>__<database>
 	Name          string
-	SchemaPath    string                // path of schema.json, for error messages
-	RawSchema     map[string]any        // decoded schema.json (numbers as json.Number)
-	Schema        *jsonschema.Schema    // compiled draft 2020-12 schema
-	Fields        map[string]Field      // dot path → field info, for query checks
-	Indexes       []Index               // declared in indexes.json
-	IndexPath     string                // path of indexes.json, when present
-	Rules         *rules.Set            // from collection.yaml's rules:; nil allows nothing
-	Erasure       *ErasurePolicy        // from collection.yaml; nil: an erase leaves the collection alone
-	ErasurePath   string                // path of collection.yaml, for error messages
-	SoftDelete    *SoftDelete           // from collection.yaml; nil: DELETE removes the document
-	PersonalData  *PersonalData         // from collection.yaml's personal_data:; nil: owned documents, whole
-	Cache         *CachePolicy          // from collection.yaml's cache:; nil: responses are private, no-cache
-	CustomID      *CustomID             // from collection.yaml's custom_id:; nil: the server generates the ids
-	configLeaf    func(string) bool     // appConfig() in rules: whether a path is a value of the realm's configuration
-	Files         map[string]*FileField // file fields from collection.yaml's files:; their schema is already in Schema and RawSchema
+	SchemaPath    string             // path of schema.json, for error messages
+	RawSchema     map[string]any     // decoded schema.json (numbers as json.Number)
+	Schema        *jsonschema.Schema // compiled draft 2020-12 schema
+	Fields        map[string]Field   // dot path → field info, for query checks
+	Indexes       []Index            // declared in indexes.json
+	IndexPath     string             // path of indexes.json, when present
+	Rules         *rules.Set         // from collection.yaml's rules:; nil allows nothing
+	Erasure       *ErasurePolicy     // from collection.yaml; nil: an erase leaves the collection alone
+	ErasurePath   string             // path of collection.yaml, for error messages
+	SoftDelete    *SoftDelete        // from collection.yaml; nil: DELETE removes the document
+	PersonalData  *PersonalData      // from collection.yaml's personal_data:; nil: owned documents, whole
+	Cache         *CachePolicy       // from collection.yaml's cache:; nil: responses are private, no-cache
+	CustomID      *CustomID          // from collection.yaml's custom_id:; nil: the server generates the ids
+	// Organization is collection.yaml's organization: OrgRequired, OrgOptional or OrgNone (also ""
+	// for collections loaded without the section). OnOrgDelete is OrgDelete or OrgKeep, and
+	// OwnerDeleteInOrg InOrgKeep or InOrgApply, both only with an organization.
+	Organization     string
+	OnOrgDelete      string
+	OwnerDeleteInOrg string
+	configLeaf       func(string) bool     // appConfig() in rules: whether a path is a value of the realm's configuration
+	Files            map[string]*FileField // file fields from collection.yaml's files:; their schema is already in Schema and RawSchema
 }
 
 // Index is one index declared in indexes.json.

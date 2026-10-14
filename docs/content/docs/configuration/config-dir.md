@@ -142,6 +142,7 @@ This optional file holds a collection's policy, in sections that can each be lef
 | `cache:` | Whether anonymous reads may be stored by shared caches (CDNs) | [Public caching](#public-caching) |
 | `personal_data:` | What a user's data export takes from the collection | [Personal data scope](#personal-data-scope) |
 | `custom_id:` | Collections whose documents get the id the client chooses | [Custom ids](#custom-ids) |
+| `organization:` | Whether documents belong to an organization, and what happens to them when it is deleted | [Organizations](#organizations) |
 | `on_owner_delete:` | What an administrator's **erase** does to the collection when a user is erased (`backd user delete`) | below |
 
 ```yaml
@@ -213,6 +214,23 @@ custom_id: user            # the id must be the creating user's id (the realm ne
 
 - **Creating** sends the id in the body of the `POST`; an id that exists is `409 id_taken`, and the `create` rule runs first and can read it as `data.id`. See [Custom ids](../../api/documents/#custom-ids).
 - **Ids never change.** To change one, create a new document and delete the old one. [Custom ids](../custom-ids/) covers when to use them, probing, personal data and changing a collection that already has documents.
+
+### Organizations
+
+```yaml
+organization: required       # required | optional | none (default)
+on_org_delete:
+  action: delete             # delete | keep
+on_owner_delete:
+  action: delete
+  in_org: keep               # keep (default) | apply
+```
+
+With `organization: required`, every document is created inside an organization of the realm; with `optional`, some are. The collection has to say what happens to its documents when an organization is deleted: `delete` removes them, `keep` leaves them (readable only by realm administrators). `on_owner_delete.in_org` says what an erased user's documents do inside an organization: `keep` (the default) leaves them with the organization, owner cleared, `apply` treats them like documents outside organizations.
+
+- The realm needs an [`organizations:`](../realm/#organizations) section, and `auth: enabled`.
+- A collection with an organization can't also use `custom_id: user`: it would allow one document per user across every organization.
+- `on_org_delete` is required, and only valid next to `organization`.
 
 ### Public caching
 
