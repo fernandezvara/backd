@@ -64,11 +64,12 @@ The **Organizations** page appears in a realm that declares [organizations](../.
 An organization's page shows:
 
 - **Members**, with their **direct roles**, their **teams** and their **effective roles with where each came from** (`direct`, `default` or a team's name). A role given both directly and another way is marked, because taking it away in one place leaves it in the other. A role that `realm.yaml` no longer declares is flagged *no longer declared*: it grants nothing. Reading which roles are declared needs the `config` area; without it nothing is flagged.
-- **Teams** with the roles they carry, and **invitations** with their binding, roles, status and expiry. A link is shown **once**, when the invitation is made, and never listed.
+- **Teams** with the roles they carry and, under each, the holders of its [team roles](../../organizations/team-roles/): who, which role (🔒 when it needs a second factor), the window it counts in, who granted it and whether it is **in force**, **upcoming** or **expired**; a holder who doesn't belong to the team is marked. Members who hold a role that needs a second factor and haven't set one up are listed in their own section. And **invitations** with their binding, roles, status and expiry. A link is shown **once**, when the invitation is made, and never listed.
 - **Claims**, a JSON object that [rules](../rules/#organizations) read (`orgClaims`). The page shows the size against the 1 KiB limit and doesn't send what is over it.
 
 With the `users` area the page lets an administrator:
 
+- **give a team role** in a team (the member, the role, and optionally from and until) and **take one away**, which asks for the member's name; the audit trail records who did it;
 - **create** an organization for a user (by email), who holds the realm's `creator_roles`;
 - **add a member** directly, **change their roles** or **remove** them (typing their address);
 - **invite** people with any role, and **revoke** pending invitations;

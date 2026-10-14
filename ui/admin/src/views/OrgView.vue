@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AdminOrg, OrgInvitation, OrgMember, OrgOwnedReport, OrgTeam } from 'backd-js'
+import type { AdminOrg, OrgInvitation, OrgMember, OrgOwnedReport, OrgTeam, OrgTeamRoleGrant } from 'backd-js'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppAlert from '@/components/AppAlert.vue'
@@ -144,6 +144,75 @@ function askRemove(m: OrgMember) {
   removing.value = true
 }
 const memberLabel = (m: OrgMember) => m.email ?? m.user
+
+// ---- Team roles: held within one team, with a window; granted by realm administrators ----
+const teamRoleNames = computed<string[]>(() => {
+  const roles = realmConfig.config?.settings.organizations?.team_roles as Record<string, unknown> | undefined
+  return roles ? Object.keys(roles).sort() : []
+})
+const teamRoleNeedsMFA = (role: string) => {
+  const roles = realmConfig.config?.settings.organizations?.team_roles as Record<string, { require_mfa?: boolean }> | undefined
+  return roles?.[role]?.require_mfa === true
+}
+type Holder = { member: OrgMember; grant: OrgTeamRoleGrant }
+// Who holds a team role in a team, in force or not, by team id.
+const holdersOf = computed(() => {
+  const by = new Map<string, Holder[]>()
+  for (const m of members.value) {
+    for (const g of m.team_roles ?? []) {
+      if (!by.has(g.team)) by.set(g.team, [])
+      by.get(g.team)!.push({ member: m, grant: g })
+    }
+  }
+  return by
+})
+// A grant is in force, still to open or over, as the server judged it when it answered.
+function grantState(g: OrgTeamRoleGrant): 'active' | 'upcoming' | 'expired' {
+  if (g.active) return 'active'
+  return g.from && Date.parse(g.from) > Date.now() ? 'upcoming' : 'expired'
+}
+// Holders of roles that need a second factor who haven't enrolled one.
+const unenrolled = computed(() => members.value.filter((m) => m.mfa === false && (m.mfa_roles ?? []).length > 0))
+
+const granting = ref(false)
+const grantTeam = ref<OrgTeam>()
+const grantForm = ref({ email: '', role: '', from: '', until: '' })
+const grantError = ref('')
+const grantBusy = ref(false)
+function openGrant(tm: OrgTeam) {
+  grantTeam.value = tm
+  grantForm.value = { email: '', role: teamRoleNames.value[0] ?? '', from: '', until: '' }
+  grantError.value = ''
+  granting.value = true
+}
+// <input type="datetime-local"> holds local time without a zone: the grant is in UTC.
+const toISO = (v: string) => (v ? new Date(v).toISOString() : undefined)
+async function grantRole() {
+  grantBusy.value = true
+  grantError.value = ''
+  try {
+    const f = grantForm.value
+    const user = await admin.users.find(f.email.trim())
+    if (!user) {
+      grantError.value = t('orgs.noSuchUser', { email: f.email.trim() })
+      return
+    }
+    await admin.orgs.grantTeamRole(props.id, grantTeam.value!.id, { user: user.id, role: f.role, from: toISO(f.from), until: toISO(f.until) })
+    granting.value = false
+    toasts.push(t('orgs.teamRoles.granted'))
+    await load()
+  } catch (e) {
+    grantError.value = errorText(e, t('common.unexpected'))
+  } finally {
+    grantBusy.value = false
+  }
+}
+const revokingRole = ref(false)
+const revokeHolder = ref<Holder & { team: OrgTeam }>()
+function askRevokeRole(tm: OrgTeam, h: Holder) {
+  revokeHolder.value = { ...h, team: tm }
+  revokingRole.value = true
+}
 
 // ---- Owner (an orphaned organization) ----
 const assigning = ref(false)
@@ -365,11 +434,46 @@ const th = 'px-3 py-2'
       <section class="mt-8" aria-labelledby="teams-h">
         <h2 id="teams-h" class="text-lg font-semibold">{{ t('orgs.teams.title') }}</h2>
         <ul class="mt-2 space-y-1 text-sm" data-testid="org-teams">
-          <li v-for="tm in teams" :key="tm.id">
+          <li v-for="tm in teams" :key="tm.id" :data-testid="`team-${tm.name}`">
             <span class="font-medium">{{ tm.name }}</span> — {{ tm.roles.length ? tm.roles.join(', ') : t('common.none') }}
             <span v-for="r in tm.roles.filter(stale)" :key="r" class="ml-1 text-amber-800 dark:text-amber-300">⚠ {{ r }}: {{ t('orgs.members.stale') }}</span>
+            <div v-if="holdersOf.get(tm.id)?.length || (canWrite && teamRoleNames.length)" class="mt-1 ml-4">
+              <table v-if="holdersOf.get(tm.id)?.length" class="w-full text-left text-xs" :aria-label="t('orgs.teamRoles.of', { team: tm.name })">
+                <thead class="text-slate-600 dark:text-slate-400">
+                  <tr>
+                    <th scope="col" :class="th">{{ t('orgs.members.who') }}</th>
+                    <th scope="col" :class="th">{{ t('orgs.teamRoles.role') }}</th>
+                    <th scope="col" :class="th">{{ t('orgs.teamRoles.window') }}</th>
+                    <th scope="col" :class="th">{{ t('orgs.teamRoles.grantedBy') }}</th>
+                    <th scope="col" :class="th">{{ t('orgs.statusLabel') }}</th>
+                    <th v-if="canWrite" scope="col" :class="th"><span class="sr-only">{{ t('common.revoke') }}</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="h in holdersOf.get(tm.id)" :key="h.member.user + h.grant.role" data-testid="team-role-holder">
+                    <td class="px-3 py-1">{{ memberLabel(h.member) }}<span v-if="!h.member.teams.includes(tm.id)" class="ml-1 text-slate-600 dark:text-slate-400">({{ t('orgs.teamRoles.notInTeam') }})</span></td>
+                    <td class="px-3 py-1">{{ h.grant.role }}<span v-if="teamRoleNeedsMFA(h.grant.role)" class="ml-1" :title="t('orgs.teamRoles.needsMFA')">🔒</span></td>
+                    <td class="px-3 py-1">{{ h.grant.from ? formatDate(h.grant.from) : t('orgs.teamRoles.always') }} → {{ h.grant.until ? formatDate(h.grant.until) : t('orgs.teamRoles.never') }}</td>
+                    <td class="px-3 py-1">{{ h.grant.granted_by ?? t('orgs.teamRoles.byAdmin') }}</td>
+                    <td class="px-3 py-1">{{ t(`orgs.teamRoles.state.${grantState(h.grant)}`) }}</td>
+                    <td v-if="canWrite" class="px-3 py-1 text-right">
+                      <button type="button" class="underline" @click="askRevokeRole(tm, h)">{{ t('common.revoke') }}</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <button v-if="canWrite && teamRoleNames.length" type="button" class="mt-1 underline" @click="openGrant(tm)">{{ t('orgs.teamRoles.grant') }}</button>
+            </div>
           </li>
           <li v-if="!teams.length" class="text-slate-600 dark:text-slate-400">{{ t('orgs.teams.none') }}</li>
+        </ul>
+      </section>
+
+      <section v-if="unenrolled.length" class="mt-8" aria-labelledby="mfa-h">
+        <h2 id="mfa-h" class="text-lg font-semibold">{{ t('orgs.teamRoles.unenrolledTitle') }}</h2>
+        <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">{{ t('orgs.teamRoles.unenrolledHelp') }}</p>
+        <ul class="mt-2 space-y-1 text-sm" data-testid="org-unenrolled">
+          <li v-for="m in unenrolled" :key="m.user">{{ memberLabel(m) }} — {{ (m.mfa_roles ?? []).join(', ') }}</li>
         </ul>
       </section>
 
@@ -438,6 +542,27 @@ const th = 'px-3 py-2'
     :expected="removeTarget ? memberLabel(removeTarget) : ''"
     :action="t('orgs.members.remove')"
     @confirm="act(() => admin.orgs.removeMember(id, removeTarget!.user), t('orgs.members.removed'))"
+  />
+
+  <FormDialog v-model:open="granting" :title="t('orgs.teamRoles.grantTitle', { team: grantTeam?.name ?? '' })" :description="t('orgs.teamRoles.grantHelp')" :submit="t('orgs.teamRoles.grant')" :busy="grantBusy" :error="grantError" @submit="grantRole">
+    <TextField v-model="grantForm.email" type="email" :label="t('orgs.members.email')" autocomplete="off" required />
+    <div class="space-y-1">
+      <label for="grant-role" class="block text-sm font-medium">{{ t('orgs.teamRoles.role') }}</label>
+      <select id="grant-role" v-model="grantForm.role" class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900">
+        <option v-for="r in teamRoleNames" :key="r" :value="r">{{ r }}</option>
+      </select>
+    </div>
+    <TextField v-model="grantForm.from" type="datetime-local" :label="t('orgs.teamRoles.from')" :help="t('orgs.teamRoles.fromHelp')" autocomplete="off" />
+    <TextField v-model="grantForm.until" type="datetime-local" :label="t('orgs.teamRoles.until')" :help="t('orgs.teamRoles.untilHelp')" autocomplete="off" />
+  </FormDialog>
+
+  <ConfirmDialog
+    v-model:open="revokingRole"
+    :title="t('orgs.teamRoles.revokeTitle')"
+    :description="t('orgs.teamRoles.revokeHelp')"
+    :expected="revokeHolder ? memberLabel(revokeHolder.member) : ''"
+    :action="t('common.revoke')"
+    @confirm="act(() => admin.orgs.revokeTeamRole(id, revokeHolder!.team.id, { user: revokeHolder!.member.user, role: revokeHolder!.grant.role }), t('orgs.teamRoles.revoked'))"
   />
 
   <FormDialog v-model:open="assigning" :title="t('orgs.owner.title')" :description="t('orgs.owner.help')" :submit="t('orgs.owner.open')" :busy="ownerBusy" :error="ownerError" @submit="assignOwner">
