@@ -489,9 +489,14 @@ func (s *Users) lookupOrgInvitation(ctx context.Context, p Principal, token stri
 			return OrgInvitationPreview{}, ErrInvitationNotForYou
 		}
 	}
-	_, teams, err := s.teamRoles(ctx, inv.Org, inv.Teams)
+	teamRoles, teams, err := s.teamRoles(ctx, inv.Org, inv.Teams)
 	if err != nil {
 		return OrgInvitationPreview{}, err
+	}
+	// An open link never gives a capability, even when a team or a role gained one after
+	// the link was made.
+	if inv.Binding == BindNone && s.capsOfRoles(append(slices.Clone(inv.Roles), teamRoles...)).Any() {
+		return OrgInvitationPreview{}, ErrInvalidOrgInvitation
 	}
 	return OrgInvitationPreview{Org: org, Roles: inv.Roles, Teams: teams, Binding: inv.Binding, ExpiresAt: inv.ExpiresAt, invitation: inv}, nil
 }

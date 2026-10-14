@@ -213,3 +213,33 @@ func TestOrganizationInvitationEmail(t *testing.T) {
 		t.Errorf("without a key: %d %v", rec.Code, out)
 	}
 }
+
+// An open link never gives a capability: not even when its team gains one after the link
+// was made.
+func TestOpenLinkDoesNotFollowATeamIntoManaging(t *testing.T) {
+	f := newRulesFixture(t)
+	id := f.orgOf(t, f.ada, "Crew")
+	teams := orgsPath + "/" + id + "/teams"
+	rec, out := f.doH(t, "POST", teams, `{"name": "Crew", "roles": ["editor"]}`, jsonHdr(f.ada))
+	if rec.Code != 201 {
+		t.Fatalf("team: %d %v", rec.Code, out)
+	}
+	team := out["id"].(string)
+	rec, out = f.doH(t, "POST", orgsPath+"/"+id+"/invitations", `{"binding": "none", "teams": ["`+team+`"]}`, jsonHdr(f.ada))
+	if rec.Code != 201 {
+		t.Fatalf("open link: %d %v", rec.Code, out)
+	}
+	token := out["token"].(string)
+	body := `{"token": "` + token + `"}`
+	if rec, out := f.doH(t, "POST", orgsPath+"/invitations/preview", body, jsonHdr(f.bob)); rec.Code != 200 {
+		t.Fatalf("preview: %d %v", rec.Code, out)
+	}
+	if rec, out := f.doH(t, "PATCH", teams+"/"+team, `{"roles": ["owner"]}`, jsonHdr(f.ada)); rec.Code != 200 {
+		t.Fatalf("team gains owner: %d %v", rec.Code, out)
+	}
+	for _, path := range []string{"/preview", "/accept"} {
+		if rec, out := f.doH(t, "POST", orgsPath+"/invitations"+path, body, jsonHdr(f.bob)); rec.Code != 400 || errCode(out) != "invalid_invitation" {
+			t.Errorf("%s once the team manages: %d %v", path, rec.Code, out)
+		}
+	}
+}

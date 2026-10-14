@@ -69,6 +69,25 @@ That last gap — a function reaching the executor's own `/invoke` over its own 
 - **Logs** never contain request bodies, document contents, passwords or credentials.
 - **Responses** of `/_auth` and `/_admin` carry `Cache-Control: no-store`, so proxies and browsers don't cache tokens or account data. Document responses vary on `Origin`, `Authorization` and `Cookie` and are `private, no-cache` (`no-store` with signed file links), so a cache never serves one caller's documents to another; a matching `If-None-Match` answers `304` only after the read rule has run. A realm's [consents](../consents/) are records of what people accepted: append-only, naming the SHA-256 of the exact text, with the IP address and user agent only if `compliance.consent_proof` lists them, and reduced at erasure (pseudonymized under a realm secret, removed after `compliance.consent_retention`). The sign-in consent step is a challenge like a second factor's: 5 minutes, one use, only its hash stored; after a `reaccept_by` date a refused session can only accept, read its state, sign out or delete the account. Public texts carry no user data. A collection can opt in to [public caching](../../configuration/config-dir/#public-caching) of anonymous reads only; authenticated responses are never `public`, and a document that stops being public can stay in a CDN for up to the declared `max_age` (see [Caching](../../api/#caching)). Every response carries `X-Content-Type-Options: nosniff`.
 
+### Organizations
+
+[Organizations](../../organizations/) separate customers inside one realm. What protects them, and what the review of the feature left as it is:
+
+- **Non-members see nothing.** The helpers (`inOrg`, `hasOrgRole`, `orgClaims`) are pushed into the database query, so another organization's documents aren't listed, counted or readable by id, and `403 not_org_member` is the same for an organization that doesn't exist. A differential test compares the query with the in-memory rule against MongoDB for every helper.
+- **Revocation is immediate.** Memberships are read at each request and cached nowhere: leaving, removal, a changed role, a team change and `require_mfa` apply at the next request.
+- **`_meta.org` is server-owned.** It is set at creation after a membership check, `PUT` and `PATCH` that name another one answer `400 immutable_field` (a batch ignores it), and only a realm administrator moves a document.
+- **Privilege escalation is bounded.** A role is granted only by someone who holds what it opens (or has `manage: roles`), members with capabilities the caller lacks can't be changed, an organization always keeps a manager (`409 last_org_manager`), and neither organizations nor teams can carry realm roles.
+- **Invitations.** Tokens are stored as hashes (an email invitation keeps a sealed copy under `BACKD_SECRETS_KEY` until it ends), preview and accept need a session, the answers don't say which check failed, uses are taken atomically, and an **open link never gives a capability**: this is checked again when it is used, so a team that gains `manage` after the link was made doesn't turn it into a way to become a manager.
+- **Claims** are trusted because only realm administrators and functions write them; comparisons on them are false for non-members.
+- **Audited:** creation, deletion, renames, `require_mfa`, members and roles, teams, invitations (created, accepted, revoked), transfers and claims, by ids only.
+
+Left as it is, on purpose:
+
+- **Caps are abuse limits, not guarantees.** Two simultaneous requests can create one organization or membership more than `max_created_per_user` or `max_memberships_per_user` says.
+- **An invitation outlives its inviter's rights.** It grants what its creator could grant when it was made; revoke the pending ones (`backd orgs invitations`) when a manager is demoted.
+- **Slugs are not secret.** `409 slug_taken` tells a signed-in user that a slug is in use.
+- **Accepting at the moment of removal.** A member removed while accepting a second invitation of the same organization at the same instant can end up a member again; a manager sees it in the members list.
+
 ## What you are responsible for
 
 - **TLS.** `backd` serves plain HTTP; terminate TLS in front of it.
@@ -77,6 +96,7 @@ That last gap — a function reaching the executor's own `/invoke` over its own 
 - **API keys:** store them as secrets, give each service its own, set expiries and rotate them (see the [policy](../api-keys/#expiry-and-rotation-policy)), revoke unused ones. Never ship them to browsers or apps.
 - **Rules:** review the `rules:` of each `collection.yaml`. A missing rule denies, but a too-broad one (`read: "true"`) publishes a collection. Unique indexes can reveal that a value exists: creating a document with a value that a hidden document already has answers `409`.
 - **Files:** a private bucket with a key scoped to the realm's prefix, a prefix per backd instance, short link lifetimes on sensitive fields, `BACKD_URL`, and small limits where anonymous callers may upload: see [Security of files](../../files/security/#what-you-are-responsible-for).
+- **Organizations:** write `inOrg` or `hasOrgRole` in every rule of a collection that belongs to organizations (`read: user != nil` publishes it to all of them), keep `create` for organizations to people you trust, and give management roles to few people. See the [cookbook](../../organizations/rules-cookbook/).
 - **Second factors and magic links:** require a second factor of every role that can administer the realm (`mfa.required_roles`; `backd` warns at startup when an admin role isn't covered), keep `BACKD_SECRETS_KEY` safe and backed up (without it the enrolled authenticators can't be checked), and remember that with magic links the mailbox is a way in: protect it like the password. Tell users never to read a code out to anyone.
 - **`auth: disabled` realms** must never be reachable from the internet.
 - **Browser apps** must protect their users' tokens against cross-site scripting, or keep the session in an HttpOnly [cookie](../sessions/#session-cookies) that scripts can't read (the origin check, `SameSite` and the JSON-only bodies protect it from CSRF).
