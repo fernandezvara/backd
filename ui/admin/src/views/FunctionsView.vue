@@ -8,6 +8,7 @@ import FormDialog from '@/components/FormDialog.vue'
 import FunctionsTabs from '@/components/FunctionsTabs.vue'
 import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
+import { downloadText } from '@/lib/draft'
 import { errorText, prettyDuration } from '@/lib/format'
 import { useRealmConfig } from '@/stores/config'
 import { useSession } from '@/stores/session'
@@ -39,7 +40,7 @@ interface FunctionConfig {
   retry?: { attempts: number; backoff: string; max_backoff: string }
 }
 
-defineProps<{ realm: string }>()
+const props = defineProps<{ realm: string }>()
 const { t } = useI18n()
 const admin = useAdmin()
 const session = useSession()
@@ -63,6 +64,20 @@ onMounted(async () => {
   await Promise.all([realmConfig.load(), loadSchedules()])
   if (canConfig.value && !realmConfig.config) loadError.value = t('functions.loadFailed')
 })
+// The realm's OpenAPI document with the admin routes and every function, as a file: the
+// route needs the bearer token, so a plain link can't fetch it.
+const downloading = ref(false)
+async function downloadOpenAPI() {
+  downloading.value = true
+  try {
+    const doc = await admin.openapi()
+    downloadText(`${props.realm}-openapi.json`, JSON.stringify(doc, null, 2), 'application/json')
+  } catch (e) {
+    toasts.push(errorText(e, t('common.unexpected')))
+  } finally {
+    downloading.value = false
+  }
+}
 async function togglePause(name: string) {
   pausing.value = name
   try {
@@ -133,7 +148,10 @@ async function run() {
 <template>
   <div class="flex flex-wrap items-end justify-between gap-4">
     <h1 class="text-2xl font-semibold">{{ t('functions.title') }}</h1>
-    <AppButton v-if="canInvoke" @click="show()">{{ t('functions.invoke.open') }}</AppButton>
+    <div class="flex flex-wrap gap-2">
+      <AppButton v-if="canConfig" variant="secondary" :busy="downloading" data-testid="download-openapi" @click="downloadOpenAPI">{{ t('functions.openapi.download') }}</AppButton>
+      <AppButton v-if="canInvoke" @click="show()">{{ t('functions.invoke.open') }}</AppButton>
+    </div>
   </div>
   <div class="mt-4"><FunctionsTabs /></div>
 

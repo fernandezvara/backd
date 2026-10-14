@@ -234,6 +234,13 @@ test('users.list passes after and returns next_cursor', async () => {
   assert.equal(page.next_cursor, 'b@example.com')
 })
 
+test('openapi reads the admin document', async () => {
+  const doc = { openapi: '3.1.0', paths: {} }
+  const m = mockFetch([{ body: doc }])
+  assert.deepEqual(await adminOf(m).openapi(), doc)
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/openapi.json')
+})
+
 test('whoami, config, user search and sessions', async () => {
   const access = { level: 'read', write: [], read: ['config', 'functions'], read_access: { users: false, data: false }, user: { id: 'u1', email: 'ada@example.com', roles: ['support'] } }
   const config = { realm: 'acme', fingerprint: 'abc', file: 'acme/realm.yaml', settings: {}, databases: {}, templates: {}, warnings: [] }

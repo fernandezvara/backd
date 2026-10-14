@@ -486,6 +486,9 @@
       "history": "History",
       "jobs": "Jobs"
     },
+    "openapi": {
+      "download": "Download OpenAPI"
+    },
     "needConfig": "Reading function definitions needs the configuration area, which this level doesn't have. History and jobs are still available.",
     "none": "No database of this realm has functions.",
     "database": "Database {name}",

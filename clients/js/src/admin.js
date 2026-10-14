@@ -381,6 +381,16 @@ export class Admin {
   }
 
   /**
+   * The realm's OpenAPI document with the admin routes and every function, as this instance
+   * runs it. Needs the configuration area.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<Record<string, unknown>>}
+   */
+  async openapi(opts) {
+    return (await this._request({ method: 'GET', path: ['openapi.json'], ...opts })).data
+  }
+
+  /**
    * Checks a change to the configuration without applying it: loads the realm's whole
    * configuration as startup does, with `files` (path in the realm → content, or null to delete)
    * in place of the ones on disk, and says what it found. Every file of the realm is validated,

@@ -486,6 +486,9 @@
       "history": "Historial",
       "jobs": "Trabajos"
     },
+    "openapi": {
+      "download": "Descargar OpenAPI"
+    },
     "needConfig": "Leer las definiciones de las funciones necesita el área de configuración, que este nivel no tiene. El historial y los trabajos siguen disponibles.",
     "none": "Ninguna base de datos de este realm tiene funciones.",
     "database": "Base de datos {name}",
