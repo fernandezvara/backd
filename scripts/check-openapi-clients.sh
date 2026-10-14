@@ -21,7 +21,7 @@ for realm in shelf workshop; do
   # The admin document, for internal tooling: it lints, and a generator reads it.
   CONFIG_DIR="$root/examples/config" "$work/backd" openapi --realm "$realm" --admin --out "$work/$realm-admin.json" >/dev/null
   npx --yes "$REDOCLY" lint --config "$root/api/redocly.yaml" "$work/$realm-admin.json"
-  "$DOCKER" run --rm -v "$work:/local" "$GENERATOR" generate \
+  "$DOCKER" run --rm --user "$(id -u):$(id -g)" -v "$work:/local" "$GENERATOR" generate \
     -i "/local/$realm-admin.json" -g kotlin -o "/local/$realm-admin-kotlin" >"$work/$realm-admin.log" 2>&1 \
     || { cat "$work/$realm-admin.log"; echo "openapi-generator failed for the $realm admin document" >&2; exit 1; }
   for gen in dart kotlin swift5; do
