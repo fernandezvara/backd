@@ -862,6 +862,40 @@ func (s *Users) AdminOrgs(ctx context.Context, status string) ([]Org, error) {
 	return s.Store.ListOrgs(ctx, status)
 }
 
+// OrgSummary is an organization of the admin list, with how many members it has.
+type OrgSummary struct {
+	Org     Org
+	Members int
+}
+
+// AdminOrgSummaries lists organizations of a status (any when empty) whose name or slug
+// contains q, with their member counts.
+func (s *Users) AdminOrgSummaries(ctx context.Context, status, q string) ([]OrgSummary, error) {
+	list, err := s.AdminOrgs(ctx, status)
+	if err != nil {
+		return nil, err
+	}
+	q = strings.ToLower(strings.TrimSpace(q))
+	var ids []string
+	kept := list[:0]
+	for _, o := range list {
+		if q != "" && !strings.Contains(strings.ToLower(o.Name), q) && !strings.Contains(strings.ToLower(o.Slug), q) {
+			continue
+		}
+		kept = append(kept, o)
+		ids = append(ids, o.ID)
+	}
+	counts, err := s.Store.CountOrgMembers(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]OrgSummary, len(kept))
+	for i, o := range kept {
+		out[i] = OrgSummary{Org: o, Members: counts[o.ID]}
+	}
+	return out, nil
+}
+
 // AdminMembers lists an organization's members, with emails.
 func (s *Users) AdminMembers(ctx context.Context, orgID, after string, limit int) ([]MemberView, bool, error) {
 	if _, err := s.orgs(); err != nil {

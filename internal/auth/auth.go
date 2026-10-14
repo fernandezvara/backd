@@ -333,6 +333,8 @@ type Store interface {
 	ListOrgs(ctx context.Context, status string) ([]Org, error)
 	// CountOrgsCreatedBy counts the organizations a user created, deleted ones included.
 	CountOrgsCreatedBy(ctx context.Context, userID string) (int, error)
+	// CountOrgMembers counts the members of each of the organizations (zero ones left out).
+	CountOrgMembers(ctx context.Context, orgs []string) (map[string]int, error)
 	// OrgMember returns a membership; ErrNotFound if none.
 	OrgMember(ctx context.Context, org, user string) (OrgMember, error)
 	// ListOrgMembers returns a page of an organization's members sorted by user id: those

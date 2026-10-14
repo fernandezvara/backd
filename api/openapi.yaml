@@ -2993,9 +2993,10 @@ paths:
       security: [{ apiKey: [] }, { session: [] }]
       parameters:
         - { name: status, in: query, schema: { type: string, enum: [active, orphaned, deleted] } }
+        - { name: q, in: query, description: Only organizations whose name or slug contains it (case-insensitive)., schema: { type: string } }
       responses:
         "200":
-          description: The organizations.
+          description: The organizations, each with its number of members.
           headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
           content:
             application/json:
@@ -7497,6 +7498,7 @@ components:
       additionalProperties: false
       required: [id, name, slug, status, require_mfa, claims, created_at]
       properties:
+        members: { type: integer, description: How many members it has; only in the administrators' list. }
         id: { type: string }
         name: { type: string }
         slug: { type: [string, "null"] }

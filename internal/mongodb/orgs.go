@@ -290,6 +290,31 @@ func (s *AuthStore) ListOrgs(ctx context.Context, status string) ([]auth.Org, er
 	return out, nil
 }
 
+func (s *AuthStore) CountOrgMembers(ctx context.Context, orgs []string) (map[string]int, error) {
+	out := map[string]int{}
+	if len(orgs) == 0 {
+		return out, nil
+	}
+	cur, err := s.orgMembers().Aggregate(ctx, mongo.Pipeline{
+		{{Key: "$match", Value: bson.D{{Key: "org", Value: bson.D{{Key: "$in", Value: orgs}}}}}},
+		{{Key: "$group", Value: bson.D{{Key: "_id", Value: "$org"}, {Key: "n", Value: bson.D{{Key: "$sum", Value: 1}}}}}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var rows []struct {
+		ID string `bson:"_id"`
+		N  int    `bson:"n"`
+	}
+	if err := cur.All(ctx, &rows); err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		out[r.ID] = r.N
+	}
+	return out, nil
+}
+
 func (s *AuthStore) CountOrgsCreatedBy(ctx context.Context, userID string) (int, error) {
 	n, err := s.orgs().CountDocuments(ctx, bson.D{{Key: "created_by", Value: userID}})
 	return int(n), err

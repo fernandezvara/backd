@@ -202,6 +202,18 @@ func (m *MemStore) ListOrgs(_ context.Context, status string) ([]auth.Org, error
 	return out, nil
 }
 
+func (m *MemStore) CountOrgMembers(_ context.Context, orgs []string) (map[string]int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := map[string]int{}
+	for _, mem := range m.org().members {
+		if slices.Contains(orgs, mem.Org) {
+			out[mem.Org]++
+		}
+	}
+	return out, nil
+}
+
 func (m *MemStore) CountOrgsCreatedBy(_ context.Context, userID string) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

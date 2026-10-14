@@ -134,4 +134,4 @@ Functions see the caller's memberships in `ctx.user.orgs`, create documents in a
 
 ## Administrators
 
-Realm administrators with the `users` area use `/_admin/orgs`, described with the [admin API](../../auth/admin/), and [`backd orgs`](../../auth/cli/): list and show organizations, create one for a user, invite (with any role), add members without an invitation, replace claims, delete and reactivate organizations and assign a manager to an organization left without one.
+Realm administrators with the `users` area use `/_admin/orgs`, described with the [admin API](../../auth/admin/), and [`backd orgs`](../../auth/cli/): list organizations (`?status=active|orphaned|deleted` and `?q=` for part of a name or slug; each with its number of `members`) and show them, create one for a user, invite (with any role), add members without an invitation, replace claims, delete and reactivate organizations and assign a manager to an organization left without one.

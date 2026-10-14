@@ -328,14 +328,15 @@ func adminOrgError(w http.ResponseWriter, r *http.Request, err error) {
 
 // adminListOrgs handles GET /orgs?status=.
 func (a *adminAPI) listOrgs(w http.ResponseWriter, r *http.Request) {
-	list, err := usersOf(r).AdminOrgs(r.Context(), r.URL.Query().Get("status"))
+	list, err := usersOf(r).AdminOrgSummaries(r.Context(), r.URL.Query().Get("status"), r.URL.Query().Get("q"))
 	if err != nil {
 		adminOrgError(w, r, err)
 		return
 	}
 	items := make([]map[string]any, len(list))
 	for i, o := range list {
-		items[i] = orgJSON(o)
+		items[i] = orgJSON(o.Org)
+		items[i]["members"] = o.Members
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }

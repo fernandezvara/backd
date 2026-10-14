@@ -2205,6 +2205,7 @@ func TestContract(t *testing.T) {
 		req("GET", adm, "", nil, 401)
 		req("GET", adm, "", ada, 403)
 		req("GET", adm+"?status=active", "", key, 200)
+		req("GET", adm+"?q=ac", "", key, 200)
 		req("GET", "/v1/nope/_admin/orgs", "", key, 404)
 		req("POST", adm, `{"name": "Staff made", "owner": "`+f.bobID+`"}`, nil, 401)
 		req("POST", adm, `{"name": "Staff made", "owner": "`+f.bobID+`"}`, ada, 403)
