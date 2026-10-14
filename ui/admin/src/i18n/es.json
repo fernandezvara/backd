@@ -120,6 +120,7 @@
     "label": "Principal",
     "overview": "Resumen",
     "users": "Usuarios",
+    "orgs": "Organizaciones",
     "invitations": "Invitaciones",
     "apikeys": "Claves de API",
     "secrets": "Secretos",
@@ -784,6 +785,7 @@
     "open": "Abrir",
     "database": "Base de datos",
     "collection": {
+      "assign": {"open": "Asignar una organización", "title": "Asignar una organización", "help": "Da esta organización a los documentos que no tienen ninguna, en un trabajo. Los que ya pertenecen a una no se mueven.", "action": "Asignar", "matched": "{n} documentos no tienen organización.", "done": "La asignación quedó en cola: síguela en Funciones, Trabajos."},
       "new": "Nuevo documento",
       "trash": "Papelera",
       "live": "Documentos",
@@ -843,6 +845,10 @@
       "rawToggle": "Escribir la consulta como JSON"
     },
     "doc": {
+      "org": "Organización",
+      "noOrg": "Ninguna",
+      "orgHelp": "La organización a la que pertenece el documento. Se fija ahora y solo la cambia un administrador.",
+      "move": {"open": "Mover a otra organización", "title": "Mover a otra organización", "help": "Los miembros de la nueva organización ven el documento y los de la anterior dejan de verlo, de inmediato.", "action": "Mover", "done": "Documento movido."},
       "back": "Todos los documentos",
       "new": "Nuevo documento en {collection}",
       "edit": "Documento {id}",
@@ -940,5 +946,128 @@
     "emailCode": "El código que te enviamos por correo",
     "send": "Envíame un código por correo",
     "resend": "Envíame otro código por correo"
+  },
+  "orgs": {
+    "title": "Organizaciones",
+    "back": "Volver a organizaciones",
+    "search": "Buscar",
+    "searchHelp": "Parte de un nombre o de un slug.",
+    "filter": "Estado",
+    "name": "Nombre",
+    "slug": "Slug",
+    "statusLabel": "Estado",
+    "members": {
+      "title": "Miembros",
+      "add": "Añadir un miembro",
+      "who": "Miembro",
+      "direct": "Roles directos",
+      "teams": "Equipos",
+      "effective": "Roles efectivos y de dónde vienen",
+      "actions": "Acciones",
+      "edit": "Cambiar roles",
+      "editTitle": "Roles de {who}",
+      "email": "Correo del usuario",
+      "rolesLabel": "Roles directos",
+      "rolesHelp": "Separados por comas. Declarados: {roles}",
+      "remove": "Quitar miembro",
+      "removeTitle": "Quitar miembro",
+      "removeHelp": "Su acceso termina de inmediato. Escribe su dirección para confirmar.",
+      "removed": "Miembro quitado.",
+      "added": "Miembro añadido.",
+      "updated": "Roles actualizados.",
+      "empty": "No hay miembros.",
+      "stale": "ya no declarado",
+      "staleHelp": "realm.yaml ya no declara este rol: no concede nada.",
+      "overlap": "también concedido de otra forma",
+      "overlapHelp": "Este rol se concede directamente y también por un equipo o por defecto: quitarlo en un sitio lo deja en el otro.",
+      "count": "{n} miembros, {managers} de ellos gestionan algo.",
+      "countOnly": "{n} miembros."
+    },
+    "requireMfa": "Exige segundo factor",
+    "created": "Creada",
+    "empty": "No hay organizaciones.",
+    "loadFailed": "No se pudieron cargar las organizaciones.",
+    "loadOneFailed": "No se pudo cargar la organización.",
+    "noSuchUser": "No hay ningún usuario con la dirección {email}.",
+    "orphanedHelp": "Nadie puede gestionar esta organización. Asigna un propietario.",
+    "deletedHelp": "Esta organización se eliminó: no tiene miembros y sus documentos siguen la política de cada colección. Al reactivarla vuelve sin miembros.",
+    "status": {
+      "active": "Activa",
+      "orphaned": "Huérfana",
+      "deleted": "Eliminada"
+    },
+    "create": {
+      "open": "Crear organización",
+      "title": "Crear organización",
+      "slugHelp": "Opcional: minúsculas, dígitos y guiones.",
+      "owner": "Correo del propietario",
+      "ownerHelp": "Un usuario del realm; recibe los roles de creador del realm.",
+      "done": "Organización {name} creada."
+    },
+    "teams": {
+      "title": "Equipos",
+      "none": "No hay equipos."
+    },
+    "owner": {
+      "open": "Asignar un propietario",
+      "title": "Asignar un propietario",
+      "help": "El usuario pasa a ser miembro con los roles de creador del realm.",
+      "done": "Propietario asignado."
+    },
+    "delete": {
+      "open": "Eliminar organización",
+      "title": "Eliminar organización",
+      "help": "El acceso termina de inmediato. Escribe el nombre para confirmar.",
+      "action": "Eliminar organización",
+      "done": "Organización eliminada.",
+      "reportFailed": "No se pudo cargar el informe.",
+      "summary": "La limpieza elimina {del} documentos y conserva {keep}.",
+      "policy": {
+        "delete": "eliminados",
+        "keep": "conservados, solo visibles para administradores"
+      }
+    },
+    "reactivate": {
+      "open": "Reactivar",
+      "title": "Reactivar organización",
+      "help": "Vuelve sin miembros: asigna un propietario después. Los documentos eliminados por la limpieza no vuelven.",
+      "slugHelp": "Solo si su slug anterior está en uso.",
+      "done": "Organización reactivada."
+    },
+    "claims": {
+      "title": "Claims",
+      "help": "Datos que las reglas de acceso pueden leer y los miembros no pueden cambiar, como el plan. Como máximo 1 KiB.",
+      "label": "Claims (objeto JSON)",
+      "size": "{size} de 1024 bytes",
+      "object": "Los claims deben ser un objeto JSON.",
+      "tooBig": "Los claims ocupan {size} bytes: el límite es 1024.",
+      "saved": "Claims guardados."
+    },
+    "invitations": {
+      "title": "Invitaciones",
+      "help": "Los enlaces se muestran una vez, al crearlos, y nunca se listan.",
+      "create": "Invitar",
+      "for": "Para",
+      "binding": "Quién puede aceptarla",
+      "roles": "Roles",
+      "expires": "Caduca",
+      "expiresIn": "Caduca en",
+      "expiresHelp": "Días (7d) u horas (12h). Vacío: el valor por defecto.",
+      "anyone": "Cualquiera con el enlace",
+      "empty": "No hay invitaciones.",
+      "created": "Invitación creada.",
+      "revoked": "Invitación revocada.",
+      "revokeTitle": "Revocar invitación",
+      "revokeExpected": "revocar",
+      "userId": "Id de usuario",
+      "linkTitle": "Enlace de invitación",
+      "linkBody": "Cópialo ahora: solo se muestra esta vez.",
+      "linkLabel": "Enlace",
+      "bindings": {
+        "email": "Una dirección de correo verificada",
+        "user": "Un usuario",
+        "none": "Cualquiera con el enlace"
+      }
+    }
   }
 }

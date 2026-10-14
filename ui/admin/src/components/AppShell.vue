@@ -14,9 +14,14 @@ const router = useRouter()
 const cfg = useRealmConfig()
 onMounted(() => void cfg.load())
 
+// Organizations show when the realm has them; a level that can't read the configuration is
+// offered the page and the server decides.
+const orgsEnabled = computed(() => (cfg.config ? !!cfg.config.settings.organizations : !session.canRead('config')))
+
 const links = computed(() => [
   { name: 'home', label: t('nav.overview'), show: true },
   { name: 'users', label: t('nav.users'), show: session.canRead('users') },
+  { name: 'orgs', label: t('nav.orgs'), show: session.canRead('users') && orgsEnabled.value },
   { name: 'invitations', label: t('nav.invitations'), show: session.canRead('invitations') },
   { name: 'apikeys', label: t('nav.apikeys'), show: session.canRead('apikeys') },
   { name: 'data', label: t('nav.data'), show: session.canRead('data') },

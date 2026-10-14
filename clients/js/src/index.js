@@ -89,6 +89,12 @@ export { parseReturn as parseOAuthReturn } from './oauth.js'
  * @typedef {import('./admin.js').SentInvitation} SentInvitation
  * @typedef {import('./admin.js').AdminOrg} AdminOrg
  * @typedef {import('./admin.js').OrgOwnedReport} OrgOwnedReport
+ * @typedef {import('./orgs.js').Org} Org
+ * @typedef {import('./orgs.js').OrgMember} OrgMember
+ * @typedef {import('./orgs.js').OrgTeam} OrgTeam
+ * @typedef {import('./orgs.js').OrgInvitation} OrgInvitation
+ * @typedef {import('./orgs.js').NewOrgInvitation} NewOrgInvitation
+ * @typedef {import('./orgs.js').InviteInput} OrgInviteInput
  * @typedef {import('./admin.js').OwnedReport} OwnedReport
  * @typedef {import('./admin.js').APIKeyInfo} APIKeyInfo
  * @typedef {import('./admin.js').NewAPIKey} NewAPIKey

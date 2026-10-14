@@ -140,6 +140,17 @@ func realmConfig(s registry.RealmSettings, seesUsers bool) map[string]any {
 			"allow_email_change": s.Account.AllowEmailChange, "purge_unverified_after": dur(s.Account.PurgeUnverifiedAfter),
 		},
 	}
+	if o := s.Organizations; o != nil {
+		orgRoles := map[string]any{}
+		for _, name := range o.RoleNames() {
+			r := o.Roles[name]
+			orgRoles[name] = map[string]any{"description": r.Description, "manage": orStrings(r.Manage.Names())}
+		}
+		out["organizations"] = map[string]any{
+			"roles": orgRoles, "default_roles": orStrings(o.DefaultRoles), "creator_roles": orStrings(o.CreatorRoles),
+			"allow_require_mfa": o.AllowRequireMFA, "members_visible_to": o.MembersVisibleTo,
+		}
+	}
 	if e := s.Email; e != nil {
 		out["email"] = map[string]any{
 			"function": e.Function, "from": e.From, "reply_to": e.ReplyTo, "public_url": e.PublicURL,
@@ -215,6 +226,9 @@ func collectionConfig(c *registry.Collection, rel func(string) string) map[strin
 			view["pattern"] = cid.Pattern
 		}
 		policy["custom_id"] = view
+	}
+	if c.InOrganizations() {
+		policy["organization"] = map[string]any{"mode": c.Organization, "on_org_delete": c.OnOrgDelete}
 	}
 	if e := c.Erasure; e != nil {
 		policy["on_owner_delete"] = map[string]any{"action": e.Action, "remove": orStrings(e.Remove), "replace": e.Replace, "pull": e.Pull, "unset": e.Unset}

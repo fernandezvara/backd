@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import type { Doc } from 'backd-js'
-import { computed, onMounted, reactive, ref } from 'vue'
+import type { AdminOrg, Doc } from 'backd-js'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
+import FormDialog from '@/components/FormDialog.vue'
 import JsonView from '@/components/JsonView.vue'
 import SchemaCheckPanel from '@/components/SchemaCheckPanel.vue'
 import { useAdmin } from '@/lib/admin'
@@ -26,6 +27,49 @@ const info = computed(() => cfg.collectionInfo(props.database, props.collection)
 const schema = computed(() => info.value?.schema as Schema | undefined)
 const softDelete = computed(() => info.value?.softDelete ?? false)
 const fields = computed(() => queryFields(schema.value))
+
+// A collection that adopted organizations after it had documents: those have none, and members
+// can't see them. An administrator gives them one (a job; nothing that has an organization moves).
+const orgMode = computed(() => info.value?.organization ?? null)
+const assigning = ref(false)
+const assignOrgs = ref<AdminOrg[]>([])
+const assignTo = ref('')
+const assignMatched = ref<number | null>(null)
+const assignBusy = ref(false)
+const assignError = ref('')
+async function openAssign() {
+  assignTo.value = ''
+  assignMatched.value = null
+  assignError.value = ''
+  assigning.value = true
+  try {
+    assignOrgs.value = await admin.orgs.list({ status: 'active' })
+  } catch (e) {
+    assignError.value = errorText(e, t('orgs.loadFailed'))
+  }
+}
+watch(assignTo, async (org) => {
+  assignMatched.value = null
+  if (!org) return
+  try {
+    assignMatched.value = (await admin.orgs.assign(props.database, props.collection, org, { dryRun: true })).matched
+  } catch (e) {
+    assignError.value = errorText(e, t('common.unexpected'))
+  }
+})
+async function assign() {
+  assignBusy.value = true
+  assignError.value = ''
+  try {
+    await admin.orgs.assign(props.database, props.collection, assignTo.value)
+    assigning.value = false
+    toasts.push(t('data.collection.assign.done'))
+  } catch (e) {
+    assignError.value = errorText(e, t('common.unexpected'))
+  } finally {
+    assignBusy.value = false
+  }
+}
 
 // The columns: the first few scalar fields the schema declares.
 const columns = computed<string[]>(() => {
@@ -182,6 +226,7 @@ const showStatus = computed(() => (total.value !== undefined ? t('data.collectio
         <button type="button" class="px-3 py-1.5" :class="view === 'live' ? 'bg-brand-700 text-white' : ''" :aria-pressed="view === 'live'" @click="switchView('live')">{{ t('data.collection.live') }}</button>
         <button type="button" class="px-3 py-1.5" :class="view === 'trash' ? 'bg-brand-700 text-white' : ''" :aria-pressed="view === 'trash'" @click="switchView('trash')">{{ t('data.collection.trash') }}</button>
       </div>
+      <AppButton v-if="canWrite && orgMode" variant="secondary" @click="openAssign">{{ t('data.collection.assign.open') }}</AppButton>
       <RouterLink v-if="canWrite" :to="{ name: 'data-new', params: { realm, database, collection } }" class="rounded-md bg-brand-700 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-800">{{ t('data.collection.new') }}</RouterLink>
     </div>
   </div>
@@ -300,4 +345,15 @@ const showStatus = computed(() => (total.value !== undefined ? t('data.collectio
     <AppButton variant="secondary" :disabled="pageIndex === 0 || loading" @click="page(-1)">{{ t('common.previous') }}</AppButton>
     <AppButton variant="secondary" :disabled="!hasMore || loading" @click="page(1)">{{ t('common.next') }}</AppButton>
   </div>
+
+  <FormDialog v-model:open="assigning" :title="t('data.collection.assign.title')" :description="t('data.collection.assign.help')" :submit="t('data.collection.assign.action')" :busy="assignBusy" :error="assignError" @submit="assign">
+    <div class="space-y-1">
+      <label for="assign-org" class="block text-sm font-medium">{{ t('data.doc.org') }}</label>
+      <select id="assign-org" v-model="assignTo" required class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900">
+        <option value="" disabled>—</option>
+        <option v-for="o in assignOrgs" :key="o.id" :value="o.id">{{ o.name }}</option>
+      </select>
+    </div>
+    <p v-if="assignMatched !== null" class="text-sm" role="status" data-testid="assign-matched">{{ t('data.collection.assign.matched', { n: assignMatched }) }}</p>
+  </FormDialog>
 </template>

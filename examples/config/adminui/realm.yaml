@@ -30,6 +30,13 @@ roles:
     users:
       - support@adminui.example
 
+# Organizations, for the admin UI's Organizations pages.
+organizations:
+  roles:
+    owner: { description: Runs the organization, manage: [org, members, roles, teams] }
+    editor: { description: Edits }
+  default_roles: [editor]
+
 # Files (the data browser's file controls): the local stack's MinIO. The keys are
 # realm secrets, set by the e2e global setup (backd secret set, in a real stack).
 storage:
