@@ -53,6 +53,7 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 	var (
 		userID, address, locale string
 		invitationID            string
+		orgInvite               *auth.OrgInvitationEmail
 		notice                  = job.Email.Notice
 	)
 	custom := job.Email.Custom
@@ -76,6 +77,18 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 			return nil, nil, false
 		}
 		address, locale = to, job.Email.Locale
+	} else if job.Email.OrgInvitationID != "" {
+		// An invitation to an organization: the recipient and the link are the invitation's.
+		oi, err := svc.OrgInvitationEmail(ctx, job.Email.OrgInvitationID)
+		switch {
+		case errors.Is(err, auth.ErrOrgInvitationGone):
+			w.fail(ctx, log, svc, job, "the invitation was revoked or has ended")
+			return nil, nil, false
+		case err != nil:
+			log.Warn("read the invitation; leaving the job to be retried", "error", err)
+			return nil, nil, false
+		}
+		orgInvite, address, locale = &oi, oi.Address, job.Email.Locale
 	} else if job.Email.InvitationID != "" {
 		// An invitation: there is no user yet, the invited address is the
 		// recipient, and the token lives as long as the invitation.
@@ -166,6 +179,18 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 		extra["link"] = data.Link
 		extra["expires_at"] = data.ExpiresAt.Format(time.RFC3339)
 		mask = []string{token}
+	}
+	if orgInvite != nil {
+		// The link carries the invitation's own token, which was sealed for this message.
+		if orgInvite.Link == "" {
+			w.fail(ctx, log, svc, job, "the realm sets no organizations.invitation_link")
+			return nil, nil, false
+		}
+		data.Link, data.ExpiresAt = orgInvite.Link, orgInvite.ExpiresAt.UTC()
+		data.Data["org_name"], data.Data["roles"] = orgInvite.OrgName, orgInvite.Roles
+		extra["link"], extra["expires_at"] = data.Link, data.ExpiresAt.Format(time.RFC3339)
+		extra["org_name"], extra["roles"] = orgInvite.OrgName, orgInvite.Roles
+		mask = append(mask, orgInvite.Token)
 	}
 	if kind == email.MagicLink && job.Email.ChallengeID != "" {
 		// The link and the code are made now and only their hashes are kept; a retried job

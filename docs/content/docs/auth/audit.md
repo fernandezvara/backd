@@ -43,6 +43,7 @@ Each realm with `auth: enabled` keeps an **audit trail**: one record per securit
 | `role.add`, `role.remove` | A role is assigned or taken away, through the API or from `realm.yaml` seeds | `role` |
 | `org.create`, `org.update` | An organization is created (by a user or an administrator) or renamed | `by`, `creator` / `fields` |
 | `org.member_add`, `org.member_remove`, `org.member_leave`, `org.roles` | A member is added without an invitation, removed, leaves, or has roles changed | `user`, `roles`, `by` / `added`, `removed` |
+| `org.invitation_create`, `org.invitation_link`, `org.invitation_accept`, `org.invitation_revoke` | An organization invitation is made, given a new link, accepted or revoked | `invitation`, `binding`, `roles`, `teams`, `sent` / `user` |
 | `org.claims`, `org.owner_assign` | Claims are replaced; a manager is assigned | `keys` / `user` |
 | `apikey.create`, `apikey.revoke` | An API key is created or revoked | `role`, `networks`, `expires_at` |
 | `invitation.create`, `invitation.revoke` | An invitation is created or revoked | `bound_to_email` (whether it is), `expires_at` |

@@ -97,3 +97,75 @@ func TestAuthStoreOrganizations(t *testing.T) {
 		t.Errorf("by ids: %v", byID)
 	}
 }
+
+func TestAuthStoreOrgInvitations(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	inv := func(id, hash string, max int) auth.OrgInvitation {
+		return auth.OrgInvitation{ID: id, Org: "o1", TokenHash: hash, Binding: auth.BindNone, Roles: []string{"editor"}, MaxUses: max,
+			CreatedBy: "u1", CreatedAt: now, ExpiresAt: now.Add(time.Hour)}
+	}
+	for _, i := range []auth.OrgInvitation{inv("i1", "h1", 2), inv("i2", "h2", 1)} {
+		if err := s.CreateOrgInvitation(ctx, i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.OrgInvitationByHash(ctx, "h1")
+	if err != nil || got.ID != "i1" || got.Binding != auth.BindNone || len(got.Teams) != 0 {
+		t.Fatalf("by hash: %+v %v", got, err)
+	}
+	if n, _ := s.CountPendingOrgInvitations(ctx, "o1", now); n != 2 {
+		t.Errorf("pending: %d", n)
+	}
+	// Uses are taken atomically up to the maximum.
+	for i := 1; i <= 2; i++ {
+		used, err := s.UseOrgInvitation(ctx, "i1", now)
+		if err != nil || used.Uses != i {
+			t.Fatalf("use %d: %+v %v", i, used, err)
+		}
+	}
+	if _, err := s.UseOrgInvitation(ctx, "i1", now); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("a third use: %v", err)
+	}
+	if n, _ := s.CountPendingOrgInvitations(ctx, "o1", now); n != 1 {
+		t.Errorf("pending after use: %d", n)
+	}
+	// Expiry and revocation end it too.
+	if _, err := s.UseOrgInvitation(ctx, "i2", now.Add(2*time.Hour)); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("expired: %v", err)
+	}
+	if err := s.RevokeOrgInvitation(ctx, "o1", "i2", now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UseOrgInvitation(ctx, "i2", now); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("revoked: %v", err)
+	}
+	if err := s.RevokeOrgInvitation(ctx, "o2", "i2", now); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("another organization's: %v", err)
+	}
+	// A new token replaces the old one, with or without a sealed copy.
+	if err := s.ReplaceOrgInvitationToken(ctx, "o1", "i1", "h9", "sealed"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.OrgInvitationByHash(ctx, "h1"); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("old hash: %v", err)
+	}
+	if got, _ := s.OrgInvitationByHash(ctx, "h9"); got.SealedToken != "sealed" {
+		t.Errorf("sealed: %+v", got)
+	}
+	_ = s.ReplaceOrgInvitationToken(ctx, "o1", "i1", "h10", "")
+	if got, _ := s.OrgInvitationByHash(ctx, "h10"); got.SealedToken != "" {
+		t.Errorf("sealed token kept: %+v", got)
+	}
+	list, _ := s.ListOrgInvitations(ctx, "o1")
+	if len(list) != 2 {
+		t.Errorf("list: %d", len(list))
+	}
+	if err := s.CreateOrg(ctx, auth.Org{ID: "o1", Name: "x", Status: auth.OrgActive, CreatedAt: now, UpdatedAt: now}, auth.OrgMember{Org: "o1", User: "u1", JoinedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PutOrgMember(ctx, auth.OrgMember{Org: "o1", User: "u9", JoinedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -4,10 +4,12 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/registry"
 )
 
 // Organizations (design/organizations.md): /v1/{realm}/_orgs for the signed-in user, and
@@ -26,6 +28,9 @@ func (a *authAPI) orgRoutes(r chi.Router) {
 		json := requireContentType("application/json")
 		r.With(json).Post("/", a.createOrg)
 		r.Get("/", a.listOrgs)
+		// What an invitation offers, and taking it: the token proves the right to know.
+		r.With(json).Post("/invitations/preview", a.previewOrgInvitation)
+		r.With(json).Post("/invitations/accept", a.acceptOrgInvitation)
 		r.Route("/{org}", func(r chi.Router) {
 			r.Get("/", a.getOrg)
 			r.With(json).Patch("/", a.updateOrg)
@@ -33,6 +38,11 @@ func (a *authAPI) orgRoutes(r chi.Router) {
 			r.With(json).Patch("/members/{user}", a.updateOrgMember)
 			r.Delete("/members/{user}", a.removeOrgMember)
 			r.Post("/leave", a.leaveOrg)
+			r.Get("/invitations", a.listOrgInvitations)
+			r.With(json).Post("/invitations", a.createOrgInvitation)
+			r.Delete("/invitations/{id}", a.revokeOrgInvitation)
+			r.Post("/invitations/{id}/link", a.newOrgInvitationLink)
+			r.Post("/invitations/{id}/send", a.resendOrgInvitation)
 		})
 	})
 }
@@ -53,6 +63,16 @@ func orgError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, r, http.StatusConflict, codeLastOrgManager, err.Error())
 	case errors.Is(err, auth.ErrSlugTaken):
 		writeError(w, r, http.StatusConflict, codeSlugTaken, err.Error(), Detail{Path: "slug", Reason: "is used by another organization"})
+	case errors.Is(err, auth.ErrEmailNotConfigured):
+		writeError(w, r, http.StatusConflict, codeConflict, err.Error())
+	case errors.Is(err, auth.ErrInvalidOrgInvitation):
+		writeError(w, r, http.StatusBadRequest, "invalid_invitation", "the invitation is invalid or has expired")
+	case errors.Is(err, auth.ErrInvitationNotForYou):
+		writeError(w, r, http.StatusForbidden, "invitation_not_for_you", err.Error())
+	case errors.Is(err, auth.ErrInvitationsLimit):
+		writeError(w, r, http.StatusConflict, "invitations_limit", err.Error())
+	case errors.Is(err, auth.ErrNeedsSecretsKey):
+		writeError(w, r, http.StatusServiceUnavailable, codeUnavailable, err.Error())
 	case errors.Is(err, auth.ErrOrgNotActive):
 		writeError(w, r, http.StatusConflict, "org_not_active", err.Error())
 	case errors.Is(err, auth.ErrOrgUserNotFound):
@@ -397,4 +417,232 @@ func (a *adminAPI) assignOrgOwner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, memberJSON(v, nil))
+}
+
+func orgInvitationJSON(inv auth.OrgInvitation, now time.Time) map[string]any {
+	out := map[string]any{
+		"id": inv.ID, "binding": inv.Binding, "status": inv.Status(now),
+		"roles": nonNil(inv.Roles), "teams": nonNil(inv.Teams),
+		"max_uses": inv.MaxUses, "uses": inv.Uses,
+		"created_at": formatTime(inv.CreatedAt), "expires_at": formatTime(inv.ExpiresAt),
+	}
+	if inv.User != "" {
+		out["user"] = inv.User
+	}
+	if inv.Email != "" {
+		out["email"] = inv.Email
+	}
+	if inv.CreatedBy != "" {
+		out["created_by"] = inv.CreatedBy
+	}
+	return out
+}
+
+func invitationResultJSON(res auth.InvitationResult, now time.Time) map[string]any {
+	out := orgInvitationJSON(res.Invitation, now)
+	out["token"] = res.Token
+	if res.Link != "" {
+		out["link"] = res.Link
+	} else {
+		out["link"] = nil
+	}
+	return out
+}
+
+// invitationInput reads the body of a request to invite.
+func invitationInput(w http.ResponseWriter, r *http.Request) (auth.InvitationInput, bool) {
+	obj, ok := readObject(w, r)
+	if !ok {
+		return auth.InvitationInput{}, false
+	}
+	f, ok := fields(w, r, obj, map[string]string{
+		"binding": "string", "user": "string?", "email": "string?", "roles": "strings?", "teams": "strings?",
+		"send": "bool?", "expires_in": "string?", "max_uses": "int?",
+	})
+	if !ok {
+		return auth.InvitationInput{}, false
+	}
+	in := auth.InvitationInput{Binding: f["binding"].(string), Locale: r.Header.Get("Accept-Language"), IP: clientIP(r), Request: requestID(r.Context())}
+	in.User, _ = f["user"].(string)
+	in.Email, _ = f["email"].(string)
+	in.Roles, _ = f["roles"].([]string)
+	in.Teams, _ = f["teams"].([]string)
+	in.Send, _ = f["send"].(bool)
+	in.MaxUses, _ = f["max_uses"].(int)
+	if s, ok := f["expires_in"].(string); ok {
+		d, err := registry.ParseDuration(s)
+		if err != nil {
+			writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "expires_in", Reason: err.Error()})
+			return auth.InvitationInput{}, false
+		}
+		in.TTL = d
+	}
+	return in, true
+}
+
+// createOrgInvitation handles POST /_orgs/{org}/invitations.
+func (a *authAPI) createOrgInvitation(w http.ResponseWriter, r *http.Request) {
+	in, ok := invitationInput(w, r)
+	if !ok {
+		return
+	}
+	svc := usersOf(r)
+	res, err := svc.CreateOrgInvitation(r.Context(), principalOf(r).User.ID, chi.URLParam(r, "org"), in)
+	if err != nil {
+		orgError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, invitationResultJSON(res, svc.Clock()))
+}
+
+// listOrgInvitations handles GET /_orgs/{org}/invitations.
+func (a *authAPI) listOrgInvitations(w http.ResponseWriter, r *http.Request) {
+	svc := usersOf(r)
+	list, err := svc.OrgInvitations(r.Context(), principalOf(r).User.ID, chi.URLParam(r, "org"))
+	if err != nil {
+		orgError(w, r, err)
+		return
+	}
+	writeInvitations(w, list, svc.Clock())
+}
+
+func writeInvitations(w http.ResponseWriter, list []auth.OrgInvitation, now time.Time) {
+	items := make([]map[string]any, len(list))
+	for i, inv := range list {
+		items[i] = orgInvitationJSON(inv, now)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+// revokeOrgInvitation handles DELETE /_orgs/{org}/invitations/{id}.
+func (a *authAPI) revokeOrgInvitation(w http.ResponseWriter, r *http.Request) {
+	err := usersOf(r).RevokeOrgInvitation(r.Context(), principalOf(r).User.ID, chi.URLParam(r, "org"), chi.URLParam(r, "id"))
+	if err != nil {
+		orgInvitationError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// newOrgInvitationLink handles POST /_orgs/{org}/invitations/{id}/link.
+func (a *authAPI) newOrgInvitationLink(w http.ResponseWriter, r *http.Request) {
+	svc := usersOf(r)
+	res, err := svc.NewOrgInvitationLink(r.Context(), principalOf(r).User.ID, chi.URLParam(r, "org"), chi.URLParam(r, "id"))
+	if err != nil {
+		orgInvitationError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, invitationResultJSON(res, svc.Clock()))
+}
+
+// resendOrgInvitation handles POST /_orgs/{org}/invitations/{id}/send.
+func (a *authAPI) resendOrgInvitation(w http.ResponseWriter, r *http.Request) {
+	err := usersOf(r).ResendOrgInvitation(r.Context(), principalOf(r).User.ID, chi.URLParam(r, "org"), chi.URLParam(r, "id"), r.Header.Get("Accept-Language"), clientIP(r), requestID(r.Context()))
+	if err != nil {
+		orgInvitationError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// orgInvitationError is orgError for routes about one invitation: an unknown one is a 404.
+func orgInvitationError(w http.ResponseWriter, r *http.Request, err error) {
+	var limited *auth.EmailLimitedError
+	switch {
+	case errors.Is(err, auth.ErrNotFound):
+		writeError(w, r, http.StatusNotFound, codeNotFound, "invitation not found")
+	case errors.Is(err, auth.ErrEmailNotConfigured):
+		writeError(w, r, http.StatusConflict, codeConflict, err.Error())
+	case errors.As(err, &limited):
+		authError(w, r, err)
+	default:
+		orgError(w, r, err)
+	}
+}
+
+// previewOrgInvitation handles POST /_orgs/invitations/preview.
+func (a *authAPI) previewOrgInvitation(w http.ResponseWriter, r *http.Request) {
+	obj, ok := readObject(w, r)
+	if !ok {
+		return
+	}
+	f, ok := fields(w, r, obj, map[string]string{"token": "string"})
+	if !ok {
+		return
+	}
+	pv, err := usersOf(r).PreviewOrgInvitation(r.Context(), principalOf(r), f["token"].(string))
+	if err != nil {
+		orgError(w, r, err)
+		return
+	}
+	teams := make([]map[string]any, len(pv.Teams))
+	for i, t := range pv.Teams {
+		teams[i] = map[string]any{"id": t.ID, "name": t.Name}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"org": map[string]any{"id": pv.Org.ID, "name": pv.Org.Name}, "roles": nonNil(pv.Roles), "teams": teams,
+		"binding": pv.Binding, "expires_at": formatTime(pv.ExpiresAt),
+	})
+}
+
+// acceptOrgInvitation handles POST /_orgs/invitations/accept.
+func (a *authAPI) acceptOrgInvitation(w http.ResponseWriter, r *http.Request) {
+	obj, ok := readObject(w, r)
+	if !ok {
+		return
+	}
+	f, ok := fields(w, r, obj, map[string]string{"token": "string"})
+	if !ok {
+		return
+	}
+	m, err := usersOf(r).AcceptOrgInvitation(r.Context(), principalOf(r), f["token"].(string))
+	if err != nil {
+		orgError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, membershipJSON(m))
+}
+
+// Administrators.
+
+func (a *adminAPI) listOrgInvitations(w http.ResponseWriter, r *http.Request) {
+	svc := usersOf(r)
+	list, err := svc.AdminOrgInvitations(r.Context(), chi.URLParam(r, "org"))
+	if err != nil {
+		adminOrgError(w, r, err)
+		return
+	}
+	writeInvitations(w, list, svc.Clock())
+}
+
+func (a *adminAPI) createOrgInvitation(w http.ResponseWriter, r *http.Request) {
+	in, ok := invitationInput(w, r)
+	if !ok {
+		return
+	}
+	svc := usersOf(r)
+	res, err := svc.AdminCreateOrgInvitation(r.Context(), chi.URLParam(r, "org"), in)
+	if err != nil {
+		adminOrgError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, invitationResultJSON(res, svc.Clock()))
+}
+
+func (a *adminAPI) revokeOrgInvitation(w http.ResponseWriter, r *http.Request) {
+	if err := usersOf(r).AdminRevokeOrgInvitation(r.Context(), chi.URLParam(r, "org"), chi.URLParam(r, "id")); err != nil {
+		orgInvitationError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *adminAPI) newOrgInvitationLink(w http.ResponseWriter, r *http.Request) {
+	svc := usersOf(r)
+	res, err := svc.AdminNewOrgInvitationLink(r.Context(), chi.URLParam(r, "org"), chi.URLParam(r, "id"))
+	if err != nil {
+		orgInvitationError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, invitationResultJSON(res, svc.Clock()))
 }

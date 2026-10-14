@@ -353,6 +353,30 @@ func registerRemote(cfg *kli.Config) {
 		required(cc, "id", "the organization's id")
 		required(cc, "email", "the user's email")
 	})
+	og.SubCommand("invite").ShortHelp("invite to an organization: by address, to a user, or with an open link").
+		LongHelp("Prints the link and token once. --send also emails the link (needs email and the secrets key on the server).").
+		Func(act("orgs invite", orgsInvite)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+		optional(cc, "email", "invite whoever signs in with this verified address")
+		optional(cc, "user", "invite this existing user (their email)")
+		boolean(cc, "open", "an open link: anyone signed in who holds it (see --uses)")
+		optional(cc, "roles", "organization roles to give, comma-separated")
+		optional(cc, "expires", "how long it works, such as 2d (default 7d, at most 30d)")
+		cc.Define("uses").Int64().Flag("uses").Default(0).Min(0).Max(1000).Description("how many times an open link may be used (default 1)")
+		boolean(cc, "send", "also email it (with --email)")
+	})
+	og.SubCommand("invitations").ShortHelp("list an organization's invitations (never tokens)").
+		Func(act("orgs invitations", orgsInvitations)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+	})
+	og.SubCommand("revoke-invitation").ShortHelp("revoke an invitation").
+		Func(act("orgs revoke-invitation", orgsRevokeInvitation)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+		required(cc, "invitation", "the invitation's id")
+	})
 	og.SubCommand("claims-set").ShortHelp("replace an organization's claims (at most 1 KiB of JSON)").
 		Func(act("orgs claims-set", orgsClaimsSet)).Config(func(cc *kli.CommandConfig) {
 		remote(cc)

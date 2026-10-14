@@ -93,6 +93,10 @@ Paths are relative to `/v1/{realm}/_admin`. Bodies are JSON (`Content-Type: appl
 | `POST /orgs/{org}/members` | `{"user", "roles"?}` | `200` with the member: adds the user **without an invitation**, or gives an existing member the roles. `404` for an unknown user, `409 org_limit_reached` at their membership cap. Audited as `org.member_add` |
 | `PATCH /orgs/{org}/members/{user}` | `{"roles": [...]}` | `200`: replaces the member's direct roles. `409 last_org_manager` when it would leave the organization without a manager. Audited as `org.roles` |
 | `DELETE /orgs/{org}/members/{user}` | none | `204`; `409 last_org_manager` for the last manager (assign another first). Audited as `org.member_remove` |
+| `GET /orgs/{org}/invitations` | none | `200` with the organization's [invitations](../../api/organizations/#invitations), never tokens |
+| `POST /orgs/{org}/invitations` | `{"binding", "user"?, "email"?, "roles"?, "teams"?, "send"?, "expires_in"?, "max_uses"?}` | `201` with the invitation and its `token` and `link`, which are shown only now; any role may be given, but an open link never one that manages the organization. Audited as `org.invitation_create` |
+| `POST /orgs/{org}/invitations/{id}/link` | none | `200` with a new token and link; the old one stops working |
+| `DELETE /orgs/{org}/invitations/{id}` | none | `204`; audited as `org.invitation_revoke` |
 | `PUT /orgs/{org}/claims` | a JSON object, at most 1 KiB | `200`: replaces the organization's claims, which members and rules read. Audited as `org.claims`, with the keys |
 | `POST /orgs/{org}/owner` | `{"user"}` | `200`: gives the user the realm's `creator_roles` in the organization; an `orphaned` organization becomes `active`. Audited as `org.owner_assign` |
 | `GET /whoami` | none | `200` with what this credential may do: `level`, the areas it may `write` and `read`, and `read_access` (see [the read-only level](#the-read-only-level)) |

@@ -223,7 +223,7 @@ All of these are under `/v1/{realm}/_orgs` and require a session. **A non-member
 - **The answer always includes the link and id:** `{ id, token, link, expires_at }`. `link` is `invitation_link` with the token. The app can show it as a QR code, send it through another channel, or offer copy and paste.
 - **Email is optional:** `send: true` sends the `org-invitation` email, and only for `email` bindings. Sends use the email limits.
 - **What can be granted:** `roles` and `teams` follow the granting rules (§5.1); a team counts as the **union of the roles it carries**, which the caller must hold. Open links (`none`) can't grant roles with `manage` capabilities, directly or through a team.
-- **Storage:** the token is stored hash-only. Invitations expire after 7 days by default.
+- **Storage:** the token is stored hash-only. Invitations expire after 7 days by default. When an email carries the link the worker needs the token to write it, so that one is also kept **sealed with the instance's secrets key** until the invitation is used up, revoked or expired (sending needs `BACKD_SECRETS_KEY`).
 
 ### 7.2 Accepting
 

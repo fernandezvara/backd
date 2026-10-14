@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -93,6 +94,10 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 			r.With(json).Post("/members", a.addOrgMember)
 			r.With(json).Patch("/members/{user}", a.setOrgMemberRoles)
 			r.Delete("/members/{user}", a.removeOrgMember)
+			r.Get("/invitations", a.listOrgInvitations)
+			r.With(json).Post("/invitations", a.createOrgInvitation)
+			r.Delete("/invitations/{id}", a.revokeOrgInvitation)
+			r.Post("/invitations/{id}/link", a.newOrgInvitationLink)
 			r.With(json).Put("/claims", a.setOrgClaims)
 			r.With(json).Post("/owner", a.assignOrgOwner)
 		})
@@ -667,6 +672,14 @@ func fields(w http.ResponseWriter, r *http.Request, obj map[string]any, spec map
 			} else {
 				details = append(details, Detail{Path: name, Reason: "must be a string"})
 			}
+		case kind == "int":
+			if n, ok := v.(json.Number); ok {
+				if i, err := n.Int64(); err == nil {
+					out[name] = int(i)
+					break
+				}
+			}
+			details = append(details, Detail{Path: name, Reason: "must be an integer"})
 		case kind == "bool":
 			if b, ok := v.(bool); ok {
 				out[name] = b

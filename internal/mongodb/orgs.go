@@ -304,3 +304,178 @@ func (s *AuthStore) DeleteOrgMember(ctx context.Context, org, user string) error
 	}
 	return nil
 }
+
+type orgInvitationDoc struct {
+	ID          string     `bson:"_id"`
+	Org         string     `bson:"org"`
+	TokenHash   string     `bson:"token_hash"`
+	SealedToken string     `bson:"sealed_token,omitempty"`
+	Binding     string     `bson:"binding"`
+	User        string     `bson:"user,omitempty"`
+	Email       string     `bson:"email,omitempty"`
+	Roles       []string   `bson:"roles"`
+	Teams       []string   `bson:"teams"`
+	MaxUses     int        `bson:"max_uses"`
+	Uses        int        `bson:"uses"`
+	CreatedBy   string     `bson:"created_by,omitempty"`
+	CreatedAt   time.Time  `bson:"created_at"`
+	ExpiresAt   time.Time  `bson:"expires_at"`
+	RevokedAt   *time.Time `bson:"revoked_at,omitempty"`
+}
+
+func (d orgInvitationDoc) invitation() auth.OrgInvitation {
+	inv := auth.OrgInvitation{ID: d.ID, Org: d.Org, TokenHash: d.TokenHash, SealedToken: d.SealedToken, Binding: d.Binding,
+		User: d.User, Email: d.Email, Roles: d.Roles, Teams: d.Teams, MaxUses: d.MaxUses, Uses: d.Uses,
+		CreatedBy: d.CreatedBy, CreatedAt: d.CreatedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC()}
+	if d.RevokedAt != nil {
+		inv.RevokedAt = d.RevokedAt.UTC()
+	}
+	return inv
+}
+
+func (s *AuthStore) orgInvitations() *mongo.Collection {
+	return s.db.Collection(OrgInvitationsCollection)
+}
+
+func (s *AuthStore) CreateOrgInvitation(ctx context.Context, inv auth.OrgInvitation) error {
+	d := orgInvitationDoc{ID: inv.ID, Org: inv.Org, TokenHash: inv.TokenHash, SealedToken: inv.SealedToken, Binding: inv.Binding,
+		User: inv.User, Email: inv.Email, Roles: inv.Roles, Teams: inv.Teams, MaxUses: inv.MaxUses, Uses: inv.Uses,
+		CreatedBy: inv.CreatedBy, CreatedAt: inv.CreatedAt, ExpiresAt: inv.ExpiresAt}
+	if d.Roles == nil {
+		d.Roles = []string{}
+	}
+	if d.Teams == nil {
+		d.Teams = []string{}
+	}
+	_, err := s.orgInvitations().InsertOne(ctx, d)
+	return err
+}
+
+func (s *AuthStore) findOrgInvitation(ctx context.Context, filter bson.D) (auth.OrgInvitation, error) {
+	var d orgInvitationDoc
+	err := s.orgInvitations().FindOne(ctx, filter).Decode(&d)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return auth.OrgInvitation{}, auth.ErrNotFound
+	}
+	if err != nil {
+		return auth.OrgInvitation{}, err
+	}
+	return d.invitation(), nil
+}
+
+func (s *AuthStore) OrgInvitationByHash(ctx context.Context, hash string) (auth.OrgInvitation, error) {
+	return s.findOrgInvitation(ctx, bson.D{{Key: "token_hash", Value: hash}})
+}
+
+func (s *AuthStore) OrgInvitationByID(ctx context.Context, org, id string) (auth.OrgInvitation, error) {
+	return s.findOrgInvitation(ctx, bson.D{{Key: "_id", Value: id}, {Key: "org", Value: org}})
+}
+
+func (s *AuthStore) ListOrgInvitations(ctx context.Context, org string) ([]auth.OrgInvitation, error) {
+	cur, err := s.orgInvitations().Find(ctx, bson.D{{Key: "org", Value: org}},
+		options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}))
+	if err != nil {
+		return nil, err
+	}
+	var docs []orgInvitationDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	out := make([]auth.OrgInvitation, len(docs))
+	for i, d := range docs {
+		out[i] = d.invitation()
+	}
+	return out, nil
+}
+
+// pendingOrgInvitation matches the invitations that can still be used at now.
+func pendingOrgInvitation(now time.Time) bson.D {
+	return bson.D{
+		{Key: "revoked_at", Value: bson.D{{Key: "$exists", Value: false}}},
+		{Key: "expires_at", Value: bson.D{{Key: "$gt", Value: now}}},
+		{Key: "$expr", Value: bson.D{{Key: "$lt", Value: bson.A{"$uses", "$max_uses"}}}},
+	}
+}
+
+func (s *AuthStore) CountPendingOrgInvitations(ctx context.Context, org string, now time.Time) (int, error) {
+	filter := append(bson.D{{Key: "org", Value: org}}, pendingOrgInvitation(now)...)
+	n, err := s.orgInvitations().CountDocuments(ctx, filter)
+	return int(n), err
+}
+
+func (s *AuthStore) UseOrgInvitation(ctx context.Context, id string, now time.Time) (auth.OrgInvitation, error) {
+	filter := append(bson.D{{Key: "_id", Value: id}}, pendingOrgInvitation(now)...)
+	var d orgInvitationDoc
+	err := s.orgInvitations().FindOneAndUpdate(ctx, filter, bson.D{{Key: "$inc", Value: bson.D{{Key: "uses", Value: 1}}}},
+		options.FindOneAndUpdate().SetReturnDocument(options.After)).Decode(&d)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return auth.OrgInvitation{}, auth.ErrNotFound
+	}
+	if err != nil {
+		return auth.OrgInvitation{}, err
+	}
+	return d.invitation(), nil
+}
+
+func (s *AuthStore) RevokeOrgInvitation(ctx context.Context, org, id string, now time.Time) error {
+	res, err := s.orgInvitations().UpdateOne(ctx, bson.D{{Key: "_id", Value: id}, {Key: "org", Value: org}},
+		bson.D{{Key: "$set", Value: bson.D{{Key: "revoked_at", Value: now}}}, {Key: "$unset", Value: bson.D{{Key: "sealed_token", Value: ""}}}})
+	if err != nil {
+		return err
+	}
+	if res.MatchedCount == 0 {
+		return auth.ErrNotFound
+	}
+	return nil
+}
+
+func (s *AuthStore) ReplaceOrgInvitationToken(ctx context.Context, org, id, tokenHash, sealed string) error {
+	update := bson.D{{Key: "$set", Value: bson.D{{Key: "token_hash", Value: tokenHash}}}}
+	if sealed != "" {
+		update[0].Value = bson.D{{Key: "token_hash", Value: tokenHash}, {Key: "sealed_token", Value: sealed}}
+	} else {
+		update = append(update, bson.E{Key: "$unset", Value: bson.D{{Key: "sealed_token", Value: ""}}})
+	}
+	res, err := s.orgInvitations().UpdateOne(ctx, bson.D{{Key: "_id", Value: id}, {Key: "org", Value: org}}, update)
+	if err != nil {
+		return err
+	}
+	if res.MatchedCount == 0 {
+		return auth.ErrNotFound
+	}
+	return nil
+}
+
+func (s *AuthStore) DeleteOrgInvitation(ctx context.Context, org, id string) error {
+	_, err := s.orgInvitations().DeleteOne(ctx, bson.D{{Key: "_id", Value: id}, {Key: "org", Value: org}})
+	return err
+}
+
+type orgTeamDoc struct {
+	ID        string    `bson:"_id"`
+	Org       string    `bson:"org"`
+	Name      string    `bson:"name"`
+	Roles     []string  `bson:"roles"`
+	CreatedAt time.Time `bson:"created_at"`
+}
+
+func (s *AuthStore) orgTeams() *mongo.Collection { return s.db.Collection(OrgTeamsCollection) }
+
+func (s *AuthStore) OrgTeamsByIDs(ctx context.Context, org string, ids []string) ([]auth.OrgTeam, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	cur, err := s.orgTeams().Find(ctx, bson.D{{Key: "org", Value: org}, {Key: "_id", Value: bson.D{{Key: "$in", Value: ids}}}})
+	if err != nil {
+		return nil, err
+	}
+	var docs []orgTeamDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	out := make([]auth.OrgTeam, len(docs))
+	for i, d := range docs {
+		out[i] = auth.OrgTeam{ID: d.ID, Org: d.Org, Name: d.Name, Roles: d.Roles, CreatedAt: d.CreatedAt.UTC()}
+	}
+	return out, nil
+}

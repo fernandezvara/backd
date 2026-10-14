@@ -1184,6 +1184,204 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_orgs/{org}/invitations:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+    get:
+      tags: [organizations]
+      summary: An organization's invitations
+      description: Status, binding, uses and expiry, newest first. Never tokens. Needs `manage` of members.
+      operationId: listOrganizationInvitations
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The invitations.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/OrganizationInvitation" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [organizations]
+      summary: Invite to an organization
+      description: |
+        Creates an invitation and answers its `token` and `link` (the realm's
+        `organizations.invitation_link` with the token), which are shown only here. `binding` says who may
+        accept it: `user` (only that user id), `email` (the signed-in user whose **verified** address
+        matches) or `none` (anyone signed in who holds the link, `max_uses` times). `roles` and `teams`
+        follow the granting rules: the caller gives only what they could do themselves, and an open link
+        can't give a role that manages the organization, directly or through a team. With `send: true`
+        an `email` binding is also emailed (the `org-invitation` email), which keeps the token sealed
+        with the instance's secrets key until the invitation ends. Needs `manage` of members.
+        `409 invitations_limit` at `max_pending_invitations`.
+      operationId: createOrganizationInvitation
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationInvitationInput" }
+      responses:
+        "201":
+          description: The invitation, with its token and link.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationInvitationCreated" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/{org}/invitations/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { $ref: "#/components/parameters/id" }
+    delete:
+      tags: [organizations]
+      summary: Revoke an invitation
+      operationId: revokeOrganizationInvitation
+      security: [{ session: [] }]
+      responses:
+        "204":
+          description: The invitation can't be used any more.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/{org}/invitations/{id}/link:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { $ref: "#/components/parameters/id" }
+    post:
+      tags: [organizations]
+      summary: Issue a new link
+      description: Replaces the token of a pending invitation and invalidates the old link, since a lost link can't be shown again.
+      operationId: renewOrganizationInvitationLink
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The invitation with its new token and link.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationInvitationCreated" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/{org}/invitations/{id}/send:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { $ref: "#/components/parameters/id" }
+    post:
+      tags: [organizations]
+      summary: Send the invitation's email again
+      description: Only for a pending invitation bound to an email address. Uses the realm's email limits (`429`).
+      operationId: resendOrganizationInvitation
+      security: [{ session: [] }]
+      responses:
+        "202":
+          description: The email was queued.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/invitations/preview:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [organizations]
+      summary: See what an invitation offers
+      description: |
+        Says which organization, roles and teams a token offers, so an app can ask "Join Acme as
+        editor?". Needs a session, so anonymous callers can't probe tokens. Unknown, expired, revoked
+        and used-up tokens answer the same `400 invalid_invitation`; a token bound to someone else
+        answers `403 invitation_not_for_you`, only after it has proved valid.
+      operationId: previewOrganizationInvitation
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "200":
+          description: What accepting would do.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationInvitationPreview" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/invitations/accept:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [organizations]
+      summary: Accept an invitation
+      description: |
+        Makes the caller a member of the organization, or gives an existing member the invitation's
+        roles and teams. Needs a session. The same errors as the preview; `409 org_limit_reached`
+        when the caller belongs to the most organizations a user may. An organization that
+        requires a second factor counts the membership only for sessions that used one.
+      operationId: acceptOrganizationInvitation
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "200":
+          description: The organization, as the new member sees it.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_auth/oauth/{provider}/start:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -2851,6 +3049,100 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}/invitations:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+    get:
+      tags: [admin]
+      summary: An organization's invitations
+      operationId: adminListOrganizationInvitations
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The invitations, never tokens.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/OrganizationInvitation" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [admin]
+      summary: Invite to an organization
+      description: Like the member route, without the granting rules (an administrator may give any role). Audited as `org.invitation_create`. Needs the `users` area with write access.
+      operationId: adminCreateOrganizationInvitation
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationInvitationInput" }
+      responses:
+        "201":
+          description: The invitation, with its token and link.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationInvitationCreated" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}/invitations/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { $ref: "#/components/parameters/id" }
+    delete:
+      tags: [admin]
+      summary: Revoke an invitation
+      operationId: adminRevokeOrganizationInvitation
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "204":
+          description: The invitation was revoked.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}/invitations/{id}/link:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { $ref: "#/components/parameters/id" }
+    post:
+      tags: [admin]
+      summary: Issue a new link
+      operationId: adminRenewOrganizationInvitationLink
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The invitation with its new token and link.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationInvitationCreated" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_admin/users/{id}/identities:
@@ -6715,6 +7007,84 @@ components:
         roles: { type: array, items: { type: string }, description: "The member's effective role names." }
         effective_roles: { type: array, items: { $ref: "#/components/schemas/RoleOrigin" } }
         teams: { type: array, items: { type: string } }
+
+    OrganizationInvitationInput:
+      type: object
+      additionalProperties: false
+      required: [binding]
+      properties:
+        binding: { type: string, enum: [user, email, none] }
+        user: { type: string, description: "A user id; for `user`." }
+        email: { type: string, description: "For `email`." }
+        roles: { type: array, items: { type: string } }
+        teams: { type: array, items: { type: string }, description: "Team ids of the organization." }
+        send: { type: boolean, description: "Also email it; only for `email`." }
+        expires_in: { type: string, description: "A duration such as `2d` (default `7d`, at most `30d`)." }
+        max_uses: { type: integer, minimum: 1, maximum: 1000, description: "For `none`; default 1." }
+
+    OrganizationInvitation:
+      type: object
+      additionalProperties: false
+      required: [id, binding, status, roles, teams, max_uses, uses, created_at, expires_at]
+      properties:
+        id: { type: string }
+        binding: { type: string, enum: [user, email, none] }
+        status: { type: string, enum: [pending, used, revoked, expired] }
+        user: { type: string }
+        email: { type: string }
+        roles: { type: array, items: { type: string } }
+        teams: { type: array, items: { type: string } }
+        max_uses: { type: integer }
+        uses: { type: integer }
+        created_by: { type: string }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+
+    OrganizationInvitationCreated:
+      type: object
+      description: An invitation with the token and link, shown only when it is made or renewed.
+      additionalProperties: false
+      required: [id, binding, status, roles, teams, max_uses, uses, created_at, expires_at, token, link]
+      properties:
+        id: { type: string }
+        binding: { type: string, enum: [user, email, none] }
+        status: { type: string, enum: [pending, used, revoked, expired] }
+        user: { type: string }
+        email: { type: string }
+        roles: { type: array, items: { type: string } }
+        teams: { type: array, items: { type: string } }
+        max_uses: { type: integer }
+        uses: { type: integer }
+        created_by: { type: string }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        token: { type: string }
+        link: { type: [string, "null"], description: "The realm's `invitation_link` with the token; null when it sets none." }
+
+    OrganizationInvitationPreview:
+      type: object
+      additionalProperties: false
+      required: [org, roles, teams, binding, expires_at]
+      properties:
+        org:
+          type: object
+          additionalProperties: false
+          required: [id, name]
+          properties:
+            id: { type: string }
+            name: { type: string }
+        roles: { type: array, items: { type: string } }
+        teams:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name]
+            properties:
+              id: { type: string }
+              name: { type: string }
+        binding: { type: string, enum: [user, email, none] }
+        expires_at: { type: string, format: date-time }
 
     OrganizationMember:
       type: object

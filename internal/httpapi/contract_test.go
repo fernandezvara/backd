@@ -2242,6 +2242,91 @@ func TestContract(t *testing.T) {
 		req("POST", adm+"/"+madeID+"/owner", `{}`, key, 400)
 		req("POST", adm+"/"+madeID+"/owner", `{"user": "nosuchuser"}`, key, 404)
 		// A user at the limit of memberships can't be added to another organization.
+		// Invitations. The realm's email limits are lifted for the sends and brought back for 429.
+		inv := orgs + "/" + id + "/invitations"
+		lim := &f.svc.Settings.Email.Limits
+		oldLimits := *lim
+		lim.PerIPPerHour, lim.PerKindPerHour, lim.PerDay = 100000, 100000, 100000
+		defer func() { *lim = oldLimits }()
+		req("POST", inv, `{"binding": "none"}`, nil, 401)
+		req("POST", inv, `{"binding": "none"}`, carl, 403)
+		req("POST", inv, `{}`, ada, 400)
+		f.svc.Settings.Organizations.MaxPendingInvitations = 0
+		req("POST", inv, `{"binding": "none"}`, ada, 409)
+		f.svc.Settings.Organizations.MaxPendingInvitations = registry.DefaultMaxPendingInvitations
+		withEmail := f.svc.Settings.Email
+		f.svc.Settings.Email = nil
+		req("POST", inv, `{"binding": "email", "email": "inv@example.com", "send": true}`, ada, 409)
+		f.svc.Settings.Email = withEmail
+		invited := req("POST", inv, `{"binding": "none", "roles": ["editor"], "max_uses": 3}`, ada, 201)
+		invID, invTok := invited["id"].(string), invited["token"].(string)
+		req("GET", inv, "", nil, 401)
+		req("GET", inv, "", bob, 403)
+		req("GET", inv, "", ada, 200)
+		req("POST", orgs+"/invitations/preview", `{"token": "`+invTok+`"}`, nil, 401)
+		req("POST", orgs+"/invitations/preview", `{"token": "nope"}`, ada, 400)
+		boundTo := req("POST", inv, `{"binding": "user", "user": "`+f.bobID+`"}`, ada, 201)
+		req("POST", orgs+"/invitations/preview", `{"token": "`+boundTo["token"].(string)+`"}`, carl, 403)
+		req("POST", orgs+"/invitations/preview", `{"token": "`+invTok+`"}`, bob, 200)
+		req("POST", orgs+"/invitations/accept", `{"token": "`+invTok+`"}`, nil, 401)
+		req("POST", orgs+"/invitations/accept", `{"token": "nope"}`, bob, 400)
+		req("POST", orgs+"/invitations/accept", `{"token": "`+boundTo["token"].(string)+`"}`, carl, 403)
+		limitOne := f.svc.Settings.Organizations
+		limitOne.MaxMembershipsPerUser = 1
+		req("POST", orgs+"/invitations/accept", `{"token": "`+invTok+`"}`, bob, 409)
+		limitOne.MaxMembershipsPerUser = registry.DefaultMaxMembershipsPerUser
+		req("POST", orgs+"/invitations/accept", `{"token": "`+invTok+`"}`, bob, 200)
+		req("POST", inv+"/"+invID+"/link", "", nil, 401)
+		req("POST", inv+"/"+invID+"/link", "", bob, 403)
+		req("POST", inv+"/nosuch/link", "", ada, 404)
+		req("POST", inv+"/"+invID+"/link", "", ada, 200)
+		req("POST", inv+"/"+invID+"/send", "", nil, 401)
+		req("POST", inv+"/"+invID+"/send", "", bob, 403)
+		req("POST", inv+"/nosuch/send", "", ada, 404)
+		req("POST", inv+"/"+invID+"/send", "", ada, 400) // an open link has no address
+		mailed := req("POST", inv, `{"binding": "email", "email": "mailed@example.com"}`, ada, 201)
+		cipher := f.svc.Cipher
+		f.svc.Cipher = nil // no secrets key: the instance can't seal the token
+		req("POST", inv+"/"+mailed["id"].(string)+"/send", "", ada, 503)
+		req("POST", inv, `{"binding": "email", "email": "sealed@example.com", "send": true}`, ada, 503)
+		f.svc.Cipher = cipher
+		req("POST", inv+"/"+mailed["id"].(string)+"/send", "", ada, 202)
+		withMail := f.svc.Settings.Email
+		f.svc.Settings.Email = nil
+		req("POST", inv+"/"+mailed["id"].(string)+"/send", "", ada, 409)
+		f.svc.Settings.Email = withMail
+		lim.PerKindPerHour = 1 // the address got its one message of this kind
+		req("POST", inv+"/"+mailed["id"].(string)+"/send", "", ada, 429)
+		req("POST", inv, `{"binding": "email", "email": "mailed@example.com", "send": true}`, ada, 429)
+		lim.PerKindPerHour = 100000
+		req("DELETE", inv+"/"+invID, "", nil, 401)
+		req("DELETE", inv+"/"+invID, "", bob, 403)
+		req("DELETE", inv+"/nosuch", "", ada, 404)
+		req("DELETE", inv+"/"+invID, "", ada, 204)
+		req("GET", adm+"/"+id+"/invitations", "", nil, 401)
+		req("GET", adm+"/"+id+"/invitations", "", ada, 403)
+		req("GET", adm+"/nosuch/invitations", "", key, 404)
+		req("GET", adm+"/"+id+"/invitations", "", key, 200)
+		req("POST", adm+"/"+id+"/invitations", `{"binding": "none"}`, nil, 401)
+		req("POST", adm+"/"+id+"/invitations", `{"binding": "none"}`, ada, 403)
+		req("POST", adm+"/"+id+"/invitations", `{}`, key, 400)
+		req("POST", adm+"/nosuch/invitations", `{"binding": "none"}`, key, 404)
+		adminInv := req("POST", adm+"/"+id+"/invitations", `{"binding": "email", "email": "adm@example.com", "roles": ["owner"]}`, key, 201)
+		aid := adm + "/" + id + "/invitations/" + adminInv["id"].(string)
+		req("POST", aid+"/link", "", nil, 401)
+		req("POST", aid+"/link", "", ada, 403)
+		req("POST", adm+"/"+id+"/invitations/nosuch/link", "", key, 404)
+		req("POST", aid+"/link", "", key, 200)
+		req("DELETE", aid, "", nil, 401)
+		req("DELETE", aid, "", ada, 403)
+		req("DELETE", adm+"/"+id+"/invitations/nosuch", "", key, 404)
+		req("POST", aid+"/link", "", key, 200)
+		f.svc.Settings.Organizations.MaxPendingInvitations = 0
+		req("POST", adm+"/"+id+"/invitations", `{"binding": "none"}`, key, 409)
+		f.svc.Settings.Organizations.MaxPendingInvitations = registry.DefaultMaxPendingInvitations
+		req("DELETE", aid, "", key, 204)
+		req("POST", aid+"/link", "", key, 400) // revoked: nothing to renew
+		req("POST", inv+"/"+invID+"/link", "", ada, 400)
 		limit := f.svc.Settings.Organizations
 		limit.MaxMembershipsPerUser = 1
 		req("POST", adm+"/"+madeID+"/members", `{"user": "`+f.adaID+`"}`, key, 409)

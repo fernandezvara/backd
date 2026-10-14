@@ -348,6 +348,24 @@ type Store interface {
 	// DeleteOrgMember removes a membership; ErrNotFound if none.
 	DeleteOrgMember(ctx context.Context, org, user string) error
 
+	// Organization invitations. OrgInvitationByHash and ...ByID return ErrNotFound for none;
+	// UseOrgInvitation takes one use atomically (ErrNotFound when it can't: unknown, revoked,
+	// expired or used up) and returns the invitation.
+	CreateOrgInvitation(ctx context.Context, inv OrgInvitation) error
+	OrgInvitationByHash(ctx context.Context, hash string) (OrgInvitation, error)
+	OrgInvitationByID(ctx context.Context, org, id string) (OrgInvitation, error)
+	// ListOrgInvitations returns an organization's invitations, newest first.
+	ListOrgInvitations(ctx context.Context, org string) ([]OrgInvitation, error)
+	// CountPendingOrgInvitations counts the invitations that can still be used.
+	CountPendingOrgInvitations(ctx context.Context, org string, now time.Time) (int, error)
+	UseOrgInvitation(ctx context.Context, id string, now time.Time) (OrgInvitation, error)
+	RevokeOrgInvitation(ctx context.Context, org, id string, now time.Time) error
+	// ReplaceOrgInvitationToken swaps the token hash (and the sealed token, "" for none).
+	ReplaceOrgInvitationToken(ctx context.Context, org, id, tokenHash, sealed string) error
+	DeleteOrgInvitation(ctx context.Context, org, id string) error
+	// OrgTeamsByIDs returns the teams of the organization with these ids that exist.
+	OrgTeamsByIDs(ctx context.Context, org string, ids []string) ([]OrgTeam, error)
+
 	// LoginAttempts returns the failure counter of key (zero if none).
 	LoginAttempts(ctx context.Context, key string) (Attempts, error)
 	// RecordLoginFailure increments key's counter atomically, setting its

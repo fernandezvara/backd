@@ -44,10 +44,11 @@ type EmailRequest struct {
 	Event       string
 	CodesLeft   int
 	ChallengeID string
-	// To, Notice and InvitationID are the fields of the same name of EmailJob.
-	To           string
-	Notice       bool
-	InvitationID string
+	// To, Notice, InvitationID and OrgInvitationID are the fields of the same name of EmailJob.
+	To              string
+	Notice          bool
+	InvitationID    string
+	OrgInvitationID string
 	// Custom marks an email a function asked for; Invocation is the
 	// invocation that asked (the parent of the job, and what the per-invocation
 	// cap counts). Address is then the user's, for to_user; Custom holds the
@@ -112,7 +113,7 @@ func (s *Users) QueueEmail(ctx context.Context, r EmailRequest) (Job, error) {
 			return Job{}, err
 		}
 	}
-	if r.UserID == "" && r.InvitationID == "" && r.Custom == nil && r.ChallengeID == "" {
+	if r.UserID == "" && r.InvitationID == "" && r.OrgInvitationID == "" && r.Custom == nil && r.ChallengeID == "" {
 		// Only the limits were applied: nobody gets a message.
 		return Job{}, nil
 	}
@@ -120,7 +121,7 @@ func (s *Users) QueueEmail(ctx context.Context, r EmailRequest) (Job, error) {
 	job := Job{
 		Database: database, Function: function, CallerActor: "backd", Origin: "backd:email." + r.Kind,
 		TimeoutMS: e.Timeout.Milliseconds(), RequestID: r.RequestID,
-		Email: &EmailJob{Kind: r.Kind, UserID: r.UserID, Locale: r.Locale, RedirectTo: r.RedirectTo, To: r.To, Notice: r.Notice, InvitationID: r.InvitationID, Event: r.Event, CodesLeft: r.CodesLeft, ChallengeID: r.ChallengeID, Custom: r.Custom},
+		Email: &EmailJob{Kind: r.Kind, UserID: r.UserID, Locale: r.Locale, RedirectTo: r.RedirectTo, To: r.To, Notice: r.Notice, InvitationID: r.InvitationID, OrgInvitationID: r.OrgInvitationID, Event: r.Event, CodesLeft: r.CodesLeft, ChallengeID: r.ChallengeID, Custom: r.Custom},
 	}
 	if r.Custom != nil {
 		job.CallerActor, job.Origin = "function:"+r.Custom.Function, "function:"+r.Custom.Function

@@ -180,6 +180,17 @@ organizations:
 	c.expect(0, "claims of "+orgID+" set", "", "orgs", "claims-set", "--realm", "acme", "--id", orgID, "--claims", `{"plan": "pro"}`)
 	c.expect(1, "--claims must be a JSON object", "", "orgs", "claims-set", "--realm", "acme", "--id", orgID, "--claims", "[1]")
 	c.expect(0, `"plan":"pro"`, "", "orgs", "show", "--realm", "acme", "--id", orgID)
+	out = c.expect(0, "valid until", "", "orgs", "invite", "--realm", "acme", "--id", orgID, "--open", "--roles", "editor", "--uses", "2", "--expires", "3d")
+	if !strings.Contains(out, "token  bdo_") {
+		t.Errorf("orgs invite:\n%s", out)
+	}
+	c.expect(0, "valid until", "", "orgs", "invite", "--realm", "acme", "--id", orgID, "--email", "ana@example.com")
+	c.expect(0, "valid until", "", "orgs", "invite", "--realm", "acme", "--id", orgID, "--user", "bob@example.com")
+	c.expect(1, "say who is invited", "", "orgs", "invite", "--realm", "acme", "--id", orgID)
+	c.expect(1, "can't be combined", "", "orgs", "invite", "--realm", "acme", "--id", orgID, "--open", "--email", "x@example.com")
+	out = c.expect(0, "BINDING", "", "orgs", "invitations", "--realm", "acme", "--id", orgID)
+	invID := strings.Fields(strings.Split(out, "\n")[1])[0]
+	c.expect(0, "revoked", "", "orgs", "revoke-invitation", "--realm", "acme", "--id", orgID, "--invitation", invID)
 	c.expect(0, "is now a manager of "+orgID, "", "orgs", "assign-owner", "--realm", "acme", "--id", orgID, "--email", "bob@example.com")
 
 	// Roles: without the server's config the CLI can't tell which

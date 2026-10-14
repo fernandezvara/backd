@@ -14,6 +14,8 @@ import (
 type memOrgs struct {
 	orgs    map[string]auth.Org
 	members map[string]auth.OrgMember // org + "\x00" + user
+	teams   map[string]auth.OrgTeam
+	invites map[string]auth.OrgInvitation
 }
 
 func (m *MemStore) org() *memOrgs {
@@ -207,5 +209,131 @@ func (m *MemStore) DeleteOrgMember(_ context.Context, org, user string) error {
 		return auth.ErrNotFound
 	}
 	delete(m.org().members, k)
+	return nil
+}
+
+// PutOrgTeam stores a team, for tests: teams are managed through the service.
+func (m *MemStore) PutOrgTeam(t auth.OrgTeam) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o := m.org()
+	if o.teams == nil {
+		o.teams = map[string]auth.OrgTeam{}
+	}
+	o.teams[t.ID] = t
+}
+
+func (m *MemStore) OrgTeamsByIDs(_ context.Context, org string, ids []string) ([]auth.OrgTeam, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []auth.OrgTeam
+	for _, id := range ids {
+		if t, ok := m.org().teams[id]; ok && t.Org == org {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
+func (m *MemStore) CreateOrgInvitation(_ context.Context, inv auth.OrgInvitation) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o := m.org()
+	if o.invites == nil {
+		o.invites = map[string]auth.OrgInvitation{}
+	}
+	o.invites[inv.ID] = inv
+	return nil
+}
+
+func (m *MemStore) OrgInvitationByHash(_ context.Context, hash string) (auth.OrgInvitation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, inv := range m.org().invites {
+		if inv.TokenHash == hash {
+			return inv, nil
+		}
+	}
+	return auth.OrgInvitation{}, auth.ErrNotFound
+}
+
+func (m *MemStore) OrgInvitationByID(_ context.Context, org, id string) (auth.OrgInvitation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if inv, ok := m.org().invites[id]; ok && inv.Org == org {
+		return inv, nil
+	}
+	return auth.OrgInvitation{}, auth.ErrNotFound
+}
+
+func (m *MemStore) ListOrgInvitations(_ context.Context, org string) ([]auth.OrgInvitation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []auth.OrgInvitation
+	for _, inv := range m.org().invites {
+		if inv.Org == org {
+			out = append(out, inv)
+		}
+	}
+	slices.SortFunc(out, func(a, b auth.OrgInvitation) int {
+		return cmp.Or(b.CreatedAt.Compare(a.CreatedAt), cmp.Compare(b.ID, a.ID))
+	})
+	return out, nil
+}
+
+func (m *MemStore) CountPendingOrgInvitations(_ context.Context, org string, now time.Time) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := 0
+	for _, inv := range m.org().invites {
+		if inv.Org == org && inv.Status(now) == "pending" {
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (m *MemStore) UseOrgInvitation(_ context.Context, id string, now time.Time) (auth.OrgInvitation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	inv, ok := m.org().invites[id]
+	if !ok || inv.Status(now) != "pending" {
+		return auth.OrgInvitation{}, auth.ErrNotFound
+	}
+	inv.Uses++
+	m.org().invites[id] = inv
+	return inv, nil
+}
+
+func (m *MemStore) RevokeOrgInvitation(_ context.Context, org, id string, now time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	inv, ok := m.org().invites[id]
+	if !ok || inv.Org != org {
+		return auth.ErrNotFound
+	}
+	inv.RevokedAt, inv.SealedToken = now, ""
+	m.org().invites[id] = inv
+	return nil
+}
+
+func (m *MemStore) ReplaceOrgInvitationToken(_ context.Context, org, id, tokenHash, sealed string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	inv, ok := m.org().invites[id]
+	if !ok || inv.Org != org {
+		return auth.ErrNotFound
+	}
+	inv.TokenHash, inv.SealedToken = tokenHash, sealed
+	m.org().invites[id] = inv
+	return nil
+}
+
+func (m *MemStore) DeleteOrgInvitation(_ context.Context, org, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if inv, ok := m.org().invites[id]; ok && inv.Org == org {
+		delete(m.org().invites, id)
+	}
 	return nil
 }

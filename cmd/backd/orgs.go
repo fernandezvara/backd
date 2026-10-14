@@ -201,3 +201,109 @@ func orgsClaimsSet(c *kli.CommandContext) error {
 	fmt.Fprintf(ioOf(c).stdout, "claims of %s set\n", str(c, "id"))
 	return nil
 }
+
+// orgsInvite creates an invitation: bound to an address (--email), to a user (--user) or open
+// (--open). It prints the link, which is shown only now.
+func orgsInvite(c *kli.CommandContext) error {
+	t, err := targetOf(c, false)
+	if err != nil {
+		return err
+	}
+	body := map[string]any{}
+	email, user, open := str(c, "email"), str(c, "user"), flag(c, "open")
+	switch {
+	case open && (email != "" || user != ""):
+		return fmt.Errorf("--open can't be combined with --email or --user")
+	case open:
+		body["binding"] = "none"
+		if n := num(c, "uses"); n > 0 {
+			body["max_uses"] = n
+		}
+	case email != "" && user != "":
+		return fmt.Errorf("give --email or --user, not both")
+	case email != "":
+		body["binding"], body["email"] = "email", email
+	case user != "":
+		id, err := userIDByEmail(t, user)
+		if err != nil {
+			return err
+		}
+		body["binding"], body["user"] = "user", id
+	default:
+		return fmt.Errorf("say who is invited: --email, --user (an email of an existing user) or --open")
+	}
+	if r := str(c, "roles"); r != "" {
+		body["roles"] = strings.Split(r, ",")
+	}
+	if e := str(c, "expires"); e != "" {
+		body["expires_in"] = e
+	}
+	if flag(c, "send") {
+		body["send"] = true
+	}
+	var out struct {
+		ID        string  `json:"id"`
+		Token     string  `json:"token"`
+		Link      *string `json:"link"`
+		ExpiresAt string  `json:"expires_at"`
+	}
+	if err := t.call("POST", "_admin/orgs/"+url.PathEscape(str(c, "id"))+"/invitations", nil, body, &out); err != nil {
+		return err
+	}
+	io := ioOf(c)
+	fmt.Fprintf(io.stdout, "invitation %s, valid until %s\n", out.ID, out.ExpiresAt)
+	if out.Link != nil {
+		fmt.Fprintf(io.stdout, "link   %s\n", *out.Link)
+	}
+	fmt.Fprintf(io.stdout, "token  %s\n", out.Token)
+	return nil
+}
+
+func orgsInvitations(c *kli.CommandContext) error {
+	t, err := targetOf(c, false)
+	if err != nil {
+		return err
+	}
+	var out struct {
+		Items []struct {
+			ID        string   `json:"id"`
+			Binding   string   `json:"binding"`
+			Status    string   `json:"status"`
+			Email     string   `json:"email"`
+			User      string   `json:"user"`
+			Roles     []string `json:"roles"`
+			Uses      int      `json:"uses"`
+			MaxUses   int      `json:"max_uses"`
+			ExpiresAt string   `json:"expires_at"`
+		} `json:"items"`
+	}
+	if err := t.call("GET", "_admin/orgs/"+url.PathEscape(str(c, "id"))+"/invitations", nil, nil, &out); err != nil {
+		return err
+	}
+	io := ioOf(c)
+	w := tabwriter.NewWriter(io.stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(w, "ID\tBINDING\tFOR\tROLES\tUSES\tSTATUS\tEXPIRES")
+	for _, i := range out.Items {
+		who := i.Email
+		if who == "" {
+			who = i.User
+		}
+		if who == "" {
+			who = "-"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d/%d\t%s\t%s\n", i.ID, i.Binding, who, strings.Join(i.Roles, ","), i.Uses, i.MaxUses, i.Status, i.ExpiresAt)
+	}
+	return w.Flush()
+}
+
+func orgsRevokeInvitation(c *kli.CommandContext) error {
+	t, err := targetOf(c, false)
+	if err != nil {
+		return err
+	}
+	if err := t.call("DELETE", "_admin/orgs/"+url.PathEscape(str(c, "id"))+"/invitations/"+url.PathEscape(str(c, "invitation")), nil, nil, nil); err != nil {
+		return err
+	}
+	fmt.Fprintf(ioOf(c).stdout, "invitation %s revoked\n", str(c, "invitation"))
+	return nil
+}

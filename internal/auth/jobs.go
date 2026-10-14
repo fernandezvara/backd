@@ -154,6 +154,9 @@ type EmailJob struct {
 	// InvitationID is the invitation an invitation email is for (there is no
 	// user yet): the worker takes the address from it.
 	InvitationID string
+	// OrgInvitationID is the organization invitation an org-invitation email is for: the
+	// worker takes the address and the (sealed) link from it.
+	OrgInvitationID string
 	// Event and CodesLeft are what a security-notice says: which change it reports and, for
 	// a used recovery code, how many remain. Nothing secret.
 	Event     string
