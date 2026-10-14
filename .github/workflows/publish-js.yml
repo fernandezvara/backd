@@ -58,7 +58,8 @@ jobs:
         run: scripts/check-js-package.sh
       - name: Publish
         run: |
-          case "$GITHUB_REF_NAME" in
+          # A suffix is judged on the version, not on the tag: "js-v0.8.2" has a dash too.
+          case "${GITHUB_REF_NAME#js-v}" in
             *-*) tag=next ;;
             *) tag=latest ;;
           esac
