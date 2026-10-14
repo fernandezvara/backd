@@ -182,7 +182,7 @@ func TestRulesAndFunctionsSeeHowTheSessionWasMade(t *testing.T) {
 		t.Errorf("rules user: %+v", ru)
 	}
 	var env map[string]any
-	if err := json.Unmarshal(userEnvelope(viaTOTP), &env); err != nil {
+	if err := json.Unmarshal(userEnvelope(viaTOTP, nil), &env); err != nil {
 		t.Fatal(err)
 	}
 	if env["mfa"] != true || len(env["methods"].([]any)) != 2 {
@@ -195,7 +195,7 @@ func TestRulesAndFunctionsSeeHowTheSessionWasMade(t *testing.T) {
 	}
 	// Sessions from before the methods were recorded have none, and the lists are never null.
 	old := auth.Caller{User: &auth.Principal{User: u}}
-	if err := json.Unmarshal(userEnvelope(old), &env); err != nil || env["mfa"] != false || env["methods"] == nil {
+	if err := json.Unmarshal(userEnvelope(old, nil), &env); err != nil || env["mfa"] != false || env["methods"] == nil {
 		t.Errorf("old session: %v %v", env, err)
 	}
 }

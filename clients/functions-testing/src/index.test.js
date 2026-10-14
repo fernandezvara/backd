@@ -435,3 +435,35 @@ Deno.test('without config the function has no ctx.config, and without configWrit
   assertEquals(ctx.admin, undefined)
   assertEquals(createContext().ctx.config, undefined)
 })
+
+Deno.test('ctx.admin.orgs: create, claims, members, teams and invitations in memory', async () => {
+  const { ctx, orgChanges } = createContext({ admin: true, orgs: true })
+  const org = await ctx.admin.orgs.create({ name: 'Paid Co', owner: 'u1', slug: 'paid' })
+  assertEquals(org.name, 'Paid Co')
+  await assertRejects(() => ctx.admin.orgs.create({ name: 'Other', owner: 'u2', slug: 'paid' }), FunctionError)
+  assertEquals((await ctx.admin.orgs.setClaims(org.id, { plan: 'pro' })).claims, { plan: 'pro' })
+  await ctx.admin.orgs.addMember(org.id, { user: 'u2', roles: ['editor'] })
+  const team = await ctx.admin.orgs.teams.create(org.id, { name: 'Ops', roles: ['editor'] })
+  await ctx.admin.orgs.teams.addMember(org.id, team.id, 'u2')
+  assertEquals((await ctx.admin.orgs.members(org.id)).items.find((m) => m.user === 'u2').teams, [team.id])
+  const inv = await ctx.admin.orgs.invitations.create(org.id, { binding: 'email', email: 'x@example.com', roles: ['editor'] })
+  assert(inv.token.startsWith('bdo_') && inv.link.includes(inv.token))
+  await assertRejects(() => ctx.admin.orgs.invitations.create(org.id, { binding: 'none', roles: ['owner'] }), FunctionError)
+  // The last manager stays, as in the real one.
+  const e = await assertRejects(() => ctx.admin.orgs.removeMember(org.id, 'u1'), FunctionError)
+  assertEquals(e.code, 'last_org_manager')
+  await ctx.admin.orgs.teams.delete(org.id, team.id)
+  assertEquals((await ctx.admin.orgs.members(org.id)).items.find((m) => m.user === 'u2').teams, [])
+  assertEquals(orgChanges().map((c) => c.action), ['create', 'setClaims', 'addMember', 'teams.create', 'teams.addMember', 'invitations.create', 'teams.delete'])
+})
+
+Deno.test('ctx.admin.orgs: starts from the organizations the test gives, and ctx.user.orgs passes through', async () => {
+  const { ctx } = createContext({
+    user: { id: 'u1', email: 'a@example.com', roles: [], orgs: { o1: { name: 'Acme', roles: ['owner'], teams: [], claims: { plan: 'pro' }, counts: true } } },
+    admin: true,
+    orgs: { orgs: [{ id: 'o1', name: 'Acme', claims: { plan: 'pro' }, members: [{ user: 'u1', roles: ['owner'] }] }] },
+  })
+  assertEquals(ctx.user.orgs.o1.claims.plan, 'pro')
+  assertEquals((await ctx.admin.orgs.list()).map((o) => o.id), ['o1'])
+  await assertRejects(() => ctx.admin.orgs.get('nope'), FunctionError)
+})

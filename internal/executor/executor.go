@@ -129,6 +129,8 @@ type Callback struct {
 	// may change it (ctx.admin.config).
 	Config      bool `json:"config,omitempty"`
 	ConfigWrite bool `json:"config_write,omitempty"`
+	// Orgs says the realm has organizations and the function has admin access: ctx.admin.orgs.
+	Orgs bool `json:"orgs,omitempty"`
 	// Progress says the run is an async job's attempt: the runner reports its
 	// steps live with Token (PUT /v1/{realm}/_job/steps).
 	Progress bool `json:"progress,omitempty"`

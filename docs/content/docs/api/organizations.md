@@ -124,6 +124,10 @@ The answer always has `id`, `token` and `link` (the realm's [`invitation_link`](
 Deleting is not undoable for `delete` collections: reactivating an organization doesn't bring their documents back. Look at the report first.
 {{< /hint >}}
 
+## Functions
+
+Functions see the caller's memberships in `ctx.user.orgs`, create documents in an organization with `ctx.db`, and, with `admin: true`, manage organizations with `ctx.admin.orgs`: see [Organizations in functions](../../functions/organizations/).
+
 ## Administrators
 
 Realm administrators with the `users` area use `/_admin/orgs`, described with the [admin API](../../auth/admin/), and [`backd orgs`](../../auth/cli/): list and show organizations, create one for a user, invite (with any role), add members without an invitation, replace claims, delete and reactivate organizations and assign a manager to an organization left without one.

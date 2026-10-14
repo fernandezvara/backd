@@ -16,7 +16,59 @@ type FunctionsOutput struct {
 
 const functionsPreamble = `
 /** The user a function runs for, or null for an anonymous caller and scheduled runs. */
-export interface CallUser { id: string; email: string; roles: string[] }
+export interface CallUser {
+  id: string;
+  email: string;
+  roles: string[];
+  /** The organizations the user belongs to, by id (only in realms with organizations). */
+  orgs?: Record<string, CallOrg>;
+}
+
+/** A membership, as ctx.user.orgs shows it. */
+export interface CallOrg {
+  name: string;
+  /** Effective roles: direct, default and through teams. */
+  roles: string[];
+  teams: string[];
+  claims: Record<string, unknown>;
+  /** False when the organization requires a second factor and this session used none. */
+  counts: boolean;
+  require_mfa: boolean;
+}
+
+export interface OrgRecord { id: string; name: string; slug: string | null; status: "active" | "orphaned" | "deleted"; require_mfa: boolean; claims: Record<string, unknown>; created_at: string }
+export interface OrgMember { user: string; roles: string[]; teams: string[]; effective_roles: { role: string; origin: string[] }[]; overlap: string[]; joined_at: string }
+export interface OrgTeam { id: string; name: string; roles: string[]; created_at: string }
+export interface OrgInvitation {
+  id: string; binding: "user" | "email" | "none"; status: "pending" | "used" | "revoked" | "expired";
+  user?: string; email?: string; roles: string[]; teams: string[]; max_uses: number; uses: number; expires_at: string;
+}
+
+/** ctx.admin.orgs: organizations with full access, in realms that have them. */
+export interface OrgAdmin {
+  create(input: { name: string; owner: string; slug?: string }): Promise<OrgRecord>;
+  get(id: string): Promise<OrgRecord>;
+  list(options?: { status?: "active" | "orphaned" | "deleted" }): Promise<OrgRecord[]>;
+  setClaims(id: string, claims: Record<string, unknown>): Promise<OrgRecord>;
+  members(id: string, options?: { limit?: number; after?: string }): Promise<{ items: OrgMember[]; has_more: boolean; next?: string }>;
+  addMember(id: string, input: { user: string; roles?: string[] }): Promise<OrgMember>;
+  setRoles(id: string, user: string, roles: string[]): Promise<OrgMember>;
+  removeMember(id: string, user: string): Promise<void>;
+  assignOwner(id: string, user: string): Promise<OrgMember>;
+  teams: {
+    list(id: string): Promise<OrgTeam[]>;
+    create(id: string, input: { name: string; roles?: string[] }): Promise<OrgTeam>;
+    update(id: string, team: string, patch: { name?: string; roles?: string[] }): Promise<OrgTeam>;
+    delete(id: string, team: string): Promise<void>;
+    addMember(id: string, team: string, user: string): Promise<OrgMember>;
+    removeMember(id: string, team: string, user: string): Promise<OrgMember>;
+  };
+  invitations: {
+    create(id: string, input: { binding: "user" | "email" | "none"; user?: string; email?: string; roles?: string[]; teams?: string[]; send?: boolean; expires_in?: string; max_uses?: number }): Promise<OrgInvitation & { token: string; link: string | null }>;
+    list(id: string): Promise<OrgInvitation[]>;
+    delete(id: string, invitation: string): Promise<void>;
+  };
+}
 
 export interface ListParams<W, O> {
   where?: W | string;
@@ -146,8 +198,8 @@ func GenerateFunctions(reg *registry.Registry, realm, database, config string) (
 		if len(secrets) > 0 {
 			sec = strings.Join(secrets, " | ")
 		}
-		fmt.Fprintf(&flags, "  %s: { webhook: %t; admin: %t; config_write: %t; email: %t; push: %t; secrets: %s };\n",
-			member(n), fn.Mode == registry.ModeWebhook, fn.Admin, fn.ConfigWrite, fn.Email, fn.Push != nil, sec)
+		fmt.Fprintf(&flags, "  %s: { webhook: %t; admin: %t; orgs: %t; config_write: %t; email: %t; push: %t; secrets: %s };\n",
+			member(n), fn.Mode == registry.ModeWebhook, fn.Admin, fn.Admin && rl.Settings.Organizations != nil, fn.ConfigWrite, fn.Email, fn.Push != nil, sec)
 	}
 	flags.WriteString("}\n")
 
@@ -195,6 +247,7 @@ export type Context<N extends FunctionName> = {
   error(status: number, code: string, message: string, details?: unknown): Error;
 } & (Flag<N, "webhook"> extends true ? { request: { body: string; headers: Readonly<Record<string, string>> } } : unknown)
   & (Flag<N, "admin"> extends true ? { admin: { db<D extends DatabaseName>(name: D): TypedDatabase<D> } } : unknown)
+  & (Flag<N, "orgs"> extends true ? { admin: { orgs: OrgAdmin } } : unknown)
   & (Flag<N, "config_write"> extends true
     ? { admin: { config: {
         set(values: Partial<ConfigPaths>): Promise<ConfigWriteResult>;

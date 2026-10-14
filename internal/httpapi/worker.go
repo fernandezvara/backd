@@ -388,7 +388,7 @@ func (w *Worker) execute(ctx context.Context, log *slog.Logger, realm string, sv
 		Envelope: executor.Envelope{
 			Mode:      fn.Mode,
 			Input:     job.Input,
-			User:      userEnvelope(caller),
+			User:      userEnvelope(caller, w.fns.userOrgsEnvelope(ctx, realm, caller)),
 			Secrets:   secrets,
 			Mask:      mask,
 			Callback:  w.fns.callback(realm, job.Database, job.Function, fn, caller, deadline.Add(callbackMargin), invID, job.Depth, &job),

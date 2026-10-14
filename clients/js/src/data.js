@@ -81,7 +81,9 @@ import { Job } from './functions.js'
  * returns it again for the same key and body, instead of creating a second
  * document. The client also retries such a request itself after a network
  * error, `429` or `503` (see `retry`).
- * @typedef {RequestOptions & { idempotencyKey?: string }} CreateOptions
+ * `org` is the organization a document of a collection with `organization` is created in (the
+ * caller must be a member; `?org=` on the wire).
+ * @typedef {RequestOptions & { idempotencyKey?: string, org?: string }} CreateOptions
  */
 
 /**
@@ -444,8 +446,9 @@ function listQuery(p) {
  * @returns {RequestOptions}
  */
 function keyed(opts = {}) {
-  const { idempotencyKey, ...rest } = opts
-  return idempotencyKey === undefined ? rest : { ...rest, headers: { ...rest.headers, 'Idempotency-Key': idempotencyKey } }
+  const { idempotencyKey, org, ...rest } = opts
+  const out = org === undefined ? rest : { ...rest, query: { ...rest.query, org } }
+  return idempotencyKey === undefined ? out : { ...out, headers: { ...out.headers, 'Idempotency-Key': idempotencyKey } }
 }
 
 /**
