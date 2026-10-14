@@ -2280,6 +2280,16 @@ func TestContract(t *testing.T) {
 		req("DELETE", adm+"/"+gone, "", key, 204)
 		req("POST", tr, `{"org": "`+gone+`"}`, key, 409)
 		req("POST", tr, `{"org": "`+to+`"}`, key, 200)
+		// Teams of a collection: the document carries _meta.team, and the transfer names it.
+		deptTeam := req("POST", adm+"/"+to+"/teams", `{"name": "Contract department"}`, key, 201)["id"].(string)
+		reqsRoute := "/v1/acme/_admin/data/app/requests"
+		req("POST", reqsRoute+"?org="+to, `{"title": "no team"}`, key, 400)
+		req("POST", reqsRoute+"?org="+to+"&team=nosuch", `{"title": "x"}`, key, 404)
+		teamDoc := req("POST", reqsRoute+"?org="+to+"&team="+deptTeam, `{"title": "in a team"}`, key, 201)["id"].(string)
+		ttr := reqsRoute + "/" + teamDoc + "/_transfer"
+		req("POST", ttr, `{"org": "`+to+`", "team": null}`, key, 400)
+		req("POST", ttr, `{"org": "`+to+`", "team": "nosuch"}`, key, 404)
+		req("POST", ttr, `{"org": "`+to+`", "team": "`+deptTeam+`"}`, key, 200)
 		assign := "/v1/acme/_admin/data/app/shared/_assign_org"
 		req("POST", assign, `{"org": "`+to+`"}`, nil, 401)
 		req("POST", assign, `{"org": "`+to+`"}`, ada, 403)

@@ -6763,8 +6763,12 @@ paths:
         this is a realm administrator's act. The target must exist and not be deleted
         (`409 org_not_active`); the version goes up, `If-Match` is honored (`412`) and the audit
         record `data.transfer` names both organizations, never content. Files and image versions
-        travel with the document unchanged. `team` can only be null: collections have no teams
-        (`400 team_not_allowed`). Needs the `data` area with write access.
+        travel with the document unchanged. In a collection with `team`, `team` names a team of
+        the organization the document ends up in (`404` for an unknown one) or is null to take it
+        out of its team (`400 team_required` where one is required); moving to another
+        organization leaves the team, so a collection that requires one needs it named. A
+        collection without teams answers `400 team_not_allowed`. Needs the `data` area with write
+        access.
       operationId: adminTransferDocument
       security: [{ apiKey: [] }, { session: [] }]
       parameters: [{ $ref: "#/components/parameters/ifMatch" }]
@@ -6778,7 +6782,7 @@ paths:
               required: [org]
               properties:
                 org: { type: [string, "null"] }
-                team: { type: "null" }
+                team: { type: [string, "null"] }
       responses:
         "200": { $ref: "#/components/responses/Document" }
         "400": { $ref: "#/components/responses/Error" }
@@ -8831,6 +8835,7 @@ components:
         created_by: { type: string }
         updated_by: { type: string }
         org: { type: string, description: "The organization the document belongs to. Only in collections with `organization` set, and set at creation (`?org=`)." }
+        team: { type: string, description: "The team of the organization the document belongs to. Only in collections with `team` set, and set at creation (`?team=`)." }
         deleted_at:
           allOf: [{ $ref: "#/components/schemas/Timestamp" }]
           description: When a soft-deleted document was deleted. Only in the trash (`deleted=only|include`) of a collection with `soft_delete`.
