@@ -56,7 +56,7 @@ func ownedReport(ctx context.Context, reg *registry.Registry, store Store, svc *
 		for _, name := range slices.Sorted(maps.Keys(db.Collections)) {
 			c := db.Collections[name]
 			p := c.Erasure
-			if c.InOrganizations() && (p == nil || p.InOrg != registry.InOrgApply) {
+			if store != nil && c.InOrganizations() && (p == nil || p.InOrg != registry.InOrgApply) {
 				if clearer, ok := store.Repository(c).(storage.OrgOwnerClearer); ok {
 					n, err := clearer.CountOwnedInOrgs(ctx, u.ID)
 					if err != nil {
