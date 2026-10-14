@@ -136,6 +136,12 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 	if !tpl.Has(kind, locale) {
 		locale, _ = svc.Settings.Languages()
 	}
+	// The company context: an organization's invitation is its own, other messages carry the
+	// one the request that caused them named (already checked when it was made).
+	org := job.Email.Org
+	if orgInvite != nil {
+		org = orgInvite.Org
+	}
 	data := email.Data{Realm: realm, User: email.User{Email: address, Locale: locale}, Data: map[string]any{}}
 	extra := map[string]any{}
 	if custom != nil && custom.Data != nil {
@@ -156,7 +162,7 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 			w.fail(ctx, log, svc, job, "backd's public address is unknown (BACKD_URL or email.public_url)")
 			return nil, nil, false
 		}
-		spec := auth.EmailToken{Purpose: string(purpose), UserID: userID, RedirectTo: job.Email.RedirectTo, InvitationID: invitationID}
+		spec := auth.EmailToken{Purpose: string(purpose), UserID: userID, RedirectTo: job.Email.RedirectTo, Org: org, InvitationID: invitationID}
 		if job.Email.To != "" || invitationID != "" {
 			spec.Address = address // what the link acts on
 		}
@@ -233,10 +239,16 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 		extra["code"], extra["expires_at"] = code, data.ExpiresAt.Format(time.RFC3339)
 		mask = append(mask, code)
 	}
-	msg, err := tpl.Render(kind, locale, data)
+	msg, err := w.renderWithApp(ctx, log, realm, es.DataHook, kind, locale, userID, org, address, tpl, &data)
 	if err != nil {
 		w.fail(ctx, log, svc, job, "could not render the email: "+err.Error())
 		return nil, nil, false
+	}
+	if data.App != nil {
+		extra["app"] = data.App // a delivery function with its own templates wants it too
+	}
+	if org != "" {
+		extra["org"] = org
 	}
 	toList, ccList, bccList := []emailAddress{{Email: address}}, []emailAddress{}, []emailAddress{}
 	if custom != nil {
@@ -265,4 +277,21 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 		return nil, nil, false
 	}
 	return input, mask, true
+}
+
+// renderWithApp renders the email with what the realm's data hook says about the company
+// ({{.App}}). The hook never stops a message: when it fails, or the template can't use what it
+// gave, the message is rendered without App.
+func (w *Worker) renderWithApp(ctx context.Context, log *slog.Logger, realm, hook, kind, locale, userID, org, address string, tpl *email.Templates, data *email.Data) (email.Message, error) {
+	if hook != "" {
+		in := dataHookInput{Kind: kind, Locale: locale, Org: org, User: &hookUser{ID: userID, Email: address}}
+		data.App = w.fns.dataHook(ctx, realm, hook, in)
+	}
+	msg, err := tpl.Render(kind, locale, *data)
+	if err != nil && data.App != nil {
+		log.Warn("the template couldn't use what the data hook gave; rendering without it", "kind", kind, "error", err)
+		data.App = nil
+		msg, err = tpl.Render(kind, locale, *data)
+	}
+	return msg, err
 }

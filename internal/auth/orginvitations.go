@@ -563,6 +563,7 @@ func (s *Users) AcceptOrgInvitation(ctx context.Context, p Principal, token stri
 // OrgInvitationEmail is what the worker needs to write the message of an invitation.
 type OrgInvitationEmail struct {
 	Address   string
+	Org       string
 	OrgName   string
 	Roles     []string
 	Token     string
@@ -599,5 +600,5 @@ func (s *Users) OrgInvitationEmail(ctx context.Context, ref string) (OrgInvitati
 	if err != nil {
 		return OrgInvitationEmail{}, err
 	}
-	return OrgInvitationEmail{Address: inv.Email, OrgName: org.Name, Roles: inv.Roles, Token: token, Link: s.invitationLink(token, orgID), ExpiresAt: inv.ExpiresAt}, nil
+	return OrgInvitationEmail{Address: inv.Email, Org: orgID, OrgName: org.Name, Roles: inv.Roles, Token: token, Link: s.invitationLink(token, orgID), ExpiresAt: inv.ExpiresAt}, nil
 }

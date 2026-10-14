@@ -257,3 +257,38 @@ func TestOrganizationHooksNameBackgroundFunctions(t *testing.T) {
 		}
 	}
 }
+
+func TestTemplateDataHooksAreInternalSyncFunctions(t *testing.T) {
+	tree := func(realm, fn string) string {
+		return writeTree(t, map[string]string{
+			"shop/realm.yaml":                         realm,
+			"shop/app/_functions/deno.json":           `{}`,
+			"shop/app/_functions/hello/function.yaml": fn,
+			"shop/app/_functions/hello/index.ts":      "export default () => 1;\n",
+			"shop/app/_functions/send/function.yaml":  "internal: true\nmode: async\n",
+			"shop/app/_functions/send/index.ts":       "export default () => 1;\n",
+		})
+	}
+	email := "signup: open\nemail:\n  function: app/send\n  from: Shop <no-reply@shop.example>\n  public_url: https://api.shop.example\n  data_hook: app/hello\n"
+	reg, err := Load(tree(email, "internal: true\n"))
+	if err != nil {
+		// The templates are generated for a realm that sends email: this tree has none.
+		if !strings.Contains(err.Error(), "email") || strings.Contains(err.Error(), "data_hook") {
+			t.Fatalf("a sync internal function is a valid hook: %v", err)
+		}
+	} else if reg.Realms["shop"].Settings.Email.DataHook != "app/hello" {
+		t.Errorf("hook: %q", reg.Realms["shop"].Settings.Email.DataHook)
+	}
+	for name, tc := range map[string]struct{ realm, fn, want string }{
+		"email: not a function": {strings.Replace(email, "app/hello", "app/nothing", 1), "internal: true\n", "email.data_hook"},
+		"email: not internal":   {email, "mode: sync\n", "email.data_hook: app/hello must have `internal: true`"},
+		"email: async":          {email, "internal: true\nmode: async\n", "email.data_hook: app/hello must have `mode: sync`"},
+		"email: not a path":     {strings.Replace(email, "app/hello", "hello", 1), "internal: true\n", "email.data_hook: must be <database>/<function>"},
+		"pages: not internal":   {"signup: open\npages:\n  data_hook: app/hello\n", "mode: sync\n", "pages.data_hook: app/hello must have `internal: true`"},
+		"pages: async":          {"signup: open\npages:\n  data_hook: app/hello\n", "internal: true\nmode: async\n", "pages.data_hook: app/hello must have `mode: sync`"},
+	} {
+		if _, err := Load(tree(tc.realm, tc.fn)); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: %v, want %q", name, err, tc.want)
+		}
+	}
+}

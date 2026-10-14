@@ -161,3 +161,18 @@ test('the new codes are typed errors', async () => {
   await assert.rejects(c.orgs.teams('o1').members('t1'), (e) => e instanceof NotTeamMemberError)
   await assert.rejects(c.db('app').collection('requests').create({}), (e) => e instanceof TeamError && e.code === 'team_required')
 })
+
+test('the company a person comes from travels with sign-in, sign-up and reset requests', async () => {
+  const m = mockFetch([
+    { status: 202, body: { status: 'accepted' } },
+    { status: 202, body: { request_id: 'r1' } },
+    { status: 202, body: { status: 'verification_required' } },
+  ])
+  const c = make(m)
+  await c.auth.requestPasswordReset({ email: 'ada@example.com', org: 'o1' })
+  assert.deepEqual(m.calls[0].body, { email: 'ada@example.com', org: 'o1' })
+  await c.auth.magicLink.request('ada@example.com', { org: 'o1', redirectTo: 'https://app.example/in' })
+  assert.equal(m.calls[1].body.org, 'o1')
+  await assert.rejects(c.auth.signup({ email: 'ada@example.com', password: 'dev-p4ssw0rd!', org: 'o1' }))
+  assert.equal(m.calls[2].body.org, 'o1')
+})

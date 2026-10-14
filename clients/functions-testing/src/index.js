@@ -630,6 +630,7 @@ export function fakeEmail({ perInvocation = 50, recipientsPerMessage = 10, conse
       const addresses = [...(msg.to ?? []), ...(msg.cc ?? []), ...(msg.bcc ?? [])]
       if (!addresses.every((a) => typeof a === 'string' && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a))) throw invalid('to, cc and bcc are arrays of email addresses')
       if (addresses.length + (hasUser ? 1 : 0) > recipientsPerMessage) throw invalid(`at most ${recipientsPerMessage} recipients per message`)
+      if (msg.org !== undefined && (typeof msg.org !== 'string' || msg.org === '')) throw invalid('org must be an organization id')
       if (msg.requires_consent !== undefined) {
         if (typeof msg.requires_consent !== 'string' || !hasUser) throw invalid('requires_consent needs to_user: consents belong to users, not to addresses')
         if (!(consents[msg.to_user] ?? []).includes(msg.requires_consent)) return { status: 'no_consent' }

@@ -143,7 +143,7 @@ type User struct {
 }
 
 // Data is what a template can use: {{.Realm}}, {{.User.Email}},
-// {{.User.Locale}}, {{.Link}}, {{.ExpiresAt}} and {{.Data}}. Templates never
+// {{.User.Locale}}, {{.Link}}, {{.ExpiresAt}}, {{.Data}} and {{.App}}. Templates never
 // receive text written by whoever caused the email, so backd can't be used
 // to send someone else's words.
 type Data struct {
@@ -152,6 +152,9 @@ type Data struct {
 	Link      string
 	ExpiresAt time.Time
 	Data      map[string]any
+	// App is what the realm's email.data_hook returned (the company's name, colours, logo...):
+	// nil when there is no hook, or it failed. Templates that use it guard with {{if .App}}.
+	App map[string]any
 }
 
 // Message is a rendered email.
@@ -322,6 +325,10 @@ func loadOne(kdir, kind, locale string) (*template, []error) {
 	return parseOne(kdir, kind, locale, subject, text, html)
 }
 
+// usesApp reports whether a render error is a template reading {{.App.x}}, which the realm's
+// data hook supplies and startup can't know.
+func usesApp(err error) bool { return strings.Contains(err.Error(), "<.App") }
+
 // parseOne parses and test-renders the three templates of a kind in a locale; where names
 // them in errors.
 func parseOne(kdir, kind, locale, subject, text, html string) (*template, []error) {
@@ -346,7 +353,7 @@ func parseOne(kdir, kind, locale, subject, text, html string) (*template, []erro
 	// isn't known here: a missing key of .Data isn't an error at startup (the
 	// send fails permanently if the function leaves one out), anything else is.
 	one := &Templates{byKind: map[string]map[string]*template{kind: {locale: tpl}}}
-	if _, err := one.Render(kind, locale, sample); err != nil && (slices.Contains(SystemKinds, kind) || !strings.Contains(err.Error(), "map has no entry for key")) {
+	if _, err := one.Render(kind, locale, sample); err != nil && !usesApp(err) && (slices.Contains(SystemKinds, kind) || !strings.Contains(err.Error(), "map has no entry for key")) {
 		return nil, []error{fmt.Errorf("%s: %w", kdir, err)}
 	}
 	return tpl, nil

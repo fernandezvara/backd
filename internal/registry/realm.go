@@ -98,6 +98,9 @@ type RealmSettings struct {
 	// OpenAPIPublic makes the realm's OpenAPI document readable without credentials
 	// (openapi.public: true); otherwise only the realm's administrators read it.
 	OpenAPIPublic bool
+	// PagesDataHook is the internal, sync function (<database>/<function>) backd calls before
+	// it renders a hosted page, to fill in {{.App}} (pages.data_hook); "" for none.
+	PagesDataHook string
 	// AppConfigCacheTTL is how long clients treat the app configuration as fresh
 	// (app_config.cache_ttl); zero when not set: use AppConfigTTL.
 	AppConfigCacheTTL time.Duration
@@ -267,6 +270,9 @@ type EmailSettings struct {
 	// Timeout is the delivery function's own timeout, set when the config is
 	// loaded; email jobs lease for it.
 	Timeout time.Duration
+	// DataHook is the internal, sync function (<database>/<function>) backd calls before it
+	// renders a system email, to fill in {{.App}} (design/team-access.md §10); "" for none.
+	DataHook string
 }
 
 // EmailLimits bound how many emails one address, and one client address,
@@ -351,11 +357,15 @@ type realmDoc struct {
 	// Organizations is read by orgsDoc.apply, after the roles and the sign-in redirects.
 	Organizations *orgsDoc `yaml:"organizations"`
 	// DefaultLocale and Locales are the languages of the realm, for email and push.
-	DefaultLocale string      `yaml:"default_locale"`
-	Locales       []string    `yaml:"locales"`
-	Email         *emailDoc   `yaml:"email"`
-	Push          *pushDoc    `yaml:"push"`
-	Storage       *storageDoc `yaml:"storage"`
+	DefaultLocale string    `yaml:"default_locale"`
+	Locales       []string  `yaml:"locales"`
+	Email         *emailDoc `yaml:"email"`
+	// Pages are the settings of the hosted pages: the function that fills in {{.App}}.
+	Pages *struct {
+		DataHook string `yaml:"data_hook"`
+	} `yaml:"pages"`
+	Push    *pushDoc    `yaml:"push"`
+	Storage *storageDoc `yaml:"storage"`
 	// Providers are the external identity providers users may sign in with, and
 	// SignIn the settings that go with signing in.
 	Providers map[string]*providerDoc `yaml:"providers"`
@@ -406,6 +416,7 @@ type realmDoc struct {
 // emailDoc mirrors the email section of realm.yaml.
 type emailDoc struct {
 	Function  string `yaml:"function"`
+	DataHook  string `yaml:"data_hook"`
 	From      string `yaml:"from"`
 	ReplyTo   string `yaml:"reply_to"`
 	PublicURL string `yaml:"public_url"`
@@ -616,6 +627,13 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 
 	if o := doc.OpenAPI; o != nil {
 		s.OpenAPIPublic = o.Public
+	}
+	if p := doc.Pages; p != nil && p.DataHook != "" {
+		if db, name, ok := strings.Cut(p.DataHook, "/"); !ok || !namePattern.MatchString(db) || !namePattern.MatchString(name) {
+			errs = append(errs, fmt.Errorf("pages.data_hook: must be <database>/<function> (an internal, sync function), got %q", p.DataHook))
+		} else {
+			s.PagesDataHook = p.DataHook
+		}
 	}
 	if a := doc.AppConfig; a != nil && a.CacheTTL != nil {
 		d, err := ParseDuration(*a.CacheTTL)
@@ -1058,7 +1076,7 @@ func parseLanguages(def string, list []string) (string, []string, []error) {
 // parseEmail checks the email section of realm.yaml.
 func parseEmail(d *emailDoc) (*EmailSettings, []error) {
 	e := &EmailSettings{
-		Function: d.Function, From: d.From, ReplyTo: d.ReplyTo,
+		Function: d.Function, From: d.From, ReplyTo: d.ReplyTo, DataHook: d.DataHook,
 		Limits: EmailLimits{PerKindPerHour: DefaultEmailPerKindPerHour, PerDay: DefaultEmailPerDay, PerIPPerHour: DefaultEmailPerIPPerHour,
 			PerFunctionPerHour: DefaultEmailPerFunctionPerHour, PerInvocation: DefaultEmailPerInvocation, RecipientsPerMessage: DefaultEmailRecipientsPerMessage},
 	}
@@ -1068,6 +1086,11 @@ func parseEmail(d *emailDoc) (*EmailSettings, []error) {
 	db, name, ok := strings.Cut(d.Function, "/")
 	if !ok || !namePattern.MatchString(db) || !namePattern.MatchString(name) {
 		add("function: must be <database>/<function> (the internal, async function that delivers the messages), got %q", d.Function)
+	}
+	if d.DataHook != "" {
+		if db, name, ok := strings.Cut(d.DataHook, "/"); !ok || !namePattern.MatchString(db) || !namePattern.MatchString(name) {
+			add("data_hook: must be <database>/<function> (an internal, sync function), got %q", d.DataHook)
+		}
 	}
 	if d.From == "" {
 		add("from: is required: the sender of every message, as an address or \"Name <address>\"")

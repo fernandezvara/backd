@@ -34,6 +34,7 @@ type emailJobDoc struct {
 	UserID     string          `bson:"user_id"`
 	Locale     string          `bson:"locale,omitempty"`
 	RedirectTo string          `bson:"redirect_to,omitempty"`
+	Org        string          `bson:"org,omitempty"`
 	To         string          `bson:"to,omitempty"`
 	Notice     bool            `bson:"notice,omitempty"`
 	Invitation string          `bson:"invitation_id,omitempty"`
@@ -297,7 +298,7 @@ func emailJobFromDoc(d *emailJobDoc) *auth.EmailJob {
 	if d == nil {
 		return nil
 	}
-	return &auth.EmailJob{Kind: d.Kind, UserID: d.UserID, Locale: d.Locale, RedirectTo: d.RedirectTo, To: d.To, Notice: d.Notice, InvitationID: d.Invitation, OrgInvitationID: d.OrgInvite, Event: d.Event, CodesLeft: d.CodesLeft, ChallengeID: d.Challenge, Custom: customFromDoc(d.Custom)}
+	return &auth.EmailJob{Kind: d.Kind, UserID: d.UserID, Locale: d.Locale, RedirectTo: d.RedirectTo, Org: d.Org, To: d.To, Notice: d.Notice, InvitationID: d.Invitation, OrgInvitationID: d.OrgInvite, Event: d.Event, CodesLeft: d.CodesLeft, ChallengeID: d.Challenge, Custom: customFromDoc(d.Custom)}
 }
 
 func customFromDoc(d *customEmailDoc) *auth.CustomEmail {
@@ -318,7 +319,7 @@ func emailJobToDoc(e *auth.EmailJob) *emailJobDoc {
 	if e == nil {
 		return nil
 	}
-	return &emailJobDoc{Kind: e.Kind, UserID: e.UserID, Locale: e.Locale, RedirectTo: e.RedirectTo, To: e.To, Notice: e.Notice, Invitation: e.InvitationID, OrgInvite: e.OrgInvitationID, Event: e.Event, CodesLeft: e.CodesLeft, Challenge: e.ChallengeID, Custom: customToDoc(e.Custom)}
+	return &emailJobDoc{Kind: e.Kind, UserID: e.UserID, Locale: e.Locale, RedirectTo: e.RedirectTo, Org: e.Org, To: e.To, Notice: e.Notice, Invitation: e.InvitationID, OrgInvite: e.OrgInvitationID, Event: e.Event, CodesLeft: e.CodesLeft, Challenge: e.ChallengeID, Custom: customToDoc(e.Custom)}
 }
 
 func jobFromDoc(d jobDoc) auth.Job {

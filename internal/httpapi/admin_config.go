@@ -161,7 +161,7 @@ func realmConfig(s registry.RealmSettings, seesUsers bool) map[string]any {
 	}
 	if e := s.Email; e != nil {
 		out["email"] = map[string]any{
-			"function": e.Function, "from": e.From, "reply_to": e.ReplyTo, "public_url": e.PublicURL,
+			"function": e.Function, "data_hook": e.DataHook, "from": e.From, "reply_to": e.ReplyTo, "public_url": e.PublicURL,
 			"redirects": e.Redirects, "allowed_redirects": orStrings(e.AllowedRedirects), "links": e.Links,
 		}
 	}
