@@ -58,6 +58,13 @@ const (
 	// AppConfigHistoryCollection the versions that led to them (design/app-config.md §4).
 	AppConfigCollection        = "app_config"
 	AppConfigHistoryCollection = "app_config_history"
+	// OrgsCollection, OrgMembersCollection, OrgTeamsCollection and OrgInvitationsCollection hold
+	// the realm's organizations, their memberships, teams and invitations
+	// (design/organizations.md §4).
+	OrgsCollection           = "orgs"
+	OrgMembersCollection     = "org_members"
+	OrgTeamsCollection       = "org_teams"
+	OrgInvitationsCollection = "org_invitations"
 	// PushSendsCollection holds one record per push send: its totals, never a message.
 	PushSendsCollection = "push_sends"
 	// PushOutboxCollection holds what the capture provider took instead of sending: development
@@ -526,6 +533,80 @@ var systemCollections = []systemCollection{
 			{keys: bson.D{{Key: "user_id", Value: 1}, {Key: "last_seen", Value: -1}}},
 			{keys: bson.D{{Key: "session_id", Value: 1}}},
 			{keys: bson.D{{Key: "last_seen", Value: 1}}},
+		},
+	},
+	{
+		name: OrgsCollection,
+		validator: jsonSchema([]string{"_id", "name", "status", "require_mfa", "created_at", "updated_at"}, map[string]any{
+			"_id":         str(),
+			"name":        str(),
+			"slug":        str(),
+			"former_slug": str(),
+			"created_by":  str(),
+			"status":      map[string]any{"enum": bson.A{"active", "orphaned", "deleted"}},
+			"require_mfa": typ("bool"),
+			"created_at":  typ("date"),
+			"updated_at":  typ("date"),
+			"deleted_at":  typ("date"),
+		}),
+		indexes: []systemIndex{
+			// Unique among organizations that have one: a deleted organization gives it up.
+			{keys: bson.D{{Key: "slug", Value: 1}}, unique: true, sparse: true},
+			{keys: bson.D{{Key: "created_by", Value: 1}}},
+			{keys: bson.D{{Key: "status", Value: 1}, {Key: "created_at", Value: -1}}},
+		},
+	},
+	{
+		name: OrgMembersCollection,
+		validator: jsonSchema([]string{"_id", "org", "user", "roles", "teams", "joined_at"}, map[string]any{
+			"_id":        str(),
+			"org":        str(),
+			"user":       str(),
+			"roles":      map[string]any{"bsonType": "array"},
+			"teams":      map[string]any{"bsonType": "array", "items": str()},
+			"joined_at":  typ("date"),
+			"invited_by": str(),
+		}),
+		indexes: []systemIndex{
+			{keys: bson.D{{Key: "org", Value: 1}, {Key: "user", Value: 1}}, unique: true},
+			{keys: bson.D{{Key: "user", Value: 1}}},
+			{keys: bson.D{{Key: "org", Value: 1}, {Key: "roles.role", Value: 1}}},
+		},
+	},
+	{
+		name: OrgTeamsCollection,
+		validator: jsonSchema([]string{"_id", "org", "name", "roles", "created_at"}, map[string]any{
+			"_id":        str(),
+			"org":        str(),
+			"name":       str(),
+			"roles":      map[string]any{"bsonType": "array", "items": str()},
+			"created_at": typ("date"),
+		}),
+		indexes: []systemIndex{
+			{keys: bson.D{{Key: "org", Value: 1}, {Key: "name", Value: 1}}, unique: true},
+		},
+	},
+	{
+		name: OrgInvitationsCollection,
+		validator: jsonSchema([]string{"_id", "org", "token_hash", "binding", "created_at", "expires_at"}, map[string]any{
+			"_id":        str(),
+			"org":        str(),
+			"token_hash": str(),
+			"binding":    map[string]any{"enum": bson.A{"user", "email", "none"}},
+			"user":       str(),
+			"email":      str(),
+			"roles":      map[string]any{"bsonType": "array", "items": str()},
+			"teams":      map[string]any{"bsonType": "array", "items": str()},
+			"max_uses":   map[string]any{"bsonType": bson.A{"int", "long"}},
+			"uses":       map[string]any{"bsonType": bson.A{"int", "long"}},
+			"created_by": str(),
+			"created_at": typ("date"),
+			"expires_at": typ("date"),
+			"revoked_at": typ("date"),
+		}),
+		indexes: []systemIndex{
+			{keys: bson.D{{Key: "token_hash", Value: 1}}, unique: true},
+			{keys: bson.D{{Key: "org", Value: 1}, {Key: "created_at", Value: -1}}},
 		},
 	},
 	{

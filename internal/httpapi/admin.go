@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -84,6 +85,31 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 			r.Delete("/roles/{role}", a.removeRole)
 			r.With(json).Put("/networks", a.setNetworks)
 		})
+		r.With(users).Get("/orgs", a.listOrgs)
+		r.With(users, json).Post("/orgs", a.createOrg)
+		r.Route("/orgs/{org}", func(r chi.Router) {
+			r.Use(users)
+			r.Get("/", a.getOrg)
+			r.Delete("/", a.deleteOrg)
+			r.Get("/owned", a.orgOwned)
+			r.With(json).Post("/reactivate", a.reactivateOrg)
+			r.Get("/members", a.orgMembers)
+			r.With(json).Post("/members", a.addOrgMember)
+			r.With(json).Patch("/members/{user}", a.setOrgMemberRoles)
+			r.Delete("/members/{user}", a.removeOrgMember)
+			r.Get("/teams", a.listOrgTeams)
+			r.With(json).Post("/teams", a.createOrgTeam)
+			r.With(json).Patch("/teams/{team}", a.updateOrgTeam)
+			r.Delete("/teams/{team}", a.deleteOrgTeam)
+			r.Put("/teams/{team}/members/{user}", a.setOrgTeamMember(true))
+			r.Delete("/teams/{team}/members/{user}", a.setOrgTeamMember(false))
+			r.Get("/invitations", a.listOrgInvitations)
+			r.With(json).Post("/invitations", a.createOrgInvitation)
+			r.Delete("/invitations/{id}", a.revokeOrgInvitation)
+			r.Post("/invitations/{id}/link", a.newOrgInvitationLink)
+			r.With(json).Put("/claims", a.setOrgClaims)
+			r.With(json).Post("/owner", a.assignOrgOwner)
+		})
 		r.With(invites).Get("/invitations", a.listInvitations)
 		r.With(invites, json).Post("/invitations", a.createInvitation)
 		r.With(invites).Delete("/invitations/{id}", a.revokeInvitation)
@@ -118,6 +144,9 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 			r.Route("/{collection}", func(r chi.Router) {
 				r.Use(dataCaching, docs.resolveCollection)
 				docs.mountDocuments(r)
+				// Organizations: moving a document is not an update (design/organizations.md §10).
+				r.With(json).Post("/_assign_org", docs.assignOrg)
+				r.With(json).Post("/{id}/_transfer", docs.transfer)
 			})
 		})
 	})
@@ -655,6 +684,14 @@ func fields(w http.ResponseWriter, r *http.Request, obj map[string]any, spec map
 			} else {
 				details = append(details, Detail{Path: name, Reason: "must be a string"})
 			}
+		case kind == "int":
+			if n, ok := v.(json.Number); ok {
+				if i, err := n.Int64(); err == nil {
+					out[name] = int(i)
+					break
+				}
+			}
+			details = append(details, Detail{Path: name, Reason: "must be an integer"})
 		case kind == "bool":
 			if b, ok := v.(bool); ok {
 				out[name] = b

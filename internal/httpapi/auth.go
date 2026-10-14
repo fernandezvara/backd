@@ -39,6 +39,7 @@ func (a *authAPI) routes(r chi.Router) {
 	// What the capture push provider took, for the Mailbox: development only (see devPush).
 	r.With(noStore, a.resolveRealm).Get("/v1/{realm}/_dev/push", a.devPush)
 	a.consentRoutes(r)
+	a.orgRoutes(r)
 	r.Route("/v1/{realm}/_auth", func(r chi.Router) {
 		r.Use(noStore, a.resolveRealm, withTimeout(a.opTimeout))
 		json := requireContentType("application/json")

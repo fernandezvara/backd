@@ -57,6 +57,26 @@ The **Users** page lists the realm's users, a page at a time, and searches by em
 
 A read-only level sees the Users page only when the realm's `admin.read_access.users` grants it, and then without any control that changes something. The same holds for every area: a control appears only when `whoami` says the level may use it.
 
+## Organizations
+
+The **Organizations** page appears in a realm that declares [organizations](../../organizations/) and lists them with their status, member count and whether they require a second factor. Filter by **Active**, **Orphaned** (nobody can manage them any more) or **Deleted**, and search by part of a name or slug. It needs the `users` area, like the admin API behind it.
+
+An organization's page shows:
+
+- **Members**, with their **direct roles**, their **teams** and their **effective roles with where each came from** (`direct`, `default` or a team's name). A role given both directly and another way is marked, because taking it away in one place leaves it in the other. A role that `realm.yaml` no longer declares is flagged *no longer declared*: it grants nothing. Reading which roles are declared needs the `config` area; without it nothing is flagged.
+- **Teams** with the roles they carry, and **invitations** with their binding, roles, status and expiry. A link is shown **once**, when the invitation is made, and never listed.
+- **Claims**, a JSON object that [rules](../rules/#organizations) read (`orgClaims`). The page shows the size against the 1 KiB limit and doesn't send what is over it.
+
+With the `users` area the page lets an administrator:
+
+- **create** an organization for a user (by email), who holds the realm's `creator_roles`;
+- **add a member** directly, **change their roles** or **remove** them (typing their address);
+- **invite** people with any role, and **revoke** pending invitations;
+- **assign an owner** to an orphaned organization;
+- **delete** it: the dialog first shows what the cleanup does in each collection (documents removed and kept, from the report of `GET /_admin/orgs/{org}/owned`) and asks for the name to be typed. A deleted organization can be **reactivated**, without members, and assigned an owner afterwards.
+
+In the **Data** area, a collection in organizations shows each document's organization. A new document asks which organization it goes to, **Move to another organization** transfers one (the same `_transfer` as [`backd data transfer`](../cli/)), and **Assign an organization** on the collection gives the documents that have none one, in a job, after showing how many there are. A read-only level sees all of it without any control that changes something.
+
 ## API keys, secrets and audit
 
 {{< screenshot src="admin-ui/apikeys.png" alt="The API keys: role, prefix, scopes, networks, expiry and last use" >}}

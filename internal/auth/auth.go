@@ -320,6 +320,77 @@ type Store interface {
 	// DeleteInvitation removes an invitation by id; ErrNotFound if none.
 	DeleteInvitation(ctx context.Context, id string) error
 
+	// Organizations (design/organizations.md). CreateOrg inserts the organization and its first
+	// member together (ErrSlugTaken when the slug is in use by one that isn't deleted).
+	CreateOrg(ctx context.Context, o Org, first OrgMember) error
+	// OrgByID returns the organization, deleted ones too; ErrNotFound if none.
+	OrgByID(ctx context.Context, id string) (Org, error)
+	// OrgsByIDs returns the organizations that exist, by id.
+	OrgsByIDs(ctx context.Context, ids []string) (map[string]Org, error)
+	// UpdateOrg applies upd, sets UpdatedAt and returns the result; ErrSlugTaken, ErrNotFound.
+	UpdateOrg(ctx context.Context, id string, upd OrgUpdate, now time.Time) (Org, error)
+	// ListOrgs returns organizations, optionally of one status, newest first.
+	ListOrgs(ctx context.Context, status string) ([]Org, error)
+	// CountOrgsCreatedBy counts the organizations a user created, deleted ones included.
+	CountOrgsCreatedBy(ctx context.Context, userID string) (int, error)
+	// CountOrgMembers counts the members of each of the organizations (zero ones left out).
+	CountOrgMembers(ctx context.Context, orgs []string) (map[string]int, error)
+	// OrgMember returns a membership; ErrNotFound if none.
+	OrgMember(ctx context.Context, org, user string) (OrgMember, error)
+	// ListOrgMembers returns a page of an organization's members sorted by user id: those
+	// after `after`, at most limit; more says whether others follow.
+	ListOrgMembers(ctx context.Context, org, after string, limit int) (members []OrgMember, more bool, err error)
+	// OrgMembersWithRoles returns the members holding any of the roles directly.
+	OrgMembersWithRoles(ctx context.Context, org string, roles []string) ([]OrgMember, error)
+	// OrgMembershipsOf returns up to limit memberships of a user; CountOrgMembershipsOf counts them.
+	OrgMembershipsOf(ctx context.Context, user string, limit int) ([]OrgMember, error)
+	CountOrgMembershipsOf(ctx context.Context, user string) (int, error)
+	// PutOrgMember creates or replaces a membership (unique per organization and user).
+	PutOrgMember(ctx context.Context, m OrgMember) error
+	// DeleteOrgMember removes a membership; ErrNotFound if none.
+	DeleteOrgMember(ctx context.Context, org, user string) error
+
+	// Organization invitations. OrgInvitationByHash and ...ByID return ErrNotFound for none;
+	// UseOrgInvitation takes one use atomically (ErrNotFound when it can't: unknown, revoked,
+	// expired or used up) and returns the invitation.
+	CreateOrgInvitation(ctx context.Context, inv OrgInvitation) error
+	OrgInvitationByHash(ctx context.Context, hash string) (OrgInvitation, error)
+	OrgInvitationByID(ctx context.Context, org, id string) (OrgInvitation, error)
+	// ListOrgInvitations returns an organization's invitations, newest first.
+	ListOrgInvitations(ctx context.Context, org string) ([]OrgInvitation, error)
+	// CountPendingOrgInvitations counts the invitations that can still be used.
+	CountPendingOrgInvitations(ctx context.Context, org string, now time.Time) (int, error)
+	UseOrgInvitation(ctx context.Context, id string, now time.Time) (OrgInvitation, error)
+	RevokeOrgInvitation(ctx context.Context, org, id string, now time.Time) error
+	// ReplaceOrgInvitationToken swaps the token hash (and the sealed token, "" for none).
+	ReplaceOrgInvitationToken(ctx context.Context, org, id, tokenHash, sealed string) error
+	DeleteOrgInvitation(ctx context.Context, org, id string) error
+	// ForgetUserInOrgs removes a user from the organization data (for an erase): their
+	// memberships (and so their teams), the invitations bound to their id or address, and
+	// created_by of the organizations and invitations they made. It returns the organizations
+	// they were a member of.
+	ForgetUserInOrgs(ctx context.Context, userID, email string) ([]string, error)
+	// ArchiveOrg ends an organization at once: its status becomes deleted (the record keeps its
+	// name and dates, and its slug as FormerSlug), and its memberships, teams and invitations
+	// are removed. ErrNotFound if none; ErrOrgNotActive if it was deleted already.
+	ArchiveOrg(ctx context.Context, id string, now time.Time) (Org, error)
+	// ReactivateOrg makes a deleted organization active again, with no members, and sets slug
+	// when it isn't empty (ErrSlugTaken).
+	ReactivateOrg(ctx context.Context, id, slug string, now time.Time) (Org, error)
+	// OrgTeamsByIDs returns the teams of the organization with these ids that exist.
+	OrgTeamsByIDs(ctx context.Context, org string, ids []string) ([]OrgTeam, error)
+	// CreateOrgTeam inserts a team; ErrTeamNameTaken when the organization has one of that name.
+	CreateOrgTeam(ctx context.Context, t OrgTeam) error
+	// UpdateOrgTeam replaces a team's name and roles; ErrTeamNameTaken, ErrNotFound.
+	UpdateOrgTeam(ctx context.Context, t OrgTeam) error
+	// DeleteOrgTeam removes the team and takes its id out of every membership of the
+	// organization; ErrNotFound if none.
+	DeleteOrgTeam(ctx context.Context, org, id string) error
+	// ListOrgTeams returns an organization's teams sorted by name.
+	ListOrgTeams(ctx context.Context, org string) ([]OrgTeam, error)
+	// OrgMembersInTeams returns the members who belong to any of the teams.
+	OrgMembersInTeams(ctx context.Context, org string, teams []string) ([]OrgMember, error)
+
 	// LoginAttempts returns the failure counter of key (zero if none).
 	LoginAttempts(ctx context.Context, key string) (Attempts, error)
 	// RecordLoginFailure increments key's counter atomically, setting its

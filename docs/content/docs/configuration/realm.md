@@ -163,6 +163,49 @@ Other assignments can be made later with [`backd user add-role`](../../auth/user
 
 Emails are trimmed and lowercased, and each can appear only once per role.
 
+## Organizations
+
+Organizations are groups of users that documents can belong to, such as your customers' companies. The section is optional; without it the realm has none. Organization roles are separate from the [realm roles](#roles) above: they mean something only inside one organization, and what they allow is declared here.
+
+```yaml
+organizations:
+  roles:
+    owner:  { manage: [org, members, roles, teams] }
+    admin:  { manage: [members, teams] }
+    editor: {}
+    member: {}
+  default_roles: [member]
+  create: user.email_verified
+  creator_roles: [owner]
+  max_created_per_user: 5
+  invitation_link: "https://app.acme.example/join?token={token}&org={org}"
+```
+
+| Key | What it says | Default |
+|---|---|---|
+| `enabled` | `false` switches the section off without removing it | `true` |
+| `roles` | The organization roles: a name (same rules as realm roles), an optional `description` and `manage`, a capability or a list of them | required |
+| `default_roles` | Roles every member holds without being granted one. They can't have `manage` capabilities | none |
+| `create` | An [expression](../../auth/rules/) that decides who may create organizations; it sees `user`. `"false"` leaves it to realm administrators | `user.email_verified` |
+| `creator_roles` | The roles the creator of an organization holds. One of them needs `manage: org` | `[owner]` |
+| `max_created_per_user` | How many organizations a user may create, deleted ones included | `5` |
+| `max_memberships_per_user` | How many organizations a user may belong to (at most 100) | `100` |
+| `max_teams_per_org`, `max_teams_per_member`, `max_pending_invitations` | Caps for teams and invitations | `100`, `20`, `500` |
+| `allow_require_mfa` | Whether an organization may require a second factor of its members | `true` |
+| `members_visible_to` | Who sees other members' emails: `members`, or `managers` (holders of any role with a `manage` capability) | `members` |
+| `invitation_link` | Where invitation links point: an absolute URL with `{token}` once (and `{org}` if you want it) within `sign_in.allowed_redirects` | none |
+
+The capabilities of `manage`:
+
+| Capability | Lets holders |
+|---|---|
+| `org` | rename the organization and change its slug, and delete it |
+| `members` | remove members and change their roles, within what they hold themselves |
+| `roles` | give and take away any role, including roles with capabilities |
+| `teams` | create and change teams |
+
+Startup checks the section and names what is wrong: unknown capabilities, no role with `manage: org`, a `create` rule that doesn't compile, an `invitation_link` outside the allowed redirects. Organizations need `auth: enabled`. A role removed from this section stays in the stored memberships and grants nothing; `backd` logs it at startup. Which collections belong to organizations is declared in [`collection.yaml`](../config-dir/#organizations). Realm administrators with the `users` area manage organizations with [`backd orgs`](../../auth/cli/) and the [admin API](../../auth/admin/); people use the [organizations API](../../api/organizations/).
+
 ## Network restrictions
 
 Three settings limit where people may act from. Client addresses come from [`TRUSTED_PROXIES`](../../operations/#client-addresses-behind-a-proxy), so every one of these depends on it being exact: behind a proxy without it, every request seems to come from the proxy.

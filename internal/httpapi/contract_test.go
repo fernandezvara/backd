@@ -2151,6 +2151,335 @@ func TestContract(t *testing.T) {
 		req("GET", ad+"/push/sends/"+sendID, "", ada, 403)
 	}
 
+	// Organizations.
+	{
+		orgs, adm := "/v1/acme/_orgs", "/v1/acme/_admin/orgs"
+		bob := bearer(f.bob)
+		withJSON := func(h map[string]string) map[string]string { return with(h, "Content-Type", "application/json") }
+		req("POST", orgs, `{"name": "Contract Inc"}`, nil, 401)
+		req("POST", orgs, `{"name": "Contract Inc"}`, carl, 403)
+		req("POST", orgs, `{}`, ada, 400)
+		req("POST", "/v1/nope/_orgs", `{"name": "x"}`, ada, 404)
+		created := req("POST", orgs, `{"name": "Contract Inc", "slug": "contract-inc"}`, ada, 201)
+		id := created["id"].(string)
+		req("POST", orgs, `{"name": "Dup", "slug": "contract-inc"}`, bob, 409)
+		other := req("POST", orgs, `{"name": "Bob's", "slug": "bobs-org"}`, bob, 201)
+		req("GET", orgs, "", nil, 401)
+		req("GET", orgs, "", ada, 200)
+		req("GET", "/v1/nope/_orgs", "", ada, 404)
+		req("GET", orgs+"/"+id, "", nil, 401)
+		req("GET", orgs+"/"+id, "", bob, 403)
+		req("GET", orgs+"/"+id, "", ada, 200)
+		req("GET", "/v1/nope/_orgs/"+id, "", ada, 404)
+		req("PATCH", orgs+"/"+id, `{"name": "Contract Incorporated"}`, withJSON(nil), 401)
+		req("PATCH", orgs+"/"+id, `{"slug": "Not A Slug"}`, withJSON(ada), 400)
+		req("PATCH", orgs+"/"+id, `{"name": "Nope"}`, withJSON(bob), 403)
+		req("PATCH", orgs+"/"+id, `{"slug": "bobs-org"}`, withJSON(ada), 409)
+		req("PATCH", orgs+"/"+id, `{"name": "Contract Incorporated"}`, withJSON(ada), 200)
+		// Members: bob joins as an admin through the admin API, and the owner is the last manager.
+		req("POST", adm+"/"+id+"/members", `{"user": "`+f.bobID+`", "roles": ["admin"]}`, nil, 401)
+		req("POST", adm+"/"+id+"/members", `{"user": "`+f.bobID+`"}`, ada, 403)
+		req("POST", adm+"/"+id+"/members", `{"roles": ["admin"]}`, key, 400)
+		req("POST", adm+"/"+id+"/members", `{"user": "`+f.bobID+`", "roles": ["wizard"]}`, key, 400)
+		req("POST", adm+"/"+id+"/members", `{"user": "nosuchuser"}`, key, 404)
+		req("POST", adm+"/"+id+"/members", `{"user": "`+f.bobID+`", "roles": ["admin"]}`, key, 200)
+		req("GET", orgs+"/"+id+"/members", "", nil, 401)
+		req("GET", orgs+"/"+id+"/members", "", carl, 403)
+		req("GET", orgs+"/"+id+"/members?limit=1", "", ada, 200)
+		member := orgs + "/" + id + "/members/" + f.bobID
+		req("PATCH", member, `{"roles": ["editor"]}`, withJSON(nil), 401)
+		req("PATCH", member, `{"roles": ["editor"]}`, withJSON(carl), 403)
+		req("PATCH", member, `{"roles": ["wizard"]}`, withJSON(ada), 400)
+		req("PATCH", member, `{"roles": ["editor"]}`, withJSON(ada), 200)
+		req("PATCH", orgs+"/"+id+"/members/"+f.adaID, `{"roles": ["editor"]}`, withJSON(ada), 409)
+		req("DELETE", member, "", nil, 401)
+		req("DELETE", member, "", carl, 403)
+		req("DELETE", orgs+"/"+id+"/members/"+f.adaID, "", ada, 409)
+		req("DELETE", member, "", ada, 204)
+		req("POST", adm+"/"+id+"/members", `{"user": "`+f.bobID+`"}`, key, 200)
+		req("POST", orgs+"/"+id+"/leave", "", bob, 204)
+		req("POST", orgs+"/"+id+"/leave", "", nil, 401)
+		req("POST", orgs+"/"+id+"/leave", "", bob, 403)
+		req("POST", orgs+"/"+id+"/leave", "", ada, 409)
+		// The administrator's side.
+		req("GET", adm, "", nil, 401)
+		req("GET", adm, "", ada, 403)
+		req("GET", adm+"?status=active", "", key, 200)
+		req("GET", adm+"?q=ac", "", key, 200)
+		req("GET", "/v1/nope/_admin/orgs", "", key, 404)
+		req("POST", adm, `{"name": "Staff made", "owner": "`+f.bobID+`"}`, nil, 401)
+		req("POST", adm, `{"name": "Staff made", "owner": "`+f.bobID+`"}`, ada, 403)
+		req("POST", adm, `{"name": "Staff made"}`, key, 400)
+		req("POST", adm, `{"name": "Staff made", "owner": "nosuchuser"}`, key, 404)
+		req("POST", adm, `{"name": "Staff made", "slug": "bobs-org", "owner": "`+f.bobID+`"}`, key, 409)
+		made := req("POST", adm, `{"name": "Staff made", "owner": "`+f.bobID+`"}`, key, 201)
+		madeID := made["id"].(string)
+		req("GET", adm+"/"+id, "", nil, 401)
+		req("GET", adm+"/"+id, "", ada, 403)
+		req("GET", adm+"/nosuch", "", key, 404)
+		req("GET", adm+"/"+id, "", key, 200)
+		req("GET", adm+"/"+id+"/members", "", nil, 401)
+		req("GET", adm+"/"+id+"/members", "", ada, 403)
+		req("GET", adm+"/nosuch/members", "", key, 404)
+		req("GET", adm+"/"+id+"/members", "", key, 200)
+		req("PUT", adm+"/"+id+"/claims", `{"plan": "pro"}`, nil, 401)
+		req("PUT", adm+"/"+id+"/claims", `{"plan": "pro"}`, ada, 403)
+		req("PUT", adm+"/nosuch/claims", `{"plan": "pro"}`, key, 404)
+		req("PUT", adm+"/"+id+"/claims", `{"x": "`+strings.Repeat("a", 1100)+`"}`, key, 400)
+		req("PUT", adm+"/"+id+"/claims", `{"plan": "pro"}`, key, 200)
+		mem := adm + "/" + madeID + "/members/" + f.bobID
+		req("PATCH", mem, `{"roles": ["editor"]}`, withJSON(nil), 401)
+		req("PATCH", mem, `{"roles": ["editor"]}`, withJSON(ada), 403)
+		req("PATCH", adm+"/"+madeID+"/members/nosuchuser", `{"roles": ["editor"]}`, withJSON(key), 404)
+		req("PATCH", mem, `{"roles": ["wizard"]}`, withJSON(key), 400)
+		req("PATCH", mem, `{"roles": ["owner", "editor"]}`, withJSON(key), 200)
+		req("PATCH", mem, `{"roles": ["editor"]}`, withJSON(key), 409)
+		req("DELETE", mem, "", nil, 401)
+		req("DELETE", mem, "", ada, 403)
+		req("DELETE", adm+"/"+madeID+"/members/nosuchuser", "", key, 404)
+		req("DELETE", mem, "", key, 409)
+		req("POST", adm+"/"+madeID+"/owner", `{"user": "`+f.adaID+`"}`, nil, 401)
+		req("POST", adm+"/"+madeID+"/owner", `{"user": "`+f.adaID+`"}`, ada, 403)
+		req("POST", adm+"/"+madeID+"/owner", `{}`, key, 400)
+		req("POST", adm+"/"+madeID+"/owner", `{"user": "nosuchuser"}`, key, 404)
+		// A user at the limit of memberships can't be added to another organization.
+		// Deleting an organization.
+		doomed := req("POST", adm, `{"name": "Doomed", "owner": "`+f.adaID+`"}`, key, 201)["id"].(string)
+		req("GET", adm+"/"+doomed+"/owned", "", nil, 401)
+		req("GET", adm+"/"+doomed+"/owned", "", ada, 403)
+		req("GET", adm+"/nosuch/owned", "", key, 404)
+		req("GET", adm+"/"+doomed+"/owned", "", key, 200)
+		req("DELETE", orgs+"/"+doomed, "", nil, 401)
+		req("DELETE", orgs+"/"+doomed, "", bob, 403)
+		req("DELETE", orgs+"/"+doomed, "", ada, 401) // a fresh proof is needed
+		req("DELETE", orgs+"/"+doomed, "", proofOf(f.ada, "dev-p4ssw0rd!"), 204)
+		req("DELETE", adm+"/"+doomed, "", nil, 401)
+		req("DELETE", adm+"/"+doomed, "", ada, 403)
+		req("DELETE", adm+"/nosuch", "", key, 404)
+		req("DELETE", adm+"/"+doomed, "", key, 409) // deleted already
+		adminGone := req("POST", adm, `{"name": "Admin deleted", "owner": "`+f.adaID+`"}`, key, 201)["id"].(string)
+		req("DELETE", adm+"/"+adminGone, "", key, 204)
+		req("POST", adm+"/"+doomed+"/reactivate", `{}`, nil, 401)
+		req("POST", adm+"/"+doomed+"/reactivate", `{}`, ada, 403)
+		req("POST", adm+"/nosuch/reactivate", `{}`, key, 404)
+		req("POST", adm+"/"+doomed+"/reactivate", `{"slug": "Not A Slug"}`, key, 400)
+		req("POST", adm+"/"+id+"/reactivate", `{}`, key, 409) // not deleted
+		req("POST", adm+"/"+doomed+"/reactivate", `{}`, key, 200)
+		// Moving documents: the admin data route.
+		dataRoute := "/v1/acme/_admin/data/app/projects"
+		moving := req("POST", dataRoute+"?org="+id, `{"title": "moves"}`, key, 201)["id"].(string)
+		to := other["id"].(string)
+		tr := dataRoute + "/" + moving + "/_transfer"
+		req("POST", tr, `{"org": "`+to+`"}`, nil, 401)
+		req("POST", tr, `{"org": "`+to+`"}`, ada, 403)
+		req("POST", tr, `{}`, key, 400)
+		req("POST", dataRoute+"/nosuch/_transfer", `{"org": "`+to+`"}`, key, 404)
+		req("POST", tr, `{"org": "nosuch"}`, key, 404)
+		req("POST", tr, `{"org": "`+to+`"}`, with(key, "If-Match", `"99"`), 412)
+		gone := req("POST", adm, `{"name": "Gone", "owner": "`+f.adaID+`"}`, key, 201)["id"].(string)
+		req("DELETE", adm+"/"+gone, "", key, 204)
+		req("POST", tr, `{"org": "`+gone+`"}`, key, 409)
+		req("POST", tr, `{"org": "`+to+`"}`, key, 200)
+		assign := "/v1/acme/_admin/data/app/shared/_assign_org"
+		req("POST", assign, `{"org": "`+to+`"}`, nil, 401)
+		req("POST", assign, `{"org": "`+to+`"}`, ada, 403)
+		req("POST", assign, `{}`, key, 400)
+		req("POST", assign, `{"org": "nosuch"}`, key, 404)
+		req("POST", assign+"?dry_run=true", `{"org": "`+to+`"}`, key, 200)
+		req("POST", assign, `{"org": "`+to+`"}`, key, 202)
+		req("POST", assign, `{"org": "`+to+`"}`, key, 409) // one at a time per collection
+		// Teams.
+		teamsPath := orgs + "/" + id + "/teams"
+		req("GET", teamsPath, "", nil, 401)
+		req("GET", teamsPath, "", carl, 403)
+		req("GET", teamsPath, "", ada, 200)
+		req("POST", teamsPath, `{"name": "Editors", "roles": ["editor"]}`, nil, 401)
+		req("POST", teamsPath, `{"name": "Editors"}`, carl, 403)
+		req("POST", teamsPath, `{}`, ada, 400)
+		req("POST", "/v1/acme/_orgs/nosuch/teams", `{"name": "x"}`, ada, 403)
+		team := req("POST", teamsPath, `{"name": "Editors", "roles": ["editor"]}`, ada, 201)
+		teamID := team["id"].(string)
+		req("POST", teamsPath, `{"name": "Editors"}`, ada, 409)
+		tp := teamsPath + "/" + teamID
+		req("PATCH", tp, `{"name": "Writers"}`, withJSON(nil), 401)
+		req("PATCH", tp, `{"name": "Writers"}`, withJSON(carl), 403)
+		req("PATCH", tp, `{"roles": ["wizard"]}`, withJSON(ada), 400)
+		req("PATCH", teamsPath+"/nosuch", `{"name": "x"}`, withJSON(ada), 404)
+		req("PATCH", tp, `{"name": "Writers"}`, withJSON(ada), 200)
+		tm := tp + "/members/" + f.adaID
+		req("PUT", tm, "", nil, 401)
+		req("PUT", tm, "", carl, 403)
+		req("PUT", teamsPath+"/nosuch/members/"+f.adaID, "", ada, 404)
+		req("PUT", tp+"/members/nosuchuser", "", ada, 403)
+		req("PUT", tm, "", ada, 200)
+		f.svc.Settings.Organizations.MaxTeamsPerMember = 0
+		req("PUT", tp+"/members/"+f.adaID, "", ada, 200) // already in: nothing to count
+		f.svc.Settings.Organizations.MaxTeamsPerMember = registry.DefaultMaxTeamsPerMember
+		req("DELETE", tm, "", nil, 401)
+		req("DELETE", tm, "", carl, 403)
+		req("DELETE", teamsPath+"/nosuch/members/"+f.adaID, "", ada, 404)
+		req("DELETE", tm, "", ada, 200)
+		bosses := req("POST", teamsPath, `{"name": "Bosses", "roles": ["owner"]}`, ada, 201)["id"].(string)
+		f.svc.Settings.Organizations.MaxTeamsPerMember = 0
+		req("PUT", teamsPath+"/"+bosses+"/members/"+f.adaID, "", ada, 409)
+		f.svc.Settings.Organizations.MaxTeamsPerMember = registry.DefaultMaxTeamsPerMember
+		req("DELETE", tp, "", nil, 401)
+		req("DELETE", tp, "", carl, 403)
+		req("DELETE", teamsPath+"/nosuch", "", ada, 404)
+		req("DELETE", tp, "", ada, 204)
+		req("GET", "/v1/nope/_orgs/x/teams", "", ada, 404)
+		req("POST", "/v1/nope/_orgs/x/teams", `{"name": "x"}`, ada, 404)
+		// A team that keeps the organization its manager can't lose that, by any route.
+		mgr := req("POST", teamsPath, `{"name": "Managers", "roles": ["owner"]}`, ada, 201)["id"].(string)
+		req("PUT", teamsPath+"/"+mgr+"/members/"+f.adaID, "", ada, 200)
+		if _, err := f.svc.AdminSetMemberRoles(context.Background(), id, f.adaID, nil); err != nil {
+			t.Fatal(err)
+		}
+		req("PATCH", teamsPath+"/"+mgr, `{"roles": []}`, withJSON(ada), 409)
+		req("DELETE", teamsPath+"/"+mgr+"/members/"+f.adaID, "", ada, 409)
+		req("DELETE", teamsPath+"/"+mgr, "", ada, 409)
+		admMgr := adm + "/" + id + "/teams/" + mgr
+		req("PATCH", admMgr, `{"roles": []}`, withJSON(key), 409)
+		req("DELETE", admMgr+"/members/"+f.adaID, "", key, 409)
+		req("DELETE", admMgr, "", key, 409)
+		if _, err := f.svc.AdminSetMemberRoles(context.Background(), id, f.adaID, []string{"owner"}); err != nil {
+			t.Fatal(err)
+		}
+		req("DELETE", teamsPath+"/"+mgr, "", ada, 204)
+		// The only manager is kept: ada is the owner only directly, so the team of owners
+		// going away or losing the role is fine, but the organization's last manager is not.
+		req("PATCH", teamsPath+"/"+bosses, `{"roles": []}`, withJSON(ada), 200)
+		req("DELETE", teamsPath+"/"+bosses, "", ada, 204)
+		admTeams := adm + "/" + id + "/teams"
+		req("GET", admTeams, "", nil, 401)
+		req("GET", admTeams, "", ada, 403)
+		req("GET", adm+"/nosuch/teams", "", key, 404)
+		req("GET", admTeams, "", key, 200)
+		req("POST", admTeams, `{"name": "Ops"}`, nil, 401)
+		req("POST", admTeams, `{"name": "Ops"}`, ada, 403)
+		req("POST", admTeams, `{}`, key, 400)
+		req("POST", adm+"/nosuch/teams", `{"name": "Ops"}`, key, 404)
+		opsTeam := req("POST", admTeams, `{"name": "Ops", "roles": ["owner"]}`, key, 201)["id"].(string)
+		req("POST", admTeams, `{"name": "Ops"}`, key, 409)
+		ap := admTeams + "/" + opsTeam
+		req("PATCH", ap, `{"name": "Ops2"}`, withJSON(nil), 401)
+		req("PATCH", ap, `{"name": "Ops2"}`, withJSON(ada), 403)
+		req("PATCH", admTeams+"/nosuch", `{"name": "x"}`, withJSON(key), 404)
+		req("PATCH", ap, `{"roles": ["wizard"]}`, withJSON(key), 400)
+		req("PATCH", ap, `{"name": "Ops2"}`, withJSON(key), 200)
+		am := ap + "/members/" + f.adaID
+		req("PUT", am, "", nil, 401)
+		req("PUT", am, "", ada, 403)
+		req("PUT", admTeams+"/nosuch/members/"+f.adaID, "", key, 404)
+		req("PUT", ap+"/members/nosuchuser", "", key, 404)
+		req("PUT", am, "", key, 200)
+		req("DELETE", am, "", key, 200)
+		f.svc.Settings.Organizations.MaxTeamsPerMember = 0
+		req("PUT", am, "", key, 409)
+		f.svc.Settings.Organizations.MaxTeamsPerMember = registry.DefaultMaxTeamsPerMember
+		req("DELETE", am, "", nil, 401)
+		req("DELETE", am, "", ada, 403)
+		req("DELETE", admTeams+"/nosuch/members/"+f.adaID, "", key, 404)
+		req("DELETE", am, "", key, 200)
+		req("DELETE", ap, "", nil, 401)
+		req("DELETE", ap, "", ada, 403)
+		req("DELETE", admTeams+"/nosuch", "", key, 404)
+		req("DELETE", ap, "", key, 204)
+		// Invitations. The realm's email limits are lifted for the sends and brought back for 429.
+		inv := orgs + "/" + id + "/invitations"
+		lim := &f.svc.Settings.Email.Limits
+		oldLimits := *lim
+		lim.PerIPPerHour, lim.PerKindPerHour, lim.PerDay = 100000, 100000, 100000
+		defer func() { *lim = oldLimits }()
+		req("POST", inv, `{"binding": "none"}`, nil, 401)
+		req("POST", inv, `{"binding": "none"}`, carl, 403)
+		req("POST", inv, `{}`, ada, 400)
+		f.svc.Settings.Organizations.MaxPendingInvitations = 0
+		req("POST", inv, `{"binding": "none"}`, ada, 409)
+		f.svc.Settings.Organizations.MaxPendingInvitations = registry.DefaultMaxPendingInvitations
+		withEmail := f.svc.Settings.Email
+		f.svc.Settings.Email = nil
+		req("POST", inv, `{"binding": "email", "email": "inv@example.com", "send": true}`, ada, 409)
+		f.svc.Settings.Email = withEmail
+		invited := req("POST", inv, `{"binding": "none", "roles": ["editor"], "max_uses": 3}`, ada, 201)
+		invID, invTok := invited["id"].(string), invited["token"].(string)
+		req("GET", inv, "", nil, 401)
+		req("GET", inv, "", bob, 403)
+		req("GET", inv, "", ada, 200)
+		req("POST", orgs+"/invitations/preview", `{"token": "`+invTok+`"}`, nil, 401)
+		req("POST", orgs+"/invitations/preview", `{"token": "nope"}`, ada, 400)
+		boundTo := req("POST", inv, `{"binding": "user", "user": "`+f.bobID+`"}`, ada, 201)
+		req("POST", orgs+"/invitations/preview", `{"token": "`+boundTo["token"].(string)+`"}`, carl, 403)
+		req("POST", orgs+"/invitations/preview", `{"token": "`+invTok+`"}`, bob, 200)
+		req("POST", orgs+"/invitations/accept", `{"token": "`+invTok+`"}`, nil, 401)
+		req("POST", orgs+"/invitations/accept", `{"token": "nope"}`, bob, 400)
+		req("POST", orgs+"/invitations/accept", `{"token": "`+boundTo["token"].(string)+`"}`, carl, 403)
+		limitOne := f.svc.Settings.Organizations
+		limitOne.MaxMembershipsPerUser = 1
+		req("POST", orgs+"/invitations/accept", `{"token": "`+invTok+`"}`, bob, 409)
+		limitOne.MaxMembershipsPerUser = registry.DefaultMaxMembershipsPerUser
+		req("POST", orgs+"/invitations/accept", `{"token": "`+invTok+`"}`, bob, 200)
+		req("POST", inv+"/"+invID+"/link", "", nil, 401)
+		req("POST", inv+"/"+invID+"/link", "", bob, 403)
+		req("POST", inv+"/nosuch/link", "", ada, 404)
+		req("POST", inv+"/"+invID+"/link", "", ada, 200)
+		req("POST", inv+"/"+invID+"/send", "", nil, 401)
+		req("POST", inv+"/"+invID+"/send", "", bob, 403)
+		req("POST", inv+"/nosuch/send", "", ada, 404)
+		req("POST", inv+"/"+invID+"/send", "", ada, 400) // an open link has no address
+		mailed := req("POST", inv, `{"binding": "email", "email": "mailed@example.com"}`, ada, 201)
+		cipher := f.svc.Cipher
+		f.svc.Cipher = nil // no secrets key: the instance can't seal the token
+		req("POST", inv+"/"+mailed["id"].(string)+"/send", "", ada, 503)
+		req("POST", inv, `{"binding": "email", "email": "sealed@example.com", "send": true}`, ada, 503)
+		f.svc.Cipher = cipher
+		req("POST", inv+"/"+mailed["id"].(string)+"/send", "", ada, 202)
+		withMail := f.svc.Settings.Email
+		f.svc.Settings.Email = nil
+		req("POST", inv+"/"+mailed["id"].(string)+"/send", "", ada, 409)
+		f.svc.Settings.Email = withMail
+		lim.PerKindPerHour = 1 // the address got its one message of this kind
+		req("POST", inv+"/"+mailed["id"].(string)+"/send", "", ada, 429)
+		req("POST", inv, `{"binding": "email", "email": "mailed@example.com", "send": true}`, ada, 429)
+		lim.PerKindPerHour = 100000
+		req("DELETE", inv+"/"+invID, "", nil, 401)
+		req("DELETE", inv+"/"+invID, "", bob, 403)
+		req("DELETE", inv+"/nosuch", "", ada, 404)
+		req("DELETE", inv+"/"+invID, "", ada, 204)
+		req("GET", adm+"/"+id+"/invitations", "", nil, 401)
+		req("GET", adm+"/"+id+"/invitations", "", ada, 403)
+		req("GET", adm+"/nosuch/invitations", "", key, 404)
+		req("GET", adm+"/"+id+"/invitations", "", key, 200)
+		req("POST", adm+"/"+id+"/invitations", `{"binding": "none"}`, nil, 401)
+		req("POST", adm+"/"+id+"/invitations", `{"binding": "none"}`, ada, 403)
+		req("POST", adm+"/"+id+"/invitations", `{}`, key, 400)
+		req("POST", adm+"/nosuch/invitations", `{"binding": "none"}`, key, 404)
+		adminInv := req("POST", adm+"/"+id+"/invitations", `{"binding": "email", "email": "adm@example.com", "roles": ["owner"]}`, key, 201)
+		aid := adm + "/" + id + "/invitations/" + adminInv["id"].(string)
+		req("POST", aid+"/link", "", nil, 401)
+		req("POST", aid+"/link", "", ada, 403)
+		req("POST", adm+"/"+id+"/invitations/nosuch/link", "", key, 404)
+		req("POST", aid+"/link", "", key, 200)
+		req("DELETE", aid, "", nil, 401)
+		req("DELETE", aid, "", ada, 403)
+		req("DELETE", adm+"/"+id+"/invitations/nosuch", "", key, 404)
+		req("POST", aid+"/link", "", key, 200)
+		f.svc.Settings.Organizations.MaxPendingInvitations = 0
+		req("POST", adm+"/"+id+"/invitations", `{"binding": "none"}`, key, 409)
+		f.svc.Settings.Organizations.MaxPendingInvitations = registry.DefaultMaxPendingInvitations
+		req("DELETE", aid, "", key, 204)
+		req("POST", aid+"/link", "", key, 400) // revoked: nothing to renew
+		req("POST", inv+"/"+invID+"/link", "", ada, 400)
+		limit := f.svc.Settings.Organizations
+		limit.MaxMembershipsPerUser = 1
+		req("POST", adm+"/"+madeID+"/members", `{"user": "`+f.adaID+`"}`, key, 409)
+		req("POST", adm+"/"+madeID+"/owner", `{"user": "`+f.adaID+`"}`, key, 409)
+		limit.MaxMembershipsPerUser = registry.DefaultMaxMembershipsPerUser
+		req("POST", adm+"/"+madeID+"/owner", `{"user": "`+f.adaID+`"}`, key, 200)
+		req("DELETE", mem, "", key, 204)
+		_ = other
+	}
+
 	c.verify(t, router)
 
 }

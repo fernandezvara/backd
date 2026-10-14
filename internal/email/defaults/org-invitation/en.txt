@@ -1,0 +1,7 @@
+Hello,
+
+You are invited to join {{.Data.org_name}} on {{.Realm}}.
+
+Accept the invitation: {{.Link}}
+
+You need to be signed in to {{.Realm}} with {{.User.Email}}. The invitation works until {{.ExpiresAt}}. If you weren't expecting it, ignore this message: nothing happens unless you accept it.

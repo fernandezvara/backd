@@ -251,6 +251,22 @@ mfa:
 #     change_email: 24h            # how long the confirmation of an email change works (default shown)
 #     revert_email_change: 7d      # how long the link to undo one works (default shown)
 
+# Organizations (docs: Configuration -> Organizations): groups of users, such as your
+# customers' companies, that documents can belong to. Organization roles are separate from
+# the roles below: they only mean something inside one organization. A role can manage
+# the organization (org), its members, which roles members hold, and its teams.
+# organizations:
+#   roles:
+#     owner:  { manage: [org, members, roles, teams] }
+#     admin:  { manage: [members, teams] }
+#     editor: {}
+#     member: {}
+#   default_roles: [member]          # held by every member, without being granted
+#   create: user.email_verified      # who may create organizations ("false": only administrators)
+#   creator_roles: [owner]           # the roles the creator holds
+#   max_created_per_user: 5
+#   invitation_link: "https://app.example.com/join?token={token}"   # within sign_in.allowed_redirects
+
 # Roles that access rules can check. `users` lists emails that get the role
 # at startup (seed assignments): plain emails, or objects with an `email`.
 # Keeping them here lets you rebuild the realm on new infrastructure; roles

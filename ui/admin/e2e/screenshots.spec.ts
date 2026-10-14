@@ -29,6 +29,7 @@ test('screenshots of the main views', async ({ page, signIn }) => {
     await page.screenshot({ path: out(name) })
   }
   await shoot('users', 'users-table', 'users')
+  await shoot('orgs', 'orgs-table', 'orgs')
   await shoot('apikeys', 'apikeys-table', 'apikeys')
   await shoot('audit', 'audit-table', 'audit')
   await shoot('functions', 'fn-main-greet', 'functions')

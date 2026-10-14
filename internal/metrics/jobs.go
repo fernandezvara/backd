@@ -21,7 +21,7 @@ type JobStat struct {
 
 // JobKind names a job's kind from what it holds: the label values are this
 // closed list.
-func JobKind(email, erase, check, image, scheduled bool) string {
+func JobKind(email, erase, check, image, org, scheduled bool) string {
 	switch {
 	case email:
 		return "email"
@@ -31,6 +31,8 @@ func JobKind(email, erase, check, image, scheduled bool) string {
 		return "check"
 	case image:
 		return "image"
+	case org:
+		return "org"
 	case scheduled:
 		return "schedule"
 	}

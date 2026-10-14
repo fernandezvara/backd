@@ -5,6 +5,7 @@ export { Admin } from './admin.js'
 export { Push } from './push.js'
 export { Consents } from './consents.js'
 export { Config } from './config.js'
+export { Orgs, OrgMembers, OrgTeams, OrgInvitations } from './orgs.js'
 export { Files, versionStatus } from './files.js'
 export { Sha256, sha256Blob } from './sha256.js'
 export { Job, JobTimeoutError } from './functions.js'
@@ -17,6 +18,9 @@ export {
   ConflictError,
   IdTakenError,
   InvalidIdError,
+  OrgRequiresMFAError,
+  NotOrgMemberError,
+  LastOrgManagerError,
   VersionMismatchError,
   RetryableError,
   NetworkError,
@@ -83,6 +87,14 @@ export { parseReturn as parseOAuthReturn } from './oauth.js'
  * @typedef {import('./admin.js').Invitation} Invitation
  * @typedef {import('./admin.js').NewInvitation} NewInvitation
  * @typedef {import('./admin.js').SentInvitation} SentInvitation
+ * @typedef {import('./admin.js').AdminOrg} AdminOrg
+ * @typedef {import('./admin.js').OrgOwnedReport} OrgOwnedReport
+ * @typedef {import('./orgs.js').Org} Org
+ * @typedef {import('./orgs.js').OrgMember} OrgMember
+ * @typedef {import('./orgs.js').OrgTeam} OrgTeam
+ * @typedef {import('./orgs.js').OrgInvitation} OrgInvitation
+ * @typedef {import('./orgs.js').NewOrgInvitation} NewOrgInvitation
+ * @typedef {import('./orgs.js').InviteInput} OrgInviteInput
  * @typedef {import('./admin.js').OwnedReport} OwnedReport
  * @typedef {import('./admin.js').APIKeyInfo} APIKeyInfo
  * @typedef {import('./admin.js').NewAPIKey} NewAPIKey

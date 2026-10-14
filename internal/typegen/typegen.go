@@ -126,6 +126,8 @@ export interface Meta {
   owner?: string | null;
   created_by?: string;
   updated_by?: string;
+  /** The organization the document belongs to, in collections that have them. */
+  org?: string;
   deleted_at?: DateTimeString;
   deleted_by?: string;
   purge_at?: DateTimeString;
@@ -226,7 +228,17 @@ func (g *gen) realm(rl *registry.Realm, o Options) string {
 	if len(quoted) > 0 {
 		role = strings.Join(quoted, " | ")
 	}
-	fmt.Fprintf(&tree, "  roles: %s;\n}\n", role)
+	fmt.Fprintf(&tree, "  roles: %s;\n", role)
+	// The organization roles the realm declares, for apps that give them (only in realms with organizations).
+	if o := rl.Settings.Organizations; o != nil {
+		var orgRoles []string
+		for _, r := range o.RoleNames() {
+			orgRoles = append(orgRoles, literal(r))
+			g.entries["org role "+r] = ""
+		}
+		fmt.Fprintf(&tree, "  org_roles: %s;\n", strings.Join(orgRoles, " | "))
+	}
+	tree.WriteString("}\n")
 
 	return preamble + "\n" + types.String() + "\n" + tree.String()
 }

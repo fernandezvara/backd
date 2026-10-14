@@ -573,7 +573,8 @@ export class FunctionError extends Error {
  * @property {boolean | { kinds?: string[], audience?: boolean }} [push]  Give the function ctx.push.send (function.yaml's `push:`); the object is what it declares: the `kinds` it may name and whether it may send to an `audience`.
  * @property {boolean | { perInvocation?: number, recipientsPerMessage?: number, consents?: Record<string, string[]> }} [email]  Give the function ctx.email.send (function.yaml's `email: true`); the object sets the realm's caps (`email.limits`) the fake enforces, and the consents each user id holds, for sends that `requires_consent`.
  * @property {Record<string, any>} [config]  The realm's app configuration, nested like its schema.json: gives the function ctx.config.get and ctx.config.all.
- * @property {boolean} [configWrite]    Also give ctx.admin.config.set, reset and history (function.yaml's `config: write`); changes apply to `config` and are listed by `configChanges()`.
+ * @property {boolean | { orgs?: Array<{ id?: string, name: string, slug?: string | null, claims?: Record<string, any>, members?: Array<{ user: string, roles?: string[], teams?: string[] }>, teams?: Array<{ id?: string, name: string, roles?: string[] }> }> }} [orgs]  Also give ctx.admin.orgs: create, get, list, setClaims, addMember, removeMember, teams and invitations, kept in memory (start from `orgs`); \`orgChanges()\` lists what the function changed. \`user.orgs\` is passed through as given.
+* @property {boolean} [configWrite]    Also give ctx.admin.config.set, reset and history (function.yaml's `config: write`); changes apply to `config` and are listed by `configChanges()`.
  */
 
 /** The kinds backd sends itself: a function can't send them. */
@@ -759,7 +760,7 @@ export function callTimedOut() {
  * to list what it reported with `ctx.step` and `ctx.progress` (name, total, message, the
  * last `current`, and every `updates` entry).
  * @param {ContextOptions} [opts]
- * @returns {{ ctx: any, store: MemoryStore, fakeCall: (name: string, handler: (input: any, options: any) => any) => void, calls: (name: string) => Array<{ input: any, options: any }>, sentEmails: () => Array<Record<string, any>>, sentPushes: () => Array<Record<string, any>>, configChanges: () => Array<{ path: string, old: any, new: any }>, steps: () => Array<{ name: string, total: number | null, message: string | null, current: number, updates: Array<{ current: number, message: string | null }> }> }}
+ * @returns {{ ctx: any, store: MemoryStore, fakeCall: (name: string, handler: (input: any, options: any) => any) => void, calls: (name: string) => Array<{ input: any, options: any }>, sentEmails: () => Array<Record<string, any>>, sentPushes: () => Array<Record<string, any>>, orgChanges: () => Array<{ action: string, org: string, [key: string]: any }>, configChanges: () => Array<{ path: string, old: any, new: any }>, steps: () => Array<{ name: string, total: number | null, message: string | null, current: number, updates: Array<{ current: number, message: string | null }> }> }}
  */
 export function createContext(opts = {}) {
   const store = opts.store ?? new MemoryStore()
@@ -868,9 +869,14 @@ export function createContext(opts = {}) {
       }),
     })
   }
+  // ctx.admin.orgs: organizations in memory. The real one is an admin's: no granting rules, but
+  // the structure is checked as backd does (names and slugs unique, the last manager stays).
+  const orgState = fakeOrgs(typeof opts.orgs === 'object' ? opts.orgs : {})
+  if (opts.orgs) ctx.admin = Object.freeze({ ...(ctx.admin ?? {}), orgs: orgState.api })
   return {
     ctx: Object.freeze(ctx),
     store,
+    orgChanges: orgState.changes,
     sentEmails: mail.sent,
     sentPushes: pushes.sent,
     configChanges: () => structuredClone(configChanged),
@@ -878,4 +884,151 @@ export function createContext(opts = {}) {
     fakeCall: (name, handler) => void fakes.set(name, handler),
     calls: (name) => recorded.filter((c) => c.name === name).map(({ input, options }) => ({ input, options })),
   }
+}
+
+/**
+ * A fake of `ctx.admin.orgs`: organizations, members, teams and invitations in memory.
+ * @param {{ orgs?: Array<any> }} seed
+ */
+function fakeOrgs(seed) {
+  let n = 0
+  const next = (p) => `${p}-test${++n}`
+  /** @type {Map<string, any>} */
+  const orgs = new Map()
+  /** @type {Array<{ action: string, org: string, [key: string]: any }>} */
+  const changed = []
+  const note = (action, org, extra = {}) => void changed.push({ action, org, ...extra })
+  const err = (status, code, message) => new FunctionError(status, code, message)
+  const record = (o) => ({
+    id: o.id, name: o.name, slug: o.slug ?? null, status: o.status, require_mfa: false,
+    claims: structuredClone(o.claims), created_at: '2030-01-01T00:00:00.000Z',
+  })
+  const make = (input) => {
+    const o = {
+      id: input.id ?? next('org'), name: input.name, slug: input.slug ?? null, status: 'active', claims: input.claims ?? {},
+      members: new Map((input.members ?? []).map((m) => [m.user, { roles: [...(m.roles ?? [])], teams: [...(m.teams ?? [])] }])),
+      teams: new Map((input.teams ?? []).map((t) => { const id = t.id ?? next('team'); return [id, { id, name: t.name, roles: [...(t.roles ?? [])] }] })),
+      invitations: new Map(),
+    }
+    orgs.set(o.id, o)
+    return o
+  }
+  for (const o of seed.orgs ?? []) make(o)
+  const need = (id) => {
+    const o = orgs.get(id)
+    if (!o) throw err(404, 'not_found', 'organization not found')
+    return o
+  }
+  const memberView = (id, user, m) => ({ user, roles: [...m.roles], teams: [...m.teams], effective_roles: m.roles.map((role) => ({ role, origin: ['direct'] })), overlap: [], joined_at: '2030-01-01T00:00:00.000Z' })
+  const team = (o, id) => {
+    const t = o.teams.get(id)
+    if (!t) throw err(404, 'not_found', 'team not found')
+    return t
+  }
+  const api = {
+    create: async (input) => {
+      if (!input || typeof input.name !== 'string' || input.name.trim() === '') throw err(400, 'validation_error', 'name is required')
+      if (!input.owner) throw err(400, 'validation_error', 'owner is required')
+      if (input.slug && [...orgs.values()].some((x) => x.slug === input.slug && x.status !== 'deleted')) throw err(409, 'slug_taken', 'that slug is taken')
+      const o = make({ name: input.name.trim(), slug: input.slug, members: [{ user: input.owner, roles: ['owner'] }] })
+      note('create', o.id)
+      return { ...record(o), roles: ['owner'], effective_roles: [], teams: [] }
+    },
+    get: async (id) => record(need(id)),
+    list: async (options = {}) => [...orgs.values()].filter((o) => !options.status || o.status === options.status).map(record),
+    setClaims: async (id, claims) => {
+      const o = need(id)
+      if (JSON.stringify(claims).length > 1024) throw err(400, 'validation_error', 'claims must be at most 1024 bytes')
+      o.claims = structuredClone(claims)
+      note('setClaims', id, { claims: structuredClone(claims) })
+      return record(o)
+    },
+    members: async (id) => ({ items: [...need(id).members].map(([u, m]) => memberView(id, u, m)), has_more: false }),
+    addMember: async (id, input) => {
+      const o = need(id)
+      const m = o.members.get(input.user) ?? { roles: [], teams: [] }
+      for (const r of input.roles ?? []) if (!m.roles.includes(r)) m.roles.push(r)
+      o.members.set(input.user, m)
+      note('addMember', id, { user: input.user, roles: [...(input.roles ?? [])] })
+      return memberView(id, input.user, m)
+    },
+    setRoles: async (id, user, roles) => {
+      const o = need(id)
+      const m = o.members.get(user)
+      if (!m) throw err(404, 'not_found', 'that user is not a member of the organization')
+      m.roles = [...roles]
+      note('setRoles', id, { user, roles: [...roles] })
+      return memberView(id, user, m)
+    },
+    removeMember: async (id, user) => {
+      const o = need(id)
+      if (!o.members.has(user)) throw err(404, 'not_found', 'that user is not a member of the organization')
+      const owners = [...o.members].filter(([u, m]) => u !== user && m.roles.includes('owner'))
+      if (o.members.get(user).roles.includes('owner') && owners.length === 0) throw err(409, 'last_org_manager', 'the organization needs at least one member who can manage it')
+      o.members.delete(user)
+      note('removeMember', id, { user })
+    },
+    assignOwner: async (id, user) => api.addMember(id, { user, roles: ['owner'] }),
+    teams: Object.freeze({
+      list: async (id) => [...need(id).teams.values()].map((t) => ({ ...t, roles: [...t.roles], created_at: '2030-01-01T00:00:00.000Z' })),
+      create: async (id, input) => {
+        const o = need(id)
+        if ([...o.teams.values()].some((t) => t.name === input.name)) throw err(409, 'team_name_taken', 'the organization has a team with that name')
+        const t = { id: next('team'), name: input.name, roles: [...(input.roles ?? [])] }
+        o.teams.set(t.id, t)
+        note('teams.create', id, { team: t.id, name: t.name })
+        return { ...t, created_at: '2030-01-01T00:00:00.000Z' }
+      },
+      update: async (id, teamID, patch) => {
+        const t = team(need(id), teamID)
+        if (patch.name !== undefined) t.name = patch.name
+        if (patch.roles !== undefined) t.roles = [...patch.roles]
+        note('teams.update', id, { team: teamID })
+        return { ...t, created_at: '2030-01-01T00:00:00.000Z' }
+      },
+      delete: async (id, teamID) => {
+        const o = need(id)
+        team(o, teamID)
+        o.teams.delete(teamID)
+        for (const m of o.members.values()) m.teams = m.teams.filter((t) => t !== teamID)
+        note('teams.delete', id, { team: teamID })
+      },
+      addMember: async (id, teamID, user) => {
+        const o = need(id)
+        team(o, teamID)
+        const m = o.members.get(user)
+        if (!m) throw err(404, 'not_found', 'that user is not a member of the organization')
+        if (!m.teams.includes(teamID)) m.teams.push(teamID)
+        note('teams.addMember', id, { team: teamID, user })
+        return memberView(id, user, m)
+      },
+      removeMember: async (id, teamID, user) => {
+        const o = need(id)
+        team(o, teamID)
+        const m = o.members.get(user)
+        if (!m) throw err(404, 'not_found', 'that user is not a member of the organization')
+        m.teams = m.teams.filter((t) => t !== teamID)
+        note('teams.removeMember', id, { team: teamID, user })
+        return memberView(id, user, m)
+      },
+    }),
+    invitations: Object.freeze({
+      create: async (id, input) => {
+        const o = need(id)
+        if (!['user', 'email', 'none'].includes(input?.binding)) throw err(400, 'validation_error', 'binding must be user, email or none')
+        if (input.binding === 'none' && (input.roles ?? []).includes('owner')) throw err(400, 'validation_error', "an open link can't give a role that manages the organization")
+        const inv = { id: next('inv'), binding: input.binding, status: 'pending', roles: [...(input.roles ?? [])], teams: [...(input.teams ?? [])], user: input.user, email: input.email }
+        o.invitations.set(inv.id, inv)
+        note('invitations.create', id, { invitation: inv.id, binding: inv.binding })
+        return { ...inv, token: `bdo_test${n}`, link: `https://example.com/join?token=bdo_test${n}&org=${id}` }
+      },
+      list: async (id) => [...need(id).invitations.values()].map((i) => ({ ...i })),
+      delete: async (id, invitation) => {
+        const o = need(id)
+        if (!o.invitations.delete(invitation)) throw err(404, 'not_found', 'invitation not found')
+        note('invitations.delete', id, { invitation })
+      },
+    }),
+  }
+  return { api: Object.freeze(api), changes: () => structuredClone(changed) }
 }

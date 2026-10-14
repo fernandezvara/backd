@@ -284,6 +284,8 @@ func serve(ctx context.Context, a *app) error {
 		w.LogImageLimits()
 		tasks = append(tasks, func() error {
 			go w.CheckImageDeclarations(ctx)
+			go w.ReportOrganizationless(ctx)
+			go w.ReportOrganizationless(ctx)
 			w.Run(ctx, a.cfg.WorkerConcurrency)
 			return nil
 		})

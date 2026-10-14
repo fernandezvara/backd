@@ -54,6 +54,9 @@ type User struct {
 	Methods []string `expr:"methods"`
 	// Consents maps each consent the user holds to the version they accepted.
 	Consents map[string]string `expr:"consents"`
+	// Orgs are the memberships that count, by organization id (design/organizations.md §6):
+	// filled in only for a rule that uses them.
+	Orgs map[string]*UserOrg `expr:"orgs"`
 }
 
 // Schema describes what the rules of one collection may refer to.
@@ -81,6 +84,12 @@ type Schema struct {
 	// ConfigLeaf reports whether a dot path is a value of the realm's app
 	// configuration, for appConfig; nil when the realm declares none.
 	ConfigLeaf func(path string) bool
+	// OrgRoles are the organization roles declared in realm.yaml, for hasOrgRole; nil when
+	// the realm doesn't enable organizations.
+	OrgRoles []string
+	// InOrgs says the collection's documents can belong to an organization, so rules may name
+	// document._meta.org (and data._meta.org on create).
+	InOrgs bool
 }
 
 // Set is a collection's compiled rules. A nil rule denies the operation.
@@ -146,6 +155,7 @@ func compileEnv() map[string]any {
 		"now":      time.Time{},
 		"changed":  func() []string { return nil },
 		"config":   map[string]any{},
+		orgsVar:    map[string]*UserOrg{},
 	}
 }
 
@@ -174,7 +184,9 @@ func (configPatcher) Visit(node *ast.Node) {
 
 // compileOptions are what every rule is compiled with, whole or in parts.
 func compileOptions(extra ...expr.Option) []expr.Option {
-	return append([]expr.Option{expr.Env(compileEnv()), hasRoleFunc, hasConsentFunc, appConfigFunc, expr.Patch(configPatcher{})}, extra...)
+	opts := []expr.Option{expr.Env(compileEnv()), hasRoleFunc, hasConsentFunc, appConfigFunc, expr.Patch(configPatcher{}), expr.Patch(orgPatcher{})}
+	opts = append(opts, orgFuncs...)
+	return append(opts, extra...)
 }
 
 // UsesConfig reports whether the rule reads the app configuration.

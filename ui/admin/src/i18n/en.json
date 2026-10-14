@@ -120,6 +120,7 @@
     "label": "Main",
     "overview": "Overview",
     "users": "Users",
+    "orgs": "Organizations",
     "invitations": "Invitations",
     "apikeys": "API keys",
     "secrets": "Secrets",
@@ -784,6 +785,7 @@
     "open": "Open",
     "database": "Database",
     "collection": {
+      "assign": {"open": "Assign an organization", "title": "Assign an organization", "help": "Gives the documents that have none this organization, in a job. Documents that already belong to one never move.", "action": "Assign", "matched": "{n} documents have no organization.", "done": "The assignment was queued: follow it under Functions, Jobs."},
       "new": "New document",
       "trash": "Trash",
       "live": "Documents",
@@ -843,6 +845,10 @@
       "rawToggle": "Write the query as JSON"
     },
     "doc": {
+      "org": "Organization",
+      "noOrg": "None",
+      "orgHelp": "The organization the document belongs to. It is set now and moved only by an administrator.",
+      "move": {"open": "Move to another organization", "title": "Move to another organization", "help": "Members of the new organization see the document, and members of the old one stop seeing it, at once.", "action": "Move", "done": "Document moved."},
       "back": "All documents",
       "new": "New document in {collection}",
       "edit": "Document {id}",
@@ -940,5 +946,128 @@
     "emailCode": "The code we emailed you",
     "send": "Email me a code",
     "resend": "Email me another code"
+  },
+  "orgs": {
+    "title": "Organizations",
+    "back": "Back to organizations",
+    "search": "Search",
+    "searchHelp": "Part of a name or slug.",
+    "filter": "Status",
+    "name": "Name",
+    "slug": "Slug",
+    "statusLabel": "Status",
+    "members": {
+      "title": "Members",
+      "add": "Add a member",
+      "who": "Member",
+      "direct": "Direct roles",
+      "teams": "Teams",
+      "effective": "Effective roles and where they come from",
+      "actions": "Actions",
+      "edit": "Change roles",
+      "editTitle": "Roles of {who}",
+      "email": "Email of the user",
+      "rolesLabel": "Direct roles",
+      "rolesHelp": "Separated by commas. Declared: {roles}",
+      "remove": "Remove member",
+      "removeTitle": "Remove member",
+      "removeHelp": "Their access ends at once. Type their address to confirm.",
+      "removed": "Member removed.",
+      "added": "Member added.",
+      "updated": "Roles updated.",
+      "empty": "No members.",
+      "stale": "no longer declared",
+      "staleHelp": "realm.yaml doesn't declare this role any more: it grants nothing.",
+      "overlap": "also given another way",
+      "overlapHelp": "This role is given directly and also by a team or by default: taking it away in one place leaves it in the other.",
+      "count": "{n} members, {managers} of them manage something.",
+      "countOnly": "{n} members."
+    },
+    "requireMfa": "Requires a second factor",
+    "created": "Created",
+    "empty": "No organizations.",
+    "loadFailed": "The organizations could not be loaded.",
+    "loadOneFailed": "The organization could not be loaded.",
+    "noSuchUser": "There is no user with the address {email}.",
+    "orphanedHelp": "Nobody can manage this organization any more. Assign an owner.",
+    "deletedHelp": "This organization was deleted: it has no members and its documents follow each collection's policy. Reactivating it brings it back without members.",
+    "status": {
+      "active": "Active",
+      "orphaned": "Orphaned",
+      "deleted": "Deleted"
+    },
+    "create": {
+      "open": "Create organization",
+      "title": "Create organization",
+      "slugHelp": "Optional: lowercase letters, digits and dashes.",
+      "owner": "Owner's email",
+      "ownerHelp": "A user of the realm; they hold the realm's creator roles.",
+      "done": "Organization {name} created."
+    },
+    "teams": {
+      "title": "Teams",
+      "none": "No teams."
+    },
+    "owner": {
+      "open": "Assign an owner",
+      "title": "Assign an owner",
+      "help": "The user becomes a member with the realm's creator roles.",
+      "done": "Owner assigned."
+    },
+    "delete": {
+      "open": "Delete organization",
+      "title": "Delete organization",
+      "help": "Access ends at once. Type the name to confirm.",
+      "action": "Delete organization",
+      "done": "Organization deleted.",
+      "reportFailed": "The report could not be loaded.",
+      "summary": "The cleanup removes {del} documents and keeps {keep}.",
+      "policy": {
+        "delete": "deleted",
+        "keep": "kept, readable only by administrators"
+      }
+    },
+    "reactivate": {
+      "open": "Reactivate",
+      "title": "Reactivate organization",
+      "help": "It comes back without members: assign an owner afterwards. Documents removed by the cleanup do not return.",
+      "slugHelp": "Only when its former slug is in use.",
+      "done": "Organization reactivated."
+    },
+    "claims": {
+      "title": "Claims",
+      "help": "Facts that access rules can read and members can't change, such as the plan. At most 1 KiB.",
+      "label": "Claims (JSON object)",
+      "size": "{size} of 1024 bytes",
+      "object": "Claims must be a JSON object.",
+      "tooBig": "Claims are {size} bytes: the limit is 1024.",
+      "saved": "Claims saved."
+    },
+    "invitations": {
+      "title": "Invitations",
+      "help": "Links are shown once, when made, and never listed.",
+      "create": "Invite",
+      "for": "For",
+      "binding": "Who can accept",
+      "roles": "Roles",
+      "expires": "Expires",
+      "expiresIn": "Expires in",
+      "expiresHelp": "Days (7d) or hours (12h). Empty: the default.",
+      "anyone": "Anyone with the link",
+      "empty": "No invitations.",
+      "created": "Invitation created.",
+      "revoked": "Invitation revoked.",
+      "revokeTitle": "Revoke invitation",
+      "revokeExpected": "revoke",
+      "userId": "User id",
+      "linkTitle": "Invitation link",
+      "linkBody": "Copy it now: it is shown only this once.",
+      "linkLabel": "Link",
+      "bindings": {
+        "email": "A verified email address",
+        "user": "One user",
+        "none": "Anyone with the link"
+      }
+    }
   }
 }

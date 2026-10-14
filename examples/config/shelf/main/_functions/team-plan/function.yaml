@@ -1,0 +1,5 @@
+# An operator puts a team on a plan (chapter 20). The plan is a claim of the
+# team's organization: only realm administrators and functions write claims,
+# so members can't give their own team a better one.
+admin: true
+invoke: "user != nil && hasRole(user, 'admin')"

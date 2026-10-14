@@ -316,6 +316,92 @@ func registerRemote(cfg *kli.Config) {
 		required(cc, "id", "the device's id, from `backd push devices`")
 	})
 
+	og := cfg.Command("orgs").ShortHelp("manage a realm's organizations").
+		LongHelp(adminAPINote + " Needs the users area. People create and manage organizations through the realm's /_orgs API; this is for administrators.")
+	og.SubCommand("list").ShortHelp("list the realm's organizations").
+		Func(act("orgs list", orgsList)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		cc.Define("status").String().Flag("status").Default("").OneOf("", "active", "orphaned", "deleted").Description("only organizations with this status (orphaned: no manager left)")
+	})
+	og.SubCommand("show").ShortHelp("show an organization with its claims").
+		Func(act("orgs show", orgsShow)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+	})
+	og.SubCommand("create").ShortHelp("create an organization owned by a user").
+		Func(act("orgs create", orgsCreate)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "name", "the organization's name")
+		optional(cc, "slug", "a unique short name: lowercase letters, digits and '-'")
+		required(cc, "owner", "the email of the user who becomes its owner")
+	})
+	og.SubCommand("members").ShortHelp("list an organization's members with their roles").
+		Func(act("orgs members", orgsMembers)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+	})
+	og.SubCommand("add-member").ShortHelp("add a user to an organization without an invitation (audited)").
+		Func(act("orgs add-member", orgsAddMember)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+		required(cc, "email", "the user's email")
+		optional(cc, "roles", "organization roles, comma-separated")
+	})
+	og.SubCommand("assign-owner").ShortHelp("make a user a manager of an organization (for an orphaned one)").
+		Func(act("orgs assign-owner", orgsAssignOwner)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+		required(cc, "email", "the user's email")
+	})
+	og.SubCommand("invite").ShortHelp("invite to an organization: by address, to a user, or with an open link").
+		LongHelp("Prints the link and token once. --send also emails the link (needs email and the secrets key on the server).").
+		Func(act("orgs invite", orgsInvite)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+		optional(cc, "email", "invite whoever signs in with this verified address")
+		optional(cc, "user", "invite this existing user (their email)")
+		boolean(cc, "open", "an open link: anyone signed in who holds it (see --uses)")
+		optional(cc, "roles", "organization roles to give, comma-separated")
+		optional(cc, "expires", "how long it works, such as 2d (default 7d, at most 30d)")
+		cc.Define("uses").Int64().Flag("uses").Default(0).Min(0).Max(1000).Description("how many times an open link may be used (default 1)")
+		boolean(cc, "send", "also email it (with --email)")
+	})
+	og.SubCommand("invitations").ShortHelp("list an organization's invitations (never tokens)").
+		Func(act("orgs invitations", orgsInvitations)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+	})
+	og.SubCommand("revoke-invitation").ShortHelp("revoke an invitation").
+		Func(act("orgs revoke-invitation", orgsRevokeInvitation)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+		required(cc, "invitation", "the invitation's id")
+	})
+	og.SubCommand("owned").ShortHelp("report what deleting an organization would do").
+		Func(act("orgs owned", orgsOwned)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+	})
+	og.SubCommand("delete").ShortHelp("delete an organization: access ends at once, its documents follow").
+		LongHelp("Ends everyone's access at once (the record stays, as deleted), then a job applies each collection's on_org_delete: `delete` removes the documents and queues their files for deletion, `keep` leaves them for realm administrators. See `backd orgs owned` first. Needs --yes. " + adminAPINote).
+		Func(act("orgs delete", orgsDelete)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+		boolean(cc, "yes", "confirm")
+	})
+	og.SubCommand("reactivate").ShortHelp("bring a deleted organization back, with no members").
+		Func(act("orgs reactivate", orgsReactivate)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+		optional(cc, "slug", "the slug it takes (its former one may be in use)")
+	})
+	og.SubCommand("claims-set").ShortHelp("replace an organization's claims (at most 1 KiB of JSON)").
+		Func(act("orgs claims-set", orgsClaimsSet)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+		required(cc, "claims", "a JSON object, for example '{\"plan\": \"pro\"}'")
+	})
+
 	k := cfg.Command("apikey").ShortHelp("manage a realm's API keys").
 		LongHelp(adminAPINote + "\n\nAPI keys give server-side services full access to their realm's data.\nStore them as secrets.")
 	k.SubCommand("create").ShortHelp("create an API key and print it once").
@@ -513,6 +599,27 @@ func registerRemote(cfg *kli.Config) {
 	data.SubCommand("checks").ShortHelp("print the latest schema check reports").
 		LongHelp("Lists every collection of the realm with its latest schema check (documents read,\ninvalid, whether it was complete, when it finished), and notes a check running now. With\n--database and --collection prints that collection's report in full. " + adminAPINote).
 		Func(act("data checks", dataChecks)).Config(checkFlags)
+	docFlags := func(cc *kli.CommandConfig) {
+		required(cc, "realm", "the realm")
+		required(cc, "database", "the database")
+		required(cc, "collection", "the collection")
+		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+	}
+	data.SubCommand("transfer").ShortHelp("move one document to another organization (audited)").
+		LongHelp("Moves a document to another organization, or out of its organization with --org none when the collection's documents may have none. It is a deliberate act of a realm administrator, not an update: the version goes up and the audit trail names both organizations. Needs the data area with write access. " + adminAPINote).
+		Func(act("data transfer", dataTransfer)).Config(func(cc *kli.CommandConfig) {
+		docFlags(cc)
+		required(cc, "id", "the document's id")
+		required(cc, "org", "the organization's id, or none")
+	})
+	data.SubCommand("assign-org").ShortHelp("give the documents that have no organization one").
+		LongHelp("For a collection that adopted organizations after it had documents: they have none, and members can't see them. Queues a job that gives the organization to the documents that have none and match --where (a JSON filter, as in a list query), and never moves one that has an organization. --dry-run only counts them. Needs the data area with write access. " + adminAPINote).
+		Func(act("data assign-org", dataAssignOrg)).Config(func(cc *kli.CommandConfig) {
+		docFlags(cc)
+		required(cc, "org", "the organization's id")
+		optional(cc, "where", "only documents matching this JSON filter")
+		boolean(cc, "dry-run", "count the documents without changing anything")
+	})
 	fn := cfg.Command("functions").ShortHelp("build, call and inspect server-side functions")
 	fn.SubCommand("build").ShortHelp("bundle every function in CONFIG_DIR with deno").
 		LongHelp("Bundles every function in CONFIG_DIR with `deno bundle` into\n<realm>/<database>/_functions/.build/, one file per function named by its\ncontent hash, and records them in .build/manifest.json. Needs only CONFIG_DIR\nand Deno " + registry.DenoVersion + " (DENO, or deno on the PATH). --check also type-checks\nTypeScript. backd refuses to start while any bundle is missing or stale, so\nbuild after every change to a functions project, before provisioning or\ndeploying.").

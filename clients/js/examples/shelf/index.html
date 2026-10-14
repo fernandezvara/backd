@@ -30,6 +30,7 @@
     <ul>
       <li><a href="#gallery" :aria-current="view === 'gallery' ? 'page' : null">Gallery</a></li>
       <li><a href="#mine" :aria-current="view === 'mine' ? 'page' : null">My assets</a></li>
+      <li x-show="user"><a href="#teams" :aria-current="view === 'teams' ? 'page' : null">Teams</a></li>
       <li x-show="isCurator"><a href="#review" :aria-current="view === 'review' ? 'page' : null">Review <mark class="badge" x-show="drafts.length" x-text="drafts.length"></mark></a></li>
       <li><a href="#notifications" :aria-current="view === 'notifications' ? 'page' : null">Notifications <mark class="badge" x-show="unreadCount" x-text="unreadCount"></mark></a></li>
       <li><a href="#admin" :aria-current="view === 'admin' ? 'page' : null">Admin</a></li>
@@ -299,6 +300,89 @@
           </footer>
         </article>
       </template>
+    </section>
+
+    <!-- view: teams (ch20) — a team is an organization: its pins, members and invitations. -->
+    <section id="teams" x-show="view === 'teams'">
+      <hgroup>
+        <h2>Teams</h2>
+        <p>Each team is an organization: only its members see its pins.</p>
+      </hgroup>
+      <p class="muted" x-show="!user">Sign in to see your teams.</p>
+
+      <article x-show="joinOffer">
+        <header>You are invited to join <strong x-text="joinOffer?.org.name"></strong></header>
+        <p>As <span x-text="(joinOffer?.roles || []).join(', ') || 'a member'"></span>.</p>
+        <footer><button id="join" @click="acceptJoin" :disabled="busy">Join the team</button></footer>
+      </article>
+
+      <div x-show="user">
+        <form @submit.prevent="createTeam" class="inline">
+          <input id="team-name" x-model="teamName" placeholder="A new team's name" :required="!!user" maxlength="100">
+          <button type="submit" :disabled="busy">Create team</button>
+        </form>
+        <p class="muted" x-show="!teams.length">You are not in a team yet: create one, or open an invitation link.</p>
+
+        <div x-show="teams.length">
+          <label>Open team
+            <select id="team-select" :value="team" @change="openTeam($event.target.value)">
+              <template x-for="t in teams" :key="t.id">
+                <option :value="t.id" x-text="t.name" :selected="t.id === team"></option>
+              </template>
+            </select>
+          </label>
+          <p class="muted">You hold: <code x-text="(currentTeam?.roles || []).join(', ')"></code></p>
+
+          <article>
+            <header>Pins</header>
+            <p class="muted" x-show="!pinList.length">Nothing pinned yet.</p>
+            <ul>
+              <template x-for="p in pinList" :key="p.id">
+                <li>
+                  <a :href="p.url" target="_blank" rel="noopener" x-text="p.title" x-show="p.url"></a>
+                  <span x-text="p.title" x-show="!p.url"></span>
+                  <span class="muted" x-text="p.note"></span>
+                  <button class="link sm" @click="removePin(p.id)" x-show="holds('admin', 'owner') || p.author === user?.id">remove</button>
+                </li>
+              </template>
+            </ul>
+            <form @submit.prevent="addPin" x-show="holds('editor', 'admin', 'owner')">
+              <input x-model="pinDraft.title" placeholder="Title" :required="holds('editor', 'admin', 'owner')" maxlength="200">
+              <input x-model="pinDraft.url" type="url" placeholder="https://…">
+              <input x-model="pinDraft.note" placeholder="Why it matters">
+              <button type="submit" :disabled="busy">Pin</button>
+            </form>
+          </article>
+
+          <article>
+            <header>Members</header>
+            <ul>
+              <template x-for="m in teamMembers" :key="m.user">
+                <li><span x-text="m.email || m.user"></span> — <code x-text="m.roles.join(', ') || 'member'"></code>
+                  <button class="link sm" x-show="holds('owner')" @click="setMemberRoles(m.user, m.roles.includes('admin') ? ['editor'] : ['admin'])" x-text="m.roles.includes('admin') ? 'make editor' : 'make admin'"></button>
+                </li>
+              </template>
+            </ul>
+          </article>
+
+          <article x-show="holds('admin', 'owner')">
+            <header>Invite</header>
+            <form class="inline" @submit.prevent="inviteToTeam(true)">
+              <input id="invite-email" x-model="invite.email" type="email" placeholder="ana@example.com" :required="holds('admin', 'owner')">
+              <select x-model="invite.roles"><option value="editor">editor</option><option value="member">member</option><option value="admin">admin</option></select>
+              <button type="submit" :disabled="busy">Send by email</button>
+            </form>
+            <p><button class="secondary outline sm" @click="inviteToTeam(false)" :disabled="busy">Make a link to share</button></p>
+            <p x-show="invite.link">Link (shown once): <input id="invite-link" readonly :value="invite.link" @focus="$event.target.select()"></p>
+            <p class="muted" x-show="invite.sent">The link was also emailed.</p>
+          </article>
+
+          <p>
+            <button class="secondary outline sm" @click="leaveTeam">Leave the team</button>
+            <button class="contrast outline sm" x-show="holds('owner')" @click="deleteTeam">Delete the team</button>
+          </p>
+        </div>
+      </div>
     </section>
 
     <!-- view: notifications (ch7, wired) — what publish and digest create. -->

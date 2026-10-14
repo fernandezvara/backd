@@ -101,6 +101,7 @@ func TestTutorialChaptersLoad(t *testing.T) {
 	ch16 := ch13 + "\n" + blockAfter(t, "16-second-factor", "Add to `config/shelf/realm.yaml`:") +
 		"\n" + blockAfter(t, "16-second-factor", "Add this to `config/shelf/realm.yaml` too:")
 	ch17 := ch16 + "\n" + blockAfter(t, "17-consents", "Add to `config/shelf/realm.yaml`:")
+	ch20 := ch17 + "\n" + blockAfter(t, "20-teams", "Add to `config/shelf/realm.yaml`:")
 	collections := []string{
 		"main/assets/schema.json", "main/assets/indexes.json", "main/shares/schema.json", "main/shares/indexes.json",
 	}
@@ -130,13 +131,13 @@ func TestTutorialChaptersLoad(t *testing.T) {
 			writeFile(t, filepath.Join(d, "main/shares/collection.yaml"), blockAfter(t, "03-rules", "And `config/shelf/main/shares/collection.yaml`"))
 		})
 	})
-	t.Run("chapter 17 is the finished realm", func(t *testing.T) {
+	t.Run("chapter 20 is the finished realm", func(t *testing.T) {
 		loadChapter(t, func(d string) {
 			src := filepath.Join("..", "..", "examples", "config", "shelf")
 			if err := os.CopyFS(d, os.DirFS(src)); err != nil {
 				t.Fatal(err)
 			}
-			writeFile(t, filepath.Join(d, "realm.yaml"), ch17)
+			writeFile(t, filepath.Join(d, "realm.yaml"), ch20)
 		})
 		final, err := os.ReadFile(filepath.Join("..", "..", "examples", "config", "shelf", "realm.yaml"))
 		if err != nil {
@@ -146,7 +147,7 @@ func TestTutorialChaptersLoad(t *testing.T) {
 		if err := yaml.Unmarshal(final, &a); err != nil {
 			t.Fatal(err)
 		}
-		if err := yaml.Unmarshal([]byte(ch17), &b); err != nil {
+		if err := yaml.Unmarshal([]byte(ch20), &b); err != nil {
 			t.Fatal(err)
 		}
 		if !reflect.DeepEqual(a, b) {

@@ -1,0 +1,7 @@
+# Documents of an organization: the admin UI's organization pages and the data browser's
+# "move to another organization" use it.
+organization: required
+on_org_delete:
+  action: delete
+rules:
+  read: inOrg(document._meta.org)

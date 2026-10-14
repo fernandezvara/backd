@@ -1,0 +1,32 @@
+# Chapter 20: the team's pinboard. Each pin belongs to one team, which is an
+# organization of the realm: backd keeps it in _meta.org, the caller says
+# which with ?org= (`pins.inOrg(id)` in the client), and the rules read
+# the caller's memberships.
+organization: required
+
+# When a team is deleted, its pins go with it (the other choice is `keep`).
+on_org_delete:
+  action: delete
+
+rules:
+  # A member of the team reads its pins; anybody else, nothing. This is applied
+  # inside the database query, so lists and counts show only what is readable.
+  read: inOrg(document._meta.org)
+
+  # No create rule: a pin is made by the pin function (chapter 20), which
+  # knows the team's plan and how many pins fit. Clients can't create one.
+
+  # Editing and removing: the person who pinned it, and the team's admins.
+  update: >
+    user != nil && document.author == user.id
+    && (hasOrgRole(document._meta.org, 'editor') || hasOrgRole(document._meta.org, 'admin') || hasOrgRole(document._meta.org, 'owner'))
+  delete: >
+    user != nil && (document.author == user.id
+    || hasOrgRole(document._meta.org, 'admin') || hasOrgRole(document._meta.org, 'owner'))
+
+# What happens to what a member pinned when they are erased: the pins stay
+# with their team (the content is the team's), and only the personal link,
+# `author`, is cleared.
+on_owner_delete:
+  unset:
+    author: id

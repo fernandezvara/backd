@@ -63,6 +63,10 @@ Friendly aliases are generated too, for every collection: `MainOrders` (the docu
 
 Keywords that only validate (`minimum`, `pattern`, `maxLength`, other `format` values) don't change the type. A schema that uses `not`, `if`/`then`/`else`, `patternProperties`, `propertyNames`, `dependentSchemas`, `unevaluatedProperties`, `unevaluatedItems` or `contains`, or a `$ref` that isn't local, is typed `unknown`, and the generator prints a warning with the file and the place.
 
+## Organization roles
+
+In a realm with [organizations](../../api/organizations/) the generated `Realm` has `org_roles`, the union of the roles declared under `organizations.roles` (`"owner" | "admin" | "editor" | "member"`). Use it to type what an app gives: `const roles: Realm["org_roles"][] = ["editor"]`. Collections that belong to organizations list `_meta.org` among the fields of `where` and `orderBy`, and `inOrg(id)` keeps the types of the collection.
+
 ## In TypeScript and in plain JavaScript
 
 Apps and functions get the same types in both languages; JavaScript needs no build step, because editors read the JSDoc:

@@ -42,6 +42,8 @@ tags:
       data operations past the collections' rules to the `data` area. A read-only level (`admin: read`) reads every area,
       users and data only when `admin.read_access` grants them, and every change
       answers 403.
+  - name: organizations
+    description: "Organizations of a realm: groups of users with roles the realm declares, which documents can belong to."
   - name: documents
     description: CRUD and queries on any configured collection.
   - name: functions
@@ -966,6 +968,599 @@ paths:
         "204": { description: Device removed. }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [organizations]
+      summary: Create an organization
+      description: |
+        Creates an organization with the caller as a member holding the realm's `creator_roles`.
+        Allowed when the realm's `organizations.create` rule says so (by default: a verified
+        address) and below `max_created_per_user` (`409 org_limit_reached`). `slug` is optional and
+        unique among organizations that aren't deleted (`409 slug_taken`). Needs a session: an API
+        key can't create organizations. Realm administrators create them for any user with the
+        admin API.
+      operationId: createOrganization
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+                slug: { type: string, maxLength: 63, pattern: "^[a-z0-9]+(-[a-z0-9]+)*$" }
+      responses:
+        "201":
+          description: The organization, as its creator sees it.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      tags: [organizations]
+      summary: The caller's organizations
+      description: With the caller's effective roles and teams in each. Deleted organizations aren't listed.
+      operationId: listOrganizations
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The organizations.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Organization" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/{org}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+    get:
+      tags: [organizations]
+      summary: One organization
+      description: |
+        Name, slug, status and claims (read-only: realm administrators and functions write them).
+        A non-member and an unknown organization answer the same `403 not_org_member`, so the
+        answer never says whether an organization exists.
+      operationId: getOrganization
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The organization.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [organizations]
+      summary: Rename an organization, change its slug or its second-factor requirement
+      description: |
+        Needs a role with `manage: org`. `require_mfa: true` makes members' sessions count only when
+        they used a second factor: it needs a fresh proof of identity (`401 reauth_required`),
+        `organizations.allow_require_mfa` (`409 require_mfa_not_allowed`) and a session of the
+        caller that has a second factor itself (`403 org_requires_mfa`). Audited as `org.require_mfa`.
+      operationId: updateOrganization
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+                slug: { type: string, maxLength: 63, description: "An empty string removes the slug." }
+                require_mfa: { type: boolean }
+      responses:
+        "200":
+          description: The organization.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+    delete:
+      tags: [organizations]
+      summary: Delete an organization
+      description: |
+        Needs `manage: org` and a fresh proof of identity (`401 reauth_required`, then
+        `POST /_auth/reauth` and send its token in `X-Backd-Reauth`). Access ends **at once**: the
+        status becomes `deleted` (the record stays, with its name and dates) and memberships, teams
+        and invitations are removed. A job then applies each collection's `on_org_delete`: `delete`
+        removes the documents (soft-deleted ones too) and queues their files for deletion; `keep`
+        leaves them, readable only by realm administrators. The slug is released.
+      operationId: deleteOrganization
+      security: [{ session: [] }]
+      responses:
+        "204":
+          description: The organization was deleted.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/{org}/members:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+    get:
+      tags: [organizations]
+      summary: The members of an organization
+      description: |
+        A page of members sorted by user id: their direct roles, their teams and their effective
+        roles with where each came from (`direct`, `default` or a team). `overlap` lists the roles
+        held both directly and through a team or by default. Emails appear according to the
+        realm's `members_visible_to`.
+      operationId: listOrganizationMembers
+      security: [{ session: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+        - { name: after, in: query, description: "The `next` of the previous page.", schema: { type: string } }
+      responses:
+        "200":
+          description: A page of members.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationMembers" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/{org}/members/{user}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { name: user, in: path, required: true, description: "A user id.", schema: { type: string } }
+    patch:
+      tags: [organizations]
+      summary: Change a member's direct roles
+      description: |
+        Replaces the member's direct roles. With `manage: roles` any role may be given or taken
+        away; with `manage: members` only roles that open no capability the caller lacks, and not
+        for a member who holds capabilities the caller lacks. The last member who can manage the
+        organization can't lose that (`409 last_org_manager`).
+      operationId: updateOrganizationMember
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [roles]
+              properties:
+                roles: { type: array, items: { type: string } }
+      responses:
+        "200":
+          description: The member.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationMember" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [organizations]
+      summary: Remove a member
+      description: "Needs `manage: members`, and can't remove someone who holds capabilities the caller lacks. The last manager can't be removed (`409 last_org_manager`). Their access ends at once; the documents they created stay."
+      operationId: removeOrganizationMember
+      security: [{ session: [] }]
+      responses:
+        "204":
+          description: The member was removed.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/{org}/leave:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+    post:
+      tags: [organizations]
+      summary: Leave an organization
+      description: The last member who can manage the organization can't leave (`409 last_org_manager`).
+      operationId: leaveOrganization
+      security: [{ session: [] }]
+      responses:
+        "204":
+          description: The caller left.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/{org}/invitations:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+    get:
+      tags: [organizations]
+      summary: An organization's invitations
+      description: Status, binding, uses and expiry, newest first. Never tokens. Needs `manage` of members.
+      operationId: listOrganizationInvitations
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The invitations.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/OrganizationInvitation" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [organizations]
+      summary: Invite to an organization
+      description: |
+        Creates an invitation and answers its `token` and `link` (the realm's
+        `organizations.invitation_link` with the token), which are shown only here. `binding` says who may
+        accept it: `user` (only that user id), `email` (the signed-in user whose **verified** address
+        matches) or `none` (anyone signed in who holds the link, `max_uses` times). `roles` and `teams`
+        follow the granting rules: the caller gives only what they could do themselves, and an open link
+        can't give a role that manages the organization, directly or through a team. With `send: true`
+        an `email` binding is also emailed (the `org-invitation` email), which keeps the token sealed
+        with the instance's secrets key until the invitation ends. Needs `manage` of members.
+        `409 invitations_limit` at `max_pending_invitations`.
+      operationId: createOrganizationInvitation
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationInvitationInput" }
+      responses:
+        "201":
+          description: The invitation, with its token and link.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationInvitationCreated" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/{org}/invitations/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { $ref: "#/components/parameters/id" }
+    delete:
+      tags: [organizations]
+      summary: Revoke an invitation
+      operationId: revokeOrganizationInvitation
+      security: [{ session: [] }]
+      responses:
+        "204":
+          description: The invitation can't be used any more.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/{org}/invitations/{id}/link:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { $ref: "#/components/parameters/id" }
+    post:
+      tags: [organizations]
+      summary: Issue a new link
+      description: Replaces the token of a pending invitation and invalidates the old link, since a lost link can't be shown again.
+      operationId: renewOrganizationInvitationLink
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The invitation with its new token and link.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationInvitationCreated" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/{org}/invitations/{id}/send:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { $ref: "#/components/parameters/id" }
+    post:
+      tags: [organizations]
+      summary: Send the invitation's email again
+      description: Only for a pending invitation bound to an email address. Uses the realm's email limits (`429`).
+      operationId: resendOrganizationInvitation
+      security: [{ session: [] }]
+      responses:
+        "202":
+          description: The email was queued.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/invitations/preview:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [organizations]
+      summary: See what an invitation offers
+      description: |
+        Says which organization, roles and teams a token offers, so an app can ask "Join Acme as
+        editor?". Needs a session, so anonymous callers can't probe tokens. Unknown, expired, revoked
+        and used-up tokens answer the same `400 invalid_invitation`; a token bound to someone else
+        answers `403 invitation_not_for_you`, only after it has proved valid.
+      operationId: previewOrganizationInvitation
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "200":
+          description: What accepting would do.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationInvitationPreview" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/invitations/accept:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [organizations]
+      summary: Accept an invitation
+      description: |
+        Makes the caller a member of the organization, or gives an existing member the invitation's
+        roles and teams. Needs a session. The same errors as the preview; `409 org_limit_reached`
+        when the caller belongs to the most organizations a user may. An organization that
+        requires a second factor counts the membership only for sessions that used one.
+      operationId: acceptOrganizationInvitation
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "200":
+          description: The organization, as the new member sees it.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/{org}/teams:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+    get:
+      tags: [organizations]
+      summary: An organization's teams
+      description: Groups of members that carry organization roles, sorted by name. Any member may list them.
+      operationId: listOrganizationTeams
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The teams.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/OrganizationTeam" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [organizations]
+      summary: Create a team
+      description: |
+        A team carries organization roles, which its members hold in addition to their direct roles.
+        `roles` follow the granting rules: only roles the caller could give themselves. Names are unique
+        in the organization (`409 team_name_taken`), up to `max_teams_per_org` (`409 team_limit_reached`).
+        Needs `manage` of teams.
+      operationId: createOrganizationTeam
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 60 }
+                roles: { type: array, items: { type: string } }
+      responses:
+        "201":
+          description: The team.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationTeam" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/{org}/teams/{team}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { name: team, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [organizations]
+      summary: Rename a team or change its roles
+      description: The roles it gains or loses follow the granting rules, and the organization keeps a member who can manage it (`409 last_org_manager`). Changes apply at the members' next request. Needs `manage` of teams.
+      operationId: updateOrganizationTeam
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name: { type: string, minLength: 1, maxLength: 60 }
+                roles: { type: array, items: { type: string } }
+      responses:
+        "200":
+          description: The team.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationTeam" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [organizations]
+      summary: Delete a team
+      description: It leaves every membership, and its roles go with it. Needs `manage` of teams.
+      operationId: deleteOrganizationTeam
+      security: [{ session: [] }]
+      responses:
+        "204":
+          description: The team was deleted.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/{org}/teams/{team}/members/{user}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { name: team, in: path, required: true, schema: { type: string } }
+      - { name: user, in: path, required: true, schema: { type: string } }
+    put:
+      tags: [organizations]
+      summary: Put a member in a team
+      description: The user must be a member of the organization. They gain the team's roles, which the caller must be able to give (`403 forbidden`). Up to `max_teams_per_member` (`409 team_limit_reached`). Needs `manage` of teams.
+      operationId: addOrganizationTeamMember
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The member.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationMember" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [organizations]
+      summary: Take a member out of a team
+      description: They lose the team's roles at their next request, unless they hold them another way. The last member who can manage the organization stays (`409 last_org_manager`). Needs `manage` of teams.
+      operationId: removeOrganizationTeamMember
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The member.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationMember" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_auth/oauth/{provider}/start:
@@ -2386,6 +2981,584 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [admin]
+      summary: List organizations
+      description: Every organization of the realm, newest first, whatever its status. Needs the `users` area.
+      operationId: adminListOrganizations
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [active, orphaned, deleted] } }
+        - { name: q, in: query, description: Only organizations whose name or slug contains it (case-insensitive)., schema: { type: string } }
+      responses:
+        "200":
+          description: The organizations, each with its number of members.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/OrganizationRecord" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [admin]
+      summary: Create an organization for a user
+      description: The owner holds the realm's `creator_roles`. Not limited by the create rule or `max_created_per_user`. Audited as `org.create`. Needs the `users` area.
+      operationId: adminCreateOrganization
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, owner]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+                slug: { type: string, maxLength: 63 }
+                owner: { type: string, description: "A user id." }
+      responses:
+        "201":
+          description: The organization.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+    get:
+      tags: [admin]
+      summary: One organization
+      operationId: adminGetOrganization
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The organization with its claims.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationRecord" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+    delete:
+      tags: [admin]
+      summary: Delete an organization
+      description: |
+        Like the member route, without the proof. Access ends at once and a job applies `on_org_delete`;
+        see `GET .../owned` first. Audited as `org.delete` and, when the cleanup finishes, `org.deleted`
+        with counts. Needs the `users` area with write access.
+      operationId: adminDeleteOrganization
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "204":
+          description: The organization was deleted.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}/owned:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+    get:
+      tags: [admin]
+      summary: What deleting an organization would do
+      description: The documents the organization holds in each collection that has organizations, and what its `on_org_delete` will do with them, counts only. Needs the `users` area.
+      operationId: adminOrganizationOwned
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The report.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationOwned" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}/reactivate:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+    post:
+      tags: [admin]
+      summary: Bring a deleted organization back
+      description: |
+        Makes it `active` again **with no members**: assign an owner next (`POST .../owner`).
+        Documents kept under `keep` are visible to members again; those under `delete` are gone.
+        It takes its former slug back unless it is in use (`409 slug_taken`); `slug` picks another.
+        Audited as `org.reactivate`. Needs the `users` area with write access.
+      operationId: adminReactivateOrganization
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                slug: { type: string, maxLength: 63 }
+      responses:
+        "200":
+          description: The organization.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationRecord" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}/members:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+    get:
+      tags: [admin]
+      summary: An organization's members, with emails
+      operationId: adminListOrganizationMembers
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+        - { name: after, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: A page of members.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationMembers" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [admin]
+      summary: Add a member directly
+      description: "Bypasses invitations: the user becomes a member (or gains the roles) at once. Audited as `org.member_add`. Needs the `users` area."
+      operationId: adminAddOrganizationMember
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [user]
+              properties:
+                user: { type: string, description: "A user id." }
+                roles: { type: array, items: { type: string } }
+      responses:
+        "200":
+          description: The member.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationMember" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}/members/{user}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { name: user, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [admin]
+      summary: Replace a member's direct roles
+      operationId: adminSetOrganizationMemberRoles
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [roles]
+              properties:
+                roles: { type: array, items: { type: string } }
+      responses:
+        "200":
+          description: The member.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationMember" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      summary: Remove a member
+      description: "The last member who can manage the organization can't be removed (`409 last_org_manager`): assign another owner first."
+      operationId: adminRemoveOrganizationMember
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "204":
+          description: The member was removed.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}/claims:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+    put:
+      tags: [admin]
+      summary: Replace an organization's claims
+      description: |
+        Claims are a JSON object of at most 1 KiB (typical: `plan`, `seats`, `features`) that members
+        read and rules can use. Only realm administrators and functions write them. An empty object
+        clears them. Audited as `org.claims` with the keys, never the values. Needs the `users` area.
+      operationId: adminSetOrganizationClaims
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200":
+          description: The organization.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationRecord" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}/owner:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+    post:
+      tags: [admin]
+      summary: Assign a manager
+      description: Gives the user the realm's `creator_roles` in the organization, for one left without a manager (`orphaned`), which becomes `active` again. Audited as `org.owner_assign`. Needs the `users` area.
+      operationId: adminAssignOrganizationOwner
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [user]
+              properties:
+                user: { type: string, description: "A user id." }
+      responses:
+        "200":
+          description: The member.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationMember" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}/invitations:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+    get:
+      tags: [admin]
+      summary: An organization's invitations
+      operationId: adminListOrganizationInvitations
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The invitations, never tokens.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/OrganizationInvitation" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [admin]
+      summary: Invite to an organization
+      description: Like the member route, without the granting rules (an administrator may give any role). Audited as `org.invitation_create`. Needs the `users` area with write access.
+      operationId: adminCreateOrganizationInvitation
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationInvitationInput" }
+      responses:
+        "201":
+          description: The invitation, with its token and link.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationInvitationCreated" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}/invitations/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { $ref: "#/components/parameters/id" }
+    delete:
+      tags: [admin]
+      summary: Revoke an invitation
+      operationId: adminRevokeOrganizationInvitation
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "204":
+          description: The invitation was revoked.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}/invitations/{id}/link:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { $ref: "#/components/parameters/id" }
+    post:
+      tags: [admin]
+      summary: Issue a new link
+      operationId: adminRenewOrganizationInvitationLink
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The invitation with its new token and link.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationInvitationCreated" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}/teams:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+    get:
+      tags: [admin]
+      summary: An organization's teams
+      description: Groups of members that carry organization roles, sorted by name.
+      operationId: adminListOrganizationTeams
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The teams.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/OrganizationTeam" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [admin]
+      summary: Create a team
+      description: |
+        A team carries organization roles, which its members hold in addition to their direct roles.
+        `roles` follow the granting rules: only roles the caller could give themselves. Names are unique
+        in the organization (`409 team_name_taken`), up to `max_teams_per_org` (`409 team_limit_reached`).
+        Needs the `users` area with write access.
+      operationId: adminCreateOrganizationTeam
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 60 }
+                roles: { type: array, items: { type: string } }
+      responses:
+        "201":
+          description: The team.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationTeam" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}/teams/{team}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { name: team, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [admin]
+      summary: Rename a team or change its roles
+      description: The roles it gains or loses follow the granting rules, and the organization keeps a member who can manage it (`409 last_org_manager`). Changes apply at the members' next request. Needs the `users` area with write access.
+      operationId: adminUpdateOrganizationTeam
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name: { type: string, minLength: 1, maxLength: 60 }
+                roles: { type: array, items: { type: string } }
+      responses:
+        "200":
+          description: The team.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationTeam" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      summary: Delete a team
+      description: It leaves every membership, and its roles go with it. Needs the `users` area with write access.
+      operationId: adminDeleteOrganizationTeam
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "204":
+          description: The team was deleted.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}/teams/{team}/members/{user}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { name: team, in: path, required: true, schema: { type: string } }
+      - { name: user, in: path, required: true, schema: { type: string } }
+    put:
+      tags: [admin]
+      summary: Put a member in a team
+      description: The user must be a member of the organization. They gain the team's roles, which the caller must be able to give (`403 forbidden`). Up to `max_teams_per_member` (`409 team_limit_reached`). Needs the `users` area with write access.
+      operationId: adminAddOrganizationTeamMember
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The member.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationMember" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      summary: Take a member out of a team
+      description: They lose the team's roles at their next request, unless they hold them another way. The last member who can manage the organization stays (`409 last_org_manager`). Needs the `users` area with write access.
+      operationId: adminRemoveOrganizationTeamMember
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The member.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationMember" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_admin/users/{id}/identities:
@@ -4411,6 +5584,7 @@ paths:
       security: [{}, { session: [] }, { apiKey: [] }]
       parameters:
         - $ref: "#/components/parameters/idempotencyKeyDocuments"
+        - $ref: "#/components/parameters/orgQuery"
       requestBody:
         required: true
         content:
@@ -4448,6 +5622,7 @@ paths:
       operationId: listDocuments
       security: [{}, { session: [] }, { apiKey: [] }]
       parameters:
+        - { $ref: "#/components/parameters/orgQuery" }
         - { $ref: "#/components/parameters/fileLinks" }
         - { $ref: "#/components/parameters/ifNoneMatch" }
         - name: where
@@ -4514,6 +5689,7 @@ paths:
       security: [{}, { session: [] }, { apiKey: [] }]
       parameters:
         - $ref: "#/components/parameters/idempotencyKeyDocuments"
+        - $ref: "#/components/parameters/orgQuery"
       requestBody:
         required: true
         content:
@@ -5341,6 +6517,105 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "412": { $ref: "#/components/responses/VersionMismatch" }
         default: { $ref: "#/components/responses/Error" }
+  /v1/{realm}/_admin/data/{database}/{collection}/{id}/_transfer:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+      - { $ref: "#/components/parameters/id" }
+    post:
+      tags: [admin]
+      summary: Admin data, move a document to another organization
+      description: |
+        Moves a document to another organization, or out of its organization (`org: null`, when
+        the collection's organization is `optional`). A document never moves through an update:
+        this is a realm administrator's act. The target must exist and not be deleted
+        (`409 org_not_active`); the version goes up, `If-Match` is honored (`412`) and the audit
+        record `data.transfer` names both organizations, never content. Files and image versions
+        travel with the document unchanged. `team` can only be null: collections have no teams
+        (`400 team_not_allowed`). Needs the `data` area with write access.
+      operationId: adminTransferDocument
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters: [{ $ref: "#/components/parameters/ifMatch" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [org]
+              properties:
+                org: { type: [string, "null"] }
+                team: { type: "null" }
+      responses:
+        "200": { $ref: "#/components/responses/Document" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/VersionMismatch" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/{realm}/_admin/data/{database}/{collection}/_assign_org:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+    post:
+      tags: [admin]
+      summary: Admin data, give documents without one an organization
+      description: |
+        For a collection that adopted organizations after it had documents: those have none, and
+        members can't see them. Queues a job (`202` with `job` and `matched`) that sets
+        `_meta.org` on the documents **without one** that match `where` (the filter of a list),
+        and never moves a document that has an organization. With `?dry_run=true` it answers
+        `200` with `matched` and changes nothing. One assignment per collection at a time
+        (`409 assign_running`); follow the job with the jobs routes. Audited as
+        `data.assign_org`. Needs the `data` area with write access.
+      operationId: adminAssignOrganization
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { name: dry_run, in: query, schema: { type: boolean } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [org]
+              properties:
+                org: { type: string }
+                where: { type: object }
+      responses:
+        "200":
+          description: "A dry run: how many documents the job would change."
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [matched]
+                properties:
+                  matched: { type: integer }
+        "202":
+          description: The job was queued.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [job, matched]
+                properties:
+                  job: { type: string }
+                  matched: { type: integer }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
   /v1/{realm}/_admin/data/{database}/{collection}/_files/{field}/uploads:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -5939,6 +7214,24 @@ components:
         Never use it in browsers.
 
   parameters:
+    org:
+      name: org
+      in: path
+      required: true
+      description: An organization id.
+      schema: { type: string }
+    orgQuery:
+      name: org
+      in: query
+      description: |
+        The organization (its id) of a collection with `organization` set. On a create it is
+        where the document is created: the caller must be a member (`403 not_org_member`, the
+        same for an unknown organization), and `required` collections answer `400 org_required`
+        without it; a collection without organizations answers `400 org_not_allowed`. On a list
+        it is a shorthand for `where` on `_meta.org`, ANDed with it: the read rule still
+        decides what is seen. A batch takes it for all its creates. Fixed at creation: an
+        update that names another organization answers `400 immutable_field`.
+      schema: { type: string }
     realm:
       name: realm
       in: path
@@ -6189,6 +7482,181 @@ components:
         Cache-Control: { $ref: "#/components/headers/DataCacheControl" }
 
   schemas:
+    RoleOrigin:
+      type: object
+      additionalProperties: false
+      required: [role, origin]
+      properties:
+        role: { type: string }
+        origin:
+          type: array
+          description: "`direct`, `default` (the realm's `default_roles`) and the names of the teams that carry the role."
+          items: { type: string }
+
+    OrganizationRecord:
+      type: object
+      additionalProperties: false
+      required: [id, name, slug, status, require_mfa, claims, created_at]
+      properties:
+        members: { type: integer, description: How many members it has; only in the administrators' list. }
+        id: { type: string }
+        name: { type: string }
+        slug: { type: [string, "null"] }
+        status: { type: string, enum: [active, orphaned, deleted] }
+        require_mfa: { type: boolean }
+        claims: { type: object, description: "Set by realm administrators and functions; at most 1 KiB." }
+        created_at: { type: string, format: date-time }
+
+    Organization:
+      type: object
+      description: An organization as a member sees it.
+      additionalProperties: false
+      required: [id, name, slug, status, require_mfa, mfa_met, claims, created_at, roles, effective_roles, teams]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        slug: { type: [string, "null"] }
+        status: { type: string, enum: [active, orphaned, deleted] }
+        require_mfa: { type: boolean }
+        mfa_met: { type: boolean, description: "False when the organization requires a second factor and this session used none: the app asks for one. Such a session answers `403 org_requires_mfa` on the organization's routes, except leaving." }
+        claims: { type: object, description: "Set by realm administrators and functions; at most 1 KiB." }
+        created_at: { type: string, format: date-time }
+        roles: { type: array, items: { type: string }, description: "The member's effective role names." }
+        effective_roles: { type: array, items: { $ref: "#/components/schemas/RoleOrigin" } }
+        teams: { type: array, items: { type: string } }
+
+    OrganizationInvitationInput:
+      type: object
+      additionalProperties: false
+      required: [binding]
+      properties:
+        binding: { type: string, enum: [user, email, none] }
+        user: { type: string, description: "A user id; for `user`." }
+        email: { type: string, description: "For `email`." }
+        roles: { type: array, items: { type: string } }
+        teams: { type: array, items: { type: string }, description: "Team ids of the organization." }
+        send: { type: boolean, description: "Also email it; only for `email`." }
+        expires_in: { type: string, description: "A duration such as `2d` (default `7d`, at most `30d`)." }
+        max_uses: { type: integer, minimum: 1, maximum: 1000, description: "For `none`; default 1." }
+
+    OrganizationInvitation:
+      type: object
+      additionalProperties: false
+      required: [id, binding, status, roles, teams, max_uses, uses, created_at, expires_at]
+      properties:
+        id: { type: string }
+        binding: { type: string, enum: [user, email, none] }
+        status: { type: string, enum: [pending, used, revoked, expired] }
+        user: { type: string }
+        email: { type: string }
+        roles: { type: array, items: { type: string } }
+        teams: { type: array, items: { type: string } }
+        max_uses: { type: integer }
+        uses: { type: integer }
+        created_by: { type: string }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+
+    OrganizationInvitationCreated:
+      type: object
+      description: An invitation with the token and link, shown only when it is made or renewed.
+      additionalProperties: false
+      required: [id, binding, status, roles, teams, max_uses, uses, created_at, expires_at, token, link]
+      properties:
+        id: { type: string }
+        binding: { type: string, enum: [user, email, none] }
+        status: { type: string, enum: [pending, used, revoked, expired] }
+        user: { type: string }
+        email: { type: string }
+        roles: { type: array, items: { type: string } }
+        teams: { type: array, items: { type: string } }
+        max_uses: { type: integer }
+        uses: { type: integer }
+        created_by: { type: string }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        token: { type: string }
+        link: { type: [string, "null"], description: "The realm's `invitation_link` with the token; null when it sets none." }
+
+    OrganizationInvitationPreview:
+      type: object
+      additionalProperties: false
+      required: [org, roles, teams, binding, expires_at]
+      properties:
+        org:
+          type: object
+          additionalProperties: false
+          required: [id, name]
+          properties:
+            id: { type: string }
+            name: { type: string }
+        roles: { type: array, items: { type: string } }
+        teams:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name]
+            properties:
+              id: { type: string }
+              name: { type: string }
+        binding: { type: string, enum: [user, email, none] }
+        expires_at: { type: string, format: date-time }
+
+    OrganizationTeam:
+      type: object
+      additionalProperties: false
+      required: [id, name, roles, created_at]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        roles: { type: array, items: { type: string }, description: "Organization roles every member of the team holds." }
+        created_at: { type: string, format: date-time }
+
+    OrganizationOwned:
+      type: object
+      additionalProperties: false
+      required: [org, collections, to_delete, to_keep]
+      properties:
+        org: { $ref: "#/components/schemas/OrganizationRecord" }
+        collections:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [database, collection, documents, on_org_delete]
+            properties:
+              database: { type: string }
+              collection: { type: string }
+              documents: { type: integer }
+              on_org_delete: { type: string, enum: [delete, keep] }
+        to_delete: { type: integer, description: "Documents a deletion removes." }
+        to_keep: { type: integer, description: "Documents a deletion leaves, readable only by realm administrators." }
+
+    OrganizationMember:
+      type: object
+      additionalProperties: false
+      required: [user, roles, teams, effective_roles, overlap, joined_at]
+      properties:
+        user: { type: string, description: "The user's id." }
+        email: { type: string, description: "Present according to the realm's `members_visible_to`." }
+        roles: { type: array, items: { type: string }, description: "Direct roles." }
+        teams: { type: array, items: { type: string } }
+        effective_roles: { type: array, items: { $ref: "#/components/schemas/RoleOrigin" } }
+        overlap: { type: array, items: { type: string }, description: "Roles held directly and also through a team or by default." }
+        mfa: { type: boolean, description: "Whether the member has a second factor. Only for members who manage the organization." }
+        joined_at: { type: string, format: date-time }
+        invited_by: { type: string }
+
+    OrganizationMembers:
+      type: object
+      additionalProperties: false
+      required: [items, has_more]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/OrganizationMember" } }
+        has_more: { type: boolean }
+        next: { type: string, description: "Pass as `after` for the next page." }
+
     Timestamp:
       type: string
       format: date-time
@@ -6961,8 +8429,30 @@ components:
     OwnedReport:
       type: object
       additionalProperties: false
-      required: [user, collections, without_policy]
+      required: [user, collections, without_policy, organizations, kept_in_organizations]
       properties:
+        organizations:
+          type: array
+          description: "The organizations the user can manage, and whether they are the only one: an erase leaves those organizations `orphaned`."
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name, last_manager]
+            properties:
+              id: { type: string }
+              name: { type: string }
+              last_manager: { type: boolean }
+        kept_in_organizations:
+          type: array
+          description: "The documents the user owns that belong to an organization, per collection: they stay with it, with the owner cleared, unless the collection says `in_org: apply`."
+          items:
+            type: object
+            additionalProperties: false
+            required: [database, collection, documents]
+            properties:
+              database: { type: string }
+              collection: { type: string }
+              documents: { type: integer }
         user:
           type: object
           additionalProperties: false
@@ -7029,6 +8519,7 @@ components:
         owner: { type: [string, "null"] }
         created_by: { type: string }
         updated_by: { type: string }
+        org: { type: string, description: "The organization the document belongs to. Only in collections with `organization` set, and set at creation (`?org=`)." }
         deleted_at:
           allOf: [{ $ref: "#/components/schemas/Timestamp" }]
           description: When a soft-deleted document was deleted. Only in the trash (`deleted=only|include`) of a collection with `soft_delete`.

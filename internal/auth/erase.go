@@ -105,6 +105,9 @@ func (s *Users) Erase(ctx context.Context, id, requestID string) (Job, error) {
 	if err := s.Store.DeleteEmailJobsOfUser(ctx, id); err != nil {
 		return Job{}, err
 	}
+	if err := s.releaseOrgs(ctx, id, u.Email); err != nil {
+		return Job{}, err
+	}
 	s.Audit(ctx, AuditUserDelete, userTarget(id), map[string]any{"job_id": job.ID})
 	return job, nil
 }

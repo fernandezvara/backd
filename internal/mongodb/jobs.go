@@ -37,6 +37,7 @@ type emailJobDoc struct {
 	To         string          `bson:"to,omitempty"`
 	Notice     bool            `bson:"notice,omitempty"`
 	Invitation string          `bson:"invitation_id,omitempty"`
+	OrgInvite  string          `bson:"org_invitation_id,omitempty"`
 	Event      string          `bson:"event,omitempty"`
 	CodesLeft  int             `bson:"codes_left,omitempty"`
 	Challenge  string          `bson:"challenge_id,omitempty"`
@@ -68,6 +69,8 @@ type jobDoc struct {
 	Push           *pushJobDoc   `bson:"push,omitempty"`
 	Check          *checkJobDoc  `bson:"check,omitempty"`
 	Image          *imageJobDoc  `bson:"image,omitempty"`
+	Assign         *assignJobDoc `bson:"assign,omitempty"`
+	OrgDelete      string        `bson:"org_delete,omitempty"`
 	Exclusive      string        `bson:"exclusive,omitempty"`
 	ParentID       string        `bson:"parent_id,omitempty"`
 	RerunOf        string        `bson:"rerun_of,omitempty"`
@@ -163,6 +166,40 @@ type imageJobDoc struct {
 	Rate        int32 `bson:"rate,omitempty"`
 }
 
+type assignJobDoc struct {
+	Collection string `bson:"collection"`
+	Org        string `bson:"org"`
+	Where      string `bson:"where,omitempty"`
+}
+
+func orgDeleteToDoc(o *auth.OrgDeleteJob) string {
+	if o == nil {
+		return ""
+	}
+	return o.Org
+}
+
+func orgDeleteFromDoc(org string) *auth.OrgDeleteJob {
+	if org == "" {
+		return nil
+	}
+	return &auth.OrgDeleteJob{Org: org}
+}
+
+func assignToDoc(a *auth.AssignOrgJob) *assignJobDoc {
+	if a == nil {
+		return nil
+	}
+	return &assignJobDoc{Collection: a.Collection, Org: a.Org, Where: a.Where}
+}
+
+func assignFromDoc(d *assignJobDoc) *auth.AssignOrgJob {
+	if d == nil {
+		return nil
+	}
+	return &auth.AssignOrgJob{Collection: d.Collection, Org: d.Org, Where: d.Where}
+}
+
 func imageToDoc(i *auth.ImageJob) *imageJobDoc {
 	if i == nil {
 		return nil
@@ -256,7 +293,7 @@ func emailJobFromDoc(d *emailJobDoc) *auth.EmailJob {
 	if d == nil {
 		return nil
 	}
-	return &auth.EmailJob{Kind: d.Kind, UserID: d.UserID, Locale: d.Locale, RedirectTo: d.RedirectTo, To: d.To, Notice: d.Notice, InvitationID: d.Invitation, Event: d.Event, CodesLeft: d.CodesLeft, ChallengeID: d.Challenge, Custom: customFromDoc(d.Custom)}
+	return &auth.EmailJob{Kind: d.Kind, UserID: d.UserID, Locale: d.Locale, RedirectTo: d.RedirectTo, To: d.To, Notice: d.Notice, InvitationID: d.Invitation, OrgInvitationID: d.OrgInvite, Event: d.Event, CodesLeft: d.CodesLeft, ChallengeID: d.Challenge, Custom: customFromDoc(d.Custom)}
 }
 
 func customFromDoc(d *customEmailDoc) *auth.CustomEmail {
@@ -277,14 +314,14 @@ func emailJobToDoc(e *auth.EmailJob) *emailJobDoc {
 	if e == nil {
 		return nil
 	}
-	return &emailJobDoc{Kind: e.Kind, UserID: e.UserID, Locale: e.Locale, RedirectTo: e.RedirectTo, To: e.To, Notice: e.Notice, Invitation: e.InvitationID, Event: e.Event, CodesLeft: e.CodesLeft, Challenge: e.ChallengeID, Custom: customToDoc(e.Custom)}
+	return &emailJobDoc{Kind: e.Kind, UserID: e.UserID, Locale: e.Locale, RedirectTo: e.RedirectTo, To: e.To, Notice: e.Notice, Invitation: e.InvitationID, OrgInvite: e.OrgInvitationID, Event: e.Event, CodesLeft: e.CodesLeft, Challenge: e.ChallengeID, Custom: customToDoc(e.Custom)}
 }
 
 func jobFromDoc(d jobDoc) auth.Job {
 	j := auth.Job{
 		ID: d.ID, Database: d.Database, Function: d.Function, Input: encodeJSONAny(d.Input),
 		CallerActor: d.CallerActor, CallerUserID: d.CallerUserID, CallerKeyHash: d.CallerKeyHash, Scheduled: d.Scheduled,
-		ActsAsFunction: d.ActsAsFunction, Email: emailJobFromDoc(d.Email), Erase: eraseFromDoc(d.Erase), Revoke: revokeFromDoc(d.Revoke), Push: pushFromDoc(d.Push), Check: checkFromDoc(d.Check), Image: imageFromDoc(d.Image), Exclusive: d.Exclusive, Origin: d.Origin, ParentID: d.ParentID, RerunOf: d.RerunOf, Depth: int(d.Depth),
+		ActsAsFunction: d.ActsAsFunction, Email: emailJobFromDoc(d.Email), Erase: eraseFromDoc(d.Erase), Revoke: revokeFromDoc(d.Revoke), Push: pushFromDoc(d.Push), Check: checkFromDoc(d.Check), Image: imageFromDoc(d.Image), Assign: assignFromDoc(d.Assign), OrgDelete: orgDeleteFromDoc(d.OrgDelete), Exclusive: d.Exclusive, Origin: d.Origin, ParentID: d.ParentID, RerunOf: d.RerunOf, Depth: int(d.Depth),
 		TimeoutMS: d.TimeoutMS, RequestID: d.RequestID,
 		Status: d.Status, Attempts: int(d.Attempts), CreatedAt: d.CreatedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC(),
 		Result: jobResultFromDoc(d.Result), Steps: stepsFromDocs(d.Steps), StepsOmitted: int(d.StepsOmitted),
@@ -316,7 +353,7 @@ func (s *AuthStore) EnqueueJob(ctx context.Context, j auth.Job) error {
 	_, err = s.jobs().InsertOne(ctx, jobDoc{
 		ID: j.ID, Database: j.Database, Function: j.Function, Input: input,
 		CallerActor: j.CallerActor, CallerUserID: j.CallerUserID, CallerKeyHash: j.CallerKeyHash, Scheduled: j.Scheduled, Status: j.Status,
-		ActsAsFunction: j.ActsAsFunction, Email: emailJobToDoc(j.Email), Erase: eraseToDoc(j.Erase), Revoke: revokeToDoc(j.Revoke), Push: pushToDoc(j.Push), Check: checkToDoc(j.Check), Image: imageToDoc(j.Image), Exclusive: j.Exclusive, Origin: j.Origin, ParentID: j.ParentID, RerunOf: j.RerunOf, Depth: int32(j.Depth),
+		ActsAsFunction: j.ActsAsFunction, Email: emailJobToDoc(j.Email), Erase: eraseToDoc(j.Erase), Revoke: revokeToDoc(j.Revoke), Push: pushToDoc(j.Push), Check: checkToDoc(j.Check), Image: imageToDoc(j.Image), Assign: assignToDoc(j.Assign), OrgDelete: orgDeleteToDoc(j.OrgDelete), Exclusive: j.Exclusive, Origin: j.Origin, ParentID: j.ParentID, RerunOf: j.RerunOf, Depth: int32(j.Depth),
 		Attempts: 0, TimeoutMS: j.TimeoutMS, RequestID: j.RequestID,
 		CreatedAt: j.CreatedAt, CompletedAt: completed, ExpiresAt: j.ExpiresAt, Result: result,
 	})

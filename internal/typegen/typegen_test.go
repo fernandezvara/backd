@@ -201,3 +201,55 @@ func TestFunctionTypes(t *testing.T) {
 		}
 	}
 }
+
+// A realm with organizations names their roles, and a function with admin access gets
+// ctx.admin.orgs; a realm without them has neither.
+func TestOrganizationTypes(t *testing.T) {
+	root := t.TempDir()
+	write := func(path, content string) {
+		p := filepath.Join(root, path)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("acme/realm.yaml", "organizations:\n  roles:\n    owner: {manage: org}\n    editor: {}\n")
+	write("acme/main/projects/schema.json", `{"type": "object", "properties": {"title": {"type": "string"}}}`)
+	write("acme/main/projects/collection.yaml", "organization: required\non_org_delete:\n  action: delete\nrules:\n  read: inOrg(document._meta.org)\n")
+	write("acme/main/_functions/provision/function.yaml", "admin: true\ninvoke: \"true\"\n")
+	write("acme/main/_functions/provision/index.ts", "export default () => null\n")
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := Generate(reg, Options{Realm: "acme"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.Types, `org_roles: "editor" | "owner";`) {
+		t.Errorf("no org_roles:\n%s", out.Types)
+	}
+	if !strings.Contains(out.Types, `"_meta.org"`) {
+		t.Errorf("_meta.org is not queryable")
+	}
+	fns, err := GenerateFunctions(reg, "acme", "main", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(fns.Types, "provision: { webhook: false; admin: true; orgs: true;") {
+		t.Errorf("flags:\n%s", fns.Types)
+	}
+	// Without organizations there are neither.
+	write("acme/realm.yaml", "signup: open\n")
+	write("acme/main/projects/collection.yaml", "rules:\n  read: user != nil\n")
+	reg, err = registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, _ = Generate(reg, Options{Realm: "acme"})
+	if strings.Contains(out.Types, "org_roles") {
+		t.Error("org_roles in a realm without organizations")
+	}
+}

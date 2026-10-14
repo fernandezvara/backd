@@ -34,7 +34,7 @@ An admin role can open the whole admin API (`admin: true`), only some of its are
 
 | Area | Endpoints |
 |---|---|
-| `users` | `/users` and everything under `/users/{id}`: reading, disabling, erasing, passwords, addresses, roles and networks |
+| `users` | `/users` and everything under `/users/{id}`: reading, disabling, erasing, passwords, addresses, roles and networks; and `/orgs`, the realm's [organizations](../../api/organizations/) |
 | `invitations` | `/invitations` |
 | `apikeys` | `/apikeys` |
 | `secrets` | `/secrets` |
@@ -86,6 +86,25 @@ Paths are relative to `/v1/{realm}/_admin`. Bodies are JSON (`Content-Type: appl
 | `PUT /users/{id}/roles/{role}` | none | `200` with the user |
 | `DELETE /users/{id}/roles/{role}` | none | `200` with the user |
 | `PUT /users/{id}/networks` | `{"admin_networks": [...], "login_networks": [...]}` | `200` with the user |
+| `GET /orgs?status=` | none | `200` with the realm's [organizations](../../api/organizations/), newest first (`status`: `active`, `orphaned`, `deleted`). Needs the `users` area |
+| `POST /orgs` | `{"name", "owner", "slug"?}` | `201`: creates an organization for the user `owner` (a user id), who holds the realm's `creator_roles`; the create rule and `max_created_per_user` don't apply. `404` for an unknown user, `409 slug_taken`. Audited as `org.create`. Needs the `users` area with write access |
+| `GET /orgs/{org}` | none | `200` with the organization and its claims; `404` if unknown |
+| `DELETE /orgs/{org}` | none | `204`: ends the organization [at once](../../api/organizations/#deleting-an-organization) and queues the cleanup of its documents. `409 org_not_active` when it is deleted already. Audited as `org.delete` and `org.deleted` |
+| `GET /orgs/{org}/owned` | none | `200` with what a deletion would do: the documents in each collection with organizations and its `on_org_delete`, and totals `to_delete` and `to_keep` |
+| `POST /orgs/{org}/reactivate` | `{"slug"?}` | `200`: a deleted organization is active again with no members. `409 slug_taken`, `409 org_not_deleted`. Audited as `org.reactivate` |
+| `GET /orgs/{org}/members` | none | `200` with a page of members, with emails (`limit`, `after`) |
+| `POST /orgs/{org}/members` | `{"user", "roles"?}` | `200` with the member: adds the user **without an invitation**, or gives an existing member the roles. `404` for an unknown user, `409 org_limit_reached` at their membership cap. Audited as `org.member_add` |
+| `PATCH /orgs/{org}/members/{user}` | `{"roles": [...]}` | `200`: replaces the member's direct roles. `409 last_org_manager` when it would leave the organization without a manager. Audited as `org.roles` |
+| `DELETE /orgs/{org}/members/{user}` | none | `204`; `409 last_org_manager` for the last manager (assign another first). Audited as `org.member_remove` |
+| `GET /orgs/{org}/teams`, `POST /orgs/{org}/teams` | `{"name", "roles"?}` | The organization's [teams](../../api/organizations/#teams); `201` on create, `409 team_name_taken` or `team_limit_reached`. Audited as `org.team_create` |
+| `PATCH` and `DELETE /orgs/{org}/teams/{team}` | `{"name"?, "roles"?}` | `200` / `204`; `409 last_org_manager` when no manager would be left. Audited as `org.team_update`, `org.team_delete` |
+| `PUT` and `DELETE /orgs/{org}/teams/{team}/members/{user}` | none | `200` with the member; `404` when the user isn't a member. Audited as `org.team_member_add`, `org.team_member_remove` |
+| `GET /orgs/{org}/invitations` | none | `200` with the organization's [invitations](../../api/organizations/#invitations), never tokens |
+| `POST /orgs/{org}/invitations` | `{"binding", "user"?, "email"?, "roles"?, "teams"?, "send"?, "expires_in"?, "max_uses"?}` | `201` with the invitation and its `token` and `link`, which are shown only now; any role may be given, but an open link never one that manages the organization. Audited as `org.invitation_create` |
+| `POST /orgs/{org}/invitations/{id}/link` | none | `200` with a new token and link; the old one stops working |
+| `DELETE /orgs/{org}/invitations/{id}` | none | `204`; audited as `org.invitation_revoke` |
+| `PUT /orgs/{org}/claims` | a JSON object, at most 1 KiB | `200`: replaces the organization's claims, which members and rules read. Audited as `org.claims`, with the keys |
+| `POST /orgs/{org}/owner` | `{"user"}` | `200`: gives the user the realm's `creator_roles` in the organization; an `orphaned` organization becomes `active`. Audited as `org.owner_assign` |
 | `GET /whoami` | none | `200` with what this credential may do: `level`, the areas it may `write` and `read`, and `read_access` (see [the read-only level](#the-read-only-level)) |
 | `POST /storage/check` | none | `200` with the report of a [storage check](../../files/storage/#checking-it) (`ok`, one entry per step with its `level` and `detail`, what the storage does with a signed SHA-256, the bucket's CORS and encryption where exposed): it stores a few small objects under `<prefix>/<realm>/_check/` and deletes them. `404` when the realm has no `storage:`; `503 storage_unavailable` when its keys aren't set. Needs the `config` area (read is enough). Audited as `storage.check` |
 | `GET /storage` | none | `200` with the realm's [storage status](../../files/maintenance/#usage): its configuration (the keys by name), whether the keys are set and the bucket answers, the running totals of bytes and files (the realm's and the 20 users holding the most), the deletion queue and the unfinished uploads. `{"configured": false}` without `storage:`. Needs the `config` area (read is enough) |
@@ -222,6 +241,7 @@ curl -X PUT https://localhost:8443/v1/blog/_admin/secrets/STRIPE_KEY \
 
 - `owned` counts the documents the user owns (`_meta.owner`); `pull` and `unset` count, per field, the documents that hold the user (by email or id, as the policy says). `status` is `active` or `deactivated`.
 - The collections **without a policy** are listed by name and not counted: an erase leaves them alone.
+- `organizations` lists the [organizations](../../api/organizations/) the user can manage, and `last_manager` says whether an erase leaves one without anyone who can: it becomes `orphaned` (its members keep access) until an administrator assigns a manager. `kept_in_organizations` counts, per collection, the documents the user owns that belong to an organization: they **stay with it, with the owner cleared**, unless the collection says [`in_org: apply`](../../configuration/config-dir/#organizations).
 - It returns counts and field names, never document content. The counts use indexes that `backd provision` creates from the policies.
 
 ### Changing a user's email
@@ -251,6 +271,7 @@ Every change is audited as `appconfig.change` with the version, the kind and the
 
 - A document created here has **no owner** (`_meta.owner` is `null`): the administrator didn't create it for themselves. `created_by` and `updated_by` record who did, `user:<id>` or `key:<name>`.
 - **Writes are audited**, never their content: `data.create`, `data.update`, `data.delete`, `data.restore` and `data.purge`, with the actor and the target `doc:<database>/<collection>/<id>`. Reads are not in the audit trail; they carry the actor in the access log.
+- Two more routes exist only here, for [organizations](../../api/documents/#fixing-data-as-an-administrator): `POST /{id}/_transfer` moves a document to another organization, and `POST /_assign_org` gives the documents of an adopted collection that have none one (`data.transfer` and `data.assign_org`, audited).
 - The normal data routes are unchanged: an administrator using an app is bound by its rules there.
 - With `BACKD_ADMIN_API=false` the route doesn't exist (`404`).
 

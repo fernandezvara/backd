@@ -39,6 +39,10 @@ var systemQueryFields = []queryField{
 	{path: "_meta.updated_by", kind: kindString, value: "string"},
 }
 
+var orgQueryFields = []queryField{
+	{path: registry.MetaOrg, kind: kindString, value: "string"},
+}
+
 var softDeleteQueryFields = []queryField{
 	{path: registry.MetaDeletedAt, kind: kindDate, value: "DateTimeString"},
 	{path: registry.MetaDeletedBy, kind: kindString, value: "string"},
@@ -102,6 +106,9 @@ func fieldOf(path string, f registry.Field, schema any) queryField {
 // query renders the where and order_by types of a collection.
 func (g *gen) query(c *registry.Collection) (where, order string) {
 	fields := append([]queryField{}, systemQueryFields...)
+	if c.InOrganizations() {
+		fields = append(fields, orgQueryFields...)
+	}
 	if c.SoftDelete != nil {
 		fields = append(fields, softDeleteQueryFields...)
 	}

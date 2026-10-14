@@ -33,6 +33,9 @@ const (
 	ChangeEmail     = "change-email"
 	EmailChanged    = "email-changed"
 	Invitation      = "invitation"
+	// OrgInvitation invites to an organization ({{.Link}}, {{.Data.org_name}}, {{.Data.roles}},
+	// {{.ExpiresAt}}).
+	OrgInvitation = "org-invitation"
 	// SecurityNotice tells the user a change to their sign-in security (a
 	// second factor on or off, a password set or removed, a key created); the
 	// template reads {{.Data.event}}. MFAFailed warns of wrong second-factor codes
@@ -56,12 +59,12 @@ const (
 
 // SystemKinds are the kinds backd knows; `backd template realm` writes an
 // English template for each.
-var SystemKinds = []string{VerifyEmail, ResetPassword, AccountExists, PasswordChanged, Welcome, ChangeEmail, EmailChanged, Invitation, SecurityNotice, MFAFailed, ReauthCode, MFAReset, MagicLink, NoAccount, ConsentUpdated}
+var SystemKinds = []string{VerifyEmail, ResetPassword, AccountExists, PasswordChanged, Welcome, ChangeEmail, EmailChanged, Invitation, OrgInvitation, SecurityNotice, MFAFailed, ReauthCode, MFAReset, MagicLink, NoAccount, ConsentUpdated}
 
 // BuiltInKinds are system kinds a realm does not have to ship: when its email folder has
 // none, the built-in English text is used for every listed locale, so a realm that
 // existed before them keeps working. A folder of the kind replaces the built-in text.
-var BuiltInKinds = []string{SecurityNotice, MFAFailed, ReauthCode, MFAReset, MagicLink, NoAccount, ConsentUpdated}
+var BuiltInKinds = []string{OrgInvitation, SecurityNotice, MFAFailed, ReauthCode, MFAReset, MagicLink, NoAccount, ConsentUpdated}
 
 // RequiredKinds must have a template in every realm that configures email.
 var RequiredKinds = []string{VerifyEmail, ResetPassword, AccountExists, PasswordChanged}
@@ -221,7 +224,7 @@ var sample = Data{
 	User:      User{Email: "ana@example.com", Locale: "en"},
 	Link:      "https://example.com/v1/sample/_auth/verify-email?token=sample",
 	ExpiresAt: time.Date(2030, 1, 2, 15, 4, 0, 0, time.UTC),
-	Data:      map[string]any{"event": "mfa-enabled", "codes_left": 3, "code": "123456"},
+	Data:      map[string]any{"event": "mfa-enabled", "codes_left": 3, "code": "123456", "org_name": "Acme", "roles": []string{"editor"}},
 }
 
 // Load reads <realm>/email/ (dir): one folder per kind, with

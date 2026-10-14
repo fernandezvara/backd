@@ -77,6 +77,9 @@ YAML reads a value starting with `'`, `!`, `[` or `{` specially, so quote such r
 | `hasRole(user, 'a', 'b', …)` | all | True if the user has any of the roles; false for anonymous callers |
 | `hasConsent(user, 'a', 'b', …)` | all | True if the user holds every named [consent](../consents/) (any version); false for anonymous callers |
 | `appConfig("a.b")` | all | The value of a key of the realm's [app configuration](../../configuration/app-config/#in-rules), read once for the request. The key is a string literal naming a declared value, or startup fails. Use it for kill switches that must hold on the server: `appConfig("features.export.enabled") == true` |
+| `inOrg(document._meta.org)` | collections with an organization | True when the caller is a member of the document's [organization](#organizations) |
+| `hasOrgRole(document._meta.org, 'editor')` | collections with an organization | True when the caller holds the [organization role](../../configuration/realm/#organizations) there; the role may also be a field of the document |
+| `orgClaims(document._meta.org).plan == 'pro'` | collections with an organization | A claim of the organization, for the organizations the caller belongs to |
 | `changed()` | update | The top-level fields whose value differs between `document` and `data` |
 
 Rules have no access to the request itself (headers, address) and can't look up other documents. For shared documents, store member ids in an array and check `user.id in document.members`.
@@ -103,6 +106,27 @@ Negations are literal: `!hasRole(user, 'banned')` is true for anonymous callers,
 ### Roles
 
 Role names must be declared in the realm's [`realm.yaml`](../../configuration/realm/#roles). Using an undeclared role, with `hasRole` or with `'x' in user.roles`, stops startup. Consent names given to `hasConsent` must be declared under `consents:` and be string literals, and `hasConsent` needs no `user != nil` guard, like `hasRole`.
+
+### Organizations
+
+A collection with [`organization:`](../../configuration/config-dir/#organizations) stores the organization of each document in `document._meta.org`. Three helpers test the caller's memberships, which are read once per request and only when a rule uses them:
+
+```yaml
+rules:
+  read: inOrg(document._meta.org)
+  create: hasOrgRole(data._meta.org, 'editor') || hasOrgRole(data._meta.org, 'owner')
+  update: hasOrgRole(document._meta.org, 'editor')
+  delete: hasOrgRole(document._meta.org, 'owner') || hasOrgRole(document._meta.org, document.audience)
+```
+
+- **They count only memberships that count:** the organization is active (or orphaned) and, when it [requires a second factor](../mfa/), the session used one. For anyone else the helpers are false.
+- **In a read rule they are database filters.** `inOrg(document._meta.org)` becomes "`_meta.org` is one of the caller's organizations", so lists and counts show only what the caller may see. In a read rule the first argument must be `document._meta.org`, and the role of `hasOrgRole` a string literal or a single-valued field of the document, such as `document.audience`.
+- **On create** the organization is `data._meta.org`: the one in `?org=`, which the caller already belongs to.
+- **Claims** are facts about an organization that only realm administrators and functions write. `orgClaims(document._meta.org).plan == "pro"`, `.seats >= 3` and `.plan in ["pro", "team"]` are allowed, and `"a" in orgClaims(document._meta.org).features` for an array claim. A claim can only be compared with a value that doesn't depend on the document, and the comparison is false for organizations the caller doesn't belong to.
+- **Roles, not teams:** rules see the roles a member holds, whether granted directly, by default or through a team.
+- **`user.orgs`** is a map from organization id to `{roles, teams, claims}`, for `create` and `invoke` rules, which are evaluated in memory.
+
+Role names must be declared under `organizations.roles`, or startup fails.
 
 ### Read rules are database filters
 

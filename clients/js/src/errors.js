@@ -100,6 +100,15 @@ export class ConsentRequiredError extends BackdError {
  */
 export class InvalidIdError extends ValidationError {}
 
+/**
+ * 403 `org_requires_mfa`: the organization requires a second factor and this session used none.
+ * Ask for one (see `mfa_met` of `client.orgs.list()`); leaving the organization still works.
+ */
+export class OrgRequiresMFAError extends ForbiddenError {}
+
+/** 403 `not_org_member`: not a member of the organization, or there is no such organization. */
+export class NotOrgMemberError extends ForbiddenError {}
+
 /** 404: unknown realm, collection, document, user or session. */
 export class NotFoundError extends BackdError {}
 
@@ -108,6 +117,9 @@ export class ConflictError extends BackdError {}
 
 /** 409 `id_taken`: a document with the id of a create exists. Nothing was overwritten. */
 export class IdTakenError extends ConflictError {}
+
+/** 409 `last_org_manager`: the organization needs at least one member who can manage it. */
+export class LastOrgManagerError extends ConflictError {}
 
 /** 412: `If-Match` didn't match the current version. */
 export class VersionMismatchError extends BackdError {}
@@ -166,6 +178,12 @@ function typedClass(code, fallback) {
       return InvalidIdError
     case 'id_taken':
       return IdTakenError
+    case 'org_requires_mfa':
+      return OrgRequiresMFAError
+    case 'not_org_member':
+      return NotOrgMemberError
+    case 'last_org_manager':
+      return LastOrgManagerError
   }
   return fallback
 }

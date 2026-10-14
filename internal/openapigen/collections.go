@@ -246,6 +246,7 @@ func (b *builder) collectionAt(db string, c *registry.Collection, admin bool) {
 				op["operationId"] = id + alias
 			}
 			dropParams(op, "realm", "database", "collection")
+			orgParam(op, id, c)
 		}
 		if len(operations(cp)) == 0 {
 			return
@@ -397,4 +398,31 @@ func (b *builder) configSchema() {
 		}
 		values["$ref"] = "#/components/schemas/AppConfigValues"
 	}
+}
+
+// orgParam gives an operation the `org` query parameter the collection's policy calls for: none
+// for a collection without organizations, required on the create of one that requires them.
+func orgParam(op map[string]any, id string, c *registry.Collection) {
+	dropParams(op, "orgQuery")
+	if !c.InOrganizations() {
+		return
+	}
+	var required bool
+	switch id {
+	case "createDocument":
+		required = c.Organization == registry.OrgRequired
+	case "listDocuments", "batchWrite":
+	default:
+		return
+	}
+	param := map[string]any{
+		"name": "org", "in": "query", "required": required, "schema": map[string]any{"type": "string"},
+		"description": "The organization of the documents: where a create puts the document (the caller must be a member), or a filter on `_meta.org` for a list.",
+	}
+	op["parameters"] = append([]any{param}, anySlice(op["parameters"])...)
+}
+
+func anySlice(v any) []any {
+	s, _ := v.([]any)
+	return s
 }

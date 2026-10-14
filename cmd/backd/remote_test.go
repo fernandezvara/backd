@@ -73,8 +73,14 @@ roles:
     users:
       - email: cy@example.com
         login_networks: [10.0.0.0/8]
+organizations:
+  roles:
+    owner: {manage: [org, members, roles, teams]}
+    editor: {}
 `,
-		"acme/app/notes/schema.json": `{}`,
+		"acme/app/notes/schema.json":      `{}`,
+		"acme/app/boards/schema.json":     `{}`,
+		"acme/app/boards/collection.yaml": "organization: optional\non_org_delete:\n  action: keep\n",
 	})
 	reg, err := registry.Load(root)
 	if err != nil {
@@ -160,6 +166,41 @@ roles:
 		!strings.HasPrefix(lines[2], "bob@example.com") || !strings.Contains(lines[2], " true ") {
 		t.Errorf("user list:\n%s", out)
 	}
+
+	// Organizations.
+	c.expect(0, "no organizations", "", "orgs", "list", "--realm", "acme")
+	out = c.expect(0, "created (Acme Corp), owned by ada@example.com", "", "orgs", "create", "--realm", "acme", "--name", "Acme Corp", "--slug", "acme", "--owner", "ada@example.com")
+	orgID := strings.Fields(out)[1]
+	c.expect(1, "slug_taken", "", "orgs", "create", "--realm", "acme", "--name", "Other", "--slug", "acme", "--owner", "bob@example.com")
+	c.expect(1, "user not found: nobody@example.com", "", "orgs", "create", "--realm", "acme", "--name", "Other", "--owner", "nobody@example.com")
+	c.expect(0, "acme", "", "orgs", "list", "--realm", "acme", "--status", "active")
+	c.expect(0, "bob@example.com added to "+orgID, "", "orgs", "add-member", "--realm", "acme", "--id", orgID, "--email", "bob@example.com", "--roles", "editor")
+	out = c.expect(0, "USER", "", "orgs", "members", "--realm", "acme", "--id", orgID)
+	if !strings.Contains(out, "bob@example.com") || !strings.Contains(out, "editor(direct)") || !strings.Contains(out, "owner(direct)") {
+		t.Errorf("orgs members:\n%s", out)
+	}
+	c.expect(0, "claims of "+orgID+" set", "", "orgs", "claims-set", "--realm", "acme", "--id", orgID, "--claims", `{"plan": "pro"}`)
+	c.expect(1, "--claims must be a JSON object", "", "orgs", "claims-set", "--realm", "acme", "--id", orgID, "--claims", "[1]")
+	c.expect(0, `"plan":"pro"`, "", "orgs", "show", "--realm", "acme", "--id", orgID)
+	out = c.expect(0, "valid until", "", "orgs", "invite", "--realm", "acme", "--id", orgID, "--open", "--roles", "editor", "--uses", "2", "--expires", "3d")
+	if !strings.Contains(out, "token  bdo_") {
+		t.Errorf("orgs invite:\n%s", out)
+	}
+	c.expect(0, "valid until", "", "orgs", "invite", "--realm", "acme", "--id", orgID, "--email", "ana@example.com")
+	c.expect(0, "valid until", "", "orgs", "invite", "--realm", "acme", "--id", orgID, "--user", "bob@example.com")
+	c.expect(1, "say who is invited", "", "orgs", "invite", "--realm", "acme", "--id", orgID)
+	c.expect(1, "can't be combined", "", "orgs", "invite", "--realm", "acme", "--id", orgID, "--open", "--email", "x@example.com")
+	out = c.expect(0, "BINDING", "", "orgs", "invitations", "--realm", "acme", "--id", orgID)
+	invID := strings.Fields(strings.Split(out, "\n")[1])[0]
+	c.expect(0, "revoked", "", "orgs", "revoke-invitation", "--realm", "acme", "--id", orgID, "--invitation", invID)
+	c.expect(1, "org_not_allowed", "", "data", "transfer", "--realm", "acme", "--database", "app", "--collection", "notes", "--id", "x", "--org", orgID)
+	c.expect(1, "org_not_allowed", "", "data", "assign-org", "--realm", "acme", "--database", "app", "--collection", "notes", "--org", orgID)
+	c.expect(1, "--where must be a JSON object", "", "data", "assign-org", "--realm", "acme", "--database", "app", "--collection", "boards", "--org", orgID, "--where", "[1]")
+	c.expect(1, "add --yes to confirm", "", "orgs", "delete", "--realm", "acme", "--id", orgID)
+	c.expect(0, "deleted;", "", "orgs", "delete", "--realm", "acme", "--id", orgID, "--yes")
+	c.expect(0, "deleted", "", "orgs", "list", "--realm", "acme", "--status", "deleted")
+	c.expect(0, "active again, with no members", "", "orgs", "reactivate", "--realm", "acme", "--id", orgID)
+	c.expect(0, "is now a manager of "+orgID, "", "orgs", "assign-owner", "--realm", "acme", "--id", orgID, "--email", "bob@example.com")
 
 	// Roles: without the server's config the CLI can't tell which
 	// assignments realm.yaml makes, and says so; with it, it can.

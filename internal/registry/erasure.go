@@ -45,6 +45,9 @@ type ErasurePolicy struct {
 	// value says what the field holds: MatchEmail or MatchID.
 	Pull  map[string]string
 	Unset map[string]string
+	// InOrg is InOrgKeep (the default) or InOrgApply: whether documents that belong to an
+	// organization follow Action (apply) or stay with the organization, owner cleared (keep).
+	InOrg string
 }
 
 // Fields lists every field the policy touches, for the indexes it needs.
@@ -89,8 +92,14 @@ type erasureDoc struct {
 	// Files is read by parseFiles, which checks it; here it is only allowed.
 	Files map[string]*fileFieldDoc `yaml:"files"`
 	// Rules is read by loadRules, which checks it; here it is only allowed.
-	Rules         map[string]string `yaml:"rules"`
+	Rules map[string]string `yaml:"rules"`
+	// Organization and OnOrgDelete are read by loadOrganization; here they are only allowed.
+	Organization *string `yaml:"organization"`
+	OnOrgDelete  *struct {
+		Action string `yaml:"action"`
+	} `yaml:"on_org_delete"`
 	OnOwnerDelete *struct {
+		InOrg   string            `yaml:"in_org"`
 		Action  string            `yaml:"action"`
 		Remove  []string          `yaml:"remove"`
 		Replace map[string]any    `yaml:"replace"`
@@ -141,6 +150,7 @@ func loadErasure(c *Collection, settings RealmSettings, path string) error {
 		return fmt.Errorf("%s: a data policy for an erased user only applies when the realm has auth enabled (realm.yaml has `auth: disabled`: it has no users)", path)
 	}
 	p := &ErasurePolicy{Action: d.Action, Remove: d.Remove, Replace: d.Replace, Pull: d.Pull, Unset: d.Unset}
+	p.InOrg = c.OwnerDeleteInOrg
 	var errs []error
 	add := func(format string, args ...any) {
 		errs = append(errs, fmt.Errorf("%s: on_owner_delete."+format, append([]any{path}, args...)...))

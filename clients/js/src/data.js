@@ -16,6 +16,7 @@ import { Job } from './functions.js'
  * @property {string | null} [owner]  Id of the user who created it (realms with auth enabled).
  * @property {string} [created_by] `user:<id>`, `key:<name>` or `anonymous`.
  * @property {string} [updated_by] `user:<id>`, `key:<name>` or `anonymous`.
+ * @property {string} [org]        The organization the document belongs to (collections with `organization`).
  * @property {string} [deleted_at] RFC3339 timestamp; only on soft-deleted documents (collections with `soft_delete`).
  * @property {string} [deleted_by] Who deleted it, like `updated_by`.
  * @property {string} [purge_at]   RFC3339 timestamp: when it is removed for good (`soft_delete.retention`).
@@ -80,7 +81,9 @@ import { Job } from './functions.js'
  * returns it again for the same key and body, instead of creating a second
  * document. The client also retries such a request itself after a network
  * error, `429` or `503` (see `retry`).
- * @typedef {RequestOptions & { idempotencyKey?: string }} CreateOptions
+ * `org` is the organization a document of a collection with `organization` is created in (the
+ * caller must be a member; `?org=` on the wire).
+ * @typedef {RequestOptions & { idempotencyKey?: string, org?: string }} CreateOptions
  */
 
 /**
@@ -187,12 +190,26 @@ export class Collection {
    * @param {Client} client
    * @param {string} database
    * @param {string} name
+   * @param {string} [org] The organization lists and creates are scoped to (see {@link Collection#inOrg}).
    */
-  constructor(client, database, name) {
+  constructor(client, database, name, org) {
     /** @internal */
     this.client = client
     /** @internal */
     this.path = [database, name]
+    /** @internal */
+    this.org = org
+  }
+
+  /**
+   * The same collection scoped to an organization: `create` puts documents there and `list` and
+   * `iterate` show only its documents (the read rule still decides what is seen). The caller must
+   * be a member that counts: a create answers `NotOrgMemberError` otherwise.
+   * @param {string} org
+   * @returns {Collection<T>}
+   */
+  inOrg(org) {
+    return new Collection(this.client, /** @type {string} */ (this.path[0]), /** @type {string} */ (this.path[1]), org)
   }
 
   /**
@@ -202,7 +219,8 @@ export class Collection {
    * @returns {Promise<Page<T>>}
    */
   async list(params = {}, opts) {
-    const { data } = await this.client.request({ method: 'GET', path: this.path, query: listQuery(params), ...opts })
+    const query = this.org === undefined ? listQuery(params) : { ...listQuery(params), org: this.org }
+    const { data } = await this.client.request({ method: 'GET', path: this.path, query, ...opts })
     return data
   }
 
@@ -257,7 +275,8 @@ export class Collection {
    * @returns {Promise<Doc<T>>}
    */
   async create(doc, opts) {
-    return (await this.client.request({ method: 'POST', path: this.path, body: doc, ...keyed(opts) })).data
+    const scoped = this.org === undefined || opts?.org !== undefined ? opts : { ...opts, org: this.org }
+    return (await this.client.request({ method: 'POST', path: this.path, body: doc, ...keyed(scoped) })).data
   }
 
   /**
@@ -440,11 +459,13 @@ function listQuery(p) {
 /**
  * Turns `idempotencyKey` into an Idempotency-Key header.
  * @param {CreateOptions} [opts]
- * @returns {RequestOptions}
+ * @returns {RequestOptions & { query?: Record<string, string> }}
  */
 function keyed(opts = {}) {
-  const { idempotencyKey, ...rest } = opts
-  return idempotencyKey === undefined ? rest : { ...rest, headers: { ...rest.headers, 'Idempotency-Key': idempotencyKey } }
+  const { idempotencyKey, org, ...rest } = opts
+  /** @type {RequestOptions & { query?: Record<string, string> }} */
+  const out = org === undefined ? rest : { ...rest, query: { org } }
+  return idempotencyKey === undefined ? out : { ...out, headers: { ...out.headers, 'Idempotency-Key': idempotencyKey } }
 }
 
 /**
