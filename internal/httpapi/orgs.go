@@ -10,6 +10,7 @@ import (
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/internal/storage"
 )
 
 // Organizations (design/organizations.md): /v1/{realm}/_orgs for the signed-in user, and
@@ -34,6 +35,7 @@ func (a *authAPI) orgRoutes(r chi.Router) {
 		r.Route("/{org}", func(r chi.Router) {
 			r.Get("/", a.getOrg)
 			r.With(json).Patch("/", a.updateOrg)
+			r.Delete("/", a.deleteOrg)
 			r.Get("/members", a.orgMembers)
 			r.With(json).Patch("/members/{user}", a.updateOrgMember)
 			r.Delete("/members/{user}", a.removeOrgMember)
@@ -85,6 +87,8 @@ func orgError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, r, http.StatusServiceUnavailable, codeUnavailable, err.Error())
 	case errors.Is(err, auth.ErrOrgNotActive):
 		writeError(w, r, http.StatusConflict, "org_not_active", err.Error())
+	case errors.Is(err, auth.ErrOrgNotDeleted):
+		writeError(w, r, http.StatusConflict, "org_not_deleted", err.Error())
 	case errors.Is(err, auth.ErrOrgUserNotFound):
 		writeError(w, r, http.StatusNotFound, codeNotFound, "user not found")
 	case errors.As(err, &bad):
@@ -835,4 +839,99 @@ func (a *adminAPI) setOrgTeamMember(add bool) http.HandlerFunc {
 		}
 		writeJSON(w, http.StatusOK, memberJSON(v, nil))
 	}
+}
+
+// deleteOrg handles DELETE /_orgs/{org}: it needs manage: org and a fresh proof of identity.
+// Access ends at once; a job cleans up the documents.
+func (a *authAPI) deleteOrg(w http.ResponseWriter, r *http.Request) {
+	svc := usersOf(r)
+	p := principalOf(r)
+	org := chi.URLParam(r, "org")
+	m, err := svc.MembershipOf(r.Context(), p.User.ID, org)
+	if err != nil {
+		orgError(w, r, err)
+		return
+	}
+	if !svc.Settings.Organizations.CapsOf(m.RoleNames()).Has(registry.CapOrg) {
+		orgError(w, r, auth.ErrOrgForbidden)
+		return
+	}
+	if !a.reauthed(w, r) {
+		return
+	}
+	if _, err := svc.DeleteOrg(r.Context(), p.User.ID, org, requestID(r.Context())); err != nil {
+		orgError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// adminDeleteOrg handles DELETE /orgs/{org}.
+func (a *adminAPI) deleteOrg(w http.ResponseWriter, r *http.Request) {
+	if _, err := usersOf(r).AdminDeleteOrg(r.Context(), chi.URLParam(r, "org"), requestID(r.Context())); err != nil {
+		adminOrgError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// reactivateOrg handles POST /orgs/{org}/reactivate: the organization comes back with no members.
+func (a *adminAPI) reactivateOrg(w http.ResponseWriter, r *http.Request) {
+	obj, ok := readObject(w, r)
+	if !ok {
+		return
+	}
+	f, ok := fields(w, r, obj, map[string]string{"slug": "string?"})
+	if !ok {
+		return
+	}
+	slug, _ := f["slug"].(string)
+	o, err := usersOf(r).AdminReactivateOrg(r.Context(), chi.URLParam(r, "org"), slug)
+	if err != nil {
+		adminOrgError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, orgJSON(o))
+}
+
+// orgOwned handles GET /orgs/{org}/owned: what deleting the organization would do, per
+// collection, before it is done.
+func (a *adminAPI) orgOwned(w http.ResponseWriter, r *http.Request) {
+	realm := chi.URLParam(r, "realm")
+	svc := usersOf(r)
+	o, err := svc.AdminOrg(r.Context(), chi.URLParam(r, "org"))
+	if err != nil {
+		adminOrgError(w, r, err)
+		return
+	}
+	rl := a.reg.Realms[realm]
+	items := []map[string]any{}
+	var toDelete, toKeep int64
+	if rl != nil {
+		for _, dbName := range sortedKeys(rl.Databases) {
+			for _, c := range rl.Databases[dbName].SortedCollections() {
+				if !c.InOrganizations() {
+					continue
+				}
+				purger, ok := a.fns.docs.store.Repository(c).(storage.OrgPurger)
+				if !ok {
+					continue
+				}
+				n, err := purger.CountInOrg(r.Context(), o.ID)
+				if err != nil {
+					storageError(w, r, err)
+					return
+				}
+				if c.OnOrgDelete == registry.OrgDelete {
+					toDelete += n
+				} else {
+					toKeep += n
+				}
+				items = append(items, map[string]any{"database": dbName, "collection": c.Name, "documents": n, "on_org_delete": c.OnOrgDelete})
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"org": orgJSON(o), "collections": items, "to_delete": toDelete, "to_keep": toKeep,
+	})
 }

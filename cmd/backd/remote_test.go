@@ -196,6 +196,10 @@ organizations:
 	c.expect(1, "org_not_allowed", "", "data", "transfer", "--realm", "acme", "--database", "app", "--collection", "notes", "--id", "x", "--org", orgID)
 	c.expect(1, "org_not_allowed", "", "data", "assign-org", "--realm", "acme", "--database", "app", "--collection", "notes", "--org", orgID)
 	c.expect(1, "--where must be a JSON object", "", "data", "assign-org", "--realm", "acme", "--database", "app", "--collection", "boards", "--org", orgID, "--where", "[1]")
+	c.expect(1, "add --yes to confirm", "", "orgs", "delete", "--realm", "acme", "--id", orgID)
+	c.expect(0, "deleted;", "", "orgs", "delete", "--realm", "acme", "--id", orgID, "--yes")
+	c.expect(0, "deleted", "", "orgs", "list", "--realm", "acme", "--status", "deleted")
+	c.expect(0, "active again, with no members", "", "orgs", "reactivate", "--realm", "acme", "--id", orgID)
 	c.expect(0, "is now a manager of "+orgID, "", "orgs", "assign-owner", "--realm", "acme", "--id", orgID, "--email", "bob@example.com")
 
 	// Roles: without the server's config the CLI can't tell which

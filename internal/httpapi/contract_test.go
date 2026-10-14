@@ -2242,6 +2242,28 @@ func TestContract(t *testing.T) {
 		req("POST", adm+"/"+madeID+"/owner", `{}`, key, 400)
 		req("POST", adm+"/"+madeID+"/owner", `{"user": "nosuchuser"}`, key, 404)
 		// A user at the limit of memberships can't be added to another organization.
+		// Deleting an organization.
+		doomed := req("POST", adm, `{"name": "Doomed", "owner": "`+f.adaID+`"}`, key, 201)["id"].(string)
+		req("GET", adm+"/"+doomed+"/owned", "", nil, 401)
+		req("GET", adm+"/"+doomed+"/owned", "", ada, 403)
+		req("GET", adm+"/nosuch/owned", "", key, 404)
+		req("GET", adm+"/"+doomed+"/owned", "", key, 200)
+		req("DELETE", orgs+"/"+doomed, "", nil, 401)
+		req("DELETE", orgs+"/"+doomed, "", bob, 403)
+		req("DELETE", orgs+"/"+doomed, "", ada, 401) // a fresh proof is needed
+		req("DELETE", orgs+"/"+doomed, "", proofOf(f.ada, "dev-p4ssw0rd!"), 204)
+		req("DELETE", adm+"/"+doomed, "", nil, 401)
+		req("DELETE", adm+"/"+doomed, "", ada, 403)
+		req("DELETE", adm+"/nosuch", "", key, 404)
+		req("DELETE", adm+"/"+doomed, "", key, 409) // deleted already
+		adminGone := req("POST", adm, `{"name": "Admin deleted", "owner": "`+f.adaID+`"}`, key, 201)["id"].(string)
+		req("DELETE", adm+"/"+adminGone, "", key, 204)
+		req("POST", adm+"/"+doomed+"/reactivate", `{}`, nil, 401)
+		req("POST", adm+"/"+doomed+"/reactivate", `{}`, ada, 403)
+		req("POST", adm+"/nosuch/reactivate", `{}`, key, 404)
+		req("POST", adm+"/"+doomed+"/reactivate", `{"slug": "Not A Slug"}`, key, 400)
+		req("POST", adm+"/"+id+"/reactivate", `{}`, key, 409) // not deleted
+		req("POST", adm+"/"+doomed+"/reactivate", `{}`, key, 200)
 		// Moving documents: the admin data route.
 		dataRoute := "/v1/acme/_admin/data/app/projects"
 		moving := req("POST", dataRoute+"?org="+id, `{"title": "moves"}`, key, 201)["id"].(string)
@@ -2253,10 +2275,8 @@ func TestContract(t *testing.T) {
 		req("POST", dataRoute+"/nosuch/_transfer", `{"org": "`+to+`"}`, key, 404)
 		req("POST", tr, `{"org": "nosuch"}`, key, 404)
 		req("POST", tr, `{"org": "`+to+`"}`, with(key, "If-Match", `"99"`), 412)
-		gone := req("POST", orgs, `{"name": "Gone"}`, ada, 201)["id"].(string)
-		if _, err := f.svc.Store.UpdateOrg(context.Background(), gone, auth.OrgUpdate{Status: auth.OrgDeleted}, time.Now()); err != nil {
-			t.Fatal(err)
-		}
+		gone := req("POST", adm, `{"name": "Gone", "owner": "`+f.adaID+`"}`, key, 201)["id"].(string)
+		req("DELETE", adm+"/"+gone, "", key, 204)
 		req("POST", tr, `{"org": "`+gone+`"}`, key, 409)
 		req("POST", tr, `{"org": "`+to+`"}`, key, 200)
 		assign := "/v1/acme/_admin/data/app/shared/_assign_org"

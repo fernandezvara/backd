@@ -104,6 +104,62 @@ func (m *MemStore) UpdateOrg(_ context.Context, id string, upd auth.OrgUpdate, n
 	return org, nil
 }
 
+func (m *MemStore) ArchiveOrg(_ context.Context, id string, now time.Time) (auth.Org, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o := m.org()
+	org, ok := o.orgs[id]
+	if !ok {
+		return auth.Org{}, auth.ErrNotFound
+	}
+	if org.Status == auth.OrgDeleted {
+		return auth.Org{}, auth.ErrOrgNotActive
+	}
+	if org.Slug != "" {
+		org.FormerSlug = org.Slug
+	}
+	org.Slug, org.Status, org.DeletedAt, org.UpdatedAt = "", auth.OrgDeleted, now, now
+	o.orgs[id] = org
+	for k, mem := range o.members {
+		if mem.Org == id {
+			delete(o.members, k)
+		}
+	}
+	for k, t := range o.teams {
+		if t.Org == id {
+			delete(o.teams, k)
+		}
+	}
+	for k, inv := range o.invites {
+		if inv.Org == id {
+			delete(o.invites, k)
+		}
+	}
+	return org, nil
+}
+
+func (m *MemStore) ReactivateOrg(_ context.Context, id, slug string, now time.Time) (auth.Org, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o := m.org()
+	org, ok := o.orgs[id]
+	if !ok {
+		return auth.Org{}, auth.ErrNotFound
+	}
+	if org.Status != auth.OrgDeleted {
+		return auth.Org{}, auth.ErrOrgNotDeleted
+	}
+	if slug != "" {
+		if o.slugTaken(slug, id) {
+			return auth.Org{}, auth.ErrSlugTaken
+		}
+		org.Slug = slug
+	}
+	org.Status, org.DeletedAt, org.UpdatedAt = auth.OrgActive, time.Time{}, now
+	o.orgs[id] = org
+	return org, nil
+}
+
 func (m *MemStore) ListOrgs(_ context.Context, status string) ([]auth.Org, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

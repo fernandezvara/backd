@@ -1085,6 +1085,26 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+    delete:
+      tags: [organizations]
+      summary: Delete an organization
+      description: |
+        Needs `manage: org` and a fresh proof of identity (`401 reauth_required`, then
+        `POST /_auth/reauth` and send its token in `X-Backd-Reauth`). Access ends **at once**: the
+        status becomes `deleted` (the record stays, with its name and dates) and memberships, teams
+        and invitations are removed. A job then applies each collection's `on_org_delete`: `delete`
+        removes the documents (soft-deleted ones too) and queues their files for deletion; `keep`
+        leaves them, readable only by realm administrators. The slug is released.
+      operationId: deleteOrganization
+      security: [{ session: [] }]
+      responses:
+        "204":
+          description: The organization was deleted.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_orgs/{org}/members:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -3037,6 +3057,84 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+    delete:
+      tags: [admin]
+      summary: Delete an organization
+      description: |
+        Like the member route, without the proof. Access ends at once and a job applies `on_org_delete`;
+        see `GET .../owned` first. Audited as `org.delete` and, when the cleanup finishes, `org.deleted`
+        with counts. Needs the `users` area with write access.
+      operationId: adminDeleteOrganization
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "204":
+          description: The organization was deleted.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}/owned:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+    get:
+      tags: [admin]
+      summary: What deleting an organization would do
+      description: The documents the organization holds in each collection that has organizations, and what its `on_org_delete` will do with them, counts only. Needs the `users` area.
+      operationId: adminOrganizationOwned
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The report.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationOwned" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}/reactivate:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+    post:
+      tags: [admin]
+      summary: Bring a deleted organization back
+      description: |
+        Makes it `active` again **with no members**: assign an owner next (`POST .../owner`).
+        Documents kept under `keep` are visible to members again; those under `delete` are gone.
+        It takes its former slug back unless it is in use (`409 slug_taken`); `slug` picks another.
+        Audited as `org.reactivate`. Needs the `users` area with write access.
+      operationId: adminReactivateOrganization
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                slug: { type: string, maxLength: 63 }
+      responses:
+        "200":
+          description: The organization.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationRecord" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_admin/orgs/{org}/members:
@@ -7506,6 +7604,26 @@ components:
         name: { type: string }
         roles: { type: array, items: { type: string }, description: "Organization roles every member of the team holds." }
         created_at: { type: string, format: date-time }
+
+    OrganizationOwned:
+      type: object
+      additionalProperties: false
+      required: [org, collections, to_delete, to_keep]
+      properties:
+        org: { $ref: "#/components/schemas/OrganizationRecord" }
+        collections:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [database, collection, documents, on_org_delete]
+            properties:
+              database: { type: string }
+              collection: { type: string }
+              documents: { type: integer }
+              on_org_delete: { type: string, enum: [delete, keep] }
+        to_delete: { type: integer, description: "Documents a deletion removes." }
+        to_keep: { type: integer, description: "Documents a deletion leaves, readable only by realm administrators." }
 
     OrganizationMember:
       type: object

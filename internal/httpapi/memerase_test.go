@@ -210,3 +210,40 @@ func (r *memRepo) ClearReference(_ context.Context, field, value string, limit i
 	}
 	return int64(len(docs)), nil
 }
+
+func inOrgDoc(org string) func(map[string]any) bool {
+	return func(d map[string]any) bool {
+		meta, _ := d["_meta"].(map[string]any)
+		return meta["org"] == org
+	}
+}
+
+func (r *memRepo) CountInOrg(_ context.Context, org string) (int64, error) {
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	var n int64
+	for _, d := range r.coll() {
+		if inOrgDoc(org)(d) {
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (r *memRepo) DeleteInOrg(_ context.Context, org string, fileFields []string, limit int) (int64, []storage.ErasedFile, error) {
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	var n int64
+	var files []storage.ErasedFile
+	for id, d := range r.coll() {
+		if n >= int64(limit) {
+			break
+		}
+		if inOrgDoc(org)(d) {
+			files = append(files, memFiles(d, fileFields)...)
+			delete(r.coll(), id)
+			n++
+		}
+	}
+	return n, files, nil
+}

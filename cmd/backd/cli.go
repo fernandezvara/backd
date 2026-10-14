@@ -377,6 +377,24 @@ func registerRemote(cfg *kli.Config) {
 		required(cc, "id", "the organization's id")
 		required(cc, "invitation", "the invitation's id")
 	})
+	og.SubCommand("owned").ShortHelp("report what deleting an organization would do").
+		Func(act("orgs owned", orgsOwned)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+	})
+	og.SubCommand("delete").ShortHelp("delete an organization: access ends at once, its documents follow").
+		LongHelp("Ends everyone's access at once (the record stays, as deleted), then a job applies each collection's on_org_delete: `delete` removes the documents and queues their files for deletion, `keep` leaves them for realm administrators. See `backd orgs owned` first. Needs --yes. " + adminAPINote).
+		Func(act("orgs delete", orgsDelete)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+		boolean(cc, "yes", "confirm")
+	})
+	og.SubCommand("reactivate").ShortHelp("bring a deleted organization back, with no members").
+		Func(act("orgs reactivate", orgsReactivate)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+		optional(cc, "slug", "the slug it takes (its former one may be in use)")
+	})
 	og.SubCommand("claims-set").ShortHelp("replace an organization's claims (at most 1 KiB of JSON)").
 		Func(act("orgs claims-set", orgsClaimsSet)).Config(func(cc *kli.CommandConfig) {
 		remote(cc)

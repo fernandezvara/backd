@@ -182,6 +182,61 @@ func (s *AuthStore) UpdateOrg(ctx context.Context, id string, upd auth.OrgUpdate
 	return d.org(), nil
 }
 
+func (s *AuthStore) ArchiveOrg(ctx context.Context, id string, now time.Time) (auth.Org, error) {
+	var d orgDoc
+	err := s.orgs().FindOneAndUpdate(ctx,
+		bson.D{{Key: "_id", Value: id}, {Key: "status", Value: bson.D{{Key: "$ne", Value: auth.OrgDeleted}}}},
+		mongo.Pipeline{
+			{{Key: "$set", Value: bson.D{
+				{Key: "status", Value: auth.OrgDeleted},
+				{Key: "deleted_at", Value: now},
+				{Key: "updated_at", Value: now},
+				{Key: "former_slug", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$slug", "$former_slug"}}}},
+			}}},
+			{{Key: "$unset", Value: "slug"}},
+		},
+		options.FindOneAndUpdate().SetReturnDocument(options.After)).Decode(&d)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		if _, ferr := s.OrgByID(ctx, id); ferr != nil {
+			return auth.Org{}, ferr
+		}
+		return auth.Org{}, auth.ErrOrgNotActive
+	}
+	if err != nil {
+		return auth.Org{}, err
+	}
+	filter := bson.D{{Key: "org", Value: id}}
+	for _, c := range []*mongo.Collection{s.orgMembers(), s.orgTeams(), s.orgInvitations()} {
+		if _, err := c.DeleteMany(ctx, filter); err != nil {
+			return auth.Org{}, err
+		}
+	}
+	return d.org(), nil
+}
+
+func (s *AuthStore) ReactivateOrg(ctx context.Context, id, slug string, now time.Time) (auth.Org, error) {
+	set := bson.D{{Key: "status", Value: auth.OrgActive}, {Key: "updated_at", Value: now}}
+	if slug != "" {
+		set = append(set, bson.E{Key: "slug", Value: slug})
+	}
+	var d orgDoc
+	err := s.orgs().FindOneAndUpdate(ctx, bson.D{{Key: "_id", Value: id}, {Key: "status", Value: auth.OrgDeleted}},
+		bson.D{{Key: "$set", Value: set}, {Key: "$unset", Value: bson.D{{Key: "deleted_at", Value: ""}}}},
+		options.FindOneAndUpdate().SetReturnDocument(options.After)).Decode(&d)
+	switch {
+	case errors.Is(err, mongo.ErrNoDocuments):
+		if _, ferr := s.OrgByID(ctx, id); ferr != nil {
+			return auth.Org{}, ferr
+		}
+		return auth.Org{}, auth.ErrOrgNotDeleted
+	case mongo.IsDuplicateKeyError(err):
+		return auth.Org{}, auth.ErrSlugTaken
+	case err != nil:
+		return auth.Org{}, err
+	}
+	return d.org(), nil
+}
+
 func (s *AuthStore) ListOrgs(ctx context.Context, status string) ([]auth.Org, error) {
 	filter := bson.D{}
 	if status != "" {

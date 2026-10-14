@@ -54,6 +54,10 @@ func (r *Repository) CountReferences(ctx context.Context, field, value string, a
 // erasedFiles reads the files held in fileFields from a document's raw BSON.
 func erasedFiles(raw bson.Raw, fileFields []string) []storage.ErasedFile {
 	var out []storage.ErasedFile
+	owner := ""
+	if meta, ok := raw.Lookup("_meta").DocumentOK(); ok {
+		owner, _ = meta.Lookup("owner").StringValueOK()
+	}
 	one := func(v bson.RawValue) {
 		doc, ok := v.DocumentOK()
 		if !ok {
@@ -69,7 +73,7 @@ func erasedFiles(raw bson.Raw, fileFields []string) []storage.ErasedFile {
 				size = n
 			}
 		}
-		file := storage.ErasedFile{ID: id, Size: size}
+		file := storage.ErasedFile{ID: id, Size: size, Owner: owner}
 		if vs, ok := doc.Lookup("versions").DocumentOK(); ok {
 			if elems, err := vs.Elements(); err == nil {
 				for _, e := range elems {
@@ -112,7 +116,7 @@ func erasedFiles(raw bson.Raw, fileFields []string) []storage.ErasedFile {
 }
 
 func fileProjection(fileFields []string) bson.D {
-	p := bson.D{{Key: "_id", Value: 1}}
+	p := bson.D{{Key: "_id", Value: 1}, {Key: "_meta.owner", Value: 1}}
 	for _, f := range fileFields {
 		p = append(p, bson.E{Key: mongoField(f), Value: 1})
 	}
@@ -221,4 +225,31 @@ func (r *Repository) ClearReference(ctx context.Context, field, value string, li
 		return 0, mapError(err)
 	}
 	return res.ModifiedCount, nil
+}
+
+func inOrg(org string) bson.D { return bson.D{{Key: "_meta.org", Value: org}} }
+
+// CountInOrg counts the documents of an organization, soft-deleted ones included.
+func (r *Repository) CountInOrg(ctx context.Context, org string) (int64, error) {
+	n, err := r.coll.CountDocuments(ctx, inOrg(org))
+	return n, mapError(err)
+}
+
+// DeleteInOrg deletes up to limit documents of an organization, the files they held in
+// fileFields reported as for an erase.
+func (r *Repository) DeleteInOrg(ctx context.Context, org string, fileFields []string, limit int) (int64, []storage.ErasedFile, error) {
+	var n int64
+	var files []storage.ErasedFile
+	for range limit {
+		raw, err := r.coll.FindOneAndDelete(ctx, inOrg(org), options.FindOneAndDelete().SetProjection(fileProjection(fileFields))).Raw()
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			break
+		}
+		if err != nil {
+			return n, files, mapError(err)
+		}
+		n++
+		files = append(files, erasedFiles(raw, fileFields)...)
+	}
+	return n, files, nil
 }

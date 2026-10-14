@@ -100,6 +100,19 @@ The answer always has `id`, `token` and `link` (the realm's [`invitation_link`](
 - **Errors:** an unknown, expired, revoked or used-up token answers the same `400 invalid_invitation`; a binding that doesn't fit answers `403 invitation_not_for_you`, only after the token has proved valid.
 - **Managing:** `GET /_orgs/{org}/invitations` (status, binding, uses and expiry, never tokens), `DELETE .../{id}` revokes, `POST .../{id}/link` issues a new token and invalidates the old one, `POST .../{id}/send` sends the email again. At most `max_pending_invitations` (500) pending ones per organization (`409 invitations_limit`).
 
+## Deleting an organization
+
+`DELETE /_orgs/{org}` needs `manage: org` and a fresh proof of identity ([re-authentication](../../auth/reauth/): `401 reauth_required` until the request carries `X-Backd-Reauth`). A realm administrator uses `DELETE /_admin/orgs/{org}` or `backd orgs delete`, after looking at what it will do with `GET /_admin/orgs/{org}/owned` (`backd orgs owned`: counts per database and collection, and each collection's policy).
+
+- **Access ends at once.** The status becomes `deleted`, and memberships, teams and invitations are removed: nobody belongs to it any more, and its slug is free again.
+- **Then a job cleans up** (`backd:org.delete`, resumable) by each collection's [`on_org_delete`](../../configuration/config-dir/#organizations): `delete` removes the organization's documents, soft-deleted ones too, and queues their files for deletion; `keep` leaves them, readable only by realm administrators.
+- **The record stays** as `deleted`, with its name and dates, so `keep` documents still point at something readable. Audited as `org.delete` and, when the cleanup ends, `org.deleted` with counts and never content.
+- **Bringing it back:** `POST /_admin/orgs/{org}/reactivate` (`backd orgs reactivate`) makes it `active` **without members**, under its former slug unless that is in use (give another in `slug`); assign an owner next. Documents kept under `keep` are visible to members again; those under `delete` are gone.
+
+{{< hint style="warning" >}}
+Deleting is not undoable for `delete` collections: reactivating an organization doesn't bring their documents back. Look at the report first.
+{{< /hint >}}
+
 ## Administrators
 
-Realm administrators with the `users` area use `/_admin/orgs`, described with the [admin API](../../auth/admin/), and [`backd orgs`](../../auth/cli/): list and show organizations, create one for a user, invite (with any role), add members without an invitation, replace claims and assign a manager to an organization left without one.
+Realm administrators with the `users` area use `/_admin/orgs`, described with the [admin API](../../auth/admin/), and [`backd orgs`](../../auth/cli/): list and show organizations, create one for a user, invite (with any role), add members without an invitation, replace claims, delete and reactivate organizations and assign a manager to an organization left without one.

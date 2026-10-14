@@ -366,3 +366,63 @@ func dataAssignOrg(c *kli.CommandContext) error {
 	fmt.Fprintf(io.stdout, "job %s queued: %d documents will be given the organization (follow it with `backd functions jobs --realm %s --job %s`)\n", out.Job, out.Matched, str(c, "realm"), out.Job)
 	return nil
 }
+
+func orgsOwned(c *kli.CommandContext) error {
+	t, err := targetOf(c, false)
+	if err != nil {
+		return err
+	}
+	var out struct {
+		Org         orgRow `json:"org"`
+		Collections []struct {
+			Database   string `json:"database"`
+			Collection string `json:"collection"`
+			Documents  int64  `json:"documents"`
+			OnOrgDel   string `json:"on_org_delete"`
+		} `json:"collections"`
+		ToDelete int64 `json:"to_delete"`
+		ToKeep   int64 `json:"to_keep"`
+	}
+	if err := t.call("GET", "_admin/orgs/"+url.PathEscape(str(c, "id"))+"/owned", nil, nil, &out); err != nil {
+		return err
+	}
+	io := ioOf(c)
+	fmt.Fprintf(io.stdout, "%s (%s): deleting it removes %d documents and leaves %d\n", out.Org.Name, out.Org.ID, out.ToDelete, out.ToKeep)
+	w := tabwriter.NewWriter(io.stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(w, "COLLECTION\tDOCUMENTS\tON DELETE")
+	for _, col := range out.Collections {
+		fmt.Fprintf(w, "%s/%s\t%d\t%s\n", col.Database, col.Collection, col.Documents, col.OnOrgDel)
+	}
+	return w.Flush()
+}
+
+func orgsDelete(c *kli.CommandContext) error {
+	if !flag(c, "yes") {
+		return fmt.Errorf("deleting an organization ends everyone's access at once and removes the documents of its `delete` collections: see them first with `backd orgs owned`, then add --yes to confirm")
+	}
+	t, err := targetOf(c, false)
+	if err != nil {
+		return err
+	}
+	if err := t.call("DELETE", "_admin/orgs/"+url.PathEscape(str(c, "id")), nil, nil, nil); err != nil {
+		return err
+	}
+	fmt.Fprintf(ioOf(c).stdout, "organization %s deleted; its documents are being cleaned up in the background\n", str(c, "id"))
+	return nil
+}
+
+func orgsReactivate(c *kli.CommandContext) error {
+	t, err := targetOf(c, false)
+	if err != nil {
+		return err
+	}
+	body := map[string]any{}
+	if s := str(c, "slug"); s != "" {
+		body["slug"] = s
+	}
+	if err := t.call("POST", "_admin/orgs/"+url.PathEscape(str(c, "id"))+"/reactivate", nil, body, nil); err != nil {
+		return err
+	}
+	fmt.Fprintf(ioOf(c).stdout, "organization %s is active again, with no members: assign an owner with `backd orgs assign-owner`\n", str(c, "id"))
+	return nil
+}

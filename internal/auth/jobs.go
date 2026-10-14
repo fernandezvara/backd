@@ -61,8 +61,9 @@ type Job struct {
 	// Image is set on the job that makes a file's image versions (origin ImageOrigin).
 	Image *ImageJob
 	// Assign is set on the job that gives documents without one an organization (origin
-	// AssignOrgOrigin).
-	Assign *AssignOrgJob
+	// AssignOrgOrigin); OrgDelete on the cleanup after an organization was deleted.
+	Assign    *AssignOrgJob
+	OrgDelete *OrgDeleteJob
 	// Revoke is set on a job that revokes a user's Apple refresh token (origin RevokeOrigin).
 	Revoke *RevokeJob
 	// Push is set on the jobs of a push send (origin PushOrigin): planning an audience, a batch
@@ -276,7 +277,7 @@ func (s *Users) RerunJob(ctx context.Context, id string, timeoutMS int64) (Job, 
 	if !found {
 		return Job{}, ErrNotFound
 	}
-	if j.Email != nil || j.Erase != nil || j.Check != nil || j.Image != nil || j.Assign != nil || j.Revoke != nil || j.Push != nil {
+	if j.Email != nil || j.Erase != nil || j.Check != nil || j.Image != nil || j.Assign != nil || j.OrgDelete != nil || j.Revoke != nil || j.Push != nil {
 		return Job{}, ErrJobNotFunction
 	}
 	if j.Status != JobDone {

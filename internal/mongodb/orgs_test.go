@@ -225,3 +225,81 @@ func TestAuthStoreOrgTeams(t *testing.T) {
 		t.Errorf("again: %v", err)
 	}
 }
+
+func TestAuthStoreArchiveAndReactivateOrg(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	if err := s.CreateOrg(ctx, auth.Org{ID: "o1", Name: "Gone", Slug: "gone", CreatedBy: "u1", Status: auth.OrgActive, CreatedAt: now, UpdatedAt: now},
+		auth.OrgMember{Org: "o1", User: "u1", JoinedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.CreateOrgTeam(ctx, auth.OrgTeam{ID: "t1", Org: "o1", Name: "T", CreatedAt: now})
+	_ = s.CreateOrgInvitation(ctx, auth.OrgInvitation{ID: "i1", Org: "o1", TokenHash: "h", Binding: auth.BindNone, MaxUses: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour)})
+	org, err := s.ArchiveOrg(ctx, "o1", now)
+	if err != nil || org.Status != auth.OrgDeleted || org.Slug != "" || org.FormerSlug != "gone" || org.DeletedAt.IsZero() {
+		t.Fatalf("archive: %+v %v", org, err)
+	}
+	if n, _ := s.CountOrgMembershipsOf(ctx, "u1"); n != 0 {
+		t.Errorf("memberships left: %d", n)
+	}
+	if teams, _ := s.ListOrgTeams(ctx, "o1"); len(teams) != 0 {
+		t.Errorf("teams left: %v", teams)
+	}
+	if invs, _ := s.ListOrgInvitations(ctx, "o1"); len(invs) != 0 {
+		t.Errorf("invitations left: %v", invs)
+	}
+	if _, err := s.ArchiveOrg(ctx, "o1", now); !errors.Is(err, auth.ErrOrgNotActive) {
+		t.Errorf("again: %v", err)
+	}
+	if _, err := s.ArchiveOrg(ctx, "nosuch", now); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("unknown: %v", err)
+	}
+	// The slug is free for another organization; the deleted one comes back under another.
+	if err := s.CreateOrg(ctx, auth.Org{ID: "o2", Name: "New", Slug: "gone", Status: auth.OrgActive, CreatedAt: now, UpdatedAt: now},
+		auth.OrgMember{Org: "o2", User: "u2", JoinedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ReactivateOrg(ctx, "o1", "gone", now); !errors.Is(err, auth.ErrSlugTaken) {
+		t.Errorf("slug taken: %v", err)
+	}
+	back, err := s.ReactivateOrg(ctx, "o1", "other", now)
+	if err != nil || back.Status != auth.OrgActive || back.Slug != "other" || !back.DeletedAt.IsZero() {
+		t.Errorf("reactivate: %+v %v", back, err)
+	}
+	if _, err := s.ReactivateOrg(ctx, "o1", "", now); !errors.Is(err, auth.ErrOrgNotDeleted) {
+		t.Errorf("an active one: %v", err)
+	}
+}
+
+func TestRepositoryOrgPurge(t *testing.T) {
+	_, repo := provisionOneWith(t, `{"type": "object", "properties": {"n": {"type": "integer"}}}`, "")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	for i, org := range []any{"o1", "o1", "o1", "o2", nil} {
+		meta := map[string]any{"created_at": now, "updated_at": now, "version": int64(1), "owner": "u1"}
+		if org != nil {
+			meta["org"] = org
+		}
+		if i == 2 {
+			meta["deleted_at"] = now // soft-deleted ones are counted and removed too
+		}
+		if err := repo.Create(ctx, map[string]any{"id": string(rune('a' + i)), "n": int64(i), "_meta": meta}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n, err := repo.CountInOrg(ctx, "o1"); err != nil || n != 3 {
+		t.Fatalf("count: %d %v", n, err)
+	}
+	n, _, err := repo.DeleteInOrg(ctx, "o1", nil, 2)
+	if err != nil || n != 2 {
+		t.Fatalf("first batch: %d %v", n, err)
+	}
+	n, _, err = repo.DeleteInOrg(ctx, "o1", nil, 2)
+	if err != nil || n != 1 {
+		t.Fatalf("second batch: %d %v", n, err)
+	}
+	if n, _ := repo.CountInOrg(ctx, "o2"); n != 1 {
+		t.Errorf("another organization lost documents: %d", n)
+	}
+}

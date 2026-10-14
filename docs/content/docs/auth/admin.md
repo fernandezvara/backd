@@ -89,6 +89,9 @@ Paths are relative to `/v1/{realm}/_admin`. Bodies are JSON (`Content-Type: appl
 | `GET /orgs?status=` | none | `200` with the realm's [organizations](../../api/organizations/), newest first (`status`: `active`, `orphaned`, `deleted`). Needs the `users` area |
 | `POST /orgs` | `{"name", "owner", "slug"?}` | `201`: creates an organization for the user `owner` (a user id), who holds the realm's `creator_roles`; the create rule and `max_created_per_user` don't apply. `404` for an unknown user, `409 slug_taken`. Audited as `org.create`. Needs the `users` area with write access |
 | `GET /orgs/{org}` | none | `200` with the organization and its claims; `404` if unknown |
+| `DELETE /orgs/{org}` | none | `204`: ends the organization [at once](../../api/organizations/#deleting-an-organization) and queues the cleanup of its documents. `409 org_not_active` when it is deleted already. Audited as `org.delete` and `org.deleted` |
+| `GET /orgs/{org}/owned` | none | `200` with what a deletion would do: the documents in each collection with organizations and its `on_org_delete`, and totals `to_delete` and `to_keep` |
+| `POST /orgs/{org}/reactivate` | `{"slug"?}` | `200`: a deleted organization is active again with no members. `409 slug_taken`, `409 org_not_deleted`. Audited as `org.reactivate` |
 | `GET /orgs/{org}/members` | none | `200` with a page of members, with emails (`limit`, `after`) |
 | `POST /orgs/{org}/members` | `{"user", "roles"?}` | `200` with the member: adds the user **without an invitation**, or gives an existing member the roles. `404` for an unknown user, `409 org_limit_reached` at their membership cap. Audited as `org.member_add` |
 | `PATCH /orgs/{org}/members/{user}` | `{"roles": [...]}` | `200`: replaces the member's direct roles. `409 last_org_manager` when it would leave the organization without a manager. Audited as `org.roles` |

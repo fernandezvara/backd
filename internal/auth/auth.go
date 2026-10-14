@@ -363,6 +363,13 @@ type Store interface {
 	// ReplaceOrgInvitationToken swaps the token hash (and the sealed token, "" for none).
 	ReplaceOrgInvitationToken(ctx context.Context, org, id, tokenHash, sealed string) error
 	DeleteOrgInvitation(ctx context.Context, org, id string) error
+	// ArchiveOrg ends an organization at once: its status becomes deleted (the record keeps its
+	// name and dates, and its slug as FormerSlug), and its memberships, teams and invitations
+	// are removed. ErrNotFound if none; ErrOrgNotActive if it was deleted already.
+	ArchiveOrg(ctx context.Context, id string, now time.Time) (Org, error)
+	// ReactivateOrg makes a deleted organization active again, with no members, and sets slug
+	// when it isn't empty (ErrSlugTaken).
+	ReactivateOrg(ctx context.Context, id, slug string, now time.Time) (Org, error)
 	// OrgTeamsByIDs returns the teams of the organization with these ids that exist.
 	OrgTeamsByIDs(ctx context.Context, org string, ids []string) ([]OrgTeam, error)
 	// CreateOrgTeam inserts a team; ErrTeamNameTaken when the organization has one of that name.
