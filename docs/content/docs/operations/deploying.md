@@ -35,7 +35,7 @@ my-backd-config/
 The `Dockerfile` starts from a released `backd` image and adds the config. `backd config check` runs during the image build, so an invalid config never becomes an image:
 
 ```dockerfile
-FROM ghcr.io/fernandezvara/backd:v0.8.1
+FROM ghcr.io/fernandezvara/backd:v0.8.2
 COPY config /config
 ENV CONFIG_DIR=/config
 RUN ["/backd", "config", "check"]
@@ -85,7 +85,7 @@ on:
     branches: [main]
     tags: ["v*"]
 env:
-  BACKD_VERSION: 0.8.1
+  BACKD_VERSION: 0.8.2
   IMAGE: ghcr.io/my-org/backd-config
 jobs:
   build:
@@ -133,7 +133,7 @@ Instances in `PROVISION_MODE=verify` compare their config's fingerprint with the
 
 ```
 backd serve: the config differs from the one last provisioned: this instance's config is 7c1e…, but
-  realm shop: provisioned 4a90… (at 2026-09-28T10:00:00Z by backd v0.8.1)
+  realm shop: provisioned 4a90… (at 2026-09-28T10:00:00Z by backd v0.8.2)
 provision this config (`backd provision`) or deploy the config that was provisioned
 ```
 

@@ -7,7 +7,7 @@ sections:
     weight: 10
     template: hero
 
-    badge: "v0.8.1 · files in your own S3-compatible storage, image versions, quotas and uploads of files up to 4 TiB"
+    badge: "v0.8.2 · sign in with Google, Microsoft and Apple, a second factor, push notifications, app configuration and TypeScript types generated from your config"
 
     title: "backd"
     subtitle: "A **config-driven** REST backend over MongoDB. Declare realms, databases and collections as files on disk, and get a **schema-validated**, **queryable** document API. Add **server-side functions** for the logic clients can't be trusted with: background jobs, cron schedules and webhooks included."
@@ -70,7 +70,7 @@ sections:
 
       - title: Users and single sign-on
         icon: group
-        description: "Built-in users per realm with argon2id passwords, sessions valid across the realm's databases, API keys for services, invitations and brute-force protection. Email verification, password reset and address changes through any email provider you call from a function, and erasure of a user's data on request."
+        description: "Built-in users per realm with argon2id passwords, sessions valid across the realm's databases, API keys for services, invitations and brute-force protection. Sign in with Google, Microsoft or Apple, a second factor, magic links, email verification, password reset and address changes through any email provider you call from a function, consents, and erasure of a user's data on request."
 
       - title: Access rules
         icon: policy
@@ -79,6 +79,14 @@ sections:
       - title: Server-side functions
         icon: function
         description: "JavaScript or TypeScript next to your collections, run in isolated Deno processes: sync calls, background jobs you can follow, cron schedules, webhooks. Rules, secrets, rate limits, idempotency, a network allowlist and full call history are built in. [Start here](docs/functions/)."
+
+      - title: Typed from your config
+        icon: code
+        description: "`backd types` turns the config into TypeScript for your app and your functions, and `backd openapi` into an OpenAPI 3.1 document per realm for client generators. In development the config reloads as you save it. [Typing and OpenAPI](docs/clients/types/)."
+
+      - title: Files, push and app configuration
+        icon: attach_file
+        description: "Files in your own S3-compatible storage with image versions and quotas, push notifications to FCM, APNs and browsers, and a configuration your apps read, with history and rollback, and conditional GET so they ask only when it changed."
 
       - title: Built for operations
         icon: monitor_heart
