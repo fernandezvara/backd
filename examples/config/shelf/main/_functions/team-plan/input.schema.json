@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "properties": {
+    "org":  { "type": "string", "minLength": 1 },
+    "plan": { "enum": ["free", "pro"] }
+  },
+  "required": ["org", "plan"],
+  "additionalProperties": false
+}

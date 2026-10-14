@@ -506,6 +506,99 @@ check('the admin OpenAPI document lists the internal functions', Object.keys(spe
 const publicSpec19 = await fetch(`${url}/v1/shelf/_openapi.json`)
 check('the client document is not public by default (401)', publicSpec19.status === 401, String(publicSpec19.status))
 
+heading('Teams as organizations (ch20)')
+{
+  const STAMP = Date.now().toString(36)
+  const ben = await signedIn(`ben-${STAMP}@shelf.example`, operator)
+  const cy = await signedIn(`cy-${STAMP}@shelf.example`, operator)
+  const dee = await signedIn(`dee-${STAMP}@shelf.example`, operator)
+  const benId = (await ben.auth.me()).id
+  const cyId = (await cy.auth.me()).id
+  const pinsOf = (/** @type {any} */ c) => c.db('main').collection('pins')
+
+  // A team is an organization: its creator owns it, and holds `member` without being given it.
+  const team = await ben.orgs.create({ name: `Docs ${STAMP}` })
+  check('creating a team makes its creator the owner', team.roles.includes('owner') && team.roles.includes('member') && team.status === 'active', JSON.stringify(team.roles))
+  const first = /** @type {any} */ (await main(ben).fn('pin', { org: team.id, title: 'Handbook', url: 'https://example.com/handbook' }))
+  check('an owner pins, and the pin says how many fit (the free plan)', first.pins === 1 && first.limit === 5, JSON.stringify(first))
+
+  // Joining: the invitation answers its link once; it is a copyable link.
+  const invite = await ben.orgs.invitations(team.id).create({ binding: 'none', roles: ['editor'], maxUses: 2 })
+  check('an invitation answers a link and a token, once', invite.token.startsWith('bdo_') && String(invite.link).includes(invite.token), String(invite.link))
+  const offer = await cy.orgs.invitations.preview(invite.token)
+  check('the person sees what the link offers before taking it', offer.org.id === team.id && offer.roles.includes('editor'), JSON.stringify(offer))
+  await cy.orgs.invitations.accept(invite.token)
+  check('accepting makes them a member with the invited role', (await cy.orgs.get(team.id)).roles.includes('editor'))
+  await refused('an open link can never give a role that manages the team (400)', () => ben.orgs.invitations(team.id).create({ binding: 'none', roles: ['owner'] }), ValidationError, 'validation_error')
+
+  // Reading: the read rule is a database filter on the caller's teams.
+  check('a member reads the team\'s pins', (await pinsOf(cy).inOrg(team.id).list()).items.length === 1)
+  const strangerTeam = await dee.orgs.create({ name: `Elsewhere ${STAMP}` })
+  await main(dee).fn('pin', { org: strangerTeam.id, title: 'Not yours' })
+  const deeSees = (await pinsOf(dee).list()).items
+  check('another team\'s members see only their own pins', deeSees.length === 1 && deeSees[0]._meta.org === strangerTeam.id, JSON.stringify(deeSees.map((p) => p._meta.org)))
+  await refused('a stranger can\'t pin into the team (403 not_org_member)', () => main(dee).fn('pin', { org: team.id, title: 'x' }), ForbiddenError, 'not_org_member')
+  await refused('nor read its organization (403 not_org_member)', () => dee.orgs.get(team.id), ForbiddenError, 'not_org_member')
+
+  // Roles: an editor pins and removes their own, only an admin removes other people's.
+  const cyPin = /** @type {any} */ (await main(cy).fn('pin', { org: team.id, title: 'Style guide' }))
+  const benPin = (await pinsOf(ben).inOrg(team.id).list()).items.find((p) => p.title === 'Handbook')
+  await refused('an editor can\'t remove somebody else\'s pin (403)', () => pinsOf(cy).delete(benPin.id), ForbiddenError, 'forbidden')
+  await pinsOf(cy).delete(cyPin.id)
+  check('an editor removes their own pin', (await pinsOf(ben).inOrg(team.id).list()).items.length === 1)
+  await refused('a plain member can\'t pin (403)', async () => {
+    const eve = await signedIn(`eve-${STAMP}@shelf.example`, operator)
+    const link = await ben.orgs.invitations(team.id).create({ binding: 'none', roles: [] })
+    await eve.orgs.invitations.accept(link.token)
+    return main(eve).fn('pin', { org: team.id, title: 'x' })
+  }, ForbiddenError, 'forbidden')
+  await ben.orgs.members(team.id).update(cyId, ['admin'])
+  await pinsOf(cy).delete(benPin.id)
+  check('an admin removes any pin', (await pinsOf(ben).inOrg(team.id).list()).items.length === 0)
+
+  // Teams of access: an "Editors" team carries `editor`; management roles stay direct.
+  const editors = await ben.orgs.teams(team.id).create({ name: 'Editors', roles: ['editor'] })
+  const members = (await ben.orgs.members(team.id).list()).items
+  const eveId = members.find((m) => m.user !== benId && m.user !== cyId)?.user
+  const made = await ben.orgs.teams(team.id).addMember(editors.id, eveId)
+  check('a team carries roles to its members, and the list says where each came from', made.effective_roles.some((r) => r.role === 'editor' && r.origin.includes('Editors')), JSON.stringify(made.effective_roles))
+  await ben.orgs.teams(team.id).removeMember(editors.id, eveId)
+
+  // The plan: a claim only operators write, read by the function that counts.
+  for (let i = 0; i < 4; i++) await main(ben).fn('pin', { org: team.id, title: `Pin ${i}` })
+  await main(ben).fn('pin', { org: team.id, title: 'The fifth' })
+  await refused('the free plan holds five pins (409 plan_limit)', () => main(ben).fn('pin', { org: team.id, title: 'The sixth' }), ConflictError, 'plan_limit')
+  await refused('a member can\'t put their own team on a better plan (403)', () => main(ben).fn('team-plan', { org: team.id, plan: 'pro' }), ForbiddenError, '')
+  await main(operator).fn('team-plan', { org: team.id, plan: 'pro' })
+  check('the claim is on the organization, read-only for its members', (await ben.orgs.get(team.id)).claims.plan === 'pro')
+  const sixth = /** @type {any} */ (await main(ben).fn('pin', { org: team.id, title: 'The sixth' }))
+  check('on the pro plan the sixth fits', sixth.pins === 6 && sixth.limit === 100, JSON.stringify(sixth))
+
+  // The last manager stays.
+  await refused('the only owner can\'t leave (409 last_org_manager)', () => ben.orgs.leave(team.id), ConflictError, 'last_org_manager')
+  await ben.orgs.members(team.id).update(cyId, ['owner'])
+  await ben.orgs.leave(team.id)
+  check('with another owner, leaving works and ends access at once', await cy.orgs.get(team.id).then(() => true), '')
+  await refused('the one who left is no longer a member (403)', () => ben.orgs.get(team.id), ForbiddenError, 'not_org_member')
+
+  // A second factor for the team: asked with a fresh proof, and a session without one is refused.
+  await cy.auth.reauth({ method: 'password', password: PASSWORD })
+  await refused('a team can\'t require a second factor of someone who has none (403 org_requires_mfa)', () => cy.orgs.update(team.id, { require_mfa: true }), ForbiddenError, 'org_requires_mfa')
+
+  // Deleting: the report first, then access ends at once and the pins go.
+  const report = await (await fetch(`${url}/v1/shelf/_admin/orgs/${team.id}/owned`, { headers: { Authorization: `Bearer ${operatorToken}` } })).json()
+  check('the report counts what deleting would remove', report.to_delete === 6 && report.collections.some((c) => c.collection === 'pins' && c.documents === 6), JSON.stringify(report))
+  await cy.auth.reauth({ method: 'password', password: PASSWORD })
+  await cy.orgs.delete(team.id)
+  await refused('a deleted team has no members left (403)', () => cy.orgs.get(team.id), ForbiddenError, 'not_org_member')
+  let pinsLeft = -1
+  for (let i = 0; i < 100 && pinsLeft !== 0; i++) {
+    pinsLeft = (await (await fetch(`${url}/v1/shelf/_admin/orgs/${team.id}/owned`, { headers: { Authorization: `Bearer ${operatorToken}` } })).json()).to_delete
+    if (pinsLeft !== 0) await new Promise((r) => setTimeout(r, 300))
+  }
+  check('the cleanup removed the team\'s pins', pinsLeft === 0, String(pinsLeft))
+}
+
 heading('cleanup by hand (ch9)')
 const sweep = /** @type {any} */ (await operator.admin.invokeFunction('main/cleanup'))
 const swept = /** @type {any} */ (await sweep.wait({ pollIntervalMs: 300, timeoutMs: 90000 }))

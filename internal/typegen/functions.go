@@ -85,7 +85,8 @@ export interface Page<D> {
   skip: number;
   has_more: boolean;
   next_cursor?: string;
-  count?: number;
+  /** With count: true, the size of the whole list. */
+  total?: number;
 }
 
 /** The files of one document's file field. */
@@ -105,7 +106,8 @@ export interface TypedCollection<D, I, C, W, O> {
   files(id: string, field: string): FileField<D>;
   list(params?: ListParams<W, O>): Promise<Page<D>>;
   iterate(params?: Omit<ListParams<W, O>, "skip" | "count">): AsyncGenerator<D, void, undefined>;
-  create(doc: C, options?: { idempotencyKey?: string }): Promise<D>;
+  /** org: the organization a document of a collection with organizations is created in. */
+  create(doc: C, options?: { idempotencyKey?: string; org?: string }): Promise<D>;
   replace(id: string, doc: I, options?: { ifMatch?: number | string }): Promise<D>;
   patch(id: string, patch: Partial<I>, options?: { ifMatch?: number | string }): Promise<D>;
   delete(id: string, options?: { ifMatch?: number | string }): Promise<void>;

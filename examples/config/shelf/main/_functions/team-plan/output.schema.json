@@ -1,0 +1,5 @@
+{
+  "type": "object",
+  "properties": { "org": { "type": "string" }, "plan": { "type": "string" } },
+  "required": ["org", "plan"]
+}

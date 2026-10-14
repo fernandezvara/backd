@@ -177,6 +177,28 @@ export type MainNotificationsWhere = {
 };
 export type MainNotificationsOrderByField = "id" | "-id" | "_meta.created_at" | "-_meta.created_at" | "_meta.updated_at" | "-_meta.updated_at" | "_meta.version" | "-_meta.version" | "_meta.owner" | "-_meta.owner" | "_meta.created_by" | "-_meta.created_by" | "_meta.updated_by" | "-_meta.updated_by" | "asset_id" | "-asset_id" | "kind" | "-kind" | "read_at" | "-read_at" | "text" | "-text" | "to_user" | "-to_user";
 export type MainNotificationsOrderBy = MainNotificationsOrderByField | `${MainNotificationsOrderByField},${string}`;
+/** main/pins */
+export type MainPins = { id: string; _meta: Meta } & { author?: string; note?: string; title: string; url?: string; [key: string]: unknown; };
+/** main/pins */
+export type MainPinsInput = { author?: string; note?: string; title: string; url?: string; [key: string]: unknown; };
+export type MainPinsWhere = {
+  id?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "_meta.created_at"?: DateTimeString | (Ops<DateTimeString> & NullOps & RangeOps<DateTimeString>);
+  "_meta.updated_at"?: DateTimeString | (Ops<DateTimeString> & NullOps & RangeOps<DateTimeString>);
+  "_meta.version"?: number | (Ops<number> & NullOps & RangeOps<number>);
+  "_meta.owner"?: (string | null) | (Ops<(string | null)> & NullOps & RangeOps<string> & TextOps);
+  "_meta.created_by"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "_meta.updated_by"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "_meta.org"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  author?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  note?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  title?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  url?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  $or?: Array<MainPinsWhere>;
+  $and?: Array<MainPinsWhere>;
+};
+export type MainPinsOrderByField = "id" | "-id" | "_meta.created_at" | "-_meta.created_at" | "_meta.updated_at" | "-_meta.updated_at" | "_meta.version" | "-_meta.version" | "_meta.owner" | "-_meta.owner" | "_meta.created_by" | "-_meta.created_by" | "_meta.updated_by" | "-_meta.updated_by" | "_meta.org" | "-_meta.org" | "author" | "-author" | "note" | "-note" | "title" | "-title" | "url" | "-url";
+export type MainPinsOrderBy = MainPinsOrderByField | `${MainPinsOrderByField},${string}`;
 /** main/shares */
 export type MainShares = { id: string; _meta: Meta } & { asset_id: string; created_by?: string | null; expires_at?: DateTimeString | null; token: string; [key: string]: unknown; };
 /** main/shares */
@@ -218,6 +240,7 @@ export interface Realm {
         imports: { doc: MainImports; input: MainImportsInput; create: MainImportsInput; where: MainImportsWhere; order_by: MainImportsOrderBy };
         members: { doc: MainMembers; input: MainMembersInput; create: MainMembersCreate; where: MainMembersWhere; order_by: MainMembersOrderBy };
         notifications: { doc: MainNotifications; input: MainNotificationsInput; create: MainNotificationsInput; where: MainNotificationsWhere; order_by: MainNotificationsOrderBy };
+        pins: { doc: MainPins; input: MainPinsInput; create: MainPinsInput; where: MainPinsWhere; order_by: MainPinsOrderBy };
         shares: { doc: MainShares; input: MainSharesInput; create: MainSharesInput; where: MainSharesWhere; order_by: MainSharesOrderBy };
       };
       functions: {
@@ -229,10 +252,12 @@ export interface Realm {
         "maintenance-close": { input: unknown; output: unknown; mode: "async"; internal: true; calls: never };
         "maintenance-open": { input: unknown; output: unknown; mode: "async"; internal: true; calls: never };
         notify: { input: { asset_id?: string; kind: string; text: string; to_user: string; }; output: unknown; mode: "sync"; internal: true; calls: never };
+        pin: { input: { note?: string; org: string; title: string; url?: string; }; output: { id: string; limit: number; pins: number; [key: string]: unknown; }; mode: "sync"; internal: false; calls: never };
         preview: { input: { url: string; }; output: unknown; mode: "sync"; internal: false; calls: never };
         publish: { input: { asset_id: string; }; output: unknown; mode: "sync"; internal: false; calls: "notify" };
         share: { input: { asset_id: string; expires_in?: "week" | "month" | "never"; }; output: unknown; mode: "sync"; internal: false; calls: never };
         "share-open": { input: { token: string; }; output: unknown; mode: "sync"; internal: false; calls: never };
+        "team-plan": { input: { org: string; plan: "free" | "pro"; }; output: { org: string; plan: string; [key: string]: unknown; }; mode: "sync"; internal: false; calls: never };
       };
     };
   };
@@ -268,6 +293,7 @@ export interface Realm {
     };
   };
   roles: "admin" | "curator";
+  org_roles: "admin" | "editor" | "member" | "owner";
 }
 
 /** The user a function runs for, or null for an anonymous caller and scheduled runs. */
@@ -340,7 +366,8 @@ export interface Page<D> {
   skip: number;
   has_more: boolean;
   next_cursor?: string;
-  count?: number;
+  /** With count: true, the size of the whole list. */
+  total?: number;
 }
 
 /** The files of one document's file field. */
@@ -360,7 +387,8 @@ export interface TypedCollection<D, I, C, W, O> {
   files(id: string, field: string): FileField<D>;
   list(params?: ListParams<W, O>): Promise<Page<D>>;
   iterate(params?: Omit<ListParams<W, O>, "skip" | "count">): AsyncGenerator<D, void, undefined>;
-  create(doc: C, options?: { idempotencyKey?: string }): Promise<D>;
+  /** org: the organization a document of a collection with organizations is created in. */
+  create(doc: C, options?: { idempotencyKey?: string; org?: string }): Promise<D>;
   replace(id: string, doc: I, options?: { ifMatch?: number | string }): Promise<D>;
   patch(id: string, patch: Partial<I>, options?: { ifMatch?: number | string }): Promise<D>;
   delete(id: string, options?: { ifMatch?: number | string }): Promise<void>;
@@ -431,7 +459,7 @@ export type FunctionName = keyof Realm["db"][ThisDatabase]["functions"] & string
 
 /** What each function of this database may use. */
 export interface FunctionFlags {
-  "email-capture": { webhook: false; admin: true; orgs: false; config_write: false; email: false; push: false; secrets: never };
+  "email-capture": { webhook: false; admin: true; orgs: true; config_write: false; email: false; push: false; secrets: never };
   postmark: { webhook: false; admin: false; orgs: false; config_write: false; email: false; push: false; secrets: "POSTMARK_TOKEN" | "POSTMARK_FROM" };
 }
 
