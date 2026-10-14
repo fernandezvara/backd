@@ -185,6 +185,7 @@ organizations:
 |---|---|---|
 | `enabled` | `false` switches the section off without removing it | `true` |
 | `roles` | The organization roles: a name (same rules as realm roles), an optional `description`, `manage` (a capability or a list of them) and `require_mfa` (the role counts only for sessions that used a [second factor](../../organizations/team-roles/#roles-that-require-a-second-factor)) | required |
+| `hooks` | [Membership hooks](../../organizations/membership-hooks/): `on_member_joined`, `on_member_left` and `on_roles_changed`, each an internal, async function `<database>/<function>` | none |
 | `team_roles` | [Roles held within one team](../../organizations/team-roles/): a name, an optional `description`, `grants` (team roles its holders may give, in their own team) and `require_mfa` | none |
 | `default_roles` | Roles every member holds without being granted one. They can't have `manage` capabilities | none |
 | `create` | An [expression](../../auth/rules/) that decides who may create organizations; it sees `user`. `"false"` leaves it to realm administrators | `user.email_verified` |

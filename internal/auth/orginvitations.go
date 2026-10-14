@@ -535,7 +535,11 @@ func (s *Users) AcceptOrgInvitation(ctx context.Context, p Principal, token stri
 	}
 	now := s.now()
 	m := existing
-	if !isMember {
+	var before *OrgMember
+	if isMember {
+		was := existing
+		before = &was
+	} else {
 		m = OrgMember{Org: inv.Org, User: p.User.ID, JoinedAt: now, InvitedBy: used.CreatedBy}
 	}
 	have := m.DirectRoles(now)
@@ -549,7 +553,7 @@ func (s *Users) AcceptOrgInvitation(ctx context.Context, p Principal, token stri
 			m.Teams = append(m.Teams, t.ID)
 		}
 	}
-	if err := s.Store.PutOrgMember(ctx, m); err != nil {
+	if err := s.putMember(ctx, before, m, inv.ID); err != nil {
 		return Membership{}, err
 	}
 	s.Audit(ctx, AuditOrgInviteAccept, orgTarget(inv.Org), map[string]any{"invitation": inv.ID, "user": p.User.ID, "roles": used.Roles, "teams": m.Teams})

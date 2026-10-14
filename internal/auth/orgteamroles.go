@@ -193,6 +193,7 @@ func (s *Users) setTeamRole(ctx context.Context, by, orgID, teamID, target, role
 	if err != nil {
 		return TeamMemberView{}, err
 	}
+	before := tm
 	held := slices.IndexFunc(tm.TeamRoles, func(g TeamRoleGrant) bool { return g.Team == teamID && g.Role == role })
 	details := map[string]any{"team": teamID, "user": target, "role": role}
 	var action string
@@ -228,7 +229,7 @@ func (s *Users) setTeamRole(ctx context.Context, by, orgID, teamID, target, role
 			details["until"] = w.Until.UTC().Format(time.RFC3339)
 		}
 	}
-	if err := s.Store.PutOrgMember(ctx, tm); err != nil {
+	if err := s.putMember(ctx, &before, tm, ""); err != nil {
 		return TeamMemberView{}, err
 	}
 	s.Audit(ctx, action, orgTarget(orgID), details)

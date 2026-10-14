@@ -16,6 +16,7 @@ type memOrgs struct {
 	members map[string]auth.OrgMember // org + "\x00" + user
 	teams   map[string]auth.OrgTeam
 	invites map[string]auth.OrgInvitation
+	seq     map[string]int64 // org + "\x00" + user → the last membership event number
 }
 
 func (m *MemStore) org() *memOrgs {
@@ -250,6 +251,17 @@ func (m *MemStore) ListOrgMembers(_ context.Context, org, after string, limit in
 		return all[:limit], true, nil
 	}
 	return all, false, nil
+}
+
+func (m *MemStore) NextOrgMemberSeq(_ context.Context, org, user string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o := m.org()
+	if o.seq == nil {
+		o.seq = map[string]int64{}
+	}
+	o.seq[memberKey(org, user)]++
+	return o.seq[memberKey(org, user)], nil
 }
 
 func (m *MemStore) PurgeExpiredTeamRoles(_ context.Context, before time.Time) (int64, error) {

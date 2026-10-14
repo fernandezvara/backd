@@ -206,9 +206,14 @@ func (s *Users) updateOrgTeam(ctx context.Context, cc registry.OrgCaps, orgID, i
 		}
 		t.Roles = roles
 	}
+	var snaps []memberSnapshot
+	if setRoles {
+		snaps = s.snapshotTeam(ctx, orgID, id)
+	}
 	if err := s.Store.UpdateOrgTeam(ctx, t); err != nil {
 		return OrgTeam{}, err
 	}
+	s.teamChanged(ctx, orgID, snaps)
 	s.Audit(ctx, AuditOrgTeamUpdate, orgTarget(orgID), map[string]any{"team": t.ID, "name": t.Name, "roles": t.Roles})
 	return t, nil
 }
@@ -254,9 +259,11 @@ func (s *Users) deleteOrgTeam(ctx context.Context, cc registry.OrgCaps, orgID, i
 			return err
 		}
 	}
+	snaps := s.snapshotTeam(ctx, orgID, id)
 	if err := s.Store.DeleteOrgTeam(ctx, orgID, id); err != nil {
 		return err
 	}
+	s.teamChanged(ctx, orgID, snaps)
 	// The collections' on_team_delete applies to its documents through a job.
 	j, err := s.enqueueCleanup(ctx, TeamDeleteOrigin, "team-delete:"+id, OrgDeleteJob{Org: orgID, Team: id}, "")
 	if err != nil {
@@ -308,6 +315,7 @@ func (s *Users) setTeamMembership(ctx context.Context, cc registry.OrgCaps, orgI
 	if err != nil {
 		return MemberView{}, err
 	}
+	before := m
 	has := slices.Contains(m.Teams, id)
 	switch {
 	case add && has, !add && !has:
@@ -339,7 +347,7 @@ func (s *Users) setTeamMembership(ctx context.Context, cc registry.OrgCaps, orgI
 		}
 		m.Teams = slices.DeleteFunc(slices.Clone(m.Teams), func(x string) bool { return x == id })
 	}
-	if err := s.Store.PutOrgMember(ctx, m); err != nil {
+	if err := s.putMember(ctx, &before, m, ""); err != nil {
 		return MemberView{}, err
 	}
 	action := AuditOrgTeamMemberRemove

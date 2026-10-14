@@ -459,3 +459,26 @@ func TestAuthStoreTeamRoles(t *testing.T) {
 		t.Errorf("another team's grant: %+v", m.TeamRoles)
 	}
 }
+
+func TestAuthStoreOrgMemberSeq(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	next := func(org, user string) int64 {
+		t.Helper()
+		n, err := s.NextOrgMemberSeq(ctx, org, user)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	// It counts per organization and user, from one, and never goes back.
+	if a, b, c := next("o1", "u1"), next("o1", "u1"), next("o1", "u2"); a != 1 || b != 2 || c != 1 {
+		t.Errorf("seq: %d %d %d", a, b, c)
+	}
+	if n := next("o2", "u1"); n != 1 {
+		t.Errorf("another organization: %d", n)
+	}
+	if n := next("o1", "u1"); n != 3 {
+		t.Errorf("after the others: %d", n)
+	}
+}

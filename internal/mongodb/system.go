@@ -65,6 +65,9 @@ const (
 	OrgMembersCollection     = "org_members"
 	OrgTeamsCollection       = "org_teams"
 	OrgInvitationsCollection = "org_invitations"
+	// OrgMemberSeqCollection holds, per organization and user, the sequence number of the last
+	// membership event handed to a hook (design/team-access.md §7).
+	OrgMemberSeqCollection = "org_member_seq"
 	// PushSendsCollection holds one record per push send: its totals, never a message.
 	PushSendsCollection = "push_sends"
 	// PushOutboxCollection holds what the capture provider took instead of sending: development
@@ -574,6 +577,15 @@ var systemCollections = []systemCollection{
 			{keys: bson.D{{Key: "org", Value: 1}, {Key: "roles.role", Value: 1}}},
 			{keys: bson.D{{Key: "org", Value: 1}, {Key: "team_roles.team", Value: 1}}},
 		},
+	},
+	{
+		name: OrgMemberSeqCollection,
+		validator: jsonSchema([]string{"_id", "org", "user", "seq"}, map[string]any{
+			"_id":  str(),
+			"org":  str(),
+			"user": str(),
+			"seq":  map[string]any{"bsonType": bson.A{"int", "long"}},
+		}),
 	},
 	{
 		name: OrgTeamsCollection,

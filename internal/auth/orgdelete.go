@@ -130,6 +130,7 @@ func (s *Users) releaseOrgs(ctx context.Context, userID, address string) error {
 		return err
 	}
 	for _, id := range orgs {
+		s.memberLeft(ctx, id, userID, LeftErased)
 		org, err := s.Store.OrgByID(ctx, id)
 		if err != nil || org.Status != OrgActive {
 			continue

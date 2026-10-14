@@ -399,6 +399,18 @@ func (s *AuthStore) OrgMembersWithRoles(ctx context.Context, org string, roles [
 	return out, nil
 }
 
+// NextOrgMemberSeq counts a membership event of a user in an organization.
+func (s *AuthStore) NextOrgMemberSeq(ctx context.Context, org, user string) (int64, error) {
+	var d struct {
+		Seq int64 `bson:"seq"`
+	}
+	err := s.db.Collection(OrgMemberSeqCollection).FindOneAndUpdate(ctx,
+		bson.D{{Key: "_id", Value: orgMemberID(org, user)}},
+		bson.D{{Key: "$inc", Value: bson.D{{Key: "seq", Value: int64(1)}}}, {Key: "$setOnInsert", Value: bson.D{{Key: "org", Value: org}, {Key: "user", Value: user}}}},
+		options.FindOneAndUpdate().SetUpsert(true).SetReturnDocument(options.After)).Decode(&d)
+	return d.Seq, err
+}
+
 // PurgeExpiredTeamRoles pulls the grants whose window ended before the instant.
 func (s *AuthStore) PurgeExpiredTeamRoles(ctx context.Context, before time.Time) (int64, error) {
 	ended := bson.D{{Key: "until", Value: bson.D{{Key: "$lt", Value: before}}}}

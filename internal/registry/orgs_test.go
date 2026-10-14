@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 const orgsRealm = `signup: open
@@ -213,5 +214,46 @@ func TestCollectionTeamPolicy(t *testing.T) {
 	// The rules compile with the helpers when the collection has teams.
 	if _, err := softTree(t, realm, ok+"team: required\non_team_delete:\n  action: keep\nrules:\n  read: inTeam(document._meta.team) || hasTeamRole(document._meta.team, 'manager')\n", ""); err != nil {
 		t.Errorf("rules: %v", err)
+	}
+}
+
+func TestOrganizationHooksSettings(t *testing.T) {
+	s, errs := parseRealmSettings([]byte("organizations:\n  roles:\n    owner: { manage: org }\n  hooks:\n    on_member_joined: core/joined\n    on_roles_changed: core/changed\n"))
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	h := s.Organizations.Hooks
+	if h.OnMemberJoined.Function != "core/joined" || h.OnRolesChanged.Function != "core/changed" || h.OnMemberLeft.Function != "" {
+		t.Errorf("hooks: %+v", h)
+	}
+	_, errs = parseRealmSettings([]byte("organizations:\n  roles:\n    owner: { manage: org }\n  hooks:\n    on_member_left: nonsense\n"))
+	if len(errs) == 0 || !strings.Contains(errs[0].Error(), "hooks.on_member_left: must be <database>/<function>") {
+		t.Errorf("a bad reference: %v", errs)
+	}
+}
+
+func TestOrganizationHooksNameBackgroundFunctions(t *testing.T) {
+	tree := func(fn string) string {
+		return writeTree(t, map[string]string{
+			"shop/realm.yaml":                         "signup: open\norganizations:\n  roles:\n    owner: { manage: org }\n  hooks:\n    on_member_joined: app/hello\n",
+			"shop/app/_functions/deno.json":           `{}`,
+			"shop/app/_functions/hello/function.yaml": fn,
+			"shop/app/_functions/hello/index.ts":      "export default () => 1;\n",
+		})
+	}
+	reg, err := Load(tree("internal: true\nmode: async\ntimeout: 20s\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h := reg.Realms["shop"].Settings.Organizations.Hooks.OnMemberJoined; h.Function != "app/hello" || h.Timeout != 20*time.Second {
+		t.Errorf("hook: %+v", h)
+	}
+	for name, tc := range map[string]struct{ fn, want string }{
+		"not internal": {"mode: async\n", "organizations.hooks.on_member_joined: app/hello must have `internal: true`"},
+		"not async":    {"internal: true\n", "organizations.hooks.on_member_joined: app/hello must have `mode: async`"},
+	} {
+		if _, err := Load(tree(tc.fn)); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: %v, want %q", name, err, tc.want)
+		}
 	}
 }

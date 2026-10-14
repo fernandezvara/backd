@@ -94,6 +94,7 @@ func Load(root string) (*Registry, error) {
 	for _, realmName := range reg.RealmNames() {
 		errs = append(errs, loadEmail(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadOnSignup(reg.Realms[realmName], filepath.Join(root, realmName))...)
+		errs = append(errs, loadOrgHooks(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadPush(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadConsents(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, checkConfigGrants(reg.Realms[realmName], filepath.Join(root, realmName))...)
@@ -145,6 +146,26 @@ func loadPush(rl *Realm, realmPath string) []error {
 	return errs
 }
 
+// backgroundHook finds the function a realm setting names (<database>/<function>) and checks
+// that it can run in the background without anyone calling it: internal and async. nothingWaits
+// says who isn't waiting for it, for the message.
+func backgroundHook(rl *Realm, file, setting, ref, nothingWaits string) (*Function, error) {
+	dbName, fnName, _ := strings.Cut(ref, "/")
+	var fn *Function
+	if db := rl.Databases[dbName]; db != nil && db.Functions != nil {
+		fn = db.Functions.Functions[fnName]
+	}
+	switch {
+	case fn == nil:
+		return nil, fmt.Errorf("%s: %s: %q is not a function of this realm (it is _functions/%s in the database %q)", file, setting, ref, fnName, dbName)
+	case !fn.Internal:
+		return nil, fmt.Errorf("%s: %s: %s must have `internal: true` in its function.yaml (nobody should call it over HTTP)", file, setting, ref)
+	case fn.Mode != ModeAsync:
+		return nil, fmt.Errorf("%s: %s: %s must have `mode: async` in its function.yaml (nothing waits for it %s)", file, setting, ref, nothingWaits)
+	}
+	return fn, nil
+}
+
 // loadOnSignup checks that account.on_signup names a function that can run in the background
 // without anyone calling it: internal and async.
 func loadOnSignup(rl *Realm, realmPath string) []error {
@@ -152,22 +173,34 @@ func loadOnSignup(rl *Realm, realmPath string) []error {
 	if a.OnSignup == "" {
 		return nil
 	}
-	file := filepath.Join(realmPath, RealmFile)
-	dbName, fnName := a.OnSignupDatabaseAndName()
-	var fn *Function
-	if db := rl.Databases[dbName]; db != nil && db.Functions != nil {
-		fn = db.Functions.Functions[fnName]
-	}
-	switch {
-	case fn == nil:
-		return []error{fmt.Errorf("%s: account.on_signup: %q is not a function of this realm (it is _functions/%s in the database %q)", file, a.OnSignup, fnName, dbName)}
-	case !fn.Internal:
-		return []error{fmt.Errorf("%s: account.on_signup: %s must have `internal: true` in its function.yaml (nobody should call it over HTTP)", file, a.OnSignup)}
-	case fn.Mode != ModeAsync:
-		return []error{fmt.Errorf("%s: account.on_signup: %s must have `mode: async` in its function.yaml (nothing waits for it while someone signs up)", file, a.OnSignup)}
+	fn, err := backgroundHook(rl, filepath.Join(realmPath, RealmFile), "account.on_signup", a.OnSignup, "while someone signs up")
+	if err != nil {
+		return []error{err}
 	}
 	a.OnSignupTimeout = fn.Timeout
 	return nil
+}
+
+// loadOrgHooks checks that each of organizations.hooks names an internal, async function.
+func loadOrgHooks(rl *Realm, realmPath string) []error {
+	o := rl.Settings.Organizations
+	if o == nil {
+		return nil
+	}
+	var errs []error
+	file := filepath.Join(realmPath, RealmFile)
+	for _, h := range o.Hooks.All() {
+		if h.Hook.Function == "" {
+			continue
+		}
+		fn, err := backgroundHook(rl, file, "organizations.hooks."+h.Key, h.Hook.Function, "while membership changes")
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		h.Hook.Timeout = fn.Timeout
+	}
+	return errs
 }
 
 // loadEmail checks a realm's email settings against its functions and loads

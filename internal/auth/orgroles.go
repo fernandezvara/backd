@@ -81,14 +81,15 @@ func (s *Users) resolve(ctx context.Context, m OrgMember, mfa bool) (resolved, e
 		out.Roles = append(out.Roles, e)
 	}
 	out.TeamRoles = map[string][]string{}
-	for team, roles := range s.declaredTeamRoles(m, now) {
-		for _, r := range roles {
-			if def := o.TeamRoles[r]; def.RequireMFA && !mfa {
-				out.Withheld = append(out.Withheld, WithheldRole{Role: r, Team: team, Grants: def.Grants})
-				continue
-			}
-			out.TeamRoles[team] = append(out.TeamRoles[team], r)
+	for _, g := range m.TeamRoles {
+		if !g.Active(now) || !o.TeamRoleDeclared(g.Role) || slices.Contains(out.TeamRoles[g.Team], g.Role) {
+			continue
 		}
+		if def := o.TeamRoles[g.Role]; def.RequireMFA && !mfa {
+			out.Withheld = append(out.Withheld, WithheldRole{Role: g.Role, Team: g.Team, Grants: def.Grants})
+			continue
+		}
+		out.TeamRoles[g.Team] = append(out.TeamRoles[g.Team], g.Role)
 	}
 	return out, nil
 }

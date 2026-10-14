@@ -315,6 +315,7 @@ func (s *Users) createOrg(ctx context.Context, o *registry.OrgSettings, name, sl
 	if err := s.Store.CreateOrg(ctx, org, m); err != nil {
 		return Membership{}, err
 	}
+	s.memberChanged(ctx, nil, m, "")
 	s.Audit(ctx, AuditOrgCreate, orgTarget(org.ID), map[string]any{"by": by, "creator": creator})
 	return s.membership(ctx, org, m)
 }
@@ -636,8 +637,9 @@ func (s *Users) setRoles(ctx context.Context, callerCaps registry.OrgCaps, by, o
 	for _, r := range added {
 		grants = append(grants, RoleGrant{Role: r, GrantedBy: by, GrantedAt: now})
 	}
+	before := tm
 	tm.Roles = grants
-	if err := s.Store.PutOrgMember(ctx, tm); err != nil {
+	if err := s.putMember(ctx, &before, tm, ""); err != nil {
 		return MemberView{}, err
 	}
 	s.Audit(ctx, AuditOrgRoles, orgTarget(orgID), map[string]any{"user": target, "added": added, "removed": removed})
@@ -688,6 +690,7 @@ func (s *Users) AdminAddMember(ctx context.Context, orgID, userID string, roles 
 func (s *Users) addMember(ctx context.Context, o *registry.OrgSettings, org Org, userID string, roles []string, invitedBy, by string) (MemberView, error) {
 	now := s.now()
 	m, err := s.Store.OrgMember(ctx, org.ID, userID)
+	var before *OrgMember
 	switch {
 	case errors.Is(err, ErrNotFound):
 		if err := s.checkMembershipCap(ctx, o, userID); err != nil {
@@ -696,14 +699,17 @@ func (s *Users) addMember(ctx context.Context, o *registry.OrgSettings, org Org,
 		m = OrgMember{Org: org.ID, User: userID, JoinedAt: now, InvitedBy: invitedBy}
 	case err != nil:
 		return MemberView{}, err
+	default:
+		was := m
+		before = &was
 	}
 	have := m.DirectRoles(now)
 	for _, r := range roles {
 		if !slices.Contains(have, r) {
-			m.Roles = append(m.Roles, RoleGrant{Role: r, GrantedBy: invitedBy, GrantedAt: now})
+			m.Roles = append(slices.Clone(m.Roles), RoleGrant{Role: r, GrantedBy: invitedBy, GrantedAt: now})
 		}
 	}
-	if err := s.Store.PutOrgMember(ctx, m); err != nil {
+	if err := s.putMember(ctx, before, m, ""); err != nil {
 		return MemberView{}, err
 	}
 	s.Audit(ctx, AuditOrgMemberAdd, orgTarget(org.ID), map[string]any{"user": userID, "roles": roles, "by": by})
@@ -797,6 +803,11 @@ func (s *Users) removeMember(ctx context.Context, orgID string, m OrgMember, act
 	if err := s.Store.DeleteOrgMember(ctx, orgID, m.User); err != nil {
 		return err
 	}
+	reason := LeftRemoved
+	if action == AuditOrgMemberLeave {
+		reason = LeftByThemselves
+	}
+	s.memberLeft(ctx, orgID, m.User, reason)
 	s.Audit(ctx, action, orgTarget(orgID), map[string]any{"user": m.User})
 	return nil
 }

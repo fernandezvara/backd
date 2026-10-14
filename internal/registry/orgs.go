@@ -131,6 +131,30 @@ const (
 	TeamRequired = "required"
 )
 
+// OrgHook is a function called when membership changes (organizations.hooks): an internal,
+// async function, <database>/<function>.
+type OrgHook struct {
+	Function string
+	// Timeout is the function's own, the lease of the job (zero: the default).
+	Timeout time.Duration
+}
+
+// OrgHooks are the functions called when people join, leave or change roles in an organization.
+type OrgHooks struct {
+	OnMemberJoined, OnMemberLeft, OnRolesChanged OrgHook
+}
+
+// NamedHook is a hook with its key in realm.yaml.
+type NamedHook struct {
+	Key  string
+	Hook *OrgHook
+}
+
+// All lists the hooks, whether they are set or not, with the keys they have in realm.yaml.
+func (h *OrgHooks) All() []NamedHook {
+	return []NamedHook{{"on_member_joined", &h.OnMemberJoined}, {"on_member_left", &h.OnMemberLeft}, {"on_roles_changed", &h.OnRolesChanged}}
+}
+
 // OrgSettings is the realm's organizations section; nil in RealmSettings when the realm
 // doesn't enable organizations.
 type OrgSettings struct {
@@ -150,6 +174,8 @@ type OrgSettings struct {
 	MaxPendingInvitations int
 	AllowRequireMFA       bool
 	MembersVisibleTo      string
+	// Hooks are called through the job queue when membership changes.
+	Hooks OrgHooks
 	// InvitationLink is where invitation links point: it holds {token} and may hold {org}.
 	InvitationLink string
 	create         *rules.Rule
@@ -250,6 +276,11 @@ type orgsDoc struct {
 	AllowRequireMFA       *bool    `yaml:"allow_require_mfa"`
 	MembersVisibleTo      string   `yaml:"members_visible_to"`
 	InvitationLink        string   `yaml:"invitation_link"`
+	Hooks                 *struct {
+		OnMemberJoined string `yaml:"on_member_joined"`
+		OnMemberLeft   string `yaml:"on_member_left"`
+		OnRolesChanged string `yaml:"on_roles_changed"`
+	} `yaml:"hooks"`
 }
 
 // apply reads the section into s. It runs after the realm's roles, redirects and sign-in
@@ -373,6 +404,21 @@ func (d *orgsDoc) apply(s *RealmSettings) []error {
 		o.MembersVisibleTo = d.MembersVisibleTo
 	default:
 		add("members_visible_to: must be members or managers, got %q", d.MembersVisibleTo)
+	}
+	if h := d.Hooks; h != nil {
+		set := map[string]string{"on_member_joined": h.OnMemberJoined, "on_member_left": h.OnMemberLeft, "on_roles_changed": h.OnRolesChanged}
+		for _, named := range o.Hooks.All() {
+			ref := set[named.Key]
+			if ref == "" {
+				continue
+			}
+			db, name, ok := strings.Cut(ref, "/")
+			if !ok || !namePattern.MatchString(db) || !namePattern.MatchString(name) {
+				add("hooks.%s: must be <database>/<function> (an internal, async function), got %q", named.Key, ref)
+				continue
+			}
+			named.Hook.Function = ref
+		}
 	}
 	if d.Create != nil {
 		o.CreateRule = strings.TrimSpace(*d.Create)

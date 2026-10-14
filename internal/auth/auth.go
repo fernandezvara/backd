@@ -353,6 +353,9 @@ type Store interface {
 	CountOrgMembershipsOf(ctx context.Context, user string) (int, error)
 	// PutOrgMember creates or replaces a membership (unique per organization and user).
 	PutOrgMember(ctx context.Context, m OrgMember) error
+	// NextOrgMemberSeq returns the next sequence number of the membership events of a user in an
+	// organization: it grows for ever, across leaving and joining again.
+	NextOrgMemberSeq(ctx context.Context, org, user string) (int64, error)
 	// DeleteOrgMember removes a membership; ErrNotFound if none.
 	DeleteOrgMember(ctx context.Context, org, user string) error
 
