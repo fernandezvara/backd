@@ -2286,6 +2286,7 @@ func TestContract(t *testing.T) {
 		req("POST", reqsRoute+"?org="+to, `{"title": "no team"}`, key, 400)
 		req("POST", reqsRoute+"?org="+to+"&team=nosuch", `{"title": "x"}`, key, 404)
 		teamDoc := req("POST", reqsRoute+"?org="+to+"&team="+deptTeam, `{"title": "in a team"}`, key, 201)["id"].(string)
+		req("GET", reqsRoute+"?org="+to+"&team="+deptTeam, "", key, 200)
 		ttr := reqsRoute + "/" + teamDoc + "/_transfer"
 		req("POST", ttr, `{"org": "`+to+`", "team": null}`, key, 400)
 		req("POST", ttr, `{"org": "`+to+`", "team": "nosuch"}`, key, 404)
