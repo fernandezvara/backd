@@ -3,6 +3,8 @@ package httpapi
 import (
 	"context"
 	"testing"
+
+	"github.com/fernandezvara/backd/internal/storage"
 )
 
 func TestDeleteAnOrganization(t *testing.T) {
@@ -126,5 +128,103 @@ func TestDeletedOrganizationsGiveUpTheirSlug(t *testing.T) {
 	f.orgOf(t, f.ada, "Three")
 	if rec, out := f.doH(t, "POST", orgsPath, `{"name": "Four"}`, jsonHdr(f.ada)); rec.Code != 409 || errCode(out) != "org_limit_reached" {
 		t.Errorf("the cap counts deleted ones: %d %v", rec.Code, out)
+	}
+}
+
+// Erasing a user takes them out of organizations; their documents there stay with the owner
+// cleared, and an organization left without a manager becomes orphaned.
+func TestEraseAUserInOrganizations(t *testing.T) {
+	f := newRulesFixture(t)
+	f.bobHolds(t, "staff")
+	w := newTestWorker(t, f)
+	w.reg = f.reg
+	ctx := context.Background()
+	projects := "/v1/acme/app/projects"
+	alone := f.orgOf(t, f.ada, "Alone") // ada is the only manager
+	shared := f.orgOf(t, f.ada, "Pair") // two managers
+	if _, err := f.svc.AdminAddMember(ctx, shared, f.bobID, []string{"owner"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range []string{alone, shared} {
+		if rec, out := f.doH(t, "POST", projects+"?org="+o, `{"title": "kept"}`, jsonHdr(f.ada)); rec.Code != 201 {
+			t.Fatalf("create: %d %v", rec.Code, out)
+		}
+	}
+	if rec, out := f.doH(t, "POST", "/v1/acme/app/ztally?org="+shared, `{"title": "entry"}`, jsonHdr(f.ada)); rec.Code != 201 {
+		t.Fatalf("ledger: %d %v", rec.Code, out)
+	}
+	// An invitation she made, and one made for her.
+	if rec, out := f.doH(t, "POST", orgsPath+"/"+shared+"/invitations", `{"binding": "user", "user": "`+f.adaID+`"}`, jsonHdr(f.bob)); rec.Code != 201 {
+		t.Fatalf("invitation for ada: %d %v", rec.Code, out)
+	}
+	if rec, out := f.doH(t, "POST", orgsPath+"/"+shared+"/invitations", `{"binding": "none"}`, jsonHdr(f.ada)); rec.Code != 201 {
+		t.Fatalf("invitation by ada: %d %v", rec.Code, out)
+	}
+	// The report names what is going to happen.
+	rec, out := f.doH(t, "GET", "/v1/acme/_admin/users/"+f.adaID+"/owned", "", bearer(f.bob))
+	if rec.Code != 200 {
+		t.Fatalf("owned: %d %v", rec.Code, out)
+	}
+	orgs := out["organizations"].([]any)
+	last := map[string]bool{}
+	for _, o := range orgs {
+		m := o.(map[string]any)
+		last[m["id"].(string)] = m["last_manager"].(bool)
+	}
+	if len(orgs) != 2 || !last[alone] || last[shared] {
+		t.Errorf("organizations: %v", orgs)
+	}
+	kept := out["kept_in_organizations"].([]any)
+	if len(kept) != 1 || kept[0].(map[string]any)["documents"] != float64(2) {
+		t.Errorf("kept: %v", kept)
+	}
+	// Erase her and let the worker run.
+	if rec, out := f.doH(t, "DELETE", "/v1/acme/_admin/users/"+f.adaID, "", bearer(f.bob)); rec.Code != 202 {
+		t.Fatalf("erase: %d %v", rec.Code, out)
+	}
+	for w.RunOnce(ctx) {
+	}
+	// Alone is orphaned (no members left); Pair still has bob and stays active.
+	one, err := f.svc.Store.OrgByID(ctx, alone)
+	if err != nil || one.Status != "orphaned" || one.CreatedBy != "" {
+		t.Errorf("alone: %+v %v", one, err)
+	}
+	pair, _ := f.svc.Store.OrgByID(ctx, shared)
+	if pair.Status != "active" {
+		t.Errorf("pair: %+v", pair)
+	}
+	// Her documents stay, with no owner.
+	coll, _ := f.reg.Collection("acme", "app", "projects")
+	got, _ := f.store.Repository(coll).List(ctx, storage.Query{Limit: 50})
+	if len(got.Items) != 2 {
+		t.Fatalf("documents: %d", len(got.Items))
+	}
+	for _, d := range got.Items {
+		if m, _ := d["_meta"].(map[string]any); m["owner"] != nil || m["org"] == nil {
+			t.Errorf("document after the erase: %v", d)
+		}
+	}
+	// A collection with in_org: apply treats them like any other: they were deleted.
+	tally, _ := f.reg.Collection("acme", "app", "ztally")
+	left, _ := f.store.Repository(tally).List(ctx, storage.Query{Limit: 50})
+	if len(left.Items) != 0 {
+		t.Errorf("tally after the erase: %d", len(left.Items))
+	}
+	// Bob reads the shared organization's document.
+	if rec, out := f.doH(t, "GET", projects+"?org="+shared, "", bearer(f.bob)); rec.Code != 200 || len(out["items"].([]any)) != 1 {
+		t.Errorf("bob lists: %d %v", rec.Code, out)
+	}
+	// The invitations: the one for her is gone, the one she made stays with no creator.
+	invs, _ := f.svc.Store.ListOrgInvitations(ctx, shared)
+	if len(invs) != 1 || invs[0].CreatedBy != "" {
+		t.Errorf("invitations: %+v", invs)
+	}
+	// An administrator assigns a manager to the orphaned one.
+	if rec, out := f.doH(t, "POST", "/v1/acme/_admin/orgs/"+alone+"/owner", `{"user": "`+f.bobID+`"}`, jsonHdr(f.bob)); rec.Code != 200 {
+		t.Errorf("assign: %d %v", rec.Code, out)
+	}
+	back, _ := f.svc.Store.OrgByID(ctx, alone)
+	if back.Status != "active" {
+		t.Errorf("after assigning: %+v", back)
 	}
 }

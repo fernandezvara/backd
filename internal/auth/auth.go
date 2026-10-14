@@ -363,6 +363,11 @@ type Store interface {
 	// ReplaceOrgInvitationToken swaps the token hash (and the sealed token, "" for none).
 	ReplaceOrgInvitationToken(ctx context.Context, org, id, tokenHash, sealed string) error
 	DeleteOrgInvitation(ctx context.Context, org, id string) error
+	// ForgetUserInOrgs removes a user from the organization data (for an erase): their
+	// memberships (and so their teams), the invitations bound to their id or address, and
+	// created_by of the organizations and invitations they made. It returns the organizations
+	// they were a member of.
+	ForgetUserInOrgs(ctx context.Context, userID, email string) ([]string, error)
 	// ArchiveOrg ends an organization at once: its status becomes deleted (the record keeps its
 	// name and dates, and its slug as FormerSlug), and its memberships, teams and invitations
 	// are removed. ErrNotFound if none; ErrOrgNotActive if it was deleted already.

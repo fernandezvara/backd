@@ -265,6 +265,16 @@ type OrgPurger interface {
 	DeleteInOrg(ctx context.Context, org string, fileFields []string, limit int) (int64, []ErasedFile, error)
 }
 
+// OrgOwnerClearer is what erasing a user needs of a collection that has organizations: the
+// documents that belong to one stay with it, and only lose their owner (unless the collection
+// says `in_org: apply`, when the erase treats them like any other).
+type OrgOwnerClearer interface {
+	// CountOwnedInOrgs counts the documents of the user that belong to an organization.
+	CountOwnedInOrgs(ctx context.Context, owner string) (int64, error)
+	// ClearOwnerInOrgs clears _meta.owner on up to limit such documents, as a system write.
+	ClearOwnerInOrgs(ctx context.Context, owner string, limit int, now time.Time) (int64, error)
+}
+
 // Scanner reads every stored document of a collection, in id order, for the
 // schema check: soft-deleted ones included, with no access rules and no
 // writes. A repository that doesn't implement it can't be checked.

@@ -253,3 +253,29 @@ func (r *Repository) DeleteInOrg(ctx context.Context, org string, fileFields []s
 	}
 	return n, files, nil
 }
+
+func ownedInOrgs(owner string) bson.D {
+	return bson.D{{Key: "_meta.owner", Value: owner}, {Key: "_meta.org", Value: bson.D{{Key: "$exists", Value: true}}}}
+}
+
+// CountOwnedInOrgs counts the documents a user owns that belong to an organization.
+func (r *Repository) CountOwnedInOrgs(ctx context.Context, owner string) (int64, error) {
+	n, err := r.coll.CountDocuments(ctx, ownedInOrgs(owner))
+	return n, mapError(err)
+}
+
+// ClearOwnerInOrgs clears the owner of up to limit such documents.
+func (r *Repository) ClearOwnerInOrgs(ctx context.Context, owner string, limit int, now time.Time) (int64, error) {
+	ids, err := r.ids(ctx, ownedInOrgs(owner), limit)
+	if err != nil || len(ids) == 0 {
+		return 0, err
+	}
+	set, inc := systemWrite(now)
+	set = append(set, bson.E{Key: "_meta.owner", Value: nil})
+	res, err := r.coll.UpdateMany(ctx, bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: ids}}}, {Key: "_meta.owner", Value: owner}},
+		bson.D{{Key: "$set", Value: set}, {Key: "$inc", Value: inc}})
+	if err != nil {
+		return 0, mapError(err)
+	}
+	return res.ModifiedCount, nil
+}

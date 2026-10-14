@@ -247,3 +247,33 @@ func (r *memRepo) DeleteInOrg(_ context.Context, org string, fileFields []string
 	}
 	return n, files, nil
 }
+
+func (r *memRepo) CountOwnedInOrgs(_ context.Context, owner string) (int64, error) {
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	var n int64
+	for _, d := range r.coll() {
+		meta, _ := d["_meta"].(map[string]any)
+		if meta["owner"] == owner && meta["org"] != nil {
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (r *memRepo) ClearOwnerInOrgs(_ context.Context, owner string, limit int, _ time.Time) (int64, error) {
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	var n int64
+	for _, d := range r.coll() {
+		meta, _ := d["_meta"].(map[string]any)
+		if n < int64(limit) && meta["owner"] == owner && meta["org"] != nil {
+			meta["owner"] = nil
+			if v, ok := meta["version"].(int64); ok {
+				meta["version"] = v + 1
+			}
+			n++
+		}
+	}
+	return n, nil
+}

@@ -104,6 +104,35 @@ func (m *MemStore) UpdateOrg(_ context.Context, id string, upd auth.OrgUpdate, n
 	return org, nil
 }
 
+func (m *MemStore) ForgetUserInOrgs(_ context.Context, userID, email string) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o := m.org()
+	var orgs []string
+	for k, mem := range o.members {
+		if mem.User == userID {
+			orgs = append(orgs, mem.Org)
+			delete(o.members, k)
+		}
+	}
+	for k, inv := range o.invites {
+		switch {
+		case inv.User == userID || (email != "" && inv.Email == email):
+			delete(o.invites, k)
+		case inv.CreatedBy == userID:
+			inv.CreatedBy = ""
+			o.invites[k] = inv
+		}
+	}
+	for k, org := range o.orgs {
+		if org.CreatedBy == userID {
+			org.CreatedBy = ""
+			o.orgs[k] = org
+		}
+	}
+	return orgs, nil
+}
+
 func (m *MemStore) ArchiveOrg(_ context.Context, id string, now time.Time) (auth.Org, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

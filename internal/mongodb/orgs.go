@@ -182,6 +182,39 @@ func (s *AuthStore) UpdateOrg(ctx context.Context, id string, upd auth.OrgUpdate
 	return d.org(), nil
 }
 
+func (s *AuthStore) ForgetUserInOrgs(ctx context.Context, userID, email string) ([]string, error) {
+	cur, err := s.orgMembers().Find(ctx, bson.D{{Key: "user", Value: userID}}, options.Find().SetProjection(bson.D{{Key: "org", Value: 1}}))
+	if err != nil {
+		return nil, err
+	}
+	var docs []orgMemberDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	orgs := make([]string, len(docs))
+	for i, d := range docs {
+		orgs[i] = d.Org
+	}
+	if _, err := s.orgMembers().DeleteMany(ctx, bson.D{{Key: "user", Value: userID}}); err != nil {
+		return nil, err
+	}
+	bound := bson.A{bson.D{{Key: "user", Value: userID}}}
+	if email != "" {
+		bound = append(bound, bson.D{{Key: "email", Value: email}})
+	}
+	if _, err := s.orgInvitations().DeleteMany(ctx, bson.D{{Key: "$or", Value: bound}}); err != nil {
+		return nil, err
+	}
+	clear := bson.D{{Key: "$unset", Value: bson.D{{Key: "created_by", Value: ""}}}}
+	if _, err := s.orgInvitations().UpdateMany(ctx, bson.D{{Key: "created_by", Value: userID}}, clear); err != nil {
+		return nil, err
+	}
+	if _, err := s.orgs().UpdateMany(ctx, bson.D{{Key: "created_by", Value: userID}}, clear); err != nil {
+		return nil, err
+	}
+	return orgs, nil
+}
+
 func (s *AuthStore) ArchiveOrg(ctx context.Context, id string, now time.Time) (auth.Org, error) {
 	var d orgDoc
 	err := s.orgs().FindOneAndUpdate(ctx,

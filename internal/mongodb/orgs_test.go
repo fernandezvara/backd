@@ -303,3 +303,77 @@ func TestRepositoryOrgPurge(t *testing.T) {
 		t.Errorf("another organization lost documents: %d", n)
 	}
 }
+
+func TestAuthStoreForgetUserInOrgs(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	for _, id := range []string{"o1", "o2"} {
+		if err := s.CreateOrg(ctx, auth.Org{ID: id, Name: id, CreatedBy: "u1", Status: auth.OrgActive, CreatedAt: now, UpdatedAt: now},
+			auth.OrgMember{Org: id, User: "u1", JoinedAt: now, Teams: []string{"t"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = s.PutOrgMember(ctx, auth.OrgMember{Org: "o1", User: "u2", JoinedAt: now})
+	inv := func(id, user, email, by string) auth.OrgInvitation {
+		return auth.OrgInvitation{ID: id, Org: "o1", TokenHash: id, Binding: auth.BindUser, User: user, Email: email, MaxUses: 1, CreatedBy: by, CreatedAt: now, ExpiresAt: now.Add(time.Hour)}
+	}
+	for _, i := range []auth.OrgInvitation{inv("a", "u1", "", "u2"), inv("b", "", "u1@example.com", "u2"), inv("c", "u3", "", "u1"), inv("d", "u3", "", "u2")} {
+		if err := s.CreateOrgInvitation(ctx, i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	orgs, err := s.ForgetUserInOrgs(ctx, "u1", "u1@example.com")
+	if err != nil || len(orgs) != 2 {
+		t.Fatalf("forget: %v %v", orgs, err)
+	}
+	if n, _ := s.CountOrgMembershipsOf(ctx, "u1"); n != 0 {
+		t.Errorf("memberships left: %d", n)
+	}
+	if m, _ := s.OrgMember(ctx, "o1", "u2"); m.User != "u2" {
+		t.Errorf("another member was removed")
+	}
+	left, _ := s.ListOrgInvitations(ctx, "o1")
+	if len(left) != 2 {
+		t.Fatalf("invitations: %+v", left)
+	}
+	for _, i := range left {
+		if i.CreatedBy == "u1" {
+			t.Errorf("created_by kept: %+v", i)
+		}
+	}
+	org, _ := s.OrgByID(ctx, "o1")
+	if org.CreatedBy != "" {
+		t.Errorf("organization created_by kept: %q", org.CreatedBy)
+	}
+}
+
+func TestRepositoryClearOwnerInOrgs(t *testing.T) {
+	_, repo := provisionOneWith(t, `{"type": "object", "properties": {"n": {"type": "integer"}}}`, "")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	for i, org := range []any{"o1", "o1", nil} {
+		meta := map[string]any{"created_at": now, "updated_at": now, "version": int64(1), "owner": "u1"}
+		if org != nil {
+			meta["org"] = org
+		}
+		if err := repo.Create(ctx, map[string]any{"id": string(rune('a' + i)), "n": int64(i), "_meta": meta}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n, err := repo.CountOwnedInOrgs(ctx, "u1"); err != nil || n != 2 {
+		t.Fatalf("count: %d %v", n, err)
+	}
+	n, err := repo.ClearOwnerInOrgs(ctx, "u1", 10, now)
+	if err != nil || n != 2 {
+		t.Fatalf("clear: %d %v", n, err)
+	}
+	doc, _ := repo.Get(ctx, "a")
+	meta, _ := doc["_meta"].(map[string]any)
+	if meta["owner"] != nil || meta["version"] != int64(2) || meta["org"] != "o1" {
+		t.Errorf("document: %v", meta)
+	}
+	if own, _ := repo.CountOwned(ctx, "u1"); own != 1 {
+		t.Errorf("the one outside an organization keeps its owner: %d", own)
+	}
+}

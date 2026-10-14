@@ -96,3 +96,77 @@ func (s *Users) AdminReactivateOrg(ctx context.Context, orgID, slug string) (Org
 	s.Audit(ctx, AuditOrgReactivate, orgTarget(orgID), map[string]any{"slug": org.Slug})
 	return org, nil
 }
+
+// AuditOrgOrphaned is recorded when an organization loses its last manager to an erase.
+const AuditOrgOrphaned = "org.orphaned" // details: user
+
+// releaseOrgs takes an erased user out of the organizations (design/organizations.md §9): their
+// memberships and team memberships go, invitations bound to them go, and the ones they created
+// stay with created_by cleared. An organization left without anyone who can manage it becomes
+// orphaned: its members keep access, and an administrator assigns a manager.
+func (s *Users) releaseOrgs(ctx context.Context, userID, address string) error {
+	if s.Settings.Organizations == nil {
+		return nil
+	}
+	orgs, err := s.Store.ForgetUserInOrgs(ctx, userID, address)
+	if err != nil {
+		return err
+	}
+	for _, id := range orgs {
+		org, err := s.Store.OrgByID(ctx, id)
+		if err != nil || org.Status != OrgActive {
+			continue
+		}
+		if err := s.keepManager(ctx, id, ""); errors.Is(err, ErrLastOrgManager) {
+			if _, err := s.Store.UpdateOrg(ctx, id, OrgUpdate{Status: OrgOrphaned}, s.now()); err != nil {
+				return err
+			}
+			s.Audit(ctx, AuditOrgOrphaned, orgTarget(id), map[string]any{"user": userID})
+		} else if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ManagedOrg is an organization a user can manage, for the report before an erase.
+type ManagedOrg struct {
+	ID   string
+	Name string
+	// LastManager says nobody else could manage it: erasing the user leaves it orphaned.
+	LastManager bool
+}
+
+// OrgsManagedBy lists the organizations in which the user holds a role that manages the
+// organization (manage: org), and whether they are the only one.
+func (s *Users) OrgsManagedBy(ctx context.Context, userID string) ([]ManagedOrg, error) {
+	o := s.Settings.Organizations
+	if o == nil {
+		return nil, nil
+	}
+	members, err := s.Store.OrgMembershipsOf(ctx, userID, 0)
+	if err != nil {
+		return nil, err
+	}
+	var out []ManagedOrg
+	for _, m := range members {
+		org, err := s.Store.OrgByID(ctx, m.Org)
+		if err != nil || org.Status == OrgDeleted {
+			continue
+		}
+		teamRoles, err := s.teamRolesOf(ctx, m.Org, m.Teams)
+		if err != nil {
+			return nil, err
+		}
+		var held []string
+		for _, e := range s.effective(m, s.now(), teamRoles) {
+			held = append(held, e.Role)
+		}
+		if !o.CapsOf(held).Has(registry.CapOrg) {
+			continue
+		}
+		last := errors.Is(s.keepManagerWith(ctx, m.Org, userID, nil), ErrLastOrgManager)
+		out = append(out, ManagedOrg{ID: org.ID, Name: org.Name, LastManager: last})
+	}
+	return out, nil
+}

@@ -82,6 +82,28 @@ func (w *Worker) applyErasePolicies(ctx context.Context, realm string, svc *auth
 		for _, name := range slices.Sorted(maps.Keys(db.Collections)) {
 			c := db.Collections[name]
 			p := c.Erasure
+			// Documents that belong to an organization stay with it, their owner cleared,
+			// before the policy runs (so the policy no longer finds them), unless the
+			// collection says `in_org: apply`.
+			if c.InOrganizations() && (p == nil || p.InOrg != registry.InOrgApply) {
+				clearer, ok := w.fns.docs.store.Repository(c).(storage.OrgOwnerClearer)
+				if !ok {
+					return fmt.Errorf("the storage of %s.%s can't clear owners", dbName, name)
+				}
+				now := svc.Clock()
+				for {
+					n, err := clearer.ClearOwnerInOrgs(ctx, e.UserID, eraseBatch, now)
+					if err != nil {
+						return fmt.Errorf("%s.%s: %w", dbName, name, err)
+					}
+					if n == 0 {
+						break
+					}
+					if err := svc.Store.AddEraseCount(ctx, job.ID, dbName+"/"+name+"/kept_in_organizations", n); err != nil {
+						return err
+					}
+				}
+			}
 			if p == nil {
 				continue
 			}

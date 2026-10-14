@@ -256,6 +256,16 @@ type ownedReport struct {
 		Unset      map[string]int64 `json:"unset"`
 	} `json:"collections"`
 	WithoutPolicy []string `json:"without_policy"`
+	Organizations []struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		LastManager bool   `json:"last_manager"`
+	} `json:"organizations"`
+	Kept []struct {
+		Database   string `json:"database"`
+		Collection string `json:"collection"`
+		Documents  int64  `json:"documents"`
+	} `json:"kept_in_organizations"`
 }
 
 // userOwned prints what erasing the user would do, per collection with a policy.
@@ -293,6 +303,16 @@ func userOwned(c *userCtx) error {
 	}
 	if len(report.WithoutPolicy) > 0 {
 		fmt.Fprintf(out, "left alone (no policy): %s\n", strings.Join(report.WithoutPolicy, ", "))
+	}
+	for _, k := range report.Kept {
+		fmt.Fprintf(out, "%s.%s  %d document(s) belong to an organization: they stay with it, the owner cleared\n", k.Database, k.Collection, k.Documents)
+	}
+	for _, o := range report.Organizations {
+		if o.LastManager {
+			fmt.Fprintf(out, "organization %s (%s): the user is the only manager: it becomes orphaned until an administrator assigns one\n", o.Name, o.ID)
+		} else {
+			fmt.Fprintf(out, "organization %s (%s): the user is a manager, and others remain\n", o.Name, o.ID)
+		}
 	}
 	return nil
 }

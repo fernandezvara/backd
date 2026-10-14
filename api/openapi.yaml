@@ -8420,8 +8420,30 @@ components:
     OwnedReport:
       type: object
       additionalProperties: false
-      required: [user, collections, without_policy]
+      required: [user, collections, without_policy, organizations, kept_in_organizations]
       properties:
+        organizations:
+          type: array
+          description: "The organizations the user can manage, and whether they are the only one: an erase leaves those organizations `orphaned`."
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name, last_manager]
+            properties:
+              id: { type: string }
+              name: { type: string }
+              last_manager: { type: boolean }
+        kept_in_organizations:
+          type: array
+          description: "The documents the user owns that belong to an organization, per collection: they stay with it, with the owner cleared, unless the collection says `in_org: apply`."
+          items:
+            type: object
+            additionalProperties: false
+            required: [database, collection, documents]
+            properties:
+              database: { type: string }
+              collection: { type: string }
+              documents: { type: integer }
         user:
           type: object
           additionalProperties: false

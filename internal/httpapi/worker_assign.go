@@ -177,7 +177,7 @@ func (w *Worker) assignOne(ctx context.Context, repo storage.Repository, doc sto
 	return false, nil
 }
 
-// ReportOrganizationless looks, once at startup, for collections that belong to organizations
+// ReportOrganizationless looks, once at startup, for organizations left without a manager and for collections that belong to organizations
 // and hold documents without one (a collection that adopted organizations later): they are
 // invisible to members until an administrator assigns them. It changes nothing.
 func (w *Worker) ReportOrganizationless(ctx context.Context) {
@@ -186,6 +186,15 @@ func (w *Worker) ReportOrganizationless(ctx context.Context) {
 		rl := w.reg.Realms[realm]
 		if rl == nil || rl.Settings.Organizations == nil {
 			continue
+		}
+		// Organizations that lost their last manager to an erase.
+		if svc := w.fns.docs.users(realm); svc != nil {
+			if orphaned, err := svc.AdminOrgs(ctx, auth.OrgOrphaned); err != nil {
+				w.log.Warn("could not list the orphaned organizations", "realm", realm, "error", err)
+			} else if len(orphaned) > 0 {
+				w.log.Warn("organizations without a manager: assign one (backd orgs assign-owner --realm "+realm+" --id <id> --email <email>)",
+					"realm", realm, "organizations", len(orphaned))
+			}
 		}
 		for _, db := range sortedKeys(rl.Databases) {
 			for _, c := range rl.Databases[db].SortedCollections() {
