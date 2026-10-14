@@ -151,6 +151,9 @@ func (s *AuthStore) UpdateOrg(ctx context.Context, id string, upd auth.OrgUpdate
 			set = append(set, bson.E{Key: "slug", Value: *upd.Slug})
 		}
 	}
+	if upd.RequireMFA != nil {
+		set = append(set, bson.E{Key: "require_mfa", Value: *upd.RequireMFA})
+	}
 	if upd.ClaimsSet {
 		if len(upd.Claims) == 0 {
 			unset = append(unset, bson.E{Key: "claims", Value: ""})

@@ -85,9 +85,11 @@ type Org struct {
 
 // OrgUpdate changes an organization; nil fields stay.
 type OrgUpdate struct {
-	Name   *string
-	Slug   *string // "" removes it
-	Claims map[string]any
+	Name *string
+	Slug *string // "" removes it
+	// RequireMFA turns the organization's second-factor requirement on or off.
+	RequireMFA *bool
+	Claims     map[string]any
 	// ClaimsSet says Claims replaces the claims (an empty map clears them).
 	ClaimsSet bool
 	Status    string // "" leaves it
@@ -793,4 +795,63 @@ func diff(want, have []string) (added, removed []string) {
 		}
 	}
 	return added, removed
+}
+
+// Counts reports whether memberships of the organization count for a session: it is active
+// (or orphaned: its members keep access) and its require_mfa is met.
+func (o Org) Counts(mfa bool) bool {
+	return (o.Status == OrgActive || o.Status == OrgOrphaned) && (!o.RequireMFA || mfa)
+}
+
+// RuleOrgs returns the memberships of a user that count for a session, in the form access
+// rules read them: the roles the user holds there (direct, default and through teams), the
+// teams and the organization's claims. Loaded when a rule asks, never cached, bounded by
+// max_memberships_per_user.
+func (s *Users) RuleOrgs(ctx context.Context, userID string, mfa bool) (map[string]*rules.UserOrg, error) {
+	out := map[string]*rules.UserOrg{}
+	o := s.Settings.Organizations
+	if o == nil {
+		return out, nil
+	}
+	members, err := s.Store.OrgMembershipsOf(ctx, userID, o.MaxMembershipsPerUser)
+	if err != nil || len(members) == 0 {
+		return out, err
+	}
+	ids := make([]string, len(members))
+	for i, m := range members {
+		ids[i] = m.Org
+	}
+	orgs, err := s.Store.OrgsByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	now := s.now()
+	for _, m := range members {
+		org, ok := orgs[m.Org]
+		if !ok || !org.Counts(mfa) {
+			continue
+		}
+		eff := s.effective(m, now, nil)
+		roles := make([]string, 0, len(eff))
+		for _, e := range eff {
+			if o.Declared(e.Role) { // a role the realm no longer declares grants nothing
+				roles = append(roles, e.Role)
+			}
+		}
+		out[m.Org] = &rules.UserOrg{Roles: roles, Teams: nonNilStrings(m.Teams), Claims: org.Claims}
+	}
+	return out, nil
+}
+
+func nonNilStrings(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
+}
+
+// OrgActive reports whether an active (or orphaned) organization with the id exists.
+func (s *Users) OrgActive(ctx context.Context, id string) bool {
+	org, err := s.Store.OrgByID(ctx, id)
+	return err == nil && (org.Status == OrgActive || org.Status == OrgOrphaned)
 }

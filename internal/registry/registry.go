@@ -118,9 +118,18 @@ func (c *Collection) DateField(path string) bool {
 	return c.Fields[path].Date
 }
 
+// MetaOrg is the system field that holds the organization a document belongs to. It exists
+// only in collections that can belong to one (collection.yaml's organization).
+const MetaOrg = "_meta.org"
+
+// systemField reports whether path is a server-owned field of this collection.
+func (c *Collection) systemField(path string) bool {
+	return slices.Contains(SystemFields, path) || (path == MetaOrg && c.InOrganizations())
+}
+
 // IsKnownField reports whether path is a system field or declared in the schema.
 func (c *Collection) IsKnownField(path string) bool {
-	if slices.Contains(SystemFields, path) {
+	if c.systemField(path) {
 		return true
 	}
 	_, ok := c.Fields[path]
@@ -131,7 +140,7 @@ func (c *Collection) IsKnownField(path string) bool {
 // or a declared field whose types exclude "array", with no array on the
 // way to it.
 func (c *Collection) ScalarField(path string) bool {
-	if slices.Contains(SystemFields, path) {
+	if c.systemField(path) {
 		return true
 	}
 	f, ok := c.Fields[path]

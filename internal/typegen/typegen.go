@@ -126,6 +126,8 @@ export interface Meta {
   owner?: string | null;
   created_by?: string;
   updated_by?: string;
+  /** The organization the document belongs to, in collections that have them. */
+  org?: string;
   deleted_at?: DateTimeString;
   deleted_by?: string;
   purge_at?: DateTimeString;

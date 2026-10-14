@@ -16,6 +16,7 @@ import { Job } from './functions.js'
  * @property {string | null} [owner]  Id of the user who created it (realms with auth enabled).
  * @property {string} [created_by] `user:<id>`, `key:<name>` or `anonymous`.
  * @property {string} [updated_by] `user:<id>`, `key:<name>` or `anonymous`.
+ * @property {string} [org]        The organization the document belongs to (collections with `organization`).
  * @property {string} [deleted_at] RFC3339 timestamp; only on soft-deleted documents (collections with `soft_delete`).
  * @property {string} [deleted_by] Who deleted it, like `updated_by`.
  * @property {string} [purge_at]   RFC3339 timestamp: when it is removed for good (`soft_delete.retention`).

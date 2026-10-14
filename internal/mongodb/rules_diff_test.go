@@ -115,6 +115,9 @@ func provisionOneWith(t *testing.T, schema, config string) (*registry.Collection
 	client := testClient(t)
 	realm := testRealm(t, client)
 	realmYAML := "roles:\n  admin: {}\n  a: {}\n  editor: {}\n  staff: {}\n  curator: {}\n  ops: {}\n"
+	if strings.Contains(config, "organization:") {
+		realmYAML += "organizations:\n  roles:\n    owner: {manage: [org, members, roles, teams]}\n    editor: {}\n    viewer: {}\n    member: {}\n"
+	}
 	files := map[string]string{"app/items": schema}
 	if strings.Contains(config, "files:") {
 		realmYAML += "storage:\n  provider: minio\n  endpoint: http://minio:9000\n  bucket: test-bucket\n  prefix: p\n  access_key: secret:A\n  secret_key: secret:B\n"
@@ -311,6 +314,16 @@ func TestSampleReadRules(t *testing.T) {
 // to check that compare notices (TestReadRuleCheckCatchesBrokenFilters).
 func compare(t *testing.T, repo *Repository, r *rules.Rule, break_ func(storage.Filter) storage.Filter, src string, docs map[string]storage.Document, now time.Time, rng *rand.Rand) (mismatches []string, undecided int) {
 	t.Helper()
+	callers := map[string]rules.Values{}
+	for name, u := range diffUsers {
+		callers[name] = rules.Values{User: u, Now: now}
+	}
+	return compareCallers(t, repo, r, break_, src, docs, callers, rng)
+}
+
+// compareCallers is compare for callers given as the values their rules are evaluated with.
+func compareCallers(t *testing.T, repo *Repository, r *rules.Rule, break_ func(storage.Filter) storage.Filter, src string, docs map[string]storage.Document, callers map[string]rules.Values, rng *rand.Rand) (mismatches []string, undecided int) {
+	t.Helper()
 	filter := func(v rules.Values) storage.Filter {
 		f, err := r.Filter(v)
 		if err != nil {
@@ -321,8 +334,7 @@ func compare(t *testing.T, repo *Repository, r *rules.Rule, break_ func(storage.
 		}
 		return f
 	}
-	for name, u := range diffUsers {
-		v := rules.Values{User: u, Now: now}
+	for name, v := range callers {
 		allowed := map[string]bool{}
 		skip := map[string]bool{}
 		for id, d := range docs {

@@ -30,6 +30,7 @@ type batchOp struct {
 	kind       string // create | replace | patch | delete
 	collection *registry.Collection
 	id         string
+	org        string         // create: the organization (?org= of the request)
 	fields     map[string]any // create, replace: the new document's fields
 	patch      map[string]any // patch: the raw merge patch
 	cond       ifMatch
@@ -124,6 +125,16 @@ func (d *documents) batch(w http.ResponseWriter, r *http.Request) {
 		}
 		ops[i] = op
 	}
+	// Memberships, once, when a collection of the batch has rules that read them.
+	if a.ruled && caller.User != nil {
+		for _, op := range ops {
+			if op.collection.Rules.UsesOrgs() {
+				orgs := d.userOrgs(r, realm, caller)
+				a.values.Orgs, a.values.User.Orgs = orgs, orgs
+				break
+			}
+		}
+	}
 
 	for _, op := range ops {
 		if op.kind == "create" && op.id != "" && d.dupBlocked(w, r, op.collection) {
@@ -207,6 +218,10 @@ func (d *documents) parseBatchOp(w http.ResponseWriter, r *http.Request, realm, 
 			return batchOp{}, false
 		}
 		op.id = id
+		// The organization comes from the request, as for a POST.
+		if op.org, ok = d.createOrg(w, r, c); !ok {
+			return batchOp{}, false
+		}
 	} else {
 		id, _ := m["id"].(string)
 		if id == "" {
@@ -291,6 +306,9 @@ func (d *documents) applyBatchOp(ctx context.Context, r *http.Request, a access,
 		if op.id != "" {
 			op.fields["id"] = op.id // the create rule sees data.id
 		}
+		if op.org != "" {
+			op.fields["_meta"] = map[string]any{"org": op.org} // ...and data._meta.org
+		}
 		if err := checkWrite(a, op.collection, rules.Create, nil, op.fields); err != nil {
 			return nil, err
 		}
@@ -302,6 +320,9 @@ func (d *documents) applyBatchOp(ctx context.Context, r *http.Request, a access,
 		}
 		meta := map[string]any{"created_at": now, "updated_at": now, "version": int64(1)}
 		stampCreate(r, meta)
+		if op.org != "" {
+			meta["org"] = op.org
+		}
 		doc["_meta"] = meta
 		if err := repo.Create(ctx, doc); err != nil {
 			return nil, err

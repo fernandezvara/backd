@@ -91,6 +91,13 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 		// Ids that sit next to the routes under a collection, and files (see customid_audit_test.go).
 		"acme/app/slugs/schema.json":     postsSchema,
 		"acme/app/slugs/collection.yaml": "custom_id:\n  pattern: '[A-Za-z0-9._~:@-]+'\nsoft_delete: true\n" + rulesSection("read: user != nil\ncreate: user != nil\nupdate: user != nil\ndelete: user != nil\nrestore: user != nil\n"),
+		// Organizations (see orgs_documents_test.go).
+		"acme/app/projects/schema.json":     postsSchema,
+		"acme/app/projects/collection.yaml": "organization: required\non_org_delete:\n  action: delete\n" + rulesSection("read: inOrg(document._meta.org)\ncreate: hasOrgRole(data._meta.org, 'editor') || hasOrgRole(data._meta.org, 'owner')\nupdate: hasOrgRole(document._meta.org, 'editor') || hasOrgRole(document._meta.org, 'owner')\ndelete: hasOrgRole(document._meta.org, 'owner')\n"),
+		"acme/app/shared/schema.json":       postsSchema,
+		"acme/app/shared/collection.yaml":   "organization: optional\non_org_delete:\n  action: keep\n" + rulesSection("read: document._meta.org == nil || inOrg(document._meta.org)\ncreate: user != nil\nupdate: user != nil\n"),
+		"acme/app/plans/schema.json":        postsSchema,
+		"acme/app/plans/collection.yaml":    "organization: required\non_org_delete:\n  action: keep\n" + rulesSection("read: orgClaims(document._meta.org).plan == 'pro'\ncreate: user != nil\n"),
 		// Functions (see functions_test.go).
 		fnDir + "echo/function.yaml":  "invoke: \"user != nil && user.email_verified\"\n",
 		fnDir + "echo/index.js":       "",

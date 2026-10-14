@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -101,6 +102,13 @@ func TestCollectionOrganizationPolicy(t *testing.T) {
 			}
 			if tc.org != OrgNone && !c.InOrganizations() {
 				t.Error("InOrganizations")
+			}
+			has := slices.ContainsFunc(c.Indexes, func(ix Index) bool { return ix.String() == "_meta.org,_meta.created_at,id" })
+			if has != (tc.org != OrgNone) {
+				t.Errorf("organization index present = %v for %s", has, tc.org)
+			}
+			if c.IsKnownField(MetaOrg) != (tc.org != OrgNone) {
+				t.Errorf("_meta.org known = %v for %s", c.IsKnownField(MetaOrg), tc.org)
 			}
 		})
 	}

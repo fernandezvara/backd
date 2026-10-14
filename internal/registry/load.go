@@ -315,13 +315,14 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 		Files:         files,
 		configLeaf:    db.configLeaf(),
 	}
-	if err := loadIndexes(coll, filepath.Join(dir, indexesFile)); err != nil {
-		return nil, err
-	}
+	// The id and organization policies come first: indexes and rules may name `_meta.org`.
 	if err := loadCustomID(coll, settings, filepath.Join(dir, CollectionFile)); err != nil {
 		return nil, err
 	}
 	if err := loadOrganization(coll, settings, filepath.Join(dir, CollectionFile)); err != nil {
+		return nil, err
+	}
+	if err := loadIndexes(coll, filepath.Join(dir, indexesFile)); err != nil {
 		return nil, err
 	}
 	if err := loadRules(coll, settings, dir); err != nil {
@@ -339,6 +340,7 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 	}
 	coll.addSoftDeleteIndexes()
 	coll.addDefaultOrderIndex()
+	coll.addOrgIndex()
 	return coll, nil
 }
 
@@ -384,6 +386,10 @@ func loadRules(c *Collection, settings RealmSettings, dir string) error {
 			if p == "id" {
 				return c.CustomID != nil
 			}
+			// ...and the organization the document is created in.
+			if p == MetaOrg {
+				return c.InOrganizations()
+			}
 			_, ok := c.Fields[p]
 			return ok
 		},
@@ -393,6 +399,8 @@ func loadRules(c *Collection, settings RealmSettings, dir string) error {
 		Roles:       roles,
 		Consents:    settings.ConsentNames(),
 		ConfigLeaf:  c.configLeaf,
+		OrgRoles:    orgRoles(settings),
+		InOrgs:      c.InOrganizations(),
 	})
 	if len(errs) > 0 {
 		for i, e := range errs {

@@ -231,6 +231,8 @@ With `organization: required`, every document is created inside an organization 
 - The realm needs an [`organizations:`](../realm/#organizations) section, and `auth: enabled`.
 - A collection with an organization can't also use `custom_id: user`: it would allow one document per user across every organization.
 - `on_org_delete` is required, and only valid next to `organization`.
+- `_meta.org` is a system field: it can be queried, sorted and used in `indexes.json` (`[_meta.org, slug]` makes `slug` unique per organization). `backd provision` adds the index `(_meta.org, _meta.created_at, id)`, which serves a list of one organization in the default order.
+- [Access rules](../../auth/rules/#organizations) read it with `inOrg`, `hasOrgRole` and `orgClaims`, applied inside the query.
 
 ### Public caching
 

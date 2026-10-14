@@ -38,10 +38,10 @@ func stampCreate(r *http.Request, meta map[string]any) {
 	meta["updated_by"] = c.Subject()
 }
 
-// stampUpdate carries the ownership fields over from the stored meta,
+// stampUpdate carries the ownership fields (and the organization) over from the stored meta,
 // which never change, and records who made this write.
 func stampUpdate(r *http.Request, stored, meta map[string]any) {
-	for _, k := range []string{"owner", "created_by"} {
+	for _, k := range []string{"owner", "created_by", "org"} {
 		if v, ok := stored[k]; ok {
 			meta[k] = v
 		}
@@ -215,6 +215,13 @@ func (d *documents) accessFor(r *http.Request) access {
 	// and only when a rule asks for it.
 	if c, ok := r.Context().Value(collectionKey{}).(*registry.Collection); ok && c.Rules.UsesConfig() {
 		a.values.Config = d.configValues(r, c.Realm)
+	}
+	// The organization helpers and user.orgs: the memberships are read once for the request,
+	// and only when a rule asks for them.
+	if c, ok := r.Context().Value(collectionKey{}).(*registry.Collection); ok && caller.User != nil && c.Rules.UsesOrgs() {
+		orgs := d.userOrgs(r, c.Realm, caller)
+		a.values.Orgs = orgs
+		a.values.User.Orgs = orgs
 	}
 	return a
 }
@@ -413,4 +420,20 @@ func viewFilter(w http.ResponseWriter, r *http.Request, a access, c *registry.Co
 		return deleted, true
 	}
 	return storage.Simplify(storage.Or{and(readable, liveCondition), deleted}), true
+}
+
+// userOrgs loads the memberships of the caller's user that count. A realm that can't be read
+// gets none, so rules that depend on membership refuse.
+func (d *documents) userOrgs(r *http.Request, realm string, caller auth.Caller) map[string]*rules.UserOrg {
+	svc := d.users(realm)
+	if svc == nil || caller.User == nil || !svc.OrgsEnabled() {
+		return map[string]*rules.UserOrg{}
+	}
+	mfa, _ := caller.SignInMethods()
+	orgs, err := svc.RuleOrgs(r.Context(), caller.User.User.ID, mfa)
+	if err != nil {
+		logger(r.Context()).Error("memberships unreadable for a rule", "realm", realm, "error", err)
+		return map[string]*rules.UserOrg{}
+	}
+	return orgs
 }

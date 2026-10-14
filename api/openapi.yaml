@@ -4876,6 +4876,7 @@ paths:
       security: [{}, { session: [] }, { apiKey: [] }]
       parameters:
         - $ref: "#/components/parameters/idempotencyKeyDocuments"
+        - $ref: "#/components/parameters/orgQuery"
       requestBody:
         required: true
         content:
@@ -4913,6 +4914,7 @@ paths:
       operationId: listDocuments
       security: [{}, { session: [] }, { apiKey: [] }]
       parameters:
+        - { $ref: "#/components/parameters/orgQuery" }
         - { $ref: "#/components/parameters/fileLinks" }
         - { $ref: "#/components/parameters/ifNoneMatch" }
         - name: where
@@ -4979,6 +4981,7 @@ paths:
       security: [{}, { session: [] }, { apiKey: [] }]
       parameters:
         - $ref: "#/components/parameters/idempotencyKeyDocuments"
+        - $ref: "#/components/parameters/orgQuery"
       requestBody:
         required: true
         content:
@@ -6410,6 +6413,18 @@ components:
       required: true
       description: An organization id.
       schema: { type: string }
+    orgQuery:
+      name: org
+      in: query
+      description: |
+        The organization (its id) of a collection with `organization` set. On a create it is
+        where the document is created: the caller must be a member (`403 not_org_member`, the
+        same for an unknown organization), and `required` collections answer `400 org_required`
+        without it; a collection without organizations answers `400 org_not_allowed`. On a list
+        it is a shorthand for `where` on `_meta.org`, ANDed with it: the read rule still
+        decides what is seen. A batch takes it for all its creates. Fixed at creation: an
+        update that names another organization answers `400 immutable_field`.
+      schema: { type: string }
     realm:
       name: realm
       in: path
@@ -7564,6 +7579,7 @@ components:
         owner: { type: [string, "null"] }
         created_by: { type: string }
         updated_by: { type: string }
+        org: { type: string, description: "The organization the document belongs to. Only in collections with `organization` set, and set at creation (`?org=`)." }
         deleted_at:
           allOf: [{ $ref: "#/components/schemas/Timestamp" }]
           description: When a soft-deleted document was deleted. Only in the trash (`deleted=only|include`) of a collection with `soft_delete`.

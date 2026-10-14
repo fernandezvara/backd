@@ -189,11 +189,12 @@ All of these are under `/v1/{realm}/_orgs` and require a session. **A non-member
 | `inOrg(doc._meta.org)` | the caller is a counting member of the document's organization | `_meta.org in [counting organizations]` |
 | `hasOrgRole(doc._meta.org, "editor")` | the caller's effective roles there include `editor` | `_meta.org in [organizations where effective roles include editor]` |
 | `hasOrgRole(doc._meta.org, doc.audience_role)` | role named by the document | `$or` over the caller's (organization, role) pairs, each `{_meta.org: o, audience_role: r}` |
-| `orgClaims(doc._meta.org).plan == "pro"` | a claim of the document's organization, for counting memberships only | `_meta.org in [counting organizations whose claim matches]` |
+| `orgClaims(doc._meta.org).plan == "pro"` | a claim of the document's organization, for counting memberships only; always inside a comparison (`==`, `!=`, `<`…, `in`) with a value that doesn't depend on the document, and false for organizations the caller doesn't belong to | `_meta.org in [counting organizations whose claim matches]` |
 | `user.orgs` | map from organization to `{ roles, teams, claims }` | in-memory only; meant for `create` and `invoke` rules, not lists |
 
 - **What "counting" means:** the organization is active (or orphaned), and its `require_mfa` is met by the session.
 - **Team names:** rules never get them, only effective roles. `user.orgs[o].teams` exists for apps, and the docs say not to use it in rules.
+- **On create** the document's organization is `data._meta.org`, the one in `?org=`.
 - **Tests:** the existing property tests (pushdown against in-memory evaluation) gain callers with memberships, teams, claims and MFA-required organizations.
 
 ### 6.3 Loading memberships

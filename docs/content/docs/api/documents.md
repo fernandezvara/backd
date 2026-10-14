@@ -89,6 +89,22 @@ Location: /v1/shop/billing/invoices/INV-2026-0042
 - [Custom ids](../../configuration/custom-ids/) explains when to use them and how to keep them safe.
 - The same applies to [batch](#batch-writes) creates (`"id"` on the operation), `ctx.db` and `ctx.admin.db` in [functions](../../functions/), and the admin data route. The admin routes skip the `create` rule, not the id checks.
 
+### Organizations
+
+In a collection with [`organization:`](../../configuration/config-dir/#organizations) a document is created in an organization, named with `?org=<id>` (`.inOrg(id)` in the JavaScript client):
+
+```
+POST /v1/acme/app/projects?org=d3c9ljp8hc2g00b6s1m0
+```
+
+- The caller must be a member that counts, checked **before** the `create` rule: a non-member and an unknown organization both answer `403 not_org_member`.
+- A `required` collection answers `400 org_required` without `?org=`; a collection without organizations answers `400 org_not_allowed` with it.
+- The organization is `_meta.org`, server-owned and fixed: a PUT or PATCH naming another one answers `400 immutable_field`. Moving a document is an administrator's transfer.
+- A [batch](#batch-writes) takes `?org=` for all its creates.
+- API keys without a user have no memberships, so they answer `403 not_org_member`; administrators use the admin data route, which accepts any active organization.
+
+A list takes `?org=<id>` as a shorthand for `where={"_meta.org": "<id>"}`, ANDed with `where`. The read rule still decides what is seen: an organization the caller doesn't belong to lists nothing.
+
 ### Safe retries with `Idempotency-Key`
 
 A create whose answer is lost (a timeout, a dropped connection) can't be retried blindly: it may have worked, and the retry would make a second document. Send an `Idempotency-Key` and retry with the same one:

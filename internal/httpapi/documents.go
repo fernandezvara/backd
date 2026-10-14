@@ -155,6 +155,10 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, problem.status, problem.code, problem.reason, Detail{Path: "id", Reason: problem.reason})
 		return
 	}
+	org, ok := d.createOrg(w, r, c) // membership comes before the create rule
+	if !ok {
+		return
+	}
 	stripSystemFields(body)
 	refs, details := takeFileRefs(c, body)
 	if len(details) > 0 {
@@ -177,6 +181,9 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 	if id != "" {
 		doc["id"] = id // the create rule sees data.id
 	}
+	if org != "" {
+		doc["_meta"] = map[string]any{"org": org} // ...and data._meta.org
+	}
 	if !allowWrite(w, r, d.accessFor(r), c, rules.Create, nil, doc) {
 		return
 	}
@@ -190,6 +197,9 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 	}
 	meta := map[string]any{"created_at": now, "updated_at": now, "version": int64(1)}
 	stampCreate(r, meta)
+	if org != "" {
+		meta["org"] = org
+	}
 	doc["_meta"] = meta
 	if pending != nil && !pending.claim(w, r, doc["id"].(string)) {
 		return
@@ -274,6 +284,18 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// ?org= is a shorthand for a where on _meta.org; the read rule still decides what is seen.
+	if org := r.URL.Query().Get("org"); r.URL.Query().Has("org") {
+		if !c.InOrganizations() {
+			writeError(w, r, http.StatusBadRequest, codeOrgNotAllowed, "this collection has no organizations")
+			return
+		}
+		if org == "" {
+			writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid query parameters", Detail{Path: "org", Reason: "must be an organization id"})
+			return
+		}
+		q.Filter = and(q.Filter, storage.Condition{Field: registry.MetaOrg, Op: storage.OpEq, Value: org})
+	}
 	filter, ok := viewFilter(w, r, d.accessFor(r), c, view)
 	if !ok {
 		return
@@ -312,7 +334,7 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-var listParams = map[string]bool{"where": true, "order_by": true, "limit": true, "skip": true, "after": true, "count": true, "deleted": true, "file_links": true}
+var listParams = map[string]bool{"where": true, "order_by": true, "limit": true, "skip": true, "after": true, "count": true, "deleted": true, "file_links": true, "org": true}
 
 func parseListQuery(v url.Values, fields map[string]registry.Field) (storage.Query, []Detail) {
 	q := storage.Query{Limit: defaultLimit}
@@ -392,12 +414,16 @@ func (d *documents) replace(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	claimed, claims := claimedOrg(c, body)
 	stripSystemFields(body)
 	pending, ok := d.takePending(w, r, c, body)
 	if !ok {
 		return
 	}
 	d.write(w, r, c, repo, pending, func(current map[string]any) (map[string]any, bool) {
+		if claims && !sameOrg(w, r, claimed, current) {
+			return nil, false
+		}
 		candidate := body
 		if len(c.Files) > 0 { // a PUT keeps the document's files
 			candidate = deepCopy(body)
@@ -419,12 +445,16 @@ func (d *documents) patch(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	claimed, claims := claimedOrg(c, patch)
 	stripSystemFields(patch)
 	pending, ok := d.takePending(w, r, c, patch)
 	if !ok {
 		return
 	}
 	d.write(w, r, c, repo, pending, func(current map[string]any) (map[string]any, bool) {
+		if claims && !sameOrg(w, r, claimed, current) {
+			return nil, false
+		}
 		// Deep copies: merging must not modify the stored document, which the
 		// update rule (changed()) compares against.
 		merged := mergePatch(timesToStrings(userFields(current)).(map[string]any), deepCopy(patch))
@@ -951,4 +981,78 @@ func (d *documents) restore(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeError(w, r, http.StatusConflict, codeWriteConflict, "document is being modified concurrently; retry the request")
+}
+
+const (
+	codeOrgRequired    = "org_required"
+	codeOrgNotAllowed  = "org_not_allowed"
+	codeImmutableField = "immutable_field"
+)
+
+// createOrg resolves the organization a new document is created in (?org=), checking that the
+// caller is a member that counts before any rule runs. It answers and returns false on a
+// problem; "" means the document belongs to none.
+func (d *documents) createOrg(w http.ResponseWriter, r *http.Request, c *registry.Collection) (string, bool) {
+	org := r.URL.Query().Get("org")
+	given := r.URL.Query().Has("org")
+	if !c.InOrganizations() {
+		if given {
+			writeError(w, r, http.StatusBadRequest, codeOrgNotAllowed, "this collection has no organizations", Detail{Path: "org", Reason: "this collection doesn't belong to organizations"})
+			return "", false
+		}
+		return "", true
+	}
+	if org == "" {
+		if c.Organization == registry.OrgRequired {
+			writeError(w, r, http.StatusBadRequest, codeOrgRequired, "documents of this collection belong to an organization: say which with ?org=", Detail{Path: "org", Reason: "is required"})
+			return "", false
+		}
+		return "", true
+	}
+	caller, _ := callerOf(r)
+	// Administrators (the admin data route) and functions with admin access choose any
+	// organization that exists; everyone else is a member of it.
+	if adminData(r) || (caller.BypassesRules() && caller.Func != nil) {
+		svc := d.users(c.Realm)
+		if svc == nil || !svc.OrgActive(r.Context(), org) {
+			writeError(w, r, http.StatusNotFound, codeNotFound, "no such organization", Detail{Path: "org", Reason: "no active organization has this id"})
+			return "", false
+		}
+		return org, true
+	}
+	if caller.User == nil {
+		writeError(w, r, http.StatusForbidden, codeNotOrgMember, "you are not a member of that organization")
+		return "", false
+	}
+	if _, member := d.userOrgs(r, c.Realm, caller)[org]; !member {
+		writeError(w, r, http.StatusForbidden, codeNotOrgMember, "you are not a member of that organization")
+		return "", false
+	}
+	return org, true
+}
+
+// claimedOrg reads the organization a PUT or PATCH body says the document belongs to.
+func claimedOrg(c *registry.Collection, body map[string]any) (org string, claims bool) {
+	if !c.InOrganizations() {
+		return "", false
+	}
+	meta, ok := body["_meta"].(map[string]any)
+	if !ok {
+		return "", false
+	}
+	v, has := meta["org"]
+	s, _ := v.(string)
+	return s, has
+}
+
+// sameOrg answers 400 immutable_field when the body names another organization than the
+// document's: moving a document is an administrator's transfer, not an update.
+func sameOrg(w http.ResponseWriter, r *http.Request, claimed string, current map[string]any) bool {
+	meta, _ := current["_meta"].(map[string]any)
+	have, _ := meta["org"].(string)
+	if claimed == have {
+		return true
+	}
+	writeError(w, r, http.StatusBadRequest, codeImmutableField, "_meta.org can't be changed: a document is moved to another organization by an administrator", Detail{Path: "_meta.org", Reason: "is set at creation and can't change"})
+	return false
 }

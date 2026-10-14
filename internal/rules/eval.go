@@ -19,6 +19,9 @@ type Values struct {
 	Document map[string]any // stored document (read, update, delete)
 	Data     map[string]any // incoming document (create, update)
 	Now      time.Time
+	// Orgs are the caller's memberships that count, for the organization helpers; only filled
+	// in when a rule reads them (Rule.UsesOrgs).
+	Orgs map[string]*UserOrg
 	// Config is the app configuration, by dot path of each value, for appConfig();
 	// only filled in when a rule reads it.
 	Config map[string]any
@@ -32,6 +35,7 @@ func (v Values) env() map[string]any {
 		"now":      v.Now,
 		"changed":  func() []string { return changed(v.Document, v.Data) },
 		"config":   v.configMap(),
+		orgsVar:    v.orgsMap(),
 	}
 }
 
@@ -80,7 +84,11 @@ func (r *Rule) prepareFilter() error {
 			r.consts[n], err = expr.Compile(n.String(), compileOptions()...)
 			return
 		}
-		for _, c := range children(n) {
+		cs := children(n)
+		if _, call, ok := orgCall(n); ok {
+			cs = call.Arguments // the callee is a function, not a value
+		}
+		for _, c := range cs {
 			visit(c)
 		}
 	}
@@ -127,6 +135,7 @@ func (r *Rule) build(n ast.Node, env map[string]any) (storage.Filter, error) {
 		b, _ := v.(bool)
 		return storage.Const(b), nil
 	}
+	orgs, _ := env[orgsVar].(map[string]*UserOrg)
 	switch n := n.(type) {
 	case *ast.UnaryNode:
 		inner, err := r.build(n.Node, env)
@@ -134,6 +143,10 @@ func (r *Rule) build(n ast.Node, env map[string]any) (storage.Filter, error) {
 			return nil, err
 		}
 		return storage.Not{Filter: inner}, nil
+	case *ast.CallNode:
+		if name, c, ok := orgCall(n); ok {
+			return r.buildOrgCall(name, c, orgs)
+		}
 	case *ast.MemberNode, *ast.ChainNode:
 		path, _ := docPath(n)
 		return storage.Condition{Field: path, Op: storage.OpEq, Value: true}, nil
@@ -159,6 +172,20 @@ func (r *Rule) build(n ast.Node, env map[string]any) (storage.Filter, error) {
 			}
 			return storage.Or{l, rt}, nil
 		case "in":
+			if path, ok := claimRef(n.Left); ok {
+				v, err := r.value(n.Right, env)
+				if err != nil {
+					return nil, err
+				}
+				return r.buildClaim(path, "in", v, orgs), nil
+			}
+			if path, ok := claimRef(n.Right); ok {
+				v, err := r.value(n.Left, env)
+				if err != nil {
+					return nil, err
+				}
+				return r.buildClaim(path, "has", v, orgs), nil
+			}
 			if path, ok := docPath(n.Left); ok {
 				v, err := r.value(n.Right, env)
 				if err != nil {
@@ -179,6 +206,20 @@ func (r *Rule) build(n ast.Node, env map[string]any) (storage.Filter, error) {
 			return storage.Condition{Field: path, Op: storage.OpEq, Value: v}, nil
 		default:
 			op, fieldNode, valueNode := n.Operator, n.Left, n.Right
+			if path, ok := claimRef(n.Left); ok {
+				v, err := r.value(n.Right, env)
+				if err != nil {
+					return nil, err
+				}
+				return r.buildClaim(path, op, v, orgs), nil
+			}
+			if path, ok := claimRef(n.Right); ok {
+				v, err := r.value(n.Left, env)
+				if err != nil {
+					return nil, err
+				}
+				return r.buildClaim(path, flipped[op], v, orgs), nil
+			}
 			if _, ok := docPath(n.Left); !ok {
 				op, fieldNode, valueNode = flipped[op], n.Right, n.Left
 			}
@@ -235,4 +276,11 @@ func (v Values) configMap() map[string]any {
 		return map[string]any{}
 	}
 	return v.Config
+}
+
+func (v Values) orgsMap() map[string]*UserOrg {
+	if v.Orgs == nil {
+		return map[string]*UserOrg{}
+	}
+	return v.Orgs
 }

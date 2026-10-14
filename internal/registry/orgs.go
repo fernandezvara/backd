@@ -445,3 +445,26 @@ func loadOrganization(c *Collection, settings RealmSettings, path string) error 
 func (c *Collection) InOrganizations() bool {
 	return c.Organization == OrgRequired || c.Organization == OrgOptional
 }
+
+// orgRoles are the organization role names of the realm; nil when it has no organizations.
+func orgRoles(s RealmSettings) []string {
+	if s.Organizations == nil {
+		return nil
+	}
+	return s.Organizations.RoleNames()
+}
+
+// addOrgIndex adds the index that serves the lists of one organization in the default order,
+// which every query the caller's rules narrow to `_meta.org` uses.
+func (c *Collection) addOrgIndex() {
+	if !c.InOrganizations() {
+		return
+	}
+	ix := Index{Keys: []IndexKey{{Field: MetaOrg}, {Field: "_meta.created_at"}, {Field: "id"}}}
+	for _, have := range c.Indexes {
+		if have.String() == ix.String() && !have.Unique {
+			return
+		}
+	}
+	c.Indexes = append(c.Indexes, ix)
+}

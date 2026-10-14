@@ -359,3 +359,39 @@ func TestCustomIDsAreTypedInTheDocument(t *testing.T) {
 		t.Error("a collection that generates ids has a create schema of its own")
 	}
 }
+
+// A collection with organizations takes the `org` query parameter on its create and its list
+// (required on the create when the collection requires one); other collections don't.
+func TestOrganizationParameterIsPerCollection(t *testing.T) {
+	reg := load(t, map[string]string{
+		"app/realm.yaml":                  "auth: enabled\nsignup: open\norganizations:\n  roles:\n    owner: {manage: org}\n",
+		"app/main/tasks/schema.json":      noteSchema,
+		"app/main/tasks/collection.yaml":  "organization: required\non_org_delete:\n  action: delete\nrules:\n  read: inOrg(document._meta.org)\n  create: hasOrgRole(data._meta.org, 'owner')\n",
+		"app/main/shared/schema.json":     noteSchema,
+		"app/main/shared/collection.yaml": "organization: optional\non_org_delete:\n  action: keep\nrules:\n  read: user != nil\n  create: user != nil\n",
+		"app/main/notes/schema.json":      noteSchema,
+		"app/main/notes/collection.yaml":  "rules:\n  read: user != nil\n  create: user != nil\n",
+	})
+	doc := generate(t, reg, "app")
+	param := func(coll, method string) map[string]any {
+		op := doc["paths"].(map[string]any)["/v1/app/main/"+coll].(map[string]any)[method].(map[string]any)
+		for _, p := range op["parameters"].([]any) {
+			if pm, ok := p.(map[string]any); ok && pm["name"] == "org" {
+				return pm
+			}
+		}
+		return nil
+	}
+	if p := param("tasks", "post"); p == nil || p["required"] != true || p["in"] != "query" {
+		t.Errorf("tasks create: %v", p)
+	}
+	if p := param("shared", "post"); p == nil || p["required"] != false {
+		t.Errorf("shared create: %v", p)
+	}
+	if p := param("tasks", "get"); p == nil || p["required"] != false {
+		t.Errorf("tasks list: %v", p)
+	}
+	if p := param("notes", "post"); p != nil {
+		t.Errorf("a collection without organizations has %v", p)
+	}
+}

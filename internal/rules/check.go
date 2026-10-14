@@ -87,6 +87,63 @@ func check(r *Rule, schema Schema) error {
 		}
 	})
 
+	// Organization helpers.
+	// A claim is only read to be compared: orgClaims(x).plan == "pro".
+	claimCalls := map[ast.Node]bool{}
+	walk(r.tree, func(n ast.Node) {
+		b, ok := n.(*ast.BinaryNode)
+		if !ok || (!comparisons[b.Operator] && b.Operator != "in") {
+			return
+		}
+		for _, side := range []ast.Node{b.Left, b.Right} {
+			if _, ok := claimRef(side); ok {
+				if c := claimCall(side); c != nil {
+					claimCalls[c] = true
+				}
+			}
+		}
+	})
+	inQuery := r.Op == Read || r.Op == Restore // pushed down: only what the database can apply
+	walk(r.tree, func(n ast.Node) {
+		if b, ok := n.(*ast.BinaryNode); ok && inQuery && (comparisons[b.Operator] || b.Operator == "in") {
+			_, l := claimRef(b.Left)
+			_, rt := claimRef(b.Right)
+			if (l && refs(b.Right, "document")) || (rt && refs(b.Left, "document")) {
+				add("a claim can only be compared with a value that doesn't depend on the document: the organizations that qualify are worked out before the query")
+			}
+		}
+		name, c, ok := orgCall(n)
+		if !ok {
+			return
+		}
+		if schema.OrgRoles == nil {
+			add("%s: this realm doesn't enable organizations (an `organizations:` section in realm.yaml)", name)
+			return
+		}
+		if len(c.Arguments) == 0 {
+			return
+		}
+		// The first argument is the first as written: the patcher only runs when compiling.
+		if inQuery && !orgField(c.Arguments[0]) {
+			add("%s: in a %s rule, call it with document._meta.org, so it can be applied inside the query", name, r.Op)
+		}
+		switch {
+		case name == "hasOrgRole" && len(c.Arguments) == 2:
+			switch role := c.Arguments[1].(type) {
+			case *ast.StringNode:
+				if !slices.Contains(schema.OrgRoles, role.Value) {
+					add("organization role %q is not declared in realm.yaml", role.Value)
+				}
+			default:
+				if p, isPath := docPath(role); inQuery && (!isPath || schema.ScalarField == nil || !schema.ScalarField(p)) {
+					add("hasOrgRole: in a %s rule the role is a string literal or a single-valued field of the document, such as document.audience_role", r.Op)
+				}
+			}
+		case name == "orgClaims" && !claimCalls[c]:
+			add("orgClaims: read a claim to compare it with a value, such as orgClaims(document._meta.org).plan == \"pro\"")
+		}
+	})
+
 	// Configuration paths read with appConfig.
 	walk(r.tree, func(n ast.Node) {
 		c, ok := n.(*ast.CallNode)
@@ -261,8 +318,22 @@ func filterable(n ast.Node, schema Schema) error {
 	if !refs(n, "document") {
 		return nil // evaluated per request
 	}
+	// Organization helpers are applied by the query too (see orgs.go); check reports misuse.
+	if _, _, ok := orgCall(n); ok {
+		return nil
+	}
+	if _, ok := claimRef(n); ok {
+		return nil
+	}
 	switch n := n.(type) {
 	case *ast.BinaryNode:
+		_, leftClaim := claimRef(n.Left)
+		_, rightClaim := claimRef(n.Right)
+		if (leftClaim && !refs(n.Right, "document")) || (rightClaim && !refs(n.Left, "document")) {
+			if comparisons[n.Operator] || n.Operator == "in" {
+				return nil
+			}
+		}
 		switch n.Operator {
 		case "&&", "and", "||", "or":
 			return errors.Join(filterable(n.Left, schema), filterable(n.Right, schema))
