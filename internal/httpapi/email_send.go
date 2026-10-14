@@ -30,6 +30,8 @@ type emailSendInput struct {
 	// RequiresConsent skips a to_user recipient who doesn't hold that consent: the
 	// answer says no_consent and nothing is queued.
 	RequiresConsent string `json:"requires_consent"`
+	// Org is the company context: the organization whose data hook and template overrides apply.
+	Org string `json:"org"`
 }
 
 // emailSend handles POST /v1/{realm}/_email/send on the internal listener:
@@ -95,6 +97,10 @@ func (f *functions) emailSend(w http.ResponseWriter, r *http.Request) {
 		invalid("requires_consent", "is not a consent of this realm")
 		return
 	}
+	if in.Org != "" && !svc.OrgActive(r.Context(), in.Org) {
+		invalid("org", "no active organization has this id")
+		return
+	}
 	count := len(in.To) + len(in.CC) + len(in.BCC)
 	if in.ToUser != "" {
 		count++
@@ -114,7 +120,7 @@ func (f *functions) emailSend(w http.ResponseWriter, r *http.Request) {
 
 	_, fn, _ := cutFunction(realm, fc.Name)
 	req := auth.EmailRequest{
-		Kind: in.Kind, RequestID: requestID(r.Context()), Invocation: fc.Invocation, Depth: fc.Depth + 1,
+		Kind: in.Kind, Org: in.Org, RequestID: requestID(r.Context()), Invocation: fc.Invocation, Depth: fc.Depth + 1,
 		Custom: &auth.CustomEmail{Function: fn, To: in.To, CC: in.CC, BCC: in.BCC, Data: in.Data},
 	}
 	if in.ToUser != "" {

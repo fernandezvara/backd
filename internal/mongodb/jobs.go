@@ -13,6 +13,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/email"
 	"github.com/fernandezvara/backd/internal/jsonnum"
 	"github.com/fernandezvara/backd/internal/metrics"
 )
@@ -29,11 +30,34 @@ type jobResultDoc struct {
 	HTTPStatus int `bson:"http_status,omitempty"`
 }
 
+// draftDoc is the owner template of a test send.
+type draftDoc struct {
+	Subject string `bson:"subject"`
+	Text    string `bson:"text"`
+	HTML    string `bson:"html"`
+}
+
+func (d *draftDoc) override() *email.Override {
+	if d == nil {
+		return nil
+	}
+	return &email.Override{Subject: d.Subject, Text: d.Text, HTML: d.HTML}
+}
+
+func draftToDoc(o *email.Override) *draftDoc {
+	if o == nil {
+		return nil
+	}
+	return &draftDoc{Subject: o.Subject, Text: o.Text, HTML: o.HTML}
+}
+
 type emailJobDoc struct {
 	Kind       string          `bson:"kind"`
 	UserID     string          `bson:"user_id"`
 	Locale     string          `bson:"locale,omitempty"`
 	RedirectTo string          `bson:"redirect_to,omitempty"`
+	Org        string          `bson:"org,omitempty"`
+	Draft      *draftDoc       `bson:"draft,omitempty"`
 	To         string          `bson:"to,omitempty"`
 	Notice     bool            `bson:"notice,omitempty"`
 	Invitation string          `bson:"invitation_id,omitempty"`
@@ -176,6 +200,9 @@ func orgDeleteToDoc(o *auth.OrgDeleteJob) string {
 	if o == nil {
 		return ""
 	}
+	if o.Team != "" {
+		return o.Org + "/" + o.Team
+	}
 	return o.Org
 }
 
@@ -183,7 +210,8 @@ func orgDeleteFromDoc(org string) *auth.OrgDeleteJob {
 	if org == "" {
 		return nil
 	}
-	return &auth.OrgDeleteJob{Org: org}
+	org, team, _ := strings.Cut(org, "/")
+	return &auth.OrgDeleteJob{Org: org, Team: team}
 }
 
 func assignToDoc(a *auth.AssignOrgJob) *assignJobDoc {
@@ -293,7 +321,7 @@ func emailJobFromDoc(d *emailJobDoc) *auth.EmailJob {
 	if d == nil {
 		return nil
 	}
-	return &auth.EmailJob{Kind: d.Kind, UserID: d.UserID, Locale: d.Locale, RedirectTo: d.RedirectTo, To: d.To, Notice: d.Notice, InvitationID: d.Invitation, OrgInvitationID: d.OrgInvite, Event: d.Event, CodesLeft: d.CodesLeft, ChallengeID: d.Challenge, Custom: customFromDoc(d.Custom)}
+	return &auth.EmailJob{Kind: d.Kind, UserID: d.UserID, Locale: d.Locale, RedirectTo: d.RedirectTo, Org: d.Org, Draft: d.Draft.override(), To: d.To, Notice: d.Notice, InvitationID: d.Invitation, OrgInvitationID: d.OrgInvite, Event: d.Event, CodesLeft: d.CodesLeft, ChallengeID: d.Challenge, Custom: customFromDoc(d.Custom)}
 }
 
 func customFromDoc(d *customEmailDoc) *auth.CustomEmail {
@@ -314,7 +342,7 @@ func emailJobToDoc(e *auth.EmailJob) *emailJobDoc {
 	if e == nil {
 		return nil
 	}
-	return &emailJobDoc{Kind: e.Kind, UserID: e.UserID, Locale: e.Locale, RedirectTo: e.RedirectTo, To: e.To, Notice: e.Notice, Invitation: e.InvitationID, OrgInvite: e.OrgInvitationID, Event: e.Event, CodesLeft: e.CodesLeft, Challenge: e.ChallengeID, Custom: customToDoc(e.Custom)}
+	return &emailJobDoc{Kind: e.Kind, UserID: e.UserID, Locale: e.Locale, RedirectTo: e.RedirectTo, Org: e.Org, Draft: draftToDoc(e.Draft), To: e.To, Notice: e.Notice, Invitation: e.InvitationID, OrgInvite: e.OrgInvitationID, Event: e.Event, CodesLeft: e.CodesLeft, Challenge: e.ChallengeID, Custom: customToDoc(e.Custom)}
 }
 
 func jobFromDoc(d jobDoc) auth.Job {

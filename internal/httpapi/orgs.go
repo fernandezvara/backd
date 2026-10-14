@@ -23,6 +23,8 @@ const (
 	codeSlugTaken      = "slug_taken"
 	codeOrgLimit       = "org_limit_reached"
 	codeOrgRequiresMFA = "org_requires_mfa"
+	// codeOrgRoleRequiresMFA: the action needs a role that requires a second factor.
+	codeOrgRoleRequiresMFA = "org_role_requires_mfa"
 )
 
 func (a *authAPI) orgRoutes(r chi.Router) {
@@ -47,8 +49,13 @@ func (a *authAPI) orgRoutes(r chi.Router) {
 			r.With(json).Post("/teams", a.createOrgTeam)
 			r.With(json).Patch("/teams/{team}", a.updateOrgTeam)
 			r.Delete("/teams/{team}", a.deleteOrgTeam)
+			r.Get("/teams/{team}/members", a.orgTeamMembers)
 			r.Put("/teams/{team}/members/{user}", a.addOrgTeamMember)
 			r.Delete("/teams/{team}/members/{user}", a.removeOrgTeamMember)
+			r.With(json).Post("/teams/{team}/roles", teamRoleHandler(auth.TeamRoleGrantOp, false))
+			r.With(json).Patch("/teams/{team}/roles", teamRoleHandler(auth.TeamRoleWindowOp, false))
+			r.With(json).Delete("/teams/{team}/roles", teamRoleHandler(auth.TeamRoleRevokeOp, false))
+			a.templateRoutes(r)
 			r.Get("/invitations", a.listOrgInvitations)
 			r.With(json).Post("/invitations", a.createOrgInvitation)
 			r.Delete("/invitations/{id}", a.revokeOrgInvitation)
@@ -61,11 +68,18 @@ func (a *authAPI) orgRoutes(r chi.Router) {
 // orgError maps organization errors, falling back to the sign-in errors.
 func orgError(w http.ResponseWriter, r *http.Request, err error) {
 	var bad *auth.OrgInvalidError
+	var needsMFA *auth.RoleRequiresMFAError
 	switch {
 	case errors.Is(err, auth.ErrOrgsDisabled):
 		writeError(w, r, http.StatusNotFound, codeNotFound, err.Error())
 	case errors.Is(err, auth.ErrNotOrgMember):
 		writeError(w, r, http.StatusForbidden, codeNotOrgMember, "you are not a member of that organization")
+	case errors.As(err, &needsMFA):
+		details := []Detail{{Path: "role", Reason: needsMFA.Role}}
+		if needsMFA.Team != "" {
+			details = append(details, Detail{Path: "team", Reason: needsMFA.Team})
+		}
+		writeError(w, r, http.StatusForbidden, codeOrgRoleRequiresMFA, needsMFA.Error(), details...)
 	case errors.Is(err, auth.ErrOrgRequiresMFA):
 		writeError(w, r, http.StatusForbidden, codeOrgRequiresMFA, err.Error())
 	case errors.Is(err, auth.ErrRequireMFANotAllowed):
@@ -80,7 +94,9 @@ func orgError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, r, http.StatusConflict, codeSlugTaken, err.Error(), Detail{Path: "slug", Reason: "is used by another organization"})
 	case errors.Is(err, auth.ErrTeamNameTaken):
 		writeError(w, r, http.StatusConflict, "team_name_taken", err.Error(), Detail{Path: "name", Reason: "is used by another team of the organization"})
-	case errors.Is(err, auth.ErrTeamLimit), errors.Is(err, auth.ErrMemberTeamsLimit):
+	case errors.Is(err, auth.ErrTeamRoleNotHeld):
+		writeError(w, r, http.StatusNotFound, codeNotFound, err.Error())
+	case errors.Is(err, auth.ErrTeamLimit), errors.Is(err, auth.ErrMemberTeamsLimit), errors.Is(err, auth.ErrTeamRoleLimit):
 		writeError(w, r, http.StatusConflict, "team_limit_reached", err.Error())
 	case errors.Is(err, auth.ErrEmailNotConfigured):
 		writeError(w, r, http.StatusConflict, codeConflict, err.Error())
@@ -138,10 +154,34 @@ func membershipJSON(m auth.Membership, sessionMFA bool) map[string]any {
 	out["roles"] = m.RoleNames()
 	out["effective_roles"] = roleOriginsJSON(m.Roles)
 	out["teams"] = nonNil(m.Member.Teams)
+	out["team_roles"] = teamRolesNow(m.TeamRoles)
 	return out
 }
 
-func memberJSON(v auth.MemberView, now func() string) map[string]any {
+// teamRolesNow is the team roles in force, by team id: a map even when empty.
+func teamRolesNow(by map[string][]string) map[string][]string {
+	if by == nil {
+		return map[string][]string{}
+	}
+	return by
+}
+
+// teamRoleGrantJSON is one team role grant with its window and who gave it.
+func teamRoleGrantJSON(g auth.TeamRoleGrant, now time.Time) map[string]any {
+	out := map[string]any{"team": g.Team, "role": g.Role, "granted_at": formatTime(g.GrantedAt), "active": g.Active(now)}
+	if !g.From.IsZero() {
+		out["from"] = formatTime(g.From)
+	}
+	if !g.Until.IsZero() {
+		out["until"] = formatTime(g.Until)
+	}
+	if g.GrantedBy != "" {
+		out["granted_by"] = g.GrantedBy
+	}
+	return out
+}
+
+func memberJSON(v auth.MemberView) map[string]any {
 	roles := make([]string, 0, len(v.Member.Roles))
 	for _, g := range v.Member.Roles {
 		roles = append(roles, g.Role)
@@ -159,7 +199,13 @@ func memberJSON(v auth.MemberView, now func() string) map[string]any {
 	}
 	if v.MFA != nil {
 		out["mfa"] = *v.MFA
+		out["mfa_roles"] = nonNil(v.MFARoles)
 	}
+	grants := make([]map[string]any, len(v.TeamRoles))
+	for i, g := range v.TeamRoles {
+		grants[i] = teamRoleGrantJSON(g, v.Now)
+	}
+	out["team_roles"] = grants
 	return out
 }
 
@@ -252,16 +298,94 @@ func pageParams(r *http.Request) (limit int, after string) {
 	return limit, r.URL.Query().Get("after")
 }
 
-func memberPage(w http.ResponseWriter, list []auth.MemberView, more bool) {
-	items := make([]map[string]any, len(list))
-	for i, v := range list {
-		items[i] = memberJSON(v, nil)
-	}
+// writePage writes a page of a members list: next is the cursor of the last item.
+func writePage(w http.ResponseWriter, items []map[string]any, more bool, last string) {
 	out := map[string]any{"items": items, "has_more": more}
-	if more && len(list) > 0 {
-		out["next"] = list[len(list)-1].Member.User
+	if more && last != "" {
+		out["next"] = last
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+func memberPage(w http.ResponseWriter, list []auth.MemberView, more bool) {
+	items := make([]map[string]any, len(list))
+	last := ""
+	for i, v := range list {
+		items[i], last = memberJSON(v), v.Member.User
+	}
+	writePage(w, items, more, last)
+}
+
+// teamMemberJSON is a member as seen from a team: whether they belong to it and the team roles
+// they hold in it now.
+func teamMemberJSON(v auth.TeamMemberView) map[string]any {
+	out := memberJSON(v.MemberView)
+	out["in_team"] = v.InTeam
+	out["roles_in_team"] = nonNil(v.Roles)
+	return out
+}
+
+func teamMemberPage(w http.ResponseWriter, list []auth.TeamMemberView, more bool) {
+	items := make([]map[string]any, len(list))
+	last := ""
+	for i, v := range list {
+		items[i], last = teamMemberJSON(v), v.Member.User
+	}
+	writePage(w, items, more, last)
+}
+
+// orgTeamMembers handles GET /_orgs/{org}/teams/{team}/members?role=: the team's members and the
+// holders of its roles in force now.
+func (a *authAPI) orgTeamMembers(w http.ResponseWriter, r *http.Request) {
+	limit, after := pageParams(r)
+	list, more, err := usersOf(r).TeamMembers(r.Context(), principalOf(r).User.ID, chi.URLParam(r, "org"), chi.URLParam(r, "team"), r.URL.Query().Get("role"), after, limit)
+	if err != nil {
+		teamError(w, r, err)
+		return
+	}
+	teamMemberPage(w, list, more)
+}
+
+// teamRoleRequest reads the body of a team role request: the member, the role and, to give or
+// re-window a grant, its window ("from" and "until", RFC 3339; absent is open).
+func teamRoleRequest(w http.ResponseWriter, r *http.Request, op auth.TeamRoleOp) (user, role string, win auth.TeamRoleWindow, ok bool) {
+	obj, ok := readObject(w, r)
+	if !ok {
+		return "", "", win, false
+	}
+	spec := map[string]string{"user": "string", "role": "string"}
+	if op != auth.TeamRoleRevokeOp {
+		spec["from"], spec["until"] = "time?", "time?"
+	}
+	f, ok := fields(w, r, obj, spec)
+	if !ok {
+		return "", "", win, false
+	}
+	win.From, _ = f["from"].(time.Time)
+	win.Until, _ = f["until"].(time.Time)
+	return f["user"].(string), f["role"].(string), win, true
+}
+
+// teamRoleHandler handles POST, PATCH and DELETE on .../teams/{team}/roles, for people (who need
+// manage: teams or a team role that grants the role) and for administrators.
+func teamRoleHandler(op auth.TeamRoleOp, admin bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, role, win, ok := teamRoleRequest(w, r, op)
+		if !ok {
+			return
+		}
+		caller := ""
+		fail := adminTeamError
+		if !admin {
+			caller, fail = principalOf(r).User.ID, teamError
+		}
+		v, err := usersOf(r).SetTeamRole(r.Context(), caller, chi.URLParam(r, "org"), chi.URLParam(r, "team"), user, role, op, win)
+		if err != nil {
+			fail(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, teamMemberJSON(v))
+	}
 }
 
 // orgMembers handles GET /_orgs/{org}/members.
@@ -290,7 +414,7 @@ func (a *authAPI) updateOrgMember(w http.ResponseWriter, r *http.Request) {
 		orgError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, memberJSON(v, nil))
+	writeJSON(w, http.StatusOK, memberJSON(v))
 }
 
 // removeOrgMember handles DELETE /_orgs/{org}/members/{user}.
@@ -397,7 +521,7 @@ func (a *adminAPI) addOrgMember(w http.ResponseWriter, r *http.Request) {
 		adminOrgError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, memberJSON(v, nil))
+	writeJSON(w, http.StatusOK, memberJSON(v))
 }
 
 // setOrgMemberRoles handles PATCH /orgs/{org}/members/{user}.
@@ -415,7 +539,7 @@ func (a *adminAPI) setOrgMemberRoles(w http.ResponseWriter, r *http.Request) {
 		adminOrgError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, memberJSON(v, nil))
+	writeJSON(w, http.StatusOK, memberJSON(v))
 }
 
 // removeOrgMember handles DELETE /orgs/{org}/members/{user}.
@@ -456,7 +580,7 @@ func (a *adminAPI) assignOrgOwner(w http.ResponseWriter, r *http.Request) {
 		adminOrgError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, memberJSON(v, nil))
+	writeJSON(w, http.StatusOK, memberJSON(v))
 }
 
 func orgInvitationJSON(inv auth.OrgInvitation, now time.Time) map[string]any {
@@ -793,7 +917,7 @@ func (a *authAPI) addOrgTeamMember(w http.ResponseWriter, r *http.Request) {
 		teamError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, memberJSON(v, nil))
+	writeJSON(w, http.StatusOK, memberJSON(v))
 }
 
 // removeOrgTeamMember handles DELETE /_orgs/{org}/teams/{team}/members/{user}.
@@ -803,7 +927,7 @@ func (a *authAPI) removeOrgTeamMember(w http.ResponseWriter, r *http.Request) {
 		teamError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, memberJSON(v, nil))
+	writeJSON(w, http.StatusOK, memberJSON(v))
 }
 
 // Administrators.
@@ -856,6 +980,16 @@ func (a *adminAPI) deleteOrgTeam(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (a *adminAPI) orgTeamMembers(w http.ResponseWriter, r *http.Request) {
+	limit, after := pageParams(r)
+	list, more, err := usersOf(r).AdminTeamMembers(r.Context(), chi.URLParam(r, "org"), chi.URLParam(r, "team"), r.URL.Query().Get("role"), after, limit)
+	if err != nil {
+		adminTeamError(w, r, err)
+		return
+	}
+	teamMemberPage(w, list, more)
+}
+
 func (a *adminAPI) setOrgTeamMember(add bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		v, err := usersOf(r).AdminSetOrgTeamMember(r.Context(), chi.URLParam(r, "org"), chi.URLParam(r, "team"), chi.URLParam(r, "user"), add)
@@ -863,7 +997,7 @@ func (a *adminAPI) setOrgTeamMember(add bool) http.HandlerFunc {
 			adminTeamError(w, r, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, memberJSON(v, nil))
+		writeJSON(w, http.StatusOK, memberJSON(v))
 	}
 }
 

@@ -2280,6 +2280,17 @@ func TestContract(t *testing.T) {
 		req("DELETE", adm+"/"+gone, "", key, 204)
 		req("POST", tr, `{"org": "`+gone+`"}`, key, 409)
 		req("POST", tr, `{"org": "`+to+`"}`, key, 200)
+		// Teams of a collection: the document carries _meta.team, and the transfer names it.
+		deptTeam := req("POST", adm+"/"+to+"/teams", `{"name": "Contract department"}`, key, 201)["id"].(string)
+		reqsRoute := "/v1/acme/_admin/data/app/requests"
+		req("POST", reqsRoute+"?org="+to, `{"title": "no team"}`, key, 400)
+		req("POST", reqsRoute+"?org="+to+"&team=nosuch", `{"title": "x"}`, key, 404)
+		teamDoc := req("POST", reqsRoute+"?org="+to+"&team="+deptTeam, `{"title": "in a team"}`, key, 201)["id"].(string)
+		req("GET", reqsRoute+"?org="+to+"&team="+deptTeam, "", key, 200)
+		ttr := reqsRoute + "/" + teamDoc + "/_transfer"
+		req("POST", ttr, `{"org": "`+to+`", "team": null}`, key, 400)
+		req("POST", ttr, `{"org": "`+to+`", "team": "nosuch"}`, key, 404)
+		req("POST", ttr, `{"org": "`+to+`", "team": "`+deptTeam+`"}`, key, 200)
 		assign := "/v1/acme/_admin/data/app/shared/_assign_org"
 		req("POST", assign, `{"org": "`+to+`"}`, nil, 401)
 		req("POST", assign, `{"org": "`+to+`"}`, ada, 403)
@@ -2288,6 +2299,50 @@ func TestContract(t *testing.T) {
 		req("POST", assign+"?dry_run=true", `{"org": "`+to+`"}`, key, 200)
 		req("POST", assign, `{"org": "`+to+`"}`, key, 202)
 		req("POST", assign, `{"org": "`+to+`"}`, key, 409) // one at a time per collection
+		// Owner templates.
+		f.svc.Settings.Email.Customizable = []string{"reset-password"}
+		tplLimits := f.svc.Settings.Email.Limits
+		f.svc.Settings.Email.Limits.PerKindPerHour, f.svc.Settings.Email.Limits.PerDay, f.svc.Settings.Email.Limits.PerIPPerHour = 100000, 100000, 100000
+		tplBase := orgs + "/" + id + "/templates"
+		tpl := tplBase + "/reset-password/en"
+		goodTpl := `{"subject": "Reset", "text": "{{Link}}", "html": "<a href=\"{{Link}}\">Reset</a>"}`
+		req("GET", tplBase, "", nil, 401)
+		req("GET", tplBase, "", carl, 403)
+		req("GET", tplBase, "", ada, 200)
+		req("GET", tpl, "", nil, 401)
+		req("GET", tpl, "", carl, 403)
+		req("GET", tpl, "", ada, 404)
+		req("GET", tplBase+"/verify-email/en", "", ada, 400)
+		req("PUT", tpl, goodTpl, withJSON(nil), 401)
+		req("PUT", tpl, goodTpl, withJSON(carl), 403)
+		req("PUT", tpl, `{"subject": "x", "text": "no link", "html": "x"}`, withJSON(ada), 400)
+		req("PUT", tplBase+"/verify-email/en", goodTpl, withJSON(ada), 400)
+		req("PUT", tpl, goodTpl, withJSON(ada), 200)
+		req("GET", tpl, "", ada, 200)
+		req("POST", tpl+"/preview", `{}`, withJSON(nil), 401)
+		req("POST", tpl+"/preview", `{}`, withJSON(carl), 403)
+		req("POST", tpl+"/preview", `{"subject": "only"}`, withJSON(ada), 400)
+		req("POST", tpl+"/preview", `{}`, withJSON(ada), 200)
+		req("DELETE", tpl, "", ada, 204)
+		req("POST", tpl+"/preview", `{}`, withJSON(ada), 404) // nothing saved
+		req("POST", tpl+"/test", `{}`, withJSON(ada), 404)
+		req("PUT", tpl, goodTpl, withJSON(ada), 200)
+		req("POST", tplBase+"/magic-link/en/preview", `{}`, withJSON(ada), 400)
+		req("POST", tpl+"/test", `{}`, withJSON(nil), 401)
+		req("POST", tpl+"/test", `{}`, withJSON(carl), 403)
+		req("POST", tpl+"/test", `{"subject": "only"}`, withJSON(ada), 400)
+		req("POST", tpl+"/test", `{}`, withJSON(ada), 202)
+		for i := 1; i < auth.OrgTemplateTestsPerHour; i++ {
+			req("POST", tpl+"/test", `{}`, withJSON(ada), 202)
+		}
+		req("POST", tpl+"/test", `{}`, withJSON(ada), 429)
+		req("DELETE", tpl, "", nil, 401)
+		req("DELETE", tpl, "", carl, 403)
+		req("DELETE", tpl, "", ada, 204)
+		req("DELETE", tpl, "", ada, 404)
+		req("DELETE", tplBase+"/verify-email/en", "", ada, 400)
+		f.svc.Settings.Email.Limits = tplLimits
+		f.svc.Settings.Email.Customizable = nil
 		// Teams.
 		teamsPath := orgs + "/" + id + "/teams"
 		req("GET", teamsPath, "", nil, 401)
@@ -2312,6 +2367,44 @@ func TestContract(t *testing.T) {
 		req("PUT", teamsPath+"/nosuch/members/"+f.adaID, "", ada, 404)
 		req("PUT", tp+"/members/nosuchuser", "", ada, 403)
 		req("PUT", tm, "", ada, 200)
+		// Team members, and team roles held within a team.
+		req("GET", tp+"/members", "", nil, 401)
+		req("GET", tp+"/members", "", carl, 403)
+		req("GET", tp+"/members?role=manager", "", ada, 200)
+		req("GET", tp+"/members?role=wizard", "", ada, 400)
+		req("GET", teamsPath+"/nosuch/members", "", ada, 404)
+		role := fmt.Sprintf(`{"user": %q, "role": "manager"}`, f.adaID)
+		req("POST", tp+"/roles", role, withJSON(nil), 401)
+		req("POST", tp+"/roles", role, withJSON(carl), 403)
+		req("POST", tp+"/roles", `{"user": "x"}`, withJSON(ada), 400)
+		req("POST", tp+"/roles", `{"user": "x", "role": "wizard"}`, withJSON(ada), 400)
+		req("POST", teamsPath+"/nosuch/roles", role, withJSON(ada), 404)
+		req("POST", tp+"/roles", role, withJSON(ada), 200)
+		req("GET", tp+"/members?role=manager", "", ada, 200)
+		// Fifty grants is the most a member holds.
+		held, _ := f.svc.Store.OrgMember(context.Background(), id, f.adaID)
+		saved := held.TeamRoles
+		for i := len(held.TeamRoles); i < registry.MaxTeamRolesPerMember; i++ {
+			held.TeamRoles = append(held.TeamRoles, teamGrant(fmt.Sprintf("filler%d", i), "delegate"))
+		}
+		if err := f.svc.Store.PutOrgMember(context.Background(), held); err != nil {
+			t.Fatal(err)
+		}
+		req("POST", tp+"/roles", fmt.Sprintf(`{"user": %q, "role": "delegate"}`, f.adaID), withJSON(ada), 409)
+		held.TeamRoles = saved
+		if err := f.svc.Store.PutOrgMember(context.Background(), held); err != nil {
+			t.Fatal(err)
+		}
+		req("PATCH", tp+"/roles", role, withJSON(nil), 401)
+		req("PATCH", tp+"/roles", role, withJSON(carl), 403)
+		req("PATCH", tp+"/roles", `{"user": "x", "role": "manager", "from": "soon"}`, withJSON(ada), 400)
+		req("PATCH", tp+"/roles", fmt.Sprintf(`{"user": %q, "role": "delegate"}`, f.adaID), withJSON(ada), 404)
+		req("PATCH", tp+"/roles", fmt.Sprintf(`{"user": %q, "role": "manager", "until": "2099-01-01T00:00:00Z"}`, f.adaID), withJSON(ada), 200)
+		req("DELETE", tp+"/roles", role, withJSON(nil), 401)
+		req("DELETE", tp+"/roles", role, withJSON(carl), 403)
+		req("DELETE", tp+"/roles", `{}`, withJSON(ada), 400)
+		req("DELETE", teamsPath+"/nosuch/roles", role, withJSON(ada), 404)
+		req("DELETE", tp+"/roles", role, withJSON(ada), 200)
 		f.svc.Settings.Organizations.MaxTeamsPerMember = 0
 		req("PUT", tp+"/members/"+f.adaID, "", ada, 200) // already in: nothing to count
 		f.svc.Settings.Organizations.MaxTeamsPerMember = registry.DefaultMaxTeamsPerMember
@@ -2374,6 +2467,40 @@ func TestContract(t *testing.T) {
 		req("PUT", ap+"/members/nosuchuser", "", key, 404)
 		req("PUT", am, "", key, 200)
 		req("DELETE", am, "", key, 200)
+		// Team members and team roles, for administrators.
+		req("GET", ap+"/members", "", nil, 401)
+		req("GET", ap+"/members", "", ada, 403)
+		req("GET", ap+"/members?role=wizard", "", key, 400)
+		req("GET", admTeams+"/nosuch/members", "", key, 404)
+		req("GET", ap+"/members", "", key, 200)
+		role = fmt.Sprintf(`{"user": %q, "role": "delegate"}`, f.adaID)
+		req("POST", ap+"/roles", role, withJSON(nil), 401)
+		req("POST", ap+"/roles", role, withJSON(ada), 403)
+		req("POST", ap+"/roles", `{}`, withJSON(key), 400)
+		req("POST", admTeams+"/nosuch/roles", role, withJSON(key), 404)
+		req("POST", ap+"/roles", role, withJSON(key), 200)
+		req("PATCH", ap+"/roles", `{"user": "`+f.adaID+`", "role": "delegate", "until": "2099-01-01T00:00:00Z"}`, withJSON(key), 200)
+		held.TeamRoles = nil
+		for i := 0; i < registry.MaxTeamRolesPerMember; i++ {
+			held.TeamRoles = append(held.TeamRoles, teamGrant(fmt.Sprintf("filler%d", i), "delegate"))
+		}
+		if err := f.svc.Store.PutOrgMember(context.Background(), held); err != nil {
+			t.Fatal(err)
+		}
+		req("POST", ap+"/roles", fmt.Sprintf(`{"user": %q, "role": "manager"}`, f.adaID), withJSON(key), 409)
+		held.TeamRoles = nil
+		if err := f.svc.Store.PutOrgMember(context.Background(), held); err != nil {
+			t.Fatal(err)
+		}
+		req("PATCH", ap+"/roles", role, withJSON(nil), 401)
+		req("PATCH", ap+"/roles", role, withJSON(ada), 403)
+		req("PATCH", ap+"/roles", `{"user": "x", "role": "delegate", "until": "soon"}`, withJSON(key), 400)
+		req("PATCH", admTeams+"/nosuch/roles", role, withJSON(key), 404)
+		req("DELETE", ap+"/roles", role, withJSON(nil), 401)
+		req("DELETE", ap+"/roles", role, withJSON(ada), 403)
+		req("DELETE", ap+"/roles", `{}`, withJSON(key), 400)
+		req("DELETE", admTeams+"/nosuch/roles", role, withJSON(key), 404)
+		req("DELETE", ap+"/roles", role, withJSON(key), 200)
 		f.svc.Settings.Organizations.MaxTeamsPerMember = 0
 		req("PUT", am, "", key, 409)
 		f.svc.Settings.Organizations.MaxTeamsPerMember = registry.DefaultMaxTeamsPerMember

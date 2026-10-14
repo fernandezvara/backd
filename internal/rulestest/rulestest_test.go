@@ -364,3 +364,59 @@ tests:
 		t.Errorf("with the switch on the deny should fail: %+v", checks)
 	}
 }
+
+// Fixture users can belong to organizations and teams, so the helpers can be tested.
+func TestRunOrganizationsAndTeams(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "acme", "app", "absences")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for p, content := range map[string]string{
+		filepath.Join(root, "acme", "realm.yaml"): "organizations:\n  roles:\n    owner: { manage: org }\n    hr: {}\n  team_roles:\n    manager: {}\n",
+		filepath.Join(dir, "schema.json"):         `{"type":"object","properties":{"title":{"type":"string"}}}`,
+		filepath.Join(dir, "collection.yaml"):     "organization: required\non_org_delete:\n  action: delete\nteam: required\non_team_delete:\n  action: keep\n" + rulesSection("read: inTeam(document._meta.team) || hasTeamRole(document._meta.team, 'manager') || hasOrgRole(document._meta.org, 'hr')\ncreate: inTeam(data._meta.team)\n"),
+	} {
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := reg.Collection("acme", "app", "absences")
+	checks, problems := Run(c, nil, []byte(`
+users:
+  ana:   { id: u1, email: ana@example.com, orgs: { o1: { roles: [member], teams: [sales] } } }
+  marta: { id: u2, email: marta@example.com, orgs: { o1: { teams: [support], team_roles: { sales: [manager] } } } }
+  hugo:  { id: u3, email: hugo@example.com, orgs: { o1: { roles: [hr] } } }
+  carl:  { id: u4, email: carl@example.com }
+documents:
+  leave: { title: Leave, _meta: { org: o1, team: sales } }
+tests:
+  - as: ana
+    read: { allow: [leave] }
+    create:
+      - { data: { title: x }, org: o1, team: sales, expect: allow }
+      - { data: { title: x }, org: o1, team: support, expect: deny }
+  - name: a manager of a team without belonging to it, and HR through the organization
+    as: marta
+    read: { allow: [leave] }
+  - as: hugo
+    read: { allow: [leave] }
+  - as: carl
+    read: { deny: [leave] }
+`))
+	if len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	for _, ch := range checks {
+		if !ch.Pass {
+			t.Errorf("%s: %s", ch.What, ch.Detail)
+		}
+	}
+	if len(checks) != 6 {
+		t.Errorf("%d assertions ran", len(checks))
+	}
+}

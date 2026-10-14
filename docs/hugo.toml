@@ -50,6 +50,11 @@ enableGitInfo = true
     includeFiles = ["**.yaml", "**.json"]
     excludeFiles = ["**/.build/**"]
   [[module.mounts]]
+    source = "../examples/config/hr"
+    target = "assets/examples/hr"
+    includeFiles = ["**.yaml", "**.json"]
+    excludeFiles = ["**/.build/**"]
+  [[module.mounts]]
     source = "../examples/config/shelf"
     target = "assets/examples/shelf"
     includeFiles = ["**.ts", "**.yaml", "**.json", "**.html", "**.txt", "**.lock"]

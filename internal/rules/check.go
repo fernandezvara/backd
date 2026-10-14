@@ -120,14 +120,25 @@ func check(r *Rule, schema Schema) error {
 			add("%s: this realm doesn't enable organizations (an `organizations:` section in realm.yaml)", name)
 			return
 		}
+		teamHelper := helperFields[name] == "_meta.team"
+		if teamHelper && !schema.InTeams {
+			add("%s: this collection has no teams (set `team:` in collection.yaml)", name)
+			return
+		}
 		if len(c.Arguments) == 0 {
 			return
 		}
 		// The first argument is the first as written: the patcher only runs when compiling.
-		if inQuery && !orgField(c.Arguments[0]) {
-			add("%s: in a %s rule, call it with document._meta.org, so it can be applied inside the query", name, r.Op)
+		if inQuery && !helperField(name, c.Arguments[0]) {
+			add("%s: in a %s rule, call it with document.%s, so it can be applied inside the query", name, r.Op, helperFields[name])
 		}
 		switch {
+		case name == "hasTeamRole" && len(c.Arguments) == 2:
+			if role, isStr := c.Arguments[1].(*ast.StringNode); !isStr {
+				add("hasTeamRole: the role is a string literal")
+			} else if !slices.Contains(schema.TeamRoles, role.Value) {
+				add("team role %q is not declared in realm.yaml (organizations.team_roles)", role.Value)
+			}
 		case name == "hasOrgRole" && len(c.Arguments) == 2:
 			switch role := c.Arguments[1].(type) {
 			case *ast.StringNode:

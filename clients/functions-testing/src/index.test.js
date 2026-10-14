@@ -457,6 +457,34 @@ Deno.test('ctx.admin.orgs: create, claims, members, teams and invitations in mem
   assertEquals(orgChanges().map((c) => c.action), ['create', 'setClaims', 'addMember', 'teams.create', 'teams.addMember', 'invitations.create', 'teams.delete'])
 })
 
+Deno.test('ctx.admin.orgs.teams: grants, re-windows and revokes team roles', async () => {
+  const { ctx, orgChanges } = createContext({ admin: true, orgs: { orgs: [{ id: 'o1', name: 'Acme', teams: [{ id: 'sales', name: 'Sales' }], members: [{ user: 'u1' }] }] } })
+  const granted = await ctx.admin.orgs.teams.grantRole('o1', 'sales', { user: 'u1', role: 'manager', until: '2030-01-01T00:00:00Z' })
+  assertEquals(granted.roles_in_team, ['manager'])
+  assertEquals((await ctx.admin.orgs.teams.members('o1', 'sales', { role: 'manager' })).items.map((m) => m.user), ['u1'])
+  await ctx.admin.orgs.teams.setRoleWindow('o1', 'sales', { user: 'u1', role: 'manager' })
+  await assertRejects(() => ctx.admin.orgs.teams.setRoleWindow('o1', 'sales', { user: 'u1', role: 'delegate' }), FunctionError)
+  await ctx.admin.orgs.teams.revokeRole('o1', 'sales', { user: 'u1', role: 'manager' })
+  assertEquals((await ctx.admin.orgs.teams.members('o1', 'sales', { role: 'manager' })).items, [])
+  assertEquals(orgChanges().map((c) => c.action), ['teams.grantRole', 'teams.setRoleWindow', 'teams.revokeRole'])
+})
+
+Deno.test('ctx.admin.orgs.teams.members: lists members and the holders of a team role', async () => {
+  const { ctx } = createContext({
+    admin: true,
+    orgs: {
+      orgs: [{
+        id: 'o1', name: 'Acme', teams: [{ id: 'sales', name: 'Sales' }],
+        members: [{ user: 'u1', teams: ['sales'] }, { user: 'u2', teamRoles: [{ team: 'sales', role: 'manager' }] }, { user: 'u3' }],
+      }],
+    },
+  })
+  const all = await ctx.admin.orgs.teams.members('o1', 'sales')
+  assertEquals(all.items.map((m) => m.user), ['u1', 'u2'])
+  const managers = await ctx.admin.orgs.teams.members('o1', 'sales', { role: 'manager' })
+  assertEquals(managers.items.map((m) => [m.user, m.in_team, m.roles_in_team]), [['u2', false, ['manager']]])
+})
+
 Deno.test('ctx.admin.orgs: starts from the organizations the test gives, and ctx.user.orgs passes through', async () => {
   const { ctx } = createContext({
     user: { id: 'u1', email: 'a@example.com', roles: [], orgs: { o1: { name: 'Acme', roles: ['owner'], teams: [], claims: { plan: 'pro' }, counts: true } } },

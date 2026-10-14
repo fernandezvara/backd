@@ -215,9 +215,11 @@ func TestOrganizationTypes(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write("acme/realm.yaml", "organizations:\n  roles:\n    owner: {manage: org}\n    editor: {}\n")
+	write("acme/realm.yaml", "organizations:\n  roles:\n    owner: {manage: org}\n    editor: {}\n  team_roles:\n    manager: {}\n    delegate: {}\n")
 	write("acme/main/projects/schema.json", `{"type": "object", "properties": {"title": {"type": "string"}}}`)
 	write("acme/main/projects/collection.yaml", "organization: required\non_org_delete:\n  action: delete\nrules:\n  read: inOrg(document._meta.org)\n")
+	write("acme/main/tickets/schema.json", `{"type": "object", "properties": {"title": {"type": "string"}}}`)
+	write("acme/main/tickets/collection.yaml", "organization: required\non_org_delete:\n  action: delete\nteam: required\non_team_delete:\n  action: keep\nrules:\n  read: inTeam(document._meta.team)\n")
 	write("acme/main/_functions/provision/function.yaml", "admin: true\ninvoke: \"true\"\n")
 	write("acme/main/_functions/provision/index.ts", "export default () => null\n")
 	reg, err := registry.Load(root)
@@ -230,6 +232,13 @@ func TestOrganizationTypes(t *testing.T) {
 	}
 	if !strings.Contains(out.Types, `org_roles: "editor" | "owner";`) {
 		t.Errorf("no org_roles:\n%s", out.Types)
+	}
+	if !strings.Contains(out.Types, `team_roles: "delegate" | "manager";`) {
+		t.Errorf("no team_roles:\n%s", out.Types)
+	}
+	// _meta.team is queryable only where the collection has teams.
+	if n := strings.Count(out.Types, `"_meta.team"?:`); n != 1 {
+		t.Errorf("_meta.team in %d where types, want 1 (tickets)", n)
 	}
 	if !strings.Contains(out.Types, `"_meta.org"`) {
 		t.Errorf("_meta.org is not queryable")
@@ -244,12 +253,13 @@ func TestOrganizationTypes(t *testing.T) {
 	// Without organizations there are neither.
 	write("acme/realm.yaml", "signup: open\n")
 	write("acme/main/projects/collection.yaml", "rules:\n  read: user != nil\n")
+	write("acme/main/tickets/collection.yaml", "rules:\n  read: user != nil\n")
 	reg, err = registry.Load(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	out, _ = Generate(reg, Options{Realm: "acme"})
-	if strings.Contains(out.Types, "org_roles") {
-		t.Error("org_roles in a realm without organizations")
+	if strings.Contains(out.Types, "org_roles") || strings.Contains(out.Types, "team_roles") {
+		t.Error("org_roles or team_roles in a realm without organizations")
 	}
 }

@@ -4,6 +4,7 @@ import { Job } from './functions.js'
 /**
  * @typedef {import('./orgs.js').OrgMember} OrgMember
  * @typedef {import('./orgs.js').OrgTeam} OrgTeam
+ * @typedef {import('./orgs.js').OrgTeamMember} OrgTeamMember
  * @typedef {import('./orgs.js').OrgInvitation} OrgInvitation
  * @typedef {import('./orgs.js').NewOrgInvitation} NewOrgInvitation
  * @typedef {import('./orgs.js').InviteInput} OrgInviteInput
@@ -1355,6 +1356,56 @@ class AdminOrgs {
    */
   async teams(id, opts) {
     return (await this.admin._request({ method: 'GET', path: ['orgs', id, 'teams'], ...opts })).data.items
+  }
+
+  /**
+   * The members of a team and the holders of its team roles, in force now; with `role`, only its
+   * holders.
+   * @param {string} id
+   * @param {string} team
+   * @param {{ role?: string, limit?: number, after?: string }} [params]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ items: OrgTeamMember[], has_more: boolean, next?: string }>}
+   */
+  async teamMembers(id, team, params = {}, opts) {
+    const query = { role: params.role, limit: params.limit, after: params.after }
+    return (await this.admin._request({ method: 'GET', path: ['orgs', id, 'teams', team, 'members'], query, ...opts })).data
+  }
+
+  /**
+   * Gives a member a team role in a team, for the window `from`..`until`, as an administrator.
+   * @param {string} id
+   * @param {string} team
+   * @param {import('./orgs.js').TeamRoleInput} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgTeamMember>}
+   */
+  async grantTeamRole(id, team, input, opts) {
+    return (await this.admin._request({ method: 'POST', path: ['orgs', id, 'teams', team, 'roles'], body: input, ...opts })).data
+  }
+
+  /**
+   * Replaces the window of a team role a member holds.
+   * @param {string} id
+   * @param {string} team
+   * @param {import('./orgs.js').TeamRoleInput} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgTeamMember>}
+   */
+  async setTeamRoleWindow(id, team, input, opts) {
+    return (await this.admin._request({ method: 'PATCH', path: ['orgs', id, 'teams', team, 'roles'], body: input, ...opts })).data
+  }
+
+  /**
+   * Takes a team role from a member.
+   * @param {string} id
+   * @param {string} team
+   * @param {{ user: string, role: string }} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgTeamMember>}
+   */
+  async revokeTeamRole(id, team, input, opts) {
+    return (await this.admin._request({ method: 'DELETE', path: ['orgs', id, 'teams', team, 'roles'], body: input, ...opts })).data
   }
 
   /**

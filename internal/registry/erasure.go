@@ -98,6 +98,11 @@ type erasureDoc struct {
 	OnOrgDelete  *struct {
 		Action string `yaml:"action"`
 	} `yaml:"on_org_delete"`
+	// Team and OnTeamDelete are read by loadOrganization too.
+	Team         *string `yaml:"team"`
+	OnTeamDelete *struct {
+		Action string `yaml:"action"`
+	} `yaml:"on_team_delete"`
 	OnOwnerDelete *struct {
 		InOrg   string            `yaml:"in_org"`
 		Action  string            `yaml:"action"`

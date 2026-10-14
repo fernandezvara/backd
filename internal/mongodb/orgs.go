@@ -10,6 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/email"
 )
 
 type orgDoc struct {
@@ -36,6 +37,7 @@ func (d orgDoc) org() auth.Org {
 }
 
 type grantDoc struct {
+	Team      string     `bson:"team,omitempty"` // team roles only
 	Role      string     `bson:"role"`
 	From      *time.Time `bson:"from,omitempty"`
 	Until     *time.Time `bson:"until,omitempty"`
@@ -49,6 +51,7 @@ type orgMemberDoc struct {
 	User      string     `bson:"user"`
 	Roles     []grantDoc `bson:"roles"`
 	Teams     []string   `bson:"teams"`
+	TeamRoles []grantDoc `bson:"team_roles"`
 	JoinedAt  time.Time  `bson:"joined_at"`
 	InvitedBy string     `bson:"invited_by,omitempty"`
 }
@@ -62,28 +65,44 @@ func timePtr(t time.Time) *time.Time {
 	return &t
 }
 
+func (g grantDoc) grant() auth.RoleGrant {
+	rg := auth.RoleGrant{Role: g.Role, GrantedBy: g.GrantedBy, GrantedAt: g.GrantedAt.UTC()}
+	if g.From != nil {
+		rg.From = g.From.UTC()
+	}
+	if g.Until != nil {
+		rg.Until = g.Until.UTC()
+	}
+	return rg
+}
+
+func grantOf(g auth.RoleGrant) grantDoc {
+	return grantDoc{Role: g.Role, From: timePtr(g.From), Until: timePtr(g.Until), GrantedBy: g.GrantedBy, GrantedAt: g.GrantedAt}
+}
+
 func (d orgMemberDoc) member() auth.OrgMember {
 	m := auth.OrgMember{Org: d.Org, User: d.User, Teams: d.Teams, JoinedAt: d.JoinedAt.UTC(), InvitedBy: d.InvitedBy}
 	for _, g := range d.Roles {
-		rg := auth.RoleGrant{Role: g.Role, GrantedBy: g.GrantedBy, GrantedAt: g.GrantedAt.UTC()}
-		if g.From != nil {
-			rg.From = g.From.UTC()
-		}
-		if g.Until != nil {
-			rg.Until = g.Until.UTC()
-		}
-		m.Roles = append(m.Roles, rg)
+		m.Roles = append(m.Roles, g.grant())
+	}
+	for _, g := range d.TeamRoles {
+		m.TeamRoles = append(m.TeamRoles, auth.TeamRoleGrant{Team: g.Team, RoleGrant: g.grant()})
 	}
 	return m
 }
 
 func memberDoc(m auth.OrgMember) orgMemberDoc {
-	d := orgMemberDoc{ID: orgMemberID(m.Org, m.User), Org: m.Org, User: m.User, Teams: m.Teams, JoinedAt: m.JoinedAt, InvitedBy: m.InvitedBy, Roles: []grantDoc{}}
+	d := orgMemberDoc{ID: orgMemberID(m.Org, m.User), Org: m.Org, User: m.User, Teams: m.Teams, JoinedAt: m.JoinedAt, InvitedBy: m.InvitedBy, Roles: []grantDoc{}, TeamRoles: []grantDoc{}}
 	if d.Teams == nil {
 		d.Teams = []string{}
 	}
 	for _, g := range m.Roles {
-		d.Roles = append(d.Roles, grantDoc{Role: g.Role, From: timePtr(g.From), Until: timePtr(g.Until), GrantedBy: g.GrantedBy, GrantedAt: g.GrantedAt})
+		d.Roles = append(d.Roles, grantOf(g))
+	}
+	for _, g := range m.TeamRoles {
+		gd := grantOf(g.RoleGrant)
+		gd.Team = g.Team
+		d.TeamRoles = append(d.TeamRoles, gd)
 	}
 	return d
 }
@@ -333,7 +352,12 @@ func (s *AuthStore) OrgMember(ctx context.Context, org, user string) (auth.OrgMe
 }
 
 func (s *AuthStore) ListOrgMembers(ctx context.Context, org, after string, limit int) ([]auth.OrgMember, bool, error) {
-	filter := bson.D{{Key: "org", Value: org}}
+	return s.pageOrgMembers(ctx, bson.D{{Key: "org", Value: org}}, after, limit)
+}
+
+// pageOrgMembers returns a page of the memberships matching filter, sorted by user id, after
+// the user after; more says there are further ones.
+func (s *AuthStore) pageOrgMembers(ctx context.Context, filter bson.D, after string, limit int) ([]auth.OrgMember, bool, error) {
 	if after != "" {
 		filter = append(filter, bson.E{Key: "user", Value: bson.D{{Key: "$gt", Value: after}}})
 	}
@@ -374,6 +398,49 @@ func (s *AuthStore) OrgMembersWithRoles(ctx context.Context, org string, roles [
 		out[i] = d.member()
 	}
 	return out, nil
+}
+
+// NextOrgMemberSeq counts a membership event of a user in an organization.
+func (s *AuthStore) NextOrgMemberSeq(ctx context.Context, org, user string) (int64, error) {
+	var d struct {
+		Seq int64 `bson:"seq"`
+	}
+	err := s.db.Collection(OrgMemberSeqCollection).FindOneAndUpdate(ctx,
+		bson.D{{Key: "_id", Value: orgMemberID(org, user)}},
+		bson.D{{Key: "$inc", Value: bson.D{{Key: "seq", Value: int64(1)}}}, {Key: "$setOnInsert", Value: bson.D{{Key: "org", Value: org}, {Key: "user", Value: user}}}},
+		options.FindOneAndUpdate().SetUpsert(true).SetReturnDocument(options.After)).Decode(&d)
+	return d.Seq, err
+}
+
+// PurgeExpiredTeamRoles pulls the grants whose window ended before the instant.
+func (s *AuthStore) PurgeExpiredTeamRoles(ctx context.Context, before time.Time) (int64, error) {
+	ended := bson.D{{Key: "until", Value: bson.D{{Key: "$lt", Value: before}}}}
+	res, err := s.orgMembers().UpdateMany(ctx,
+		bson.D{{Key: "team_roles", Value: bson.D{{Key: "$elemMatch", Value: ended}}}},
+		bson.D{{Key: "$pull", Value: bson.D{{Key: "team_roles", Value: ended}}}})
+	if err != nil {
+		return 0, err
+	}
+	return res.ModifiedCount, nil
+}
+
+// OrgTeamHolders pages the members of a team and the holders of a team role in it.
+func (s *AuthStore) OrgTeamHolders(ctx context.Context, org, team, role string, now time.Time, after string, limit int) ([]auth.OrgMember, bool, error) {
+	held := bson.D{{Key: "team", Value: team}}
+	if role != "" {
+		held = append(held, bson.E{Key: "role", Value: role})
+	}
+	// Grants outside their window don't count.
+	held = append(held, bson.E{Key: "$and", Value: bson.A{
+		bson.D{{Key: "$or", Value: bson.A{bson.D{{Key: "from", Value: bson.D{{Key: "$exists", Value: false}}}}, bson.D{{Key: "from", Value: bson.D{{Key: "$lte", Value: now}}}}}}},
+		bson.D{{Key: "$or", Value: bson.A{bson.D{{Key: "until", Value: bson.D{{Key: "$exists", Value: false}}}}, bson.D{{Key: "until", Value: bson.D{{Key: "$gt", Value: now}}}}}}},
+	}})
+	holder := bson.D{{Key: "team_roles", Value: bson.D{{Key: "$elemMatch", Value: held}}}}
+	match := bson.A{holder}
+	if role == "" {
+		match = append(match, bson.D{{Key: "teams", Value: team}})
+	}
+	return s.pageOrgMembers(ctx, bson.D{{Key: "org", Value: org}, {Key: "$or", Value: match}}, after, limit)
 }
 
 func (s *AuthStore) OrgMembershipsOf(ctx context.Context, user string, limit int) ([]auth.OrgMember, error) {
@@ -615,8 +682,16 @@ func (s *AuthStore) DeleteOrgTeam(ctx context.Context, org, id string) error {
 	if res.DeletedCount == 0 {
 		return auth.ErrNotFound
 	}
-	_, err = s.orgMembers().UpdateMany(ctx, bson.D{{Key: "org", Value: org}, {Key: "teams", Value: id}},
-		bson.D{{Key: "$pull", Value: bson.D{{Key: "teams", Value: id}}}})
+	// The team goes from its members' teams and the grants of its roles go with it.
+	_, err = s.orgMembers().UpdateMany(ctx,
+		bson.D{{Key: "org", Value: org}, {Key: "$or", Value: bson.A{
+			bson.D{{Key: "teams", Value: id}},
+			bson.D{{Key: "team_roles.team", Value: id}},
+		}}},
+		bson.D{{Key: "$pull", Value: bson.D{
+			{Key: "teams", Value: id},
+			{Key: "team_roles", Value: bson.D{{Key: "team", Value: id}}},
+		}}})
 	return err
 }
 
@@ -672,4 +747,89 @@ func (s *AuthStore) OrgTeamsByIDs(ctx context.Context, org string, ids []string)
 		out[i] = auth.OrgTeam{ID: d.ID, Org: d.Org, Name: d.Name, Roles: d.Roles, CreatedAt: d.CreatedAt.UTC()}
 	}
 	return out, nil
+}
+
+type orgTemplateVersionDoc struct {
+	Version int       `bson:"version"`
+	Subject string    `bson:"subject"`
+	Text    string    `bson:"text"`
+	HTML    string    `bson:"html"`
+	By      string    `bson:"by,omitempty"`
+	At      time.Time `bson:"at"`
+}
+
+type orgTemplateDoc struct {
+	ID        string                  `bson:"_id"` // org/kind/locale
+	Org       string                  `bson:"org"`
+	Kind      string                  `bson:"kind"`
+	Locale    string                  `bson:"locale"`
+	Subject   string                  `bson:"subject"`
+	Text      string                  `bson:"text"`
+	HTML      string                  `bson:"html"`
+	Version   int                     `bson:"version"`
+	UpdatedBy string                  `bson:"updated_by,omitempty"`
+	UpdatedAt time.Time               `bson:"updated_at"`
+	Versions  []orgTemplateVersionDoc `bson:"versions"`
+}
+
+func (s *AuthStore) orgTemplates() *mongo.Collection { return s.db.Collection(OrgTemplatesCollection) }
+
+func orgTemplateID(org, kind, locale string) string { return org + "/" + kind + "/" + locale }
+
+func (d orgTemplateDoc) template() auth.OrgTemplate {
+	t := auth.OrgTemplate{Org: d.Org, Kind: d.Kind, Locale: d.Locale, Override: email.Override{Subject: d.Subject, Text: d.Text, HTML: d.HTML},
+		Version: d.Version, UpdatedBy: d.UpdatedBy, UpdatedAt: d.UpdatedAt.UTC()}
+	for _, v := range d.Versions {
+		t.Versions = append(t.Versions, auth.OrgTemplateVersion{Version: v.Version, Override: email.Override{Subject: v.Subject, Text: v.Text, HTML: v.HTML}, By: v.By, At: v.At.UTC()})
+	}
+	return t
+}
+
+func (s *AuthStore) OrgTemplate(ctx context.Context, org, kind, locale string) (auth.OrgTemplate, error) {
+	var d orgTemplateDoc
+	err := s.orgTemplates().FindOne(ctx, bson.D{{Key: "_id", Value: orgTemplateID(org, kind, locale)}}).Decode(&d)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return auth.OrgTemplate{}, auth.ErrNotFound
+	}
+	if err != nil {
+		return auth.OrgTemplate{}, err
+	}
+	return d.template(), nil
+}
+
+func (s *AuthStore) ListOrgTemplates(ctx context.Context, org string) ([]auth.OrgTemplate, error) {
+	cur, err := s.orgTemplates().Find(ctx, bson.D{{Key: "org", Value: org}}, options.Find().SetSort(bson.D{{Key: "kind", Value: 1}, {Key: "locale", Value: 1}}))
+	if err != nil {
+		return nil, err
+	}
+	var docs []orgTemplateDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	out := make([]auth.OrgTemplate, len(docs))
+	for i, d := range docs {
+		out[i] = d.template()
+	}
+	return out, nil
+}
+
+func (s *AuthStore) PutOrgTemplate(ctx context.Context, t auth.OrgTemplate) error {
+	d := orgTemplateDoc{ID: orgTemplateID(t.Org, t.Kind, t.Locale), Org: t.Org, Kind: t.Kind, Locale: t.Locale,
+		Subject: t.Subject, Text: t.Text, HTML: t.HTML, Version: t.Version, UpdatedBy: t.UpdatedBy, UpdatedAt: t.UpdatedAt, Versions: []orgTemplateVersionDoc{}}
+	for _, v := range t.Versions {
+		d.Versions = append(d.Versions, orgTemplateVersionDoc{Version: v.Version, Subject: v.Subject, Text: v.Text, HTML: v.HTML, By: v.By, At: v.At})
+	}
+	_, err := s.orgTemplates().ReplaceOne(ctx, bson.D{{Key: "_id", Value: d.ID}}, d, options.Replace().SetUpsert(true))
+	return err
+}
+
+func (s *AuthStore) DeleteOrgTemplate(ctx context.Context, org, kind, locale string) error {
+	res, err := s.orgTemplates().DeleteOne(ctx, bson.D{{Key: "_id", Value: orgTemplateID(org, kind, locale)}})
+	if err != nil {
+		return err
+	}
+	if res.DeletedCount == 0 {
+		return auth.ErrNotFound
+	}
+	return nil
 }

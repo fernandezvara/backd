@@ -2,6 +2,7 @@ package rules
 
 import (
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -17,6 +18,8 @@ import (
 //	inOrg(document._meta.org)
 //	hasOrgRole(document._meta.org, "editor")        // or a role named by the document
 //	orgClaims(document._meta.org).plan == "pro"
+//	inTeam(document._meta.team)                     // a member of the document's team
+//	hasTeamRole(document._meta.team, "manager")     // holds that role in the document's team
 //
 // They see the caller's memberships that count, which the HTTP layer loads once per request
 // into Values.Orgs when a rule uses them. Like appConfig, each call is rewritten to receive
@@ -24,11 +27,14 @@ import (
 // and counts only show what the caller may see.
 
 // UserOrg is one membership that counts: the roles the caller holds in the organization
-// (direct, default and through teams), the teams, and the organization's claims.
+// (direct, default and through teams), the teams, the team roles held within them and the
+// organization's claims.
 type UserOrg struct {
-	Roles  []string       `expr:"roles"`
-	Teams  []string       `expr:"teams"`
-	Claims map[string]any `expr:"claims"`
+	Roles []string `expr:"roles"`
+	Teams []string `expr:"teams"`
+	// TeamRoles are the team roles held in force, by team id.
+	TeamRoles map[string][]string `expr:"team_roles"`
+	Claims    map[string]any      `expr:"claims"`
 }
 
 // OrgsEnv is the memberships by organization id.
@@ -62,6 +68,37 @@ func hasOrgRole(params ...any) (any, error) {
 	return m != nil && slices.Contains(m.Roles, role), nil
 }
 
+// inTeam: the caller belongs to the team. Team ids are unique across organizations.
+func inTeam(params ...any) (any, error) {
+	orgs, _ := params[0].(OrgsEnv)
+	id, ok := orgID(params[1])
+	if !ok {
+		return false, nil
+	}
+	for _, m := range orgs {
+		if slices.Contains(m.Teams, id) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// hasTeamRole: the caller holds the team role in the team, now.
+func hasTeamRole(params ...any) (any, error) {
+	orgs, _ := params[0].(OrgsEnv)
+	id, ok := orgID(params[1])
+	role, isStr := params[2].(string)
+	if !ok || !isStr {
+		return false, nil
+	}
+	for _, m := range orgs {
+		if slices.Contains(m.TeamRoles[id], role) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func orgClaims(params ...any) (any, error) {
 	orgs, _ := params[0].(OrgsEnv)
 	if id, ok := orgID(params[1]); ok {
@@ -76,10 +113,15 @@ var orgFuncs = []expr.Option{
 	expr.Function("inOrg", inOrg, new(func(OrgsEnv, any) bool)),
 	expr.Function("hasOrgRole", hasOrgRole, new(func(OrgsEnv, any, any) bool)),
 	expr.Function("orgClaims", orgClaims, new(func(OrgsEnv, any) map[string]any)),
+	expr.Function("inTeam", inTeam, new(func(OrgsEnv, any) bool)),
+	expr.Function("hasTeamRole", hasTeamRole, new(func(OrgsEnv, any, any) bool)),
 }
 
 // orgArgs says how many arguments each helper takes as written.
-var orgArgs = map[string]int{"inOrg": 1, "hasOrgRole": 2, "orgClaims": 1}
+var orgArgs = map[string]int{"inOrg": 1, "hasOrgRole": 2, "orgClaims": 1, "inTeam": 1, "hasTeamRole": 2}
+
+// helperFields are the document fields the helpers that apply inside a query are called with.
+var helperFields = map[string]string{"inOrg": "_meta.org", "hasOrgRole": "_meta.org", "orgClaims": "_meta.org", "inTeam": "_meta.team", "hasTeamRole": "_meta.team"}
 
 // orgPatcher rewrites inOrg(x) into inOrg(orgs, x), and the others alike. A comparison with a
 // claim, which only means something for an organization the caller belongs to, becomes
@@ -240,9 +282,10 @@ func claimValue(claims map[string]any, path []string) (any, bool) {
 	return cur, true
 }
 
-func orgField(arg ast.Node) bool {
+// helperField reports whether arg is the document field the helper is called with.
+func helperField(name string, arg ast.Node) bool {
 	p, ok := docPath(arg)
-	return ok && p == "_meta.org"
+	return ok && p == helperFields[name]
 }
 
 // orgIDs lists, in a fixed order, the organizations where pred holds.
@@ -261,27 +304,55 @@ func orgIDs(orgs OrgsEnv, pred func(*UserOrg) bool) []any {
 	return out
 }
 
-func inList(ids []any) storage.Filter {
+// teamIDs lists, in a fixed order, the teams where pred holds, among those the caller's
+// memberships name.
+func teamIDs(orgs OrgsEnv, pred func(m *UserOrg, team string) bool) []any {
+	var ids []string
+	for _, m := range orgs {
+		seen := map[string]bool{}
+		for _, t := range append(slices.Clone(m.Teams), slices.Collect(maps.Keys(m.TeamRoles))...) {
+			if !seen[t] && pred(m, t) {
+				seen[t] = true
+				ids = append(ids, t)
+			}
+		}
+	}
+	slices.Sort(ids)
+	out := make([]any, len(ids))
+	for i, id := range ids {
+		out[i] = id
+	}
+	return out
+}
+
+// inList is the condition `field in ids`; nothing matches an empty list.
+func inList(field string, ids []any) storage.Filter {
 	if len(ids) == 0 {
 		return storage.Const(false)
 	}
-	return storage.Condition{Field: "_meta.org", Op: storage.OpIn, Value: ids}
+	return storage.Condition{Field: field, Op: storage.OpIn, Value: ids}
 }
 
 // buildOrgCall turns a helper call that reads the document into a filter.
 func (r *Rule) buildOrgCall(name string, c *ast.CallNode, orgs OrgsEnv) (storage.Filter, error) {
-	if len(c.Arguments) == 0 || !orgField(c.Arguments[0]) {
-		return nil, fmt.Errorf("internal: %s must be called with document._meta.org", name)
+	if len(c.Arguments) == 0 || !helperField(name, c.Arguments[0]) {
+		return nil, fmt.Errorf("internal: %s must be called with document.%s", name, helperFields[name])
 	}
 	switch name {
+	case "inTeam":
+		return inList("_meta.team", teamIDs(orgs, func(m *UserOrg, t string) bool { return slices.Contains(m.Teams, t) })), nil
+	case "hasTeamRole":
+		if s, ok := c.Arguments[1].(*ast.StringNode); ok && len(c.Arguments) == 2 {
+			return inList("_meta.team", teamIDs(orgs, func(m *UserOrg, t string) bool { return slices.Contains(m.TeamRoles[t], s.Value) })), nil
+		}
 	case "inOrg":
-		return inList(orgIDs(orgs, func(*UserOrg) bool { return true })), nil
+		return inList("_meta.org", orgIDs(orgs, func(*UserOrg) bool { return true })), nil
 	case "hasOrgRole":
 		if len(c.Arguments) != 2 {
 			break
 		}
 		if s, ok := c.Arguments[1].(*ast.StringNode); ok {
-			return inList(orgIDs(orgs, func(m *UserOrg) bool { return slices.Contains(m.Roles, s.Value) })), nil
+			return inList("_meta.org", orgIDs(orgs, func(m *UserOrg) bool { return slices.Contains(m.Roles, s.Value) })), nil
 		}
 		// A role named by the document: one (organization, role) pair at a time.
 		field, ok := docPath(c.Arguments[1])
@@ -318,7 +389,7 @@ func mapKeys(m OrgsEnv) func(func(string) bool) {
 // buildClaim turns `orgClaims(document._meta.org).path <op> value` into a filter: the
 // organizations whose claim satisfies it.
 func (r *Rule) buildClaim(path []string, op string, value any, orgs OrgsEnv) storage.Filter {
-	return inList(orgIDs(orgs, func(m *UserOrg) bool {
+	return inList("_meta.org", orgIDs(orgs, func(m *UserOrg) bool {
 		got, ok := claimValue(m.Claims, path)
 		return claimHolds(got, ok, op, value)
 	}))

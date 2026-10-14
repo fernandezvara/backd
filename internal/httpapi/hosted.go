@@ -115,6 +115,10 @@ type hostedPage struct {
 	rl     *registry.Realm
 	act    hostedAction
 	locale string
+	// fns calls the realm's pages.data_hook; org and address are the company context and the
+	// address of the token the page is about (set once the token is looked up).
+	fns          *functions
+	org, address string
 }
 
 func (a *authAPI) newHostedPage(r *http.Request, act hostedAction) (hostedPage, bool) {
@@ -122,7 +126,7 @@ func (a *authAPI) newHostedPage(r *http.Request, act hostedAction) (hostedPage, 
 	if !ok {
 		return hostedPage{}, false
 	}
-	return hostedPage{rl: rl, act: act, locale: rl.Settings.BestLocale(acceptLanguages(r.Header.Get("Accept-Language"))...)}, true
+	return hostedPage{rl: rl, act: act, fns: a.fns, locale: rl.Settings.BestLocale(acceptLanguages(r.Header.Get("Accept-Language"))...)}, true
 }
 
 func (p hostedPage) data(r *http.Request) email.PageData {
@@ -134,7 +138,15 @@ func (p hostedPage) data(r *http.Request) email.PageData {
 }
 
 func (p hostedPage) write(w http.ResponseWriter, r *http.Request, status int, kind string, d email.PageData) {
+	if p.fns != nil {
+		p.fns.pageApp(r.Context(), p.rl.Name, kind, &d, p.org, p.address)
+	}
 	body, err := p.rl.Pages.Render(kind, p.locale, d)
+	if err != nil && d.App != nil {
+		logger(r.Context()).Warn("the page couldn't use what the data hook gave; rendering without it", "page", kind, "error", err)
+		d.App = nil
+		body, err = p.rl.Pages.Render(kind, p.locale, d)
+	}
 	if err != nil {
 		logger(r.Context()).Error("render hosted page", "page", kind, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -166,6 +178,7 @@ func (a *authAPI) hostedGet(act hostedAction) http.HandlerFunc {
 		}
 		d.Token = token
 		d.Email = tok.Address
+		p.org, p.address = tok.Org, tok.Address
 		p.write(w, r, http.StatusOK, act.Page, d)
 	}
 }
@@ -222,6 +235,7 @@ func (a *authAPI) hostedPost(act hostedAction, jsonOnly func(http.Handler) http.
 		d.Token = in.Token
 		if tok, err := usersOf(r).PeekEmailToken(r.Context(), in.Token, string(act.Purpose)); err == nil {
 			d.Email = tok.Address // for the form shown again
+			p.org, p.address = tok.Org, tok.Address
 		}
 		if act.Password && in.Password != r.PostForm.Get("password_confirm") {
 			d.Error, d.ErrorCode = "the passwords don't match", "password_mismatch"
@@ -251,6 +265,7 @@ func (a *authAPI) hostedPost(act hostedAction, jsonOnly func(http.Handler) http.
 				to = es.Redirects[flowKey(act.Purpose)]
 			}
 			d.Redirect, d.DelaySeconds = htmltemplate.URL(to), int(es.RedirectDelay/time.Second)
+			p.org = tok.Org
 			p.write(w, r, http.StatusOK, email.PageResult, d)
 		}
 	}
@@ -313,7 +328,7 @@ func (a *authAPI) requestPasswordReset(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"email": "string", "redirect_to": "string?"})
+	f, ok := fields(w, r, obj, map[string]string{"email": "string", "redirect_to": "string?", "org": "string?"})
 	if !ok {
 		return
 	}
@@ -326,11 +341,28 @@ func (a *authAPI) requestPasswordReset(w http.ResponseWriter, r *http.Request) {
 	if !a.checkRedirect(w, r, redirectTo) {
 		return
 	}
+	r = withOrgContext(r, f, address)
 	if err := usersOf(r).RequestPasswordReset(r.Context(), address, redirectTo, clientIP(r), requestID(r.Context())); err != nil {
 		authError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"status": "accepted"})
+}
+
+// withOrgContext reads the optional `org` of a request about address and records it on the
+// request's context when it is a company the address has to do with (see
+// auth.Users.ResolveOrgContext): the emails the request causes, and the pages of their links,
+// keep it. Anything else is ignored without a trace in the answer.
+func withOrgContext(r *http.Request, f map[string]any, address string) *http.Request {
+	org, _ := f["org"].(string)
+	if org == "" {
+		return r
+	}
+	svc := usersOf(r)
+	if svc == nil {
+		return r
+	}
+	return r.WithContext(auth.WithOrgContext(r.Context(), svc.ResolveOrgContext(r.Context(), org, address)))
 }
 
 // changeEmail handles POST /_auth/email: the signed-in user asks to change

@@ -18,6 +18,19 @@
  * @property {string[]} roles                  The user's effective role names there.
  * @property {Array<{ role: string, origin: string[] }>} effective_roles  Where each came from: `direct`, `default` or a team's name.
  * @property {string[]} teams                  The user's teams (ids).
+ * @property {Record<string, string[]>} team_roles  The team roles that count now, by team id.
+ */
+
+/**
+ * A team role held by a member: a role within one team, which doesn't need membership of it.
+ * @typedef {object} OrgTeamRoleGrant
+ * @property {string} team
+ * @property {string} role
+ * @property {string} [from]        The grant counts from then (always, when absent).
+ * @property {string} [until]       ...and until then (for ever, when absent).
+ * @property {string} [granted_by]  A user id; absent for administrators and functions.
+ * @property {string} granted_at
+ * @property {boolean} active       Whether it counts now.
  */
 
 /**
@@ -27,11 +40,28 @@
  * @property {string} [email]        Per the realm's `members_visible_to`.
  * @property {string[]} roles        Direct roles.
  * @property {string[]} teams
+ * @property {OrgTeamRoleGrant[]} team_roles  Team roles held, in force or not.
  * @property {Array<{ role: string, origin: string[] }>} effective_roles
  * @property {string[]} overlap      Roles held directly and also through a team or by default.
  * @property {boolean} [mfa]         Whether they have a second factor; only for managers.
+ * @property {string[]} [mfa_roles]  The roles they hold now that require one; only for managers.
  * @property {string} joined_at
  * @property {string} [invited_by]
+ */
+
+/**
+ * A team role to give, change or take away: the member and the role, and the window it counts
+ * in (`from` and `until`, RFC 3339; absent is open).
+ * @typedef {object} TeamRoleInput
+ * @property {string} user   A member of the organization (they need not belong to the team).
+ * @property {string} role   A team role the realm declares.
+ * @property {string} [from]
+ * @property {string} [until]
+ */
+
+/**
+ * A member or role holder of one team.
+ * @typedef {OrgMember & { in_team: boolean, roles_in_team: string[] }} OrgTeamMember
  */
 
 /**
@@ -40,6 +70,29 @@
  * @property {string} name
  * @property {string[]} roles
  * @property {string} created_at
+ */
+
+/**
+ * The three parts of an email an organization wrote itself, in the logic-less syntax.
+ * @typedef {object} OrgTemplateText
+ * @property {string} subject
+ * @property {string} text
+ * @property {string} html
+ */
+
+/**
+ * An organization's version of a kind of email in a language.
+ * @typedef {object} OrgTemplate
+ * @property {string} kind
+ * @property {string} locale
+ * @property {number} version
+ * @property {string} updated_at
+ * @property {string} [updated_by]
+ * @property {string} [subject]   Only when one template is read.
+ * @property {string} [text]
+ * @property {string} [html]
+ * @property {Array<{ version: number, at: string, by?: string } & Partial<OrgTemplateText>>} versions  Previous ones, newest first (at most 20).
+ * @property {string[]} [removed]  Only in the answer to a save: what the HTML sanitizer drops from the sample.
  */
 
 /**
@@ -188,6 +241,16 @@ export class Orgs {
   }
 
   /**
+   * The organization's own versions of the realm's emails (`email.customizable`): `list`, `get`,
+   * `put`, `delete`, `preview` and `test`.
+   * @param {string} org
+   * @returns {OrgTemplates}
+   */
+  templates(org) {
+    return new OrgTemplates(this.client, org)
+  }
+
+  /**
    * The teams of an organization: groups of members that carry roles.
    * @param {string} org
    * @returns {OrgTeams}
@@ -294,6 +357,55 @@ export class OrgTeams {
   }
 
   /**
+   * The members of a team and the holders of its team roles, in force now. With `role`, only the
+   * holders of that role (members of the organization who need not belong to the team). Emails
+   * follow the realm's `members_visible_to`.
+   * @param {string} team
+   * @param {{ role?: string, limit?: number, after?: string }} [params]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ items: OrgTeamMember[], has_more: boolean, next?: string }>}
+   */
+  async members(team, params = {}, opts) {
+    const query = { role: params.role, limit: params.limit, after: params.after }
+    return (await this.client.request({ method: 'GET', path: ['_orgs', this.org, 'teams', team, 'members'], query, ...opts })).data
+  }
+
+  /**
+   * Gives a member a team role in a team: with `manage: teams`, any; otherwise a holder of a team
+   * role of that team whose `grants` lists it. `from` and `until` set the window it counts in.
+   * `OrgRoleRequiresMFAError` when the role that lets the caller does and the session has no second factor.
+   * @param {string} team
+   * @param {TeamRoleInput} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgTeamMember>}
+   */
+  async grantRole(team, input, opts) {
+    return (await this.client.request({ method: 'POST', path: ['_orgs', this.org, 'teams', team, 'roles'], body: input, ...opts })).data
+  }
+
+  /**
+   * Replaces the window of a team role the member holds (`NotFoundError` if they don't).
+   * @param {string} team
+   * @param {TeamRoleInput} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgTeamMember>}
+   */
+  async setRoleWindow(team, input, opts) {
+    return (await this.client.request({ method: 'PATCH', path: ['_orgs', this.org, 'teams', team, 'roles'], body: input, ...opts })).data
+  }
+
+  /**
+   * Takes a team role from a member: access through it ends at their next request.
+   * @param {string} team
+   * @param {{ user: string, role: string }} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgTeamMember>}
+   */
+  async revokeRole(team, input, opts) {
+    return (await this.client.request({ method: 'DELETE', path: ['_orgs', this.org, 'teams', team, 'roles'], body: input, ...opts })).data
+  }
+
+  /**
    * Puts a member of the organization in a team; they gain its roles.
    * @param {string} team
    * @param {string} user
@@ -313,6 +425,96 @@ export class OrgTeams {
    */
   async removeMember(team, user, opts) {
     return (await this.client.request({ method: 'DELETE', path: ['_orgs', this.org, 'teams', team, 'members', user], ...opts })).data
+  }
+}
+
+/**
+ * The email templates of one organization: its own text for the kinds the realm lets companies
+ * customize, in the logic-less syntax (`{{Link}}`, `{{App.name}}`, `{{#App.logo}}…{{/App.logo}}`).
+ * Needs the capability `email.overrides.permission` names (`manage: org` by default).
+ */
+export class OrgTemplates {
+  /**
+   * @param {Client} client
+   * @param {string} org
+   */
+  constructor(client, org) {
+    /** @internal */
+    this.client = client
+    /** @internal */
+    this.org = org
+  }
+
+  /**
+   * The kinds that can be customized, with the placeholders each must print, and the
+   * organization's overrides (without their text).
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ customizable: Record<string, { required: string[] }>, items: OrgTemplate[] }>}
+   */
+  async list(opts) {
+    return (await this.client.request({ method: 'GET', path: ['_orgs', this.org, 'templates'], ...opts })).data
+  }
+
+  /**
+   * One template with its versions; `NotFoundError` if the organization has none.
+   * @param {string} kind
+   * @param {string} locale
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgTemplate>}
+   */
+  async get(kind, locale, opts) {
+    return (await this.client.request({ method: 'GET', path: ['_orgs', this.org, 'templates', kind, locale], ...opts })).data
+  }
+
+  /**
+   * Saves a version. A template with a problem rejects with a `ValidationError` (`invalid_template`)
+   * whose `details` say where (`text`: `line 3, column 5: …`).
+   * @param {string} kind
+   * @param {string} locale
+   * @param {OrgTemplateText} template
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgTemplate>}
+   */
+  async put(kind, locale, template, opts) {
+    return (await this.client.request({ method: 'PUT', path: ['_orgs', this.org, 'templates', kind, locale], body: template, ...opts })).data
+  }
+
+  /**
+   * Goes back to the realm's own template of the kind.
+   * @param {string} kind
+   * @param {string} locale
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async delete(kind, locale, opts) {
+    await this.client.request({ method: 'DELETE', path: ['_orgs', this.org, 'templates', kind, locale], ...opts })
+  }
+
+  /**
+   * Renders a draft, or the saved version without one, without sending anything. `data: 'real'`
+   * calls the realm's data hook. Show `html` in a sandboxed frame.
+   * @param {string} kind
+   * @param {string} locale
+   * @param {{ draft?: OrgTemplateText, data?: 'sample' | 'real' }} [input]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ subject: string, text: string, html: string, removed: string[] }>}
+   */
+  async preview(kind, locale, input = {}, opts) {
+    const body = { ...input.draft, data: input.data }
+    return (await this.client.request({ method: 'POST', path: ['_orgs', this.org, 'templates', kind, locale, 'preview'], body, ...opts })).data
+  }
+
+  /**
+   * Sends a draft (or the saved version) to your own address, marked [TEST]. At most 10 per hour
+   * for the organization (`RetryableError`, 429).
+   * @param {string} kind
+   * @param {string} locale
+   * @param {{ draft?: OrgTemplateText }} [input]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async test(kind, locale, input = {}, opts) {
+    await this.client.request({ method: 'POST', path: ['_orgs', this.org, 'templates', kind, locale, 'test'], body: { ...input.draft }, ...opts })
   }
 }
 

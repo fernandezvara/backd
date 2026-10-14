@@ -11,6 +11,7 @@ import (
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/email"
+	"github.com/fernandezvara/backd/internal/registry"
 )
 
 // emailInput is what the delivery function receives as ctx.input: a finished
@@ -136,6 +137,12 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 	if !tpl.Has(kind, locale) {
 		locale, _ = svc.Settings.Languages()
 	}
+	// The company context: an organization's invitation is its own, other messages carry the
+	// one the request that caused them named (already checked when it was made).
+	org := job.Email.Org
+	if orgInvite != nil {
+		org = orgInvite.Org
+	}
 	data := email.Data{Realm: realm, User: email.User{Email: address, Locale: locale}, Data: map[string]any{}}
 	extra := map[string]any{}
 	if custom != nil && custom.Data != nil {
@@ -156,7 +163,7 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 			w.fail(ctx, log, svc, job, "backd's public address is unknown (BACKD_URL or email.public_url)")
 			return nil, nil, false
 		}
-		spec := auth.EmailToken{Purpose: string(purpose), UserID: userID, RedirectTo: job.Email.RedirectTo, InvitationID: invitationID}
+		spec := auth.EmailToken{Purpose: string(purpose), UserID: userID, RedirectTo: job.Email.RedirectTo, Org: org, InvitationID: invitationID}
 		if job.Email.To != "" || invitationID != "" {
 			spec.Address = address // what the link acts on
 		}
@@ -233,10 +240,19 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 		extra["code"], extra["expires_at"] = code, data.ExpiresAt.Format(time.RFC3339)
 		mask = append(mask, code)
 	}
-	msg, err := tpl.Render(kind, locale, data)
+	if kind == email.TemplateFailed && org != "" {
+		data.Data["org_name"] = svc.OrgName(ctx, org)
+	}
+	msg, err := w.renderMessage(ctx, log, svc, realm, es, kind, locale, userID, org, address, tpl, &data, job.Email.Draft)
 	if err != nil {
 		w.fail(ctx, log, svc, job, "could not render the email: "+err.Error())
 		return nil, nil, false
+	}
+	if data.App != nil {
+		extra["app"] = data.App // a delivery function with its own templates wants it too
+	}
+	if org != "" {
+		extra["org"] = org
 	}
 	toList, ccList, bccList := []emailAddress{{Email: address}}, []emailAddress{}, []emailAddress{}
 	if custom != nil {
@@ -265,4 +281,55 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 		return nil, nil, false
 	}
 	return input, mask, true
+}
+
+// renderMessage renders the email: the data hook gives {{.App}}, then the text is, in order, a
+// draft being tested, the organization's own template of the kind (when it has one and it works)
+// or the realm's file. A hook or an organization's template that fails never stops a message: the
+// message goes without App, or in the realm's text.
+func (w *Worker) renderMessage(ctx context.Context, log *slog.Logger, svc *auth.Users, realm string, es *registry.EmailSettings, kind, locale, userID, org, address string, tpl *email.Templates, data *email.Data, draft *email.Override) (email.Message, error) {
+	if es.DataHook != "" {
+		in := dataHookInput{Kind: kind, Locale: locale, Org: org, User: &hookUser{ID: userID, Email: address}}
+		data.App = w.fns.dataHook(ctx, realm, es.DataHook, in)
+	}
+	orgName := ""
+	if org != "" {
+		orgName = svc.OrgName(ctx, org)
+	}
+	if draft != nil {
+		// A test send of what a company is writing: the sample's data in the person's own words.
+		d := email.SampleData(kind)
+		d.Realm, d.User, d.App = realm, data.User, data.App
+		msg, err := renderOverride(kind, *draft, d, orgName)
+		if err != nil {
+			return email.Message{}, err
+		}
+		msg.Subject = "[TEST] " + msg.Subject
+		return msg, nil
+	}
+	if ov, ok := svc.OrgTemplateFor(ctx, org, kind, locale); ok {
+		msg, err := renderOverride(kind, ov.Override, *data, orgName)
+		if err == nil {
+			return msg, nil
+		}
+		log.Warn("an organization's template couldn't be used; sending the realm's", "org", org, "kind", kind, "error", err)
+		svc.NotifyTemplateFailed(ctx, org, kind)
+	}
+	msg, err := tpl.Render(kind, locale, *data)
+	if err != nil && data.App != nil {
+		log.Warn("the template couldn't use what the data hook gave; rendering without it", "kind", kind, "error", err)
+		data.App = nil
+		msg, err = tpl.Render(kind, locale, *data)
+	}
+	return msg, err
+}
+
+// renderOverride compiles and renders an organization's template.
+func renderOverride(kind string, o email.Override, d email.Data, orgName string) (email.Message, error) {
+	c, problems := email.CompileOverride(kind, o)
+	if len(problems) > 0 {
+		return email.Message{}, errors.New(problems[0].String())
+	}
+	msg, _, err := c.Render(d, orgName)
+	return msg, err
 }

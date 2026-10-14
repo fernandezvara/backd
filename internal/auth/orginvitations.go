@@ -150,9 +150,9 @@ func (s *Users) CreateOrgInvitation(ctx context.Context, userID, orgID string, i
 	if err != nil {
 		return InvitationResult{}, err
 	}
-	cc := s.caps(caller)
-	if !cc.Has(registry.CapMembers) {
-		return InvitationResult{}, ErrOrgForbidden
+	cc, err := s.requireCaps(caller, registry.CapMembers)
+	if err != nil {
+		return InvitationResult{}, err
 	}
 	return s.createOrgInvitation(ctx, caller.Org, cc, userID, in)
 }
@@ -300,8 +300,8 @@ func (s *Users) OrgInvitations(ctx context.Context, userID, orgID string) ([]Org
 	if err != nil {
 		return nil, err
 	}
-	if !s.caps(caller).Has(registry.CapMembers) {
-		return nil, ErrOrgForbidden
+	if _, err := s.requireCaps(caller, registry.CapMembers); err != nil {
+		return nil, err
 	}
 	return s.Store.ListOrgInvitations(ctx, orgID)
 }
@@ -324,9 +324,9 @@ func (s *Users) managedInvitation(ctx context.Context, userID, orgID, id string)
 	if err != nil {
 		return OrgInvitation{}, Org{}, 0, err
 	}
-	cc := s.caps(caller)
-	if !cc.Has(registry.CapMembers) {
-		return OrgInvitation{}, Org{}, 0, ErrOrgForbidden
+	cc, err := s.requireCaps(caller, registry.CapMembers)
+	if err != nil {
+		return OrgInvitation{}, Org{}, 0, err
 	}
 	inv, err := s.Store.OrgInvitationByID(ctx, orgID, id)
 	if err != nil {
@@ -535,7 +535,11 @@ func (s *Users) AcceptOrgInvitation(ctx context.Context, p Principal, token stri
 	}
 	now := s.now()
 	m := existing
-	if !isMember {
+	var before *OrgMember
+	if isMember {
+		was := existing
+		before = &was
+	} else {
 		m = OrgMember{Org: inv.Org, User: p.User.ID, JoinedAt: now, InvitedBy: used.CreatedBy}
 	}
 	have := m.DirectRoles(now)
@@ -549,7 +553,7 @@ func (s *Users) AcceptOrgInvitation(ctx context.Context, p Principal, token stri
 			m.Teams = append(m.Teams, t.ID)
 		}
 	}
-	if err := s.Store.PutOrgMember(ctx, m); err != nil {
+	if err := s.putMember(ctx, before, m, inv.ID); err != nil {
 		return Membership{}, err
 	}
 	s.Audit(ctx, AuditOrgInviteAccept, orgTarget(inv.Org), map[string]any{"invitation": inv.ID, "user": p.User.ID, "roles": used.Roles, "teams": m.Teams})
@@ -559,6 +563,7 @@ func (s *Users) AcceptOrgInvitation(ctx context.Context, p Principal, token stri
 // OrgInvitationEmail is what the worker needs to write the message of an invitation.
 type OrgInvitationEmail struct {
 	Address   string
+	Org       string
 	OrgName   string
 	Roles     []string
 	Token     string
@@ -595,5 +600,5 @@ func (s *Users) OrgInvitationEmail(ctx context.Context, ref string) (OrgInvitati
 	if err != nil {
 		return OrgInvitationEmail{}, err
 	}
-	return OrgInvitationEmail{Address: inv.Email, OrgName: org.Name, Roles: inv.Roles, Token: token, Link: s.invitationLink(token, orgID), ExpiresAt: inv.ExpiresAt}, nil
+	return OrgInvitationEmail{Address: inv.Email, Org: orgID, OrgName: org.Name, Roles: inv.Roles, Token: token, Link: s.invitationLink(token, orgID), ExpiresAt: inv.ExpiresAt}, nil
 }

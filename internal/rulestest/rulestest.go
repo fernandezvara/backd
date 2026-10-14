@@ -76,6 +76,17 @@ type UserDef struct {
 	Methods []string `yaml:"methods"`
 	// Consents are the consents the user holds: name to the version accepted.
 	Consents map[string]string `yaml:"consents"`
+	// Orgs are the organizations the user belongs to, by id: what the organization and team
+	// helpers see (the roles that count, the teams, the team roles held and the claims).
+	Orgs map[string]OrgDef `yaml:"orgs"`
+}
+
+// OrgDef is one membership of a fixture user.
+type OrgDef struct {
+	Roles     []string            `yaml:"roles"`
+	Teams     []string            `yaml:"teams"`
+	TeamRoles map[string][]string `yaml:"team_roles"` // team id to the team roles held there
+	Claims    map[string]any      `yaml:"claims"`
 }
 
 // Test groups the assertions of one caller.
@@ -104,6 +115,10 @@ type Docs struct {
 type Create struct {
 	Data   map[string]any `yaml:"data"`
 	Expect string         `yaml:"expect"`
+	// Org and Team are the organization and team the document is created in (?org= and
+	// ?team=): what a create rule reads as data._meta.org and data._meta.team.
+	Org  string `yaml:"org"`
+	Team string `yaml:"team"`
 }
 
 // Update asserts the decision on updating a stored document: Data is the
@@ -194,7 +209,11 @@ func (r *runner) load(f File) {
 				methods = append(methods, "totp")
 			}
 		}
-		r.users[name] = &rules.User{ID: u.ID, Email: u.Email, EmailVerified: verified, Roles: append([]string{}, u.Roles...), MFA: u.MFA, Methods: methods, Consents: u.Consents}
+		user := &rules.User{ID: u.ID, Email: u.Email, EmailVerified: verified, Roles: append([]string{}, u.Roles...), MFA: u.MFA, Methods: methods, Consents: u.Consents, Orgs: map[string]*rules.UserOrg{}}
+		for id, o := range u.Orgs {
+			user.Orgs[id] = &rules.UserOrg{Roles: nonNil(o.Roles), Teams: nonNil(o.Teams), TeamRoles: o.TeamRoles, Claims: o.Claims}
+		}
+		r.users[name] = user
 	}
 	for _, name := range slices.Sorted(maps.Keys(f.Documents)) {
 		if doc, err := r.stored(name, f.Documents[name]); err != nil {
@@ -208,7 +227,7 @@ func (r *runner) load(f File) {
 	}
 }
 
-var metaKeys = []string{"owner", "created_by", "updated_by", "version", "created_at", "updated_at", "deleted_at", "deleted_by", "purge_at"}
+var metaKeys = []string{"owner", "org", "team", "created_by", "updated_by", "version", "created_at", "updated_at", "deleted_at", "deleted_by", "purge_at"}
 
 // stored builds a stored document: the user fields (checked against the
 // schema, as the server does when it writes them) and the system fields.
@@ -389,6 +408,16 @@ func (r *runner) run(i int, t Test) {
 		if !valid {
 			continue
 		}
+		if c.Org != "" || c.Team != "" {
+			scope := map[string]any{}
+			if c.Org != "" {
+				scope["org"] = c.Org
+			}
+			if c.Team != "" {
+				scope["team"] = c.Team
+			}
+			data["_meta"] = scope
+		}
 		add(fmt.Sprintf("%s creates %s", as, summary(c.Data)), c.Expect, r.write(user, now, rules.Create, nil, data))
 	}
 	for j, u := range t.Update {
@@ -461,7 +490,7 @@ func (r *runner) read(user *rules.User, now time.Time, doc map[string]any) decis
 	if rule == nil {
 		return decision{false, "no read rule"}
 	}
-	f, err := rule.Filter(rules.Values{User: user, Now: now, Config: r.config})
+	f, err := rule.Filter(r.values(user, now))
 	switch {
 	case err != nil:
 		return decision{false, "read rule error: " + err.Error()}
@@ -508,7 +537,9 @@ func (r *runner) purge(user *rules.User, now time.Time, doc map[string]any) deci
 	if rule == nil {
 		return decision{false, "no purge rule"}
 	}
-	ok, err := rule.Allow(rules.Values{User: user, Document: doc, Now: now, Config: r.config})
+	v := r.values(user, now)
+	v.Document = doc
+	ok, err := rule.Allow(v)
 	switch {
 	case err != nil:
 		return decision{false, "rule " + rule.Key + " failed: " + err.Error()}
@@ -530,7 +561,7 @@ func (r *runner) filterRule(user *rules.User, now time.Time, op rules.Op, doc ma
 	if rule == nil {
 		return decision{false, "no " + string(op) + " rule"}
 	}
-	f, err := rule.Filter(rules.Values{User: user, Now: now, Config: r.config})
+	f, err := rule.Filter(r.values(user, now))
 	switch {
 	case err != nil:
 		return decision{false, string(op) + " rule error: " + err.Error()}
@@ -561,7 +592,9 @@ func (r *runner) write(user *rules.User, now time.Time, op rules.Op, doc, data m
 	if rule == nil {
 		return decision{false, "no " + string(op) + " rule"}
 	}
-	ok, err := rule.Allow(rules.Values{User: user, Document: doc, Data: data, Now: now, Config: r.config})
+	v := r.values(user, now)
+	v.Document, v.Data = doc, data
+	ok, err := rule.Allow(v)
 	switch {
 	case err != nil:
 		return decision{false, "rule " + rule.Key + " failed: " + err.Error()}
@@ -569,6 +602,22 @@ func (r *runner) write(user *rules.User, now time.Time, op rules.Op, doc, data m
 		return decision{true, "rule " + rule.Key + " is true"}
 	}
 	return decision{false, "rule " + rule.Key + " is false"}
+}
+
+// values is what the rules see for a caller: the user with their memberships, and the clock.
+func (r *runner) values(user *rules.User, now time.Time) rules.Values {
+	v := rules.Values{User: user, Now: now, Config: r.config}
+	if user != nil {
+		v.Orgs = user.Orgs
+	}
+	return v
+}
+
+func nonNil(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
 
 // summary shows a document briefly in a description.

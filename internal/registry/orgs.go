@@ -73,7 +73,23 @@ type OrgRole struct {
 	Description string
 	// Manage is what holders may manage in the organization.
 	Manage OrgCaps
+	// RequireMFA makes the role count only for sessions with a second factor.
+	RequireMFA bool
 }
+
+// TeamRole is a role held within one team of an organization, declared in realm.yaml's
+// organizations.team_roles. Team roles are separate from organization roles: they grant
+// nothing outside their team (design/team-access.md §3).
+type TeamRole struct {
+	Description string
+	// Grants are the team roles its holders may grant, change and revoke in the same team.
+	Grants []string
+	// RequireMFA makes the role count only for sessions with a second factor.
+	RequireMFA bool
+}
+
+// MaxTeamRolesPerMember is the most team role grants one member may hold in an organization.
+const MaxTeamRolesPerMember = 50
 
 // Defaults of the organizations section.
 const (
@@ -108,12 +124,43 @@ const (
 	// InOrgKeep and InOrgApply are on_owner_delete.in_org.
 	InOrgKeep  = "keep"
 	InOrgApply = "apply"
+
+	// TeamNone, TeamOptional and TeamRequired are collection.yaml's team.
+	TeamNone     = "none"
+	TeamOptional = "optional"
+	TeamRequired = "required"
 )
+
+// OrgHook is a function called when membership changes (organizations.hooks): an internal,
+// async function, <database>/<function>.
+type OrgHook struct {
+	Function string
+	// Timeout is the function's own, the lease of the job (zero: the default).
+	Timeout time.Duration
+}
+
+// OrgHooks are the functions called when people join, leave or change roles in an organization.
+type OrgHooks struct {
+	OnMemberJoined, OnMemberLeft, OnRolesChanged OrgHook
+}
+
+// NamedHook is a hook with its key in realm.yaml.
+type NamedHook struct {
+	Key  string
+	Hook *OrgHook
+}
+
+// All lists the hooks, whether they are set or not, with the keys they have in realm.yaml.
+func (h *OrgHooks) All() []NamedHook {
+	return []NamedHook{{"on_member_joined", &h.OnMemberJoined}, {"on_member_left", &h.OnMemberLeft}, {"on_roles_changed", &h.OnRolesChanged}}
+}
 
 // OrgSettings is the realm's organizations section; nil in RealmSettings when the realm
 // doesn't enable organizations.
 type OrgSettings struct {
 	Roles map[string]OrgRole
+	// TeamRoles are the roles held within a team.
+	TeamRoles map[string]TeamRole
 	// CreateRule is the expression deciding who may create organizations (it sees `user`);
 	// "false" leaves it to realm admins and functions.
 	CreateRule   string
@@ -127,6 +174,8 @@ type OrgSettings struct {
 	MaxPendingInvitations int
 	AllowRequireMFA       bool
 	MembersVisibleTo      string
+	// Hooks are called through the job queue when membership changes.
+	Hooks OrgHooks
 	// InvitationLink is where invitation links point: it holds {token} and may hold {org}.
 	InvitationLink string
 	create         *rules.Rule
@@ -150,6 +199,17 @@ func (o *OrgSettings) CapsOf(roles []string) OrgCaps {
 	return out
 }
 
+// RolesWith returns the declared roles whose holders may manage everything in caps, sorted.
+func (o *OrgSettings) RolesWith(caps OrgCaps) []string {
+	var out []string
+	for _, name := range o.RoleNames() {
+		if o.Roles[name].Manage.Has(caps) {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
 // Declared reports whether role is declared.
 func (o *OrgSettings) Declared(role string) bool {
 	_, ok := o.Roles[role]
@@ -158,6 +218,15 @@ func (o *OrgSettings) Declared(role string) bool {
 
 // RoleNames returns the declared roles, sorted.
 func (o *OrgSettings) RoleNames() []string { return slices.Sorted(maps.Keys(o.Roles)) }
+
+// TeamRoleDeclared reports whether role is a declared team role.
+func (o *OrgSettings) TeamRoleDeclared(role string) bool {
+	_, ok := o.TeamRoles[role]
+	return ok
+}
+
+// TeamRoleNames returns the declared team roles, sorted.
+func (o *OrgSettings) TeamRoleNames() []string { return slices.Sorted(maps.Keys(o.TeamRoles)) }
 
 // InvitationURL is the link for a token (and organization id).
 func (o *OrgSettings) InvitationURL(token, org string) string {
@@ -200,7 +269,13 @@ type orgsDoc struct {
 	Roles   map[string]*struct {
 		Description string    `yaml:"description"`
 		Manage      manageDoc `yaml:"manage"`
+		RequireMFA  bool      `yaml:"require_mfa"`
 	} `yaml:"roles"`
+	TeamRoles map[string]*struct {
+		Description string   `yaml:"description"`
+		Grants      []string `yaml:"grants"`
+		RequireMFA  bool     `yaml:"require_mfa"`
+	} `yaml:"team_roles"`
 	Create                *string  `yaml:"create"`
 	CreatorRoles          []string `yaml:"creator_roles"`
 	DefaultRoles          []string `yaml:"default_roles"`
@@ -212,6 +287,11 @@ type orgsDoc struct {
 	AllowRequireMFA       *bool    `yaml:"allow_require_mfa"`
 	MembersVisibleTo      string   `yaml:"members_visible_to"`
 	InvitationLink        string   `yaml:"invitation_link"`
+	Hooks                 *struct {
+		OnMemberJoined string `yaml:"on_member_joined"`
+		OnMemberLeft   string `yaml:"on_member_left"`
+		OnRolesChanged string `yaml:"on_roles_changed"`
+	} `yaml:"hooks"`
 }
 
 // apply reads the section into s. It runs after the realm's roles, redirects and sign-in
@@ -227,6 +307,7 @@ func (d *orgsDoc) apply(s *RealmSettings) []error {
 	add := func(format string, args ...any) { errs = append(errs, fmt.Errorf("organizations."+format, args...)) }
 	o := &OrgSettings{
 		Roles:                 map[string]OrgRole{},
+		TeamRoles:             map[string]TeamRole{},
 		CreateRule:            DefaultOrgCreateRule,
 		CreatorRoles:          d.CreatorRoles,
 		DefaultRoles:          d.DefaultRoles,
@@ -250,7 +331,7 @@ func (d *orgsDoc) apply(s *RealmSettings) []error {
 		r := d.Roles[name]
 		role := OrgRole{}
 		if r != nil {
-			role.Description, role.Manage = r.Description, r.Manage.Caps
+			role.Description, role.Manage, role.RequireMFA = r.Description, r.Manage.Caps, r.RequireMFA
 		}
 		o.Roles[name] = role
 	}
@@ -258,6 +339,29 @@ func (d *orgsDoc) apply(s *RealmSettings) []error {
 		add("roles: declare at least one role (one with manage: org, for the people who run an organization)")
 	} else if !slices.ContainsFunc(slices.Collect(maps.Values(o.Roles)), func(r OrgRole) bool { return r.Manage.Has(CapOrg) }) {
 		add("roles: at least one role needs manage: org, or nobody could rename or delete an organization")
+	}
+	for _, name := range slices.Sorted(maps.Keys(d.TeamRoles)) {
+		if msg := roleNameProblem(name); msg != "" {
+			add("team_roles: invalid role name %q: %s", name, msg)
+			continue
+		}
+		role := TeamRole{}
+		if r := d.TeamRoles[name]; r != nil {
+			role = TeamRole{Description: r.Description, Grants: r.Grants, RequireMFA: r.RequireMFA}
+		}
+		o.TeamRoles[name] = role
+	}
+	for _, name := range o.TeamRoleNames() {
+		seen := map[string]bool{}
+		for _, g := range o.TeamRoles[name].Grants {
+			switch {
+			case !o.TeamRoleDeclared(g):
+				add("team_roles.%s.grants: %q is not a declared team role", name, g)
+			case seen[g]:
+				add("team_roles.%s.grants: %q is listed twice", name, g)
+			}
+			seen[g] = true
+		}
 	}
 	holds := func(r string) bool { return o.Roles[r].Manage.Has(CapOrg) }
 	for _, r := range o.CreatorRoles {
@@ -312,6 +416,21 @@ func (d *orgsDoc) apply(s *RealmSettings) []error {
 	default:
 		add("members_visible_to: must be members or managers, got %q", d.MembersVisibleTo)
 	}
+	if h := d.Hooks; h != nil {
+		set := map[string]string{"on_member_joined": h.OnMemberJoined, "on_member_left": h.OnMemberLeft, "on_roles_changed": h.OnRolesChanged}
+		for _, named := range o.Hooks.All() {
+			ref := set[named.Key]
+			if ref == "" {
+				continue
+			}
+			db, name, ok := strings.Cut(ref, "/")
+			if !ok || !namePattern.MatchString(db) || !namePattern.MatchString(name) {
+				add("hooks.%s: must be <database>/<function> (an internal, async function), got %q", named.Key, ref)
+				continue
+			}
+			named.Hook.Function = ref
+		}
+	}
 	if d.Create != nil {
 		o.CreateRule = strings.TrimSpace(*d.Create)
 	}
@@ -362,6 +481,10 @@ type organizationDoc struct {
 	OnOrgDelete  *struct {
 		Action string `yaml:"action"`
 	} `yaml:"on_org_delete"`
+	Team         *string `yaml:"team"`
+	OnTeamDelete *struct {
+		Action string `yaml:"action"`
+	} `yaml:"on_team_delete"`
 	OnOwnerDelete *struct {
 		InOrg  string `yaml:"in_org"`
 		Action string `yaml:"action"`
@@ -382,7 +505,7 @@ func loadOrganization(c *Collection, settings RealmSettings, path string) error 
 	var doc organizationDoc
 	if err := yaml.NewDecoder(bytes.NewReader(data)).Decode(&doc); err != nil && !errors.Is(err, io.EOF) {
 		// Another section's mistake is reported by the loader that reads it.
-		if strings.Contains(err.Error(), "organization") || strings.Contains(err.Error(), "on_org_delete") {
+		if strings.Contains(err.Error(), "organization") || strings.Contains(err.Error(), "on_org_delete") || strings.Contains(err.Error(), "team") {
 			return fmt.Errorf("%s: %w", path, err)
 		}
 		return nil
@@ -417,7 +540,7 @@ func loadOrganization(c *Collection, settings RealmSettings, path string) error 
 		if inOrg != "" {
 			return fail("on_owner_delete.in_org: only applies to a collection with `organization: required` or `optional`")
 		}
-		return nil
+		return loadTeam(c, doc, fail)
 	}
 	if settings.Organizations == nil {
 		return fail("organization: needs the realm to enable organizations (an `organizations:` section in realm.yaml)")
@@ -438,7 +561,45 @@ func loadOrganization(c *Collection, settings RealmSettings, path string) error 
 	if inOrg != "" {
 		c.OwnerDeleteInOrg = inOrg
 	}
+	return loadTeam(c, doc, fail)
+}
+
+// loadTeam reads `team` and `on_team_delete`: documents that belong to a team of their
+// organization (design/team-access.md §4).
+func loadTeam(c *Collection, doc organizationDoc, fail func(string, ...any) error) error {
+	c.Team = TeamNone
+	if doc.Team != nil {
+		switch *doc.Team {
+		case TeamNone, TeamOptional, TeamRequired:
+			c.Team = *doc.Team
+		default:
+			return fail("team: must be required, optional or none, got %q", *doc.Team)
+		}
+	}
+	if !c.InTeams() {
+		if doc.OnTeamDelete != nil {
+			return fail("on_team_delete: only applies to a collection with `team: required` or `optional`")
+		}
+		return nil
+	}
+	if !c.InOrganizations() {
+		return fail("team: needs `organization: required` or `optional`: a team belongs to an organization")
+	}
+	if doc.OnTeamDelete == nil {
+		return fail("on_team_delete: a collection with `team` must say what happens to its documents when the team is deleted: `action: delete` or `action: keep`")
+	}
+	switch doc.OnTeamDelete.Action {
+	case OrgDelete, OrgKeep:
+		c.OnTeamDelete = doc.OnTeamDelete.Action
+	default:
+		return fail("on_team_delete.action: must be delete or keep, got %q", doc.OnTeamDelete.Action)
+	}
 	return nil
+}
+
+// InTeams reports whether documents of the collection can belong to a team.
+func (c *Collection) InTeams() bool {
+	return c.Team == TeamRequired || c.Team == TeamOptional
 }
 
 // InOrganizations reports whether documents of the collection can belong to an organization.
@@ -454,17 +615,29 @@ func orgRoles(s RealmSettings) []string {
 	return s.Organizations.RoleNames()
 }
 
-// addOrgIndex adds the index that serves the lists of one organization in the default order,
-// which every query the caller's rules narrow to `_meta.org` uses.
+// teamRoles are the team role names of the realm; nil when it has no organizations.
+func teamRoles(s RealmSettings) []string {
+	if s.Organizations == nil {
+		return nil
+	}
+	return s.Organizations.TeamRoleNames()
+}
+
+// addOrgIndex adds the indexes that serve the lists of one organization, and of one team of it,
+// in the default order, which every query the caller's rules narrow to `_meta.org` or
+// `_meta.team` use.
 func (c *Collection) addOrgIndex() {
 	if !c.InOrganizations() {
 		return
 	}
-	ix := Index{Keys: []IndexKey{{Field: MetaOrg}, {Field: "_meta.created_at"}, {Field: "id"}}}
-	for _, have := range c.Indexes {
-		if have.String() == ix.String() && !have.Unique {
-			return
+	scopes := [][]IndexKey{{{Field: MetaOrg}}}
+	if c.InTeams() {
+		scopes = append(scopes, []IndexKey{{Field: MetaOrg}, {Field: MetaTeam}})
+	}
+	for _, scope := range scopes {
+		ix := Index{Keys: append(slices.Clone(scope), IndexKey{Field: "_meta.created_at"}, IndexKey{Field: "id"})}
+		if !slices.ContainsFunc(c.Indexes, func(have Index) bool { return have.String() == ix.String() && !have.Unique }) {
+			c.Indexes = append(c.Indexes, ix)
 		}
 	}
-	c.Indexes = append(c.Indexes, ix)
 }

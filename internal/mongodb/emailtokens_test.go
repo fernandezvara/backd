@@ -142,6 +142,22 @@ func TestEmailTokenAddressAndInvitationOnMongoDB(t *testing.T) {
 	}
 }
 
+// The company context of a flow is stored with its token.
+func TestEmailTokenKeepsTheOrganizationOnMongoDB(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Date(2126, 10, 1, 12, 0, 0, 0, time.UTC)
+	if err := s.CreateEmailToken(ctx, auth.EmailToken{Hash: "org", Purpose: "reset-password", UserID: "u1", Org: "o1", CreatedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.GetEmailToken(ctx, "org"); err != nil || got.Org != "o1" {
+		t.Errorf("get: %+v %v", got, err)
+	}
+	if got, err := s.RedeemEmailToken(ctx, "org", "reset-password", now); err != nil || got.Org != "o1" {
+		t.Errorf("redeemed: %+v %v", got, err)
+	}
+}
+
 func TestEmailChangeStoreOnMongoDB(t *testing.T) {
 	s, _ := authFixture(t)
 	ctx := context.Background()

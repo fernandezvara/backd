@@ -87,7 +87,7 @@ func (s *Users) RequestMagicLink(ctx context.Context, in MagicLinkInput) (string
 	}
 	now := s.now()
 	c := AuthChallenge{
-		ID: HashToken(requestID), Kind: ChallengeMagicLink, CodeChallenge: in.CodeChallenge, RedirectTo: in.RedirectTo,
+		ID: HashToken(requestID), Kind: ChallengeMagicLink, CodeChallenge: in.CodeChallenge, RedirectTo: in.RedirectTo, Org: OrgContextOf(ctx),
 		Locale: s.Settings.BestLocale(in.Locales...), Consents: in.Consents, CreatedAt: now, ExpiresAt: now.Add(MagicLinkTTL),
 	}
 	send := true

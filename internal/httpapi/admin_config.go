@@ -146,14 +146,22 @@ func realmConfig(s registry.RealmSettings, seesUsers bool) map[string]any {
 			r := o.Roles[name]
 			orgRoles[name] = map[string]any{"description": r.Description, "manage": orStrings(r.Manage.Names())}
 		}
+		teamRoles := map[string]any{}
+		for name, r := range o.TeamRoles {
+			teamRoles[name] = map[string]any{"description": r.Description, "grants": orStrings(r.Grants), "require_mfa": r.RequireMFA}
+		}
+		hooks := map[string]any{}
+		for _, h := range o.Hooks.All() {
+			hooks[h.Key] = h.Hook.Function
+		}
 		out["organizations"] = map[string]any{
-			"roles": orgRoles, "default_roles": orStrings(o.DefaultRoles), "creator_roles": orStrings(o.CreatorRoles),
+			"roles": orgRoles, "team_roles": teamRoles, "hooks": hooks, "default_roles": orStrings(o.DefaultRoles), "creator_roles": orStrings(o.CreatorRoles),
 			"allow_require_mfa": o.AllowRequireMFA, "members_visible_to": o.MembersVisibleTo,
 		}
 	}
 	if e := s.Email; e != nil {
 		out["email"] = map[string]any{
-			"function": e.Function, "from": e.From, "reply_to": e.ReplyTo, "public_url": e.PublicURL,
+			"function": e.Function, "data_hook": e.DataHook, "from": e.From, "reply_to": e.ReplyTo, "public_url": e.PublicURL,
 			"redirects": e.Redirects, "allowed_redirects": orStrings(e.AllowedRedirects), "links": e.Links,
 		}
 	}
@@ -229,6 +237,9 @@ func collectionConfig(c *registry.Collection, rel func(string) string) map[strin
 	}
 	if c.InOrganizations() {
 		policy["organization"] = map[string]any{"mode": c.Organization, "on_org_delete": c.OnOrgDelete}
+	}
+	if c.InTeams() {
+		policy["team"] = map[string]any{"mode": c.Team, "on_team_delete": c.OnTeamDelete}
 	}
 	if e := c.Erasure; e != nil {
 		policy["on_owner_delete"] = map[string]any{"action": e.Action, "remove": orStrings(e.Remove), "replace": e.Replace, "pull": e.Pull, "unset": e.Unset}

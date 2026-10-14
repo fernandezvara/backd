@@ -8,6 +8,7 @@ import (
 
 	"github.com/rs/xid"
 
+	"github.com/fernandezvara/backd/internal/email"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -149,6 +150,11 @@ type EmailJob struct {
 	UserID     string
 	Locale     string
 	RedirectTo string // checked when the request was made; bound to the token the worker creates
+	// Org is the company context of the message (an organization id): its data hook and,
+	// for custom emails, its template overrides apply.
+	Org string
+	// Draft is an owner template to render for a test send (Org's company context applies).
+	Draft *email.Override
 	// To says whose address the message goes to: "" the user's current one,
 	// "pending" the address they asked to change to, "previous" the one
 	// before the last change.

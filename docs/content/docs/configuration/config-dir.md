@@ -235,6 +235,21 @@ With `organization: required`, every document is created inside an organization 
 - `_meta.org` is a system field: it can be queried, sorted and used in `indexes.json` (`[_meta.org, slug]` makes `slug` unique per organization). `backd provision` adds the index `(_meta.org, _meta.created_at, id)`, which serves a list of one organization in the default order.
 - [Access rules](../../auth/rules/#organizations) read it with `inOrg`, `hasOrgRole` and `orgClaims`, applied inside the query.
 
+#### Teams
+
+A collection with an organization can also say its documents belong to a **team** of it:
+
+```yaml
+organization: required
+on_org_delete:
+  action: delete
+team: required               # required | optional | none (default); needs `organization`
+on_team_delete:
+  action: keep               # keep | delete
+```
+
+`_meta.team` is a system field like `_meta.org`: it can be queried (`?team=<id>` is the shorthand), sorted and used in `indexes.json`, and `backd provision` adds the index `(_meta.org, _meta.team, _meta.created_at, id)` for the lists of one team. It is server-owned: set at creation with `?team=<id>` (next to `?org=`), by a member of the team or a holder of a [team role](../../organizations/team-roles/) in it, and fixed afterwards (administrators move documents with the [transfer](../../api/documents/#fixing-data-as-an-administrator)). `on_team_delete` is required next to `team`: `delete` removes the team's documents when it is deleted (a job, in batches), `keep` leaves them with the old team id, readable through organization-level rules. [Access rules](../../auth/rules/#organizations) read it with `inTeam` and `hasTeamRole`.
+
 ### Public caching
 
 Document responses are `private, no-cache` by default: browsers keep them but revalidate with `If-None-Match`, and shared caches never store them. A collection whose content anyone may read can let a CDN serve it:

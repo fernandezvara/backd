@@ -340,6 +340,20 @@ type Store interface {
 	// ListOrgMembers returns a page of an organization's members sorted by user id: those
 	// after `after`, at most limit; more says whether others follow.
 	ListOrgMembers(ctx context.Context, org, after string, limit int) (members []OrgMember, more bool, err error)
+	// OrgTeamHolders returns a page, sorted by user id, of the members of the team and the
+	// members holding a team role in it that counts at now; with role, only its holders.
+	OrgTeamHolders(ctx context.Context, org, team, role string, now time.Time, after string, limit int) (members []OrgMember, more bool, err error)
+	// PurgeExpiredTeamRoles removes the team role grants whose window ended before the instant,
+	// and says how many it removed.
+	PurgeExpiredTeamRoles(ctx context.Context, before time.Time) (int64, error)
+	// OrgTemplate returns an organization's override of a kind in a language; ErrNotFound if none.
+	OrgTemplate(ctx context.Context, org, kind, locale string) (OrgTemplate, error)
+	// ListOrgTemplates returns an organization's overrides.
+	ListOrgTemplates(ctx context.Context, org string) ([]OrgTemplate, error)
+	// PutOrgTemplate stores an override, with its versions.
+	PutOrgTemplate(ctx context.Context, t OrgTemplate) error
+	// DeleteOrgTemplate removes an override; ErrNotFound if none.
+	DeleteOrgTemplate(ctx context.Context, org, kind, locale string) error
 	// OrgMembersWithRoles returns the members holding any of the roles directly.
 	OrgMembersWithRoles(ctx context.Context, org string, roles []string) ([]OrgMember, error)
 	// OrgMembershipsOf returns up to limit memberships of a user; CountOrgMembershipsOf counts them.
@@ -347,6 +361,9 @@ type Store interface {
 	CountOrgMembershipsOf(ctx context.Context, user string) (int, error)
 	// PutOrgMember creates or replaces a membership (unique per organization and user).
 	PutOrgMember(ctx context.Context, m OrgMember) error
+	// NextOrgMemberSeq returns the next sequence number of the membership events of a user in an
+	// organization: it grows for ever, across leaving and joining again.
+	NextOrgMemberSeq(ctx context.Context, org, user string) (int64, error)
 	// DeleteOrgMember removes a membership; ErrNotFound if none.
 	DeleteOrgMember(ctx context.Context, org, user string) error
 

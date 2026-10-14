@@ -167,3 +167,33 @@ func TestPages(t *testing.T) {
 		t.Errorf("missing folder: %v", errs)
 	}
 }
+
+// A template may use what the realm's data hook gives ({{.App}}): startup can't know it, so a
+// template that reads it loads, renders with it, and fails to render without it.
+func TestTemplatesUseTheDataHooksApp(t *testing.T) {
+	dir := t.TempDir()
+	writeDefaults(t, dir)
+	branded := filepath.Join(dir, ResetPassword, "en.subject.txt")
+	if err := os.WriteFile(branded, []byte("Reset your {{.App.name}} password"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	guarded := filepath.Join(dir, VerifyEmail, "en.subject.txt")
+	if err := os.WriteFile(guarded, []byte("Confirm {{if .App}}{{.App.name}}{{else}}{{.Realm}}{{end}}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tpl, errs := Load(dir, []string{"en"})
+	if len(errs) > 0 {
+		t.Fatalf("templates that read App don't load: %v", errs)
+	}
+	d := Data{Realm: "blog", User: User{Email: "ana@example.com"}, Link: "https://x.example/t", App: map[string]any{"name": "Acme"}}
+	msg, err := tpl.Render(ResetPassword, "en", d)
+	if err != nil || msg.Subject != "Reset your Acme password" {
+		t.Errorf("with App: %q %v", msg.Subject, err)
+	}
+	if _, err := tpl.Render(ResetPassword, "en", Data{Realm: "blog", Link: "https://x.example/t"}); err == nil {
+		t.Error("an unguarded template rendered without App")
+	}
+	if msg, err := tpl.Render(VerifyEmail, "en", Data{Realm: "blog", Link: "https://x.example/t"}); err != nil || msg.Subject != "Confirm blog" {
+		t.Errorf("a guarded template without App: %q %v", msg.Subject, err)
+	}
+}

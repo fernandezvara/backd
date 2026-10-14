@@ -66,6 +66,7 @@ var systemFields = map[string]field{
 	"_meta.version":    {Field: registry.Field{Types: []string{"integer"}}},
 	"_meta.owner":      {Field: registry.Field{Types: []string{"string", "null"}}},
 	"_meta.org":        {Field: registry.Field{Types: []string{"string"}}}, // only collections with organizations
+	"_meta.team":       {Field: registry.Field{Types: []string{"string"}}}, // only collections with teams
 	"_meta.created_by": {Field: registry.Field{Types: []string{"string"}}},
 	"_meta.updated_by": {Field: registry.Field{Types: []string{"string"}}},
 	// Only soft-deleted documents have these (soft_delete in collection.yaml).

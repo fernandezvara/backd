@@ -36,6 +36,8 @@ export interface Meta {
   updated_by?: string;
   /** The organization the document belongs to, in collections that have them. */
   org?: string;
+  /** The team of the organization the document belongs to, in collections that have them. */
+  team?: string;
   deleted_at?: DateTimeString;
   deleted_by?: string;
   purge_at?: DateTimeString;
@@ -275,6 +277,7 @@ export interface Realm {
       "change-email": Record<string, unknown>;
       "consent-updated": Record<string, unknown>;
       "email-changed": Record<string, unknown>;
+      "email-template-failed": Record<string, unknown>;
       invitation: Record<string, unknown>;
       "magic-link": Record<string, unknown>;
       "mfa-failed": Record<string, unknown>;
@@ -294,6 +297,7 @@ export interface Realm {
   };
   roles: "admin" | "curator";
   org_roles: "admin" | "editor" | "member" | "owner";
+  team_roles: never;
 }
 
 /** The user a function runs for, or null for an anonymous caller and scheduled runs. */
@@ -311,6 +315,8 @@ export interface CallOrg {
   /** Effective roles: direct, default and through teams. */
   roles: string[];
   teams: string[];
+  /** The team roles that count now, with their windows. */
+  team_roles: { team: string; role: string; from?: string; until?: string }[];
   claims: Record<string, unknown>;
   /** False when the organization requires a second factor and this session used none. */
   counts: boolean;
@@ -318,7 +324,10 @@ export interface CallOrg {
 }
 
 export interface OrgRecord { id: string; name: string; slug: string | null; status: "active" | "orphaned" | "deleted"; require_mfa: boolean; claims: Record<string, unknown>; created_at: string }
-export interface OrgMember { user: string; roles: string[]; teams: string[]; effective_roles: { role: string; origin: string[] }[]; overlap: string[]; joined_at: string }
+export interface OrgTeamRoleGrant { team: string; role: string; from?: string; until?: string; granted_by?: string; granted_at: string; active: boolean }
+export interface OrgMember { user: string; email?: string; mfa?: boolean; mfa_roles?: string[]; roles: string[]; teams: string[]; team_roles: OrgTeamRoleGrant[]; effective_roles: { role: string; origin: string[] }[]; overlap: string[]; joined_at: string }
+/** A member or role holder of one team: roles_in_team are the team roles held there now. */
+export interface OrgTeamMember extends OrgMember { in_team: boolean; roles_in_team: string[] }
 export interface OrgTeam { id: string; name: string; roles: string[]; created_at: string }
 export interface OrgInvitation {
   id: string; binding: "user" | "email" | "none"; status: "pending" | "used" | "revoked" | "expired";
@@ -341,6 +350,13 @@ export interface OrgAdmin {
     create(id: string, input: { name: string; roles?: string[] }): Promise<OrgTeam>;
     update(id: string, team: string, patch: { name?: string; roles?: string[] }): Promise<OrgTeam>;
     delete(id: string, team: string): Promise<void>;
+    /** Members of the team and holders of its roles in force now; with role, only its holders. */
+    members(id: string, team: string, options?: { role?: string; limit?: number; after?: string }): Promise<{ items: OrgTeamMember[]; has_more: boolean; next?: string }>;
+    /** Gives a member a team role in a team, for the window from..until (RFC 3339). */
+    grantRole(id: string, team: string, input: { user: string; role: string; from?: string; until?: string }): Promise<OrgTeamMember>;
+    /** Replaces the window of a team role the member holds. */
+    setRoleWindow(id: string, team: string, input: { user: string; role: string; from?: string; until?: string }): Promise<OrgTeamMember>;
+    revokeRole(id: string, team: string, input: { user: string; role: string }): Promise<OrgTeamMember>;
     addMember(id: string, team: string, user: string): Promise<OrgMember>;
     removeMember(id: string, team: string, user: string): Promise<OrgMember>;
   };
@@ -434,6 +450,8 @@ export interface EmailMessage {
   data?: Record<string, unknown>;
   locale?: string;
   requires_consent?: string;
+  /** The organization the message is about: its company context (the email.data_hook) applies. */
+  org?: string;
 }
 
 export interface PushMessage {

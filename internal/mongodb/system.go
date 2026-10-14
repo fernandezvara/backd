@@ -65,6 +65,11 @@ const (
 	OrgMembersCollection     = "org_members"
 	OrgTeamsCollection       = "org_teams"
 	OrgInvitationsCollection = "org_invitations"
+	// OrgMemberSeqCollection holds, per organization and user, the sequence number of the last
+	// membership event handed to a hook (design/team-access.md §7).
+	OrgMemberSeqCollection = "org_member_seq"
+	// OrgTemplatesCollection holds the email templates organizations wrote (design/team-access.md §11).
+	OrgTemplatesCollection = "org_templates"
 	// PushSendsCollection holds one record per push send: its totals, never a message.
 	PushSendsCollection = "push_sends"
 	// PushOutboxCollection holds what the capture provider took instead of sending: development
@@ -564,6 +569,7 @@ var systemCollections = []systemCollection{
 			"user":       str(),
 			"roles":      map[string]any{"bsonType": "array"},
 			"teams":      map[string]any{"bsonType": "array", "items": str()},
+			"team_roles": map[string]any{"bsonType": "array"},
 			"joined_at":  typ("date"),
 			"invited_by": str(),
 		}),
@@ -571,7 +577,32 @@ var systemCollections = []systemCollection{
 			{keys: bson.D{{Key: "org", Value: 1}, {Key: "user", Value: 1}}, unique: true},
 			{keys: bson.D{{Key: "user", Value: 1}}},
 			{keys: bson.D{{Key: "org", Value: 1}, {Key: "roles.role", Value: 1}}},
+			{keys: bson.D{{Key: "org", Value: 1}, {Key: "team_roles.team", Value: 1}}},
 		},
+	},
+	{
+		name: OrgTemplatesCollection,
+		validator: jsonSchema([]string{"_id", "org", "kind", "locale", "subject", "text", "html", "version", "updated_at"}, map[string]any{
+			"_id":      str(),
+			"org":      str(),
+			"kind":     str(),
+			"locale":   str(),
+			"subject":  str(),
+			"text":     str(),
+			"html":     str(),
+			"version":  map[string]any{"bsonType": bson.A{"int", "long"}},
+			"versions": map[string]any{"bsonType": "array"},
+		}),
+		indexes: []systemIndex{{keys: bson.D{{Key: "org", Value: 1}}}},
+	},
+	{
+		name: OrgMemberSeqCollection,
+		validator: jsonSchema([]string{"_id", "org", "user", "seq"}, map[string]any{
+			"_id":  str(),
+			"org":  str(),
+			"user": str(),
+			"seq":  map[string]any{"bsonType": bson.A{"int", "long"}},
+		}),
 	},
 	{
 		name: OrgTeamsCollection,

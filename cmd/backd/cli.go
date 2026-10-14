@@ -605,12 +605,13 @@ func registerRemote(cfg *kli.Config) {
 		required(cc, "collection", "the collection")
 		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
 	}
-	data.SubCommand("transfer").ShortHelp("move one document to another organization (audited)").
-		LongHelp("Moves a document to another organization, or out of its organization with --org none when the collection's documents may have none. It is a deliberate act of a realm administrator, not an update: the version goes up and the audit trail names both organizations. Needs the data area with write access. " + adminAPINote).
+	data.SubCommand("transfer").ShortHelp("move one document to another organization or team (audited)").
+		LongHelp("Moves a document to another organization, or out of its organization with --org none when the collection's documents may have none. --team names a team of the organization the document ends up in (none takes it out of its team): moving to another organization leaves the team. It is a deliberate act of a realm administrator, not an update: the version goes up and the audit trail names both organizations. Needs the data area with write access. " + adminAPINote).
 		Func(act("data transfer", dataTransfer)).Config(func(cc *kli.CommandConfig) {
 		docFlags(cc)
 		required(cc, "id", "the document's id")
 		required(cc, "org", "the organization's id, or none")
+		optional(cc, "team", "the team's id in that organization, or none")
 	})
 	data.SubCommand("assign-org").ShortHelp("give the documents that have no organization one").
 		LongHelp("For a collection that adopted organizations after it had documents: they have none, and members can't see them. Queues a job that gives the organization to the documents that have none and match --where (a JSON filter, as in a list query), and never moves one that has an organization. --dry-run only counts them. Needs the data area with write access. " + adminAPINote).

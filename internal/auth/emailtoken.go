@@ -19,6 +19,9 @@ type EmailToken struct {
 	Purpose    string // verify-email, reset-password, change-email, revert-email-change or invitation
 	UserID     string
 	RedirectTo string // where the page after the link may send the user (already checked)
+	// Org is the company context of the flow (see ResolveOrgContext): the pages and the emails
+	// that follow the link keep it.
+	Org string
 	// Address is the address the token acts on: the new one for change-email,
 	// the previous one for revert-email-change, the invited one for an
 	// invitation. Empty for the others.

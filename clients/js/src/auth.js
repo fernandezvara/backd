@@ -228,7 +228,9 @@ class MagicLink {
    * @param {string} email
    * `consents` are accepted for the account a new address gets (a new account made without them is asked
    * at its first sign-in).
-   * @param {{ redirectTo?: string, locale?: string, consents?: Record<string, string> }} [options]
+   * `org` is the company the person comes from: when it is one they belong to (or are invited to), the
+   * email and the page of the link look like the company's; otherwise it is ignored without a word.
+   * @param {{ redirectTo?: string, locale?: string, org?: string, consents?: Record<string, string> }} [options]
    * @param {RequestOptions} [opts]
    * @returns {Promise<{ requestId: string }>}
    */
@@ -238,7 +240,7 @@ class MagicLink {
     const { verifier, challenge } = newPKCE()
     const { data } = await this.auth.client.request({
       method: 'POST', path: ['_auth', 'magic-link'], auth: false, ...opts,
-      body: compact({ email, redirect_to: redirectTo, code_challenge: challenge, locale: options.locale, consents: options.consents }),
+      body: compact({ email, redirect_to: redirectTo, code_challenge: challenge, locale: options.locale, org: options.org, consents: options.consents }),
     })
     savePending(this.auth.oauthStorage(), { verifier, provider: 'magic-link', intent: 'signin', requestId: data.request_id })
     return { requestId: data.request_id }
@@ -407,11 +409,12 @@ export class Auth {
    * `consents` are the consents accepted, as the consent's name and the version shown (`{ terms: '2026-10' }`):
    * every required one of the realm must be there at its current version, or this rejects with a
    * {@link ConsentRequiredError} that lists them.
-   * @param {{ email: string, password: string, invitation?: string, locale?: string, redirectTo?: string, consents?: Record<string, string> }} input
+   * `org` is the company the person comes from (see {@link MagicLink#request}).
+   * @param {{ email: string, password: string, invitation?: string, locale?: string, redirectTo?: string, org?: string, consents?: Record<string, string> }} input
    * @param {RequestOptions} [opts]
    * @returns {Promise<Session>}
    */
-  async signup({ email, password, invitation, locale, redirectTo, consents }, opts) {
+  async signup({ email, password, invitation, locale, redirectTo, org, consents }, opts) {
     /** @type {Record<string, unknown>} */
     const body = { email, password }
     if (consents) body.consents = consents
@@ -419,6 +422,7 @@ export class Auth {
     if (invitation) body.invitation = invitation
     if (locale) body.locale = locale
     if (redirectTo) body.redirect_to = redirectTo
+    if (org) body.org = org
     const { status, data } = await this.client.request({ method: 'POST', path: ['_auth', 'signup'], body, auth: false, ...opts })
     if (status === 202) {
       throw new VerificationRequiredError({ status, code: 'verification_required', message: 'the account was created: verify the email address, then sign in' })
@@ -454,12 +458,13 @@ export class Auth {
    * Signs in with email and password. The answer is the session, or, for a user with a second
    * factor, an {@link MfaChallenge} to finish with {@link Auth#verifyMfa}, or an
    * {@link EnrollmentChallenge}: check `'challenge' in result`. Nothing is stored until a session.
-   * @param {{ email: string, password: string }} input
+   * `org` is the company the person comes from (see {@link MagicLink#request}).
+   * @param {{ email: string, password: string, org?: string }} input
    * @param {RequestOptions} [opts]
    * @returns {Promise<SignInResult>}
    */
-  async signIn({ email, password }, opts) {
-    const body = this.client.cookies ? { email, password, cookie: true } : { email, password }
+  async signIn({ email, password, org }, opts) {
+    const body = compact({ email, password, org, cookie: this.client.cookies ? true : undefined })
     const { data } = await this.client.request({ method: 'POST', path: ['_auth', 'login'], body, auth: false, ...opts })
     return this.step(data)
   }
@@ -467,7 +472,7 @@ export class Auth {
   /**
    * Signs in with email and password and promises a session: a user who needs a second step makes
    * this reject with a {@link SecondStepRequiredError} (use {@link Auth#signIn} to get the step as a value).
-   * @param {{ email: string, password: string }} input
+   * @param {{ email: string, password: string, org?: string }} input
    * @param {RequestOptions} [opts]
    * @returns {Promise<Session>}
    */
@@ -651,12 +656,13 @@ export class Auth {
    * Asks for a password reset email. Always resolves, whatever the address is.
    * Rejects with a `RetryableError` once the realm's limits for reset
    * requests (per address and per client) are reached.
-   * @param {{ email: string, redirectTo?: string }} input
+   * `org` is the company the person comes from (see {@link MagicLink#request}).
+   * @param {{ email: string, redirectTo?: string, org?: string }} input
    * @param {RequestOptions} [opts]
    * @returns {Promise<void>}
    */
-  async requestPasswordReset({ email, redirectTo }, opts) {
-    await this.accepted(['_auth', 'reset-password', 'request'], { email, redirect_to: redirectTo }, opts)
+  async requestPasswordReset({ email, redirectTo, org }, opts) {
+    await this.accepted(['_auth', 'reset-password', 'request'], { email, redirect_to: redirectTo, org }, opts)
   }
 
   /**

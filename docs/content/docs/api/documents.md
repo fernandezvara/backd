@@ -103,7 +103,7 @@ POST /v1/acme/app/projects?org=d3c9ljp8hc2g00b6s1m0
 - A [batch](#batch-writes) takes `?org=` for all its creates.
 - API keys without a user have no memberships, so they answer `403 not_org_member`; administrators use the admin data route, which accepts any active organization.
 
-A list takes `?org=<id>` as a shorthand for `where={"_meta.org": "<id>"}`, ANDed with `where`. The read rule still decides what is seen: an organization the caller doesn't belong to lists nothing.
+A list takes `?org=<id>` as a shorthand for `where={"_meta.org": "<id>"}`, ANDed with `where`. The read rule still decides what is seen: an organization the caller doesn't belong to lists nothing. In a collection with [teams](../../configuration/config-dir/#teams), `?team=<id>` is the same shorthand for `_meta.team` (and `_meta.team` can be used in `where` and `order_by`); a create names its team with `?team=` next to `?org=` (`.inTeam(id)` in the JavaScript client).
 
 ### Safe retries with `Idempotency-Key`
 
@@ -324,7 +324,7 @@ The [admin API](../../auth/admin/#data) serves these same operations past the co
 
 Two operations exist only there, for [organizations](#organizations):
 
-- **Moving a document.** `POST /{id}/_transfer` with `{"org": "<id>"}` (`null` takes it out of its organization, in a collection where that is allowed) moves one document. It is never an update: the target must exist and not be deleted, the version goes up, `If-Match` is honored, files and image versions travel with it, and the audit record names both organizations. `backd data transfer` does the same from the terminal.
+- **Moving a document.** `POST /{id}/_transfer` with `{"org": "<id>"}` (`null` takes it out of its organization, in a collection where that is allowed) moves one document. It is never an update: the target must exist and not be deleted, the version goes up, `If-Match` is honored, files and image versions travel with it, and the audit record names both organizations. `backd data transfer` does the same from the terminal. In a collection with [teams](../../configuration/config-dir/#teams) the body also takes `"team": "<id>"` (a team of the target organization) or `null`: moving to another organization leaves the team, so a collection that requires one needs it named; the same call with the document's own organization puts a document that has no team into one (`backd data transfer --team <id|none>`).
 - **Adopting a collection.** A collection that starts using organizations has documents without one, and with `organization: required` members can't see them. `POST /_assign_org` with `{"org": "<id>", "where": {…}}` queues a job that gives the organization to the documents that have none and match `where`, and never moves one that has an organization; `?dry_run=true` only counts them (`backd data assign-org`). At startup `backd` logs the collections that still hold documents without one.
 
 ## Schema changes

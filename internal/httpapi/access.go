@@ -41,7 +41,7 @@ func stampCreate(r *http.Request, meta map[string]any) {
 // stampUpdate carries the ownership fields (and the organization) over from the stored meta,
 // which never change, and records who made this write.
 func stampUpdate(r *http.Request, stored, meta map[string]any) {
-	for _, k := range []string{"owner", "created_by", "org"} {
+	for _, k := range []string{"owner", "created_by", "org", "team"} {
 		if v, ok := stored[k]; ok {
 			meta[k] = v
 		}

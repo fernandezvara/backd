@@ -73,6 +73,8 @@ An empty file, or one with only comments, is valid: every key has a default.
 | `default_locale` | `en` | The language used for a user who has none and for email and push templates that lack the user's. Must be in `locales`. See [Languages](../../functions/email/#languages) |
 | `locales` | `[default_locale]` | The languages the realm supports: each user's `locale` is one of them, and every listed language needs every email template and page. Shared by email and push notifications |
 | `email` | none (no email) | How the realm sends email: the delivery function, the sender, backd's public address for links, the pages the links open, where users go afterwards, and limits. backd never sends mail itself. See [Email](../../functions/email/) |
+| `email.customizable`, `email.overrides.permission` | none, `manage_org` | The kinds of email an organization may write its own template of, and the capability that edits them. See [company email templates](../../organizations/email-templates/) |
+| `pages.data_hook` | none | An internal, `mode: sync` function (`<database>/<function>`) that fills in `{{.App}}` in the hosted pages with a company's branding; `email.data_hook` does it for emails. See [company context](../../organizations/company-context/) |
 | `providers` | none | The external identity providers users may sign in with (`google`, `microsoft`, `apple`), each with its client id and `secret:NAME` references. See [Sign in with providers](../../auth/providers/) |
 | `push` | none (no push) | Push notifications: the platforms and their providers, the web subscription hosts and the device limits. Needs `BACKD_SECRETS_KEY`. See [Push notifications](../../push/) |
 | `sign_in.allowed_redirects` | `email.allowed_redirects` | Origins and app schemes a provider sign-in may send the user back to |
@@ -184,7 +186,9 @@ organizations:
 | Key | What it says | Default |
 |---|---|---|
 | `enabled` | `false` switches the section off without removing it | `true` |
-| `roles` | The organization roles: a name (same rules as realm roles), an optional `description` and `manage`, a capability or a list of them | required |
+| `roles` | The organization roles: a name (same rules as realm roles), an optional `description`, `manage` (a capability or a list of them) and `require_mfa` (the role counts only for sessions that used a [second factor](../../organizations/team-roles/#roles-that-require-a-second-factor)) | required |
+| `hooks` | [Membership hooks](../../organizations/membership-hooks/): `on_member_joined`, `on_member_left` and `on_roles_changed`, each an internal, async function `<database>/<function>` | none |
+| `team_roles` | [Roles held within one team](../../organizations/team-roles/): a name, an optional `description`, `grants` (team roles its holders may give, in their own team) and `require_mfa` | none |
 | `default_roles` | Roles every member holds without being granted one. They can't have `manage` capabilities | none |
 | `create` | An [expression](../../auth/rules/) that decides who may create organizations; it sees `user`. `"false"` leaves it to realm administrators | `user.email_verified` |
 | `creator_roles` | The roles the creator of an organization holds. One of them needs `manage: org` | `[owner]` |
