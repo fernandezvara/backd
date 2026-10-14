@@ -58,6 +58,7 @@ export default async function (ctx, input) {
 ```
 
 - **Guard with `{{if .App}}`.** `.App` is empty when there is no hook, no company or the hook failed. Startup accepts templates that read it.
+- **Pages call the hook only with a company context.** A page that comes without one (a wrong token, a link made without `org`) is rendered with no `App`, and nothing runs: pages are public. Emails always call it, since email limits already bound them.
 - **Bounded, and never in the way.** A hook has **2 seconds** and may answer **16 KiB**. On any failure (an error, a timeout, an answer that is too large or isn't an object, a template that can't use what it gave) the message or page renders **without** `App`, and backd logs it: an email is never delayed or dropped by a hook.
 - **Startup checks** that each hook is an internal function with `mode: sync`.
 - **The delivery function** also receives `org` and `app` in the message's `data`, for one that has templates of its own.

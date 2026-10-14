@@ -74,7 +74,7 @@ team_roles:
   delegate: {}
 ```
 
-A manager of Sales may give `delegate` in Sales, change the window of it and take it away. They can't give `manager`, and they can't act in Support, even if they hold `manager` there. Members with `manage: teams` can do all of it in any team. Each change is audited with who made it (`org.team_role_grant`, `org.team_role_change`, `org.team_role_revoke`), and the grant records `granted_by`.
+A manager of Sales may give `delegate` in Sales, change the window of it and take it away. They can't give `manager`, and they can't act in Support, even if they hold `manager` there. What a delegate gives **can't outlast their own authority**: if their grant ends on the 15th, what they give ends on or before it (a grant with no end, or one beyond, is `400`), and they can't change the window of their own grant, so cover can't be stretched from the inside. Members with `manage: teams` can do all of it in any team. Each change is audited with who made it (`org.team_role_grant`, `org.team_role_change`, `org.team_role_revoke`), and the grant records `granted_by`.
 
 ## Roles that require a second factor
 

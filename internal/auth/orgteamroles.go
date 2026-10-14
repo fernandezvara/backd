@@ -130,24 +130,60 @@ const (
 	TeamRoleRevokeOp                   // take it away
 )
 
-// canGrantTeamRole checks the caller's right to give, change or take away role in team: with
-// manage: teams any team role in any team; otherwise a holder of a team role of that team whose
-// `grants` lists it (design/team-access.md §5), in that team only.
-func (s *Users) canGrantTeamRole(ctx context.Context, userID, orgID, teamID, role string) error {
+// grantAuthority is a caller's right to give, change or take away a team role in a team.
+type grantAuthority struct {
+	// full: manage: teams, any team role in any team, with any window.
+	full bool
+	// until bounds what a delegate gives: nothing they give may outlast their own authority
+	// (zero: no bound, because one of the roles that lets them has no end).
+	until time.Time
+}
+
+// grantAuthorityFor checks the caller's right to handle role in team: with manage: teams any team
+// role in any team; otherwise a holder of a team role of that team whose `grants` lists it
+// (design/team-access.md §5), in that team only.
+func (s *Users) grantAuthorityFor(ctx context.Context, userID, orgID, teamID, role string) (grantAuthority, error) {
 	m, err := s.MembershipOf(ctx, userID, orgID)
 	if err != nil {
-		return err
+		return grantAuthority{}, err
 	}
 	if s.caps(m).Has(registry.CapTeams) {
-		return nil
+		return grantAuthority{full: true}, nil
 	}
 	o := s.Settings.Organizations
-	for _, held := range m.TeamRoles[teamID] {
-		if slices.Contains(o.TeamRoles[held].Grants, role) {
-			return nil
+	var a grantAuthority
+	found := false
+	for _, g := range m.TeamGrants {
+		if g.Team != teamID || !slices.Contains(o.TeamRoles[g.Role].Grants, role) {
+			continue
 		}
+		if g.Until.IsZero() {
+			return grantAuthority{}, nil // a role that never ends lets them: no bound
+		}
+		if !found || g.Until.After(a.until) {
+			a.until = g.Until
+		}
+		found = true
 	}
-	return m.forbiddenToGrant(teamID, role)
+	if !found {
+		return grantAuthority{}, m.forbiddenToGrant(teamID, role)
+	}
+	return a, nil
+}
+
+// check applies what a delegate may not do: change their own grant (which would extend their
+// own authority), or give what outlasts their own.
+func (a grantAuthority) check(caller, target string, op TeamRoleOp, w TeamRoleWindow) error {
+	if a.full {
+		return nil
+	}
+	if op == TeamRoleWindowOp && caller == target {
+		return ErrOrgForbidden
+	}
+	if op != TeamRoleRevokeOp && !a.until.IsZero() && (w.Until.IsZero() || w.Until.After(a.until)) {
+		return &OrgInvalidError{"until", "can't be after your own role ends (" + a.until.UTC().Format(time.RFC3339) + "): what a delegate gives ends no later than their own authority"}
+	}
+	return nil
 }
 
 // SetTeamRole gives, re-windows or revokes a team role of a member in a team. caller is the user
@@ -155,7 +191,11 @@ func (s *Users) canGrantTeamRole(ctx context.Context, userID, orgID, teamID, rol
 // stands for an administrator or a function, who may do it in any active organization.
 func (s *Users) SetTeamRole(ctx context.Context, caller, orgID, teamID, target, role string, op TeamRoleOp, w TeamRoleWindow) (TeamMemberView, error) {
 	if caller != "" {
-		if err := s.canGrantTeamRole(ctx, caller, orgID, teamID, role); err != nil {
+		authority, err := s.grantAuthorityFor(ctx, caller, orgID, teamID, role)
+		if err != nil {
+			return TeamMemberView{}, err
+		}
+		if err := authority.check(caller, target, op, w); err != nil {
 			return TeamMemberView{}, err
 		}
 	} else {

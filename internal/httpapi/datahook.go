@@ -109,11 +109,13 @@ func (f *functions) dataHook(ctx context.Context, realm, ref string, in dataHook
 	return decodeHookData(log, res.Output)
 }
 
-// pageApp fills in d.App with what the realm's pages.data_hook says about the company of a page
-// (org may be empty), and returns whether it did. A page the hook can't serve is shown without.
+// pageApp fills in d.App with what the realm's pages.data_hook says about the company of a page.
+// Only a page that has a company context (it comes from a token or request that carried one)
+// calls the hook: pages are public, and a page that anyone can open, like the one of a wrong
+// token, must not make the app's function run. A page the hook can't serve is shown without.
 func (f *functions) pageApp(ctx context.Context, realm, kind string, d *email.PageData, org, address string) {
 	hook := f.docs.reg.Realms[realm].Settings.PagesDataHook
-	if hook == "" {
+	if hook == "" || org == "" {
 		return
 	}
 	in := dataHookInput{Kind: kind, Locale: d.Locale, Org: org}

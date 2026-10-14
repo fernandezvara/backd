@@ -129,3 +129,25 @@ func TestEmailSendKeepsTheCompany(t *testing.T) {
 		t.Errorf("hook input: %v", got)
 	}
 }
+
+// A page anyone can open (the one of a wrong token) never makes the app's function run: only a
+// page that comes with a company context calls pages.data_hook.
+func TestPagesDataHookNeedsACompanyContext(t *testing.T) {
+	f, _ := newVerifyFixture(t)
+	f.reg.Realms["acme"].Settings.PagesDataHook = "app/echo"
+	hook := &hookCalls{answer: `{"name": "Acme"}`}
+	hook.install(f, "app/echo")
+	for i := 0; i < 3; i++ {
+		if rec := f.page(t, "GET", "/v1/acme/_auth/reset-password?token=not-a-token", "", "", ""); rec.Code != 400 {
+			t.Fatalf("wrong token: %d", rec.Code)
+		}
+	}
+	// A valid token without a company: no hook either.
+	token := f.token(t, "reset-password", "")
+	if rec := f.page(t, "GET", "/v1/acme/_auth/reset-password?token="+token, "", "", ""); rec.Code != 200 {
+		t.Fatalf("page: %d", rec.Code)
+	}
+	if len(hook.inputs) != 0 {
+		t.Errorf("the hook ran %d times for pages without a company", len(hook.inputs))
+	}
+}

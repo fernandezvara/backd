@@ -210,3 +210,27 @@ func TestOrganizationTemplatePreviewAndTest(t *testing.T) {
 		t.Errorf("audited tests: %d", len(trail))
 	}
 }
+
+func TestRealPreviewsAreLimited(t *testing.T) {
+	f, _ := newVerifyFixture(t)
+	f.svc.Settings.Email.Customizable = []string{"reset-password"}
+	f.reg.Realms["acme"].Settings.Email.DataHook = "app/echo"
+	hook := &hookCalls{answer: `{"name": "Acme"}`}
+	hook.install(f, "app/echo")
+	org := f.orgOf(t, f.ada, "Acme")
+	base := orgsPath + "/" + org + "/templates/reset-password/en/preview"
+	draft := `{"subject": "s", "text": "{{Link}}", "html": "{{Link}}", "data": "real"}`
+	for i := 0; i < auth.OrgTemplateRealPreviewsPerHour; i++ {
+		if rec, out := f.doH(t, "POST", base, draft, jsonHdr(f.ada)); rec.Code != 200 {
+			t.Fatalf("preview %d: %d %v", i+1, rec.Code, out)
+		}
+	}
+	rec, out := f.doH(t, "POST", base, draft, jsonHdr(f.ada))
+	if rec.Code != 429 {
+		t.Errorf("over the limit: %d %v", rec.Code, out)
+	}
+	// Sample data costs nothing: the hook isn't called.
+	if rec, _ := f.doH(t, "POST", base, strings.Replace(draft, `"real"`, `"sample"`, 1), jsonHdr(f.ada)); rec.Code != 200 {
+		t.Errorf("a sample preview: %d", rec.Code)
+	}
+}

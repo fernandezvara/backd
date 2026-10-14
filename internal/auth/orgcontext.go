@@ -43,11 +43,13 @@ func (s *Users) ResolveOrgContext(ctx context.Context, org, address string) stri
 	if err != nil {
 		normalized = ""
 	}
-	belongs := false
+	// A person with no account is looked up with an empty id, so the work is the same.
+	userID := ""
 	if u, uerr := s.Store.UserByEmail(ctx, normalized); uerr == nil && u.ErasedAt.IsZero() {
-		_, merr := s.Store.OrgMember(ctx, org, u.ID)
-		belongs = merr == nil
+		userID = u.ID
 	}
+	_, merr := s.Store.OrgMember(ctx, org, userID)
+	belongs := userID != "" && merr == nil
 	invited := false
 	if list, lerr := s.Store.ListOrgInvitations(ctx, org); lerr == nil {
 		now := s.now()

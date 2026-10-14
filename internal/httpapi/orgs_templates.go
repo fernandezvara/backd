@@ -47,7 +47,7 @@ func templateError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, r, http.StatusBadRequest, codeTemplateInvalid, "the template can't be used", details...)
 	case errors.Is(err, auth.ErrTemplateNotCustomizable):
 		writeError(w, r, http.StatusBadRequest, codeTemplateNotCustomizable, err.Error(), Detail{Path: "kind", Reason: "isn't in email.customizable"})
-	case errors.Is(err, auth.ErrTemplateTestLimit):
+	case errors.Is(err, auth.ErrTemplateTestLimit), errors.Is(err, auth.ErrTemplatePreviewLimit):
 		w.Header().Set("Retry-After", "3600")
 		writeError(w, r, http.StatusTooManyRequests, codeTemplateTestLimit, err.Error())
 	case errors.Is(err, auth.ErrNotFound):
@@ -208,6 +208,10 @@ func (a *authAPI) previewOrgTemplate(w http.ResponseWriter, r *http.Request) {
 	d.Realm, d.User = chi.URLParam(r, "realm"), email.User{Email: user.Email, Locale: locale}
 	if mode == "real" && a.fns != nil {
 		if hook := svc.Settings.Email.DataHook; hook != "" {
+			if err := svc.AllowRealPreview(r.Context(), org); err != nil {
+				templateError(w, r, err)
+				return
+			}
 			d.App = a.fns.dataHook(r.Context(), d.Realm, hook, dataHookInput{Kind: kind, Locale: locale, Org: org, User: &hookUser{ID: user.ID, Email: user.Email}})
 		}
 	}

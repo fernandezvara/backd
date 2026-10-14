@@ -203,6 +203,25 @@ func (s *Users) OrgName(ctx context.Context, orgID string) string {
 	return org.Name
 }
 
+// ErrTemplatePreviewLimit: too many previews with real data.
+var ErrTemplatePreviewLimit = errors.New("too many previews with real data for this organization; try again later")
+
+// OrgTemplateRealPreviewsPerHour is how many previews with real data (which call the data hook)
+// an organization may make.
+const OrgTemplateRealPreviewsPerHour = 30
+
+// AllowRealPreview counts a preview with real data against the organization's hourly limit.
+func (s *Users) AllowRealPreview(ctx context.Context, orgID string) error {
+	if err := s.RateLimit(ctx, "tplpreview:"+orgID, OrgTemplateRealPreviewsPerHour, time.Hour); err != nil {
+		var te *ThrottledError
+		if errors.As(err, &te) {
+			return ErrTemplatePreviewLimit
+		}
+		return err
+	}
+	return nil
+}
+
 // QueueTemplateTest sends a draft (or the saved version, when draft is nil) of a template to
 // the requesting user's own address, with "[TEST]" in the subject. At most
 // OrgTemplateTestsPerHour per organization.

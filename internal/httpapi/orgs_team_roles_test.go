@@ -3,10 +3,12 @@ package httpapi
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/registry"
 )
 
 func teamGrant(team, role string) auth.TeamRoleGrant {
@@ -244,5 +246,62 @@ func TestTeamRoleWindowsAndDelegation(t *testing.T) {
 	*f.clock = f.clock.Add(auth.TeamRoleHistory)
 	if n, err := f.svc.SweepTeamRoles(ctx); err != nil || n != 2 {
 		t.Errorf("sweep: %d %v", n, err)
+	}
+}
+
+// What a delegate gives never outlasts their own authority, and they can't extend it themselves.
+func TestDelegatesCannotOutliveOrExtendTheirOwnRole(t *testing.T) {
+	f := newRulesFixture(t)
+	ctx := context.Background()
+	*f.clock = f.clock.Truncate(time.Second)
+	f.svc.Now = func() time.Time { return *f.clock }
+	org := f.orgOf(t, f.ada, "Bounds")
+	teams := orgsPath + "/" + org + "/teams"
+	if _, err := f.svc.AdminAddMember(ctx, org, f.bobID, nil); err != nil {
+		t.Fatal(err)
+	}
+	_, out := f.doH(t, "POST", teams, `{"name": "Sales"}`, jsonHdr(f.ada))
+	roles := teams + "/" + out["id"].(string) + "/roles"
+	at := func(d time.Duration) string { return f.clock.Add(d).UTC().Format(time.RFC3339) }
+	grant := func(user, role, until string) string {
+		b := fmt.Sprintf(`{"user": %q, "role": %q`, user, role)
+		if until != "" {
+			b += fmt.Sprintf(`, "until": %q`, until)
+		}
+		return b + "}"
+	}
+	// Bob manages Sales for a week.
+	if rec, out := f.doH(t, "POST", roles, grant(f.bobID, "manager", at(7*24*time.Hour)), jsonHdr(f.ada)); rec.Code != 200 {
+		t.Fatalf("manager: %d %v", rec.Code, out)
+	}
+	// Giving delegate: inside the week, yes; beyond it or with no end, no.
+	if rec, out := f.doH(t, "POST", roles, grant(f.adaID, "delegate", at(24*time.Hour)), jsonHdr(f.bob)); rec.Code != 200 {
+		t.Errorf("inside the week: %d %v", rec.Code, out)
+	}
+	for name, until := range map[string]string{"after it ends": at(30 * 24 * time.Hour), "with no end": ""} {
+		if rec, out := f.doH(t, "PATCH", roles, grant(f.adaID, "delegate", until), jsonHdr(f.bob)); rec.Code != 400 || !strings.Contains(fmt.Sprint(out), "your own role ends") {
+			t.Errorf("%s: %d %v", name, rec.Code, out)
+		}
+	}
+	// A delegate whose role lists itself can't change their own window, and what they give is
+	// bounded by it. (An owner, with manage: teams, isn't bounded.)
+	f.svc.Settings.Organizations.TeamRoles["delegate"] = registry.TeamRole{Grants: []string{"delegate"}}
+	if rec, out := f.doH(t, "DELETE", roles, grant(f.bobID, "manager", ""), jsonHdr(f.ada)); rec.Code != 200 {
+		t.Fatalf("end manager: %d %v", rec.Code, out)
+	}
+	if rec, out := f.doH(t, "POST", roles, grant(f.bobID, "delegate", at(2*24*time.Hour)), jsonHdr(f.ada)); rec.Code != 200 {
+		t.Fatalf("bob delegate: %d %v", rec.Code, out)
+	}
+	if rec, out := f.doH(t, "PATCH", roles, grant(f.bobID, "delegate", at(5*24*time.Hour)), jsonHdr(f.bob)); rec.Code != 403 {
+		t.Errorf("a delegate changes their own window: %d %v", rec.Code, out)
+	}
+	if rec, out := f.doH(t, "PATCH", roles, grant(f.adaID, "delegate", at(5*24*time.Hour)), jsonHdr(f.bob)); rec.Code != 400 {
+		t.Errorf("giving beyond their own end: %d %v", rec.Code, out)
+	}
+	if rec, out := f.doH(t, "PATCH", roles, grant(f.adaID, "delegate", at(time.Hour)), jsonHdr(f.bob)); rec.Code != 200 {
+		t.Errorf("giving inside it: %d %v", rec.Code, out)
+	}
+	if rec, out := f.doH(t, "PATCH", roles, grant(f.bobID, "delegate", at(60*24*time.Hour)), jsonHdr(f.ada)); rec.Code != 200 {
+		t.Errorf("an owner extends it: %d %v", rec.Code, out)
 	}
 }
