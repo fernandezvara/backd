@@ -130,7 +130,8 @@ func (a *authAPI) sessionMiddleware(next http.Handler, ignoreConsents bool) http
 		if !ok {
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, p)))
+		ctx := auth.WithSessionMFA(context.WithValue(r.Context(), principalKey{}, p), p.Session.MFA)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 

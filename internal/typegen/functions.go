@@ -38,7 +38,7 @@ export interface CallOrg {
 
 export interface OrgRecord { id: string; name: string; slug: string | null; status: "active" | "orphaned" | "deleted"; require_mfa: boolean; claims: Record<string, unknown>; created_at: string }
 export interface OrgTeamRoleGrant { team: string; role: string; from?: string; until?: string; granted_by?: string; granted_at: string; active: boolean }
-export interface OrgMember { user: string; email?: string; roles: string[]; teams: string[]; team_roles: OrgTeamRoleGrant[]; effective_roles: { role: string; origin: string[] }[]; overlap: string[]; joined_at: string }
+export interface OrgMember { user: string; email?: string; mfa?: boolean; mfa_roles?: string[]; roles: string[]; teams: string[]; team_roles: OrgTeamRoleGrant[]; effective_roles: { role: string; origin: string[] }[]; overlap: string[]; joined_at: string }
 /** A member or role holder of one team: roles_in_team are the team roles held there now. */
 export interface OrgTeamMember extends OrgMember { in_team: boolean; roles_in_team: string[] }
 export interface OrgTeam { id: string; name: string; roles: string[]; created_at: string }

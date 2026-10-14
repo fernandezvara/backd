@@ -134,6 +134,17 @@ func TestCollectionOrganizationPolicy(t *testing.T) {
 	}
 }
 
+func TestRolesThatRequireMFA(t *testing.T) {
+	s, errs := parseRealmSettings([]byte("organizations:\n  roles:\n    owner: { manage: org }\n    hr: { manage: members, require_mfa: true }\n"))
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	o := s.Organizations
+	if o.Roles["owner"].RequireMFA || !o.Roles["hr"].RequireMFA {
+		t.Errorf("roles: %+v", o.Roles)
+	}
+}
+
 func TestTeamRoleSettings(t *testing.T) {
 	s, errs := parseRealmSettings([]byte("organizations:\n  roles:\n    owner: { manage: org }\n  team_roles:\n    manager:\n      description: Runs the team\n      grants: [delegate]\n      require_mfa: true\n    delegate: {}\n"))
 	if len(errs) > 0 {

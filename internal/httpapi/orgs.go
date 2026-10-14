@@ -23,6 +23,8 @@ const (
 	codeSlugTaken      = "slug_taken"
 	codeOrgLimit       = "org_limit_reached"
 	codeOrgRequiresMFA = "org_requires_mfa"
+	// codeOrgRoleRequiresMFA: the action needs a role that requires a second factor.
+	codeOrgRoleRequiresMFA = "org_role_requires_mfa"
 )
 
 func (a *authAPI) orgRoutes(r chi.Router) {
@@ -65,11 +67,18 @@ func (a *authAPI) orgRoutes(r chi.Router) {
 // orgError maps organization errors, falling back to the sign-in errors.
 func orgError(w http.ResponseWriter, r *http.Request, err error) {
 	var bad *auth.OrgInvalidError
+	var needsMFA *auth.RoleRequiresMFAError
 	switch {
 	case errors.Is(err, auth.ErrOrgsDisabled):
 		writeError(w, r, http.StatusNotFound, codeNotFound, err.Error())
 	case errors.Is(err, auth.ErrNotOrgMember):
 		writeError(w, r, http.StatusForbidden, codeNotOrgMember, "you are not a member of that organization")
+	case errors.As(err, &needsMFA):
+		details := []Detail{{Path: "role", Reason: needsMFA.Role}}
+		if needsMFA.Team != "" {
+			details = append(details, Detail{Path: "team", Reason: needsMFA.Team})
+		}
+		writeError(w, r, http.StatusForbidden, codeOrgRoleRequiresMFA, needsMFA.Error(), details...)
 	case errors.Is(err, auth.ErrOrgRequiresMFA):
 		writeError(w, r, http.StatusForbidden, codeOrgRequiresMFA, err.Error())
 	case errors.Is(err, auth.ErrRequireMFANotAllowed):
@@ -189,6 +198,7 @@ func memberJSON(v auth.MemberView) map[string]any {
 	}
 	if v.MFA != nil {
 		out["mfa"] = *v.MFA
+		out["mfa_roles"] = nonNil(v.MFARoles)
 	}
 	grants := make([]map[string]any, len(v.TeamRoles))
 	for i, g := range v.TeamRoles {

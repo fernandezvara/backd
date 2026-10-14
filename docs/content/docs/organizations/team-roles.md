@@ -76,6 +76,24 @@ team_roles:
 
 A manager of Sales may give `delegate` in Sales, change the window of it and take it away. They can't give `manager`, and they can't act in Support, even if they hold `manager` there. Members with `manage: teams` can do all of it in any team. Each change is audited with who made it (`org.team_role_grant`, `org.team_role_change`, `org.team_role_revoke`), and the grant records `granted_by`.
 
+## Roles that require a second factor
+
+`require_mfa: true` works on organization roles and on team roles, so a sensitive role can ask for a second factor without forcing it on the whole organization:
+
+```yaml
+organizations:
+  roles:
+    hr: { manage: [members], require_mfa: true }
+  team_roles:
+    manager: { grants: [delegate], require_mfa: true }
+```
+
+- **Without a second factor the role doesn't count.** `hasOrgRole(…, "hr")` and `hasTeamRole(…, "manager")` are false, the [pushdown](../../auth/rules/#organizations) leaves the organization out of what the role opens, and **plain membership remains**: the person still sees what `inOrg` shows.
+- **The error names the role.** An endpoint that needs the role answers `403 org_role_requires_mfa` with the `role` (and the `team`) in `details`, so a client can start the [enrollment](../../auth/mfa/) instead of showing "forbidden". A person who lacks the capability anyway gets the usual `403 forbidden`.
+- **One predicate.** A grant counts when its organization (`require_mfa` of the organization, which every member needs), its role and its window all count.
+- **Managers see who is missing one:** the members list carries `mfa` and `mfa_roles` (the roles the member holds that require one) for people who manage the organization.
+- **API keys on behalf of a user** have no second factor, so these roles don't count for them.
+
 ## List who holds what
 
 ```http

@@ -19,6 +19,7 @@ export {
   IdTakenError,
   InvalidIdError,
   OrgRequiresMFAError,
+  OrgRoleRequiresMFAError,
   NotOrgMemberError,
   LastOrgManagerError,
   VersionMismatchError,

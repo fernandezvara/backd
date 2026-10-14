@@ -875,7 +875,7 @@ func (f *functions) userOrgsEnvelope(ctx context.Context, realm string, c auth.C
 		return nil
 	}
 	mfa, _ := c.SignInMethods()
-	list, err := svc.MyOrgs(ctx, c.User.User.ID)
+	list, err := svc.MyOrgs(auth.WithSessionMFA(ctx, mfa), c.User.User.ID)
 	if err != nil {
 		logger(ctx).Error("memberships unreadable for ctx.user.orgs", "realm", realm, "error", err)
 		return map[string]any{}

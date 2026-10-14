@@ -73,6 +73,8 @@ type OrgRole struct {
 	Description string
 	// Manage is what holders may manage in the organization.
 	Manage OrgCaps
+	// RequireMFA makes the role count only for sessions with a second factor.
+	RequireMFA bool
 }
 
 // TeamRole is a role held within one team of an organization, declared in realm.yaml's
@@ -225,6 +227,7 @@ type orgsDoc struct {
 	Roles   map[string]*struct {
 		Description string    `yaml:"description"`
 		Manage      manageDoc `yaml:"manage"`
+		RequireMFA  bool      `yaml:"require_mfa"`
 	} `yaml:"roles"`
 	TeamRoles map[string]*struct {
 		Description string   `yaml:"description"`
@@ -281,7 +284,7 @@ func (d *orgsDoc) apply(s *RealmSettings) []error {
 		r := d.Roles[name]
 		role := OrgRole{}
 		if r != nil {
-			role.Description, role.Manage = r.Description, r.Manage.Caps
+			role.Description, role.Manage, role.RequireMFA = r.Description, r.Manage.Caps, r.RequireMFA
 		}
 		o.Roles[name] = role
 	}

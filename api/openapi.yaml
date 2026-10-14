@@ -7878,6 +7878,7 @@ components:
         effective_roles: { type: array, items: { $ref: "#/components/schemas/RoleOrigin" } }
         overlap: { type: array, items: { type: string }, description: "Roles held directly and also through a team or by default." }
         mfa: { type: boolean, description: "Whether the member has a second factor. Only for members who manage the organization." }
+        mfa_roles: { type: array, items: { type: string }, description: "The roles the member holds now, organization roles and team roles, that require a second factor. Only for members who manage the organization; with `mfa: false` these are the people to nudge." }
         joined_at: { type: string, format: date-time }
         invited_by: { type: string }
 
@@ -7908,6 +7909,7 @@ components:
         effective_roles: { type: array, items: { $ref: "#/components/schemas/RoleOrigin" } }
         overlap: { type: array, items: { type: string } }
         mfa: { type: boolean }
+        mfa_roles: { type: array, items: { type: string } }
         joined_at: { type: string, format: date-time }
         invited_by: { type: string }
         in_team: { type: boolean, description: "Whether they belong to the team (a role holder needs not)." }

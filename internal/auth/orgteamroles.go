@@ -147,7 +147,7 @@ func (s *Users) canGrantTeamRole(ctx context.Context, userID, orgID, teamID, rol
 			return nil
 		}
 	}
-	return ErrOrgForbidden
+	return m.forbiddenToGrant(teamID, role)
 }
 
 // SetTeamRole gives, re-windows or revokes a team role of a member in a team. caller is the user

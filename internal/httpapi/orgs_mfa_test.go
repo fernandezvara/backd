@@ -2,12 +2,15 @@ package httpapi
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/rs/xid"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/registry"
 )
 
 // mfaSession gives a user a session that used a second factor, the way a sign-in with one
@@ -111,5 +114,76 @@ func TestOrganizationRequiresMFA(t *testing.T) {
 	h["X-Backd-On-Behalf-Of"] = f.adaID
 	if rec, out := f.doH(t, "GET", projects, "", h); rec.Code != 403 {
 		t.Errorf("a key on behalf of a member: %d %v", rec.Code, out)
+	}
+}
+
+func TestRolesThatRequireMFA(t *testing.T) {
+	f := newRulesFixture(t)
+	ctx := context.Background()
+	projects := "/v1/acme/app/projects"
+	org := f.orgOf(t, f.ada, "Sensitive")
+	if _, err := f.svc.AdminAddMember(ctx, org, f.bobID, []string{"editor"}); err != nil {
+		t.Fatal(err)
+	}
+	o := f.svc.Settings.Organizations
+	o.Roles["editor"] = registry.OrgRole{RequireMFA: true}
+	o.Roles["owner"] = registry.OrgRole{Manage: o.Roles["owner"].Manage, RequireMFA: true}
+	o.TeamRoles["manager"] = registry.TeamRole{Grants: []string{"delegate"}, RequireMFA: true}
+	bobMFA := f.mfaSession(t, f.bobID)
+	adaMFA := f.mfaSession(t, f.adaID)
+
+	// The role doesn't count without a second factor: the helpers are false, plain membership stays.
+	if rec, out := f.doH(t, "POST", projects+"?org="+org, `{"title": "x"}`, jsonHdr(f.bob)); rec.Code != 403 {
+		t.Errorf("create without it: %d %v", rec.Code, out)
+	}
+	if rec, out := f.doH(t, "POST", projects+"?org="+org, `{"title": "x"}`, jsonHdr(bobMFA)); rec.Code != 201 {
+		t.Errorf("create with it: %d %v", rec.Code, out)
+	}
+	rec, out := f.doH(t, "GET", orgsPath+"/"+org, "", bearer(f.bob))
+	if rec.Code != 200 || len(out["roles"].([]any)) != 1 || out["roles"].([]any)[0] != "member" {
+		t.Errorf("a session without it keeps plain membership: %d %v", rec.Code, out["roles"])
+	}
+	if rec, out := f.doH(t, "GET", orgsPath+"/"+org+"/members", "", bearer(f.bob)); rec.Code != 200 {
+		t.Errorf("members without it: %d %v", rec.Code, out)
+	}
+
+	// An action that needs the role says so, with the role.
+	rec, out = f.doH(t, "PATCH", orgsPath+"/"+org, `{"name": "Renamed"}`, jsonHdr(f.ada))
+	if rec.Code != 403 || errCode(out) != "org_role_requires_mfa" || !strings.Contains(fmt.Sprint(out), "owner") {
+		t.Errorf("rename without it: %d %v", rec.Code, out)
+	}
+	if rec, out := f.doH(t, "PATCH", orgsPath+"/"+org, `{"name": "Renamed"}`, jsonHdr(adaMFA)); rec.Code != 200 {
+		t.Errorf("rename with it: %d %v", rec.Code, out)
+	}
+	// Someone who lacks the capability anyway is just forbidden.
+	if rec, out := f.doH(t, "PATCH", orgsPath+"/"+org, `{"name": "Mine"}`, jsonHdr(bobMFA)); rec.Code != 403 || errCode(out) != "forbidden" {
+		t.Errorf("a member renames: %d %v", rec.Code, out)
+	}
+
+	// A team role that requires it can't delegate without one.
+	teams := orgsPath + "/" + org + "/teams"
+	_, out = f.doH(t, "POST", teams, `{"name": "Sales"}`, jsonHdr(adaMFA))
+	sales := out["id"].(string)
+	if rec, out := f.doH(t, "POST", teams+"/"+sales+"/roles", fmt.Sprintf(`{"user": %q, "role": "manager"}`, f.bobID), jsonHdr(adaMFA)); rec.Code != 200 {
+		t.Fatalf("grant manager: %d %v", rec.Code, out)
+	}
+	body := fmt.Sprintf(`{"user": %q, "role": "delegate"}`, f.adaID)
+	rec, out = f.doH(t, "POST", teams+"/"+sales+"/roles", body, jsonHdr(f.bob))
+	if rec.Code != 403 || errCode(out) != "org_role_requires_mfa" || !strings.Contains(fmt.Sprint(out), "manager") {
+		t.Errorf("delegate without it: %d %v", rec.Code, out)
+	}
+	if rec, out := f.doH(t, "POST", teams+"/"+sales+"/roles", body, jsonHdr(bobMFA)); rec.Code != 200 {
+		t.Errorf("delegate with it: %d %v", rec.Code, out)
+	}
+
+	// Managers see who holds such roles and has no second factor yet.
+	_, out = f.doH(t, "GET", orgsPath+"/"+org+"/members", "", bearer(adaMFA))
+	seen := map[string]string{}
+	for _, it := range out["items"].([]any) {
+		m := it.(map[string]any)
+		seen[m["user"].(string)] = fmt.Sprint(m["mfa"], m["mfa_roles"])
+	}
+	if seen[f.bobID] != "false [editor manager]" {
+		t.Errorf("bob: %q (%v)", seen[f.bobID], seen)
 	}
 }

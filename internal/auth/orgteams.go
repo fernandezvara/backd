@@ -63,9 +63,9 @@ func (s *Users) teamManager(ctx context.Context, userID, orgID string) (Membersh
 	if err != nil {
 		return Membership{}, 0, err
 	}
-	cc := s.caps(m)
-	if !cc.Has(registry.CapTeams) {
-		return Membership{}, 0, ErrOrgForbidden
+	cc, err := s.requireCaps(m, registry.CapTeams)
+	if err != nil {
+		return Membership{}, 0, err
 	}
 	return m, cc, nil
 }

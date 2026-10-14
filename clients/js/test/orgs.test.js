@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createClient, OrgRequiresMFAError, NotOrgMemberError, LastOrgManagerError, IdTakenError } from '../src/index.js'
+import { createClient, OrgRequiresMFAError, OrgRoleRequiresMFAError, NotOrgMemberError, LastOrgManagerError, IdTakenError } from '../src/index.js'
 import { mockFetch, errorBody } from './helpers.js'
 
 /** @param {ReturnType<typeof mockFetch>} m @param {object} [extra] */
@@ -115,10 +115,12 @@ test('the new codes are typed errors', async () => {
     { status: 403, body: errorBody('not_org_member', 'not a member') },
     { status: 409, body: errorBody('last_org_manager', 'last') },
     { status: 409, body: errorBody('id_taken', 'taken') },
+    { status: 403, body: errorBody('org_role_requires_mfa', 'role needs a second factor') },
   ])
   const c = make(m)
   await assert.rejects(c.orgs.get('o1'), (e) => e instanceof OrgRequiresMFAError && e.status === 403)
   await assert.rejects(c.orgs.get('o2'), (e) => e instanceof NotOrgMemberError)
   await assert.rejects(c.orgs.leave('o1'), (e) => e instanceof LastOrgManagerError && e.code === 'last_org_manager')
   await assert.rejects(c.orgs.create({ name: 'x' }), (e) => e instanceof IdTakenError)
+  await assert.rejects(c.orgs.update('o1', { name: 'x' }), (e) => e instanceof OrgRoleRequiresMFAError && !(e instanceof OrgRequiresMFAError))
 })

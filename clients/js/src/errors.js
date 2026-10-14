@@ -106,6 +106,13 @@ export class InvalidIdError extends ValidationError {}
  */
 export class OrgRequiresMFAError extends ForbiddenError {}
 
+/**
+ * 403 `org_role_requires_mfa`: the action needs a role that requires a second factor and this
+ * session used none. `details` names the `role` (and the `team`, for a team role): start the
+ * enrollment, or sign in again with a second factor.
+ */
+export class OrgRoleRequiresMFAError extends ForbiddenError {}
+
 /** 403 `not_org_member`: not a member of the organization, or there is no such organization. */
 export class NotOrgMemberError extends ForbiddenError {}
 
@@ -180,6 +187,8 @@ function typedClass(code, fallback) {
       return IdTakenError
     case 'org_requires_mfa':
       return OrgRequiresMFAError
+    case 'org_role_requires_mfa':
+      return OrgRoleRequiresMFAError
     case 'not_org_member':
       return NotOrgMemberError
     case 'last_org_manager':

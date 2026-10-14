@@ -150,9 +150,9 @@ func (s *Users) CreateOrgInvitation(ctx context.Context, userID, orgID string, i
 	if err != nil {
 		return InvitationResult{}, err
 	}
-	cc := s.caps(caller)
-	if !cc.Has(registry.CapMembers) {
-		return InvitationResult{}, ErrOrgForbidden
+	cc, err := s.requireCaps(caller, registry.CapMembers)
+	if err != nil {
+		return InvitationResult{}, err
 	}
 	return s.createOrgInvitation(ctx, caller.Org, cc, userID, in)
 }
@@ -300,8 +300,8 @@ func (s *Users) OrgInvitations(ctx context.Context, userID, orgID string) ([]Org
 	if err != nil {
 		return nil, err
 	}
-	if !s.caps(caller).Has(registry.CapMembers) {
-		return nil, ErrOrgForbidden
+	if _, err := s.requireCaps(caller, registry.CapMembers); err != nil {
+		return nil, err
 	}
 	return s.Store.ListOrgInvitations(ctx, orgID)
 }
@@ -324,9 +324,9 @@ func (s *Users) managedInvitation(ctx context.Context, userID, orgID, id string)
 	if err != nil {
 		return OrgInvitation{}, Org{}, 0, err
 	}
-	cc := s.caps(caller)
-	if !cc.Has(registry.CapMembers) {
-		return OrgInvitation{}, Org{}, 0, ErrOrgForbidden
+	cc, err := s.requireCaps(caller, registry.CapMembers)
+	if err != nil {
+		return OrgInvitation{}, Org{}, 0, err
 	}
 	inv, err := s.Store.OrgInvitationByID(ctx, orgID, id)
 	if err != nil {

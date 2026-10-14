@@ -44,6 +44,7 @@
  * @property {Array<{ role: string, origin: string[] }>} effective_roles
  * @property {string[]} overlap      Roles held directly and also through a team or by default.
  * @property {boolean} [mfa]         Whether they have a second factor; only for managers.
+ * @property {string[]} [mfa_roles]  The roles they hold now that require one; only for managers.
  * @property {string} joined_at
  * @property {string} [invited_by]
  */

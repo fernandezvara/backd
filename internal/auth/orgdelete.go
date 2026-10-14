@@ -39,8 +39,8 @@ func (s *Users) DeleteOrg(ctx context.Context, userID, orgID, requestID string) 
 	if err != nil {
 		return Org{}, err
 	}
-	if !s.caps(m).Has(registry.CapOrg) {
-		return Org{}, ErrOrgForbidden
+	if _, err := s.requireCaps(m, registry.CapOrg); err != nil {
+		return Org{}, err
 	}
 	return s.deleteOrg(ctx, orgID, "member", requestID)
 }
