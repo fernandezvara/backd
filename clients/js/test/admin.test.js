@@ -444,3 +444,47 @@ test('admin.push reads the status and the sends, and a test send, and users.devi
   assert.equal(m.calls[6].method, 'DELETE')
   assert.equal(m.calls[6].url.pathname, '/v1/acme/_admin/users/u1/devices/d1')
 })
+
+test('organizations', async () => {
+  const org = { id: 'o1', name: 'Acme', slug: 'acme', status: 'active', require_mfa: false, claims: {}, created_at: '2026-09-26T12:00:00.000Z', members: 2 }
+  const m = mockFetch([
+    { body: { items: [org] } }, { body: org }, { status: 201, body: org }, { body: { org, collections: [], to_delete: 0, to_keep: 0 } },
+    { status: 204 }, { body: org }, { body: org }, { body: { user: 'u1' } }, { body: { items: [], has_more: false } },
+    { body: { user: 'u2' } }, { body: { user: 'u2' } }, { status: 204 }, { body: { items: [] } }, { body: { items: [] } },
+    { status: 201, body: { id: 'i1', token: 'bdo_t', link: null } }, { status: 204 }, { body: { id: 'd1' } }, { status: 202, body: { job: 'j1', matched: 3 } },
+  ])
+  const a = adminOf(m).orgs
+  assert.deepEqual(await a.list({ status: 'orphaned', q: 'ac' }), [org])
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/orgs')
+  assert.equal(m.calls[0].url.search, '?status=orphaned&q=ac')
+  assert.equal((await a.get('o1')).name, 'Acme')
+  await a.create({ name: 'Acme', owner: 'u1' })
+  assert.deepEqual(m.calls[2].body, { name: 'Acme', owner: 'u1' })
+  assert.equal((await a.owned('o1')).to_delete, 0)
+  await a.delete('o1')
+  assert.equal(m.calls[4].method, 'DELETE')
+  await a.reactivate('o1', { slug: 'acme-2' })
+  assert.deepEqual(m.calls[5].body, { slug: 'acme-2' })
+  await a.setClaims('o1', { plan: 'pro' })
+  assert.equal(m.calls[6].method, 'PUT')
+  assert.deepEqual(m.calls[6].body, { plan: 'pro' })
+  await a.assignOwner('o1', 'u1')
+  assert.deepEqual(m.calls[7].body, { user: 'u1' })
+  await a.members('o1', { limit: 10 })
+  assert.equal(m.calls[8].url.search, '?limit=10')
+  await a.addMember('o1', 'u2', ['editor'])
+  assert.deepEqual(m.calls[9].body, { user: 'u2', roles: ['editor'] })
+  await a.setMemberRoles('o1', 'u2', ['admin'])
+  assert.equal(m.calls[10].url.pathname, '/v1/acme/_admin/orgs/o1/members/u2')
+  await a.removeMember('o1', 'u2')
+  await a.teams('o1')
+  await a.invitations('o1')
+  assert.equal((await a.invite('o1', { binding: 'none', expiresIn: '2d', maxUses: 3 })).token, 'bdo_t')
+  assert.deepEqual(m.calls[14].body, { binding: 'none', expires_in: '2d', max_uses: 3 })
+  await a.revokeInvitation('o1', 'i1')
+  await a.transfer('main', 'docs', 'd1', 'o2', { ifMatch: '3' })
+  assert.equal(m.calls[16].url.pathname, '/v1/acme/_admin/data/main/docs/d1/_transfer')
+  assert.equal(m.calls[16].headers['If-Match'], '3')
+  assert.deepEqual(await a.assign('main', 'docs', 'o1', { dryRun: true, where: { status: 'old' } }), { job: 'j1', matched: 3 })
+  assert.equal(m.calls[17].url.search, '?dry_run=true')
+})

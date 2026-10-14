@@ -679,6 +679,12 @@ await backd.admin.users.changeEmail(user.id, 'new@example.com')   // at once; bo
 await backd.admin.invitations.list()
 await backd.admin.invitations.revoke(invitation.id)
 
+const orgs = await backd.admin.orgs.list({ status: 'orphaned', q: 'acme' })   // each with its number of members
+const report = await backd.admin.orgs.owned(orgs[0].id)         // what deleting it would do, per collection
+await backd.admin.orgs.assignOwner(orgs[0].id, user.id)          // an orphaned organization gets a manager
+await backd.admin.orgs.setClaims(orgs[0].id, { plan: 'pro' })    // read by rules with orgClaims()
+await backd.admin.orgs.transfer('main', 'projects', docId, otherOrgId)   // moves a document; also invite, members, teams, delete, reactivate, assign
+
 const access = await backd.admin.whoami()                         // level, areas it may read and change
 const posts = backd.admin.data('blog', 'posts')                  // the admin data route: list/get/create/replace/patch/delete/restore, past the rules
 const config = await backd.admin.config()                         // what this instance runs for the realm, read-only
