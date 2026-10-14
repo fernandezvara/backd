@@ -445,6 +445,16 @@ test('admin.push reads the status and the sends, and a test send, and users.devi
   assert.equal(m.calls[6].url.pathname, '/v1/acme/_admin/users/u1/devices/d1')
 })
 
+test('team roles as an administrator', async () => {
+  const m = mockFetch([{ body: { user: 'u1' } }, { body: { user: 'u1' } }, { body: { user: 'u1' } }])
+  const a = adminOf(m).orgs
+  await a.grantTeamRole('o1', 't1', { user: 'u1', role: 'delegate', from: '2030-01-01T00:00:00Z' })
+  await a.setTeamRoleWindow('o1', 't1', { user: 'u1', role: 'delegate' })
+  await a.revokeTeamRole('o1', 't1', { user: 'u1', role: 'delegate' })
+  assert.deepEqual(m.calls.map((c) => c.method), ['POST', 'PATCH', 'DELETE'])
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/orgs/o1/teams/t1/roles')
+})
+
 test('team members and holders of a team role', async () => {
   const m = mockFetch([{ body: { items: [{ user: 'u1', in_team: true, roles_in_team: [] }], has_more: false } }])
   const page = await adminOf(m).orgs.teamMembers('o1', 't1', { role: 'delegate' })

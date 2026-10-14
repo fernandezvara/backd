@@ -90,6 +90,11 @@ type Schema struct {
 	// InOrgs says the collection's documents can belong to an organization, so rules may name
 	// document._meta.org (and data._meta.org on create).
 	InOrgs bool
+	// TeamRoles are the team roles declared in realm.yaml, for hasTeamRole.
+	TeamRoles []string
+	// InTeams says the collection's documents can belong to a team, so rules may name
+	// document._meta.team (and data._meta.team on create).
+	InTeams bool
 }
 
 // Set is a collection's compiled rules. A nil rule denies the operation.

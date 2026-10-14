@@ -1,0 +1,5 @@
+Hello,
+
+The custom template of the "{{.Data.event}}" email that {{.Data.org_name}} wrote for {{.Realm}} couldn't be used when a message was sent, so the standard text was sent instead.
+
+Open the template, check it with a preview and save it again. This notice is sent at most once a day for each kind of email.

@@ -257,12 +257,14 @@ type Eraser interface {
 	ClearReference(ctx context.Context, field, value string, limit int, now time.Time) (int64, error)
 }
 
-// OrgPurger is what deleting an organization needs of a collection's storage: its documents,
-// soft-deleted ones included, are counted for the report and removed in batches (call
-// DeleteInOrg until it returns 0). It returns the files of the documents it deleted.
+// OrgPurger is what deleting an organization (or a team) needs of a collection's storage: its
+// documents, soft-deleted ones included, are counted for the report and removed in batches
+// (call DeleteInOrg or DeleteInTeam until it returns 0). It returns the files of the documents
+// it deleted.
 type OrgPurger interface {
 	CountInOrg(ctx context.Context, org string) (int64, error)
 	DeleteInOrg(ctx context.Context, org string, fileFields []string, limit int) (int64, []ErasedFile, error)
+	DeleteInTeam(ctx context.Context, team string, fileFields []string, limit int) (int64, []ErasedFile, error)
 }
 
 // OrgOwnerClearer is what erasing a user needs of a collection that has organizations: the

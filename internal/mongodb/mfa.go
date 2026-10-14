@@ -25,6 +25,7 @@ type challengeDoc struct {
 	TokenHash     string            `bson:"token_hash,omitempty"`
 	CodeChallenge string            `bson:"code_challenge,omitempty"`
 	RedirectTo    string            `bson:"redirect_to,omitempty"`
+	Org           string            `bson:"org,omitempty"`
 	Email         string            `bson:"email,omitempty"`
 	Purpose       string            `bson:"purpose,omitempty"`
 	Locale        string            `bson:"locale,omitempty"`

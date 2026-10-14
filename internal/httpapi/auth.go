@@ -30,6 +30,8 @@ type authAPI struct {
 	// (BACKD_URL), where they send the user back to.
 	oauth   *oauth.Service
 	baseURL string
+	// fns calls the template data hooks of the hosted pages; set once the function routes exist.
+	fns *functions
 }
 
 type usersKey struct{}
@@ -130,7 +132,8 @@ func (a *authAPI) sessionMiddleware(next http.Handler, ignoreConsents bool) http
 		if !ok {
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, p)))
+		ctx := auth.WithSessionMFA(context.WithValue(r.Context(), principalKey{}, p), p.Session.MFA)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -195,7 +198,7 @@ func (a *authAPI) signup(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"email": "string", "password": "string", "invitation": "string?", "locale": "string?", "redirect_to": "string?", "cookie": "bool?"})
+	f, ok := fields(w, r, obj, map[string]string{"email": "string", "password": "string", "invitation": "string?", "locale": "string?", "redirect_to": "string?", "org": "string?", "cookie": "bool?"})
 	if !ok {
 		return
 	}
@@ -215,6 +218,7 @@ func (a *authAPI) signup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid sign-up request", Detail{Path: "email", Reason: "must be a valid email address"})
 		return
 	}
+	r = withOrgContext(r, f, email)
 	// The language asked for in the request comes first, then the browser's.
 	res, err := usersOf(r).SignUp(r.Context(), auth.SignupRequest{
 		Email: email, Password: password, Invitation: invitation, RedirectTo: redirectTo, ClientIP: clientIP(r), RequestID: requestID(r.Context()),
@@ -238,7 +242,7 @@ func (a *authAPI) login(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"email": "string", "password": "string", "cookie": "bool?"})
+	f, ok := fields(w, r, obj, map[string]string{"email": "string", "password": "string", "org": "string?", "cookie": "bool?"})
 	if !ok {
 		return
 	}
@@ -247,6 +251,7 @@ func (a *authAPI) login(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	r = withOrgContext(r, f, f["email"].(string))
 	out, err := usersOf(r).SignIn(r.Context(), f["email"].(string), f["password"].(string), clientIP(r))
 	if err != nil {
 		authError(w, r, err)

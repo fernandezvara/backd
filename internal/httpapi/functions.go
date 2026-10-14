@@ -866,7 +866,7 @@ func userEnvelope(c auth.Caller, orgs map[string]any) json.RawMessage {
 }
 
 // userOrgsEnvelope is ctx.user.orgs: the caller's memberships by organization id, with the
-// effective roles, the teams, the claims, and whether each counts for this session (an
+// effective roles, the teams, the team roles that count now (with their windows), the claims, and whether each counts for this session (an
 // organization that requires a second factor doesn't count for a session without one). Nil
 // when the realm has no organizations or there is no user.
 func (f *functions) userOrgsEnvelope(ctx context.Context, realm string, c auth.Caller) map[string]any {
@@ -875,7 +875,7 @@ func (f *functions) userOrgsEnvelope(ctx context.Context, realm string, c auth.C
 		return nil
 	}
 	mfa, _ := c.SignInMethods()
-	list, err := svc.MyOrgs(ctx, c.User.User.ID)
+	list, err := svc.MyOrgs(auth.WithSessionMFA(ctx, mfa), c.User.User.ID)
 	if err != nil {
 		logger(ctx).Error("memberships unreadable for ctx.user.orgs", "realm", realm, "error", err)
 		return map[string]any{}
@@ -886,8 +886,18 @@ func (f *functions) userOrgsEnvelope(ctx context.Context, realm string, c auth.C
 		if claims == nil {
 			claims = map[string]any{}
 		}
+		grants := make([]map[string]any, len(m.TeamGrants))
+		for i, g := range m.TeamGrants {
+			grants[i] = map[string]any{"team": g.Team, "role": g.Role}
+			if !g.From.IsZero() {
+				grants[i]["from"] = formatTime(g.From)
+			}
+			if !g.Until.IsZero() {
+				grants[i]["until"] = formatTime(g.Until)
+			}
+		}
 		out[m.Org.ID] = map[string]any{
-			"name": m.Org.Name, "roles": nonNil(m.RoleNames()), "teams": nonNil(m.Member.Teams),
+			"name": m.Org.Name, "roles": nonNil(m.RoleNames()), "teams": nonNil(m.Member.Teams), "team_roles": grants,
 			"claims": claims, "counts": m.Org.Counts(mfa), "require_mfa": m.Org.RequireMFA,
 		}
 	}

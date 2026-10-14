@@ -5,6 +5,8 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/fernandezvara/backd/internal/auth"
 )
 
 // Organizations for functions with admin access (design/organizations.md §14): ctx.admin.orgs.
@@ -33,6 +35,9 @@ func (f *functions) orgRoutes(r chi.Router) {
 			r.With(json).Patch("/teams/{team}", adm.updateOrgTeam)
 			r.Delete("/teams/{team}", adm.deleteOrgTeam)
 			r.Get("/teams/{team}/members", adm.orgTeamMembers)
+			r.With(json).Post("/teams/{team}/roles", teamRoleHandler(auth.TeamRoleGrantOp, true))
+			r.With(json).Patch("/teams/{team}/roles", teamRoleHandler(auth.TeamRoleWindowOp, true))
+			r.With(json).Delete("/teams/{team}/roles", teamRoleHandler(auth.TeamRoleRevokeOp, true))
 			r.Put("/teams/{team}/members/{user}", adm.setOrgTeamMember(true))
 			r.Delete("/teams/{team}/members/{user}", adm.setOrgTeamMember(false))
 			r.Get("/invitations", adm.listOrgInvitations)

@@ -94,6 +94,9 @@ func Load(root string) (*Registry, error) {
 	for _, realmName := range reg.RealmNames() {
 		errs = append(errs, loadEmail(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadOnSignup(reg.Realms[realmName], filepath.Join(root, realmName))...)
+		errs = append(errs, loadOrgHooks(reg.Realms[realmName], filepath.Join(root, realmName))...)
+		errs = append(errs, loadDataHooks(reg.Realms[realmName], filepath.Join(root, realmName))...)
+		errs = append(errs, loadCustomizable(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadPush(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadConsents(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, checkConfigGrants(reg.Realms[realmName], filepath.Join(root, realmName))...)
@@ -145,6 +148,26 @@ func loadPush(rl *Realm, realmPath string) []error {
 	return errs
 }
 
+// hookFunction finds the function a realm setting names (<database>/<function>) and checks
+// that nobody can call it over HTTP and that it has the mode the setting needs. why says,
+// for the message, what that mode is for.
+func hookFunction(rl *Realm, file, setting, ref, mode, why string) (*Function, error) {
+	dbName, fnName, _ := strings.Cut(ref, "/")
+	var fn *Function
+	if db := rl.Databases[dbName]; db != nil && db.Functions != nil {
+		fn = db.Functions.Functions[fnName]
+	}
+	switch {
+	case fn == nil:
+		return nil, fmt.Errorf("%s: %s: %q is not a function of this realm (it is _functions/%s in the database %q)", file, setting, ref, fnName, dbName)
+	case !fn.Internal:
+		return nil, fmt.Errorf("%s: %s: %s must have `internal: true` in its function.yaml (nobody should call it over HTTP)", file, setting, ref)
+	case fn.Mode != mode:
+		return nil, fmt.Errorf("%s: %s: %s must have `mode: %s` in its function.yaml (%s)", file, setting, ref, mode, why)
+	}
+	return fn, nil
+}
+
 // loadOnSignup checks that account.on_signup names a function that can run in the background
 // without anyone calling it: internal and async.
 func loadOnSignup(rl *Realm, realmPath string) []error {
@@ -152,22 +175,76 @@ func loadOnSignup(rl *Realm, realmPath string) []error {
 	if a.OnSignup == "" {
 		return nil
 	}
-	file := filepath.Join(realmPath, RealmFile)
-	dbName, fnName := a.OnSignupDatabaseAndName()
-	var fn *Function
-	if db := rl.Databases[dbName]; db != nil && db.Functions != nil {
-		fn = db.Functions.Functions[fnName]
-	}
-	switch {
-	case fn == nil:
-		return []error{fmt.Errorf("%s: account.on_signup: %q is not a function of this realm (it is _functions/%s in the database %q)", file, a.OnSignup, fnName, dbName)}
-	case !fn.Internal:
-		return []error{fmt.Errorf("%s: account.on_signup: %s must have `internal: true` in its function.yaml (nobody should call it over HTTP)", file, a.OnSignup)}
-	case fn.Mode != ModeAsync:
-		return []error{fmt.Errorf("%s: account.on_signup: %s must have `mode: async` in its function.yaml (nothing waits for it while someone signs up)", file, a.OnSignup)}
+	fn, err := hookFunction(rl, filepath.Join(realmPath, RealmFile), "account.on_signup", a.OnSignup, ModeAsync, "nothing waits for it while someone signs up")
+	if err != nil {
+		return []error{err}
 	}
 	a.OnSignupTimeout = fn.Timeout
 	return nil
+}
+
+// loadOrgHooks checks that each of organizations.hooks names an internal, async function.
+func loadOrgHooks(rl *Realm, realmPath string) []error {
+	o := rl.Settings.Organizations
+	if o == nil {
+		return nil
+	}
+	var errs []error
+	file := filepath.Join(realmPath, RealmFile)
+	for _, h := range o.Hooks.All() {
+		if h.Hook.Function == "" {
+			continue
+		}
+		fn, err := hookFunction(rl, file, "organizations.hooks."+h.Key, h.Hook.Function, ModeAsync, "nothing waits for it while membership changes")
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		h.Hook.Timeout = fn.Timeout
+	}
+	return errs
+}
+
+// loadDataHooks checks that email.data_hook and pages.data_hook name internal, sync functions:
+// backd waits for their answer before it renders a message or a page.
+func loadDataHooks(rl *Realm, realmPath string) []error {
+	file := filepath.Join(realmPath, RealmFile)
+	var errs []error
+	check := func(setting, ref string) {
+		if ref == "" {
+			return
+		}
+		if _, err := hookFunction(rl, file, setting, ref, ModeSync, "backd waits for its answer to fill in the template data"); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if e := rl.Settings.Email; e != nil {
+		check("email.data_hook", e.DataHook)
+	}
+	check("pages.data_hook", rl.Settings.PagesDataHook)
+	return errs
+}
+
+// loadCustomizable checks that every kind of email.customizable has a template (the realm's own
+// text is what a company's version replaces), and that the realm has organizations, which own the
+// overrides.
+func loadCustomizable(rl *Realm, realmPath string) []error {
+	e := rl.Settings.Email
+	if e == nil || len(e.Customizable) == 0 {
+		return nil
+	}
+	file := filepath.Join(realmPath, RealmFile)
+	if rl.Settings.Organizations == nil {
+		return []error{fmt.Errorf("%s: email.customizable: needs the realm to enable organizations (an `organizations:` section): companies own the overrides", file)}
+	}
+	def, _ := rl.Settings.Languages()
+	var errs []error
+	for _, kind := range e.Customizable {
+		if !email.ValidKind(kind) || rl.Email == nil || !rl.Email.Has(kind, def) {
+			errs = append(errs, fmt.Errorf("%s: email.customizable: %q is not a kind of this realm's email folder (email/%s/ has the templates a company's version replaces)", file, kind, kind))
+		}
+	}
+	return errs
 }
 
 // loadEmail checks a realm's email settings against its functions and loads
@@ -390,6 +467,9 @@ func loadRules(c *Collection, settings RealmSettings, dir string) error {
 			if p == MetaOrg {
 				return c.InOrganizations()
 			}
+			if p == MetaTeam {
+				return c.InTeams()
+			}
 			_, ok := c.Fields[p]
 			return ok
 		},
@@ -401,6 +481,8 @@ func loadRules(c *Collection, settings RealmSettings, dir string) error {
 		ConfigLeaf:  c.configLeaf,
 		OrgRoles:    orgRoles(settings),
 		InOrgs:      c.InOrganizations(),
+		TeamRoles:   teamRoles(settings),
+		InTeams:     c.InTeams(),
 	})
 	if len(errs) > 0 {
 		for i, e := range errs {

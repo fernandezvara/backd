@@ -103,6 +103,7 @@ on_team_delete:
   - they can't grant `manager`, and can't act in other teams;
   - `POST`, `PATCH` and `DELETE /v1/{realm}/_orgs/{org}/teams/{team}/roles` take the role, the member, `from` and `until`;
   - each grant and change is audited.
+- **Delegation is bounded** (security review, 24.9): what a delegate gives can't end later than their own authority, and they can't change the window of their own grant; only `manage: teams` is unbounded.
 - **Expired grants** stay visible in the membership history for 90 days, then are cleaned up.
 
 ## 6. Queries, aggregations and realtime (issue 24.4)
@@ -170,6 +171,7 @@ backd's own emails (organization invitations, verification, password reset, magi
   - **What they return:** the result is available to templates as `{{.App}}`, and as `{{App}}` in organization templates (§11).
   - **Bounds:** a time limit of 2 s and a result of at most 16 KiB. On failure or timeout, rendering continues **without** `App` (realm defaults), so emails are never delayed or dropped by a hook, and failures are logged.
   - **Startup checks:** hooks are internal sync functions.
+  - **Pages only with a company context:** a hosted page calls its hook only when it has an organization (its token or request carried one), so a public page that anyone can open, such as the one of a wrong token, never makes the app's function run (security review, 24.9).
 - **Hosted pages** use `App` for branding, and their redirects keep the company's path when `redirect_to` came from a company page.
 - **Data sent by functions:** emails sent by functions keep using `ctx.email.send({ data })`. An optional `org` there selects organization templates (§11) and is passed to the hook too.
 
@@ -197,7 +199,7 @@ email:
   - size cap (64 KiB per template);
   - only kinds listed in `customizable`.
 - **Rendering:** for emails with an organization context (§10, invitations, or `ctx.email.send` with `org`), backd uses the organization's override for that locale, else the realm's file. If an override fails at send time, the file is used and the organization's admins are notified through an `email-template-failed` notice, at most once per day per kind.
-- **Preview:** `POST …/templates/{kind}/{locale}/preview` with a draft (or nothing, for the saved version), and `sample` or `real` data (real calls the data hook for the caller's organization). It returns subject, text and HTML without sending. Clients show it in a sandboxed frame.
+- **Preview:** `POST …/templates/{kind}/{locale}/preview` with a draft (or nothing, for the saved version), and `sample` or `real` data (real calls the data hook for the caller's organization, at most 30 an hour per organization). It returns subject, text and HTML without sending. Clients show it in a sandboxed frame.
 - **Test send:** `POST …/templates/{kind}/{locale}/test` with a draft or the saved version. It sends to the **requesting user's own address only**, with "[TEST]" in the subject, through the realm's delivery function, at most 10 per hour per organization, and audited.
 
 ## 12. Documentation (issue 24.8)

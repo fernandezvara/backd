@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/email"
 )
 
 func TestAuthStoreOrganizations(t *testing.T) {
@@ -435,6 +436,19 @@ func TestAuthStoreTeamRoles(t *testing.T) {
 	if len(m.TeamRoles) != 1 || m.TeamRoles[0].Team != "sales" || m.TeamRoles[0].GrantedBy != "u9" || !m.TeamRoles[0].Until.Equal(now.Add(time.Hour)) {
 		t.Errorf("stored grant: %+v", m.TeamRoles)
 	}
+	// Ended grants are purged once they are older than the cut.
+	if n, err := s.PurgeExpiredTeamRoles(ctx, now.Add(-3*time.Hour)); err != nil || n != 0 {
+		t.Errorf("too early: %d %v", n, err)
+	}
+	if n, err := s.PurgeExpiredTeamRoles(ctx, now); err != nil || n != 1 {
+		t.Errorf("purge: %d %v", n, err)
+	}
+	if m, _ := s.OrgMember(ctx, "o1", "u4"); len(m.TeamRoles) != 0 {
+		t.Errorf("u4 after the purge: %+v", m.TeamRoles)
+	}
+	if m, _ := s.OrgMember(ctx, "o1", "u6"); len(m.TeamRoles) != 1 {
+		t.Errorf("u6 after the purge: %+v", m.TeamRoles)
+	}
 	// Deleting the team takes its grants and keeps the others.
 	if err := s.DeleteOrgTeam(ctx, "o1", "sales"); err != nil {
 		t.Fatal(err)
@@ -444,5 +458,72 @@ func TestAuthStoreTeamRoles(t *testing.T) {
 	}
 	if m, _ := s.OrgMember(ctx, "o1", "u5"); len(m.TeamRoles) != 1 {
 		t.Errorf("another team's grant: %+v", m.TeamRoles)
+	}
+}
+
+func TestAuthStoreOrgMemberSeq(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	next := func(org, user string) int64 {
+		t.Helper()
+		n, err := s.NextOrgMemberSeq(ctx, org, user)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	// It counts per organization and user, from one, and never goes back.
+	if a, b, c := next("o1", "u1"), next("o1", "u1"), next("o1", "u2"); a != 1 || b != 2 || c != 1 {
+		t.Errorf("seq: %d %d %d", a, b, c)
+	}
+	if n := next("o2", "u1"); n != 1 {
+		t.Errorf("another organization: %d", n)
+	}
+	if n := next("o1", "u1"); n != 3 {
+		t.Errorf("after the others: %d", n)
+	}
+}
+
+func TestAuthStoreOrgTemplates(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	put := func(org, kind, locale string, version int, subject string) {
+		t.Helper()
+		tpl := auth.OrgTemplate{Org: org, Kind: kind, Locale: locale, Override: email.Override{Subject: subject, Text: "t", HTML: "h"}, Version: version, UpdatedBy: "u1", UpdatedAt: now}
+		if version > 1 {
+			tpl.Versions = []auth.OrgTemplateVersion{{Version: version - 1, Override: email.Override{Subject: "old", Text: "t0", HTML: "h0"}, By: "u2", At: now.Add(-time.Hour)}}
+		}
+		if err := s.PutOrgTemplate(ctx, tpl); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put("o1", "reset-password", "en", 1, "one")
+	put("o1", "reset-password", "es", 2, "dos")
+	put("o2", "reset-password", "en", 1, "other")
+	got, err := s.OrgTemplate(ctx, "o1", "reset-password", "es")
+	if err != nil || got.Subject != "dos" || got.Version != 2 || len(got.Versions) != 1 || got.Versions[0].Subject != "old" || got.Versions[0].By != "u2" || got.UpdatedBy != "u1" {
+		t.Fatalf("get: %+v %v", got, err)
+	}
+	if _, err := s.OrgTemplate(ctx, "o1", "reset-password", "fr"); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("unknown: %v", err)
+	}
+	list, _ := s.ListOrgTemplates(ctx, "o1")
+	if len(list) != 2 || list[0].Locale != "en" || list[1].Locale != "es" {
+		t.Errorf("list: %+v", list)
+	}
+	// Saving again replaces it; deleting removes only that one.
+	put("o1", "reset-password", "en", 2, "uno")
+	if got, _ := s.OrgTemplate(ctx, "o1", "reset-password", "en"); got.Subject != "uno" || got.Version != 2 {
+		t.Errorf("replace: %+v", got)
+	}
+	if err := s.DeleteOrgTemplate(ctx, "o1", "reset-password", "en"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteOrgTemplate(ctx, "o1", "reset-password", "en"); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("delete again: %v", err)
+	}
+	if list, _ := s.ListOrgTemplates(ctx, "o2"); len(list) != 1 {
+		t.Errorf("another organization's: %+v", list)
 	}
 }

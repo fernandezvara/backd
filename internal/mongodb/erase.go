@@ -238,10 +238,21 @@ func (r *Repository) CountInOrg(ctx context.Context, org string) (int64, error) 
 // DeleteInOrg deletes up to limit documents of an organization, the files they held in
 // fileFields reported as for an erase.
 func (r *Repository) DeleteInOrg(ctx context.Context, org string, fileFields []string, limit int) (int64, []storage.ErasedFile, error) {
+	return r.deleteWhere(ctx, inOrg(org), fileFields, limit)
+}
+
+// DeleteInTeam is DeleteInOrg for the documents of a team.
+func (r *Repository) DeleteInTeam(ctx context.Context, team string, fileFields []string, limit int) (int64, []storage.ErasedFile, error) {
+	return r.deleteWhere(ctx, bson.D{{Key: "_meta.team", Value: team}}, fileFields, limit)
+}
+
+// deleteWhere deletes up to limit documents matching filter, one at a time so the files of
+// each are known.
+func (r *Repository) deleteWhere(ctx context.Context, filter bson.D, fileFields []string, limit int) (int64, []storage.ErasedFile, error) {
 	var n int64
 	var files []storage.ErasedFile
 	for range limit {
-		raw, err := r.coll.FindOneAndDelete(ctx, inOrg(org), options.FindOneAndDelete().SetProjection(fileProjection(fileFields))).Raw()
+		raw, err := r.coll.FindOneAndDelete(ctx, filter, options.FindOneAndDelete().SetProjection(fileProjection(fileFields))).Raw()
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			break
 		}

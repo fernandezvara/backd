@@ -48,6 +48,7 @@ Realm administrators and functions are not bound by `max_created_per_user`.
 | `400 invalid_invitation` | unknown, expired, revoked or used token | ask for a new invitation |
 | `403 not_org_member` | not a member, or the organization doesn't exist (the same answer) | check the id; join first |
 | `403 org_requires_mfa` | the organization requires a second factor and the session has none | start the [enrollment](../../auth/mfa/) |
+| `403 org_role_requires_mfa` | the action needs a [role that requires a second factor](../team-roles/#roles-that-require-a-second-factor); `details` names it | start the enrollment, or sign in again with a second factor |
 | `403 invitation_not_for_you` | the invitation is bound to another user or address | sign in with the invited account |
 | `403 forbidden` | the caller's roles don't allow the change | ask a manager with the role |
 | `409 last_org_manager` | the change leaves nobody who can manage | give `manage: org` to someone else first |

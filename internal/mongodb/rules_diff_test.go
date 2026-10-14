@@ -116,7 +116,7 @@ func provisionOneWith(t *testing.T, schema, config string) (*registry.Collection
 	realm := testRealm(t, client)
 	realmYAML := "roles:\n  admin: {}\n  a: {}\n  editor: {}\n  staff: {}\n  curator: {}\n  ops: {}\n"
 	if strings.Contains(config, "organization:") {
-		realmYAML += "organizations:\n  roles:\n    owner: {manage: [org, members, roles, teams]}\n    admin: {}\n    editor: {}\n    viewer: {}\n    member: {}\n"
+		realmYAML += "organizations:\n  roles:\n    owner: {manage: [org, members, roles, teams]}\n    admin: {}\n    editor: {}\n    viewer: {}\n    member: {}\n    hr: {}\n  team_roles:\n    manager: {}\n    delegate: {}\n"
 	}
 	files := map[string]string{"app/items": schema}
 	if strings.Contains(config, "files:") {
@@ -148,12 +148,17 @@ func compileRules(t *testing.T, c *registry.Collection, content string) *rules.S
 	}
 	set, errs := rules.Parse(doc, rules.Schema{
 		DocumentField: c.IsKnownField,
-		DataField:     func(p string) bool { _, ok := c.Fields[p]; return ok },
-		ScalarField:   c.ScalarField,
-		ArrayField:    c.ArrayField,
-		Roles:         diffRoles,
-		OrgRoles:      []string{"owner", "admin", "editor", "viewer", "member"},
-		InOrgs:        c.InOrganizations(),
+		DataField: func(p string) bool {
+			_, ok := c.Fields[p]
+			return ok || (p == registry.MetaOrg && c.InOrganizations()) || (p == registry.MetaTeam && c.InTeams())
+		},
+		ScalarField: c.ScalarField,
+		ArrayField:  c.ArrayField,
+		Roles:       diffRoles,
+		OrgRoles:    []string{"owner", "admin", "editor", "viewer", "member", "hr"},
+		InOrgs:      c.InOrganizations(),
+		TeamRoles:   []string{"manager", "delegate"},
+		InTeams:     c.InTeams(),
 	})
 	if len(errs) > 0 {
 		t.Fatalf("%s: %v", content, errs)

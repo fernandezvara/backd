@@ -36,6 +36,10 @@ organizations:
     owner: { description: Runs the organization, manage: [org, members, roles, teams] }
     editor: { description: Edits }
   default_roles: [editor]
+  # Roles within a team, for the admin UI's team pages (manager needs a second factor).
+  team_roles:
+    manager: { description: Runs the team, grants: [delegate], require_mfa: true }
+    delegate: { description: Covers the manager }
 
 # Files (the data browser's file controls): the local stack's MinIO. The keys are
 # realm secrets, set by the e2e global setup (backd secret set, in a real stack).

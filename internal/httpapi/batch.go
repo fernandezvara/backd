@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -31,6 +32,7 @@ type batchOp struct {
 	collection *registry.Collection
 	id         string
 	org        string         // create: the organization (?org= of the request)
+	team       string         // create: the team (?team= of the request)
 	fields     map[string]any // create, replace: the new document's fields
 	patch      map[string]any // patch: the raw merge patch
 	cond       ifMatch
@@ -219,7 +221,7 @@ func (d *documents) parseBatchOp(w http.ResponseWriter, r *http.Request, realm, 
 		}
 		op.id = id
 		// The organization comes from the request, as for a POST.
-		if op.org, ok = d.createOrg(w, r, c); !ok {
+		if op.org, op.team, ok = d.createScope(w, r, c); !ok {
 			return batchOp{}, false
 		}
 	} else {
@@ -306,8 +308,8 @@ func (d *documents) applyBatchOp(ctx context.Context, r *http.Request, a access,
 		if op.id != "" {
 			op.fields["id"] = op.id // the create rule sees data.id
 		}
-		if op.org != "" {
-			op.fields["_meta"] = map[string]any{"org": op.org} // ...and data._meta.org
+		if scope := scopeMeta(op.org, op.team); len(scope) > 0 {
+			op.fields["_meta"] = scope // ...and data._meta.org and data._meta.team
 		}
 		if err := checkWrite(a, op.collection, rules.Create, nil, op.fields); err != nil {
 			return nil, err
@@ -320,9 +322,7 @@ func (d *documents) applyBatchOp(ctx context.Context, r *http.Request, a access,
 		}
 		meta := map[string]any{"created_at": now, "updated_at": now, "version": int64(1)}
 		stampCreate(r, meta)
-		if op.org != "" {
-			meta["org"] = op.org
-		}
+		maps.Copy(meta, scopeMeta(op.org, op.team))
 		doc["_meta"] = meta
 		if err := repo.Create(ctx, doc); err != nil {
 			return nil, err

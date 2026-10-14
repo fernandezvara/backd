@@ -1,0 +1,1 @@
+A custom {{.Data.event}} email of {{.Data.org_name}} couldn't be used

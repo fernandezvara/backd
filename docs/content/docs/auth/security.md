@@ -88,6 +88,29 @@ Left as it is, on purpose:
 - **Slugs are not secret.** `409 slug_taken` tells a signed-in user that a slug is in use.
 - **Accepting at the moment of removal.** A member removed while accepting a second invitation of the same organization at the same instant can end up a member again; a manager sees it in the members list.
 
+### Team access
+
+[Team roles, team-scoped documents, hooks and company templates](../../organizations/team-roles/) build on organizations. What was reviewed and fixed, and what is left:
+
+- **Team helpers are database filters.** `inTeam` and `hasTeamRole` are pushed into the query like the organization ones, over the memberships of the request: windows are applied when they are read, roles that need a second factor the session lacks aren't in them, and a differential test checks the filter against the in-memory rule for members, holders inside and outside the team, closed windows and people with no team.
+- **`_meta.team` is server-owned.** A create names the team after a check that the caller belongs to it or holds a role in it; a team the caller isn't part of, an unknown one and one of another organization answer `403 not_team_member` alike; `PUT` and `PATCH` can't change it; administrators move documents with the transfer.
+- **Delegation is bounded.** Someone who holds a team role that lists `grants` can give, re-window and revoke exactly those roles, in that team only. **Review fixes:** what a delegate gives can't end later than their own authority (a grant with no end or one beyond theirs is `400`), and a delegate can't change the window of their own grant, so a limited cover can't be turned into a lasting one. Only `manage: teams` is unbounded.
+- **Windows need nothing to run.** Grants outside their window are left out when memberships are read, so access starts and ends on the second; expired grants stay visible for 90 days and are then removed by a sweep.
+- **Roles that need a second factor don't count without one,** for the helpers, the pushdown and the endpoints, and the error names the role. API keys on behalf of a user have no second factor, so those roles don't count for them.
+- **Hooks carry ids and role names, never content or tokens.** Their `seq` lets handlers drop stale events. Failures are retried by the job mechanism and never undo the change.
+- **Company context can't be used to probe.** `org` on sign-in, sign-up, magic links and reset requests is used only when the address belongs to a member (or is invited by email); otherwise it is ignored with the same answer and the same work (the lookups run either way).
+- **Data hooks are bounded and never in the way.** Two seconds, 16 KiB, an object; a failure renders without `App`. **Review fix:** a hosted page calls its hook only when it has a company context, so a page anyone can open (a wrong token) can't make the app's function run.
+- **Company templates can't run anything.** The syntax is logic-less with escaped values, sizes are capped, the HTML is sanitized from what a parser understood when a message is made (so a template saved before a rule changed is still safe), and previews and test sends are limited: a test goes to the requester only, 10 an hour per organization, and **previews with real data** (which call the hook) 30 an hour (a review fix).
+- **Audited:** team role grants, window changes and revocations, template saves, deletions and test sends, by ids only, never the text.
+
+Left as it is, on purpose:
+
+- **Owners write what you send from your domain.** A company can put its own words in an invitation to any address. Limits (per recipient, per client address, pending invitations) bound it, but keep `email.customizable` to kinds that need it and `overrides.permission` to people you trust.
+- **Images may be remote.** The sanitizer keeps `https` images, so a template can include a tracking pixel.
+- **Any member lists who holds a role in a team,** with ids (and emails per `members_visible_to`): it is what a team page needs.
+- **Erased users stay in old events.** A hook job keeps its input (ids, role names) until job retention ends.
+- **Realtime isn't covered yet:** window boundaries and role changes reaching open streams belong to the realtime milestone.
+
 ## What you are responsible for
 
 - **TLS.** `backd` serves plain HTTP; terminate TLS in front of it.
@@ -97,6 +120,7 @@ Left as it is, on purpose:
 - **Rules:** review the `rules:` of each `collection.yaml`. A missing rule denies, but a too-broad one (`read: "true"`) publishes a collection. Unique indexes can reveal that a value exists: creating a document with a value that a hidden document already has answers `409`.
 - **Files:** a private bucket with a key scoped to the realm's prefix, a prefix per backd instance, short link lifetimes on sensitive fields, `BACKD_URL`, and small limits where anonymous callers may upload: see [Security of files](../../files/security/#what-you-are-responsible-for).
 - **Organizations:** write `inOrg` or `hasOrgRole` in every rule of a collection that belongs to organizations (`read: user != nil` publishes it to all of them), keep `create` for organizations to people you trust, and give management roles to few people. See the [cookbook](../../organizations/rules-cookbook/).
+- **Team access:** keep `grants` short (who may hand out which role), put `require_mfa` on roles that can decide for others, guard hook handlers against stale events with `seq`, make data hooks cheap, and keep company templates to the kinds that need them. See the [recipes](../../organizations/team-access-recipes/).
 - **Second factors and magic links:** require a second factor of every role that can administer the realm (`mfa.required_roles`; `backd` warns at startup when an admin role isn't covered), keep `BACKD_SECRETS_KEY` safe and backed up (without it the enrolled authenticators can't be checked), and remember that with magic links the mailbox is a way in: protect it like the password. Tell users never to read a code out to anyone.
 - **`auth: disabled` realms** must never be reachable from the internet.
 - **Browser apps** must protect their users' tokens against cross-site scripting, or keep the session in an HttpOnly [cookie](../sessions/#session-cookies) that scripts can't read (the origin check, `SameSite` and the JSON-only bodies protect it from CSRF).

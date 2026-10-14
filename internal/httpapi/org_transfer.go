@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 
 	"github.com/go-chi/chi/v5"
 
@@ -41,22 +42,48 @@ func (d *documents) targetOrg(w http.ResponseWriter, r *http.Request, c *registr
 	return true
 }
 
-// orgBody reads `org` (a string, or null) and `team` (only null: collections have no teams
-// yet) of a request.
+// targetTeam checks a team an administrator names: the organization the document ends up in
+// must have it.
+func (d *documents) targetTeam(w http.ResponseWriter, r *http.Request, c *registry.Collection, org, team string) bool {
+	svc := d.users(c.Realm)
+	if svc == nil {
+		notFound(w, r)
+		return false
+	}
+	if !svc.OrgTeamExists(r.Context(), org, team) {
+		writeError(w, r, http.StatusNotFound, codeNotFound, "no such team", Detail{Path: "team", Reason: "the organization has no team with this id"})
+		return false
+	}
+	return true
+}
+
+// teamBody reads `team` of a transfer: whether it is there, and its id ("" for null).
+func teamBody(w http.ResponseWriter, r *http.Request, c *registry.Collection, obj map[string]any) (team string, set, ok bool) {
+	v, has := obj["team"]
+	if !has {
+		return "", false, true
+	}
+	s, isStr := v.(string)
+	switch {
+	case v == nil:
+		return "", true, true
+	case !isStr || s == "":
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "team", Reason: "must be a team id or null"})
+	case !c.InTeams():
+		writeError(w, r, http.StatusBadRequest, codeTeamNotAllowed, "this collection has no teams", Detail{Path: "team", Reason: "documents of this collection don't belong to teams"})
+	default:
+		return s, true, true
+	}
+	return "", false, false
+}
+
+// orgBody reads `org` (a string, or null) of a request, rejecting what isn't allowed.
 func orgBody(w http.ResponseWriter, r *http.Request, obj map[string]any, allowed ...string) (org string, isNull, ok bool) {
 	for k := range obj {
-		known := false
-		for _, a := range allowed {
-			known = known || a == k
-		}
-		if !known {
+		if !slices.Contains(allowed, k) {
 			writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: k, Reason: "is not allowed"})
 			return "", false, false
 		}
-	}
-	if team, has := obj["team"]; has && team != nil {
-		writeError(w, r, http.StatusBadRequest, codeTeamNotAllowed, "this collection has no teams", Detail{Path: "team", Reason: "documents of this collection don't belong to teams"})
-		return "", false, false
 	}
 	v, has := obj["org"]
 	switch t := v.(type) {
@@ -94,11 +121,26 @@ func (d *documents) transfer(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	team, teamSet, ok := teamBody(w, r, c, obj)
+	if !ok {
+		return
+	}
+	if toNone && teamSet && team != "" {
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "team", Reason: "a document outside organizations has no team"})
+		return
+	}
+	if teamSet && team == "" && c.Team == registry.TeamRequired {
+		writeError(w, r, http.StatusBadRequest, codeTeamRequired, "documents of this collection belong to a team", Detail{Path: "team", Reason: "can't be null in a collection that requires one"})
+		return
+	}
 	if toNone && c.Organization == registry.OrgRequired {
 		writeError(w, r, http.StatusBadRequest, codeOrgRequired, "documents of this collection belong to an organization", Detail{Path: "org", Reason: "can't be null in a collection that requires one"})
 		return
 	}
 	if !toNone && !d.targetOrg(w, r, c, org) {
+		return
+	}
+	if team != "" && !d.targetTeam(w, r, c, org, team) {
 		return
 	}
 	cond, err := parseIfMatch(r.Header.Values("If-Match"))
@@ -120,6 +162,16 @@ func (d *documents) transfer(w http.ResponseWriter, r *http.Request) {
 	}
 	stored, _ := current["_meta"].(map[string]any)
 	from, _ := stored["org"].(string)
+	teamFrom, _ := stored["team"].(string)
+	// The team belongs to an organization: moving to another one (or out) leaves the team,
+	// which must then be named again when the collection needs one.
+	if c.InTeams() && !teamSet && teamFrom != "" && (toNone || org != from) {
+		if c.Team == registry.TeamRequired && !toNone {
+			writeError(w, r, http.StatusBadRequest, codeTeamRequired, "the team belongs to the organization the document is leaving: name the team it joins in the new one", Detail{Path: "team", Reason: "is required to move a document to another organization"})
+			return
+		}
+		teamSet = true
+	}
 	meta := map[string]any{}
 	for k, v := range stored {
 		meta[k] = v
@@ -130,6 +182,12 @@ func (d *documents) transfer(w http.ResponseWriter, r *http.Request) {
 		delete(meta, "org")
 	} else {
 		meta["org"] = org
+	}
+	if teamSet {
+		delete(meta, "team")
+		if team != "" {
+			meta["team"] = team
+		}
 	}
 	fields := map[string]any{}
 	for k, v := range current {
@@ -148,6 +206,7 @@ func (d *documents) transfer(w http.ResponseWriter, r *http.Request) {
 	if svc := d.users(c.Realm); svc != nil {
 		svc.Audit(r.Context(), auth.AuditDataTransfer, "doc:"+c.Database+"/"+c.Name+"/"+id, map[string]any{
 			"database": c.Database, "collection": c.Name, "id": id, "from": from, "to": org,
+			"team_from": teamFrom, "team_to": team,
 		})
 	}
 	w.Header().Set("ETag", etag(version(fields)))
@@ -169,7 +228,7 @@ func (d *documents) assignOrg(w http.ResponseWriter, r *http.Request) {
 	}
 	where, hasWhere := obj["where"]
 	delete(obj, "where")
-	org, toNone, ok := orgBody(w, r, obj, "org", "team")
+	org, toNone, ok := orgBody(w, r, obj, "org")
 	if !ok {
 		return
 	}

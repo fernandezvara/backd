@@ -5,7 +5,7 @@ export { Admin } from './admin.js'
 export { Push } from './push.js'
 export { Consents } from './consents.js'
 export { Config } from './config.js'
-export { Orgs, OrgMembers, OrgTeams, OrgInvitations } from './orgs.js'
+export { Orgs, OrgMembers, OrgTeams, OrgTemplates, OrgInvitations } from './orgs.js'
 export { Files, versionStatus } from './files.js'
 export { Sha256, sha256Blob } from './sha256.js'
 export { Job, JobTimeoutError } from './functions.js'
@@ -19,6 +19,9 @@ export {
   IdTakenError,
   InvalidIdError,
   OrgRequiresMFAError,
+  OrgRoleRequiresMFAError,
+  NotTeamMemberError,
+  TeamError,
   NotOrgMemberError,
   LastOrgManagerError,
   VersionMismatchError,
@@ -94,6 +97,9 @@ export { parseReturn as parseOAuthReturn } from './oauth.js'
  * @typedef {import('./orgs.js').OrgTeam} OrgTeam
  * @typedef {import('./orgs.js').OrgTeamMember} OrgTeamMember
  * @typedef {import('./orgs.js').OrgTeamRoleGrant} OrgTeamRoleGrant
+ * @typedef {import('./orgs.js').TeamRoleInput} TeamRoleInput
+ * @typedef {import('./orgs.js').OrgTemplate} OrgTemplate
+ * @typedef {import('./orgs.js').OrgTemplateText} OrgTemplateText
  * @typedef {import('./orgs.js').OrgInvitation} OrgInvitation
  * @typedef {import('./orgs.js').NewOrgInvitation} NewOrgInvitation
  * @typedef {import('./orgs.js').InviteInput} OrgInviteInput

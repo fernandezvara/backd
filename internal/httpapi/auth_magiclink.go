@@ -40,7 +40,7 @@ func (a *authAPI) requestMagicLink(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"email": "string", "redirect_to": "string?", "code_challenge": "string", "locale": "string?"})
+	f, ok := fields(w, r, obj, map[string]string{"email": "string", "redirect_to": "string?", "code_challenge": "string", "locale": "string?", "org": "string?"})
 	if !ok {
 		return
 	}
@@ -65,6 +65,7 @@ func (a *authAPI) requestMagicLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	locale, _ := f["locale"].(string)
+	r = withOrgContext(r, f, address)
 	id, err := svc.RequestMagicLink(r.Context(), auth.MagicLinkInput{
 		Email: address, RedirectTo: redirectTo, CodeChallenge: challenge,
 		Locales: append([]string{locale}, acceptLanguages(r.Header.Get("Accept-Language"))...), IP: clientIP(r), RequestID: requestID(r.Context()),
@@ -84,14 +85,21 @@ func (a *authAPI) magicLinkPageData(r *http.Request, kind, token string) email.P
 }
 
 // writeMagicLinkPage renders the page of kind in the best language of the realm.
-func (a *authAPI) writeMagicLinkPage(w http.ResponseWriter, r *http.Request, status int, page string, d email.PageData) {
+func (a *authAPI) writeMagicLinkPage(w http.ResponseWriter, r *http.Request, status int, page, org string, d email.PageData) {
 	rl := a.reg.Realms[chi.URLParam(r, "realm")]
 	locale := rl.Settings.BestLocale(acceptLanguages(r.Header.Get("Accept-Language"))...)
 	d.Locale = locale
 	var body string
 	var err error
 	if rl.Pages != nil && rl.Pages.Has(page, locale) {
+		if a.fns != nil {
+			a.fns.pageApp(r.Context(), rl.Name, page, &d, org, "")
+		}
 		body, err = rl.Pages.Render(page, locale, d)
+		if err != nil && d.App != nil {
+			d.App = nil // the page couldn't use what the data hook gave
+			body, err = rl.Pages.Render(page, locale, d)
+		}
 	} else {
 		d.Locale = "en"
 		body, err = email.RenderBuiltin(page, d)
@@ -125,7 +133,7 @@ func (a *authAPI) magicLinkPage(w http.ResponseWriter, r *http.Request) {
 		kind = "type-code"
 		token = ""
 	}
-	a.writeMagicLinkPage(w, r, http.StatusOK, email.PageMagicLink, a.magicLinkPageData(r, kind, token))
+	a.writeMagicLinkPage(w, r, http.StatusOK, email.PageMagicLink, c.Org, a.magicLinkPageData(r, kind, token))
 }
 
 // invalidLinkPage is the one page every link that doesn't work shows.
@@ -174,7 +182,11 @@ func (a *authAPI) useMagicLink(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, auth.ErrNoRedirect):
 		// Nowhere to send the browser: the link isn't used up; the code in the email is the way.
-		a.writeMagicLinkPage(w, r, http.StatusOK, email.PageMagicLink, a.magicLinkPageData(r, "type-code", ""))
+		org := ""
+		if c, cerr := svc.MagicLinkByToken(r.Context(), token); cerr == nil {
+			org = c.Org
+		}
+		a.writeMagicLinkPage(w, r, http.StatusOK, email.PageMagicLink, org, a.magicLinkPageData(r, "type-code", ""))
 		return
 	case errors.Is(err, auth.ErrInvalidMagicLink):
 		a.invalidLinkPage(w, r)

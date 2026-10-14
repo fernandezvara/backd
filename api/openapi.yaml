@@ -125,6 +125,7 @@ paths:
                 locale: { type: string, description: "The language to use for the user, such as `es` or `es-MX`; mapped silently to one the realm lists." }
                 redirect_to: { type: string, description: "Where the page after the verification link may send the user: an absolute URL within the realm's `email.allowed_redirects` (`400 invalid_redirect` otherwise)." }
                 cookie: { type: boolean, description: "Keep the session in an HttpOnly cookie, as for login." }
+                org: { type: string, description: "The company the person comes from, an organization id. It is used only when the address belongs to one of its members (or has an invitation by email to it): the emails of the flow, and the pages of their links, then carry its context (`email.data_hook`, `pages.data_hook`). Anything else is ignored, with the same answer and work." }
                 consents: { $ref: "#/components/schemas/ConsentsGiven" }
       responses:
         "201": { $ref: "#/components/responses/SessionCreated" }
@@ -176,6 +177,7 @@ paths:
               properties:
                 email: { type: string }
                 password: { type: string }
+                org: { type: string, description: "The company the person comes from, an organization id. It is used only when the address belongs to one of its members (or has an invitation by email to it): the emails of the flow, and the pages of their links, then carry its context (`email.data_hook`, `pages.data_hook`). Anything else is ignored, with the same answer and work." }
                 cookie:
                   type: boolean
                   description: >-
@@ -329,6 +331,7 @@ paths:
               properties:
                 email: { type: string }
                 redirect_to: { type: string, description: "Where the page after the reset may send the user: within the realm's `email.allowed_redirects`." }
+                org: { type: string, description: "The company the person comes from, an organization id. It is used only when the address belongs to one of its members (or has an invitation by email to it): the emails of the flow, and the pages of their links, then carry its context (`email.data_hook`, `pages.data_hook`). Anything else is ignored, with the same answer and work." }
       responses:
         "202":
           description: Accepted.
@@ -1562,8 +1565,10 @@ paths:
       summary: Give a member a team role
       description: |
         The member must belong to the organization, not to the team: a team role can be held
-        outside it. Granting what is already held changes nothing. At most 50 team role grants
-        per member (`409 team_limit_reached`). Any member of the organization may list; granting and revoking need `manage` of teams.
+        outside it. `from` and `until` set the window it counts in. Granting what is already held
+        changes nothing (use `PATCH` for the window). At most 50 team role grants per member
+        (`409 team_limit_reached`). Needs `manage` of teams, or a team role of that team whose
+        `grants` lists this role (only in that team).
       operationId: grantOrganizationTeamRole
       security: [{ session: [] }]
       requestBody:
@@ -1584,11 +1589,13 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
-    delete:
+    patch:
       tags: [organizations]
-      summary: Take a team role from a member
-      description: Access through the role ends at the member's next request. Any member of the organization may list; granting and revoking need `manage` of teams.
-      operationId: revokeOrganizationTeamRole
+      summary: Change the window of a team role grant
+      description: |
+        Replaces `from` and `until` of a grant the member holds (absent means open); `404` when
+        the member doesn't hold the role in the team. Needs `manage` of teams, or a team role of that team that grants this role.
+      operationId: changeOrganizationTeamRoleWindow
       security: [{ session: [] }]
       requestBody:
         required: true
@@ -1606,6 +1613,191 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [organizations]
+      summary: Take a team role from a member
+      description: Access through the role ends at the member's next request. Needs `manage` of teams, or a team role of that team whose `grants` lists this role.
+      operationId: revokeOrganizationTeamRole
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationTeamRoleRef" }
+      responses:
+        "200":
+          description: The member as seen from the team.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationTeamMember" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/{org}/templates:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+    get:
+      tags: [organizations]
+      summary: An organization's email templates
+      description: |
+        The kinds of email the realm lets companies customize (`email.customizable`), with the
+        placeholders each must print, and the overrides the organization has with their versions
+        (without the text). Needs the capability `email.overrides.permission` names (`manage: org`
+        by default).
+      operationId: listOrganizationTemplates
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The customizable kinds and the organization's overrides.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationTemplates" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/{org}/templates/{kind}/{locale}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { name: kind, in: path, required: true, schema: { type: string } }
+      - { name: locale, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [organizations]
+      summary: One template with its versions
+      operationId: getOrganizationTemplate
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The template and its previous versions (up to 20), newest first.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationTemplate" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      tags: [organizations]
+      summary: Write the organization's version of a kind in a language
+      description: |
+        Subject, text and HTML in a logic-less syntax: `{{Link}}`, `{{App.name}}`, `{{#App.logo}}…{{/App.logo}}`,
+        `{{^App.logo}}…{{/App.logo}}`; every value is escaped; there are no includes, partials or helpers.
+        The kind must be in `email.customizable`. It is checked: each part at most 64 KiB, the syntax
+        (`400 invalid_template`, with the line and column in `details`), the placeholders the kind
+        needs (the link of a token kind, an invitation's link and organization name) and a render
+        with sample data. The HTML passes an allowlist sanitizer when a message is made, and
+        `removed` lists what it drops from the sample. The previous version is kept (the last 20).
+        Audited, never with the text.
+      operationId: putOrganizationTemplate
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationTemplateInput" }
+      responses:
+        "200":
+          description: The saved template.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationTemplate" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [organizations]
+      summary: Go back to the realm's own template
+      operationId: deleteOrganizationTemplate
+      security: [{ session: [] }]
+      responses:
+        "204": { description: "Removed; the kind uses the realm's file again." }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/{org}/templates/{kind}/{locale}/preview:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { name: kind, in: path, required: true, schema: { type: string } }
+      - { name: locale, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [organizations]
+      summary: Preview a template
+      description: |
+        Renders a draft (all three parts), or the saved version when none is given, without
+        sending anything. `data` is `sample` (default) or `real`, which calls the realm's
+        `email.data_hook` for the caller and the organization. Show `html` in a sandboxed frame.
+      operationId: previewOrganizationTemplate
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationTemplatePreviewInput" }
+      responses:
+        "200":
+          description: The rendered message.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationTemplatePreview" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/{org}/templates/{kind}/{locale}/test:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { name: kind, in: path, required: true, schema: { type: string } }
+      - { name: locale, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [organizations]
+      summary: Send a test of a template to yourself
+      description: |
+        Sends a draft (or the saved version) to the **requesting user's own address only**, with
+        "[TEST]" in the subject, through the realm's delivery function. At most 10 per hour per
+        organization (`429 template_test_limit`). Audited.
+      operationId: testOrganizationTemplate
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationTemplateDraft" }
+      responses:
+        "202":
+          description: Queued.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status: { type: string, enum: [queued] }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_orgs/{org}/teams/{team}/members/{user}:
@@ -2395,6 +2587,7 @@ paths:
                 code_challenge: { type: string, minLength: 43, maxLength: 43, description: "The S256 PKCE challenge of a verifier only the app holds." }
                 redirect_to: { type: string }
                 locale: { type: string }
+                org: { type: string, description: "The company the person comes from, an organization id. It is used only when the address belongs to one of its members (or has an invitation by email to it): the emails of the flow, and the pages of their links, then carry its context (`email.data_hook`, `pages.data_hook`). Anything else is ignored, with the same answer and work." }
                 consents: { $ref: "#/components/schemas/ConsentsGiven" }
           application/x-www-form-urlencoded:
             schema:
@@ -3670,17 +3863,42 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
-    delete:
+    patch:
       tags: [admin]
-      summary: Take a team role from a member
-      description: Access through the role ends at the member's next request. Needs the `users` area (write access to grant and revoke).
-      operationId: adminRevokeOrganizationTeamRole
+      summary: Change the window of a team role grant
+      description: |
+        Replaces `from` and `until` of a grant the member holds (absent means open); `404` when
+        the member doesn't hold the role in the team. Needs the `users` area with write access.
+      operationId: adminChangeOrganizationTeamRoleWindow
       security: [{ apiKey: [] }, { session: [] }]
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/OrganizationTeamRoleInput" }
+      responses:
+        "200":
+          description: The member as seen from the team.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationTeamMember" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      summary: Take a team role from a member
+      description: Access through the role ends at the member's next request. Needs the `users` area with write access.
+      operationId: adminRevokeOrganizationTeamRole
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationTeamRoleRef" }
       responses:
         "200":
           description: The member as seen from the team.
@@ -5761,6 +5979,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/idempotencyKeyDocuments"
         - $ref: "#/components/parameters/orgQuery"
+        - $ref: "#/components/parameters/teamQuery"
       requestBody:
         required: true
         content:
@@ -5799,6 +6018,7 @@ paths:
       security: [{}, { session: [] }, { apiKey: [] }]
       parameters:
         - { $ref: "#/components/parameters/orgQuery" }
+        - { $ref: "#/components/parameters/teamQuery" }
         - { $ref: "#/components/parameters/fileLinks" }
         - { $ref: "#/components/parameters/ifNoneMatch" }
         - name: where
@@ -5866,6 +6086,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/idempotencyKeyDocuments"
         - $ref: "#/components/parameters/orgQuery"
+        - $ref: "#/components/parameters/teamQuery"
       requestBody:
         required: true
         content:
@@ -6708,8 +6929,12 @@ paths:
         this is a realm administrator's act. The target must exist and not be deleted
         (`409 org_not_active`); the version goes up, `If-Match` is honored (`412`) and the audit
         record `data.transfer` names both organizations, never content. Files and image versions
-        travel with the document unchanged. `team` can only be null: collections have no teams
-        (`400 team_not_allowed`). Needs the `data` area with write access.
+        travel with the document unchanged. In a collection with `team`, `team` names a team of
+        the organization the document ends up in (`404` for an unknown one) or is null to take it
+        out of its team (`400 team_required` where one is required); moving to another
+        organization leaves the team, so a collection that requires one needs it named. A
+        collection without teams answers `400 team_not_allowed`. Needs the `data` area with write
+        access.
       operationId: adminTransferDocument
       security: [{ apiKey: [] }, { session: [] }]
       parameters: [{ $ref: "#/components/parameters/ifMatch" }]
@@ -6723,7 +6948,7 @@ paths:
               required: [org]
               properties:
                 org: { type: [string, "null"] }
-                team: { type: "null" }
+                team: { type: [string, "null"] }
       responses:
         "200": { $ref: "#/components/responses/Document" }
         "400": { $ref: "#/components/responses/Error" }
@@ -7408,6 +7633,20 @@ components:
         decides what is seen. A batch takes it for all its creates. Fixed at creation: an
         update that names another organization answers `400 immutable_field`.
       schema: { type: string }
+    teamQuery:
+      name: team
+      in: query
+      description: |
+        The team (its id) of a collection with `team` set, within `?org=`. On a create it is the
+        team the document belongs to: the caller must be a member of it or hold a team role in
+        it (`403 not_team_member`, the same for an unknown team or one of another
+        organization); `required` collections answer `400 team_required` without it, it needs
+        `?org=` (`400`), and a collection without teams answers `400 team_not_allowed`. A batch
+        takes it for all its creates. On a list it is a shorthand for `where` on `_meta.team`,
+        ANDed with it: the read rule still decides what is seen. Fixed at creation: an update
+        that names another team answers `400 immutable_field`; administrators move documents
+        with the transfer.
+      schema: { type: string }
     realm:
       name: realm
       in: path
@@ -7826,6 +8065,7 @@ components:
         effective_roles: { type: array, items: { $ref: "#/components/schemas/RoleOrigin" } }
         overlap: { type: array, items: { type: string }, description: "Roles held directly and also through a team or by default." }
         mfa: { type: boolean, description: "Whether the member has a second factor. Only for members who manage the organization." }
+        mfa_roles: { type: array, items: { type: string }, description: "The roles the member holds now, organization roles and team roles, that require a second factor. Only for members who manage the organization; with `mfa: false` these are the people to nudge." }
         joined_at: { type: string, format: date-time }
         invited_by: { type: string }
 
@@ -7856,6 +8096,7 @@ components:
         effective_roles: { type: array, items: { $ref: "#/components/schemas/RoleOrigin" } }
         overlap: { type: array, items: { type: string } }
         mfa: { type: boolean }
+        mfa_roles: { type: array, items: { type: string } }
         joined_at: { type: string, format: date-time }
         invited_by: { type: string }
         in_team: { type: boolean, description: "Whether they belong to the team (a role holder needs not)." }
@@ -7870,6 +8111,14 @@ components:
         has_more: { type: boolean }
         next: { type: string, description: "Pass as `after` for the next page." }
 
+    OrganizationTeamRoleRef:
+      type: object
+      additionalProperties: false
+      required: [user, role]
+      properties:
+        user: { type: string, description: "A member of the organization." }
+        role: { type: string, description: "A team role declared in `organizations.team_roles`." }
+
     OrganizationTeamRoleInput:
       type: object
       additionalProperties: false
@@ -7877,6 +8126,89 @@ components:
       properties:
         user: { type: string, description: "A member of the organization." }
         role: { type: string, description: "A team role declared in `organizations.team_roles`." }
+        from: { type: string, format: date-time, description: "The grant counts from then; from now when absent." }
+        until: { type: string, format: date-time, description: "...until then, to the second; for ever when absent. After `from`." }
+
+    OrganizationTemplateInput:
+      type: object
+      additionalProperties: false
+      required: [subject, text, html]
+      properties:
+        subject: { type: string, maxLength: 65536 }
+        text: { type: string, maxLength: 65536 }
+        html: { type: string, maxLength: 65536 }
+
+    OrganizationTemplateDraft:
+      type: object
+      additionalProperties: false
+      description: A draft with all three parts, or an empty object for the saved version.
+      properties:
+        subject: { type: string }
+        text: { type: string }
+        html: { type: string }
+
+    OrganizationTemplatePreviewInput:
+      type: object
+      additionalProperties: false
+      properties:
+        subject: { type: string }
+        text: { type: string }
+        html: { type: string }
+        data: { type: string, enum: [sample, real], default: sample }
+
+    OrganizationTemplatePreview:
+      type: object
+      additionalProperties: false
+      required: [subject, text, html, removed]
+      properties:
+        subject: { type: string }
+        text: { type: string }
+        html: { type: string, description: "Already sanitized." }
+        removed: { type: array, items: { type: string }, description: "What the sanitizer dropped." }
+
+    OrganizationTemplateVersion:
+      type: object
+      additionalProperties: false
+      required: [version, at]
+      properties:
+        version: { type: integer }
+        at: { type: string, format: date-time }
+        by: { type: string, description: "The user who wrote it." }
+        subject: { type: string }
+        text: { type: string }
+        html: { type: string }
+
+    OrganizationTemplate:
+      type: object
+      additionalProperties: false
+      required: [kind, locale, version, updated_at, versions]
+      properties:
+        kind: { type: string }
+        locale: { type: string }
+        version: { type: integer }
+        updated_at: { type: string, format: date-time }
+        updated_by: { type: string }
+        subject: { type: string }
+        text: { type: string }
+        html: { type: string }
+        versions: { type: array, items: { $ref: "#/components/schemas/OrganizationTemplateVersion" } }
+        removed: { type: array, items: { type: string }, description: "Only in the answer to a save: what the sanitizer would drop from the sample render." }
+
+    OrganizationTemplates:
+      type: object
+      additionalProperties: false
+      required: [customizable, items]
+      properties:
+        customizable:
+          type: object
+          description: The kinds companies may customize, by name, with the placeholders each must print.
+          additionalProperties:
+            type: object
+            additionalProperties: false
+            required: [required]
+            properties:
+              required: { type: array, items: { type: string } }
+        items: { type: array, items: { $ref: "#/components/schemas/OrganizationTemplate" } }
 
     OrganizationMembers:
       type: object
@@ -8750,6 +9082,7 @@ components:
         created_by: { type: string }
         updated_by: { type: string }
         org: { type: string, description: "The organization the document belongs to. Only in collections with `organization` set, and set at creation (`?org=`)." }
+        team: { type: string, description: "The team of the organization the document belongs to. Only in collections with `team` set, and set at creation (`?team=`)." }
         deleted_at:
           allOf: [{ $ref: "#/components/schemas/Timestamp" }]
           description: When a soft-deleted document was deleted. Only in the trash (`deleted=only|include`) of a collection with `soft_delete`.

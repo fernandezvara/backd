@@ -309,7 +309,7 @@ func orgsRevokeInvitation(c *kli.CommandContext) error {
 }
 
 // dataTransfer moves one document to another organization (or out of its organization with
-// --org none), as an administrator.
+// --org none), and to a team of it (--team, or --team none), as an administrator.
 func dataTransfer(c *kli.CommandContext) error {
 	t, err := targetOf(c, false)
 	if err != nil {
@@ -320,6 +320,13 @@ func dataTransfer(c *kli.CommandContext) error {
 		org = nil
 	}
 	body := map[string]any{"org": org}
+	switch team := str(c, "team"); team {
+	case "":
+	case "none":
+		body["team"] = nil
+	default:
+		body["team"] = team
+	}
 	path := "_admin/data/" + url.PathEscape(str(c, "database")) + "/" + url.PathEscape(str(c, "collection")) + "/" + url.PathEscape(str(c, "id")) + "/_transfer"
 	if err := t.call("POST", path, nil, body, nil); err != nil {
 		return err
@@ -327,6 +334,9 @@ func dataTransfer(c *kli.CommandContext) error {
 	to := str(c, "org")
 	if to == "none" {
 		to = "no organization"
+	}
+	if team := str(c, "team"); team != "" && team != "none" {
+		to += ", team " + team
 	}
 	fmt.Fprintf(ioOf(c).stdout, "document %s moved to %s\n", str(c, "id"), to)
 	return nil

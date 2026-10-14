@@ -85,7 +85,7 @@ A team is a group of members that **carries organization roles**: everyone in it
 - **Leaving** the organization removes the member from its teams; **deleting a team** removes it from every membership.
 - **Caps:** `max_teams_per_org` and `max_teams_per_member` (`409 team_limit_reached`); names are unique in an organization (`409 team_name_taken`).
 
-A team can also hold **team roles**, which are separate from the roles it carries: see [team roles](../../organizations/team-roles/). `GET /_orgs/{org}/teams/{team}/members?role=` lists a team's members and role holders; `POST` and `DELETE /_orgs/{org}/teams/{team}/roles` with `{"user", "role"}` give and take a role (`manage: teams`).
+A team can also hold **team roles**, which are separate from the roles it carries: see [team roles](../../organizations/team-roles/). `GET /_orgs/{org}/teams/{team}/members?role=` lists a team's members and role holders; `POST`, `PATCH` and `DELETE /_orgs/{org}/teams/{team}/roles` with `{"user", "role"}` (and `from` and `until` for a window) give, re-window and take a role: `manage: teams`, or a holder of a team role whose `grants` lists it, in their own team.
 
 {{< hint style="tip" title="Best practice" >}}
 Give **management** roles (`owner`, `admin`) directly and **access** roles (`editor`, `viewer`) through teams. A member who holds `editor` both ways keeps it after being taken out of the team, so removal looks done and isn't; the members list marks those roles in `overlap`.

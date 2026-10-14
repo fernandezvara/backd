@@ -63,11 +63,17 @@ func (s *Users) teamManager(ctx context.Context, userID, orgID string) (Membersh
 	if err != nil {
 		return Membership{}, 0, err
 	}
-	cc := s.caps(m)
-	if !cc.Has(registry.CapTeams) {
-		return Membership{}, 0, ErrOrgForbidden
+	cc, err := s.requireCaps(m, registry.CapTeams)
+	if err != nil {
+		return Membership{}, 0, err
 	}
 	return m, cc, nil
+}
+
+// OrgTeamExists reports whether the organization has a team with the id.
+func (s *Users) OrgTeamExists(ctx context.Context, orgID, teamID string) bool {
+	_, err := s.team(ctx, orgID, teamID)
+	return err == nil
 }
 
 // OrgTeams lists an organization's teams to a member.
@@ -200,9 +206,14 @@ func (s *Users) updateOrgTeam(ctx context.Context, cc registry.OrgCaps, orgID, i
 		}
 		t.Roles = roles
 	}
+	var snaps []memberSnapshot
+	if setRoles {
+		snaps = s.snapshotTeam(ctx, orgID, id)
+	}
 	if err := s.Store.UpdateOrgTeam(ctx, t); err != nil {
 		return OrgTeam{}, err
 	}
+	s.teamChanged(ctx, orgID, snaps)
 	s.Audit(ctx, AuditOrgTeamUpdate, orgTarget(orgID), map[string]any{"team": t.ID, "name": t.Name, "roles": t.Roles})
 	return t, nil
 }
@@ -248,10 +259,17 @@ func (s *Users) deleteOrgTeam(ctx context.Context, cc registry.OrgCaps, orgID, i
 			return err
 		}
 	}
+	snaps := s.snapshotTeam(ctx, orgID, id)
 	if err := s.Store.DeleteOrgTeam(ctx, orgID, id); err != nil {
 		return err
 	}
-	s.Audit(ctx, AuditOrgTeamDelete, orgTarget(orgID), map[string]any{"team": id})
+	s.teamChanged(ctx, orgID, snaps)
+	// The collections' on_team_delete applies to its documents through a job.
+	j, err := s.enqueueCleanup(ctx, TeamDeleteOrigin, "team-delete:"+id, OrgDeleteJob{Org: orgID, Team: id}, "")
+	if err != nil {
+		return err
+	}
+	s.Audit(ctx, AuditOrgTeamDelete, orgTarget(orgID), map[string]any{"team": id, "job_id": j.ID})
 	return nil
 }
 
@@ -297,6 +315,7 @@ func (s *Users) setTeamMembership(ctx context.Context, cc registry.OrgCaps, orgI
 	if err != nil {
 		return MemberView{}, err
 	}
+	before := m
 	has := slices.Contains(m.Teams, id)
 	switch {
 	case add && has, !add && !has:
@@ -328,7 +347,7 @@ func (s *Users) setTeamMembership(ctx context.Context, cc registry.OrgCaps, orgI
 		}
 		m.Teams = slices.DeleteFunc(slices.Clone(m.Teams), func(x string) bool { return x == id })
 	}
-	if err := s.Store.PutOrgMember(ctx, m); err != nil {
+	if err := s.putMember(ctx, &before, m, ""); err != nil {
 		return MemberView{}, err
 	}
 	action := AuditOrgTeamMemberRemove

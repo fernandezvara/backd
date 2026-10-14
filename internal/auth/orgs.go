@@ -191,8 +191,13 @@ type Membership struct {
 	Org    Org
 	Member OrgMember
 	Roles  []EffectiveRole
-	// TeamRoles are the team roles that count now, by team id.
-	TeamRoles map[string][]string
+	// TeamRoles are the team roles that count now, by team id, and TeamGrants the same grants
+	// with their windows.
+	TeamRoles  map[string][]string
+	TeamGrants []TeamRoleGrant
+	// Withheld are the roles the member holds that don't count for this session because they
+	// require a second factor it didn't use.
+	Withheld []WithheldRole
 }
 
 // RoleNames returns the effective role names.
@@ -312,6 +317,7 @@ func (s *Users) createOrg(ctx context.Context, o *registry.OrgSettings, name, sl
 	if err := s.Store.CreateOrg(ctx, org, m); err != nil {
 		return Membership{}, err
 	}
+	s.memberChanged(ctx, nil, m, "")
 	s.Audit(ctx, AuditOrgCreate, orgTarget(org.ID), map[string]any{"by": by, "creator": creator})
 	return s.membership(ctx, org, m)
 }
@@ -338,12 +344,11 @@ func (s *Users) checkMembershipCap(ctx context.Context, o *registry.OrgSettings,
 }
 
 func (s *Users) membership(ctx context.Context, org Org, m OrgMember) (Membership, error) {
-	teamRoles, err := s.teamRolesOf(ctx, org.ID, m.Teams)
+	r, err := s.resolve(ctx, m, sessionMFA(ctx))
 	if err != nil {
 		return Membership{}, err
 	}
-	now := s.now()
-	return Membership{Org: org, Member: m, Roles: s.effective(m, now, teamRoles), TeamRoles: s.declaredTeamRoles(m, now)}, nil
+	return Membership{Org: org, Member: m, Roles: r.Roles, TeamRoles: r.TeamRoles, TeamGrants: r.TeamGrants, Withheld: r.Withheld}, nil
 }
 
 // MyOrgs lists the organizations a user belongs to, with their effective roles. Deleted
@@ -413,8 +418,8 @@ func (s *Users) UpdateOrg(ctx context.Context, userID, orgID string, name, slug 
 	if err != nil {
 		return Membership{}, err
 	}
-	if !s.caps(m).Has(registry.CapOrg) {
-		return Membership{}, ErrOrgForbidden
+	if _, err := s.requireCaps(m, registry.CapOrg); err != nil {
+		return Membership{}, err
 	}
 	upd := OrgUpdate{}
 	var fields []string
@@ -458,6 +463,9 @@ type MemberView struct {
 	// TeamRoles are the member's team role grants, in force or not, judged at Now.
 	TeamRoles []TeamRoleGrant
 	Now       time.Time
+	// MFARoles are the roles the member holds now (organization roles and team roles) that
+	// require a second factor; set only for viewers who manage the organization.
+	MFARoles []string
 }
 
 // Members lists an organization's members to a member, a page at a time sorted by user id.
@@ -523,6 +531,7 @@ func (s *Users) viewsOf(ctx context.Context, viewer Membership, orgID string, li
 		if manager {
 			has := s.memberHasMFA(ctx, m.User)
 			v.MFA = &has
+			v.MFARoles = s.mfaRolesOf(v)
 		}
 		out[i] = v
 	}
@@ -561,6 +570,9 @@ func (s *Users) UpdateMember(ctx context.Context, userID, orgID, target string, 
 	caller, err := s.MembershipOf(ctx, userID, orgID)
 	if err != nil {
 		return MemberView{}, err
+	}
+	if cc := s.caps(caller); !cc.Has(registry.CapRoles) && !cc.Has(registry.CapMembers) {
+		return MemberView{}, caller.forbidden(registry.CapMembers)
 	}
 	return s.setRoles(ctx, s.caps(caller), userID, orgID, target, roles, true)
 }
@@ -627,8 +639,9 @@ func (s *Users) setRoles(ctx context.Context, callerCaps registry.OrgCaps, by, o
 	for _, r := range added {
 		grants = append(grants, RoleGrant{Role: r, GrantedBy: by, GrantedAt: now})
 	}
+	before := tm
 	tm.Roles = grants
-	if err := s.Store.PutOrgMember(ctx, tm); err != nil {
+	if err := s.putMember(ctx, &before, tm, ""); err != nil {
 		return MemberView{}, err
 	}
 	s.Audit(ctx, AuditOrgRoles, orgTarget(orgID), map[string]any{"user": target, "added": added, "removed": removed})
@@ -679,6 +692,7 @@ func (s *Users) AdminAddMember(ctx context.Context, orgID, userID string, roles 
 func (s *Users) addMember(ctx context.Context, o *registry.OrgSettings, org Org, userID string, roles []string, invitedBy, by string) (MemberView, error) {
 	now := s.now()
 	m, err := s.Store.OrgMember(ctx, org.ID, userID)
+	var before *OrgMember
 	switch {
 	case errors.Is(err, ErrNotFound):
 		if err := s.checkMembershipCap(ctx, o, userID); err != nil {
@@ -687,14 +701,17 @@ func (s *Users) addMember(ctx context.Context, o *registry.OrgSettings, org Org,
 		m = OrgMember{Org: org.ID, User: userID, JoinedAt: now, InvitedBy: invitedBy}
 	case err != nil:
 		return MemberView{}, err
+	default:
+		was := m
+		before = &was
 	}
 	have := m.DirectRoles(now)
 	for _, r := range roles {
 		if !slices.Contains(have, r) {
-			m.Roles = append(m.Roles, RoleGrant{Role: r, GrantedBy: invitedBy, GrantedAt: now})
+			m.Roles = append(slices.Clone(m.Roles), RoleGrant{Role: r, GrantedBy: invitedBy, GrantedAt: now})
 		}
 	}
-	if err := s.Store.PutOrgMember(ctx, m); err != nil {
+	if err := s.putMember(ctx, before, m, ""); err != nil {
 		return MemberView{}, err
 	}
 	s.Audit(ctx, AuditOrgMemberAdd, orgTarget(org.ID), map[string]any{"user": userID, "roles": roles, "by": by})
@@ -738,9 +755,9 @@ func (s *Users) RemoveMember(ctx context.Context, userID, orgID, target string) 
 	if err != nil {
 		return err
 	}
-	cc := s.caps(caller)
-	if !cc.Has(registry.CapMembers) {
-		return ErrOrgForbidden
+	cc, err := s.requireCaps(caller, registry.CapMembers)
+	if err != nil {
+		return err
 	}
 	tm, err := s.Store.OrgMember(ctx, orgID, target)
 	if errors.Is(err, ErrNotFound) {
@@ -788,6 +805,11 @@ func (s *Users) removeMember(ctx context.Context, orgID string, m OrgMember, act
 	if err := s.Store.DeleteOrgMember(ctx, orgID, m.User); err != nil {
 		return err
 	}
+	reason := LeftRemoved
+	if action == AuditOrgMemberLeave {
+		reason = LeftByThemselves
+	}
+	s.memberLeft(ctx, orgID, m.User, reason)
 	s.Audit(ctx, action, orgTarget(orgID), map[string]any{"user": m.User})
 	return nil
 }
@@ -813,12 +835,8 @@ func (s *Users) keepManagerWith(ctx context.Context, orgID, skip string, teamRol
 	if teamRoles != nil {
 		roles = teamRoles
 	}
-	var managerRoles, managerTeams []string
-	for name, r := range o.Roles {
-		if r.Manage.Has(registry.CapOrg) {
-			managerRoles = append(managerRoles, name)
-		}
-	}
+	managerRoles := o.RolesWith(registry.CapOrg)
+	var managerTeams []string
 	for id, rs := range roles {
 		if o.CapsOf(rs).Has(registry.CapOrg) {
 			managerTeams = append(managerTeams, id)
@@ -981,24 +999,22 @@ func (s *Users) RuleOrgs(ctx context.Context, userID string, mfa bool) (map[stri
 	if err != nil {
 		return nil, err
 	}
-	now := s.now()
 	for _, m := range members {
 		org, ok := orgs[m.Org]
 		if !ok || !org.Counts(mfa) {
 			continue
 		}
-		teamRoles, err := s.teamRolesOf(ctx, m.Org, m.Teams)
+		r, err := s.resolve(ctx, m, mfa)
 		if err != nil {
 			return nil, err
 		}
-		eff := s.effective(m, now, teamRoles)
-		roles := make([]string, 0, len(eff))
-		for _, e := range eff {
+		roles := make([]string, 0, len(r.Roles))
+		for _, e := range r.Roles {
 			if o.Declared(e.Role) { // a role the realm no longer declares grants nothing
 				roles = append(roles, e.Role)
 			}
 		}
-		out[m.Org] = &rules.UserOrg{Roles: roles, Teams: nonNilStrings(m.Teams), TeamRoles: s.declaredTeamRoles(m, now), Claims: org.Claims}
+		out[m.Org] = &rules.UserOrg{Roles: roles, Teams: nonNilStrings(m.Teams), TeamRoles: r.TeamRoles, Claims: org.Claims}
 	}
 	return out, nil
 }
@@ -1049,8 +1065,8 @@ func (s *Users) SetOrgRequireMFA(ctx context.Context, p Principal, orgID string,
 	if err != nil {
 		return Membership{}, err
 	}
-	if !s.caps(m).Has(registry.CapOrg) {
-		return Membership{}, ErrOrgForbidden
+	if _, err := s.requireCaps(m, registry.CapOrg); err != nil {
+		return Membership{}, err
 	}
 	if on && !o.AllowRequireMFA {
 		return Membership{}, ErrRequireMFANotAllowed

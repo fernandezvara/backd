@@ -100,6 +100,9 @@ type PageData struct {
 	Redirect     htmltemplate.URL
 	DelaySeconds int
 	BackURL      htmltemplate.URL
+	// App is what the realm's pages.data_hook returned for this page ({{.App.name}}): nil when
+	// there is no hook, or it failed. Pages that use it guard with {{if .App}}.
+	App map[string]any
 }
 
 // Pages are a realm's parsed hosted pages, held in memory.
@@ -158,7 +161,7 @@ func LoadPages(dir string, locales []string) (*Pages, []error) {
 				continue
 			}
 			var b strings.Builder
-			if err := tpl.Execute(&b, samplePage); err != nil {
+			if err := tpl.Execute(&b, samplePage); err != nil && !usesApp(err) {
 				errs = append(errs, fmt.Errorf("%s: %w", file, err))
 				continue
 			}
@@ -184,7 +187,7 @@ func LoadPages(dir string, locales []string) (*Pages, []error) {
 				var b strings.Builder
 				err = tpl.Execute(&b, samplePage)
 			}
-			if err != nil {
+			if err != nil && !usesApp(err) {
 				errs = append(errs, fmt.Errorf("%s: %w", file, err))
 				continue
 			}

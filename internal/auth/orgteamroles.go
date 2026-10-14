@@ -21,6 +21,12 @@ const (
 	AuditOrgTeamRoleRevoke = "org.team_role_revoke" // details: team, user, role
 )
 
+// TeamRoleHistory is how long a grant stays visible after its window ended.
+const TeamRoleHistory = 90 * 24 * time.Hour
+
+// ErrTeamRoleNotHeld: the member doesn't hold the team role whose window a request changes.
+var ErrTeamRoleNotHeld = errors.New("the member doesn't hold that role in the team")
+
 // ErrTeamRoleLimit: the member holds the most team role grants one may.
 var ErrTeamRoleLimit = errors.New("that member holds the most team roles a member may")
 
@@ -103,54 +109,119 @@ func (s *Users) teamMembers(ctx context.Context, viewer Membership, orgID, teamI
 	return out, more, nil
 }
 
-// GrantTeamRole gives a member a team role in a team. It needs manage: teams.
-func (s *Users) GrantTeamRole(ctx context.Context, userID, orgID, teamID, target, role string) (TeamMemberView, error) {
-	_, _, err := s.teamManager(ctx, userID, orgID)
+// TeamRoleWindow is the period a team role grant counts in; a zero end is open.
+type TeamRoleWindow struct{ From, Until time.Time }
+
+// Valid checks the window: it ends after it starts.
+func (w TeamRoleWindow) Valid() error {
+	if !w.From.IsZero() && !w.Until.IsZero() && !w.Until.After(w.From) {
+		return &OrgInvalidError{"until", "must be after from"}
+	}
+	return nil
+}
+
+// TeamRoleOp is what a request does to a team role grant.
+type TeamRoleOp int
+
+// The operations on a team role grant.
+const (
+	TeamRoleGrantOp  TeamRoleOp = iota // give it, for the window
+	TeamRoleWindowOp                   // replace the window of a held grant
+	TeamRoleRevokeOp                   // take it away
+)
+
+// grantAuthority is a caller's right to give, change or take away a team role in a team.
+type grantAuthority struct {
+	// full: manage: teams, any team role in any team, with any window.
+	full bool
+	// until bounds what a delegate gives: nothing they give may outlast their own authority
+	// (zero: no bound, because one of the roles that lets them has no end).
+	until time.Time
+}
+
+// grantAuthorityFor checks the caller's right to handle role in team: with manage: teams any team
+// role in any team; otherwise a holder of a team role of that team whose `grants` lists it
+// (design/team-access.md §5), in that team only.
+func (s *Users) grantAuthorityFor(ctx context.Context, userID, orgID, teamID, role string) (grantAuthority, error) {
+	m, err := s.MembershipOf(ctx, userID, orgID)
 	if err != nil {
-		return TeamMemberView{}, err
+		return grantAuthority{}, err
 	}
-	return s.setTeamRole(ctx, userID, orgID, teamID, target, role, true)
+	if s.caps(m).Has(registry.CapTeams) {
+		return grantAuthority{full: true}, nil
+	}
+	o := s.Settings.Organizations
+	var a grantAuthority
+	found := false
+	for _, g := range m.TeamGrants {
+		if g.Team != teamID || !slices.Contains(o.TeamRoles[g.Role].Grants, role) {
+			continue
+		}
+		if g.Until.IsZero() {
+			return grantAuthority{}, nil // a role that never ends lets them: no bound
+		}
+		if !found || g.Until.After(a.until) {
+			a.until = g.Until
+		}
+		found = true
+	}
+	if !found {
+		return grantAuthority{}, m.forbiddenToGrant(teamID, role)
+	}
+	return a, nil
 }
 
-// RevokeTeamRole takes a team role from a member. It needs manage: teams.
-func (s *Users) RevokeTeamRole(ctx context.Context, userID, orgID, teamID, target, role string) (TeamMemberView, error) {
-	_, _, err := s.teamManager(ctx, userID, orgID)
-	if err != nil {
-		return TeamMemberView{}, err
+// check applies what a delegate may not do: change their own grant (which would extend their
+// own authority), or give what outlasts their own.
+func (a grantAuthority) check(caller, target string, op TeamRoleOp, w TeamRoleWindow) error {
+	if a.full {
+		return nil
 	}
-	return s.setTeamRole(ctx, userID, orgID, teamID, target, role, false)
+	if op == TeamRoleWindowOp && caller == target {
+		return ErrOrgForbidden
+	}
+	if op != TeamRoleRevokeOp && !a.until.IsZero() && (w.Until.IsZero() || w.Until.After(a.until)) {
+		return &OrgInvalidError{"until", "can't be after your own role ends (" + a.until.UTC().Format(time.RFC3339) + "): what a delegate gives ends no later than their own authority"}
+	}
+	return nil
 }
 
-// AdminGrantTeamRole is GrantTeamRole for an administrator.
-func (s *Users) AdminGrantTeamRole(ctx context.Context, orgID, teamID, target, role string) (TeamMemberView, error) {
-	return s.adminSetTeamRole(ctx, orgID, teamID, target, role, true)
+// SetTeamRole gives, re-windows or revokes a team role of a member in a team. caller is the user
+// making the request, who needs manage: teams or a team role of that team that grants role; ""
+// stands for an administrator or a function, who may do it in any active organization.
+func (s *Users) SetTeamRole(ctx context.Context, caller, orgID, teamID, target, role string, op TeamRoleOp, w TeamRoleWindow) (TeamMemberView, error) {
+	if caller != "" {
+		authority, err := s.grantAuthorityFor(ctx, caller, orgID, teamID, role)
+		if err != nil {
+			return TeamMemberView{}, err
+		}
+		if err := authority.check(caller, target, op, w); err != nil {
+			return TeamMemberView{}, err
+		}
+	} else {
+		if _, err := s.orgs(); err != nil {
+			return TeamMemberView{}, err
+		}
+		org, err := s.Store.OrgByID(ctx, orgID)
+		if err != nil {
+			return TeamMemberView{}, err
+		}
+		if org.Status == OrgDeleted {
+			return TeamMemberView{}, ErrOrgNotActive
+		}
+	}
+	return s.setTeamRole(ctx, caller, orgID, teamID, target, role, op, w)
 }
 
-// AdminRevokeTeamRole is RevokeTeamRole for an administrator.
-func (s *Users) AdminRevokeTeamRole(ctx context.Context, orgID, teamID, target, role string) (TeamMemberView, error) {
-	return s.adminSetTeamRole(ctx, orgID, teamID, target, role, false)
-}
-
-func (s *Users) adminSetTeamRole(ctx context.Context, orgID, teamID, target, role string, add bool) (TeamMemberView, error) {
-	if _, err := s.orgs(); err != nil {
-		return TeamMemberView{}, err
-	}
-	org, err := s.Store.OrgByID(ctx, orgID)
-	if err != nil {
-		return TeamMemberView{}, err
-	}
-	if org.Status == OrgDeleted {
-		return TeamMemberView{}, ErrOrgNotActive
-	}
-	return s.setTeamRole(ctx, "", orgID, teamID, target, role, add)
-}
-
-// setTeamRole adds or removes the grant of role in team to target. The caller's right to do so
-// was checked by the caller of this function; by is "" for an administrator.
-func (s *Users) setTeamRole(ctx context.Context, by, orgID, teamID, target, role string, add bool) (TeamMemberView, error) {
+// setTeamRole applies op to the grant of role in team to target. The caller's right to do so was
+// checked; by is "" for an administrator.
+func (s *Users) setTeamRole(ctx context.Context, by, orgID, teamID, target, role string, op TeamRoleOp, w TeamRoleWindow) (TeamMemberView, error) {
 	o := s.Settings.Organizations
 	if !o.TeamRoleDeclared(role) {
 		return TeamMemberView{}, &OrgInvalidError{"role", fmt.Sprintf("%q is not a team role of this realm", role)}
+	}
+	if err := w.Valid(); err != nil {
+		return TeamMemberView{}, err
 	}
 	if _, err := s.team(ctx, orgID, teamID); err != nil {
 		return TeamMemberView{}, err
@@ -162,25 +233,46 @@ func (s *Users) setTeamRole(ctx context.Context, by, orgID, teamID, target, role
 	if err != nil {
 		return TeamMemberView{}, err
 	}
-	now := s.now()
+	before := tm
 	held := slices.IndexFunc(tm.TeamRoles, func(g TeamRoleGrant) bool { return g.Team == teamID && g.Role == role })
-	if add == (held >= 0) {
-		return s.teamViewOf(ctx, tm, teamID) // already as asked
-	}
-	action := AuditOrgTeamRoleRevoke
-	if add {
+	details := map[string]any{"team": teamID, "user": target, "role": role}
+	var action string
+	switch op {
+	case TeamRoleGrantOp:
+		if held >= 0 {
+			return s.teamViewOf(ctx, tm, teamID) // already held: a window changes with PATCH
+		}
 		if len(tm.TeamRoles) >= registry.MaxTeamRolesPerMember {
 			return TeamMemberView{}, ErrTeamRoleLimit
 		}
-		tm.TeamRoles = append(slices.Clone(tm.TeamRoles), TeamRoleGrant{Team: teamID, RoleGrant: RoleGrant{Role: role, GrantedBy: by, GrantedAt: now}})
+		tm.TeamRoles = append(slices.Clone(tm.TeamRoles), TeamRoleGrant{Team: teamID, RoleGrant: RoleGrant{Role: role, From: w.From, Until: w.Until, GrantedBy: by, GrantedAt: s.now()}})
 		action = AuditOrgTeamRoleGrant
-	} else {
+	case TeamRoleWindowOp:
+		if held < 0 {
+			return TeamMemberView{}, ErrTeamRoleNotHeld
+		}
+		tm.TeamRoles = slices.Clone(tm.TeamRoles)
+		tm.TeamRoles[held].From, tm.TeamRoles[held].Until = w.From, w.Until
+		action = AuditOrgTeamRoleChange
+	case TeamRoleRevokeOp:
+		if held < 0 {
+			return s.teamViewOf(ctx, tm, teamID)
+		}
 		tm.TeamRoles = slices.Delete(slices.Clone(tm.TeamRoles), held, held+1)
+		action = AuditOrgTeamRoleRevoke
 	}
-	if err := s.Store.PutOrgMember(ctx, tm); err != nil {
+	if op != TeamRoleRevokeOp {
+		if !w.From.IsZero() {
+			details["from"] = w.From.UTC().Format(time.RFC3339)
+		}
+		if !w.Until.IsZero() {
+			details["until"] = w.Until.UTC().Format(time.RFC3339)
+		}
+	}
+	if err := s.putMember(ctx, &before, tm, ""); err != nil {
 		return TeamMemberView{}, err
 	}
-	s.Audit(ctx, action, orgTarget(orgID), map[string]any{"team": teamID, "user": target, "role": role})
+	s.Audit(ctx, action, orgTarget(orgID), details)
 	return s.teamViewOf(ctx, tm, teamID)
 }
 
@@ -190,4 +282,13 @@ func (s *Users) teamViewOf(ctx context.Context, m OrgMember, teamID string) (Tea
 		return TeamMemberView{}, err
 	}
 	return TeamMemberView{MemberView: v, InTeam: slices.Contains(m.Teams, teamID), Roles: s.declaredTeamRoles(m, s.now())[teamID]}, nil
+}
+
+// SweepTeamRoles removes the team role grants that ended more than TeamRoleHistory ago. Running
+// it in every worker is harmless.
+func (s *Users) SweepTeamRoles(ctx context.Context) (int64, error) {
+	if s.Settings.Organizations == nil {
+		return 0, nil
+	}
+	return s.Store.PurgeExpiredTeamRoles(ctx, s.now().Add(-TeamRoleHistory))
 }
