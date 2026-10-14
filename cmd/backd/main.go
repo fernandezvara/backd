@@ -25,7 +25,6 @@ import (
 	"github.com/fernandezvara/backd/internal/adminui"
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/executor"
-	"github.com/fernandezvara/backd/internal/functions"
 	"github.com/fernandezvara/backd/internal/httpapi"
 	"github.com/fernandezvara/backd/internal/metrics"
 	"github.com/fernandezvara/backd/internal/mongodb"
@@ -85,6 +84,8 @@ type app struct {
 	withWorker bool
 	// metrics records what this process does; nil when METRICS_ADDR is unset.
 	metrics *metrics.Metrics
+	// reloadErrors reports why the last live reload failed (dev mode); nil otherwise.
+	reloadErrors func() []string
 }
 
 func setup(ctx context.Context, getenv func(string) string, logOut io.Writer) (*app, error) {
@@ -138,7 +139,7 @@ func provision(ctx context.Context, a *app) error {
 	return nil
 }
 
-// devWatchInterval is how often BACKD_DEV checks function sources for changes.
+// devWatchInterval is how often BACKD_DEV checks the config files for changes.
 const devWatchInterval = time.Second
 
 // isLoopbackAddr reports whether addr's host is localhost or a loopback
@@ -199,7 +200,27 @@ func serve(ctx context.Context, a *app) error {
 		return err
 	}
 
-	srv := &http.Server{Handler: a.handler()}
+	var reload *reloader
+	var publicHandler http.Handler
+	var internalSwap *swapHandler
+	needsInternal := a.hasFunctions() && a.cfg.ExecutorURL != ""
+	if a.cfg.Dev {
+		// Dev mode serves through swappable handlers, so the reloader can replace the config.
+		publicSwap := &swapHandler{}
+		if needsInternal {
+			internalSwap = &swapHandler{}
+		}
+		reload = newReloader(a, publicSwap, internalSwap)
+		a.reloadErrors = reload.Errors
+		publicSwap.Store(a.handler())
+		if internalSwap != nil {
+			internalSwap.Store(a.internalHandler())
+		}
+		publicHandler = publicSwap
+	} else {
+		publicHandler = a.handler()
+	}
+	srv := &http.Server{Handler: publicHandler}
 	httpapi.ServerTimeouts(srv, a.cfg.MongoOpTimeout)
 
 	ln, err := net.Listen("tcp", a.cfg.HTTPAddr)
@@ -209,14 +230,11 @@ func serve(ctx context.Context, a *app) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if a.cfg.Dev && a.hasFunctions() {
-		a.log.Warn("BACKD_DEV=true: function sources rebuild automatically on change; schemas, rules and realm.yaml still need a restart — local development only, never enable this in production")
-		go functions.Watch(ctx, a.reg, functions.Options{
-			Deno: a.cfg.Deno,
-			Log:  func(format string, args ...any) { a.log.Info(fmt.Sprintf(format, args...)) },
-		}, devWatchInterval)
+	if reload != nil {
+		a.log.Warn("BACKD_DEV=true: the config reloads automatically when its files change (a change that doesn't validate is refused and the previous config keeps running) — local development only, never enable this in production")
+		reload.writeTypes(a)
+		go reload.Watch(ctx, devWatchInterval)
 	}
-	needsInternal := a.hasFunctions() && a.cfg.ExecutorURL != ""
 	if !needsInternal && !a.withWorker && a.metrics == nil {
 		return httpapi.Run(ctx, srv, ln, a.cfg.ShutdownTimeout, a.log)
 	}
@@ -235,7 +253,7 @@ func serve(ctx context.Context, a *app) error {
 	}
 	if needsInternal {
 		// The internal listener, for the executor and functions calling back.
-		internal := &http.Server{Handler: a.internalHandler()}
+		internal := &http.Server{Handler: servedBy(a.internalHandler(), internalSwap)}
 		httpapi.ServerTimeouts(internal, a.cfg.MongoOpTimeout)
 		iln, err := net.Listen("tcp", a.cfg.InternalAddr)
 		if err != nil {
@@ -486,6 +504,7 @@ func (a *app) handlerConfig() httpapi.Config {
 		TrustedProxies:    a.cfg.TrustedProxies,
 		ConfigFingerprint: a.fingerprint,
 		Dev:               a.cfg.Dev,
+		ReloadErrors:      a.reloadErrors,
 		DisableAdminAPI:   a.cfg.DisableAdminAPI,
 		UI:                ui,
 		Metrics:           a.metrics,

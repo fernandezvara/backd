@@ -486,6 +486,12 @@
       "history": "Historial",
       "jobs": "Trabajos"
     },
+    "openapi": {
+      "client": "Descargar OpenAPI (aplicaciones)",
+      "clientHelp": "Solo lo que las aplicaciones pueden alcanzar: sin rutas de administración.",
+      "admin": "Descargar OpenAPI (con administración)",
+      "adminHelp": "Todo, con las rutas de administración y las funciones internas."
+    },
     "needConfig": "Leer las definiciones de las funciones necesita el área de configuración, que este nivel no tiene. El historial y los trabajos siguen disponibles.",
     "none": "Ninguna base de datos de este realm tiene funciones.",
     "database": "Base de datos {name}",

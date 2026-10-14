@@ -11,6 +11,12 @@ info:
     Every error response uses the `Error` envelope. `default` responses list
     errors that can happen on any operation (for example `413`, `415`, `500`,
     `503`, or `404` for an unknown realm).
+
+    Any `/v1/{realm}/…` request may carry `X-Backd-Types`, the fingerprint
+    of the types a development build was generated from (`realm.json`, made
+    by `backd types`). When it isn't the fingerprint of the types the running
+    config generates, the answer carries `X-Backd-Types-Stale: true` (and
+    nothing else changes); production builds send no header.
   license:
     name: MIT
     identifier: MIT
@@ -2855,7 +2861,9 @@ paths:
         (defaults applied; seeded user emails only for whoever may read users),
         every database's collections (schema, indexes, rules, `collection.yaml` policy) and
         functions (`function.yaml`, secrets by name only), the email templates and hosted
-        pages found on disk, the configuration warnings and the config fingerprint. Each
+        pages found on disk, the configuration warnings and the config fingerprint. In dev
+        mode (`BACKD_DEV`) the warnings include `reload_failed` entries: why the last change to the
+        files was refused while the previous config keeps running. Each
         item carries the file it came from, relative to the config directory. Nothing here
         can be changed through the API: configuration is a reviewed, versioned artifact.
         Needs the `config` area (a read-only administrator reads it).
@@ -2887,6 +2895,90 @@ paths:
                         message: { type: string }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/types:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [admin]
+      summary: The realm's TypeScript types
+      description: |
+        The TypeScript types of the config this instance runs: documents, `where` and `order_by`
+        per collection, functions, app configuration, templates and roles, exactly what
+        `backd types` writes from `CONFIG_DIR`. `info` is the `realm.json` that goes with them
+        (the types' fingerprint and the type-level entries `backd types --diff` compares), and
+        `warnings` lists what a schema says that TypeScript can't express. `db` limits it to one
+        database. Needs the `config` area (a read-only administrator reads it).
+      operationId: adminTypes
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { name: db, in: query, required: false, schema: { type: string }, description: Only this database. }
+      responses:
+        "200":
+          description: The generated types.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [types, info, warnings]
+                properties:
+                  types: { type: string, description: The contents of types.d.ts. }
+                  info:
+                    type: object
+                    required: [generator, realm, fingerprint, entries]
+                    properties:
+                      generator: { type: string }
+                      realm: { type: string }
+                      fingerprint: { type: string }
+                      config: { type: string }
+                      entries: { type: object, additionalProperties: { type: string } }
+                  warnings: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/openapi.json:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [admin]
+      summary: The realm's admin API as OpenAPI
+      description: |
+        An OpenAPI 3.1 document for internal tooling, generated from the realm's configuration:
+        the administration routes (users, API keys, secrets, audit, jobs, configuration, and
+        what the realm enables), the data routes past the collections' rules typed per
+        collection, and **every function an administrator may run by hand, internal ones
+        included**, with their input and output schemas. The client API's document is
+        `/_openapi.json`. Needs the `config` area (a read-only administrator reads it).
+        `backd openapi --admin` makes the same document from `CONFIG_DIR`.
+      operationId: adminOpenAPI
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/ifNoneMatch" }
+      responses:
+        "200":
+          description: The document.
+          headers:
+            ETag: { schema: { type: string }, description: Identifies this document; send it back as `If-None-Match`. }
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [openapi, info, paths]
+                additionalProperties: true
+                properties:
+                  openapi: { type: string }
+                  info: { type: object }
+                  paths: { type: object }
+        "304":
+          description: The copy the caller holds (`If-None-Match`) is current.
+          headers:
+            ETag: { schema: { type: string } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_admin/whoami:
@@ -3190,6 +3282,53 @@ paths:
               schema: { $ref: "#/components/schemas/StorageStatus" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_openapi.json:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [documents]
+      summary: The realm's client API as OpenAPI
+      description: |
+        An OpenAPI 3.1 document describing what a client of this realm can use, generated from
+        its configuration: the collections clients can reach (a collection whose rules are all
+        literally `false` is left out, and so is an operation whose rule is), with their schemas,
+        `_meta` and the features they enable (files, soft delete, conditional reads); the
+        sign-in methods the realm enables; its non-internal functions with their input and output
+        schemas; its app configuration; batches and jobs. Internal functions, the admin API, rules
+        and system collections are not in it (the admin document is `/_admin/openapi.json`).
+        It is what generators of typed clients for other platforms read.
+
+        Realm administrators (the `config` area) read it; `openapi.public: true` in `realm.yaml`
+        makes it public, and a realm with `auth: disabled` serves it to everyone.
+        `backd openapi --realm <realm>` makes the same document from `CONFIG_DIR`.
+      operationId: realmOpenAPI
+      security: [{}, { session: [] }, { apiKey: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/ifNoneMatch" }
+      responses:
+        "200":
+          description: The document.
+          headers:
+            ETag: { schema: { type: string }, description: Identifies this document; send it back as `If-None-Match`. }
+            Cache-Control: { schema: { type: string }, description: "`public, max-age=60` when anyone may read it, `private, no-store` otherwise." }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [openapi, info, paths]
+                additionalProperties: true
+                properties:
+                  openapi: { type: string }
+                  info: { type: object }
+                  paths: { type: object }
+        "304":
+          description: The copy the caller holds (`If-None-Match`) is current.
+          headers:
+            ETag: { schema: { type: string } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_config:

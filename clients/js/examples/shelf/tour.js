@@ -16,6 +16,7 @@
 // and event id is new or looked up first. Exits 0 when every check passes.
 import { execFileSync } from 'node:child_process'
 import { createHmac } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { deflateSync } from 'node:zlib'
 import { createClient, AuthenticationError, ConflictError, ConsentRequiredError, ForbiddenError, NotFoundError, SecondStepRequiredError, ValidationError, VersionMismatchError, versionStatus } from '../../src/index.js'
 
@@ -480,6 +481,26 @@ const invalid17 = await adminConfig('PATCH', '', { set: { 'maintenance.message':
 check('a value that breaks the schema is refused, with its path (400)', invalid17.status === 400 && invalid17.body.error.details[0].path === 'maintenance.message', JSON.stringify(invalid17))
 const back17 = await adminConfig('POST', '/rollback', { version: version17 }, await currentVersion())
 check('a rollback restores the earlier state as a new version', back17.status === 200 && (await main(member).fn('export')).count >= 0, JSON.stringify(back17))
+
+heading('Types from the config (ch19)')
+// The generated types are the ones the running config produces: what the app was written against.
+const committed19 = JSON.parse(readFileSync(new URL('./backd/realm.json', import.meta.url), 'utf8'))
+const types19 = await (await fetch(`${url}/v1/shelf/_admin/types`, { headers: { Authorization: `Bearer ${operatorToken}` } })).json()
+check('the running config generates the types the app was written against',
+  types19.info?.fingerprint === committed19.fingerprint && String(types19.types).includes('export interface Realm'),
+  `${types19.info?.fingerprint} vs ${committed19.fingerprint}`)
+const withTypes = (/** @type {string} */ fp) => fetch(`${url}/v1/shelf/_config?paths=maintenance`, { headers: { 'X-Backd-Types': fp } })
+check('current types are not flagged', (await withTypes(committed19.fingerprint)).headers.get('X-Backd-Types-Stale') === null)
+check('out-of-date types are flagged, and the request still works', await withTypes('0000').then((r) => r.headers.get('X-Backd-Types-Stale') === 'true' && r.ok))
+let warned19 = 0
+const devClient = createClient({ url, realm: 'shelf', types: '0000', onStaleTypes: () => warned19++ })
+await devClient.config.load(['maintenance'], { refresh: true })
+await devClient.config.load(['maintenance'], { refresh: true })
+check('the client warns once', warned19 === 1, String(warned19))
+const spec19 = await (await fetch(`${url}/v1/shelf/_admin/openapi.json`, { headers: { Authorization: `Bearer ${operatorToken}` } })).json()
+check('the admin OpenAPI document lists the internal functions', Object.keys(spec19.paths ?? {}).includes('/v1/shelf/_admin/functions/main/maintenance-open/invoke'))
+const publicSpec19 = await fetch(`${url}/v1/shelf/_openapi.json`)
+check('the client document is not public by default (401)', publicSpec19.status === 401, String(publicSpec19.status))
 
 heading('cleanup by hand (ch9)')
 const sweep = /** @type {any} */ (await operator.admin.invokeFunction('main/cleanup'))

@@ -260,6 +260,12 @@ func (r *Rule) AlwaysTrue() bool {
 	return ok && b.Value
 }
 
+// AlwaysFalse reports whether the rule is literally `false`: nobody is ever allowed.
+func (r *Rule) AlwaysFalse() bool {
+	b, ok := r.tree.(*ast.BoolNode)
+	return ok && !b.Value
+}
+
 func compile(op Op, key, src string, schema Schema) (*Rule, error) {
 	where := key
 	if key != string(op) {

@@ -414,6 +414,25 @@ func registerRemote(cfg *kli.Config) {
 		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
 		boolean(cc, "json", "print it as JSON")
 	})
+	cfg.Command("openapi").ShortHelp("generate a realm's OpenAPI document").
+		LongHelp("Generates the OpenAPI 3.1 document of a realm's client API from CONFIG_DIR: the collections clients can reach\nwith their schemas and the features they enable, the sign-in methods the realm enables, its non-internal functions\nwith their input and output schemas, and its app configuration. It is what generators of typed clients for other\nplatforms (Dart, Kotlin, Swift) read; a running backd serves the same document at /v1/<realm>/_openapi.json.\n\nPrints it, or writes --out. --check writes nothing and exits non-zero when --out is missing or stale, for CI.\n\n--admin generates the admin API's document instead (served at /v1/<realm>/_admin/openapi.json to administrators):\nusers, API keys, secrets, audit, jobs, configuration, the data routes past the collections' rules typed per\ncollection, and every function an administrator may run by hand, internal ones included, with their input and\noutput. For internal tooling.").
+		Func(act("openapi", openapiCommand)).Config(func(cc *kli.CommandConfig) {
+		required(cc, "realm", "the realm")
+		optional(cc, "out", "write the document to this file instead of standard output")
+		boolean(cc, "check", "write nothing; fail when --out is missing or differs from what the config produces")
+		boolean(cc, "admin", "the admin API's document instead: administration routes, data routes past the rules, and internal functions")
+	})
+	cfg.Command("types").ShortHelp("generate a realm's TypeScript types").
+		LongHelp("Generates TypeScript types from the realm's config: documents, where and order_by per collection, functions,\napp configuration, email and push templates and roles. They come from the same config the server enforces; nothing\nis checked at runtime from them. Reads CONFIG_DIR, or a running backd with --from (an admin of the realm, the config\narea; " + adminAPINote + ") and writes types.d.ts and realm.json into --out.\n\n--check writes nothing and exits non-zero when the files in --out are missing or stale, for CI. --diff writes\nnothing and prints what changed at the type level since they were generated (a field added, a type changed, a\ncollection removed, a function's input changed), for pull request reviews. Things TypeScript can't express are\ntyped unknown and listed as warnings on standard error.\n\n--functions writes each functions project's backd.d.ts instead (in <realm>/<database>/_functions/, from CONFIG_DIR only):\nthe registry defineFunction(\"<database>/<name>\", handler) takes its types from. In dev mode backd rewrites it after\nevery config reload.").
+		Func(act("types", typesCommand)).Config(func(cc *kli.CommandConfig) {
+		required(cc, "realm", "the realm")
+		optional(cc, "db", "only this database of the realm")
+		cc.Define("out").String().Flag("out").Default("backd").Description("the directory for types.d.ts and realm.json")
+		optional(cc, "from", "read the config from this running backd instead of CONFIG_DIR")
+		boolean(cc, "check", "write nothing; fail when the generated files are missing or stale")
+		boolean(cc, "diff", "write nothing; print the type-level changes since the files were generated")
+		boolean(cc, "functions", "write each functions project's backd.d.ts (for defineFunction) instead of --out; with --check, only check")
+	})
 	appcfg := cfg.Command("app-config").ShortHelp("the realm's app configuration: values, history, rollback")
 	appcfg.SubCommand("get").ShortHelp("show the configuration with every value").
 		LongHelp("Asks the running backd for the realm's app configuration: every key with its effective value (the keys clients\ncan't read too), marking the ones that differ from their defaults, and the stored values that stopped validating\nafter a deploy. --key limits it to one key or group. Needs the config area (read is enough). " + adminAPINote).

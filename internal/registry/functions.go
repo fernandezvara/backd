@@ -28,8 +28,13 @@ import (
 
 // Function layout inside a database directory.
 const (
-	FunctionsDir     = "_functions" // one Deno project per database
-	BuildDir         = ".build"     // bundles and their manifest, written by `backd functions build`
+	FunctionsDir = "_functions" // one Deno project per database
+	BuildDir     = ".build"     // bundles and their manifest, written by `backd functions build`
+	// TypesFile is the generated registry of the project's types (`backd types --functions`): it
+	// shapes no bundle, so it is not part of the source hash or the config fingerprint.
+	TypesFile = "backd.d.ts"
+	// RuntimeDir holds what `defineFunction` runs on (a hidden folder, never part of the config).
+	RuntimeDir       = ".backd"
 	ManifestFile     = "manifest.json"
 	FunctionFile     = "function.yaml"
 	libDir           = "lib" // shared code of the project; not a function
@@ -397,6 +402,9 @@ func loadFunction(db *Database, settings RealmSettings, name, dir string) (*Func
 		errs = append(errs, fmt.Errorf("%s: function folder has no index.js or index.ts", dir))
 	case 1:
 		fn.Entry = name + "/" + entries[0]
+		if err := checkDefineName(filepath.Join(dir, entries[0]), db.Name, name); err != nil {
+			errs = append(errs, err)
+		}
 	default:
 		errs = append(errs, fmt.Errorf("%s: function folder has both index.js and index.ts; keep one", dir))
 	}
@@ -810,6 +818,9 @@ func SourceHash(dir string) (string, error) {
 		if err != nil {
 			return err
 		}
+		if rel == TypesFile {
+			return nil // generated, shapes no bundle
+		}
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return err
@@ -961,4 +972,26 @@ func reservedRealmSecret(settings RealmSettings, name string) bool {
 		return true
 	}
 	return settings.Storage != nil && slices.Contains(settings.Storage.SecretNames(), name)
+}
+
+// definePattern finds the name a function gives defineFunction("<database>/<name>", …).
+var definePattern = regexp.MustCompile("defineFunction\\(\\s*[\"'`]([^\"'`]*)[\"'`]")
+
+// checkDefineName fails when the entry file's defineFunction names another function: the
+// registry of generated types is keyed by name, so a mismatch would type the handler as
+// someone else's.
+func checkDefineName(entry, database, name string) error {
+	src, err := os.ReadFile(entry)
+	if err != nil {
+		return nil // an unreadable entry is reported where it is used
+	}
+	m := definePattern.FindSubmatch(src)
+	if m == nil {
+		return nil
+	}
+	want := database + "/" + name
+	if got := string(m[1]); got != want {
+		return fmt.Errorf("%s: defineFunction(%q) doesn't match the function's location: use defineFunction(%q)", entry, got, want)
+	}
+	return nil
 }

@@ -33,3 +33,12 @@ They also check coverage in both directions: every route of the server is in the
 ## Changing the API
 
 Change the spec in the same commit as the server. If a handler starts returning a new status, a new field or a new header, the contract tests fail until the spec says so, and a newly documented status fails until a test produces it.
+
+## New API or config surface extends the generators too
+
+Two generators read the same loaded config and the contract, so a feature that adds API or config surface isn't done until they know it:
+
+- the **type generator** (`internal/typegen`, behind `backd types`): new document fields, collection options that change what a client may write or query, function modes and context members, configuration, templates and roles, with a golden file in `internal/typegen/testdata`;
+- the **per-realm OpenAPI** (`internal/openapigen`, behind `backd openapi`): new routes, or routes that exist only when a realm enables something, each with a test that the route is present when enabled and absent when not. CI lints the example realms' documents and builds clients from them (`make openapi-clients`).
+
+Both are derived from `api/openapi.yaml`: documenting the route there is the first step.

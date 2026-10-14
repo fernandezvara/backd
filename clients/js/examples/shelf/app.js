@@ -4,6 +4,11 @@
 // mint `share` links, and `?s=<token>` resolves one publicly through
 // `share-open` — the holes the rules chapter left, closed.
 //
+// Chapter 19 types it: `backd types` writes backd/types.d.ts, `main` and the
+// collections below are typed from it in an editor, and on localhost the client
+// sends the types' fingerprint, so a schema change the app hasn't been
+// regenerated for shows up as a warning in the console.
+//
 // Chapter 18 reads the realm's app configuration: a maintenance banner anyone
 // sees, and a switch that hides the export button (the server enforces it too).
 //
@@ -17,13 +22,23 @@
 // `download` function, and a shared asset comes with links to its files.
 import { createClient, localStorageStorage, NotFoundError, SecondStepRequiredError, VersionMismatchError, versionStatus } from 'backd-js'
 
-const backd = createClient({
+/** @typedef {import('./backd/types').Realm} Realm */
+
+// The fingerprint of the types this app was written against (backd/realm.json). Only a
+// development build sends it: elsewhere there is no header and no warning.
+const devTypes = ['localhost', '127.0.0.1'].includes(window.location.hostname)
+  ? await fetch('./backd/realm.json').then((r) => r.json()).then((i) => i.fingerprint).catch(() => undefined)
+  : undefined
+
+/** @type {import('backd-js').TypedClient<Realm>} */
+const backd = /** @type {any} */ (createClient({
   url: window.location.origin,
   realm: 'shelf',
   // Sessions survive reloads. In a real app, guard against XSS before
   // trusting localStorage (or use cookie sessions).
   storage: localStorageStorage('shelf'),
-})
+  types: devTypes,
+}))
 const main = backd.db('main')
 const assets = main.collection('assets')
 const shares = main.collection('shares')

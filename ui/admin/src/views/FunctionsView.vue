@@ -8,6 +8,7 @@ import FormDialog from '@/components/FormDialog.vue'
 import FunctionsTabs from '@/components/FunctionsTabs.vue'
 import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
+import { downloadText } from '@/lib/draft'
 import { errorText, prettyDuration } from '@/lib/format'
 import { useRealmConfig } from '@/stores/config'
 import { useSession } from '@/stores/session'
@@ -39,7 +40,7 @@ interface FunctionConfig {
   retry?: { attempts: number; backoff: string; max_backoff: string }
 }
 
-defineProps<{ realm: string }>()
+const props = defineProps<{ realm: string }>()
 const { t } = useI18n()
 const admin = useAdmin()
 const session = useSession()
@@ -63,6 +64,21 @@ onMounted(async () => {
   await Promise.all([realmConfig.load(), loadSchedules()])
   if (canConfig.value && !realmConfig.config) loadError.value = t('functions.loadFailed')
 })
+// The realm's OpenAPI documents as files: the client one (what applications reach, no admin
+// routes) and the admin one (everything). The routes need the bearer token, so a plain link
+// can't fetch them.
+const downloading = ref(false)
+async function downloadOpenAPI(client: boolean) {
+  downloading.value = true
+  try {
+    const doc = client ? await admin.clientOpenapi() : await admin.openapi()
+    downloadText(`${props.realm}-openapi${client ? '-client' : '-admin'}.json`, JSON.stringify(doc, null, 2), 'application/json')
+  } catch (e) {
+    toasts.push(errorText(e, t('common.unexpected')))
+  } finally {
+    downloading.value = false
+  }
+}
 async function togglePause(name: string) {
   pausing.value = name
   try {
@@ -133,7 +149,11 @@ async function run() {
 <template>
   <div class="flex flex-wrap items-end justify-between gap-4">
     <h1 class="text-2xl font-semibold">{{ t('functions.title') }}</h1>
-    <AppButton v-if="canInvoke" @click="show()">{{ t('functions.invoke.open') }}</AppButton>
+    <div class="flex flex-wrap gap-2">
+      <AppButton v-if="canConfig" variant="secondary" :busy="downloading" data-testid="download-openapi-client" :title="t('functions.openapi.clientHelp')" @click="downloadOpenAPI(true)">{{ t('functions.openapi.client') }}</AppButton>
+      <AppButton v-if="canConfig" variant="secondary" :busy="downloading" data-testid="download-openapi-admin" :title="t('functions.openapi.adminHelp')" @click="downloadOpenAPI(false)">{{ t('functions.openapi.admin') }}</AppButton>
+      <AppButton v-if="canInvoke" @click="show()">{{ t('functions.invoke.open') }}</AppButton>
+    </div>
   </div>
   <div class="mt-4"><FunctionsTabs /></div>
 

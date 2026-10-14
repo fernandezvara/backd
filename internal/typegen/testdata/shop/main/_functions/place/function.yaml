@@ -1,0 +1,4 @@
+mode: sync
+invoke: user != nil
+admin: true
+calls: [price]

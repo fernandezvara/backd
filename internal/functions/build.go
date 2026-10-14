@@ -17,7 +17,6 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/fernandezvara/backd/internal/registry"
 )
@@ -75,64 +74,6 @@ func Build(ctx context.Context, reg *registry.Registry, opts Options) error {
 		}
 	}
 	return nil
-}
-
-// Watch rebuilds each functions project's bundles whenever its sources
-// change, until ctx is done. For `BACKD_DEV=true`: function code is picked
-// up automatically; schemas, rules and realm.yaml still need a restart.
-// A build failure (e.g. a syntax error) is logged and retried every tick
-// until the source changes again or the problem is fixed.
-func Watch(ctx context.Context, reg *registry.Registry, opts Options, interval time.Duration) {
-	if opts.Deno == "" {
-		opts.Deno = "deno"
-	}
-	if opts.Log == nil {
-		opts.Log = func(string, ...any) {}
-	}
-	var projects []*registry.Database
-	last := map[string]string{}
-	for _, db := range reg.Databases() {
-		if db.Functions == nil || len(db.Functions.Functions) == 0 {
-			continue
-		}
-		projects = append(projects, db)
-		if m, err := registry.ReadManifest(db.Functions.Dir); err == nil {
-			last[db.Functions.Dir] = m.Source
-		}
-	}
-	if len(projects) == 0 {
-		return
-	}
-	if v, err := DenoVersion(ctx, opts.Deno); err != nil {
-		opts.Log("dev mode: %v", err)
-		return
-	} else if v != registry.DenoVersion {
-		opts.Log("dev mode: this backd bundles functions with Deno %s, but %s is %s", registry.DenoVersion, opts.Deno, v)
-		return
-	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-		for _, db := range projects {
-			hash, err := registry.SourceHash(db.Functions.Dir)
-			if err != nil || hash == last[db.Functions.Dir] {
-				continue
-			}
-			if err := buildProject(ctx, db, opts); err != nil {
-				opts.Log("dev mode: rebuilding %s/%s failed: %v", db.Realm, db.Name, err)
-				continue
-			}
-			last[db.Functions.Dir] = hash
-			if after, err := registry.SourceHash(db.Functions.Dir); err == nil {
-				last[db.Functions.Dir] = after // the build may have written deno.lock
-			}
-		}
-	}
 }
 
 // buildProject bundles one database's functions into _functions/.build,
@@ -203,6 +144,11 @@ func bundle(ctx context.Context, dir string, fn *registry.Function, opts Options
 	if opts.Check {
 		args = append(args, "--check")
 	}
+	mapArgs, err := importMapArgs(dir)
+	if err != nil {
+		return nil, err
+	}
+	args = append(args, mapArgs...)
 	args = append(args, "./"+fn.Entry)
 	cmd := exec.CommandContext(ctx, opts.Deno, args...)
 	cmd.Dir = dir

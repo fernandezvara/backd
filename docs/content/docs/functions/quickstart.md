@@ -111,7 +111,7 @@ curl -X POST http://127.0.0.1:8080/v1/shop/main/_func/hello -H 'Content-Type: ap
 # → 400 {"error": {"code": "name_required", "message": "Send {\"name\": \"…\"}", ...}}
 ```
 
-While you edit function code, run `backd` locally with `BACKD_DEV=true` instead: it rebuilds function sources as you save, with no restart ([Dev mode](../testing/#dev-mode)).
+While you edit function code, run `backd` locally with `BACKD_DEV=true` instead: it rebuilds function sources and reloads the config as you save, with no restart ([Dev mode](../testing/#dev-mode)).
 
 ## 5. See what happened
 

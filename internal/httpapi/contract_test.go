@@ -946,6 +946,35 @@ func TestContract(t *testing.T) {
 	req("GET", ad+"/config", "", key, 200)
 	req("GET", ad+"/config", "", nil, 401)
 	req("GET", ad+"/config", "", ada, 403)
+	spec := "/v1/acme/_openapi.json"
+	specDoc := req("GET", spec, "", key, 200)
+	if rec, _ := f.doH(t, "GET", spec, "", key); rec.Header().Get("ETag") == "" {
+		t.Error("the document has no ETag")
+	} else {
+		req("GET", spec, "", map[string]string{"Authorization": key["Authorization"], "If-None-Match": rec.Header().Get("ETag")}, 304)
+	}
+	req("GET", "/v1/nope/_openapi.json", "", key, 404)
+	if specDoc["openapi"] != "3.1.0" {
+		t.Errorf("openapi document = %v", specDoc["openapi"])
+	}
+	req("GET", spec, "", nil, 401)
+	req("GET", spec, "", ada, 403)
+	req("GET", ad+"/types", "", key, 200)
+	adminSpec := req("GET", ad+"/openapi.json", "", key, 200)
+	if adminSpec["openapi"] != "3.1.0" {
+		t.Errorf("admin openapi document = %v", adminSpec["openapi"])
+	}
+	if rec, _ := f.doH(t, "GET", ad+"/openapi.json", "", key); rec.Header().Get("ETag") == "" {
+		t.Error("the admin document has no ETag")
+	} else {
+		req("GET", ad+"/openapi.json", "", map[string]string{"Authorization": key["Authorization"], "If-None-Match": rec.Header().Get("ETag")}, 304)
+	}
+	req("GET", ad+"/openapi.json", "", nil, 401)
+	req("GET", ad+"/openapi.json", "", ada, 403)
+	req("GET", "/v1/nope/_admin/openapi.json", "", key, 404)
+	req("GET", ad+"/types?db=nope", "", key, 400)
+	req("GET", ad+"/types", "", nil, 401)
+	req("GET", ad+"/types", "", ada, 403)
 	req("GET", ad+"/users?q=ada", "", key, 200)
 	req("GET", ad+"/users?q=", "", key, 400)
 	// A user made for the purpose, so ending its session disturbs nobody else.

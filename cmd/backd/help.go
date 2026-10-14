@@ -15,7 +15,7 @@ var helpGroups = []struct {
 	title    string
 	commands []string
 }{
-	{"Develop", []string{"template", "config", "rules", "databases", "functions"}},
+	{"Develop", []string{"template", "config", "rules", "databases", "types", "openapi", "functions"}},
 	{"Session", []string{"login", "logout", "whoami", "account"}},
 	{"Administer a realm", []string{"bootstrap", "user", "apikey", "push", "secret", "audit", "data", "storage", "files", "compliance", "consents", "app-config"}},
 	{"Server", []string{"serve", "provision", "worker", "executor", "egress"}},

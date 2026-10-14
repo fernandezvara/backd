@@ -27,6 +27,7 @@ export { parseReturn as parseOAuthReturn } from './oauth.js'
 
 /**
  * @typedef {import('./client.js').ClientOptions} ClientOptions
+ * @typedef {import('./typed.js').RealmShape} RealmShape
  * @typedef {import('./client.js').RequestOptions} RequestOptions
  * @typedef {import('./client.js').RetryOptions} RetryOptions
  * @typedef {import('./storage.js').TokenStorage} TokenStorage
@@ -109,4 +110,10 @@ export { parseReturn as parseOAuthReturn } from './oauth.js'
 /**
  * @template {object} [T=Record<string, any>]
  * @typedef {import('./data.js').Page<T>} Page
+ */
+
+/**
+ * A client typed from a realm's generated types: `TypedClient<Realm>` (see `createClient`).
+ * @template {import('./typed.js').RealmShape} R
+ * @typedef {import('./typed.js').TypedClient<R>} TypedClient
  */

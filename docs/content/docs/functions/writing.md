@@ -159,6 +159,30 @@ Put `input.schema.json` and `output.schema.json` next to `function.yaml` and `ba
 
 Schemas don't apply to `webhook` functions, which take a raw body. A scheduled run has no input, so a schema for a function that is also called by hand must allow `null` (see `daily_digest` in the [cookbook](../cookbook/#a-daily-digest-on-a-schedule)).
 
+## Typed functions
+
+`backd types --realm <realm> --functions` writes a `backd.d.ts` into each database's `_functions/` folder: the realm's [generated types](../../clients/types/) plus a `defineFunction` that gives each handler a context typed from your config. Wrap the handler and name it `<database>/<function>`:
+
+```ts
+// main/_functions/place/index.ts
+import { defineFunction } from "@backd/functions";
+
+export default defineFunction("main/place", async (ctx) => {
+  const sku = ctx.input.items[0];                          // from input.schema.json
+  const price = await ctx.call("price", { sku });          // only functions listed in calls:
+  const order = await ctx.db("main").collection("orders")  // the collection's document types
+    .create({ status: "new", items: [{ sku, qty: 1 }], total: price.amount });
+  return { order_id: order.id };                           // checked against output.schema.json
+});
+```
+
+Plain JavaScript gets the same checking in editors with `// @ts-check`. What the context holds follows `function.yaml`: `ctx.admin` only with `admin: true` (and `ctx.admin.config` with `config: write`), `ctx.email` and `ctx.push` only when declared, `ctx.request` only for webhooks, and `ctx.secrets` has exactly the names the function lists.
+
+- **No setup for builds.** `defineFunction` returns its handler unchanged, so it costs nothing at run time. `backd functions build` maps `@backd/functions` to a small module it keeps in the project's hidden `.backd/` folder; add the mapping yourself (`"@backd/functions": "./.backd/functions.js"` under `imports` in `deno.json`) for `deno test` and editors that read `deno.json`.
+- **The name is checked.** A `defineFunction` whose name isn't the function's own location stops startup and says the name to use.
+- **Functions without it keep working**, untyped.
+- **In dev mode** (`BACKD_DEV=true`) `backd.d.ts` is rewritten after every config reload, so a change to a schema shows up in your editor as you save it ([Dev mode](../testing/#dev-mode)). Otherwise run the command above, commit `backd.d.ts`, and run it with `--check` in CI next to `backd config check`: it fails when the file is missing or no longer matches the config.
+
 ## Privileged changes: admin and batch
 
 Some changes no user rule should allow: marking an order refunded, moving money, granting a role. Put them in a function with `admin: true`, restrict who may call it with `invoke`, and make the change atomic with `batch`:

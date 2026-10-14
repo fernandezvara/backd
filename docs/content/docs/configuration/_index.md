@@ -29,7 +29,7 @@ All runtime configuration comes from environment variables. At startup `backd` c
 | `BACKD_ADMIN_API` | no | `true` | `false` makes this instance serve no `/v1/{realm}/_admin` route: they answer `404` like any unknown route. For public instances when an internal instance has the admin API (see [Production deployment](../operations/production/#admin-api)) |
 | `BACKD_ADMIN_UI` | no | `false` | `true` serves the admin web interface at `/_ui/` when the binary was built with it (release images are); it needs the admin API on the same instance, or startup fails |
 | `BACKD_ADMIN_UI_IDLE` | no | `30m` | how long the admin interface may sit untouched before it signs out and revokes its session |
-| `BACKD_DEV` | no | `false` | `true` rebuilds function sources automatically as they change (see [Dev mode](../functions/testing/#dev-mode)); `serve` refuses to start unless `HTTP_ADDR` is bound to localhost. Local development only |
+| `BACKD_DEV` | no | `false` | `true` reloads the config and rebuilds function sources automatically as the files change (see [Dev mode](../functions/testing/#dev-mode)); `serve` refuses to start unless `HTTP_ADDR` is bound to localhost. Local development only |
 | `BACKD_DEV_ANY_ADDR` | no | `false` | `true` lets `BACKD_DEV=true` run on an address that isn't localhost, for a container whose ports are published on the host's localhost only (the local docker stack). Never set it where anything else can reach `backd` |
 | `WORKER_CONCURRENCY` | no | `10` | [Async jobs](../functions/jobs/) one worker process runs at once, on `backd worker` or `backd serve --with-worker` |
 
