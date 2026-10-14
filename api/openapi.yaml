@@ -1638,6 +1638,168 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_orgs/{org}/templates:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+    get:
+      tags: [organizations]
+      summary: An organization's email templates
+      description: |
+        The kinds of email the realm lets companies customize (`email.customizable`), with the
+        placeholders each must print, and the overrides the organization has with their versions
+        (without the text). Needs the capability `email.overrides.permission` names (`manage: org`
+        by default).
+      operationId: listOrganizationTemplates
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The customizable kinds and the organization's overrides.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationTemplates" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/{org}/templates/{kind}/{locale}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { name: kind, in: path, required: true, schema: { type: string } }
+      - { name: locale, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [organizations]
+      summary: One template with its versions
+      operationId: getOrganizationTemplate
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The template and its previous versions (up to 20), newest first.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationTemplate" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      tags: [organizations]
+      summary: Write the organization's version of a kind in a language
+      description: |
+        Subject, text and HTML in a logic-less syntax: `{{Link}}`, `{{App.name}}`, `{{#App.logo}}…{{/App.logo}}`,
+        `{{^App.logo}}…{{/App.logo}}`; every value is escaped; there are no includes, partials or helpers.
+        The kind must be in `email.customizable`. It is checked: each part at most 64 KiB, the syntax
+        (`400 invalid_template`, with the line and column in `details`), the placeholders the kind
+        needs (the link of a token kind, an invitation's link and organization name) and a render
+        with sample data. The HTML passes an allowlist sanitizer when a message is made, and
+        `removed` lists what it drops from the sample. The previous version is kept (the last 20).
+        Audited, never with the text.
+      operationId: putOrganizationTemplate
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationTemplateInput" }
+      responses:
+        "200":
+          description: The saved template.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationTemplate" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [organizations]
+      summary: Go back to the realm's own template
+      operationId: deleteOrganizationTemplate
+      security: [{ session: [] }]
+      responses:
+        "204": { description: "Removed; the kind uses the realm's file again." }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/{org}/templates/{kind}/{locale}/preview:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { name: kind, in: path, required: true, schema: { type: string } }
+      - { name: locale, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [organizations]
+      summary: Preview a template
+      description: |
+        Renders a draft (all three parts), or the saved version when none is given, without
+        sending anything. `data` is `sample` (default) or `real`, which calls the realm's
+        `email.data_hook` for the caller and the organization. Show `html` in a sandboxed frame.
+      operationId: previewOrganizationTemplate
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationTemplatePreviewInput" }
+      responses:
+        "200":
+          description: The rendered message.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationTemplatePreview" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/{org}/templates/{kind}/{locale}/test:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { name: kind, in: path, required: true, schema: { type: string } }
+      - { name: locale, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [organizations]
+      summary: Send a test of a template to yourself
+      description: |
+        Sends a draft (or the saved version) to the **requesting user's own address only**, with
+        "[TEST]" in the subject, through the realm's delivery function. At most 10 per hour per
+        organization (`429 template_test_limit`). Audited.
+      operationId: testOrganizationTemplate
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationTemplateDraft" }
+      responses:
+        "202":
+          description: Queued.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status: { type: string, enum: [queued] }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_orgs/{org}/teams/{team}/members/{user}:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -7966,6 +8128,87 @@ components:
         role: { type: string, description: "A team role declared in `organizations.team_roles`." }
         from: { type: string, format: date-time, description: "The grant counts from then; from now when absent." }
         until: { type: string, format: date-time, description: "...until then, to the second; for ever when absent. After `from`." }
+
+    OrganizationTemplateInput:
+      type: object
+      additionalProperties: false
+      required: [subject, text, html]
+      properties:
+        subject: { type: string, maxLength: 65536 }
+        text: { type: string, maxLength: 65536 }
+        html: { type: string, maxLength: 65536 }
+
+    OrganizationTemplateDraft:
+      type: object
+      additionalProperties: false
+      description: A draft with all three parts, or an empty object for the saved version.
+      properties:
+        subject: { type: string }
+        text: { type: string }
+        html: { type: string }
+
+    OrganizationTemplatePreviewInput:
+      type: object
+      additionalProperties: false
+      properties:
+        subject: { type: string }
+        text: { type: string }
+        html: { type: string }
+        data: { type: string, enum: [sample, real], default: sample }
+
+    OrganizationTemplatePreview:
+      type: object
+      additionalProperties: false
+      required: [subject, text, html, removed]
+      properties:
+        subject: { type: string }
+        text: { type: string }
+        html: { type: string, description: "Already sanitized." }
+        removed: { type: array, items: { type: string }, description: "What the sanitizer dropped." }
+
+    OrganizationTemplateVersion:
+      type: object
+      additionalProperties: false
+      required: [version, at]
+      properties:
+        version: { type: integer }
+        at: { type: string, format: date-time }
+        by: { type: string, description: "The user who wrote it." }
+        subject: { type: string }
+        text: { type: string }
+        html: { type: string }
+
+    OrganizationTemplate:
+      type: object
+      additionalProperties: false
+      required: [kind, locale, version, updated_at, versions]
+      properties:
+        kind: { type: string }
+        locale: { type: string }
+        version: { type: integer }
+        updated_at: { type: string, format: date-time }
+        updated_by: { type: string }
+        subject: { type: string }
+        text: { type: string }
+        html: { type: string }
+        versions: { type: array, items: { $ref: "#/components/schemas/OrganizationTemplateVersion" } }
+        removed: { type: array, items: { type: string }, description: "Only in the answer to a save: what the sanitizer would drop from the sample render." }
+
+    OrganizationTemplates:
+      type: object
+      additionalProperties: false
+      required: [customizable, items]
+      properties:
+        customizable:
+          type: object
+          description: The kinds companies may customize, by name, with the placeholders each must print.
+          additionalProperties:
+            type: object
+            additionalProperties: false
+            required: [required]
+            properties:
+              required: { type: array, items: { type: string } }
+        items: { type: array, items: { $ref: "#/components/schemas/OrganizationTemplate" } }
 
     OrganizationMembers:
       type: object

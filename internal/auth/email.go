@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/fernandezvara/backd/internal/email"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -40,9 +41,12 @@ type EmailRequest struct {
 	RedirectTo string // already checked against the realm's allowed redirects
 	// Org is the company context of the message; when empty, the one recorded on the request's
 	// context (WithOrgContext) is used.
-	Org      string
-	ClientIP   string // who caused it, for the per-IP limit; "" when nobody did
-	RequestID  string
+	Org string
+	// Draft is a template to render instead of the realm's (or the organization's saved) one: a
+	// test send of an owner template. The job keeps it until job retention ends.
+	Draft     *email.Override
+	ClientIP  string // who caused it, for the per-IP limit; "" when nobody did
+	RequestID string
 	// Event and CodesLeft are the fields of the same name of EmailJob.
 	Event       string
 	CodesLeft   int
@@ -127,7 +131,7 @@ func (s *Users) QueueEmail(ctx context.Context, r EmailRequest) (Job, error) {
 	job := Job{
 		Database: database, Function: function, CallerActor: "backd", Origin: "backd:email." + r.Kind,
 		TimeoutMS: e.Timeout.Milliseconds(), RequestID: r.RequestID,
-		Email: &EmailJob{Kind: r.Kind, UserID: r.UserID, Locale: r.Locale, RedirectTo: r.RedirectTo, Org: r.Org, To: r.To, Notice: r.Notice, InvitationID: r.InvitationID, OrgInvitationID: r.OrgInvitationID, Event: r.Event, CodesLeft: r.CodesLeft, ChallengeID: r.ChallengeID, Custom: r.Custom},
+		Email: &EmailJob{Kind: r.Kind, UserID: r.UserID, Locale: r.Locale, RedirectTo: r.RedirectTo, Org: r.Org, Draft: r.Draft, To: r.To, Notice: r.Notice, InvitationID: r.InvitationID, OrgInvitationID: r.OrgInvitationID, Event: r.Event, CodesLeft: r.CodesLeft, ChallengeID: r.ChallengeID, Custom: r.Custom},
 	}
 	if r.Custom != nil {
 		job.CallerActor, job.Origin = "function:"+r.Custom.Function, "function:"+r.Custom.Function

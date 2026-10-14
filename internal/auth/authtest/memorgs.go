@@ -17,6 +17,7 @@ type memOrgs struct {
 	teams   map[string]auth.OrgTeam
 	invites map[string]auth.OrgInvitation
 	seq     map[string]int64 // org + "\x00" + user → the last membership event number
+	tpls    map[string]auth.OrgTemplate
 }
 
 func (m *MemStore) org() *memOrgs {
@@ -251,6 +252,53 @@ func (m *MemStore) ListOrgMembers(_ context.Context, org, after string, limit in
 		return all[:limit], true, nil
 	}
 	return all, false, nil
+}
+
+func tplKey(org, kind, locale string) string { return org + "\x00" + kind + "\x00" + locale }
+
+func (m *MemStore) OrgTemplate(_ context.Context, org, kind, locale string) (auth.OrgTemplate, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	t, ok := m.org().tpls[tplKey(org, kind, locale)]
+	if !ok {
+		return auth.OrgTemplate{}, auth.ErrNotFound
+	}
+	return t, nil
+}
+
+func (m *MemStore) ListOrgTemplates(_ context.Context, org string) ([]auth.OrgTemplate, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []auth.OrgTemplate
+	for _, t := range m.org().tpls {
+		if t.Org == org {
+			out = append(out, t)
+		}
+	}
+	slices.SortFunc(out, func(a, b auth.OrgTemplate) int { return cmp.Compare(a.Kind+"\x00"+a.Locale, b.Kind+"\x00"+b.Locale) })
+	return out, nil
+}
+
+func (m *MemStore) PutOrgTemplate(_ context.Context, t auth.OrgTemplate) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o := m.org()
+	if o.tpls == nil {
+		o.tpls = map[string]auth.OrgTemplate{}
+	}
+	o.tpls[tplKey(t.Org, t.Kind, t.Locale)] = t
+	return nil
+}
+
+func (m *MemStore) DeleteOrgTemplate(_ context.Context, org, kind, locale string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o := m.org()
+	if _, ok := o.tpls[tplKey(org, kind, locale)]; !ok {
+		return auth.ErrNotFound
+	}
+	delete(o.tpls, tplKey(org, kind, locale))
+	return nil
 }
 
 func (m *MemStore) NextOrgMemberSeq(_ context.Context, org, user string) (int64, error) {

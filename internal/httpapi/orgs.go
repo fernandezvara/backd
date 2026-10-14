@@ -55,6 +55,7 @@ func (a *authAPI) orgRoutes(r chi.Router) {
 			r.With(json).Post("/teams/{team}/roles", teamRoleHandler(auth.TeamRoleGrantOp, false))
 			r.With(json).Patch("/teams/{team}/roles", teamRoleHandler(auth.TeamRoleWindowOp, false))
 			r.With(json).Delete("/teams/{team}/roles", teamRoleHandler(auth.TeamRoleRevokeOp, false))
+			a.templateRoutes(r)
 			r.Get("/invitations", a.listOrgInvitations)
 			r.With(json).Post("/invitations", a.createOrgInvitation)
 			r.Delete("/invitations/{id}", a.revokeOrgInvitation)

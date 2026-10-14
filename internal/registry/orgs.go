@@ -199,6 +199,17 @@ func (o *OrgSettings) CapsOf(roles []string) OrgCaps {
 	return out
 }
 
+// RolesWith returns the declared roles whose holders may manage everything in caps, sorted.
+func (o *OrgSettings) RolesWith(caps OrgCaps) []string {
+	var out []string
+	for _, name := range o.RoleNames() {
+		if o.Roles[name].Manage.Has(caps) {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
 // Declared reports whether role is declared.
 func (o *OrgSettings) Declared(role string) bool {
 	_, ok := o.Roles[role]

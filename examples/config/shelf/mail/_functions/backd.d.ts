@@ -277,6 +277,7 @@ export interface Realm {
       "change-email": Record<string, unknown>;
       "consent-updated": Record<string, unknown>;
       "email-changed": Record<string, unknown>;
+      "email-template-failed": Record<string, unknown>;
       invitation: Record<string, unknown>;
       "magic-link": Record<string, unknown>;
       "mfa-failed": Record<string, unknown>;

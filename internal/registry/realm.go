@@ -270,6 +270,10 @@ type EmailSettings struct {
 	// Timeout is the delivery function's own timeout, set when the config is
 	// loaded; email jobs lease for it.
 	Timeout time.Duration
+	// Customizable are the kinds of email an organization may write its own template of
+	// (email.customizable); OverridePermission is the organization capability that edits them.
+	Customizable       []string
+	OverridePermission OrgCaps
 	// DataHook is the internal, sync function (<database>/<function>) backd calls before it
 	// renders a system email, to fill in {{.App}} (design/team-access.md §10); "" for none.
 	DataHook string
@@ -415,8 +419,13 @@ type realmDoc struct {
 
 // emailDoc mirrors the email section of realm.yaml.
 type emailDoc struct {
-	Function  string `yaml:"function"`
-	DataHook  string `yaml:"data_hook"`
+	Function string `yaml:"function"`
+	DataHook string `yaml:"data_hook"`
+	// Customizable lists the kinds a company may customize, and Overrides who edits them.
+	Customizable []string `yaml:"customizable"`
+	Overrides    *struct {
+		Permission string `yaml:"permission"`
+	} `yaml:"overrides"`
 	From      string `yaml:"from"`
 	ReplyTo   string `yaml:"reply_to"`
 	PublicURL string `yaml:"public_url"`
@@ -1090,6 +1099,25 @@ func parseEmail(d *emailDoc) (*EmailSettings, []error) {
 	if d.DataHook != "" {
 		if db, name, ok := strings.Cut(d.DataHook, "/"); !ok || !namePattern.MatchString(db) || !namePattern.MatchString(name) {
 			add("data_hook: must be <database>/<function> (an internal, sync function), got %q", d.DataHook)
+		}
+	}
+	e.OverridePermission = CapOrg
+	if o := d.Overrides; o != nil && o.Permission != "" {
+		caps := map[string]OrgCaps{"manage_org": CapOrg, "manage_members": CapMembers, "manage_roles": CapRoles, "manage_teams": CapTeams}
+		c, ok := caps[o.Permission]
+		if !ok {
+			add("overrides.permission: must be manage_org, manage_members, manage_roles or manage_teams, got %q", o.Permission)
+		}
+		e.OverridePermission = c
+	}
+	for i, kind := range d.Customizable {
+		switch {
+		case kind == "":
+			add("customizable[%d]: is empty", i)
+		case slices.Contains(e.Customizable, kind):
+			add("customizable[%d]: %q is listed twice", i, kind)
+		default:
+			e.Customizable = append(e.Customizable, kind)
 		}
 	}
 	if d.From == "" {

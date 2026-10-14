@@ -1,7 +1,7 @@
 {
   "generator": "1",
   "realm": "shelf",
-  "fingerprint": "26348c4aa8a9ef73b67bffe24185a98646b6a26fb5bd70fa96ad9914fd6cd4d8",
+  "fingerprint": "6ad2ea437aa2b12a7665e6a298996417f08ee917a258c7fa1cce66e229f5ff2d",
   "entries": {
     "collection mail/outbox": "",
     "collection main/assets": "",
@@ -132,6 +132,7 @@
     "template email change-email": "",
     "template email consent-updated": "",
     "template email email-changed": "",
+    "template email email-template-failed": "",
     "template email invitation": "",
     "template email magic-link": "",
     "template email mfa-failed": "",

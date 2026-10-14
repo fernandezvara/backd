@@ -10,6 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/email"
 )
 
 type orgDoc struct {
@@ -746,4 +747,89 @@ func (s *AuthStore) OrgTeamsByIDs(ctx context.Context, org string, ids []string)
 		out[i] = auth.OrgTeam{ID: d.ID, Org: d.Org, Name: d.Name, Roles: d.Roles, CreatedAt: d.CreatedAt.UTC()}
 	}
 	return out, nil
+}
+
+type orgTemplateVersionDoc struct {
+	Version int       `bson:"version"`
+	Subject string    `bson:"subject"`
+	Text    string    `bson:"text"`
+	HTML    string    `bson:"html"`
+	By      string    `bson:"by,omitempty"`
+	At      time.Time `bson:"at"`
+}
+
+type orgTemplateDoc struct {
+	ID        string                  `bson:"_id"` // org/kind/locale
+	Org       string                  `bson:"org"`
+	Kind      string                  `bson:"kind"`
+	Locale    string                  `bson:"locale"`
+	Subject   string                  `bson:"subject"`
+	Text      string                  `bson:"text"`
+	HTML      string                  `bson:"html"`
+	Version   int                     `bson:"version"`
+	UpdatedBy string                  `bson:"updated_by,omitempty"`
+	UpdatedAt time.Time               `bson:"updated_at"`
+	Versions  []orgTemplateVersionDoc `bson:"versions"`
+}
+
+func (s *AuthStore) orgTemplates() *mongo.Collection { return s.db.Collection(OrgTemplatesCollection) }
+
+func orgTemplateID(org, kind, locale string) string { return org + "/" + kind + "/" + locale }
+
+func (d orgTemplateDoc) template() auth.OrgTemplate {
+	t := auth.OrgTemplate{Org: d.Org, Kind: d.Kind, Locale: d.Locale, Override: email.Override{Subject: d.Subject, Text: d.Text, HTML: d.HTML},
+		Version: d.Version, UpdatedBy: d.UpdatedBy, UpdatedAt: d.UpdatedAt.UTC()}
+	for _, v := range d.Versions {
+		t.Versions = append(t.Versions, auth.OrgTemplateVersion{Version: v.Version, Override: email.Override{Subject: v.Subject, Text: v.Text, HTML: v.HTML}, By: v.By, At: v.At.UTC()})
+	}
+	return t
+}
+
+func (s *AuthStore) OrgTemplate(ctx context.Context, org, kind, locale string) (auth.OrgTemplate, error) {
+	var d orgTemplateDoc
+	err := s.orgTemplates().FindOne(ctx, bson.D{{Key: "_id", Value: orgTemplateID(org, kind, locale)}}).Decode(&d)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return auth.OrgTemplate{}, auth.ErrNotFound
+	}
+	if err != nil {
+		return auth.OrgTemplate{}, err
+	}
+	return d.template(), nil
+}
+
+func (s *AuthStore) ListOrgTemplates(ctx context.Context, org string) ([]auth.OrgTemplate, error) {
+	cur, err := s.orgTemplates().Find(ctx, bson.D{{Key: "org", Value: org}}, options.Find().SetSort(bson.D{{Key: "kind", Value: 1}, {Key: "locale", Value: 1}}))
+	if err != nil {
+		return nil, err
+	}
+	var docs []orgTemplateDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	out := make([]auth.OrgTemplate, len(docs))
+	for i, d := range docs {
+		out[i] = d.template()
+	}
+	return out, nil
+}
+
+func (s *AuthStore) PutOrgTemplate(ctx context.Context, t auth.OrgTemplate) error {
+	d := orgTemplateDoc{ID: orgTemplateID(t.Org, t.Kind, t.Locale), Org: t.Org, Kind: t.Kind, Locale: t.Locale,
+		Subject: t.Subject, Text: t.Text, HTML: t.HTML, Version: t.Version, UpdatedBy: t.UpdatedBy, UpdatedAt: t.UpdatedAt, Versions: []orgTemplateVersionDoc{}}
+	for _, v := range t.Versions {
+		d.Versions = append(d.Versions, orgTemplateVersionDoc{Version: v.Version, Subject: v.Subject, Text: v.Text, HTML: v.HTML, By: v.By, At: v.At})
+	}
+	_, err := s.orgTemplates().ReplaceOne(ctx, bson.D{{Key: "_id", Value: d.ID}}, d, options.Replace().SetUpsert(true))
+	return err
+}
+
+func (s *AuthStore) DeleteOrgTemplate(ctx context.Context, org, kind, locale string) error {
+	res, err := s.orgTemplates().DeleteOne(ctx, bson.D{{Key: "_id", Value: orgTemplateID(org, kind, locale)}})
+	if err != nil {
+		return err
+	}
+	if res.DeletedCount == 0 {
+		return auth.ErrNotFound
+	}
+	return nil
 }

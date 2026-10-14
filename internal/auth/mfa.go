@@ -113,10 +113,10 @@ type AuthChallenge struct {
 	CodeChallenge string
 	RedirectTo    string
 	// Org is the company context of a magic-link request: the page of its link keeps it.
-	Org   string
-	Email string
-	Purpose       string
-	Locale        string
+	Org     string
+	Email   string
+	Purpose string
+	Locale  string
 	// Methods are how the session will say it was made (a ChallengeConsent keeps them
 	// while the user accepts); Consents are the acceptances a magic-link request carried.
 	Methods   []string

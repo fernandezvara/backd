@@ -176,3 +176,26 @@ test('the company a person comes from travels with sign-in, sign-up and reset re
   await assert.rejects(c.auth.signup({ email: 'ada@example.com', password: 'dev-p4ssw0rd!', org: 'o1' }))
   assert.equal(m.calls[2].body.org, 'o1')
 })
+
+test('an organization writes, previews and tests its own emails', async () => {
+  const m = mockFetch([
+    { body: { customizable: { 'reset-password': { required: ['Link'] } }, items: [] } },
+    { body: { kind: 'reset-password', locale: 'en', version: 1, versions: [], removed: [] } },
+    { body: { subject: 'Hi', text: 't', html: '<p>h</p>', removed: [] } },
+    { status: 202, body: { status: 'queued' } },
+    { status: 204 },
+  ])
+  const t = make(m).orgs.templates('o1')
+  assert.deepEqual(Object.keys((await t.list()).customizable), ['reset-password'])
+  const draft = { subject: 'Reset {{App.name}}', text: '{{Link}}', html: '<a href="{{Link}}">go</a>' }
+  await t.put('reset-password', 'en', draft)
+  assert.equal(m.calls[1].method, 'PUT')
+  assert.equal(m.calls[1].url.pathname, '/v1/acme/_orgs/o1/templates/reset-password/en')
+  assert.deepEqual(m.calls[1].body, draft)
+  await t.preview('reset-password', 'en', { draft, data: 'real' })
+  assert.deepEqual(m.calls[2].body, { ...draft, data: 'real' })
+  await t.test('reset-password', 'en')
+  assert.equal(m.calls[3].url.pathname, '/v1/acme/_orgs/o1/templates/reset-password/en/test')
+  await t.delete('reset-password', 'en')
+  assert.equal(m.calls[4].method, 'DELETE')
+})

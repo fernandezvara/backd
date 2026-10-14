@@ -835,12 +835,8 @@ func (s *Users) keepManagerWith(ctx context.Context, orgID, skip string, teamRol
 	if teamRoles != nil {
 		roles = teamRoles
 	}
-	var managerRoles, managerTeams []string
-	for name, r := range o.Roles {
-		if r.Manage.Has(registry.CapOrg) {
-			managerRoles = append(managerRoles, name)
-		}
-	}
+	managerRoles := o.RolesWith(registry.CapOrg)
+	var managerTeams []string
 	for id, rs := range roles {
 		if o.CapsOf(rs).Has(registry.CapOrg) {
 			managerTeams = append(managerTeams, id)

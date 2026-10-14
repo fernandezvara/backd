@@ -67,8 +67,8 @@ func TestCompanyContextInEmailsAndPages(t *testing.T) {
 	// An organization the address doesn't belong to, and one that doesn't exist, are ignored
 	// with the same answer, and the message carries no company.
 	for name, body := range map[string]string{
-		"a stranger's organization": `{"email": "ada@example.com", "org": "` + other + `"}`,
-		"an unknown organization":   `{"email": "ada@example.com", "org": "nosuchorg"}`,
+		"a stranger's organization":  `{"email": "ada@example.com", "org": "` + other + `"}`,
+		"an unknown organization":    `{"email": "ada@example.com", "org": "nosuchorg"}`,
 		"an address with no account": `{"email": "nobody@example.com", "org": "` + org + `"}`,
 	} {
 		rec := f.page(t, "POST", "/v1/acme/_auth/reset-password/request", "application/json", body, "")

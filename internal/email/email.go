@@ -52,6 +52,9 @@ const (
 	// no account that someone asked to sign in with it.
 	MagicLink = "magic-link"
 	NoAccount = "no-account"
+	// TemplateFailed tells an organization's managers that a template they wrote couldn't be
+	// used at send time ({{.Data.event}} is the kind, {{.Data.org_name}} the organization).
+	TemplateFailed = "email-template-failed"
 	// ConsentUpdated asks people to review the new version of a consent
 	// ({{.Data.event}} is the consent's name); it is only sent by `backd consents notify`.
 	ConsentUpdated = "consent-updated"
@@ -59,12 +62,12 @@ const (
 
 // SystemKinds are the kinds backd knows; `backd template realm` writes an
 // English template for each.
-var SystemKinds = []string{VerifyEmail, ResetPassword, AccountExists, PasswordChanged, Welcome, ChangeEmail, EmailChanged, Invitation, OrgInvitation, SecurityNotice, MFAFailed, ReauthCode, MFAReset, MagicLink, NoAccount, ConsentUpdated}
+var SystemKinds = []string{VerifyEmail, ResetPassword, AccountExists, PasswordChanged, Welcome, ChangeEmail, EmailChanged, Invitation, OrgInvitation, SecurityNotice, MFAFailed, ReauthCode, MFAReset, MagicLink, NoAccount, TemplateFailed, ConsentUpdated}
 
 // BuiltInKinds are system kinds a realm does not have to ship: when its email folder has
 // none, the built-in English text is used for every listed locale, so a realm that
 // existed before them keeps working. A folder of the kind replaces the built-in text.
-var BuiltInKinds = []string{OrgInvitation, SecurityNotice, MFAFailed, ReauthCode, MFAReset, MagicLink, NoAccount, ConsentUpdated}
+var BuiltInKinds = []string{OrgInvitation, SecurityNotice, MFAFailed, ReauthCode, MFAReset, MagicLink, NoAccount, TemplateFailed, ConsentUpdated}
 
 // RequiredKinds must have a template in every realm that configures email.
 var RequiredKinds = []string{VerifyEmail, ResetPassword, AccountExists, PasswordChanged}
@@ -217,6 +220,9 @@ var (
 	kindPattern   = regexp.MustCompile(`^[a-z0-9]+(?:[-_][a-z0-9]+)*$`)
 	localePattern = regexp.MustCompile(`^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$`)
 )
+
+// ValidKind reports whether v is a name a kind of email can have.
+func ValidKind(v string) bool { return kindPattern.MatchString(v) }
 
 // ValidLocale reports whether v looks like a BCP 47 language tag (es, es-MX).
 func ValidLocale(v string) bool { return localePattern.MatchString(v) }

@@ -346,6 +346,14 @@ type Store interface {
 	// PurgeExpiredTeamRoles removes the team role grants whose window ended before the instant,
 	// and says how many it removed.
 	PurgeExpiredTeamRoles(ctx context.Context, before time.Time) (int64, error)
+	// OrgTemplate returns an organization's override of a kind in a language; ErrNotFound if none.
+	OrgTemplate(ctx context.Context, org, kind, locale string) (OrgTemplate, error)
+	// ListOrgTemplates returns an organization's overrides.
+	ListOrgTemplates(ctx context.Context, org string) ([]OrgTemplate, error)
+	// PutOrgTemplate stores an override, with its versions.
+	PutOrgTemplate(ctx context.Context, t OrgTemplate) error
+	// DeleteOrgTemplate removes an override; ErrNotFound if none.
+	DeleteOrgTemplate(ctx context.Context, org, kind, locale string) error
 	// OrgMembersWithRoles returns the members holding any of the roles directly.
 	OrgMembersWithRoles(ctx context.Context, org string, roles []string) ([]OrgMember, error)
 	// OrgMembershipsOf returns up to limit memberships of a user; CountOrgMembershipsOf counts them.

@@ -2299,6 +2299,50 @@ func TestContract(t *testing.T) {
 		req("POST", assign+"?dry_run=true", `{"org": "`+to+`"}`, key, 200)
 		req("POST", assign, `{"org": "`+to+`"}`, key, 202)
 		req("POST", assign, `{"org": "`+to+`"}`, key, 409) // one at a time per collection
+		// Owner templates.
+		f.svc.Settings.Email.Customizable = []string{"reset-password"}
+		tplLimits := f.svc.Settings.Email.Limits
+		f.svc.Settings.Email.Limits.PerKindPerHour, f.svc.Settings.Email.Limits.PerDay, f.svc.Settings.Email.Limits.PerIPPerHour = 100000, 100000, 100000
+		tplBase := orgs + "/" + id + "/templates"
+		tpl := tplBase + "/reset-password/en"
+		goodTpl := `{"subject": "Reset", "text": "{{Link}}", "html": "<a href=\"{{Link}}\">Reset</a>"}`
+		req("GET", tplBase, "", nil, 401)
+		req("GET", tplBase, "", carl, 403)
+		req("GET", tplBase, "", ada, 200)
+		req("GET", tpl, "", nil, 401)
+		req("GET", tpl, "", carl, 403)
+		req("GET", tpl, "", ada, 404)
+		req("GET", tplBase+"/verify-email/en", "", ada, 400)
+		req("PUT", tpl, goodTpl, withJSON(nil), 401)
+		req("PUT", tpl, goodTpl, withJSON(carl), 403)
+		req("PUT", tpl, `{"subject": "x", "text": "no link", "html": "x"}`, withJSON(ada), 400)
+		req("PUT", tplBase+"/verify-email/en", goodTpl, withJSON(ada), 400)
+		req("PUT", tpl, goodTpl, withJSON(ada), 200)
+		req("GET", tpl, "", ada, 200)
+		req("POST", tpl+"/preview", `{}`, withJSON(nil), 401)
+		req("POST", tpl+"/preview", `{}`, withJSON(carl), 403)
+		req("POST", tpl+"/preview", `{"subject": "only"}`, withJSON(ada), 400)
+		req("POST", tpl+"/preview", `{}`, withJSON(ada), 200)
+		req("DELETE", tpl, "", ada, 204)
+		req("POST", tpl+"/preview", `{}`, withJSON(ada), 404) // nothing saved
+		req("POST", tpl+"/test", `{}`, withJSON(ada), 404)
+		req("PUT", tpl, goodTpl, withJSON(ada), 200)
+		req("POST", tplBase+"/magic-link/en/preview", `{}`, withJSON(ada), 400)
+		req("POST", tpl+"/test", `{}`, withJSON(nil), 401)
+		req("POST", tpl+"/test", `{}`, withJSON(carl), 403)
+		req("POST", tpl+"/test", `{"subject": "only"}`, withJSON(ada), 400)
+		req("POST", tpl+"/test", `{}`, withJSON(ada), 202)
+		for i := 1; i < auth.OrgTemplateTestsPerHour; i++ {
+			req("POST", tpl+"/test", `{}`, withJSON(ada), 202)
+		}
+		req("POST", tpl+"/test", `{}`, withJSON(ada), 429)
+		req("DELETE", tpl, "", nil, 401)
+		req("DELETE", tpl, "", carl, 403)
+		req("DELETE", tpl, "", ada, 204)
+		req("DELETE", tpl, "", ada, 404)
+		req("DELETE", tplBase+"/verify-email/en", "", ada, 400)
+		f.svc.Settings.Email.Limits = tplLimits
+		f.svc.Settings.Email.Customizable = nil
 		// Teams.
 		teamsPath := orgs + "/" + id + "/teams"
 		req("GET", teamsPath, "", nil, 401)

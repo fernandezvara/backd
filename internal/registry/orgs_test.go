@@ -292,3 +292,38 @@ func TestTemplateDataHooksAreInternalSyncFunctions(t *testing.T) {
 		}
 	}
 }
+
+func TestCustomizableEmailKinds(t *testing.T) {
+	s, errs := parseRealmSettings([]byte("signup: open\nemail:\n  function: app/send\n  from: Shop <no-reply@shop.example>\n  public_url: https://api.shop.example\n  customizable: [reset-password, org-invitation]\n  overrides:\n    permission: manage_members\n"))
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	e := s.Email
+	if len(e.Customizable) != 2 || e.Customizable[1] != "org-invitation" || e.OverridePermission != CapMembers {
+		t.Errorf("email: %+v", e)
+	}
+	s, _ = parseRealmSettings([]byte("signup: open\nemail:\n  function: app/send\n  from: Shop <no-reply@shop.example>\n  public_url: https://api.shop.example\n"))
+	if s.Email.OverridePermission != CapOrg || len(s.Email.Customizable) != 0 {
+		t.Errorf("defaults: %+v", s.Email)
+	}
+	for name, yaml := range map[string]string{
+		"listed twice":   "customizable: [reset-password, reset-password]\n",
+		"an empty kind":  "customizable: [\"\"]\n",
+		"bad permission": "overrides:\n  permission: everyone\n",
+	} {
+		_, errs := parseRealmSettings([]byte("signup: open\nemail:\n  function: app/send\n  from: Shop <no-reply@shop.example>\n  public_url: https://api.shop.example\n  " + strings.ReplaceAll(strings.TrimSpace(yaml), "\n", "\n  ") + "\n"))
+		if len(errs) == 0 {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	// The kinds need organizations, which own the overrides.
+	tree := writeTree(t, map[string]string{
+		"shop/realm.yaml":                        "signup: open\nemail:\n  function: app/send\n  from: Shop <no-reply@shop.example>\n  public_url: https://api.shop.example\n  customizable: [reset-password]\n",
+		"shop/app/_functions/deno.json":          `{}`,
+		"shop/app/_functions/send/function.yaml": "internal: true\nmode: async\n",
+		"shop/app/_functions/send/index.ts":      "export default () => 1;\n",
+	})
+	if _, err := Load(tree); err == nil || !strings.Contains(err.Error(), "email.customizable: needs the realm to enable organizations") {
+		t.Errorf("without organizations: %v", err)
+	}
+}

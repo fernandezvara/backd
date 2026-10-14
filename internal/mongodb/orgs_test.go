@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/email"
 )
 
 func TestAuthStoreOrganizations(t *testing.T) {
@@ -480,5 +481,49 @@ func TestAuthStoreOrgMemberSeq(t *testing.T) {
 	}
 	if n := next("o1", "u1"); n != 3 {
 		t.Errorf("after the others: %d", n)
+	}
+}
+
+func TestAuthStoreOrgTemplates(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	put := func(org, kind, locale string, version int, subject string) {
+		t.Helper()
+		tpl := auth.OrgTemplate{Org: org, Kind: kind, Locale: locale, Override: email.Override{Subject: subject, Text: "t", HTML: "h"}, Version: version, UpdatedBy: "u1", UpdatedAt: now}
+		if version > 1 {
+			tpl.Versions = []auth.OrgTemplateVersion{{Version: version - 1, Override: email.Override{Subject: "old", Text: "t0", HTML: "h0"}, By: "u2", At: now.Add(-time.Hour)}}
+		}
+		if err := s.PutOrgTemplate(ctx, tpl); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put("o1", "reset-password", "en", 1, "one")
+	put("o1", "reset-password", "es", 2, "dos")
+	put("o2", "reset-password", "en", 1, "other")
+	got, err := s.OrgTemplate(ctx, "o1", "reset-password", "es")
+	if err != nil || got.Subject != "dos" || got.Version != 2 || len(got.Versions) != 1 || got.Versions[0].Subject != "old" || got.Versions[0].By != "u2" || got.UpdatedBy != "u1" {
+		t.Fatalf("get: %+v %v", got, err)
+	}
+	if _, err := s.OrgTemplate(ctx, "o1", "reset-password", "fr"); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("unknown: %v", err)
+	}
+	list, _ := s.ListOrgTemplates(ctx, "o1")
+	if len(list) != 2 || list[0].Locale != "en" || list[1].Locale != "es" {
+		t.Errorf("list: %+v", list)
+	}
+	// Saving again replaces it; deleting removes only that one.
+	put("o1", "reset-password", "en", 2, "uno")
+	if got, _ := s.OrgTemplate(ctx, "o1", "reset-password", "en"); got.Subject != "uno" || got.Version != 2 {
+		t.Errorf("replace: %+v", got)
+	}
+	if err := s.DeleteOrgTemplate(ctx, "o1", "reset-password", "en"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteOrgTemplate(ctx, "o1", "reset-password", "en"); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("delete again: %v", err)
+	}
+	if list, _ := s.ListOrgTemplates(ctx, "o2"); len(list) != 1 {
+		t.Errorf("another organization's: %+v", list)
 	}
 }

@@ -73,6 +73,29 @@
  */
 
 /**
+ * The three parts of an email an organization wrote itself, in the logic-less syntax.
+ * @typedef {object} OrgTemplateText
+ * @property {string} subject
+ * @property {string} text
+ * @property {string} html
+ */
+
+/**
+ * An organization's version of a kind of email in a language.
+ * @typedef {object} OrgTemplate
+ * @property {string} kind
+ * @property {string} locale
+ * @property {number} version
+ * @property {string} updated_at
+ * @property {string} [updated_by]
+ * @property {string} [subject]   Only when one template is read.
+ * @property {string} [text]
+ * @property {string} [html]
+ * @property {Array<{ version: number, at: string, by?: string } & Partial<OrgTemplateText>>} versions  Previous ones, newest first (at most 20).
+ * @property {string[]} [removed]  Only in the answer to a save: what the HTML sanitizer drops from the sample.
+ */
+
+/**
  * @typedef {object} OrgInvitation
  * @property {string} id
  * @property {'user' | 'email' | 'none'} binding
@@ -215,6 +238,16 @@ export class Orgs {
    */
   members(org) {
     return new OrgMembers(this.client, org)
+  }
+
+  /**
+   * The organization's own versions of the realm's emails (`email.customizable`): `list`, `get`,
+   * `put`, `delete`, `preview` and `test`.
+   * @param {string} org
+   * @returns {OrgTemplates}
+   */
+  templates(org) {
+    return new OrgTemplates(this.client, org)
   }
 
   /**
@@ -392,6 +425,96 @@ export class OrgTeams {
    */
   async removeMember(team, user, opts) {
     return (await this.client.request({ method: 'DELETE', path: ['_orgs', this.org, 'teams', team, 'members', user], ...opts })).data
+  }
+}
+
+/**
+ * The email templates of one organization: its own text for the kinds the realm lets companies
+ * customize, in the logic-less syntax (`{{Link}}`, `{{App.name}}`, `{{#App.logo}}…{{/App.logo}}`).
+ * Needs the capability `email.overrides.permission` names (`manage: org` by default).
+ */
+export class OrgTemplates {
+  /**
+   * @param {Client} client
+   * @param {string} org
+   */
+  constructor(client, org) {
+    /** @internal */
+    this.client = client
+    /** @internal */
+    this.org = org
+  }
+
+  /**
+   * The kinds that can be customized, with the placeholders each must print, and the
+   * organization's overrides (without their text).
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ customizable: Record<string, { required: string[] }>, items: OrgTemplate[] }>}
+   */
+  async list(opts) {
+    return (await this.client.request({ method: 'GET', path: ['_orgs', this.org, 'templates'], ...opts })).data
+  }
+
+  /**
+   * One template with its versions; `NotFoundError` if the organization has none.
+   * @param {string} kind
+   * @param {string} locale
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgTemplate>}
+   */
+  async get(kind, locale, opts) {
+    return (await this.client.request({ method: 'GET', path: ['_orgs', this.org, 'templates', kind, locale], ...opts })).data
+  }
+
+  /**
+   * Saves a version. A template with a problem rejects with a `ValidationError` (`invalid_template`)
+   * whose `details` say where (`text`: `line 3, column 5: …`).
+   * @param {string} kind
+   * @param {string} locale
+   * @param {OrgTemplateText} template
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgTemplate>}
+   */
+  async put(kind, locale, template, opts) {
+    return (await this.client.request({ method: 'PUT', path: ['_orgs', this.org, 'templates', kind, locale], body: template, ...opts })).data
+  }
+
+  /**
+   * Goes back to the realm's own template of the kind.
+   * @param {string} kind
+   * @param {string} locale
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async delete(kind, locale, opts) {
+    await this.client.request({ method: 'DELETE', path: ['_orgs', this.org, 'templates', kind, locale], ...opts })
+  }
+
+  /**
+   * Renders a draft, or the saved version without one, without sending anything. `data: 'real'`
+   * calls the realm's data hook. Show `html` in a sandboxed frame.
+   * @param {string} kind
+   * @param {string} locale
+   * @param {{ draft?: OrgTemplateText, data?: 'sample' | 'real' }} [input]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ subject: string, text: string, html: string, removed: string[] }>}
+   */
+  async preview(kind, locale, input = {}, opts) {
+    const body = { ...input.draft, data: input.data }
+    return (await this.client.request({ method: 'POST', path: ['_orgs', this.org, 'templates', kind, locale, 'preview'], body, ...opts })).data
+  }
+
+  /**
+   * Sends a draft (or the saved version) to your own address, marked [TEST]. At most 10 per hour
+   * for the organization (`RetryableError`, 429).
+   * @param {string} kind
+   * @param {string} locale
+   * @param {{ draft?: OrgTemplateText }} [input]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async test(kind, locale, input = {}, opts) {
+    await this.client.request({ method: 'POST', path: ['_orgs', this.org, 'templates', kind, locale, 'test'], body: { ...input.draft }, ...opts })
   }
 }
 

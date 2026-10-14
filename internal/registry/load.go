@@ -96,6 +96,7 @@ func Load(root string) (*Registry, error) {
 		errs = append(errs, loadOnSignup(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadOrgHooks(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadDataHooks(reg.Realms[realmName], filepath.Join(root, realmName))...)
+		errs = append(errs, loadCustomizable(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadPush(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadConsents(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, checkConfigGrants(reg.Realms[realmName], filepath.Join(root, realmName))...)
@@ -221,6 +222,28 @@ func loadDataHooks(rl *Realm, realmPath string) []error {
 		check("email.data_hook", e.DataHook)
 	}
 	check("pages.data_hook", rl.Settings.PagesDataHook)
+	return errs
+}
+
+// loadCustomizable checks that every kind of email.customizable has a template (the realm's own
+// text is what a company's version replaces), and that the realm has organizations, which own the
+// overrides.
+func loadCustomizable(rl *Realm, realmPath string) []error {
+	e := rl.Settings.Email
+	if e == nil || len(e.Customizable) == 0 {
+		return nil
+	}
+	file := filepath.Join(realmPath, RealmFile)
+	if rl.Settings.Organizations == nil {
+		return []error{fmt.Errorf("%s: email.customizable: needs the realm to enable organizations (an `organizations:` section): companies own the overrides", file)}
+	}
+	def, _ := rl.Settings.Languages()
+	var errs []error
+	for _, kind := range e.Customizable {
+		if !email.ValidKind(kind) || rl.Email == nil || !rl.Email.Has(kind, def) {
+			errs = append(errs, fmt.Errorf("%s: email.customizable: %q is not a kind of this realm's email folder (email/%s/ has the templates a company's version replaces)", file, kind, kind))
+		}
+	}
 	return errs
 }
 
