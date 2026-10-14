@@ -141,6 +141,9 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 			r.Route("/{collection}", func(r chi.Router) {
 				r.Use(dataCaching, docs.resolveCollection)
 				docs.mountDocuments(r)
+				// Organizations: moving a document is not an update (design/organizations.md §10).
+				r.With(json).Post("/_assign_org", docs.assignOrg)
+				r.With(json).Post("/{id}/_transfer", docs.transfer)
 			})
 		})
 	})

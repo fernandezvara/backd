@@ -307,3 +307,62 @@ func orgsRevokeInvitation(c *kli.CommandContext) error {
 	fmt.Fprintf(ioOf(c).stdout, "invitation %s revoked\n", str(c, "invitation"))
 	return nil
 }
+
+// dataTransfer moves one document to another organization (or out of its organization with
+// --org none), as an administrator.
+func dataTransfer(c *kli.CommandContext) error {
+	t, err := targetOf(c, false)
+	if err != nil {
+		return err
+	}
+	org := any(str(c, "org"))
+	if org == "none" {
+		org = nil
+	}
+	body := map[string]any{"org": org}
+	path := "_admin/data/" + url.PathEscape(str(c, "database")) + "/" + url.PathEscape(str(c, "collection")) + "/" + url.PathEscape(str(c, "id")) + "/_transfer"
+	if err := t.call("POST", path, nil, body, nil); err != nil {
+		return err
+	}
+	to := str(c, "org")
+	if to == "none" {
+		to = "no organization"
+	}
+	fmt.Fprintf(ioOf(c).stdout, "document %s moved to %s\n", str(c, "id"), to)
+	return nil
+}
+
+// dataAssignOrg gives the documents of a collection that have no organization one.
+func dataAssignOrg(c *kli.CommandContext) error {
+	t, err := targetOf(c, false)
+	if err != nil {
+		return err
+	}
+	body := map[string]any{"org": str(c, "org")}
+	if w := str(c, "where"); w != "" {
+		var where map[string]any
+		if err := json.Unmarshal([]byte(w), &where); err != nil {
+			return fmt.Errorf("--where must be a JSON object: %w", err)
+		}
+		body["where"] = where
+	}
+	q := url.Values{}
+	if flag(c, "dry-run") {
+		q.Set("dry_run", "true")
+	}
+	path := "_admin/data/" + url.PathEscape(str(c, "database")) + "/" + url.PathEscape(str(c, "collection")) + "/_assign_org"
+	var out struct {
+		Job     string `json:"job"`
+		Matched int64  `json:"matched"`
+	}
+	if err := t.call("POST", path, q, body, &out); err != nil {
+		return err
+	}
+	io := ioOf(c)
+	if flag(c, "dry-run") {
+		fmt.Fprintf(io.stdout, "%d documents have no organization and match: nothing was changed\n", out.Matched)
+		return nil
+	}
+	fmt.Fprintf(io.stdout, "job %s queued: %d documents will be given the organization (follow it with `backd functions jobs --realm %s --job %s`)\n", out.Job, out.Matched, str(c, "realm"), out.Job)
+	return nil
+}

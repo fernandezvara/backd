@@ -73,6 +73,11 @@ const (
 	AuditDataDelete  = "data.delete"
 	AuditDataRestore = "data.restore"
 	AuditDataPurge   = "data.purge"
+	// A document moved to another organization by an administrator (target database/collection/id,
+	// details: from, to), and a job that gives a collection's documents without one an organization
+	// (details: org, job_id).
+	AuditDataTransfer  = "data.transfer"
+	AuditDataAssignOrg = "data.assign_org"
 	// A schema check started by an administrator; the target is the scope
 	// (<database>/<collection>, <database> or the realm), details: collections, limit.
 	AuditDataCheck = "data.check"

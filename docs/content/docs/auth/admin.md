@@ -267,6 +267,7 @@ Every change is audited as `appconfig.change` with the version, the kind and the
 
 - A document created here has **no owner** (`_meta.owner` is `null`): the administrator didn't create it for themselves. `created_by` and `updated_by` record who did, `user:<id>` or `key:<name>`.
 - **Writes are audited**, never their content: `data.create`, `data.update`, `data.delete`, `data.restore` and `data.purge`, with the actor and the target `doc:<database>/<collection>/<id>`. Reads are not in the audit trail; they carry the actor in the access log.
+- Two more routes exist only here, for [organizations](../../api/documents/#fixing-data-as-an-administrator): `POST /{id}/_transfer` moves a document to another organization, and `POST /_assign_org` gives the documents of an adopted collection that have none one (`data.transfer` and `data.assign_org`, audited).
 - The normal data routes are unchanged: an administrator using an app is bound by its rules there.
 - With `BACKD_ADMIN_API=false` the route doesn't exist (`404`).
 

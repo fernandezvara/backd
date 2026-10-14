@@ -78,7 +78,9 @@ organizations:
     owner: {manage: [org, members, roles, teams]}
     editor: {}
 `,
-		"acme/app/notes/schema.json": `{}`,
+		"acme/app/notes/schema.json":      `{}`,
+		"acme/app/boards/schema.json":     `{}`,
+		"acme/app/boards/collection.yaml": "organization: optional\non_org_delete:\n  action: keep\n",
 	})
 	reg, err := registry.Load(root)
 	if err != nil {
@@ -191,6 +193,9 @@ organizations:
 	out = c.expect(0, "BINDING", "", "orgs", "invitations", "--realm", "acme", "--id", orgID)
 	invID := strings.Fields(strings.Split(out, "\n")[1])[0]
 	c.expect(0, "revoked", "", "orgs", "revoke-invitation", "--realm", "acme", "--id", orgID, "--invitation", invID)
+	c.expect(1, "org_not_allowed", "", "data", "transfer", "--realm", "acme", "--database", "app", "--collection", "notes", "--id", "x", "--org", orgID)
+	c.expect(1, "org_not_allowed", "", "data", "assign-org", "--realm", "acme", "--database", "app", "--collection", "notes", "--org", orgID)
+	c.expect(1, "--where must be a JSON object", "", "data", "assign-org", "--realm", "acme", "--database", "app", "--collection", "boards", "--org", orgID, "--where", "[1]")
 	c.expect(0, "is now a manager of "+orgID, "", "orgs", "assign-owner", "--realm", "acme", "--id", orgID, "--email", "bob@example.com")
 
 	// Roles: without the server's config the CLI can't tell which

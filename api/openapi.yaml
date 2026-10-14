@@ -6413,6 +6413,105 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "412": { $ref: "#/components/responses/VersionMismatch" }
         default: { $ref: "#/components/responses/Error" }
+  /v1/{realm}/_admin/data/{database}/{collection}/{id}/_transfer:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+      - { $ref: "#/components/parameters/id" }
+    post:
+      tags: [admin]
+      summary: Admin data, move a document to another organization
+      description: |
+        Moves a document to another organization, or out of its organization (`org: null`, when
+        the collection's organization is `optional`). A document never moves through an update:
+        this is a realm administrator's act. The target must exist and not be deleted
+        (`409 org_not_active`); the version goes up, `If-Match` is honored (`412`) and the audit
+        record `data.transfer` names both organizations, never content. Files and image versions
+        travel with the document unchanged. `team` can only be null: collections have no teams
+        (`400 team_not_allowed`). Needs the `data` area with write access.
+      operationId: adminTransferDocument
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters: [{ $ref: "#/components/parameters/ifMatch" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [org]
+              properties:
+                org: { type: [string, "null"] }
+                team: { type: "null" }
+      responses:
+        "200": { $ref: "#/components/responses/Document" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "412": { $ref: "#/components/responses/VersionMismatch" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/{realm}/_admin/data/{database}/{collection}/_assign_org:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+    post:
+      tags: [admin]
+      summary: Admin data, give documents without one an organization
+      description: |
+        For a collection that adopted organizations after it had documents: those have none, and
+        members can't see them. Queues a job (`202` with `job` and `matched`) that sets
+        `_meta.org` on the documents **without one** that match `where` (the filter of a list),
+        and never moves a document that has an organization. With `?dry_run=true` it answers
+        `200` with `matched` and changes nothing. One assignment per collection at a time
+        (`409 assign_running`); follow the job with the jobs routes. Audited as
+        `data.assign_org`. Needs the `data` area with write access.
+      operationId: adminAssignOrganization
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { name: dry_run, in: query, schema: { type: boolean } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [org]
+              properties:
+                org: { type: string }
+                where: { type: object }
+      responses:
+        "200":
+          description: "A dry run: how many documents the job would change."
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [matched]
+                properties:
+                  matched: { type: integer }
+        "202":
+          description: The job was queued.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [job, matched]
+                properties:
+                  job: { type: string }
+                  matched: { type: integer }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
   /v1/{realm}/_admin/data/{database}/{collection}/_files/{field}/uploads:
     parameters:
       - { $ref: "#/components/parameters/realm" }

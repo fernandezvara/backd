@@ -2242,6 +2242,31 @@ func TestContract(t *testing.T) {
 		req("POST", adm+"/"+madeID+"/owner", `{}`, key, 400)
 		req("POST", adm+"/"+madeID+"/owner", `{"user": "nosuchuser"}`, key, 404)
 		// A user at the limit of memberships can't be added to another organization.
+		// Moving documents: the admin data route.
+		dataRoute := "/v1/acme/_admin/data/app/projects"
+		moving := req("POST", dataRoute+"?org="+id, `{"title": "moves"}`, key, 201)["id"].(string)
+		to := other["id"].(string)
+		tr := dataRoute + "/" + moving + "/_transfer"
+		req("POST", tr, `{"org": "`+to+`"}`, nil, 401)
+		req("POST", tr, `{"org": "`+to+`"}`, ada, 403)
+		req("POST", tr, `{}`, key, 400)
+		req("POST", dataRoute+"/nosuch/_transfer", `{"org": "`+to+`"}`, key, 404)
+		req("POST", tr, `{"org": "nosuch"}`, key, 404)
+		req("POST", tr, `{"org": "`+to+`"}`, with(key, "If-Match", `"99"`), 412)
+		gone := req("POST", orgs, `{"name": "Gone"}`, ada, 201)["id"].(string)
+		if _, err := f.svc.Store.UpdateOrg(context.Background(), gone, auth.OrgUpdate{Status: auth.OrgDeleted}, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		req("POST", tr, `{"org": "`+gone+`"}`, key, 409)
+		req("POST", tr, `{"org": "`+to+`"}`, key, 200)
+		assign := "/v1/acme/_admin/data/app/shared/_assign_org"
+		req("POST", assign, `{"org": "`+to+`"}`, nil, 401)
+		req("POST", assign, `{"org": "`+to+`"}`, ada, 403)
+		req("POST", assign, `{}`, key, 400)
+		req("POST", assign, `{"org": "nosuch"}`, key, 404)
+		req("POST", assign+"?dry_run=true", `{"org": "`+to+`"}`, key, 200)
+		req("POST", assign, `{"org": "`+to+`"}`, key, 202)
+		req("POST", assign, `{"org": "`+to+`"}`, key, 409) // one at a time per collection
 		// Teams.
 		teamsPath := orgs + "/" + id + "/teams"
 		req("GET", teamsPath, "", nil, 401)
