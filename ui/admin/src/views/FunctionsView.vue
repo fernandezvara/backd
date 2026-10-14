@@ -64,14 +64,15 @@ onMounted(async () => {
   await Promise.all([realmConfig.load(), loadSchedules()])
   if (canConfig.value && !realmConfig.config) loadError.value = t('functions.loadFailed')
 })
-// The realm's OpenAPI document with the admin routes and every function, as a file: the
-// route needs the bearer token, so a plain link can't fetch it.
+// The realm's OpenAPI documents as files: the client one (what applications reach, no admin
+// routes) and the admin one (everything). The routes need the bearer token, so a plain link
+// can't fetch them.
 const downloading = ref(false)
-async function downloadOpenAPI() {
+async function downloadOpenAPI(client: boolean) {
   downloading.value = true
   try {
-    const doc = await admin.openapi()
-    downloadText(`${props.realm}-openapi.json`, JSON.stringify(doc, null, 2), 'application/json')
+    const doc = client ? await admin.clientOpenapi() : await admin.openapi()
+    downloadText(`${props.realm}-openapi${client ? '-client' : '-admin'}.json`, JSON.stringify(doc, null, 2), 'application/json')
   } catch (e) {
     toasts.push(errorText(e, t('common.unexpected')))
   } finally {
@@ -149,7 +150,8 @@ async function run() {
   <div class="flex flex-wrap items-end justify-between gap-4">
     <h1 class="text-2xl font-semibold">{{ t('functions.title') }}</h1>
     <div class="flex flex-wrap gap-2">
-      <AppButton v-if="canConfig" variant="secondary" :busy="downloading" data-testid="download-openapi" @click="downloadOpenAPI">{{ t('functions.openapi.download') }}</AppButton>
+      <AppButton v-if="canConfig" variant="secondary" :busy="downloading" data-testid="download-openapi-client" :title="t('functions.openapi.clientHelp')" @click="downloadOpenAPI(true)">{{ t('functions.openapi.client') }}</AppButton>
+      <AppButton v-if="canConfig" variant="secondary" :busy="downloading" data-testid="download-openapi-admin" :title="t('functions.openapi.adminHelp')" @click="downloadOpenAPI(false)">{{ t('functions.openapi.admin') }}</AppButton>
       <AppButton v-if="canInvoke" @click="show()">{{ t('functions.invoke.open') }}</AppButton>
     </div>
   </div>

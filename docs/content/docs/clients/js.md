@@ -625,6 +625,7 @@ const access = await backd.admin.whoami()                         // level, area
 const posts = backd.admin.data('blog', 'posts')                  // the admin data route: list/get/create/replace/patch/delete/restore, past the rules
 const config = await backd.admin.config()                         // what this instance runs for the realm, read-only
 const spec = await backd.admin.openapi()                       // the realm's admin OpenAPI document (needs the config area)
+const appSpec = await backd.admin.clientOpenapi()                 // the one for client applications: no admin routes
 const storage = await backd.admin.storage.check()                  // the realm's object storage: credentials, put/get, signed SHA-256, links
 const started = await backd.admin.dataChecks.start({ database: 'main', collection: 'orders' }) // reads every document: see estimated_documents
 const reports = await backd.admin.dataChecks.wait(started, { onProgress: (job) => console.log(job.progress?.current) })  // the documents that no longer match their schema

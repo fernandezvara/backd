@@ -239,6 +239,9 @@ test('openapi reads the admin document', async () => {
   const m = mockFetch([{ body: doc }])
   assert.deepEqual(await adminOf(m).openapi(), doc)
   assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/openapi.json')
+  const c = mockFetch([{ body: doc }])
+  assert.deepEqual(await adminOf(c).clientOpenapi(), doc)
+  assert.equal(c.calls[0].url.pathname, '/v1/acme/_openapi.json')
 })
 
 test('whoami, config, user search and sessions', async () => {

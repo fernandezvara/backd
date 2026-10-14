@@ -487,7 +487,10 @@
       "jobs": "Jobs"
     },
     "openapi": {
-      "download": "Download OpenAPI"
+      "client": "Download OpenAPI (client apps)",
+      "clientHelp": "Only what applications can reach: no admin routes.",
+      "admin": "Download OpenAPI (with admin)",
+      "adminHelp": "Everything, including the admin routes and internal functions."
     },
     "needConfig": "Reading function definitions needs the configuration area, which this level doesn't have. History and jobs are still available.",
     "none": "No database of this realm has functions.",
