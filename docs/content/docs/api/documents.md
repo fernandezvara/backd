@@ -86,6 +86,7 @@ Location: /v1/shop/billing/invoices/INV-2026-0042
 - **Mistakes with the id** are `400`: `id_required` (a collection with `custom_id` and no `id`), `invalid_id` (outside the safety envelope or the pattern, or not the creating user's id with `custom_id: user`; the detail says which check, and never echoes other data) and `id_not_allowed` (an `id` sent to a collection that generates its ids).
 - **The order of the checks is fixed:** the id is validated, then the `create` rule runs (and sees the id as `data.id`), and only then is the document inserted. A caller the rule doesn't allow gets `403` for every id, so only callers allowed to create can learn that an id exists.
 - **Duplicates are limited.** After the collection's `duplicate_limit` (20 by default) answers of `id_taken` in a minute, a caller gets `429` with `Retry-After`, for any create in that collection. The count is per caller (user, API key or address) and per backd instance. `backd_id_conflicts_total` counts them per collection.
+- [Custom ids](../../configuration/custom-ids/) explains when to use them and how to keep them safe.
 - The same applies to [batch](#batch-writes) creates (`"id"` on the operation), `ctx.db` and `ctx.admin.db` in [functions](../../functions/), and the admin data route. The admin routes skip the `create` rule, not the id checks.
 
 ### Safe retries with `Idempotency-Key`

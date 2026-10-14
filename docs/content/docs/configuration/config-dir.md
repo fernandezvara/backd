@@ -212,7 +212,7 @@ custom_id: user            # the id must be the creating user's id (the realm ne
 - Collections without `custom_id` are unchanged.
 
 - **Creating** sends the id in the body of the `POST`; an id that exists is `409 id_taken`, and the `create` rule runs first and can read it as `data.id`. See [Custom ids](../../api/documents/#custom-ids).
-- **Ids never change.** To change one, create a new document and delete the old one.
+- **Ids never change.** To change one, create a new document and delete the old one. [Custom ids](../custom-ids/) covers when to use them, probing, personal data and changing a collection that already has documents.
 
 ### Public caching
 
