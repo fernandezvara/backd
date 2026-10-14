@@ -1,0 +1,71 @@
+---
+title: "Team roles"
+description: "Roles held within one team of an organization: declare them, give them to members, and list who holds what. Separate from organization roles and from the roles teams carry."
+icon: "groups"
+weight: 523
+toc: true
+---
+
+[Teams](../../api/organizations/#teams) carry organization roles to everyone in them. That is enough for "the editors", but not for "Marta manages **Sales**": a manager of Sales must not manage Support. **Team roles** are roles held *within one team*, by a member of the organization, and they mean nothing outside it.
+
+## Organization roles, teams and team roles
+
+| | Organization role | Team | Team role |
+|---|---|---|---|
+| Declared in | `organizations.roles` | created through the API | `organizations.team_roles` |
+| Holds | what the role allows in the organization | a group of members | a role in one team |
+| Given by | `manage: members` or `manage: roles` | `manage: teams` | `manage: teams` |
+| Gives access to | everything the role is checked for | the roles it carries | only what checks that team |
+
+A team role never gives an organization or a realm role, and an organization role never gives a team role.
+
+## Declare them
+
+```yaml
+# realm.yaml
+organizations:
+  roles:
+    owner: { manage: [org, members, roles, teams] }
+    member: {}
+  team_roles:
+    manager:
+      description: Runs the team
+      grants: [delegate]        # may give this role in the same team (see time windows)
+      require_mfa: true         # counts only for sessions with a second factor
+    delegate: {}
+```
+
+Names follow the rules of roles. `grants` may only list declared team roles. Startup names what is wrong. A team role removed from `realm.yaml` stays on the memberships and grants nothing, the way a removed organization role does.
+
+## Give them
+
+A member with `manage: teams` gives any team role in any team of the organization:
+
+```http
+POST /v1/acme/_orgs/{org}/teams/{team}/roles
+{ "user": "<user id>", "role": "manager" }
+```
+
+`DELETE` on the same path with the same body takes it away. The user must belong to the organization; they need **not** belong to the team: a delegate from another team can approve Sales' requests without seeing Sales' team page. Granting what is held changes nothing, and each change is audited (`org.team_role_grant`, `org.team_role_revoke`). A member holds at most 50 team role grants (`409 team_limit_reached`).
+
+Deleting a team removes the grants of its roles with it. Removing a member from the organization removes theirs.
+
+## List who holds what
+
+```http
+GET /v1/acme/_orgs/{org}/teams/{team}/members?role=manager
+```
+
+Any member of the organization may list. The answer is a page of the members who belong to the team and of those who hold a team role in it; with `role`, only the holders of that role. Each item is a member as in the [members list](../../api/organizations/#members), plus `in_team` and `roles_in_team` (the team roles they hold there now). Emails follow [`members_visible_to`](../../configuration/realm/#organizations).
+
+| Where | Call |
+|---|---|
+| Functions with `admin: true` | `ctx.admin.orgs.teams.members(org, team, { role })` |
+| JavaScript client | `client.orgs.teams(org).members(team, { role })` |
+| Administrators | `GET /_admin/orgs/{org}/teams/{team}/members`, `POST` and `DELETE …/roles` |
+
+A member sees their own in `GET /_orgs/{org}`, as `team_roles` (team id to role names).
+
+{{< hint style="note" >}}
+Team roles are read with the membership at each request, with no cache: a grant or a revocation applies at the member's next request.
+{{< /hint >}}

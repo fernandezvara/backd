@@ -205,6 +205,7 @@ if (env.callback?.admin_token && env.callback.orgs) {
       create: (id, input) => call({ method: "POST", path: [id, "teams"], body: input }),
       update: (id, team, patch) => call({ method: "PATCH", path: [id, "teams", team], body: patch }),
       delete: (id, team) => call({ method: "DELETE", path: [id, "teams", team] }),
+      members: (id, team, options = {}) => call({ method: "GET", path: [id, "teams", team, "members"], query: options }),
       addMember: (id, team, user) => call({ method: "PUT", path: [id, "teams", team, "members", user] }),
       removeMember: (id, team, user) => call({ method: "DELETE", path: [id, "teams", team, "members", user] }),
     },

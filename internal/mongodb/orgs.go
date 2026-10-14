@@ -36,6 +36,7 @@ func (d orgDoc) org() auth.Org {
 }
 
 type grantDoc struct {
+	Team      string     `bson:"team,omitempty"` // team roles only
 	Role      string     `bson:"role"`
 	From      *time.Time `bson:"from,omitempty"`
 	Until     *time.Time `bson:"until,omitempty"`
@@ -49,6 +50,7 @@ type orgMemberDoc struct {
 	User      string     `bson:"user"`
 	Roles     []grantDoc `bson:"roles"`
 	Teams     []string   `bson:"teams"`
+	TeamRoles []grantDoc `bson:"team_roles"`
 	JoinedAt  time.Time  `bson:"joined_at"`
 	InvitedBy string     `bson:"invited_by,omitempty"`
 }
@@ -62,28 +64,44 @@ func timePtr(t time.Time) *time.Time {
 	return &t
 }
 
+func (g grantDoc) grant() auth.RoleGrant {
+	rg := auth.RoleGrant{Role: g.Role, GrantedBy: g.GrantedBy, GrantedAt: g.GrantedAt.UTC()}
+	if g.From != nil {
+		rg.From = g.From.UTC()
+	}
+	if g.Until != nil {
+		rg.Until = g.Until.UTC()
+	}
+	return rg
+}
+
+func grantOf(g auth.RoleGrant) grantDoc {
+	return grantDoc{Role: g.Role, From: timePtr(g.From), Until: timePtr(g.Until), GrantedBy: g.GrantedBy, GrantedAt: g.GrantedAt}
+}
+
 func (d orgMemberDoc) member() auth.OrgMember {
 	m := auth.OrgMember{Org: d.Org, User: d.User, Teams: d.Teams, JoinedAt: d.JoinedAt.UTC(), InvitedBy: d.InvitedBy}
 	for _, g := range d.Roles {
-		rg := auth.RoleGrant{Role: g.Role, GrantedBy: g.GrantedBy, GrantedAt: g.GrantedAt.UTC()}
-		if g.From != nil {
-			rg.From = g.From.UTC()
-		}
-		if g.Until != nil {
-			rg.Until = g.Until.UTC()
-		}
-		m.Roles = append(m.Roles, rg)
+		m.Roles = append(m.Roles, g.grant())
+	}
+	for _, g := range d.TeamRoles {
+		m.TeamRoles = append(m.TeamRoles, auth.TeamRoleGrant{Team: g.Team, RoleGrant: g.grant()})
 	}
 	return m
 }
 
 func memberDoc(m auth.OrgMember) orgMemberDoc {
-	d := orgMemberDoc{ID: orgMemberID(m.Org, m.User), Org: m.Org, User: m.User, Teams: m.Teams, JoinedAt: m.JoinedAt, InvitedBy: m.InvitedBy, Roles: []grantDoc{}}
+	d := orgMemberDoc{ID: orgMemberID(m.Org, m.User), Org: m.Org, User: m.User, Teams: m.Teams, JoinedAt: m.JoinedAt, InvitedBy: m.InvitedBy, Roles: []grantDoc{}, TeamRoles: []grantDoc{}}
 	if d.Teams == nil {
 		d.Teams = []string{}
 	}
 	for _, g := range m.Roles {
-		d.Roles = append(d.Roles, grantDoc{Role: g.Role, From: timePtr(g.From), Until: timePtr(g.Until), GrantedBy: g.GrantedBy, GrantedAt: g.GrantedAt})
+		d.Roles = append(d.Roles, grantOf(g))
+	}
+	for _, g := range m.TeamRoles {
+		gd := grantOf(g.RoleGrant)
+		gd.Team = g.Team
+		d.TeamRoles = append(d.TeamRoles, gd)
 	}
 	return d
 }
@@ -333,7 +351,12 @@ func (s *AuthStore) OrgMember(ctx context.Context, org, user string) (auth.OrgMe
 }
 
 func (s *AuthStore) ListOrgMembers(ctx context.Context, org, after string, limit int) ([]auth.OrgMember, bool, error) {
-	filter := bson.D{{Key: "org", Value: org}}
+	return s.pageOrgMembers(ctx, bson.D{{Key: "org", Value: org}}, after, limit)
+}
+
+// pageOrgMembers returns a page of the memberships matching filter, sorted by user id, after
+// the user after; more says there are further ones.
+func (s *AuthStore) pageOrgMembers(ctx context.Context, filter bson.D, after string, limit int) ([]auth.OrgMember, bool, error) {
 	if after != "" {
 		filter = append(filter, bson.E{Key: "user", Value: bson.D{{Key: "$gt", Value: after}}})
 	}
@@ -374,6 +397,25 @@ func (s *AuthStore) OrgMembersWithRoles(ctx context.Context, org string, roles [
 		out[i] = d.member()
 	}
 	return out, nil
+}
+
+// OrgTeamHolders pages the members of a team and the holders of a team role in it.
+func (s *AuthStore) OrgTeamHolders(ctx context.Context, org, team, role string, now time.Time, after string, limit int) ([]auth.OrgMember, bool, error) {
+	held := bson.D{{Key: "team", Value: team}}
+	if role != "" {
+		held = append(held, bson.E{Key: "role", Value: role})
+	}
+	// Grants outside their window don't count.
+	held = append(held, bson.E{Key: "$and", Value: bson.A{
+		bson.D{{Key: "$or", Value: bson.A{bson.D{{Key: "from", Value: bson.D{{Key: "$exists", Value: false}}}}, bson.D{{Key: "from", Value: bson.D{{Key: "$lte", Value: now}}}}}}},
+		bson.D{{Key: "$or", Value: bson.A{bson.D{{Key: "until", Value: bson.D{{Key: "$exists", Value: false}}}}, bson.D{{Key: "until", Value: bson.D{{Key: "$gt", Value: now}}}}}}},
+	}})
+	holder := bson.D{{Key: "team_roles", Value: bson.D{{Key: "$elemMatch", Value: held}}}}
+	match := bson.A{holder}
+	if role == "" {
+		match = append(match, bson.D{{Key: "teams", Value: team}})
+	}
+	return s.pageOrgMembers(ctx, bson.D{{Key: "org", Value: org}, {Key: "$or", Value: match}}, after, limit)
 }
 
 func (s *AuthStore) OrgMembershipsOf(ctx context.Context, user string, limit int) ([]auth.OrgMember, error) {
@@ -615,8 +657,16 @@ func (s *AuthStore) DeleteOrgTeam(ctx context.Context, org, id string) error {
 	if res.DeletedCount == 0 {
 		return auth.ErrNotFound
 	}
-	_, err = s.orgMembers().UpdateMany(ctx, bson.D{{Key: "org", Value: org}, {Key: "teams", Value: id}},
-		bson.D{{Key: "$pull", Value: bson.D{{Key: "teams", Value: id}}}})
+	// The team goes from its members' teams and the grants of its roles go with it.
+	_, err = s.orgMembers().UpdateMany(ctx,
+		bson.D{{Key: "org", Value: org}, {Key: "$or", Value: bson.A{
+			bson.D{{Key: "teams", Value: id}},
+			bson.D{{Key: "team_roles.team", Value: id}},
+		}}},
+		bson.D{{Key: "$pull", Value: bson.D{
+			{Key: "teams", Value: id},
+			{Key: "team_roles", Value: bson.D{{Key: "team", Value: id}}},
+		}}})
 	return err
 }
 

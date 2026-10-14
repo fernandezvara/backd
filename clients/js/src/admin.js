@@ -4,6 +4,7 @@ import { Job } from './functions.js'
 /**
  * @typedef {import('./orgs.js').OrgMember} OrgMember
  * @typedef {import('./orgs.js').OrgTeam} OrgTeam
+ * @typedef {import('./orgs.js').OrgTeamMember} OrgTeamMember
  * @typedef {import('./orgs.js').OrgInvitation} OrgInvitation
  * @typedef {import('./orgs.js').NewOrgInvitation} NewOrgInvitation
  * @typedef {import('./orgs.js').InviteInput} OrgInviteInput
@@ -1355,6 +1356,20 @@ class AdminOrgs {
    */
   async teams(id, opts) {
     return (await this.admin._request({ method: 'GET', path: ['orgs', id, 'teams'], ...opts })).data.items
+  }
+
+  /**
+   * The members of a team and the holders of its team roles, in force now; with `role`, only its
+   * holders.
+   * @param {string} id
+   * @param {string} team
+   * @param {{ role?: string, limit?: number, after?: string }} [params]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ items: OrgTeamMember[], has_more: boolean, next?: string }>}
+   */
+  async teamMembers(id, team, params = {}, opts) {
+    const query = { role: params.role, limit: params.limit, after: params.after }
+    return (await this.admin._request({ method: 'GET', path: ['orgs', id, 'teams', team, 'members'], query, ...opts })).data
   }
 
   /**

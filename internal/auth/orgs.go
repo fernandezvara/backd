@@ -118,12 +118,20 @@ func (g RoleGrant) Active(now time.Time) bool {
 	return (g.From.IsZero() || !now.Before(g.From)) && (g.Until.IsZero() || now.Before(g.Until))
 }
 
+// TeamRoleGrant is a team role held by a member: the grant of an organization role plus the
+// team it is held in (design/team-access.md §3).
+type TeamRoleGrant struct {
+	Team string
+	RoleGrant
+}
+
 // OrgMember is a user's membership of one organization.
 type OrgMember struct {
 	Org       string
 	User      string
 	Roles     []RoleGrant // direct
 	Teams     []string
+	TeamRoles []TeamRoleGrant // held within a team, member of it or not
 	JoinedAt  time.Time
 	InvitedBy string
 }
@@ -183,6 +191,8 @@ type Membership struct {
 	Org    Org
 	Member OrgMember
 	Roles  []EffectiveRole
+	// TeamRoles are the team roles that count now, by team id.
+	TeamRoles map[string][]string
 }
 
 // RoleNames returns the effective role names.
@@ -332,7 +342,8 @@ func (s *Users) membership(ctx context.Context, org Org, m OrgMember) (Membershi
 	if err != nil {
 		return Membership{}, err
 	}
-	return Membership{Org: org, Member: m, Roles: s.effective(m, s.now(), teamRoles)}, nil
+	now := s.now()
+	return Membership{Org: org, Member: m, Roles: s.effective(m, now, teamRoles), TeamRoles: s.declaredTeamRoles(m, now)}, nil
 }
 
 // MyOrgs lists the organizations a user belongs to, with their effective roles. Deleted
@@ -444,6 +455,9 @@ type MemberView struct {
 	// MFA says whether the member has a second factor; set only for viewers who manage the
 	// organization (nil otherwise).
 	MFA *bool
+	// TeamRoles are the member's team role grants, in force or not, judged at Now.
+	TeamRoles []TeamRoleGrant
+	Now       time.Time
 }
 
 // Members lists an organization's members to a member, a page at a time sorted by user id.
@@ -456,11 +470,17 @@ func (s *Users) Members(ctx context.Context, userID, orgID, after string, limit 
 }
 
 func (s *Users) memberViews(ctx context.Context, viewer Membership, orgID, after string, limit int) ([]MemberView, bool, error) {
-	o := s.Settings.Organizations
 	list, more, err := s.Store.ListOrgMembers(ctx, orgID, after, limit)
 	if err != nil {
 		return nil, false, err
 	}
+	out, err := s.viewsOf(ctx, viewer, orgID, list)
+	return out, more, err
+}
+
+// viewsOf shows members to a viewer: effective roles, emails when the viewer may see them.
+func (s *Users) viewsOf(ctx context.Context, viewer Membership, orgID string, list []OrgMember) ([]MemberView, error) {
+	o := s.Settings.Organizations
 	// An administrator has no membership.
 	manager := viewer.Member.User == "" || s.caps(viewer).Any()
 	showEmail := o.MembersVisibleTo == registry.MembersVisibleToMembers || manager
@@ -475,7 +495,7 @@ func (s *Users) memberViews(ctx context.Context, viewer Membership, orgID, after
 	}
 	teams, err := s.Store.OrgTeamsByIDs(ctx, orgID, teamIDs)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	byID := map[string]OrgTeam{}
 	for _, t := range teams {
@@ -489,7 +509,7 @@ func (s *Users) memberViews(ctx context.Context, viewer Membership, orgID, after
 				roles[t.Name] = t.Roles
 			}
 		}
-		v := MemberView{Member: m, Effective: s.effective(m, now, roles)}
+		v := MemberView{Member: m, Effective: s.effective(m, now, roles), TeamRoles: m.TeamRoles, Now: now}
 		for _, e := range v.Effective {
 			if slices.Contains(e.Origin, "direct") && len(e.Origin) > 1 {
 				v.Overlap = append(v.Overlap, e.Role)
@@ -506,7 +526,7 @@ func (s *Users) memberViews(ctx context.Context, viewer Membership, orgID, after
 		}
 		out[i] = v
 	}
-	return out, more, nil
+	return out, nil
 }
 
 // orgCapsOfRoles are the capabilities of a set of role names.
@@ -620,7 +640,8 @@ func (s *Users) viewOf(ctx context.Context, m OrgMember) (MemberView, error) {
 	if err != nil {
 		return MemberView{}, err
 	}
-	v := MemberView{Member: m, Effective: s.effective(m, s.now(), teamRoles)}
+	now := s.now()
+	v := MemberView{Member: m, Effective: s.effective(m, now, teamRoles), TeamRoles: m.TeamRoles, Now: now}
 	for _, e := range v.Effective {
 		if slices.Contains(e.Origin, "direct") && len(e.Origin) > 1 {
 			v.Overlap = append(v.Overlap, e.Role)
@@ -977,7 +998,7 @@ func (s *Users) RuleOrgs(ctx context.Context, userID string, mfa bool) (map[stri
 				roles = append(roles, e.Role)
 			}
 		}
-		out[m.Org] = &rules.UserOrg{Roles: roles, Teams: nonNilStrings(m.Teams), Claims: org.Claims}
+		out[m.Org] = &rules.UserOrg{Roles: roles, Teams: nonNilStrings(m.Teams), TeamRoles: s.declaredTeamRoles(m, now), Claims: org.Claims}
 	}
 	return out, nil
 }

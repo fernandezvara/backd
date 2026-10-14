@@ -75,6 +75,20 @@ type OrgRole struct {
 	Manage OrgCaps
 }
 
+// TeamRole is a role held within one team of an organization, declared in realm.yaml's
+// organizations.team_roles. Team roles are separate from organization roles: they grant
+// nothing outside their team (design/team-access.md §3).
+type TeamRole struct {
+	Description string
+	// Grants are the team roles its holders may grant, change and revoke in the same team.
+	Grants []string
+	// RequireMFA makes the role count only for sessions with a second factor.
+	RequireMFA bool
+}
+
+// MaxTeamRolesPerMember is the most team role grants one member may hold in an organization.
+const MaxTeamRolesPerMember = 50
+
 // Defaults of the organizations section.
 const (
 	DefaultOrgCreateRule         = "user.email_verified"
@@ -114,6 +128,8 @@ const (
 // doesn't enable organizations.
 type OrgSettings struct {
 	Roles map[string]OrgRole
+	// TeamRoles are the roles held within a team.
+	TeamRoles map[string]TeamRole
 	// CreateRule is the expression deciding who may create organizations (it sees `user`);
 	// "false" leaves it to realm admins and functions.
 	CreateRule   string
@@ -159,6 +175,15 @@ func (o *OrgSettings) Declared(role string) bool {
 // RoleNames returns the declared roles, sorted.
 func (o *OrgSettings) RoleNames() []string { return slices.Sorted(maps.Keys(o.Roles)) }
 
+// TeamRoleDeclared reports whether role is a declared team role.
+func (o *OrgSettings) TeamRoleDeclared(role string) bool {
+	_, ok := o.TeamRoles[role]
+	return ok
+}
+
+// TeamRoleNames returns the declared team roles, sorted.
+func (o *OrgSettings) TeamRoleNames() []string { return slices.Sorted(maps.Keys(o.TeamRoles)) }
+
 // InvitationURL is the link for a token (and organization id).
 func (o *OrgSettings) InvitationURL(token, org string) string {
 	return strings.NewReplacer("{token}", token, "{org}", org).Replace(o.InvitationLink)
@@ -201,6 +226,11 @@ type orgsDoc struct {
 		Description string    `yaml:"description"`
 		Manage      manageDoc `yaml:"manage"`
 	} `yaml:"roles"`
+	TeamRoles map[string]*struct {
+		Description string   `yaml:"description"`
+		Grants      []string `yaml:"grants"`
+		RequireMFA  bool     `yaml:"require_mfa"`
+	} `yaml:"team_roles"`
 	Create                *string  `yaml:"create"`
 	CreatorRoles          []string `yaml:"creator_roles"`
 	DefaultRoles          []string `yaml:"default_roles"`
@@ -227,6 +257,7 @@ func (d *orgsDoc) apply(s *RealmSettings) []error {
 	add := func(format string, args ...any) { errs = append(errs, fmt.Errorf("organizations."+format, args...)) }
 	o := &OrgSettings{
 		Roles:                 map[string]OrgRole{},
+		TeamRoles:             map[string]TeamRole{},
 		CreateRule:            DefaultOrgCreateRule,
 		CreatorRoles:          d.CreatorRoles,
 		DefaultRoles:          d.DefaultRoles,
@@ -258,6 +289,29 @@ func (d *orgsDoc) apply(s *RealmSettings) []error {
 		add("roles: declare at least one role (one with manage: org, for the people who run an organization)")
 	} else if !slices.ContainsFunc(slices.Collect(maps.Values(o.Roles)), func(r OrgRole) bool { return r.Manage.Has(CapOrg) }) {
 		add("roles: at least one role needs manage: org, or nobody could rename or delete an organization")
+	}
+	for _, name := range slices.Sorted(maps.Keys(d.TeamRoles)) {
+		if msg := roleNameProblem(name); msg != "" {
+			add("team_roles: invalid role name %q: %s", name, msg)
+			continue
+		}
+		role := TeamRole{}
+		if r := d.TeamRoles[name]; r != nil {
+			role = TeamRole{Description: r.Description, Grants: r.Grants, RequireMFA: r.RequireMFA}
+		}
+		o.TeamRoles[name] = role
+	}
+	for _, name := range o.TeamRoleNames() {
+		seen := map[string]bool{}
+		for _, g := range o.TeamRoles[name].Grants {
+			switch {
+			case !o.TeamRoleDeclared(g):
+				add("team_roles.%s.grants: %q is not a declared team role", name, g)
+			case seen[g]:
+				add("team_roles.%s.grants: %q is listed twice", name, g)
+			}
+			seen[g] = true
+		}
 	}
 	holds := func(r string) bool { return o.Roles[r].Manage.Has(CapOrg) }
 	for _, r := range o.CreatorRoles {

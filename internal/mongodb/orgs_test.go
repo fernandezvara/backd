@@ -3,6 +3,7 @@ package mongodb
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -375,5 +376,73 @@ func TestRepositoryClearOwnerInOrgs(t *testing.T) {
 	}
 	if own, _ := repo.CountOwned(ctx, "u1"); own != 1 {
 		t.Errorf("the one outside an organization keeps its owner: %d", own)
+	}
+}
+
+func TestAuthStoreTeamRoles(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	grant := func(team, role string, from, until time.Time) auth.TeamRoleGrant {
+		return auth.TeamRoleGrant{Team: team, RoleGrant: auth.RoleGrant{Role: role, From: from, Until: until, GrantedBy: "u9", GrantedAt: now}}
+	}
+	put := func(user string, teams []string, grants ...auth.TeamRoleGrant) {
+		t.Helper()
+		if err := s.PutOrgMember(ctx, auth.OrgMember{Org: "o1", User: user, JoinedAt: now, Teams: teams, TeamRoles: grants}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.CreateOrgTeam(ctx, auth.OrgTeam{ID: "sales", Org: "o1", Name: "Sales", CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	put("u1", []string{"sales"})                                                             // a member
+	put("u2", nil, grant("sales", "manager", time.Time{}, time.Time{}))                      // a holder outside the team
+	put("u3", []string{"sales"}, grant("sales", "manager", now.Add(time.Hour), time.Time{})) // not yet
+	put("u4", nil, grant("sales", "delegate", now.Add(-2*time.Hour), now.Add(-time.Hour)))   // expired
+	put("u5", nil, grant("support", "manager", time.Time{}, time.Time{}))                    // another team
+	put("u6", nil, grant("sales", "delegate", now.Add(-time.Hour), now.Add(time.Hour)))      // in its window
+
+	users := func(role string, after string, limit int) (out []string, more bool) {
+		t.Helper()
+		list, more, err := s.OrgTeamHolders(ctx, "o1", "sales", role, now, after, limit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range list {
+			out = append(out, m.User)
+		}
+		return out, more
+	}
+	if got, _ := users("", "", 0); fmt.Sprint(got) != "[u1 u2 u3 u6]" {
+		t.Errorf("members and holders: %v", got)
+	}
+	if got, _ := users("manager", "", 0); fmt.Sprint(got) != "[u2]" {
+		t.Errorf("managers: %v", got)
+	}
+	if got, _ := users("delegate", "", 0); fmt.Sprint(got) != "[u6]" {
+		t.Errorf("delegates: %v", got)
+	}
+	// Pages.
+	got, more := users("", "", 2)
+	if fmt.Sprint(got) != "[u1 u2]" || !more {
+		t.Errorf("page 1: %v %v", got, more)
+	}
+	if got, more := users("", "u2", 2); fmt.Sprint(got) != "[u3 u6]" || more {
+		t.Errorf("page 2: %v %v", got, more)
+	}
+	// The grant comes back as it went in.
+	m, _ := s.OrgMember(ctx, "o1", "u6")
+	if len(m.TeamRoles) != 1 || m.TeamRoles[0].Team != "sales" || m.TeamRoles[0].GrantedBy != "u9" || !m.TeamRoles[0].Until.Equal(now.Add(time.Hour)) {
+		t.Errorf("stored grant: %+v", m.TeamRoles)
+	}
+	// Deleting the team takes its grants and keeps the others.
+	if err := s.DeleteOrgTeam(ctx, "o1", "sales"); err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := s.OrgMember(ctx, "o1", "u6"); len(m.TeamRoles) != 0 {
+		t.Errorf("grants after the team went: %+v", m.TeamRoles)
+	}
+	if m, _ := s.OrgMember(ctx, "o1", "u5"); len(m.TeamRoles) != 1 {
+		t.Errorf("another team's grant: %+v", m.TeamRoles)
 	}
 }

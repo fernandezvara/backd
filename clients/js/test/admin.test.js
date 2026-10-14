@@ -445,6 +445,14 @@ test('admin.push reads the status and the sends, and a test send, and users.devi
   assert.equal(m.calls[6].url.pathname, '/v1/acme/_admin/users/u1/devices/d1')
 })
 
+test('team members and holders of a team role', async () => {
+  const m = mockFetch([{ body: { items: [{ user: 'u1', in_team: true, roles_in_team: [] }], has_more: false } }])
+  const page = await adminOf(m).orgs.teamMembers('o1', 't1', { role: 'delegate' })
+  assert.equal(page.items[0].user, 'u1')
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/orgs/o1/teams/t1/members')
+  assert.equal(m.calls[0].url.search, '?role=delegate')
+})
+
 test('organizations', async () => {
   const org = { id: 'o1', name: 'Acme', slug: 'acme', status: 'active', require_mfa: false, claims: {}, created_at: '2026-09-26T12:00:00.000Z', members: 2 }
   const m = mockFetch([

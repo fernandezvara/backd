@@ -564,6 +564,7 @@ var systemCollections = []systemCollection{
 			"user":       str(),
 			"roles":      map[string]any{"bsonType": "array"},
 			"teams":      map[string]any{"bsonType": "array", "items": str()},
+			"team_roles": map[string]any{"bsonType": "array"},
 			"joined_at":  typ("date"),
 			"invited_by": str(),
 		}),
@@ -571,6 +572,7 @@ var systemCollections = []systemCollection{
 			{keys: bson.D{{Key: "org", Value: 1}, {Key: "user", Value: 1}}, unique: true},
 			{keys: bson.D{{Key: "user", Value: 1}}},
 			{keys: bson.D{{Key: "org", Value: 1}, {Key: "roles.role", Value: 1}}},
+			{keys: bson.D{{Key: "org", Value: 1}, {Key: "team_roles.team", Value: 1}}},
 		},
 	},
 	{

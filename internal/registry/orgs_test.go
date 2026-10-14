@@ -57,6 +57,10 @@ func TestOrganizationSettingsRefusals(t *testing.T) {
 		"link without token":   {"sign_in:\n  allowed_redirects: [\"https://app.acme.example\"]\norganizations:\n  invitation_link: https://app.acme.example/join\n  roles:\n    owner: { manage: org }\n", "{token} exactly once"},
 		"link outside":         {"sign_in:\n  allowed_redirects: [\"https://app.acme.example\"]\norganizations:\n  invitation_link: https://evil.example/join?t={token}\n  roles:\n    owner: { manage: org }\n", "within sign_in.allowed_redirects"},
 		"auth disabled":        {"auth: disabled\norganizations:\n  roles:\n    owner: { manage: org }\n", "only apply when auth is enabled"},
+		"grants unknown":       {"organizations:\n  roles:\n    owner: { manage: org }\n  team_roles:\n    manager: { grants: [boss] }\n", `grants: "boss" is not a declared team role`},
+		"grants twice":         {"organizations:\n  roles:\n    owner: { manage: org }\n  team_roles:\n    manager: { grants: [delegate, delegate] }\n    delegate: {}\n", "listed twice"},
+		"bad team role name":   {"organizations:\n  roles:\n    owner: { manage: org }\n  team_roles:\n    Manager: {}\n", "invalid role name"},
+		"unknown team key":     {"organizations:\n  roles:\n    owner: { manage: org }\n  team_roles:\n    manager: { manage: org }\n", "manage"},
 		"bad visible":          {"organizations:\n  members_visible_to: everyone\n  roles:\n    owner: { manage: org }\n", "members or managers"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -127,5 +131,23 @@ func TestCollectionOrganizationPolicy(t *testing.T) {
 				t.Errorf("err = %v, want one containing %q", err, tc.want)
 			}
 		})
+	}
+}
+
+func TestTeamRoleSettings(t *testing.T) {
+	s, errs := parseRealmSettings([]byte("organizations:\n  roles:\n    owner: { manage: org }\n  team_roles:\n    manager:\n      description: Runs the team\n      grants: [delegate]\n      require_mfa: true\n    delegate: {}\n"))
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	o := s.Organizations
+	if got := o.TeamRoleNames(); len(got) != 2 || got[0] != "delegate" || got[1] != "manager" {
+		t.Errorf("names: %v", got)
+	}
+	m := o.TeamRoles["manager"]
+	if !m.RequireMFA || len(m.Grants) != 1 || m.Grants[0] != "delegate" || m.Description != "Runs the team" {
+		t.Errorf("manager: %+v", m)
+	}
+	if !o.TeamRoleDeclared("delegate") || o.TeamRoleDeclared("owner") {
+		t.Error("team roles and organization roles are separate")
 	}
 }

@@ -57,6 +57,7 @@ await ctx.admin.orgs.invitations.create(org.id, { binding: "email", email: input
 | `members(id)`, `addMember(id, { user, roles })`, `setRoles(id, user, roles)`, `removeMember(id, user)` | membership without an invitation; the last manager can't be removed |
 | `assignOwner(id, user)` | makes the user a manager (for an orphaned organization) |
 | `teams.list(id)`, `create`, `update`, `delete`, `addMember`, `removeMember` | [teams](../../api/organizations/#teams) |
+| `teams.members(id, team, { role? })` | the team's members and the holders of its [team roles](../../organizations/team-roles/), in force now |
 | `invitations.create(id, input)`, `list(id)`, `delete(id, invitation)` | [invitations](../../api/organizations/#invitations); `create` answers the `token` and `link` |
 
 Errors of backd's own (an unknown organization, a name taken, the last manager) throw a `FunctionError` with its status and code. Review a function with `admin: true` as privileged code.

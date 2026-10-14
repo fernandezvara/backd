@@ -18,6 +18,19 @@
  * @property {string[]} roles                  The user's effective role names there.
  * @property {Array<{ role: string, origin: string[] }>} effective_roles  Where each came from: `direct`, `default` or a team's name.
  * @property {string[]} teams                  The user's teams (ids).
+ * @property {Record<string, string[]>} team_roles  The team roles that count now, by team id.
+ */
+
+/**
+ * A team role held by a member: a role within one team, which doesn't need membership of it.
+ * @typedef {object} OrgTeamRoleGrant
+ * @property {string} team
+ * @property {string} role
+ * @property {string} [from]        The grant counts from then (always, when absent).
+ * @property {string} [until]       ...and until then (for ever, when absent).
+ * @property {string} [granted_by]  A user id; absent for administrators and functions.
+ * @property {string} granted_at
+ * @property {boolean} active       Whether it counts now.
  */
 
 /**
@@ -27,11 +40,17 @@
  * @property {string} [email]        Per the realm's `members_visible_to`.
  * @property {string[]} roles        Direct roles.
  * @property {string[]} teams
+ * @property {OrgTeamRoleGrant[]} team_roles  Team roles held, in force or not.
  * @property {Array<{ role: string, origin: string[] }>} effective_roles
  * @property {string[]} overlap      Roles held directly and also through a team or by default.
  * @property {boolean} [mfa]         Whether they have a second factor; only for managers.
  * @property {string} joined_at
  * @property {string} [invited_by]
+ */
+
+/**
+ * A member or role holder of one team.
+ * @typedef {OrgMember & { in_team: boolean, roles_in_team: string[] }} OrgTeamMember
  */
 
 /**
@@ -291,6 +310,20 @@ export class OrgTeams {
    */
   async delete(team, opts) {
     await this.client.request({ method: 'DELETE', path: ['_orgs', this.org, 'teams', team], ...opts })
+  }
+
+  /**
+   * The members of a team and the holders of its team roles, in force now. With `role`, only the
+   * holders of that role (members of the organization who need not belong to the team). Emails
+   * follow the realm's `members_visible_to`.
+   * @param {string} team
+   * @param {{ role?: string, limit?: number, after?: string }} [params]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ items: OrgTeamMember[], has_more: boolean, next?: string }>}
+   */
+  async members(team, params = {}, opts) {
+    const query = { role: params.role, limit: params.limit, after: params.after }
+    return (await this.client.request({ method: 'GET', path: ['_orgs', this.org, 'teams', team, 'members'], query, ...opts })).data
   }
 
   /**

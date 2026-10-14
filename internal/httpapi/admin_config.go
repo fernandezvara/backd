@@ -146,8 +146,12 @@ func realmConfig(s registry.RealmSettings, seesUsers bool) map[string]any {
 			r := o.Roles[name]
 			orgRoles[name] = map[string]any{"description": r.Description, "manage": orStrings(r.Manage.Names())}
 		}
+		teamRoles := map[string]any{}
+		for name, r := range o.TeamRoles {
+			teamRoles[name] = map[string]any{"description": r.Description, "grants": orStrings(r.Grants), "require_mfa": r.RequireMFA}
+		}
 		out["organizations"] = map[string]any{
-			"roles": orgRoles, "default_roles": orStrings(o.DefaultRoles), "creator_roles": orStrings(o.CreatorRoles),
+			"roles": orgRoles, "team_roles": teamRoles, "default_roles": orStrings(o.DefaultRoles), "creator_roles": orStrings(o.CreatorRoles),
 			"allow_require_mfa": o.AllowRequireMFA, "members_visible_to": o.MembersVisibleTo,
 		}
 	}

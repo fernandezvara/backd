@@ -1520,6 +1520,94 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_orgs/{org}/teams/{team}/members:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { name: team, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [organizations]
+      summary: The members and role holders of a team
+      description: |
+        A page, sorted by user id, of the organization's members who belong to the team and of
+        those who hold a team role in it, whether or not they belong. Grants outside their
+        window are left out. With `role`, only the holders of that role. Emails appear according
+        to the realm's `members_visible_to`. Any member of the organization may list; granting and revoking need `manage` of teams.
+      operationId: listOrganizationTeamMembers
+      security: [{ session: [] }]
+      parameters:
+        - { name: role, in: query, description: "A team role declared in `organizations.team_roles`.", schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+        - { name: after, in: query, description: "The `next` of the previous page.", schema: { type: string } }
+      responses:
+        "200":
+          description: A page of members and holders.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationTeamMembers" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/{org}/teams/{team}/roles:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { name: team, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [organizations]
+      summary: Give a member a team role
+      description: |
+        The member must belong to the organization, not to the team: a team role can be held
+        outside it. Granting what is already held changes nothing. At most 50 team role grants
+        per member (`409 team_limit_reached`). Any member of the organization may list; granting and revoking need `manage` of teams.
+      operationId: grantOrganizationTeamRole
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationTeamRoleInput" }
+      responses:
+        "200":
+          description: The member as seen from the team.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationTeamMember" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [organizations]
+      summary: Take a team role from a member
+      description: Access through the role ends at the member's next request. Any member of the organization may list; granting and revoking need `manage` of teams.
+      operationId: revokeOrganizationTeamRole
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationTeamRoleInput" }
+      responses:
+        "200":
+          description: The member as seen from the team.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationTeamMember" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_orgs/{org}/teams/{team}/members/{user}:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -3516,6 +3604,94 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}/teams/{team}/members:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { name: team, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [admin]
+      summary: The members and role holders of a team
+      description: |
+        A page, sorted by user id, of the organization's members who belong to the team and of
+        those who hold a team role in it, whether or not they belong. Grants outside their
+        window are left out. With `role`, only the holders of that role. Emails appear according
+        to the realm's `members_visible_to`. Needs the `users` area (write access to grant and revoke).
+      operationId: adminListOrganizationTeamMembers
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { name: role, in: query, description: "A team role declared in `organizations.team_roles`.", schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+        - { name: after, in: query, description: "The `next` of the previous page.", schema: { type: string } }
+      responses:
+        "200":
+          description: A page of members and holders.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationTeamMembers" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}/teams/{team}/roles:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { name: team, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [admin]
+      summary: Give a member a team role
+      description: |
+        The member must belong to the organization, not to the team: a team role can be held
+        outside it. Granting what is already held changes nothing. At most 50 team role grants
+        per member (`409 team_limit_reached`). Needs the `users` area (write access to grant and revoke).
+      operationId: adminGrantOrganizationTeamRole
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationTeamRoleInput" }
+      responses:
+        "200":
+          description: The member as seen from the team.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationTeamMember" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      summary: Take a team role from a member
+      description: Access through the role ends at the member's next request. Needs the `users` area (write access to grant and revoke).
+      operationId: adminRevokeOrganizationTeamRole
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationTeamRoleInput" }
+      responses:
+        "200":
+          description: The member as seen from the team.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationTeamMember" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_admin/orgs/{org}/teams/{team}/members/{user}:
@@ -7511,7 +7687,7 @@ components:
       type: object
       description: An organization as a member sees it.
       additionalProperties: false
-      required: [id, name, slug, status, require_mfa, mfa_met, claims, created_at, roles, effective_roles, teams]
+      required: [id, name, slug, status, require_mfa, mfa_met, claims, created_at, roles, effective_roles, teams, team_roles]
       properties:
         id: { type: string }
         name: { type: string }
@@ -7524,6 +7700,10 @@ components:
         roles: { type: array, items: { type: string }, description: "The member's effective role names." }
         effective_roles: { type: array, items: { $ref: "#/components/schemas/RoleOrigin" } }
         teams: { type: array, items: { type: string } }
+        team_roles:
+          type: object
+          additionalProperties: { type: array, items: { type: string } }
+          description: "The team roles the member holds now, by team id: roles held within a team, which don't need membership of it."
 
     OrganizationInvitationInput:
       type: object
@@ -7636,17 +7816,67 @@ components:
     OrganizationMember:
       type: object
       additionalProperties: false
-      required: [user, roles, teams, effective_roles, overlap, joined_at]
+      required: [user, roles, teams, team_roles, effective_roles, overlap, joined_at]
       properties:
         user: { type: string, description: "The user's id." }
         email: { type: string, description: "Present according to the realm's `members_visible_to`." }
         roles: { type: array, items: { type: string }, description: "Direct roles." }
         teams: { type: array, items: { type: string } }
+        team_roles: { type: array, items: { $ref: "#/components/schemas/TeamRoleGrant" }, description: "The team roles the member holds, in force or not." }
         effective_roles: { type: array, items: { $ref: "#/components/schemas/RoleOrigin" } }
         overlap: { type: array, items: { type: string }, description: "Roles held directly and also through a team or by default." }
         mfa: { type: boolean, description: "Whether the member has a second factor. Only for members who manage the organization." }
         joined_at: { type: string, format: date-time }
         invited_by: { type: string }
+
+    TeamRoleGrant:
+      type: object
+      additionalProperties: false
+      required: [team, role, granted_at, active]
+      properties:
+        team: { type: string, description: "A team id." }
+        role: { type: string, description: "A team role declared in `organizations.team_roles`." }
+        from: { type: string, format: date-time, description: "The grant counts from then; always when absent." }
+        until: { type: string, format: date-time, description: "...and until then; for ever when absent." }
+        granted_by: { type: string, description: "A user id; absent when an administrator or a function granted it." }
+        granted_at: { type: string, format: date-time }
+        active: { type: boolean, description: "Whether it counts now." }
+
+    OrganizationTeamMember:
+      type: object
+      additionalProperties: false
+      description: A member of the organization seen from one of its teams.
+      required: [user, roles, teams, team_roles, effective_roles, overlap, joined_at, in_team, roles_in_team]
+      properties:
+        user: { type: string }
+        email: { type: string, description: "Present according to the realm's `members_visible_to`." }
+        roles: { type: array, items: { type: string } }
+        teams: { type: array, items: { type: string } }
+        team_roles: { type: array, items: { $ref: "#/components/schemas/TeamRoleGrant" } }
+        effective_roles: { type: array, items: { $ref: "#/components/schemas/RoleOrigin" } }
+        overlap: { type: array, items: { type: string } }
+        mfa: { type: boolean }
+        joined_at: { type: string, format: date-time }
+        invited_by: { type: string }
+        in_team: { type: boolean, description: "Whether they belong to the team (a role holder needs not)." }
+        roles_in_team: { type: array, items: { type: string }, description: "The team roles they hold in this team now." }
+
+    OrganizationTeamMembers:
+      type: object
+      additionalProperties: false
+      required: [items, has_more]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/OrganizationTeamMember" } }
+        has_more: { type: boolean }
+        next: { type: string, description: "Pass as `after` for the next page." }
+
+    OrganizationTeamRoleInput:
+      type: object
+      additionalProperties: false
+      required: [user, role]
+      properties:
+        user: { type: string, description: "A member of the organization." }
+        role: { type: string, description: "A team role declared in `organizations.team_roles`." }
 
     OrganizationMembers:
       type: object

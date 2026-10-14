@@ -69,6 +69,16 @@ test('members, teams and invitations hang off one organization', async () => {
   assert.equal(m.calls[9].method, 'DELETE')
 })
 
+test('team members and holders of a team role', async () => {
+  const m = mockFetch([{ body: { items: [{ user: 'u2', in_team: false, roles_in_team: ['manager'], team_roles: [] }], has_more: false } }])
+  const c = make(m)
+  const page = await c.orgs.teams('o1').members('t1', { role: 'manager', limit: 5 })
+  assert.equal(page.items[0].roles_in_team[0], 'manager')
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_orgs/o1/teams/t1/members')
+  assert.equal(m.calls[0].url.searchParams.get('role'), 'manager')
+  assert.equal(m.calls[0].url.searchParams.get('limit'), '5')
+})
+
 test('preview and accept an invitation by its token', async () => {
   const m = mockFetch([{ body: { org: { id: 'o1', name: 'Acme' }, roles: ['editor'], teams: [], binding: 'email', expires_at: 't' } }, { body: org }])
   const c = make(m)

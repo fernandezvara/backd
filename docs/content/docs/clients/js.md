@@ -573,6 +573,7 @@ await backd.orgs.members(org.id).list()
 await backd.orgs.members(org.id).update(userId, ['editor'])   // direct roles
 await backd.orgs.teams(org.id).create({ name: 'Editors', roles: ['editor'] })
 await backd.orgs.teams(org.id).addMember(team.id, userId)
+const { items } = await backd.orgs.teams(org.id).members(team.id, { role: 'manager' })   // members and holders of a team role, in force now
 
 // An invitation answers the link once: show it, send it, or let the server email it.
 const inv = await backd.orgs.invitations(org.id).create({ binding: 'email', email: 'ana@example.com', roles: ['editor'], send: true })

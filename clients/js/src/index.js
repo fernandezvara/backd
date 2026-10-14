@@ -92,6 +92,8 @@ export { parseReturn as parseOAuthReturn } from './oauth.js'
  * @typedef {import('./orgs.js').Org} Org
  * @typedef {import('./orgs.js').OrgMember} OrgMember
  * @typedef {import('./orgs.js').OrgTeam} OrgTeam
+ * @typedef {import('./orgs.js').OrgTeamMember} OrgTeamMember
+ * @typedef {import('./orgs.js').OrgTeamRoleGrant} OrgTeamRoleGrant
  * @typedef {import('./orgs.js').OrgInvitation} OrgInvitation
  * @typedef {import('./orgs.js').NewOrgInvitation} NewOrgInvitation
  * @typedef {import('./orgs.js').InviteInput} OrgInviteInput

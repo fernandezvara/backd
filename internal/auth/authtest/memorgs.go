@@ -252,6 +252,28 @@ func (m *MemStore) ListOrgMembers(_ context.Context, org, after string, limit in
 	return all, false, nil
 }
 
+func (m *MemStore) OrgTeamHolders(_ context.Context, org, team, role string, now time.Time, after string, limit int) ([]auth.OrgMember, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var all []auth.OrgMember
+	for _, mem := range m.org().members {
+		if mem.Org != org || mem.User <= after {
+			continue
+		}
+		holds := slices.ContainsFunc(mem.TeamRoles, func(g auth.TeamRoleGrant) bool {
+			return g.Team == team && (role == "" || g.Role == role) && g.Active(now)
+		})
+		if holds || (role == "" && slices.Contains(mem.Teams, team)) {
+			all = append(all, mem)
+		}
+	}
+	slices.SortFunc(all, func(a, b auth.OrgMember) int { return cmp.Compare(a.User, b.User) })
+	if limit > 0 && len(all) > limit {
+		return all[:limit], true, nil
+	}
+	return all, false, nil
+}
+
 func (m *MemStore) OrgMembersWithRoles(_ context.Context, org string, roles []string) ([]auth.OrgMember, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -352,8 +374,9 @@ func (m *MemStore) DeleteOrgTeam(_ context.Context, org, id string) error {
 	}
 	delete(o.teams, id)
 	for k, mem := range o.members {
-		if mem.Org == org && slices.Contains(mem.Teams, id) {
+		if mem.Org == org {
 			mem.Teams = slices.DeleteFunc(slices.Clone(mem.Teams), func(t string) bool { return t == id })
+			mem.TeamRoles = slices.DeleteFunc(slices.Clone(mem.TeamRoles), func(g auth.TeamRoleGrant) bool { return g.Team == id })
 			o.members[k] = mem
 		}
 	}

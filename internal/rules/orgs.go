@@ -24,11 +24,14 @@ import (
 // and counts only show what the caller may see.
 
 // UserOrg is one membership that counts: the roles the caller holds in the organization
-// (direct, default and through teams), the teams, and the organization's claims.
+// (direct, default and through teams), the teams, the team roles held within them and the
+// organization's claims.
 type UserOrg struct {
-	Roles  []string       `expr:"roles"`
-	Teams  []string       `expr:"teams"`
-	Claims map[string]any `expr:"claims"`
+	Roles []string `expr:"roles"`
+	Teams []string `expr:"teams"`
+	// TeamRoles are the team roles held in force, by team id.
+	TeamRoles map[string][]string `expr:"team_roles"`
+	Claims    map[string]any      `expr:"claims"`
 }
 
 // OrgsEnv is the memberships by organization id.

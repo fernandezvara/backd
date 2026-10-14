@@ -573,7 +573,7 @@ export class FunctionError extends Error {
  * @property {boolean | { kinds?: string[], audience?: boolean }} [push]  Give the function ctx.push.send (function.yaml's `push:`); the object is what it declares: the `kinds` it may name and whether it may send to an `audience`.
  * @property {boolean | { perInvocation?: number, recipientsPerMessage?: number, consents?: Record<string, string[]> }} [email]  Give the function ctx.email.send (function.yaml's `email: true`); the object sets the realm's caps (`email.limits`) the fake enforces, and the consents each user id holds, for sends that `requires_consent`.
  * @property {Record<string, any>} [config]  The realm's app configuration, nested like its schema.json: gives the function ctx.config.get and ctx.config.all.
- * @property {boolean | { orgs?: Array<{ id?: string, name: string, slug?: string | null, claims?: Record<string, any>, members?: Array<{ user: string, roles?: string[], teams?: string[] }>, teams?: Array<{ id?: string, name: string, roles?: string[] }> }> }} [orgs]  Also give ctx.admin.orgs: create, get, list, setClaims, addMember, removeMember, teams and invitations, kept in memory (start from `orgs`); \`orgChanges()\` lists what the function changed. \`user.orgs\` is passed through as given.
+ * @property {boolean | { orgs?: Array<{ id?: string, name: string, slug?: string | null, claims?: Record<string, any>, members?: Array<{ user: string, roles?: string[], teams?: string[], teamRoles?: Array<{ team: string, role: string }> }>, teams?: Array<{ id?: string, name: string, roles?: string[] }> }> }} [orgs]  Also give ctx.admin.orgs: create, get, list, setClaims, addMember, removeMember, teams and invitations, kept in memory (start from `orgs`); \`orgChanges()\` lists what the function changed. \`user.orgs\` is passed through as given.
 * @property {boolean} [configWrite]    Also give ctx.admin.config.set, reset and history (function.yaml's `config: write`); changes apply to `config` and are listed by `configChanges()`.
  */
 
@@ -906,7 +906,7 @@ function fakeOrgs(seed) {
   const make = (input) => {
     const o = {
       id: input.id ?? next('org'), name: input.name, slug: input.slug ?? null, status: 'active', claims: input.claims ?? {},
-      members: new Map((input.members ?? []).map((m) => [m.user, { roles: [...(m.roles ?? [])], teams: [...(m.teams ?? [])] }])),
+      members: new Map((input.members ?? []).map((m) => [m.user, { roles: [...(m.roles ?? [])], teams: [...(m.teams ?? [])], teamRoles: (m.teamRoles ?? []).map((g) => ({ ...g })) }])),
       teams: new Map((input.teams ?? []).map((t) => { const id = t.id ?? next('team'); return [id, { id, name: t.name, roles: [...(t.roles ?? [])] }] })),
       invitations: new Map(),
     }
@@ -919,7 +919,7 @@ function fakeOrgs(seed) {
     if (!o) throw err(404, 'not_found', 'organization not found')
     return o
   }
-  const memberView = (id, user, m) => ({ user, roles: [...m.roles], teams: [...m.teams], effective_roles: m.roles.map((role) => ({ role, origin: ['direct'] })), overlap: [], joined_at: '2030-01-01T00:00:00.000Z' })
+  const memberView = (id, user, m) => ({ user, roles: [...m.roles], teams: [...m.teams], team_roles: (m.teamRoles ?? []).map((g) => ({ ...g, granted_at: '2030-01-01T00:00:00.000Z', active: true })), effective_roles: m.roles.map((role) => ({ role, origin: ['direct'] })), overlap: [], joined_at: '2030-01-01T00:00:00.000Z' })
   const team = (o, id) => {
     const t = o.teams.get(id)
     if (!t) throw err(404, 'not_found', 'team not found')
@@ -992,6 +992,18 @@ function fakeOrgs(seed) {
         o.teams.delete(teamID)
         for (const m of o.members.values()) m.teams = m.teams.filter((t) => t !== teamID)
         note('teams.delete', id, { team: teamID })
+      },
+      members: async (id, teamID, options = {}) => {
+        const o = need(id)
+        team(o, teamID)
+        const items = []
+        for (const [user, m] of [...o.members].sort(([a], [b]) => (a < b ? -1 : 1))) {
+          const held = (m.teamRoles ?? []).filter((g) => g.team === teamID).map((g) => g.role)
+          const inTeam = m.teams.includes(teamID)
+          if (options.role ? !held.includes(options.role) : !inTeam && held.length === 0) continue
+          items.push({ ...memberView(id, user, m), in_team: inTeam, roles_in_team: held })
+        }
+        return { items, has_more: false }
       },
       addMember: async (id, teamID, user) => {
         const o = need(id)

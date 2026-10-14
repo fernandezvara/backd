@@ -2312,6 +2312,39 @@ func TestContract(t *testing.T) {
 		req("PUT", teamsPath+"/nosuch/members/"+f.adaID, "", ada, 404)
 		req("PUT", tp+"/members/nosuchuser", "", ada, 403)
 		req("PUT", tm, "", ada, 200)
+		// Team members, and team roles held within a team.
+		req("GET", tp+"/members", "", nil, 401)
+		req("GET", tp+"/members", "", carl, 403)
+		req("GET", tp+"/members?role=manager", "", ada, 200)
+		req("GET", tp+"/members?role=wizard", "", ada, 400)
+		req("GET", teamsPath+"/nosuch/members", "", ada, 404)
+		role := fmt.Sprintf(`{"user": %q, "role": "manager"}`, f.adaID)
+		req("POST", tp+"/roles", role, withJSON(nil), 401)
+		req("POST", tp+"/roles", role, withJSON(carl), 403)
+		req("POST", tp+"/roles", `{"user": "x"}`, withJSON(ada), 400)
+		req("POST", tp+"/roles", `{"user": "x", "role": "wizard"}`, withJSON(ada), 400)
+		req("POST", teamsPath+"/nosuch/roles", role, withJSON(ada), 404)
+		req("POST", tp+"/roles", role, withJSON(ada), 200)
+		req("GET", tp+"/members?role=manager", "", ada, 200)
+		// Fifty grants is the most a member holds.
+		held, _ := f.svc.Store.OrgMember(context.Background(), id, f.adaID)
+		saved := held.TeamRoles
+		for i := len(held.TeamRoles); i < registry.MaxTeamRolesPerMember; i++ {
+			held.TeamRoles = append(held.TeamRoles, teamGrant(fmt.Sprintf("filler%d", i), "delegate"))
+		}
+		if err := f.svc.Store.PutOrgMember(context.Background(), held); err != nil {
+			t.Fatal(err)
+		}
+		req("POST", tp+"/roles", fmt.Sprintf(`{"user": %q, "role": "delegate"}`, f.adaID), withJSON(ada), 409)
+		held.TeamRoles = saved
+		if err := f.svc.Store.PutOrgMember(context.Background(), held); err != nil {
+			t.Fatal(err)
+		}
+		req("DELETE", tp+"/roles", role, withJSON(nil), 401)
+		req("DELETE", tp+"/roles", role, withJSON(carl), 403)
+		req("DELETE", tp+"/roles", `{}`, withJSON(ada), 400)
+		req("DELETE", teamsPath+"/nosuch/roles", role, withJSON(ada), 404)
+		req("DELETE", tp+"/roles", role, withJSON(ada), 200)
 		f.svc.Settings.Organizations.MaxTeamsPerMember = 0
 		req("PUT", tp+"/members/"+f.adaID, "", ada, 200) // already in: nothing to count
 		f.svc.Settings.Organizations.MaxTeamsPerMember = registry.DefaultMaxTeamsPerMember
@@ -2374,6 +2407,35 @@ func TestContract(t *testing.T) {
 		req("PUT", ap+"/members/nosuchuser", "", key, 404)
 		req("PUT", am, "", key, 200)
 		req("DELETE", am, "", key, 200)
+		// Team members and team roles, for administrators.
+		req("GET", ap+"/members", "", nil, 401)
+		req("GET", ap+"/members", "", ada, 403)
+		req("GET", ap+"/members?role=wizard", "", key, 400)
+		req("GET", admTeams+"/nosuch/members", "", key, 404)
+		req("GET", ap+"/members", "", key, 200)
+		role = fmt.Sprintf(`{"user": %q, "role": "delegate"}`, f.adaID)
+		req("POST", ap+"/roles", role, withJSON(nil), 401)
+		req("POST", ap+"/roles", role, withJSON(ada), 403)
+		req("POST", ap+"/roles", `{}`, withJSON(key), 400)
+		req("POST", admTeams+"/nosuch/roles", role, withJSON(key), 404)
+		req("POST", ap+"/roles", role, withJSON(key), 200)
+		held.TeamRoles = nil
+		for i := 0; i < registry.MaxTeamRolesPerMember; i++ {
+			held.TeamRoles = append(held.TeamRoles, teamGrant(fmt.Sprintf("filler%d", i), "delegate"))
+		}
+		if err := f.svc.Store.PutOrgMember(context.Background(), held); err != nil {
+			t.Fatal(err)
+		}
+		req("POST", ap+"/roles", fmt.Sprintf(`{"user": %q, "role": "manager"}`, f.adaID), withJSON(key), 409)
+		held.TeamRoles = nil
+		if err := f.svc.Store.PutOrgMember(context.Background(), held); err != nil {
+			t.Fatal(err)
+		}
+		req("DELETE", ap+"/roles", role, withJSON(nil), 401)
+		req("DELETE", ap+"/roles", role, withJSON(ada), 403)
+		req("DELETE", ap+"/roles", `{}`, withJSON(key), 400)
+		req("DELETE", admTeams+"/nosuch/roles", role, withJSON(key), 404)
+		req("DELETE", ap+"/roles", role, withJSON(key), 200)
 		f.svc.Settings.Organizations.MaxTeamsPerMember = 0
 		req("PUT", am, "", key, 409)
 		f.svc.Settings.Organizations.MaxTeamsPerMember = registry.DefaultMaxTeamsPerMember

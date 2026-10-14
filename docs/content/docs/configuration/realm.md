@@ -185,6 +185,7 @@ organizations:
 |---|---|---|
 | `enabled` | `false` switches the section off without removing it | `true` |
 | `roles` | The organization roles: a name (same rules as realm roles), an optional `description` and `manage`, a capability or a list of them | required |
+| `team_roles` | [Roles held within one team](../../organizations/team-roles/): a name, an optional `description`, `grants` (team roles its holders may give, in their own team) and `require_mfa` | none |
 | `default_roles` | Roles every member holds without being granted one. They can't have `manage` capabilities | none |
 | `create` | An [expression](../../auth/rules/) that decides who may create organizations; it sees `user`. `"false"` leaves it to realm administrators | `user.email_verified` |
 | `creator_roles` | The roles the creator of an organization holds. One of them needs `manage: org` | `[owner]` |
