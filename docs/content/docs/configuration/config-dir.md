@@ -73,7 +73,7 @@ Realm, database and collection names must match `^[a-z0-9]+(?:[-_][a-z0-9]+)*$`:
 - Must be a valid JSON Schema object. `$schema` may be omitted and is then treated as draft 2020-12. Any other draft is rejected.
 - `format` keywords are asserted: for example, `"format": "email"` rejects values that aren't email addresses.
 - A `date-time` string can be stored as a real date: add `"x-backd-store": "date"` to its property (see [Dates](#dates)).
-- Must not declare or require `id`, `_id` or `_meta`. These are system-owned fields that `backd` adds to every document, and clients can never set them.
+- Must not declare or require `id`, `_id` or `_meta`. These are system-owned fields that `backd` adds to every document. Clients can't set them; the one exception is the `id` of a create in a collection with [`custom_id`](#custom-ids).
 
 Example, `shop/orders/items/schema.json`:
 
@@ -124,7 +124,7 @@ This optional file declares the collection's MongoDB indexes:
 A document without a uniquely indexed field counts as having `null` there, so only **one** document may lack it: the second is refused with `409`. Make every field with a unique index `required` in `schema.json`. And remember that a unique index tells callers that a value exists, even if its document is hidden by a [rule](../../auth/rules/).
 {{< /hint >}}
 
-Indexes are created at startup by [provisioning](../../operations/). Indexes that exist in MongoDB but aren't declared here are kept and reported as warnings. An index on `id` alone is unnecessary, because MongoDB always indexes `_id`.
+Indexes are created at startup by [provisioning](../../operations/). Indexes that exist in MongoDB but aren't declared here are kept and reported as warnings. An index on `id` alone is unnecessary, because MongoDB always indexes `_id`. Every collection also gets an index on `_meta.created_at, id` without being declared, which serves the [default order](../../api/querying/#ordering-and-pagination) of lists.
 
 {{< hint style="tip" title="Best practice" >}}
 Filtering and sorting on unindexed fields works, but scans the whole collection, which is fine for a few thousand documents and slow beyond that. Add an index for every query your application runs often, and for `_meta.owner` when [rules](../../auth/rules/) restrict access to the owner.

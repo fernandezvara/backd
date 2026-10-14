@@ -192,6 +192,7 @@ func TestLoadIndexes(t *testing.T) {
 		{Keys: []IndexKey{{Field: "address.city"}, {Field: "_meta.created_at", Desc: true}}},
 		{Keys: []IndexKey{{Field: "id"}, {Field: "age"}}},
 		{Keys: []IndexKey{{Field: "_meta.version", Desc: true}}},
+		{Keys: []IndexKey{{Field: "_meta.created_at"}, {Field: "id"}}}, // the default order's
 	}
 	if !reflect.DeepEqual(c.Indexes, want) {
 		t.Errorf("indexes = %+v\nwant %+v", c.Indexes, want)
@@ -199,8 +200,8 @@ func TestLoadIndexes(t *testing.T) {
 	if got := c.Indexes[1].String(); got != "address.city,-_meta.created_at" {
 		t.Errorf("String() = %q", got)
 	}
-	if plain, _ := reg.Collection("shop", "db", "plain"); plain.Indexes != nil {
-		t.Errorf("collection without indexes.json has indexes %v", plain.Indexes)
+	if plain, _ := reg.Collection("shop", "db", "plain"); len(plain.Indexes) != 1 || plain.Indexes[0].String() != "_meta.created_at,id" {
+		t.Errorf("collection without indexes.json has indexes %v, want only the default order's", plain.Indexes)
 	}
 }
 

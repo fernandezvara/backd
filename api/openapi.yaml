@@ -4459,7 +4459,11 @@ paths:
           schema: { type: string }
         - name: order_by
           in: query
-          description: Comma-separated fields; `-` prefix for descending.
+          description: >-
+            Comma-separated fields; `-` prefix for descending. Without it,
+            documents are ordered by `_meta.created_at`, then `id`: ids chosen
+            by clients have no order of their own. `id` is always the last
+            tiebreaker.
           schema: { type: string }
         - { $ref: "#/components/parameters/limit" }
         - { $ref: "#/components/parameters/skip" }
@@ -4469,8 +4473,8 @@ paths:
             The `next_cursor` of the previous page: continues the list after it,
             with the same `where` and `order_by`. Stable when documents change
             between requests and as fast on the last page as on the first, unlike
-            `skip`. Can't be combined with `skip`. For the default order it is
-            the id of the last document you saw. Refused (`400 invalid_query`,
+            `skip`. Can't be combined with `skip`. Treat it as opaque; with
+            `order_by=id` alone it is the id of the last document you saw. Refused (`400 invalid_query`,
             on `after`) for another `order_by` than the cursor's, for a cursor
             that isn't one, and for an `order_by` on arrays, objects or fields of
             mixed types, which no cursor can follow.
@@ -5144,7 +5148,11 @@ paths:
           schema: { type: string }
         - name: order_by
           in: query
-          description: Comma-separated fields; `-` prefix for descending.
+          description: >-
+            Comma-separated fields; `-` prefix for descending. Without it,
+            documents are ordered by `_meta.created_at`, then `id`: ids chosen
+            by clients have no order of their own. `id` is always the last
+            tiebreaker.
           schema: { type: string }
         - { $ref: "#/components/parameters/limit" }
         - { $ref: "#/components/parameters/skip" }
@@ -5154,8 +5162,8 @@ paths:
             The `next_cursor` of the previous page: continues the list after it,
             with the same `where` and `order_by`. Stable when documents change
             between requests and as fast on the last page as on the first, unlike
-            `skip`. Can't be combined with `skip`. For the default order it is
-            the id of the last document you saw. Refused (`400 invalid_query`,
+            `skip`. Can't be combined with `skip`. Treat it as opaque; with
+            `order_by=id` alone it is the id of the last document you saw. Refused (`400 invalid_query`,
             on `after`) for another `order_by` than the cursor's, for a cursor
             that isn't one, and for an `order_by` on arrays, objects or fields of
             mixed types, which no cursor can follow.

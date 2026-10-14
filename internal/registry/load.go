@@ -335,6 +335,7 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 		}
 	}
 	coll.addSoftDeleteIndexes()
+	coll.addDefaultOrderIndex()
 	return coll, nil
 }
 

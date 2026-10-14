@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -153,6 +154,18 @@ func (r *memRepo) List(_ context.Context, q storage.Query) (storage.Page, error)
 		}
 	}
 	sortStrings(ids)
+	if len(q.Sort) > 0 {
+		docs := r.coll()
+		sort.SliceStable(ids, func(i, j int) bool {
+			for _, f := range q.Sort {
+				c := compareForSort(sortValue(docs[ids[i]], f.Field), sortValue(docs[ids[j]], f.Field))
+				if c != 0 {
+					return (c < 0) != f.Desc
+				}
+			}
+			return false
+		})
+	}
 	var page storage.Page
 	if q.Count {
 		page.Total = &counted // the cursor narrows the page, not the total
@@ -203,6 +216,37 @@ func (r *memRepo) Delete(_ context.Context, id string, ifVersion *int64) error {
 	}
 	delete(r.coll(), id)
 	return nil
+}
+
+// sortValue reads a dotted path of a stored document.
+func sortValue(doc map[string]any, path string) any {
+	var cur any = doc
+	for _, part := range strings.Split(path, ".") {
+		m, ok := cur.(map[string]any)
+		if !ok {
+			return nil
+		}
+		cur = m[part]
+	}
+	return cur
+}
+
+// compareForSort orders null first, then times, numbers and strings.
+func compareForSort(a, b any) int {
+	switch {
+	case a == nil && b == nil:
+		return 0
+	case a == nil:
+		return -1
+	case b == nil:
+		return 1
+	}
+	if ta, ok := a.(time.Time); ok {
+		if tb, ok := b.(time.Time); ok {
+			return ta.Compare(tb)
+		}
+	}
+	return strings.Compare(fmt.Sprint(a), fmt.Sprint(b))
 }
 
 func sortStrings(s []string) {
@@ -443,9 +487,9 @@ func TestListCursor(t *testing.T) {
 		ids = append(ids, b["id"].(string))
 	}
 
-	// The default order: next_cursor is the last id, and walks the whole list.
+	// The default order (creation time, then id): next_cursor is opaque, and walks the whole list.
 	_, page := f.do(t, "GET", items+"?limit=10", "")
-	if page["next_cursor"] != ids[9] || page["has_more"] != true {
+	if page["next_cursor"] == nil || page["next_cursor"] == ids[9] || page["has_more"] != true {
 		t.Fatalf("first page: next_cursor %v, has_more %v", page["next_cursor"], page["has_more"])
 	}
 	var got []string
@@ -469,13 +513,13 @@ func TestListCursor(t *testing.T) {
 	if strings.Join(got, ",") != strings.Join(ids, ",") {
 		t.Errorf("walking with cursors: %v\nwant %v", got, ids)
 	}
-	// By hand: any id continues after it.
-	_, page = f.do(t, "GET", items+"?limit=3&after="+ids[20], "")
+	// By hand, ordered by id: any id continues after it.
+	_, page = f.do(t, "GET", items+"?limit=3&order_by=id&after="+ids[20], "")
 	if list := page["items"].([]any); len(list) != 3 || list[0].(map[string]any)["id"] != ids[21] {
 		t.Errorf("after an id: %v", page)
 	}
 	// The count is of the whole list, not of what is left.
-	_, page = f.do(t, "GET", items+"?limit=2&after="+ids[20]+"&count=true", "")
+	_, page = f.do(t, "GET", items+"?limit=2&order_by=id&after="+ids[20]+"&count=true", "")
 	if page["total"] != float64(25) {
 		t.Errorf("total with after = %v, want 25", page["total"])
 	}

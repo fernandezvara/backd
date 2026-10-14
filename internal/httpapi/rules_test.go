@@ -88,6 +88,9 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 		"acme/app/invoices/collection.yaml": "custom_id:\n  pattern: 'INV-[0-9]{4}'\n  duplicate_limit: 3\n" + rulesSection("read: user != nil\ncreate: user != nil && data.id != 'INV-9999'\n"),
 		"acme/app/cards/schema.json":        postsSchema,
 		"acme/app/cards/collection.yaml":    "custom_id: user\n" + rulesSection("read: user != nil\ncreate: user != nil\n"),
+		// Ids that sit next to the routes under a collection, and files (see customid_audit_test.go).
+		"acme/app/slugs/schema.json":     postsSchema,
+		"acme/app/slugs/collection.yaml": "custom_id:\n  pattern: '[A-Za-z0-9._~:@-]+'\nsoft_delete: true\n" + rulesSection("read: user != nil\ncreate: user != nil\nupdate: user != nil\ndelete: user != nil\nrestore: user != nil\n"),
 		// Functions (see functions_test.go).
 		fnDir + "echo/function.yaml":  "invoke: \"user != nil && user.email_verified\"\n",
 		fnDir + "echo/index.js":       "",

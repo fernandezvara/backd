@@ -473,11 +473,15 @@ func hasDollarKey(v any) bool {
 
 // ParseOrderBy parses a comma-separated field list with an optional "-"
 // prefix for descending order. An "id" tiebreaker is appended unless id is
-// already present, so pagination is stable. Empty means id ascending.
+// already present, so pagination is stable. Empty means creation time, then id: ids chosen
+// by clients (custom ids) have no order of their own.
 func ParseOrderBy(s string, fields map[string]registry.Field) ([]storage.SortField, error) {
 	var out []storage.SortField
 	var errs Errors
 	seen := map[string]bool{}
+	if strings.TrimSpace(s) == "" {
+		return []storage.SortField{{Field: "_meta.created_at"}, {Field: "id"}}, nil
+	}
 	if s != "" {
 		parts := strings.Split(s, ",")
 		if len(parts) > MaxSortFields {
