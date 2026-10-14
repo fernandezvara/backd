@@ -231,6 +231,9 @@ func TestOrganizationTypes(t *testing.T) {
 	if !strings.Contains(out.Types, `org_roles: "editor" | "owner";`) {
 		t.Errorf("no org_roles:\n%s", out.Types)
 	}
+	if strings.Contains(out.Types, `"_meta.team"`) {
+		t.Errorf("_meta.team is queryable in a collection without teams")
+	}
 	if !strings.Contains(out.Types, `"_meta.org"`) {
 		t.Errorf("_meta.org is not queryable")
 	}

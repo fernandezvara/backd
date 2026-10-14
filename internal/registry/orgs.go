@@ -566,17 +566,21 @@ func teamRoles(s RealmSettings) []string {
 	return s.Organizations.TeamRoleNames()
 }
 
-// addOrgIndex adds the index that serves the lists of one organization in the default order,
-// which every query the caller's rules narrow to `_meta.org` uses.
+// addOrgIndex adds the indexes that serve the lists of one organization, and of one team of it,
+// in the default order, which every query the caller's rules narrow to `_meta.org` or
+// `_meta.team` use.
 func (c *Collection) addOrgIndex() {
 	if !c.InOrganizations() {
 		return
 	}
-	ix := Index{Keys: []IndexKey{{Field: MetaOrg}, {Field: "_meta.created_at"}, {Field: "id"}}}
-	for _, have := range c.Indexes {
-		if have.String() == ix.String() && !have.Unique {
-			return
+	scopes := [][]IndexKey{{{Field: MetaOrg}}}
+	if c.InTeams() {
+		scopes = append(scopes, []IndexKey{{Field: MetaOrg}, {Field: MetaTeam}})
+	}
+	for _, scope := range scopes {
+		ix := Index{Keys: append(slices.Clone(scope), IndexKey{Field: "_meta.created_at"}, IndexKey{Field: "id"})}
+		if !slices.ContainsFunc(c.Indexes, func(have Index) bool { return have.String() == ix.String() && !have.Unique }) {
+			c.Indexes = append(c.Indexes, ix)
 		}
 	}
-	c.Indexes = append(c.Indexes, ix)
 }

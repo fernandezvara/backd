@@ -103,7 +103,7 @@ POST /v1/acme/app/projects?org=d3c9ljp8hc2g00b6s1m0
 - A [batch](#batch-writes) takes `?org=` for all its creates.
 - API keys without a user have no memberships, so they answer `403 not_org_member`; administrators use the admin data route, which accepts any active organization.
 
-A list takes `?org=<id>` as a shorthand for `where={"_meta.org": "<id>"}`, ANDed with `where`. The read rule still decides what is seen: an organization the caller doesn't belong to lists nothing.
+A list takes `?org=<id>` as a shorthand for `where={"_meta.org": "<id>"}`, ANDed with `where`. The read rule still decides what is seen: an organization the caller doesn't belong to lists nothing. In a collection with [teams](../../configuration/config-dir/#teams), `?team=<id>` is the same shorthand for `_meta.team` (and `_meta.team` can be used in `where` and `order_by`); a create names its team with `?team=` next to `?org=` (`.inTeam(id)` in the JavaScript client).
 
 ### Safe retries with `Idempotency-Key`
 

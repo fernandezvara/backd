@@ -423,16 +423,15 @@ func orgParam(op map[string]any, id string, c *registry.Collection) {
 	op["parameters"] = append([]any{param}, anySlice(op["parameters"])...)
 }
 
-// teamParam is orgParam for `team`: only creates and batches take it (lists get the shorthand
-// with the query language).
+// teamParam is orgParam for `team`.
 func teamParam(op map[string]any, id string, c *registry.Collection) {
 	dropParams(op, "teamQuery")
-	if !c.InTeams() || (id != "createDocument" && id != "batchWrite") {
+	if !c.InTeams() || (id != "createDocument" && id != "batchWrite" && id != "listDocuments") {
 		return
 	}
 	param := map[string]any{
 		"name": "team", "in": "query", "required": c.Team == registry.TeamRequired && id == "createDocument", "schema": map[string]any{"type": "string"},
-		"description": "The team of the document within `org`: the caller must belong to it or hold a team role in it.",
+		"description": "The team of the documents: where a create puts the document (the caller must belong to the team or hold a team role in it, and name `org`), or a filter on `_meta.team` for a list.",
 	}
 	op["parameters"] = append([]any{param}, anySlice(op["parameters"])...)
 }

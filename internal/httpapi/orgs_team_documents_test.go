@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"testing"
 	"time"
 )
@@ -78,6 +79,30 @@ func TestTeamScopedDocuments(t *testing.T) {
 	}
 	if got := ids(f.ada); len(got) != 1 {
 		t.Errorf("an owner: %v", got)
+	}
+	// ?team= is a shorthand for a where on _meta.team, as ?org= is for _meta.org.
+	inTeamList := func(query string) int {
+		t.Helper()
+		rec, out := f.doH(t, "GET", requests+"?org="+org+query, "", bearer(f.ada))
+		if rec.Code != 200 {
+			t.Fatalf("list %s: %d %v", query, rec.Code, out)
+		}
+		return len(out["items"].([]any))
+	}
+	if n := inTeamList("&team=" + sales); n != 1 {
+		t.Errorf("?team=sales: %d", n)
+	}
+	if n := inTeamList("&team=" + support); n != 0 {
+		t.Errorf("?team=support: %d", n)
+	}
+	if n := inTeamList(`&where=` + url.QueryEscape(fmt.Sprintf(`{"_meta.team": %q}`, sales))); n != 1 {
+		t.Errorf("where on _meta.team: %d", n)
+	}
+	if rec, out := f.doH(t, "GET", requests+"?team=", "", bearer(f.ada)); rec.Code != 400 {
+		t.Errorf("empty ?team=: %d %v", rec.Code, out)
+	}
+	if rec, out := f.doH(t, "GET", "/v1/acme/app/projects?org="+org+"&team="+sales, "", bearer(f.ada)); rec.Code != 400 || errCode(out) != "team_not_allowed" {
+		t.Errorf("a collection without teams: %d %v", rec.Code, out)
 	}
 	// Somebody outside the organization sees nothing.
 	if rec, _ := f.doH(t, "GET", requests+"?org="+org, "", bearer(f.carl)); rec.Code != 403 {

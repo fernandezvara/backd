@@ -174,6 +174,12 @@ func TestCollectionTeamPolicy(t *testing.T) {
 	if c.Team != TeamRequired || c.OnTeamDelete != OrgKeep || !c.InTeams() || !c.IsKnownField(MetaTeam) {
 		t.Errorf("team: %q %q", c.Team, c.OnTeamDelete)
 	}
+	// The lists of a team have an index next to the organization's.
+	for _, want := range []string{"_meta.org,_meta.created_at,id", "_meta.org,_meta.team,_meta.created_at,id"} {
+		if !slices.ContainsFunc(c.Indexes, func(ix Index) bool { return ix.String() == want }) {
+			t.Errorf("index %s is missing: %v", want, c.Indexes)
+		}
+	}
 	reg, err = softTree(t, realm, ok+"team: optional\non_team_delete:\n  action: delete\n", "")
 	if err != nil {
 		t.Fatal(err)

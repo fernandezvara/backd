@@ -284,17 +284,22 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// ?org= is a shorthand for a where on _meta.org; the read rule still decides what is seen.
-	if org := r.URL.Query().Get("org"); r.URL.Query().Has("org") {
-		if !c.InOrganizations() {
-			writeError(w, r, http.StatusBadRequest, codeOrgNotAllowed, "this collection has no organizations")
+	// ?org= and ?team= are shorthands for a where on _meta.org and _meta.team; the read rule
+	// still decides what is seen.
+	for _, f := range scopeFields {
+		if !r.URL.Query().Has(f.key) {
+			continue
+		}
+		if !f.has(c) {
+			writeError(w, r, http.StatusBadRequest, f.notAllowed, "this collection has no "+f.plural)
 			return
 		}
-		if org == "" {
-			writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid query parameters", Detail{Path: "org", Reason: "must be an organization id"})
+		id := r.URL.Query().Get(f.key)
+		if id == "" {
+			writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid query parameters", Detail{Path: f.key, Reason: "must be " + f.article + " " + f.noun + " id"})
 			return
 		}
-		q.Filter = and(q.Filter, storage.Condition{Field: registry.MetaOrg, Op: storage.OpEq, Value: org})
+		q.Filter = and(q.Filter, storage.Condition{Field: f.path, Op: storage.OpEq, Value: id})
 	}
 	filter, ok := viewFilter(w, r, d.accessFor(r), c, view)
 	if !ok {
@@ -334,7 +339,7 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-var listParams = map[string]bool{"where": true, "order_by": true, "limit": true, "skip": true, "after": true, "count": true, "deleted": true, "file_links": true, "org": true}
+var listParams = map[string]bool{"where": true, "order_by": true, "limit": true, "skip": true, "after": true, "count": true, "deleted": true, "file_links": true, "org": true, "team": true}
 
 func parseListQuery(v url.Values, fields map[string]registry.Field) (storage.Query, []Detail) {
 	q := storage.Query{Limit: defaultLimit}
@@ -1089,12 +1094,14 @@ func (d *documents) createTeam(w http.ResponseWriter, r *http.Request, c *regist
 // scopeFields are the system fields that say where in the organization a document lives, by
 // the key they have in `_meta`.
 var scopeFields = []struct {
-	key  string // in _meta
-	path string // _meta.<key>, for messages
+	key  string // in _meta, and the query parameter that names it
+	path string // _meta.<key>
 	has  func(c *registry.Collection) bool
+	// For messages: "organization" "an", the plural and the code of a collection without them.
+	noun, article, plural, notAllowed string
 }{
-	{"org", registry.MetaOrg, (*registry.Collection).InOrganizations},
-	{"team", registry.MetaTeam, (*registry.Collection).InTeams},
+	{"org", registry.MetaOrg, (*registry.Collection).InOrganizations, "organization", "an", "organizations", codeOrgNotAllowed},
+	{"team", registry.MetaTeam, (*registry.Collection).InTeams, "team", "a", "teams", codeTeamNotAllowed},
 }
 
 // scopeMeta is the `_meta` content a create gets from the organization and team it is made in.
