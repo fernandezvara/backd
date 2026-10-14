@@ -234,6 +234,9 @@ func collectionConfig(c *registry.Collection, rel func(string) string) map[strin
 	if c.InOrganizations() {
 		policy["organization"] = map[string]any{"mode": c.Organization, "on_org_delete": c.OnOrgDelete}
 	}
+	if c.InTeams() {
+		policy["team"] = map[string]any{"mode": c.Team, "on_team_delete": c.OnTeamDelete}
+	}
 	if e := c.Erasure; e != nil {
 		policy["on_owner_delete"] = map[string]any{"action": e.Action, "remove": orStrings(e.Remove), "replace": e.Replace, "pull": e.Pull, "unset": e.Unset}
 	}

@@ -390,6 +390,9 @@ func loadRules(c *Collection, settings RealmSettings, dir string) error {
 			if p == MetaOrg {
 				return c.InOrganizations()
 			}
+			if p == MetaTeam {
+				return c.InTeams()
+			}
 			_, ok := c.Fields[p]
 			return ok
 		},
@@ -401,6 +404,8 @@ func loadRules(c *Collection, settings RealmSettings, dir string) error {
 		ConfigLeaf:  c.configLeaf,
 		OrgRoles:    orgRoles(settings),
 		InOrgs:      c.InOrganizations(),
+		TeamRoles:   teamRoles(settings),
+		InTeams:     c.InTeams(),
 	})
 	if len(errs) > 0 {
 		for i, e := range errs {

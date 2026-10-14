@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"math/rand/v2"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -155,7 +157,7 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, problem.status, problem.code, problem.reason, Detail{Path: "id", Reason: problem.reason})
 		return
 	}
-	org, ok := d.createOrg(w, r, c) // membership comes before the create rule
+	org, team, ok := d.createScope(w, r, c) // membership comes before the create rule
 	if !ok {
 		return
 	}
@@ -181,8 +183,8 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 	if id != "" {
 		doc["id"] = id // the create rule sees data.id
 	}
-	if org != "" {
-		doc["_meta"] = map[string]any{"org": org} // ...and data._meta.org
+	if scope := scopeMeta(org, team); len(scope) > 0 {
+		doc["_meta"] = scope // ...and data._meta.org and data._meta.team
 	}
 	if !allowWrite(w, r, d.accessFor(r), c, rules.Create, nil, doc) {
 		return
@@ -197,9 +199,7 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 	}
 	meta := map[string]any{"created_at": now, "updated_at": now, "version": int64(1)}
 	stampCreate(r, meta)
-	if org != "" {
-		meta["org"] = org
-	}
+	maps.Copy(meta, scopeMeta(org, team))
 	doc["_meta"] = meta
 	if pending != nil && !pending.claim(w, r, doc["id"].(string)) {
 		return
@@ -414,14 +414,14 @@ func (d *documents) replace(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	claimed, claims := claimedOrg(c, body)
+	claimed := claimedScope(c, body)
 	stripSystemFields(body)
 	pending, ok := d.takePending(w, r, c, body)
 	if !ok {
 		return
 	}
 	d.write(w, r, c, repo, pending, func(current map[string]any) (map[string]any, bool) {
-		if claims && !sameOrg(w, r, claimed, current) {
+		if !sameScope(w, r, claimed, current) {
 			return nil, false
 		}
 		candidate := body
@@ -445,14 +445,14 @@ func (d *documents) patch(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	claimed, claims := claimedOrg(c, patch)
+	claimed := claimedScope(c, patch)
 	stripSystemFields(patch)
 	pending, ok := d.takePending(w, r, c, patch)
 	if !ok {
 		return
 	}
 	d.write(w, r, c, repo, pending, func(current map[string]any) (map[string]any, bool) {
-		if claims && !sameOrg(w, r, claimed, current) {
+		if !sameScope(w, r, claimed, current) {
 			return nil, false
 		}
 		// Deep copies: merging must not modify the stored document, which the
@@ -985,6 +985,8 @@ func (d *documents) restore(w http.ResponseWriter, r *http.Request) {
 
 const (
 	codeOrgRequired    = "org_required"
+	codeTeamRequired   = "team_required"
+	codeNotTeamMember  = "not_team_member"
 	codeOrgNotAllowed  = "org_not_allowed"
 	codeImmutableField = "immutable_field"
 )
@@ -1031,28 +1033,108 @@ func (d *documents) createOrg(w http.ResponseWriter, r *http.Request, c *registr
 	return org, true
 }
 
-// claimedOrg reads the organization a PUT or PATCH body says the document belongs to.
-func claimedOrg(c *registry.Collection, body map[string]any) (org string, claims bool) {
-	if !c.InOrganizations() {
-		return "", false
+// createScope resolves where a new document is created: its organization (?org=) and team
+// (?team=), after the caller's membership of each was checked, before any rule runs.
+func (d *documents) createScope(w http.ResponseWriter, r *http.Request, c *registry.Collection) (org, team string, ok bool) {
+	if org, ok = d.createOrg(w, r, c); !ok {
+		return "", "", false
 	}
-	meta, ok := body["_meta"].(map[string]any)
-	if !ok {
-		return "", false
+	if team, ok = d.createTeam(w, r, c, org); !ok {
+		return "", "", false
 	}
-	v, has := meta["org"]
-	s, _ := v.(string)
-	return s, has
+	return org, team, true
 }
 
-// sameOrg answers 400 immutable_field when the body names another organization than the
-// document's: moving a document is an administrator's transfer, not an update.
-func sameOrg(w http.ResponseWriter, r *http.Request, claimed string, current map[string]any) bool {
-	meta, _ := current["_meta"].(map[string]any)
-	have, _ := meta["org"].(string)
-	if claimed == have {
-		return true
+// createTeam resolves the team a new document is created in (?team=, which needs ?org=): the
+// caller must belong to it or hold a team role in it. A team the caller isn't part of, an
+// unknown one and one of another organization all answer alike.
+func (d *documents) createTeam(w http.ResponseWriter, r *http.Request, c *registry.Collection, org string) (string, bool) {
+	team := r.URL.Query().Get("team")
+	given := r.URL.Query().Has("team")
+	if !c.InTeams() {
+		if given {
+			writeError(w, r, http.StatusBadRequest, codeTeamNotAllowed, "this collection has no teams", Detail{Path: "team", Reason: "documents of this collection don't belong to teams"})
+			return "", false
+		}
+		return "", true
 	}
-	writeError(w, r, http.StatusBadRequest, codeImmutableField, "_meta.org can't be changed: a document is moved to another organization by an administrator", Detail{Path: "_meta.org", Reason: "is set at creation and can't change"})
-	return false
+	if team == "" {
+		if c.Team == registry.TeamRequired {
+			writeError(w, r, http.StatusBadRequest, codeTeamRequired, "documents of this collection belong to a team: say which with ?team=", Detail{Path: "team", Reason: "is required"})
+			return "", false
+		}
+		return "", true
+	}
+	if org == "" {
+		writeError(w, r, http.StatusBadRequest, codeValidation, "?team= needs ?org=", Detail{Path: "team", Reason: "needs ?org= with the team's organization"})
+		return "", false
+	}
+	caller, _ := callerOf(r)
+	if adminData(r) || (caller.BypassesRules() && caller.Func != nil) {
+		if svc := d.users(c.Realm); svc == nil || !svc.OrgTeamExists(r.Context(), org, team) {
+			writeError(w, r, http.StatusNotFound, codeNotFound, "no such team", Detail{Path: "team", Reason: "the organization has no team with this id"})
+			return "", false
+		}
+		return team, true
+	}
+	if caller.User != nil {
+		if m := d.userOrgs(r, c.Realm, caller)[org]; m != nil && (slices.Contains(m.Teams, team) || len(m.TeamRoles[team]) > 0) {
+			return team, true
+		}
+	}
+	writeError(w, r, http.StatusForbidden, codeNotTeamMember, "you are not a member of that team")
+	return "", false
+}
+
+// scopeFields are the system fields that say where in the organization a document lives, by
+// the key they have in `_meta`.
+var scopeFields = []struct {
+	key  string // in _meta
+	path string // _meta.<key>, for messages
+	has  func(c *registry.Collection) bool
+}{
+	{"org", registry.MetaOrg, (*registry.Collection).InOrganizations},
+	{"team", registry.MetaTeam, (*registry.Collection).InTeams},
+}
+
+// scopeMeta is the `_meta` content a create gets from the organization and team it is made in.
+func scopeMeta(org, team string) map[string]any {
+	out := map[string]any{}
+	if org != "" {
+		out["org"] = org
+	}
+	if team != "" {
+		out["team"] = team
+	}
+	return out
+}
+
+// claimedScope reads the organization and team a PUT or PATCH body says the document belongs to.
+func claimedScope(c *registry.Collection, body map[string]any) map[string]string {
+	meta, ok := body["_meta"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	out := map[string]string{}
+	for _, f := range scopeFields {
+		if v, has := meta[f.key]; has && f.has(c) {
+			s, _ := v.(string)
+			out[f.key] = s
+		}
+	}
+	return out
+}
+
+// sameScope answers 400 immutable_field when the body names another organization or team than
+// the document's: moving a document is an administrator's transfer, not an update.
+func sameScope(w http.ResponseWriter, r *http.Request, claimed map[string]string, current map[string]any) bool {
+	meta, _ := current["_meta"].(map[string]any)
+	for _, f := range scopeFields {
+		want, claims := claimed[f.key]
+		if have, _ := meta[f.key].(string); claims && want != have {
+			writeError(w, r, http.StatusBadRequest, codeImmutableField, f.path+" can't be changed: a document is moved by an administrator", Detail{Path: f.path, Reason: "is set at creation and can't change"})
+			return false
+		}
+	}
+	return true
 }

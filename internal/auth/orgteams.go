@@ -70,6 +70,12 @@ func (s *Users) teamManager(ctx context.Context, userID, orgID string) (Membersh
 	return m, cc, nil
 }
 
+// OrgTeamExists reports whether the organization has a team with the id.
+func (s *Users) OrgTeamExists(ctx context.Context, orgID, teamID string) bool {
+	_, err := s.team(ctx, orgID, teamID)
+	return err == nil
+}
+
 // OrgTeams lists an organization's teams to a member.
 func (s *Users) OrgTeams(ctx context.Context, userID, orgID string) ([]OrgTeam, error) {
 	if _, err := s.MembershipOf(ctx, userID, orgID); err != nil {
@@ -251,7 +257,12 @@ func (s *Users) deleteOrgTeam(ctx context.Context, cc registry.OrgCaps, orgID, i
 	if err := s.Store.DeleteOrgTeam(ctx, orgID, id); err != nil {
 		return err
 	}
-	s.Audit(ctx, AuditOrgTeamDelete, orgTarget(orgID), map[string]any{"team": id})
+	// The collections' on_team_delete applies to its documents through a job.
+	j, err := s.enqueueCleanup(ctx, TeamDeleteOrigin, "team-delete:"+id, OrgDeleteJob{Org: orgID, Team: id}, "")
+	if err != nil {
+		return err
+	}
+	s.Audit(ctx, AuditOrgTeamDelete, orgTarget(orgID), map[string]any{"team": id, "job_id": j.ID})
 	return nil
 }
 

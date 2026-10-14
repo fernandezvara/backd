@@ -162,3 +162,50 @@ func TestTeamRoleSettings(t *testing.T) {
 		t.Error("team roles and organization roles are separate")
 	}
 }
+
+func TestCollectionTeamPolicy(t *testing.T) {
+	realm := orgsRealm + "  team_roles:\n    manager: {}\n"
+	ok := "organization: required\non_org_delete:\n  action: delete\n"
+	reg, err := softTree(t, realm, ok+"team: required\non_team_delete:\n  action: keep\n", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := reg.Collection("shop", "main", "orders")
+	if c.Team != TeamRequired || c.OnTeamDelete != OrgKeep || !c.InTeams() || !c.IsKnownField(MetaTeam) {
+		t.Errorf("team: %q %q", c.Team, c.OnTeamDelete)
+	}
+	reg, err = softTree(t, realm, ok+"team: optional\non_team_delete:\n  action: delete\n", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := reg.Collection("shop", "main", "orders"); c.Team != TeamOptional || c.OnTeamDelete != OrgDelete {
+		t.Errorf("optional: %q %q", c.Team, c.OnTeamDelete)
+	}
+	plain, err := softTree(t, realm, ok, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := plain.Collection("shop", "main", "orders"); c.InTeams() || c.IsKnownField(MetaTeam) {
+		t.Error("a collection without team has teams")
+	}
+	for name, tc := range map[string]struct{ yaml, want string }{
+		"no on_team_delete":     {ok + "team: required\n", "on_team_delete"},
+		"bad value":             {ok + "team: sometimes\n", "must be required, optional or none"},
+		"without organization":  {"team: required\non_team_delete:\n  action: keep\n", "needs `organization"},
+		"on_team_delete alone":  {ok + "on_team_delete:\n  action: keep\n", "only applies to a collection with `team"},
+		"bad action":            {ok + "team: required\non_team_delete:\n  action: purge\n", "delete or keep"},
+		"rule without the team": {ok + "rules:\n  read: inTeam(document._meta.team)\n", "has no teams"},
+		"role not declared":     {ok + "team: required\non_team_delete:\n  action: keep\nrules:\n  read: hasTeamRole(document._meta.team, 'boss')\n", `team role "boss"`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := softTree(t, realm, tc.yaml, "")
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("err = %v, want one containing %q", err, tc.want)
+			}
+		})
+	}
+	// The rules compile with the helpers when the collection has teams.
+	if _, err := softTree(t, realm, ok+"team: required\non_team_delete:\n  action: keep\nrules:\n  read: inTeam(document._meta.team) || hasTeamRole(document._meta.team, 'manager')\n", ""); err != nil {
+		t.Errorf("rules: %v", err)
+	}
+}

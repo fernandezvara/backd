@@ -176,6 +176,9 @@ func orgDeleteToDoc(o *auth.OrgDeleteJob) string {
 	if o == nil {
 		return ""
 	}
+	if o.Team != "" {
+		return o.Org + "/" + o.Team
+	}
 	return o.Org
 }
 
@@ -183,7 +186,8 @@ func orgDeleteFromDoc(org string) *auth.OrgDeleteJob {
 	if org == "" {
 		return nil
 	}
-	return &auth.OrgDeleteJob{Org: org}
+	org, team, _ := strings.Cut(org, "/")
+	return &auth.OrgDeleteJob{Org: org, Team: team}
 }
 
 func assignToDoc(a *auth.AssignOrgJob) *assignJobDoc {

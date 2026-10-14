@@ -5813,6 +5813,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/idempotencyKeyDocuments"
         - $ref: "#/components/parameters/orgQuery"
+        - $ref: "#/components/parameters/teamQuery"
       requestBody:
         required: true
         content:
@@ -5918,6 +5919,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/idempotencyKeyDocuments"
         - $ref: "#/components/parameters/orgQuery"
+        - $ref: "#/components/parameters/teamQuery"
       requestBody:
         required: true
         content:
@@ -7459,6 +7461,18 @@ components:
         it is a shorthand for `where` on `_meta.org`, ANDed with it: the read rule still
         decides what is seen. A batch takes it for all its creates. Fixed at creation: an
         update that names another organization answers `400 immutable_field`.
+      schema: { type: string }
+    teamQuery:
+      name: team
+      in: query
+      description: |
+        The team (its id) of a collection with `team` set, within `?org=`. On a create it is the
+        team the document belongs to: the caller must be a member of it or hold a team role in
+        it (`403 not_team_member`, the same for an unknown team or one of another
+        organization); `required` collections answer `400 team_required` without it, it needs
+        `?org=` (`400`), and a collection without teams answers `400 team_not_allowed`. A batch
+        takes it for all its creates. Fixed at creation: an update that names another team
+        answers `400 immutable_field`; administrators move documents with the transfer.
       schema: { type: string }
     realm:
       name: realm

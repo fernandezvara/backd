@@ -231,6 +231,17 @@ func (r *memRepo) CountInOrg(_ context.Context, org string) (int64, error) {
 }
 
 func (r *memRepo) DeleteInOrg(_ context.Context, org string, fileFields []string, limit int) (int64, []storage.ErasedFile, error) {
+	return r.deleteWhere(inOrgDoc(org), fileFields, limit)
+}
+
+func (r *memRepo) DeleteInTeam(_ context.Context, team string, fileFields []string, limit int) (int64, []storage.ErasedFile, error) {
+	return r.deleteWhere(func(d map[string]any) bool {
+		meta, _ := d["_meta"].(map[string]any)
+		return meta["team"] == team
+	}, fileFields, limit)
+}
+
+func (r *memRepo) deleteWhere(match func(map[string]any) bool, fileFields []string, limit int) (int64, []storage.ErasedFile, error) {
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
 	var n int64
@@ -239,7 +250,7 @@ func (r *memRepo) DeleteInOrg(_ context.Context, org string, fileFields []string
 		if n >= int64(limit) {
 			break
 		}
-		if inOrgDoc(org)(d) {
+		if match(d) {
 			files = append(files, memFiles(d, fileFields)...)
 			delete(r.coll(), id)
 			n++

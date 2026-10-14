@@ -124,6 +124,11 @@ const (
 	// InOrgKeep and InOrgApply are on_owner_delete.in_org.
 	InOrgKeep  = "keep"
 	InOrgApply = "apply"
+
+	// TeamNone, TeamOptional and TeamRequired are collection.yaml's team.
+	TeamNone     = "none"
+	TeamOptional = "optional"
+	TeamRequired = "required"
 )
 
 // OrgSettings is the realm's organizations section; nil in RealmSettings when the realm
@@ -419,6 +424,10 @@ type organizationDoc struct {
 	OnOrgDelete  *struct {
 		Action string `yaml:"action"`
 	} `yaml:"on_org_delete"`
+	Team         *string `yaml:"team"`
+	OnTeamDelete *struct {
+		Action string `yaml:"action"`
+	} `yaml:"on_team_delete"`
 	OnOwnerDelete *struct {
 		InOrg  string `yaml:"in_org"`
 		Action string `yaml:"action"`
@@ -439,7 +448,7 @@ func loadOrganization(c *Collection, settings RealmSettings, path string) error 
 	var doc organizationDoc
 	if err := yaml.NewDecoder(bytes.NewReader(data)).Decode(&doc); err != nil && !errors.Is(err, io.EOF) {
 		// Another section's mistake is reported by the loader that reads it.
-		if strings.Contains(err.Error(), "organization") || strings.Contains(err.Error(), "on_org_delete") {
+		if strings.Contains(err.Error(), "organization") || strings.Contains(err.Error(), "on_org_delete") || strings.Contains(err.Error(), "team") {
 			return fmt.Errorf("%s: %w", path, err)
 		}
 		return nil
@@ -474,7 +483,7 @@ func loadOrganization(c *Collection, settings RealmSettings, path string) error 
 		if inOrg != "" {
 			return fail("on_owner_delete.in_org: only applies to a collection with `organization: required` or `optional`")
 		}
-		return nil
+		return loadTeam(c, doc, fail)
 	}
 	if settings.Organizations == nil {
 		return fail("organization: needs the realm to enable organizations (an `organizations:` section in realm.yaml)")
@@ -495,7 +504,45 @@ func loadOrganization(c *Collection, settings RealmSettings, path string) error 
 	if inOrg != "" {
 		c.OwnerDeleteInOrg = inOrg
 	}
+	return loadTeam(c, doc, fail)
+}
+
+// loadTeam reads `team` and `on_team_delete`: documents that belong to a team of their
+// organization (design/team-access.md §4).
+func loadTeam(c *Collection, doc organizationDoc, fail func(string, ...any) error) error {
+	c.Team = TeamNone
+	if doc.Team != nil {
+		switch *doc.Team {
+		case TeamNone, TeamOptional, TeamRequired:
+			c.Team = *doc.Team
+		default:
+			return fail("team: must be required, optional or none, got %q", *doc.Team)
+		}
+	}
+	if !c.InTeams() {
+		if doc.OnTeamDelete != nil {
+			return fail("on_team_delete: only applies to a collection with `team: required` or `optional`")
+		}
+		return nil
+	}
+	if !c.InOrganizations() {
+		return fail("team: needs `organization: required` or `optional`: a team belongs to an organization")
+	}
+	if doc.OnTeamDelete == nil {
+		return fail("on_team_delete: a collection with `team` must say what happens to its documents when the team is deleted: `action: delete` or `action: keep`")
+	}
+	switch doc.OnTeamDelete.Action {
+	case OrgDelete, OrgKeep:
+		c.OnTeamDelete = doc.OnTeamDelete.Action
+	default:
+		return fail("on_team_delete.action: must be delete or keep, got %q", doc.OnTeamDelete.Action)
+	}
 	return nil
+}
+
+// InTeams reports whether documents of the collection can belong to a team.
+func (c *Collection) InTeams() bool {
+	return c.Team == TeamRequired || c.Team == TeamOptional
 }
 
 // InOrganizations reports whether documents of the collection can belong to an organization.
@@ -509,6 +556,14 @@ func orgRoles(s RealmSettings) []string {
 		return nil
 	}
 	return s.Organizations.RoleNames()
+}
+
+// teamRoles are the team role names of the realm; nil when it has no organizations.
+func teamRoles(s RealmSettings) []string {
+	if s.Organizations == nil {
+		return nil
+	}
+	return s.Organizations.TeamRoleNames()
 }
 
 // addOrgIndex adds the index that serves the lists of one organization in the default order,

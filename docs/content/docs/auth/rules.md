@@ -78,6 +78,8 @@ YAML reads a value starting with `'`, `!`, `[` or `{` specially, so quote such r
 | `hasConsent(user, 'a', 'b', …)` | all | True if the user holds every named [consent](../consents/) (any version); false for anonymous callers |
 | `appConfig("a.b")` | all | The value of a key of the realm's [app configuration](../../configuration/app-config/#in-rules), read once for the request. The key is a string literal naming a declared value, or startup fails. Use it for kill switches that must hold on the server: `appConfig("features.export.enabled") == true` |
 | `inOrg(document._meta.org)` | collections with an organization | True when the caller is a member of the document's [organization](#organizations) |
+| `inTeam(document._meta.team)` | collections with a `team` | True when the caller belongs to the document's team |
+| `hasTeamRole(document._meta.team, 'manager')` | collections with a `team` | True when the caller holds that [team role](../../organizations/team-roles/) in the document's team, now (a window that isn't open doesn't count). The role is a string literal |
 | `hasOrgRole(document._meta.org, 'editor')` | collections with an organization | True when the caller holds the [organization role](../../configuration/realm/#organizations) there; the role may also be a field of the document |
 | `orgClaims(document._meta.org).plan == 'pro'` | collections with an organization | A claim of the organization, for the organizations the caller belongs to |
 | `changed()` | update | The top-level fields whose value differs between `document` and `data` |

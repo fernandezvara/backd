@@ -247,6 +247,7 @@ func (b *builder) collectionAt(db string, c *registry.Collection, admin bool) {
 			}
 			dropParams(op, "realm", "database", "collection")
 			orgParam(op, id, c)
+			teamParam(op, id, c)
 		}
 		if len(operations(cp)) == 0 {
 			return
@@ -418,6 +419,20 @@ func orgParam(op map[string]any, id string, c *registry.Collection) {
 	param := map[string]any{
 		"name": "org", "in": "query", "required": required, "schema": map[string]any{"type": "string"},
 		"description": "The organization of the documents: where a create puts the document (the caller must be a member), or a filter on `_meta.org` for a list.",
+	}
+	op["parameters"] = append([]any{param}, anySlice(op["parameters"])...)
+}
+
+// teamParam is orgParam for `team`: only creates and batches take it (lists get the shorthand
+// with the query language).
+func teamParam(op map[string]any, id string, c *registry.Collection) {
+	dropParams(op, "teamQuery")
+	if !c.InTeams() || (id != "createDocument" && id != "batchWrite") {
+		return
+	}
+	param := map[string]any{
+		"name": "team", "in": "query", "required": c.Team == registry.TeamRequired && id == "createDocument", "schema": map[string]any{"type": "string"},
+		"description": "The team of the document within `org`: the caller must belong to it or hold a team role in it.",
 	}
 	op["parameters"] = append([]any{param}, anySlice(op["parameters"])...)
 }

@@ -17,6 +17,8 @@ const (
 	AuditOrgDelete     = "org.delete"     // details: by, job_id (access ended at once)
 	AuditOrgDeleted    = "org.deleted"    // the cleanup finished; details: job_id, counts (never content)
 	AuditOrgReactivate = "org.reactivate" // details: slug
+	// AuditTeamDeleted: the cleanup after a team was deleted finished; the target is org:<id>.
+	AuditTeamDeleted = "org.team_deleted" // details: team, job_id, counts (never content)
 )
 
 // OrgDeleteOrigin is the origin of the job that applies the collections' on_org_delete.
@@ -25,10 +27,30 @@ const OrgDeleteOrigin = "backd:org.delete"
 // ErrOrgNotDeleted: only a deleted organization can be reactivated.
 var ErrOrgNotDeleted = errors.New("the organization is not deleted")
 
-// OrgDeleteJob is what a deletion's cleanup carries: the organization. The job's Database is
-// empty: it goes through every collection of the realm that has organizations.
+// OrgDeleteJob is what a deletion's cleanup carries: the organization, and the team when it is
+// the cleanup after a team was deleted (on_team_delete). The job's Database is empty: it goes
+// through every collection of the realm that has organizations (or teams).
 type OrgDeleteJob struct {
-	Org string
+	Org  string
+	Team string
+}
+
+// TeamDeleteOrigin is the origin of the job that applies the collections' on_team_delete.
+const TeamDeleteOrigin = "backd:team.delete"
+
+// enqueueCleanup queues the cleanup job of a deletion; a second one for the same thing that is
+// already queued or running is fine (the exclusive key makes it the same job).
+func (s *Users) enqueueCleanup(ctx context.Context, origin, exclusive string, job OrgDeleteJob, requestID string) (Job, error) {
+	now := s.now()
+	j := Job{
+		ID: xid.New().String(), CallerActor: ActorSystem, Origin: origin, Exclusive: exclusive,
+		TimeoutMS: (10 * time.Minute).Milliseconds(), RequestID: requestID,
+		OrgDelete: &job, Status: JobQueued, CreatedAt: now, ExpiresAt: now.Add(pendingJobTTL),
+	}
+	if err := s.Store.EnqueueJob(ctx, j); err != nil && !errors.Is(err, ErrJobExclusive) {
+		return j, err
+	}
+	return j, nil
 }
 
 // DeleteOrg ends an organization for the caller, who needs manage: org (the HTTP layer asks for
@@ -54,17 +76,12 @@ func (s *Users) AdminDeleteOrg(ctx context.Context, orgID, requestID string) (Or
 }
 
 func (s *Users) deleteOrg(ctx context.Context, orgID, by, requestID string) (Org, error) {
-	now := s.now()
-	org, err := s.Store.ArchiveOrg(ctx, orgID, now)
+	org, err := s.Store.ArchiveOrg(ctx, orgID, s.now())
 	if err != nil {
 		return Org{}, err
 	}
-	j := Job{
-		ID: xid.New().String(), CallerActor: ActorSystem, Origin: OrgDeleteOrigin, Exclusive: "org-delete:" + orgID,
-		TimeoutMS: (10 * time.Minute).Milliseconds(), RequestID: requestID,
-		OrgDelete: &OrgDeleteJob{Org: orgID}, Status: JobQueued, CreatedAt: now, ExpiresAt: now.Add(pendingJobTTL),
-	}
-	if err := s.Store.EnqueueJob(ctx, j); err != nil && !errors.Is(err, ErrJobExclusive) {
+	j, err := s.enqueueCleanup(ctx, OrgDeleteOrigin, "org-delete:"+orgID, OrgDeleteJob{Org: orgID}, requestID)
+	if err != nil {
 		// Access has ended; the cleanup can be started again by deleting again from the admin API.
 		return org, err
 	}

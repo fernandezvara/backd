@@ -78,8 +78,12 @@ type Collection struct {
 	Organization     string
 	OnOrgDelete      string
 	OwnerDeleteInOrg string
-	configLeaf       func(string) bool     // appConfig() in rules: whether a path is a value of the realm's configuration
-	Files            map[string]*FileField // file fields from collection.yaml's files:; their schema is already in Schema and RawSchema
+	// Team is collection.yaml's team: TeamRequired, TeamOptional or TeamNone (needs an
+	// organization); OnTeamDelete is OrgDelete or OrgKeep, set with a team.
+	Team         string
+	OnTeamDelete string
+	configLeaf   func(string) bool     // appConfig() in rules: whether a path is a value of the realm's configuration
+	Files        map[string]*FileField // file fields from collection.yaml's files:; their schema is already in Schema and RawSchema
 }
 
 // Index is one index declared in indexes.json.
@@ -122,9 +126,13 @@ func (c *Collection) DateField(path string) bool {
 // only in collections that can belong to one (collection.yaml's organization).
 const MetaOrg = "_meta.org"
 
+// MetaTeam is the system field that holds the team a document belongs to, within its
+// organization. It exists only in collections with `team` set.
+const MetaTeam = "_meta.team"
+
 // systemField reports whether path is a server-owned field of this collection.
 func (c *Collection) systemField(path string) bool {
-	return slices.Contains(SystemFields, path) || (path == MetaOrg && c.InOrganizations())
+	return slices.Contains(SystemFields, path) || (path == MetaOrg && c.InOrganizations()) || (path == MetaTeam && c.InTeams())
 }
 
 // IsKnownField reports whether path is a system field or declared in the schema.

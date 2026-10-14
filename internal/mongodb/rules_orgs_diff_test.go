@@ -121,3 +121,88 @@ func escape(s string) string {
 }
 
 func registryCollection(c *registry.Collection) (*registry.Collection, bool) { return c, c != nil }
+
+// The team helpers are pushed down as conditions on _meta.team: members, holders of a role in
+// the team (inside or outside it, with a window that is open or that already closed, which the
+// membership loader leaves out) and people with no team at all.
+var teamsDiffRules = []string{
+	`inTeam(document._meta.team)`,
+	`!inTeam(document._meta.team)`,
+	`hasTeamRole(document._meta.team, 'manager')`,
+	`hasTeamRole(document._meta.team, 'delegate') || document.status == 'public'`,
+	`inTeam(document._meta.team) && hasTeamRole(document._meta.team, 'manager')`,
+	`inOrg(document._meta.org) && !hasTeamRole(document._meta.team, 'manager')`,
+	`hasOrgRole(document._meta.org, 'owner') || inTeam(document._meta.team)`,
+	`hasOrgRole(document._meta.org, 'owner') || hasTeamRole(document._meta.team, 'manager')`,
+	`user != nil && (document._meta.owner == user.id || inTeam(document._meta.team))`,
+	`inTeam(document._meta.team) && document.status == 'a'`,
+}
+
+func teamsDiffCallers(now time.Time) map[string]rules.Values {
+	mk := func(id string, orgs map[string]*rules.UserOrg) rules.Values {
+		return rules.Values{User: &rules.User{ID: id, Orgs: orgs}, Orgs: orgs, Now: now}
+	}
+	return map[string]rules.Values{
+		"anonymous": {Now: now},
+		"nobody":    mk("u0", map[string]*rules.UserOrg{}),
+		// A member of two teams, and manager of one of them.
+		"u1": mk("u1", map[string]*rules.UserOrg{"o1": {Roles: []string{"member"}, Teams: []string{"t1", "t2"}, TeamRoles: map[string][]string{"t1": {"manager"}}}}),
+		// Holds a role in a team without being in it, and a plain member of another.
+		"u2": mk("u2", map[string]*rules.UserOrg{"o1": {Roles: []string{"member"}, Teams: []string{"t3"}, TeamRoles: map[string][]string{"t2": {"delegate"}}}}),
+		// A grant whose window closed is not there at all: plain membership remains.
+		"u3": mk("u3", map[string]*rules.UserOrg{"o2": {Roles: []string{"owner", "member"}, Teams: []string{}, TeamRoles: map[string][]string{}}}),
+		// Teams in two organizations.
+		"u4": mk("u4", map[string]*rules.UserOrg{
+			"o1": {Roles: []string{"member"}, Teams: []string{"t1"}, TeamRoles: map[string][]string{"t1": {"delegate"}}},
+			"o2": {Roles: []string{"member"}, Teams: []string{"t4"}, TeamRoles: map[string][]string{"t4": {"manager"}, "t5": {"manager"}}},
+		}),
+	}
+}
+
+func TestTeamRuleFiltersMatchRules(t *testing.T) {
+	c, repo := provisionOneWith(t, orgsDiffSchema, "organization: required\non_org_delete:\n  action: keep\nteam: required\non_team_delete:\n  action: keep\n")
+	rng := rand.New(rand.NewPCG(13, 9))
+	pick := func(vs ...any) any { return vs[rng.IntN(len(vs))] }
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	for i := range 240 {
+		doc := map[string]any{
+			"id":       fmt.Sprintf("d%04d", i),
+			"status":   pick("a", "b", "draft", "public"),
+			"audience": pick("owner", "editor", "viewer", "member"),
+			"_meta": map[string]any{
+				"created_at": now, "updated_at": now, "version": int64(1), "created_by": "key:test", "updated_by": "key:test",
+				"owner": pick("u1", "u2", "u3", nil),
+				"org":   pick("o1", "o2", "o3"),
+				"team":  pick("t1", "t2", "t3", "t4", "t5", "t6"),
+			},
+		}
+		if err := repo.Create(context.Background(), doc); err != nil {
+			t.Fatal(err)
+		}
+	}
+	docs := all(t, repo, nil)
+	schema := rules.Schema{
+		DocumentField: c.IsKnownField, DataField: func(string) bool { return false },
+		ScalarField: c.ScalarField, ArrayField: c.ArrayField, Roles: diffRoles,
+		OrgRoles: []string{"owner", "editor", "viewer", "member"}, InOrgs: true,
+		TeamRoles: []string{"manager", "delegate"}, InTeams: true,
+	}
+	callers := teamsDiffCallers(now)
+	for _, src := range teamsDiffRules {
+		var doc map[string]string
+		if err := yaml.Unmarshal([]byte("read: \""+escape(src)+"\"\n"), &doc); err != nil {
+			t.Fatal(err)
+		}
+		set, errs := rules.Parse(doc, schema)
+		if len(errs) > 0 {
+			t.Fatalf("%s: %v", src, errs)
+		}
+		mismatches, _ := compareCallers(t, repo, set.For(rules.Read), nil, src, docs, callers, rng)
+		for _, m := range mismatches {
+			t.Error(m)
+		}
+	}
+	if !c.IsKnownField(registry.MetaTeam) {
+		t.Error("_meta.team is not a known field")
+	}
+}
