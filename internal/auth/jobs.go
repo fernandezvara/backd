@@ -60,6 +60,10 @@ type Job struct {
 	Check *CheckJob
 	// Image is set on the job that makes a file's image versions (origin ImageOrigin).
 	Image *ImageJob
+	// Assign is set on the job that gives documents without one an organization (origin
+	// AssignOrgOrigin); OrgDelete on the cleanup after an organization was deleted.
+	Assign    *AssignOrgJob
+	OrgDelete *OrgDeleteJob
 	// Revoke is set on a job that revokes a user's Apple refresh token (origin RevokeOrigin).
 	Revoke *RevokeJob
 	// Push is set on the jobs of a push send (origin PushOrigin): planning an audience, a batch
@@ -273,7 +277,7 @@ func (s *Users) RerunJob(ctx context.Context, id string, timeoutMS int64) (Job, 
 	if !found {
 		return Job{}, ErrNotFound
 	}
-	if j.Email != nil || j.Erase != nil || j.Check != nil || j.Image != nil || j.Revoke != nil || j.Push != nil {
+	if j.Email != nil || j.Erase != nil || j.Check != nil || j.Image != nil || j.Assign != nil || j.OrgDelete != nil || j.Revoke != nil || j.Push != nil {
 		return Job{}, ErrJobNotFunction
 	}
 	if j.Status != JobDone {
@@ -502,5 +506,39 @@ func (s *Users) StartRegeneration(ctx context.Context, database string, e ImageJ
 		}
 		return Job{}, err
 	}
+	return j, nil
+}
+
+// AssignOrgOrigin is the origin of the job that gives documents an organization.
+const AssignOrgOrigin = "backd:org.assign"
+
+// AssignOrgJob is what an assignment carries (design/organizations.md §10): the collection (the
+// job's Database is its database), the organization to give, and the filter the documents
+// must match, as the JSON of a `where`. Only documents without an organization change.
+type AssignOrgJob struct {
+	Collection string
+	Org        string
+	Where      string
+}
+
+// ErrAssignRunning means an assignment of the same collection is queued or running.
+var ErrAssignRunning = errors.New("an assignment of organizations in this collection is already queued or running")
+
+// StartAssignOrg queues the assignment of an organization to the documents of a collection
+// that have none. A collection has at most one at a time.
+func (s *Users) StartAssignOrg(ctx context.Context, database string, e AssignOrgJob, requestedBy, requestID string) (Job, error) {
+	now := s.now()
+	j := Job{
+		ID: xid.New().String(), Database: database, Function: e.Collection, CallerActor: requestedBy,
+		Origin: AssignOrgOrigin, Exclusive: "assign-org:" + database + "/" + e.Collection, TimeoutMS: (10 * time.Minute).Milliseconds(), RequestID: requestID,
+		Assign: &e, Status: JobQueued, CreatedAt: now, ExpiresAt: now.Add(pendingJobTTL),
+	}
+	if err := s.Store.EnqueueJob(ctx, j); err != nil {
+		if errors.Is(err, ErrJobExclusive) {
+			return Job{}, ErrAssignRunning
+		}
+		return Job{}, err
+	}
+	s.Audit(ctx, AuditDataAssignOrg, "doc:"+database+"/"+e.Collection, map[string]any{"database": database, "collection": e.Collection, "org": e.Org, "job_id": j.ID})
 	return j, nil
 }

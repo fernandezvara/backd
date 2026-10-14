@@ -1,0 +1,11 @@
+{
+  "$comment": "What a team pins to its board (chapter 20). A team is an organization: backd records which one in _meta.org, so this schema has no team field. Only the pin function writes pins, so `author` is the member it acted for.",
+  "type": "object",
+  "properties": {
+    "title":  { "type": "string", "minLength": 1, "maxLength": 200, "description": "What the pin is called." },
+    "url":    { "type": "string", "format": "uri", "description": "The page worth keeping." },
+    "note":   { "type": "string", "maxLength": 1000, "description": "Why the team should look at it." },
+    "author": { "type": "string", "description": "The member who pinned it (a user id), set by the pin function." }
+  },
+  "required": ["title"]
+}

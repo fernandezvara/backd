@@ -333,6 +333,8 @@ type Store interface {
 	ListOrgs(ctx context.Context, status string) ([]Org, error)
 	// CountOrgsCreatedBy counts the organizations a user created, deleted ones included.
 	CountOrgsCreatedBy(ctx context.Context, userID string) (int, error)
+	// CountOrgMembers counts the members of each of the organizations (zero ones left out).
+	CountOrgMembers(ctx context.Context, orgs []string) (map[string]int, error)
 	// OrgMember returns a membership; ErrNotFound if none.
 	OrgMember(ctx context.Context, org, user string) (OrgMember, error)
 	// ListOrgMembers returns a page of an organization's members sorted by user id: those
@@ -363,8 +365,31 @@ type Store interface {
 	// ReplaceOrgInvitationToken swaps the token hash (and the sealed token, "" for none).
 	ReplaceOrgInvitationToken(ctx context.Context, org, id, tokenHash, sealed string) error
 	DeleteOrgInvitation(ctx context.Context, org, id string) error
+	// ForgetUserInOrgs removes a user from the organization data (for an erase): their
+	// memberships (and so their teams), the invitations bound to their id or address, and
+	// created_by of the organizations and invitations they made. It returns the organizations
+	// they were a member of.
+	ForgetUserInOrgs(ctx context.Context, userID, email string) ([]string, error)
+	// ArchiveOrg ends an organization at once: its status becomes deleted (the record keeps its
+	// name and dates, and its slug as FormerSlug), and its memberships, teams and invitations
+	// are removed. ErrNotFound if none; ErrOrgNotActive if it was deleted already.
+	ArchiveOrg(ctx context.Context, id string, now time.Time) (Org, error)
+	// ReactivateOrg makes a deleted organization active again, with no members, and sets slug
+	// when it isn't empty (ErrSlugTaken).
+	ReactivateOrg(ctx context.Context, id, slug string, now time.Time) (Org, error)
 	// OrgTeamsByIDs returns the teams of the organization with these ids that exist.
 	OrgTeamsByIDs(ctx context.Context, org string, ids []string) ([]OrgTeam, error)
+	// CreateOrgTeam inserts a team; ErrTeamNameTaken when the organization has one of that name.
+	CreateOrgTeam(ctx context.Context, t OrgTeam) error
+	// UpdateOrgTeam replaces a team's name and roles; ErrTeamNameTaken, ErrNotFound.
+	UpdateOrgTeam(ctx context.Context, t OrgTeam) error
+	// DeleteOrgTeam removes the team and takes its id out of every membership of the
+	// organization; ErrNotFound if none.
+	DeleteOrgTeam(ctx context.Context, org, id string) error
+	// ListOrgTeams returns an organization's teams sorted by name.
+	ListOrgTeams(ctx context.Context, org string) ([]OrgTeam, error)
+	// OrgMembersInTeams returns the members who belong to any of the teams.
+	OrgMembersInTeams(ctx context.Context, org string, teams []string) ([]OrgMember, error)
 
 	// LoginAttempts returns the failure counter of key (zero if none).
 	LoginAttempts(ctx context.Context, key string) (Attempts, error)

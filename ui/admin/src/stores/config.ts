@@ -59,12 +59,18 @@ export const useRealmConfig = defineStore('realm-config', () => {
   const databases = computed(() => (config.value ? Object.keys(config.value.databases).sort() : null))
 
   /** A collection's schema, whether it keeps a trash and its file fields, from the configuration (null: not known). */
-  function collectionInfo(database: string, name: string): { schema: Record<string, unknown>; softDelete: boolean; files: Record<string, FileFieldConfig> } | null {
+  function collectionInfo(
+    database: string,
+    name: string,
+  ): { schema: Record<string, unknown>; softDelete: boolean; files: Record<string, FileFieldConfig>; organization: 'required' | 'optional' | null } | null {
     const dbs = config.value?.databases as
-      | Record<string, { collections?: { name: string; schema: Record<string, unknown>; policy?: { soft_delete?: unknown }; files?: Record<string, FileFieldConfig> }[] }>
+      | Record<
+          string,
+          { collections?: { name: string; schema: Record<string, unknown>; policy?: { soft_delete?: unknown; organization?: { mode: 'required' | 'optional' } }; files?: Record<string, FileFieldConfig> }[] }
+        >
       | undefined
     const c = dbs?.[database]?.collections?.find((x) => x.name === name)
-    return c ? { schema: c.schema, softDelete: !!c.policy?.soft_delete, files: c.files ?? {} } : null
+    return c ? { schema: c.schema, softDelete: !!c.policy?.soft_delete, files: c.files ?? {}, organization: c.policy?.organization?.mode ?? null } : null
   }
 
   function reset() {

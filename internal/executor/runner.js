@@ -175,6 +175,49 @@ if (env.callback?.admin_token) {
   const admin = client(env.callback.admin_token);
   adminCtx = { db: (name) => admin.db(name) };
 }
+if (env.callback?.admin_token && env.callback.orgs) {
+  // Organizations, with full access as the function: create, get, list, setClaims, addMember,
+  // removeMember, teams.* and invitations.*. Errors of backd's own (a missing organization, a
+  // name taken, the last manager) throw a FunctionError with its status and code.
+  const orgsClient = client(env.callback.admin_token);
+  const call = async (req) => {
+    try {
+      return (await orgsClient.request({ ...req, path: ["_fn", "orgs", ...req.path] })).data;
+    } catch (e) {
+      if (e && Number.isInteger(e.status) && e.status >= 400 && e.status <= 499 && typeof e.code === "string") {
+        throw new FunctionError(e.status, e.code, e.message, e.details?.length ? e.details : undefined);
+      }
+      throw e;
+    }
+  };
+  const orgs = {
+    create: (input) => call({ method: "POST", path: [], body: input }),
+    get: (id) => call({ method: "GET", path: [id] }),
+    list: async (options = {}) => (await call({ method: "GET", path: [], query: options.status ? { status: options.status } : {} })).items,
+    setClaims: (id, claims) => call({ method: "PUT", path: [id, "claims"], body: claims }),
+    members: async (id, options = {}) => call({ method: "GET", path: [id, "members"], query: options }),
+    addMember: (id, input) => call({ method: "POST", path: [id, "members"], body: input }),
+    setRoles: (id, user, roles) => call({ method: "PATCH", path: [id, "members", user], body: { roles } }),
+    removeMember: (id, user) => call({ method: "DELETE", path: [id, "members", user] }),
+    assignOwner: (id, user) => call({ method: "POST", path: [id, "owner"], body: { user } }),
+    teams: {
+      list: async (id) => (await call({ method: "GET", path: [id, "teams"] })).items,
+      create: (id, input) => call({ method: "POST", path: [id, "teams"], body: input }),
+      update: (id, team, patch) => call({ method: "PATCH", path: [id, "teams", team], body: patch }),
+      delete: (id, team) => call({ method: "DELETE", path: [id, "teams", team] }),
+      addMember: (id, team, user) => call({ method: "PUT", path: [id, "teams", team, "members", user] }),
+      removeMember: (id, team, user) => call({ method: "DELETE", path: [id, "teams", team, "members", user] }),
+    },
+    invitations: {
+      create: (id, input) => call({ method: "POST", path: [id, "invitations"], body: input }),
+      list: async (id) => (await call({ method: "GET", path: [id, "invitations"] })).items,
+      delete: (id, invitation) => call({ method: "DELETE", path: [id, "invitations", invitation] }),
+    },
+  };
+  orgs.teams = Object.freeze(orgs.teams);
+  orgs.invitations = Object.freeze(orgs.invitations);
+  adminCtx = { ...(adminCtx ?? {}), orgs: Object.freeze(orgs) };
+}
 if (env.callback?.token && env.callback.config_write) {
   // Changes values as this function: set({ "a.b": 1 }), reset(["a.b"]) and history(limit).
   // Validated as a whole and atomic; a value that doesn't fit throws a FunctionError with

@@ -155,8 +155,15 @@ func TestOrganizationsAdminAPI(t *testing.T) {
 		t.Errorf("member reads claims: %d %v", rec.Code, out)
 	}
 	rec, out = f.doH(t, "GET", adm+"?status=active", "", bearer(f.bob))
-	if items, _ := out["items"].([]any); rec.Code != 200 || len(items) != 1 {
+	if items, _ := out["items"].([]any); rec.Code != 200 || len(items) != 1 || items[0].(map[string]any)["members"] != float64(2) {
 		t.Errorf("list: %d %v", rec.Code, out)
+	}
+	// Searching by name or slug.
+	for q, want := range map[string]int{"staff": 1, "MADE": 1, "nothing": 0} {
+		rec, out = f.doH(t, "GET", adm+"?q="+q, "", bearer(f.bob))
+		if items, _ := out["items"].([]any); rec.Code != 200 || len(items) != want {
+			t.Errorf("search %q: %d %v", q, rec.Code, out)
+		}
 	}
 	// Roles of another area don't open it.
 	f.bobHolds(t, "auditor")

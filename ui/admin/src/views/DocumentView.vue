@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ValidationError, VersionMismatchError, type Doc } from 'backd-js'
+import { ValidationError, VersionMismatchError, type AdminOrg, type Doc } from 'backd-js'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -7,6 +7,7 @@ import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
 import DocumentFiles from '@/components/DocumentFiles.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import FormDialog from '@/components/FormDialog.vue'
 import JsonField from '@/components/JsonField.vue'
 import JsonView from '@/components/JsonView.vue'
 import SchemaForm from '@/components/SchemaForm.vue'
@@ -35,6 +36,20 @@ const fileNames = computed(() => Object.keys(fileFields.value))
 const schema = computed(() => (info.value?.schema ? withoutProperties(info.value.schema as Schema, fileNames.value) : undefined))
 const softDelete = computed(() => info.value?.softDelete ?? false)
 const canForm = computed(() => formable(schema.value))
+
+// Collections in organizations: a new document names its organization, and an
+// administrator may move one to another (`_meta.org` never changes in an update).
+const orgMode = computed(() => info.value?.organization ?? null)
+const orgChoices = ref<AdminOrg[]>([])
+const newOrg = ref('')
+async function loadOrgs() {
+  try {
+    orgChoices.value = await admin.orgs.list({ status: 'active' })
+  } catch (e) {
+    toasts.push(errorText(e, t('orgs.loadFailed')), 'error')
+  }
+}
+const orgName = (id?: string | null) => (id ? (orgChoices.value.find((o) => o.id === id)?.name ?? id) : t('data.doc.noOrg'))
 
 type Fields = Record<string, unknown>
 const doc = ref<Doc>()
@@ -98,6 +113,7 @@ async function filesChanged() {
 onMounted(async () => {
   await cfg.load()
   tab.value = canForm.value ? 'form' : 'json'
+  if (orgMode.value) await loadOrgs()
   if (isNew.value) {
     draft.value = schema.value && canForm.value ? newDocument(schema.value) : {}
     original.value = JSON.stringify(draft.value)
@@ -123,7 +139,7 @@ async function save() {
   problems.value = []
   try {
     if (isNew.value) {
-      const made = await col.value.create(draft.value)
+      const made = await col.value.create(draft.value, orgMode.value && newOrg.value ? { org: newOrg.value } : undefined)
       toasts.push(t('data.doc.created_ok'))
       await router.replace({ name: 'data-doc', params: { realm: props.realm, database: props.database, collection: props.collection, id: made.id } })
       return
@@ -184,7 +200,33 @@ async function restore() {
   }
 }
 
+// Move to another organization.
+const moving = ref(false)
+const moveTo = ref('')
+const moveBusy = ref(false)
+const moveError = ref('')
+function openMove() {
+  moveTo.value = (doc.value?._meta as { org?: string } | undefined)?.org ?? ''
+  moveError.value = ''
+  moving.value = true
+}
+async function move() {
+  moveBusy.value = true
+  moveError.value = ''
+  try {
+    const moved = await admin.orgs.transfer(props.database, props.collection, props.id!, moveTo.value || null, { ifMatch: String(baseVersion.value ?? '') || undefined })
+    moving.value = false
+    toasts.push(t('data.doc.move.done'))
+    adopt(moved as Doc)
+  } catch (e) {
+    moveError.value = errorText(e, t('common.unexpected'))
+  } finally {
+    moveBusy.value = false
+  }
+}
+
 const meta = computed(() => doc.value?._meta)
+const docOrg = computed(() => (meta.value as { org?: string } | undefined)?.org)
 const actor = (v?: string | null) => v || '—'
 </script>
 
@@ -214,6 +256,10 @@ const actor = (v?: string | null) => v || '—'
       <dd>{{ formatDate(meta.updated_at) }} · <span class="font-mono text-xs">{{ actor(meta.updated_by) }}</span></dd>
       <dt class="text-slate-600 dark:text-slate-400">{{ t('data.doc.owner') }}</dt>
       <dd class="font-mono text-xs">{{ meta.owner ?? t('data.doc.noOwner') }}</dd>
+      <template v-if="orgMode">
+        <dt class="text-slate-600 dark:text-slate-400">{{ t('data.doc.org') }}</dt>
+        <dd data-testid="doc-org">{{ orgName(docOrg) }}</dd>
+      </template>
       <template v-if="meta.deleted_at">
         <dt class="text-slate-600 dark:text-slate-400">{{ t('data.doc.deletedAt') }}</dt>
         <dd>{{ formatDate(meta.deleted_at) }} · <span class="font-mono text-xs">{{ actor(meta.deleted_by) }}</span></dd>
@@ -247,6 +293,15 @@ const actor = (v?: string | null) => v || '—'
       <p v-if="dirty && !readonly" class="text-sm text-amber-800 dark:text-amber-300" role="status">{{ t('data.doc.unsaved') }}</p>
     </div>
 
+    <div v-if="isNew && orgMode" class="mt-4 max-w-md space-y-1">
+      <label for="doc-org-new" class="block text-sm font-medium">{{ t('data.doc.org') }}</label>
+      <select id="doc-org-new" v-model="newOrg" :required="orgMode === 'required'" class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900">
+        <option value="" :disabled="orgMode === 'required'">{{ orgMode === 'required' ? '—' : t('data.doc.noOrg') }}</option>
+        <option v-for="o in orgChoices" :key="o.id" :value="o.id">{{ o.name }}</option>
+      </select>
+      <p class="text-xs text-slate-600 dark:text-slate-400">{{ t('data.doc.orgHelp') }}</p>
+    </div>
+
     <form class="mt-4 max-w-3xl space-y-4" novalidate @submit.prevent="save">
       <SchemaForm v-if="tab === 'form' && canForm && schema" v-model="draft" :schema="schema" :readonly="readonly" :errors="errors" />
       <JsonField v-else id="doc-json" v-model="draft" :label="t('data.doc.tabs.json')" :readonly="readonly" :rows="16" :error="errors['']" />
@@ -263,8 +318,19 @@ const actor = (v?: string | null) => v || '—'
         <AppButton variant="secondary" @click="restore">{{ t('data.doc.restore.open') }}</AppButton>
         <AppButton variant="danger" @click="purging = true">{{ t('data.doc.purge.open') }}</AppButton>
       </template>
-      <AppButton v-else variant="danger" @click="deleting = true">{{ softDelete ? t('data.doc.delete.open') : t('data.doc.delete.openHard') }}</AppButton>
+      <AppButton v-if="orgMode && !inTrash" variant="secondary" @click="openMove">{{ t('data.doc.move.open') }}</AppButton>
+      <AppButton v-if="!inTrash" variant="danger" @click="deleting = true">{{ softDelete ? t('data.doc.delete.open') : t('data.doc.delete.openHard') }}</AppButton>
     </div>
+
+    <FormDialog v-model:open="moving" :title="t('data.doc.move.title')" :description="t('data.doc.move.help')" :submit="t('data.doc.move.action')" :busy="moveBusy" :error="moveError" @submit="move">
+      <div class="space-y-1">
+        <label for="doc-move-to" class="block text-sm font-medium">{{ t('data.doc.org') }}</label>
+        <select id="doc-move-to" v-model="moveTo" class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900">
+          <option v-if="orgMode === 'optional'" value="">{{ t('data.doc.noOrg') }}</option>
+          <option v-for="o in orgChoices" :key="o.id" :value="o.id">{{ o.name }}</option>
+        </select>
+      </div>
+    </FormDialog>
 
     <ConfirmDialog v-model:open="deleting" :title="t('data.doc.delete.title', { id: id ?? '' })" :description="softDelete ? t('data.doc.delete.bodySoft') : t('data.doc.delete.body')" :expected="id ?? ''" :action="t('data.doc.delete.action')" @confirm="remove(false)" />
     <ConfirmDialog v-model:open="purging" :title="t('data.doc.purge.title', { id: id ?? '' })" :description="t('data.doc.purge.body')" :expected="id ?? ''" :action="t('data.doc.purge.action')" @confirm="remove(true)" />

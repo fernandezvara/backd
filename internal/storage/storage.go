@@ -221,6 +221,9 @@ func Fetch(ctx context.Context, repo Repository, id string, filter Filter) (Docu
 type ErasedFile struct {
 	ID   string
 	Size int64
+	// Owner is the _meta.owner of the document the file was in ("" when it had none), whose
+	// storage usage the file counted in.
+	Owner string
 	// Versions are the made copies of an image the file had, by version name, with their sizes.
 	Versions map[string]int64
 }
@@ -252,6 +255,24 @@ type Eraser interface {
 	// ClearReference unsets the string field of up to limit documents where
 	// it equals value.
 	ClearReference(ctx context.Context, field, value string, limit int, now time.Time) (int64, error)
+}
+
+// OrgPurger is what deleting an organization needs of a collection's storage: its documents,
+// soft-deleted ones included, are counted for the report and removed in batches (call
+// DeleteInOrg until it returns 0). It returns the files of the documents it deleted.
+type OrgPurger interface {
+	CountInOrg(ctx context.Context, org string) (int64, error)
+	DeleteInOrg(ctx context.Context, org string, fileFields []string, limit int) (int64, []ErasedFile, error)
+}
+
+// OrgOwnerClearer is what erasing a user needs of a collection that has organizations: the
+// documents that belong to one stay with it, and only lose their owner (unless the collection
+// says `in_org: apply`, when the erase treats them like any other).
+type OrgOwnerClearer interface {
+	// CountOwnedInOrgs counts the documents of the user that belong to an organization.
+	CountOwnedInOrgs(ctx context.Context, owner string) (int64, error)
+	// ClearOwnerInOrgs clears _meta.owner on up to limit such documents, as a system write.
+	ClearOwnerInOrgs(ctx context.Context, owner string, limit int, now time.Time) (int64, error)
 }
 
 // Scanner reads every stored document of a collection, in id order, for the

@@ -1,0 +1,74 @@
+import { expect, test } from './fixtures'
+import { users } from './users'
+
+const stamp = Date.now()
+
+test('an administrator manages an organization: members, claims, invitations and deletion', async ({ page, signIn }) => {
+  const name = `Acme ${stamp}`
+  await signIn('admin')
+  await page.getByRole('link', { name: 'Organizations' }).click()
+
+  // Create it for a user of the realm, who becomes its owner.
+  await page.getByRole('button', { name: 'Create organization' }).click()
+  const create = page.getByRole('dialog')
+  await create.getByLabel('Name').fill(name)
+  await create.getByLabel("Owner's email").fill(users.admin)
+  await create.getByRole('button', { name: 'Create', exact: true }).click()
+  await expect(page.getByTestId('org-name')).toHaveText(name)
+  await expect(page.getByTestId('org-status')).toHaveText('Active')
+  await expect(page.getByTestId('org-members')).toContainText(users.admin)
+  await expect(page.getByTestId('org-members')).toContainText('owner')
+
+  // Add a member directly, then change their roles. The default role is held by everyone.
+  await page.getByRole('button', { name: 'Add a member' }).click()
+  const add = page.getByRole('dialog')
+  await add.getByLabel('Email of the user').fill(users.plain)
+  await add.getByLabel('Direct roles').fill('owner')
+  await add.getByRole('button', { name: 'Create', exact: true }).click()
+  const row = page.getByTestId('org-members').getByRole('row').filter({ hasText: users.plain })
+  await expect(row).toContainText('owner')
+  await expect(row).toContainText('default')
+  await row.getByRole('button', { name: 'Change roles' }).click()
+  const edit = page.getByRole('dialog')
+  await edit.getByLabel('Direct roles').fill('editor')
+  await edit.getByRole('button', { name: 'Save' }).click()
+  await expect(row).toContainText('editor')
+
+  // Claims are limited to 1 KiB.
+  const claims = page.getByLabel('Claims (JSON object)')
+  await claims.fill('{"plan": "pro"}')
+  await page.getByRole('button', { name: 'Save' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Claims saved' })).toBeVisible()
+  await claims.fill(JSON.stringify({ big: 'x'.repeat(1100) }))
+  await expect(page.getByTestId('claims-size')).toContainText('bytes')
+  await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled()
+
+  // An invitation: its link is shown once and never listed.
+  await page.getByRole('button', { name: 'Invite' }).click()
+  const invite = page.getByRole('dialog')
+  await invite.getByLabel('Email of the user').fill('guest@adminui.example')
+  await invite.getByRole('button', { name: 'Create', exact: true }).click()
+  await expect(page.getByTestId('org-invitation-link')).toHaveValue(/bdo_/)
+  await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click()
+  await expect(page.getByTestId('org-invitations')).toContainText('guest@adminui.example')
+  await expect(page.getByTestId('org-invitations')).not.toContainText('bdo_')
+
+  // Deleting shows what the cleanup does, and asks for the name.
+  await page.getByRole('button', { name: 'Delete organization' }).click()
+  const del = page.getByRole('dialog')
+  await expect(del.getByTestId('org-owned')).toContainText('main/projects')
+  await del.getByLabel(/Type/).fill(name)
+  await del.getByRole('button', { name: 'Delete organization' }).click()
+  await expect(page.getByTestId('org-status')).toHaveText('Deleted')
+
+  // Deleted ones are found with the filter, and can come back.
+  await page.getByRole('link', { name: 'Back to organizations' }).click()
+  await page.getByLabel('Status').selectOption('deleted')
+  await expect(page.getByTestId('orgs-table')).toContainText(name)
+})
+
+test('a read-only administrator sees organizations and has no controls', async ({ page, signIn }) => {
+  await signIn('viewer')
+  await page.getByRole('link', { name: 'Organizations' }).click()
+  await expect(page.getByRole('button', { name: 'Create organization' })).toHaveCount(0)
+})

@@ -377,6 +377,24 @@ func registerRemote(cfg *kli.Config) {
 		required(cc, "id", "the organization's id")
 		required(cc, "invitation", "the invitation's id")
 	})
+	og.SubCommand("owned").ShortHelp("report what deleting an organization would do").
+		Func(act("orgs owned", orgsOwned)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+	})
+	og.SubCommand("delete").ShortHelp("delete an organization: access ends at once, its documents follow").
+		LongHelp("Ends everyone's access at once (the record stays, as deleted), then a job applies each collection's on_org_delete: `delete` removes the documents and queues their files for deletion, `keep` leaves them for realm administrators. See `backd orgs owned` first. Needs --yes. " + adminAPINote).
+		Func(act("orgs delete", orgsDelete)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+		boolean(cc, "yes", "confirm")
+	})
+	og.SubCommand("reactivate").ShortHelp("bring a deleted organization back, with no members").
+		Func(act("orgs reactivate", orgsReactivate)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+		optional(cc, "slug", "the slug it takes (its former one may be in use)")
+	})
 	og.SubCommand("claims-set").ShortHelp("replace an organization's claims (at most 1 KiB of JSON)").
 		Func(act("orgs claims-set", orgsClaimsSet)).Config(func(cc *kli.CommandConfig) {
 		remote(cc)
@@ -581,6 +599,27 @@ func registerRemote(cfg *kli.Config) {
 	data.SubCommand("checks").ShortHelp("print the latest schema check reports").
 		LongHelp("Lists every collection of the realm with its latest schema check (documents read,\ninvalid, whether it was complete, when it finished), and notes a check running now. With\n--database and --collection prints that collection's report in full. " + adminAPINote).
 		Func(act("data checks", dataChecks)).Config(checkFlags)
+	docFlags := func(cc *kli.CommandConfig) {
+		required(cc, "realm", "the realm")
+		required(cc, "database", "the database")
+		required(cc, "collection", "the collection")
+		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+	}
+	data.SubCommand("transfer").ShortHelp("move one document to another organization (audited)").
+		LongHelp("Moves a document to another organization, or out of its organization with --org none when the collection's documents may have none. It is a deliberate act of a realm administrator, not an update: the version goes up and the audit trail names both organizations. Needs the data area with write access. " + adminAPINote).
+		Func(act("data transfer", dataTransfer)).Config(func(cc *kli.CommandConfig) {
+		docFlags(cc)
+		required(cc, "id", "the document's id")
+		required(cc, "org", "the organization's id, or none")
+	})
+	data.SubCommand("assign-org").ShortHelp("give the documents that have no organization one").
+		LongHelp("For a collection that adopted organizations after it had documents: they have none, and members can't see them. Queues a job that gives the organization to the documents that have none and match --where (a JSON filter, as in a list query), and never moves one that has an organization. --dry-run only counts them. Needs the data area with write access. " + adminAPINote).
+		Func(act("data assign-org", dataAssignOrg)).Config(func(cc *kli.CommandConfig) {
+		docFlags(cc)
+		required(cc, "org", "the organization's id")
+		optional(cc, "where", "only documents matching this JSON filter")
+		boolean(cc, "dry-run", "count the documents without changing anything")
+	})
 	fn := cfg.Command("functions").ShortHelp("build, call and inspect server-side functions")
 	fn.SubCommand("build").ShortHelp("bundle every function in CONFIG_DIR with deno").
 		LongHelp("Bundles every function in CONFIG_DIR with `deno bundle` into\n<realm>/<database>/_functions/.build/, one file per function named by its\ncontent hash, and records them in .build/manifest.json. Needs only CONFIG_DIR\nand Deno " + registry.DenoVersion + " (DENO, or deno on the PATH). --check also type-checks\nTypeScript. backd refuses to start while any bundle is missing or stale, so\nbuild after every change to a functions project, before provisioning or\ndeploying.").

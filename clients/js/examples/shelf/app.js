@@ -4,6 +4,10 @@
 // mint `share` links, and `?s=<token>` resolves one publicly through
 // `share-open` — the holes the rules chapter left, closed.
 //
+// Chapter 20 makes a team an organization: people create teams, invite each
+// other with a link (or by email), and a team's pins are readable only by its
+// members. `?join=<token>` offers an invitation to a signed-in member.
+//
 // Chapter 19 types it: `backd types` writes backd/types.d.ts, `main` and the
 // collections below are typed from it in an editor, and on localhost the client
 // sends the types' fingerprint, so a schema change the app hasn't been
@@ -44,9 +48,10 @@ const assets = main.collection('assets')
 const shares = main.collection('shares')
 const notifications = main.collection('notifications')
 const members = main.collection('members')
+const pins = main.collection('pins')
 const outbox = backd.db('mail').collection('outbox')
 
-const VIEWS = ['gallery', 'mine', 'review', 'notifications', 'admin', 'auth', 'account']
+const VIEWS = ['gallery', 'mine', 'teams', 'review', 'notifications', 'admin', 'auth', 'account']
 
 document.addEventListener('alpine:init', () => {
   Alpine.data('shelf', () => ({
@@ -107,6 +112,18 @@ document.addEventListener('alpine:init', () => {
     // flip read_at — the rules say so).
     notifs: [],
 
+    // Teams (chapter 20): the organizations I belong to, the one open, its
+    // pins and members, and what an invitation made (a link to copy).
+    teams: [],
+    team: null, // the open team's id
+    pinList: [],
+    teamMembers: [],
+    teamName: '',
+    pinDraft: { title: '', url: '', note: '' },
+    invite: { email: '', roles: 'editor', link: null, sent: false },
+    joinOffer: null, // { token, org, roles }: what ?join=<token> offers
+    joinToken: null,
+
     // Admin "run by hand": digest runs as an async job — the call answers
     // with a job, and its status is polled.
     fnName: 'digest',
@@ -151,6 +168,8 @@ document.addEventListener('alpine:init', () => {
         this.mode = 'signup'
         window.location.hash = '#auth'
       }
+      // An invitation to a team (?join=<token>): offered once the member is signed in.
+      this.joinToken = params.get('join')
       await this.loadConsentTexts()
       await this.loadConfig()
       // Back on the tab: the copy is fresh for its cache_ttl, then revalidated with a 304.
@@ -176,6 +195,7 @@ document.addEventListener('alpine:init', () => {
       await this.refilter()
       if (this.user) await Promise.all([this.loadMine(), this.loadDrafts(), this.loadInvites(), this.loadShares(), this.loadNotifs(), this.ensureMember(), this.loadAdmin(), this.loadMfa(), this.loadConsents()])
       if (this.user) await this.loadNames()
+      if (this.user) await this.loadTeams()
       this.syncView()
     },
 
@@ -306,8 +326,9 @@ document.addEventListener('alpine:init', () => {
       await this.loadAdmin()
       await this.loadMfa()
       await this.loadConsents()
+      await this.loadTeams()
       await this.loadConfig() // a member reads more of it than a visitor
-      window.location.hash = '#mine'
+      window.location.hash = this.joinOffer ? '#teams' : '#mine'
     },
 
     // The code of the authenticator app (or a recovery code) after the password.
@@ -384,6 +405,9 @@ document.addEventListener('alpine:init', () => {
       this.user = null
       this.mine = []
       this.drafts = []
+      this.teams = []
+      this.team = null
+      this.pinList = []
       window.location.hash = '#gallery'
       await this.refilter()
       await this.loadConfig() // the copies were dropped with the session: read what a visitor may
@@ -875,6 +899,173 @@ document.addEventListener('alpine:init', () => {
 
     get unreadCount() {
       return this.notifs.filter((n) => !n.read_at).length
+    },
+
+    // --- teams (chapter 20) ------------------------------------------------
+
+    async loadTeams() {
+      if (!this.user) return
+      try {
+        this.teams = await backd.orgs.list()
+        if (this.team && !this.teams.some((t) => t.id === this.team)) this.team = null
+        if (!this.team && this.teams.length) this.team = this.teams[0].id
+        await this.openTeam(this.team)
+        // An invitation link opened while signed in: show what it offers.
+        if (this.joinToken && !this.joinOffer) {
+          const offer = await backd.orgs.invitations.preview(this.joinToken)
+          this.joinOffer = { token: this.joinToken, org: offer.org, roles: offer.roles }
+          window.location.hash = '#teams'
+        }
+      } catch (e) {
+        if (e.code === 'invalid_invitation' || e.code === 'invitation_not_for_you') {
+          this.error = e.code === 'invalid_invitation' ? 'That invitation is no longer valid.' : 'That invitation is for someone else.'
+          this.joinToken = null
+        } else if (e.code !== 'not_found') {
+          this.error = e.message
+        }
+      }
+    },
+
+    // The team being open: its pins (the read rule shows members only theirs,
+    // and ?org= says which) and its members.
+    async openTeam(id) {
+      this.team = id
+      this.pinList = []
+      this.teamMembers = []
+      this.invite.link = null
+      if (!id) return
+      const [page, members] = await Promise.all([
+        pins.inOrg(id).list({ orderBy: '-_meta.created_at', limit: 50 }),
+        backd.orgs.members(id).list(),
+      ])
+      this.pinList = page.items
+      this.teamMembers = members.items
+    },
+
+    get currentTeam() {
+      return this.teams.find((t) => t.id === this.team) ?? null
+    },
+
+    // The roles I hold in the open team decide what the page offers; the
+    // server decides what is allowed.
+    holds(...roles) {
+      return roles.some((r) => this.currentTeam?.roles.includes(r))
+    },
+
+    async createTeam() {
+      this.busy = true
+      this.error = null
+      try {
+        const org = await backd.orgs.create({ name: this.teamName })
+        this.teamName = ''
+        this.team = org.id
+        await this.loadTeams()
+      } catch (e) {
+        this.error = e.message
+      } finally {
+        this.busy = false
+      }
+    },
+
+    // The pin function checks the plan: a free team holds five pins.
+    async addPin() {
+      this.busy = true
+      this.error = null
+      try {
+        const { title, url, note } = this.pinDraft
+        await main.fn('pin', { org: this.team, title, ...(url ? { url } : {}), ...(note ? { note } : {}) })
+        this.pinDraft = { title: '', url: '', note: '' }
+        await this.openTeam(this.team)
+      } catch (e) {
+        this.error = e.code === 'plan_limit' ? `${e.message}. An operator can put the team on the pro plan.` : e.message
+      } finally {
+        this.busy = false
+      }
+    },
+
+    async removePin(id) {
+      this.error = null
+      try {
+        await pins.delete(id)
+        await this.openTeam(this.team)
+      } catch (e) {
+        this.error = e.message
+      }
+    },
+
+    // The answer to an invitation holds the link once: show it, to copy, and
+    // for an address also have the server email it.
+    async inviteToTeam(byEmail) {
+      this.busy = true
+      this.error = null
+      try {
+        const roles = this.invite.roles ? [this.invite.roles] : []
+        const input = byEmail
+          ? { binding: 'email', email: this.invite.email, roles, send: true }
+          : { binding: 'none', roles, maxUses: 5 }
+        const made = await backd.orgs.invitations(this.team).create(input)
+        this.invite.link = made.link
+        this.invite.sent = byEmail
+      } catch (e) {
+        this.error = e.message
+      } finally {
+        this.busy = false
+      }
+    },
+
+    async acceptJoin() {
+      this.busy = true
+      this.error = null
+      try {
+        const org = await backd.orgs.invitations.accept(this.joinOffer.token)
+        this.joinOffer = null
+        this.joinToken = null
+        window.history.replaceState({}, '', window.location.pathname + '#teams')
+        this.team = org.id
+        await this.loadTeams()
+      } catch (e) {
+        this.error = e.message
+      } finally {
+        this.busy = false
+      }
+    },
+
+    async setMemberRoles(user, roles) {
+      this.error = null
+      try {
+        await backd.orgs.members(this.team).update(user, roles)
+        await this.openTeam(this.team)
+      } catch (e) {
+        this.error = e.message
+      }
+    },
+
+    // Leaving ends access at once. The last owner can't leave: say so.
+    async leaveTeam() {
+      this.error = null
+      try {
+        await backd.orgs.leave(this.team)
+        this.team = null
+        await this.loadTeams()
+      } catch (e) {
+        this.error = e.code === 'last_org_manager' ? 'You are the last owner: make someone else an owner, or delete the team.' : e.message
+      }
+    },
+
+    // Deleting a team takes its pins with it, and asks for a fresh proof.
+    async deleteTeam() {
+      if (!window.confirm(`Delete ${this.currentTeam?.name} and its ${this.pinList.length} pins?`)) return
+      this.error = null
+      try {
+        await backd.auth.withProof(
+          async (methods) => this.askProof(methods),
+          () => backd.orgs.delete(this.team),
+        )
+        this.team = null
+        await this.loadTeams()
+      } catch (e) {
+        this.error = e.message
+      }
     },
 
     async loadNotifs() {

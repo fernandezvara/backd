@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "properties": {
+    "id":    { "type": "string" },
+    "pins":  { "type": "integer" },
+    "limit": { "type": "integer" }
+  },
+  "required": ["id", "pins", "limit"]
+}

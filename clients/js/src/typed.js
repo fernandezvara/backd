@@ -62,6 +62,7 @@
  *   replace(id: string, doc: C['input'], opts?: import('./data.js').WriteOptions): Promise<C['doc']>,
  *   patch(id: string, patch: Partial<C['input']>, opts?: import('./data.js').WriteOptions): Promise<C['doc']>,
  *   delete(id: string, opts?: import('./data.js').DeleteOptions): Promise<void>,
+ *   inOrg(org: string): TypedCollection<C>,
  * }} TypedCollection
  */
 

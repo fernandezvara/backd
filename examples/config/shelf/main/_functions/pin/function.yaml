@@ -1,0 +1,7 @@
+# A member of a team pins something to its board. The rules can't count, so
+# the plan's limit lives here: the function reads the team's plan from its
+# claims and refuses a pin past what the plan allows. It writes as admin
+# (pins have no create rule), after checking that the caller belongs to the
+# team and may add.
+admin: true
+invoke: "user != nil"

@@ -2,6 +2,7 @@ import { Admin } from './admin.js'
 import { Push } from './push.js'
 import { Consents } from './consents.js'
 import { Config } from './config.js'
+import { Orgs } from './orgs.js'
 import { Auth } from './auth.js'
 import { Database } from './data.js'
 import { xhrFetch } from './xhr.js'
@@ -174,6 +175,8 @@ export class Client {
     this.consents = new Consents(this)
     /** The realm's app configuration: flags, switches and limits, cached per user. */
     this.config = new Config(this, options.configStorage)
+    /** Organizations of the signed-in user: members, teams and invitations. */
+    this.orgs = new Orgs(this)
   }
 
   /** Whether the client was created with an API key. */

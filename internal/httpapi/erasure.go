@@ -27,7 +27,7 @@ func userStatus(u auth.User) string {
 // ownedReport says what erasing the user would do, for the collections that
 // declare a policy (the others are listed by name: an erase leaves them alone).
 // It counts with the same queries the erase uses, and never returns content.
-func ownedReport(ctx context.Context, reg *registry.Registry, store Store, realm string, u auth.User) (map[string]any, error) {
+func ownedReport(ctx context.Context, reg *registry.Registry, store Store, svc *auth.Users, realm string, u auth.User) (map[string]any, error) {
 	rl := reg.Realms[realm]
 	if rl == nil {
 		return nil, fmt.Errorf("unknown realm %q", realm)
@@ -36,13 +36,37 @@ func ownedReport(ctx context.Context, reg *registry.Registry, store Store, realm
 	without := []string{}
 	if !u.ErasedAt.IsZero() {
 		// Nothing left to count: the user is a tombstone.
-		return map[string]any{"user": map[string]any{"id": u.ID, "status": "erased"}, "collections": collections, "without_policy": without}, nil
+		return map[string]any{"user": map[string]any{"id": u.ID, "status": "erased"}, "collections": collections, "without_policy": without,
+			"organizations": []map[string]any{}, "kept_in_organizations": []map[string]any{}}, nil
 	}
+	// Organizations the user manages, and which of them an erase leaves without a manager.
+	managed := []map[string]any{}
+	if svc != nil {
+		orgs, err := svc.OrgsManagedBy(ctx, u.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, o := range orgs {
+			managed = append(managed, map[string]any{"id": o.ID, "name": o.Name, "last_manager": o.LastManager})
+		}
+	}
+	kept := []map[string]any{}
 	for _, dbName := range slices.Sorted(maps.Keys(rl.Databases)) {
 		db := rl.Databases[dbName]
 		for _, name := range slices.Sorted(maps.Keys(db.Collections)) {
 			c := db.Collections[name]
 			p := c.Erasure
+			if store != nil && c.InOrganizations() && (p == nil || p.InOrg != registry.InOrgApply) {
+				if clearer, ok := store.Repository(c).(storage.OrgOwnerClearer); ok {
+					n, err := clearer.CountOwnedInOrgs(ctx, u.ID)
+					if err != nil {
+						return nil, err
+					}
+					if n > 0 {
+						kept = append(kept, map[string]any{"database": dbName, "collection": name, "documents": n})
+					}
+				}
+			}
 			if p == nil {
 				without = append(without, dbName+"."+name)
 				continue
@@ -86,9 +110,11 @@ func ownedReport(ctx context.Context, reg *registry.Registry, store Store, realm
 		}
 	}
 	return map[string]any{
-		"user":           map[string]any{"id": u.ID, "status": userStatus(u)},
-		"collections":    collections,
-		"without_policy": without,
+		"user":                  map[string]any{"id": u.ID, "status": userStatus(u)},
+		"collections":           collections,
+		"without_policy":        without,
+		"organizations":         managed,
+		"kept_in_organizations": kept,
 	}, nil
 }
 
@@ -102,7 +128,7 @@ func nonNil(s []string) []string {
 // owned handles GET /users/{id}/owned: what erasing this user would do.
 func (a *adminAPI) owned(w http.ResponseWriter, r *http.Request) {
 	u := adminUserOf(r)
-	report, err := ownedReport(r.Context(), a.reg, a.fns.docs.store, chi.URLParam(r, "realm"), u)
+	report, err := ownedReport(r.Context(), a.reg, a.fns.docs.store, usersOf(r), chi.URLParam(r, "realm"), u)
 	if err != nil {
 		adminError(w, r, err)
 		return

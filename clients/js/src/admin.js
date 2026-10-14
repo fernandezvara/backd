@@ -2,6 +2,36 @@ import { Collection } from './data.js'
 import { Job } from './functions.js'
 
 /**
+ * @typedef {import('./orgs.js').OrgMember} OrgMember
+ * @typedef {import('./orgs.js').OrgTeam} OrgTeam
+ * @typedef {import('./orgs.js').OrgInvitation} OrgInvitation
+ * @typedef {import('./orgs.js').NewOrgInvitation} NewOrgInvitation
+ * @typedef {import('./orgs.js').InviteInput} OrgInviteInput
+ */
+
+/**
+ * An organization as administrators see it.
+ * @typedef {object} AdminOrg
+ * @property {string} id
+ * @property {string} name
+ * @property {string | null} slug
+ * @property {'active' | 'orphaned' | 'deleted'} status
+ * @property {boolean} require_mfa
+ * @property {Record<string, unknown>} claims
+ * @property {string} created_at
+ * @property {number} [members]   How many members it has; only in `list`.
+ */
+
+/**
+ * What deleting an organization would do (`admin.orgs.owned`).
+ * @typedef {object} OrgOwnedReport
+ * @property {AdminOrg} org
+ * @property {Array<{ database: string, collection: string, documents: number, on_org_delete: 'delete' | 'keep' }>} collections
+ * @property {number} to_delete   Documents the cleanup removes.
+ * @property {number} to_keep     Documents it leaves, readable only by administrators.
+ */
+
+/**
  * @typedef {import('./client.js').Client} Client
  * @typedef {import('./client.js').RequestOptions} RequestOptions
  */
@@ -339,6 +369,8 @@ export class Admin {
     this.invocations = new AdminInvocations(this)
     /** Push notifications: how they are configured, the records of what was sent, a test send. */
     this.push = new AdminPush(this)
+    /** Organizations: list, create, members, teams, invitations, claims, delete and reactivate. */
+    this.orgs = new AdminOrgs(this)
   }
 
   /**
@@ -1178,6 +1210,220 @@ class AdminSchedules {
     const [database, name, ...rest] = fn.split('/')
     if (!database || !name || rest.length > 0) throw new TypeError(`schedules.${op}: the function must be "<database>/<name>"`)
     return (await this.admin._request({ method: 'POST', path: ['functions', database, name, op], ...opts })).data
+  }
+}
+
+/** Organizations through the admin API (`admin.orgs`); needs the `users` area. */
+class AdminOrgs {
+  /** @param {Admin} admin */
+  constructor(admin) {
+    /** @internal */
+    this.admin = admin
+  }
+
+  /**
+   * The organizations, newest first, each with its number of `members`.
+   * @param {{ status?: 'active' | 'orphaned' | 'deleted', q?: string }} [params] `q`: part of a name or slug.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<AdminOrg[]>}
+   */
+  async list(params = {}, opts) {
+    return (await this.admin._request({ method: 'GET', path: ['orgs'], query: { status: params.status, q: params.q }, ...opts })).data.items
+  }
+
+  /**
+   * @param {string} id
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<AdminOrg>}
+   */
+  async get(id, opts) {
+    return (await this.admin._request({ method: 'GET', path: ['orgs', id], ...opts })).data
+  }
+
+  /**
+   * Creates an organization for a user, who holds the realm's `creator_roles`.
+   * @param {{ name: string, owner: string, slug?: string }} input `owner`: a user id.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<AdminOrg>}
+   */
+  async create(input, opts) {
+    return (await this.admin._request({ method: 'POST', path: ['orgs'], body: input, ...opts })).data
+  }
+
+  /**
+   * What deleting the organization would do, per collection: look before `delete`.
+   * @param {string} id
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgOwnedReport>}
+   */
+  async owned(id, opts) {
+    return (await this.admin._request({ method: 'GET', path: ['orgs', id, 'owned'], ...opts })).data
+  }
+
+  /**
+   * Deletes the organization: access ends at once, then a job applies each collection's `on_org_delete`.
+   * @param {string} id
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async delete(id, opts) {
+    await this.admin._request({ method: 'DELETE', path: ['orgs', id], ...opts })
+  }
+
+  /**
+   * Brings a deleted organization back, without members.
+   * @param {string} id
+   * @param {{ slug?: string }} [input] Another slug, when the former one is in use.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<AdminOrg>}
+   */
+  async reactivate(id, input = {}, opts) {
+    return (await this.admin._request({ method: 'POST', path: ['orgs', id, 'reactivate'], body: input, ...opts })).data
+  }
+
+  /**
+   * Replaces the organization's claims (at most 1 KiB).
+   * @param {string} id
+   * @param {Record<string, unknown>} claims
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<AdminOrg>}
+   */
+  async setClaims(id, claims, opts) {
+    return (await this.admin._request({ method: 'PUT', path: ['orgs', id, 'claims'], body: claims, ...opts })).data
+  }
+
+  /**
+   * Gives an organization without a manager one, with the realm's `creator_roles`.
+   * @param {string} id
+   * @param {string} user
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgMember>}
+   */
+  async assignOwner(id, user, opts) {
+    return (await this.admin._request({ method: 'POST', path: ['orgs', id, 'owner'], body: { user }, ...opts })).data
+  }
+
+  /**
+   * A page of members with emails, sorted by user id.
+   * @param {string} id
+   * @param {{ limit?: number, after?: string }} [params]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ items: OrgMember[], has_more: boolean, next?: string }>}
+   */
+  async members(id, params = {}, opts) {
+    return (await this.admin._request({ method: 'GET', path: ['orgs', id, 'members'], query: { limit: params.limit, after: params.after }, ...opts })).data
+  }
+
+  /**
+   * Adds a user directly, without an invitation.
+   * @param {string} id
+   * @param {string} user
+   * @param {string[]} [roles]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgMember>}
+   */
+  async addMember(id, user, roles, opts) {
+    return (await this.admin._request({ method: 'POST', path: ['orgs', id, 'members'], body: { user, roles: roles ?? [] }, ...opts })).data
+  }
+
+  /**
+   * Replaces a member's direct roles.
+   * @param {string} id
+   * @param {string} user
+   * @param {string[]} roles
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgMember>}
+   */
+  async setMemberRoles(id, user, roles, opts) {
+    return (await this.admin._request({ method: 'PATCH', path: ['orgs', id, 'members', user], body: { roles }, ...opts })).data
+  }
+
+  /**
+   * @param {string} id
+   * @param {string} user
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async removeMember(id, user, opts) {
+    await this.admin._request({ method: 'DELETE', path: ['orgs', id, 'members', user], ...opts })
+  }
+
+  /**
+   * @param {string} id
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgTeam[]>}
+   */
+  async teams(id, opts) {
+    return (await this.admin._request({ method: 'GET', path: ['orgs', id, 'teams'], ...opts })).data.items
+  }
+
+  /**
+   * Status, binding, uses and expiry of an organization's invitations; never tokens.
+   * @param {string} id
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgInvitation[]>}
+   */
+  async invitations(id, opts) {
+    return (await this.admin._request({ method: 'GET', path: ['orgs', id, 'invitations'], ...opts })).data.items
+  }
+
+  /**
+   * Invites with any role. The answer holds the token and link, shown only now.
+   * @param {string} id
+   * @param {OrgInviteInput} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<NewOrgInvitation>}
+   */
+  async invite(id, input, opts) {
+    const { expiresIn, maxUses, ...rest } = input
+    /** @type {Record<string, unknown>} */
+    const body = { ...rest }
+    if (expiresIn !== undefined) body.expires_in = expiresIn
+    if (maxUses !== undefined) body.max_uses = maxUses
+    return (await this.admin._request({ method: 'POST', path: ['orgs', id, 'invitations'], body, ...opts })).data
+  }
+
+  /**
+   * @param {string} id
+   * @param {string} invitation
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async revokeInvitation(id, invitation, opts) {
+    await this.admin._request({ method: 'DELETE', path: ['orgs', id, 'invitations', invitation], ...opts })
+  }
+
+  /**
+   * Moves a document to another organization (or out of its organization with `org: null`,
+   * when the collection's `organization` is `optional`).
+   * @param {string} database
+   * @param {string} collection
+   * @param {string} documentId
+   * @param {string | null} org
+   * @param {{ ifMatch?: string } & RequestOptions} [opts]
+   * @returns {Promise<Record<string, any>>}
+   */
+  async transfer(database, collection, documentId, org, opts = {}) {
+    const { ifMatch, ...rest } = opts
+    const headers = ifMatch === undefined ? undefined : { 'If-Match': ifMatch }
+    return (await this.admin._request({ method: 'POST', path: ['data', database, collection, documentId, '_transfer'], body: { org }, headers, ...rest })).data
+  }
+
+  /**
+   * Gives the documents of a collection that have no organization one: a job that never moves
+   * a document that has one. With `dryRun` it only counts them.
+   * @param {string} database
+   * @param {string} collection
+   * @param {string} org
+   * @param {{ where?: Record<string, unknown>, dryRun?: boolean } & RequestOptions} [opts]
+   * @returns {Promise<{ matched: number, job?: string }>}
+   */
+  async assign(database, collection, org, opts = {}) {
+    const { where, dryRun, ...rest } = opts
+    /** @type {Record<string, unknown>} */
+    const body = { org }
+    if (where !== undefined) body.where = where
+    return (await this.admin._request({ method: 'POST', path: ['data', database, collection, '_assign_org'], query: { dry_run: dryRun ? 'true' : undefined }, body, ...rest })).data
   }
 }
 

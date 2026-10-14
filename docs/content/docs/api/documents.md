@@ -322,6 +322,11 @@ A collection with [`soft_delete`](../../configuration/config-dir/#soft-delete) k
 
 The [admin API](../../auth/admin/#data) serves these same operations past the collections' rules, at `/v1/{realm}/_admin/data/{database}/{collection}`, for administrators who hold the `data` area. Writes there are audited and documents they create have no owner.
 
+Two operations exist only there, for [organizations](#organizations):
+
+- **Moving a document.** `POST /{id}/_transfer` with `{"org": "<id>"}` (`null` takes it out of its organization, in a collection where that is allowed) moves one document. It is never an update: the target must exist and not be deleted, the version goes up, `If-Match` is honored, files and image versions travel with it, and the audit record names both organizations. `backd data transfer` does the same from the terminal.
+- **Adopting a collection.** A collection that starts using organizations has documents without one, and with `organization: required` members can't see them. `POST /_assign_org` with `{"org": "<id>", "where": {…}}` queues a job that gives the organization to the documents that have none and match `where`, and never moves one that has an organization; `?dry_run=true` only counts them (`backd data assign-org`). At startup `backd` logs the collections that still hold documents without one.
+
 ## Schema changes
 
 After `schema.json` changes, existing documents are returned as they are, even if they no longer match. Every write must produce a document that is valid against the **current** schema.

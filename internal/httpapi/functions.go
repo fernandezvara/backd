@@ -154,6 +154,7 @@ func (f *functions) internalRoutes(r chi.Router) {
 	r.With(noStore).Get("/v1/{realm}/_fn/config", f.configRead)
 	r.With(noStore).Patch("/v1/{realm}/_fn/config", f.configWrite)
 	r.With(noStore).Get("/v1/{realm}/_fn/config/history", f.configHistory)
+	f.orgRoutes(r)
 }
 
 func (f *functions) routes(r chi.Router) {
@@ -368,7 +369,7 @@ func (f *functions) run(w http.ResponseWriter, r *http.Request, fn *registry.Fun
 			Mode:           fn.Mode,
 			Input:          input,
 			Webhook:        webhook,
-			User:           userEnvelope(caller),
+			User:           userEnvelope(caller, f.userOrgsEnvelope(r.Context(), realm, caller)),
 			Secrets:        secrets,
 			Callback:       f.callback(realm, database, name, fn, caller, deadline.Add(callbackMargin), invID, meta.Depth, nil),
 			IdempotencyKey: r.Header.Get("Idempotency-Key"),
@@ -842,7 +843,7 @@ func rulesUser(c auth.Caller) *rules.User {
 }
 
 // userEnvelope is ctx.user: the user the call acts as, or null.
-func userEnvelope(c auth.Caller) json.RawMessage {
+func userEnvelope(c auth.Caller, orgs map[string]any) json.RawMessage {
 	if c.User == nil {
 		return nil
 	}
@@ -856,8 +857,41 @@ func userEnvelope(c auth.Caller) json.RawMessage {
 	if consents == nil {
 		consents = map[string]string{}
 	}
-	data, _ := json.Marshal(map[string]any{"id": u.ID, "email": u.Email, "email_verified": u.EmailVerified, "roles": roles, "mfa": mfa, "methods": methods, "consents": consents})
+	env := map[string]any{"id": u.ID, "email": u.Email, "email_verified": u.EmailVerified, "roles": roles, "mfa": mfa, "methods": methods, "consents": consents}
+	if orgs != nil {
+		env["orgs"] = orgs
+	}
+	data, _ := json.Marshal(env)
 	return data
+}
+
+// userOrgsEnvelope is ctx.user.orgs: the caller's memberships by organization id, with the
+// effective roles, the teams, the claims, and whether each counts for this session (an
+// organization that requires a second factor doesn't count for a session without one). Nil
+// when the realm has no organizations or there is no user.
+func (f *functions) userOrgsEnvelope(ctx context.Context, realm string, c auth.Caller) map[string]any {
+	svc := f.docs.users(realm)
+	if svc == nil || c.User == nil || !svc.OrgsEnabled() {
+		return nil
+	}
+	mfa, _ := c.SignInMethods()
+	list, err := svc.MyOrgs(ctx, c.User.User.ID)
+	if err != nil {
+		logger(ctx).Error("memberships unreadable for ctx.user.orgs", "realm", realm, "error", err)
+		return map[string]any{}
+	}
+	out := map[string]any{}
+	for _, m := range list {
+		claims := m.Org.Claims
+		if claims == nil {
+			claims = map[string]any{}
+		}
+		out[m.Org.ID] = map[string]any{
+			"name": m.Org.Name, "roles": nonNil(m.RoleNames()), "teams": nonNil(m.Member.Teams),
+			"claims": claims, "counts": m.Org.Counts(mfa), "require_mfa": m.Org.RequireMFA,
+		}
+	}
+	return out
 }
 
 // callback gives the function its tokens: ctx.db acts as the caller,
@@ -880,6 +914,7 @@ func (f *functions) callback(realm, database, name string, fn *registry.Function
 	}
 	if fn.Admin || (c.Func != nil && c.Func.Admin) {
 		cb.AdminToken = auth.SignCallback(f.docs.callbackKey, auth.CallbackClaims{Realm: realm, Function: database + "/" + name, Admin: true, Expires: expires})
+		cb.Orgs = f.docs.reg.Realms[realm] != nil && f.docs.reg.Realms[realm].Settings.Organizations != nil
 	}
 	return cb
 }

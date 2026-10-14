@@ -489,9 +489,14 @@ func (s *Users) lookupOrgInvitation(ctx context.Context, p Principal, token stri
 			return OrgInvitationPreview{}, ErrInvitationNotForYou
 		}
 	}
-	_, teams, err := s.teamRoles(ctx, inv.Org, inv.Teams)
+	teamRoles, teams, err := s.teamRoles(ctx, inv.Org, inv.Teams)
 	if err != nil {
 		return OrgInvitationPreview{}, err
+	}
+	// An open link never gives a capability, even when a team or a role gained one after
+	// the link was made.
+	if inv.Binding == BindNone && s.capsOfRoles(append(slices.Clone(inv.Roles), teamRoles...)).Any() {
+		return OrgInvitationPreview{}, ErrInvalidOrgInvitation
 	}
 	return OrgInvitationPreview{Org: org, Roles: inv.Roles, Teams: teams, Binding: inv.Binding, ExpiresAt: inv.ExpiresAt, invitation: inv}, nil
 }
@@ -548,7 +553,7 @@ func (s *Users) AcceptOrgInvitation(ctx context.Context, p Principal, token stri
 		return Membership{}, err
 	}
 	s.Audit(ctx, AuditOrgInviteAccept, orgTarget(inv.Org), map[string]any{"invitation": inv.ID, "user": p.User.ID, "roles": used.Roles, "teams": m.Teams})
-	return s.membership(pv.Org, m), nil
+	return s.membership(ctx, pv.Org, m)
 }
 
 // OrgInvitationEmail is what the worker needs to write the message of an invitation.

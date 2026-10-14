@@ -42,6 +42,22 @@ magic_link:
 sign_in:
   app_url: http://localhost:8080/   # within email.allowed_redirects
 
+# Chapter 20: a team is an organization. People create teams, invite one
+# another and hold roles *inside* a team (these are not the realm roles
+# below: they mean something only in one team). `manage` says what a role
+# may do there: run the team (org), its members, which roles they hold, its
+# teams. A member holds `member` without being given it (default_roles).
+organizations:
+  roles:
+    owner:  { description: Runs the team, manage: [org, members, roles, teams] }
+    admin:  { description: Invites and removes people and deletes any pin, manage: [members, teams] }
+    editor: { description: Adds and edits pins }
+    member: { description: Reads the team's pins }
+  default_roles: [member]
+  max_created_per_user: 5
+  # What an invitation's link opens: the app, which reads ?join= and offers it.
+  invitation_link: http://localhost:8080/?join={token}
+
 # The operators hold the keys to everything, so the admin role needs a second
 # factor: the first sign-in sets one up (an authenticator app), the next ones
 # ask for its code. Members who want it can turn it on themselves on the

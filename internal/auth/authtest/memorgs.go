@@ -104,6 +104,91 @@ func (m *MemStore) UpdateOrg(_ context.Context, id string, upd auth.OrgUpdate, n
 	return org, nil
 }
 
+func (m *MemStore) ForgetUserInOrgs(_ context.Context, userID, email string) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o := m.org()
+	var orgs []string
+	for k, mem := range o.members {
+		if mem.User == userID {
+			orgs = append(orgs, mem.Org)
+			delete(o.members, k)
+		}
+	}
+	for k, inv := range o.invites {
+		switch {
+		case inv.User == userID || (email != "" && inv.Email == email):
+			delete(o.invites, k)
+		case inv.CreatedBy == userID:
+			inv.CreatedBy = ""
+			o.invites[k] = inv
+		}
+	}
+	for k, org := range o.orgs {
+		if org.CreatedBy == userID {
+			org.CreatedBy = ""
+			o.orgs[k] = org
+		}
+	}
+	return orgs, nil
+}
+
+func (m *MemStore) ArchiveOrg(_ context.Context, id string, now time.Time) (auth.Org, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o := m.org()
+	org, ok := o.orgs[id]
+	if !ok {
+		return auth.Org{}, auth.ErrNotFound
+	}
+	if org.Status == auth.OrgDeleted {
+		return auth.Org{}, auth.ErrOrgNotActive
+	}
+	if org.Slug != "" {
+		org.FormerSlug = org.Slug
+	}
+	org.Slug, org.Status, org.DeletedAt, org.UpdatedAt = "", auth.OrgDeleted, now, now
+	o.orgs[id] = org
+	for k, mem := range o.members {
+		if mem.Org == id {
+			delete(o.members, k)
+		}
+	}
+	for k, t := range o.teams {
+		if t.Org == id {
+			delete(o.teams, k)
+		}
+	}
+	for k, inv := range o.invites {
+		if inv.Org == id {
+			delete(o.invites, k)
+		}
+	}
+	return org, nil
+}
+
+func (m *MemStore) ReactivateOrg(_ context.Context, id, slug string, now time.Time) (auth.Org, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o := m.org()
+	org, ok := o.orgs[id]
+	if !ok {
+		return auth.Org{}, auth.ErrNotFound
+	}
+	if org.Status != auth.OrgDeleted {
+		return auth.Org{}, auth.ErrOrgNotDeleted
+	}
+	if slug != "" {
+		if o.slugTaken(slug, id) {
+			return auth.Org{}, auth.ErrSlugTaken
+		}
+		org.Slug = slug
+	}
+	org.Status, org.DeletedAt, org.UpdatedAt = auth.OrgActive, time.Time{}, now
+	o.orgs[id] = org
+	return org, nil
+}
+
 func (m *MemStore) ListOrgs(_ context.Context, status string) ([]auth.Org, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -114,6 +199,18 @@ func (m *MemStore) ListOrgs(_ context.Context, status string) ([]auth.Org, error
 		}
 	}
 	slices.SortFunc(out, func(a, b auth.Org) int { return cmp.Or(b.CreatedAt.Compare(a.CreatedAt), cmp.Compare(b.ID, a.ID)) })
+	return out, nil
+}
+
+func (m *MemStore) CountOrgMembers(_ context.Context, orgs []string) (map[string]int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := map[string]int{}
+	for _, mem := range m.org().members {
+		if slices.Contains(orgs, mem.Org) {
+			out[mem.Org]++
+		}
+	}
 	return out, nil
 }
 
@@ -210,6 +307,88 @@ func (m *MemStore) DeleteOrgMember(_ context.Context, org, user string) error {
 	}
 	delete(m.org().members, k)
 	return nil
+}
+
+func (m *MemStore) CreateOrgTeam(_ context.Context, t auth.OrgTeam) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o := m.org()
+	if o.teams == nil {
+		o.teams = map[string]auth.OrgTeam{}
+	}
+	for _, x := range o.teams {
+		if x.Org == t.Org && x.Name == t.Name {
+			return auth.ErrTeamNameTaken
+		}
+	}
+	o.teams[t.ID] = t
+	return nil
+}
+
+func (m *MemStore) UpdateOrgTeam(_ context.Context, t auth.OrgTeam) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o := m.org()
+	cur, ok := o.teams[t.ID]
+	if !ok || cur.Org != t.Org {
+		return auth.ErrNotFound
+	}
+	for id, x := range o.teams {
+		if id != t.ID && x.Org == t.Org && x.Name == t.Name {
+			return auth.ErrTeamNameTaken
+		}
+	}
+	cur.Name, cur.Roles = t.Name, t.Roles
+	o.teams[t.ID] = cur
+	return nil
+}
+
+func (m *MemStore) DeleteOrgTeam(_ context.Context, org, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o := m.org()
+	if t, ok := o.teams[id]; !ok || t.Org != org {
+		return auth.ErrNotFound
+	}
+	delete(o.teams, id)
+	for k, mem := range o.members {
+		if mem.Org == org && slices.Contains(mem.Teams, id) {
+			mem.Teams = slices.DeleteFunc(slices.Clone(mem.Teams), func(t string) bool { return t == id })
+			o.members[k] = mem
+		}
+	}
+	return nil
+}
+
+func (m *MemStore) ListOrgTeams(_ context.Context, org string) ([]auth.OrgTeam, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []auth.OrgTeam
+	for _, t := range m.org().teams {
+		if t.Org == org {
+			out = append(out, t)
+		}
+	}
+	slices.SortFunc(out, func(a, b auth.OrgTeam) int { return cmp.Compare(a.Name, b.Name) })
+	return out, nil
+}
+
+func (m *MemStore) OrgMembersInTeams(_ context.Context, org string, teams []string) ([]auth.OrgMember, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []auth.OrgMember
+	for _, mem := range m.org().members {
+		if mem.Org != org {
+			continue
+		}
+		for _, t := range mem.Teams {
+			if slices.Contains(teams, t) {
+				out = append(out, mem)
+				break
+			}
+		}
+	}
+	return out, nil
 }
 
 // PutOrgTeam stores a team, for tests: teams are managed through the service.

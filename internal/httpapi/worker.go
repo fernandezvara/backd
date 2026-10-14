@@ -303,6 +303,14 @@ func (w *Worker) runJob(ctx context.Context, realm string, svc *auth.Users, job 
 		w.runCheck(ctx, log, realm, svc, job) // not a function either: a worker reads the collections itself
 		return
 	}
+	if job.Assign != nil {
+		w.runAssignOrg(ctx, log, realm, svc, job) // nor is this: a worker gives the documents their organization
+		return
+	}
+	if job.OrgDelete != nil {
+		w.runOrgDelete(ctx, log, realm, svc, job) // ...or this: a worker applies on_org_delete itself
+		return
+	}
 	fn := w.fns.lookup(realm, job.Database, job.Function)
 	if fn == nil {
 		w.fail(ctx, log, svc, job, "the function no longer exists")
@@ -380,7 +388,7 @@ func (w *Worker) execute(ctx context.Context, log *slog.Logger, realm string, sv
 		Envelope: executor.Envelope{
 			Mode:      fn.Mode,
 			Input:     job.Input,
-			User:      userEnvelope(caller),
+			User:      userEnvelope(caller, w.fns.userOrgsEnvelope(ctx, realm, caller)),
 			Secrets:   secrets,
 			Mask:      mask,
 			Callback:  w.fns.callback(realm, job.Database, job.Function, fn, caller, deadline.Add(callbackMargin), invID, job.Depth, &job),
@@ -480,7 +488,7 @@ func jobKind(j auth.Job) string {
 	if j.Push != nil {
 		return "push"
 	}
-	return metrics.JobKind(j.Email != nil, j.Erase != nil, j.Check != nil, j.Image != nil, j.Scheduled)
+	return metrics.JobKind(j.Email != nil, j.Erase != nil, j.Check != nil, j.Image != nil, j.Assign != nil || j.OrgDelete != nil, j.Scheduled)
 }
 
 // retryableStatus says whether an attempt that ended this way may succeed
