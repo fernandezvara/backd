@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "properties": {
+    "kind": { "type": "string", "enum": ["vacation", "sick", "personal"] },
+    "from": { "type": "string", "maxLength": 10 },
+    "until": { "type": "string", "maxLength": 10 },
+    "status": { "type": "string", "enum": ["requested", "approved", "rejected"] },
+    "note": { "type": "string", "maxLength": 500 }
+  },
+  "required": ["kind", "from", "until", "status"],
+  "additionalProperties": false
+}

@@ -1,0 +1,29 @@
+# An absence belongs to a company and to the employee's department. What each person may do
+# comes from who they are in that department, never from copying names into the document.
+organization: required
+on_org_delete:
+  action: delete
+team: required
+on_team_delete:
+  action: keep          # the history stays, readable by HR through the organization
+
+rules:
+  # Employees see their own; the manager and delegates of the department see its absences,
+  # without having to belong to it; HR sees the company's.
+  read: >
+    user != nil && (
+      document._meta.owner == user.id
+      || hasTeamRole(document._meta.team, 'manager')
+      || hasTeamRole(document._meta.team, 'delegate')
+      || hasOrgRole(document._meta.org, 'hr')
+    )
+  # Anyone asks for an absence in their own department, as a request.
+  create: user != nil && inTeam(data._meta.team) && data.status == 'requested'
+  # The employee edits their own request; approving needs a manager or a delegate (in force today).
+  update: >
+    user != nil && (
+      (document._meta.owner == user.id && document.status == 'requested' && data.status == 'requested')
+      || hasTeamRole(document._meta.team, 'manager')
+      || hasTeamRole(document._meta.team, 'delegate')
+    )
+  delete: user != nil && document._meta.owner == user.id && document.status == 'requested'
