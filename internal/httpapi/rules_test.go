@@ -96,8 +96,8 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 		"acme/app/projects/collection.yaml": "organization: required\non_org_delete:\n  action: delete\n" + rulesSection("read: inOrg(document._meta.org)\ncreate: hasOrgRole(data._meta.org, 'editor') || hasOrgRole(data._meta.org, 'owner')\nupdate: hasOrgRole(document._meta.org, 'editor') || hasOrgRole(document._meta.org, 'owner')\ndelete: hasOrgRole(document._meta.org, 'owner')\n"),
 		"acme/app/shared/schema.json":       postsSchema,
 		"acme/app/shared/collection.yaml":   "organization: optional\non_org_delete:\n  action: keep\n" + rulesSection("read: document._meta.org == nil || inOrg(document._meta.org)\ncreate: user != nil\nupdate: user != nil\n"),
-		"acme/app/ztally/schema.json":      postsSchema,
-		"acme/app/ztally/collection.yaml":  "organization: required\non_org_delete:\n  action: delete\non_owner_delete:\n  action: delete\n  in_org: apply\n" + rulesSection("read: inOrg(document._meta.org)\ncreate: inOrg(data._meta.org)\n"),
+		"acme/app/ztally/schema.json":       postsSchema,
+		"acme/app/ztally/collection.yaml":   "organization: required\non_org_delete:\n  action: delete\non_owner_delete:\n  action: delete\n  in_org: apply\n" + rulesSection("read: inOrg(document._meta.org)\ncreate: inOrg(data._meta.org)\n"),
 		"acme/app/plans/schema.json":        postsSchema,
 		"acme/app/plans/collection.yaml":    "organization: required\non_org_delete:\n  action: keep\n" + rulesSection("read: orgClaims(document._meta.org).plan == 'pro'\ncreate: user != nil\n"),
 		// Functions (see functions_test.go).
