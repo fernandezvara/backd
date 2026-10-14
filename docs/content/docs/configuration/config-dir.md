@@ -141,6 +141,7 @@ This optional file holds a collection's policy, in sections that can each be lef
 | `soft_delete:` | Whether deleted documents stay recoverable | [Soft delete](#soft-delete) |
 | `cache:` | Whether anonymous reads may be stored by shared caches (CDNs) | [Public caching](#public-caching) |
 | `personal_data:` | What a user's data export takes from the collection | [Personal data scope](#personal-data-scope) |
+| `custom_id:` | Collections whose documents get the id the client chooses | [Custom ids](#custom-ids) |
 | `on_owner_delete:` | What an administrator's **erase** does to the collection when a user is erased (`backd user delete`) | below |
 
 ```yaml
@@ -190,6 +191,27 @@ soft_delete:
 - **Unique indexes** from `indexes.json` get `_meta.deleted_at` as their last key, so live documents stay unique among themselves, a deleted one never clashes with anything, and documents that existed before count as live. Turning `soft_delete` on for a collection that already has a unique index builds the new index next to the old one, and `backd provision` warns about the old one: it also covers deleted documents, so **drop it** once the new one exists (`db.<collection>.dropIndex("<name>")`) or a deleted document's values stay taken. `backd` never drops an index itself.
 - **Erasing a user** still deletes, anonymizes and clears documents that are in the trash: it works on everything the user owns.
 - It doesn't need users: a realm with `auth: disabled` can soft-delete, though it has no rules to restrict the trash.
+
+### Custom ids
+
+By default the server generates a document's id. A collection can instead declare what its ids look like, for ids that mean something: an invoice number, an external reference, or the user's own id for one document per user.
+
+```yaml
+custom_id:
+  pattern: '^INV-[0-9]{4}-[0-9]{4,6}$'
+  duplicate_limit: 20      # optional: duplicate creates per caller per minute (1 to 1000, default 20)
+```
+
+```yaml
+custom_id: user            # the id must be the creating user's id (the realm needs users)
+```
+
+- **The pattern is anchored** automatically (the whole id must match), uses Go's RE2 syntax (no lookaheads or backreferences, so it can't hang a request) and has at most 512 characters. It is checked when backd starts.
+- **A safety envelope always applies**, whatever the pattern: 1 to 128 characters, only letters, digits and `-` `.` `_` `~` `:` `@`, not starting with `_` or `.` (backd's own path segments such as `_files` start with `_`), and no `..`.
+- **`backd data check`** reports stored documents whose id doesn't match the pattern (path `id`, never the value), for example after adding `custom_id` to a collection that already holds generated ids. Existing documents are never changed.
+- Collections without `custom_id` are unchanged.
+
+Creating documents with their own id is the next planned step of this feature: until then the declaration is validated and checked, and creates still get generated ids.
 
 ### Public caching
 

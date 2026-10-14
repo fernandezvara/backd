@@ -3,11 +3,14 @@ package httpapi
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage"
 )
 
@@ -211,4 +214,44 @@ type cancelAfterScan struct {
 func (c *cancelAfterScan) RenewJobLease(ctx context.Context, id string, attempt int, until time.Time) (bool, error) {
 	c.onRenew()
 	return c.Store.RenewJobLease(ctx, id, attempt, until)
+}
+
+// A collection with custom ids reports a stored id its pattern doesn't accept, by path "id";
+// without custom_id the id is never checked.
+func TestCheckDocumentReportsIDsThatDontMatch(t *testing.T) {
+	load := func(collectionYAML string) *registry.Collection {
+		t.Helper()
+		dir := t.TempDir()
+		for name, content := range map[string]string{
+			"acme/realm.yaml":                "signup: open\n",
+			"acme/app/notes/schema.json":     `{"type":"object","properties":{"title":{"type":"string"}}}`,
+			"acme/app/notes/collection.yaml": collectionYAML,
+		} {
+			p := filepath.Join(dir, name)
+			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		reg, err := registry.Load(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, _ := reg.Collection("acme", "app", "notes")
+		return c
+	}
+	doc := func(id string) storage.Document { return storage.Document{"id": id, "title": "x"} }
+	if problems, _ := checkDocument(load("{}\n"), doc("anything")); len(problems) != 0 {
+		t.Errorf("no custom_id: %+v", problems)
+	}
+	c := load("custom_id:\n  pattern: 'INV-[0-9]{4}'\n")
+	if problems, _ := checkDocument(c, doc("INV-0042")); len(problems) != 0 {
+		t.Errorf("a matching id: %+v", problems)
+	}
+	problems, _ := checkDocument(c, doc("cq9d2k3f4"))
+	if len(problems) != 1 || problems[0].Path != "id" || strings.Contains(problems[0].Reason, "cq9d2k3f4") {
+		t.Errorf("a generated id: %+v", problems)
+	}
 }

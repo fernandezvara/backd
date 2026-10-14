@@ -36,14 +36,23 @@ func schemaHash(c *registry.Collection) string {
 // (without its system fields) and returns its problems, at most
 // auth.MaxCheckProblems of them, and how many more there were. Never a value.
 func checkDocument(c *registry.Collection, doc storage.Document) (problems []auth.CheckProblem, more int) {
+	// A collection with custom ids reports a stored id the pattern doesn't accept, for example
+	// after custom_id was added to a collection that holds generated ids.
+	if c.CustomID != nil {
+		if id, _ := doc["id"].(string); id != "" {
+			if reason := c.CustomID.Check(id); reason != "" && !c.CustomID.User {
+				problems = append(problems, auth.CheckProblem{Path: "id", Reason: reason})
+			}
+		}
+	}
 	body := timesToStrings(userFields(doc)).(map[string]any)
 	err := c.Schema.Validate(body)
 	if err == nil {
-		return nil, 0
+		return problems, 0
 	}
 	details := validationDetails(err)
 	for i, d := range details {
-		if i == auth.MaxCheckProblems {
+		if len(problems) == auth.MaxCheckProblems {
 			return problems, len(details) - i
 		}
 		problems = append(problems, auth.CheckProblem{Path: clip(d.Path, maxCheckText), Reason: clip(d.Reason, maxCheckText)})
