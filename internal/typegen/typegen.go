@@ -157,8 +157,8 @@ func (g *gen) realm(rl *registry.Realm, o Options) string {
 		cols := db.SortedCollections()
 		for _, c := range cols {
 			g.entries["collection "+dbName+"/"+c.Name] = ""
-			doc, input, where, order := g.collection(&types, dbName, c)
-			fmt.Fprintf(&tree, "        %s: { doc: %s; input: %s; where: %s; order_by: %s };\n", member(c.Name), doc, input, where, order)
+			doc, input, create, where, order := g.collection(&types, dbName, c)
+			fmt.Fprintf(&tree, "        %s: { doc: %s; input: %s; create: %s; where: %s; order_by: %s };\n", member(c.Name), doc, input, create, where, order)
 		}
 		tree.WriteString("      };\n      functions: {\n")
 		if db.Functions != nil {
@@ -253,8 +253,8 @@ func (g *gen) alias(name, what string) string {
 }
 
 // collection writes a collection's types and returns the type expressions for doc, input,
-// where and order_by.
-func (g *gen) collection(w *strings.Builder, db string, c *registry.Collection) (doc, input, where, order string) {
+// create (input, with the id a custom_id collection requires), where and order_by.
+func (g *gen) collection(w *strings.Builder, db string, c *registry.Collection) (doc, input, create, where, order string) {
 	prefix := pascal(db) + pascal(c.Name)
 	where0 := db + "/" + c.Name + " schema.json "
 	conv := newConverter(c.RawSchema, prefix, where0, g.warn)
@@ -281,6 +281,23 @@ func (g *gen) collection(w *strings.Builder, db string, c *registry.Collection) 
 		names = append(names, n)
 	}
 	doc, input = names[0], names[1]
+	create = input
+	if cid := c.CustomID; cid != nil {
+		// The client chooses the id of a document it creates: required on create only, since an
+		// update names the document in the path.
+		note := "the id is chosen by the client and never changes; it must match " + cid.Anchored()
+		if cid.User {
+			note = "the id is chosen by the client and never changes; it must be the id of the signed-in user"
+		}
+		body := "{ id: string } & " + wrap(inT)
+		if n := g.alias(prefix+"Create", db+"/"+c.Name); n != "" {
+			fmt.Fprintf(w, "/** %s/%s: %s */\nexport type %s = %s;\n", db, c.Name, strings.ReplaceAll(note, "*/", "* /"), n, body)
+			create = n
+		} else {
+			create = "(" + body + ")"
+		}
+		g.entries["collection "+db+"/"+c.Name+" id"] = cid.Anchored() + " user=" + fmt.Sprint(cid.User)
+	}
 	g.fieldEntries(db+"/"+c.Name, c, conv)
 
 	whereT, orderT := g.query(c)

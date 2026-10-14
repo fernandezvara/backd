@@ -318,6 +318,9 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 	if err := loadIndexes(coll, filepath.Join(dir, indexesFile)); err != nil {
 		return nil, err
 	}
+	if err := loadCustomID(coll, settings, filepath.Join(dir, CollectionFile)); err != nil {
+		return nil, err
+	}
 	if err := loadRules(coll, settings, dir); err != nil {
 		return nil, err
 	}
@@ -332,6 +335,7 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 		}
 	}
 	coll.addSoftDeleteIndexes()
+	coll.addDefaultOrderIndex()
 	return coll, nil
 }
 
@@ -372,13 +376,20 @@ func loadRules(c *Collection, settings RealmSettings, dir string) error {
 	}
 	set, errs := rules.Parse(doc.Rules, rules.Schema{
 		DocumentField: c.IsKnownField,
-		DataField:     func(p string) bool { _, ok := c.Fields[p]; return ok },
-		ScalarField:   c.ScalarField,
-		ArrayField:    c.ArrayField,
-		DateField:     c.DateField,
-		Roles:         roles,
-		Consents:      settings.ConsentNames(),
-		ConfigLeaf:    c.configLeaf,
+		DataField: func(p string) bool {
+			// A create rule sees the id the client chose; elsewhere data has no id.
+			if p == "id" {
+				return c.CustomID != nil
+			}
+			_, ok := c.Fields[p]
+			return ok
+		},
+		ScalarField: c.ScalarField,
+		ArrayField:  c.ArrayField,
+		DateField:   c.DateField,
+		Roles:       roles,
+		Consents:    settings.ConsentNames(),
+		ConfigLeaf:  c.configLeaf,
 	})
 	if len(errs) > 0 {
 		for i, e := range errs {

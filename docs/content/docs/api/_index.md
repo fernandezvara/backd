@@ -68,6 +68,9 @@ Every error uses the same JSON envelope. Success responses are never wrapped.
 | 400 | `invalid_json` | Body is not a single valid JSON object |
 | 400 | `validation_error` | Document fails its schema, or an `/_auth` or `/_admin` request body is invalid (`details` per path) |
 | 400 | `invalid_header` | Malformed `If-Match` header, or an [`X-Backd-On-Behalf-Of`](../auth/api-keys/#acting-on-behalf-of-a-user) header that isn't allowed or names no user of the realm |
+| 400 | `id_required` | A create in a collection with [`custom_id`](../configuration/config-dir/#custom-ids) without an `id` |
+| 400 | `invalid_id` | A create's `id` that is outside the safety envelope or the pattern, or isn't the creating user's with `custom_id: user` |
+| 400 | `id_not_allowed` | A create with an `id` in a collection that generates its ids |
 | 400 | `invalid_query` | Bad `where`, `order_by`, `limit`, `skip` or `count`, or unknown query parameter |
 | 400 | `idempotency_key_required` | A [function](../functions/calling/#idempotency) with `idempotency: required` was called with no `Idempotency-Key` |
 | 401 | `unauthenticated` | Missing, unknown, expired or revoked session token or API key, where credentials are required (see [API keys](../auth/api-keys/#who-can-access-data)) |
@@ -76,6 +79,7 @@ Every error uses the same JSON envelope. Success responses are never wrapped.
 | 404 | `not_found` | Unknown route, realm, database, collection or `id`, or a document the caller's access rules hide |
 | 405 | `method_not_allowed` | Method not supported on the route |
 | 409 | `conflict` | A unique index is violated (`details` name the fields) |
+| 409 | `id_taken` | A create with a [custom id](../api/documents/#custom-ids) that exists |
 | 409 | `write_conflict` | A PUT, PATCH or conditional DELETE lost the race against concurrent writes 3 times |
 | 409 | `email_taken` | Sign-up with an email that is already registered |
 | 409 | `request_in_progress` | A [function](../functions/calling/#idempotency) call with this `Idempotency-Key` is still running |

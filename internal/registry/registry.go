@@ -71,6 +71,7 @@ type Collection struct {
 	SoftDelete    *SoftDelete           // from collection.yaml; nil: DELETE removes the document
 	PersonalData  *PersonalData         // from collection.yaml's personal_data:; nil: owned documents, whole
 	Cache         *CachePolicy          // from collection.yaml's cache:; nil: responses are private, no-cache
+	CustomID      *CustomID             // from collection.yaml's custom_id:; nil: the server generates the ids
 	configLeaf    func(string) bool     // appConfig() in rules: whether a path is a value of the realm's configuration
 	Files         map[string]*FileField // file fields from collection.yaml's files:; their schema is already in Schema and RawSchema
 }

@@ -32,12 +32,13 @@ type PlaceInput = Realm["db"]["main"]["functions"]["place"]["input"];
 type Currency = Realm["config"]["paths"]["shop.currency"];
 ```
 
-Friendly aliases are generated too, for every collection: `MainOrders` (the document), `MainOrdersInput` (what a client may write), `MainOrdersWhere`, `MainOrdersOrderBy`. When two names would collide, the alias is left out, with a warning, and the path still works.
+Friendly aliases are generated too, for every collection: `MainOrders` (the document), `MainOrdersInput` (what a client may write; `MainOrdersCreate` for a collection with custom ids), `MainOrdersWhere`, `MainOrdersOrderBy`. When two names would collide, the alias is left out, with a warning, and the path still works.
 
 | Part | Type |
 |---|---|
 | `db.<database>.collections.<name>.doc` | The stored document: `id`, `_meta` and the fields of `schema.json`. [File fields](../../files/file-fields/) are typed as `FileDetails` |
 | `…​.input` | What a client sends: the same without `id`, `_meta` and file fields (only uploads write files) |
+| `…​.create` | What a client sends to create: `input`, plus the required `id` in a collection with [`custom_id`](../../configuration/config-dir/#custom-ids) (`MainInvoicesCreate`). The same as `input` elsewhere |
 | `…​.where` | Every queryable field with the operators its type allows: `$eq`, `$ne`, `$in`, `$nin`, `$isNull` and `$notNull` for all; `$gt`, `$gte`, `$lt`, `$lte` and `$between` for strings, numbers and dates; the text operators for strings; and `$or` and `$and` of the same type |
 | `…​.order_by` | A field, `-field`, or a comma separated list of them |
 | `db.<database>.functions.<name>` | `input` and `output` from `input.schema.json` and `output.schema.json` (`unknown` without them), `mode`, `internal` and the `calls` the function declares |

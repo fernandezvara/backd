@@ -413,6 +413,21 @@ func TestContract(t *testing.T) {
 		req("POST", a+"/"+aid+"/restore", "", ada, 403)
 	}
 
+	// Custom ids: the id is the document's, checked before the rule and the insert; repeated
+	// duplicates are held.
+	{
+		const inv = "/v1/acme/app/invoices"
+		req("POST", inv, `{"title":"a"}`, ada, 400)
+		req("POST", inv, `{"id":"nope","title":"a"}`, ada, 400)
+		req("POST", "/v1/acme/app/posts", `{"id":"mine","title":"a"}`, ada, 400)
+		req("POST", inv, `{"id":"INV-0001","title":"a"}`, ada, 201)
+		req("POST", inv, `{"id":"INV-9999","title":"a"}`, ada, 403)
+		for i := 0; i < 3; i++ {
+			req("POST", inv, `{"id":"INV-0001","title":"a"}`, ada, 409)
+		}
+		req("POST", inv, `{"id":"INV-0002","title":"a"}`, ada, 429)
+	}
+
 	// Health.
 	req("GET", "/healthz", "", nil, 200)
 	req("GET", "/readyz", "", nil, 200)

@@ -51,7 +51,7 @@ export default async function handler(ctx: Context) {
 
   let notified = 0;
   for await (const member of db.collection("members").iterate()) {
-    await ctx.call("notify", { to_user: member.user_id, kind: "digest", text });
+    await ctx.call("notify", { to_user: member.id, kind: "digest", text });
     notified++;
   }
   console.log(`digest: ${page.items.length} assets, ${notified} members notified`);
@@ -63,11 +63,13 @@ export default async function handler(ctx: Context) {
 
 ## Members in business data
 
-The digest needs "every member" — but realm users live in the **system database**, which functions can't read (it holds credentials, sessions, tokens). The honest pattern: keep a small `members` directory in business data; the app upserts its own row on sign-in, rules let anyone read it:
+The digest needs "every member" — but realm users live in the **system database**, which functions can't read (it holds credentials, sessions, tokens). The honest pattern: keep a small `members` directory in business data; the app creates its own document on sign-in, rules let anyone read it:
 
 {{< example-file path="shelf/main/members/collection.yaml" >}}
 
-{{< tutorial-files "main/_functions/digest/input.schema.json main/members/collection.yaml main/members/schema.json main/members/indexes.json" >}}
+{{< tutorial-files "main/_functions/digest/input.schema.json main/members/collection.yaml main/members/schema.json" >}}
+
+**One document per user, keyed by the user.** `custom_id: user` makes the document's id the user's own id: the app creates it with `members.create({ id: user.id, email })`, backd refuses an id that isn't the caller's (`400 invalid_id`) and a second document for the same user (`409 id_taken`), and the app reads it back with `members.get(user.id)`. Nothing else is needed to keep one per user: no `user_id` field, no unique index, and no rule comparing the field to `user.id`. (An earlier version of this chapter stored a `user_id` field and kept it unique with an index; see [custom ids](../../configuration/config-dir/#custom-ids) to move a collection like that.)
 
 Rebuild and restart (`docker compose run --rm functions-build && docker compose restart backd`).
 

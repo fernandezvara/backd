@@ -205,7 +205,8 @@ func TestParseOrderBy(t *testing.T) {
 		in   string
 		want []storage.SortField
 	}{
-		{"", []storage.SortField{{Field: "id"}}},
+		{"", []storage.SortField{{Field: "_meta.created_at"}, {Field: "id"}}},
+		{"id", []storage.SortField{{Field: "id"}}},
 		{"-age,name", []storage.SortField{{Field: "age", Desc: true}, {Field: "name"}, {Field: "id"}}},
 		{"address.city, -_meta.created_at", []storage.SortField{{Field: "address.city"}, {Field: "_meta.created_at", Desc: true}, {Field: "id"}}},
 		{"-id", []storage.SortField{{Field: "id", Desc: true}}},

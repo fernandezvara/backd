@@ -133,9 +133,11 @@ export type MainImportsWhere = {
 export type MainImportsOrderByField = "id" | "-id" | "_meta.created_at" | "-_meta.created_at" | "_meta.updated_at" | "-_meta.updated_at" | "_meta.version" | "-_meta.version" | "_meta.owner" | "-_meta.owner" | "_meta.created_by" | "-_meta.created_by" | "_meta.updated_by" | "-_meta.updated_by" | "asset_id" | "-asset_id" | "event_id" | "-event_id";
 export type MainImportsOrderBy = MainImportsOrderByField | `${MainImportsOrderByField},${string}`;
 /** main/members */
-export type MainMembers = { id: string; _meta: Meta } & { email: string; name?: string; user_id: string; [key: string]: unknown; };
+export type MainMembers = { id: string; _meta: Meta } & { email: string; name?: string; [key: string]: unknown; };
 /** main/members */
-export type MainMembersInput = { email: string; name?: string; user_id: string; [key: string]: unknown; };
+export type MainMembersInput = { email: string; name?: string; [key: string]: unknown; };
+/** main/members: the id is chosen by the client and never changes; it must be the id of the signed-in user */
+export type MainMembersCreate = { id: string } & { email: string; name?: string; [key: string]: unknown; };
 export type MainMembersWhere = {
   id?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
   "_meta.created_at"?: DateTimeString | (Ops<DateTimeString> & NullOps & RangeOps<DateTimeString>);
@@ -146,11 +148,10 @@ export type MainMembersWhere = {
   "_meta.updated_by"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
   email?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
   name?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
-  user_id?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
   $or?: Array<MainMembersWhere>;
   $and?: Array<MainMembersWhere>;
 };
-export type MainMembersOrderByField = "id" | "-id" | "_meta.created_at" | "-_meta.created_at" | "_meta.updated_at" | "-_meta.updated_at" | "_meta.version" | "-_meta.version" | "_meta.owner" | "-_meta.owner" | "_meta.created_by" | "-_meta.created_by" | "_meta.updated_by" | "-_meta.updated_by" | "email" | "-email" | "name" | "-name" | "user_id" | "-user_id";
+export type MainMembersOrderByField = "id" | "-id" | "_meta.created_at" | "-_meta.created_at" | "_meta.updated_at" | "-_meta.updated_at" | "_meta.version" | "-_meta.version" | "_meta.owner" | "-_meta.owner" | "_meta.created_by" | "-_meta.created_by" | "_meta.updated_by" | "-_meta.updated_by" | "email" | "-email" | "name" | "-name";
 export type MainMembersOrderBy = MainMembersOrderByField | `${MainMembersOrderByField},${string}`;
 /** main/notifications */
 export type MainNotifications = { id: string; _meta: Meta } & { asset_id?: string; kind: string; read_at?: DateTimeString | null; text: string; to_user: string; [key: string]: unknown; };
@@ -202,7 +203,7 @@ export interface Realm {
   db: {
     mail: {
       collections: {
-        outbox: { doc: MailOutbox; input: MailOutboxInput; where: MailOutboxWhere; order_by: MailOutboxOrderBy };
+        outbox: { doc: MailOutbox; input: MailOutboxInput; create: MailOutboxInput; where: MailOutboxWhere; order_by: MailOutboxOrderBy };
       };
       functions: {
         "email-capture": { input: unknown; output: unknown; mode: "async"; internal: true; calls: never };
@@ -211,11 +212,11 @@ export interface Realm {
     };
     main: {
       collections: {
-        assets: { doc: MainAssets; input: MainAssetsInput; where: MainAssetsWhere; order_by: MainAssetsOrderBy };
-        imports: { doc: MainImports; input: MainImportsInput; where: MainImportsWhere; order_by: MainImportsOrderBy };
-        members: { doc: MainMembers; input: MainMembersInput; where: MainMembersWhere; order_by: MainMembersOrderBy };
-        notifications: { doc: MainNotifications; input: MainNotificationsInput; where: MainNotificationsWhere; order_by: MainNotificationsOrderBy };
-        shares: { doc: MainShares; input: MainSharesInput; where: MainSharesWhere; order_by: MainSharesOrderBy };
+        assets: { doc: MainAssets; input: MainAssetsInput; create: MainAssetsInput; where: MainAssetsWhere; order_by: MainAssetsOrderBy };
+        imports: { doc: MainImports; input: MainImportsInput; create: MainImportsInput; where: MainImportsWhere; order_by: MainImportsOrderBy };
+        members: { doc: MainMembers; input: MainMembersInput; create: MainMembersCreate; where: MainMembersWhere; order_by: MainMembersOrderBy };
+        notifications: { doc: MainNotifications; input: MainNotificationsInput; create: MainNotificationsInput; where: MainNotificationsWhere; order_by: MainNotificationsOrderBy };
+        shares: { doc: MainShares; input: MainSharesInput; create: MainSharesInput; where: MainSharesWhere; order_by: MainSharesOrderBy };
       };
       functions: {
         cleanup: { input: unknown; output: unknown; mode: "async"; internal: true; calls: never };
@@ -299,12 +300,12 @@ export interface FileField<D> {
 }
 
 /** A collection of a database, typed from its schema. */
-export interface TypedCollection<D, I, W, O> {
+export interface TypedCollection<D, I, C, W, O> {
   get(id: string): Promise<D>;
   files(id: string, field: string): FileField<D>;
   list(params?: ListParams<W, O>): Promise<Page<D>>;
   iterate(params?: Omit<ListParams<W, O>, "skip" | "count">): AsyncGenerator<D, void, undefined>;
-  create(doc: I, options?: { idempotencyKey?: string }): Promise<D>;
+  create(doc: C, options?: { idempotencyKey?: string }): Promise<D>;
   replace(id: string, doc: I, options?: { ifMatch?: number | string }): Promise<D>;
   patch(id: string, patch: Partial<I>, options?: { ifMatch?: number | string }): Promise<D>;
   delete(id: string, options?: { ifMatch?: number | string }): Promise<void>;
@@ -328,6 +329,7 @@ export interface TypedDatabase<D extends DatabaseName> {
   ): TypedCollection<
     Part<Realm["db"][D]["collections"][C], "doc">,
     Part<Realm["db"][D]["collections"][C], "input">,
+    Part<Realm["db"][D]["collections"][C], "create">,
     Part<Realm["db"][D]["collections"][C], "where">,
     Part<Realm["db"][D]["collections"][C], "order_by">
   >;

@@ -45,7 +45,8 @@ All names start with `backd_`; durations are in seconds.
 | `mongodb_up` | | `1` while the last check (every 15 seconds) of MongoDB worked, `0` when it failed. |
 | `sessions_created_total` | `realm` | Sessions started by sign-up and login. |
 | `sessions_ended_total` | `realm`, `reason` | Sessions ended on purpose: `logout`, `logout_all`, `revoked`, `password_changed`, `password_reset`, `password_set`, `email_changed`, `email_reverted`, `disabled`, `deactivated`, `erased` or `deleted`. Sessions that expire on their own are not counted. |
-| `rate_limited_total` | `realm`, `scope` | Times a limit stopped someone: `login` (the throttle), `function` (a function's `rate_limit`) and `email_function`, `email_invocation`, `email_ip`, `email_recipient` (the [email limits](../../functions/email/)). |
+| `rate_limited_total` | `realm`, `scope` | Times a limit stopped someone: `login` (the throttle), `function` (a function's `rate_limit`), `duplicate_id` ([custom ids](../../api/documents/#custom-ids) that exist, held after `duplicate_limit`) and `email_function`, `email_invocation`, `email_ip`, `email_recipient` (the [email limits](../../functions/email/)). |
+| `id_conflicts_total` | `realm`, `database`, `collection` | Creates of a [custom id](../../api/documents/#custom-ids) that already exists (`409 id_taken`). |
 | `push_users_total` | `realm`, `outcome` | Users of [push sends](../../push/records/#metrics) by what planning did: `queued`, `limited`, `no_devices`, `no_consent`. |
 | `push_deliveries_total` | `realm`, `status` | Devices a delivery unit answered for: `sent`, `invalid`, `failed`. |
 | `push_devices_pruned_total` | `realm`, `reason` | Devices removed from the registry: `invalid`, `stale`, `session`, `cap`, `moved`. |

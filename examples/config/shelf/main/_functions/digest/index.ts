@@ -24,7 +24,7 @@ export default async function handler(ctx: Context) {
   let notified = 0;
   for await (const member of db.collection("members").iterate()) {
     await ctx.call("notify", {
-      to_user: member.user_id,
+      to_user: member.id,
       kind: "digest",
       text,
     });
@@ -34,7 +34,7 @@ export default async function handler(ctx: Context) {
     // mail; the others are skipped by backd and told apart as no_consent.
     await ctx.email.send({
       kind: "shelf-digest",
-      to_user: member.user_id as string,
+      to_user: member.id,
       requires_consent: "marketing",
       data: { count: page.items.length, since: since.slice(0, 10), assets: page.items.map((a) => a.title) },
     });

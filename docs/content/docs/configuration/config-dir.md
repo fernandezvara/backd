@@ -73,7 +73,7 @@ Realm, database and collection names must match `^[a-z0-9]+(?:[-_][a-z0-9]+)*$`:
 - Must be a valid JSON Schema object. `$schema` may be omitted and is then treated as draft 2020-12. Any other draft is rejected.
 - `format` keywords are asserted: for example, `"format": "email"` rejects values that aren't email addresses.
 - A `date-time` string can be stored as a real date: add `"x-backd-store": "date"` to its property (see [Dates](#dates)).
-- Must not declare or require `id`, `_id` or `_meta`. These are system-owned fields that `backd` adds to every document, and clients can never set them.
+- Must not declare or require `id`, `_id` or `_meta`. These are system-owned fields that `backd` adds to every document. Clients can't set them; the one exception is the `id` of a create in a collection with [`custom_id`](#custom-ids).
 
 Example, `shop/orders/items/schema.json`:
 
@@ -124,7 +124,7 @@ This optional file declares the collection's MongoDB indexes:
 A document without a uniquely indexed field counts as having `null` there, so only **one** document may lack it: the second is refused with `409`. Make every field with a unique index `required` in `schema.json`. And remember that a unique index tells callers that a value exists, even if its document is hidden by a [rule](../../auth/rules/).
 {{< /hint >}}
 
-Indexes are created at startup by [provisioning](../../operations/). Indexes that exist in MongoDB but aren't declared here are kept and reported as warnings. An index on `id` alone is unnecessary, because MongoDB always indexes `_id`.
+Indexes are created at startup by [provisioning](../../operations/). Indexes that exist in MongoDB but aren't declared here are kept and reported as warnings. An index on `id` alone is unnecessary, because MongoDB always indexes `_id`. Every collection also gets an index on `_meta.created_at, id` without being declared, which serves the [default order](../../api/querying/#ordering-and-pagination) of lists.
 
 {{< hint style="tip" title="Best practice" >}}
 Filtering and sorting on unindexed fields works, but scans the whole collection, which is fine for a few thousand documents and slow beyond that. Add an index for every query your application runs often, and for `_meta.owner` when [rules](../../auth/rules/) restrict access to the owner.
@@ -141,6 +141,7 @@ This optional file holds a collection's policy, in sections that can each be lef
 | `soft_delete:` | Whether deleted documents stay recoverable | [Soft delete](#soft-delete) |
 | `cache:` | Whether anonymous reads may be stored by shared caches (CDNs) | [Public caching](#public-caching) |
 | `personal_data:` | What a user's data export takes from the collection | [Personal data scope](#personal-data-scope) |
+| `custom_id:` | Collections whose documents get the id the client chooses | [Custom ids](#custom-ids) |
 | `on_owner_delete:` | What an administrator's **erase** does to the collection when a user is erased (`backd user delete`) | below |
 
 ```yaml
@@ -190,6 +191,28 @@ soft_delete:
 - **Unique indexes** from `indexes.json` get `_meta.deleted_at` as their last key, so live documents stay unique among themselves, a deleted one never clashes with anything, and documents that existed before count as live. Turning `soft_delete` on for a collection that already has a unique index builds the new index next to the old one, and `backd provision` warns about the old one: it also covers deleted documents, so **drop it** once the new one exists (`db.<collection>.dropIndex("<name>")`) or a deleted document's values stay taken. `backd` never drops an index itself.
 - **Erasing a user** still deletes, anonymizes and clears documents that are in the trash: it works on everything the user owns.
 - It doesn't need users: a realm with `auth: disabled` can soft-delete, though it has no rules to restrict the trash.
+
+### Custom ids
+
+By default the server generates a document's id. A collection can instead declare what its ids look like, for ids that mean something: an invoice number, an external reference, or the user's own id for one document per user.
+
+```yaml
+custom_id:
+  pattern: '^INV-[0-9]{4}-[0-9]{4,6}$'
+  duplicate_limit: 20      # optional: duplicate creates per caller per minute (1 to 1000, default 20)
+```
+
+```yaml
+custom_id: user            # the id must be the creating user's id (the realm needs users)
+```
+
+- **The pattern is anchored** automatically (the whole id must match), uses Go's RE2 syntax (no lookaheads or backreferences, so it can't hang a request) and has at most 512 characters. It is checked when backd starts.
+- **A safety envelope always applies**, whatever the pattern: 1 to 128 characters, only letters, digits and `-` `.` `_` `~` `:` `@`, not starting with `_` or `.` (backd's own path segments such as `_files` start with `_`), and no `..`.
+- **`backd data check`** reports stored documents whose id doesn't match the pattern (path `id`, never the value), for example after adding `custom_id` to a collection that already holds generated ids. Existing documents are never changed.
+- Collections without `custom_id` are unchanged.
+
+- **Creating** sends the id in the body of the `POST`; an id that exists is `409 id_taken`, and the `create` rule runs first and can read it as `data.id`. See [Custom ids](../../api/documents/#custom-ids).
+- **Ids never change.** To change one, create a new document and delete the old one. [Custom ids](../custom-ids/) covers when to use them, probing, personal data and changing a collection that already has documents.
 
 ### Public caching
 

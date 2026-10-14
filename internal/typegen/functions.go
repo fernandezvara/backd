@@ -48,12 +48,12 @@ export interface FileField<D> {
 }
 
 /** A collection of a database, typed from its schema. */
-export interface TypedCollection<D, I, W, O> {
+export interface TypedCollection<D, I, C, W, O> {
   get(id: string): Promise<D>;
   files(id: string, field: string): FileField<D>;
   list(params?: ListParams<W, O>): Promise<Page<D>>;
   iterate(params?: Omit<ListParams<W, O>, "skip" | "count">): AsyncGenerator<D, void, undefined>;
-  create(doc: I, options?: { idempotencyKey?: string }): Promise<D>;
+  create(doc: C, options?: { idempotencyKey?: string }): Promise<D>;
   replace(id: string, doc: I, options?: { ifMatch?: number | string }): Promise<D>;
   patch(id: string, patch: Partial<I>, options?: { ifMatch?: number | string }): Promise<D>;
   delete(id: string, options?: { ifMatch?: number | string }): Promise<void>;
@@ -77,6 +77,7 @@ export interface TypedDatabase<D extends DatabaseName> {
   ): TypedCollection<
     Part<Realm["db"][D]["collections"][C], "doc">,
     Part<Realm["db"][D]["collections"][C], "input">,
+    Part<Realm["db"][D]["collections"][C], "create">,
     Part<Realm["db"][D]["collections"][C], "where">,
     Part<Realm["db"][D]["collections"][C], "order_by">
   >;

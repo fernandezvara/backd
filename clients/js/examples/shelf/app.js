@@ -904,11 +904,11 @@ document.addEventListener('alpine:init', () => {
     async loadNames() {
       try {
         const page = await members.list({ limit: 100 })
-        this.names = Object.fromEntries(page.items.map((m) => [m.user_id, m.email]))
+        this.names = Object.fromEntries(page.items.map((m) => [m.id, m.email]))
       } catch {
         // no members collection yet (before chapter 8): cards just say nothing.
         // (One page of 100 is plenty for a demo; a real app would look up the
-        // ids on screen with `where: { user_id: { $in: [...] } }`.)
+        // ids on screen with `where: { id: { $in: [...] } }`.)
       }
     },
 
@@ -922,11 +922,12 @@ document.addEventListener('alpine:init', () => {
     async ensureMember() {
       if (!this.user) return
       try {
-        const page = await members.list({ where: { user_id: this.user.id }, limit: 1 })
-        if (page.items.length === 0) {
-          await members.create({ user_id: this.user.id, email: this.user.email })
-        } else if (page.items[0].email !== this.user.email) {
-          await members.patch(page.items[0].id, { email: this.user.email })
+        // The member's document has the user's own id (custom_id: user).
+        const mine = await members.get(this.user.id).catch((e) => (e.status === 404 ? null : Promise.reject(e)))
+        if (!mine) {
+          await members.create({ id: this.user.id, email: this.user.email })
+        } else if (mine.email !== this.user.email) {
+          await members.patch(this.user.id, { email: this.user.email })
         }
       } catch (e) {
         this.error = e.message

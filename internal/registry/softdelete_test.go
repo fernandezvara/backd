@@ -67,14 +67,14 @@ func TestSoftDeleteIndexes(t *testing.T) {
 	}
 	// Unique indexes end with the deletion time; the others are untouched; the
 	// retention adds the TTL index.
-	want := "code,_meta.deleted_at unique | total,-code | buyer_name,code,_meta.deleted_at unique | _meta.purge_at ttl"
+	want := "code,_meta.deleted_at unique | total,-code | buyer_name,code,_meta.deleted_at unique | _meta.purge_at ttl | _meta.created_at,id"
 	if strings.Join(got, " | ") != want {
 		t.Errorf("indexes:\n got %s\nwant %s", strings.Join(got, " | "), want)
 	}
 	// Without soft delete nothing changes.
 	reg, _ = softTree(t, "signup: open\n", "", "")
 	c, _ = reg.Collection("shop", "main", "orders")
-	if c.Indexes[0].String() != "code" || c.Indexes[2].String() != "buyer_name,code" || len(c.Indexes) != 3 {
+	if c.Indexes[0].String() != "code" || c.Indexes[2].String() != "buyer_name,code" || len(c.Indexes) != 4 {
 		t.Errorf("indexes without soft delete: %v", c.Indexes)
 	}
 }

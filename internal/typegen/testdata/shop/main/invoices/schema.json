@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["customer"],
+  "properties": {
+    "customer": { "type": "string" },
+    "total": { "type": "number" }
+  }
+}

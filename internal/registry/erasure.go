@@ -82,6 +82,8 @@ func (p *ErasurePolicy) IndexedFields() []string {
 type erasureDoc struct {
 	SoftDelete *softDeleteDoc `yaml:"soft_delete"`
 	Cache      *cacheDoc      `yaml:"cache"`
+	// CustomID is read by loadCustomID, before the rules; here it is only allowed.
+	CustomID *customIDDoc `yaml:"custom_id"`
 	// PersonalData overrides what a user's data export takes from the collection.
 	PersonalData *personalDataDoc `yaml:"personal_data"`
 	// Files is read by parseFiles, which checks it; here it is only allowed.

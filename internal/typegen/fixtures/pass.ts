@@ -5,6 +5,10 @@ export const place = defineFunction("main/place", async (ctx) => {
   const price = await ctx.call("price", { sku });
   const amount: number = price.amount;
   const orders = ctx.db("main").collection("orders");
+  // A collection with custom_id: the id is required on create, and only there.
+  const invoices = ctx.db("main").collection("invoices");
+  const invoice = await invoices.create({ id: "INV-2026-0001", customer: "ada" });
+  await invoices.patch(invoice.id, { total: 3 });
   const order = await orders.create({ status: "new", items: [{ sku, qty: 1 }], total: amount });
   const found = await orders.list({ where: { status: "paid", total: { $gte: 100 } }, orderBy: "-total" });
   const first = found.items[0];

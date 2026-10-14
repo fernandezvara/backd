@@ -125,6 +125,11 @@ func (d *documents) batch(w http.ResponseWriter, r *http.Request) {
 		ops[i] = op
 	}
 
+	for _, op := range ops {
+		if op.kind == "create" && op.id != "" && d.dupBlocked(w, r, op.collection) {
+			return
+		}
+	}
 	results := make([]map[string]any, len(ops))
 	err := d.store.Transact(r.Context(), func(ctx context.Context) error {
 		for i, op := range ops {
@@ -137,7 +142,7 @@ func (d *documents) batch(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	if err != nil {
-		writeBatchError(w, r, err)
+		d.writeBatchError(w, r, err, ops)
 		return
 	}
 	rendered := make([]map[string]any, len(results))
@@ -194,7 +199,15 @@ func (d *documents) parseBatchOp(w http.ResponseWriter, r *http.Request, realm, 
 	}
 	op := batchOp{index: index, kind: kind, collection: c}
 
-	if kind != "create" {
+	if kind == "create" {
+		// The id of a document in a collection with custom ids, as on a POST.
+		id, problem := newID(c, r, m)
+		if problem != nil {
+			writeError(w, r, problem.status, problem.code, fmt.Sprintf("operation %d: %s", index, problem.reason), Detail{Path: idx + ".id", Reason: problem.reason})
+			return batchOp{}, false
+		}
+		op.id = id
+	} else {
 		id, _ := m["id"].(string)
 		if id == "" {
 			writeError(w, r, http.StatusBadRequest, codeValidation, fmt.Sprintf(`operation %d: "id" is required for %s`, index, kind), Detail{Path: idx + ".id", Reason: "is required"})
@@ -275,12 +288,18 @@ func (d *documents) applyBatchOp(ctx context.Context, r *http.Request, a access,
 	repo := d.store.Repository(op.collection)
 
 	if op.kind == "create" {
+		if op.id != "" {
+			op.fields["id"] = op.id // the create rule sees data.id
+		}
 		if err := checkWrite(a, op.collection, rules.Create, nil, op.fields); err != nil {
 			return nil, err
 		}
 		now := d.timestamp()
 		doc := op.fields
-		doc["id"] = xid.New().String()
+		doc["id"] = op.id
+		if op.id == "" {
+			doc["id"] = xid.New().String()
+		}
 		meta := map[string]any{"created_at": now, "updated_at": now, "version": int64(1)}
 		stampCreate(r, meta)
 		doc["_meta"] = meta
@@ -415,7 +434,7 @@ func checkWrite(a access, c *registry.Collection, op rules.Op, document, data ma
 // writeBatchError answers a batch request from the transaction's error:
 // a *batchIndexErr names which operation failed and why; anything else
 // is an unexpected storage or transaction failure.
-func writeBatchError(w http.ResponseWriter, r *http.Request, err error) {
+func (d *documents) writeBatchError(w http.ResponseWriter, r *http.Request, err error, ops []batchOp) {
 	var ie *batchIndexErr
 	if !errors.As(err, &ie) {
 		storageError(w, r, err)
@@ -437,6 +456,8 @@ func writeBatchError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, r, http.StatusNotFound, codeNotFound, fmt.Sprintf("operation %d: document not found", ie.index), Detail{Path: idx, Reason: "document not found"})
 	case errors.Is(ie.err, storage.ErrVersionMismatch):
 		writeError(w, r, http.StatusPreconditionFailed, codeVersionMismatch, fmt.Sprintf("operation %d: %v", ie.index, ie.err), Detail{Path: idx, Reason: ie.err.Error()})
+	case isIDConflict(ie.err):
+		d.idTaken(w, r, ops[ie.index].collection, fmt.Sprintf("operation %d: a document with this id already exists", ie.index), Detail{Path: idx + ".id", Reason: "already exists"})
 	case errors.Is(ie.err, storage.ErrConflict):
 		var ce *storage.ConflictError
 		var details []Detail

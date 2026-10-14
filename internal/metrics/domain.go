@@ -13,6 +13,7 @@ type domain struct {
 	sessionsStarted *prometheus.CounterVec
 	sessionsEnded   *prometheus.CounterVec
 	rateLimited     *prometheus.CounterVec
+	idConflicts     *prometheus.CounterVec
 
 	fnCalls    *prometheus.CounterVec
 	fnTime     *prometheus.HistogramVec
@@ -54,6 +55,8 @@ func newDomain() domain {
 			"realm", "reason"),
 		rateLimited: counter("rate_limited_total",
 			"Times a limit refused or delayed someone: login (the throttle), function (a function's rate_limit) and email_<scope> (the email limits).", "realm", "scope"),
+		idConflicts: counter("id_conflicts_total",
+			"Creates of a document with a custom id that already exists (409 id_taken), by realm, database and collection.", "realm", "database", "collection"),
 		fnCalls: counter("function_invocations_total",
 			"Function runs that ended, by realm, function, mode and the executor's terminal status.", "realm", "function", "mode", "status"),
 		fnTime: prometheus.NewHistogramVec(prometheus.HistogramOpts{
@@ -70,7 +73,7 @@ func newDomain() domain {
 }
 
 func (d domain) collectors() []prometheus.Collector {
-	return []prometheus.Collector{newJobsCollector(d.jobs), d.jobsDone, d.jobsRetried, d.jobsExpired, d.refreshErrors, d.egress, d.execRuns, d.execTime, d.execRunning, d.sessionsStarted, d.sessionsEnded, d.rateLimited, d.fnCalls, d.fnTime, d.fnRefusals, d.fnReplays, d.execErrors, d.pushUsers, d.pushDeliveries, d.pushPruned}
+	return []prometheus.Collector{newJobsCollector(d.jobs), d.jobsDone, d.jobsRetried, d.jobsExpired, d.refreshErrors, d.egress, d.execRuns, d.execTime, d.execRunning, d.sessionsStarted, d.sessionsEnded, d.rateLimited, d.idConflicts, d.fnCalls, d.fnTime, d.fnRefusals, d.fnReplays, d.execErrors, d.pushUsers, d.pushDeliveries, d.pushPruned}
 }
 
 // PushUsers counts n users by what planning a push did with them.
@@ -112,6 +115,13 @@ func (m *Metrics) SessionsEnded(realm, reason string, n int64) {
 func (m *Metrics) RateLimited(realm, scope string) {
 	if m != nil {
 		m.rateLimited.WithLabelValues(realm, scope).Inc()
+	}
+}
+
+// DuplicateID counts a create that asked for an id that exists.
+func (m *Metrics) DuplicateID(realm, database, collection string) {
+	if m != nil {
+		m.idConflicts.WithLabelValues(realm, database, collection).Inc()
 	}
 }
 

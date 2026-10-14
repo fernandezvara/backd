@@ -99,3 +99,16 @@ func (c *Collection) addSoftDeleteIndexes() {
 		c.Indexes = append(c.Indexes, Index{Keys: []IndexKey{{Field: MetaPurgeAt}}, TTL: true})
 	}
 }
+
+// defaultOrderIndex is the index that serves a list without order_by, which sorts by creation
+// time and then by id (ids that clients choose have no order of their own). It is added to
+// every collection unless the collection declares the same keys.
+func (c *Collection) addDefaultOrderIndex() {
+	ix := Index{Keys: []IndexKey{{Field: "_meta.created_at"}, {Field: "id"}}}
+	for _, have := range c.Indexes {
+		if have.String() == ix.String() && !have.Unique {
+			return
+		}
+	}
+	c.Indexes = append(c.Indexes, ix)
+}

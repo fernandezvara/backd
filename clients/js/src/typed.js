@@ -26,6 +26,7 @@
  * @typedef {object} CollectionShape
  * @property {any} doc
  * @property {any} input
+ * @property {any} [create] The input of a create: with the `id` a collection with `custom_id` requires. Types generated before custom ids have none, and then `input` is used.
  * @property {any} where
  * @property {any} order_by
  */
@@ -57,7 +58,7 @@
  *   list(params?: TypedListParams<C['where'], C['order_by']>, opts?: RequestOptions): Promise<TypedPage<C['doc']>>,
  *   iterate(params?: Omit<TypedListParams<C['where'], C['order_by']>, 'skip' | 'count'>, opts?: RequestOptions): AsyncGenerator<C['doc'], void, undefined>,
  *   get(id: string, opts?: import('./data.js').GetOptions): Promise<C['doc']>,
- *   create(doc: C['input'], opts?: import('./data.js').CreateOptions): Promise<C['doc']>,
+ *   create(doc: C extends { create: infer X } ? X : C['input'], opts?: import('./data.js').CreateOptions): Promise<C['doc']>,
  *   replace(id: string, doc: C['input'], opts?: import('./data.js').WriteOptions): Promise<C['doc']>,
  *   patch(id: string, patch: Partial<C['input']>, opts?: import('./data.js').WriteOptions): Promise<C['doc']>,
  *   delete(id: string, opts?: import('./data.js').DeleteOptions): Promise<void>,

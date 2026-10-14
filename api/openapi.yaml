@@ -4459,7 +4459,11 @@ paths:
           schema: { type: string }
         - name: order_by
           in: query
-          description: Comma-separated fields; `-` prefix for descending.
+          description: >-
+            Comma-separated fields; `-` prefix for descending. Without it,
+            documents are ordered by `_meta.created_at`, then `id`: ids chosen
+            by clients have no order of their own. `id` is always the last
+            tiebreaker.
           schema: { type: string }
         - { $ref: "#/components/parameters/limit" }
         - { $ref: "#/components/parameters/skip" }
@@ -4469,8 +4473,8 @@ paths:
             The `next_cursor` of the previous page: continues the list after it,
             with the same `where` and `order_by`. Stable when documents change
             between requests and as fast on the last page as on the first, unlike
-            `skip`. Can't be combined with `skip`. For the default order it is
-            the id of the last document you saw. Refused (`400 invalid_query`,
+            `skip`. Can't be combined with `skip`. Treat it as opaque; with
+            `order_by=id` alone it is the id of the last document you saw. Refused (`400 invalid_query`,
             on `after`) for another `order_by` than the cursor's, for a cursor
             that isn't one, and for an `order_by` on arrays, objects or fields of
             mixed types, which no cursor can follow.
@@ -4497,6 +4501,15 @@ paths:
     post:
       tags: [documents]
       summary: Create a document
+      description: |
+        The server generates the id, unless the collection declares `custom_id`
+        in its collection.yaml: then the body's `id` is required and becomes the
+        document's id. Checks run in this order: the id (`400 id_required`,
+        `400 invalid_id`; `400 id_not_allowed` for an `id` sent to a collection
+        that generates ids), the `create` rule, which sees `data.id` (`403`),
+        and the insert, which never overwrites (`409 id_taken`). Repeated
+        `id_taken` answers to one caller are limited per minute with
+        `429` and `Retry-After`.
       operationId: createDocument
       security: [{}, { session: [] }, { apiKey: [] }]
       parameters:
@@ -4528,6 +4541,7 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         "415": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/{database}/{collection}/{id}:
@@ -5134,7 +5148,11 @@ paths:
           schema: { type: string }
         - name: order_by
           in: query
-          description: Comma-separated fields; `-` prefix for descending.
+          description: >-
+            Comma-separated fields; `-` prefix for descending. Without it,
+            documents are ordered by `_meta.created_at`, then `id`: ids chosen
+            by clients have no order of their own. `id` is always the last
+            tiebreaker.
           schema: { type: string }
         - { $ref: "#/components/parameters/limit" }
         - { $ref: "#/components/parameters/skip" }
@@ -5144,8 +5162,8 @@ paths:
             The `next_cursor` of the previous page: continues the list after it,
             with the same `where` and `order_by`. Stable when documents change
             between requests and as fast on the last page as on the first, unlike
-            `skip`. Can't be combined with `skip`. For the default order it is
-            the id of the last document you saw. Refused (`400 invalid_query`,
+            `skip`. Can't be combined with `skip`. Treat it as opaque; with
+            `order_by=id` alone it is the id of the last document you saw. Refused (`400 invalid_query`,
             on `after`) for another `order_by` than the cursor's, for a cursor
             that isn't one, and for an `order_by` on arrays, objects or fields of
             mixed types, which no cursor can follow.
@@ -6313,7 +6331,8 @@ components:
                 invalid_header, precondition_required, unauthenticated,
                 invalid_credentials, forbidden,
                 not_found, method_not_allowed, conflict, email_taken,
-                write_conflict, version_mismatch, payload_too_large,
+                write_conflict, version_mismatch, id_required, invalid_id,
+                id_not_allowed, id_taken, payload_too_large,
                 unsupported_media_type, too_many_requests, internal_error,
                 unavailable; for function calls also function_failed,
                 function_timeout, invalid_output, secret_missing,
@@ -7253,7 +7272,10 @@ components:
       type: object
       description: |
         The document's fields, validated against the collection's
-        schema.json. `id`, `_id` and `_meta` are ignored. So are file fields,
+        schema.json. `_id` and `_meta` are ignored, and so is `id` on `PUT` and
+        `PATCH`. On a create, `id` is the document's id in a collection that
+        declares `custom_id` (required there), and `400 id_not_allowed` in one
+        that generates ids. File fields are ignored too,
         except for a reference to a pending upload, `{"upload": "<id>", "token":
         "<token>"}` (a list of them on a `multiple` field), which attaches the
         file in this write (`POST …/_files/{field}/uploads`). On a `PUT` or `PATCH`
@@ -7286,7 +7308,9 @@ components:
       description: |
         One write, applied atomically with the batch's other operations.
         `create` and `replace` need `document`; `patch` needs `patch` (a
-        JSON Merge Patch). `replace`, `patch` and `delete` need `id`, and
+        JSON Merge Patch). `replace`, `patch` and `delete` need `id`; a
+        `create` takes one for a collection with `custom_id` (required there, the same
+        checks as a `POST`), and
         accept `if_match`: the version expected, as returned in `ETag`
         (e.g. `"3"`), or `"*"` for any existing document.
       properties:

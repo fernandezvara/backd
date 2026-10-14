@@ -137,8 +137,21 @@ func TestParseCursorRefusals(t *testing.T) {
 	}
 }
 
-func TestCursorOfTheDefaultOrderIsTheID(t *testing.T) {
+// A list without order_by sorts by creation time then id, with an opaque cursor like any other
+// order; ordering by id alone keeps the bare id as its cursor.
+func TestCursorOfTheDefaultOrder(t *testing.T) {
 	sort := sortOf(t, "")
+	c := EncodeCursor(sort, storage.Document{"id": "abc123", "_meta": map[string]any{"created_at": "2026-09-25T21:30:00.123Z"}})
+	if c == "" || c == "abc123" {
+		t.Errorf("cursor = %q, want an opaque one", c)
+	}
+	if _, err := ParseCursor(c, sort, cursorFields); err != nil {
+		t.Errorf("the default order's own cursor: %v", err)
+	}
+}
+
+func TestCursorOfTheIDOrderIsTheID(t *testing.T) {
+	sort := sortOf(t, "id")
 	if c := EncodeCursor(sort, storage.Document{"id": "abc123"}); c != "abc123" {
 		t.Errorf("cursor = %q, want the id", c)
 	}

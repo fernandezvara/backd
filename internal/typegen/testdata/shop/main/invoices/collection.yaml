@@ -1,0 +1,5 @@
+custom_id:
+  pattern: 'INV-[0-9]{4}-[0-9]{4,6}'
+rules:
+  read: user != nil
+  create: user != nil

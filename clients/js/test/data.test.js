@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createClient, ifMatchValue, VersionMismatchError } from '../src/index.js'
+import { createClient, ifMatchValue, VersionMismatchError, ConflictError, IdTakenError, InvalidIdError, ValidationError, RetryableError } from '../src/index.js'
 import { mockFetch, errorBody } from './helpers.js'
 
 const meta = { created_at: '2026-09-26T12:00:00.000Z', updated_at: '2026-09-26T12:00:00.000Z', version: 1 }
@@ -77,6 +77,27 @@ test('list passes after and returns next_cursor', async () => {
   const page = await posts(m).list({ limit: 1, after: 'prev' })
   assert.equal(m.calls[0].url.searchParams.get('after'), 'prev')
   assert.equal(page.next_cursor, 'abc')
+})
+
+test('create sends the id a collection with custom ids requires, and types its errors', async () => {
+  const m = mockFetch([
+    { status: 201, body: doc('INV-2026-0042', { total: 120 }) },
+    { status: 409, body: errorBody('id_taken', 'a document with this id already exists') },
+    { status: 400, body: errorBody('id_required', 'send id') },
+    { status: 400, body: errorBody('invalid_id', 'the id doesn\'t match the collection\'s pattern') },
+    { status: 400, body: errorBody('id_not_allowed', 'this collection generates its ids') },
+    { status: 429, body: errorBody('too_many_requests', 'slow down'), headers: { 'Retry-After': '30' } },
+  ])
+  const invoices = createClient({ url: 'http://api.test', realm: 'blog', fetch: m.fetch }).db('main').collection('invoices')
+  const created = await invoices.create({ id: 'INV-2026-0042', total: 120 })
+  assert.equal(created.id, 'INV-2026-0042')
+  assert.deepEqual(m.calls[0].body, { id: 'INV-2026-0042', total: 120 })
+
+  await assert.rejects(invoices.create({ id: 'INV-2026-0042', total: 1 }), (e) => e instanceof IdTakenError && e instanceof ConflictError && e.code === 'id_taken' && e.status === 409)
+  for (const code of ['id_required', 'invalid_id', 'id_not_allowed']) {
+    await assert.rejects(invoices.create({ total: 1 }), (e) => e instanceof InvalidIdError && e instanceof ValidationError && e.code === code)
+  }
+  await assert.rejects(invoices.create({ id: 'INV-2026-0043' }), (e) => e instanceof RetryableError && e.retryAfter === 30_000)
 })
 
 test('get, create, replace, patch and delete', async () => {
