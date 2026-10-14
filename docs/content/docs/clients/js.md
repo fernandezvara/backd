@@ -293,6 +293,25 @@ const back = await posts.restore(id, { ifMatch: gone._meta.version })  // Confli
 await posts.delete(id, { purge: true })                 // for good, under the purge rule
 ```
 
+### Custom ids
+
+A collection that declares [`custom_id`](../../configuration/config-dir/#custom-ids) takes the id from the client: pass it in the document. Nothing is overwritten, and a typed client requires it:
+
+```js
+const invoices = backd.db('billing').collection('invoices')
+await invoices.create({ id: 'INV-2026-0042', customer: 'Ada', total: 120 })
+await backd.db('main').collection('profiles').create({ id: user.id, bio: '…' })   // custom_id: user
+
+try {
+  await invoices.create({ id: 'INV-2026-0042', customer: 'Bob', total: 5 })
+} catch (err) {
+  if (err instanceof IdTakenError) pickAnotherNumber()          // 409 id_taken
+  if (err instanceof InvalidIdError) console.log(err.code)      // id_required | invalid_id | id_not_allowed
+}
+```
+
+A `429` after repeated `IdTakenError`s is a `RetryableError`: the [duplicate limit](../../api/documents/#custom-ids). `batch` creates take `id` on the operation. See [the API](../../api/documents/#custom-ids) for the order of the checks.
+
 ### Safe retries of creates
 
 `create()` and `db.batch()` take an `idempotencyKey`. The server remembers the first answer for 24 hours and returns it for the same key and body, so a retry never makes a second document (see [Safe retries](../../api/documents/#safe-retries-with-idempotency-key)). A request with a key is also retried by the client itself after a network error, `429` or `503`, when `retry` is on:
@@ -549,10 +568,12 @@ Every answer that isn't 2xx throws a `BackdError`, or one of its subclasses:
 | Class | Status | Typical `code` |
 |---|---|---|
 | `ValidationError` | 400 | `validation_error`, `invalid_json`, `invalid_query`, `invalid_header` |
+| `InvalidIdError` (a `ValidationError`) | 400 | `id_required`, `invalid_id`, `id_not_allowed`: the `id` of a [custom id](#custom-ids) create |
 | `AuthenticationError` | 401 | `unauthenticated`, `invalid_credentials` |
 | `ForbiddenError` | 403 | `forbidden` |
 | `NotFoundError` | 404 | `not_found` |
 | `ConflictError` | 409 | `email_taken`, `conflict`, `write_conflict` |
+| `IdTakenError` (a `ConflictError`) | 409 | `id_taken`: a document with that [custom id](#custom-ids) exists, and nothing was overwritten |
 | `VersionMismatchError` | 412 | `version_mismatch` |
 | `ConsentRequiredError` | 400, 403 | `consent_required`; `consents` lists what to accept, as `{ name, version }` |
 | `RetryableError` | 429, 503 | `too_many_requests`, `unavailable`; `retryAfter` in milliseconds |

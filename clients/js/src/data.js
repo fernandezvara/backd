@@ -87,7 +87,8 @@ import { Job } from './functions.js'
  * One write for `db.batch(...)`, applied atomically with the others.
  * `create` and `replace` need `document`; `patch` needs `patch` (a JSON
  * Merge Patch). `replace`, `patch` and `delete` need `id`, and accept
- * `ifMatch` (like `WriteOptions`).
+ * `ifMatch` (like `WriteOptions`). A `create` in a collection with
+ * `custom_id` carries the new document's `id`.
  * @typedef {object} BatchOperation
  * @property {'create' | 'replace' | 'patch' | 'delete'} op
  * @property {string} collection
@@ -246,7 +247,9 @@ export class Collection {
   }
 
   /**
-   * Creates a document. `id` and `_meta` are set by the server. With an
+   * Creates a document. `_meta` is set by the server, and so is `id`, unless the collection declares
+   * `custom_id`: then `doc` carries the `id` (`400 id_required` otherwise; `409 id_taken` if it
+   * exists). With an
    * `idempotencyKey`, a repeated request returns the document created by the
    * first one.
    * @param {T} doc

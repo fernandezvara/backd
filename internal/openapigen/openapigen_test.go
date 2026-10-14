@@ -308,3 +308,54 @@ func generate2(t *testing.T, reg *registry.Registry, realm string, gen func(*reg
 	}
 	return doc
 }
+
+// A collection with custom ids requires the id in the create body with its pattern, and the id
+// path parameter carries it too; a collection that generates ids is left as it was.
+func TestCustomIDsAreTypedInTheDocument(t *testing.T) {
+	reg := load(t, map[string]string{
+		"app/realm.yaml":                    "auth: enabled\nsignup: open\n",
+		"app/main/invoices/schema.json":     noteSchema,
+		"app/main/invoices/collection.yaml": "custom_id:\n  pattern: 'INV-[0-9]{4}'\nrules:\n  read: user != nil\n  create: user != nil\n  update: user != nil\n",
+		"app/main/cards/schema.json":        noteSchema,
+		"app/main/cards/collection.yaml":    "custom_id: user\nrules:\n  read: user != nil\n  create: user != nil\n",
+		"app/main/notes/schema.json":        noteSchema,
+		"app/main/notes/collection.yaml":    "rules:\n  read: user != nil\n  create: user != nil\n",
+	})
+	doc := generate(t, reg, "app")
+	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
+
+	create := schemas["MainInvoicesCreate"].(map[string]any)
+	id := create["properties"].(map[string]any)["id"].(map[string]any)
+	if id["pattern"] != "^(?:INV-[0-9]{4})$" || id["maxLength"] != float64(128) {
+		t.Errorf("id schema = %v", id)
+	}
+	if req := create["required"].([]any); req[0] != "id" {
+		t.Errorf("required = %v, want id first", req)
+	}
+	if _, has := schemas["MainInvoicesInput"].(map[string]any)["properties"].(map[string]any)["id"]; has {
+		t.Error("the input of an update has an id")
+	}
+	post := doc["paths"].(map[string]any)["/v1/app/main/invoices"].(map[string]any)["post"].(map[string]any)
+	ref := post["requestBody"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)["$ref"]
+	if ref != "#/components/schemas/MainInvoicesCreate" {
+		t.Errorf("create body = %v", ref)
+	}
+	get := doc["paths"].(map[string]any)["/v1/app/main/invoices/{id}"].(map[string]any)
+	found := false
+	for _, p := range get["parameters"].([]any) {
+		if pm := p.(map[string]any); pm["name"] == "id" {
+			found = pm["schema"].(map[string]any)["pattern"] == "^(?:INV-[0-9]{4})$"
+		}
+	}
+	if !found {
+		t.Errorf("the id path parameter has no pattern: %v", get["parameters"])
+	}
+
+	cards := schemas["MainCardsCreate"].(map[string]any)["properties"].(map[string]any)["id"].(map[string]any)
+	if _, has := cards["pattern"]; has || cards["description"] == nil {
+		t.Errorf("a user-id collection's id = %v", cards)
+	}
+	if _, has := schemas["MainNotesCreate"]; has {
+		t.Error("a collection that generates ids has a create schema of its own")
+	}
+}

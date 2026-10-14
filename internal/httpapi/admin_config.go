@@ -209,6 +209,13 @@ func collectionConfig(c *registry.Collection, rel func(string) string) map[strin
 	if c.SoftDelete != nil {
 		policy["soft_delete"] = map[string]any{"retention": dur(c.SoftDelete.Retention)}
 	}
+	if cid := c.CustomID; cid != nil {
+		view := map[string]any{"user": cid.User, "duplicate_limit": cid.DuplicateLimit}
+		if !cid.User {
+			view["pattern"] = cid.Pattern
+		}
+		policy["custom_id"] = view
+	}
 	if e := c.Erasure; e != nil {
 		policy["on_owner_delete"] = map[string]any{"action": e.Action, "remove": orStrings(e.Remove), "replace": e.Replace, "pull": e.Pull, "unset": e.Unset}
 	}

@@ -202,7 +202,7 @@ export interface Realm {
   db: {
     mail: {
       collections: {
-        outbox: { doc: MailOutbox; input: MailOutboxInput; where: MailOutboxWhere; order_by: MailOutboxOrderBy };
+        outbox: { doc: MailOutbox; input: MailOutboxInput; create: MailOutboxInput; where: MailOutboxWhere; order_by: MailOutboxOrderBy };
       };
       functions: {
         "email-capture": { input: unknown; output: unknown; mode: "async"; internal: true; calls: never };
@@ -211,11 +211,11 @@ export interface Realm {
     };
     main: {
       collections: {
-        assets: { doc: MainAssets; input: MainAssetsInput; where: MainAssetsWhere; order_by: MainAssetsOrderBy };
-        imports: { doc: MainImports; input: MainImportsInput; where: MainImportsWhere; order_by: MainImportsOrderBy };
-        members: { doc: MainMembers; input: MainMembersInput; where: MainMembersWhere; order_by: MainMembersOrderBy };
-        notifications: { doc: MainNotifications; input: MainNotificationsInput; where: MainNotificationsWhere; order_by: MainNotificationsOrderBy };
-        shares: { doc: MainShares; input: MainSharesInput; where: MainSharesWhere; order_by: MainSharesOrderBy };
+        assets: { doc: MainAssets; input: MainAssetsInput; create: MainAssetsInput; where: MainAssetsWhere; order_by: MainAssetsOrderBy };
+        imports: { doc: MainImports; input: MainImportsInput; create: MainImportsInput; where: MainImportsWhere; order_by: MainImportsOrderBy };
+        members: { doc: MainMembers; input: MainMembersInput; create: MainMembersInput; where: MainMembersWhere; order_by: MainMembersOrderBy };
+        notifications: { doc: MainNotifications; input: MainNotificationsInput; create: MainNotificationsInput; where: MainNotificationsWhere; order_by: MainNotificationsOrderBy };
+        shares: { doc: MainShares; input: MainSharesInput; create: MainSharesInput; where: MainSharesWhere; order_by: MainSharesOrderBy };
       };
       functions: {
         cleanup: { input: unknown; output: unknown; mode: "async"; internal: true; calls: never };
@@ -299,12 +299,12 @@ export interface FileField<D> {
 }
 
 /** A collection of a database, typed from its schema. */
-export interface TypedCollection<D, I, W, O> {
+export interface TypedCollection<D, I, C, W, O> {
   get(id: string): Promise<D>;
   files(id: string, field: string): FileField<D>;
   list(params?: ListParams<W, O>): Promise<Page<D>>;
   iterate(params?: Omit<ListParams<W, O>, "skip" | "count">): AsyncGenerator<D, void, undefined>;
-  create(doc: I, options?: { idempotencyKey?: string }): Promise<D>;
+  create(doc: C, options?: { idempotencyKey?: string }): Promise<D>;
   replace(id: string, doc: I, options?: { ifMatch?: number | string }): Promise<D>;
   patch(id: string, patch: Partial<I>, options?: { ifMatch?: number | string }): Promise<D>;
   delete(id: string, options?: { ifMatch?: number | string }): Promise<void>;
@@ -328,6 +328,7 @@ export interface TypedDatabase<D extends DatabaseName> {
   ): TypedCollection<
     Part<Realm["db"][D]["collections"][C], "doc">,
     Part<Realm["db"][D]["collections"][C], "input">,
+    Part<Realm["db"][D]["collections"][C], "create">,
     Part<Realm["db"][D]["collections"][C], "where">,
     Part<Realm["db"][D]["collections"][C], "order_by">
   >;

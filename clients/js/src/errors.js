@@ -93,11 +93,21 @@ export class ConsentRequiredError extends BackdError {
   }
 }
 
+/**
+ * 400 `id_required`, `invalid_id` or `id_not_allowed`: the `id` of a create is missing, isn't
+ * acceptable (`code` says which; the `details` say why) or was sent to a collection that
+ * generates its ids.
+ */
+export class InvalidIdError extends ValidationError {}
+
 /** 404: unknown realm, collection, document, user or session. */
 export class NotFoundError extends BackdError {}
 
 /** 409: a unique value already exists (`conflict`, `email_taken`) or concurrent writes (`write_conflict`). */
 export class ConflictError extends BackdError {}
+
+/** 409 `id_taken`: a document with the id of a create exists. Nothing was overwritten. */
+export class IdTakenError extends ConflictError {}
 
 /** 412: `If-Match` didn't match the current version. */
 export class VersionMismatchError extends BackdError {}
@@ -142,6 +152,25 @@ export function errorClassFor(status) {
 }
 
 /**
+ * @param {string} code
+ * @param {typeof BackdError} fallback
+ * @returns {typeof BackdError}
+ */
+function typedClass(code, fallback) {
+  switch (code) {
+    case 'consent_required':
+      return ConsentRequiredError
+    case 'id_required':
+    case 'invalid_id':
+    case 'id_not_allowed':
+      return InvalidIdError
+    case 'id_taken':
+      return IdTakenError
+  }
+  return fallback
+}
+
+/**
  * Builds the error for a non-2xx response.
  * @param {Response} res
  * @returns {Promise<BackdError>}
@@ -158,7 +187,7 @@ export async function errorFromResponse(res) {
   const Class = errorClassFor(res.status)
   const retryAfter = parseRetryAfter(res.headers.get('Retry-After'))
   const code = e.code ?? 'http_' + res.status
-  const Typed = code === 'consent_required' ? ConsentRequiredError : Class
+  const Typed = typedClass(code, Class)
   return new Typed({
     status: res.status,
     code,

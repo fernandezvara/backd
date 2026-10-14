@@ -15,6 +15,8 @@ export {
   ForbiddenError,
   NotFoundError,
   ConflictError,
+  IdTakenError,
+  InvalidIdError,
   VersionMismatchError,
   RetryableError,
   NetworkError,

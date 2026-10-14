@@ -2,6 +2,7 @@ package openapigen
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -174,6 +175,24 @@ func (b *builder) collectionAt(db string, c *registry.Collection, admin bool) {
 	}
 	b.extra[alias] = doc
 	b.extra[alias+"Input"] = input
+	// A collection with custom ids takes the id in a create's body, required.
+	createBody := alias + "Input"
+	var idSchema map[string]any
+	if cid := c.CustomID; cid != nil {
+		idSchema = map[string]any{"type": "string", "minLength": 1, "maxLength": registry.MaxIDLength}
+		if cid.User {
+			idSchema["description"] = "Chosen by the client, and never changes: it must be the id of the signed-in user creating the document."
+		} else {
+			idSchema["pattern"] = cid.Anchored()
+			idSchema["description"] = "Chosen by the client, and never changes. Letters, digits and - . _ ~ : @ only, not starting with _ or ."
+		}
+		create := deepCopy(input).(map[string]any)
+		props(create)["id"] = idSchema
+		creq, _ := create["required"].([]any)
+		create["required"] = append([]any{"id"}, creq...)
+		b.extra[alias+"Create"] = create
+		createBody = alias + "Create"
+	}
 	// Lists: the contract's page with this collection's documents.
 	list := deepCopy(b.components("schemas")["DocumentList"]).(map[string]any)
 	rewriteRefs(list, map[string]string{"#/components/schemas/Document": "#/components/schemas/" + alias})
@@ -212,7 +231,13 @@ func (b *builder) collectionAt(db string, c *registry.Collection, admin bool) {
 				delete(cp, method)
 				continue
 			}
-			rewriteRefs(op, mapping)
+			if id == "createDocument" && createBody != alias+"Input" {
+				createMapping := maps.Clone(mapping)
+				createMapping["#/components/schemas/DocumentBody"] = "#/components/schemas/" + createBody
+				rewriteRefs(op, createMapping)
+			} else {
+				rewriteRefs(op, mapping)
+			}
 			op["tags"] = []any{tag}
 			b.tags[tag] = true
 			if n, ok := opNames[id]; ok {
@@ -224,6 +249,9 @@ func (b *builder) collectionAt(db string, c *registry.Collection, admin bool) {
 		}
 		if len(operations(cp)) == 0 {
 			return
+		}
+		if idSchema != nil {
+			typeIDParam(cp, idSchema)
 		}
 		b.uniqueIDs(cp, "")
 		b.paths[path] = cp
@@ -251,6 +279,33 @@ func (b *builder) collectionAt(db string, c *registry.Collection, admin bool) {
 			}
 			path := base + strings.ReplaceAll(suffix, "{field}", field)
 			b.addFileItem(path, tag, alias+pascal(field), cp, mapping)
+		}
+	}
+}
+
+// typeIDParam gives the `id` path parameter of a path item and its operations the id schema of
+// a collection with custom ids, so a client sees what an id looks like.
+func typeIDParam(item, schema map[string]any) {
+	typed := func(list any) any {
+		params, ok := list.([]any)
+		if !ok {
+			return list
+		}
+		for i, p := range params {
+			pm, ok := p.(map[string]any)
+			if !ok || pm["$ref"] != "#/components/parameters/id" {
+				continue
+			}
+			params[i] = map[string]any{"name": "id", "in": "path", "required": true, "schema": deepCopy(schema)}
+		}
+		return params
+	}
+	if v, ok := item["parameters"]; ok {
+		item["parameters"] = typed(v)
+	}
+	for _, op := range operations(item) {
+		if v, ok := op["parameters"]; ok {
+			op["parameters"] = typed(v)
 		}
 	}
 }
