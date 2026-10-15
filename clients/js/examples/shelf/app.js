@@ -24,7 +24,7 @@
 // and up to five attachments (straight to the bucket, with a progress bar), the
 // worker makes a thumbnail of an image (a declared version), downloads are counted by the
 // `download` function, and a shared asset comes with links to its files.
-import { createClient, localStorageStorage, NotFoundError, SecondStepRequiredError, VersionMismatchError, versionStatus } from 'backd-js'
+import { createClient, expand, localStorageStorage, NotFoundError, SecondStepRequiredError, VersionMismatchError, versionStatus } from 'backd-js'
 
 /** @typedef {import('./backd/types').Realm} Realm */
 
@@ -49,6 +49,7 @@ const shares = main.collection('shares')
 const notifications = main.collection('notifications')
 const members = main.collection('members')
 const pins = main.collection('pins')
+const profiles = main.collection('profiles')
 const outbox = backd.db('mail').collection('outbox')
 
 const VIEWS = ['gallery', 'mine', 'teams', 'review', 'notifications', 'admin', 'auth', 'account']
@@ -435,6 +436,9 @@ document.addEventListener('alpine:init', () => {
           // Chapter 13: every file comes with a link, for the previews shown at
           // once. They expire (five minutes), so downloads fetch a fresh one.
           fileLinks: true,
+          // Chapter 21: each asset's author, in the same request. Only the name
+          // and the avatar come back; visitors who can't read profiles get null.
+          expand: expand(['author', ['name', 'avatar']]),
         })
         this.assets = this.assets.concat(page.items)
         this.after = page.next_cursor
@@ -1106,8 +1110,14 @@ document.addEventListener('alpine:init', () => {
     // "published by …" for an asset whose publish function stamped
     // `published_by` (the optional schema step of chapter 7); '' otherwise.
     byline(asset) {
+      const parts = []
+      // Chapter 21: the author comes with the list (`expand`), null when the
+      // profile is missing or the reader can't see it.
+      const author = asset._expanded?.author
+      if (author?.name) parts.push(`${author.avatar ? author.avatar + ' ' : ''}by ${author.name}`)
       const who = asset.published_by && this.names[asset.published_by]
-      return who ? `published by ${who}` : ''
+      if (who) parts.push(`published by ${who}`)
+      return parts.join(' · ')
     },
 
     async ensureMember() {
@@ -1120,8 +1130,18 @@ document.addEventListener('alpine:init', () => {
         } else if (mine.email !== this.user.email) {
           await members.patch(this.user.id, { email: this.user.email })
         }
+        await this.ensureProfile()
       } catch (e) {
         this.error = e.message
+      }
+    },
+
+    // Chapter 21: one profile per user (a unique index on _meta.owner keeps it
+    // to one). It starts with the name before the @; the member can change it.
+    async ensureProfile() {
+      const mine = await profiles.list({ where: { '_meta.owner': this.user.id }, limit: 1 })
+      if (mine.items.length === 0) {
+        await profiles.create({ name: this.user.email.split('@')[0] })
       }
     },
 

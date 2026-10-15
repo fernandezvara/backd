@@ -1,0 +1,11 @@
+{
+  "$comment": "How a member appears to the others (chapter 21): one profile per user. Assets point at it through the `author` reference, so a list can show who wrote each one without a request per card. The profile belongs to its owner (_meta.owner), which is how the reference finds it.",
+  "type": "object",
+  "properties": {
+    "name":   { "type": "string", "minLength": 1, "maxLength": 80, "description": "The name shown next to what the member wrote." },
+    "avatar": { "type": "string", "maxLength": 300, "description": "An initial, an emoji or a short text shown beside the name." },
+    "bio":    { "type": "string", "maxLength": 300, "description": "One line about the member." }
+  },
+  "required": ["name"],
+  "additionalProperties": false
+}

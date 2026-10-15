@@ -1,0 +1,20 @@
+# Chapter 21: a profile is what other members see of a person. The account
+# (email, password, roles) is private; a profile holds only what the person
+# chooses to show, so it can be read by every member and expanded into lists.
+rules:
+  # Every signed-in member reads every profile; anonymous visitors none, so the
+  # public gallery shows no authors (the reference expands to null there).
+  read: user != nil
+
+  # A member makes their own profile. The unique index on _meta.owner (see
+  # indexes.json) keeps it to one: a second create is a 409.
+  create: user != nil
+
+  # Only the owner changes or removes it.
+  update: user != nil && document._meta.owner == user.id
+  delete: user != nil && document._meta.owner == user.id
+
+# A profile goes with its person when they are erased: what they wrote stays,
+# and its author is an unreadable reference (null) from then on.
+on_owner_delete:
+  action: delete

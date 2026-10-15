@@ -1,7 +1,7 @@
 {
   "generator": "1",
   "realm": "shelf",
-  "fingerprint": "6ad2ea437aa2b12a7665e6a298996417f08ee917a258c7fa1cce66e229f5ff2d",
+  "fingerprint": "bc5e70cf463944e8cb6c93beb93c127eafecb8532c5b077307f075fc1dc1d7a0",
   "entries": {
     "collection mail/outbox": "",
     "collection main/assets": "",
@@ -10,6 +10,7 @@
     "collection main/members id": " user=true",
     "collection main/notifications": "",
     "collection main/pins": "",
+    "collection main/profiles": "",
     "collection main/shares": "",
     "config features.export.enabled": "boolean",
     "config maintenance.enabled": "boolean",
@@ -54,6 +55,9 @@
     "field main/pins note": "string",
     "field main/pins title": "string (required)",
     "field main/pins url": "string",
+    "field main/profiles avatar": "string",
+    "field main/profiles bio": "string",
+    "field main/profiles name": "string (required)",
     "field main/shares asset_id": "string (required)",
     "field main/shares created_by": "string | null",
     "field main/shares expires_at": "DateTimeString | null",

@@ -18,7 +18,7 @@ import { execFileSync } from 'node:child_process'
 import { createHmac } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { deflateSync } from 'node:zlib'
-import { createClient, AuthenticationError, ConflictError, ConsentRequiredError, ForbiddenError, IdTakenError, InvalidIdError, NotFoundError, SecondStepRequiredError, ValidationError, VersionMismatchError, versionStatus } from '../../src/index.js'
+import { createClient, expand, AuthenticationError, ConflictError, ConsentRequiredError, ForbiddenError, IdTakenError, InvalidIdError, NotFoundError, SecondStepRequiredError, ValidationError, VersionMismatchError, versionStatus } from '../../src/index.js'
 
 const url = process.env.BACKD_URL ?? 'http://localhost:8080'
 const PASSWORD = 'dev-p4ssw0rd!'
@@ -597,6 +597,49 @@ heading('Teams as organizations (ch20)')
     if (pinsLeft !== 0) await new Promise((r) => setTimeout(r, 300))
   }
   check('the cleanup removed the team\'s pins', pinsLeft === 0, String(pinsLeft))
+}
+
+heading('Authors through expansion (ch21)')
+{
+  const STAMP = Date.now().toString(36)
+  // One profile per member, found through the asset's owner. The member's
+  // session token is read from the client's storage to see the cost headers.
+  const profiles = main(member).collection('profiles')
+  const mine = (await profiles.list({ where: { '_meta.owner': (await member.auth.me()).id }, limit: 1 })).items[0]
+  const profile = mine ?? (await profiles.create({ name: 'Ana', avatar: '🦊' }))
+  if (mine) await profiles.patch(profile.id, { name: 'Ana', avatar: '🦊' })
+  await refused('a second profile of the same person is refused by the unique index (409)', () => profiles.create({ name: 'Ana again' }), ConflictError, '')
+
+  const asset = await main(member).collection('assets').create({ title: `Authored ${STAMP}`, kind: 'note', body: 'Written by Ana' })
+  const asMember = { Authorization: `Bearer ${await member.storage.get()}` }
+  const read = async (/** @type {string} */ query) => {
+    const res = await fetch(`${url}/v1/shelf/main/assets/${asset.id}${query}`, { headers: asMember })
+    return { res, body: /** @type {any} */ (await res.json()) }
+  }
+
+  const plain = await read('')
+  check('without expand nothing is looked up', plain.body._expanded === undefined && plain.res.headers.get('X-Backd-Expand-Queries') === null)
+  const all = await read('?expand=author')
+  check('expand returns the author next to the asset', all.body._expanded.author.name === 'Ana' && all.body._expanded.author.avatar === '🦊' && all.body._expanded.author.id === profile.id, JSON.stringify(all.body._expanded))
+  check('and the asset itself is unchanged, with its own ETag', all.body.title === asset.title && all.res.headers.get('ETag') === plain.res.headers.get('ETag') && all.res.headers.get('Cache-Control') === 'private, no-cache')
+  const cost = await read('?expand=' + expand(['author', ['name']]))
+  check('field selection returns the id and the fields asked for', JSON.stringify(Object.keys(cost.body._expanded.author).sort()) === '["id","name"]', JSON.stringify(cost.body._expanded))
+  check('the cost is in the headers: one query, one document', cost.res.headers.get('X-Backd-Expand-Queries') === '1' && cost.res.headers.get('X-Backd-Expand-Docs') === '1', `${cost.res.headers.get('X-Backd-Expand-Queries')} ${cost.res.headers.get('X-Backd-Expand-Docs')}`)
+
+  // The list asks for it once for the whole page.
+  const page = await main(member).collection('assets').list({ where: { '_meta.owner': profile._meta.owner }, expand: 'author(name)', limit: 20 })
+  check('a list expands every asset, with one query', page.items.length > 0 && page.items.every((a) => a._expanded?.author?.name === 'Ana'), JSON.stringify(page.items.map((a) => a._expanded)))
+
+  // A reference the reader can't read is null, and so is one that doesn't exist.
+  const stranger = await main(anonymous).collection('assets').get(asset.id).catch((e) => e)
+  check('a visitor needs a sign-in for the asset itself (401)', stranger instanceof AuthenticationError)
+  const wrong = await read('?expand=nope')
+  check('an unknown reference is a 400 invalid_expand that names it', wrong.res.status === 400 && wrong.body.error.code === 'invalid_expand' && String(wrong.body.error.message).includes('nope'), JSON.stringify(wrong.body))
+  await refused('where can\'t follow a reference (400 invalid_query)', () => main(member).collection('assets').list({ where: { 'author.name': 'Ana' } }), ValidationError, 'invalid_query')
+
+  // Writes keep the asset's own ETag and ignore what was expanded.
+  const patched = await main(member).collection('assets').patch(asset.id, { body: 'Edited' }, { ifMatch: asset._meta.version })
+  check('a write uses the asset\'s own version and is never expanded', patched._meta.version === asset._meta.version + 1 && patched._expanded === undefined)
 }
 
 heading('cleanup by hand (ch9)')
