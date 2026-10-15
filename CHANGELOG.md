@@ -4,6 +4,23 @@ All notable changes to `backd` and to its JavaScript client `backd-js`, which ar
 
 Until a stable release is declared, a minor release may have breaking changes; they are listed first.
 
+## 0.8.4
+
+No breaking changes, apart from two names reserved in `schema.json` (`_expanded`, `_search_lang`). No new system collections; declaring a text index or the indexes an aggregation asks for needs `backd provision` in `PROVISION_MODE=verify`.
+
+### Added
+
+- **References and expansion:** `references:` in `collection.yaml` (checked at startup: target, source field, unique key), `?expand=author(name),tags,category.parent` on a get or a list (one batched query per path and level, the target's own read rule with the caller's identity, API key scopes, identical `null`s for missing, unreadable and foreign documents, limits `BACKD_EXPAND_MAX_*`, cost headers `X-Backd-Expand-*`, never cached publicly), in functions (`ctx.db` as the caller, `ctx.admin.db` as admin) and in the JavaScript client and the testing fake.
+- **Aggregations:** `aggregate:` in `collection.yaml` and `GET …/_aggregate`: group by up to three declared fields with date buckets (day, ISO week, month, year) in an IANA time zone; count, count_distinct, sum, avg, min and max with exact decimals; the read rules applied before grouping; a fixed pipeline with a time limit, no disk use, a group cap and one request at a time per caller and collection; weak `ETag`; metrics `backd_aggregations_total` and `backd_aggregation_duration_seconds`.
+- **Full-text search:** a text index in `indexes.json` (weights, `default_language`, `language_field`, rebuilt when its declaration changes), `$search` in `where` (words, phrases, exclusions; at most 256 bytes and 10 terms), `language=`, `order_by=_relevance` with `_meta.score`, `$search` inside `_aggregate`, `422 search_too_expensive` and `503 index_building`.
+- **JavaScript client 0.8.4:** `expand()`, `aggregate()`, `search()`, `fillBuckets()`, `_expanded` and aggregations typed from the generated types, and typed errors (`InvalidExpandError`, `ExpandTooLargeError`, `AggregateNotEnabledError`, `InvalidAggregateError`, `AggregateTooExpensiveError`, `SearchNotEnabledError`, `SearchTooExpensiveError`, `IndexBuildingError`).
+- **Tutorial:** chapter 21 (authors through a reference) and chapter 22 (search and a team dashboard).
+- **Documentation:** [References and expansion](https://fernandezvara.github.io/backd/docs/api/references/), [Aggregations](https://fernandezvara.github.io/backd/docs/api/aggregations/) with best practices, the [search guide](https://fernandezvara.github.io/backd/docs/api/search/), and the security review of each in the security model.
+
+### Not yet
+
+- `_batch` read operations (it only writes), realtime refusing `$search`, and refusing encrypted fields in aggregations and text indexes wait for realtime and field encryption.
+
 ## 0.8.3
 
 No breaking changes. New system collections: `PROVISION_MODE=verify` instances need `backd provision` first.
