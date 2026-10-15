@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -20,7 +21,11 @@ type Store struct {
 
 // Repository returns the repository of a configured collection.
 func (s *Store) Repository(c *registry.Collection) storage.Repository {
-	return &Repository{coll: s.Client.Database(c.MongoDatabase).Collection(c.Name)}
+	r := &Repository{coll: s.Client.Database(c.MongoDatabase).Collection(c.Name)}
+	if c.Text != nil {
+		r.languageField = c.Text.LanguageField
+	}
+	return r
 }
 
 // Transact runs fn once inside a MongoDB transaction: every write made
@@ -43,12 +48,42 @@ func (s *Store) Transact(ctx context.Context, fn func(ctx context.Context) error
 // Repository implements storage.Repository for one MongoDB collection.
 type Repository struct {
 	coll *mongo.Collection
+	// languageField is the document field (API path) holding a locale code, for a collection
+	// whose text index has a language_field: the stored copy the index reads is kept in step
+	// on every write.
+	languageField string
+}
+
+// bsonOf converts a document for storage, adding the hidden search language the text index
+// reads when the collection declares a language_field.
+func (r *Repository) bsonOf(doc storage.Document) bson.D {
+	out := toBSON(doc)
+	if r.languageField == "" {
+		return out
+	}
+	if v, ok := lookupPath(doc, r.languageField).(string); ok && v != "" {
+		out = append(out, bson.E{Key: registry.TextSearchField, Value: registry.SearchLanguage(v)})
+	}
+	return out
+}
+
+// lookupPath reads a dot path of a document; a missing field is nil.
+func lookupPath(doc map[string]any, path string) any {
+	var cur any = map[string]any(doc)
+	for _, p := range strings.Split(path, ".") {
+		m, ok := cur.(map[string]any)
+		if !ok {
+			return nil
+		}
+		cur = m[p]
+	}
+	return cur
 }
 
 var _ storage.Repository = (*Repository)(nil)
 
 func (r *Repository) Create(ctx context.Context, doc storage.Document) error {
-	_, err := r.coll.InsertOne(ctx, toBSON(doc))
+	_, err := r.coll.InsertOne(ctx, r.bsonOf(doc))
 	return mapError(err)
 }
 
@@ -110,7 +145,7 @@ func (r *Repository) List(ctx context.Context, q storage.Query) (storage.Page, e
 
 func (r *Repository) Replace(ctx context.Context, doc storage.Document, ifVersion int64) error {
 	id, _ := doc["id"].(string)
-	res, err := r.coll.ReplaceOne(ctx, versionFilter(id, &ifVersion), toBSON(doc))
+	res, err := r.coll.ReplaceOne(ctx, versionFilter(id, &ifVersion), r.bsonOf(doc))
 	if err != nil {
 		return mapError(err)
 	}

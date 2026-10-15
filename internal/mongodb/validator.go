@@ -49,7 +49,7 @@ var annotations = map[string]bool{
 // Validator translates a collection's JSON Schema (as decoded by the
 // registry) into a MongoDB $jsonSchema document, injecting the system
 // fields _id and _meta at the top level. It never modifies schema.
-func Validator(schema map[string]any) (map[string]any, []Omission) {
+func Validator(schema map[string]any, hidden ...string) (map[string]any, []Omission) {
 	var om []Omission
 	out := translate(schema, "", &om)
 
@@ -58,6 +58,9 @@ func Validator(schema map[string]any) (map[string]any, []Omission) {
 		props = map[string]any{}
 	}
 	props["_id"] = map[string]any{"bsonType": "string"}
+	for _, h := range hidden { // server-owned fields of this collection, never in schema.json
+		props[h] = map[string]any{"bsonType": "string"}
+	}
 	props["_meta"] = map[string]any{
 		"bsonType": "object",
 		"required": []any{"created_at", "updated_at", "version"},

@@ -100,3 +100,10 @@ func testLogger() (*slog.Logger, *logBuffer) {
 	buf := &logBuffer{}
 	return slog.New(slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug})), buf
 }
+
+// Reset forgets what was logged so far.
+func (b *logBuffer) Reset() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.buf.Reset()
+}

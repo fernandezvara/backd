@@ -10,8 +10,9 @@ import (
 )
 
 type indexDecl struct {
-	Fields []string `json:"fields"`
-	Unique bool     `json:"unique"`
+	Fields []string  `json:"fields"`
+	Unique bool      `json:"unique"`
+	Text   *textDecl `json:"text"`
 }
 
 // loadIndexes reads the optional indexes.json of a collection.
@@ -28,12 +29,18 @@ func loadIndexes(c *Collection, path string) error {
 	dec.DisallowUnknownFields()
 	var decls []indexDecl
 	if err := dec.Decode(&decls); err != nil {
-		return fmt.Errorf("%s: invalid index declarations (want an array of {\"fields\": [...], \"unique\": bool}): %w", path, err)
+		return fmt.Errorf("%s: invalid index declarations (want an array of {\"fields\": [...], \"unique\": bool} and at most one {\"text\": {...}}): %w", path, err)
 	}
 
 	var errs []error
 	seen := map[string]int{}
 	for i, d := range decls {
+		if d.Text != nil {
+			if err := parseTextIndex(c, d); err != nil {
+				errs = append(errs, fmt.Errorf("%s: index %d: %w", path, i, err))
+			}
+			continue
+		}
 		ix, err := parseIndex(c, d)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: index %d: %w", path, i, err))

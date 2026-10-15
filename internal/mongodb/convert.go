@@ -7,6 +7,7 @@ import (
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 
+	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage"
 )
 
@@ -58,6 +59,9 @@ func fromBSON(d bson.D) storage.Document {
 		key := e.Key
 		if key == "_id" {
 			key = "id"
+		}
+		if key == registry.TextSearchField {
+			continue // the stored search language: never part of a document
 		}
 		out[key] = fromBSONValue(e.Value)
 	}

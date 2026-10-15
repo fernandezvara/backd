@@ -50,12 +50,12 @@ type collectionKey struct{}
 type documents struct {
 	reg            *registry.Registry
 	store          Store
-	objects        *realmObjects         // each realm's object storage (files)
-	baseURL        string                // backd's public address, for the links it signs (BACKD_URL)
-	imageMaxPixels int64                 // the instance's image pixel limit (BACKD_IMAGE_MAX_PIXELS)
-	expand         registry.ExpandLimits // reference expansion limits (BACKD_EXPAND_MAX_*), defaults filled in
+	objects        *realmObjects            // each realm's object storage (files)
+	baseURL        string                   // backd's public address, for the links it signs (BACKD_URL)
+	imageMaxPixels int64                    // the instance's image pixel limit (BACKD_IMAGE_MAX_PIXELS)
+	expand         registry.ExpandLimits    // reference expansion limits (BACKD_EXPAND_MAX_*), defaults filled in
 	aggregateLim   registry.AggregateLimits // aggregation limits (BACKD_AGGREGATE_*), defaults filled in
-	maxUpload      int64                 // the largest file a proxy upload may carry (BACKD_MAX_UPLOAD_BYTES)
+	maxUpload      int64                    // the largest file a proxy upload may carry (BACKD_MAX_UPLOAD_BYTES)
 	now            func() time.Time
 	maxBody        int64
 	opTimeout      time.Duration
