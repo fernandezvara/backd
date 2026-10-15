@@ -22,6 +22,8 @@ All runtime configuration comes from environment variables. At startup `backd` c
 | `BACKD_EXPAND_MAX_PATHS` | no | `5` | Entries of one `expand` parameter |
 | `BACKD_EXPAND_MAX_ARRAY` | no | `100` | Most ids of one `many` reference that an expansion follows; the rest is returned as `truncated`. A reference's `max_expand` may only lower it, and a higher one stops startup |
 | `BACKD_EXPAND_MAX_DOCS` | no | `2000` | Most expanded documents in one response; more is `400 expand_too_large`, before any partial data. The four values are logged at startup |
+| `BACKD_AGGREGATE_TIME` | no | `5s` | The most time one [aggregation](config-dir/#aggregations) may run (100ms to 1m). A collection's `aggregate.limits.time` may only lower it, and a higher one stops startup |
+| `BACKD_AGGREGATE_MAX_GROUPS` | no | `1000` | The most groups one aggregation may return (1 to 10000). A collection may only lower it |
 | `BACKD_IMAGE_TIMEOUT` | no | `30s` | How long a worker may take to decode one image and make all its versions; over it, the versions fail with `timeout` |
 | `BACKD_IMAGE_CONCURRENCY` | no | derived | How many images one worker process makes versions of at once. Derived from the container's limits: half the CPUs, and no more than fit in half the memory at 4 bytes per pixel of the largest allowed image (at least 1); the value in effect is logged at startup. See [sizing the worker](../files/file-fields/#sizing-the-worker) |
 | `MONGO_OP_TIMEOUT` | no | `10s` | Deadline for the storage work of each document request; exceeding it returns `503` |

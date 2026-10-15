@@ -43,6 +43,8 @@ type Config struct {
 	// Expand are the instance's reference expansion limits (BACKD_EXPAND_MAX_*); zero values
 	// mean the defaults.
 	Expand registry.ExpandLimits
+	// Aggregate are the instance's aggregation limits (BACKD_AGGREGATE_*); zero means the defaults.
+	Aggregate registry.AggregateLimits
 	// ImageTimeout and ImageConcurrency bound the workers making image versions
 	// (BACKD_IMAGE_TIMEOUT, BACKD_IMAGE_CONCURRENCY); zero is 30 seconds, and a number
 	// derived from the container's limits.
@@ -164,7 +166,7 @@ func NewHandler(cfg Config) http.Handler {
 	authRoutes.fns = fns
 	spec := &openAPI{reg: cfg.Registry}
 	if !cfg.DisableAdminAPI {
-		admin := &adminAPI{users: users, reg: cfg.Registry, fns: fns, fingerprint: cfg.ConfigFingerprint, reloadErrors: cfg.ReloadErrors, imageMaxPixels: cfg.ImageMaxPixels, expandMaxArray: cfg.Expand.OrDefault().MaxArray}
+		admin := &adminAPI{users: users, reg: cfg.Registry, fns: fns, fingerprint: cfg.ConfigFingerprint, reloadErrors: cfg.ReloadErrors, imageMaxPixels: cfg.ImageMaxPixels, expandMaxArray: cfg.Expand.OrDefault().MaxArray, aggregate: cfg.Aggregate}
 		admin.routes(r, authRoutes.resolveRealm, withTimeout(opTimeout))
 		spec.protected = noStore(authRoutes.resolveRealm(withTimeout(opTimeout)(admin.requireAdmin(admin.need(registry.RightConfig)(http.HandlerFunc(spec.serve))))))
 	}

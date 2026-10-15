@@ -44,6 +44,8 @@ type Settings struct {
 	ImageTimeout time.Duration
 	// Expand are the instance's limits for reference expansion (BACKD_EXPAND_MAX_*).
 	Expand registry.ExpandLimits
+	// Aggregate are the instance's limits for aggregations (BACKD_AGGREGATE_*).
+	Aggregate registry.AggregateLimits
 	// ImageConcurrency is how many images one worker process makes versions of at once
 	// (BACKD_IMAGE_CONCURRENCY); 0 derives it from the container's CPU and memory limits.
 	ImageConcurrency int
@@ -180,6 +182,12 @@ func Load(getenv func(string) string) (Settings, error) {
 		errs = append(errs, err)
 	} else {
 		s.Expand = l
+	}
+
+	if l, err := AggregateLimitsFrom(getenv); err != nil {
+		errs = append(errs, err)
+	} else {
+		s.Aggregate = l
 	}
 
 	if d, err := duration(getenv, "BACKD_IMAGE_TIMEOUT", "30s", false); err != nil {
@@ -412,6 +420,30 @@ func ExpandLimitsFrom(getenv func(string) string) (registry.ExpandLimits, error)
 			continue
 		}
 		*v.dst = n
+	}
+	return l, errors.Join(errs...)
+}
+
+// AggregateLimitsFrom reads the instance's aggregation limits (BACKD_AGGREGATE_TIME and
+// BACKD_AGGREGATE_MAX_GROUPS). A collection's aggregate.limits may only lower them.
+func AggregateLimitsFrom(getenv func(string) string) (registry.AggregateLimits, error) {
+	l := registry.DefaultAggregateLimits
+	var errs []error
+	if v := getenv("BACKD_AGGREGATE_TIME"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d < 100*time.Millisecond || d > time.Minute {
+			errs = append(errs, fmt.Errorf("BACKD_AGGREGATE_TIME must be a duration between 100ms and 1m, got %q", v))
+		} else {
+			l.Time = d
+		}
+	}
+	if v := getenv("BACKD_AGGREGATE_MAX_GROUPS"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 10000 {
+			errs = append(errs, fmt.Errorf("BACKD_AGGREGATE_MAX_GROUPS must be an integer between 1 and 10000, got %q", v))
+		} else {
+			l.MaxGroups = n
+		}
 	}
 	return l, errors.Join(errs...)
 }

@@ -284,6 +284,26 @@ references:
 - **Values aren't checked on write.** There is no referential integrity: a value that points at nothing is a reference to a document that doesn't exist.
 - **Requesting them** is explicit: `?expand=author(name),tags` on a read returns the referenced documents in `_expanded`, under their own collection's rules. See [References and expansion](../../api/references/) for every startup error, the syntax, the cost and the recipe.
 
+### Aggregations
+
+A collection says which of its fields can be grouped and measured by the aggregate endpoint, so the cost of a summary is designed, not discovered:
+
+```yaml
+aggregate:
+  group_by: [status, category, _meta.org, _meta.owner, _meta.created_at, paid_at]
+  metrics: [total, quantity, paid_at]
+  limits:                       # optional; can only lower the instance's values
+    time: 3s
+    max_groups: 500
+```
+
+- **Opt-in.** A collection without `aggregate:` can't be aggregated.
+- **`group_by`:** fields that hold one value: strings, booleans, numbers, enums, dates (which can be bucketed by day, week, month or year), and `_meta.owner`, `_meta.created_by`, `_meta.updated_by`, `_meta.created_at`, `_meta.updated_at`, plus `_meta.org` and `_meta.team` in collections that have them. Not arrays, objects, fields inside arrays or `id`.
+- **`metrics`:** numeric fields, and dates (for minimum and maximum), `_meta.created_at`, `_meta.updated_at` and `_meta.version`.
+- **Checked at startup** against `schema.json`, with the file and the field named. `limits.time` is a duration (at least 100ms) and `limits.max_groups` a number; both may only be lower than the instance's `BACKD_AGGREGATE_TIME` and `BACKD_AGGREGATE_MAX_GROUPS`, or startup stops.
+- **A warning at startup** names each `group_by` field that no index leads with, and the line to add to [`indexes.json`](#indexesjson): grouping by it reads every matching document, in no useful order. `backd config check` prints the same warnings.
+- The aggregate endpoint itself is described in the next steps of this feature.
+
 ### Public caching
 
 Document responses are `private, no-cache` by default: browsers keep them but revalidate with `If-None-Match`, and shared caches never store them. A collection whose content anyone may read can let a CDN serve it:

@@ -126,6 +126,13 @@ func (a *adminAPI) checkConfig(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		err = reg.CheckExpandLimits(cmp.Or(a.expandMaxArray, registry.DefaultExpandMaxArray))
 	}
+	if err == nil {
+		lim := registry.DefaultAggregateLimits
+		if a.aggregate.Time > 0 {
+			lim = a.aggregate
+		}
+		err = reg.CheckAggregateLimits(lim)
+	}
 	if err != nil {
 		for _, e := range splitErrors(err) {
 			problems = append(problems, problem(e.Error(), tmp+string(filepath.Separator)+name+string(filepath.Separator)))

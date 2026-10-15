@@ -89,6 +89,8 @@ type erasureDoc struct {
 	CustomID *customIDDoc `yaml:"custom_id"`
 	// PersonalData overrides what a user's data export takes from the collection.
 	PersonalData *personalDataDoc `yaml:"personal_data"`
+	// Aggregate is read by loadAggregate, which checks it; here it is only allowed.
+	Aggregate *aggregateDoc `yaml:"aggregate"`
 	// References is read by loadReferences, which checks it; here it is only allowed.
 	References map[string]*referenceDoc `yaml:"references"`
 	// Files is read by parseFiles, which checks it; here it is only allowed.

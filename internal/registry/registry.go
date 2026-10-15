@@ -73,6 +73,7 @@ type Collection struct {
 	Cache         *CachePolicy          // from collection.yaml's cache:; nil: responses are private, no-cache
 	CustomID      *CustomID             // from collection.yaml's custom_id:; nil: the server generates the ids
 	References    map[string]*Reference // from collection.yaml's references:, by name; nil: none
+	Aggregate     *Aggregate            // from collection.yaml's aggregate:; nil: not aggregatable
 	// Organization is collection.yaml's organization: OrgRequired, OrgOptional or OrgNone (also ""
 	// for collections loaded without the section). OnOrgDelete is OrgDelete or OrgKeep, and
 	// OwnerDeleteInOrg InOrgKeep or InOrgApply, both only with an organization.

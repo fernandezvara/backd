@@ -36,8 +36,17 @@ func configCommand(c *kli.CommandContext, fingerprintOnly bool) error {
 			err = reg.CheckExpandLimits(l.MaxArray)
 		}
 	}
+	if err == nil {
+		var l registry.AggregateLimits
+		if l, err = settings.AggregateLimitsFrom(c.Getenv); err == nil {
+			err = reg.CheckAggregateLimits(l)
+		}
+	}
 	if err != nil {
 		return fmt.Errorf("invalid config:\n%w", err)
+	}
+	for _, w := range reg.AggregateWarnings() {
+		fmt.Fprintln(c.Stderr(), "warning:", w)
 	}
 	fp, err := reg.Fingerprint()
 	if err != nil {

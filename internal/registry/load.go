@@ -412,6 +412,9 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 	if err := loadReferences(coll, filepath.Join(dir, CollectionFile)); err != nil {
 		return nil, err
 	}
+	if err := loadAggregate(coll, filepath.Join(dir, CollectionFile)); err != nil {
+		return nil, err
+	}
 	if coll.SoftDelete == nil && coll.Rules != nil {
 		for _, op := range []rules.Op{rules.Restore, rules.Purge} {
 			if coll.Rules.For(op) != nil {
