@@ -471,6 +471,23 @@ await backd.db('shop').fn('charge', { amount: 1250 }, { idempotencyKey: `order-$
 
 `fn`'s third argument also accepts `{ idempotencyKey, respondAsync, retry, signal, headers }`, same as [collections calls](#retries). `webhook` functions aren't called through `fn` — they're invoked by the sender, not the client.
 
+### Triggers
+
+A [trigger](../../configuration/config-dir/#triggers) runs an internal function when a collection's documents change, in the background and without a client in the loop, so **there is nothing to call**: the client has no `triggers` surface, by design. What the client does touch:
+
+- `backd.admin.invokeFunction('main/on-paid', { input })` runs the trigger's *function* by hand, with the input you give it. It neither fires the trigger nor needs an event: the wiring lives in the collection's `collection.yaml`, not in the function.
+- The function's input has a type, `generated` with the rest: the realm's `backd.d.ts` has `Realm['db']['main']['collections']['orders']['trigger']` for a collection with triggers (`before` and `after` are partial: only the paths the trigger's `fields` names are there).
+- Handlers should be idempotent: the same change can be delivered again after a restart. Deduplicate on the input's `id`, which is the same on every delivery of one change.
+
+```ts
+export default async function (input: Realm["db"]["main"]["collections"]["orders"]["trigger"], ctx: Ctx) {
+  const seen = ctx.admin.db("main").collection("seen_events");
+  if ((await seen.list({ where: { event_id: input.id }, limit: 1 })).items.length) return;   // a replay
+  await seen.create({ event_id: input.id });
+  // …the effect
+}
+```
+
 ## Push notifications
 
 `client.push` registers this device so that functions can push the signed-in user: `register({ platform, token })`, `devices()`, `unregister()`, `registerOnLaunch(getToken)` and, for browsers, `subscribeWeb({ registration })`, which asks for the permission and does nothing when it is denied.

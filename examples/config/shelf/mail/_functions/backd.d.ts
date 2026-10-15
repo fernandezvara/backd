@@ -251,7 +251,7 @@ export interface Realm {
   db: {
     mail: {
       collections: {
-        outbox: { doc: MailOutbox; input: MailOutboxInput; create: MailOutboxInput; where: MailOutboxWhere; order_by: MailOutboxOrderBy; expand: {}; aggregate: never };
+        outbox: { doc: MailOutbox; input: MailOutboxInput; create: MailOutboxInput; where: MailOutboxWhere; order_by: MailOutboxOrderBy; expand: {}; aggregate: never; trigger: never };
       };
       functions: {
         "email-capture": { input: unknown; output: unknown; mode: "async"; internal: true; calls: never };
@@ -260,13 +260,13 @@ export interface Realm {
     };
     main: {
       collections: {
-        assets: { doc: MainAssets; input: MainAssetsInput; create: MainAssetsInput; where: MainAssetsWhere; order_by: MainAssetsOrderBy; expand: { author: { db: "main"; collection: "profiles"; many: false }; }; aggregate: never };
-        imports: { doc: MainImports; input: MainImportsInput; create: MainImportsInput; where: MainImportsWhere; order_by: MainImportsOrderBy; expand: {}; aggregate: never };
-        members: { doc: MainMembers; input: MainMembersInput; create: MainMembersCreate; where: MainMembersWhere; order_by: MainMembersOrderBy; expand: {}; aggregate: never };
-        notifications: { doc: MainNotifications; input: MainNotificationsInput; create: MainNotificationsInput; where: MainNotificationsWhere; order_by: MainNotificationsOrderBy; expand: {}; aggregate: never };
-        pins: { doc: MainPins; input: MainPinsInput; create: MainPinsInput; where: MainPinsWhere; order_by: MainPinsOrderBy; expand: {}; aggregate: { group_by: "author" | "_meta.created_at"; dates: "_meta.created_at"; metrics: never } };
-        profiles: { doc: MainProfiles; input: MainProfilesInput; create: MainProfilesInput; where: MainProfilesWhere; order_by: MainProfilesOrderBy; expand: {}; aggregate: never };
-        shares: { doc: MainShares; input: MainSharesInput; create: MainSharesInput; where: MainSharesWhere; order_by: MainSharesOrderBy; expand: {}; aggregate: never };
+        assets: { doc: MainAssets; input: MainAssetsInput; create: MainAssetsInput; where: MainAssetsWhere; order_by: MainAssetsOrderBy; expand: { author: { db: "main"; collection: "profiles"; many: false }; }; aggregate: never; trigger: never };
+        imports: { doc: MainImports; input: MainImportsInput; create: MainImportsInput; where: MainImportsWhere; order_by: MainImportsOrderBy; expand: {}; aggregate: never; trigger: never };
+        members: { doc: MainMembers; input: MainMembersInput; create: MainMembersCreate; where: MainMembersWhere; order_by: MainMembersOrderBy; expand: {}; aggregate: never; trigger: never };
+        notifications: { doc: MainNotifications; input: MainNotificationsInput; create: MainNotificationsInput; where: MainNotificationsWhere; order_by: MainNotificationsOrderBy; expand: {}; aggregate: never; trigger: never };
+        pins: { doc: MainPins; input: MainPinsInput; create: MainPinsInput; where: MainPinsWhere; order_by: MainPinsOrderBy; expand: {}; aggregate: { group_by: "author" | "_meta.created_at"; dates: "_meta.created_at"; metrics: never }; trigger: never };
+        profiles: { doc: MainProfiles; input: MainProfilesInput; create: MainProfilesInput; where: MainProfilesWhere; order_by: MainProfilesOrderBy; expand: {}; aggregate: never; trigger: never };
+        shares: { doc: MainShares; input: MainSharesInput; create: MainSharesInput; where: MainSharesWhere; order_by: MainSharesOrderBy; expand: {}; aggregate: never; trigger: never };
       };
       functions: {
         cleanup: { input: unknown; output: unknown; mode: "async"; internal: true; calls: never };

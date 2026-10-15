@@ -896,6 +896,109 @@ export function fakeJob({ id = 'job-test', output = null } = {}) {
  * The error a callee that ran out of time makes `ctx.call` throw: fake it
  * with `fakeCall(name, () => { throw callTimedOut() })`.
  */
+/** What a trigger job's input holds, the same bounds the server applies. */
+const TRIGGER_MAX_INPUT_BYTES = 256 * 1024
+
+/** The top-level fields whose values differ, ignoring `id` and `_meta`: what `changed` holds. */
+function changedFields(before, after) {
+  const out = []
+  const seen = new Set(['id', '_id', '_meta'])
+  for (const m of [before ?? {}, after ?? {}]) {
+    for (const k of Object.keys(m)) {
+      if (seen.has(k)) continue
+      seen.add(k)
+      if (JSON.stringify((before ?? {})[k]) !== JSON.stringify((after ?? {})[k])) out.push(k)
+    }
+  }
+  return out.sort()
+}
+
+/** A document trimmed to `fields`: its `id`, `_meta` and the listed dot paths; `['*']` keeps it whole. */
+function projectBody(doc, fields) {
+  if (doc == null) return null
+  if (fields.length === 1 && fields[0] === '*') return doc
+  const out = {}
+  for (const k of ['id', '_meta']) if (k in doc) out[k] = doc[k]
+  for (const path of fields) {
+    const parts = path.split('.')
+    let src = doc
+    let dst = out
+    for (let i = 0; i < parts.length; i++) {
+      if (src == null || typeof src !== 'object' || !(parts[i] in src)) break
+      if (i === parts.length - 1) {
+        dst[parts[i]] = src[parts[i]]
+      } else {
+        dst[parts[i]] = typeof dst[parts[i]] === 'object' && dst[parts[i]] ? dst[parts[i]] : {}
+        src = src[parts[i]]
+        dst = dst[parts[i]]
+      }
+    }
+  }
+  return out
+}
+
+/**
+ * The input a trigger's function receives, as backd builds it (design: triggers, the function
+ * contract), so a handler can be tested without a replica set, a change stream or a worker:
+ *
+ *     const input = fakeTrigger({ event: 'updated', collection: 'orders', before: {...}, after: {...}, by: 'u_1', fields: ['status'] })
+ *     await handler(input, ctx)
+ *
+ * `before` and `after` are the documents as backd would give them (with `id` and `_meta`); a
+ * created document has no `before` and a removed one no `after`. `changed` is computed the way
+ * the server computes it. Bodies ride only when `fields` asks (a list of paths, or `['*']`),
+ * as with a trigger's `fields:`; `by` is only what the test gives (the server derives it from
+ * `_meta.updated_by` of a user). `depth`, `root`, `id` and `at` default to a first-party change.
+ *
+ * @param {object} o
+ * @param {'created' | 'updated' | 'removed'} o.event
+ * @param {string} [o.collection]
+ * @param {Record<string, any> | null} [o.before]
+ * @param {Record<string, any> | null} [o.after]
+ * @param {string} [o.by]
+ * @param {string[]} [o.fields]
+ * @param {string} [o.id] the event id; default a distinct test id
+ * @param {number} [o.depth]
+ * @param {string} [o.root]
+ * @param {string} [o.at]
+ * @param {string} [o.rescan] a run id: the input of a `backd triggers rescan`
+ */
+export function fakeTrigger({ event, collection = 'items', before = null, after = null, by, fields, id, depth = 0, root, at, rescan } = {}) {
+  if (!['created', 'updated', 'removed'].includes(event)) {
+    throw new Error(`fakeTrigger: event must be created, updated or removed, got ${JSON.stringify(event)}`)
+  }
+  if (event !== 'removed' && after == null) throw new Error(`fakeTrigger: a ${event} event needs an \`after\` document`)
+  if (event === 'removed' && before == null) throw new Error('fakeTrigger: a removed event needs a `before` document')
+  if (event === 'created' && before != null) throw new Error('fakeTrigger: a created event has no `before`')
+  if (event === 'removed' && after != null) throw new Error('fakeTrigger: a removed event has no `after`')
+  const subject = after ?? before
+  const version = subject?._meta?.version ?? 1
+  const eventId = id ?? `evt${nextId()}`
+  const input = {
+    id: eventId,
+    event,
+    collection,
+    doc: { id: subject?.id ?? '', version },
+    version,
+    changed: event === 'updated' ? changedFields(before, after) : [],
+    depth,
+    root: root ?? eventId,
+    at: at ?? subject?._meta?.updated_at ?? now(),
+  }
+  if (fields && fields.length > 0) {
+    input.before = projectBody(before, fields)
+    input.after = projectBody(after, fields)
+    if (JSON.stringify(input).length > TRIGGER_MAX_INPUT_BYTES) {
+      delete input.before
+      delete input.after
+      input.truncated = true
+    }
+  }
+  if (by !== undefined) input.by = by
+  if (rescan !== undefined) input.rescan = rescan
+  return input
+}
+
 export function callTimedOut() {
   return new BackdError({ status: 504, code: 'function_timeout', message: "the function didn't finish in time" })
 }
