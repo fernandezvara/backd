@@ -162,6 +162,9 @@ func (r *reloader) reload(ctx context.Context, changed []string) (*reloadEvent, 
 	if err := reg.CheckImageLimits(cur.cfg.ImageMaxPixels); err != nil {
 		return nil, fmt.Errorf("invalid config:\n%w", err)
 	}
+	if err := reg.CheckExpandLimits(cur.cfg.Expand.MaxArray); err != nil {
+		return nil, fmt.Errorf("invalid config:\n%w", err)
+	}
 	if err := r.build(ctx, reg); err != nil {
 		return nil, err
 	}

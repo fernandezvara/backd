@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/fernandezvara/backd/internal/registry"
 )
 
 // ProvisionMode controls what startup provisioning does to MongoDB.
@@ -40,6 +42,8 @@ type Settings struct {
 	ImageMaxPixels int64
 	// ImageTimeout bounds the making of one image's versions (BACKD_IMAGE_TIMEOUT).
 	ImageTimeout time.Duration
+	// Expand are the instance's limits for reference expansion (BACKD_EXPAND_MAX_*).
+	Expand ExpandLimits
 	// ImageConcurrency is how many images one worker process makes versions of at once
 	// (BACKD_IMAGE_CONCURRENCY); 0 derives it from the container's CPU and memory limits.
 	ImageConcurrency int
@@ -170,6 +174,12 @@ func Load(getenv func(string) string) (Settings, error) {
 		errs = append(errs, err)
 	} else {
 		s.ImageMaxPixels = n
+	}
+
+	if l, err := ExpandLimitsFrom(getenv); err != nil {
+		errs = append(errs, err)
+	} else {
+		s.Expand = l
 	}
 
 	if d, err := duration(getenv, "BACKD_IMAGE_TIMEOUT", "30s", false); err != nil {
@@ -373,6 +383,30 @@ func orDefault(v, def string) string {
 		return def
 	}
 	return v
+}
+
+// ExpandLimits are what a reference expansion may cost, set per instance; a collection's
+// reference may only lower them.
+type ExpandLimits struct {
+	// MaxArray is the most ids of one `many` reference an expansion follows
+	// (BACKD_EXPAND_MAX_ARRAY).
+	MaxArray int
+}
+
+// DefaultExpandLimits are the limits when the environment sets none.
+var DefaultExpandLimits = ExpandLimits{MaxArray: registry.DefaultExpandMaxArray}
+
+// ExpandLimitsFrom reads the instance's expansion limits.
+func ExpandLimitsFrom(getenv func(string) string) (ExpandLimits, error) {
+	l := DefaultExpandLimits
+	if v := getenv("BACKD_EXPAND_MAX_ARRAY"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			return l, fmt.Errorf("BACKD_EXPAND_MAX_ARRAY must be a positive integer, got %q", v)
+		}
+		l.MaxArray = n
+	}
+	return l, nil
 }
 
 // DefaultImageMaxPixels is the pixel limit for image versions when none is set.

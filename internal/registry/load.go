@@ -92,6 +92,7 @@ func Load(root string) (*Registry, error) {
 		}
 	}
 	for _, realmName := range reg.RealmNames() {
+		errs = append(errs, checkReferences(reg.Realms[realmName])...)
 		errs = append(errs, loadEmail(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadOnSignup(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadOrgHooks(reg.Realms[realmName], filepath.Join(root, realmName))...)
@@ -406,6 +407,9 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 		return nil, err
 	}
 	if err := loadErasure(coll, settings, filepath.Join(dir, CollectionFile)); err != nil {
+		return nil, err
+	}
+	if err := loadReferences(coll, filepath.Join(dir, CollectionFile)); err != nil {
 		return nil, err
 	}
 	if coll.SoftDelete == nil && coll.Rules != nil {

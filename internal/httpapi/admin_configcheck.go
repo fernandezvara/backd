@@ -123,6 +123,9 @@ func (a *adminAPI) checkConfig(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		err = reg.CheckImageLimits(cmp.Or(a.imageMaxPixels, imaging.DefaultMaxPixels))
 	}
+	if err == nil {
+		err = reg.CheckExpandLimits(cmp.Or(a.expandMaxArray, registry.DefaultExpandMaxArray))
+	}
 	if err != nil {
 		for _, e := range splitErrors(err) {
 			problems = append(problems, problem(e.Error(), tmp+string(filepath.Separator)+name+string(filepath.Separator)))

@@ -30,6 +30,12 @@ func configCommand(c *kli.CommandContext, fingerprintOnly bool) error {
 			err = reg.CheckImageLimits(max)
 		}
 	}
+	if err == nil {
+		var l settings.ExpandLimits
+		if l, err = settings.ExpandLimitsFrom(c.Getenv); err == nil {
+			err = reg.CheckExpandLimits(l.MaxArray)
+		}
+	}
 	if err != nil {
 		return fmt.Errorf("invalid config:\n%w", err)
 	}

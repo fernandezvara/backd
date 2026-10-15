@@ -40,6 +40,9 @@ type Config struct {
 	// (BACKD_IMAGE_MAX_PIXELS); a file field's max_pixels may only be lower. Zero
 	// means 40 million.
 	ImageMaxPixels int64
+	// ExpandMaxArray is the instance's limit on the ids of one reference an expansion follows
+	// (BACKD_EXPAND_MAX_ARRAY); 0 means the default.
+	ExpandMaxArray int
 	// ImageTimeout and ImageConcurrency bound the workers making image versions
 	// (BACKD_IMAGE_TIMEOUT, BACKD_IMAGE_CONCURRENCY); zero is 30 seconds, and a number
 	// derived from the container's limits.
@@ -161,7 +164,7 @@ func NewHandler(cfg Config) http.Handler {
 	authRoutes.fns = fns
 	spec := &openAPI{reg: cfg.Registry}
 	if !cfg.DisableAdminAPI {
-		admin := &adminAPI{users: users, reg: cfg.Registry, fns: fns, fingerprint: cfg.ConfigFingerprint, reloadErrors: cfg.ReloadErrors, imageMaxPixels: cfg.ImageMaxPixels}
+		admin := &adminAPI{users: users, reg: cfg.Registry, fns: fns, fingerprint: cfg.ConfigFingerprint, reloadErrors: cfg.ReloadErrors, imageMaxPixels: cfg.ImageMaxPixels, expandMaxArray: cfg.ExpandMaxArray}
 		admin.routes(r, authRoutes.resolveRealm, withTimeout(opTimeout))
 		spec.protected = noStore(authRoutes.resolveRealm(withTimeout(opTimeout)(admin.requireAdmin(admin.need(registry.RightConfig)(http.HandlerFunc(spec.serve))))))
 	}
