@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/fernandezvara/backd/internal/registry"
 )
 
 func env(m map[string]string) func(string) string {
@@ -20,7 +22,7 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := Settings{ConfigDir: "/cfg", MongoURI: "mongodb://m", HTTPAddr: ":8080", ProvisionMode: ProvisionApply, LogLevel: slog.LevelInfo, MaxBodyBytes: 1 << 20, MaxUploadBytes: 100 << 20, ImageMaxPixels: 40_000_000, ImageTimeout: 30 * time.Second,
+	want := Settings{ConfigDir: "/cfg", MongoURI: "mongodb://m", HTTPAddr: ":8080", ProvisionMode: ProvisionApply, LogLevel: slog.LevelInfo, MaxBodyBytes: 1 << 20, MaxUploadBytes: 100 << 20, ImageMaxPixels: 40_000_000, ImageTimeout: 30 * time.Second, Expand: registry.DefaultExpandLimits,
 		MongoOpTimeout: 10 * time.Second, ShutdownTimeout: 15 * time.Second, AdminUIIdle: 30 * time.Minute, InternalAddr: ":8081", WorkerConcurrency: 10}
 	if !reflect.DeepEqual(s, want) {
 		t.Errorf("got %+v, want %+v", s, want)
@@ -265,6 +267,21 @@ func TestImageWorkerSettings(t *testing.T) {
 	for k, v := range map[string]string{"BACKD_IMAGE_TIMEOUT": "soon", "BACKD_IMAGE_CONCURRENCY": "0"} {
 		if _, err := Load(env(map[string]string{"CONFIG_DIR": "/c", "MONGO_URI": "m", k: v})); err == nil || !strings.Contains(err.Error(), k) {
 			t.Errorf("%s=%s: %v", k, v, err)
+		}
+	}
+}
+
+func TestExpandLimits(t *testing.T) {
+	if l, err := ExpandLimitsFrom(env(nil)); err != nil || l != registry.DefaultExpandLimits {
+		t.Fatalf("default = %+v, %v", l, err)
+	}
+	l, err := ExpandLimitsFrom(env(map[string]string{"BACKD_EXPAND_MAX_ARRAY": "25", "BACKD_EXPAND_MAX_DEPTH": "1", "BACKD_EXPAND_MAX_PATHS": "3", "BACKD_EXPAND_MAX_DOCS": "500"}))
+	if want := (registry.ExpandLimits{MaxDepth: 1, MaxPaths: 3, MaxArray: 25, MaxDocs: 500}); err != nil || l != want {
+		t.Fatalf("set = %+v, %v", l, err)
+	}
+	for _, kv := range [][2]string{{"BACKD_EXPAND_MAX_ARRAY", "0"}, {"BACKD_EXPAND_MAX_DOCS", "-3"}, {"BACKD_EXPAND_MAX_PATHS", "many"}, {"BACKD_EXPAND_MAX_DEPTH", "3"}} {
+		if _, err := ExpandLimitsFrom(env(map[string]string{kv[0]: kv[1]})); err == nil || !strings.Contains(err.Error(), kv[0]) {
+			t.Errorf("%s=%s: err = %v", kv[0], kv[1], err)
 		}
 	}
 }

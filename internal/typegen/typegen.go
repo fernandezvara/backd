@@ -162,7 +162,7 @@ func (g *gen) realm(rl *registry.Realm, o Options) string {
 		for _, c := range cols {
 			g.entries["collection "+dbName+"/"+c.Name] = ""
 			doc, input, create, where, order := g.collection(&types, dbName, c)
-			fmt.Fprintf(&tree, "        %s: { doc: %s; input: %s; create: %s; where: %s; order_by: %s };\n", member(c.Name), doc, input, create, where, order)
+			fmt.Fprintf(&tree, "        %s: { doc: %s; input: %s; create: %s; where: %s; order_by: %s; expand: %s };\n", member(c.Name), doc, input, create, where, order, expandRefs(c))
 		}
 		tree.WriteString("      };\n      functions: {\n")
 		if db.Functions != nil {
@@ -463,4 +463,20 @@ func (g *gen) function(w *strings.Builder, db string, fn *registry.Function) str
 	g.entries["function "+db+"/"+fn.Name+" mode"] = fn.Mode
 	g.entries["function "+db+"/"+fn.Name+" internal"] = fmt.Sprint(fn.Internal)
 	return fmt.Sprintf("{ input: %s; output: %s; mode: %q; internal: %t; calls: %s }", in, out, fn.Mode, fn.Internal, callsT)
+}
+
+// expandRefs renders a collection's declared references: the collection each name leads to and
+// whether it holds many, which is what the types of `_expanded` are derived from.
+func expandRefs(c *registry.Collection) string {
+	if len(c.References) == 0 {
+		return "{}"
+	}
+	var b strings.Builder
+	b.WriteString("{ ")
+	for _, name := range slices.Sorted(keys(c.References)) {
+		ref := c.References[name]
+		fmt.Fprintf(&b, "%s: { db: %q; collection: %q; many: %t }; ", member(name), ref.Database, ref.Collection, ref.Many)
+	}
+	b.WriteString("}")
+	return b.String()
 }

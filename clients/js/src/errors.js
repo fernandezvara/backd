@@ -125,6 +125,20 @@ export class NotTeamMemberError extends ForbiddenError {}
  */
 export class TeamError extends ValidationError {}
 
+/**
+ * 400 `invalid_expand`: the `expand` of a read names a reference the collection doesn't declare,
+ * a field the target doesn't have, goes too deep, has too many entries or isn't well formed. The
+ * `details` name the part.
+ */
+export class InvalidExpandError extends ValidationError {}
+
+/**
+ * 400 `expand_too_large`: the expansion would return more documents than the server allows
+ * (`BACKD_EXPAND_MAX_DOCS`); nothing partial is returned. Ask for fewer references, a smaller
+ * `limit` or fewer documents.
+ */
+export class ExpandTooLargeError extends ValidationError {}
+
 /** 403 `not_org_member`: not a member of the organization, or there is no such organization. */
 export class NotOrgMemberError extends ForbiddenError {}
 
@@ -210,6 +224,10 @@ function typedClass(code, fallback) {
       return NotOrgMemberError
     case 'last_org_manager':
       return LastOrgManagerError
+    case 'invalid_expand':
+      return InvalidExpandError
+    case 'expand_too_large':
+      return ExpandTooLargeError
   }
   return fallback
 }

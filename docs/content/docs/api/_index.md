@@ -71,6 +71,8 @@ Every error uses the same JSON envelope. Success responses are never wrapped.
 | 400 | `id_required` | A create in a collection with [`custom_id`](../configuration/config-dir/#custom-ids) without an `id` |
 | 400 | `invalid_id` | A create's `id` that is outside the safety envelope or the pattern, or isn't the creating user's with `custom_id: user` |
 | 400 | `id_not_allowed` | A create with an `id` in a collection that generates its ids |
+| 400 | `invalid_expand` | An `expand` that names an unknown reference or field, goes too deep, has too many entries or is malformed; the details name the part. See [Expanding references](documents/#expanding-references) |
+| 400 | `expand_too_large` | An `expand` that would return more documents than the instance allows; nothing partial is returned |
 | 400 | `invalid_query` | Bad `where`, `order_by`, `limit`, `skip` or `count`, or unknown query parameter |
 | 400 | `idempotency_key_required` | A [function](../functions/calling/#idempotency) with `idempotency: required` was called with no `Idempotency-Key` |
 | 401 | `unauthenticated` | Missing, unknown, expired or revoked session token or API key, where credentials are required (see [API keys](../auth/api-keys/#who-can-access-data)) |

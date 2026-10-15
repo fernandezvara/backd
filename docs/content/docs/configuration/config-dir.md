@@ -250,6 +250,40 @@ on_team_delete:
 
 `_meta.team` is a system field like `_meta.org`: it can be queried (`?team=<id>` is the shorthand), sorted and used in `indexes.json`, and `backd provision` adds the index `(_meta.org, _meta.team, _meta.created_at, id)` for the lists of one team. It is server-owned: set at creation with `?team=<id>` (next to `?org=`), by a member of the team or a holder of a [team role](../../organizations/team-roles/) in it, and fixed afterwards (administrators move documents with the [transfer](../../api/documents/#fixing-data-as-an-administrator)). `on_team_delete` is required next to `team`: `delete` removes the team's documents when it is deleted (a job, in batches), `keep` leaves them with the old team id, readable through organization-level rules. [Access rules](../../auth/rules/#organizations) read it with `inTeam` and `hasTeamRole`.
 
+### References
+
+Documents often point at other documents: a post's category, an invoice's customer, an item's owner. A collection can **declare** these relations so that backd knows them, checks them when it starts, and can later return the referenced documents next to the result.
+
+```yaml
+references:
+  category:                      # the field "category" holds the id of a categories document
+    collection: categories
+  tags:
+    collection: tags
+    many: true                   # the field is an array of ids
+    max_expand: 20               # optional: follow at most 20 of them
+  author:                        # the owner's profile
+    field: _meta.owner
+    collection: profiles
+    key: _meta.owner             # profiles has a unique index on _meta.owner
+  customer:
+    collection: customers
+    database: crm                # another database of the same realm
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `collection` | required | the collection the values point to |
+| `field` | the reference's name | where the value is in this collection: a declared string field (an array of strings with `many`), `_meta.owner` or `_meta.created_by` |
+| `database` | this database | the database of the target, which must be in the same realm |
+| `key` | `id` | the field of the target that equals the value; anything but `id` needs a **unique** index of its own in the target's `indexes.json` |
+| `many` | `false` | the source is an array of values |
+| `max_expand` | the instance's value | follow at most this many ids of the array (only with `many`); it can only lower `BACKD_EXPAND_MAX_ARRAY` |
+
+- **Checked at startup**, with the file, the reference's name and what to fix: the target database and collection exist in the realm, the source is a declared string field (or an array of strings with `many`), `key` is unique, the name isn't another field of the schema, and `max_expand` isn't above the instance's limit.
+- **Values aren't checked on write.** There is no referential integrity: a value that points at nothing is a reference to a document that doesn't exist.
+- **Requesting them** is explicit: `?expand=author(name),tags` on a read returns the referenced documents in `_expanded`, under their own collection's rules. See [References and expansion](../../api/references/) for every startup error, the syntax, the cost and the recipe.
+
 ### Public caching
 
 Document responses are `private, no-cache` by default: browsers keep them but revalidate with `If-None-Match`, and shared caches never store them. A collection whose content anyone may read can let a CDN serve it:

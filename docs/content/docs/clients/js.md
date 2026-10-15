@@ -293,6 +293,28 @@ const back = await posts.restore(id, { ifMatch: gone._meta.version })  // Confli
 await posts.delete(id, { purge: true })                 // for good, under the purge rule
 ```
 
+### Expanding references
+
+A collection that [declares references](../../configuration/config-dir/#references) can return the referenced documents next to the result. You ask for them with `expand`, on `get`, `list` and `iterate`; the client never adds it by itself:
+
+```js
+import { expand } from 'backd-js'
+
+const page = await posts.list({
+  expand: expand(['author', ['name', 'avatar']], 'tags'),   // "author(name,avatar),tags", or write the string
+  limit: 20,
+})
+const post = page.items[0]
+post._expanded?.author       // { id, name, avatar }, or null when missing or not readable by this user
+post._expanded?.tags         // [{ id, ... }, null, ...] (positions kept), or { items, truncated: true }
+```
+
+- **`expand(...)`** takes names (`'author'`, `'author.company'` for a second level) and `[name, [fields]]` pairs, and checks their form; the server checks them against the config.
+- **`null`** is the same for a document that doesn't exist, one the user can't read and one of another organization. In a typed client (below) `_expanded` is typed from the collection the reference leads to: `T | null`, the selected fields optional, and `truncated` for arrays.
+- **Errors** are `InvalidExpandError` (`invalid_expand`: the `details` name the part) and `ExpandTooLargeError` (`expand_too_large`: ask for less). Both are `ValidationError`s. The [cost headers and limits](../../api/documents/#expanding-references) are the server's.
+- **It isn't cached by the server**, and your [revalidation cache](#revalidation-cache) always asks again for an expanded read.
+- **Functions** have it too: `ctx.db.collection('posts').get(id, { expand: 'author(name)' })`.
+
 ### Custom ids
 
 A collection that declares [`custom_id`](../../configuration/config-dir/#custom-ids) takes the id from the client: pass it in the document. Nothing is overwritten, and a typed client requires it:
@@ -501,7 +523,7 @@ const r = await client.db("main").fn("place", { items });    // typed input and 
 client.config.get("shop.currency");                          // "eur" | "usd" | undefined
 ```
 
-- **What's typed:** databases and collections by name, documents (with `_meta` and [file details](../../files/file-fields/)), what `create`, `replace` and `patch` accept, `where` (fields, and the operators each type allows) and `orderBy`, function calls (input, and result or [job](#functions) by mode; internal functions have no route and aren't offered) and configuration paths.
+- **What's typed:** databases and collections by name, documents (with `_meta` and [file details](../../files/file-fields/), and `_expanded` for the [references](#expanding-references) a collection declares), what `create`, `replace` and `patch` accept, `where` (fields, and the operators each type allows) and `orderBy`, function calls (input, and result or [job](#functions) by mode; internal functions have no route and aren't offered) and configuration paths.
 - **Without the type parameter** everything works untyped, as before. The runtime package is the same for every realm.
 - **Stale-types warning (development).** Pass `types` the fingerprint from `realm.json`, and the client sends it as `X-Backd-Types`; when the server's config has moved on it answers `X-Backd-Types-Stale: true` and the client warns once on the console (or calls `onStaleTypes`). Nothing is refused. Send it only in development builds; without `types`, no header is sent. The fingerprint covers the whole realm, so generate without `--db`, or the warning never goes away.
 
@@ -625,6 +647,7 @@ Every answer that isn't 2xx throws a `BackdError`, or one of its subclasses:
 | `NotOrgMemberError`, `OrgRequiresMFAError`, `OrgRoleRequiresMFAError` (`ForbiddenError`s) | 403 | `not_org_member` (also for an unknown organization), `org_requires_mfa`, `org_role_requires_mfa` (`details` names the role) |
 | `NotTeamMemberError` (a `ForbiddenError`) | 403 | `not_team_member`: not a member of the team and no team role there (the same for an unknown team) |
 | `TeamError` (a `ValidationError`) | 400 | `team_required`, `team_not_allowed` |
+| `InvalidExpandError`, `ExpandTooLargeError` (`ValidationError`s) | 400 | `invalid_expand` (`details` name the part), `expand_too_large`: see [expanding references](#expanding-references) |
 | `LastOrgManagerError` (a `ConflictError`) | 409 | `last_org_manager`: the organization needs someone who can manage it |
 | `VersionMismatchError` | 412 | `version_mismatch` |
 | `ConsentRequiredError` | 400, 403 | `consent_required`; `consents` lists what to accept, as `{ name, version }` |

@@ -2,6 +2,7 @@ package openapigen
 
 import (
 	"encoding/json"
+	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
@@ -248,6 +249,7 @@ func (b *builder) collectionAt(db string, c *registry.Collection, admin bool) {
 			dropParams(op, "realm", "database", "collection")
 			orgParam(op, id, c)
 			teamParam(op, id, c)
+			expandParam(op, id, c)
 		}
 		if len(operations(cp)) == 0 {
 			return
@@ -434,6 +436,25 @@ func teamParam(op map[string]any, id string, c *registry.Collection) {
 		"description": "The team of the documents: where a create puts the document (the caller must belong to the team or hold a team role in it, and name `org`), or a filter on `_meta.team` for a list.",
 	}
 	op["parameters"] = append([]any{param}, anySlice(op["parameters"])...)
+}
+
+// expandParam gives a read the `expand` parameter of the collection's own references: none for
+// a collection that declares none, and the names it can take for one that does.
+func expandParam(op map[string]any, id string, c *registry.Collection) {
+	dropParams(op, "expand")
+	if len(c.References) == 0 || (id != "getDocument" && id != "listDocuments") {
+		return
+	}
+	var list []string
+	for _, name := range slices.Sorted(maps.Keys(c.References)) {
+		ref := c.References[name]
+		list = append(list, fmt.Sprintf("`%s` (%s/%s)", name, ref.Database, ref.Collection))
+	}
+	param := map[string]any{
+		"name": "expand", "in": "query", "required": false, "schema": map[string]any{"type": "string"},
+		"description": "References to return in `_expanded`, with the fields to return of each in parentheses: `name(field,field)`, and `name.nested` for a reference of the referenced collection. This collection declares: " + strings.Join(list, ", ") + ".",
+	}
+	op["parameters"] = append(anySlice(op["parameters"]), param)
 }
 
 func anySlice(v any) []any {

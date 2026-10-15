@@ -30,6 +30,8 @@ type adminAPI struct {
 	reloadErrors func() []string // why the last live reload failed (BACKD_DEV); nil without one
 	// imageMaxPixels is the instance's image pixel limit, which a config check applies to the draft.
 	imageMaxPixels int64
+	// expandMaxArray is the instance's per-array expansion limit, which a config check applies.
+	expandMaxArray int
 }
 
 type adminUserKey struct{}

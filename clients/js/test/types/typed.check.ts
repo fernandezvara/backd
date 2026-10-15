@@ -1,7 +1,7 @@
 // Type-level tests, checked by `npm run typecheck` (tsc): the calls below must compile, and each
 // line marked with the expect-error directive must fail to compile, or tsc reports it as unused.
 // realm.d.ts is what `backd types` generates for internal/typegen/testdata/shop.
-import { createClient } from '../../src/index.js'
+import { createClient, expand } from '../../src/index.js'
 import type { Realm } from './realm.js'
 
 const client = createClient<Realm>({ url: 'https://api.example.com', realm: 'shop' })
@@ -29,7 +29,14 @@ export async function typed() {
   await invoices.replace(invoice.id, { customer: 'ada' })
 
   const currency: 'eur' | 'usd' | undefined = client.config.get('shop.currency')
-  return [status, note, city, receipt, id, currency]
+
+  // References are expanded only on request, into _expanded, typed from the collection they lead to.
+  const expanded = await orders.get('o_1', { expand: expand(['invoice', ['customer']], 'related') })
+  const linked: { id: string; customer?: string } | null | undefined = expanded._expanded?.invoice
+  const related = expanded._expanded?.related
+  const firstRelated: string | undefined = Array.isArray(related) ? related[0]?.status : related?.items[0]?.status
+  const second = Array.isArray(related) ? related[0]?._expanded?.invoice?.customer : undefined
+  return [status, note, city, receipt, id, currency, linked, firstRelated, second]
 }
 
 // @ts-expect-error unknown database
@@ -67,3 +74,5 @@ export const myOrgs = client.orgs.list()
 // Untyped, nothing changes.
 const plain = createClient({ url: 'https://api.example.com', realm: 'shop' })
 export const anything = plain.db('whatever').collection('anything').list({ where: { a: 1 } })
+// @ts-expect-error a reference the collection doesn't declare
+orders.get('o_1').then((o) => o._expanded?.nope)

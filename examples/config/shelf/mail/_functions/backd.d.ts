@@ -201,6 +201,26 @@ export type MainPinsWhere = {
 };
 export type MainPinsOrderByField = "id" | "-id" | "_meta.created_at" | "-_meta.created_at" | "_meta.updated_at" | "-_meta.updated_at" | "_meta.version" | "-_meta.version" | "_meta.owner" | "-_meta.owner" | "_meta.created_by" | "-_meta.created_by" | "_meta.updated_by" | "-_meta.updated_by" | "_meta.org" | "-_meta.org" | "author" | "-author" | "note" | "-note" | "title" | "-title" | "url" | "-url";
 export type MainPinsOrderBy = MainPinsOrderByField | `${MainPinsOrderByField},${string}`;
+/** main/profiles */
+export type MainProfiles = { id: string; _meta: Meta } & { avatar?: string; bio?: string; name: string; };
+/** main/profiles */
+export type MainProfilesInput = { avatar?: string; bio?: string; name: string; };
+export type MainProfilesWhere = {
+  id?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "_meta.created_at"?: DateTimeString | (Ops<DateTimeString> & NullOps & RangeOps<DateTimeString>);
+  "_meta.updated_at"?: DateTimeString | (Ops<DateTimeString> & NullOps & RangeOps<DateTimeString>);
+  "_meta.version"?: number | (Ops<number> & NullOps & RangeOps<number>);
+  "_meta.owner"?: (string | null) | (Ops<(string | null)> & NullOps & RangeOps<string> & TextOps);
+  "_meta.created_by"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "_meta.updated_by"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  avatar?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  bio?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  name?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  $or?: Array<MainProfilesWhere>;
+  $and?: Array<MainProfilesWhere>;
+};
+export type MainProfilesOrderByField = "id" | "-id" | "_meta.created_at" | "-_meta.created_at" | "_meta.updated_at" | "-_meta.updated_at" | "_meta.version" | "-_meta.version" | "_meta.owner" | "-_meta.owner" | "_meta.created_by" | "-_meta.created_by" | "_meta.updated_by" | "-_meta.updated_by" | "avatar" | "-avatar" | "bio" | "-bio" | "name" | "-name";
+export type MainProfilesOrderBy = MainProfilesOrderByField | `${MainProfilesOrderByField},${string}`;
 /** main/shares */
 export type MainShares = { id: string; _meta: Meta } & { asset_id: string; created_by?: string | null; expires_at?: DateTimeString | null; token: string; [key: string]: unknown; };
 /** main/shares */
@@ -229,7 +249,7 @@ export interface Realm {
   db: {
     mail: {
       collections: {
-        outbox: { doc: MailOutbox; input: MailOutboxInput; create: MailOutboxInput; where: MailOutboxWhere; order_by: MailOutboxOrderBy };
+        outbox: { doc: MailOutbox; input: MailOutboxInput; create: MailOutboxInput; where: MailOutboxWhere; order_by: MailOutboxOrderBy; expand: {} };
       };
       functions: {
         "email-capture": { input: unknown; output: unknown; mode: "async"; internal: true; calls: never };
@@ -238,12 +258,13 @@ export interface Realm {
     };
     main: {
       collections: {
-        assets: { doc: MainAssets; input: MainAssetsInput; create: MainAssetsInput; where: MainAssetsWhere; order_by: MainAssetsOrderBy };
-        imports: { doc: MainImports; input: MainImportsInput; create: MainImportsInput; where: MainImportsWhere; order_by: MainImportsOrderBy };
-        members: { doc: MainMembers; input: MainMembersInput; create: MainMembersCreate; where: MainMembersWhere; order_by: MainMembersOrderBy };
-        notifications: { doc: MainNotifications; input: MainNotificationsInput; create: MainNotificationsInput; where: MainNotificationsWhere; order_by: MainNotificationsOrderBy };
-        pins: { doc: MainPins; input: MainPinsInput; create: MainPinsInput; where: MainPinsWhere; order_by: MainPinsOrderBy };
-        shares: { doc: MainShares; input: MainSharesInput; create: MainSharesInput; where: MainSharesWhere; order_by: MainSharesOrderBy };
+        assets: { doc: MainAssets; input: MainAssetsInput; create: MainAssetsInput; where: MainAssetsWhere; order_by: MainAssetsOrderBy; expand: { author: { db: "main"; collection: "profiles"; many: false }; } };
+        imports: { doc: MainImports; input: MainImportsInput; create: MainImportsInput; where: MainImportsWhere; order_by: MainImportsOrderBy; expand: {} };
+        members: { doc: MainMembers; input: MainMembersInput; create: MainMembersCreate; where: MainMembersWhere; order_by: MainMembersOrderBy; expand: {} };
+        notifications: { doc: MainNotifications; input: MainNotificationsInput; create: MainNotificationsInput; where: MainNotificationsWhere; order_by: MainNotificationsOrderBy; expand: {} };
+        pins: { doc: MainPins; input: MainPinsInput; create: MainPinsInput; where: MainPinsWhere; order_by: MainPinsOrderBy; expand: {} };
+        profiles: { doc: MainProfiles; input: MainProfilesInput; create: MainProfilesInput; where: MainProfilesWhere; order_by: MainProfilesOrderBy; expand: {} };
+        shares: { doc: MainShares; input: MainSharesInput; create: MainSharesInput; where: MainSharesWhere; order_by: MainSharesOrderBy; expand: {} };
       };
       functions: {
         cleanup: { input: unknown; output: unknown; mode: "async"; internal: true; calls: never };
@@ -374,7 +395,23 @@ export interface ListParams<W, O> {
   skip?: number;
   after?: string;
   count?: boolean;
+  /** References to return in _expanded: "author(name,avatar),tags". Nothing is expanded without it. */
+  expand?: string;
 }
+
+/** What a document's references expand to: the selected fields and the id, null when missing or unreadable. */
+type ExpandedDoc<DB, N> = DB extends keyof Realm["db"]
+  ? N extends keyof Realm["db"][DB]["collections"]
+    ? Partial<Part<Realm["db"][DB]["collections"][N], "doc">> & { id: string } & WithExpanded<Part<Realm["db"][DB]["collections"][N], "expand">>
+    : never
+  : never;
+type ExpandedValue<R> = R extends { db: infer DB; collection: infer N; many: infer M }
+  ? M extends true
+    ? (ExpandedDoc<DB, N> | null)[] | { items: (ExpandedDoc<DB, N> | null)[]; truncated: true }
+    : ExpandedDoc<DB, N> | null
+  : never;
+/** A document of a collection with references has an optional _expanded, filled by expand. */
+export type WithExpanded<E> = [E] extends [never] ? unknown : [keyof E] extends [never] ? unknown : { _expanded?: { [K in keyof E]?: ExpandedValue<E[K]> } };
 
 export interface Page<D> {
   items: D[];
@@ -398,11 +435,11 @@ export interface FileField<D> {
 }
 
 /** A collection of a database, typed from its schema. */
-export interface TypedCollection<D, I, C, W, O> {
-  get(id: string): Promise<D>;
+export interface TypedCollection<D, I, C, W, O, E = {}> {
+  get(id: string, options?: { expand?: string }): Promise<D & WithExpanded<E>>;
   files(id: string, field: string): FileField<D>;
-  list(params?: ListParams<W, O>): Promise<Page<D>>;
-  iterate(params?: Omit<ListParams<W, O>, "skip" | "count">): AsyncGenerator<D, void, undefined>;
+  list(params?: ListParams<W, O>): Promise<Page<D & WithExpanded<E>>>;
+  iterate(params?: Omit<ListParams<W, O>, "skip" | "count">): AsyncGenerator<D & WithExpanded<E>, void, undefined>;
   /** org: the organization a document of a collection with organizations is created in. */
   create(doc: C, options?: { idempotencyKey?: string; org?: string }): Promise<D>;
   replace(id: string, doc: I, options?: { ifMatch?: number | string }): Promise<D>;
@@ -430,7 +467,8 @@ export interface TypedDatabase<D extends DatabaseName> {
     Part<Realm["db"][D]["collections"][C], "input">,
     Part<Realm["db"][D]["collections"][C], "create">,
     Part<Realm["db"][D]["collections"][C], "where">,
-    Part<Realm["db"][D]["collections"][C], "order_by">
+    Part<Realm["db"][D]["collections"][C], "order_by">,
+    Part<Realm["db"][D]["collections"][C], "expand">
   >;
   batch(operations: BatchOperation[], options?: { idempotencyKey?: string }): Promise<unknown[]>;
 }

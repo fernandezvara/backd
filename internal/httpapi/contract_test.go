@@ -390,6 +390,19 @@ func TestContract(t *testing.T) {
 		req("GET", news, "", ada, 200)
 	}
 
+	// Reference expansion: notes reference the archive through their status.
+	{
+		aid := req("POST", "/v1/acme/app/archive", `{"title":"a"}`, ada, 201)["id"].(string)
+		nid := req("POST", "/v1/acme/app/notes", `{"title":"n","status":"`+aid+`"}`, ada, 201)["id"].(string)
+		out := req("GET", "/v1/acme/app/notes/"+nid+"?expand=status(title)", "", ada, 200)
+		if out["_expanded"].(map[string]any)["status"].(map[string]any)["title"] != "a" {
+			t.Errorf("expanded = %v", out)
+		}
+		req("GET", "/v1/acme/app/notes?expand=status", "", ada, 200)
+		req("GET", "/v1/acme/app/notes/"+nid+"?expand=nope", "", ada, 400)
+		req("GET", "/v1/acme/app/notes?expand=status.nope", "", ada, 400)
+	}
+
 	// Soft delete: delete, trash views, restore and purge.
 	{
 		const b = "/v1/acme/app/bin"

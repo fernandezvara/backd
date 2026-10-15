@@ -155,3 +155,33 @@ func TestTutorialChaptersLoad(t *testing.T) {
 		}
 	})
 }
+
+// Chapter 21 prints the reference it adds to the assets: it has to be what the finished
+// realm declares, and the realm has to load with it (the profiles' unique index included).
+func TestTutorialAuthorsReference(t *testing.T) {
+	printed := blockAfter(t, "21-authors", "Add this at the end of `config/shelf/main/assets/collection.yaml`")
+	b, err := os.ReadFile(filepath.Join("..", "..", "examples", "config", "shelf", "main", "assets", "collection.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want, got struct {
+		References map[string]any `yaml:"references"`
+	}
+	if err := yaml.Unmarshal(b, &want); err != nil {
+		t.Fatal(err)
+	}
+	if err := yaml.Unmarshal([]byte(printed), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(want.References) == 0 || !reflect.DeepEqual(want.References, got.References) {
+		t.Fatalf("chapter 21 prints %v, the repository has %v", got.References, want.References)
+	}
+	reg, err := Load(filepath.Join("..", "..", "examples", "config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, ok := reg.Collection("shelf", "main", "assets")
+	if !ok || c.References["author"] == nil || c.References["author"].Key != "_meta.owner" {
+		t.Fatalf("assets references = %+v", c.References)
+	}
+}

@@ -72,9 +72,9 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 		"acme/consents/marketing/1/es.md":  "Enviadme novedades por correo.",
 		// Public caching of anonymous reads (see public_cache_test.go).
 		"acme/app/news/schema.json":        postsSchema,
-		"acme/app/news/collection.yaml":    "cache: {public: true, max_age: 60}\nsoft_delete: true\n" + rulesSection("read: document.published == true || user != nil\ncreate: user != nil\nrestore: hasRole(user, 'staff')\n"),
+		"acme/app/news/collection.yaml":    "cache: {public: true, max_age: 60}\nsoft_delete: true\nreferences:\n  related: {field: status, collection: projects}\n  trashed: {field: title, collection: bin}\n  post: {field: status, collection: posts}\n" + rulesSection("read: document.published == true || user != nil\ncreate: user != nil\nrestore: hasRole(user, 'staff')\n"),
 		"acme/app/notes/schema.json":       postsSchema,
-		"acme/app/notes/collection.yaml":   rulesSection("read: user != nil\nwrite: user != nil\n"),
+		"acme/app/notes/collection.yaml":   "references:\n  status: {collection: archive}\n  secret: {field: title, collection: private}\n" + rulesSection("read: user != nil\nwrite: user != nil\n"),
 		"acme/app/private/schema.json":     postsSchema,
 		"acme/app/private/collection.yaml": "personal_data:\n  export: exclude\n  reason: fraud scores, exempt from access requests\n",
 		// A collection that soft-deletes (see soft_delete_test.go).

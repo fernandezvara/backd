@@ -7,6 +7,7 @@ export { Consents } from './consents.js'
 export { Config } from './config.js'
 export { Orgs, OrgMembers, OrgTeams, OrgTemplates, OrgInvitations } from './orgs.js'
 export { Files, versionStatus } from './files.js'
+export { expand } from './expand.js'
 export { Sha256, sha256Blob } from './sha256.js'
 export { Job, JobTimeoutError } from './functions.js'
 export {
@@ -21,6 +22,8 @@ export {
   OrgRequiresMFAError,
   OrgRoleRequiresMFAError,
   NotTeamMemberError,
+  InvalidExpandError,
+  ExpandTooLargeError,
   TeamError,
   NotOrgMemberError,
   LastOrgManagerError,
@@ -63,6 +66,8 @@ export { parseReturn as parseOAuthReturn } from './oauth.js'
  * @typedef {import('./data.js').ListParams} ListParams
  * @typedef {import('./data.js').WriteOptions} WriteOptions
  * @typedef {import('./data.js').GetOptions} GetOptions
+ * @typedef {import('./data.js').Expanded} Expanded
+ * @typedef {import('./expand.js').ExpandPart} ExpandPart
  * @typedef {import('./data.js').DeleteOptions} DeleteOptions
  * @typedef {import('./data.js').CreateOptions} CreateOptions
  * @typedef {import('./admin.js').ConfigCheck} ConfigCheck

@@ -395,3 +395,33 @@ func TestOrganizationParameterIsPerCollection(t *testing.T) {
 		t.Errorf("a collection without organizations has %v", p)
 	}
 }
+
+// Only a collection that declares references takes `expand`, and its description names them.
+func TestExpandParameterIsPerCollection(t *testing.T) {
+	reg := load(t, map[string]string{
+		"app/realm.yaml":                  "auth: enabled\nsignup: open\n",
+		"app/main/posts/schema.json":      `{"type":"object","additionalProperties":false,"properties":{"title":{"type":"string"},"author_id":{"type":"string"}}}`,
+		"app/main/posts/collection.yaml":  "references:\n  author: {field: author_id, collection: people}\nrules:\n  read: user != nil\n  create: user != nil\n",
+		"app/main/people/schema.json":     noteSchema,
+		"app/main/people/collection.yaml": "rules:\n  read: user != nil\n  create: user != nil\n",
+	})
+	doc := generate(t, reg, "app")
+	expand := func(path, method string) map[string]any {
+		op := doc["paths"].(map[string]any)[path].(map[string]any)[method].(map[string]any)
+		for _, p := range op["parameters"].([]any) {
+			if pm, ok := p.(map[string]any); ok && (pm["name"] == "expand" || pm["$ref"] == "#/components/parameters/expand") {
+				return pm
+			}
+		}
+		return nil
+	}
+	for _, c := range []struct{ path, method string }{{"/v1/app/main/posts", "get"}, {"/v1/app/main/posts/{id}", "get"}} {
+		p := expand(c.path, c.method)
+		if p == nil || !strings.Contains(p["description"].(string), "`author` (main/people)") {
+			t.Errorf("%s %s: %v", c.method, c.path, p)
+		}
+	}
+	if p := expand("/v1/app/main/people", "get"); p != nil {
+		t.Errorf("a collection without references has %v", p)
+	}
+}

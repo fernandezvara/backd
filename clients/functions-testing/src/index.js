@@ -10,10 +10,14 @@
 // `where` supports equality and $eq/$ne/$gt/$gte/$lt/$lte/$in/$nin/
 // $contains/$icontains/$exists on top-level or dotted fields, plus a
 // top-level $or/$and of such objects (not nested further). Access rules
-// are not evaluated at all — ctx.db here is always full access, as if
-// admin: true — because the point is testing the function's own code, not
-// backd's rule engine (that's what the real integration tests are for).
+// are not evaluated — ctx.db here is full access, as if admin: true —
+// unless a test declares a read predicate (store.declareReadRule) to see
+// what a function does when a document isn't readable; references are
+// declared with store.declareReferences and followed by `expand`. The point
+// is testing the function's own code, not backd's rule engine (that's what
+// the real integration tests are for).
 import { BackdError, NotFoundError, VersionMismatchError } from '../../js/src/errors.js'
+import { DEFAULT_LIMITS, expandDocs, normalizeReferences, planExpand } from './expand.js'
 
 let seq = 0
 /** Deterministic, distinct ids across a test run (resets with resetIds()). */
@@ -139,6 +143,47 @@ export class MemoryStore {
     this.objects = new Map()
     /** @type {Map<string, Record<string, FileFieldConfig>>} */
     this.fileFields = new Map()
+    /** @type {Map<string, Record<string, any>>} */
+    this.references = new Map()
+    /** @type {Map<string, (doc: any, who: { user: any }) => boolean>} */
+    this.readRules = new Map()
+  }
+
+  /**
+   * Declares a collection's references, as `references:` in its collection.yaml does, so that
+   * `expand` works: `{ author: { field: '_meta.owner', collection: 'profiles', key: '_meta.owner' },
+   * tags: { collection: 'tags', many: true } }`. `database` defaults to this one, `field` to the
+   * reference's name and `key` to `id`; `max_expand` lowers the array cap.
+   * @param {string} database
+   * @param {string} name
+   * @param {Record<string, { collection: string, field?: string, database?: string, key?: string, many?: boolean, max_expand?: number }>} refs
+   */
+  declareReferences(database, name, refs) {
+    this.references.set(`${database}/${name}`, normalizeReferences(database, refs))
+    return this
+  }
+
+  /**
+   * Says which documents a caller may read in a collection, as its `read` rule does: a
+   * predicate `(doc, { user }) => boolean`. It applies to `ctx.db` (not to `ctx.admin.db`): to
+   * `get`, `list` and what `expand` returns, where an unreadable reference is `null`, as on
+   * backd. Without one every document is readable, like the rest of the fake.
+   * @param {string} database
+   * @param {string} name
+   * @param {(doc: any, who: { user: any }) => boolean} rule
+   */
+  declareReadRule(database, name, rule) {
+    this.readRules.set(`${database}/${name}`, rule)
+    return this
+  }
+
+  /** @private The view `expand` needs of the store. */
+  get expandSource() {
+    return {
+      collection: (database, name) => this.collection(database, name),
+      referencesOf: (database, name) => this.references.get(`${database}/${name}`),
+      readRuleOf: (database, name) => this.readRules.get(`${database}/${name}`),
+    }
   }
 
   /**
@@ -202,12 +247,34 @@ export class MemoryStore {
 }
 
 class FakeCollection {
-  constructor(store, database, name, actor) {
+  /**
+   * @param {MemoryStore} store
+   * @param {string} database
+   * @param {string} name
+   * @param {string | null} [actor]
+   * @param {{ user: any, admin: boolean, expand: typeof DEFAULT_LIMITS }} [who] The identity reads are made as.
+   */
+  constructor(store, database, name, actor, who = { user: null, admin: true, expand: DEFAULT_LIMITS }) {
     this.store = store
     this.database = database
     this.name = name
     this.map = store.collection(database, name)
     this.actor = actor ?? null
+    this.who = who
+  }
+
+  /** @private The documents the caller may read. */
+  readable() {
+    const rule = this.who.admin ? undefined : this.store.readRules.get(`${this.database}/${this.name}`)
+    const all = [...this.map.values()]
+    return rule ? all.filter((d) => rule(d, { user: this.who.user })) : all
+  }
+
+  /** @private Expands what `expand` asks for in copies of docs. */
+  expanded(docs, expand) {
+    if (expand === undefined) return docs
+    const plan = planExpand(this.store.expandSource, this.database, this.name, expand, this.who.expand)
+    return plan.length === 0 ? docs : expandDocs(this.store.expandSource, docs, plan, this.who, this.who.expand)
   }
 
   /**
@@ -226,15 +293,15 @@ class FakeCollection {
    * cursor's position semantics.
    * @returns {Promise<{ items: any[], limit: number, skip: number, has_more: boolean, next_cursor?: string, total?: number }>}
    */
-  async list({ where, orderBy, limit = 20, skip = 0, after, count } = {}) {
+  async list({ where, orderBy, limit = 20, skip = 0, after, count, expand } = {}) {
     if (after !== undefined) {
       if (skip) throw new Error('after can\'t be combined with skip')
       skip = Number(after)
       if (!Number.isInteger(skip) || skip < 0) throw new Error('after is not a cursor of this fake: use the next_cursor of a previous page')
     }
-    let items = [...this.map.values()].filter(matchWhere(where))
+    let items = this.readable().filter(matchWhere(where))
     if (orderBy) items = sortBy(items, orderBy)
-    const page = items.slice(skip, skip + limit)
+    const page = this.expanded(items.slice(skip, skip + limit), expand)
     /** @type {{ items: any[], limit: number, skip: number, has_more: boolean, next_cursor?: string, total?: number }} */
     const out = { items: page, limit, skip, has_more: skip + limit < items.length }
     if (out.has_more) out.next_cursor = String(skip + limit)
@@ -251,10 +318,13 @@ class FakeCollection {
     }
   }
 
-  async get(id) {
+  async get(id, opts = {}) {
+    const rule = this.who.admin ? undefined : this.store.readRules.get(`${this.database}/${this.name}`)
     const doc = this.map.get(id)
-    if (!doc) throw new NotFoundError({ status: 404, code: 'not_found', message: `document not found: ${id}` })
-    return doc
+    if (!doc || (rule && !rule(doc, { user: this.who.user }))) {
+      throw new NotFoundError({ status: 404, code: 'not_found', message: `document not found: ${id}` })
+    }
+    return this.expanded([doc], opts.expand)[0]
   }
 
   async create(fields) {
@@ -534,14 +604,15 @@ function mergePatch(target, patch) {
 
 /** ctx.db(name) / ctx.admin.db(name): a database of the fake client. */
 class FakeDatabase {
-  constructor(store, name, actor) {
+  constructor(store, name, actor, who) {
     this.store = store
     this.name = name
     this.actor = actor
+    this.who = who
   }
 
   collection(name) {
-    return new FakeCollection(this.store, this.name, name, this.actor)
+    return new FakeCollection(this.store, this.name, name, this.actor, this.who)
   }
 }
 
@@ -563,6 +634,7 @@ export class FunctionError extends Error {
 /**
  * @typedef {object} ContextOptions
  * @property {any} [input]              ctx.input.
+ * @property {{ maxDepth?: number, maxPaths?: number, maxArray?: number, maxDocs?: number }} [expand] Lower the expansion limits (backd's defaults: 2 levels, 5 paths, 100 ids, 2000 documents) to test a function against them.
  * @property {{id: string, email: string, email_verified?: boolean, roles?: string[], consents?: Record<string, string>} | null} [user] ctx.user.
  * @property {Record<string, string>} [secrets]  ctx.secrets.
  * @property {string | null} [idempotencyKey]
@@ -766,13 +838,14 @@ export function callTimedOut() {
 export function createContext(opts = {}) {
   const store = opts.store ?? new MemoryStore()
   const actor = opts.user ? `user:${opts.user.id}` : 'func:test'
+  const limits = { ...DEFAULT_LIMITS, ...(opts.expand ?? {}) }
   const ctx = {
     input: opts.input ?? null,
     user: opts.user ?? null,
     secrets: Object.freeze({ ...(opts.secrets ?? {}) }),
     idempotencyKey: opts.idempotencyKey ?? null,
     requestId: opts.requestId ?? 'test-request',
-    db: (name) => new FakeDatabase(store, name, actor),
+    db: (name) => new FakeDatabase(store, name, actor, { user: opts.user ?? null, admin: false, expand: limits }),
     error: (status, code, message, details) => {
       if (!Number.isInteger(status) || status < 400 || status > 499) {
         throw new TypeError('ctx.error: status must be a 4xx code')
@@ -781,7 +854,7 @@ export function createContext(opts = {}) {
     },
   }
   if (opts.admin) {
-    ctx.admin = Object.freeze({ db: (name) => new FakeDatabase(store, name, 'func:test') })
+    ctx.admin = Object.freeze({ db: (name) => new FakeDatabase(store, name, 'func:test', { user: null, admin: true, expand: limits }) })
   }
 
   // ctx.call: only what the test fakes, and only what `calls` declares.

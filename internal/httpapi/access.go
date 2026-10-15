@@ -199,8 +199,16 @@ type access struct {
 	values rules.Values
 }
 
-// accessFor returns how rules apply to the request.
+// accessFor returns how rules apply to the request, for the collection it addresses.
 func (d *documents) accessFor(r *http.Request) access {
+	c, _ := r.Context().Value(collectionKey{}).(*registry.Collection)
+	return d.accessIn(r, c)
+}
+
+// accessIn returns how rules apply to the request in collection c, which may not be the one
+// the request addresses (a reference's target): the configuration and the memberships are
+// read only when c's rules use them.
+func (d *documents) accessIn(r *http.Request, c *registry.Collection) access {
 	caller, ok := callerOf(r)
 	if !ok || caller.BypassesRules() || adminData(r) {
 		return access{}
@@ -213,12 +221,12 @@ func (d *documents) accessFor(r *http.Request) access {
 	}
 	// appConfig() in the collection's rules: the configuration is read once for the request,
 	// and only when a rule asks for it.
-	if c, ok := r.Context().Value(collectionKey{}).(*registry.Collection); ok && c.Rules.UsesConfig() {
+	if c != nil && c.Rules.UsesConfig() {
 		a.values.Config = d.configValues(r, c.Realm)
 	}
 	// The organization helpers and user.orgs: the memberships are read once for the request,
 	// and only when a rule asks for them.
-	if c, ok := r.Context().Value(collectionKey{}).(*registry.Collection); ok && caller.User != nil && c.Rules.UsesOrgs() {
+	if c != nil && caller.User != nil && c.Rules.UsesOrgs() {
 		orgs := d.userOrgs(r, c.Realm, caller)
 		a.values.Orgs = orgs
 		a.values.User.Orgs = orgs
@@ -265,27 +273,35 @@ func readFilter(w http.ResponseWriter, r *http.Request, a access, c *registry.Co
 // readableFilter is the read rule as a filter, before soft-deleted documents
 // are taken out (see hideDeleted).
 func readableFilter(w http.ResponseWriter, r *http.Request, a access, c *registry.Collection) (storage.Filter, bool) {
+	f, why := readRuleFilter(a, c)
+	if why != "" {
+		deny(w, r, a, c, rules.Read, why)
+		return nil, false
+	}
+	return f, true
+}
+
+// readRuleFilter is the read rule as a filter, nil when it is unrestricted. A non-empty
+// reason says why the caller may read nothing at all.
+func readRuleFilter(a access, c *registry.Collection) (storage.Filter, string) {
 	if !a.ruled {
-		return nil, true
+		return nil, ""
 	}
 	rule := c.Rules.For(rules.Read)
 	if rule == nil {
-		deny(w, r, a, c, rules.Read, "no read rule")
-		return nil, false
+		return nil, "no read rule"
 	}
 	f, err := rule.Filter(a.values)
 	if err != nil {
-		deny(w, r, a, c, rules.Read, "rule error: "+err.Error())
-		return nil, false
+		return nil, "rule error: " + err.Error()
 	}
 	switch f {
 	case storage.Const(false):
-		deny(w, r, a, c, rules.Read, "rule "+rule.Key+" is false")
-		return nil, false
+		return nil, "rule " + rule.Key + " is false"
 	case storage.Const(true):
-		return nil, true
+		return nil, ""
 	}
-	return f, true
+	return f, ""
 }
 
 // allowWrite evaluates the create, update or delete rule. It answers the

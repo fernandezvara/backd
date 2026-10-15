@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/fernandezvara/backd/internal/registry"
 )
 
 // ProvisionMode controls what startup provisioning does to MongoDB.
@@ -40,6 +42,8 @@ type Settings struct {
 	ImageMaxPixels int64
 	// ImageTimeout bounds the making of one image's versions (BACKD_IMAGE_TIMEOUT).
 	ImageTimeout time.Duration
+	// Expand are the instance's limits for reference expansion (BACKD_EXPAND_MAX_*).
+	Expand registry.ExpandLimits
 	// ImageConcurrency is how many images one worker process makes versions of at once
 	// (BACKD_IMAGE_CONCURRENCY); 0 derives it from the container's CPU and memory limits.
 	ImageConcurrency int
@@ -170,6 +174,12 @@ func Load(getenv func(string) string) (Settings, error) {
 		errs = append(errs, err)
 	} else {
 		s.ImageMaxPixels = n
+	}
+
+	if l, err := ExpandLimitsFrom(getenv); err != nil {
+		errs = append(errs, err)
+	} else {
+		s.Expand = l
 	}
 
 	if d, err := duration(getenv, "BACKD_IMAGE_TIMEOUT", "30s", false); err != nil {
@@ -373,6 +383,37 @@ func orDefault(v, def string) string {
 		return def
 	}
 	return v
+}
+
+// ExpandLimitsFrom reads the instance's reference expansion limits
+// (BACKD_EXPAND_MAX_DEPTH, _PATHS, _ARRAY and _DOCS). A collection's reference may only lower
+// the array limit.
+func ExpandLimitsFrom(getenv func(string) string) (registry.ExpandLimits, error) {
+	l := registry.DefaultExpandLimits
+	var errs []error
+	for _, v := range []struct {
+		env  string
+		dst  *int
+		max  int
+		hint string
+	}{
+		{"BACKD_EXPAND_MAX_DEPTH", &l.MaxDepth, 2, "1 or 2"},
+		{"BACKD_EXPAND_MAX_PATHS", &l.MaxPaths, 0, "a positive integer"},
+		{"BACKD_EXPAND_MAX_ARRAY", &l.MaxArray, 0, "a positive integer"},
+		{"BACKD_EXPAND_MAX_DOCS", &l.MaxDocs, 0, "a positive integer"},
+	} {
+		s := getenv(v.env)
+		if s == "" {
+			continue
+		}
+		n, err := strconv.Atoi(s)
+		if err != nil || n < 1 || (v.max > 0 && n > v.max) {
+			errs = append(errs, fmt.Errorf("%s must be %s, got %q", v.env, v.hint, s))
+			continue
+		}
+		*v.dst = n
+	}
+	return l, errors.Join(errs...)
 }
 
 // DefaultImageMaxPixels is the pixel limit for image versions when none is set.

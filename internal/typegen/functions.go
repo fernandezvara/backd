@@ -89,7 +89,23 @@ export interface ListParams<W, O> {
   skip?: number;
   after?: string;
   count?: boolean;
+  /** References to return in _expanded: "author(name,avatar),tags". Nothing is expanded without it. */
+  expand?: string;
 }
+
+/** What a document's references expand to: the selected fields and the id, null when missing or unreadable. */
+type ExpandedDoc<DB, N> = DB extends keyof Realm["db"]
+  ? N extends keyof Realm["db"][DB]["collections"]
+    ? Partial<Part<Realm["db"][DB]["collections"][N], "doc">> & { id: string } & WithExpanded<Part<Realm["db"][DB]["collections"][N], "expand">>
+    : never
+  : never;
+type ExpandedValue<R> = R extends { db: infer DB; collection: infer N; many: infer M }
+  ? M extends true
+    ? (ExpandedDoc<DB, N> | null)[] | { items: (ExpandedDoc<DB, N> | null)[]; truncated: true }
+    : ExpandedDoc<DB, N> | null
+  : never;
+/** A document of a collection with references has an optional _expanded, filled by expand. */
+export type WithExpanded<E> = [E] extends [never] ? unknown : [keyof E] extends [never] ? unknown : { _expanded?: { [K in keyof E]?: ExpandedValue<E[K]> } };
 
 export interface Page<D> {
   items: D[];
@@ -113,11 +129,11 @@ export interface FileField<D> {
 }
 
 /** A collection of a database, typed from its schema. */
-export interface TypedCollection<D, I, C, W, O> {
-  get(id: string): Promise<D>;
+export interface TypedCollection<D, I, C, W, O, E = {}> {
+  get(id: string, options?: { expand?: string }): Promise<D & WithExpanded<E>>;
   files(id: string, field: string): FileField<D>;
-  list(params?: ListParams<W, O>): Promise<Page<D>>;
-  iterate(params?: Omit<ListParams<W, O>, "skip" | "count">): AsyncGenerator<D, void, undefined>;
+  list(params?: ListParams<W, O>): Promise<Page<D & WithExpanded<E>>>;
+  iterate(params?: Omit<ListParams<W, O>, "skip" | "count">): AsyncGenerator<D & WithExpanded<E>, void, undefined>;
   /** org: the organization a document of a collection with organizations is created in. */
   create(doc: C, options?: { idempotencyKey?: string; org?: string }): Promise<D>;
   replace(id: string, doc: I, options?: { ifMatch?: number | string }): Promise<D>;
@@ -145,7 +161,8 @@ export interface TypedDatabase<D extends DatabaseName> {
     Part<Realm["db"][D]["collections"][C], "input">,
     Part<Realm["db"][D]["collections"][C], "create">,
     Part<Realm["db"][D]["collections"][C], "where">,
-    Part<Realm["db"][D]["collections"][C], "order_by">
+    Part<Realm["db"][D]["collections"][C], "order_by">,
+    Part<Realm["db"][D]["collections"][C], "expand">
   >;
   batch(operations: BatchOperation[], options?: { idempotencyKey?: string }): Promise<unknown[]>;
 }

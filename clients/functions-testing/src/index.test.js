@@ -1,5 +1,5 @@
 import { callTimedOut, createContext, EmailLimitError, emailMessage, fakeEmail, fakeJob, fakePush, FunctionError, MemoryStore, resetIds } from './index.js'
-import { BackdError, NotFoundError, VersionMismatchError } from '../../js/src/errors.js'
+import { BackdError, ExpandTooLargeError, InvalidExpandError, NotFoundError, VersionMismatchError } from '../../js/src/errors.js'
 
 // No test-framework dependency, matching the JS client's "no runtime
 // dependencies" (these helpers are dev-only, never shipped).
@@ -494,4 +494,59 @@ Deno.test('ctx.admin.orgs: starts from the organizations the test gives, and ctx
   assertEquals(ctx.user.orgs.o1.claims.plan, 'pro')
   assertEquals((await ctx.admin.orgs.list()).map((o) => o.id), ['o1'])
   await assertRejects(() => ctx.admin.orgs.get('nope'), FunctionError)
+})
+
+Deno.test('expand follows declared references, applies a read predicate and keeps positions', async () => {
+  const { ctx, store } = createContext({ user: { id: 'u1', email: 'a@example.com' } })
+  store.seed('blog', 'posts', [
+    { id: 'p1', title: 'Hello', category: 'c1', tags: ['t1', 'gone', 't3'], _meta: { owner: 'u1' } },
+    { id: 'p2', title: 'Bye' },
+    { id: 'p3', title: 'Secret tag', tags: ['t3'] },
+  ])
+  store.seed('blog', 'categories', [{ id: 'c1', name: 'News', parent: 'root' }, { id: 'root', name: 'All' }])
+  store.seed('blog', 'tags', [{ id: 't1', name: 'go' }, { id: 't3', name: 'db', secret: true }])
+  store.seed('blog', 'profiles', [{ id: 'pr1', name: 'Ada', email: 'a@example.com', _meta: { owner: 'u1' } }])
+  store
+    .declareReferences('blog', 'posts', {
+      category: { collection: 'categories' },
+      tags: { collection: 'tags', many: true, max_expand: 2 },
+      author: { field: '_meta.owner', collection: 'profiles', key: '_meta.owner' },
+    })
+    .declareReferences('blog', 'categories', { parent: { collection: 'categories' } })
+    .declareReadRule('blog', 'tags', (doc) => doc.secret !== true)
+
+  const posts = ctx.db('blog').collection('posts')
+  const post = await posts.get('p1', { expand: 'category.parent(name),tags(name),author(name)' })
+  assertEquals(post._expanded.category.name, 'News')
+  assertEquals(post._expanded.category._expanded.parent, { id: 'root', name: 'All' })
+  assertEquals(post._expanded.tags, { items: [{ id: 't1', name: 'go' }, null], truncated: true })
+  assertEquals(post._expanded.author, { id: 'pr1', name: 'Ada' })
+  assert(posts.map.get('p1')._expanded === undefined, 'the stored document is not changed')
+
+  // A list: the second post has no references at all.
+  const page = await posts.list({ expand: 'category,tags', orderBy: 'id' })
+  assertEquals(page.items[1]._expanded, { category: null, tags: [] })
+
+  // A tag the predicate hides is null for ctx.db and there through the administrator.
+  assertEquals((await posts.get('p3', { expand: 'tags(name)' }))._expanded.tags, [null])
+  const { ctx: adminCtx } = createContext({ admin: true, store })
+  const viaAdmin = await adminCtx.admin.db('blog').collection('posts').get('p3', { expand: 'tags(name)' })
+  assertEquals(viaAdmin._expanded.tags, [{ id: 't3', name: 'db' }])
+  assert((await posts.get('p1'))._expanded === undefined)
+
+  // Wrong expands are backd's errors; the limits can be lowered.
+  const e = await assertRejects(() => posts.get('p1', { expand: 'nope' }), InvalidExpandError)
+  assertEquals(e.code, 'invalid_expand')
+  await assertRejects(() => posts.get('p1', { expand: 'category.parent.parent' }), InvalidExpandError)
+  const { ctx: tight } = createContext({ store, expand: { maxDocs: 1 } })
+  await assertRejects(() => tight.db('blog').collection('posts').list({ expand: 'category,tags' }), ExpandTooLargeError)
+})
+
+Deno.test('a read predicate hides documents from get and list', async () => {
+  const { ctx, store } = createContext({ user: { id: 'u1', email: 'a@example.com' } })
+  store.seed('app', 'notes', [{ id: 'n1', _meta: { owner: 'u1' } }, { id: 'n2', _meta: { owner: 'u2' } }])
+  store.declareReadRule('app', 'notes', (doc, { user }) => doc._meta.owner === user?.id)
+  const notes = ctx.db('app').collection('notes')
+  assertEquals((await notes.list()).items.map((d) => d.id), ['n1'])
+  await assertRejects(() => notes.get('n2'), NotFoundError)
 })
