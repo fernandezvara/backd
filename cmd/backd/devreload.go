@@ -169,6 +169,9 @@ func (r *reloader) reload(ctx context.Context, changed []string) (*reloadEvent, 
 	if err := reg.CheckAggregateLimits(cur.cfg.Aggregate); err != nil {
 		return nil, fmt.Errorf("invalid config:\n%w", err)
 	}
+	if err := reg.CheckTriggerLimits(cur.cfg.TriggerLimits); err != nil {
+		return nil, fmt.Errorf("invalid config:\n%w", err)
+	}
 	if err := r.build(ctx, reg); err != nil {
 		return nil, err
 	}

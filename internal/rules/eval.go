@@ -22,18 +22,31 @@ type Values struct {
 	// Orgs are the caller's memberships that count, for the organization helpers; only filled
 	// in when a rule reads them (Rule.UsesOrgs).
 	Orgs map[string]*UserOrg
+	// Before is the document before the change, and Event says this is a trigger's `when:`:
+	// `changed()` then compares Before with Document (the document after).
+	Before map[string]any
+	Event  bool
 	// Config is the app configuration, by dot path of each value, for appConfig();
 	// only filled in when a rule reads it.
 	Config map[string]any
 }
 
 func (v Values) env() map[string]any {
+	diff := func() []string { return changed(v.Document, v.Data) }
+	if v.Event {
+		diff = func() []string { return changed(v.Before, v.Document) }
+	}
+	before := v.Before
+	if before == nil {
+		before = map[string]any{}
+	}
 	return map[string]any{
 		"user":     v.User,
 		"document": v.Document,
+		"before":   before,
 		"data":     v.Data,
 		"now":      v.Now,
-		"changed":  func() []string { return changed(v.Document, v.Data) },
+		"changed":  diff,
 		"config":   v.configMap(),
 		orgsVar:    v.orgsMap(),
 	}

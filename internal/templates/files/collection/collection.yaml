@@ -39,6 +39,28 @@
 # on_org_delete:
 #   action: delete               # delete | keep
 #
+# Realtime (docs: Operations -> Change feed). Marks the collection's changes as ones that
+# may be streamed to subscribed clients. Costs storage and writes (pre-change images,
+# enabled by `backd provision`), so it is per collection. Commented out.
+#
+# realtime: true
+#
+# Triggers (docs: Configuration -> collection.yaml). Run an internal, async function
+# in the background when documents change and a condition holds. `events` are
+# created, updated and removed; `when` sees `document` (after), `before`, `changed()`,
+# `now` and appConfig(...) but no `user`: an event has no caller. The function must
+# have `internal: true` and `mode: async`. Without `fields` the job carries ids, the
+# version and what changed, not the documents. Commented out.
+#
+# triggers:
+#   on_paid:
+#     events: [created, updated]
+#     when: "document.status == 'paid' && before.status != 'paid'"
+#     function: main/on-paid       # <database>/<function>
+#     fields: [status, total]      # bodies in the job: these paths, or ["*"] for whole documents
+#     session: true                # the input gains `by`, the user who wrote
+#     ordered: true                # the jobs of one document run one at a time
+#
 # What a user's data export takes from this collection (docs: Configuration ->
 # collection.yaml). By default: the documents the user owns, whole. Commented out.
 #

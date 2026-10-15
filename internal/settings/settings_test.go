@@ -22,7 +22,7 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := Settings{ConfigDir: "/cfg", MongoURI: "mongodb://m", HTTPAddr: ":8080", ProvisionMode: ProvisionApply, LogLevel: slog.LevelInfo, MaxBodyBytes: 1 << 20, MaxUploadBytes: 100 << 20, ImageMaxPixels: 40_000_000, ImageTimeout: 30 * time.Second, Expand: registry.DefaultExpandLimits, Aggregate: registry.DefaultAggregateLimits,
+	want := Settings{ConfigDir: "/cfg", MongoURI: "mongodb://m", HTTPAddr: ":8080", ProvisionMode: ProvisionApply, LogLevel: slog.LevelInfo, MaxBodyBytes: 1 << 20, MaxUploadBytes: 100 << 20, ImageMaxPixels: 40_000_000, ImageTimeout: 30 * time.Second, Expand: registry.DefaultExpandLimits, Aggregate: registry.DefaultAggregateLimits, TriggerLimits: registry.DefaultTriggerLimits,
 		MongoOpTimeout: 10 * time.Second, ShutdownTimeout: 15 * time.Second, AdminUIIdle: 30 * time.Minute, InternalAddr: ":8081", WorkerConcurrency: 10, Events: true, Triggers: true}
 	if !reflect.DeepEqual(s, want) {
 		t.Errorf("got %+v, want %+v", s, want)
@@ -328,6 +328,26 @@ func TestEventsFlags(t *testing.T) {
 	for _, name := range []string{"BACKD_EVENTS", "BACKD_TRIGGERS"} {
 		if _, err := load(map[string]string{name: "sometimes"}); err == nil || !strings.Contains(err.Error(), name+" must be true or false") {
 			t.Errorf("%s=sometimes: %v", name, err)
+		}
+	}
+}
+
+func TestTriggerMaxChain(t *testing.T) {
+	load := func(v string) (Settings, error) {
+		env := map[string]string{"CONFIG_DIR": "/c", "MONGO_URI": "mongodb://x", "BACKD_TRIGGER_MAX_CHAIN": v}
+		return Load(func(k string) string { return env[k] })
+	}
+	s, err := load("")
+	if err != nil || s.TriggerLimits.MaxChain != 16 {
+		t.Fatalf("default: %+v %v", s.TriggerLimits, err)
+	}
+	s, err = load("5")
+	if err != nil || s.TriggerLimits.MaxChain != 5 {
+		t.Fatalf("5: %+v %v", s.TriggerLimits, err)
+	}
+	for _, bad := range []string{"0", "-1", "65", "deep"} {
+		if _, err := load(bad); err == nil || !strings.Contains(err.Error(), "BACKD_TRIGGER_MAX_CHAIN must be an integer between 1 and 64") {
+			t.Errorf("%q: %v", bad, err)
 		}
 	}
 }

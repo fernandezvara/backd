@@ -46,6 +46,8 @@ type Settings struct {
 	Expand registry.ExpandLimits
 	// Aggregate are the instance's limits for aggregations (BACKD_AGGREGATE_*).
 	Aggregate registry.AggregateLimits
+	// TriggerLimits are the instance's trigger limits (BACKD_TRIGGER_MAX_CHAIN).
+	TriggerLimits registry.TriggerLimits
 	// ImageConcurrency is how many images one worker process makes versions of at once
 	// (BACKD_IMAGE_CONCURRENCY); 0 derives it from the container's CPU and memory limits.
 	ImageConcurrency int
@@ -194,6 +196,12 @@ func Load(getenv func(string) string) (Settings, error) {
 		errs = append(errs, err)
 	} else {
 		s.Aggregate = l
+	}
+
+	if l, err := TriggerLimitsFrom(getenv); err != nil {
+		errs = append(errs, err)
+	} else {
+		s.TriggerLimits = l
 	}
 
 	if d, err := duration(getenv, "BACKD_IMAGE_TIMEOUT", "30s", false); err != nil {
@@ -465,6 +473,20 @@ func AggregateLimitsFrom(getenv func(string) string) (registry.AggregateLimits, 
 		}
 	}
 	return l, errors.Join(errs...)
+}
+
+// TriggerLimitsFrom reads the instance's trigger limits: BACKD_TRIGGER_MAX_CHAIN, how deep a
+// chain of writes caused by trigger runs may go. A realm's `triggers:` may only lower it.
+func TriggerLimitsFrom(getenv func(string) string) (registry.TriggerLimits, error) {
+	l := registry.DefaultTriggerLimits
+	if v := getenv("BACKD_TRIGGER_MAX_CHAIN"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > registry.MaxTriggerChain {
+			return l, fmt.Errorf("BACKD_TRIGGER_MAX_CHAIN must be an integer between 1 and %d, got %q", registry.MaxTriggerChain, v)
+		}
+		l.MaxChain = n
+	}
+	return l, nil
 }
 
 // DefaultImageMaxPixels is the pixel limit for image versions when none is set.

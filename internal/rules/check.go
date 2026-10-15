@@ -23,6 +23,14 @@ func check(r *Rule, schema Schema) error {
 	walk(r.tree, func(n ast.Node) {
 		switch n := n.(type) {
 		case *ast.IdentifierNode:
+			if r.Op == Trigger && (n.Value == "user" || n.Value == "data") {
+				add("`%s` is not available in a trigger's `when`: an event has no caller (it sees `document`, `before`, `changed()`, `now` and appConfig)", n.Value)
+				return
+			}
+			if n.Value == "before" && r.Op != Trigger {
+				add("`before` is only available in a trigger's `when`")
+				return
+			}
 			if r.Op == Invoke && (n.Value == "document" || n.Value == "data" || n.Value == "changed") {
 				add("`%s` is not available in invoke rules: they see only `user`", n.Value)
 				return
@@ -41,12 +49,26 @@ func check(r *Rule, schema Schema) error {
 					add("`data` is only available on create and update")
 				}
 			case "changed":
-				if r.Op != Update {
-					add("changed() is only available on update")
+				if r.Op != Update && r.Op != Trigger {
+					add("changed() is only available on update, and in a trigger's `when`")
 				}
 			}
 		}
 	})
+
+	// A trigger has no caller, so the helpers that ask about one can't be answered.
+	if r.Op == Trigger {
+		walk(r.tree, func(n ast.Node) {
+			if c, ok := n.(*ast.CallNode); ok {
+				if id, ok := c.Callee.(*ast.IdentifierNode); ok {
+					switch id.Value {
+					case "hasRole", "hasConsent", "inOrg", "hasOrgRole", "orgClaims", "inTeam", "hasTeamRole":
+						add("%s: not available in a trigger's `when`: an event has no caller to ask about", id.Value)
+					}
+				}
+			}
+		})
+	}
 
 	// Declared role names.
 	walk(r.tree, func(n ast.Node) {
@@ -199,7 +221,7 @@ func check(r *Rule, schema Schema) error {
 		}
 	})
 	walk(r.tree, func(n ast.Node) {
-		if id, ok := n.(*ast.IdentifierNode); ok && id.Value == "now" && !allowed[n] && r.Op != Config {
+		if id, ok := n.(*ast.IdentifierNode); ok && id.Value == "now" && !allowed[n] && r.Op != Config && r.Op != Trigger {
 			add("`now` can only be compared with a timestamp: document._meta.created_at, document._meta.updated_at, or a field stored as a date (x-backd-store: date)")
 		}
 	})
@@ -243,7 +265,7 @@ func checkPaths(n ast.Node, schema Schema, add func(string, ...any)) {
 	}
 	if m, ok := n.(*ast.MemberNode); ok {
 		root, path, ok := memberPath(m)
-		if ok && (root == "document" || root == "data") {
+		if ok && (root == "document" || root == "data" || root == "before") {
 			known := schema.DocumentField
 			if root == "data" {
 				known = schema.DataField

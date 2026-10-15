@@ -41,8 +41,8 @@ func loadRealtime(c *Collection, path string) error {
 }
 
 // NeedsEvents reports whether the collection's changes are read from the change stream: it is
-// realtime, or (later) it has triggers. Such a collection needs pre-change images.
-func (c *Collection) NeedsEvents() bool { return c.Realtime }
+// realtime, or it has triggers. Such a collection needs pre-change images.
+func (c *Collection) NeedsEvents() bool { return c.Realtime || len(c.Triggers) > 0 }
 
 // EventCollection names a collection whose changes the change feed watches.
 type EventCollection struct {
@@ -51,6 +51,7 @@ type EventCollection struct {
 	MongoDatabase string
 	Name          string
 	Realtime      bool
+	Triggers      int // how many triggers it declares
 }
 
 // EventCollections lists every collection of every realm that needs the change feed, in a
@@ -64,7 +65,7 @@ func (r *Registry) EventCollections() []EventCollection {
 					continue
 				}
 				out = append(out, EventCollection{
-					Realm: realm.Name, Database: db.Name, MongoDatabase: db.MongoName, Name: c.Name, Realtime: c.Realtime,
+					Realm: realm.Name, Database: db.Name, MongoDatabase: db.MongoName, Name: c.Name, Realtime: c.Realtime, Triggers: len(c.Triggers),
 				})
 			}
 		}

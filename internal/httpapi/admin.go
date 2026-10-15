@@ -34,6 +34,7 @@ type adminAPI struct {
 	expandMaxArray int
 	// aggregate are the instance's aggregation limits, which a config check applies.
 	aggregate registry.AggregateLimits
+	triggers  registry.TriggerLimits
 }
 
 type adminUserKey struct{}

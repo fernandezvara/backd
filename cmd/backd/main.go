@@ -117,6 +117,9 @@ func setup(ctx context.Context, getenv func(string) string, logOut io.Writer) (*
 	if err := reg.CheckAggregateLimits(cfg.Aggregate); err != nil {
 		return nil, fmt.Errorf("invalid config:\n%w", err)
 	}
+	if err := reg.CheckTriggerLimits(cfg.TriggerLimits); err != nil {
+		return nil, fmt.Errorf("invalid config:\n%w", err)
+	}
 	for _, w := range reg.AggregateWarnings() {
 		log.Warn(w)
 	}
@@ -541,6 +544,7 @@ func (a *app) handlerConfig() httpapi.Config {
 		ImageMaxPixels:    a.cfg.ImageMaxPixels,
 		Expand:            a.cfg.Expand,
 		Aggregate:         a.cfg.Aggregate,
+		TriggerLimits:     a.cfg.TriggerLimits,
 		ImageTimeout:      a.cfg.ImageTimeout,
 		ImageConcurrency:  a.cfg.ImageConcurrency,
 		OpTimeout:         a.cfg.MongoOpTimeout,

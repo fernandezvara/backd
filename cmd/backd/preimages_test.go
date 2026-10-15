@@ -51,7 +51,7 @@ func TestProvisionPreImagesLifecycle(t *testing.T) {
 	t.Cleanup(func() { _ = client.Database(realm + "__app").Drop(ctx) })
 	enabled := func() bool {
 		t.Helper()
-		specs, err := client.Database(realm + "__app").ListCollectionSpecifications(ctx, bson.D{{Key: "name", Value: "items"}})
+		specs, err := client.Database(realm+"__app").ListCollectionSpecifications(ctx, bson.D{{Key: "name", Value: "items"}})
 		if err != nil || len(specs) != 1 {
 			t.Fatalf("collection specs: %v %v", specs, err)
 		}

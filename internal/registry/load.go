@@ -96,6 +96,7 @@ func Load(root string) (*Registry, error) {
 		errs = append(errs, loadEmail(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadOnSignup(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadOrgHooks(reg.Realms[realmName], filepath.Join(root, realmName))...)
+		errs = append(errs, loadTriggerFunctions(reg.Realms[realmName])...)
 		errs = append(errs, loadDataHooks(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadCustomizable(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadPush(reg.Realms[realmName], filepath.Join(root, realmName))...)
@@ -418,6 +419,9 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 	if err := loadRealtime(coll, filepath.Join(dir, CollectionFile)); err != nil {
 		return nil, err
 	}
+	if err := loadTriggers(coll, settings, filepath.Join(dir, CollectionFile)); err != nil {
+		return nil, err
+	}
 	if coll.SoftDelete == nil && coll.Rules != nil {
 		for _, op := range []rules.Op{rules.Restore, rules.Purge} {
 			if coll.Rules.For(op) != nil {
@@ -462,11 +466,25 @@ func loadRules(c *Collection, settings RealmSettings, dir string) error {
 	if !settings.AuthEnabled {
 		return fmt.Errorf("%s: rules only apply when the realm has auth enabled (realm.yaml has `auth: disabled`)", path)
 	}
+	set, errs := rules.Parse(doc.Rules, c.ruleSchema(settings))
+	if len(errs) > 0 {
+		for i, e := range errs {
+			errs[i] = fmt.Errorf("%s: rules: %w", path, e)
+		}
+		return errors.Join(errs...)
+	}
+	set.File = path
+	c.Rules = set
+	return nil
+}
+
+// ruleSchema is what the rules and trigger conditions of this collection may refer to.
+func (c *Collection) ruleSchema(settings RealmSettings) rules.Schema {
 	roles := make([]string, 0, len(settings.Roles))
 	for r := range settings.Roles {
 		roles = append(roles, r)
 	}
-	set, errs := rules.Parse(doc.Rules, rules.Schema{
+	return rules.Schema{
 		DocumentField: c.IsKnownField,
 		DataField: func(p string) bool {
 			// A create rule sees the id the client chose; elsewhere data has no id.
@@ -493,16 +511,7 @@ func loadRules(c *Collection, settings RealmSettings, dir string) error {
 		InOrgs:      c.InOrganizations(),
 		TeamRoles:   teamRoles(settings),
 		InTeams:     c.InTeams(),
-	})
-	if len(errs) > 0 {
-		for i, e := range errs {
-			errs[i] = fmt.Errorf("%s: rules: %w", path, e)
-		}
-		return errors.Join(errs...)
 	}
-	set.File = path
-	c.Rules = set
-	return nil
 }
 
 // checkSchema enforces backd's rules on top of JSON Schema validity.

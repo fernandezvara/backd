@@ -166,6 +166,7 @@ This optional file holds a collection's policy, in sections that can each be lef
 | `custom_id:` | Collections whose documents get the id the client chooses | [Custom ids](#custom-ids) |
 | `organization:` | Whether documents belong to an organization, and what happens to them when it is deleted | [Organizations](#organizations) |
 | `realtime:` | Whether the collection's changes may be streamed to clients | [Realtime](#realtime) |
+| `triggers:` | Functions to run in the background when documents change | [Triggers](#triggers) |
 | `on_owner_delete:` | What an administrator's **erase** does to the collection when a user is erased (`backd user delete`) | below |
 
 ```yaml
@@ -336,6 +337,38 @@ realtime: true      # the collection's changes may be streamed to subscribed cli
 `realtime: true` marks the collection as one whose changes are read from MongoDB's change stream. Without it (or with `false`) nothing is read for the collection, and anything but `true` or `false` stops startup, naming the file.
 
 Subscriptions themselves, the `POST /v1/{realm}/_realtime` endpoint, come in a later step (planned): today the key only declares the collection, and the [change feed](../../operations/events/) it will use is what is built. Nothing is streamed to clients yet.
+
+### Triggers
+
+A trigger runs an [internal, async function](../../functions/internal/) in the background when documents of the collection change and a condition holds. A document is checked when it is **created**, **updated** or **removed**.
+
+```yaml
+triggers:
+  on_paid:
+    events: [created, updated]
+    when: "document.status == 'paid' && before.status != 'paid'"
+    function: main/on-paid          # <database>/<function>
+    fields: [status, total]         # optional
+    session: true                   # optional
+    ordered: true                   # optional
+```
+
+| Key | Meaning |
+|---|---|
+| `events` | At least one of `created`, `updated`, `removed`. |
+| `when` | Optional condition. It sees `document` (the document after the change), `before` (before it), `changed()` (the top-level fields that differ), `now` and `appConfig("path")`. There is **no `user` and no `data`**: an event has no caller, so the helpers that ask about one (`hasRole`, `inOrg`, …) are errors. Left out, every listed event fires. |
+| `function` | `<database>/<function>`. The function must declare `internal: true` and `mode: async`; startup names the file and trigger when it doesn't. |
+| `fields` | What rides in the job. Without it the job carries ids, the document's version and which fields changed, **not** the documents: the function reads what it needs. Paths of the schema add `before` and `after` trimmed to them; `["*"]` adds them whole. Jobs are kept as long as invocation records, so bodies in them are a choice. |
+| `session` | `true` adds `by`: the user who wrote the document, when a user did. It is information, never an identity. |
+| `ordered` | `true` runs the jobs of one document one at a time. |
+
+- **A transition is the safe shape.** `before.status != 'paid' && document.status == 'paid'` fires once when the value is reached; writing the same value again doesn't fire it again, and the function's own write can't loop through it. A missing `before` (a creation) reads as an empty document, so `before.status` is `nil`.
+- **A removal has no `document`.** A condition that names `document` never matches a removal; to react to removals, read `before`. A trigger listening only to `removed` whose `when` names `document` is refused at startup, because it could never fire.
+- **Field paths are checked against `schema.json`**, like rules: a typo is a startup error, not a trigger that silently never fires.
+- **At most 20 triggers per collection**, lowered with `triggers.max_per_collection` in `realm.yaml`; `max_chain` (how deep writes caused by trigger runs may chain, at most the instance's `BACKD_TRIGGER_MAX_CHAIN`, default 16), `max_chained_per_minute` and `max_backlog` are the other `triggers:` keys of `realm.yaml`.
+- A collection with triggers needs [pre-change images](../../operations/events/#requirements), which `backd provision` enables.
+
+Triggers are **declared and checked** today; running them is planned. Until the dispatcher lands, a trigger is validated and enables pre-change images, and no function is run.
 
 ### Public caching
 

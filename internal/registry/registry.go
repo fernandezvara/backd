@@ -76,6 +76,7 @@ type Collection struct {
 	Aggregate     *Aggregate            // from collection.yaml's aggregate:; nil: not aggregatable
 	Text          *TextIndex            // from indexes.json's text entry; nil: no full-text search
 	Realtime      bool                  // from collection.yaml's realtime:; its changes may be streamed to clients
+	Triggers      []*Trigger            // from collection.yaml's triggers:, by name; nil: none
 	// Organization is collection.yaml's organization: OrgRequired, OrgOptional or OrgNone (also ""
 	// for collections loaded without the section). OnOrgDelete is OrgDelete or OrgKeep, and
 	// OwnerDeleteInOrg InOrgKeep or InOrgApply, both only with an organization.

@@ -42,6 +42,12 @@ func configCommand(c *kli.CommandContext, fingerprintOnly bool) error {
 			err = reg.CheckAggregateLimits(l)
 		}
 	}
+	if err == nil {
+		var l registry.TriggerLimits
+		if l, err = settings.TriggerLimitsFrom(c.Getenv); err == nil {
+			err = reg.CheckTriggerLimits(l)
+		}
+	}
 	if err != nil {
 		return fmt.Errorf("invalid config:\n%w", err)
 	}

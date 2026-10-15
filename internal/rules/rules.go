@@ -37,6 +37,10 @@ const (
 	// Config is the read rule of a path of the realm's app configuration
 	// (app-config/rules.yaml): it sees `user` and `now`, with no document.
 	Config Op = "config"
+	// Trigger is the `when:` of a collection's trigger (collection.yaml): it sees the
+	// document before and after a change, `changed()`, `now` (the change's time) and the
+	// app configuration — and no caller, because an event has none.
+	Trigger Op = "trigger"
 )
 
 // Ops lists the operations in a fixed order.
@@ -156,6 +160,7 @@ func compileEnv() map[string]any {
 	return map[string]any{
 		"user":     (*User)(nil),
 		"document": map[string]any{},
+		"before":   map[string]any{},
 		"data":     map[string]any{},
 		"now":      time.Time{},
 		"changed":  func() []string { return nil },
@@ -281,6 +286,38 @@ func (r *Rule) AlwaysTrue() bool {
 func (r *Rule) AlwaysFalse() bool {
 	b, ok := r.tree.(*ast.BoolNode)
 	return ok && !b.Value
+}
+
+// CompileTrigger compiles and checks the `when:` of a trigger. It may use `document` (after
+// the change), `before` (before it), `changed()`, `now` and appConfig; `user`, `data` and the
+// helpers that need a caller are errors, because an event has none.
+func CompileTrigger(src string, schema Schema) (*Rule, error) {
+	return compile(Trigger, string(Trigger), src, schema)
+}
+
+// References reports whether the rule's source names the variable (`document`, `before`).
+func (r *Rule) References(name string) bool { return refs(r.tree, name) }
+
+// Fires evaluates a trigger's `when:` for one change. before and after are the documents in
+// API shape, nil when there is none (a created document has no before, a removed one no
+// after); at is the change's cluster time and config the app configuration, for appConfig.
+//
+// A missing document reads as an empty one, so `before.status != 'paid'` is true for a
+// creation (it came from nothing). The exception is a removal: a condition that names
+// `document` never matches it, whatever it says, because the document is gone; conditions
+// meant for removals read `before`.
+func (r *Rule) Fires(before, after map[string]any, at time.Time, config map[string]any) (bool, error) {
+	if after == nil && r.References("document") {
+		return false, nil
+	}
+	if before == nil {
+		before = map[string]any{}
+	}
+	doc := after
+	if doc == nil {
+		doc = map[string]any{}
+	}
+	return r.Allow(Values{Document: doc, Before: before, Event: true, Now: at, Config: config})
 }
 
 func compile(op Op, key, src string, schema Schema) (*Rule, error) {
