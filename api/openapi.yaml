@@ -6030,7 +6030,7 @@ paths:
             `$or` and `$and` take an array of such objects, e.g.
             `{"$or":[{"title":{"$icontains":"go"}},{"body":{"$icontains":"go"}}]}`.
             `$search` at the top level searches the collection's text index (words,
-            `"quoted phrases"` and `-excluded` words, at most 256 bytes and 20 terms), ANDed
+            `"quoted phrases"` and `-excluded` words, at most 256 bytes and 10 terms), ANDed
             with the rest; it can't be inside `$or` or `$and`, and a collection without a
             text index answers `400 search_not_enabled`.
           schema: { type: string }
@@ -6078,6 +6078,13 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        "422":
+          description: >-
+            `search_too_expensive`: a `$search` that needed more time than allowed
+            (`BACKD_AGGREGATE_TIME`, 5 seconds by default): fewer or rarer words, or a narrower
+            `where`.
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
         "503":
           description: >-
             `index_building`: a `$search` while the collection's text index is being rebuilt
@@ -8512,7 +8519,7 @@ components:
                 backd's codes: invalid_json, validation_error, invalid_query, invalid_path,
                 invalid_header, precondition_required, invalid_expand, expand_too_large,
                 invalid_aggregate, aggregate_not_enabled, aggregate_too_expensive,
-                search_not_enabled, index_building, unauthenticated,
+                search_not_enabled, search_too_expensive, index_building, unauthenticated,
                 invalid_credentials, forbidden,
                 not_found, method_not_allowed, conflict, email_taken,
                 write_conflict, version_mismatch, id_required, invalid_id,

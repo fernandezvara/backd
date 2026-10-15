@@ -441,6 +441,8 @@ func TestContract(t *testing.T) {
 		}
 		req("GET", a+`/_aggregate?where={"$search":"running"}&language=en`, "", ada, 200)
 		req("GET", "/v1/acme/app/notes"+`?where={"$search":"x"}`, "", ada, 400)
+		f.store.fail = storage.ErrSearchTooExpensive
+		req("GET", a+`?where={"$search":"running"}`, "", ada, 422)
 		f.store.fail = storage.ErrIndexBuilding
 		req("GET", a+`?where={"$search":"running"}`, "", ada, 503)
 		f.store.fail = nil

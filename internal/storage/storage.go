@@ -35,6 +35,8 @@ type Query struct {
 	// Search, and pages by Skip only.
 	Search    *Search
 	Relevance bool
+	// MaxTime bounds a search (0: no limit); past it the read fails with ErrSearchTooExpensive.
+	MaxTime time.Duration
 }
 
 // Search is a full-text search over a collection's text index.
@@ -190,6 +192,8 @@ var (
 	ErrNotFound = errors.New("document not found")
 	// ErrVersionMismatch means a conditional write found a different version.
 	ErrVersionMismatch = errors.New("document version mismatch")
+	// ErrSearchTooExpensive means a search needed more time than allowed.
+	ErrSearchTooExpensive = errors.New("search too expensive")
 	// ErrIndexBuilding means a search found no text index: it is being rebuilt.
 	ErrIndexBuilding = errors.New("text index not available")
 	// ErrUnavailable means the storage backend could not be reached in time.

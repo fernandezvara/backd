@@ -61,10 +61,18 @@ const scoreField = "_backd_score"
 
 // mapSearchError maps a failed read: a search without its text index is a rebuild in
 // progress, not an outage of the database.
-func mapSearchError(searching bool, err error) error {
+func mapSearchError(parent, run context.Context, searching bool, err error) error {
+	if searching && run.Err() != nil && parent.Err() == nil {
+		return storage.ErrSearchTooExpensive
+	}
 	var ce mongo.CommandError
-	if searching && errors.As(err, &ce) && ce.Code == 27 { // IndexNotFound: "text index required for $text query"
-		return storage.ErrIndexBuilding
+	if searching && errors.As(err, &ce) {
+		switch ce.Code {
+		case 27: // IndexNotFound: "text index required for $text query"
+			return storage.ErrIndexBuilding
+		case 50: // MaxTimeMSExpired
+			return storage.ErrSearchTooExpensive
+		}
 	}
 	return mapError(err)
 }
@@ -138,13 +146,19 @@ func (r *Repository) List(ctx context.Context, q storage.Query) (storage.Page, e
 		opts.SetProjection(bson.D{{Key: scoreField, Value: score}}).
 			SetSort(bson.D{{Key: scoreField, Value: score}, {Key: "_id", Value: 1}})
 	}
-	cur, err := r.coll.Find(ctx, find, opts)
+	runCtx := ctx
+	if q.Search != nil && q.MaxTime > 0 {
+		var cancel context.CancelFunc
+		runCtx, cancel = context.WithTimeout(ctx, q.MaxTime)
+		defer cancel()
+	}
+	cur, err := r.coll.Find(runCtx, find, opts)
 	if err != nil {
-		return storage.Page{}, mapSearchError(q.Search != nil, err)
+		return storage.Page{}, mapSearchError(ctx, runCtx, q.Search != nil, err)
 	}
 	var docs []bson.D
-	if err := cur.All(ctx, &docs); err != nil {
-		return storage.Page{}, mapSearchError(q.Search != nil, err)
+	if err := cur.All(runCtx, &docs); err != nil {
+		return storage.Page{}, mapSearchError(ctx, runCtx, q.Search != nil, err)
 	}
 
 	page := storage.Page{Items: make([]storage.Document, 0, min(len(docs), q.Limit))}

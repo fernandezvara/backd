@@ -188,6 +188,9 @@ export class RetryableError extends BackdError {
   }
 }
 
+/** 422 `search_too_expensive`: a search needed more time than allowed; use fewer or rarer words, or narrow `where`. */
+export class SearchTooExpensiveError extends BackdError {}
+
 /**
  * 503 `index_building`: a search while the collection's text index is being rebuilt. It is a
  * `RetryableError`: the client retries it after `Retry-After`, and `retryAfter` says how long.
@@ -257,6 +260,8 @@ function typedClass(code, fallback) {
       return AggregateTooExpensiveError
     case 'search_not_enabled':
       return SearchNotEnabledError
+    case 'search_too_expensive':
+      return SearchTooExpensiveError
     case 'index_building':
       return IndexBuildingError
     case 'invalid_expand':

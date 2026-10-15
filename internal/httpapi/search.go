@@ -11,6 +11,7 @@ import (
 const (
 	codeSearchNotEnabled = "search_not_enabled"
 	codeIndexBuilding    = "index_building"
+	codeSearchTooCostly  = "search_too_expensive"
 )
 
 // prepareSearch checks that the collection can be searched and gives the search its language.

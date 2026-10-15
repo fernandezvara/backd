@@ -311,6 +311,7 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 		if !d.prepareSearch(w, r, c, q.Search) {
 			return
 		}
+		q.MaxTime = d.aggregateLim.Time // a search that needs more is refused, as an aggregation is
 	}
 	view, ok := parseTrash(w, r, c)
 	if !ok {
@@ -814,6 +815,8 @@ func render(doc map[string]any) map[string]any {
 // storageError maps repository errors to HTTP responses.
 func storageError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, storage.ErrSearchTooExpensive):
+		writeError(w, r, http.StatusUnprocessableEntity, codeSearchTooCostly, "this search needs more time than allowed: use fewer or rarer words, or narrow `where`")
 	case errors.Is(err, storage.ErrIndexBuilding):
 		w.Header().Set("Retry-After", "5")
 		writeError(w, r, http.StatusServiceUnavailable, codeIndexBuilding, "the text index of this collection is being rebuilt: try again in a few seconds")

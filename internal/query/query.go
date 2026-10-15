@@ -112,7 +112,7 @@ func ParseWhere(where string, fields map[string]registry.Field) (storage.Filter,
 // MaxSearchBytes and MaxSearchTerms bound the text of a $search.
 const (
 	MaxSearchBytes = 256
-	MaxSearchTerms = 20
+	MaxSearchTerms = 10
 )
 
 // ParseWhereSearch is ParseWhere for reads that can search: a `$search` at the top level of the

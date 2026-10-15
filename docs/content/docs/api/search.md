@@ -43,7 +43,7 @@ red "running shoes" -kids
 - **Words**: a document matches if it has **any** of them (and ranks higher for having more).
 - **`"quoted phrases"`**: the words together, in that order.
 - **`-excluded`**: a document with that word is left out.
-- It is only words: operators, wildcards and regular expressions have no meaning, and at most 256 bytes and 20 terms are read (a phrase is one). A user can type anything.
+- It is only words: operators, wildcards and regular expressions have no meaning, and at most 256 bytes and 10 terms are read (a phrase is one). A user can type anything.
 
 ## Relevance and paging
 

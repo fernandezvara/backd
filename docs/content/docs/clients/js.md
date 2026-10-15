@@ -340,7 +340,7 @@ page.items[0]._meta.score           // the relevance; `language: 'es'` picks the
 - **`aggregate(params)`**: `groupBy` and `metrics` take a string or a list, `orderBy` a key or result name (`'-count'`), `tz` an IANA zone, `limit` at most the collection's maximum. Without `groupBy` the answer is one group with an empty `key`, for a counter.
 - **`fillBuckets(groups, { field, unit, from, to, empty })`** adds the empty buckets of one date field between `from` and `to` (bucket keys such as `'2026-09'`, or dates), as `count: 0` plus `empty`. It needs groups grouped by that bucket alone.
 - **`search(text, params)`** takes a list's parameters except `orderBy` and `after`; pages with `skip` through the first 1,000 results.
-- **Errors:** `AggregateNotEnabledError`, `InvalidAggregateError` and `SearchNotEnabledError` (400, `ValidationError`s), `AggregateTooExpensiveError` (422) and `IndexBuildingError` (503, a `RetryableError`: the text index is being rebuilt, and `retryAfter` says when to try again).
+- **Errors:** `AggregateNotEnabledError`, `InvalidAggregateError` and `SearchNotEnabledError` (400, `ValidationError`s), `AggregateTooExpensiveError` and `SearchTooExpensiveError` (422) and `IndexBuildingError` (503, a `RetryableError`: the text index is being rebuilt, and `retryAfter` says when to try again).
 - **Typed:** in a client typed from `backd types`, `aggregate` only accepts the declared fields (a bucket only on dates), and a collection that declares no `aggregate:` has none.
 - **Functions** have both on `ctx.db` (as the caller) and `ctx.admin.db`.
 
@@ -678,7 +678,7 @@ Every answer that isn't 2xx throws a `BackdError`, or one of its subclasses:
 | `TeamError` (a `ValidationError`) | 400 | `team_required`, `team_not_allowed` |
 | `InvalidExpandError`, `ExpandTooLargeError` (`ValidationError`s) | 400 | `invalid_expand` (`details` name the part), `expand_too_large`: see [expanding references](#expanding-references) |
 | `AggregateNotEnabledError`, `InvalidAggregateError`, `SearchNotEnabledError` (`ValidationError`s) | 400 | `aggregate_not_enabled`, `invalid_aggregate`, `search_not_enabled`: see [aggregations and search](#aggregations-and-search) |
-| `AggregateTooExpensiveError` | 422 | `aggregate_too_expensive` |
+| `AggregateTooExpensiveError`, `SearchTooExpensiveError` | 422 | `aggregate_too_expensive`, `search_too_expensive` |
 | `IndexBuildingError` (a `RetryableError`) | 503 | `index_building`: the collection's text index is being rebuilt |
 | `LastOrgManagerError` (a `ConflictError`) | 409 | `last_org_manager`: the organization needs someone who can manage it |
 | `VersionMismatchError` | 412 | `version_mismatch` |

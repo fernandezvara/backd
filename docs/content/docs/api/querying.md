@@ -126,7 +126,7 @@ Values are checked against the field's schema type:
 | Wildcards (`%`, `_`) in a `$like` / `$ilike` pattern | 4 |
 | Fields in `order_by` | 8 |
 | Nesting of `$or` / `$and` | 4 levels |
-| Text of a `$search` | 256 bytes, 20 terms |
+| Text of a `$search` | 256 bytes, 10 terms |
 
 ## Full-text search
 
@@ -141,6 +141,7 @@ GET /v1/shop/blog/articles?where={"$search":"red \"running shoes\" -kids","statu
 - **Language.** Words are stemmed in the language of the request: `language=` (a locale code such as `es` or `en-GB`), else the signed-in user's locale, else the first language of `Accept-Language` for anonymous callers, else the index's `default_language`. A locale with no language of its own searches without stemming. Documents are stemmed in their own language, from the index's `language_field`.
 - **Relevance.** `order_by=_relevance`, alone, orders by how well documents match (title weights beat body weights), ties by `id`, and puts the score in each document's `_meta.score`. Relevance pages by `skip`, and only through the first 1,000 results (`400` beyond); there is no `after`. Any other `order_by` works as usual, with the search as a filter.
 - **Elsewhere.** `$search` also works in [aggregations](../aggregations/) (results per category next to a search box) and with [`expand`](../references/). Conditional GET works as for any list.
+- **Cost.** A search that needs more than `BACKD_AGGREGATE_TIME` (5 seconds by default) is `422 search_too_expensive`: many common words match most of a large collection and have to be scored. Fewer or rarer words, or a narrower `where`, fix it.
 - **While the index is rebuilt** (its declaration changed and `backd provision` is replacing it) a search answers `503 index_building` with `Retry-After`.
 
 The [search guide](../search/) covers declaring the index, weights, languages and what search doesn't do.

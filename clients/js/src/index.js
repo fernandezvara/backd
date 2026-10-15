@@ -29,6 +29,7 @@ export {
   AggregateNotEnabledError,
   AggregateTooExpensiveError,
   SearchNotEnabledError,
+  SearchTooExpensiveError,
   IndexBuildingError,
   TeamError,
   NotOrgMemberError,

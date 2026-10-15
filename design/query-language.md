@@ -125,7 +125,7 @@ GET /v1/{realm}/{db}/articles?where={"$search":"red \"running shoes\" -kids","st
 ```
 
 - **Placement:** `$search` is allowed **only at the top level** of `where`, ANDed with the other conditions and the pushed-down read rule. Inside `$or` or nested groups it's rejected with `400 invalid_query` explaining why (a MongoDB limit).
-- **Syntax:** words (matching any), quoted phrases, and `-excluded` words. It's a plain string passed to MongoDB's text search, never parsed as operators. At most 256 characters and 20 terms.
+- **Syntax:** words (matching any), quoted phrases, and `-excluded` words. It's a plain string passed to MongoDB's text search, never parsed as operators. At most 256 characters and 10 terms (lowered from 20 by the load test of 21.8).
 - **Language:** `language=` if given, else the caller's `user.locale`, else `Accept-Language` for anonymous callers, else the index default. Mapped from locale codes the same way as indexing.
 - **Relevance:**
   - `order_by=_relevance` sorts by MongoDB's text score (ties by id), and `_meta.score` is included in each document;

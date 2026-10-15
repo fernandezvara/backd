@@ -302,7 +302,7 @@ func TestParseWhereSearch(t *testing.T) {
 	}
 	// Twenty terms is fine, phrases count once.
 	if _, _, err := ParseWhereSearch(`{"$search": "`+strings.Repeat("w ", MaxSearchTerms)+`"}`, fields); err != nil {
-		t.Errorf("20 terms: %v", err)
+		t.Errorf("%d terms: %v", MaxSearchTerms, err)
 	}
 	if _, _, err := ParseWhereSearch(`{"$search": "\"a b c d e f g h i j k l m n o p q r s t u v\""}`, fields); err != nil {
 		t.Errorf("a long phrase is one term: %v", err)

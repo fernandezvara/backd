@@ -104,6 +104,7 @@ Every error uses the same JSON envelope. Success responses are never wrapped.
 | 422 | `upload_mismatch` | A direct upload's size or SHA-256 isn't the declared one: the object was deleted |
 | 422 | `idempotency_key_reused` | A [function](../functions/calling/#idempotency) `Idempotency-Key` was already used with different input |
 | 422 | `aggregate_too_expensive` | An [aggregation](aggregations/) that needed more time, memory or distinct values than allowed: narrow `where`, group by fewer fields or add an index |
+| 422 | `search_too_expensive` | A `$search` that needed more time than allowed: fewer or rarer words, or a narrower `where` |
 | 503 | `index_building` | A `$search` while the collection's text index is being rebuilt after its declaration changed; retry after `Retry-After` |
 | 429 | `too_many_requests` | Too many failed logins (see [brute-force protection](../auth/sessions/#brute-force-protection)); or a [function](../functions/calling/#concurrency-limits), or its realm, is at its concurrency limit; or the caller is over a function's [rate limit](../functions/calling/#rate-limits). Wait `Retry-After` seconds |
 | 500 | `function_failed` | A [function](../functions/calling/#calling-a-function) threw an error other than `ctx.error`, crashed, or went over its memory or CPU limit |

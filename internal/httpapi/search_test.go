@@ -89,7 +89,7 @@ func TestSearch(t *testing.T) {
 		where(`{"status": "published"}`) + "&order_by=_relevance":    "_relevance needs a $search",
 		where(`{"$search": "a"}`) + "&order_by=_relevance,title":     "can't be combined with other fields",
 		where(`{"$search": "a"}`) + "&order_by=_relevance&after=abc": "can't be combined with order_by=_relevance",
-		where(`{"$search": "` + strings.Repeat("w ", 21) + `"}`):     "at most 20",
+		where(`{"$search": "` + strings.Repeat("w ", 11) + `"}`):     "at most 10",
 	} {
 		code, out, _ := get(f.ada, q)
 		if code != 400 || errCode(out) != "invalid_query" || !strings.Contains(fmt.Sprint(out), want) {

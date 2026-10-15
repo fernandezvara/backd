@@ -236,6 +236,11 @@ func TestSearchOnMongoDB(t *testing.T) {
 		}
 	}
 
+	// A search has a time limit, as an aggregation does.
+	if _, err := repo.List(ctx, storage.Query{Search: &storage.Search{Text: "shoes"}, Limit: 5, MaxTime: time.Nanosecond}); !errors.Is(err, storage.ErrSearchTooExpensive) {
+		t.Errorf("a search past its time: %v", err)
+	}
+
 	// In an aggregation: results per language next to a search box.
 	res, err := repo.Aggregate(ctx, storage.AggregateQuery{
 		Search: &storage.Search{Text: "shoes", Language: "english"}, GroupBy: []storage.GroupField{{Field: "lang"}},
