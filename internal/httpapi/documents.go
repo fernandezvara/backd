@@ -54,6 +54,7 @@ type documents struct {
 	baseURL        string                // backd's public address, for the links it signs (BACKD_URL)
 	imageMaxPixels int64                 // the instance's image pixel limit (BACKD_IMAGE_MAX_PIXELS)
 	expand         registry.ExpandLimits // reference expansion limits (BACKD_EXPAND_MAX_*), defaults filled in
+	aggregateLim   registry.AggregateLimits // aggregation limits (BACKD_AGGREGATE_*), defaults filled in
 	maxUpload      int64                 // the largest file a proxy upload may carry (BACKD_MAX_UPLOAD_BYTES)
 	now            func() time.Time
 	maxBody        int64
@@ -73,6 +74,8 @@ func (d *documents) routes(r chi.Router) {
 	r.Route("/v1/{realm}/{database}/{collection}", func(r chi.Router) {
 		r.Use(dataCaching, d.resolveCollection, withTimeout(d.opTimeout), d.authorize)
 		d.mountDocuments(r)
+		// Summaries are for apps and functions; the admin data route has no use for them.
+		r.Get("/_aggregate", d.aggregate)
 	})
 	r.With(noStore, withTimeout(d.opTimeout), requireContentType("application/json")).Post("/v1/{realm}/{database}/_batch", d.batch)
 	r.With(dataCaching, withTimeout(d.opTimeout)).Get("/v1/{realm}/_config", d.readAppConfig)
@@ -310,20 +313,8 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 	}
 	// ?org= and ?team= are shorthands for a where on _meta.org and _meta.team; the read rule
 	// still decides what is seen.
-	for _, f := range scopeFields {
-		if !r.URL.Query().Has(f.key) {
-			continue
-		}
-		if !f.has(c) {
-			writeError(w, r, http.StatusBadRequest, f.notAllowed, "this collection has no "+f.plural)
-			return
-		}
-		id := r.URL.Query().Get(f.key)
-		if id == "" {
-			writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid query parameters", Detail{Path: f.key, Reason: "must be " + f.article + " " + f.noun + " id"})
-			return
-		}
-		q.Filter = and(q.Filter, storage.Condition{Field: f.path, Op: storage.OpEq, Value: id})
+	if q.Filter, ok = scopeFilter(w, r, c, q.Filter); !ok {
+		return
 	}
 	filter, ok := viewFilter(w, r, d.accessFor(r), c, view)
 	if !ok {
@@ -1226,4 +1217,26 @@ func explainReferenceFilters(c *registry.Collection, details []Detail) []Detail 
 		}
 	}
 	return details
+}
+
+// scopeFilter adds the ?org= and ?team= shorthands of a read to filter, as conditions on
+// _meta.org and _meta.team. It answers 400 and returns false when the collection has no such
+// scope or the value is empty.
+func scopeFilter(w http.ResponseWriter, r *http.Request, c *registry.Collection, filter storage.Filter) (storage.Filter, bool) {
+	for _, f := range scopeFields {
+		if !r.URL.Query().Has(f.key) {
+			continue
+		}
+		if !f.has(c) {
+			writeError(w, r, http.StatusBadRequest, f.notAllowed, "this collection has no "+f.plural)
+			return nil, false
+		}
+		id := r.URL.Query().Get(f.key)
+		if id == "" {
+			writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid query parameters", Detail{Path: f.key, Reason: "must be " + f.article + " " + f.noun + " id"})
+			return nil, false
+		}
+		filter = and(filter, storage.Condition{Field: f.path, Op: storage.OpEq, Value: id})
+	}
+	return filter, true
 }

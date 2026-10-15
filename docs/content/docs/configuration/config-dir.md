@@ -302,7 +302,7 @@ aggregate:
 - **`metrics`:** numeric fields, and dates (for minimum and maximum), `_meta.created_at`, `_meta.updated_at` and `_meta.version`.
 - **Checked at startup** against `schema.json`, with the file and the field named. `limits.time` is a duration (at least 100ms) and `limits.max_groups` a number; both may only be lower than the instance's `BACKD_AGGREGATE_TIME` and `BACKD_AGGREGATE_MAX_GROUPS`, or startup stops.
 - **A warning at startup** names each `group_by` field that no index leads with, and the line to add to [`indexes.json`](#indexesjson): grouping by it reads every matching document, in no useful order. `backd config check` prints the same warnings.
-- The aggregate endpoint itself is described in the next steps of this feature.
+- The request side, `GET …/_aggregate`, is in [Aggregations](../../api/aggregations/).
 
 ### Public caching
 

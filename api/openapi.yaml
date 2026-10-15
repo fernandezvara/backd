@@ -6120,6 +6120,94 @@ paths:
         "429": { $ref: "#/components/responses/TooManyRequests" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/{database}/{collection}/_aggregate:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+    get:
+      tags: [documents]
+      summary: Aggregate documents
+      description: |
+        Summarizes the documents the caller may read: counts and measures, grouped by fields the
+        collection declares in `aggregate:` (collection.yaml). The read rule is applied before
+        grouping, so a total never includes a document a list would hide. The pipeline is
+        fixed; clients only choose declared fields, buckets and metrics.
+
+        Without `group_by` the answer is one group with an empty key (a counter). A missing or
+        null value forms its own `null` group; empty date buckets are not filled in.
+        `sum` and `avg` are exact decimals returned as strings; `count` and `count_distinct`
+        are integers; `min` and `max` are returned as stored. Result names are `<metric>_<field>`.
+      operationId: aggregateDocuments
+      security: [{}, { session: [] }, { apiKey: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/orgQuery" }
+        - { $ref: "#/components/parameters/teamQuery" }
+        - { $ref: "#/components/parameters/ifNoneMatch" }
+        - name: where
+          in: query
+          description: The same JSON filter as a list's, ANDed with the read rule before grouping.
+          schema: { type: string }
+        - name: group_by
+          in: query
+          description: >-
+            Up to 3 fields declared in `aggregate.group_by`, separated by commas; a date field
+            takes a bucket: `paid_at:month` (`day`, `week` (ISO, Monday first), `month`, `year`).
+            Bucket keys are text: `2026-09-14`, `2026-W38`, `2026-09`, `2026`.
+          schema: { type: string }
+        - name: metrics
+          in: query
+          description: >-
+            Separated by commas, at most 10; default `count`. `count`; `count_distinct:<field>`
+            (a `group_by` field; exact, and above 10,000 distinct values `422`); `sum:<field>`
+            and `avg:<field>` (numeric fields of `aggregate.metrics`; missing and null are
+            ignored, the average of nothing is null); `min:<field>` and `max:<field>` (numbers
+            and dates of `aggregate.metrics`).
+          schema: { type: string }
+        - name: tz
+          in: query
+          description: IANA time zone of the date buckets (`Europe/Madrid`); default `UTC`.
+          schema: { type: string }
+        - name: order_by
+          in: query
+          description: >-
+            Group keys and result names, `-` for descending: `-count`, `sum_total`,
+            `paid_at:month`. Default: the keys, ascending, null first.
+          schema: { type: string }
+        - name: limit
+          in: query
+          description: Groups returned, 1 to the collection's `max_groups` (1,000 by default); default 100.
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: The groups, and how many there were before `limit`.
+          headers:
+            ETag: { description: "A weak validator over the answer; send it in `If-None-Match`.", schema: { type: string, pattern: '^W/"[0-9a-f]{32}"$' } }
+            Vary: { $ref: "#/components/headers/DataVary" }
+            Cache-Control: { $ref: "#/components/headers/DataCacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AggregateResponse" }
+        "304": { $ref: "#/components/responses/NotModified" }
+        "400":
+          description: >-
+            `invalid_aggregate` (the details name each parameter and what is wrong),
+            `aggregate_not_enabled` (the collection declares no `aggregate:`) or
+            `invalid_query` for `?org=` and `?team=`.
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "422":
+          description: >-
+            `aggregate_too_expensive`: it needed more time, memory or distinct values than
+            allowed. Narrow `where`, group by fewer fields, or add an index that starts with a
+            `group_by` field.
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/{database}/{collection}/{id}:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -8388,7 +8476,8 @@ components:
               pattern: "^[a-z][a-z0-9_]{0,63}$"
               description: |
                 backd's codes: invalid_json, validation_error, invalid_query, invalid_path,
-                invalid_header, precondition_required, invalid_expand, expand_too_large, unauthenticated,
+                invalid_header, precondition_required, invalid_expand, expand_too_large,
+                invalid_aggregate, aggregate_not_enabled, aggregate_too_expensive, unauthenticated,
                 invalid_credentials, forbidden,
                 not_found, method_not_allowed, conflict, email_taken,
                 write_conflict, version_mismatch, id_required, invalid_id,
@@ -9389,6 +9478,27 @@ components:
         a single field's file is replaced and a `multiple` field's is added to;
         a reference that is wrong, used or expired is `400 validation_error`.
       additionalProperties: true
+
+    AggregateResponse:
+      type: object
+      additionalProperties: false
+      required: [groups, total_groups]
+      properties:
+        groups:
+          type: array
+          items:
+            type: object
+            required: [key]
+            description: |
+              `key` has one entry per `group_by` field (`null` for missing or null values);
+              the other members are the requested metrics by result name, e.g. `count`,
+              `sum_total`. Sums and averages are exact decimal strings.
+            properties:
+              key: { type: object, additionalProperties: true }
+            additionalProperties: true
+        total_groups:
+          type: integer
+          description: How many groups there were before `limit`.
 
     DocumentList:
       type: object

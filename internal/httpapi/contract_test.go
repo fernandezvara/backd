@@ -403,6 +403,34 @@ func TestContract(t *testing.T) {
 		req("GET", "/v1/acme/app/notes?expand=status.nope", "", ada, 400)
 	}
 
+	// Aggregations: the sales collection declares what can be grouped and measured.
+	{
+		const s = "/v1/acme/app/sales"
+		req("POST", s, `{"category": "shoes", "total": 100.1, "paid_at": "2026-09-30T22:30:00Z"}`, ada, 201)
+		req("POST", s, `{"category": "hats", "total": 20}`, ada, 201)
+		const q = "/_aggregate?group_by=category,paid_at:month&tz=Europe/Madrid&metrics=count,sum:total,avg:total,min:paid_at,count_distinct:category&order_by=-count"
+		out := req("GET", s+q, "", ada, 200)
+		if out["total_groups"] != float64(2) {
+			t.Errorf("aggregate = %v", out)
+		}
+		req("GET", s+"/_aggregate", "", ada, 200)
+		req("GET", s+"/_aggregate?group_by=total", "", ada, 400)
+		req("GET", "/v1/acme/app/notes/_aggregate", "", ada, 400)
+		req("GET", s+"/_aggregate", "", nil, 401)
+		req("GET", "/v1/acme/app/private/_aggregate", "", ada, 403)
+		first, _ := f.doH(t, "GET", s+q, "", ada)
+		req("GET", s+q, "", with(ada, "If-None-Match", first.Header().Get("ETag")), 304)
+		f.store.aggregateErr = storage.ErrAggregateTooExpensive
+		req("GET", s+"/_aggregate?group_by=category", "", ada, 422)
+		f.store.aggregateErr = nil
+		busy := "aggregate/acme/app/sales/user:" + f.adaID
+		if !limiterFor(f.reg).tryAcquire(busy, 1) {
+			t.Fatal("limiter busy")
+		}
+		req("GET", s+"/_aggregate", "", ada, 429)
+		limiterFor(f.reg).release(busy, 1)
+	}
+
 	// Soft delete: delete, trash views, restore and purge.
 	{
 		const b = "/v1/acme/app/bin"

@@ -21,3 +21,5 @@ openapi.yaml:
     # `_orgs` is not a database name either: organization routes never match a batch or a document route.
     - '#/paths/~1v1~1{realm}~1{database}~1_batch'
     - '#/paths/~1v1~1{realm}~1_admin~1data~1{database}~1{collection}~1{id}~1_transfer'
+    # `_consents` and `_orgs` are not database names, so a collection's `_aggregate` never matches them.
+    - '#/paths/~1v1~1{realm}~1{database}~1{collection}~1_aggregate'

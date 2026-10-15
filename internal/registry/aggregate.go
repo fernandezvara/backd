@@ -23,6 +23,17 @@ type AggregateLimits struct {
 // DefaultAggregateLimits are the limits when the instance sets none.
 var DefaultAggregateLimits = AggregateLimits{Time: 5 * time.Second, MaxGroups: 1000}
 
+// OrDefault fills the limits that are zero with the defaults.
+func (l AggregateLimits) OrDefault() AggregateLimits {
+	if l.Time <= 0 {
+		l.Time = DefaultAggregateLimits.Time
+	}
+	if l.MaxGroups <= 0 {
+		l.MaxGroups = DefaultAggregateLimits.MaxGroups
+	}
+	return l
+}
+
 // MaxAggregateGroupBy is how many fields one aggregation may group by.
 const MaxAggregateGroupBy = 3
 

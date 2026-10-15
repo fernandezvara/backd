@@ -212,9 +212,10 @@ func (b *builder) collectionAt(db string, c *registry.Collection, admin bool) {
 	opNames := map[string]string{
 		"listDocuments": "list" + alias, "createDocument": "create" + alias, "getDocument": "get" + alias,
 		"replaceDocument": "replace" + alias, "patchDocument": "patch" + alias, "deleteDocument": "delete" + alias,
+		"aggregateDocuments": "aggregate" + alias,
 	}
 	needs := map[string]rules.Op{
-		"listDocuments": rules.Read, "getDocument": rules.Read, "createDocument": rules.Create,
+		"listDocuments": rules.Read, "getDocument": rules.Read, "aggregateDocuments": rules.Read, "createDocument": rules.Create,
 		"replaceDocument": rules.Update, "patchDocument": rules.Update, "deleteDocument": rules.Delete,
 	}
 
@@ -250,6 +251,7 @@ func (b *builder) collectionAt(db string, c *registry.Collection, admin bool) {
 			orgParam(op, id, c)
 			teamParam(op, id, c)
 			expandParam(op, id, c)
+			aggregateParams(op, id, c)
 		}
 		if len(operations(cp)) == 0 {
 			return
@@ -260,7 +262,11 @@ func (b *builder) collectionAt(db string, c *registry.Collection, admin bool) {
 		b.uniqueIDs(cp, "")
 		b.paths[path] = cp
 	}
-	for _, suffix := range []string{"", "/{id}", "/{id}/restore"} {
+	suffixes := []string{"", "/{id}", "/{id}/restore"}
+	if c.Aggregate != nil {
+		suffixes = append(suffixes, "/_aggregate")
+	}
+	for _, suffix := range suffixes {
 		if item := b.staticPath(prefix + suffix); item != nil {
 			sub(item, base+suffix)
 		}
@@ -455,6 +461,25 @@ func expandParam(op map[string]any, id string, c *registry.Collection) {
 		"description": "References to return in `_expanded`, with the fields to return of each in parentheses: `name(field,field)`, and `name.nested` for a reference of the referenced collection. This collection declares: " + strings.Join(list, ", ") + ".",
 	}
 	op["parameters"] = append(anySlice(op["parameters"]), param)
+}
+
+// aggregateParams tells an aggregation the fields its collection declares.
+func aggregateParams(op map[string]any, id string, c *registry.Collection) {
+	if id != "aggregateDocuments" || c.Aggregate == nil {
+		return
+	}
+	for _, p := range anySlice(op["parameters"]) {
+		pm, ok := p.(map[string]any)
+		if !ok {
+			continue
+		}
+		switch pm["name"] {
+		case "group_by":
+			pm["description"] = fmt.Sprintf("%v Declared by this collection: %s (up to %d).", pm["description"], strings.Join(c.Aggregate.GroupBy, ", "), registry.MaxAggregateGroupBy)
+		case "metrics":
+			pm["description"] = fmt.Sprintf("%v Fields declared by this collection: %s.", pm["description"], strings.Join(c.Aggregate.Metrics, ", "))
+		}
+	}
 }
 
 func anySlice(v any) []any {

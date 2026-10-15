@@ -46,6 +46,9 @@ type memStore struct {
 	beforeWrite func(docs map[string]storage.Document)
 	docs        map[string]map[string]storage.Document // collection key → id → doc
 	fail        error
+	// aggregateErr makes Aggregate fail; lastAggregate is the last query it ran.
+	aggregateErr  error
+	lastAggregate storage.AggregateQuery
 }
 
 func (s *memStore) Repository(c *registry.Collection) storage.Repository {
@@ -196,6 +199,22 @@ func (r *memRepo) Replace(_ context.Context, doc storage.Document, ifVersion int
 	}
 	r.coll()[id] = clone(doc).(map[string]any)
 	return nil
+}
+
+// Aggregate is the reference aggregation over the collection's documents. A test can make it
+// fail with aggregateErr.
+func (r *memRepo) Aggregate(_ context.Context, q storage.AggregateQuery) (storage.AggregateResult, error) {
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	if r.s.aggregateErr != nil {
+		return storage.AggregateResult{}, r.s.aggregateErr
+	}
+	r.s.lastAggregate = q
+	docs := make([]storage.Document, 0, len(r.coll()))
+	for _, d := range r.coll() {
+		docs = append(docs, d)
+	}
+	return storage.AggregateDocs(docs, q)
 }
 
 func (r *memRepo) Delete(_ context.Context, id string, ifVersion *int64) error {
