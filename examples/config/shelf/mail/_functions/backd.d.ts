@@ -262,7 +262,7 @@ export interface Realm {
         imports: { doc: MainImports; input: MainImportsInput; create: MainImportsInput; where: MainImportsWhere; order_by: MainImportsOrderBy; expand: {}; aggregate: never };
         members: { doc: MainMembers; input: MainMembersInput; create: MainMembersCreate; where: MainMembersWhere; order_by: MainMembersOrderBy; expand: {}; aggregate: never };
         notifications: { doc: MainNotifications; input: MainNotificationsInput; create: MainNotificationsInput; where: MainNotificationsWhere; order_by: MainNotificationsOrderBy; expand: {}; aggregate: never };
-        pins: { doc: MainPins; input: MainPinsInput; create: MainPinsInput; where: MainPinsWhere; order_by: MainPinsOrderBy; expand: {}; aggregate: never };
+        pins: { doc: MainPins; input: MainPinsInput; create: MainPinsInput; where: MainPinsWhere; order_by: MainPinsOrderBy; expand: {}; aggregate: { group_by: "author" | "_meta.created_at"; dates: "_meta.created_at"; metrics: never } };
         profiles: { doc: MainProfiles; input: MainProfilesInput; create: MainProfilesInput; where: MainProfilesWhere; order_by: MainProfilesOrderBy; expand: {}; aggregate: never };
         shares: { doc: MainShares; input: MainSharesInput; create: MainSharesInput; where: MainSharesWhere; order_by: MainSharesOrderBy; expand: {}; aggregate: never };
       };
@@ -280,7 +280,7 @@ export interface Realm {
         publish: { input: { asset_id: string; }; output: unknown; mode: "sync"; internal: false; calls: "notify" };
         share: { input: { asset_id: string; expires_in?: "week" | "month" | "never"; }; output: unknown; mode: "sync"; internal: false; calls: never };
         "share-open": { input: { token: string; }; output: unknown; mode: "sync"; internal: false; calls: never };
-        "team-plan": { input: { org: string; plan: "free" | "pro"; }; output: { org: string; plan: string; [key: string]: unknown; }; mode: "sync"; internal: false; calls: never };
+        "team-plan": { input: { org: string; plan?: "free" | "pro"; timezone?: string; }; output: { org: string; plan?: string; timezone?: string; [key: string]: unknown; }; mode: "sync"; internal: false; calls: never };
       };
     };
   };

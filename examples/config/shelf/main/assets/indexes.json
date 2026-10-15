@@ -1,5 +1,6 @@
 [
-  { "fields": ["-published_at"] },
-  { "fields": ["tags", "-published_at"] },
-  { "fields": ["_meta.owner", "-published_at"] }
+  {"fields": ["-published_at"]},
+  {"fields": ["tags", "-published_at"]},
+  {"fields": ["_meta.owner", "-published_at"]},
+  {"text": {"fields": {"title": 10, "tags": 5, "body": 1}, "default_language": "english"}}
 ]

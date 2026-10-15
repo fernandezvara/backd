@@ -11,6 +11,26 @@ Deno.test("it puts a team on a plan, as a claim of its organization", async () =
   if (c.orgChanges().map((x: { action: string }) => x.action).join() !== "setClaims") throw new Error("not recorded");
 });
 
+Deno.test("the time zone is a claim too, and the plan stays", async () => {
+  const c = createContext({ admin: true, orgs: { orgs: [{ id: "o1", name: "Docs", claims: { plan: "pro" } }] }, input: { org: "o1", timezone: "Europe/Madrid" } });
+  await handler(c.ctx as never);
+  const org = (await c.ctx.admin.orgs.get("o1")) as { claims: { plan: string; timezone: string } };
+  if (org.claims.plan !== "pro" || org.claims.timezone !== "Europe/Madrid") throw new Error(JSON.stringify(org));
+});
+
+Deno.test("nothing to set and a bad zone are 400s", async () => {
+  for (const input of [{ org: "o1" }, { org: "o1", timezone: "Mars/Base" }]) {
+    const c = createContext({ admin: true, orgs: { orgs: [{ id: "o1", name: "Docs" }] }, input });
+    let status: number | undefined;
+    try {
+      await handler(c.ctx as never);
+    } catch (e) {
+      status = (e as { status?: number }).status;
+    }
+    if (status !== 400) throw new Error(`${JSON.stringify(input)}: status ${status}`);
+  }
+});
+
 Deno.test("an unknown team is a 404", async () => {
   const c = createContext({ admin: true, orgs: true, input: { org: "nope", plan: "pro" } });
   let status: number | undefined;

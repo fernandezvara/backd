@@ -1,9 +1,10 @@
 {
   "type": "object",
   "properties": {
-    "org":  { "type": "string", "minLength": 1 },
-    "plan": { "enum": ["free", "pro"] }
+    "org":      { "type": "string", "minLength": 1 },
+    "plan":     { "enum": ["free", "pro"] },
+    "timezone": { "type": "string", "minLength": 1, "maxLength": 64, "description": "The team's IANA time zone, for its dashboard's months." }
   },
-  "required": ["org", "plan"],
+  "required": ["org"],
   "additionalProperties": false
 }
