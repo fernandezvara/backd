@@ -661,8 +661,8 @@ heading('Search and a dashboard (ch22)')
   check('a quoted phrase must appear as written', phrase.items.length === 1)
   await refused('a search can\'t be inside $or (400 invalid_query)', () => mine.list({ where: { $or: [{ $search: word }, { kind: 'link' }] } }), ValidationError, 'invalid_query')
   await refused('relevance needs a search (400 invalid_query)', () => mine.list({ orderBy: '_relevance' }), ValidationError, 'invalid_query')
-  const counted = await mine.aggregate({ where: { $search: word }, groupBy: 'kind' })
-  check('the same search narrows an aggregation', counted.groups.length === 1 && counted.groups[0].key.kind === 'note' && counted.groups[0].count === 2, JSON.stringify(counted.groups))
+  const counted = await mine.search(word, { count: true, limit: 1 })
+  check('count=true counts every match, not the page', counted.total === 2 && counted.items.length === 1, JSON.stringify(counted.total))
 
   // The dashboard: a team's pins per member per month, in the team's time zone.
   const ben = await signedIn(`ben22-${STAMP}@shelf.example`, operator)
