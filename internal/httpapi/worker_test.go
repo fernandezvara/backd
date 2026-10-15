@@ -652,3 +652,28 @@ func TestWorkerRunsATriggerJob(t *testing.T) {
 		t.Errorf("record = %+v", r)
 	}
 }
+
+// A worker runs the jobs of one serial key in the order they were made, whatever order they
+// were queued in, and does not start one while another of the key is unfinished.
+func TestWorkerRunsOrderedJobsInOrder(t *testing.T) {
+	f := newRulesFixture(t)
+	w := newTestWorker(t, f)
+	ctx := context.Background()
+	mk := func(id string, order int64) auth.Job {
+		return auth.Job{ID: id, Database: "app", Function: "job", Input: json.RawMessage(`{"id":"` + id + `"}`),
+			CallerActor: "system", ActsAsFunction: true, Origin: "trigger:app/notes/on_paid", TimeoutMS: 20000,
+			SerialKey: "app/notes/on_paid|n1", SerialOrder: order}
+	}
+	if n, err := f.svc.EnqueueJobs(ctx, []auth.Job{mk("third", 3), mk("first", 1), mk("second", 2)}); err != nil || n != 3 {
+		t.Fatalf("enqueue: %d %v", n, err)
+	}
+	var ran []string
+	for w.RunOnce(ctx) {
+		var in struct{ ID string }
+		_ = json.Unmarshal(f.runner.last().Envelope.Input, &in)
+		ran = append(ran, in.ID)
+	}
+	if strings.Join(ran, ",") != "first,second,third" {
+		t.Fatalf("ran %v, want first, second, third", ran)
+	}
+}

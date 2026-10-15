@@ -393,7 +393,7 @@ The [trigger dispatcher](../../operations/events/#the-trigger-dispatcher) queues
 - **Bodies are bounded.** Over 256 KiB the bodies are left out and `truncated` is `true`; the function reads the documents itself.
 - **Runs once, unless it retries.** A failure is final unless the function declares [`retry:`](../../functions/jobs/); an error it raises on purpose (`ctx.error`) is never retried. Handlers should be idempotent anyway, because a change can be delivered again after a restart: deduplicate on `id`.
 - **Its writes are stamped** with `_meta.chain = {root, depth}`, so a change a trigger caused can be told from a first-party one, and the events it makes carry `root` and `depth + 1`.
-- **`ordered`** is checked today and takes effect in a later step.
+- **`ordered: true` runs one document's jobs one at a time, in the order the changes were made.** Without it a document changed three times quickly can have its three runs at once, in any order: handlers then compare `version` with the document's current one. With it a run starts only when the earlier ones of the same document, for this trigger, have finished; a retry waiting out its delay keeps its place. Other documents and other triggers are not held back. The price is throughput on a document that changes often: its runs go one after another, and `jobs_serialized_waiting` counts the ones queued behind.
 
 ### Public caching
 

@@ -50,7 +50,7 @@ func newDomain() domain {
 	gauge := func(name, help string, labels ...string) *prometheus.GaugeVec {
 		return prometheus.NewGaugeVec(prometheus.GaugeOpts{Namespace: Namespace, Name: name, Help: help}, labels)
 	}
-	snap := &jobSnapshot{stats: map[string][]JobStat{}, needsAttention: map[string]int64{}}
+	snap := &jobSnapshot{stats: map[string][]JobStat{}, needsAttention: map[string]int64{}, serialWaiting: map[string]int64{}}
 	return domain{
 		jobs:            snap,
 		trigEvents:      counter("trigger_events_total", "Changes a trigger considered, by realm, collection, trigger and outcome: matched (a job was made), no_match (its condition was false), missing_preimage (the image its condition needs was not there) or error.", "realm", "collection", "trigger", "outcome"),

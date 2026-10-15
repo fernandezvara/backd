@@ -45,12 +45,14 @@ type jobSnapshot struct {
 	mu             sync.RWMutex
 	stats          map[string][]JobStat // by realm
 	needsAttention map[string]int64     // erase jobs that failed, by realm
+	serialWaiting  map[string]int64     // ordered jobs behind another of their key, by realm
 	refreshed      time.Time
 }
 
 type jobsCollector struct {
 	snap                                 *jobSnapshot
 	jobs, oldest, attention, refreshedAt *prometheus.Desc
+	serialized                           *prometheus.Desc
 }
 
 func newJobsCollector(snap *jobSnapshot) *jobsCollector {
@@ -63,6 +65,7 @@ func newJobsCollector(snap *jobSnapshot) *jobsCollector {
 		oldest:      d("jobs_oldest_wait_seconds", "Age of the longest-waiting queued job, by realm and kind (as of now, from the last refresh).", "realm", "kind"),
 		attention:   d("erase_needs_attention", "Erase jobs that used up their attempts and need an administrator, by realm.", "realm"),
 		refreshedAt: d("jobs_refreshed_timestamp_seconds", "When the job gauges were last refreshed (0: never)."),
+		serialized:  d("jobs_serialized_waiting", "Ordered (serial) jobs waiting behind an unfinished job of their key, by realm: what `ordered: true` triggers cost on a hot document.", "realm"),
 	}
 }
 
@@ -71,6 +74,7 @@ func (c *jobsCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.oldest
 	ch <- c.attention
 	ch <- c.refreshedAt
+	ch <- c.serialized
 }
 
 func (c *jobsCollector) Collect(ch chan<- prometheus.Metric) {
@@ -91,6 +95,9 @@ func (c *jobsCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 	for realm, n := range c.snap.needsAttention {
 		ch <- prometheus.MustNewConstMetric(c.attention, prometheus.GaugeValue, float64(n), realm)
+	}
+	for realm, n := range c.snap.serialWaiting {
+		ch <- prometheus.MustNewConstMetric(c.serialized, prometheus.GaugeValue, float64(n), realm)
 	}
 	var at float64
 	if !c.snap.refreshed.IsZero() {
@@ -120,6 +127,16 @@ func (m *Metrics) SetJobs(realm string, stats []JobStat, needsAttention int64) {
 	m.jobs.stats[realm] = stats
 	m.jobs.needsAttention[realm] = needsAttention
 	m.jobs.refreshed = time.Now()
+}
+
+// SetSerialWaiting records how many ordered jobs of a realm wait behind another.
+func (m *Metrics) SetSerialWaiting(realm string, n int64) {
+	if m == nil {
+		return
+	}
+	m.jobs.mu.Lock()
+	defer m.jobs.mu.Unlock()
+	m.jobs.serialWaiting[realm] = n
 }
 
 // JobFinished counts a job a worker finished, by kind and the result's status.
@@ -156,6 +173,7 @@ func (m *Metrics) WatchJobs(ctx context.Context, interval time.Duration, refresh
 		got, err := refresh(rctx)
 		for realm, r := range got {
 			m.SetJobs(realm, r.Stats, r.NeedsAttention)
+			m.SetSerialWaiting(realm, r.SerialWaiting)
 		}
 		if err != nil && ctx.Err() == nil {
 			m.refreshErrors.Inc()
@@ -178,6 +196,8 @@ func (m *Metrics) WatchJobs(ctx context.Context, interval time.Duration, refresh
 type RealmJobs struct {
 	Stats          []JobStat
 	NeedsAttention int64
+	// SerialWaiting counts ordered jobs waiting behind another of their key.
+	SerialWaiting int64
 }
 
 // JobSource is a store that can summarize its job queue; the MongoDB auth

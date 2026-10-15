@@ -59,6 +59,7 @@ All names start with `backd_`; durations are in seconds.
 | `executor_errors_total` | `kind` | Calls that failed because the executor couldn't be used (`unavailable`). |
 | `jobs` | `realm`, `kind`, `state` | Jobs not done yet: `kind` is `function`, `schedule`, `email`, `erase`, `check` (a schema check) or `image` (the versions of an image file); `state` is `queued` (a worker can claim it), `running` (a worker holds its lease) or `waiting` (for a retry's delay). Refreshed every 15 seconds in the background, never when you scrape. |
 | `jobs_oldest_wait_seconds` | `realm`, `kind` | Age of the longest-waiting queued job: the number to alert on when workers fall behind. |
+| `jobs_serialized_waiting` | `realm` | Ordered jobs (an [`ordered` trigger's](../../configuration/config-dir/#triggers)) waiting behind another unfinished job of their key. |
 | `jobs_refreshed_timestamp_seconds` | | When the job gauges were last refreshed; `0` means never. |
 | `jobs_completed_total` | `realm`, `kind`, `status` | Jobs a worker finished. Email and erase outcomes are here: `kind="email"`, `kind="erase"`, `kind="check"`, `kind="image"` and `kind="org"` (organization assignments and cleanups), `status="ok"` or the failure's status. |
 | `jobs_retried_total` | `realm`, `kind` | Failed attempts queued again. |

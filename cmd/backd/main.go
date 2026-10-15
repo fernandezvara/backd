@@ -1103,7 +1103,15 @@ func (a *app) jobStats(ctx context.Context) (map[string]metrics.RealmJobs, error
 			errs = append(errs, err)
 			continue
 		}
-		out[realm] = metrics.RealmJobs{Stats: stats, NeedsAttention: attention}
+		var waiting int64
+		if w, ok := svc.Store.(interface {
+			SerialWaiting(context.Context) (int64, error)
+		}); ok {
+			if waiting, err = w.SerialWaiting(ctx); err != nil {
+				errs = append(errs, err)
+			}
+		}
+		out[realm] = metrics.RealmJobs{Stats: stats, NeedsAttention: attention, SerialWaiting: waiting}
 	}
 	return out, errors.Join(errs...)
 }

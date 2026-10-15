@@ -319,6 +319,9 @@ var systemCollections = []systemCollection{
 			{keys: bson.D{{Key: "status", Value: 1}, {Key: "lease_expires", Value: 1}, {Key: "created_at", Value: 1}}},
 			// Listing a function's jobs, newest first (GET _admin/jobs).
 			{keys: bson.D{{Key: "database", Value: 1}, {Key: "function", Value: 1}, {Key: "created_at", Value: -1}}},
+			// Ordered jobs: the head of each serial key (its oldest unfinished job) is the only
+			// one a worker may claim.
+			{keys: bson.D{{Key: "serial_key", Value: 1}, {Key: "serial_order", Value: 1}}, sparse: true},
 			// The trigger dispatcher counts a realm's unfinished trigger jobs by origin prefix.
 			{keys: bson.D{{Key: "origin", Value: 1}, {Key: "status", Value: 1}}},
 			// The erase jobs only (the metrics refresher counts the failed ones

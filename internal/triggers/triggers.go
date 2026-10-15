@@ -35,6 +35,10 @@ type Job struct {
 	// own writes are stamped with them.
 	ChainRoot  string
 	ChainDepth int
+	// SerialKey and SerialOrder make an `ordered` trigger's jobs for one document run one at a
+	// time, in the order the changes were made (the cluster time of the change).
+	SerialKey   string
+	SerialOrder int64
 }
 
 // Queue stores jobs for workers to claim.

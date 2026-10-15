@@ -1083,3 +1083,48 @@ func testRegistryRealms(t *testing.T, realms ...string) *registry.Registry {
 	}
 	return reg
 }
+
+func TestOrderedTriggersGiveTheirJobsASerialKeyPerDocument(t *testing.T) {
+	yaml := `triggers:
+  steps:
+    events: [created, updated]
+    function: main/on-paid
+    ordered: true
+  free:
+    events: [created, updated]
+    function: main/on-paid
+`
+	reg := testRegistry(t, yaml)
+	h := &history{}
+	st, q := &memState{}, newQueue()
+	stop := run(t, newDispatcher(t, reg, h, st, q, "a", nil))
+	defer stop()
+	waitFor(t, "the stream", func() bool { return st.position() != "" })
+	c1 := change(changefeed.Created, "d1", 1, 1, nil, doc("d1", "draft", 1))
+	c2 := change(changefeed.Updated, "d1", 2, 2, doc("d1", "draft", 1), doc("d1", "paid", 2))
+	c3 := change(changefeed.Created, "d2", 1, 3, nil, doc("d2", "draft", 1))
+	later := change(changefeed.Updated, "d1", 3, 1, doc("d1", "paid", 2), doc("d1", "shipped", 3))
+	later.At = t0.Add(time.Second) // a later second restarts the increment: the order must still hold
+	h.add(c1, c2, c3, later)
+	waitFor(t, "eight jobs", func() bool { return q.size() == 8 })
+	var d1 []Job
+	keys := map[string]bool{}
+	for _, j := range q.list() {
+		if j.Origin == "trigger:main/orders/free" {
+			if j.SerialKey != "" || j.SerialOrder != 0 {
+				t.Errorf("an unordered trigger's job has a serial key: %+v", j)
+			}
+			continue
+		}
+		keys[j.SerialKey] = true
+		if j.SerialKey == "main/orders/steps|d1" {
+			d1 = append(d1, j)
+		}
+	}
+	if len(keys) != 2 || !keys["main/orders/steps|d1"] || !keys["main/orders/steps|d2"] {
+		t.Errorf("keys = %v, want one per trigger and document", keys)
+	}
+	if len(d1) != 3 || d1[0].SerialOrder >= d1[1].SerialOrder || d1[1].SerialOrder >= d1[2].SerialOrder {
+		t.Errorf("d1's jobs are not ordered by the time of the changes: %+v", d1)
+	}
+}

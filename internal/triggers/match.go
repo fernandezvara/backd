@@ -210,12 +210,19 @@ func (ct *collectionTriggers) job(t *registry.Trigger, c changefeed.Change, even
 		raw, _ = json.Marshal(in)
 	}
 	fn := ct.functions[t.Name]
-	return &Job{
+	j := &Job{
 		ID: JobID(eventID, t.Name), Realm: ct.realm, Database: fn[0], Function: fn[1],
 		Input: raw, Origin: "trigger:" + ct.database + "/" + ct.collection + "/" + t.Name,
 		Timeout: ct.timeouts[t.Name], RequestID: eventID, EventID: eventID,
 		ChainRoot: root, ChainDepth: depth,
 	}
+	if t.Ordered {
+		// One key per trigger and document, ordered by when the changes were made: the cluster
+		// time is a total order over the whole deployment, and it is the same on a replay.
+		j.SerialKey = ct.database + "/" + ct.collection + "/" + t.Name + "|" + c.Key
+		j.SerialOrder = c.At.Unix()<<32 | int64(c.Increment)
+	}
+	return j
 }
 
 // project is what rides in the job of a document: all of it for ["*"], else its id, its

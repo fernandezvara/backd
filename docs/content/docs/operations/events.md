@@ -71,7 +71,7 @@ When a collection declares [`triggers:`](../../configuration/config-dir/#trigger
 - **Chains and overload.** A trigger run's writes are stamped, so the events they cause carry a depth: past `max_chain`, or past `max_chained_per_minute` for one trigger, they are dropped and counted (`trigger_dropped_total{reason}`); events nobody chained are never dropped for being many. A realm with more than `max_backlog` unfinished trigger jobs (`trigger_backlog`) records further events as a `backlog` gap instead of queuing them, so the jobs collection stays bounded and other realms keep flowing. Alert well below the ceiling.
 - **A new index.** The dispatcher counts a realm's unfinished trigger jobs by origin and status; `backd provision` creates that index in each realm's `jobs` collection (instances with `PROVISION_MODE=verify` ask for it).
 
-`ordered` triggers are planned.
+- **Ordered triggers.** A trigger with `ordered: true` gives its jobs a key (the trigger and the document) and an order (the time of the change in the database's history, the same wherever it is read); a worker takes only the oldest unfinished job of a key. `jobs_serialized_waiting` shows how many wait behind another; a document that changes faster than its function runs builds a queue of its own. `backd provision` adds the index this needs (`serial_key`, `serial_order`) to each realm's `jobs`.
 
 ## Sizing the history
 

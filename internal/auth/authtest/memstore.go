@@ -775,6 +775,19 @@ func (m *MemStore) EnqueueJob(_ context.Context, j auth.Job) error {
 	return nil
 }
 
+// hasOlderSerial reports whether another unfinished job of j's serial key comes before it.
+func (m *MemStore) hasOlderSerial(j memJob) bool {
+	for _, o := range m.jobs {
+		if o.ID == j.ID || o.SerialKey != j.SerialKey || o.Status == auth.JobDone {
+			continue
+		}
+		if o.SerialOrder < j.SerialOrder || (o.SerialOrder == j.SerialOrder && o.ID < j.ID) {
+			return true
+		}
+	}
+	return false
+}
+
 // EnqueueJobs inserts jobs that carry their own ids, skipping the ones that exist.
 func (m *MemStore) EnqueueJobs(_ context.Context, jobs []auth.Job) (int, error) {
 	m.mu.Lock()
@@ -800,6 +813,9 @@ func (m *MemStore) ClaimJob(_ context.Context, workerID string, at time.Time, ma
 	for id, j := range m.jobs {
 		if j.Status == auth.JobDone || (!j.leaseExpires.IsZero() && j.leaseExpires.After(at)) {
 			continue
+		}
+		if j.SerialKey != "" && m.hasOlderSerial(j) {
+			continue // an ordered job waits for the unfinished ones of its key before it
 		}
 		if bestID == "" || j.CreatedAt.Before(best.CreatedAt) {
 			bestID, best = id, j

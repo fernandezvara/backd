@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -520,5 +523,166 @@ func TestEnqueueJobsDedupsAndTriggerBacklogCounts(t *testing.T) {
 	}
 	if n, _ := s.CountTriggerJobs(ctx); n != 2 {
 		t.Errorf("backlog after one finished = %d, want 2", n)
+	}
+}
+
+// Ordered jobs: the oldest unfinished job of a serial key is the only one a worker may take,
+// whether it is queued, waiting out a retry or running; other keys and plain jobs go on.
+func TestOrderedJobsRunOneAtATimeInOrder(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	t0 := time.Date(2126, 9, 29, 12, 0, 0, 0, time.UTC)
+	mk := func(id, key string, order int64) auth.Job {
+		return auth.Job{ID: id, Database: "app", Function: "f", Input: json.RawMessage(`{}`), CallerActor: "system", TimeoutMS: 1000,
+			SerialKey: key, SerialOrder: order, Status: auth.JobQueued, CreatedAt: t0, ExpiresAt: t0.Add(time.Hour)}
+	}
+	// Inserted newest first: only the order field says who is the head.
+	jobs := []auth.Job{mk("a3", "doc-a", 30), mk("a2", "doc-a", 20), mk("a1", "doc-a", 10), mk("b1", "doc-b", 5), mk("p1", "", 0)}
+	if n, err := s.EnqueueJobs(ctx, jobs); err != nil || n != 5 {
+		t.Fatalf("enqueue: %d %v", n, err)
+	}
+	claim := func() string {
+		t.Helper()
+		j, ok, err := s.ClaimJob(ctx, "w1", t0, time.Minute)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !ok {
+			return ""
+		}
+		return j.ID
+	}
+	got := map[string]bool{}
+	for id := claim(); id != ""; id = claim() {
+		got[id] = true
+	}
+	if len(got) != 3 || !got["a1"] || !got["b1"] || !got["p1"] {
+		t.Fatalf("claimed %v, want the head of each key and the plain job", got)
+	}
+	if n, err := s.SerialWaiting(ctx); err != nil || n != 2 {
+		t.Fatalf("waiting = %d %v, want a2 and a3", n, err)
+	}
+
+	// The others finish (their leases would otherwise run out during the retry wait below).
+	for _, id := range []string{"b1", "p1"} {
+		if err := s.CompleteJob(ctx, id, auth.JobResult{Status: "ok"}, t0, t0.Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// While a1 runs, a2 isn't available; once it is done, it is, and a3 still isn't.
+	if err := s.CompleteJob(ctx, "a1", auth.JobResult{Status: "ok"}, t0, t0.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if id := claim(); id != "a2" {
+		t.Fatalf("after a1 finished the next is %q, want a2", id)
+	}
+	if id := claim(); id != "" {
+		t.Fatalf("a3 was claimed (%q) while a2 is unfinished", id)
+	}
+
+	// A retry waiting out its delay keeps its place: a3 stays behind it.
+	if err := s.RetryJob(ctx, "a2", t0.Add(10*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if id := claim(); id != "" {
+		t.Fatalf("a3 was claimed (%q) while a2 waits to retry", id)
+	}
+	later := t0.Add(11 * time.Minute)
+	j, ok, err := s.ClaimJob(ctx, "w1", later, time.Minute)
+	if err != nil || !ok || j.ID != "a2" {
+		t.Fatalf("after the delay: %+v %v %v, want a2 again", j, ok, err)
+	}
+	if err := s.CompleteJob(ctx, "a2", auth.JobResult{Status: "ok"}, later, later.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	j, ok, err = s.ClaimJob(ctx, "w1", later, time.Minute)
+	if err != nil || !ok || j.ID != "a3" || j.SerialKey != "doc-a" || j.SerialOrder != 30 {
+		t.Fatalf("finally: %+v %v %v, want a3", j, ok, err)
+	}
+	if n, _ := s.SerialWaiting(ctx); n != 0 {
+		t.Errorf("waiting = %d, want 0", n)
+	}
+}
+
+// Several workers at once never run two jobs of one key together, and each key's jobs finish in
+// the order of their serial order.
+func TestOrderedJobsAcrossConcurrentWorkers(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	t0 := time.Date(2126, 9, 29, 12, 0, 0, 0, time.UTC)
+	var jobs []auth.Job
+	const keys, per = 4, 12
+	for k := 0; k < keys; k++ {
+		for i := 0; i < per; i++ {
+			jobs = append(jobs, auth.Job{
+				ID: fmt.Sprintf("k%d-%02d", k, i), Database: "app", Function: "f", Input: json.RawMessage(`{}`), CallerActor: "system", TimeoutMS: 1000,
+				SerialKey: fmt.Sprintf("doc-%d", k), SerialOrder: int64(i + 1), Status: auth.JobQueued, CreatedAt: t0, ExpiresAt: t0.Add(time.Hour),
+			})
+		}
+	}
+	if n, err := s.EnqueueJobs(ctx, jobs); err != nil || n != keys*per {
+		t.Fatalf("enqueue: %d %v", n, err)
+	}
+	var mu sync.Mutex
+	running := map[string]string{} // key -> job id
+	finished := map[string][]string{}
+	done := 0
+	var wg sync.WaitGroup
+	errs := make(chan error, 16)
+	for w := 0; w < 6; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			deadline := time.Now().Add(30 * time.Second)
+			for time.Now().Before(deadline) {
+				mu.Lock()
+				if done == keys*per {
+					mu.Unlock()
+					return
+				}
+				mu.Unlock()
+				j, ok, err := s.ClaimJob(ctx, fmt.Sprintf("w%d", w), time.Now(), time.Minute)
+				if err != nil {
+					errs <- err
+					return
+				}
+				if !ok {
+					time.Sleep(2 * time.Millisecond)
+					continue
+				}
+				mu.Lock()
+				if other, busy := running[j.SerialKey]; busy {
+					errs <- fmt.Errorf("%s started while %s of the same key was running", j.ID, other)
+					mu.Unlock()
+					return
+				}
+				running[j.SerialKey] = j.ID
+				mu.Unlock()
+				time.Sleep(time.Millisecond)
+				mu.Lock()
+				delete(running, j.SerialKey)
+				finished[j.SerialKey] = append(finished[j.SerialKey], j.ID)
+				done++
+				mu.Unlock()
+				if err := s.CompleteJob(ctx, j.ID, auth.JobResult{Status: "ok"}, time.Now(), time.Now().Add(time.Hour)); err != nil {
+					errs <- err
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+	for k := 0; k < keys; k++ {
+		ids := finished[fmt.Sprintf("doc-%d", k)]
+		if len(ids) != per {
+			t.Fatalf("doc-%d finished %d jobs, want %d", k, len(ids), per)
+		}
+		if !sort.StringsAreSorted(ids) {
+			t.Errorf("doc-%d finished out of order: %v", k, ids)
+		}
 	}
 }

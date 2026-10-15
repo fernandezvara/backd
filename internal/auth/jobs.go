@@ -57,6 +57,12 @@ type Job struct {
 	EventID    string
 	ChainRoot  string
 	ChainDepth int
+	// SerialKey makes the jobs that share it run one at a time, oldest SerialOrder first (an
+	// `ordered` trigger: one document's changes, in the order they were made). A job whose
+	// predecessor hasn't finished isn't claimed, and a retry waiting out its delay holds its
+	// place. Empty for jobs that run whenever a worker is free.
+	SerialKey   string
+	SerialOrder int64
 	// Email is set on an email job: backd's own request to send a message, which
 	// a worker renders and hands to the realm's delivery function. It holds no
 	// message and no token.

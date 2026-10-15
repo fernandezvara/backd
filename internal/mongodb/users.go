@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/fernandezvara/backd/internal/registry"
 	"regexp"
+	"sync/atomic"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -17,6 +18,8 @@ import (
 // AuthStore implements auth.Store on a realm's system database.
 type AuthStore struct {
 	db *mongo.Database
+	// claimTurn alternates which of the two queues (ordered jobs, the rest) ClaimJob tries first.
+	claimTurn atomic.Uint32
 }
 
 // NewAuthStore returns the auth store of realm.
