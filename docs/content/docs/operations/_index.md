@@ -137,6 +137,15 @@ blog__main.posts
 shop__orders.items
 ```
 
+### Upgrading to v0.8.3
+
+v0.8.3 adds [organizations](../organizations/) and team access. It has no breaking changes: everything is off until `realm.yaml` declares `organizations`. What to check:
+
+1. **Run `backd provision` before you start instances with `PROVISION_MODE=verify`.** The release adds the system collections `orgs`, `org_members`, `org_teams`, `org_invitations`, `org_member_seq` and `org_templates`, and indexes on collections that declare `org` or `team`. `apply` creates them at startup; `verify` refuses to start until a provisioning run did, and the least-privilege user of the [production reference](#provisioning) needs them granted.
+2. **Organizations are opt-in.** Declare `organizations` in `realm.yaml` (roles, `team_roles`, `hooks`, `require_mfa`) and `organization: required|optional` and `team: required|optional` in `collection.yaml`. `_meta.org` and `_meta.team` are server-owned. See [organizations](../organizations/) and the [rules cookbook](../organizations/rules-cookbook/).
+3. **Rules, functions and the client gain surface:** `inOrg`, `hasOrgRole`, `inTeam` and `hasTeamRole` in rules, `ctx.user.orgs` and `ctx.admin.orgs` in functions, and organizations in the JavaScript client and its admin API. Existing rules keep working.
+4. **The JavaScript client is 0.8.3** (`npm install backd-js@latest`). It keeps working with a v0.8.2 server for what existed there; the organizations methods need a v0.8.3 server.
+
 ### Upgrading to v0.8.2
 
 v0.8.2 is a large minor release, and it has breaking changes, as allowed before a stable release: the first five points need your action, the rest are worth a look. Features are off until your config uses them. What to check:
