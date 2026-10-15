@@ -226,7 +226,9 @@ The dispatcher decodes each change on a trigger collection (§3 maps the operati
 
 `when:` compiles against the collection's schema with a trigger scope (`CompileTrigger`, next to `CompileInvoke`/`CompileConfig`): `document`, `before`, `changed()`, `now`, `config`. **No `user`, no `data`** — an event has no caller. Field paths are checked like write rules, so a typo is a startup error, not a silently dead trigger. **`now` is the change's cluster time**, not the wall clock, so a replay evaluates `when` exactly as the first delivery did.
 
-Semantics: `when` absent → every matching event fires. A `when` that references `document` never matches a `removed` event; rules that should fire on removals check `before`. The pipeline pattern is `before.x != v && document.x == v` — a transition, so the same value written twice doesn't re-fire — and `'status' in changed()` narrows further when several triggers share a collection. `when` is a gate for enqueueing, not a permission.
+**In a `when`, a missing document reads as an empty one**, not as `null`: `before.status` is `nil` on a `created` event, so the transition `before.status != 'paid' && document.status == 'paid'` fires for a document created paid, as a transition from nothing. (The job input keeps JSON `null`; only the condition's environment differs.) `config` in the list above is the existing `appConfig("path")` helper.
+
+Semantics: `when` absent → every matching event fires. A `when` that references `document` never matches a `removed` event, whatever it says; a trigger listening only to `removed` whose `when` names `document` is a startup error, because it could never fire. Rules that should fire on removals check `before`. The pipeline pattern is `before.x != v && document.x == v` — a transition, so the same value written twice doesn't re-fire — and `'status' in changed()` narrows further when several triggers share a collection. `when` is a gate for enqueueing, not a permission.
 
 ## 9. Dispatch (issue 27.4)
 
