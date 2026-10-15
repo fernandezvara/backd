@@ -279,9 +279,42 @@ func TestClassifyFeedErrorFindsLostHistory(t *testing.T) {
 	}
 }
 
-// A consumer on the real source keeps delivering after the primary steps down and is
-// elected again, and after its stream is replaced because the watched set changed.
-func TestConsumerSurvivesStepDownAndSetChange(t *testing.T) {
+// A stream whose cursor is lost on the server (what a failover or a restart of the node it
+// reads from does to it) keeps delivering: the driver resumes it from its own position.
+// The test kills the cursor rather than stepping the primary down because the replica set is
+// shared with tests running in parallel.
+func TestFeedSurvivesALostCursor(t *testing.T) {
+	f := newFeedFixture(t)
+	ctx := context.Background()
+	st, err := f.src.Open(ctx, f.set, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	insert := func(id string) {
+		t.Helper()
+		if _, err := f.items.InsertOne(ctx, bson.D{{Key: "_id", Value: id}, {Key: "_meta", Value: bson.D{{Key: "version", Value: int64(1)}}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insert("one")
+	if c := next(t, ctx, st); c.Key != "one" {
+		t.Fatalf("first = %+v", c)
+	}
+	cs := st.(*changeStream).cs
+	err = f.client.Database("admin").RunCommand(ctx, bson.D{{Key: "killCursors", Value: "$cmd.aggregate"}, {Key: "cursors", Value: bson.A{cs.ID()}}}).Err()
+	if err != nil {
+		t.Fatalf("killCursors: %v", err)
+	}
+	insert("two")
+	if c := next(t, ctx, st); c.Key != "two" {
+		t.Fatalf("after the cursor was killed the stream delivered %+v, want two", c)
+	}
+}
+
+// A consumer on the real source continues after the watched set changes: the stream is
+// replaced and the position carries over, so nothing written meanwhile is lost.
+func TestConsumerContinuesAfterSetChange(t *testing.T) {
 	f := newFeedFixture(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -292,18 +325,13 @@ func TestConsumerSurvivesStepDownAndSetChange(t *testing.T) {
 
 	insert := func(id string) {
 		t.Helper()
-		var err error
-		for i := 0; i < 40; i++ { // writes fail while the node is stepping down
-			if _, err = f.items.InsertOne(ctx, bson.D{{Key: "_id", Value: id}, {Key: "_meta", Value: bson.D{{Key: "version", Value: int64(1)}}}}); err == nil {
-				return
-			}
-			time.Sleep(250 * time.Millisecond)
+		if _, err := f.items.InsertOne(ctx, bson.D{{Key: "_id", Value: id}, {Key: "_meta", Value: bson.D{{Key: "version", Value: int64(1)}}}}); err != nil {
+			t.Fatal(err)
 		}
-		t.Fatalf("insert %s: %v", id, err)
 	}
 	expect := func(id string) {
 		t.Helper()
-		deadline := time.After(30 * time.Second)
+		deadline := time.After(15 * time.Second)
 		for {
 			select {
 			case ch := <-got:
@@ -315,20 +343,11 @@ func TestConsumerSurvivesStepDownAndSetChange(t *testing.T) {
 			}
 		}
 	}
-	// Give the consumer time to open before the first write: a stream opens from now.
+	// A stream opens from now: give the consumer time to open before the first write.
 	time.Sleep(time.Second)
 	insert("before")
 	expect("before")
 
-	admin := f.client.Database("admin")
-	err := admin.RunCommand(ctx, bson.D{{Key: "replSetStepDown", Value: 2}, {Key: "force", Value: true}}).Err()
-	if err != nil {
-		t.Logf("replSetStepDown: %v (a one-node set may refuse; the stream is still exercised)", err)
-	}
-	insert("after-stepdown")
-	expect("after-stepdown")
-
-	// A set change replaces the stream; the position carries over, so nothing is lost.
 	bigger := f.set
 	bigger.Collections = append(append([]changefeed.Namespace(nil), f.set.Collections...), changefeed.Namespace{Realm: f.realm, DB: f.realm + "__app", Coll: "other"})
 	c.SetWatched(bigger)
