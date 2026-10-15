@@ -116,7 +116,7 @@ account:
 
 `account.on_signup` is called for **every** user who signs up — with a password, through an emailed invitation, or with a provider — with `{"user_id", "provider", "profile"?}` (`provider` is `password` or the provider's name; `profile` only from a provider). It runs as the function itself, with full access, so it can create the app's profile document in a collection the clients can't write. The function must be `internal: true` and `mode: async`; give it a `retry:` so a failure is tried again.
 
-- **A failing hook never fails the sign-up.** The user is created and signed in first; the hook is a [job](../../functions/jobs/) (`origin: backd:account.on_signup`) that the workers run, so run a worker. Treat the absence of the profile document as "not created yet".
+- **A failing hook never fails the sign-up.** The call is queued with a job id made of the user, tried up to three times if the database blinks, and queued once whatever happens; if the process dies between creating the account and queuing the call, that one call can be lost, so make the function safe to run for a user it has not seen (list the users to reconcile). The user is created and signed in first; the hook is a [job](../../functions/jobs/) (`origin: backd:account.on_signup`) that the workers run, so run a worker. Treat the absence of the profile document as "not created yet".
 - The profile is **masked in the function's logs**, and the job's input is emptied as soon as the job has ended (while it waits for a retry it must keep it).
 - Users created by an administrator (`backd user create`, the admin API) are not sign-ups and don't call the hook.
 

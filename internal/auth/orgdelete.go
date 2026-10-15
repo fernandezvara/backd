@@ -125,12 +125,23 @@ func (s *Users) releaseOrgs(ctx context.Context, userID, address string) error {
 	if s.Settings.Organizations == nil {
 		return nil
 	}
-	orgs, err := s.Store.ForgetUserInOrgs(ctx, userID, address)
+	var orgs []string
+	err := s.Store.Transact(ctx, func(ctx context.Context) error {
+		var err error
+		if orgs, err = s.Store.ForgetUserInOrgs(ctx, userID, address); err != nil {
+			return err
+		}
+		for _, id := range orgs {
+			if err := s.memberLeft(ctx, id, userID, LeftErased); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return err
 	}
 	for _, id := range orgs {
-		s.memberLeft(ctx, id, userID, LeftErased)
 		org, err := s.Store.OrgByID(ctx, id)
 		if err != nil || org.Status != OrgActive {
 			continue

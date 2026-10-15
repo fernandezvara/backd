@@ -1491,3 +1491,9 @@ func (m *MemStore) ClaimLoginCode(_ context.Context, id string, now time.Time) (
 	}
 	return lc, nil
 }
+
+// Transact runs fn. The in-memory store has no transactions: a failed fn keeps the writes it
+// made, which tests that need atomicity run against MongoDB for.
+func (m *MemStore) Transact(ctx context.Context, fn func(ctx context.Context) error) error {
+	return fn(ctx)
+}

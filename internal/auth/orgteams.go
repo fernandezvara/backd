@@ -210,10 +210,15 @@ func (s *Users) updateOrgTeam(ctx context.Context, cc registry.OrgCaps, orgID, i
 	if setRoles {
 		snaps = s.snapshotTeam(ctx, orgID, id)
 	}
-	if err := s.Store.UpdateOrgTeam(ctx, t); err != nil {
+	err = s.Store.Transact(ctx, func(ctx context.Context) error {
+		if err := s.Store.UpdateOrgTeam(ctx, t); err != nil {
+			return err
+		}
+		return s.teamChanged(ctx, orgID, snaps)
+	})
+	if err != nil {
 		return OrgTeam{}, err
 	}
-	s.teamChanged(ctx, orgID, snaps)
 	s.Audit(ctx, AuditOrgTeamUpdate, orgTarget(orgID), map[string]any{"team": t.ID, "name": t.Name, "roles": t.Roles})
 	return t, nil
 }
@@ -260,10 +265,15 @@ func (s *Users) deleteOrgTeam(ctx context.Context, cc registry.OrgCaps, orgID, i
 		}
 	}
 	snaps := s.snapshotTeam(ctx, orgID, id)
-	if err := s.Store.DeleteOrgTeam(ctx, orgID, id); err != nil {
+	err = s.Store.Transact(ctx, func(ctx context.Context) error {
+		if err := s.Store.DeleteOrgTeam(ctx, orgID, id); err != nil {
+			return err
+		}
+		return s.teamChanged(ctx, orgID, snaps)
+	})
+	if err != nil {
 		return err
 	}
-	s.teamChanged(ctx, orgID, snaps)
 	// The collections' on_team_delete applies to its documents through a job.
 	j, err := s.enqueueCleanup(ctx, TeamDeleteOrigin, "team-delete:"+id, OrgDeleteJob{Org: orgID, Team: id}, "")
 	if err != nil {

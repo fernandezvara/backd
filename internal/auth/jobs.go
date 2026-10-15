@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"time"
@@ -322,6 +323,35 @@ func (s *Users) EnqueueJob(ctx context.Context, j Job) (Job, error) {
 		return Job{}, err
 	}
 	return j, nil
+}
+
+// EnqueueKeyedJob stores a job whose id says what it is for (j.ID must be set): queuing the same
+// work twice is one job, and the second call is not an error. It returns whether the job is new.
+func (s *Users) EnqueueKeyedJob(ctx context.Context, j Job) (bool, error) {
+	now := s.now()
+	j.Status = JobQueued
+	j.CreatedAt = now
+	j.ExpiresAt = now.Add(pendingJobTTL)
+	err := s.Store.EnqueueJob(ctx, j)
+	if errors.Is(err, ErrJobExists) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// KeyedJobID is the id of a job made for something that happens once, from what identifies
+// it: the same parts give the same id, in the shape of any job id.
+func KeyedJobID(parts ...string) string {
+	h := sha256.New()
+	for _, p := range parts {
+		h.Write([]byte(p))
+		h.Write([]byte{0})
+	}
+	id, err := xid.FromBytes(h.Sum(nil)[:12])
+	if err != nil {
+		return xid.New().String()
+	}
+	return id.String()
 }
 
 // EnqueueJobs stores jobs that carry an id of their own — derived from what they are for, so

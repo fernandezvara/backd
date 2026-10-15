@@ -314,10 +314,15 @@ func (s *Users) createOrg(ctx context.Context, o *registry.OrgSettings, name, sl
 	for _, r := range o.CreatorRoles {
 		m.Roles = append(m.Roles, RoleGrant{Role: r, GrantedAt: now})
 	}
-	if err := s.Store.CreateOrg(ctx, org, m); err != nil {
+	err = s.Store.Transact(ctx, func(ctx context.Context) error {
+		if err := s.Store.CreateOrg(ctx, org, m); err != nil {
+			return err
+		}
+		return s.memberChanged(ctx, nil, m, "")
+	})
+	if err != nil {
 		return Membership{}, err
 	}
-	s.memberChanged(ctx, nil, m, "")
 	s.Audit(ctx, AuditOrgCreate, orgTarget(org.ID), map[string]any{"by": by, "creator": creator})
 	return s.membership(ctx, org, m)
 }
@@ -802,14 +807,19 @@ func (s *Users) removeMember(ctx context.Context, orgID string, m OrgMember, act
 			return err
 		}
 	}
-	if err := s.Store.DeleteOrgMember(ctx, orgID, m.User); err != nil {
-		return err
-	}
 	reason := LeftRemoved
 	if action == AuditOrgMemberLeave {
 		reason = LeftByThemselves
 	}
-	s.memberLeft(ctx, orgID, m.User, reason)
+	err := s.Store.Transact(ctx, func(ctx context.Context) error {
+		if err := s.Store.DeleteOrgMember(ctx, orgID, m.User); err != nil {
+			return err
+		}
+		return s.memberLeft(ctx, orgID, m.User, reason)
+	})
+	if err != nil {
+		return err
+	}
 	s.Audit(ctx, action, orgTarget(orgID), map[string]any{"user": m.User})
 	return nil
 }

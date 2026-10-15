@@ -46,7 +46,7 @@ Two features, one library: **triggers** run a function when a collection's data 
 | Chains | `_meta.chain = {root, depth}` stamped at the write boundary of a trigger run and propagated through `ctx.call`; `max_chain` 16 |
 | Overload | first-party events are never rate-dropped; the burst cap applies to chained events only; a per-realm backlog ceiling records a gap instead of stalling others |
 | Gaps | window loss, backlog ceiling and missing pre-images are recorded; `backd triggers status` lists them, `backd triggers rescan` re-emits from `_meta.updated_at` |
-| System events | named aliases only; legacy hook paths stay until per-event parity tests pass |
+| System events | the hooks keep their inputs and become atomic with the change that causes them (one transaction) and idempotent (a job id made of the event); not moved onto the stream, which can't rebuild their inputs (§14) |
 
 **Realtime**
 
@@ -118,7 +118,6 @@ Dedicated instances: API replicas with `BACKD_EVENTS=false`, realtime instances 
 | memberships | any creation, change or deletion (the key is `org/user`) |
 | teams | `roles`, `name` among the changed field names; deletion |
 
-The dispatcher's built-in events (27.9) read their own, equally minimal projection of the same collections.
 
 - **Password hashes, TOTP secrets, recovery codes, token hashes and provider data never leave the database.**
 - **Noise is filtered in the pipeline:** an update whose only changed fields are a session's last-use time and sliding expiry (written at most once a minute per session), or an API key's last use, is dropped by `$match` on the changed field names. At 100,000 active sessions that is about 1,600 events per second of nothing.
@@ -180,7 +179,7 @@ A collection can declare that when its data changes and a rule matches, backd ru
 
 - **A trigger is a collection rule that is reactive.** `triggers:` lives in `collection.yaml`, next to `rules:` and `on_owner_delete`.
 - **Pipelines are first-class.** Each state transition is its own trigger pointing at its own function, all against the same document's `status`. Chains are legitimate and bounded, so loops can't run away.
-- **One mechanism for "backd calls a function when something happens"** — `account.on_signup` and `organizations.hooks.*` move onto the dispatcher as named aliases (§14), event by event, once parity is proven.
+- **One contract for "backd calls a function when something happens"** — jobs with ids made of what they are for, so a replay is one job; `account.on_signup` and `organizations.hooks.*` keep their inputs and are made atomic with their cause (§14).
 
 ## 7. Configuration (issue 27.3)
 
@@ -302,33 +301,24 @@ Pipelines on one document (`status` changing three times quickly) can run their 
 - **`backd triggers rescan --realm R --database D --collection C [--trigger T] --updated-since TIME [--until TIME]`**, run where `CONFIG_DIR` and `MONGO_URI` are (like `backd provision`) and not as an HTTP route, since it may read a whole collection and a request is the wrong place for that: scans `C` for documents with `_meta.updated_at` in the range and enqueues a synthetic `updated` event for each, with `rescan: <run id>` in the input and the run id in the job key (so it doesn't collapse with originals — handlers are idempotent). Limits: it evaluates `when` against `document` only, so triggers whose `when` needs `before` or `changed()` are listed as not rescannable; deletions can't be rescanned; a range scan over `_meta.updated_at` is a collection scan unless the collection indexes it, and the command says so and requires `--confirm` over a size threshold.
 - **Closing a gap** is explicit: `backd triggers gaps resolve <id>`; unresolved gaps appear in `status` and in a metric.
 
-## 14. System events: named aliases only (issue 27.9)
+## 14. System events: the hooks stay exact (issue 27.9)
 
-The dispatcher's stream includes the projected system collections (§4). Built-in events are registered as internal triggers on it, so one dispatch path can serve app collections and backd's own events:
+`account.on_signup` and `organizations.hooks.on_member_joined`/`on_member_left`/`on_roles_changed` are the realm's bespoke "backd calls a function when something happens" paths. Moving them onto the dispatcher was the plan; checking what the change stream can actually reconstruct showed it would make them worse, so the plan became a stricter version of what they already are:
 
-| realm.yaml (unchanged) | Built-in trigger | Input (unchanged) |
+| Event | Can the stream rebuild its input? | What it does instead |
 |---|---|---|
-| `account.on_signup` | `created` on users | today's `{user_id, provider, profile}` |
-| `organizations.hooks.on_member_joined` | `created` on memberships | today's event with `seq` |
-| `organizations.hooks.on_member_left` | `removed` on memberships | today's event with `reason` |
-| `organizations.hooks.on_roles_changed` | `updated` on memberships, and team changes, where computed access differs | today's before/after `MemberAccess` |
+| `on_signup` | No: `provider` and the provider's `profile` are not on the user document, and are deliberately not stored | queued right after the account exists, with a job id made of the user, retried a few times, never failing the sign-up |
+| `on_member_joined` | Partly: the membership insert has the member, but not the invitation that made it | queued in the **same transaction** as the membership |
+| `on_member_left` | No: a delete event has only the key; `reason` (left, removed, erased) exists only where the departure is decided | same transaction as the removal; the erase queues it with the memberships' deletion |
+| `on_roles_changed` | No: the "before" is a computed diff of effective roles (direct, team-carried, windows) that no document holds, and a team's change moves many members at once | same transaction as the membership or team write |
 
-**Migration is gated by parity, event by event.** The legacy in-process paths (`queueOnSignup`, `queueOrgHook`/`memberChanged`/`teamChanged`) stay the live path until the parity tests for that event pass, and are removed only in the commit that proves it. Known obstacles the issue must resolve, or keep the legacy path for:
+- **Atomic with the change.** Each membership or team write and its event are one MongoDB transaction (`Store.Transact`, joined when already inside one): if the event can't be queued the change isn't made, so nothing changes without its hook and nothing is announced that did not happen. Before, a failed queue was only logged and the hook was lost.
+- **Idempotent.** The job id is made of the event (origin, organization, user, `seq`; for signup, the user), so a retried attempt is one job.
+- **Inputs unchanged.** `realm.yaml` keys and every field of each input (`seq`, `reason`, `invitation`, `before`/`after`) are pinned by tests; any future move to the stream has to reproduce them exactly.
+- **Not covered:** a crash between creating an account and queuing `on_signup` can lose that one call (the account is made in several steps and compensated on failure, so a transaction can't include the hook without announcing accounts that are then rolled back). The docs say so and suggest reconciling from the users list.
+- **The stream's system watch** stays what realtime needs (§4); built-in events don't read it.
 
-- **`on_roles_changed`** also fires from team role changes and windows, which change effective access without a per-member document change; the "before" is computed in-process today (`teamChanged`). A stream-side computation must reproduce it, concurrent changes included.
-- **`seq`** is allocated at write time today; replays must produce the same value, so it has to be derived deterministically, not allocated at enqueue.
-- **The signup `profile`** comes from the provider flow and is probably not on the user document, so the stream can't rebuild it.
-
-Where an event can't be reconstructed exactly, it keeps an enqueue **inside the write's MongoDB transaction** (job inserted with the document) — no loss, same input, no stream involved. Either way the realm.yaml keys and the function inputs do not change, and the stable aliases are the whole public surface.
-
-**Why aliases and not a `source:` knob.** Users cannot declare triggers on system sources:
-
-- The semantic events aren't field-level (`on_roles_changed` is a computed diff; `reason` is derived).
-- System collections have no declared schema, so `when:` would be unchecked.
-- A free `source:` would expose sessions, tokens, jobs, secrets metadata and consents to any realm developer who can edit collections.
-- Internal layouts may change; the named events are the stable API.
-
-**Extension path:** new named events added deliberately (`account.on_session_ended`, `organizations.on_org_created`), each designed like `on_member_left` was. `account.on_delete` remains deferred (account-lifecycle §13): *blocking, before the erasure policies* is a different shape from a reactive trigger.
+**Why not a `source:` knob.** Users cannot declare triggers on system sources: the events aren't field-level, system collections have no declared schema, a free `source:` would expose sessions, tokens, jobs and consents to any realm developer, and internal layouts may change. **Extension path:** new named events are added deliberately (`account.on_session_ended`, `organizations.on_org_created`), each designed like `on_member_left` was, and `account.on_delete` remains deferred (account-lifecycle §13): *blocking, before the erasure policies* is a different shape from a reactive trigger.
 
 ## 15. What stays separate
 
@@ -565,7 +555,7 @@ live.on("change", (state) => render(state.items));   // sorted, reconciled list
 - **Functions guide, "Triggers" page:** the idea; the input contract; identity (`ctx.admin.db`, `by`); idempotent handlers and dedup on `event.id`; the transition-`when` pattern; chains and `max_chain`; ordering; debugging via `backd functions history`, `backd triggers status` and `_meta.chain`.
 - **Realtime concepts:** change feeds versus live queries, events, starting state and resuming, what `reset` means and how to handle it.
 - **Cost guide:** the cost model of §6 as written; `when`/`where` evaluation per change; hot collections and chained caps; `fields:` to keep jobs small; designing subscription filters with an equality on a grouping field; pre-image storage; reading the metrics.
-- **Migration note:** `account.on_signup` and `organizations.hooks.*` — same config, same inputs; which events run on the dispatcher and which keep the transactional path.
+- **Migration note:** `account.on_signup` and `organizations.hooks.*` — same config, same inputs; what changed underneath: each event is queued in the transaction of the change that causes it, with an id made of the event.
 - **Operations:** `BACKD_EVENTS`/`BACKD_TRIGGERS`, dedicated instances and proxy routing (SSE buffering and idle timeouts), triggers needing a running worker, restores invalidating the stored position, the lease, the MongoDB role (`readAnyDatabase` or equivalent), `backd provision` and the pre-image lifecycle, resume-window sizing (oplog), gaps and `backd triggers status`/`rescan`, alerting on `trigger_window_missed`, backlog and `trigger_missing_preimage`, MongoDB 6.0+ and pre-change images.
 - **Limits and errors** with what to do; OpenAPI for `/_realtime` (27.13) and the admin triggers routes (27.8); the JS client guide with the reference cache pattern.
 
@@ -581,7 +571,7 @@ live.on("change", (state) => render(state.items));   // sorted, reconciled list
 | 27.6 | Chains, loop bounds and backpressure | 27.5 |
 | 27.7 | Ordered triggers | 27.5 |
 | 27.8 | Trigger operations: status, gaps and rescan | 27.4 |
-| 27.9 | System-event aliases on the dispatcher | 27.6 |
+| 27.9 | Atomic, idempotent system-event hooks | 27.6 |
 | 27.10 | Trigger testing helpers and client docs | 27.5 |
 | 27.11 | Shelf pipeline chapter | 27.10 |
 | 27.12 | Trigger documentation | 27.11, 27.8 |
@@ -644,7 +634,7 @@ Supersedes milestone `18-realtime` (18.1–18.9, GitHub #369–#377), the unuplo
 - A database-scoped consumer scope for shared clusters with restricted MongoDB users.
 - **Field encryption** (a future milestone, no design obligations here): decrypt and `reveal` in both feeds, refusing or handling collections that declare encrypted fields, and keeping ciphertext and secrets out of job inputs. Whichever milestone lands second owns this integration and its review.
 - **DocumentDB** (to be tried later): change-stream behavior, pre-image support and retention differ; nothing about it is promised or documented until it is evaluated.
-- Named system events beyond today's aliases (`account.on_session_ended`, `organizations.on_org_created`, `account.on_delete` when erasure needs it).
+- Named system events beyond today's hooks (`account.on_session_ended`, `organizations.on_org_created`, `account.on_delete` when erasure needs it).
 - Channels: ephemeral messages, presence and broadcast with join and send rules, as their own design — may add `send`/`join`-style triggers.
 - Push notifications for offline users — a trigger can already serve it via `ctx.push`.
 - **App configuration live updates (22.6):** a `config` subscription kind on the realtime stream, filtered by the configuration's per-path read rules; defined together with 22.6, on the protocol of §17.

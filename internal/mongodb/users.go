@@ -794,3 +794,21 @@ func (s *AuthStore) DeleteInvitation(ctx context.Context, id string) error {
 	}
 	return nil
 }
+
+// Transact runs fn in a MongoDB transaction: the writes it makes with the context it gets
+// either all commit or none do. Inside a transaction already, it joins that one. The driver
+// retries fn on a transient conflict, so fn may run more than once.
+func (s *AuthStore) Transact(ctx context.Context, fn func(ctx context.Context) error) error {
+	if mongo.SessionFromContext(ctx) != nil {
+		return fn(ctx)
+	}
+	sess, err := s.db.Client().StartSession()
+	if err != nil {
+		return err
+	}
+	defer sess.EndSession(ctx)
+	_, err = sess.WithTransaction(ctx, func(sessCtx context.Context) (any, error) {
+		return nil, fn(sessCtx)
+	})
+	return err
+}
