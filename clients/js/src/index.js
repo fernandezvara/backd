@@ -8,6 +8,7 @@ export { Config } from './config.js'
 export { Orgs, OrgMembers, OrgTeams, OrgTemplates, OrgInvitations } from './orgs.js'
 export { Files, versionStatus } from './files.js'
 export { expand } from './expand.js'
+export { fillBuckets } from './buckets.js'
 export { Sha256, sha256Blob } from './sha256.js'
 export { Job, JobTimeoutError } from './functions.js'
 export {
@@ -24,6 +25,11 @@ export {
   NotTeamMemberError,
   InvalidExpandError,
   ExpandTooLargeError,
+  InvalidAggregateError,
+  AggregateNotEnabledError,
+  AggregateTooExpensiveError,
+  SearchNotEnabledError,
+  IndexBuildingError,
   TeamError,
   NotOrgMemberError,
   LastOrgManagerError,
@@ -68,6 +74,10 @@ export { parseReturn as parseOAuthReturn } from './oauth.js'
  * @typedef {import('./data.js').GetOptions} GetOptions
  * @typedef {import('./data.js').Expanded} Expanded
  * @typedef {import('./expand.js').ExpandPart} ExpandPart
+ * @typedef {import('./data.js').AggregateParams} AggregateParams
+ * @typedef {import('./data.js').AggregateGroup} AggregateGroup
+ * @typedef {import('./data.js').AggregateResult} AggregateResult
+ * @typedef {import('./buckets.js').BucketUnit} BucketUnit
  * @typedef {import('./data.js').DeleteOptions} DeleteOptions
  * @typedef {import('./data.js').CreateOptions} CreateOptions
  * @typedef {import('./admin.js').ConfigCheck} ConfigCheck

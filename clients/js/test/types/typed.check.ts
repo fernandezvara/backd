@@ -36,7 +36,13 @@ export async function typed() {
   const related = expanded._expanded?.related
   const firstRelated: string | undefined = Array.isArray(related) ? related[0]?.status : related?.items[0]?.status
   const second = Array.isArray(related) ? related[0]?._expanded?.invoice?.customer : undefined
-  return [status, note, city, receipt, id, currency, linked, firstRelated, second]
+
+  // Aggregations name only what the collection declares; search is a list sorted by relevance.
+  const summary = await orders.aggregate({ groupBy: ['status', 'paid_at:month'], metrics: ['count', 'sum:total', 'max:paid_at'], tz: 'Europe/Madrid', orderBy: '-count', limit: 12 })
+  const months: Array<string | number | boolean | null> = summary.groups.map((g) => g.key['paid_at:month'])
+  const found = await orders.search('running shoes', { where: { status: 'paid' }, limit: 5 })
+  const best: string | undefined = found.items[0]?.status
+  return [status, note, city, receipt, id, currency, linked, firstRelated, second, months, best]
 }
 
 // @ts-expect-error unknown database
@@ -76,3 +82,11 @@ const plain = createClient({ url: 'https://api.example.com', realm: 'shop' })
 export const anything = plain.db('whatever').collection('anything').list({ where: { a: 1 } })
 // @ts-expect-error a reference the collection doesn't declare
 orders.get('o_1').then((o) => o._expanded?.nope)
+// @ts-expect-error a field the collection doesn't declare in aggregate.group_by
+orders.aggregate({ groupBy: 'note' })
+// @ts-expect-error only dates take a bucket
+orders.aggregate({ groupBy: 'status:month' })
+// @ts-expect-error sums are for the declared metrics
+orders.aggregate({ metrics: 'sum:status' })
+// @ts-expect-error a collection that declares no aggregate:
+client.db('main').collection('invoices').aggregate({ groupBy: 'customer' })

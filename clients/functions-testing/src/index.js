@@ -16,8 +16,9 @@
 // declared with store.declareReferences and followed by `expand`. The point
 // is testing the function's own code, not backd's rule engine (that's what
 // the real integration tests are for).
-import { BackdError, NotFoundError, VersionMismatchError } from '../../js/src/errors.js'
+import { BackdError, NotFoundError, ValidationError, VersionMismatchError } from '../../js/src/errors.js'
 import { DEFAULT_LIMITS, expandDocs, normalizeReferences, planExpand } from './expand.js'
+import { aggregate as aggregateDocs, search as searchDocs } from './aggregate.js'
 
 let seq = 0
 /** Deterministic, distinct ids across a test run (resets with resetIds()). */
@@ -92,6 +93,19 @@ function matchOne(doc, where) {
   })
 }
 
+/** Takes the top-level `$search` out of a where. */
+function splitSearch(where) {
+  if (!where || !('$search' in where)) return { search: undefined, rest: where }
+  const { $search, ...rest } = where
+  return { search: String($search), rest }
+}
+
+class InvalidQueryError extends ValidationError {
+  constructor(reason) {
+    super({ status: 400, code: 'invalid_query', message: 'invalid query parameters', details: [{ path: 'order_by', reason }] })
+  }
+}
+
 function sortBy(items, orderBy) {
   const fields = Array.isArray(orderBy) ? orderBy : String(orderBy).split(',')
   const sorted = [...items]
@@ -147,6 +161,37 @@ export class MemoryStore {
     this.references = new Map()
     /** @type {Map<string, (doc: any, who: { user: any }) => boolean>} */
     this.readRules = new Map()
+    /** @type {Map<string, { group_by?: string[], metrics?: string[] }>} */
+    this.aggregates = new Map()
+    /** @type {Map<string, Record<string, number>>} */
+    this.textIndexes = new Map()
+  }
+
+  /**
+   * Declares what a collection lets an aggregation use, as `aggregate:` in its collection.yaml
+   * does: `{ group_by: ['status', 'paid_at'], metrics: ['total'] }`. Declared, an aggregation that
+   * names another field is an `InvalidAggregateError`; a collection that isn't declared at all is
+   * left open (any field), like the rest of the fake.
+   * @param {string} database
+   * @param {string} name
+   * @param {{ group_by?: string[], metrics?: string[] }} declaration
+   */
+  declareAggregate(database, name, declaration) {
+    this.aggregates.set(`${database}/${name}`, declaration)
+    return this
+  }
+
+  /**
+   * Declares a collection's text index: the fields searched and their weights, as in indexes.json.
+   * Searching only those fields, and ranking by the weights of the terms found, is the closest the
+   * fake gets to the database's search; it doesn't stem words or know languages.
+   * @param {string} database
+   * @param {string} name
+   * @param {Record<string, number>} weights
+   */
+  declareTextIndex(database, name, weights) {
+    this.textIndexes.set(`${database}/${name}`, weights)
+    return this
   }
 
   /**
@@ -299,14 +344,45 @@ class FakeCollection {
       skip = Number(after)
       if (!Number.isInteger(skip) || skip < 0) throw new Error('after is not a cursor of this fake: use the next_cursor of a previous page')
     }
-    let items = this.readable().filter(matchWhere(where))
-    if (orderBy) items = sortBy(items, orderBy)
+    const { search, rest } = splitSearch(where)
+    let items = this.readable().filter(matchWhere(rest))
+    if (search !== undefined) {
+      // The approximation of a text search: matching documents, best first with _meta.score.
+      items = searchDocs(items, search, this.store.textIndexes.get(`${this.database}/${this.name}`))
+      if (orderBy && orderBy !== '_relevance') items = sortBy(items, orderBy)
+    } else if (orderBy === '_relevance') {
+      throw new InvalidQueryError('order_by=_relevance needs a $search in where')
+    } else if (orderBy) {
+      items = sortBy(items, orderBy)
+    }
     const page = this.expanded(items.slice(skip, skip + limit), expand)
     /** @type {{ items: any[], limit: number, skip: number, has_more: boolean, next_cursor?: string, total?: number }} */
     const out = { items: page, limit, skip, has_more: skip + limit < items.length }
     if (out.has_more) out.next_cursor = String(skip + limit)
     if (count) out.total = items.length
     return out
+  }
+
+  /**
+   * Summarizes the documents of the collection (the read predicate applies to `ctx.db`), with
+   * backd's parameters and groups: `groupBy`, `metrics`, `tz`, `orderBy`, `limit`, `where`.
+   * @param {Record<string, any>} [params]
+   */
+  async aggregate(params = {}) {
+    const { search, rest } = splitSearch(params.where)
+    let docs = this.readable().filter(matchWhere(rest))
+    if (search !== undefined) docs = searchDocs(docs, search, this.store.textIndexes.get(`${this.database}/${this.name}`))
+    return aggregateDocs(docs, params, this.store.aggregates.get(`${this.database}/${this.name}`))
+  }
+
+  /**
+   * Text search, best match first: `list` with `$search` and `_relevance`.
+   * @param {string} text
+   * @param {Record<string, any>} [params]
+   */
+  async search(text, params = {}) {
+    if (typeof text !== 'string' || text.trim() === '') throw new TypeError('backd: search needs the text to search for')
+    return this.list({ ...params, where: { ...(params.where ?? {}), $search: text }, orderBy: '_relevance' })
   }
 
   async *iterate(params = {}) {
