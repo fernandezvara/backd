@@ -2,7 +2,7 @@
 
 - **Issues:** features 22.1–22.8 (milestone `22-app-config`)
 - **Status:** decided
-- **Related designs:** [conditional-get.md](./conditional-get.md) (`ETag`s and `304`), [organizations.md](./organizations.md) (claims, roles, teams), [realtime.md](./realtime.md) (live updates), [internal-functions.md](./internal-functions.md) (cron functions)
+- **Related designs:** [conditional-get.md](./conditional-get.md) (`ETag`s and `304`), [organizations.md](./organizations.md) (claims, roles, teams), [triggers-and-realtime.md](./triggers-and-realtime.md) (live updates), [internal-functions.md](./internal-functions.md) (cron functions)
 
 ## 1. The idea
 
@@ -240,11 +240,11 @@ It also shows them combined in the client, and what happens on an incident, a do
 | 22.3 | Reading app configuration | 22.2, 20.1 |
 | 22.4 | App configuration in functions and rules | 22.3 |
 | 22.5 | App configuration in the JavaScript client | 22.3, 4.7 |
-| 22.6 | Live configuration updates | 22.5, 18.2 |
+| 22.6 | Live configuration updates | 22.5, 27.13 |
 | 22.7 | Shelf maintenance banner and feature flag | 22.4, 22.5 |
 | 22.8 | App configuration documentation | 22.7 |
 
-**When to build:** right after conditional GET (20). 22.6 follows realtime (18.2).
+**When to build:** right after conditional GET (20). 22.6 follows realtime (27.13).
 
 ## 14. Alternatives considered
 

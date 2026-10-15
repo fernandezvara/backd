@@ -69,6 +69,11 @@ All names start with `backd_`; durations are in seconds.
 | `executor_run_duration_seconds` | | How long they took (histogram). |
 | `executor_running` | | Function processes running now. |
 | `egress_requests_total` | `outcome` | Requests to the egress proxy: `allowed`, `denied_credentials`, `denied_host` or `denied_address`. Host names are never labels. Served by `backd egress`. |
+| `changefeed_open` | `consumer` | `1` while a [change-stream](../events/) consumer (`realtime`) has its stream open, `0` while it is idle. |
+| `changefeed_watched_namespaces` | `consumer` | Collections the open stream watches. |
+| `changefeed_lag_seconds` | `consumer` | How far behind the cluster the last change read was. |
+| `changefeed_reopens_total` | `consumer`, `reason` | Streams opened again: `set_changed` (a reload changed what is watched), `error`, or `history_lost` (the change history no longer reached the position). |
+| `changefeed_events_total` | `consumer`, `op`, `source` | Changes read, by `created`/`updated`/`removed` and `app` or `system`. |
 | `build_info` | `version`, `commit` | Always `1`. |
 
 The Go runtime (`go_*`) and process (`process_*`) metrics are included.

@@ -165,6 +165,7 @@ This optional file holds a collection's policy, in sections that can each be lef
 | `personal_data:` | What a user's data export takes from the collection | [Personal data scope](#personal-data-scope) |
 | `custom_id:` | Collections whose documents get the id the client chooses | [Custom ids](#custom-ids) |
 | `organization:` | Whether documents belong to an organization, and what happens to them when it is deleted | [Organizations](#organizations) |
+| `realtime:` | Whether the collection's changes may be streamed to clients | [Realtime](#realtime) |
 | `on_owner_delete:` | What an administrator's **erase** does to the collection when a user is erased (`backd user delete`) | below |
 
 ```yaml
@@ -325,6 +326,16 @@ aggregate:
 - **Checked at startup** against `schema.json`, with the file and the field named. `limits.time` is a duration (at least 100ms) and `limits.max_groups` a number; both may only be lower than the instance's `BACKD_AGGREGATE_TIME` and `BACKD_AGGREGATE_MAX_GROUPS`, or startup stops.
 - **A warning at startup** names each `group_by` field that no index leads with, and the line to add to [`indexes.json`](#indexesjson): grouping by it reads every matching document, in no useful order. `backd config check` prints the same warnings.
 - The request side, `GET …/_aggregate`, is in [Aggregations](../../api/aggregations/), with the [best practices](../../api/aggregations/#best-practices).
+
+### Realtime
+
+```yaml
+realtime: true      # the collection's changes may be streamed to subscribed clients
+```
+
+`realtime: true` marks the collection as one whose changes are read from MongoDB's change stream. Without it (or with `false`) nothing is read for the collection, and anything but `true` or `false` stops startup, naming the file.
+
+Subscriptions themselves, the `POST /v1/{realm}/_realtime` endpoint, come in a later step (planned): today the key only declares the collection, and the [change feed](../../operations/events/) it will use is what is built. Nothing is streamed to clients yet.
 
 ### Public caching
 

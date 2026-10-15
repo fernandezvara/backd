@@ -24,6 +24,7 @@ import (
 
 	"github.com/fernandezvara/backd/internal/adminui"
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/changefeed"
 	"github.com/fernandezvara/backd/internal/executor"
 	"github.com/fernandezvara/backd/internal/httpapi"
 	"github.com/fernandezvara/backd/internal/metrics"
@@ -86,6 +87,9 @@ type app struct {
 	metrics *metrics.Metrics
 	// reloadErrors reports why the last live reload failed (dev mode); nil otherwise.
 	reloadErrors func() []string
+	// events is the realtime change feed (BACKD_EVENTS): it opens its stream when the first
+	// subscriber arrives and closes it after the last one left. nil when events are off.
+	events *changefeed.Lazy
 }
 
 func setup(ctx context.Context, getenv func(string) string, logOut io.Writer) (*app, error) {
@@ -209,6 +213,7 @@ func serve(ctx context.Context, a *app) error {
 	if err := a.checkSecrets(ctx); err != nil {
 		return err
 	}
+	defer a.openEvents()()
 
 	var reload *reloader
 	var publicHandler http.Handler

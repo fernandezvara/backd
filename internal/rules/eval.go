@@ -50,6 +50,11 @@ func (r *Rule) Allow(v Values) (bool, error) {
 	return ok, nil
 }
 
+// ChangedFields lists the top-level user fields whose values differ between two
+// versions of a document: what `changed()` returns in a rule, and what an event
+// carries as `changed`.
+func ChangedFields(before, after map[string]any) []string { return changed(before, after) }
+
 // changed lists the top-level user fields whose values differ between the
 // stored document and the new one.
 func changed(before, after map[string]any) []string {

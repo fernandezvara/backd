@@ -23,7 +23,7 @@ func TestLoadDefaults(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	want := Settings{ConfigDir: "/cfg", MongoURI: "mongodb://m", HTTPAddr: ":8080", ProvisionMode: ProvisionApply, LogLevel: slog.LevelInfo, MaxBodyBytes: 1 << 20, MaxUploadBytes: 100 << 20, ImageMaxPixels: 40_000_000, ImageTimeout: 30 * time.Second, Expand: registry.DefaultExpandLimits, Aggregate: registry.DefaultAggregateLimits,
-		MongoOpTimeout: 10 * time.Second, ShutdownTimeout: 15 * time.Second, AdminUIIdle: 30 * time.Minute, InternalAddr: ":8081", WorkerConcurrency: 10}
+		MongoOpTimeout: 10 * time.Second, ShutdownTimeout: 15 * time.Second, AdminUIIdle: 30 * time.Minute, InternalAddr: ":8081", WorkerConcurrency: 10, Events: true, Triggers: true}
 	if !reflect.DeepEqual(s, want) {
 		t.Errorf("got %+v, want %+v", s, want)
 	}
@@ -297,6 +297,37 @@ func TestAggregateLimits(t *testing.T) {
 	for _, kv := range [][2]string{{"BACKD_AGGREGATE_TIME", "0s"}, {"BACKD_AGGREGATE_TIME", "soon"}, {"BACKD_AGGREGATE_TIME", "5m"}, {"BACKD_AGGREGATE_MAX_GROUPS", "0"}, {"BACKD_AGGREGATE_MAX_GROUPS", "99999"}} {
 		if _, err := AggregateLimitsFrom(env(map[string]string{kv[0]: kv[1]})); err == nil || !strings.Contains(err.Error(), kv[0]) {
 			t.Errorf("%s=%s: err = %v", kv[0], kv[1], err)
+		}
+	}
+}
+
+func TestEventsFlags(t *testing.T) {
+	base := map[string]string{"CONFIG_DIR": "/c", "MONGO_URI": "mongodb://x"}
+	load := func(extra map[string]string) (Settings, error) {
+		env := map[string]string{}
+		for k, v := range base {
+			env[k] = v
+		}
+		for k, v := range extra {
+			env[k] = v
+		}
+		return Load(func(k string) string { return env[k] })
+	}
+	s, err := load(nil)
+	if err != nil || !s.Events || !s.Triggers {
+		t.Fatalf("defaults: %+v %v", s, err)
+	}
+	s, err = load(map[string]string{"BACKD_EVENTS": "false", "BACKD_TRIGGERS": "FALSE"})
+	if err != nil || s.Events || s.Triggers {
+		t.Fatalf("both off: %+v %v", s, err)
+	}
+	s, err = load(map[string]string{"BACKD_TRIGGERS": "false"})
+	if err != nil || !s.Events || s.Triggers {
+		t.Fatalf("triggers off only: %+v %v", s, err)
+	}
+	for _, name := range []string{"BACKD_EVENTS", "BACKD_TRIGGERS"} {
+		if _, err := load(map[string]string{name: "sometimes"}); err == nil || !strings.Contains(err.Error(), name+" must be true or false") {
+			t.Errorf("%s=sometimes: %v", name, err)
 		}
 	}
 }

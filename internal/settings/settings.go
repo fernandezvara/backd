@@ -103,6 +103,12 @@ type Settings struct {
 	// WorkerConcurrency caps how many async jobs one worker process runs
 	// at once (WORKER_CONCURRENCY, roadmap F11); default 10.
 	WorkerConcurrency int
+	// Events is BACKD_EVENTS (default true): this instance may read the change stream for
+	// realtime subscribers and serve /_realtime. Triggers is BACKD_TRIGGERS (default true): it may
+	// hold the trigger dispatcher's lease. Neither reads anything until there is something to
+	// serve (design/triggers-and-realtime.md §3).
+	Events   bool
+	Triggers bool
 	// MetricsAddr (METRICS_ADDR) is where a process serves /metrics; empty
 	// means it doesn't. MetricsToken (METRICS_TOKEN) makes it ask for that
 	// bearer token. The port must be private (design/metrics.md).
@@ -233,6 +239,19 @@ func Load(getenv func(string) string) (Settings, error) {
 		s.Dev = true
 	default:
 		errs = append(errs, fmt.Errorf("BACKD_DEV must be true or false, got %q", v))
+	}
+	s.Events, s.Triggers = true, true
+	for _, flag := range []struct {
+		name string
+		to   *bool
+	}{{"BACKD_EVENTS", &s.Events}, {"BACKD_TRIGGERS", &s.Triggers}} {
+		switch v := strings.ToLower(getenv(flag.name)); v {
+		case "", "true":
+		case "false":
+			*flag.to = false
+		default:
+			errs = append(errs, fmt.Errorf("%s must be true or false, got %q", flag.name, v))
+		}
 	}
 	switch v := strings.ToLower(getenv("BACKD_ADMIN_API")); v {
 	case "", "true":

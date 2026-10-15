@@ -468,6 +468,6 @@ The sender encrypts each payload per RFC 8291 and POSTs to the subscription's en
 ## 18. Follow-ups
 
 - Clients for other platforms (Dart, Swift, Kotlin) with device helpers, as in `missing-features.md`.
-- Pushes from data events once 7.21 (functions after data changes) exists, using `push: true` functions.
+- Pushes from data events once triggers (27.3–27.6, functions after data changes) exist, using `push: true` functions.
 - **Other push providers** (HMS, Xiaomi, OneSignal, …): the provider scope is fixed at the built-in three; new providers land as additional built-in senders if demand appears.
 - Notification preferences per user and kind (mute categories), if apps ask for it.

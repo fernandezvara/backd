@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/fernandezvara/backd/internal/changefeed"
 )
 
 // domain holds the collectors of accounts, functions and jobs. Realm, database
@@ -31,15 +33,26 @@ type domain struct {
 	execRunning                           prometheus.Gauge
 	jobs                                  *jobSnapshot
 	pushUsers, pushDeliveries, pushPruned *prometheus.CounterVec
+
+	feedOpen, feedWatched, feedLag *prometheus.GaugeVec
+	feedReopened, feedEvents       *prometheus.CounterVec
 }
 
 func newDomain() domain {
 	counter := func(name, help string, labels ...string) *prometheus.CounterVec {
 		return prometheus.NewCounterVec(prometheus.CounterOpts{Namespace: Namespace, Name: name, Help: help}, labels)
 	}
+	gauge := func(name, help string, labels ...string) *prometheus.GaugeVec {
+		return prometheus.NewGaugeVec(prometheus.GaugeOpts{Namespace: Namespace, Name: name, Help: help}, labels)
+	}
 	snap := &jobSnapshot{stats: map[string][]JobStat{}, needsAttention: map[string]int64{}}
 	return domain{
 		jobs:            snap,
+		feedOpen:        gauge("changefeed_open", "1 while a change-stream consumer (realtime, dispatcher) has its stream open, 0 while it is idle or closed.", "consumer"),
+		feedWatched:     gauge("changefeed_watched_namespaces", "Collections a consumer's open stream watches.", "consumer"),
+		feedLag:         gauge("changefeed_lag_seconds", "Seconds between the cluster time of the last change a consumer read and reading it.", "consumer"),
+		feedReopened:    counter("changefeed_reopens_total", "Times a consumer's stream was opened again, by reason: set_changed (a reload changed what is watched), error, or history_lost (the history no longer reached its position).", "consumer", "reason"),
+		feedEvents:      counter("changefeed_events_total", "Changes a consumer read, by operation (created, updated, removed) and source (app collection or system).", "consumer", "op", "source"),
 		pushUsers:       counter("push_users_total", "Users a push send reached the planning of, by realm and outcome: queued (handed to delivery), limited (over their per-user limit) or no_devices.", "realm", "outcome"),
 		pushDeliveries:  counter("push_deliveries_total", "Devices a delivery unit answered for, by realm and status: sent, invalid (removed as dead) or failed.", "realm", "status"),
 		pushPruned:      counter("push_devices_pruned_total", "Devices removed from the registry, by realm and reason: invalid (the provider said the token is dead), stale (not seen for stale_after), session (their session ended unnoticed), cap (above max_per_user), moved (a token another user registered) or rotated (every web device, when the VAPID key was rotated).", "realm", "reason"),
@@ -81,7 +94,7 @@ func newDomain() domain {
 }
 
 func (d domain) collectors() []prometheus.Collector {
-	return []prometheus.Collector{newJobsCollector(d.jobs), d.jobsDone, d.jobsRetried, d.jobsExpired, d.refreshErrors, d.egress, d.execRuns, d.execTime, d.execRunning, d.sessionsStarted, d.sessionsEnded, d.rateLimited, d.idConflicts, d.aggregations, d.aggregateTime, d.fnCalls, d.fnTime, d.fnRefusals, d.fnReplays, d.execErrors, d.pushUsers, d.pushDeliveries, d.pushPruned}
+	return []prometheus.Collector{newJobsCollector(d.jobs), d.jobsDone, d.jobsRetried, d.jobsExpired, d.refreshErrors, d.egress, d.execRuns, d.execTime, d.execRunning, d.sessionsStarted, d.sessionsEnded, d.rateLimited, d.idConflicts, d.aggregations, d.aggregateTime, d.fnCalls, d.fnTime, d.fnRefusals, d.fnReplays, d.execErrors, d.pushUsers, d.pushDeliveries, d.pushPruned, d.feedOpen, d.feedWatched, d.feedLag, d.feedReopened, d.feedEvents}
 }
 
 // PushUsers counts n users by what planning a push did with them.
@@ -203,4 +216,44 @@ func (m *Metrics) ExecutorFinished(status string, took time.Duration, ran bool) 
 	}
 	m.execRuns.WithLabelValues(status).Inc()
 	m.execTime.Observe(took.Seconds())
+}
+
+// FeedState records whether a change-stream consumer has its stream open and how many
+// collections it watches.
+func (m *Metrics) FeedState(consumer string, open bool, watched int) {
+	if m == nil {
+		return
+	}
+	v := 0.0
+	if open {
+		v = 1
+	}
+	m.feedOpen.WithLabelValues(consumer).Set(v)
+	m.feedWatched.WithLabelValues(consumer).Set(float64(watched))
+}
+
+// FeedReopened counts a stream opened again.
+func (m *Metrics) FeedReopened(consumer, reason string) {
+	if m != nil {
+		m.feedReopened.WithLabelValues(consumer, reason).Inc()
+	}
+}
+
+// FeedEvent counts a change a consumer read.
+func (m *Metrics) FeedEvent(consumer string, op changefeed.Op, system bool) {
+	if m == nil {
+		return
+	}
+	source := "app"
+	if system {
+		source = "system"
+	}
+	m.feedEvents.WithLabelValues(consumer, string(op), source).Inc()
+}
+
+// FeedLag records how far behind the cluster a consumer is reading.
+func (m *Metrics) FeedLag(consumer string, lag time.Duration) {
+	if m != nil {
+		m.feedLag.WithLabelValues(consumer).Set(lag.Seconds())
+	}
 }

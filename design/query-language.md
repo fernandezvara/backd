@@ -2,7 +2,7 @@
 
 - **Issues:** features 21.1–21.8 (milestone `21-query-language`)
 - **Status:** decided
-- **Related designs:** the query translator and rules pushdown (architecture §3.4), [conditional-get.md](./conditional-get.md) (`ETag`s), [field-encryption.md](./field-encryption.md) (encrypted fields excluded), [realtime.md](./realtime.md) (`$search` not allowed in subscriptions), [organizations.md](./organizations.md)
+- **Related designs:** the query translator and rules pushdown (architecture §3.4), [conditional-get.md](./conditional-get.md) (`ETag`s), [field-encryption.md](./field-encryption.md) (encrypted fields excluded), [triggers-and-realtime.md](./triggers-and-realtime.md) (`$search` not allowed in subscriptions), [organizations.md](./organizations.md)
 
 ## 1. The idea
 
