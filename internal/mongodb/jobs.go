@@ -99,6 +99,9 @@ type jobDoc struct {
 	ParentID       string        `bson:"parent_id,omitempty"`
 	RerunOf        string        `bson:"rerun_of,omitempty"`
 	Depth          int32         `bson:"depth,omitempty"`
+	EventID        string        `bson:"event_id,omitempty"`
+	ChainRoot      string        `bson:"chain_root,omitempty"`
+	ChainDepth     int32         `bson:"chain_depth,omitempty"`
 	Status         string        `bson:"status"`
 	Attempts       int32         `bson:"attempts"`
 	Failures       int32         `bson:"failures,omitempty"`
@@ -350,6 +353,7 @@ func jobFromDoc(d jobDoc) auth.Job {
 		ID: d.ID, Database: d.Database, Function: d.Function, Input: encodeJSONAny(d.Input),
 		CallerActor: d.CallerActor, CallerUserID: d.CallerUserID, CallerKeyHash: d.CallerKeyHash, Scheduled: d.Scheduled,
 		ActsAsFunction: d.ActsAsFunction, Email: emailJobFromDoc(d.Email), Erase: eraseFromDoc(d.Erase), Revoke: revokeFromDoc(d.Revoke), Push: pushFromDoc(d.Push), Check: checkFromDoc(d.Check), Image: imageFromDoc(d.Image), Assign: assignFromDoc(d.Assign), OrgDelete: orgDeleteFromDoc(d.OrgDelete), Exclusive: d.Exclusive, Origin: d.Origin, ParentID: d.ParentID, RerunOf: d.RerunOf, Depth: int(d.Depth),
+		EventID: d.EventID, ChainRoot: d.ChainRoot, ChainDepth: int(d.ChainDepth),
 		TimeoutMS: d.TimeoutMS, RequestID: d.RequestID,
 		Status: d.Status, Attempts: int(d.Attempts), CreatedAt: d.CreatedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC(),
 		Result: jobResultFromDoc(d.Result), Steps: stepsFromDocs(d.Steps), StepsOmitted: int(d.StepsOmitted),
@@ -382,6 +386,7 @@ func jobToDoc(j auth.Job) (jobDoc, error) {
 		ID: j.ID, Database: j.Database, Function: j.Function, Input: input,
 		CallerActor: j.CallerActor, CallerUserID: j.CallerUserID, CallerKeyHash: j.CallerKeyHash, Scheduled: j.Scheduled, Status: j.Status,
 		ActsAsFunction: j.ActsAsFunction, Email: emailJobToDoc(j.Email), Erase: eraseToDoc(j.Erase), Revoke: revokeToDoc(j.Revoke), Push: pushToDoc(j.Push), Check: checkToDoc(j.Check), Image: imageToDoc(j.Image), Assign: assignToDoc(j.Assign), OrgDelete: orgDeleteToDoc(j.OrgDelete), Exclusive: j.Exclusive, Origin: j.Origin, ParentID: j.ParentID, RerunOf: j.RerunOf, Depth: int32(j.Depth),
+		EventID: j.EventID, ChainRoot: j.ChainRoot, ChainDepth: int32(j.ChainDepth),
 		Attempts: 0, TimeoutMS: j.TimeoutMS, RequestID: j.RequestID,
 		CreatedAt: j.CreatedAt, CompletedAt: completed, ExpiresAt: j.ExpiresAt, Result: result,
 	}, nil

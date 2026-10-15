@@ -1460,11 +1460,12 @@ func invocationJSON(rec auth.InvocationRecord) map[string]any {
 		"job_id":        nil,
 		"parent_id":     nil,
 		"origin":        nil,
+		"event_id":      nil,
 		"logs":          logs,
 		"steps":         stepsJSON(rec.Steps),
 		"steps_omitted": rec.StepsOmitted,
 	}
-	for k, v := range map[string]string{"code": rec.Code, "request_id": rec.RequestID, "job_id": rec.JobID, "parent_id": rec.ParentID, "origin": rec.Origin} {
+	for k, v := range map[string]string{"code": rec.Code, "request_id": rec.RequestID, "job_id": rec.JobID, "parent_id": rec.ParentID, "origin": rec.Origin, "event_id": rec.EventID} {
 		if v != "" {
 			out[k] = v
 		}

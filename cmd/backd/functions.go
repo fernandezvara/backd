@@ -178,7 +178,11 @@ type invocationRecord struct {
 	DurationMS int64           `json:"duration_ms"`
 	RequestID  *string         `json:"request_id"`
 	JobID      *string         `json:"job_id"`
-	Logs       []invocationLog `json:"logs"`
+	// Origin is what started the call (`trigger:<database>/<collection>/<trigger>` for a
+	// trigger run) and EventID the change a trigger run was made for.
+	Origin  *string         `json:"origin"`
+	EventID *string         `json:"event_id"`
+	Logs    []invocationLog `json:"logs"`
 	// Steps are what the call reported with ctx.step, closed when it ended.
 	Steps        []stepRecord `json:"steps"`
 	StepsOmitted int          `json:"steps_omitted"`
@@ -245,9 +249,9 @@ func functionsHistory(c *kli.CommandContext) error {
 		return encodeJSONLines(c.Stdout(), recs)
 	}
 	tw := tabwriter.NewWriter(c.Stdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "TIME\tSTATUS\tCODE\tDURATION\tLAST STEP\tACTOR\tREQUEST-ID")
+	fmt.Fprintln(tw, "TIME\tSTATUS\tCODE\tDURATION\tLAST STEP\tACTOR\tREQUEST-ID\tORIGIN\tEVENT-ID")
 	for _, r := range recs {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%dms\t%s\t%s\t%s\n", r.At, r.Status, orDash(r.Code), r.DurationMS, lastStepText(r.Steps), r.Actor, orDash(r.RequestID))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%dms\t%s\t%s\t%s\t%s\t%s\n", r.At, r.Status, orDash(r.Code), r.DurationMS, lastStepText(r.Steps), r.Actor, orDash(r.RequestID), orDash(r.Origin), orDash(r.EventID))
 	}
 	return tw.Flush()
 }

@@ -3,6 +3,7 @@ package triggers
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/fernandezvara/backd/internal/changefeed"
@@ -82,25 +83,6 @@ const (
 	outcomeError          = "error"
 )
 
-// input is the job input of a trigger run (design §10, base envelope). The documents ride
-// only when the trigger's `fields` asks, which the execution step adds.
-type input struct {
-	ID         string   `json:"id"`
-	Event      string   `json:"event"`
-	Collection string   `json:"collection"`
-	Doc        inputDoc `json:"doc"`
-	Version    int64    `json:"version"`
-	Changed    []string `json:"changed"`
-	Depth      int      `json:"depth"`
-	Root       string   `json:"root"`
-	At         string   `json:"at"`
-}
-
-type inputDoc struct {
-	ID      string `json:"id"`
-	Version int64  `json:"version"`
-}
-
 // evaluation is what one change produced for one trigger.
 type evaluation struct {
 	trigger *registry.Trigger
@@ -159,24 +141,104 @@ func (ct *collectionTriggers) evaluate(ctx context.Context, c changefeed.Change,
 	return out
 }
 
+// MaxInputBytes caps the input of a trigger job. A job keeps its input for as long as the
+// realm keeps jobs, and a larger one would make every retry and every listing carry it: over
+// the cap the document bodies are left out and `truncated` says so, the function reads the
+// documents itself.
+const MaxInputBytes = 256 << 10
+
 func (ct *collectionTriggers) job(t *registry.Trigger, c changefeed.Change, eventID string) *Job {
-	var changed []string
+	changed := []string{}
 	if c.Op == changefeed.Updated && c.Before != nil && c.After != nil {
 		changed = rules.ChangedFields(c.Before, c.After)
 	}
-	if changed == nil {
-		changed = []string{}
+	in := map[string]any{
+		"id": eventID, "event": string(c.Op), "collection": ct.collection,
+		"doc": map[string]any{"id": c.Key, "version": c.Version}, "version": c.Version, "changed": changed,
+		"depth": 0, "root": eventID, "at": c.At.UTC().Format(time.RFC3339),
 	}
-	in := input{
-		ID: eventID, Event: string(c.Op), Collection: ct.collection,
-		Doc: inputDoc{ID: c.Key, Version: c.Version}, Version: c.Version, Changed: changed,
-		Depth: 0, Root: eventID, At: c.At.UTC().Format(time.RFC3339),
+	if len(t.Fields) > 0 {
+		in["before"], in["after"] = project(c.Before, t.Fields), project(c.After, t.Fields)
+	}
+	if t.Session {
+		if by := writerOf(c); by != "" {
+			in["by"] = by
+		}
 	}
 	raw, _ := json.Marshal(in)
+	if len(raw) > MaxInputBytes && len(t.Fields) > 0 {
+		delete(in, "before")
+		delete(in, "after")
+		in["truncated"] = true
+		raw, _ = json.Marshal(in)
+	}
 	fn := ct.functions[t.Name]
 	return &Job{
 		ID: JobID(eventID, t.Name), Realm: ct.realm, Database: fn[0], Function: fn[1],
 		Input: raw, Origin: "trigger:" + ct.database + "/" + ct.collection + "/" + t.Name,
 		Timeout: ct.timeouts[t.Name], RequestID: eventID, EventID: eventID,
+		ChainRoot: eventID, ChainDepth: 0,
 	}
+}
+
+// project is what rides in the job of a document: all of it for ["*"], else its id, its
+// _meta and the listed paths. A document that isn't there (a creation's before, a removal's
+// after) is null.
+func project(doc map[string]any, fields []string) any {
+	if doc == nil {
+		return nil
+	}
+	if len(fields) == 1 && fields[0] == "*" {
+		return doc
+	}
+	out := map[string]any{}
+	for _, k := range []string{"id", "_meta"} {
+		if v, ok := doc[k]; ok {
+			out[k] = v
+		}
+	}
+	for _, path := range fields {
+		pick(doc, out, strings.Split(path, "."))
+	}
+	return out
+}
+
+// pick copies the value at path from src into dst, keeping the nesting.
+func pick(src, dst map[string]any, path []string) {
+	v, ok := src[path[0]]
+	if !ok {
+		return
+	}
+	if len(path) == 1 {
+		dst[path[0]] = v
+		return
+	}
+	sub, ok := v.(map[string]any)
+	if !ok {
+		return
+	}
+	next, _ := dst[path[0]].(map[string]any)
+	if next == nil {
+		next = map[string]any{}
+	}
+	pick(sub, next, path[1:])
+	if len(next) > 0 {
+		dst[path[0]] = next
+	}
+}
+
+// writerOf is the user who wrote the change, from the document's `_meta.updated_by`: the
+// last writer, which for a removal is not necessarily who deleted it. It is information, never
+// an identity: a key, a function, backd itself (an erase) and anonymous writers give none.
+func writerOf(c changefeed.Change) string {
+	doc := c.After
+	if c.Op == changefeed.Removed {
+		doc = c.Before
+	}
+	meta, _ := doc["_meta"].(map[string]any)
+	by, _ := meta["updated_by"].(string)
+	if id, ok := strings.CutPrefix(by, "user:"); ok {
+		return id
+	}
+	return ""
 }

@@ -368,7 +368,30 @@ triggers:
 - **At most 20 triggers per collection**, lowered with `triggers.max_per_collection` in `realm.yaml`; `max_chain` (how deep writes caused by trigger runs may chain, at most the instance's `BACKD_TRIGGER_MAX_CHAIN`, default 16), `max_chained_per_minute` and `max_backlog` are the other `triggers:` keys of `realm.yaml`.
 - A collection with triggers needs [pre-change images](../../operations/events/#requirements), which `backd provision` enables.
 
-The [trigger dispatcher](../../operations/events/#the-trigger-dispatcher) queues one background job for each change a trigger matches, and a worker runs it like any [async function](../../functions/jobs/) (a realm needs auth enabled, and a running worker). The job's input carries the event, the document's id and version and what changed; the rest of the function contract (the `fields` bodies, `by`, chain tracking) is planned, so `fields`, `session` and `ordered` are checked today and take effect in a later step.
+The [trigger dispatcher](../../operations/events/#the-trigger-dispatcher) queues one background job for each change a trigger matches, and a worker runs it like any [async function](../../functions/jobs/) (a realm needs auth enabled, and a running worker). The job's input is:
+
+```json
+{
+  "id": "3f9ab1c2…",          // the change's id: the same on every replay of it
+  "event": "updated",         // created | updated | removed
+  "collection": "orders",
+  "doc": { "id": "o_17", "version": 4 },
+  "version": 4,               // the document's _meta.version after the change
+  "changed": ["status"],      // top-level fields that differ; empty for created and removed
+  "depth": 0, "root": "3f9ab1c2…",   // where the run sits in a chain of trigger runs
+  "at": "2026-10-15T12:00:00Z",      // when the change was made
+  "before": { … }, "after": { … },   // only with `fields`; null where there is no document
+  "by": "u_9",                       // only with `session: true`, and only when a user wrote
+  "truncated": true                  // when the bodies were left out for size
+}
+```
+
+- **The function runs as itself.** `ctx.user` is `null`, and `ctx.admin.db` is always there, as in a scheduled run: the realm declared the trigger, so its function is trusted with the realm's data, and `admin: true` isn't needed. Treat a trigger function as the realm's most privileged code. Its `secrets` and `network` stay its own declarations.
+- **`by` is information, not identity.** It is the user in `_meta.updated_by`; nothing is granted by it, and it is absent for API keys, functions, backd's own writes (an erase) and anonymous writers. For a removal it is the last writer, not necessarily whoever deleted the document.
+- **Bodies are bounded.** Over 256 KiB the bodies are left out and `truncated` is `true`; the function reads the documents itself.
+- **Runs once, unless it retries.** A failure is final unless the function declares [`retry:`](../../functions/jobs/); an error it raises on purpose (`ctx.error`) is never retried. Handlers should be idempotent anyway, because a change can be delivered again after a restart: deduplicate on `id`.
+- **Its writes are stamped** with `_meta.chain = {root, depth}`, so a change a trigger caused can be told from a first-party one. Limits on how deep that may go are planned.
+- **`ordered`** is checked today and takes effect in a later step.
 
 ### Public caching
 

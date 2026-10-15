@@ -607,3 +607,48 @@ func TestWorkerStopsACancelledJob(t *testing.T) {
 		t.Error("a cancelled job was claimed again")
 	}
 }
+
+// A trigger's job runs as the function itself, with no user and the admin database always
+// present, carries its place in the chain on both of its credentials, and its record names the
+// trigger and the change.
+func TestWorkerRunsATriggerJob(t *testing.T) {
+	f := newRulesFixture(t)
+	w := newTestWorker(t, f)
+	ctx := context.Background()
+
+	n, err := f.svc.EnqueueJobs(ctx, []auth.Job{{
+		ID: "trigger-job-1", Database: "app", Function: "job", Input: json.RawMessage(`{"id":"evt-xyz","event":"updated"}`),
+		CallerActor: "system", ActsAsFunction: true, Origin: "trigger:app/notes/on_paid", TimeoutMS: 20000,
+		RequestID: "evt-xyz", EventID: "evt-xyz", ChainRoot: "root-1", ChainDepth: 3,
+	}})
+	if err != nil || n != 1 {
+		t.Fatalf("enqueue: %d %v", n, err)
+	}
+	if !w.RunOnce(ctx) {
+		t.Fatal("the trigger job was not claimed")
+	}
+	req := f.runner.last()
+	if req.Function != "acme/app/job" || string(req.Envelope.Input) != `{"id":"evt-xyz","event":"updated"}` {
+		t.Errorf("executor request: %+v", req)
+	}
+	if req.Envelope.User != nil {
+		t.Errorf("ctx.user must be null in a trigger run, got %s", req.Envelope.User)
+	}
+	if req.Envelope.Callback.AdminToken == "" {
+		t.Fatal("ctx.admin.db must be present in a trigger run, without `admin: true`")
+	}
+	for name, tok := range map[string]string{"ctx.db": req.Envelope.Callback.Token, "ctx.admin.db": req.Envelope.Callback.AdminToken} {
+		claims, err := auth.VerifyCallback(f.callbackKey, tok, *f.clock)
+		if err != nil || claims.ChainRoot != "root-1" || claims.ChainDepth != 3 {
+			t.Errorf("%s token: %+v %v", name, claims, err)
+		}
+	}
+	recs, _, err := f.svc.Invocations(ctx, auth.InvocationFilter{Function: "app/job"})
+	if err != nil || len(recs) != 1 {
+		t.Fatalf("history: %+v %v", recs, err)
+	}
+	r := recs[0]
+	if r.Origin != "trigger:app/notes/on_paid" || r.EventID != "evt-xyz" || r.JobID != "trigger-job-1" || r.Actor != "func:acme/app/job" || r.RequestID != "evt-xyz" {
+		t.Errorf("record = %+v", r)
+	}
+}

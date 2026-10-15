@@ -93,7 +93,7 @@ func (f *functions) dataHook(ctx context.Context, realm, ref string, in dataHook
 			Mode:      fn.Mode,
 			Input:     input,
 			Secrets:   secrets,
-			Callback:  f.callback(realm, database, name, fn, auth.Caller{}, deadline.Add(callbackMargin), invID, 0, nil),
+			Callback:  f.callback(realm, database, name, fn, auth.Caller{}, deadline.Add(callbackMargin), invID, 0, nil, chainRef{}),
 			RequestID: requestID(ctx),
 		},
 	})

@@ -47,6 +47,11 @@ type CallbackClaims struct {
 	// rules in the function's own data calls see the same `user.mfa` and `user.methods`.
 	MFA     bool     `json:"x,omitempty"`
 	Methods []string `json:"y,omitempty"`
+	// ChainRoot and ChainDepth say the invocation is a trigger run (or was called by one):
+	// the documents it writes are stamped `_meta.chain = {root, depth}`, which is how a change
+	// caused by a trigger is told from a first-party one (design/triggers-and-realtime.md §11).
+	ChainRoot  string `json:"o,omitempty"`
+	ChainDepth int    `json:"n,omitempty"`
 }
 
 // ErrInvalidCallback means a callback token is malformed, forged or expired.
@@ -104,11 +109,14 @@ type FuncCaller struct {
 	Job        string // the job attempt behind the token, if any (see CallbackClaims)
 	Attempt    int
 	Expires    time.Time
+	// ChainRoot and ChainDepth: see CallbackClaims. Empty for a run no trigger caused.
+	ChainRoot  string
+	ChainDepth int
 }
 
 // FuncCallerOf is the function behind a verified callback token.
 func FuncCallerOf(c CallbackClaims) *FuncCaller {
-	return &FuncCaller{Name: c.Realm + "/" + c.Function, Admin: c.Admin, Calls: c.Calls, Depth: c.Depth, Invocation: c.Inv, Email: c.Email, Push: c.Push, Config: c.Config, Job: c.Job, Attempt: c.Attempt, Expires: c.Expires}
+	return &FuncCaller{Name: c.Realm + "/" + c.Function, Admin: c.Admin, Calls: c.Calls, Depth: c.Depth, Invocation: c.Inv, Email: c.Email, Push: c.Push, Config: c.Config, Job: c.Job, Attempt: c.Attempt, Expires: c.Expires, ChainRoot: c.ChainRoot, ChainDepth: c.ChainDepth}
 }
 
 // CallbackCaller resolves a verified token into the caller it acts as,

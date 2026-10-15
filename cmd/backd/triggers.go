@@ -33,6 +33,7 @@ func (q jobQueue) Enqueue(ctx context.Context, realm string, jobs []triggers.Job
 		out[i] = auth.Job{
 			ID: j.ID, Database: j.Database, Function: j.Function, Input: j.Input, CallerActor: "system",
 			ActsAsFunction: true, Origin: j.Origin, TimeoutMS: timeout.Milliseconds(), RequestID: j.RequestID,
+			EventID: j.EventID, ChainRoot: j.ChainRoot, ChainDepth: j.ChainDepth,
 		}
 	}
 	svc := &auth.Users{Store: mongodb.NewAuthStore(q.a.client, realm)}

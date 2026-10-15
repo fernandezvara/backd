@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -641,4 +642,189 @@ func TestReloadAppliesToTheNextChange(t *testing.T) {
 	waitFor(t, "the stream to open", func() bool { return st.position() != "" })
 	h.add(change(changefeed.Created, "o1", 1, 1, nil, doc("o1", "paid", 1)))
 	waitFor(t, "the job", func() bool { return q.size() == 1 })
+}
+
+const contractTriggers = `triggers:
+  ids:
+    events: [created, updated, removed]
+    function: main/on-paid
+  slim:
+    events: [created, updated, removed]
+    function: main/on-paid
+    fields: [status]
+  whole:
+    events: [created, updated, removed]
+    function: main/on-paid
+    fields: ["*"]
+  who:
+    events: [created, updated, removed]
+    function: main/on-paid
+    session: true
+`
+
+func jobFor(jobs []Job, trigger string) (Job, map[string]any) {
+	for _, j := range jobs {
+		if j.Origin == "trigger:main/orders/"+trigger {
+			var in map[string]any
+			_ = json.Unmarshal(j.Input, &in)
+			return j, in
+		}
+	}
+	return Job{}, nil
+}
+
+func written(by string, version int64, status string, total float64) map[string]any {
+	return map[string]any{
+		"id": "o1", "status": status, "total": total,
+		"_meta": map[string]any{"version": version, "updated_by": by, "created_by": by},
+	}
+}
+
+func runContract(t *testing.T, h *history, st *memState, q *memQueue) (stop func()) {
+	t.Helper()
+	reg := testRegistry(t, contractTriggers)
+	stop = run(t, newDispatcher(t, reg, h, st, q, "a", nil))
+	waitFor(t, "the stream", func() bool { return st.position() != "" })
+	return stop
+}
+
+func TestInputCarriesBodiesOnlyWhenFieldsAsks(t *testing.T) {
+	h, st, q := &history{}, &memState{}, newQueue()
+	defer runContract(t, h, st, q)()
+	before, after := written("user:u1", 1, "draft", 10), written("user:u1", 2, "paid", 10)
+	h.add(change(changefeed.Updated, "o1", 2, 1, before, after))
+	waitFor(t, "four jobs", func() bool { return q.size() == 4 })
+	jobs := q.list()
+
+	_, ids := jobFor(jobs, "ids")
+	if _, has := ids["before"]; has {
+		t.Error("a trigger without `fields` carried a body")
+	}
+	if _, has := ids["after"]; has {
+		t.Error("a trigger without `fields` carried a body")
+	}
+	if _, has := ids["by"]; has {
+		t.Error("`by` without session: true")
+	}
+
+	_, slim := jobFor(jobs, "slim")
+	b, a := slim["before"].(map[string]any), slim["after"].(map[string]any)
+	if b["status"] != "draft" || a["status"] != "paid" || b["id"] != "o1" || a["_meta"] == nil {
+		t.Errorf("slim = %v / %v", b, a)
+	}
+	if _, has := a["total"]; has {
+		t.Errorf("a field that was not listed rode along: %v", a)
+	}
+
+	_, whole := jobFor(jobs, "whole")
+	if whole["after"].(map[string]any)["total"] != float64(10) || whole["before"].(map[string]any)["status"] != "draft" {
+		t.Errorf("whole = %v", whole)
+	}
+}
+
+func TestInputBodiesAreNullWhereThereIsNoDocument(t *testing.T) {
+	h, st, q := &history{}, &memState{}, newQueue()
+	defer runContract(t, h, st, q)()
+	h.add(
+		change(changefeed.Created, "o1", 1, 1, nil, written("user:u1", 1, "draft", 1)),
+		change(changefeed.Removed, "o1", 1, 2, written("user:u1", 1, "draft", 1), nil),
+	)
+	waitFor(t, "eight jobs", func() bool { return q.size() == 8 })
+	var created, removed map[string]any
+	for _, j := range q.list() {
+		if j.Origin != "trigger:main/orders/slim" {
+			continue
+		}
+		var in map[string]any
+		_ = json.Unmarshal(j.Input, &in)
+		if in["event"] == "created" {
+			created = in
+		} else {
+			removed = in
+		}
+	}
+	if v, has := created["before"]; !has || v != nil || created["after"] == nil {
+		t.Errorf("created: before=%v (present %v) after=%v", v, has, created["after"])
+	}
+	if v, has := removed["after"]; !has || v != nil || removed["before"] == nil {
+		t.Errorf("removed: after=%v (present %v) before=%v", v, has, removed["before"])
+	}
+}
+
+func TestByIsTheUserWhoWrote(t *testing.T) {
+	h, st, q := &history{}, &memState{}, newQueue()
+	defer runContract(t, h, st, q)()
+	cases := []struct {
+		name string
+		c    changefeed.Change
+		want string // "" means absent
+	}{
+		{"user creates", change(changefeed.Created, "a", 1, 1, nil, written("user:u1", 1, "draft", 1)), "u1"},
+		{"user updates", change(changefeed.Updated, "b", 2, 2, written("user:u9", 1, "draft", 1), written("user:u2", 2, "paid", 1)), "u2"},
+		{"user removes: the last writer", change(changefeed.Removed, "c", 3, 3, written("user:u3", 2, "paid", 1), nil), "u3"},
+		{"an api key", change(changefeed.Created, "d", 1, 4, nil, written("key:ci", 1, "draft", 1)), ""},
+		{"a function", change(changefeed.Created, "e", 1, 5, nil, written("func:shop/main/ship", 1, "draft", 1)), ""},
+		{"anonymous", change(changefeed.Created, "f", 1, 6, nil, written("anonymous", 1, "draft", 1)), ""},
+		{"an erase", change(changefeed.Updated, "g", 3, 7, written("user:u4", 2, "paid", 1), written("backd:erase", 3, "paid", 1)), ""},
+		{"no writer recorded", change(changefeed.Created, "h", 1, 8, nil, map[string]any{"id": "h", "status": "draft", "_meta": map[string]any{"version": int64(1)}}), ""},
+	}
+	for _, c := range cases {
+		h.add(c.c)
+	}
+	waitFor(t, "every job", func() bool { return q.size() == 4*len(cases) })
+	byKey := map[string]map[string]any{}
+	for _, j := range q.list() {
+		if j.Origin != "trigger:main/orders/who" {
+			continue
+		}
+		var in map[string]any
+		_ = json.Unmarshal(j.Input, &in)
+		byKey[in["doc"].(map[string]any)["id"].(string)] = in
+	}
+	for i, c := range cases {
+		in := byKey[c.c.Key]
+		got, has := in["by"].(string)
+		switch {
+		case c.want == "" && has:
+			t.Errorf("%d %s: by = %q, want none", i, c.name, got)
+		case c.want != "" && got != c.want:
+			t.Errorf("%d %s: by = %q (present %v), want %q", i, c.name, got, has, c.want)
+		}
+	}
+}
+
+func TestOversizedInputDropsBodiesAndSaysSo(t *testing.T) {
+	h, st, q := &history{}, &memState{}, newQueue()
+	defer runContract(t, h, st, q)()
+	big := written("user:u1", 1, "draft", 1)
+	big["note"] = strings.Repeat("x", MaxInputBytes+10)
+	h.add(change(changefeed.Created, "o1", 1, 1, nil, big))
+	waitFor(t, "four jobs", func() bool { return q.size() == 4 })
+	_, whole := jobFor(q.list(), "whole")
+	if whole["truncated"] != true {
+		t.Errorf("truncated = %v", whole["truncated"])
+	}
+	if _, has := whole["after"]; has {
+		t.Error("the oversized body was kept")
+	}
+	if whole["doc"].(map[string]any)["id"] != "o1" || whole["id"] == nil {
+		t.Errorf("the ids must stay: %v", whole)
+	}
+	// a trigger without `fields` is unaffected: it never had a body
+	_, ids := jobFor(q.list(), "ids")
+	if _, has := ids["truncated"]; has {
+		t.Error("`truncated` on an input that carried no body")
+	}
+}
+
+func TestJobCarriesTheChainRootAndDepthZero(t *testing.T) {
+	h, st, q := &history{}, &memState{}, newQueue()
+	defer runContract(t, h, st, q)()
+	h.add(change(changefeed.Created, "o1", 1, 1, nil, written("user:u1", 1, "draft", 1)))
+	waitFor(t, "jobs", func() bool { return q.size() == 4 })
+	for _, j := range q.list() {
+		if j.ChainRoot != j.EventID || j.ChainDepth != 0 || j.EventID == "" {
+			t.Errorf("job %s: chain %q/%d event %q", j.Origin, j.ChainRoot, j.ChainDepth, j.EventID)
+		}
+	}
 }

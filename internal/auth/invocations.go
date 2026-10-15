@@ -33,8 +33,10 @@ type InvocationRecord struct {
 	RequestID  string
 	JobID      string // async jobs (roadmap F11); empty until then
 	ParentID   string // the invocation that called this one (ctx.call); empty otherwise
-	Origin     string // http, function, cron, admin or backd:<event>
-	Logs       []LogLine
+	Origin     string // http, function, cron, admin, trigger:<db>/<collection>/<trigger> or backd:<event>
+	// EventID is the change a trigger run was made for (a replay of it shares the id).
+	EventID string
+	Logs    []LogLine
 	// Steps are what the call reported with ctx.step and ctx.progress, closed
 	// when it ended; StepsOmitted counts those dropped from the middle.
 	Steps        []Step

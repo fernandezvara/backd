@@ -51,6 +51,12 @@ type Job struct {
 	ParentID       string // the invocation that queued it with ctx.call; empty otherwise
 	RerunOf        string // the finished job an administrator re-ran to make this one; empty otherwise
 	Depth          int    // nested calls above it
+	// EventID is the change that made a trigger's job; ChainRoot and ChainDepth where it sits
+	// in a chain of writes caused by trigger runs (empty and 0 for a job no trigger made, or
+	// called by one: they carry the chain over).
+	EventID    string
+	ChainRoot  string
+	ChainDepth int
 	// Email is set on an email job: backd's own request to send a message, which
 	// a worker renders and hands to the realm's delivery function. It holds no
 	// message and no token.

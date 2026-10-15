@@ -8699,7 +8699,7 @@ components:
         happened and its own console log lines (roadmap F10).
       type: object
       additionalProperties: false
-      required: [id, at, function, actor, mode, status, duration_ms, request_id, job_id, parent_id, origin, logs, steps, steps_omitted]
+      required: [id, at, function, actor, mode, status, duration_ms, request_id, job_id, parent_id, origin, event_id, logs, steps, steps_omitted]
       properties:
         id: { type: string }
         at: { $ref: "#/components/schemas/Timestamp" }
@@ -8715,7 +8715,8 @@ components:
         request_id: { type: [string, "null"] }
         job_id: { type: [string, "null"], description: "The async job this call ran for (roadmap F11); null for sync calls." }
         parent_id: { type: [string, "null"], description: "The invocation that called this one with `ctx.call`; null otherwise." }
-        origin: { type: [string, "null"], description: "What started the call: `http`, `function` (`ctx.call`), `cron`, `admin`, `on_complete:<database>/<name>` (the notification of that function's job ending), or `backd:<event>`. Null for records made before origins were recorded." }
+        origin: { type: [string, "null"], description: "What started the call: `http`, `function` (`ctx.call`), `cron`, `admin`, `trigger:<database>/<collection>/<trigger>` (a trigger of a collection), `on_complete:<database>/<name>` (the notification of that function's job ending), or `backd:<event>`. Null for records made before origins were recorded." }
+        event_id: { type: [string, "null"], description: "For a trigger run, the change it was made for: the same on every replay of that change, and the id functions deduplicate on. Null otherwise." }
         logs:
           type: array
           description: "The function's captured console output, already masked of any declared secrets."
@@ -9252,6 +9253,17 @@ components:
         purge_at:
           allOf: [{ $ref: "#/components/schemas/Timestamp" }]
           description: When a soft-deleted document is removed for good (`soft_delete.retention`).
+        chain:
+          type: object
+          additionalProperties: false
+          required: [root, depth]
+          description: |
+            Set only on a write made by a trigger run (or by a function it called): `root` is the
+            id of the change that started the chain and `depth` how many trigger runs deep this
+            write is. The dispatcher reads it to bound chains; clients can't set it.
+          properties:
+            root: { type: string }
+            depth: { type: integer, minimum: 0 }
 
     Document:
       type: object

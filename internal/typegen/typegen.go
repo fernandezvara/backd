@@ -134,6 +134,8 @@ export interface Meta {
   deleted_at?: DateTimeString;
   deleted_by?: string;
   purge_at?: DateTimeString;
+  /** Set on a write made by a trigger run: where it sits in a chain of such writes. */
+  chain?: { root: string; depth: number };
 }
 
 export type Ops<T> = { $eq?: T; $ne?: T; $in?: T[]; $nin?: T[] };

@@ -30,6 +30,7 @@ type invocationDoc struct {
 	JobID        string       `bson:"job_id,omitempty"`
 	ParentID     string       `bson:"parent_id,omitempty"`
 	Origin       string       `bson:"origin,omitempty"`
+	EventID      string       `bson:"event_id,omitempty"`
 	Logs         []logLineDoc `bson:"logs,omitempty"`
 	Steps        []stepDoc    `bson:"steps,omitempty"`
 	StepsOmitted int32        `bson:"steps_omitted,omitempty"`
@@ -46,7 +47,7 @@ func (s *AuthStore) RecordInvocation(ctx context.Context, r auth.InvocationRecor
 	}
 	_, err := s.invocations().InsertOne(ctx, invocationDoc{
 		ID: r.ID, At: r.At, ExpiresAt: r.ExpiresAt, Function: r.Function, Actor: r.Actor, Mode: r.Mode,
-		Status: r.Status, Code: r.Code, DurationMS: r.DurationMS, RequestID: r.RequestID, JobID: r.JobID, ParentID: r.ParentID, Origin: r.Origin, Logs: logs, Steps: stepsToDocs(r.Steps), StepsOmitted: int32(r.StepsOmitted),
+		Status: r.Status, Code: r.Code, DurationMS: r.DurationMS, RequestID: r.RequestID, JobID: r.JobID, ParentID: r.ParentID, Origin: r.Origin, EventID: r.EventID, Logs: logs, Steps: stepsToDocs(r.Steps), StepsOmitted: int32(r.StepsOmitted),
 	})
 	return err
 }
@@ -92,7 +93,7 @@ func (s *AuthStore) ListInvocations(ctx context.Context, f auth.InvocationFilter
 		}
 		out[i] = auth.InvocationRecord{
 			ID: d.ID, At: d.At.UTC(), ExpiresAt: d.ExpiresAt.UTC(), Function: d.Function, Actor: d.Actor, Mode: d.Mode,
-			Status: d.Status, Code: d.Code, DurationMS: d.DurationMS, RequestID: d.RequestID, JobID: d.JobID, ParentID: d.ParentID, Origin: d.Origin, Logs: logs, Steps: stepsFromDocs(d.Steps), StepsOmitted: int(d.StepsOmitted),
+			Status: d.Status, Code: d.Code, DurationMS: d.DurationMS, RequestID: d.RequestID, JobID: d.JobID, ParentID: d.ParentID, Origin: d.Origin, EventID: d.EventID, Logs: logs, Steps: stepsFromDocs(d.Steps), StepsOmitted: int(d.StepsOmitted),
 		}
 	}
 	return out, more, nil

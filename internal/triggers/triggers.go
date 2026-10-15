@@ -31,6 +31,10 @@ type Job struct {
 	Timeout   time.Duration
 	RequestID string
 	EventID   string
+	// ChainRoot and ChainDepth place the run in a chain of writes caused by trigger runs: its
+	// own writes are stamped with them.
+	ChainRoot  string
+	ChainDepth int
 }
 
 // Queue stores jobs for workers to claim.
