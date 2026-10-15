@@ -108,6 +108,22 @@ func provisionOne(t *testing.T, schema string) (*registry.Collection, *Repositor
 	return provisionOneWith(t, schema, "")
 }
 
+// withoutReferences drops the top-level `references:` section of a collection.yaml.
+func withoutReferences(config string) string {
+	var out []string
+	skipping := false
+	for _, line := range strings.Split(config, "\n") {
+		top := line != "" && line[0] != ' ' && line[0] != '#' && line[0] != '\t'
+		if top {
+			skipping = strings.HasPrefix(line, "references:")
+		}
+		if !skipping {
+			out = append(out, line)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
 // provisionOneWith is provisionOne for a collection with a collection.yaml, whose file
 // fields need the realm to have storage.
 func provisionOneWith(t *testing.T, schema, config string) (*registry.Collection, *Repository) {
@@ -123,7 +139,8 @@ func provisionOneWith(t *testing.T, schema, config string) (*registry.Collection
 		realmYAML += "storage:\n  provider: minio\n  endpoint: http://minio:9000\n  bucket: test-bucket\n  prefix: p\n  access_key: secret:A\n  secret_key: secret:B\n"
 	}
 	if config != "" {
-		files["app/items/collection.yaml"] = config
+		// A reference points at another collection; this realm holds only the one.
+		files["app/items/collection.yaml"] = withoutReferences(config)
 	}
 	reg := loadRegistryWith(t, realm, realmYAML, files)
 	log, _ := testLogger()
