@@ -282,7 +282,7 @@ references:
 
 - **Checked at startup**, with the file, the reference's name and what to fix: the target database and collection exist in the realm, the source is a declared string field (or an array of strings with `many`), `key` is unique, the name isn't another field of the schema, and `max_expand` isn't above the instance's limit.
 - **Values aren't checked on write.** There is no referential integrity: a value that points at nothing is a reference to a document that doesn't exist.
-- **Requesting them** is explicit: `?expand=author(name),tags` on a read returns the referenced documents in `_expanded`, under their own collection's rules. See [Expanding references](../../api/documents/#expanding-references).
+- **Requesting them** is explicit: `?expand=author(name),tags` on a read returns the referenced documents in `_expanded`, under their own collection's rules. See [References and expansion](../../api/references/) for every startup error, the syntax, the cost and the recipe.
 
 ### Public caching
 

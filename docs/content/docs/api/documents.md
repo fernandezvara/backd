@@ -225,7 +225,7 @@ A list response carries a weak `ETag` (`W/"…"`) over the whole page: the id, v
 
 ## Expanding references
 
-A collection can [declare references](../../configuration/config-dir/#references) to other collections. With `expand` a read returns the referenced documents next to the result, in `_expanded`, in the same request:
+A collection can [declare references](../references/) to other collections. With `expand` a read returns the referenced documents next to the result, in `_expanded`, in the same request:
 
 ```http
 GET /v1/shop/blog/posts?expand=author(name,avatar),tags(name),category
@@ -248,7 +248,7 @@ GET /v1/shop/blog/posts?expand=author(name,avatar),tags(name),category
 - **Bounded.** One query per path per level for the whole page; at most 5 entries, 2 levels, 100 ids per array (`{"items": [...], "truncated": true}` when there were more) and 2,000 expanded documents per response. A wrong `expand` is `400 invalid_expand` naming the part; one that would return too many documents is `400 expand_too_large`, before any partial data. The instance's values are `BACKD_EXPAND_MAX_*` ([configuration](../../configuration/)), and a collection can only lower them.
 - **Cost headers.** `X-Backd-Expand-Queries` and `X-Backd-Expand-Docs` say what the expansion made and returned; the access log has them too, with the paths and the time spent.
 - **Caching.** The `ETag` of a document stays its own version, so `If-Match` keeps working; an expanded response is `private, no-cache` and never `304`.
-- **Not a join.** `where` and `order_by` use the collection's own fields: a path through a reference is `400 invalid_query`. Filter on the reference's source field instead.
+- **Not a join.** `where` and `order_by` use the collection's own fields: a path through a reference is `400 invalid_query`. Filter on the reference's source field instead. The [reference page](../references/) has the syntax, the startup errors, the cost guide and the alternatives.
 - **Writes** never expand, and `_expanded` in a body is ignored, like `_meta`. A [batch](#batch-writes) only writes, so it has nothing to expand. In [functions](../../functions/writing/#expanding-references), `ctx.db` expands as the caller and `ctx.admin.db` with admin access.
 
 ## Replace (PUT)
