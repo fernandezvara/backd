@@ -37,9 +37,10 @@ type domain struct {
 	feedOpen, feedWatched, feedLag *prometheus.GaugeVec
 	feedReopened, feedEvents       *prometheus.CounterVec
 
-	trigEvents, trigEnqueued, trigDeduped, trigGaps *prometheus.CounterVec
-	trigHandoffs                                    prometheus.Counter
-	trigLag, trigWatermark, trigLease, trigEpoch    prometheus.Gauge
+	trigEvents, trigEnqueued, trigDeduped, trigGaps, trigDropped *prometheus.CounterVec
+	trigBacklog                                                  *prometheus.GaugeVec
+	trigHandoffs                                                 prometheus.Counter
+	trigLag, trigWatermark, trigLease, trigEpoch                 prometheus.Gauge
 }
 
 func newDomain() domain {
@@ -56,6 +57,8 @@ func newDomain() domain {
 		trigEnqueued:    counter("trigger_jobs_enqueued_total", "Jobs the trigger dispatcher queued, by realm.", "realm"),
 		trigDeduped:     counter("trigger_jobs_deduplicated_total", "Jobs the queue collapsed because the same change had been queued before (a replay), by realm.", "realm"),
 		trigGaps:        counter("trigger_gaps_total", "Stretches of changes the dispatcher recorded as gaps, by realm and reason (window, preimage_missing).", "realm", "reason"),
+		trigDropped:     counter("trigger_dropped_total", "Events that matched a trigger and were not queued, by realm, collection, trigger and reason: chain (deeper than max_chain) or burst (a chained loop above max_chained_per_minute).", "realm", "collection", "trigger", "reason"),
+		trigBacklog:     gauge("trigger_backlog", "Unfinished (queued, waiting or running) trigger jobs of a realm, as the dispatcher last counted them; its ceiling is triggers.max_backlog.", "realm"),
 		trigHandoffs:    prometheus.NewCounter(prometheus.CounterOpts{Namespace: Namespace, Name: "trigger_lease_acquired_total", Help: "Times this instance took the trigger dispatcher's lease."}),
 		trigLag:         prometheus.NewGauge(prometheus.GaugeOpts{Namespace: Namespace, Name: "trigger_dispatch_lag_seconds", Help: "Seconds from the newest change a batch carried to its jobs being queued."}),
 		trigWatermark:   prometheus.NewGauge(prometheus.GaugeOpts{Namespace: Namespace, Name: "trigger_watermark_timestamp_seconds", Help: "When this instance last stored the dispatcher's position; its age is what to alert on."}),
@@ -107,7 +110,7 @@ func newDomain() domain {
 }
 
 func (d domain) collectors() []prometheus.Collector {
-	return []prometheus.Collector{newJobsCollector(d.jobs), d.jobsDone, d.jobsRetried, d.jobsExpired, d.refreshErrors, d.egress, d.execRuns, d.execTime, d.execRunning, d.sessionsStarted, d.sessionsEnded, d.rateLimited, d.idConflicts, d.aggregations, d.aggregateTime, d.fnCalls, d.fnTime, d.fnRefusals, d.fnReplays, d.execErrors, d.pushUsers, d.pushDeliveries, d.pushPruned, d.feedOpen, d.feedWatched, d.feedLag, d.feedReopened, d.feedEvents, d.trigEvents, d.trigEnqueued, d.trigDeduped, d.trigGaps, d.trigHandoffs, d.trigLag, d.trigWatermark, d.trigLease, d.trigEpoch}
+	return []prometheus.Collector{newJobsCollector(d.jobs), d.jobsDone, d.jobsRetried, d.jobsExpired, d.refreshErrors, d.egress, d.execRuns, d.execTime, d.execRunning, d.sessionsStarted, d.sessionsEnded, d.rateLimited, d.idConflicts, d.aggregations, d.aggregateTime, d.fnCalls, d.fnTime, d.fnRefusals, d.fnReplays, d.execErrors, d.pushUsers, d.pushDeliveries, d.pushPruned, d.feedOpen, d.feedWatched, d.feedLag, d.feedReopened, d.feedEvents, d.trigEvents, d.trigEnqueued, d.trigDeduped, d.trigGaps, d.trigDropped, d.trigBacklog, d.trigHandoffs, d.trigLag, d.trigWatermark, d.trigLease, d.trigEpoch}
 }
 
 // PushUsers counts n users by what planning a push did with them.
@@ -329,6 +332,20 @@ func (o *TriggerObserver) Lease(held bool, epoch int64) {
 	}
 	o.m.trigLease.Set(v)
 	o.m.trigEpoch.Set(float64(epoch))
+}
+
+// Dropped counts an event that matched and was not queued.
+func (o *TriggerObserver) Dropped(realm, collection, trigger, reason string) {
+	if o != nil {
+		o.m.trigDropped.WithLabelValues(realm, collection, trigger, reason).Inc()
+	}
+}
+
+// Backlog records a realm's unfinished trigger jobs.
+func (o *TriggerObserver) Backlog(realm string, n int) {
+	if o != nil {
+		o.m.trigBacklog.WithLabelValues(realm).Set(float64(n))
+	}
 }
 
 // Gap counts a gap recorded.

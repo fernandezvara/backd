@@ -77,11 +77,13 @@ All names start with `backd_`; durations are in seconds.
 | `trigger_events_total` | `realm`, `collection`, `trigger`, `outcome` | Changes a [trigger](../events/#the-trigger-dispatcher) considered: `matched` (a job was made), `no_match`, `missing_preimage` (the image its condition needs was not in the change) or `error`. |
 | `trigger_jobs_enqueued_total` | `realm` | Jobs the dispatcher queued. |
 | `trigger_jobs_deduplicated_total` | `realm` | Jobs the queue collapsed: the same change was read again after a restart or a handoff. |
+| `trigger_dropped_total` | `realm`, `collection`, `trigger`, `reason` | Events that matched and were not queued: `chain` (deeper than `max_chain`) or `burst` (a chained loop above `max_chained_per_minute`). |
+| `trigger_backlog` | `realm` | Unfinished trigger jobs, as last counted: alert well below `triggers.max_backlog`. |
 | `trigger_dispatch_lag_seconds` | | Seconds from the newest change of a batch to its jobs being queued. |
 | `trigger_watermark_timestamp_seconds` | | When this instance last stored the dispatcher's position: alert when its age grows while it holds the lease. |
 | `trigger_lease_held`, `trigger_lease_epoch` | | `1` while this instance holds the dispatcher's lease, and the lease's epoch. |
 | `trigger_lease_acquired_total` | | Times this instance took the lease. |
-| `trigger_gaps_total` | `realm`, `reason` | Gaps recorded: `window` (the dispatcher was away longer than MongoDB keeps history) or `preimage_missing`. |
+| `trigger_gaps_total` | `realm`, `reason` | Gaps recorded: `window` (the dispatcher was away longer than MongoDB keeps history), `preimage_missing` or `backlog` (the realm was at its ceiling). |
 | `build_info` | `version`, `commit` | Always `1`. |
 
 The Go runtime (`go_*`) and process (`process_*`) metrics are included.

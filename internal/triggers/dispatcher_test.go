@@ -198,7 +198,8 @@ type memQueue struct {
 	order   []string
 	created int
 	dups    int
-	fail    int // the next n Enqueue calls fail
+	fail    int            // the next n Enqueue calls fail
+	fixed   map[string]int // when set, what Backlog answers per realm
 }
 
 func newQueue() *memQueue { return &memQueue{jobs: map[string]Job{}} }
@@ -222,6 +223,21 @@ func (q *memQueue) Enqueue(_ context.Context, _ string, jobs []Job) (int, error)
 	}
 	q.created += created
 	return created, nil
+}
+
+func (q *memQueue) Backlog(_ context.Context, realm string) (int, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.fixed != nil {
+		return q.fixed[realm], nil
+	}
+	n := 0
+	for _, j := range q.jobs {
+		if j.Realm == realm {
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (q *memQueue) size() int {
@@ -281,6 +297,16 @@ func (r *recorder) Gap(_, reason string) {
 	r.gaps = append(r.gaps, reason)
 	r.mu.Unlock()
 }
+
+func (r *recorder) Dropped(_, _, trigger, reason string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.events == nil {
+		r.events = map[string]int{}
+	}
+	r.events[trigger+"/dropped_"+reason]++
+}
+func (r *recorder) Backlog(string, int) {}
 
 func (r *recorder) count(key string) int {
 	r.mu.Lock()
@@ -827,4 +853,233 @@ func TestJobCarriesTheChainRootAndDepthZero(t *testing.T) {
 			t.Errorf("job %s: chain %q/%d event %q", j.Origin, j.ChainRoot, j.ChainDepth, j.EventID)
 		}
 	}
+}
+
+// ---- chains, bounds and backlog (27.6) ----
+
+// chained is a change a trigger run caused: the document carries the chain of that run.
+func chained(op changefeed.Op, id string, inc uint32, root string, depth int64, status string) changefeed.Change {
+	after := doc(id, status, 1)
+	after["_meta"].(map[string]any)["chain"] = map[string]any{"root": root, "depth": depth}
+	return change(op, id, 1, inc, nil, after)
+}
+
+func limitsOf(l registry.TriggerLimits) func(*registry.Registry, string) registry.TriggerLimits {
+	return func(*registry.Registry, string) registry.TriggerLimits { return l }
+}
+
+func TestChainedEventsCountDepthFromTheStamp(t *testing.T) {
+	reg := testRegistry(t, paidTrigger)
+	h := &history{}
+	st, q := &memState{}, newQueue()
+	stop := run(t, newDispatcher(t, reg, h, st, q, "a", nil))
+	defer stop()
+	waitFor(t, "the stream", func() bool { return st.position() != "" })
+	h.add(
+		change(changefeed.Created, "first", 1, 1, nil, doc("first", "paid", 1)),
+		chained(changefeed.Created, "second", 2, "root-A", 2, "paid"),
+	)
+	waitFor(t, "both jobs", func() bool { return q.size() == 2 })
+	jobs := q.list()
+	var first, second map[string]any
+	_ = json.Unmarshal(jobs[0].Input, &first)
+	_ = json.Unmarshal(jobs[1].Input, &second)
+	if first["depth"] != float64(0) || first["root"] != jobs[0].EventID || jobs[0].ChainDepth != 0 {
+		t.Errorf("first-party: %v", first)
+	}
+	if second["depth"] != float64(3) || second["root"] != "root-A" || jobs[1].ChainDepth != 3 || jobs[1].ChainRoot != "root-A" {
+		t.Errorf("chained: %v (chain %q/%d), want root-A at depth 3", second, jobs[1].ChainRoot, jobs[1].ChainDepth)
+	}
+}
+
+func TestEventsDeeperThanMaxChainAreDropped(t *testing.T) {
+	reg := testRegistry(t, paidTrigger)
+	h := &history{}
+	st, q, obs := &memState{}, newQueue(), &recorder{}
+	d := newDispatcher(t, reg, h, st, q, "a", obs)
+	d.Limits = limitsOf(registry.TriggerLimits{MaxChain: 3})
+	stop := run(t, d)
+	defer stop()
+	waitFor(t, "the stream", func() bool { return st.position() != "" })
+	h.add(
+		chained(changefeed.Created, "ok", 1, "r", 2, "paid"),   // depth 3: allowed
+		chained(changefeed.Created, "deep", 2, "r", 3, "paid"), // depth 4: over
+		change(changefeed.Created, "plain", 1, 3, nil, doc("plain", "paid", 1)),
+	)
+	waitFor(t, "the position", func() bool { return st.position() == "3" })
+	if q.size() != 2 {
+		t.Fatalf("%d jobs, want the first-party one and the one at the cap", q.size())
+	}
+	if obs.count("on_paid/dropped_chain") != 1 || obs.count("on_paid/matched") != 2 {
+		t.Errorf("events = %v", obs.events)
+	}
+}
+
+// A function that writes the very collection it triggers on: the loop runs to the cap and
+// stops, whatever the function does.
+func TestASelfTriggerLoopStopsAtTheCap(t *testing.T) {
+	reg := testRegistry(t, paidTrigger)
+	h := &history{}
+	st, q, obs := &memState{}, newQueue(), &recorder{}
+	d := newDispatcher(t, reg, h, st, q, "a", obs)
+	d.Limits = limitsOf(registry.TriggerLimits{MaxChain: 5, MaxChainedPerMinute: 1000})
+	stop := run(t, d)
+	defer stop()
+	waitFor(t, "the stream", func() bool { return st.position() != "" })
+
+	h.add(change(changefeed.Created, "seed", 1, 1, nil, doc("seed", "paid", 1)))
+	// Play the function: for every job the dispatcher queues, write a document the trigger
+	// matches again, stamped with the chain the job carries.
+	played := map[string]bool{}
+	inc := uint32(10)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, j := range q.list() {
+			if played[j.ID] {
+				continue
+			}
+			played[j.ID] = true
+			inc++
+			h.add(chained(changefeed.Created, "loop"+strconv.Itoa(int(inc)), inc, j.ChainRoot, int64(j.ChainDepth), "paid"))
+		}
+		if obs.count("on_paid/dropped_chain") > 0 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if n := q.size(); n != 6 { // depths 0..5
+		t.Fatalf("the loop queued %d jobs, want 6 (depths 0 to 5)", n)
+	}
+	if obs.count("on_paid/dropped_chain") != 1 {
+		t.Errorf("events = %v", obs.events)
+	}
+	for _, j := range q.list() {
+		if j.ChainDepth > 5 {
+			t.Errorf("a job at depth %d", j.ChainDepth)
+		}
+	}
+}
+
+func TestBurstCapAppliesToChainedEventsOnly(t *testing.T) {
+	reg := testRegistry(t, paidTrigger)
+	h := &history{}
+	st, q, obs := &memState{}, newQueue(), &recorder{}
+	d := newDispatcher(t, reg, h, st, q, "a", obs)
+	d.Limits = limitsOf(registry.TriggerLimits{MaxChainedPerMinute: 3})
+	stop := run(t, d)
+	defer stop()
+	waitFor(t, "the stream", func() bool { return st.position() != "" })
+	var batch []changefeed.Change
+	for i := 1; i <= 500; i++ { // an import: every one is first-party and must be delivered
+		batch = append(batch, change(changefeed.Created, "imp"+strconv.Itoa(i), 1, uint32(i), nil, doc("imp"+strconv.Itoa(i), "paid", 1)))
+	}
+	for i := 1; i <= 10; i++ { // a hot loop: only 3 a minute
+		batch = append(batch, chained(changefeed.Created, "hot"+strconv.Itoa(i), uint32(1000+i), "r", 1, "paid"))
+	}
+	h.add(batch...)
+	waitFor(t, "the position", func() bool { return st.position() == "510" })
+	if q.size() != 503 {
+		t.Fatalf("%d jobs, want 500 first-party + 3 chained", q.size())
+	}
+	if obs.count("on_paid/dropped_burst") != 7 {
+		t.Errorf("events = %v", obs.events)
+	}
+}
+
+func TestBacklogCeilingRecordsAGapAndOnlyForThatRealm(t *testing.T) {
+	reg := testRegistryRealms(t, "shop", "blog")
+	h := &history{}
+	st, q, obs := &memState{}, newQueue(), &recorder{}
+	q.fixed = map[string]int{"shop": 5, "blog": 0} // shop is at its ceiling
+	d := newDispatcher(t, reg, h, st, q, "a", obs)
+	d.Limits = limitsOf(registry.TriggerLimits{MaxBacklog: 5})
+	stop := run(t, d)
+	defer stop()
+	waitFor(t, "the stream", func() bool { return st.position() != "" })
+	shop := change(changefeed.Created, "s1", 1, 1, nil, doc("s1", "paid", 1))
+	blog := change(changefeed.Created, "b1", 1, 2, nil, doc("b1", "paid", 1))
+	blog.Realm, blog.DB = "blog", "blog__main"
+	shop2 := change(changefeed.Created, "s2", 1, 3, nil, doc("s2", "paid", 1))
+	h.add(shop, blog, shop2)
+	waitFor(t, "the blog job", func() bool { return q.size() == 1 })
+	waitFor(t, "the gap", func() bool { return len(st.gapList()) == 1 })
+	jobs := q.list()
+	if jobs[0].Realm != "blog" {
+		t.Errorf("the job is for %q", jobs[0].Realm)
+	}
+	g := st.gapList()[0]
+	if g.Reason != GapBacklog || g.Realm != "shop" || g.Count != 2 || len(g.Keys) != 2 || g.Trigger != "on_paid" {
+		t.Errorf("gap = %+v", g)
+	}
+}
+
+func TestBacklogIsCountedOncePerWhile(t *testing.T) {
+	reg := testRegistry(t, paidTrigger)
+	h := &history{}
+	st := &memState{}
+	cq := &countingQueue{memQueue: newQueue()}
+	d := newDispatcher(t, reg, h, st, cq, "a", nil)
+	stop := run(t, d)
+	defer stop()
+	waitFor(t, "the stream", func() bool { return st.position() != "" })
+	var batch []changefeed.Change
+	for i := 1; i <= 100; i++ {
+		batch = append(batch, change(changefeed.Created, "o"+strconv.Itoa(i), 1, uint32(i), nil, doc("o", "paid", 1)))
+	}
+	h.add(batch...)
+	waitFor(t, "the jobs", func() bool { return cq.size() == 100 })
+	if n := cq.counts(); n > 3 {
+		t.Errorf("the backlog was counted %d times for 100 events", n)
+	}
+}
+
+type countingQueue struct {
+	*memQueue
+	mu sync.Mutex
+	n  int
+}
+
+func (c *countingQueue) Backlog(ctx context.Context, realm string) (int, error) {
+	c.mu.Lock()
+	c.n++
+	c.mu.Unlock()
+	return c.memQueue.Backlog(ctx, realm)
+}
+
+func (c *countingQueue) counts() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.n
+}
+
+// testRegistryRealms is a registry of several realms, each with the orders collection and
+// the paid trigger.
+func testRegistryRealms(t *testing.T, realms ...string) *registry.Registry {
+	t.Helper()
+	root := t.TempDir()
+	for _, realm := range realms {
+		files := map[string]string{
+			realm + "/realm.yaml":                            "auth: enabled\nsignup: open\n",
+			realm + "/main/orders/schema.json":               orderSchema,
+			realm + "/main/orders/collection.yaml":           paidTrigger,
+			realm + "/main/_functions/deno.json":             "{}",
+			realm + "/main/_functions/on-paid/function.yaml": "internal: true\nmode: async\ntimeout: 20s\n",
+			realm + "/main/_functions/on-paid/index.ts":      "export default () => 1;\n",
+		}
+		for p, c := range files {
+			full := filepath.Join(root, p)
+			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(full, []byte(c), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return reg
 }

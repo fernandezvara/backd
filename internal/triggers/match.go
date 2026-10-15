@@ -88,7 +88,39 @@ type evaluation struct {
 	trigger *registry.Trigger
 	outcome string
 	job     *Job
+	depth   int
 	err     error
+}
+
+// chainOf says where a change sits in a chain of writes caused by trigger runs: the root of
+// the chain and the depth of the event it makes (the run's depth plus one). A first-party
+// change has no `_meta.chain` and is depth 0, rooted at itself.
+//
+// A removal can't be told: nothing is written to stamp, so the chain on the removed
+// document is what an earlier write left. It counts as first-party, which can't make a
+// loop endless: every cycle has to create or update a document to start again, and those are
+// stamped.
+func chainOf(c changefeed.Change) (root string, depth int) {
+	if c.Op == changefeed.Removed || c.After == nil {
+		return "", 0
+	}
+	meta, _ := c.After["_meta"].(map[string]any)
+	ch, _ := meta["chain"].(map[string]any)
+	root, _ = ch["root"].(string)
+	if root == "" {
+		return "", 0
+	}
+	switch d := ch["depth"].(type) {
+	case int64:
+		depth = int(d)
+	case int32:
+		depth = int(d)
+	case int:
+		depth = d
+	case float64:
+		depth = int(d)
+	}
+	return root, depth + 1
 }
 
 // evaluate runs every trigger of the collection against the change. config is the realm's
@@ -136,6 +168,7 @@ func (ct *collectionTriggers) evaluate(ctx context.Context, c changefeed.Change,
 		}
 		ev.outcome = outcomeMatched
 		ev.job = ct.job(t, c, eventID)
+		ev.depth = int(ev.job.ChainDepth)
 		out = append(out, ev)
 	}
 	return out
@@ -152,10 +185,14 @@ func (ct *collectionTriggers) job(t *registry.Trigger, c changefeed.Change, even
 	if c.Op == changefeed.Updated && c.Before != nil && c.After != nil {
 		changed = rules.ChangedFields(c.Before, c.After)
 	}
+	root, depth := chainOf(c)
+	if root == "" {
+		root = eventID
+	}
 	in := map[string]any{
 		"id": eventID, "event": string(c.Op), "collection": ct.collection,
 		"doc": map[string]any{"id": c.Key, "version": c.Version}, "version": c.Version, "changed": changed,
-		"depth": 0, "root": eventID, "at": c.At.UTC().Format(time.RFC3339),
+		"depth": depth, "root": root, "at": c.At.UTC().Format(time.RFC3339),
 	}
 	if len(t.Fields) > 0 {
 		in["before"], in["after"] = project(c.Before, t.Fields), project(c.After, t.Fields)
@@ -177,7 +214,7 @@ func (ct *collectionTriggers) job(t *registry.Trigger, c changefeed.Change, even
 		ID: JobID(eventID, t.Name), Realm: ct.realm, Database: fn[0], Function: fn[1],
 		Input: raw, Origin: "trigger:" + ct.database + "/" + ct.collection + "/" + t.Name,
 		Timeout: ct.timeouts[t.Name], RequestID: eventID, EventID: eventID,
-		ChainRoot: eventID, ChainDepth: 0,
+		ChainRoot: root, ChainDepth: depth,
 	}
 }
 

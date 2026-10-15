@@ -441,6 +441,16 @@ func (s *AuthStore) EnqueueJobs(ctx context.Context, jobs []auth.Job) (int, erro
 	return 0, err
 }
 
+// CountTriggerJobs counts the realm's trigger jobs that aren't finished: queued, waiting to be
+// retried, or running. The dispatcher keeps it below the realm's ceiling.
+func (s *AuthStore) CountTriggerJobs(ctx context.Context) (int, error) {
+	n, err := s.jobs().CountDocuments(ctx, bson.D{
+		{Key: "origin", Value: bson.D{{Key: "$regex", Value: "^trigger:"}}},
+		{Key: "status", Value: bson.D{{Key: "$ne", Value: auth.JobDone}}},
+	})
+	return int(n), err
+}
+
 // ClaimJob atomically claims the oldest claimable job: never claimed
 // (status queued, no lease yet), or whose lease has expired (a dead
 // worker's jobs are picked up again). The lease extends to at plus the

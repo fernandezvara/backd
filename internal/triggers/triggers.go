@@ -42,6 +42,9 @@ type Queue interface {
 	// Enqueue inserts the jobs of one realm. A job whose ID exists already is a replay and
 	// is not an error: created counts the new ones.
 	Enqueue(ctx context.Context, realm string, jobs []Job) (created int, err error)
+	// Backlog counts the realm's trigger jobs that are queued or running: what the
+	// dispatcher keeps below the realm's ceiling.
+	Backlog(ctx context.Context, realm string) (int, error)
 }
 
 // Lease is the right to dispatch. Epoch grows with every acquisition, so a holder that lost
@@ -78,6 +81,14 @@ const (
 	GapWindow = "window"
 	// GapPreImage: a change arrived without the image its condition needs.
 	GapPreImage = "preimage_missing"
+	// GapBacklog: the realm had more queued trigger jobs than its ceiling allows.
+	GapBacklog = "backlog"
+)
+
+// Reasons an event that matched is not queued.
+const (
+	DropChain = "chain"
+	DropBurst = "burst"
 )
 
 // MaxGapKeys is how many document ids one gap record lists.
@@ -108,6 +119,11 @@ type Observer interface {
 	Lease(held bool, epoch int64)
 	// Gap counts a gap recorded.
 	Gap(realm, reason string)
+	// Dropped counts an event that matched and was not queued, by reason: chain (too deep) or
+	// burst (a chained loop above its rate).
+	Dropped(realm, collection, trigger, reason string)
+	// Backlog records a realm's queued trigger jobs.
+	Backlog(realm string, n int)
 }
 
 // EventID identifies one change of one document, the same wherever and however often it is

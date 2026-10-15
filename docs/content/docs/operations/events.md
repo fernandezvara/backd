@@ -68,7 +68,10 @@ When a collection declares [`triggers:`](../../configuration/config-dir/#trigger
 - **Gaps are recorded, never silent.** If the dispatcher was away longer than the oplog reaches, the changes in between are gone from the stream: it records a gap (`window`, with the interval) in `backd___deployment.trigger_gaps`, logs an error and goes on from now. A change that arrives without the image a condition needs (`before`, `changed()`) is skipped and recorded (`preimage_missing`, with the document ids). Both are counted in `trigger_gaps_total`.
 - **Several deployments, one cluster.** Give each its own [`BACKD_DEPLOYMENT_ID`](../../configuration/) so their dispatchers don't share a lease.
 
-Changes made by a dispatcher's own jobs can trigger others; limits on chains and `ordered` triggers are planned.
+- **Chains and overload.** A trigger run's writes are stamped, so the events they cause carry a depth: past `max_chain`, or past `max_chained_per_minute` for one trigger, they are dropped and counted (`trigger_dropped_total{reason}`); events nobody chained are never dropped for being many. A realm with more than `max_backlog` unfinished trigger jobs (`trigger_backlog`) records further events as a `backlog` gap instead of queuing them, so the jobs collection stays bounded and other realms keep flowing. Alert well below the ceiling.
+- **A new index.** The dispatcher counts a realm's unfinished trigger jobs by origin and status; `backd provision` creates that index in each realm's `jobs` collection (instances with `PROVISION_MODE=verify` ask for it).
+
+`ordered` triggers are planned.
 
 ## Sizing the history
 

@@ -46,6 +46,10 @@ func (q realQueue) Enqueue(ctx context.Context, realm string, jobs []triggers.Jo
 	return (&auth.Users{Store: mongodb.NewAuthStore(q.client, realm)}).EnqueueJobs(ctx, out)
 }
 
+func (q realQueue) Backlog(ctx context.Context, realm string) (int, error) {
+	return mongodb.NewAuthStore(q.client, realm).CountTriggerJobs(ctx)
+}
+
 func writeTree(t *testing.T, realm, collectionYAML string) *registry.Registry {
 	t.Helper()
 	root := t.TempDir()
@@ -205,5 +209,25 @@ func TestDispatchAgainstMongoDB(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 	if n := len(jobsOf(t, client, realm)); n != 4 {
 		t.Fatalf("%d jobs after the handoff, want exactly 4 (one per matching change)", n)
+	}
+
+	// A write a trigger run made carries its chain: the event it causes is one deeper.
+	chainedMeta := meta(1)
+	chainedMeta = append(chainedMeta, bson.E{Key: "chain", Value: bson.D{{Key: "root", Value: "r-1"}, {Key: "depth", Value: int64(1)}}})
+	if _, err := orders.InsertOne(ctx, bson.D{{Key: "_id", Value: "o6"}, {Key: "_meta", Value: chainedMeta}, {Key: "status", Value: "paid"}}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the chained event's job", func() bool { return len(jobsOf(t, client, realm)) == 5 })
+	deepest := 0
+	for _, j := range jobsOf(t, client, realm) {
+		if d, _ := j["chain_depth"].(int32); int(d) > deepest {
+			deepest = int(d)
+			if j["chain_root"] != "r-1" {
+				t.Errorf("chain root = %v", j["chain_root"])
+			}
+		}
+	}
+	if deepest != 2 {
+		t.Errorf("deepest chain depth = %d, want 2", deepest)
 	}
 }

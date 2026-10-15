@@ -482,3 +482,43 @@ func TestImageDeclarationsOnMongoDB(t *testing.T) {
 		t.Errorf("recorded: %v %v", got, err)
 	}
 }
+
+// Jobs with ids of their own are inserted once however often they're offered, and the
+// dispatcher's backlog counts only the unfinished trigger ones.
+func TestEnqueueJobsDedupsAndTriggerBacklogCounts(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Date(2126, 9, 29, 12, 0, 0, 0, time.UTC)
+	mk := func(id, origin, status string) auth.Job {
+		return auth.Job{ID: id, Database: "app", Function: "f", Input: json.RawMessage(`{}`), CallerActor: "system",
+			Origin: origin, EventID: "evt-" + id, ChainRoot: "root", ChainDepth: 2, TimeoutMS: 1000,
+			Status: status, CreatedAt: now, ExpiresAt: now.Add(time.Hour)}
+	}
+	first := []auth.Job{mk("t1", "trigger:app/orders/on_paid", auth.JobQueued), mk("t2", "trigger:app/orders/on_paid", auth.JobQueued), mk("h1", "http", auth.JobQueued)}
+	n, err := s.EnqueueJobs(ctx, first)
+	if err != nil || n != 3 {
+		t.Fatalf("first: %d %v", n, err)
+	}
+	// A replay with one new job: the two known are skipped, the batch is not an error.
+	n, err = s.EnqueueJobs(ctx, []auth.Job{mk("t1", "trigger:app/orders/on_paid", auth.JobQueued), mk("t3", "trigger:app/orders/on_paid", auth.JobQueued), mk("t2", "trigger:app/orders/on_paid", auth.JobQueued)})
+	if err != nil || n != 1 {
+		t.Fatalf("replay: %d %v", n, err)
+	}
+	if n, err := s.EnqueueJobs(ctx, nil); err != nil || n != 0 {
+		t.Fatalf("empty: %d %v", n, err)
+	}
+	got, found, err := s.GetJob(ctx, "t1")
+	if err != nil || !found || got.EventID != "evt-t1" || got.ChainRoot != "root" || got.ChainDepth != 2 || got.Origin != "trigger:app/orders/on_paid" {
+		t.Fatalf("job = %+v %v %v", got, found, err)
+	}
+	if n, err := s.CountTriggerJobs(ctx); err != nil || n != 3 {
+		t.Fatalf("backlog = %d %v, want the 3 trigger jobs (not the http one)", n, err)
+	}
+	// A finished one doesn't count.
+	if err := s.CompleteJob(ctx, "t1", auth.JobResult{Status: "ok"}, now, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := s.CountTriggerJobs(ctx); n != 2 {
+		t.Errorf("backlog after one finished = %d, want 2", n)
+	}
+}

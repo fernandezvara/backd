@@ -32,6 +32,9 @@ type Dispatcher struct {
 	// Config returns a realm's app configuration, for conditions that use appConfig; may be
 	// nil. reg is the configuration the dispatcher is running.
 	Config   func(ctx context.Context, reg *registry.Registry, realm string) map[string]any
+	// Limits returns a realm's trigger limits (the instance's, lowered by the realm's); nil
+	// is registry.DefaultTriggerLimits for every realm.
+	Limits func(reg *registry.Registry, realm string) registry.TriggerLimits
 	Observer Observer
 	Log      *slog.Logger
 	Now      func() time.Time
@@ -65,6 +68,16 @@ func (d *Dispatcher) SetRegistry(reg *registry.Registry) {
 		c.SetWatched(WatchSet(reg))
 	}
 }
+
+func (d *Dispatcher) limits(reg *registry.Registry, realm string) registry.TriggerLimits {
+	if d.Limits != nil {
+		return d.Limits(reg, realm).OrDefault()
+	}
+	return registry.DefaultTriggerLimits
+}
+
+// BacklogCacheTTL is how long a realm's count of queued trigger jobs is reused.
+const BacklogCacheTTL = 5 * time.Second
 
 func (d *Dispatcher) now() time.Time {
 	if d.Now != nil {
@@ -289,9 +302,24 @@ type handler struct {
 	startedAt time.Time // when the stored position was written, for a window gap
 	lastAt    time.Time // the cluster time of the newest change seen, for lag
 	fenced    bool
+
+	chained  map[[3]string]*rate // by realm, collection, trigger
+	backlogs map[string]backlogOf
 }
 
 type gapKey struct{ realm, collection, trigger, reason string }
+
+// rate counts the chained events a trigger handled in one minute.
+type rate struct {
+	minute int64
+	n      int
+}
+
+// backlogOf is a realm's queued trigger jobs, counted at most every BacklogCacheTTL.
+type backlogOf struct {
+	n  int
+	at time.Time
+}
 
 var errFenced = errors.New("triggers: the lease is no longer ours")
 
@@ -317,11 +345,17 @@ func (h *handler) consider(ctx context.Context, ct *collectionTriggers, c change
 		}
 	}
 	for _, ev := range ct.evaluate(ctx, c, config) {
-		if h.d.Observer != nil {
+		if h.d.Observer != nil && ev.outcome != outcomeMatched {
 			h.d.Observer.Event(ct.realm, ct.collection, ev.trigger.Name, ev.outcome)
 		}
 		switch ev.outcome {
 		case outcomeMatched:
+			if !h.admit(ctx, ct, ev, c) {
+				continue
+			}
+			if h.d.Observer != nil {
+				h.d.Observer.Event(ct.realm, ct.collection, ev.trigger.Name, ev.outcome)
+			}
 			if h.pending == nil {
 				h.pending = map[string][]Job{}
 			}
@@ -333,6 +367,70 @@ func (h *handler) consider(ctx context.Context, ct *collectionTriggers, c change
 			h.d.log().Warn("trigger condition failed", "realm", ct.realm, "collection", ct.collection, "trigger", ev.trigger.Name, "error", ev.err)
 		}
 	}
+}
+
+// admit decides whether a matched event becomes a job. Loops are bounded by the chain:
+// an event deeper than the realm's max_chain, or a trigger's chained events above its
+// per-minute rate, are dropped, logged and metered. A first-party event is never dropped for
+// being many: an import of thousands of documents delivers every one; only a realm's
+// backlog ceiling, which protects the database, records them as a gap instead.
+func (h *handler) admit(ctx context.Context, ct *collectionTriggers, ev evaluation, c changefeed.Change) bool {
+	lim := h.d.limits(h.d.ix.Load().reg, ct.realm)
+	drop := func(reason string) bool {
+		if h.d.Observer != nil {
+			h.d.Observer.Dropped(ct.realm, ct.collection, ev.trigger.Name, reason)
+		}
+		h.d.log().Warn("trigger event dropped", "realm", ct.realm, "collection", ct.collection, "trigger", ev.trigger.Name,
+			"reason", reason, "depth", ev.depth, "root", ev.job.ChainRoot, "document", c.Key)
+		return false
+	}
+	if ev.depth > 0 {
+		if ev.depth > lim.MaxChain {
+			return drop(DropChain)
+		}
+		minute := h.d.now().Unix() / 60
+		key := [3]string{ct.realm, ct.collection, ev.trigger.Name}
+		if h.chained == nil {
+			h.chained = map[[3]string]*rate{}
+		}
+		r := h.chained[key]
+		if r == nil || r.minute != minute {
+			r = &rate{minute: minute}
+			h.chained[key] = r
+		}
+		if r.n >= lim.MaxChainedPerMinute {
+			return drop(DropBurst)
+		}
+		r.n++
+	}
+	if h.backlog(ctx, ct.realm)+len(h.pending[ct.realm]) >= lim.MaxBacklog {
+		h.addGap(ct.realm, ct.collection, ev.trigger.Name, GapBacklog, c.At, c.Key)
+		return false
+	}
+	return true
+}
+
+// backlog is the realm's queued trigger jobs, reused for a few seconds. When the count can't
+// be read the last one stands: a database that can't count can't queue either, which the
+// flush's own retry handles.
+func (h *handler) backlog(ctx context.Context, realm string) int {
+	b, ok := h.backlogs[realm]
+	if ok && h.d.now().Sub(b.at) < BacklogCacheTTL {
+		return b.n
+	}
+	n, err := h.d.Queue.Backlog(ctx, realm)
+	if err != nil {
+		h.d.log().Warn("trigger backlog could not be counted", "realm", realm, "error", err)
+		return b.n
+	}
+	if h.backlogs == nil {
+		h.backlogs = map[string]backlogOf{}
+	}
+	h.backlogs[realm] = backlogOf{n: n, at: h.d.now()}
+	if h.d.Observer != nil {
+		h.d.Observer.Backlog(realm, n)
+	}
+	return n
 }
 
 func (h *handler) addGap(realm, collection, trigger, reason string, at time.Time, key string) {

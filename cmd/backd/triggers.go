@@ -40,6 +40,20 @@ func (q jobQueue) Enqueue(ctx context.Context, realm string, jobs []triggers.Job
 	return svc.EnqueueJobs(ctx, out)
 }
 
+// Backlog counts the realm's unfinished trigger jobs.
+func (q jobQueue) Backlog(ctx context.Context, realm string) (int, error) {
+	return mongodb.NewAuthStore(q.a.client, realm).CountTriggerJobs(ctx)
+}
+
+// triggerLimits are a realm's limits: the instance's, lowered by the realm's own.
+func (a *app) triggerLimits(reg *registry.Registry, realm string) registry.TriggerLimits {
+	rl := reg.Realms[realm]
+	if rl == nil {
+		return a.cfg.TriggerLimits.OrDefault()
+	}
+	return rl.Settings.TriggerLimits(a.cfg.TriggerLimits)
+}
+
 // triggerConfig reads a realm's app configuration for the conditions that use appConfig; a
 // realm that can't be read gives an empty one, so what depends on a flag does not fire.
 func (a *app) triggerConfig(ctx context.Context, reg *registry.Registry, realm string) map[string]any {
@@ -70,6 +84,7 @@ func (a *app) startTriggers(ctx context.Context) func() {
 		Queue:    jobQueue{a},
 		Holder:   fmt.Sprintf("%s-%s", workerID(), time.Now().UTC().Format("150405")),
 		Config:   a.triggerConfig,
+		Limits:   a.triggerLimits,
 		Observer: a.metrics.TriggerObserver(),
 		Log:      a.log,
 	}
