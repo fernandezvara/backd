@@ -252,6 +252,9 @@ func (b *builder) collectionAt(db string, c *registry.Collection, admin bool) {
 			teamParam(op, id, c)
 			expandParam(op, id, c)
 			aggregateParams(op, id, c)
+			if c.Text == nil {
+				dropParams(op, "language") // only a collection with a text index can be searched
+			}
 		}
 		if len(operations(cp)) == 0 {
 			return

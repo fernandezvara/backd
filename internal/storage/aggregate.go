@@ -69,6 +69,7 @@ type AggregateSort struct {
 type AggregateQuery struct {
 	Filter  Filter
 	Access  Filter
+	Search  *Search // restricts the documents like a list's search
 	GroupBy []GroupField
 	Metrics []Metric
 	// Sort orders the groups; the keys in order break ties, so the order is total.
@@ -140,6 +141,11 @@ func AggregateDocs(docs []Document, q AggregateQuery) (AggregateResult, error) {
 			}
 			if !ok {
 				goto next
+			}
+		}
+		if q.Search != nil {
+			if _, ok := MatchSearch(d, q.Search.Text); !ok {
+				continue
 			}
 		}
 		{

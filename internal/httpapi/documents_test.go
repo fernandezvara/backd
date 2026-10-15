@@ -148,8 +148,16 @@ func (r *memRepo) List(_ context.Context, q storage.Query) (storage.Page, error)
 	r.s.lastQuery = q
 	var ids []string
 	var counted int64
+	scores := map[string]float64{}
 	for id, doc := range r.coll() {
 		if (q.Filter == nil || matches(doc, q.Filter)) && (q.Access == nil || matches(doc, q.Access)) {
+			if q.Search != nil {
+				score, ok := storage.MatchSearch(doc, q.Search.Text)
+				if !ok {
+					continue
+				}
+				scores[id] = score
+			}
 			counted++
 			if q.After == nil || matches(doc, q.After) {
 				ids = append(ids, id)
@@ -169,6 +177,9 @@ func (r *memRepo) List(_ context.Context, q storage.Query) (storage.Page, error)
 			return false
 		})
 	}
+	if q.Relevance {
+		sort.SliceStable(ids, func(i, j int) bool { return scores[ids[i]] > scores[ids[j]] })
+	}
 	var page storage.Page
 	if q.Count {
 		page.Total = &counted // the cursor narrows the page, not the total
@@ -178,7 +189,11 @@ func (r *memRepo) List(_ context.Context, q storage.Query) (storage.Page, error)
 			page.HasMore = true
 			break
 		}
-		page.Items = append(page.Items, clone(r.coll()[ids[i]]).(map[string]any))
+		item := clone(r.coll()[ids[i]]).(map[string]any)
+		if q.Relevance {
+			item["_meta"].(map[string]any)["score"] = scores[ids[i]]
+		}
+		page.Items = append(page.Items, item)
 	}
 	return page, nil
 }

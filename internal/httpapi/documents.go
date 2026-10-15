@@ -307,6 +307,11 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid query parameters", details...)
 		return
 	}
+	if q.Search != nil || q.Relevance {
+		if !d.prepareSearch(w, r, c, q.Search) {
+			return
+		}
+	}
 	view, ok := parseTrash(w, r, c)
 	if !ok {
 		return
@@ -337,7 +342,7 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 	if plan != nil && !d.expandInto(w, r, plan, page.Items, resp.Items) {
 		return
 	}
-	if page.HasMore && len(page.Items) > 0 {
+	if page.HasMore && len(page.Items) > 0 && !q.Relevance {
 		if ok, _ := query.Cursorable(q.Sort, c.Fields); ok {
 			resp.NextCursor = query.EncodeCursor(q.Sort, page.Items[len(page.Items)-1])
 		}
@@ -368,7 +373,7 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-var listParams = map[string]bool{"expand": true, "where": true, "order_by": true, "limit": true, "skip": true, "after": true, "count": true, "deleted": true, "file_links": true, "org": true, "team": true}
+var listParams = map[string]bool{"language": true, "expand": true, "where": true, "order_by": true, "limit": true, "skip": true, "after": true, "count": true, "deleted": true, "file_links": true, "org": true, "team": true}
 
 func parseListQuery(v url.Values, fields map[string]registry.Field) (storage.Query, []Detail) {
 	q := storage.Query{Limit: defaultLimit}
@@ -390,10 +395,27 @@ func parseListQuery(v url.Values, fields map[string]registry.Field) (storage.Que
 		}
 	}
 	var err error
-	if q.Filter, err = query.ParseWhere(v.Get("where"), fields); err != nil {
+	var text string
+	if q.Filter, text, err = query.ParseWhereSearch(v.Get("where"), fields); err != nil {
 		addErr(err)
 	}
-	if q.Sort, err = query.ParseOrderBy(v.Get("order_by"), fields); err != nil {
+	if text != "" {
+		q.Search = &storage.Search{Text: text}
+	}
+	orderBy := v.Get("order_by")
+	if relevanceSort(orderBy) {
+		q.Relevance, orderBy = true, ""
+		switch {
+		case text == "":
+			details = append(details, Detail{Path: "order_by", Reason: "_relevance needs a $search in where: it orders by how well documents match it"})
+		case v.Has("after"):
+			details = append(details, Detail{Path: "after", Reason: "can't be combined with order_by=_relevance: relevance pages with skip"})
+		}
+	} else if strings.Contains(orderBy, "_relevance") {
+		details = append(details, Detail{Path: "order_by", Reason: "_relevance can't be combined with other fields: it orders by the search's score alone (ties by id)"})
+		orderBy = ""
+	}
+	if q.Sort, err = query.ParseOrderBy(orderBy, fields); err != nil {
 		addErr(err)
 	}
 	if q.Count, err = query.ParseCount(v.Get("count")); err != nil {
@@ -413,7 +435,10 @@ func parseListQuery(v url.Values, fields map[string]registry.Field) (storage.Que
 		}
 		q.Skip = n
 	}
-	if cursor := v.Get("after"); v.Has("after") {
+	if q.Relevance && q.Skip+q.Limit > maxRelevanceResults {
+		details = append(details, Detail{Path: "skip", Reason: "relevance pages reach at most the first " + strconv.Itoa(maxRelevanceResults) + " results: narrow the search or its where"})
+	}
+	if cursor := v.Get("after"); v.Has("after") && !q.Relevance {
 		switch {
 		case v.Has("skip"):
 			details = append(details, Detail{Path: "after", Reason: "can't be combined with skip: a cursor already says where the page starts"})
@@ -789,6 +814,9 @@ func render(doc map[string]any) map[string]any {
 // storageError maps repository errors to HTTP responses.
 func storageError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, storage.ErrIndexBuilding):
+		w.Header().Set("Retry-After", "5")
+		writeError(w, r, http.StatusServiceUnavailable, codeIndexBuilding, "the text index of this collection is being rebuilt: try again in a few seconds")
 	case errors.Is(err, storage.ErrNotFound):
 		writeError(w, r, http.StatusNotFound, codeNotFound, "document not found")
 	case errors.Is(err, storage.ErrConflict):
@@ -1240,3 +1268,10 @@ func scopeFilter(w http.ResponseWriter, r *http.Request, c *registry.Collection,
 	}
 	return filter, true
 }
+
+// maxRelevanceResults is how deep a relevance-sorted search can page: past it the database
+// would score and sort ever more documents to show a page nobody reads.
+const maxRelevanceResults = 1000
+
+// relevanceSort reports whether order_by is the relevance sort.
+func relevanceSort(orderBy string) bool { return strings.TrimSpace(orderBy) == "_relevance" }

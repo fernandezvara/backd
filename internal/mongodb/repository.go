@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -52,6 +53,20 @@ type Repository struct {
 	// whose text index has a language_field: the stored copy the index reads is kept in step
 	// on every write.
 	languageField string
+}
+
+// scoreField is where a search's relevance is projected, a name no document can use (names
+// starting with an underscore are server-owned).
+const scoreField = "_backd_score"
+
+// mapSearchError maps a failed read: a search without its text index is a rebuild in
+// progress, not an outage of the database.
+func mapSearchError(searching bool, err error) error {
+	var ce mongo.CommandError
+	if searching && errors.As(err, &ce) && ce.Code == 27 { // IndexNotFound: "text index required for $text query"
+		return storage.ErrIndexBuilding
+	}
+	return mapError(err)
 }
 
 // bsonOf converts a document for storage, adding the hidden search language the text index
@@ -116,13 +131,20 @@ func (r *Repository) List(ctx context.Context, q storage.Query) (storage.Page, e
 		SetSort(buildSort(q.Sort)).
 		SetSkip(int64(q.Skip)).
 		SetLimit(int64(q.Limit) + 1) // one extra to compute HasMore
+	if q.Relevance {
+		// Best match first, ties by id; the score rides along under a name no document can
+		// have and is moved into _meta.score below.
+		score := bson.D{{Key: "$meta", Value: "textScore"}}
+		opts.SetProjection(bson.D{{Key: scoreField, Value: score}}).
+			SetSort(bson.D{{Key: scoreField, Value: score}, {Key: "_id", Value: 1}})
+	}
 	cur, err := r.coll.Find(ctx, find, opts)
 	if err != nil {
-		return storage.Page{}, mapError(err)
+		return storage.Page{}, mapSearchError(q.Search != nil, err)
 	}
 	var docs []bson.D
 	if err := cur.All(ctx, &docs); err != nil {
-		return storage.Page{}, mapError(err)
+		return storage.Page{}, mapSearchError(q.Search != nil, err)
 	}
 
 	page := storage.Page{Items: make([]storage.Document, 0, min(len(docs), q.Limit))}
@@ -131,7 +153,23 @@ func (r *Repository) List(ctx context.Context, q storage.Query) (storage.Page, e
 		docs = docs[:q.Limit]
 	}
 	for _, d := range docs {
-		page.Items = append(page.Items, fromBSON(d))
+		var score any
+		if q.Relevance {
+			for i, e := range d {
+				if e.Key == scoreField {
+					score = e.Value
+					d = slices.Delete(slices.Clone(d), i, i+1)
+					break
+				}
+			}
+		}
+		doc := fromBSON(d)
+		if score != nil {
+			if meta, ok := doc["_meta"].(map[string]any); ok {
+				meta["score"] = score
+			}
+		}
+		page.Items = append(page.Items, doc)
 	}
 	if q.Count {
 		n, err := r.coll.CountDocuments(ctx, filter)

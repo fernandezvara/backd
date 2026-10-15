@@ -28,7 +28,7 @@ var bucketFormats = map[string]string{
 // client sent becomes a stage, a field name or an operator: fields come from the declaration
 // and everything else from this function.
 func (r *Repository) Aggregate(ctx context.Context, q storage.AggregateQuery) (storage.AggregateResult, error) {
-	match, err := buildQuery(storage.Query{Filter: q.Filter, Access: q.Access})
+	match, err := buildQuery(storage.Query{Filter: q.Filter, Access: q.Access, Search: q.Search})
 	if err != nil {
 		return storage.AggregateResult{}, err
 	}
@@ -232,6 +232,9 @@ func aggregateError(parent, run context.Context, err error) error {
 	}
 	var ce mongo.CommandError
 	if errors.As(err, &ce) {
+		if ce.Code == 27 {
+			return storage.ErrIndexBuilding
+		}
 		switch ce.Code {
 		case 50, 292, 16819, 16820, 16945, 4568: // time, memory and the group limits
 			return storage.ErrAggregateTooExpensive

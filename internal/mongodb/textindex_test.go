@@ -2,6 +2,7 @@ package mongodb
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +10,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+
+	"github.com/fernandezvara/backd/internal/storage"
 )
 
 const articleSchema = `{
@@ -154,5 +157,102 @@ func TestSearchLanguageIsStoredAndHidden(t *testing.T) {
 	}
 	if got := stored(doc["id"].(string)); got != "german" {
 		t.Errorf("replaced: %v", got)
+	}
+}
+
+// Searching: words, phrases, exclusions and languages, relevance with the score, the same
+// search inside an aggregation, the rebuild window, and a text that is never an operator.
+func TestSearchOnMongoDB(t *testing.T) {
+	client := testClient(t)
+	realm := testRealm(t, client)
+	ctx := context.Background()
+	log, _ := testLogger()
+	reg := loadRegistry(t, realm, map[string]string{
+		"app/articles":              articleSchema,
+		"app/articles/indexes.json": `[{"text": {"fields": {"title": 10, "body": 1}, "default_language": "english", "language_field": "lang"}}]`,
+	})
+	if err := (&Provisioner{Client: client, Registry: reg, Log: log}).Apply(ctx); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := reg.Collection(realm, "app", "articles")
+	repo := (&Store{Client: client}).Repository(c).(*Repository)
+	add := func(title, body, lang string) string {
+		d := newDoc(map[string]any{"title": title, "body": body})
+		if lang != "" {
+			d["lang"] = lang
+		}
+		if err := repo.Create(ctx, d); err != nil {
+			t.Fatal(err)
+		}
+		return d["id"].(string)
+	}
+	shoes := add("Running shoes", "Light shoes for the road", "en")
+	kids := add("Kids shoes", "Small running shoes for kids", "en")
+	boots := add("Boots", "Heavy boots, also for running", "en")
+	zapatos := add("Zapatos para correr", "Zapatillas ligeras", "es")
+	search := func(text, lang string, relevance bool) []storage.Document {
+		t.Helper()
+		page, err := repo.List(ctx, storage.Query{Search: &storage.Search{Text: text, Language: lang}, Relevance: relevance, Limit: 20, Sort: []storage.SortField{{Field: "id"}}})
+		if err != nil {
+			t.Fatalf("search %q: %v", text, err)
+		}
+		return page.Items
+	}
+	ids := func(docs []storage.Document) []string {
+		var out []string
+		for _, d := range docs {
+			out = append(out, d["id"].(string))
+		}
+		return out
+	}
+
+	// Relevance: the weighted title beats the body, and the score rides in _meta.score.
+	got := search("running", "english", true)
+	if len(got) != 3 || got[0]["id"] != shoes && got[0]["id"] != kids {
+		t.Fatalf("relevance order = %v", ids(got))
+	}
+	first, second := got[0]["_meta"].(map[string]any)["score"].(float64), got[2]["_meta"].(map[string]any)["score"].(float64)
+	if first <= second || got[2]["id"] != boots {
+		t.Errorf("scores %v >= %v, last = %v", first, second, got[2]["id"])
+	}
+	if _, has := search("running", "english", false)[0]["_meta"].(map[string]any)["score"]; has {
+		t.Error("the score is there without relevance sorting")
+	}
+	// A phrase and an exclusion.
+	if got := ids(search(`"running shoes"`, "english", false)); len(got) != 2 {
+		t.Errorf("phrase = %v", got)
+	}
+	if got := ids(search("shoes -kids", "english", false)); len(got) != 1 || got[0] != shoes {
+		t.Errorf("exclusion = %v", got)
+	}
+	// Stemming follows the language: "correr" finds the Spanish document as Spanish.
+	if got := ids(search("corriendo", "spanish", false)); len(got) != 1 || got[0] != zapatos {
+		t.Errorf("spanish = %v", got)
+	}
+	// What looks like an operator or a regular expression is only words.
+	for _, evil := range []string{`{"$where": "sleep(5000)"}`, `$regex`, `.*`, `\"; db.dropDatabase(); \"`, `-`, `"`} {
+		if _, err := repo.List(ctx, storage.Query{Search: &storage.Search{Text: evil}, Limit: 5}); err != nil {
+			t.Errorf("search %q: %v", evil, err)
+		}
+	}
+
+	// In an aggregation: results per language next to a search box.
+	res, err := repo.Aggregate(ctx, storage.AggregateQuery{
+		Search: &storage.Search{Text: "shoes", Language: "english"}, GroupBy: []storage.GroupField{{Field: "lang"}},
+		Metrics: []storage.Metric{{Op: storage.MetricCount}},
+	})
+	if err != nil || res.TotalGroups != 1 || res.Groups[0].Values["count"] != int64(2) {
+		t.Errorf("aggregate = %+v %v", res, err)
+	}
+
+	// While the index is being rebuilt there is none: a distinct error, not an outage.
+	if err := client.Database(c.MongoDatabase).Collection(c.Name).Indexes().DropOne(ctx, "backd_text"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.List(ctx, storage.Query{Search: &storage.Search{Text: "shoes"}, Limit: 5}); !errors.Is(err, storage.ErrIndexBuilding) {
+		t.Errorf("without the index: %v", err)
+	}
+	if _, err := repo.Aggregate(ctx, storage.AggregateQuery{Search: &storage.Search{Text: "shoes"}, Metrics: []storage.Metric{{Op: storage.MetricCount}}}); !errors.Is(err, storage.ErrIndexBuilding) {
+		t.Errorf("aggregate without the index: %v", err)
 	}
 }

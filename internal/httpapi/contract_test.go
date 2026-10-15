@@ -431,6 +431,24 @@ func TestContract(t *testing.T) {
 		limiterFor(f.reg).release(busy, 1)
 	}
 
+	// Full-text search: a list, relevance, the aggregate and the rebuild window.
+	{
+		const a = "/v1/acme/app/articles"
+		req("POST", a, `{"title": "Running shoes", "lang": "en"}`, ada, 201)
+		out := req("GET", a+`?where={"$search":"running"}&order_by=_relevance`, "", ada, 200)
+		if len(out["items"].([]any)) != 1 {
+			t.Errorf("search = %v", out)
+		}
+		req("GET", a+`/_aggregate?where={"$search":"running"}&language=en`, "", ada, 200)
+		req("GET", "/v1/acme/app/notes"+`?where={"$search":"x"}`, "", ada, 400)
+		f.store.fail = storage.ErrIndexBuilding
+		req("GET", a+`?where={"$search":"running"}`, "", ada, 503)
+		f.store.fail = nil
+		f.store.aggregateErr = storage.ErrIndexBuilding
+		req("GET", a+`/_aggregate?where={"$search":"running"}`, "", ada, 503)
+		f.store.aggregateErr = nil
+	}
+
 	// Soft delete: delete, trash views, restore and purge.
 	{
 		const b = "/v1/acme/app/bin"

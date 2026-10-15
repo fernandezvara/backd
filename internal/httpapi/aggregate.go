@@ -23,7 +23,7 @@ const (
 	maxDistinct = 10000
 )
 
-var aggregateParams = map[string]bool{"where": true, "group_by": true, "metrics": true, "order_by": true, "limit": true, "tz": true, "org": true, "team": true}
+var aggregateParams = map[string]bool{"language": true, "where": true, "group_by": true, "metrics": true, "order_by": true, "limit": true, "tz": true, "org": true, "team": true}
 
 // aggregate handles GET …/{collection}/_aggregate: a summary of the documents the caller may
 // read, grouped by declared fields, with a fixed pipeline the request only parameterizes.
@@ -55,7 +55,7 @@ func (d *documents) aggregate(w http.ResponseWriter, r *http.Request) {
 			details = append(details, Detail{Path: key, Reason: "must be given at most once"})
 		}
 	}
-	where, err := query.ParseWhere(v.Get("where"), c.Fields)
+	where, text, err := query.ParseWhereSearch(v.Get("where"), c.Fields)
 	details = append(details, queryDetails(err)...)
 	lim := d.aggregateLim
 	maxGroups := c.Aggregate.EffectiveMaxGroups(lim)
@@ -95,6 +95,13 @@ func (d *documents) aggregate(w http.ResponseWriter, r *http.Request) {
 	}
 	defer limiter.release(key, 1)
 
+	if text != "" {
+		q.Search = &storage.Search{Text: text}
+		if !d.prepareSearch(w, r, c, q.Search) {
+			outcome = "invalid"
+			return
+		}
+	}
 	q.Filter, q.Access = filter, access
 	q.MaxTime, q.MaxDistinct = c.Aggregate.EffectiveTime(lim), maxDistinct
 	began := time.Now()

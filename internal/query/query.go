@@ -102,35 +102,54 @@ var rangeOps = map[string]storage.Operator{
 // array of where objects. An empty string or object means no filter (nil).
 // Keys are processed in sorted order, so the result is deterministic.
 func ParseWhere(where string, fields map[string]registry.Field) (storage.Filter, error) {
+	f, search, err := ParseWhereSearch(where, fields)
+	if err == nil && search != "" {
+		return nil, Errors{{Path: "where.$search", Reason: "text search isn't available here"}}
+	}
+	return f, err
+}
+
+// MaxSearchBytes and MaxSearchTerms bound the text of a $search.
+const (
+	MaxSearchBytes = 256
+	MaxSearchTerms = 20
+)
+
+// ParseWhereSearch is ParseWhere for reads that can search: a `$search` at the top level of the
+// object is returned apart from the filter, as the text to search for. It is only allowed at
+// the top level (the database can't combine a text search with alternatives or a negation),
+// and its text is bounded: words, "quoted phrases" and -excluded words, at most MaxSearchBytes
+// bytes and MaxSearchTerms terms.
+func ParseWhereSearch(where string, fields map[string]registry.Field) (storage.Filter, string, error) {
 	if where == "" {
-		return nil, nil
+		return nil, "", nil
 	}
 	if len(where) > MaxWhereBytes {
-		return nil, Errors{{Path: "where", Reason: fmt.Sprintf("must be at most %d bytes", MaxWhereBytes)}}
+		return nil, "", Errors{{Path: "where", Reason: fmt.Sprintf("must be at most %d bytes", MaxWhereBytes)}}
 	}
 	dec := json.NewDecoder(strings.NewReader(where))
 	dec.UseNumber()
 	var root any
 	if err := dec.Decode(&root); err != nil || dec.More() {
-		return nil, Errors{{Path: "where", Reason: "must be a valid JSON object"}}
+		return nil, "", Errors{{Path: "where", Reason: "must be a valid JSON object"}}
 	}
 	obj, ok := root.(map[string]any)
 	if !ok {
-		return nil, Errors{{Path: "where", Reason: "must be a valid JSON object"}}
+		return nil, "", Errors{{Path: "where", Reason: "must be a valid JSON object"}}
 	}
 
-	p := &parser{fields: fields}
+	p := &parser{fields: fields, allowSearch: true}
 	f := p.object(obj, 0)
 	if p.count > MaxConditions {
 		p.errs = append(p.errs, Error{Path: "where", Reason: fmt.Sprintf("must have at most %d conditions", MaxConditions)})
 	}
 	if len(p.errs) > 0 {
-		return nil, p.errs
+		return nil, "", p.errs
 	}
 	if len(f) == 0 {
-		return nil, nil
+		return nil, p.search, nil
 	}
-	return f, nil
+	return f, p.search, nil
 }
 
 type parser struct {
@@ -139,6 +158,9 @@ type parser struct {
 	loc    string            // error path prefix inside groups, e.g. "$or.1."
 	count  int               // conditions so far, across all groups
 	errs   Errors
+	// allowSearch lets a top-level $search through; search is its text.
+	allowSearch bool
+	search      string
 }
 
 func (p *parser) fail(path, format string, args ...any) {
@@ -160,6 +182,10 @@ func (p *parser) object(obj map[string]any, depth int) storage.And {
 	for _, k := range keys {
 		if k == "$or" || k == "$and" {
 			p.group(k, obj[k], depth)
+			continue
+		}
+		if k == "$search" {
+			p.searchText(obj[k], depth)
 			continue
 		}
 		p.field(k, obj[k])
@@ -526,4 +552,59 @@ func ParseCount(s string) (bool, error) {
 		return true, nil
 	}
 	return false, Errors{{Path: "count", Reason: "must be true or false"}}
+}
+
+// searchText reads a $search: only at the top level, only when the read can search, once.
+func (p *parser) searchText(v any, depth int) {
+	switch {
+	case !p.allowSearch:
+		p.fail("$search", "text search isn't available here")
+		return
+	case depth > 0 || p.loc != "":
+		p.fail("$search", "must be at the top level of where, next to the other conditions: a text search can't be inside $or or $and")
+		return
+	}
+	text, ok := v.(string)
+	if !ok || strings.TrimSpace(text) == "" {
+		p.fail("$search", "must be a non-empty string of words, \"quoted phrases\" and -excluded words")
+		return
+	}
+	if len(text) > MaxSearchBytes {
+		p.fail("$search", "must be at most %d bytes", MaxSearchBytes)
+		return
+	}
+	terms, ok := searchTerms(text)
+	switch {
+	case !ok:
+		p.fail("$search", "has an unbalanced quote")
+		return
+	case terms > MaxSearchTerms:
+		p.fail("$search", "has %d terms, at most %d", terms, MaxSearchTerms)
+		return
+	}
+	p.search = strings.TrimSpace(text)
+}
+
+// searchTerms counts the words and quoted phrases of a search text; ok is false when a quote
+// is left open.
+func searchTerms(s string) (n int, ok bool) {
+	inQuote, inWord := false, false
+	for _, r := range s {
+		switch {
+		case r == '"':
+			if inQuote {
+				n++
+			}
+			inQuote, inWord = !inQuote, false
+		case inQuote:
+		case r == ' ' || r == '\t' || r == '\n':
+			inWord = false
+		default:
+			if !inWord {
+				n++
+				inWord = true
+			}
+		}
+	}
+	return n, !inQuote
 }

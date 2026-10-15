@@ -150,7 +150,7 @@ One entry of the array can be a **full-text index** instead of a list of fields:
 - **`default_language`** (default `english`) is the language of documents that say none: a language name or two-letter code the database stems and stops words for (`danish`, `dutch`, `english`, `finnish`, `french`, `german`, `hungarian`, `italian`, `norwegian`, `portuguese`, `romanian`, `russian`, `spanish`, `swedish`, `turkish`), or `none` for no stemming.
 - **`language_field`** is optional: a declared string field of each document that holds a **locale code** (`es`, `en-GB`, `pt_BR`). backd maps it to the database's language when it writes the document, in a hidden field the index reads (`_search_lang`, which is never part of a document and can't be declared in `schema.json`). A locale with no language of its own is indexed without stemming.
 - **Rebuilds.** `backd provision` creates the index, and **replaces it when the declaration changes** (weights, fields or languages), logging a warning at startup: until it is built, searches answer `503 index_building`. Documents written before the index get their language from `language_field` when it is first created. An index that exists in MongoDB but that backd didn't create is never dropped: a second text index isn't possible, so provisioning stops and says which to drop.
-- Searching with it, `$search`, comes with the next step of this feature.
+- Searching with it is `$search` in `where`: see [Full-text search](../../api/querying/#full-text-search).
 
 ## `collection.yaml`
 

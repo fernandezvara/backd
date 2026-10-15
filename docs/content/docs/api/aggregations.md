@@ -47,7 +47,7 @@ GET /v1/shop/main/orders/_aggregate
 
 | Parameter | Meaning |
 |---|---|
-| `where` | The [same filter](../querying/) as a list's, with its caps. The read rule is applied **before** grouping, so a total never includes a document a list would hide. `?org=` and `?team=` work as on lists. |
+| `where` | The [same filter](../querying/) as a list's, with its caps, and its [`$search`](../querying/#full-text-search) (with `language=`). The read rule is applied **before** grouping, so a total never includes a document a list would hide. `?org=` and `?team=` work as on lists. |
 | `group_by` | Up to 3 declared fields, separated by commas. A date field takes a bucket: `paid_at:day`, `:week` (ISO 8601, Monday first), `:month`, `:year`. Without `group_by` the answer is one group with an empty key: a counter. |
 | `tz` | The IANA zone the buckets are cut in (`Europe/Madrid`), `UTC` by default. A sale at 23:30 UTC on the 30th is already the 1st in Madrid in summer; the bucket follows the zone, including daylight saving changes. |
 | `metrics` | `count` (the default), `count_distinct:<field>`, `sum:<field>`, `avg:<field>`, `min:<field>`, `max:<field>`; at most 10. |
