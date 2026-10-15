@@ -741,7 +741,11 @@ func registerRoles(cfg *kli.Config) {
 		LongHelp("Claims and runs async jobs (mode: async) and scheduled functions. Needs\nBACKD_EXECUTOR_URL; WORKER_CONCURRENCY caps jobs running at once (default 10).").
 		Func(role("worker", worker)).Config(func(*kli.CommandConfig) {})
 	cfg.Command("provision").ShortHelp("load config, apply provisioning once and exit").
-		Func(role("provision", provision)).Config(func(*kli.CommandConfig) {})
+		LongHelp("Creates missing collections, validators and indexes, and enables pre-change images on\nrealtime collections. Nothing is ever removed, except with --disable-preimages --yes:\nthat switches the images off on collections that no longer need them, and deletes the\nimages stored so far for good.").
+		Func(role("provision", provision)).Config(func(cc *kli.CommandConfig) {
+		boolean(cc, "disable-preimages", "switch off pre-change images on collections that no longer need them (irreversible)")
+		boolean(cc, "yes", "confirm --disable-preimages")
+	})
 	cfg.Command("executor").ShortHelp("run server-side functions for backd").LongHelp(executorHelp).
 		Func(act("executor", func(c *kli.CommandContext) error { return serveExecutor(c.Getenv, c.Stderr()) })).
 		Config(func(*kli.CommandConfig) {})

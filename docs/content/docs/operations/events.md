@@ -38,8 +38,25 @@ Opting a collection in is a decision with a price, so it is per collection and n
 | **Several streams** | Eight streams reading the same backlog together delivered more than three times the total of one, each taking about twice as long. |
 
 {{< hint style="warning" >}}
-Pre-change images need MongoDB 6.0 or later, are part of what [`backd provision`](../deploying/) will set up for opted-in collections, and can't be switched off by a restart: keep `realtime: true` to collections that need it, and away from very large documents that change often.
+Pre-change images are enabled per collection by `backd provision`, and a restart never switches them off: keep `realtime: true` to collections that need it, and away from very large documents that change often.
 {{< /hint >}}
+
+## Requirements
+
+- **MongoDB 6.0 or later**, as a replica set. A configuration with a realtime collection on an older server stops at startup, naming the requirement and the collections: without the previous document, a removal could not be told to the right subscribers, and there is no degraded mode.
+- **Pre-change images** on every realtime collection. `backd provision` (and `PROVISION_MODE=apply`, the default) enables them with `collMod`, which needs that privilege like creating an index does. With `PROVISION_MODE=verify` an instance **refuses to start** when a realtime collection lacks them, naming the collection and the command to run.
+- **A MongoDB user that may read a change stream of the deployment.** The stream is opened on the whole deployment and `backd` filters it, and MongoDB checks the scope of the stream, not its filter: the user in `MONGO_URI` needs the `changeStream` and `find` actions on every database, for example the built-in `readAnyDatabase` role. An instance that serves realtime collections tries this at startup and stops with a message naming the role if the user lacks it. Clusters where `backd`'s user is confined to its own databases can't use realtime yet.
+
+## Disabling pre-change images
+
+Dropping `realtime:` from a collection leaves its images in place, so a rolling deploy with an older configuration never loses them; `backd` only warns that they still cost storage and writes. To remove them:
+
+```sh
+backd provision --disable-preimages          # lists what it would remove and stops
+backd provision --disable-preimages --yes    # removes them
+```
+
+Removing them **deletes the images stored so far for good**. It only touches configured collections that no longer need them.
 
 ## Sizing the history
 
@@ -48,6 +65,6 @@ A stream that falls behind can only catch up while MongoDB still holds the histo
 ## What is planned
 
 - **Subscriptions** (`POST /v1/{realm}/_realtime`), with per-subscriber rules and immediate revocation.
-- **Triggers**, a function run after a document changes, on a dispatcher with a durable position, and the `backd provision` step that enables pre-change images.
+- **Triggers**, a function run after a document changes, on a dispatcher with a durable position.
 
 Their [design](https://github.com/fernandezvara/backd/blob/main/design/triggers-and-realtime.md) is in the repository. Until they land, the feed has no subscribers and the only visible effects are the two settings, the `realtime:` key and the [metrics](../metrics/).

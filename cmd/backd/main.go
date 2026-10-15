@@ -68,6 +68,9 @@ func role(name string, action func(context.Context, *app) error) kli.CommandFunc
 		}
 		defer a.close()
 		a.withWorker = name == "serve" && flag(c, "with-worker")
+		if name == "provision" {
+			a.disablePreImages, a.yes = flag(c, "disable-preimages"), flag(c, "yes")
+		}
 		return action(ctx, a)
 	})
 }
@@ -87,6 +90,8 @@ type app struct {
 	metrics *metrics.Metrics
 	// reloadErrors reports why the last live reload failed (dev mode); nil otherwise.
 	reloadErrors func() []string
+	// disablePreImages and yes are provision's --disable-preimages and --yes.
+	disablePreImages, yes bool
 	// events is the realtime change feed (BACKD_EVENTS): it opens its stream when the first
 	// subscriber arrives and closes it after the last one left. nil when events are off.
 	events *changefeed.Lazy
@@ -143,8 +148,23 @@ func (a *app) provisioner() *mongodb.Provisioner {
 }
 
 func provision(ctx context.Context, a *app) error {
+	if a.disablePreImages {
+		// Irreversible, so it is listed and refused before anything is applied, until --yes.
+		would, err := a.provisioner().DisablePreImages(ctx, false)
+		if err != nil {
+			return err
+		}
+		if len(would) > 0 && !a.yes {
+			return fmt.Errorf("--disable-preimages would remove the pre-change images of %s for good (the stored images are deleted, and a realtime collection can't get them back for changes already made): run it again with --yes", strings.Join(would, ", "))
+		}
+	}
 	if err := a.provisioner().Apply(ctx); err != nil {
 		return err
+	}
+	if a.disablePreImages {
+		if _, err := a.provisioner().DisablePreImages(ctx, true); err != nil {
+			return err
+		}
 	}
 	if err := a.syncRoles(ctx); err != nil {
 		return err
@@ -212,6 +232,11 @@ func serve(ctx context.Context, a *app) error {
 	a.checkExecutor(ctx)
 	if err := a.checkSecrets(ctx); err != nil {
 		return err
+	}
+	if a.cfg.Events && len(a.reg.EventCollections()) > 0 {
+		if err := mongodb.CheckStreamPrivilege(ctx, a.client); err != nil {
+			return err
+		}
 	}
 	defer a.openEvents()()
 

@@ -36,6 +36,9 @@ type Provisioner struct {
 // Apply creates missing collections with their validators, updates
 // validators that differ and creates missing declared indexes. It is idempotent.
 func (p *Provisioner) Apply(ctx context.Context) error {
+	if err := CheckEventRequirements(ctx, p.Client, p.Registry); err != nil {
+		return err
+	}
 	for _, db := range p.Registry.Databases() {
 		existing, err := p.collectionOptions(ctx, db.MongoName)
 		if err != nil {
@@ -46,11 +49,15 @@ func (p *Provisioner) Apply(ctx context.Context) error {
 			if err := p.ensureCollection(ctx, mdb, existing, c.Name, p.validator(c)); err != nil {
 				return err
 			}
+			if err := p.ensurePreImages(ctx, mdb, c, existing[c.Name]); err != nil {
+				return err
+			}
 			if err := p.applyIndexes(ctx, c, mdb.Collection(c.Name)); err != nil {
 				return err
 			}
 		}
 		p.warnUnknownCollections(db, existing)
+		p.warnUnusedPreImages(db, existing)
 	}
 	if err := p.applySystem(ctx); err != nil {
 		return err
@@ -92,6 +99,9 @@ func (p *Provisioner) ensureCollection(ctx context.Context, mdb *mongo.Database,
 // Verify compares collections, validators and indexes with the registry
 // without changing anything and returns an error listing every difference.
 func (p *Provisioner) Verify(ctx context.Context) error {
+	if err := CheckEventRequirements(ctx, p.Client, p.Registry); err != nil {
+		return err
+	}
 	var diffs []string
 	for _, db := range p.Registry.Databases() {
 		existing, err := p.collectionOptions(ctx, db.MongoName)
@@ -108,6 +118,9 @@ func (p *Provisioner) Verify(ctx context.Context) error {
 			if d := validatorDiff(opts, p.validator(c)); d != "" {
 				diffs = append(diffs, ns+": "+d)
 			}
+			if d := preImageDiff(c, opts); d != "" {
+				diffs = append(diffs, ns+": "+d)
+			}
 			ixDiffs, err := p.verifyIndexes(ctx, c, p.Client.Database(db.MongoName).Collection(c.Name))
 			if err != nil {
 				return err
@@ -117,6 +130,7 @@ func (p *Provisioner) Verify(ctx context.Context) error {
 			}
 		}
 		p.warnUnknownCollections(db, existing)
+		p.warnUnusedPreImages(db, existing)
 	}
 	sysDiffs, err := p.verifySystem(ctx)
 	if err != nil {
