@@ -7,7 +7,7 @@ sections:
     weight: 10
     template: hero
 
-    badge: "v0.8.2 · sign in with Google, Microsoft and Apple, a second factor, push notifications, app configuration and TypeScript types generated from your config"
+    badge: "v0.8.3 · organizations for B2B apps: teams, team roles with time windows, documents that belong to a company, membership hooks and company email templates"
 
     title: "backd"
     subtitle: "A **config-driven** REST backend over MongoDB. Declare realms, databases and collections as files on disk, and get a **schema-validated**, **queryable** document API. Add **server-side functions** for the logic clients can't be trusted with: background jobs, cron schedules and webhooks included."
@@ -87,6 +87,10 @@ sections:
       - title: Files, push and app configuration
         icon: attach_file
         description: "Files in your own S3-compatible storage with image versions and quotas, push notifications to FCM, APNs and browsers, and a configuration your apps read, with history and rollback, and conditional GET so they ask only when it changed."
+
+      - title: Organizations and team access
+        icon: domain
+        description: "Groups of users for B2B apps: roles per organization, teams, team roles with time windows and delegation, documents that belong to an organization or a team, membership hooks and company email templates. [Start here](docs/organizations/)."
 
       - title: Built for operations
         icon: monitor_heart
