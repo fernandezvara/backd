@@ -111,6 +111,24 @@ Left as it is, on purpose:
 - **Erased users stay in old events.** A hook job keeps its input (ids, role names) until job retention ends.
 - **Realtime isn't covered yet:** window boundaries and role changes reaching open streams belong to the realtime milestone.
 
+### Reference expansion
+
+[Reading a document with `expand`](../../api/references/) returns documents of other collections in the same answer. What was reviewed, and what is left:
+
+- **Rules apply to every expanded document, with the caller of the request.** The target's `read` rule is pushed into the query with the same identity (user, memberships and their second factor, configuration), soft-deleted documents are left out, and an API key's scopes narrow it: a key that can't read the target collection gets `null`. Tests compare a missing reference, one the caller can't read, one of another organization and a target nobody may read: the same value, the same headers.
+- **`null` is the only answer.** Missing, unreadable and foreign are indistinguishable by value, by status and by cost headers, and nothing is logged by caller about which it was.
+- **Selection can't reveal more than a read.** Rules are evaluated on the whole document in the database and the selected fields are chosen afterwards in memory, so a rule that depends on a field the request didn't select still decides, and the field stays out.
+- **Only declared relations,** checked when backd starts, within the realm. A request can't name a collection, a database or a field of its own: `expand` entries are names of declared references and, for the second level, of references declared on the target.
+- **Cost can't be multiplied beyond the limits.** At most two levels, five entries, 100 ids per array and 2,000 documents per response; past the last one the answer is `400` before any partial data, decided from the request's own documents and before the queries run. Each path is one query with the target's unique key.
+- **No shared caching.** An expanded read is `private, no-cache`, even for an anonymous reader of a collection that is publicly cached, and it is never `304`; the `ETag` of a document stays its own version.
+- **Writes can't be steered by it.** `_expanded` is server-owned and dropped from every write; a write never expands.
+
+Left as it is, on purpose:
+
+- **The names of a collection's references are visible in `invalid_expand` errors** (`declared: author, tags`). They are configuration, not data, and a client that builds the request needs them.
+- **Expansion with `ctx.admin.db` has admin access,** as everything on that client does: a function that returns an expanded document returns what it read. Select fields, and use `ctx.db` unless the function needs more than its caller may see.
+- **A path costs a lookup even when the caller can read nothing there.** The counters report it the same either way, so a caller can't tell it from a miss, but the load is real: the limits are what bound it.
+
 ## What you are responsible for
 
 - **TLS.** `backd` serves plain HTTP; terminate TLS in front of it.
@@ -120,6 +138,7 @@ Left as it is, on purpose:
 - **Rules:** review the `rules:` of each `collection.yaml`. A missing rule denies, but a too-broad one (`read: "true"`) publishes a collection. Unique indexes can reveal that a value exists: creating a document with a value that a hidden document already has answers `409`.
 - **Files:** a private bucket with a key scoped to the realm's prefix, a prefix per backd instance, short link lifetimes on sensitive fields, `BACKD_URL`, and small limits where anonymous callers may upload: see [Security of files](../../files/security/#what-you-are-responsible-for).
 - **Organizations:** write `inOrg` or `hasOrgRole` in every rule of a collection that belongs to organizations (`read: user != nil` publishes it to all of them), keep `create` for organizations to people you trust, and give management roles to few people. See the [cookbook](../../organizations/rules-cookbook/).
+- **Reference expansion:** a reference is only as private as its target's `read` rule: write that rule for the document read directly, select the fields a screen needs, and keep `ctx.admin.db` expansions out of anything that goes back to a caller. See [References and expansion](../../api/references/).
 - **Team access:** keep `grants` short (who may hand out which role), put `require_mfa` on roles that can decide for others, guard hook handlers against stale events with `seq`, make data hooks cheap, and keep company templates to the kinds that need them. See the [recipes](../../organizations/team-access-recipes/).
 - **Second factors and magic links:** require a second factor of every role that can administer the realm (`mfa.required_roles`; `backd` warns at startup when an admin role isn't covered), keep `BACKD_SECRETS_KEY` safe and backed up (without it the enrolled authenticators can't be checked), and remember that with magic links the mailbox is a way in: protect it like the password. Tell users never to read a code out to anyone.
 - **`auth: disabled` realms** must never be reachable from the internet.
