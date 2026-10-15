@@ -30,6 +30,8 @@ Each realm with `auth: enabled` keeps an **audit trail**: one record per securit
 | `storage.check` | An administrator runs a [storage check](../../files/storage/#checking-it) ([admin API](../admin/)); never the keys or anything stored | `ok`, `provider`, `bucket` |
 | `data.check` | An administrator starts a [schema check](../../configuration/validation/#finding-documents-that-no-longer-match) ([admin API](../admin/)); the target is `data:<database>/<collection>`, `data:<database>` or `data:*`; never the report | `collections`, `limit`, `job_id` |
 | `schedule.pause`, `schedule.resume` | An administrator pauses or resumes a function's schedule ([admin API](../admin/)); only a change is recorded; the target is `schedule:<database>/<function>` | none |
+| `triggers.gap_resolve` | An administrator closes a [gap of the trigger dispatcher](../../operations/events/#seeing-and-repairing-what-the-dispatcher-did) ([admin API](../admin/), `backd triggers resolve`); the target is `trigger-gap:<id>` | none |
+| `triggers.rescan` | An operator runs `backd triggers rescan` for a collection; the actor is `cli`; the target is `<database>/<collection>` | `trigger`, `since`, `scanned`, `queued`, `run` |
 | `job.cancel`, `job.rerun` | An administrator cancels a job, or queues a finished one again ([admin API](../admin/)); the target is `job:<id>` | `function`; for a re-run also `new_job` |
 | `user.disable`, `user.enable` | An administrator disables or re-enables a user | |
 | `user.delete` | An administrator erases a user (the tombstone is made; the data work is in the job) | `job_id` |

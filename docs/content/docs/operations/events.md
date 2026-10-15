@@ -73,6 +73,27 @@ When a collection declares [`triggers:`](../../configuration/config-dir/#trigger
 
 - **Ordered triggers.** A trigger with `ordered: true` gives its jobs a key (the trigger and the document) and an order (the time of the change in the database's history, the same wherever it is read); a worker takes only the oldest unfinished job of a key. `jobs_serialized_waiting` shows how many wait behind another; a document that changes faster than its function runs builds a queue of its own. `backd provision` adds the index this needs (`serial_key`, `serial_order`) to each realm's `jobs`.
 
+## Seeing and repairing what the dispatcher did
+
+```sh
+backd triggers status --realm shop          # lease, position age, triggers, backlog, open gaps
+backd triggers gaps --realm shop [--all]    # what could not be turned into jobs
+backd triggers resolve --realm shop --id <gap>
+backd triggers rescan --realm shop --database main --collection orders --updated-since 6h
+```
+
+`status`, `gaps` and `resolve` use the realm's [admin API](../../auth/admin/) (`GET /_admin/triggers/status`, `GET /_admin/triggers/gaps`, `POST /_admin/triggers/gaps/{id}/resolve`) with the `functions` area, as the session of `backd login` or an admin API key. `status` lists every trigger with its function and the note **runs with admin data access**: a trigger's function always has `ctx.admin.db`, so that is the one place to review who holds it. The lease holder's name is not shown.
+
+A **gap** says what the dispatcher could not do and for which collection and trigger. After you have dealt with it, `resolve` closes it (audited); an unresolved one stays in `status` and `trigger_gaps_total`.
+
+**`rescan`** re-emits what a gap lost. It runs where you run the command, with `CONFIG_DIR` and `MONGO_URI` like [`backd provision`](../#provisioning), not through the API, because it may read a whole collection:
+
+- It reads the documents of one collection written from `--updated-since` (an RFC 3339 time, or `6h`, `7d`) until `--until` (default now), and queues an `updated` event for each to the triggers that can be evaluated from a document alone.
+- It is **not a replay**: a document changed twice in the range is read once, as it is now; deletions can't be found; a trigger whose condition needs `before` or `changed()`, or that does not listen to `updated`, is reported and skipped.
+- Its jobs have ids of their own and `rescan` in their input, so handlers see them as new work: they must be idempotent anyway.
+- Over 10,000 documents it asks for `--confirm`. Without an index starting with `_meta.updated_at`, reading the range is a scan of the collection: run it when that is acceptable.
+- It is audited (`triggers.rescan`).
+
 ## Sizing the history
 
 A stream that falls behind can only catch up while MongoDB still holds the history it needs: its **oplog**. A consumer that is offline longer than the oplog window loses its position and continues from now, which `backd` reports as a gap (`changefeed_reopens_total{reason="history_lost"}`). Size the oplog for your write volume and the longest outage you want to survive.

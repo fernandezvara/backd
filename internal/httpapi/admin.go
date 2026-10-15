@@ -18,6 +18,7 @@ import (
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/executor"
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/internal/triggers"
 )
 
 // adminAPI serves /v1/{realm}/_admin/…: user management for server-side
@@ -35,6 +36,8 @@ type adminAPI struct {
 	// aggregate are the instance's aggregation limits, which a config check applies.
 	aggregate registry.AggregateLimits
 	triggers  registry.TriggerLimits
+	// triggerAdmin reads the dispatcher's recorded state; nil when this instance has none.
+	triggerAdmin triggers.Admin
 }
 
 type adminUserKey struct{}
@@ -130,6 +133,9 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		r.With(secrets).Delete("/secrets/{name}", a.deleteSecret)
 		r.With(audit).Get("/audit", a.listAudit)
 		r.With(fns).Get("/invocations", a.listInvocations)
+		r.With(fns).Get("/triggers/status", a.triggersStatus)
+		r.With(fns).Get("/triggers/gaps", a.listTriggerGaps)
+		r.With(fns).Post("/triggers/gaps/{id}/resolve", a.resolveTriggerGap)
 		r.With(fns).Get("/jobs", a.listJobs)
 		r.With(fns).Get("/jobs/{id}", a.getJob)
 		// Cancelling needs the functions area, except for a schema check, which the data

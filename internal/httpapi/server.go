@@ -16,6 +16,7 @@ import (
 	"github.com/fernandezvara/backd/internal/oauth"
 	"github.com/fernandezvara/backd/internal/push"
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/internal/triggers"
 )
 
 // Config holds the handler dependencies.
@@ -47,6 +48,9 @@ type Config struct {
 	Aggregate registry.AggregateLimits
 	// TriggerLimits are the instance's trigger limits (BACKD_TRIGGER_MAX_CHAIN); zero means the defaults.
 	TriggerLimits registry.TriggerLimits
+	// Triggers reads and closes what the trigger dispatcher recorded (status, gaps); nil on an
+	// instance that has no access to it.
+	Triggers triggers.Admin
 	// ImageTimeout and ImageConcurrency bound the workers making image versions
 	// (BACKD_IMAGE_TIMEOUT, BACKD_IMAGE_CONCURRENCY); zero is 30 seconds, and a number
 	// derived from the container's limits.
@@ -168,7 +172,7 @@ func NewHandler(cfg Config) http.Handler {
 	authRoutes.fns = fns
 	spec := &openAPI{reg: cfg.Registry}
 	if !cfg.DisableAdminAPI {
-		admin := &adminAPI{users: users, reg: cfg.Registry, fns: fns, fingerprint: cfg.ConfigFingerprint, reloadErrors: cfg.ReloadErrors, imageMaxPixels: cfg.ImageMaxPixels, expandMaxArray: cfg.Expand.OrDefault().MaxArray, aggregate: cfg.Aggregate, triggers: cfg.TriggerLimits}
+		admin := &adminAPI{users: users, reg: cfg.Registry, fns: fns, fingerprint: cfg.ConfigFingerprint, reloadErrors: cfg.ReloadErrors, imageMaxPixels: cfg.ImageMaxPixels, expandMaxArray: cfg.Expand.OrDefault().MaxArray, aggregate: cfg.Aggregate, triggers: cfg.TriggerLimits, triggerAdmin: cfg.Triggers}
 		admin.routes(r, authRoutes.resolveRealm, withTimeout(opTimeout))
 		spec.protected = noStore(authRoutes.resolveRealm(withTimeout(opTimeout)(admin.requireAdmin(admin.need(registry.RightConfig)(http.HandlerFunc(spec.serve))))))
 	}

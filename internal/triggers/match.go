@@ -286,3 +286,17 @@ func writerOf(c changefeed.Change) string {
 	}
 	return ""
 }
+
+// withRescan marks a job input as made by a rescan.
+func withRescan(input json.RawMessage, run string) json.RawMessage {
+	var in map[string]any
+	if err := json.Unmarshal(input, &in); err != nil {
+		return input
+	}
+	in["rescan"] = run
+	out, err := json.Marshal(in)
+	if err != nil {
+		return input
+	}
+	return out
+}

@@ -553,6 +553,7 @@ func (a *app) handlerConfig() httpapi.Config {
 		Expand:            a.cfg.Expand,
 		Aggregate:         a.cfg.Aggregate,
 		TriggerLimits:     a.cfg.TriggerLimits,
+		Triggers:          &mongodb.TriggerState{Client: a.client, Deployment: a.cfg.DeploymentID},
 		ImageTimeout:      a.cfg.ImageTimeout,
 		ImageConcurrency:  a.cfg.ImageConcurrency,
 		OpTimeout:         a.cfg.MongoOpTimeout,

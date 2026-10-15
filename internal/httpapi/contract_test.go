@@ -28,6 +28,7 @@ import (
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage"
 	"github.com/fernandezvara/backd/internal/storage/storagetest"
+	"github.com/fernandezvara/backd/internal/triggers"
 )
 
 // contract checks HTTP responses against api/openapi.yaml.
@@ -345,7 +346,7 @@ func TestContract(t *testing.T) {
 		}
 		return e
 	}
-	f := newRulesFixture(t, func(cfg *Config) { cfg.OAuth = oauthSvc })
+	f := newRulesFixture(t, func(cfg *Config) { cfg.OAuth = oauthSvc; cfg.Triggers = &fakeTriggerAdmin{} })
 	setUpProviders(t, f)
 	router := f.h.(chi.Routes)
 	f.h = c.wrap(t, f.h)
@@ -1217,6 +1218,19 @@ func TestContract(t *testing.T) {
 	req("POST", run+"typed/invoke", `{"input": {"n": "x"}}`, key, 400)
 	req("POST", run+"echo/invoke", `{}`, nil, 401)
 	req("POST", run+"echo/invoke", `{}`, with(ada, "Content-Type", "application/json"), 403)
+	// The trigger dispatcher's state and gaps.
+	req("GET", ad+"/triggers/status", "", key, 200)
+	req("GET", ad+"/triggers/status", "", nil, 401)
+	req("GET", ad+"/triggers/status", "", ada, 403)
+	req("GET", ad+"/triggers/gaps", "", key, 200)
+	req("GET", ad+"/triggers/gaps?all=true&limit=5", "", key, 200)
+	req("GET", ad+"/triggers/gaps?limit=0", "", key, 400)
+	req("GET", ad+"/triggers/gaps", "", nil, 401)
+	req("GET", ad+"/triggers/gaps", "", ada, 403)
+	req("POST", ad+"/triggers/gaps/gap1/resolve", ``, nil, 401)
+	req("POST", ad+"/triggers/gaps/gap1/resolve", ``, ada, 403)
+	req("POST", ad+"/triggers/gaps/nothing/resolve", ``, key, 404)
+	req("POST", ad+"/triggers/gaps/gap1/resolve", ``, key, 200)
 	// Pausing and resuming schedules.
 	req("GET", ad+"/schedules", "", key, 200)
 	req("GET", ad+"/schedules", "", nil, 401)
@@ -2740,4 +2754,40 @@ func dirtyJPEGForContract(t *testing.T) []byte {
 	t.Helper()
 	dirty, _ := dirtyJPEG(t, 30, 10)
 	return dirty[:len(dirty)-40]
+}
+
+// fakeTriggerAdmin is the dispatcher's recorded state, with one open gap.
+type fakeTriggerAdmin struct {
+	mu       sync.Mutex
+	resolved bool
+}
+
+func (f *fakeTriggerAdmin) Status(context.Context) (triggers.DispatcherStatus, error) {
+	return triggers.DispatcherStatus{Found: true, Held: true, Epoch: 3, Holder: "host-1", LeaseExpires: time.Now().Add(10 * time.Second), WatermarkAt: time.Now().Add(-2 * time.Second)}, nil
+}
+
+func (f *fakeTriggerAdmin) Gaps(_ context.Context, realm string, all bool, _ int) ([]triggers.GapRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	g := triggers.GapRecord{
+		Gap: triggers.Gap{Realm: realm, Collection: "notes", Trigger: "on_paid", Reason: triggers.GapPreImage, From: time.Now().Add(-time.Hour), To: time.Now(), Count: 2, Keys: []string{"n1", "n2"}},
+		ID:  "gap1", RecordedAt: time.Now(),
+	}
+	if f.resolved {
+		if !all {
+			return nil, nil
+		}
+		g.ResolvedAt = time.Now()
+	}
+	return []triggers.GapRecord{g}, nil
+}
+
+func (f *fakeTriggerAdmin) ResolveGap(_ context.Context, _, id string, _ time.Time) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if id != "gap1" || f.resolved {
+		return false, nil
+	}
+	f.resolved = true
+	return true, nil
 }

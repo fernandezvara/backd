@@ -108,6 +108,7 @@ func newCLI(getenv func(string) string, stdin io.Reader, stdout, stderr io.Write
 		})
 	registerRoles(cfg)
 	registerRemote(cfg)
+	registerTriggers(cfg)
 	return cfg
 }
 
@@ -752,4 +753,42 @@ func registerRoles(cfg *kli.Config) {
 	cfg.Command("egress").ShortHelp("run the egress role, the executor's only way out").LongHelp(egressHelp).
 		Func(act("egress", func(c *kli.CommandContext) error { return serveEgress(c.Getenv, c.Stderr()) })).
 		Config(func(*kli.CommandConfig) {})
+}
+
+// registerTriggers adds `backd triggers`: what the dispatcher is doing and has not been able to
+// do (status, gaps), and a way to re-emit the changes of a collection after a gap (rescan).
+func registerTriggers(cfg *kli.Config) {
+	tr := cfg.Command("triggers").ShortHelp("see and repair what the trigger dispatcher did")
+	remote := func(cc *kli.CommandConfig) {
+		required(cc, "realm", "the realm")
+		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+		boolean(cc, "json", "one JSON object per line")
+	}
+	tr.SubCommand("status").ShortHelp("the dispatcher, the realm's triggers, the backlog and the open gaps").
+		LongHelp("Shows whether an instance holds the dispatcher's lease and how old its stored position is,\nthe realm's triggers (each runs with admin data access), the unfinished trigger jobs and the\ngaps not yet resolved. " + adminAPINote).
+		Func(act("triggers status", triggersStatus)).Config(remote)
+	tr.SubCommand("gaps").ShortHelp("list what the dispatcher could not turn into jobs").
+		LongHelp("Lists the gaps the dispatcher recorded: a stretch of changes that fell out of MongoDB's\nhistory while no dispatcher read them (window), changes whose condition needed an image that\nwas not there (preimage_missing) and events refused because the realm was at its backlog\nceiling (backlog). Open ones by default. " + adminAPINote).
+		Func(act("triggers gaps", triggersGaps)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		boolean(cc, "all", "include the resolved gaps")
+	})
+	tr.SubCommand("resolve").ShortHelp("mark a gap as dealt with").
+		LongHelp("Closes a gap: use it once you have run `backd triggers rescan` for it, or decided that\nnothing that matters was lost. Audited as triggers.gap_resolve. " + adminAPINote).
+		Func(act("triggers resolve", triggersResolve)).Config(func(cc *kli.CommandConfig) {
+		required(cc, "realm", "the realm")
+		required(cc, "id", "the gap's id (see `backd triggers gaps`)")
+		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+	})
+	tr.SubCommand("rescan").ShortHelp("queue a collection's recently written documents again").
+		LongHelp("Re-emits the documents of a collection written in a time range as synthetic `updated`\nevents, to the triggers that can be evaluated from a document alone, after a gap. It is not a\nreplay of history: a document changed twice is read once, as it is now; deletions can't be\nfound; and a trigger whose condition needs `before` or `changed()` is reported and skipped.\nThe jobs carry `rescan` in their input and have ids of their own, so handlers (which must be\nidempotent anyway) see them as new work.\n\nIt runs here, not through the API: it reads CONFIG_DIR and MONGO_URI like `backd provision`,\nand may read a whole collection (over 10,000 documents it asks for --confirm). Without an\nindex on _meta.updated_at, that is a scan of the collection. Audited as triggers.rescan.").
+		Func(act("triggers rescan", triggersRescan)).Config(func(cc *kli.CommandConfig) {
+		required(cc, "realm", "the realm")
+		required(cc, "database", "the database")
+		required(cc, "collection", "the collection")
+		optional(cc, "trigger", "only this trigger (default: every one that can be rescanned)")
+		optional(cc, "updated-since", "documents written from this time: RFC 3339, or a duration back from now such as 24h or 7d")
+		optional(cc, "until", "...before this time (default: now)")
+		boolean(cc, "confirm", "allow reading more than 10,000 documents")
+	})
 }

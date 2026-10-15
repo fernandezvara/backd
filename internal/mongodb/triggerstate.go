@@ -154,6 +154,7 @@ type gapDoc struct {
 	Count      int       `bson:"count"`
 	Keys       []string  `bson:"keys,omitempty"`
 	RecordedAt time.Time `bson:"recorded_at"`
+	ResolvedAt time.Time `bson:"resolved_at,omitempty"`
 }
 
 // RecordGap stores a gap.
@@ -170,4 +171,81 @@ func (s *TriggerState) RecordGap(ctx context.Context, g triggers.Gap) error {
 		return fmt.Errorf("record trigger gap: %w", err)
 	}
 	return nil
+}
+
+// Status reads the lease and the position as they are stored.
+func (s *TriggerState) Status(ctx context.Context) (triggers.DispatcherStatus, error) {
+	var d struct {
+		Holder  string      `bson:"holder"`
+		Epoch   int64       `bson:"epoch"`
+		Expires time.Time   `bson:"expires_at"`
+		Token   bson.Binary `bson:"token"`
+		At      time.Time   `bson:"at"`
+	}
+	err := s.state().FindOne(ctx, bson.D{{Key: "_id", Value: s.id()}}).Decode(&d)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return triggers.DispatcherStatus{}, nil
+	}
+	if err != nil {
+		return triggers.DispatcherStatus{}, err
+	}
+	st := triggers.DispatcherStatus{Found: true, Epoch: d.Epoch, Holder: d.Holder, LeaseExpires: d.Expires.UTC(), WatermarkAt: d.At.UTC()}
+	st.Held = d.Holder != "" && time.Now().Before(d.Expires)
+	return st, nil
+}
+
+// realmFilter selects the gaps of a realm: its own and those that cover every realm.
+func (s *TriggerState) realmFilter(realm string) bson.D {
+	return bson.D{{Key: "deployment", Value: s.Deployment}, {Key: "$or", Value: bson.A{
+		bson.D{{Key: "realm", Value: realm}},
+		bson.D{{Key: "realm", Value: bson.D{{Key: "$exists", Value: false}}}},
+	}}}
+}
+
+// Gaps lists a realm's gaps, newest first.
+func (s *TriggerState) Gaps(ctx context.Context, realm string, all bool, limit int) ([]triggers.GapRecord, error) {
+	filter := s.realmFilter(realm)
+	if !all {
+		filter = append(filter, bson.E{Key: "resolved_at", Value: bson.D{{Key: "$exists", Value: false}}})
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	cur, err := s.gaps().Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "recorded_at", Value: -1}}).SetLimit(int64(limit)))
+	if err != nil {
+		return nil, err
+	}
+	var docs []gapDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	out := make([]triggers.GapRecord, len(docs))
+	for i, d := range docs {
+		out[i] = triggers.GapRecord{
+			Gap: triggers.Gap{Realm: d.Realm, Collection: d.Collection, Trigger: d.Trigger, Reason: d.Reason,
+				From: d.From.UTC(), To: d.To.UTC(), Count: d.Count, Keys: d.Keys},
+			ID: d.ID, RecordedAt: d.RecordedAt.UTC(), ResolvedAt: d.ResolvedAt.UTC(),
+		}
+		if d.ResolvedAt.IsZero() {
+			out[i].ResolvedAt = time.Time{}
+		}
+	}
+	return out, nil
+}
+
+// ResolveGap closes an open gap of the realm.
+func (s *TriggerState) ResolveGap(ctx context.Context, realm, id string, at time.Time) (bool, error) {
+	filter := append(s.realmFilter(realm), bson.E{Key: "_id", Value: id}, bson.E{Key: "resolved_at", Value: bson.D{{Key: "$exists", Value: false}}})
+	res, err := s.gaps().UpdateOne(ctx, filter, bson.D{{Key: "$set", Value: bson.D{{Key: "resolved_at", Value: at.UTC()}}}})
+	if err != nil {
+		return false, err
+	}
+	return res.MatchedCount == 1, nil
+}
+
+// OpenGaps counts a realm's unresolved gaps.
+func (s *TriggerState) OpenGaps(ctx context.Context, realm string) (int, error) {
+	filter := append(s.realmFilter(realm), bson.E{Key: "resolved_at", Value: bson.D{{Key: "$exists", Value: false}}})
+	n, err := s.gaps().CountDocuments(ctx, filter)
+	return int(n), err
 }

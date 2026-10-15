@@ -2,6 +2,8 @@ package mongodb
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -131,5 +133,112 @@ func TestTriggerGapsAreRecorded(t *testing.T) {
 	}
 	if d.Realm != "shop" || d.Reason != triggers.GapPreImage || d.Count != 3 || len(d.Keys) != 3 || d.Trigger != "on_paid" {
 		t.Errorf("gap = %+v", d)
+	}
+}
+
+func TestTriggerStatusGapsAndResolve(t *testing.T) {
+	s := newTriggerState(t)
+	ctx := context.Background()
+
+	st, err := s.Status(ctx)
+	if err != nil || st.Found {
+		t.Fatalf("before anything: %+v %v", st, err)
+	}
+	l, ok, err := s.AcquireLease(ctx, "host-1", time.Minute)
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	at := time.Now().UTC().Truncate(time.Millisecond)
+	if _, err := s.SetWatermark(ctx, l, []byte("p"), at); err != nil {
+		t.Fatal(err)
+	}
+	st, err = s.Status(ctx)
+	if err != nil || !st.Found || !st.Held || st.Epoch != 1 || st.Holder != "host-1" || !st.WatermarkAt.Equal(at) {
+		t.Fatalf("status: %+v %v", st, err)
+	}
+	if err := s.ReleaseLease(ctx, l); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := s.Status(ctx); st.Held {
+		t.Error("held after release")
+	}
+
+	rec := func(g triggers.Gap) {
+		t.Helper()
+		g.From, g.To = time.Now().Add(-time.Hour), time.Now()
+		if err := s.RecordGap(ctx, g); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rec(triggers.Gap{Realm: "shop", Collection: "orders", Trigger: "on_paid", Reason: triggers.GapPreImage, Count: 2, Keys: []string{"a", "b"}})
+	rec(triggers.Gap{Realm: "blog", Collection: "posts", Trigger: "t", Reason: triggers.GapBacklog, Count: 1})
+	rec(triggers.Gap{Reason: triggers.GapWindow}) // covers every realm
+
+	shop, err := s.Gaps(ctx, "shop", false, 10)
+	if err != nil || len(shop) != 2 {
+		t.Fatalf("shop gaps = %+v %v, want its own and the window one", shop, err)
+	}
+	for _, g := range shop {
+		if g.Realm == "blog" {
+			t.Errorf("a gap of another realm leaked: %+v", g)
+		}
+	}
+	if n, _ := s.OpenGaps(ctx, "blog"); n != 2 {
+		t.Errorf("blog open = %d", n)
+	}
+
+	// Resolving: only that realm's own or window gaps, once.
+	var own string
+	for _, g := range shop {
+		if g.Realm == "shop" {
+			own = g.ID
+		}
+	}
+	if ok, err := s.ResolveGap(ctx, "blog", own, time.Now()); err != nil || ok {
+		t.Errorf("another realm resolved it: %v %v", ok, err)
+	}
+	if ok, err := s.ResolveGap(ctx, "shop", own, time.Now()); err != nil || !ok {
+		t.Fatalf("resolve: %v %v", ok, err)
+	}
+	if ok, _ := s.ResolveGap(ctx, "shop", own, time.Now()); ok {
+		t.Error("resolved twice")
+	}
+	open, _ := s.Gaps(ctx, "shop", false, 10)
+	all, _ := s.Gaps(ctx, "shop", true, 10)
+	if len(open) != 1 || len(all) != 2 {
+		t.Fatalf("open %d, all %d", len(open), len(all))
+	}
+	for _, g := range all {
+		if g.ID == own && g.ResolvedAt.IsZero() {
+			t.Error("resolved gap has no time")
+		}
+	}
+}
+
+func TestDocScannerReadsByUpdatedAt(t *testing.T) {
+	client := testClient(t)
+	realm := testRealm(t, client)
+	ctx := context.Background()
+	coll := client.Database(realm + "__app").Collection("items")
+	base := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	for i := 0; i < 5; i++ {
+		_, err := coll.InsertOne(ctx, bson.D{{Key: "_id", Value: fmt.Sprintf("d%d", i)},
+			{Key: "_meta", Value: bson.D{{Key: "version", Value: int64(1)}, {Key: "updated_at", Value: base.Add(time.Duration(i) * time.Hour)}}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	sc := &DocScanner{Client: client}
+	n, err := sc.Count(ctx, realm+"__app", "items", base.Add(time.Hour), base.Add(4*time.Hour))
+	if err != nil || n != 3 {
+		t.Fatalf("count = %d %v, want d1..d3", n, err)
+	}
+	var ids []string
+	err = sc.Updated(ctx, realm+"__app", "items", base.Add(time.Hour), time.Time{}, func(d map[string]any) error {
+		ids = append(ids, d["id"].(string))
+		return nil
+	})
+	if err != nil || strings.Join(ids, ",") != "d1,d2,d3,d4" {
+		t.Fatalf("ids = %v %v", ids, err)
 	}
 }
