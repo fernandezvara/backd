@@ -88,6 +88,50 @@ Every matching document is read once, so the cost is the number of documents `wh
 
 `backd` warns at startup about `group_by` fields that no index leads with, and names the index to add. [`backd_aggregations_total` and `backd_aggregation_duration_seconds`](../../operations/metrics/) count and time them per collection.
 
+## Best practices
+
+An aggregation is the most expensive read there is, so most of using it well is deciding **how much of the collection one request reads**.
+
+### What it costs
+
+Every document `where` selects is read once, whatever the number of groups: grouping 200,000 orders into 12 months reads 200,000 documents. The database does it in one pass, but a pass over a large part of a large collection takes time and memory, and `backd` bounds both (5 seconds, no spilling to disk, one request at a time per caller). So:
+
+- **Narrow `where` first.** A dashboard for this quarter, this team or this customer reads a small slice; "everything, grouped by month" reads it all. Date ranges and `_meta.org` are the usual narrowing, and a [text search](../search/) works too.
+- **Group by few things.** Each extra key multiplies the groups, not the documents read, but the groups are what the database holds in memory and what the response carries (up to 1,000).
+- **Ask only for the metrics you show.** `count_distinct` keeps every distinct value of a group in memory until it counts them; past 10,000 per group it fails on purpose.
+
+### Indexes that help
+
+- **`where` fields first.** The documents selected are found through an index on the fields of `where` (for example `{"fields": ["_meta.org", "-_meta.created_at"]}` for "this team, recent first"), exactly as for a list.
+- **Then `group_by` fields.** `backd` warns at startup about each declared `group_by` field that no index starts with, and names the line to add to `indexes.json`. The automatic index on `_meta.created_at` serves date buckets of the creation time.
+- An index doesn't make grouping read fewer documents: it finds them faster and in a useful order. Reading fewer is what a narrower `where` is for.
+
+### Buckets and time zones
+
+- **Cut in the zone people live in.** A day or a month begins at midnight *somewhere*: pass the business's `tz`, and keep it the same everywhere the totals are compared, or a sale at 23:30 UTC lands in different months on different screens. Daylight saving changes are handled; a day of 23 or 25 hours is still one bucket.
+- **Weeks are ISO weeks** (Monday first, week 1 holds January 4th), so `2026-12-31` can belong to `2027-W01`. For calendar weeks, group by `day` and add them up on the client.
+- **Pick the coarsest unit that answers the question**: a year of days is 365 groups.
+- **Empty buckets aren't returned.** Charts fill them with `fillBuckets` in the [JavaScript client](../../clients/js/#aggregations-and-search).
+
+### Caching
+
+The answer has a weak `ETag`, so an unchanged summary costs a `304` with no body, but **the aggregation still runs** to compute the validator. For a dashboard that many people load all day, this is the wrong tool: precompute.
+
+- **Counters kept by a function** (or by the code that makes the change) turn "count the orders" into reading one document. They cost an update per change, and they can drift if a path forgets to maintain them: keep the aggregation as the audit.
+- **Let a client cache it for a while** (your own `max-age` on an endpoint of yours, or the client's memory) when a figure a few minutes old is fine.
+- **Don't aggregate on every page view** of a public page: put the result in a document a scheduled function refreshes.
+
+### Reading the warnings and errors
+
+| You see | It means | What to do |
+|---|---|---|
+| a startup warning `group_by "x" has no index that starts with it` | grouping by `x` reads documents in no useful order | add `{"fields": ["x"]}` (or a compound index that also serves your `where`) to `indexes.json` and provision |
+| `422 aggregate_too_expensive` | past the time limit, out of memory, or too many distinct values | narrow `where`, group by fewer fields, drop `count_distinct`, add the index; if it is a report, run it off-peak from a function |
+| `429` with `Retry-After: 1` | another aggregation of yours on this collection is still running | wait for it; don't fire them in parallel (the client can send them one after the other) |
+| `400 invalid_aggregate` | a field, bucket, metric or `tz` that isn't valid or declared | the `details` name the parameter and what is allowed |
+| `400 aggregate_not_enabled` | the collection declares no `aggregate:` | declare the fields in `collection.yaml` |
+| `backd_aggregation_duration_seconds` rising | aggregations are getting slower as data grows | look at which collection ([metrics](../../operations/metrics/)), narrow it or precompute |
+
 ## Caching
 
 The answer has a weak `ETag` over its content and is `private, no-cache`: send it back in `If-None-Match` and an unchanged summary is a `304` with no body. The aggregation still runs (the validator is a hash of the result), so this saves bytes, not database work; for a dashboard that is loaded on every page, keep a counter a function maintains instead.

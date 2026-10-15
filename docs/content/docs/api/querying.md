@@ -143,6 +143,8 @@ GET /v1/shop/blog/articles?where={"$search":"red \"running shoes\" -kids","statu
 - **Elsewhere.** `$search` also works in [aggregations](../aggregations/) (results per category next to a search box) and with [`expand`](../references/). Conditional GET works as for any list.
 - **While the index is rebuilt** (its declaration changed and `backd provision` is replacing it) a search answers `503 index_building` with `Retry-After`.
 
+The [search guide](../search/) covers declaring the index, weights, languages and what search doesn't do.
+
 **`$search` or `$contains`?** `$contains` and `$icontains` look for an exact substring and read every document of the collection: good for a few thousand documents and for partial words. `$search` is for words and phrases in prose, with stemming and ranking, and stays fast on large collections. It doesn't find partial words (`runn`), tolerate typos or return facets.
 
 ## Errors
