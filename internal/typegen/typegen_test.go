@@ -319,3 +319,38 @@ func TestTriggerInputTypes(t *testing.T) {
 		}
 	}
 }
+
+// A function a trigger runs has ctx.admin in its types, without declaring admin: true.
+func TestTriggerFunctionsAreTypedWithAdminAccess(t *testing.T) {
+	root := t.TempDir()
+	write := func(path, content string) {
+		p := filepath.Join(root, path)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("acme/realm.yaml", "signup: open\n")
+	write("acme/main/orders/schema.json", `{"type": "object", "properties": {"status": {"type": "string"}}}`)
+	write("acme/main/orders/collection.yaml", "triggers:\n  on_paid:\n    events: [created]\n    function: main/on-paid\n")
+	write("acme/main/_functions/on-paid/function.yaml", "internal: true\nmode: async\n")
+	write("acme/main/_functions/on-paid/index.ts", "export default () => null\n")
+	write("acme/main/_functions/other/function.yaml", "internal: true\nmode: async\n")
+	write("acme/main/_functions/other/index.ts", "export default () => null\n")
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fns, err := GenerateFunctions(reg, "acme", "main", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(fns.Types, "on_paid: { webhook: false; admin: true;") && !strings.Contains(fns.Types, `"on-paid": { webhook: false; admin: true;`) {
+		t.Errorf("the trigger's function has no admin access in its types:\n%s", fns.Types)
+	}
+	if strings.Contains(fns.Types, "other: { webhook: false; admin: true;") {
+		t.Error("a function no trigger runs got admin access")
+	}
+}

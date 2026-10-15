@@ -1,0 +1,6 @@
+# Step 1 of the submission pipeline (chapter 23): a proposal was created. An
+# internal, async function — nobody can call it over HTTP and nothing waits for
+# it. It needs no `admin: true`: a trigger's function always has ctx.admin.
+internal: true
+mode: async
+timeout: 20s

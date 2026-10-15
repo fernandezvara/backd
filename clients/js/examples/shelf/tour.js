@@ -697,6 +697,54 @@ heading('Search and a dashboard (ch22)')
   await ben.orgs.delete(team.id)
 }
 
+heading('A pipeline on a status (ch23)')
+{
+  const STAMP = Date.now().toString(36)
+  const sleep = (/** @type {number} */ ms) => new Promise((r) => setTimeout(r, ms))
+  const until = async (/** @type {() => Promise<any>} */ probe) => {
+    for (let i = 0; i < 150; i++) {
+      const v = await probe()
+      if (v) return v
+      await sleep(300)
+    }
+    return null
+  }
+  const curatorId = (await curator.auth.me()).id
+  const draftAsset = await main(member).collection('assets').create({ title: `Pipeline ${STAMP}`, kind: 'note', body: 'worth the gallery' })
+  const mine = main(member).collection('submissions')
+
+  // The rules decide who may start and who may move it.
+  await refused('a proposal can only start as submitted (403)', () => mine.create({ asset_id: draftAsset.id, status: 'approved' }), ForbiddenError, '')
+  const proposal = await mine.create({ asset_id: draftAsset.id, status: 'submitted', note: 'for the gallery' })
+  await refused('the author can\'t approve their own proposal (403)', () => mine.patch(proposal.id, { status: 'approved' }), ForbiddenError, '')
+
+  // Step 1: a trigger on created.
+  const noticeOf = async (/** @type {string} */ kind) =>
+    (await main(member).collection('notifications').list({ where: { kind, asset_id: draftAsset.id }, limit: 5 })).items[0]
+  const received = await until(() => noticeOf('submission.received'))
+  check('step 1: the member is told the proposal waits', received?.to_user === (await member.auth.me()).id && /waiting/.test(received?.text ?? ''), JSON.stringify(received))
+  check('a trigger run\'s write carries its place in the chain (depth 0)', received?._meta?.chain?.depth === 0 && typeof received._meta.chain.root === 'string', JSON.stringify(received?._meta))
+
+  // Step 2: the curator's approval is the only thing a client does.
+  await main(curator).collection('submissions').patch(proposal.id, { status: 'approved' })
+  const done = await until(async () => {
+    const s = await main(curator).collection('submissions').get(proposal.id)
+    return s.status === 'published' ? s : null
+  })
+  check('step 2: the function marked it published, naming the curator that approved (by)', done?.decided_by === curatorId, JSON.stringify(done))
+  check('the clients\' rules never allowed that status or that field: only the pipeline wrote them', done?._meta?.updated_by?.startsWith('func:') === true, JSON.stringify(done?._meta))
+  const published = await main(curator).collection('assets').get(draftAsset.id)
+  check('the asset is published', typeof published.published_at === 'string')
+
+  // Step 3 runs because step 2 wrote the status: one level deeper in the same chain.
+  const thanks = await until(() => noticeOf('submission.published'))
+  check('step 3: the author is thanked', /gallery/.test(thanks?.text ?? ''), JSON.stringify(thanks))
+  check('and that run is one level deeper in the chain step 2 started', thanks?._meta?.chain?.depth === 1 && thanks._meta.chain.root === done._meta.chain.root, JSON.stringify({ thanks: thanks?._meta?.chain, done: done?._meta?.chain }))
+  await sleep(1500)
+  const again = (await main(member).collection('notifications').list({ where: { kind: 'submission.published', asset_id: draftAsset.id }, limit: 5 })).items
+  check('each step ran once: one thank-you, however the changes were delivered', again.length === 1, String(again.length))
+}
+
 heading('cleanup by hand (ch9)')
 const sweep = /** @type {any} */ (await operator.admin.invokeFunction('main/cleanup'))
 const swept = /** @type {any} */ (await sweep.wait({ pollIntervalMs: 300, timeoutMs: 90000 }))
