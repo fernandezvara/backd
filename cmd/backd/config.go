@@ -31,7 +31,7 @@ func configCommand(c *kli.CommandContext, fingerprintOnly bool) error {
 		}
 	}
 	if err == nil {
-		var l settings.ExpandLimits
+		var l registry.ExpandLimits
 		if l, err = settings.ExpandLimitsFrom(c.Getenv); err == nil {
 			err = reg.CheckExpandLimits(l.MaxArray)
 		}

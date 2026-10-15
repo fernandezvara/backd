@@ -74,7 +74,7 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 		"acme/app/news/schema.json":        postsSchema,
 		"acme/app/news/collection.yaml":    "cache: {public: true, max_age: 60}\nsoft_delete: true\n" + rulesSection("read: document.published == true || user != nil\ncreate: user != nil\nrestore: hasRole(user, 'staff')\n"),
 		"acme/app/notes/schema.json":       postsSchema,
-		"acme/app/notes/collection.yaml":   rulesSection("read: user != nil\nwrite: user != nil\n"),
+		"acme/app/notes/collection.yaml":   "references:\n  status: {collection: archive}\n" + rulesSection("read: user != nil\nwrite: user != nil\n"),
 		"acme/app/private/schema.json":     postsSchema,
 		"acme/app/private/collection.yaml": "personal_data:\n  export: exclude\n  reason: fraud scores, exempt from access requests\n",
 		// A collection that soft-deletes (see soft_delete_test.go).

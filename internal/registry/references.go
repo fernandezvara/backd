@@ -14,9 +14,39 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ExpandLimits are what a reference expansion may cost on this instance (BACKD_EXPAND_MAX_*);
+// a reference may only lower MaxArray with its max_expand.
+type ExpandLimits struct {
+	MaxDepth int // levels of references followed, at most 2
+	MaxPaths int // entries of one `expand`
+	MaxArray int // ids of one `many` reference followed
+	MaxDocs  int // expanded documents in one response
+}
+
+// DefaultExpandLimits are the limits when the instance sets none.
+var DefaultExpandLimits = ExpandLimits{MaxDepth: 2, MaxPaths: 5, MaxArray: 100, MaxDocs: 2000}
+
 // DefaultExpandMaxArray is the most ids of one `many` reference an expansion follows when the
 // instance sets no other value (BACKD_EXPAND_MAX_ARRAY).
 const DefaultExpandMaxArray = 100
+
+// OrDefault fills the limits that are zero with the defaults.
+func (l ExpandLimits) OrDefault() ExpandLimits {
+	d := DefaultExpandLimits
+	if l.MaxDepth > 0 {
+		d.MaxDepth = l.MaxDepth
+	}
+	if l.MaxPaths > 0 {
+		d.MaxPaths = l.MaxPaths
+	}
+	if l.MaxArray > 0 {
+		d.MaxArray = l.MaxArray
+	}
+	if l.MaxDocs > 0 {
+		d.MaxDocs = l.MaxDocs
+	}
+	return d
+}
 
 // referenceName is what a reference may be called: it appears in `expand=` paths, which use
 // `.`, `(`, `)` and `,` as syntax, so none of those can be part of it.

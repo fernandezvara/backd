@@ -223,6 +223,34 @@ By default documents are ordered by creation time (`_meta.created_at`), then `id
 
 A list response carries a weak `ETag` (`W/"…"`) over the whole page: the id, version and view of every returned document, `has_more`, the cursor and the total. Send it back in `If-None-Match` and an unchanged page answers `304` with no body. The query and the rules always run, so a document that was added, removed, edited, or hidden from or revealed to the caller changes the tag. A list with `?file_links=true` has no tag and is never `304`.
 
+## Expanding references
+
+A collection can [declare references](../../configuration/config-dir/#references) to other collections. With `expand` a read returns the referenced documents next to the result, in `_expanded`, in the same request:
+
+```http
+GET /v1/shop/blog/posts?expand=author(name,avatar),tags(name),category
+```
+
+```json
+{
+  "id": "p_1", "title": "Hello", "category": "c_9", "tags": ["t_1", "t_2", "t_3"],
+  "_meta": { "owner": "u_9", "version": 4 },
+  "_expanded": {
+    "author": { "id": "pr_7", "name": "Ana", "avatar": "ana.png" },
+    "category": { "id": "c_9", "name": "News" },
+    "tags": [ { "id": "t_1", "name": "go" }, null, { "id": "t_3", "name": "db" } ]
+  }
+}
+```
+
+- **Explicit only.** Nothing is expanded unless `expand` names it, and only references the collection declares can be named. `name(f1,f2)` selects fields (the `id` is always there; `_meta` only when selected); without parentheses the whole document is returned. `name.nested` follows a reference declared on the target collection, two levels at most.
+- **Rules apply to every expanded document**, with the caller's identity: a referenced document is returned only if the caller could read it directly. A reference that points at nothing, at a document the caller can't read, or at one of another organization is `null`, the same in every case. In a `many` reference the positions are kept.
+- **Bounded.** One query per path per level for the whole page; at most 5 entries, 2 levels, 100 ids per array (`{"items": [...], "truncated": true}` when there were more) and 2,000 expanded documents per response. A wrong `expand` is `400 invalid_expand` naming the part; one that would return too many documents is `400 expand_too_large`, before any partial data. The instance's values are `BACKD_EXPAND_MAX_*` ([configuration](../../configuration/)), and a collection can only lower them.
+- **Cost headers.** `X-Backd-Expand-Queries` and `X-Backd-Expand-Docs` say what the expansion made and returned; the access log has them too, with the paths and the time spent.
+- **Caching.** The `ETag` of a document stays its own version, so `If-Match` keeps working; an expanded response is `private, no-cache` and never `304`.
+- **Not a join.** `where` and `order_by` use the collection's own fields: a path through a reference is `400 invalid_query`. Filter on the reference's source field instead.
+- **Writes** never expand, and `_expanded` in a body is ignored, like `_meta`.
+
 ## Replace (PUT)
 
 The body becomes the complete new document and is validated as a whole. Fields that aren't in the body are removed. `id` and `_meta.created_at` are kept.

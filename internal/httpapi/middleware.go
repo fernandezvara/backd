@@ -26,6 +26,7 @@ const (
 	requestIDKey ctxKey = iota
 	loggerKey
 	actorKey
+	expandLogKey
 )
 
 // setActor records who made the request (e.g. "user:<id>") for the
@@ -82,6 +83,8 @@ func accessLog(next http.Handler) http.Handler {
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 		actor := new(string)
 		ctx := context.WithValue(r.Context(), actorKey, actor)
+		exp := new(expandLog)
+		ctx = context.WithValue(ctx, expandLogKey, exp)
 		// Audit records name the same actor as this line, once known.
 		ctx = auth.WithAuditSource(ctx, func() auth.AuditSource {
 			return auth.AuditSource{Actor: *actor, RequestID: requestID(ctx), ClientIP: clientIP(r)}
@@ -107,6 +110,9 @@ func accessLog(next http.Handler) http.Handler {
 		}
 		if *actor != "" {
 			attrs = append(attrs, "actor", *actor)
+		}
+		if len(exp.Paths) > 0 {
+			attrs = append(attrs, "expand", exp.Paths, "expand_queries", exp.Queries, "expand_docs", exp.Docs, "expand_ms", float64(exp.Took.Microseconds())/1000)
 		}
 		logger(r.Context()).Info("request", attrs...)
 	})

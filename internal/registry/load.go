@@ -39,7 +39,7 @@ const (
 )
 
 // reservedFields are system-owned and may not be declared by a schema.
-var reservedFields = []string{"id", "_id", "_meta"}
+var reservedFields = []string{"id", "_id", "_meta", "_expanded"}
 
 var draft2020URIs = map[string]bool{
 	"https://json-schema.org/draft/2020-12/schema":  true,

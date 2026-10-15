@@ -50,10 +50,11 @@ type collectionKey struct{}
 type documents struct {
 	reg            *registry.Registry
 	store          Store
-	objects        *realmObjects // each realm's object storage (files)
-	baseURL        string        // backd's public address, for the links it signs (BACKD_URL)
-	imageMaxPixels int64         // the instance's image pixel limit (BACKD_IMAGE_MAX_PIXELS)
-	maxUpload      int64         // the largest file a proxy upload may carry (BACKD_MAX_UPLOAD_BYTES)
+	objects        *realmObjects         // each realm's object storage (files)
+	baseURL        string                // backd's public address, for the links it signs (BACKD_URL)
+	imageMaxPixels int64                 // the instance's image pixel limit (BACKD_IMAGE_MAX_PIXELS)
+	expand         registry.ExpandLimits // reference expansion limits (BACKD_EXPAND_MAX_*), defaults filled in
+	maxUpload      int64                 // the largest file a proxy upload may carry (BACKD_MAX_UPLOAD_BYTES)
 	now            func() time.Time
 	maxBody        int64
 	opTimeout      time.Duration
@@ -241,8 +242,21 @@ func (d *documents) get(w http.ResponseWriter, r *http.Request) {
 		storageError(w, r, err)
 		return
 	}
+	plan, ok := d.expandPlanOf(w, r, c)
+	if !ok {
+		return
+	}
+	var out map[string]any
+	if plan != nil {
+		out = render(doc)
+		if !d.expandInto(w, r, plan, []storage.Document{doc}, []map[string]any{out}) {
+			return
+		}
+	}
 	if r.URL.Query().Get("file_links") == "true" && len(c.Files) > 0 {
-		out := render(doc)
+		if out == nil {
+			out = render(doc)
+		}
 		if !d.addFileLinks(w, r, c, []map[string]any{out}) {
 			return
 		}
@@ -250,6 +264,15 @@ func (d *documents) get(w http.ResponseWriter, r *http.Request) {
 		// this answer is never 304 and never stored.
 		w.Header().Set("ETag", etag(version(doc)))
 		w.Header().Set("Cache-Control", "private, no-store")
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	if plan != nil {
+		// What was expanded depends on the caller and on other documents: the ETag stays the
+		// document's own version (If-Match keeps working), but the response is never cached
+		// and never 304.
+		w.Header().Set("ETag", etag(version(doc)))
+		w.Header().Set("Cache-Control", "private, no-cache")
 		writeJSON(w, http.StatusOK, out)
 		return
 	}
@@ -276,6 +299,7 @@ type listResponse struct {
 func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 	c, repo := d.collection(r)
 	q, details := parseListQuery(r.URL.Query(), c.Fields)
+	details = explainReferenceFilters(c, details)
 	if len(details) > 0 {
 		writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid query parameters", details...)
 		return
@@ -315,6 +339,13 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 	for _, doc := range page.Items {
 		resp.Items = append(resp.Items, render(doc))
 	}
+	plan, ok := d.expandPlanOf(w, r, c)
+	if !ok {
+		return
+	}
+	if plan != nil && !d.expandInto(w, r, plan, page.Items, resp.Items) {
+		return
+	}
 	if page.HasMore && len(page.Items) > 0 {
 		if ok, _ := query.Cursorable(q.Sort, c.Fields); ok {
 			resp.NextCursor = query.EncodeCursor(q.Sort, page.Items[len(page.Items)-1])
@@ -329,6 +360,13 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, resp)
 		return
 	}
+	if plan != nil {
+		// Never cached and never 304: see get. A list's validator would not cover the
+		// expanded documents, so there is none.
+		w.Header().Set("Cache-Control", "private, no-cache")
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
 	// The query and the rules have run: the validator covers what this caller sees.
 	tag := listETag(page.Items, "", resp.HasMore, resp.NextCursor, resp.Total) // nothing is redacted per caller yet
 	readHeaders(w, tag)
@@ -339,7 +377,7 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-var listParams = map[string]bool{"where": true, "order_by": true, "limit": true, "skip": true, "after": true, "count": true, "deleted": true, "file_links": true, "org": true, "team": true}
+var listParams = map[string]bool{"expand": true, "where": true, "order_by": true, "limit": true, "skip": true, "after": true, "count": true, "deleted": true, "file_links": true, "org": true, "team": true}
 
 func parseListQuery(v url.Values, fields map[string]registry.Field) (storage.Query, []Detail) {
 	q := storage.Query{Limit: defaultLimit}
@@ -712,6 +750,7 @@ func stripSystemFields(doc map[string]any) {
 	delete(doc, "id")
 	delete(doc, "_id")
 	delete(doc, "_meta")
+	delete(doc, "_expanded")
 }
 
 // userFields returns a copy of doc without system fields.
@@ -1144,4 +1183,47 @@ func sameScope(w http.ResponseWriter, r *http.Request, claimed map[string]string
 		}
 	}
 	return true
+}
+
+// expandPlanOf reads and checks the request's `expand`; plan is nil without one. It answers
+// 400 invalid_expand and returns false when the parameter is wrong.
+func (d *documents) expandPlanOf(w http.ResponseWriter, r *http.Request, c *registry.Collection) (*expandPlan, bool) {
+	if !r.URL.Query().Has("expand") {
+		return nil, true
+	}
+	plan, details := d.planExpand(c, r.URL.Query().Get("expand"))
+	if len(details) > 0 {
+		writeError(w, r, http.StatusBadRequest, codeInvalidExpand, "invalid expand: "+details[0].Reason, details...)
+		return nil, false
+	}
+	return plan, true
+}
+
+// expandInto expands docs into out and sets the cost headers; false when it answered an error.
+func (d *documents) expandInto(w http.ResponseWriter, r *http.Request, plan *expandPlan, docs []storage.Document, out []map[string]any) bool {
+	start := time.Now()
+	queries, count, err := d.expandDocuments(r.Context(), r, plan, docs, out)
+	if err != nil {
+		expandError(w, r, err)
+		return false
+	}
+	setExpandHeaders(w, r, plan, queries, count, time.Since(start))
+	return true
+}
+
+// explainReferenceFilters tells a caller who filters or sorts on a reference's fields why
+// that isn't possible: where and order_by only see the collection's own fields.
+func explainReferenceFilters(c *registry.Collection, details []Detail) []Detail {
+	for i, dt := range details {
+		// The path of a detail is where.<field> or order_by.<field>.
+		_, field, _ := strings.Cut(dt.Path, ".")
+		first, _, _ := strings.Cut(field, ".")
+		if _, declared := c.Fields[field]; declared {
+			continue
+		}
+		if _, isRef := c.References[first]; isRef || first == "_expanded" {
+			details[i].Reason = "expanded documents can't be filtered or sorted on: where and order_by use this collection's own fields (filter on the reference's source field, or see Reference expansion in the docs)"
+		}
+	}
+	return details
 }

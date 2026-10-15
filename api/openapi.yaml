@@ -6020,6 +6020,7 @@ paths:
         - { $ref: "#/components/parameters/orgQuery" }
         - { $ref: "#/components/parameters/teamQuery" }
         - { $ref: "#/components/parameters/fileLinks" }
+        - { $ref: "#/components/parameters/expand" }
         - { $ref: "#/components/parameters/ifNoneMatch" }
         - name: where
           in: query
@@ -6060,6 +6061,8 @@ paths:
             ETag: { $ref: "#/components/headers/ListETag" }
             Vary: { $ref: "#/components/headers/DataVary" }
             Cache-Control: { $ref: "#/components/headers/DataCacheControl" }
+            X-Backd-Expand-Queries: { $ref: "#/components/headers/ExpandQueries" }
+            X-Backd-Expand-Docs: { $ref: "#/components/headers/ExpandDocs" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/DocumentList" }
@@ -6131,10 +6134,12 @@ paths:
       parameters:
         - { $ref: "#/components/parameters/deleted" }
         - { $ref: "#/components/parameters/fileLinks" }
+        - { $ref: "#/components/parameters/expand" }
         - { $ref: "#/components/parameters/ifNoneMatch" }
       responses:
         "200": { $ref: "#/components/responses/Document" }
         "304": { $ref: "#/components/responses/NotModified" }
+        "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -7633,6 +7638,22 @@ components:
         decides what is seen. A batch takes it for all its creates. Fixed at creation: an
         update that names another organization answers `400 immutable_field`.
       schema: { type: string }
+    expand:
+      name: expand
+      in: query
+      description: |
+        References to return next to the result, in `_expanded`: reference names declared in the
+        collection's `collection.yaml`, separated by commas, each optionally followed by the
+        fields to return in parentheses, and `name.nested` for a reference of the referenced
+        collection: `expand=author(name,avatar),tags(name),author.company`. Nothing is expanded
+        without it. Every expanded document passes its own collection's read rule with the
+        caller's identity; a reference that is missing, unreadable or in another organization is
+        `null`, the same in every case. Two levels, 5 entries, 100 ids per array and 2,000
+        documents per response by default (`BACKD_EXPAND_MAX_*`): `400 invalid_expand` names the
+        part that is wrong, `400 expand_too_large` is answered before any partial data. The
+        response is `private, no-cache`, never `304`; on a document the `ETag` stays its own
+        version. `where` and `order_by` can't use expanded fields. Ignored on writes.
+      schema: { type: string, maxLength: 1024 }
     teamQuery:
       name: team
       in: query
@@ -7762,7 +7783,7 @@ components:
       description: >-
         A weak validator over the page: the id, version and tag of every
         returned document, `has_more`, the cursor and the total. Absent with
-        `?file_links=true`. Send it in `If-None-Match` to revalidate the page.
+        `?file_links=true` and with `?expand`. Send it in `If-None-Match` to revalidate the page.
       schema: { type: string, pattern: '^W/"[0-9a-f]{32}"$' }
     NoStore:
       required: true
@@ -7776,10 +7797,17 @@ components:
     DataCacheControl:
       description: >-
         Shared caches must not store the response, and browsers must revalidate
-        it (`no-store` with `?file_links=true`, whose links expire). Only a
+        it (`no-store` with `?file_links=true`, whose links expire; never cached
+        or `304` with `?expand`). Only a
         request without credentials, to a collection with `cache.public` in its
         `collection.yaml`, gets `public, max-age=<seconds>` (at most 3600).
       schema: { type: string, pattern: '^(private, no-cache|private, no-store|public, max-age=[0-9]+)$' }
+    ExpandQueries:
+      description: Queries the expansion made on referenced collections, one per path and level. Only on a read with `expand`.
+      schema: { type: string, pattern: '^[0-9]+$' }
+    ExpandDocs:
+      description: Expanded documents in the response, counted once for each place they appear. Only on a read with `expand`.
+      schema: { type: string, pattern: '^[0-9]+$' }
     RetryAfter:
       required: true
       description: Seconds to wait before retrying.
@@ -7883,6 +7911,8 @@ components:
         ETag: { $ref: "#/components/headers/ETag" }
         Vary: { $ref: "#/components/headers/DataVary" }
         Cache-Control: { $ref: "#/components/headers/DataCacheControl" }
+        X-Backd-Expand-Queries: { $ref: "#/components/headers/ExpandQueries" }
+        X-Backd-Expand-Docs: { $ref: "#/components/headers/ExpandDocs" }
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Document" }
@@ -8358,7 +8388,7 @@ components:
               pattern: "^[a-z][a-z0-9_]{0,63}$"
               description: |
                 backd's codes: invalid_json, validation_error, invalid_query, invalid_path,
-                invalid_header, precondition_required, unauthenticated,
+                invalid_header, precondition_required, invalid_expand, expand_too_large, unauthenticated,
                 invalid_credentials, forbidden,
                 not_found, method_not_allowed, conflict, email_taken,
                 write_conflict, version_mismatch, id_required, invalid_id,
@@ -9109,7 +9139,30 @@ components:
       properties:
         id: { type: string }
         _meta: { $ref: "#/components/schemas/Meta" }
+        _expanded:
+          type: object
+          description: |
+            Only on a read with `expand`, and never stored: ignored on writes. One entry per
+            requested reference, keyed by its name.
+          additionalProperties: { $ref: "#/components/schemas/Expanded" }
       additionalProperties: true
+
+    Expanded:
+      description: |
+        What a reference expanded to: the referenced document (the selected fields and `id`, or
+        all of it; a second level is in its own `_expanded`), `null` when it is missing,
+        unreadable or in another organization, an array of those for a `many` reference
+        (positions kept), or `{items, truncated: true}` when the array was longer than the
+        limit.
+      oneOf:
+        - { type: "null" }
+        - { type: object, additionalProperties: true }
+        - { type: array, items: { oneOf: [{ type: "null" }, { type: object, additionalProperties: true }] } }
+        - type: object
+          required: [items, truncated]
+          properties:
+            items: { type: array, items: { oneOf: [{ type: "null" }, { type: object, additionalProperties: true }] } }
+            truncated: { const: true }
 
     PendingUpload:
       type: object

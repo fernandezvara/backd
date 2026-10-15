@@ -112,6 +112,7 @@ func setup(ctx context.Context, getenv func(string) string, logOut io.Writer) (*
 	if err != nil {
 		return nil, err
 	}
+	log.Info("reference expansion limits", "max_depth", cfg.Expand.MaxDepth, "max_paths", cfg.Expand.MaxPaths, "max_array", cfg.Expand.MaxArray, "max_docs", cfg.Expand.MaxDocs)
 	log.Info("config loaded", "version", version, "config_dir", cfg.ConfigDir, "fingerprint", fingerprint, "realms", len(reg.Realms), "databases", len(reg.Databases()))
 
 	var m *metrics.Metrics
@@ -502,7 +503,7 @@ func (a *app) handlerConfig() httpapi.Config {
 		MaxBodyBytes:      a.cfg.MaxBodyBytes,
 		MaxUploadBytes:    a.cfg.MaxUploadBytes,
 		ImageMaxPixels:    a.cfg.ImageMaxPixels,
-		ExpandMaxArray:    a.cfg.Expand.MaxArray,
+		Expand:            a.cfg.Expand,
 		ImageTimeout:      a.cfg.ImageTimeout,
 		ImageConcurrency:  a.cfg.ImageConcurrency,
 		OpTimeout:         a.cfg.MongoOpTimeout,

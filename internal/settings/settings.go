@@ -43,7 +43,7 @@ type Settings struct {
 	// ImageTimeout bounds the making of one image's versions (BACKD_IMAGE_TIMEOUT).
 	ImageTimeout time.Duration
 	// Expand are the instance's limits for reference expansion (BACKD_EXPAND_MAX_*).
-	Expand ExpandLimits
+	Expand registry.ExpandLimits
 	// ImageConcurrency is how many images one worker process makes versions of at once
 	// (BACKD_IMAGE_CONCURRENCY); 0 derives it from the container's CPU and memory limits.
 	ImageConcurrency int
@@ -385,28 +385,35 @@ func orDefault(v, def string) string {
 	return v
 }
 
-// ExpandLimits are what a reference expansion may cost, set per instance; a collection's
-// reference may only lower them.
-type ExpandLimits struct {
-	// MaxArray is the most ids of one `many` reference an expansion follows
-	// (BACKD_EXPAND_MAX_ARRAY).
-	MaxArray int
-}
-
-// DefaultExpandLimits are the limits when the environment sets none.
-var DefaultExpandLimits = ExpandLimits{MaxArray: registry.DefaultExpandMaxArray}
-
-// ExpandLimitsFrom reads the instance's expansion limits.
-func ExpandLimitsFrom(getenv func(string) string) (ExpandLimits, error) {
-	l := DefaultExpandLimits
-	if v := getenv("BACKD_EXPAND_MAX_ARRAY"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 {
-			return l, fmt.Errorf("BACKD_EXPAND_MAX_ARRAY must be a positive integer, got %q", v)
+// ExpandLimitsFrom reads the instance's reference expansion limits
+// (BACKD_EXPAND_MAX_DEPTH, _PATHS, _ARRAY and _DOCS). A collection's reference may only lower
+// the array limit.
+func ExpandLimitsFrom(getenv func(string) string) (registry.ExpandLimits, error) {
+	l := registry.DefaultExpandLimits
+	var errs []error
+	for _, v := range []struct {
+		env  string
+		dst  *int
+		max  int
+		hint string
+	}{
+		{"BACKD_EXPAND_MAX_DEPTH", &l.MaxDepth, 2, "1 or 2"},
+		{"BACKD_EXPAND_MAX_PATHS", &l.MaxPaths, 0, "a positive integer"},
+		{"BACKD_EXPAND_MAX_ARRAY", &l.MaxArray, 0, "a positive integer"},
+		{"BACKD_EXPAND_MAX_DOCS", &l.MaxDocs, 0, "a positive integer"},
+	} {
+		s := getenv(v.env)
+		if s == "" {
+			continue
 		}
-		l.MaxArray = n
+		n, err := strconv.Atoi(s)
+		if err != nil || n < 1 || (v.max > 0 && n > v.max) {
+			errs = append(errs, fmt.Errorf("%s must be %s, got %q", v.env, v.hint, s))
+			continue
+		}
+		*v.dst = n
 	}
-	return l, nil
+	return l, errors.Join(errs...)
 }
 
 // DefaultImageMaxPixels is the pixel limit for image versions when none is set.

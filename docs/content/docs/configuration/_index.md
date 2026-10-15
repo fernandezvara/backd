@@ -18,7 +18,10 @@ All runtime configuration comes from environment variables. At startup `backd` c
 | `MAX_BODY_BYTES` | no | `1048576` | Maximum request body size in bytes; larger bodies get `413` |
 | `BACKD_MAX_UPLOAD_BYTES` | no | `104857600` | Largest file a [proxy upload](../files/transfers/#uploading) may carry (100 MiB). A field's own `max_size` applies as well; the smaller wins |
 | `BACKD_IMAGE_MAX_PIXELS` | no | `40000000` | Most pixels (width × height) an image may have to get [versions](../files/file-fields/#image-versions): 40 megapixels. Read from the file's header, so a larger image is refused without being decoded. A field's `max_pixels` may only lower it, and a higher one stops startup |
-| `BACKD_EXPAND_MAX_ARRAY` | no | `100` | Most ids of one `many` [reference](config-dir/#references) that an expansion follows. A reference's `max_expand` may only lower it, and a higher one stops startup |
+| `BACKD_EXPAND_MAX_DEPTH` | no | `2` | Levels of [references](config-dir/#references) an `expand` follows: 1 or 2 |
+| `BACKD_EXPAND_MAX_PATHS` | no | `5` | Entries of one `expand` parameter |
+| `BACKD_EXPAND_MAX_ARRAY` | no | `100` | Most ids of one `many` reference that an expansion follows; the rest is returned as `truncated`. A reference's `max_expand` may only lower it, and a higher one stops startup |
+| `BACKD_EXPAND_MAX_DOCS` | no | `2000` | Most expanded documents in one response; more is `400 expand_too_large`, before any partial data. The four values are logged at startup |
 | `BACKD_IMAGE_TIMEOUT` | no | `30s` | How long a worker may take to decode one image and make all its versions; over it, the versions fail with `timeout` |
 | `BACKD_IMAGE_CONCURRENCY` | no | derived | How many images one worker process makes versions of at once. Derived from the container's limits: half the CPUs, and no more than fit in half the memory at 4 bytes per pixel of the largest allowed image (at least 1); the value in effect is logged at startup. See [sizing the worker](../files/file-fields/#sizing-the-worker) |
 | `MONGO_OP_TIMEOUT` | no | `10s` | Deadline for the storage work of each document request; exceeding it returns `503` |
