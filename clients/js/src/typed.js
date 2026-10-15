@@ -29,6 +29,49 @@
  * @property {any} [create] The input of a create: with the `id` a collection with `custom_id` requires. Types generated before custom ids have none, and then `input` is used.
  * @property {any} where
  * @property {any} order_by
+ * @property {Record<string, RefShape>} [expand] The collection's declared references, by name. Types generated before reference expansion have none.
+ */
+
+/**
+ * One declared reference: where it leads and whether the source holds many ids.
+ * @typedef {object} RefShape
+ * @property {string} db
+ * @property {string} collection
+ * @property {boolean} many
+ */
+
+/**
+ * What a reference expanded to, typed from the realm: the target's fields (only the selected ones
+ * and the `id` come back, so all but `id` are optional), `null` when it is missing or unreadable,
+ * an array of those for a `many` reference, or `{ items, truncated: true }` past the limit.
+ * @template {RealmShape} R
+ * @template {RefShape} X
+ * @typedef {X extends { db: infer DB, collection: infer N }
+ *   ? DB extends keyof R['db'] & string
+ *     ? N extends keyof R['db'][DB]['collections'] & string
+ *       ? X['many'] extends true
+ *         ? (ExpandedDoc<R, DB, N> | null)[] | { items: (ExpandedDoc<R, DB, N> | null)[], truncated: true }
+ *         : ExpandedDoc<R, DB, N> | null
+ *       : never
+ *     : never
+ *   : never } ExpandedValue
+ */
+
+/**
+ * A referenced document as an expansion returns it, with its own `_expanded` for a second level.
+ * @template {RealmShape} R
+ * @template {keyof R['db'] & string} DB
+ * @template {keyof R['db'][DB]['collections'] & string} N
+ * @typedef {Partial<R['db'][DB]['collections'][N]['doc']> & { id: string } & WithExpanded<R, R['db'][DB]['collections'][N]>} ExpandedDoc
+ */
+
+/**
+ * `_expanded`, for a collection that declares references.
+ * @template {RealmShape} R
+ * @template {CollectionShape} C
+ * @typedef {C extends { expand: infer E extends Record<string, RefShape> }
+ *   ? [keyof E] extends [never] ? unknown : { _expanded?: { [K in keyof E]?: ExpandedValue<R, E[K]> } }
+ *   : unknown} WithExpanded
  */
 
 /**
@@ -41,6 +84,7 @@
 
 /**
  * Options of a list: the collection's own `where` and `order_by` types.
+ * `expand` names the references to return in `_expanded`: a string, or `expand(...)`.
  * @template W, O
  * @typedef {Omit<import('./data.js').ListParams, 'where' | 'orderBy'> & { where?: W | string, orderBy?: O | O[] }} TypedListParams
  */
@@ -53,17 +97,18 @@
 
 /**
  * A collection with its documents typed.
+ * @template {RealmShape} R
  * @template {CollectionShape} C
  * @typedef {{
- *   list(params?: TypedListParams<C['where'], C['order_by']>, opts?: RequestOptions): Promise<TypedPage<C['doc']>>,
- *   iterate(params?: Omit<TypedListParams<C['where'], C['order_by']>, 'skip' | 'count'>, opts?: RequestOptions): AsyncGenerator<C['doc'], void, undefined>,
- *   get(id: string, opts?: import('./data.js').GetOptions): Promise<C['doc']>,
+ *   list(params?: TypedListParams<C['where'], C['order_by']>, opts?: RequestOptions): Promise<TypedPage<C['doc'] & WithExpanded<R, C>>>,
+ *   iterate(params?: Omit<TypedListParams<C['where'], C['order_by']>, 'skip' | 'count'>, opts?: RequestOptions): AsyncGenerator<C['doc'] & WithExpanded<R, C>, void, undefined>,
+ *   get(id: string, opts?: import('./data.js').GetOptions): Promise<C['doc'] & WithExpanded<R, C>>,
  *   create(doc: C extends { create: infer X } ? X : C['input'], opts?: import('./data.js').CreateOptions): Promise<C['doc']>,
  *   replace(id: string, doc: C['input'], opts?: import('./data.js').WriteOptions): Promise<C['doc']>,
  *   patch(id: string, patch: Partial<C['input']>, opts?: import('./data.js').WriteOptions): Promise<C['doc']>,
  *   delete(id: string, opts?: import('./data.js').DeleteOptions): Promise<void>,
- *   inOrg(org: string): TypedCollection<C>,
- *   inTeam(team: string): TypedCollection<C>,
+ *   inOrg(org: string): TypedCollection<R, C>,
+ *   inTeam(team: string): TypedCollection<R, C>,
  * }} TypedCollection
  */
 
@@ -78,7 +123,7 @@
  * @template {RealmShape} R
  * @template {keyof R['db'] & string} D
  * @typedef {Omit<Database, 'collection' | 'fn'> & {
- *   collection<C extends keyof R['db'][D]['collections'] & string>(name: C): TypedCollection<R['db'][D]['collections'][C]>,
+ *   collection<C extends keyof R['db'][D]['collections'] & string>(name: C): TypedCollection<R, R['db'][D]['collections'][C]>,
  *   fn<F extends CallableFunctions<R['db'][D]['functions']>>(
  *     name: F,
  *     input: R['db'][D]['functions'][F]['input'],

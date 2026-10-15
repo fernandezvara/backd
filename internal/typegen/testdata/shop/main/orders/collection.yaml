@@ -1,3 +1,10 @@
+references:
+  invoice:
+    field: invoice_id
+    collection: invoices
+  related:
+    collection: orders
+    many: true
 rules:
   read: user != nil
   create: user != nil

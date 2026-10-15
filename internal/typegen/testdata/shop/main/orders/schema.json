@@ -60,6 +60,15 @@
           }
         }
       }
+    },
+    "invoice_id": {
+      "type": "string"
+    },
+    "related": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     }
   },
   "$defs": {

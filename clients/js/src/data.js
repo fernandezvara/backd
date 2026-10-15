@@ -26,7 +26,18 @@ import { Job } from './functions.js'
 /**
  * A stored document: the collection's fields plus `id` and `_meta`.
  * @template {object} [T=Record<string, any>]
- * @typedef {T & { id: string, _meta: Meta }} Doc
+ * @typedef {T & { id: string, _meta: Meta, _expanded?: Record<string, any> }} Doc
+ */
+
+/**
+ * What a reference expanded to (`_expanded.<name>`, only on a read with `expand`): the referenced
+ * document (only the selected fields and `id`, when the request selected some), `null` when it is
+ * missing, unreadable for the caller or in another organization, an array of those for a `many`
+ * reference (positions kept), or `{ items, truncated: true }` when the array was longer than the
+ * server's limit. A second level is in the expanded document's own `_expanded`.
+ * An untyped client leaves `_expanded` as a record of `any`: type the client from the generated
+ * `Realm` for these shapes per reference.
+ * @typedef {Doc | null | (Doc | null)[] | { items: (Doc | null)[], truncated: true }} Expanded
  */
 
 /**
@@ -40,6 +51,8 @@ import { Job } from './functions.js'
  *   (same `where` and `orderBy`). Can't be combined with `skip`.
  * @property {boolean} [count]              Also return `total`.
  * @property {boolean} [fileLinks]          Add `url` and `expires_at` to every file of every document.
+ * @property {string} [expand]              References to return in `_expanded`: `'author(name),tags'`, or built
+ *   with `expand(['author', ['name']], 'tags')`. Never sent unless you set it.
  * @property {'only' | 'include'} [deleted] In a collection with `soft_delete`: `'only'` lists the deleted documents
  *   (the trash), `'include'` both. Needs the `restore` rule besides `read`.
  */
@@ -67,7 +80,8 @@ import { Job } from './functions.js'
  * Options for `get`. `deleted` reads a soft-deleted document (see `ListParams`).
  * `fileLinks` adds `url` and `expires_at` to every file the document holds: for content shown right
  * away (a gallery, a preview). They expire; for a download button, `downloadFile` gets a fresh link.
- * @typedef {RequestOptions & { deleted?: 'only' | 'include', fileLinks?: boolean }} GetOptions
+ * `expand` returns the declared references named in it in `_expanded` (see `expand()`).
+ * @typedef {RequestOptions & { deleted?: 'only' | 'include', fileLinks?: boolean, expand?: string }} GetOptions
  */
 
 /**
@@ -277,8 +291,8 @@ export class Collection {
    * @returns {Promise<Doc<T>>}
    */
   async get(id, opts = {}) {
-    const { deleted, fileLinks, ...rest } = opts
-    return (await this.client.request({ method: 'GET', path: [...this.path, id], query: { deleted, file_links: fileLinks || undefined }, ...rest })).data
+    const { deleted, fileLinks, expand, ...rest } = opts
+    return (await this.client.request({ method: 'GET', path: [...this.path, id], query: { deleted, file_links: fileLinks || undefined, expand }, ...rest })).data
   }
 
   /**
@@ -472,6 +486,7 @@ function listQuery(p) {
     count: p.count || undefined,
     deleted: p.deleted,
     file_links: p.fileLinks || undefined,
+    expand: p.expand,
   }
 }
 
