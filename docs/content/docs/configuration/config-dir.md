@@ -368,7 +368,7 @@ triggers:
 - **At most 20 triggers per collection**, lowered with `triggers.max_per_collection` in `realm.yaml`; `max_chain` (how deep writes caused by trigger runs may chain, at most the instance's `BACKD_TRIGGER_MAX_CHAIN`, default 16), `max_chained_per_minute` and `max_backlog` are the other `triggers:` keys of `realm.yaml`.
 - A collection with triggers needs [pre-change images](../../operations/events/#requirements), which `backd provision` enables.
 
-Triggers are **declared and checked** today; running them is planned. Until the dispatcher lands, a trigger is validated and enables pre-change images, and no function is run.
+The [trigger dispatcher](../../operations/events/#the-trigger-dispatcher) queues one background job for each change a trigger matches, and a worker runs it like any [async function](../../functions/jobs/) (a realm needs auth enabled, and a running worker). The job's input carries the event, the document's id and version and what changed; the rest of the function contract (the `fields` bodies, `by`, chain tracking) is planned, so `fields`, `session` and `ordered` are checked today and take effect in a later step.
 
 ### Public caching
 

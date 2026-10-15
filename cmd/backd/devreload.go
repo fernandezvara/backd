@@ -193,6 +193,9 @@ func (r *reloader) reload(ctx context.Context, changed []string) (*reloadEvent, 
 	if next.events != nil {
 		next.events.SetWatched(mongodb.RealtimeWatchSet(reg))
 	}
+	if next.triggers != nil {
+		next.triggers.SetRegistry(reg)
+	}
 	r.public.Store(next.handler())
 	if r.internal != nil {
 		r.internal.Store(next.internalHandler())

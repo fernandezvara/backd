@@ -440,6 +440,9 @@ type Store interface {
 
 	// EnqueueJob stores a new async job (roadmap F11), queued for a worker.
 	EnqueueJob(ctx context.Context, j Job) error
+	// EnqueueJobs inserts jobs that carry their own ids, skipping those that exist; it returns
+	// how many were new.
+	EnqueueJobs(ctx context.Context, jobs []Job) (int, error)
 	// ClaimJob atomically claims the oldest job that's never been claimed,
 	// or whose lease has expired, leasing it to workerID until at plus
 	// the job's own timeout plus margin. found is false when there is

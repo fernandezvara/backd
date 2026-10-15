@@ -52,7 +52,7 @@ func (a *app) openEvents() func() {
 		a.log.Info("BACKD_EVENTS=false: this instance reads no change stream and serves no realtime subscriptions")
 		return func() {}
 	}
-	src := &feedSource{uri: a.cfg.MongoURI}
+	src := a.feedSource()
 	consumer := &changefeed.Consumer{Name: "realtime", Source: src, Log: a.log, Observer: a.metrics}
 	set := mongodb.RealtimeWatchSet(a.reg)
 	consumer.SetWatched(set)
@@ -60,8 +60,14 @@ func (a *app) openEvents() func() {
 	if !set.Empty() {
 		a.log.Info("change feed ready", "realtime_collections", len(set.Collections), "opens_on", "first subscriber")
 	}
-	return func() {
-		a.events.Close()
-		src.close()
+	return func() { a.events.Close() }
+}
+
+// feedSource is the instance's change-stream source, shared by the realtime consumer and the
+// trigger dispatcher (each opens its own stream on it). It connects on first use.
+func (a *app) feedSource() *feedSource {
+	if a.feed == nil {
+		a.feed = &feedSource{uri: a.cfg.MongoURI}
 	}
+	return a.feed
 }

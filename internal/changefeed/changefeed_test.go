@@ -137,13 +137,13 @@ func TestConsumerDeliversAndTracksPosition(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan Position)
 	go func() { p, _ := c.Run(ctx, nil, rec); done <- p }()
-	rec.wait(t, 3)
+	rec.wait(t, 4) // the position at open, two changes and a quiet period
 	cancel()
 	pos := <-done
 	if string(pos) != "p3" {
 		t.Errorf("final position = %q, want p3", pos)
 	}
-	if len(rec.changes) != 2 || rec.changes[0].Op != Created || rec.changes[1].Op != Removed || len(rec.idles) != 1 || string(rec.idles[0]) != "p2" {
+	if len(rec.changes) != 2 || rec.changes[0].Op != Created || rec.changes[1].Op != Removed || len(rec.idles) != 2 || string(rec.idles[0]) != "p0" || string(rec.idles[1]) != "p2" {
 		t.Errorf("changes=%+v idles=%q", rec.changes, rec.idles)
 	}
 	if !st.closed.Load() {

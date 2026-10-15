@@ -22,6 +22,7 @@ All runtime configuration comes from environment variables. At startup `backd` c
 | `BACKD_EXPAND_MAX_PATHS` | no | `5` | Entries of one `expand` parameter |
 | `BACKD_EXPAND_MAX_ARRAY` | no | `100` | Most ids of one `many` reference that an expansion follows; the rest is returned as `truncated`. A reference's `max_expand` may only lower it, and a higher one stops startup |
 | `BACKD_EXPAND_MAX_DOCS` | no | `2000` | Most expanded documents in one response; more is `400 expand_too_large`, before any partial data. The four values are logged at startup |
+| `BACKD_DEPLOYMENT_ID` | no | `default` | Names this backd deployment (1 to 32 characters of `a-z`, `0-9`, `-`, `_`). Only needed when several backd deployments share one MongoDB cluster: it keeps their [trigger dispatchers](../operations/events/#the-trigger-dispatcher) apart |
 | `BACKD_TRIGGER_MAX_CHAIN` | no | `16` | How deep a chain of writes caused by [trigger](config-dir/#triggers) runs may go (1 to 64). A realm's `triggers.max_chain` may only lower it, and a higher one stops startup |
 | `BACKD_AGGREGATE_TIME` | no | `5s` | The most time one [aggregation](config-dir/#aggregations) may run (100ms to 1m). A collection's `aggregate.limits.time` may only lower it, and a higher one stops startup |
 | `BACKD_AGGREGATE_MAX_GROUPS` | no | `1000` | The most groups one aggregation may return (1 to 10000). A collection may only lower it |

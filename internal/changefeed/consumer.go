@@ -115,7 +115,10 @@ func (c *Consumer) Run(ctx context.Context, after Position, h Handler) (Position
 		}
 		attempt = 0
 		if pos == nil {
+			// A stream opened from now: its position is known at once, and a handler that
+			// stores positions must have one even if nothing is ever written.
 			pos = stream.Position()
+			h.Idle(ctx, pos)
 		}
 		c.state(true, set.Count())
 		c.log().Debug("change stream open", "consumer", c.Name, "databases", set.describe(), "namespaces", set.Count())

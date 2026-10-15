@@ -364,27 +364,36 @@ func jobFromDoc(d jobDoc) auth.Job {
 	return j
 }
 
-// EnqueueJob inserts a new job, queued for a worker to claim.
-func (s *AuthStore) EnqueueJob(ctx context.Context, j auth.Job) error {
+// jobToDoc is the stored form of a new job.
+func jobToDoc(j auth.Job) (jobDoc, error) {
 	input, err := decodeJSONAny(j.Input)
 	if err != nil {
-		return err
+		return jobDoc{}, err
 	}
 	result, err := jobResultToDoc(j.Result)
 	if err != nil {
-		return err
+		return jobDoc{}, err
 	}
 	var completed *time.Time
 	if !j.CompletedAt.IsZero() {
 		completed = &j.CompletedAt
 	}
-	_, err = s.jobs().InsertOne(ctx, jobDoc{
+	return jobDoc{
 		ID: j.ID, Database: j.Database, Function: j.Function, Input: input,
 		CallerActor: j.CallerActor, CallerUserID: j.CallerUserID, CallerKeyHash: j.CallerKeyHash, Scheduled: j.Scheduled, Status: j.Status,
 		ActsAsFunction: j.ActsAsFunction, Email: emailJobToDoc(j.Email), Erase: eraseToDoc(j.Erase), Revoke: revokeToDoc(j.Revoke), Push: pushToDoc(j.Push), Check: checkToDoc(j.Check), Image: imageToDoc(j.Image), Assign: assignToDoc(j.Assign), OrgDelete: orgDeleteToDoc(j.OrgDelete), Exclusive: j.Exclusive, Origin: j.Origin, ParentID: j.ParentID, RerunOf: j.RerunOf, Depth: int32(j.Depth),
 		Attempts: 0, TimeoutMS: j.TimeoutMS, RequestID: j.RequestID,
 		CreatedAt: j.CreatedAt, CompletedAt: completed, ExpiresAt: j.ExpiresAt, Result: result,
-	})
+	}, nil
+}
+
+// EnqueueJob inserts a new job, queued for a worker to claim.
+func (s *AuthStore) EnqueueJob(ctx context.Context, j auth.Job) error {
+	doc, err := jobToDoc(j)
+	if err != nil {
+		return err
+	}
+	_, err = s.jobs().InsertOne(ctx, doc)
 	if mongo.IsDuplicateKeyError(err) {
 		if strings.Contains(err.Error(), "exclusive") { // the unique index on exclusive, not the id
 			return auth.ErrJobExclusive
@@ -392,6 +401,39 @@ func (s *AuthStore) EnqueueJob(ctx context.Context, j auth.Job) error {
 		return auth.ErrJobExists
 	}
 	return err
+}
+
+// EnqueueJobs inserts jobs that have an id of their own, in one unordered write. A job whose
+// id exists already is skipped, not an error: the ids are derived from what the job is for, so
+// that doing the same thing twice queues it once. It returns how many were new.
+func (s *AuthStore) EnqueueJobs(ctx context.Context, jobs []auth.Job) (int, error) {
+	if len(jobs) == 0 {
+		return 0, nil
+	}
+	docs := make([]any, len(jobs))
+	for i, j := range jobs {
+		d, err := jobToDoc(j)
+		if err != nil {
+			return 0, err
+		}
+		docs[i] = d
+	}
+	res, err := s.jobs().InsertMany(ctx, docs, options.InsertMany().SetOrdered(false))
+	if err == nil {
+		return len(res.InsertedIDs), nil
+	}
+	var bwe mongo.BulkWriteException
+	if errors.As(err, &bwe) && len(bwe.WriteErrors) > 0 {
+		dups := 0
+		for _, we := range bwe.WriteErrors {
+			if we.Code != 11000 {
+				return len(jobs) - len(bwe.WriteErrors), err
+			}
+			dups++
+		}
+		return len(jobs) - dups, nil
+	}
+	return 0, err
 }
 
 // ClaimJob atomically claims the oldest claimable job: never claimed

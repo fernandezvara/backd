@@ -58,6 +58,18 @@ backd provision --disable-preimages --yes    # removes them
 
 Removing them **deletes the images stored so far for good**. It only touches configured collections that no longer need them.
 
+## The trigger dispatcher
+
+When a collection declares [`triggers:`](../../configuration/config-dir/#triggers), one instance of the deployment dispatches them. Instances with `BACKD_TRIGGERS=true` (the default) compete for a **lease**, a document in MongoDB's `backd___deployment` database; the holder reads the change stream and queues one async job for each change a trigger matches. Nothing competes while no trigger is declared.
+
+- **At least once, without duplicates.** The holder stores the position it has reached only after the jobs before it are queued. After a crash or a handoff the next holder starts from that position and reads some changes again; each job's id is derived from the change and the trigger, so the queue collapses the repeats (`trigger_jobs_deduplicated_total`). A function still has to be written to tolerate being run twice, because a job can fail after it was queued and be retried.
+- **One leader at a time.** The lease has a time to live (15 seconds) and is renewed by the holder; an instance that was paused or partitioned and lost it can no longer move the position, because the position is stored with the lease and checked against it.
+- **A worker runs the jobs.** The dispatcher only queues. Jobs run while at least one [worker](../../functions/running/) is up; with none, they wait in the queue and `trigger_dispatch_lag_seconds` stays low while the jobs' age grows (see `jobs_oldest_wait_seconds`).
+- **Gaps are recorded, never silent.** If the dispatcher was away longer than the oplog reaches, the changes in between are gone from the stream: it records a gap (`window`, with the interval) in `backd___deployment.trigger_gaps`, logs an error and goes on from now. A change that arrives without the image a condition needs (`before`, `changed()`) is skipped and recorded (`preimage_missing`, with the document ids). Both are counted in `trigger_gaps_total`.
+- **Several deployments, one cluster.** Give each its own [`BACKD_DEPLOYMENT_ID`](../../configuration/) so their dispatchers don't share a lease.
+
+Changes made by a dispatcher's own jobs can trigger others; limits on chains and `ordered` triggers are planned.
+
 ## Sizing the history
 
 A stream that falls behind can only catch up while MongoDB still holds the history it needs: its **oplog**. A consumer that is offline longer than the oplog window loses its position and continues from now, which `backd` reports as a gap (`changefeed_reopens_total{reason="history_lost"}`). Size the oplog for your write volume and the longest outage you want to survive.
@@ -65,6 +77,6 @@ A stream that falls behind can only catch up while MongoDB still holds the histo
 ## What is planned
 
 - **Subscriptions** (`POST /v1/{realm}/_realtime`), with per-subscriber rules and immediate revocation.
-- **Triggers**, a function run after a document changes, on a dispatcher with a durable position.
+- **The rest of the trigger contract**: document bodies in the job (`fields`), who wrote (`by`), chain limits, ordered runs, `backd triggers status` and `rescan`.
 
 Their [design](https://github.com/fernandezvara/backd/blob/main/design/triggers-and-realtime.md) is in the repository. Until they land, the feed has no subscribers and the only visible effects are the two settings, the `realtime:` key and the [metrics](../metrics/).

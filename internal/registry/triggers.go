@@ -139,6 +139,9 @@ func loadTriggers(c *Collection, settings RealmSettings, path string) error {
 	if len(doc.Triggers) == 0 {
 		return nil
 	}
+	if !settings.AuthEnabled {
+		return fmt.Errorf("%s: triggers: only apply when the realm has auth enabled (realm.yaml has `auth: disabled`): their jobs and records are kept in the realm's system database", path)
+	}
 	var errs []error
 	for _, name := range slices.Sorted(maps.Keys(doc.Triggers)) {
 		fail := func(format string, args ...any) {

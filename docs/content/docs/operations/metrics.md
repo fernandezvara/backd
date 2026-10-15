@@ -74,6 +74,14 @@ All names start with `backd_`; durations are in seconds.
 | `changefeed_lag_seconds` | `consumer` | How far behind the cluster the last change read was. |
 | `changefeed_reopens_total` | `consumer`, `reason` | Streams opened again: `set_changed` (a reload changed what is watched), `error`, or `history_lost` (the change history no longer reached the position). |
 | `changefeed_events_total` | `consumer`, `op`, `source` | Changes read, by `created`/`updated`/`removed` and `app` or `system`. |
+| `trigger_events_total` | `realm`, `collection`, `trigger`, `outcome` | Changes a [trigger](../events/#the-trigger-dispatcher) considered: `matched` (a job was made), `no_match`, `missing_preimage` (the image its condition needs was not in the change) or `error`. |
+| `trigger_jobs_enqueued_total` | `realm` | Jobs the dispatcher queued. |
+| `trigger_jobs_deduplicated_total` | `realm` | Jobs the queue collapsed: the same change was read again after a restart or a handoff. |
+| `trigger_dispatch_lag_seconds` | | Seconds from the newest change of a batch to its jobs being queued. |
+| `trigger_watermark_timestamp_seconds` | | When this instance last stored the dispatcher's position: alert when its age grows while it holds the lease. |
+| `trigger_lease_held`, `trigger_lease_epoch` | | `1` while this instance holds the dispatcher's lease, and the lease's epoch. |
+| `trigger_lease_acquired_total` | | Times this instance took the lease. |
+| `trigger_gaps_total` | `realm`, `reason` | Gaps recorded: `window` (the dispatcher was away longer than MongoDB keeps history) or `preimage_missing`. |
 | `build_info` | `version`, `commit` | Always `1`. |
 
 The Go runtime (`go_*`) and process (`process_*`) metrics are included.

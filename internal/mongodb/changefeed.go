@@ -326,7 +326,7 @@ func (s *changeStream) decode(raw bson.Raw) (c changefeed.Change, ok bool, err e
 	}
 	c = changefeed.Change{
 		Realm: n.Realm, DB: ev.NS.DB, Coll: ev.NS.Coll, System: s.system[key], Op: op, Replace: replace,
-		At: time.Unix(int64(ev.ClusterTime.T), 0).UTC(),
+		At: time.Unix(int64(ev.ClusterTime.T), 0).UTC(), Increment: ev.ClusterTime.I,
 	}
 	for _, e := range ev.DocumentKey {
 		if e.Key == "_id" {

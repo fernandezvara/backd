@@ -22,7 +22,7 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := Settings{ConfigDir: "/cfg", MongoURI: "mongodb://m", HTTPAddr: ":8080", ProvisionMode: ProvisionApply, LogLevel: slog.LevelInfo, MaxBodyBytes: 1 << 20, MaxUploadBytes: 100 << 20, ImageMaxPixels: 40_000_000, ImageTimeout: 30 * time.Second, Expand: registry.DefaultExpandLimits, Aggregate: registry.DefaultAggregateLimits, TriggerLimits: registry.DefaultTriggerLimits,
+	want := Settings{ConfigDir: "/cfg", MongoURI: "mongodb://m", HTTPAddr: ":8080", ProvisionMode: ProvisionApply, LogLevel: slog.LevelInfo, MaxBodyBytes: 1 << 20, MaxUploadBytes: 100 << 20, ImageMaxPixels: 40_000_000, ImageTimeout: 30 * time.Second, Expand: registry.DefaultExpandLimits, Aggregate: registry.DefaultAggregateLimits, TriggerLimits: registry.DefaultTriggerLimits, DeploymentID: "default",
 		MongoOpTimeout: 10 * time.Second, ShutdownTimeout: 15 * time.Second, AdminUIIdle: 30 * time.Minute, InternalAddr: ":8081", WorkerConcurrency: 10, Events: true, Triggers: true}
 	if !reflect.DeepEqual(s, want) {
 		t.Errorf("got %+v, want %+v", s, want)

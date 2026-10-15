@@ -84,8 +84,10 @@ type Change struct {
 	System bool // a change of a system collection: only Key, Op and Fields are filled
 	Op     Op
 	Key    string // the document's id
-	// At is the cluster time of the change.
-	At time.Time
+	// At is the cluster time of the change, to the second; Increment orders the changes of
+	// one second. Together they identify the change within the history.
+	At        time.Time
+	Increment uint32
 	// Version is the document's `_meta.version` after the change (before it, for a removal);
 	// 0 when the images are not available.
 	Version int64

@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -46,6 +47,9 @@ type Settings struct {
 	Expand registry.ExpandLimits
 	// Aggregate are the instance's limits for aggregations (BACKD_AGGREGATE_*).
 	Aggregate registry.AggregateLimits
+	// DeploymentID is BACKD_DEPLOYMENT_ID (default "default"): what keeps the trigger dispatcher
+	// of this backd deployment apart from another one's when both share a MongoDB cluster.
+	DeploymentID string
 	// TriggerLimits are the instance's trigger limits (BACKD_TRIGGER_MAX_CHAIN).
 	TriggerLimits registry.TriggerLimits
 	// ImageConcurrency is how many images one worker process makes versions of at once
@@ -141,6 +145,8 @@ func LoadMetrics(getenv func(string) string, reserved ...string) (addr, token st
 	}
 	return addr, token, nil
 }
+
+var deploymentIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
 
 // minSecretLen is the minimum length of the executor token and callback key.
 const minSecretLen = 32
@@ -247,6 +253,10 @@ func Load(getenv func(string) string) (Settings, error) {
 		s.Dev = true
 	default:
 		errs = append(errs, fmt.Errorf("BACKD_DEV must be true or false, got %q", v))
+	}
+	s.DeploymentID = orDefault(getenv("BACKD_DEPLOYMENT_ID"), "default")
+	if !deploymentIDPattern.MatchString(s.DeploymentID) {
+		errs = append(errs, fmt.Errorf("BACKD_DEPLOYMENT_ID must be 1 to 32 characters of a-z, 0-9, - and _, got %q", s.DeploymentID))
 	}
 	s.Events, s.Triggers = true, true
 	for _, flag := range []struct {

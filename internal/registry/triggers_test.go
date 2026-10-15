@@ -175,3 +175,11 @@ func TestRealmTriggerSettingsValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestTriggersNeedAuthEnabled(t *testing.T) {
+	yaml := "triggers:\n  t:\n    events: [created]\n    function: main/on-paid\n"
+	_, err := triggerTree(t, yaml, "", "auth: disabled\n")
+	if err == nil || !strings.Contains(err.Error(), "triggers: only apply when the realm has auth enabled") {
+		t.Fatalf("err = %v", err)
+	}
+}

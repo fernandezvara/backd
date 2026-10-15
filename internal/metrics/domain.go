@@ -36,6 +36,10 @@ type domain struct {
 
 	feedOpen, feedWatched, feedLag *prometheus.GaugeVec
 	feedReopened, feedEvents       *prometheus.CounterVec
+
+	trigEvents, trigEnqueued, trigDeduped, trigGaps *prometheus.CounterVec
+	trigHandoffs                                    prometheus.Counter
+	trigLag, trigWatermark, trigLease, trigEpoch    prometheus.Gauge
 }
 
 func newDomain() domain {
@@ -48,6 +52,15 @@ func newDomain() domain {
 	snap := &jobSnapshot{stats: map[string][]JobStat{}, needsAttention: map[string]int64{}}
 	return domain{
 		jobs:            snap,
+		trigEvents:      counter("trigger_events_total", "Changes a trigger considered, by realm, collection, trigger and outcome: matched (a job was made), no_match (its condition was false), missing_preimage (the image its condition needs was not there) or error.", "realm", "collection", "trigger", "outcome"),
+		trigEnqueued:    counter("trigger_jobs_enqueued_total", "Jobs the trigger dispatcher queued, by realm.", "realm"),
+		trigDeduped:     counter("trigger_jobs_deduplicated_total", "Jobs the queue collapsed because the same change had been queued before (a replay), by realm.", "realm"),
+		trigGaps:        counter("trigger_gaps_total", "Stretches of changes the dispatcher recorded as gaps, by realm and reason (window, preimage_missing).", "realm", "reason"),
+		trigHandoffs:    prometheus.NewCounter(prometheus.CounterOpts{Namespace: Namespace, Name: "trigger_lease_acquired_total", Help: "Times this instance took the trigger dispatcher's lease."}),
+		trigLag:         prometheus.NewGauge(prometheus.GaugeOpts{Namespace: Namespace, Name: "trigger_dispatch_lag_seconds", Help: "Seconds from the newest change a batch carried to its jobs being queued."}),
+		trigWatermark:   prometheus.NewGauge(prometheus.GaugeOpts{Namespace: Namespace, Name: "trigger_watermark_timestamp_seconds", Help: "When this instance last stored the dispatcher's position; its age is what to alert on."}),
+		trigLease:       prometheus.NewGauge(prometheus.GaugeOpts{Namespace: Namespace, Name: "trigger_lease_held", Help: "1 while this instance holds the trigger dispatcher's lease."}),
+		trigEpoch:       prometheus.NewGauge(prometheus.GaugeOpts{Namespace: Namespace, Name: "trigger_lease_epoch", Help: "The epoch of the lease this instance last held."}),
 		feedOpen:        gauge("changefeed_open", "1 while a change-stream consumer (realtime, dispatcher) has its stream open, 0 while it is idle or closed.", "consumer"),
 		feedWatched:     gauge("changefeed_watched_namespaces", "Collections a consumer's open stream watches.", "consumer"),
 		feedLag:         gauge("changefeed_lag_seconds", "Seconds between the cluster time of the last change a consumer read and reading it.", "consumer"),
@@ -94,7 +107,7 @@ func newDomain() domain {
 }
 
 func (d domain) collectors() []prometheus.Collector {
-	return []prometheus.Collector{newJobsCollector(d.jobs), d.jobsDone, d.jobsRetried, d.jobsExpired, d.refreshErrors, d.egress, d.execRuns, d.execTime, d.execRunning, d.sessionsStarted, d.sessionsEnded, d.rateLimited, d.idConflicts, d.aggregations, d.aggregateTime, d.fnCalls, d.fnTime, d.fnRefusals, d.fnReplays, d.execErrors, d.pushUsers, d.pushDeliveries, d.pushPruned, d.feedOpen, d.feedWatched, d.feedLag, d.feedReopened, d.feedEvents}
+	return []prometheus.Collector{newJobsCollector(d.jobs), d.jobsDone, d.jobsRetried, d.jobsExpired, d.refreshErrors, d.egress, d.execRuns, d.execTime, d.execRunning, d.sessionsStarted, d.sessionsEnded, d.rateLimited, d.idConflicts, d.aggregations, d.aggregateTime, d.fnCalls, d.fnTime, d.fnRefusals, d.fnReplays, d.execErrors, d.pushUsers, d.pushDeliveries, d.pushPruned, d.feedOpen, d.feedWatched, d.feedLag, d.feedReopened, d.feedEvents, d.trigEvents, d.trigEnqueued, d.trigDeduped, d.trigGaps, d.trigHandoffs, d.trigLag, d.trigWatermark, d.trigLease, d.trigEpoch}
 }
 
 // PushUsers counts n users by what planning a push did with them.
@@ -255,5 +268,72 @@ func (m *Metrics) FeedEvent(consumer string, op changefeed.Op, system bool) {
 func (m *Metrics) FeedLag(consumer string, lag time.Duration) {
 	if m != nil {
 		m.feedLag.WithLabelValues(consumer).Set(lag.Seconds())
+	}
+}
+
+// TriggerObserver is the dispatcher's view of the metrics (triggers.Observer). A nil one
+// does nothing.
+type TriggerObserver struct{ m *Metrics }
+
+// TriggerObserver returns the observer for the trigger dispatcher; nil when metrics are off.
+func (m *Metrics) TriggerObserver() *TriggerObserver {
+	if m == nil {
+		return nil
+	}
+	return &TriggerObserver{m}
+}
+
+// Event counts a change a trigger considered.
+func (o *TriggerObserver) Event(realm, collection, trigger, outcome string) {
+	if o != nil {
+		o.m.trigEvents.WithLabelValues(realm, collection, trigger, outcome).Inc()
+	}
+}
+
+// Enqueued counts the jobs queued and the replays collapsed.
+func (o *TriggerObserver) Enqueued(realm string, created, duplicates int) {
+	if o == nil {
+		return
+	}
+	if created > 0 {
+		o.m.trigEnqueued.WithLabelValues(realm).Add(float64(created))
+	}
+	if duplicates > 0 {
+		o.m.trigDeduped.WithLabelValues(realm).Add(float64(duplicates))
+	}
+}
+
+// Lag records the time from a change to its jobs being queued.
+func (o *TriggerObserver) Lag(d time.Duration) {
+	if o != nil {
+		o.m.trigLag.Set(d.Seconds())
+	}
+}
+
+// Watermark records when the position was last stored.
+func (o *TriggerObserver) Watermark(at time.Time) {
+	if o != nil {
+		o.m.trigWatermark.Set(float64(at.Unix()))
+	}
+}
+
+// Lease records whether this instance holds the lease.
+func (o *TriggerObserver) Lease(held bool, epoch int64) {
+	if o == nil {
+		return
+	}
+	v := 0.0
+	if held {
+		v = 1
+		o.m.trigHandoffs.Inc()
+	}
+	o.m.trigLease.Set(v)
+	o.m.trigEpoch.Set(float64(epoch))
+}
+
+// Gap counts a gap recorded.
+func (o *TriggerObserver) Gap(realm, reason string) {
+	if o != nil {
+		o.m.trigGaps.WithLabelValues(realm, reason).Inc()
 	}
 }

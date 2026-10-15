@@ -312,6 +312,19 @@ func (s *Users) EnqueueJob(ctx context.Context, j Job) (Job, error) {
 	return j, nil
 }
 
+// EnqueueJobs stores jobs that carry an id of their own — derived from what they are for, so
+// that the same work queued twice is one job — and returns how many were new. The rest are
+// replays and are skipped.
+func (s *Users) EnqueueJobs(ctx context.Context, jobs []Job) (int, error) {
+	now := s.now()
+	for i := range jobs {
+		jobs[i].Status = JobQueued
+		jobs[i].CreatedAt = now
+		jobs[i].ExpiresAt = now.Add(pendingJobTTL)
+	}
+	return s.Store.EnqueueJobs(ctx, jobs)
+}
+
 // JobFilter selects jobs to list. Zero fields match everything.
 type JobFilter struct {
 	Database, Function string    // Function is the name only; "" matches every function

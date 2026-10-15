@@ -35,6 +35,7 @@ import (
 	"github.com/fernandezvara/backd/internal/settings"
 	"github.com/fernandezvara/backd/internal/storage"
 	"github.com/fernandezvara/backd/internal/templates"
+	"github.com/fernandezvara/backd/internal/triggers"
 )
 
 // version is set at build time (-ldflags "-X main.version=v1.2.3") by
@@ -92,6 +93,10 @@ type app struct {
 	reloadErrors func() []string
 	// disablePreImages and yes are provision's --disable-preimages and --yes.
 	disablePreImages, yes bool
+	// feed is the change-stream source both consumers read through; it connects on first use.
+	feed *feedSource
+	// triggers is the trigger dispatcher (BACKD_TRIGGERS); nil when this instance has none.
+	triggers *triggers.Dispatcher
 	// events is the realtime change feed (BACKD_EVENTS): it opens its stream when the first
 	// subscriber arrives and closes it after the last one left. nil when events are off.
 	events *changefeed.Lazy
@@ -242,6 +247,7 @@ func serve(ctx context.Context, a *app) error {
 		}
 	}
 	defer a.openEvents()()
+	defer a.feedSource().close()
 
 	var reload *reloader
 	var publicHandler http.Handler
@@ -272,6 +278,8 @@ func serve(ctx context.Context, a *app) error {
 	}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	defer a.startTriggers(ctx)()
 
 	if reload != nil {
 		a.log.Warn("BACKD_DEV=true: the config reloads automatically when its files change (a change that doesn't validate is refused and the previous config keeps running) — local development only, never enable this in production")

@@ -246,7 +246,7 @@ One dispatcher serves the whole deployment, because the stream it reads is deplo
 ### 9.1 Event id and job key
 
 - **`event.id`** = hash(namespace, document key, cluster time, operation, `_meta.version`). It does not use the resume token (token bytes aren't a stable identity) and does not rely on `(id, version)` alone (delete and recreate with a custom id repeats version 1). Identical for the same change seen twice; meaningless to anyone without the stream.
-- **Job key** = hash(`event.id`, trigger name). One change can match several triggers, so the event id alone would collapse their jobs. The jobs collection gets a **unique index on the job key**, created by the provisioner like every index (and reported missing by `verify`); an insert that hits it is a dedup hit.
+- **Job key** = hash(`event.id`, trigger name). One change can match several triggers, so the event id alone would collapse their jobs. The job key **is the job's id** (`_id`, shaped like any job id), so the jobs collection's own unique index gives the guarantee and no extra index exists; an insert that hits it is a dedup hit. The window is the life of the job record: pending jobs expire after 48 hours, finished ones with `functions.job_retention`, which should not be shorter than the change history the operator keeps.
 - Functions that must be exactly-once in effect deduplicate on `event.id` (the docs show a seen-ids collection pattern); `functions history` shows it.
 
 At-least-once remains possible — a job can fail after enqueue and `retry:` re-runs it — so handlers are written idempotent regardless.

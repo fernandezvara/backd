@@ -775,6 +775,21 @@ func (m *MemStore) EnqueueJob(_ context.Context, j auth.Job) error {
 	return nil
 }
 
+// EnqueueJobs inserts jobs that carry their own ids, skipping the ones that exist.
+func (m *MemStore) EnqueueJobs(_ context.Context, jobs []auth.Job) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	created := 0
+	for _, j := range jobs {
+		if _, ok := m.jobs[j.ID]; ok {
+			continue
+		}
+		m.jobs[j.ID] = memJob{Job: j}
+		created++
+	}
+	return created, nil
+}
+
 // ClaimJob picks the oldest job that's never been claimed, or whose
 // lease has expired, the same rule the MongoDB store's query applies.
 func (m *MemStore) ClaimJob(_ context.Context, workerID string, at time.Time, margin time.Duration) (auth.Job, bool, error) {
