@@ -31,10 +31,10 @@ type Dispatcher struct {
 	Holder string
 	// Config returns a realm's app configuration, for conditions that use appConfig; may be
 	// nil. reg is the configuration the dispatcher is running.
-	Config   func(ctx context.Context, reg *registry.Registry, realm string) map[string]any
+	Config func(ctx context.Context, reg *registry.Registry, realm string) map[string]any
 	// Limits returns a realm's trigger limits (the instance's, lowered by the realm's); nil
 	// is registry.DefaultTriggerLimits for every realm.
-	Limits func(reg *registry.Registry, realm string) registry.TriggerLimits
+	Limits   func(reg *registry.Registry, realm string) registry.TriggerLimits
 	Observer Observer
 	Log      *slog.Logger
 	Now      func() time.Time

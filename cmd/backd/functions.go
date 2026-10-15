@@ -168,16 +168,16 @@ func functionsTypes(c *kli.CommandContext) error {
 
 // invocationRecord mirrors what GET _admin/invocations returns.
 type invocationRecord struct {
-	ID         string          `json:"id"`
-	At         string          `json:"at"`
-	Function   string          `json:"function"`
-	Actor      string          `json:"actor"`
-	Mode       string          `json:"mode"`
-	Status     string          `json:"status"`
-	Code       *string         `json:"code"`
-	DurationMS int64           `json:"duration_ms"`
-	RequestID  *string         `json:"request_id"`
-	JobID      *string         `json:"job_id"`
+	ID         string  `json:"id"`
+	At         string  `json:"at"`
+	Function   string  `json:"function"`
+	Actor      string  `json:"actor"`
+	Mode       string  `json:"mode"`
+	Status     string  `json:"status"`
+	Code       *string `json:"code"`
+	DurationMS int64   `json:"duration_ms"`
+	RequestID  *string `json:"request_id"`
+	JobID      *string `json:"job_id"`
 	// Origin is what started the call (`trigger:<database>/<collection>/<trigger>` for a
 	// trigger run) and EventID the change a trigger run was made for.
 	Origin  *string         `json:"origin"`
