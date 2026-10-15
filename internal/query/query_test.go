@@ -273,3 +273,38 @@ func TestParseWhereOnDateFields(t *testing.T) {
 		t.Errorf("text: %v %v", got, err)
 	}
 }
+
+func TestParseWhereSearch(t *testing.T) {
+	fields := map[string]registry.Field{"status": {Types: []string{"string"}}}
+	f, text, err := ParseWhereSearch(`{"$search": "red \"running shoes\" -kids", "status": "published"}`, fields)
+	if err != nil || text != `red "running shoes" -kids` || f == nil {
+		t.Fatalf("got %v %q %v", f, text, err)
+	}
+	if _, text, err := ParseWhereSearch(`{"$search": "  go  "}`, fields); err != nil || text != "go" {
+		t.Errorf("trim: %q %v", text, err)
+	}
+	for name, where := range map[string]string{
+		"in $or":      `{"$or": [{"$search": "go"}, {"status": "a"}]}`,
+		"in $and":     `{"$and": [{"$search": "go"}]}`,
+		"not a string": `{"$search": 5}`,
+		"empty":       `{"$search": "   "}`,
+		"too long":    `{"$search": "` + strings.Repeat("a", MaxSearchBytes+1) + `"}`,
+		"too many":    `{"$search": "` + strings.Repeat("w ", MaxSearchTerms+1) + `"}`,
+		"a quote":     `{"$search": "say \"hello"}`,
+	} {
+		if _, _, err := ParseWhereSearch(where, fields); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	// ParseWhere, used where a search makes no sense, refuses it.
+	if _, err := ParseWhere(`{"$search": "go"}`, fields); err == nil {
+		t.Error("ParseWhere accepted $search")
+	}
+	// Twenty terms is fine, phrases count once.
+	if _, _, err := ParseWhereSearch(`{"$search": "`+strings.Repeat("w ", MaxSearchTerms)+`"}`, fields); err != nil {
+		t.Errorf("%d terms: %v", MaxSearchTerms, err)
+	}
+	if _, _, err := ParseWhereSearch(`{"$search": "\"a b c d e f g h i j k l m n o p q r s t u v\""}`, fields); err != nil {
+		t.Errorf("a long phrase is one term: %v", err)
+	}
+}

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/fernandezvara/backd/internal/registry"
@@ -162,7 +163,7 @@ func (g *gen) realm(rl *registry.Realm, o Options) string {
 		for _, c := range cols {
 			g.entries["collection "+dbName+"/"+c.Name] = ""
 			doc, input, create, where, order := g.collection(&types, dbName, c)
-			fmt.Fprintf(&tree, "        %s: { doc: %s; input: %s; create: %s; where: %s; order_by: %s; expand: %s };\n", member(c.Name), doc, input, create, where, order, expandRefs(c))
+			fmt.Fprintf(&tree, "        %s: { doc: %s; input: %s; create: %s; where: %s; order_by: %s; expand: %s; aggregate: %s };\n", member(c.Name), doc, input, create, where, order, expandRefs(c), aggregateShape(c))
 		}
 		tree.WriteString("      };\n      functions: {\n")
 		if db.Functions != nil {
@@ -479,4 +480,30 @@ func expandRefs(c *registry.Collection) string {
 	}
 	b.WriteString("}")
 	return b.String()
+}
+
+// aggregateShape renders what a collection lets an aggregation use: the fields to group by (and
+// which are dates, so can be bucketed) and to measure, or never when it declares no aggregate.
+func aggregateShape(c *registry.Collection) string {
+	a := c.Aggregate
+	if a == nil {
+		return "never"
+	}
+	union := func(list []string) string {
+		if len(list) == 0 {
+			return "never"
+		}
+		parts := make([]string, len(list))
+		for i, f := range list {
+			parts[i] = strconv.Quote(f)
+		}
+		return strings.Join(parts, " | ")
+	}
+	var dates []string
+	for _, f := range a.GroupBy {
+		if f == "_meta.created_at" || f == "_meta.updated_at" || c.Fields[f].Date {
+			dates = append(dates, f)
+		}
+	}
+	return fmt.Sprintf("{ group_by: %s; dates: %s; metrics: %s }", union(a.GroupBy), union(dates), union(a.Metrics))
 }

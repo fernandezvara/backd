@@ -118,6 +118,8 @@ document.addEventListener('alpine:init', () => {
     teams: [],
     team: null, // the open team's id
     pinList: [],
+    dashboard: [],
+    dashboardZone: 'UTC',
     teamMembers: [],
     teamName: '',
     pinDraft: { title: '', url: '', note: '' },
@@ -148,6 +150,8 @@ document.addEventListener('alpine:init', () => {
     hasMore: false,
     tag: '',
     sort: '-published_at',
+    // Chapter 22: a search text; when set the gallery is a search, best match first.
+    q: '',
     error: null,
     busy: false,
 
@@ -428,18 +432,20 @@ document.addEventListener('alpine:init', () => {
       this.busy = true
       this.error = null
       try {
-        const page = await assets.list({
-          where: this.where(),
-          orderBy: this.sort,
+        const common = {
           limit: 9,
-          after: this.after,
           // Chapter 13: every file comes with a link, for the previews shown at
           // once. They expire (five minutes), so downloads fetch a fresh one.
           fileLinks: true,
           // Chapter 21: each asset's author, in the same request. Only the name
           // and the avatar come back; visitors who can't read profiles get null.
           expand: expand(['author', ['name', 'avatar']]),
-        })
+        }
+        // Chapter 22: with a search text the gallery asks the text index, best match
+        // first, and pages by offset; without one it is the list of before.
+        const page = this.q.trim()
+          ? await assets.search(this.q.trim(), { ...common, where: this.where(), skip: this.assets.length })
+          : await assets.list({ ...common, where: this.where(), orderBy: this.sort, after: this.after })
         this.assets = this.assets.concat(page.items)
         this.after = page.next_cursor
         this.hasMore = page.has_more
@@ -944,6 +950,34 @@ document.addEventListener('alpine:init', () => {
       ])
       this.pinList = page.items
       this.teamMembers = members.items
+      await this.loadDashboard()
+    },
+
+    // Chapter 22: pins per member per month, summed up by the database in the team's
+    // time zone (a claim an operator sets; UTC when it has none). The rules still
+    // decide what is counted: a member's totals cover only what they may read.
+    async loadDashboard() {
+      this.dashboard = []
+      if (!this.team) return
+      try {
+        const org = await backd.orgs.get(this.team)
+        const tz = typeof org.claims?.timezone === 'string' ? org.claims.timezone : 'UTC'
+        this.dashboardZone = tz
+        const { groups } = await pins.inOrg(this.team).aggregate({
+          groupBy: ['author', '_meta.created_at:month'],
+          metrics: ['count'],
+          tz,
+          orderBy: ['-_meta.created_at:month', '-count'],
+          limit: 24,
+        })
+        this.dashboard = groups.map((g) => ({
+          month: g.key['_meta.created_at:month'],
+          who: this.names[g.key.author] || g.key.author || 'unknown',
+          count: g.count,
+        }))
+      } catch (e) {
+        this.error = e.message
+      }
     },
 
     get currentTeam() {

@@ -128,9 +128,40 @@ export interface FileField<D> {
   link(fileId?: string): Promise<{ url: string; expires_at: string }>;
 }
 
+/** What an aggregation of a collection may name: its declared group_by fields, those that are dates (and can be bucketed) and its metrics. */
+export interface AggregateParams<A extends { group_by: string; dates: string; metrics: string }, W> {
+  where?: W | string;
+  groupBy?: GroupKey<A> | GroupKey<A>[];
+  /** count (the default), count_distinct:<group_by field>, sum, avg, min or max of a metrics field. */
+  metrics?: AggregateMetric<A> | AggregateMetric<A>[];
+  /** IANA zone of the date buckets; UTC by default. */
+  tz?: string;
+  /** Group keys and result names, - for descending: "-count". */
+  orderBy?: string | string[];
+  limit?: number;
+  language?: string;
+}
+type GroupKey<A extends { group_by: string; dates: string }> = A["group_by"] | §${A["dates"]}:${"day" | "week" | "month" | "year"}§;
+type AggregateMetric<A extends { group_by: string; metrics: string }> =
+  | "count"
+  | §count_distinct:${A["group_by"]}§
+  | §${"sum" | "avg" | "min" | "max"}:${A["metrics"]}§;
+export interface AggregateGroup {
+  /** One entry per groupBy field; null for documents without a value. */
+  key: Record<string, string | number | boolean | null>;
+  count?: number;
+  /** The other metrics by result name: sum_total, avg_total (exact decimal strings), min_x, max_x. */
+  [metric: string]: unknown;
+}
+export interface AggregateResult { groups: AggregateGroup[]; total_groups: number }
+
 /** A collection of a database, typed from its schema. */
-export interface TypedCollection<D, I, C, W, O, E = {}> {
+export interface TypedCollection<D, I, C, W, O, E = {}, A = never> {
   get(id: string, options?: { expand?: string }): Promise<D & WithExpanded<E>>;
+  /** Summarizes the documents the caller may read (only for collections that declare aggregate:). */
+  aggregate(params?: [A] extends [never] ? never : AggregateParams<A & { group_by: string; dates: string; metrics: string }, W>): Promise<AggregateResult>;
+  /** Full-text search, best match first, with the score in _meta.score. Needs a text index. */
+  search(text: string, params?: Omit<ListParams<W, never>, "orderBy" | "after">): Promise<Page<D & WithExpanded<E>>>;
   files(id: string, field: string): FileField<D>;
   list(params?: ListParams<W, O>): Promise<Page<D & WithExpanded<E>>>;
   iterate(params?: Omit<ListParams<W, O>, "skip" | "count">): AsyncGenerator<D & WithExpanded<E>, void, undefined>;
@@ -162,7 +193,8 @@ export interface TypedDatabase<D extends DatabaseName> {
     Part<Realm["db"][D]["collections"][C], "create">,
     Part<Realm["db"][D]["collections"][C], "where">,
     Part<Realm["db"][D]["collections"][C], "order_by">,
-    Part<Realm["db"][D]["collections"][C], "expand">
+    Part<Realm["db"][D]["collections"][C], "expand">,
+    Part<Realm["db"][D]["collections"][C], "aggregate">
   >;
   batch(operations: BatchOperation[], options?: { idempotencyKey?: string }): Promise<unknown[]>;
 }

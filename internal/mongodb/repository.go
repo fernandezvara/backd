@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -20,7 +22,11 @@ type Store struct {
 
 // Repository returns the repository of a configured collection.
 func (s *Store) Repository(c *registry.Collection) storage.Repository {
-	return &Repository{coll: s.Client.Database(c.MongoDatabase).Collection(c.Name)}
+	r := &Repository{coll: s.Client.Database(c.MongoDatabase).Collection(c.Name)}
+	if c.Text != nil {
+		r.languageField = c.Text.LanguageField
+	}
+	return r
 }
 
 // Transact runs fn once inside a MongoDB transaction: every write made
@@ -43,12 +49,64 @@ func (s *Store) Transact(ctx context.Context, fn func(ctx context.Context) error
 // Repository implements storage.Repository for one MongoDB collection.
 type Repository struct {
 	coll *mongo.Collection
+	// languageField is the document field (API path) holding a locale code, for a collection
+	// whose text index has a language_field: the stored copy the index reads is kept in step
+	// on every write.
+	languageField string
+}
+
+// scoreField is where a search's relevance is projected, a name no document can use (names
+// starting with an underscore are server-owned).
+const scoreField = "_backd_score"
+
+// mapSearchError maps a failed read: a search without its text index is a rebuild in
+// progress, not an outage of the database.
+func mapSearchError(parent, run context.Context, searching bool, err error) error {
+	if searching && run.Err() != nil && parent.Err() == nil {
+		return storage.ErrSearchTooExpensive
+	}
+	var ce mongo.CommandError
+	if searching && errors.As(err, &ce) {
+		switch ce.Code {
+		case 27: // IndexNotFound: "text index required for $text query"
+			return storage.ErrIndexBuilding
+		case 50: // MaxTimeMSExpired
+			return storage.ErrSearchTooExpensive
+		}
+	}
+	return mapError(err)
+}
+
+// bsonOf converts a document for storage, adding the hidden search language the text index
+// reads when the collection declares a language_field.
+func (r *Repository) bsonOf(doc storage.Document) bson.D {
+	out := toBSON(doc)
+	if r.languageField == "" {
+		return out
+	}
+	if v, ok := lookupPath(doc, r.languageField).(string); ok && v != "" {
+		out = append(out, bson.E{Key: registry.TextSearchField, Value: registry.SearchLanguage(v)})
+	}
+	return out
+}
+
+// lookupPath reads a dot path of a document; a missing field is nil.
+func lookupPath(doc map[string]any, path string) any {
+	var cur any = map[string]any(doc)
+	for _, p := range strings.Split(path, ".") {
+		m, ok := cur.(map[string]any)
+		if !ok {
+			return nil
+		}
+		cur = m[p]
+	}
+	return cur
 }
 
 var _ storage.Repository = (*Repository)(nil)
 
 func (r *Repository) Create(ctx context.Context, doc storage.Document) error {
-	_, err := r.coll.InsertOne(ctx, toBSON(doc))
+	_, err := r.coll.InsertOne(ctx, r.bsonOf(doc))
 	return mapError(err)
 }
 
@@ -81,13 +139,26 @@ func (r *Repository) List(ctx context.Context, q storage.Query) (storage.Page, e
 		SetSort(buildSort(q.Sort)).
 		SetSkip(int64(q.Skip)).
 		SetLimit(int64(q.Limit) + 1) // one extra to compute HasMore
-	cur, err := r.coll.Find(ctx, find, opts)
+	if q.Relevance {
+		// Best match first, ties by id; the score rides along under a name no document can
+		// have and is moved into _meta.score below.
+		score := bson.D{{Key: "$meta", Value: "textScore"}}
+		opts.SetProjection(bson.D{{Key: scoreField, Value: score}}).
+			SetSort(bson.D{{Key: scoreField, Value: score}, {Key: "_id", Value: 1}})
+	}
+	runCtx := ctx
+	if q.Search != nil && q.MaxTime > 0 {
+		var cancel context.CancelFunc
+		runCtx, cancel = context.WithTimeout(ctx, q.MaxTime)
+		defer cancel()
+	}
+	cur, err := r.coll.Find(runCtx, find, opts)
 	if err != nil {
-		return storage.Page{}, mapError(err)
+		return storage.Page{}, mapSearchError(ctx, runCtx, q.Search != nil, err)
 	}
 	var docs []bson.D
-	if err := cur.All(ctx, &docs); err != nil {
-		return storage.Page{}, mapError(err)
+	if err := cur.All(runCtx, &docs); err != nil {
+		return storage.Page{}, mapSearchError(ctx, runCtx, q.Search != nil, err)
 	}
 
 	page := storage.Page{Items: make([]storage.Document, 0, min(len(docs), q.Limit))}
@@ -96,7 +167,23 @@ func (r *Repository) List(ctx context.Context, q storage.Query) (storage.Page, e
 		docs = docs[:q.Limit]
 	}
 	for _, d := range docs {
-		page.Items = append(page.Items, fromBSON(d))
+		var score any
+		if q.Relevance {
+			for i, e := range d {
+				if e.Key == scoreField {
+					score = e.Value
+					d = slices.Delete(slices.Clone(d), i, i+1)
+					break
+				}
+			}
+		}
+		doc := fromBSON(d)
+		if score != nil {
+			if meta, ok := doc["_meta"].(map[string]any); ok {
+				meta["score"] = score
+			}
+		}
+		page.Items = append(page.Items, doc)
 	}
 	if q.Count {
 		n, err := r.coll.CountDocuments(ctx, filter)
@@ -110,7 +197,7 @@ func (r *Repository) List(ctx context.Context, q storage.Query) (storage.Page, e
 
 func (r *Repository) Replace(ctx context.Context, doc storage.Document, ifVersion int64) error {
 	id, _ := doc["id"].(string)
-	res, err := r.coll.ReplaceOne(ctx, versionFilter(id, &ifVersion), toBSON(doc))
+	res, err := r.coll.ReplaceOne(ctx, versionFilter(id, &ifVersion), r.bsonOf(doc))
 	if err != nil {
 		return mapError(err)
 	}

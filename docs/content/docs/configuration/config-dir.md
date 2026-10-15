@@ -119,6 +119,7 @@ This optional file declares the collection's MongoDB indexes:
 - `fields` lists one or more fields in `order_by` notation: a `-` prefix means descending. Each field must be declared in `schema.json` or be `id`, `_meta.created_at`, `_meta.updated_at`, `_meta.version`, `_meta.owner`, `_meta.created_by` or `_meta.updated_by`. An index on `_meta.owner` keeps "owner only" access rules fast.
 - `unique` (default `false`) rejects documents that repeat a value. A write that violates it returns `409 conflict`.
 - Unknown keys, duplicate fields within an index, and two indexes with the same fields are all rejected.
+- An entry `{ "text": … }` declares a [full-text index](#a-text-index).
 
 {{< hint warning >}}
 A document without a uniquely indexed field counts as having `null` there, so only **one** document may lack it: the second is refused with `409`. Make every field with a unique index `required` in `schema.json`. And remember that a unique index tells callers that a value exists, even if its document is hidden by a [rule](../../auth/rules/).
@@ -129,6 +130,27 @@ Indexes are created at startup by [provisioning](../../operations/). Indexes tha
 {{< hint style="tip" title="Best practice" >}}
 Filtering and sorting on unindexed fields works, but scans the whole collection, which is fine for a few thousand documents and slow beyond that. Add an index for every query your application runs often, and for `_meta.owner` when [rules](../../auth/rules/) restrict access to the owner.
 {{< /hint >}}
+
+### A text index
+
+One entry of the array can be a **full-text index** instead of a list of fields:
+
+```json
+[
+  { "text": {
+      "fields": { "title": 10, "tags": 5, "body": 1 },
+      "default_language": "english",
+      "language_field": "lang"
+  } }
+]
+```
+
+- **`fields`** maps each indexed field to its **weight** (1 to 1000): a match in a heavier field ranks higher. Fields are strings or arrays of strings, declared in `schema.json`, up to 30; not fields inside arrays of objects.
+- **One per collection**, a limit of the database; put every field in the same entry.
+- **`default_language`** (default `english`) is the language of documents that say none: a language name or two-letter code the database stems and stops words for (`danish`, `dutch`, `english`, `finnish`, `french`, `german`, `hungarian`, `italian`, `norwegian`, `portuguese`, `romanian`, `russian`, `spanish`, `swedish`, `turkish`), or `none` for no stemming.
+- **`language_field`** is optional: a declared string field of each document that holds a **locale code** (`es`, `en-GB`, `pt_BR`). backd maps it to the database's language when it writes the document, in a hidden field the index reads (`_search_lang`, which is never part of a document and can't be declared in `schema.json`). A locale with no language of its own is indexed without stemming.
+- **Rebuilds.** `backd provision` creates the index, and **replaces it when the declaration changes** (weights, fields or languages), logging a warning at startup: until it is built, searches answer `503 index_building`. Documents written before the index get their language from `language_field` when it is first created. An index that exists in MongoDB but that backd didn't create is never dropped: a second text index isn't possible, so provisioning stops and says which to drop.
+- Searching with it is `$search` in `where`: see the [search guide](../../api/search/) for weights, languages and syntax.
 
 ## `collection.yaml`
 
@@ -283,6 +305,26 @@ references:
 - **Checked at startup**, with the file, the reference's name and what to fix: the target database and collection exist in the realm, the source is a declared string field (or an array of strings with `many`), `key` is unique, the name isn't another field of the schema, and `max_expand` isn't above the instance's limit.
 - **Values aren't checked on write.** There is no referential integrity: a value that points at nothing is a reference to a document that doesn't exist.
 - **Requesting them** is explicit: `?expand=author(name),tags` on a read returns the referenced documents in `_expanded`, under their own collection's rules. See [References and expansion](../../api/references/) for every startup error, the syntax, the cost and the recipe.
+
+### Aggregations
+
+A collection says which of its fields can be grouped and measured by the aggregate endpoint, so the cost of a summary is designed, not discovered:
+
+```yaml
+aggregate:
+  group_by: [status, category, _meta.org, _meta.owner, _meta.created_at, paid_at]
+  metrics: [total, quantity, paid_at]
+  limits:                       # optional; can only lower the instance's values
+    time: 3s
+    max_groups: 500
+```
+
+- **Opt-in.** A collection without `aggregate:` can't be aggregated.
+- **`group_by`:** fields that hold one value: strings, booleans, numbers, enums, dates (which can be bucketed by day, week, month or year), and `_meta.owner`, `_meta.created_by`, `_meta.updated_by`, `_meta.created_at`, `_meta.updated_at`, plus `_meta.org` and `_meta.team` in collections that have them. Not arrays, objects, fields inside arrays or `id`.
+- **`metrics`:** numeric fields, and dates (for minimum and maximum), `_meta.created_at`, `_meta.updated_at` and `_meta.version`.
+- **Checked at startup** against `schema.json`, with the file and the field named. `limits.time` is a duration (at least 100ms) and `limits.max_groups` a number; both may only be lower than the instance's `BACKD_AGGREGATE_TIME` and `BACKD_AGGREGATE_MAX_GROUPS`, or startup stops.
+- **A warning at startup** names each `group_by` field that no index leads with, and the line to add to [`indexes.json`](#indexesjson): grouping by it reads every matching document, in no useful order. `backd config check` prints the same warnings.
+- The request side, `GET …/_aggregate`, is in [Aggregations](../../api/aggregations/), with the [best practices](../../api/aggregations/#best-practices).
 
 ### Public caching
 

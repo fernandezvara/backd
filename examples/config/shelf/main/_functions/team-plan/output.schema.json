@@ -1,5 +1,5 @@
 {
   "type": "object",
-  "properties": { "org": { "type": "string" }, "plan": { "type": "string" } },
-  "required": ["org", "plan"]
+  "properties": { "org": { "type": "string" }, "plan": { "type": "string" }, "timezone": { "type": "string" } },
+  "required": ["org"]
 }

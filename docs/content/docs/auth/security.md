@@ -129,6 +129,42 @@ Left as it is, on purpose:
 - **Expansion with `ctx.admin.db` has admin access,** as everything on that client does: a function that returns an expanded document returns what it read. Select fields, and use `ctx.db` unless the function needs more than its caller may see.
 - **A path costs a lookup even when the caller can read nothing there.** The counters report it the same either way, so a caller can't tell it from a miss, but the load is real: the limits are what bound it.
 
+### Aggregations and search
+
+[Aggregations](../../api/aggregations/) and [full-text search](../../api/search/) read many documents in one request. What was reviewed, measured and decided:
+
+- **Rules apply before grouping and searching.** The read rule is part of the `$match` that starts every aggregation and of every search, with the caller's identity: totals, group keys, `total_groups`, distinct counts and minimums and maximums cover only documents the caller could list, and a filter that only hidden documents match answers a count of 0, not a hint. API key scopes apply as for a list.
+- **The pipeline is fixed.** Clients choose fields declared in `aggregate:`, buckets, metrics and a validated IANA zone; no stage, operator, field name or expression reaches the database from a request. `where` keeps its allowlist and caps; a `$search` is one string that the database reads as words, phrases and exclusions, never as operators.
+- **The stored search language is server-owned.** `_search_lang` can't be declared, filtered, sorted or grouped by, and never appears in a document.
+- **Cost is bounded** by a time limit (5 seconds), no disk use, 1,000 groups, 10,000 distinct values, 10 metrics, 3 group fields, one aggregation at a time per caller and collection, search text of 256 bytes and 10 terms, and relevance pages that stop at 1,000 results.
+- **Not exposed where it has no use:** the admin data route has no `_aggregate`.
+
+**Load tests** (300,000 documents, 5 fields indexed or not, one MongoDB on a development machine; the numbers are indicative, run them again for your hardware with `BACKD_LOAD_TEST=1 go test ./internal/mongodb -run TestAggregateAndSearchLoad -v`):
+
+| Request | Time |
+|---|---|
+| total count of the whole collection | 0.06 s |
+| count by an indexed field (50 groups) | 0.07 s |
+| count, sum and average by an unindexed field (5 groups) | 0.45 s |
+| by month in a time zone, whole collection (36 groups) | 0.7 s |
+| by day, whole collection (1,095 groups) | 0.2 s |
+| three fields × month, 9,000 groups (above the 1,000 limit) | 0.85 s |
+| by month, `where` of the last year (indexed) | 0.3 s |
+| by category, `where` of the last month (indexed) | 0.03 s |
+| `count_distinct` over 50,000 values | refused: `aggregate_too_expensive` |
+| 8 whole-collection aggregations at once | 1.0 s in total |
+| search: a rare word / a common word | 0.001 s / 0.4 s |
+| search: three common words, relevance | 1.8 s |
+| search: five / ten common words, relevance | 4.6 s / 6.6 s |
+| search: twenty common words, relevance | 15 s |
+
+What the numbers decided:
+
+- **Aggregations are cheap on this scale**, even over everything and unindexed, so the 5-second limit is a safety net, not something normal dashboards meet. The index warning stays: the cost grows with the collection, and an index on the `where` fields is what makes a narrow dashboard instant.
+- **A search of many common words is the expensive request**, because every document containing any of them has to be scored and sorted. **Review fixes:** the term cap went from 20 to **10**, and a search now has the same time limit as an aggregation (`BACKD_AGGREGATE_TIME`): past it, `422 search_too_expensive`, instead of tying up a database connection until the request timeout.
+- **Accepted:** a worst case like the table's last rows (every word in nearly every document) still costs seconds of database time up to the limit. Callers are bounded per instance (a limit of one aggregation at a time, the rate of the realm's other limits); an attacker with many accounts is the general case of any read endpoint and belongs to the edge's rate limiting.
+- **Deferred:** encrypted fields (milestone 16) don't exist yet; when they do, they must be refused in `aggregate.group_by`, `metrics` and text indexes, which is a startup check to add with them.
+
 ## What you are responsible for
 
 - **TLS.** `backd` serves plain HTTP; terminate TLS in front of it.
@@ -138,6 +174,7 @@ Left as it is, on purpose:
 - **Rules:** review the `rules:` of each `collection.yaml`. A missing rule denies, but a too-broad one (`read: "true"`) publishes a collection. Unique indexes can reveal that a value exists: creating a document with a value that a hidden document already has answers `409`.
 - **Files:** a private bucket with a key scoped to the realm's prefix, a prefix per backd instance, short link lifetimes on sensitive fields, `BACKD_URL`, and small limits where anonymous callers may upload: see [Security of files](../../files/security/#what-you-are-responsible-for).
 - **Organizations:** write `inOrg` or `hasOrgRole` in every rule of a collection that belongs to organizations (`read: user != nil` publishes it to all of them), keep `create` for organizations to people you trust, and give management roles to few people. See the [cookbook](../../organizations/rules-cookbook/).
+- **Aggregations and search:** declare in `aggregate:` only the fields a dashboard needs, add the indexes the startup warning names, keep `where` narrow (dates, organization), and prefer precomputed counters for figures loaded on every page. See the [best practices](../../api/aggregations/#best-practices).
 - **Reference expansion:** a reference is only as private as its target's `read` rule: write that rule for the document read directly, select the fields a screen needs, and keep `ctx.admin.db` expansions out of anything that goes back to a caller. See [References and expansion](../../api/references/).
 - **Team access:** keep `grants` short (who may hand out which role), put `require_mfa` on roles that can decide for others, guard hook handlers against stale events with `seq`, make data hooks cheap, and keep company templates to the kinds that need them. See the [recipes](../../organizations/team-access-recipes/).
 - **Second factors and magic links:** require a second factor of every role that can administer the realm (`mfa.required_roles`; `backd` warns at startup when an admin role isn't covered), keep `BACKD_SECRETS_KEY` safe and backed up (without it the enrolled authenticators can't be checked), and remember that with magic links the mailbox is a way in: protect it like the password. Tell users never to read a code out to anyone.

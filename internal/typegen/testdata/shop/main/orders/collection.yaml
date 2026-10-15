@@ -1,3 +1,6 @@
+aggregate:
+  group_by: [status, paid_at, _meta.created_at]
+  metrics: [total, paid_at]
 references:
   invoice:
     field: invoice_id

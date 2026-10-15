@@ -46,6 +46,9 @@ type memStore struct {
 	beforeWrite func(docs map[string]storage.Document)
 	docs        map[string]map[string]storage.Document // collection key → id → doc
 	fail        error
+	// aggregateErr makes Aggregate fail; lastAggregate is the last query it ran.
+	aggregateErr  error
+	lastAggregate storage.AggregateQuery
 }
 
 func (s *memStore) Repository(c *registry.Collection) storage.Repository {
@@ -145,8 +148,16 @@ func (r *memRepo) List(_ context.Context, q storage.Query) (storage.Page, error)
 	r.s.lastQuery = q
 	var ids []string
 	var counted int64
+	scores := map[string]float64{}
 	for id, doc := range r.coll() {
 		if (q.Filter == nil || matches(doc, q.Filter)) && (q.Access == nil || matches(doc, q.Access)) {
+			if q.Search != nil {
+				score, ok := storage.MatchSearch(doc, q.Search.Text)
+				if !ok {
+					continue
+				}
+				scores[id] = score
+			}
 			counted++
 			if q.After == nil || matches(doc, q.After) {
 				ids = append(ids, id)
@@ -166,6 +177,9 @@ func (r *memRepo) List(_ context.Context, q storage.Query) (storage.Page, error)
 			return false
 		})
 	}
+	if q.Relevance {
+		sort.SliceStable(ids, func(i, j int) bool { return scores[ids[i]] > scores[ids[j]] })
+	}
 	var page storage.Page
 	if q.Count {
 		page.Total = &counted // the cursor narrows the page, not the total
@@ -175,7 +189,11 @@ func (r *memRepo) List(_ context.Context, q storage.Query) (storage.Page, error)
 			page.HasMore = true
 			break
 		}
-		page.Items = append(page.Items, clone(r.coll()[ids[i]]).(map[string]any))
+		item := clone(r.coll()[ids[i]]).(map[string]any)
+		if q.Relevance {
+			item["_meta"].(map[string]any)["score"] = scores[ids[i]]
+		}
+		page.Items = append(page.Items, item)
 	}
 	return page, nil
 }
@@ -196,6 +214,22 @@ func (r *memRepo) Replace(_ context.Context, doc storage.Document, ifVersion int
 	}
 	r.coll()[id] = clone(doc).(map[string]any)
 	return nil
+}
+
+// Aggregate is the reference aggregation over the collection's documents. A test can make it
+// fail with aggregateErr.
+func (r *memRepo) Aggregate(_ context.Context, q storage.AggregateQuery) (storage.AggregateResult, error) {
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	if r.s.aggregateErr != nil {
+		return storage.AggregateResult{}, r.s.aggregateErr
+	}
+	r.s.lastAggregate = q
+	docs := make([]storage.Document, 0, len(r.coll()))
+	for _, d := range r.coll() {
+		docs = append(docs, d)
+	}
+	return storage.AggregateDocs(docs, q)
 }
 
 func (r *memRepo) Delete(_ context.Context, id string, ifVersion *int64) error {

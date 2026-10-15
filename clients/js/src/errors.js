@@ -139,6 +139,25 @@ export class InvalidExpandError extends ValidationError {}
  */
 export class ExpandTooLargeError extends ValidationError {}
 
+/**
+ * 400 `invalid_aggregate`: an aggregation names a field the collection doesn't declare, a bad
+ * bucket, metric, `orderBy`, `limit` or `tz`. The `details` name each parameter.
+ */
+export class InvalidAggregateError extends ValidationError {}
+
+/** 400 `aggregate_not_enabled`: the collection declares no `aggregate:` in its collection.yaml. */
+export class AggregateNotEnabledError extends ValidationError {}
+
+/**
+ * 422 `aggregate_too_expensive`: the aggregation needed more time, memory or distinct values
+ * than allowed. Narrow `where`, group by fewer fields, or ask for an index that starts with a
+ * `group_by` field.
+ */
+export class AggregateTooExpensiveError extends BackdError {}
+
+/** 400 `search_not_enabled`: a `$search` in a collection that declares no text index. */
+export class SearchNotEnabledError extends ValidationError {}
+
 /** 403 `not_org_member`: not a member of the organization, or there is no such organization. */
 export class NotOrgMemberError extends ForbiddenError {}
 
@@ -168,6 +187,15 @@ export class RetryableError extends BackdError {
     this.retryAfter = init.retryAfter
   }
 }
+
+/** 422 `search_too_expensive`: a search needed more time than allowed; use fewer or rarer words, or narrow `where`. */
+export class SearchTooExpensiveError extends BackdError {}
+
+/**
+ * 503 `index_building`: a search while the collection's text index is being rebuilt. It is a
+ * `RetryableError`: the client retries it after `Retry-After`, and `retryAfter` says how long.
+ */
+export class IndexBuildingError extends RetryableError {}
 
 /** 0: the request didn't get an answer (network error, abort, timeout). */
 export class NetworkError extends BackdError {}
@@ -224,6 +252,18 @@ function typedClass(code, fallback) {
       return NotOrgMemberError
     case 'last_org_manager':
       return LastOrgManagerError
+    case 'invalid_aggregate':
+      return InvalidAggregateError
+    case 'aggregate_not_enabled':
+      return AggregateNotEnabledError
+    case 'aggregate_too_expensive':
+      return AggregateTooExpensiveError
+    case 'search_not_enabled':
+      return SearchNotEnabledError
+    case 'search_too_expensive':
+      return SearchTooExpensiveError
+    case 'index_building':
+      return IndexBuildingError
     case 'invalid_expand':
       return InvalidExpandError
     case 'expand_too_large':
@@ -256,7 +296,7 @@ export async function errorFromResponse(res) {
     message: e.message ?? res.statusText ?? 'request failed',
     details: e.details ?? [],
     requestId: e.request_id ?? res.headers.get('X-Request-ID') ?? undefined,
-    ...(Typed === RetryableError ? { retryAfter } : {}),
+    ...(Typed === RetryableError || Typed.prototype instanceof RetryableError ? { retryAfter } : {}),
   })
 }
 

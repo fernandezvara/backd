@@ -18,6 +18,7 @@ import { Job } from './functions.js'
  * @property {string} [updated_by] `user:<id>`, `key:<name>` or `anonymous`.
  * @property {string} [org]        The organization the document belongs to (collections with `organization`).
  * @property {string} [team]       The team of the organization the document belongs to (collections with `team`).
+ * @property {number} [score]      The relevance to a `$search`, in a list sorted with `orderBy: '_relevance'`. Never stored.
  * @property {string} [deleted_at] RFC3339 timestamp; only on soft-deleted documents (collections with `soft_delete`).
  * @property {string} [deleted_by] Who deleted it, like `updated_by`.
  * @property {string} [purge_at]   RFC3339 timestamp: when it is removed for good (`soft_delete.retention`).
@@ -51,6 +52,8 @@ import { Job } from './functions.js'
  *   (same `where` and `orderBy`). Can't be combined with `skip`.
  * @property {boolean} [count]              Also return `total`.
  * @property {boolean} [fileLinks]          Add `url` and `expires_at` to every file of every document.
+ * @property {string} [language]            The language a `$search` is stemmed in (a locale code such as `es`
+ *   or `en-GB`); default: the user's locale, then the browser's.
  * @property {string} [expand]              References to return in `_expanded`: `'author(name),tags'`, or built
  *   with `expand(['author', ['name']], 'tags')`. Never sent unless you set it.
  * @property {'only' | 'include'} [deleted] In a collection with `soft_delete`: `'only'` lists the deleted documents
@@ -115,6 +118,38 @@ import { Job } from './functions.js'
  * @property {Record<string, any>} [document]
  * @property {Record<string, any>} [patch]
  * @property {number | string} [ifMatch]
+ */
+
+/**
+ * What to summarize: fields declared in the collection's `aggregate:`.
+ * @typedef {object} AggregateParams
+ * @property {object | string} [where]  The same filter as a list's, with `$search`; the read rules apply first.
+ * @property {string | string[]} [groupBy]  Up to 3 declared fields; a date takes a bucket: `'paid_at:month'`
+ *   (`day`, `week`, `month`, `year`). Without it, one group with an empty key (a counter).
+ * @property {string | string[]} [metrics]  `count` (the default), `count_distinct:<field>`, `sum:<field>`,
+ *   `avg:<field>`, `min:<field>`, `max:<field>`.
+ * @property {string} [tz]              IANA zone of the date buckets (`Europe/Madrid`); default `UTC`.
+ * @property {string | string[]} [orderBy]  Group keys and result names, `-` for descending: `'-count'`.
+ * @property {number} [limit]           Groups returned (default 100, at most the collection's maximum).
+ * @property {string} [language]        Language of a `$search` in `where`.
+ */
+
+/**
+ * One group: `key` has an entry per `groupBy` field (`null` for documents without a value), and the
+ * metrics are named `<metric>_<field>`: `count`, `sum_total`, `avg_total`, `count_distinct__meta.owner`.
+ * Sums and averages are exact decimal strings.
+ * @typedef {{ key: Record<string, string | number | boolean | null>, count?: number, [metric: string]: any }} AggregateGroup
+ */
+
+/**
+ * @typedef {object} AggregateResult
+ * @property {AggregateGroup[]} groups
+ * @property {number} total_groups  How many groups there were before `limit`.
+ */
+
+/**
+ * Options of `search`: a `list` with the text as its `$search`, best match first.
+ * @typedef {Omit<ListParams, 'orderBy' | 'after'> & { orderBy?: never }} SearchParams
  */
 
 /** A database of the realm: `client.db(name)`. */
@@ -253,6 +288,62 @@ export class Collection {
     const query = { ...listQuery(params), ...scopeQuery(this.org, this.team) }
     const { data } = await this.client.request({ method: 'GET', path: this.path, query, ...opts })
     return data
+  }
+
+  /**
+   * Summarizes the documents the caller may read: counts and measures grouped by the fields the
+   * collection declares in `aggregate:`. The read rules apply before grouping, so a total never
+   * includes a document a list would hide.
+   *
+   * ```js
+   * const { groups } = await orders.aggregate({
+   *   groupBy: ['category', 'paid_at:month'], tz: 'Europe/Madrid',
+   *   metrics: ['count', 'sum:total'], orderBy: '-sum_total', limit: 20,
+   * })
+   * groups[0].key          // { category: 'shoes', 'paid_at:month': '2026-09' }
+   * groups[0].sum_total    // '18234.5' (an exact decimal string)
+   * ```
+   *
+   * `AggregateNotEnabledError` when the collection declares no `aggregate:`, `InvalidAggregateError`
+   * for a wrong parameter and `AggregateTooExpensiveError` when it needs more than allowed.
+   * @param {AggregateParams} [params]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<AggregateResult>}
+   */
+  async aggregate(params = {}, opts) {
+    const list = (/** @type {string | string[] | undefined} */ v) => (Array.isArray(v) ? v.join(',') : v)
+    const query = {
+      where: params.where === undefined ? undefined : typeof params.where === 'string' ? params.where : JSON.stringify(params.where),
+      group_by: list(params.groupBy),
+      metrics: list(params.metrics),
+      tz: params.tz,
+      order_by: list(params.orderBy),
+      limit: params.limit,
+      language: params.language,
+      ...scopeQuery(this.org, this.team),
+    }
+    const { data } = await this.client.request({ method: 'GET', path: [...this.path, '_aggregate'], query, ...opts })
+    return data
+  }
+
+  /**
+   * Full-text search, best match first: a `list` whose `where` carries `text` as `$search`
+   * and whose order is `_relevance`, with each document's score in `_meta.score`. `text` is
+   * words, `"quoted phrases"` and `-excluded` words. Pages with `skip`, through the first 1,000
+   * results. `SearchNotEnabledError` when the collection has no text index.
+   *
+   * ```js
+   * const page = await articles.search('red "running shoes" -kids', { where: { status: 'published' }, limit: 10 })
+   * ```
+   * @param {string} text
+   * @param {SearchParams} [params]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<Page<T>>}
+   */
+  async search(text, params = {}, opts) {
+    if (typeof text !== 'string' || text.trim() === '') throw new TypeError('backd: search needs the text to search for')
+    const base = typeof params.where === 'string' ? JSON.parse(params.where) : { ...params.where }
+    return this.list({ ...params, where: { ...base, $search: text }, orderBy: '_relevance' }, opts)
   }
 
   /**
@@ -487,6 +578,7 @@ function listQuery(p) {
     deleted: p.deleted,
     file_links: p.fileLinks || undefined,
     expand: p.expand,
+    language: p.language,
   }
 }
 

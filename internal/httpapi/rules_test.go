@@ -30,6 +30,27 @@ const postsSchema = `{
   "required": ["title"]
 }`
 
+const articlesSchema = `{
+  "type": "object",
+  "properties": {
+    "title":  {"type": "string"},
+    "body":   {"type": "string"},
+    "lang":   {"type": "string"},
+    "status": {"type": "string"}
+  },
+  "required": ["title"]
+}`
+
+const salesSchema = `{
+  "type": "object",
+  "properties": {
+    "category": {"type": "string"},
+    "total":    {"type": "number"},
+    "paid_at":  {"type": "string", "format": "date-time", "x-backd-store": "date"}
+  },
+  "required": ["category"]
+}`
+
 const postsRules = `
 read: >
   document.published == true
@@ -73,6 +94,11 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 		// Public caching of anonymous reads (see public_cache_test.go).
 		"acme/app/news/schema.json":        postsSchema,
 		"acme/app/news/collection.yaml":    "cache: {public: true, max_age: 60}\nsoft_delete: true\nreferences:\n  related: {field: status, collection: projects}\n  trashed: {field: title, collection: bin}\n  post: {field: status, collection: posts}\n" + rulesSection("read: document.published == true || user != nil\ncreate: user != nil\nrestore: hasRole(user, 'staff')\n"),
+		"acme/app/articles/schema.json":    articlesSchema,
+		"acme/app/articles/indexes.json":   `[{"text": {"fields": {"title": 10, "body": 1}, "default_language": "english", "language_field": "lang"}}]`,
+		"acme/app/articles/collection.yaml": "aggregate:\n  group_by: [lang, status]\n" + rulesSection("read: user != nil\ncreate: user != nil\n"),
+		"acme/app/sales/schema.json":       salesSchema,
+		"acme/app/sales/collection.yaml":   "aggregate:\n  group_by: [category, paid_at, _meta.owner, _meta.created_at]\n  metrics: [total, paid_at]\n  limits: {max_groups: 50}\n" + rulesSection("read: user != nil && (document._meta.owner == user.id || hasRole(user, 'staff'))\ncreate: user != nil\n"),
 		"acme/app/notes/schema.json":       postsSchema,
 		"acme/app/notes/collection.yaml":   "references:\n  status: {collection: archive}\n  secret: {field: title, collection: private}\n" + rulesSection("read: user != nil\nwrite: user != nil\n"),
 		"acme/app/private/schema.json":     postsSchema,

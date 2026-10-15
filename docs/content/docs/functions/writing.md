@@ -145,6 +145,19 @@ const page = await orders.list({ where: { status: "open" }, expand: "customer(na
 - **`ctx.db` expands as the caller:** each referenced document has to pass its own collection's read rule for that caller, and is `null` otherwise. **`ctx.admin.db` expands with admin access**, and returns documents the caller of the function could not read: use it deliberately, and select only the fields you mean to return.
 - **The same limits and errors** as for any client (`InvalidExpandError`, `ExpandTooLargeError`); each path costs one query on the server, whatever the page size. See [Expanding references](../../api/documents/#expanding-references).
 
+### Aggregating and searching
+
+A function summarizes with `aggregate` and searches with `search`, as the [client](../../clients/js/#aggregations-and-search) does:
+
+```ts
+const orders = ctx.db("main").collection("orders");
+const { groups } = await orders.aggregate({ groupBy: "status", metrics: ["count", "sum:total"] });
+const found = await orders.search("late delivery -refunded", { limit: 10 });
+```
+
+- **`ctx.db` aggregates and searches as the caller:** the read rules apply before grouping and searching, so a function can't total what its caller couldn't list. **`ctx.admin.db` has admin access** and counts every document: return only what you mean to.
+- **The same declarations and limits** as for any client: the collection's [`aggregate:`](../../configuration/config-dir/#aggregations) and text index, `aggregate_too_expensive` past the time limit.
+
 ## Errors
 
 Throw `ctx.error(status, code, message, details?)` for anything the caller should understand: a `4xx` status, a lower-case code, a message and optional `[{path, reason}]` details. The caller gets exactly that (for a job, it lands in the job's `result`). Anything else the function throws, including a failed `ctx.db` call, becomes a generic `500 function_failed`, with the stack trace in `backd`'s log only.

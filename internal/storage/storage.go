@@ -29,6 +29,24 @@ type Query struct {
 	// After restricts the page to the documents positioned after a cursor in
 	// Sort (query.ParseCursor builds it). It narrows the page, not the Total.
 	After Filter
+	// Search restricts the page to documents matching a full-text search, with the
+	// collection's text index. Relevance orders the page by how well they match (best first,
+	// ties by id) instead of Sort, and puts the score in each document's _meta.score; it needs
+	// Search, and pages by Skip only.
+	Search    *Search
+	Relevance bool
+	// MaxTime bounds a search (0: no limit); past it the read fails with ErrSearchTooExpensive.
+	MaxTime time.Duration
+}
+
+// Search is a full-text search over a collection's text index.
+type Search struct {
+	// Text is what was asked for: words, "quoted phrases" and -excluded words, never parsed as
+	// operators by the caller.
+	Text string
+	// Language is the language of the query for stemming ("spanish", "none"…); "" is the
+	// index's default.
+	Language string
 }
 
 // Page is one page of a list query.
@@ -174,6 +192,10 @@ var (
 	ErrNotFound = errors.New("document not found")
 	// ErrVersionMismatch means a conditional write found a different version.
 	ErrVersionMismatch = errors.New("document version mismatch")
+	// ErrSearchTooExpensive means a search needed more time than allowed.
+	ErrSearchTooExpensive = errors.New("search too expensive")
+	// ErrIndexBuilding means a search found no text index: it is being rebuilt.
+	ErrIndexBuilding = errors.New("text index not available")
 	// ErrUnavailable means the storage backend could not be reached in time.
 	ErrUnavailable = errors.New("storage unavailable")
 	// ErrConflict means a write violated a unique index. The concrete error

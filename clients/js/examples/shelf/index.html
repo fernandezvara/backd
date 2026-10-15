@@ -95,6 +95,8 @@
       </hgroup>
 
       <form class="toolbar" role="search" @submit.prevent>
+        <input type="search" placeholder="Search words, “phrases”, -excluded" aria-label="Search" id="gallery-search"
+               x-model="q" @input.debounce.400ms="refilter">
         <input type="search" placeholder="Filter by tag…" aria-label="Filter by tag"
                x-model="tag" @input.debounce.400ms="refilter">
         <select aria-label="Sort" x-model="sort" @change="refilter">
@@ -361,6 +363,16 @@
                 <li><span x-text="m.email || m.user"></span> — <code x-text="m.roles.join(', ') || 'member'"></code>
                   <button class="link sm" x-show="holds('owner')" @click="setMemberRoles(m.user, m.roles.includes('admin') ? ['editor'] : ['admin'])" x-text="m.roles.includes('admin') ? 'make editor' : 'make admin'"></button>
                 </li>
+              </template>
+            </ul>
+          </article>
+
+          <article>
+            <header>Pins per member per month <span class="muted" x-text="'(' + dashboardZone + ')'"></span></header>
+            <p class="muted" x-show="dashboard.length === 0">Nothing pinned yet.</p>
+            <ul id="dashboard">
+              <template x-for="row in dashboard" :key="row.month + row.who">
+                <li><code x-text="row.month"></code> <span x-text="row.who"></span> — <strong x-text="row.count"></strong></li>
               </template>
             </ul>
           </article>

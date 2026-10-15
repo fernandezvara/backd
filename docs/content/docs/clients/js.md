@@ -315,6 +315,35 @@ post._expanded?.tags         // [{ id, ... }, null, ...] (positions kept), or { 
 - **It isn't cached by the server**, and your [revalidation cache](#revalidation-cache) always asks again for an expanded read.
 - **Functions** have it too: `ctx.db.collection('posts').get(id, { expand: 'author(name)' })`.
 
+### Aggregations and search
+
+`aggregate()` summarizes what the caller may read, with the fields the collection [declares](../../api/aggregations/); `search()` is a list sorted by relevance with the [text index](../../api/querying/#full-text-search):
+
+```js
+import { fillBuckets } from 'backd-js'
+
+const { groups, total_groups } = await orders.aggregate({
+  where: { status: { $in: ['paid', 'shipped'] } },
+  groupBy: ['paid_at:month'], tz: 'Europe/Madrid',
+  metrics: ['count', 'sum:total'], orderBy: 'paid_at:month',
+})
+groups[0].key['paid_at:month']      // '2026-09'
+groups[0].sum_total                 // '18234.5' (an exact decimal string)
+
+// A chart wants every month, including the ones nobody ordered in:
+const points = fillBuckets(groups, { field: 'paid_at', unit: 'month', from: '2026-01', to: '2026-12', empty: { sum_total: '0' } })
+
+const page = await articles.search('red "running shoes" -kids', { where: { status: 'published' }, limit: 10 })
+page.items[0]._meta.score           // the relevance; `language: 'es'` picks the stemming
+```
+
+- **`aggregate(params)`**: `groupBy` and `metrics` take a string or a list, `orderBy` a key or result name (`'-count'`), `tz` an IANA zone, `limit` at most the collection's maximum. Without `groupBy` the answer is one group with an empty `key`, for a counter.
+- **`fillBuckets(groups, { field, unit, from, to, empty })`** adds the empty buckets of one date field between `from` and `to` (bucket keys such as `'2026-09'`, or dates), as `count: 0` plus `empty`. It needs groups grouped by that bucket alone.
+- **`search(text, params)`** takes a list's parameters except `orderBy` and `after`; pages with `skip` through the first 1,000 results.
+- **Errors:** `AggregateNotEnabledError`, `InvalidAggregateError` and `SearchNotEnabledError` (400, `ValidationError`s), `AggregateTooExpensiveError` and `SearchTooExpensiveError` (422) and `IndexBuildingError` (503, a `RetryableError`: the text index is being rebuilt, and `retryAfter` says when to try again).
+- **Typed:** in a client typed from `backd types`, `aggregate` only accepts the declared fields (a bucket only on dates), and a collection that declares no `aggregate:` has none.
+- **Functions** have both on `ctx.db` (as the caller) and `ctx.admin.db`.
+
 ### Custom ids
 
 A collection that declares [`custom_id`](../../configuration/config-dir/#custom-ids) takes the id from the client: pass it in the document. Nothing is overwritten, and a typed client requires it:
@@ -648,6 +677,9 @@ Every answer that isn't 2xx throws a `BackdError`, or one of its subclasses:
 | `NotTeamMemberError` (a `ForbiddenError`) | 403 | `not_team_member`: not a member of the team and no team role there (the same for an unknown team) |
 | `TeamError` (a `ValidationError`) | 400 | `team_required`, `team_not_allowed` |
 | `InvalidExpandError`, `ExpandTooLargeError` (`ValidationError`s) | 400 | `invalid_expand` (`details` name the part), `expand_too_large`: see [expanding references](#expanding-references) |
+| `AggregateNotEnabledError`, `InvalidAggregateError`, `SearchNotEnabledError` (`ValidationError`s) | 400 | `aggregate_not_enabled`, `invalid_aggregate`, `search_not_enabled`: see [aggregations and search](#aggregations-and-search) |
+| `AggregateTooExpensiveError`, `SearchTooExpensiveError` | 422 | `aggregate_too_expensive`, `search_too_expensive` |
+| `IndexBuildingError` (a `RetryableError`) | 503 | `index_building`: the collection's text index is being rebuilt |
 | `LastOrgManagerError` (a `ConflictError`) | 409 | `last_org_manager`: the organization needs someone who can manage it |
 | `VersionMismatchError` | 412 | `version_mismatch` |
 | `ConsentRequiredError` | 400, 403 | `consent_required`; `consents` lists what to accept, as `{ name, version }` |

@@ -30,6 +30,32 @@
  * @property {any} where
  * @property {any} order_by
  * @property {Record<string, RefShape>} [expand] The collection's declared references, by name. Types generated before reference expansion have none.
+ * @property {AggregateShape | never} [aggregate] What the collection lets an aggregation use; `never` when it declares none.
+ */
+
+/**
+ * The fields of a collection's `aggregate:`: those to group by, those of them that are dates (and can
+ * be bucketed) and those to measure.
+ * @typedef {object} AggregateShape
+ * @property {string} group_by
+ * @property {string} dates
+ * @property {string} metrics
+ */
+
+/**
+ * Parameters of an aggregation of a collection, with its declared fields.
+ * @template {AggregateShape} A
+ * @template W
+ * @typedef {{
+ *   where?: W | string,
+ *   groupBy?: A['group_by'] | `${A['dates']}:${'day' | 'week' | 'month' | 'year'}` | Array<A['group_by'] | `${A['dates']}:${'day' | 'week' | 'month' | 'year'}`>,
+ *   metrics?: 'count' | `count_distinct:${A['group_by']}` | `${'sum' | 'avg' | 'min' | 'max'}:${A['metrics']}`
+ *     | Array<'count' | `count_distinct:${A['group_by']}` | `${'sum' | 'avg' | 'min' | 'max'}:${A['metrics']}`>,
+ *   tz?: string,
+ *   orderBy?: string | string[],
+ *   limit?: number,
+ *   language?: string,
+ * }} TypedAggregateParams
  */
 
 /**
@@ -103,6 +129,8 @@
  *   list(params?: TypedListParams<C['where'], C['order_by']>, opts?: RequestOptions): Promise<TypedPage<C['doc'] & WithExpanded<R, C>>>,
  *   iterate(params?: Omit<TypedListParams<C['where'], C['order_by']>, 'skip' | 'count'>, opts?: RequestOptions): AsyncGenerator<C['doc'] & WithExpanded<R, C>, void, undefined>,
  *   get(id: string, opts?: import('./data.js').GetOptions): Promise<C['doc'] & WithExpanded<R, C>>,
+ *   aggregate(params?: C extends { aggregate: infer A extends AggregateShape } ? ([A] extends [never] ? never : TypedAggregateParams<A, C['where']>) : import('./data.js').AggregateParams, opts?: RequestOptions): Promise<import('./data.js').AggregateResult>,
+ *   search(text: string, params?: Omit<TypedListParams<C['where'], never>, 'orderBy' | 'after'>, opts?: RequestOptions): Promise<TypedPage<C['doc'] & WithExpanded<R, C>>>,
  *   create(doc: C extends { create: infer X } ? X : C['input'], opts?: import('./data.js').CreateOptions): Promise<C['doc']>,
  *   replace(id: string, doc: C['input'], opts?: import('./data.js').WriteOptions): Promise<C['doc']>,
  *   patch(id: string, patch: Partial<C['input']>, opts?: import('./data.js').WriteOptions): Promise<C['doc']>,

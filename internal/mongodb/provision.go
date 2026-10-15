@@ -132,7 +132,11 @@ func (p *Provisioner) Verify(ctx context.Context) error {
 
 // validator translates the collection schema, logging omitted keywords.
 func (p *Provisioner) validator(c *registry.Collection) map[string]any {
-	v, omissions := Validator(c.RawSchema)
+	var hidden []string
+	if c.Text != nil && c.Text.LanguageField != "" {
+		hidden = append(hidden, registry.TextSearchField)
+	}
+	v, omissions := Validator(c.RawSchema, hidden...)
 	for _, o := range omissions {
 		p.Log.Info("schema keyword not enforced by the database validator",
 			"file", c.SchemaPath, "path", o.Path, "keyword", o.Keyword)

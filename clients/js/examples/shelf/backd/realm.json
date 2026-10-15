@@ -1,7 +1,7 @@
 {
   "generator": "1",
   "realm": "shelf",
-  "fingerprint": "bc5e70cf463944e8cb6c93beb93c127eafecb8532c5b077307f075fc1dc1d7a0",
+  "fingerprint": "e6a188ef29187628438455ff357d0f326a869645a8ec84c1dd490538cc3664e5",
   "entries": {
     "collection mail/outbox": "",
     "collection main/assets": "",
@@ -122,10 +122,10 @@
     "function main/share-open internal": "false",
     "function main/share-open mode": "sync",
     "function main/share-open output": "unknown",
-    "function main/team-plan input": "{ org: string; plan: \"free\" | \"pro\"; }",
+    "function main/team-plan input": "{ org: string; plan?: \"free\" | \"pro\"; timezone?: string; }",
     "function main/team-plan internal": "false",
     "function main/team-plan mode": "sync",
-    "function main/team-plan output": "{ org: string; plan: string; [key: string]: unknown; }",
+    "function main/team-plan output": "{ org: string; plan?: string; timezone?: string; [key: string]: unknown; }",
     "org role admin": "",
     "org role editor": "",
     "org role member": "",

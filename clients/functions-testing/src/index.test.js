@@ -1,5 +1,5 @@
 import { callTimedOut, createContext, EmailLimitError, emailMessage, fakeEmail, fakeJob, fakePush, FunctionError, MemoryStore, resetIds } from './index.js'
-import { BackdError, ExpandTooLargeError, InvalidExpandError, NotFoundError, VersionMismatchError } from '../../js/src/errors.js'
+import { BackdError, ExpandTooLargeError, InvalidAggregateError, InvalidExpandError, NotFoundError, ValidationError, VersionMismatchError } from '../../js/src/errors.js'
 
 // No test-framework dependency, matching the JS client's "no runtime
 // dependencies" (these helpers are dev-only, never shipped).
@@ -549,4 +549,51 @@ Deno.test('a read predicate hides documents from get and list', async () => {
   const notes = ctx.db('app').collection('notes')
   assertEquals((await notes.list()).items.map((d) => d.id), ['n1'])
   await assertRejects(() => notes.get('n2'), NotFoundError)
+})
+
+Deno.test('aggregate groups, measures and buckets like backd', async () => {
+  const { ctx, store } = createContext()
+  store.seed('shop', 'orders', [
+    { id: 'o1', category: 'shoes', total: 100.1, paid_at: '2026-09-30T22:30:00Z', _meta: { owner: 'u1' } },
+    { id: 'o2', category: 'shoes', total: 200.4, paid_at: '2026-09-30T21:30:00Z', _meta: { owner: 'u2' } },
+    { id: 'o3', category: 'hats', total: 20, _meta: { owner: 'u1' } },
+    { id: 'o4', total: 5 },
+  ])
+  const orders = ctx.db('shop').collection('orders')
+  const res = await orders.aggregate({ groupBy: 'category', metrics: ['count', 'sum:total', 'avg:total', 'max:paid_at', 'count_distinct:_meta.owner'], orderBy: '-count' })
+  assertEquals(res.total_groups, 3)
+  assertEquals(res.groups[0], { key: { category: 'shoes' }, count: 2, sum_total: '300.5', avg_total: '150.25', max_paid_at: '2026-09-30T22:30:00Z', 'count_distinct__meta.owner': 2 })
+  assertEquals(res.groups.map((g) => g.key.category), ['shoes', null, 'hats']) // ties by key, null first
+
+  // Months in Madrid: 22:30Z is already October there (UTC+2 in summer), 21:30Z is not.
+  const months = await orders.aggregate({ groupBy: 'paid_at:month', tz: 'Europe/Madrid', orderBy: 'paid_at:month' })
+  assertEquals(months.groups.map((g) => [g.key['paid_at:month'], g.count]), [[null, 2], ['2026-09', 1], ['2026-10', 1]])
+  // A total over nothing is a count of 0.
+  const none = await orders.aggregate({ where: { category: 'socks' } })
+  assertEquals(none.groups, [{ key: {}, count: 0 }])
+  // Declared collections refuse what backd would.
+  store.declareAggregate('shop', 'orders', { group_by: ['category'], metrics: ['total'] })
+  await assertRejects(() => orders.aggregate({ groupBy: 'paid_at' }), InvalidAggregateError)
+  await assertRejects(() => orders.aggregate({ metrics: 'sum:qty' }), InvalidAggregateError)
+  await assertRejects(() => orders.aggregate({ groupBy: 'category:fortnight' }), InvalidAggregateError)
+})
+
+Deno.test('search approximates the text index: words, phrases, exclusions and weights', async () => {
+  const { ctx, store } = createContext()
+  store.seed('blog', 'articles', [
+    { id: 'a1', title: 'Running shoes', body: 'Light shoes for the road', status: 'published' },
+    { id: 'a2', title: 'Boots', body: 'Heavy boots, also for running shoes', status: 'published' },
+    { id: 'a3', title: 'Kids shoes', body: 'small', status: 'draft' },
+  ])
+  store.declareTextIndex('blog', 'articles', { title: 10, body: 1 })
+  const articles = ctx.db('blog').collection('articles')
+  const page = await articles.search('running shoes -kids', { where: { status: 'published' } })
+  assertEquals(page.items.map((d) => d.id), ['a1', 'a2'])
+  assert(page.items[0]._meta.score > page.items[1]._meta.score, 'the weighted title ranks first')
+  assertEquals((await articles.search('"running shoes"')).items.map((d) => d.id), ['a1', 'a2'])
+  assertEquals((await articles.list({ where: { $search: 'boots' } })).items.map((d) => d.id), ['a2'])
+  await assertRejects(() => articles.list({ orderBy: '_relevance' }), ValidationError)
+  // The search is also a filter for an aggregation.
+  const counted = await articles.aggregate({ where: { $search: 'shoes' }, groupBy: 'status' })
+  assertEquals(counted.groups.map((g) => [g.key.status, g.count]), [['draft', 1], ['published', 2]])
 })

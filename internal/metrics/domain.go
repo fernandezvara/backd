@@ -14,6 +14,8 @@ type domain struct {
 	sessionsEnded   *prometheus.CounterVec
 	rateLimited     *prometheus.CounterVec
 	idConflicts     *prometheus.CounterVec
+	aggregations    *prometheus.CounterVec
+	aggregateTime   *prometheus.HistogramVec
 
 	fnCalls    *prometheus.CounterVec
 	fnTime     *prometheus.HistogramVec
@@ -57,6 +59,12 @@ func newDomain() domain {
 			"Times a limit refused or delayed someone: login (the throttle), function (a function's rate_limit) and email_<scope> (the email limits).", "realm", "scope"),
 		idConflicts: counter("id_conflicts_total",
 			"Creates of a document with a custom id that already exists (409 id_taken), by realm, database and collection.", "realm", "database", "collection"),
+		aggregations: counter("aggregations_total",
+			"Aggregations asked of a collection, by realm, database, collection and outcome: ok, too_expensive (422), invalid (400) or error.", "realm", "database", "collection", "outcome"),
+		aggregateTime: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: Namespace, Name: "aggregation_duration_seconds",
+			Help: "How long aggregations that reached the database took, by realm, database and collection.", Buckets: DurationBuckets,
+		}, []string{"realm", "database", "collection"}),
 		fnCalls: counter("function_invocations_total",
 			"Function runs that ended, by realm, function, mode and the executor's terminal status.", "realm", "function", "mode", "status"),
 		fnTime: prometheus.NewHistogramVec(prometheus.HistogramOpts{
@@ -73,7 +81,7 @@ func newDomain() domain {
 }
 
 func (d domain) collectors() []prometheus.Collector {
-	return []prometheus.Collector{newJobsCollector(d.jobs), d.jobsDone, d.jobsRetried, d.jobsExpired, d.refreshErrors, d.egress, d.execRuns, d.execTime, d.execRunning, d.sessionsStarted, d.sessionsEnded, d.rateLimited, d.idConflicts, d.fnCalls, d.fnTime, d.fnRefusals, d.fnReplays, d.execErrors, d.pushUsers, d.pushDeliveries, d.pushPruned}
+	return []prometheus.Collector{newJobsCollector(d.jobs), d.jobsDone, d.jobsRetried, d.jobsExpired, d.refreshErrors, d.egress, d.execRuns, d.execTime, d.execRunning, d.sessionsStarted, d.sessionsEnded, d.rateLimited, d.idConflicts, d.aggregations, d.aggregateTime, d.fnCalls, d.fnTime, d.fnRefusals, d.fnReplays, d.execErrors, d.pushUsers, d.pushDeliveries, d.pushPruned}
 }
 
 // PushUsers counts n users by what planning a push did with them.
@@ -122,6 +130,18 @@ func (m *Metrics) RateLimited(realm, scope string) {
 func (m *Metrics) DuplicateID(realm, database, collection string) {
 	if m != nil {
 		m.idConflicts.WithLabelValues(realm, database, collection).Inc()
+	}
+}
+
+// AggregateRan records an aggregation: its outcome and, when it reached the database, how long
+// it took.
+func (m *Metrics) AggregateRan(realm, database, collection, outcome string, took time.Duration) {
+	if m == nil {
+		return
+	}
+	m.aggregations.WithLabelValues(realm, database, collection, outcome).Inc()
+	if took > 0 {
+		m.aggregateTime.WithLabelValues(realm, database, collection).Observe(took.Seconds())
 	}
 }
 

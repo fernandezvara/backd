@@ -425,3 +425,36 @@ func TestExpandParameterIsPerCollection(t *testing.T) {
 		t.Errorf("a collection without references has %v", p)
 	}
 }
+
+// Only a collection that declares `aggregate:` has the endpoint, and it names the fields.
+func TestAggregatePathIsPerCollection(t *testing.T) {
+	reg := load(t, map[string]string{
+		"app/realm.yaml":                  "auth: enabled\nsignup: open\n",
+		"app/main/sales/schema.json":      `{"type":"object","additionalProperties":false,"properties":{"category":{"type":"string"},"total":{"type":"number"}}}`,
+		"app/main/sales/collection.yaml":  "aggregate:\n  group_by: [category]\n  metrics: [total]\nrules:\n  read: user != nil\n  create: user != nil\n",
+		"app/main/people/schema.json":     noteSchema,
+		"app/main/people/collection.yaml": "rules:\n  read: user != nil\n  create: user != nil\n",
+	})
+	doc := generate(t, reg, "app")
+	paths := doc["paths"].(map[string]any)
+	if _, ok := paths["/v1/app/main/people/_aggregate"]; ok {
+		t.Error("a collection without aggregate: has the endpoint")
+	}
+	item, ok := paths["/v1/app/main/sales/_aggregate"].(map[string]any)
+	if !ok {
+		t.Fatalf("no aggregate path: %v", pathsOf(doc))
+	}
+	op := item["get"].(map[string]any)
+	if op["operationId"] != "aggregateMainSales" && !strings.HasPrefix(op["operationId"].(string), "aggregate") {
+		t.Errorf("operationId = %v", op["operationId"])
+	}
+	var found bool
+	for _, p := range op["parameters"].([]any) {
+		if pm, ok := p.(map[string]any); ok && pm["name"] == "group_by" {
+			found = strings.Contains(pm["description"].(string), "category (up to 3)")
+		}
+	}
+	if !found {
+		t.Errorf("group_by is not described with the declared fields: %v", op["parameters"])
+	}
+}

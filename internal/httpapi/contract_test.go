@@ -403,6 +403,54 @@ func TestContract(t *testing.T) {
 		req("GET", "/v1/acme/app/notes?expand=status.nope", "", ada, 400)
 	}
 
+	// Aggregations: the sales collection declares what can be grouped and measured.
+	{
+		const s = "/v1/acme/app/sales"
+		req("POST", s, `{"category": "shoes", "total": 100.1, "paid_at": "2026-09-30T22:30:00Z"}`, ada, 201)
+		req("POST", s, `{"category": "hats", "total": 20}`, ada, 201)
+		const q = "/_aggregate?group_by=category,paid_at:month&tz=Europe/Madrid&metrics=count,sum:total,avg:total,min:paid_at,count_distinct:category&order_by=-count"
+		out := req("GET", s+q, "", ada, 200)
+		if out["total_groups"] != float64(2) {
+			t.Errorf("aggregate = %v", out)
+		}
+		req("GET", s+"/_aggregate", "", ada, 200)
+		req("GET", s+"/_aggregate?group_by=total", "", ada, 400)
+		req("GET", "/v1/acme/app/notes/_aggregate", "", ada, 400)
+		req("GET", s+"/_aggregate", "", nil, 401)
+		req("GET", "/v1/acme/app/private/_aggregate", "", ada, 403)
+		first, _ := f.doH(t, "GET", s+q, "", ada)
+		req("GET", s+q, "", with(ada, "If-None-Match", first.Header().Get("ETag")), 304)
+		f.store.aggregateErr = storage.ErrAggregateTooExpensive
+		req("GET", s+"/_aggregate?group_by=category", "", ada, 422)
+		f.store.aggregateErr = nil
+		busy := "aggregate/acme/app/sales/user:" + f.adaID
+		if !limiterFor(f.reg).tryAcquire(busy, 1) {
+			t.Fatal("limiter busy")
+		}
+		req("GET", s+"/_aggregate", "", ada, 429)
+		limiterFor(f.reg).release(busy, 1)
+	}
+
+	// Full-text search: a list, relevance, the aggregate and the rebuild window.
+	{
+		const a = "/v1/acme/app/articles"
+		req("POST", a, `{"title": "Running shoes", "lang": "en"}`, ada, 201)
+		out := req("GET", a+`?where={"$search":"running"}&order_by=_relevance`, "", ada, 200)
+		if len(out["items"].([]any)) != 1 {
+			t.Errorf("search = %v", out)
+		}
+		req("GET", a+`/_aggregate?where={"$search":"running"}&language=en`, "", ada, 200)
+		req("GET", "/v1/acme/app/notes"+`?where={"$search":"x"}`, "", ada, 400)
+		f.store.fail = storage.ErrSearchTooExpensive
+		req("GET", a+`?where={"$search":"running"}`, "", ada, 422)
+		f.store.fail = storage.ErrIndexBuilding
+		req("GET", a+`?where={"$search":"running"}`, "", ada, 503)
+		f.store.fail = nil
+		f.store.aggregateErr = storage.ErrIndexBuilding
+		req("GET", a+`/_aggregate?where={"$search":"running"}`, "", ada, 503)
+		f.store.aggregateErr = nil
+	}
+
 	// Soft delete: delete, trash views, restore and purge.
 	{
 		const b = "/v1/acme/app/bin"
@@ -1873,6 +1921,16 @@ func TestContract(t *testing.T) {
 		req("POST", ab, `{"operations": [{"op": "patch", "collection": "posts", "id": "`+abID+`", "patch": {"title": "y"}, "if_match": "\"999\""}]}`, key, 412)
 	}
 
+	// The assignment of organizations to a collection that had none is queued, and a second one
+	// is refused while the first has not finished. No worker is running yet, so the first job
+	// stays queued: with a worker it could be done before the second request arrives.
+	{
+		orgID := req("POST", "/v1/acme/_orgs", `{"name": "Early"}`, ada, 201)["id"].(string)
+		const assign = "/v1/acme/_admin/data/app/shared/_assign_org"
+		req("POST", assign, `{"org": "`+orgID+`"}`, key, 202)
+		req("POST", assign, `{"org": "`+orgID+`"}`, key, 409) // one at a time per collection
+	}
+
 	// A worker runs from here on, for what waits on one: making versions of images.
 	runWorker(t, newTestWorker(t, f))
 	for _, base := range []string{"/v1/acme/app/library", ad + "/data/app/library"} {
@@ -2310,8 +2368,8 @@ func TestContract(t *testing.T) {
 		req("POST", assign, `{}`, key, 400)
 		req("POST", assign, `{"org": "nosuch"}`, key, 404)
 		req("POST", assign+"?dry_run=true", `{"org": "`+to+`"}`, key, 200)
-		req("POST", assign, `{"org": "`+to+`"}`, key, 202)
-		req("POST", assign, `{"org": "`+to+`"}`, key, 409) // one at a time per collection
+		// 202 and the 409 of "one at a time per collection" are produced before the worker
+		// starts (see above): a running worker finishes the first job before the second request.
 		// Owner templates.
 		f.svc.Settings.Email.Customizable = []string{"reset-password"}
 		tplLimits := f.svc.Settings.Email.Limits

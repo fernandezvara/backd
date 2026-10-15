@@ -30,3 +30,9 @@ rules:
 on_owner_delete:
   unset:
     author: id
+
+# Chapter 22: the team's dashboard counts pins per member per month. Only the
+# fields named here can be grouped by, so what a summary costs is decided in
+# this file; the index it needs is in indexes.json.
+aggregate:
+  group_by: [author, _meta.created_at]

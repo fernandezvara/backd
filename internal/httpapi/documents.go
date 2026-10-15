@@ -50,11 +50,12 @@ type collectionKey struct{}
 type documents struct {
 	reg            *registry.Registry
 	store          Store
-	objects        *realmObjects         // each realm's object storage (files)
-	baseURL        string                // backd's public address, for the links it signs (BACKD_URL)
-	imageMaxPixels int64                 // the instance's image pixel limit (BACKD_IMAGE_MAX_PIXELS)
-	expand         registry.ExpandLimits // reference expansion limits (BACKD_EXPAND_MAX_*), defaults filled in
-	maxUpload      int64                 // the largest file a proxy upload may carry (BACKD_MAX_UPLOAD_BYTES)
+	objects        *realmObjects            // each realm's object storage (files)
+	baseURL        string                   // backd's public address, for the links it signs (BACKD_URL)
+	imageMaxPixels int64                    // the instance's image pixel limit (BACKD_IMAGE_MAX_PIXELS)
+	expand         registry.ExpandLimits    // reference expansion limits (BACKD_EXPAND_MAX_*), defaults filled in
+	aggregateLim   registry.AggregateLimits // aggregation limits (BACKD_AGGREGATE_*), defaults filled in
+	maxUpload      int64                    // the largest file a proxy upload may carry (BACKD_MAX_UPLOAD_BYTES)
 	now            func() time.Time
 	maxBody        int64
 	opTimeout      time.Duration
@@ -73,6 +74,8 @@ func (d *documents) routes(r chi.Router) {
 	r.Route("/v1/{realm}/{database}/{collection}", func(r chi.Router) {
 		r.Use(dataCaching, d.resolveCollection, withTimeout(d.opTimeout), d.authorize)
 		d.mountDocuments(r)
+		// Summaries are for apps and functions; the admin data route has no use for them.
+		r.Get("/_aggregate", d.aggregate)
 	})
 	r.With(noStore, withTimeout(d.opTimeout), requireContentType("application/json")).Post("/v1/{realm}/{database}/_batch", d.batch)
 	r.With(dataCaching, withTimeout(d.opTimeout)).Get("/v1/{realm}/_config", d.readAppConfig)
@@ -304,26 +307,20 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid query parameters", details...)
 		return
 	}
+	if q.Search != nil || q.Relevance {
+		if !d.prepareSearch(w, r, c, q.Search) {
+			return
+		}
+		q.MaxTime = d.aggregateLim.Time // a search that needs more is refused, as an aggregation is
+	}
 	view, ok := parseTrash(w, r, c)
 	if !ok {
 		return
 	}
 	// ?org= and ?team= are shorthands for a where on _meta.org and _meta.team; the read rule
 	// still decides what is seen.
-	for _, f := range scopeFields {
-		if !r.URL.Query().Has(f.key) {
-			continue
-		}
-		if !f.has(c) {
-			writeError(w, r, http.StatusBadRequest, f.notAllowed, "this collection has no "+f.plural)
-			return
-		}
-		id := r.URL.Query().Get(f.key)
-		if id == "" {
-			writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid query parameters", Detail{Path: f.key, Reason: "must be " + f.article + " " + f.noun + " id"})
-			return
-		}
-		q.Filter = and(q.Filter, storage.Condition{Field: f.path, Op: storage.OpEq, Value: id})
+	if q.Filter, ok = scopeFilter(w, r, c, q.Filter); !ok {
+		return
 	}
 	filter, ok := viewFilter(w, r, d.accessFor(r), c, view)
 	if !ok {
@@ -346,7 +343,7 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 	if plan != nil && !d.expandInto(w, r, plan, page.Items, resp.Items) {
 		return
 	}
-	if page.HasMore && len(page.Items) > 0 {
+	if page.HasMore && len(page.Items) > 0 && !q.Relevance {
 		if ok, _ := query.Cursorable(q.Sort, c.Fields); ok {
 			resp.NextCursor = query.EncodeCursor(q.Sort, page.Items[len(page.Items)-1])
 		}
@@ -377,7 +374,7 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-var listParams = map[string]bool{"expand": true, "where": true, "order_by": true, "limit": true, "skip": true, "after": true, "count": true, "deleted": true, "file_links": true, "org": true, "team": true}
+var listParams = map[string]bool{"language": true, "expand": true, "where": true, "order_by": true, "limit": true, "skip": true, "after": true, "count": true, "deleted": true, "file_links": true, "org": true, "team": true}
 
 func parseListQuery(v url.Values, fields map[string]registry.Field) (storage.Query, []Detail) {
 	q := storage.Query{Limit: defaultLimit}
@@ -399,10 +396,27 @@ func parseListQuery(v url.Values, fields map[string]registry.Field) (storage.Que
 		}
 	}
 	var err error
-	if q.Filter, err = query.ParseWhere(v.Get("where"), fields); err != nil {
+	var text string
+	if q.Filter, text, err = query.ParseWhereSearch(v.Get("where"), fields); err != nil {
 		addErr(err)
 	}
-	if q.Sort, err = query.ParseOrderBy(v.Get("order_by"), fields); err != nil {
+	if text != "" {
+		q.Search = &storage.Search{Text: text}
+	}
+	orderBy := v.Get("order_by")
+	if relevanceSort(orderBy) {
+		q.Relevance, orderBy = true, ""
+		switch {
+		case text == "":
+			details = append(details, Detail{Path: "order_by", Reason: "_relevance needs a $search in where: it orders by how well documents match it"})
+		case v.Has("after"):
+			details = append(details, Detail{Path: "after", Reason: "can't be combined with order_by=_relevance: relevance pages with skip"})
+		}
+	} else if strings.Contains(orderBy, "_relevance") {
+		details = append(details, Detail{Path: "order_by", Reason: "_relevance can't be combined with other fields: it orders by the search's score alone (ties by id)"})
+		orderBy = ""
+	}
+	if q.Sort, err = query.ParseOrderBy(orderBy, fields); err != nil {
 		addErr(err)
 	}
 	if q.Count, err = query.ParseCount(v.Get("count")); err != nil {
@@ -422,7 +436,10 @@ func parseListQuery(v url.Values, fields map[string]registry.Field) (storage.Que
 		}
 		q.Skip = n
 	}
-	if cursor := v.Get("after"); v.Has("after") {
+	if q.Relevance && q.Skip+q.Limit > maxRelevanceResults {
+		details = append(details, Detail{Path: "skip", Reason: "relevance pages reach at most the first " + strconv.Itoa(maxRelevanceResults) + " results: narrow the search or its where"})
+	}
+	if cursor := v.Get("after"); v.Has("after") && !q.Relevance {
 		switch {
 		case v.Has("skip"):
 			details = append(details, Detail{Path: "after", Reason: "can't be combined with skip: a cursor already says where the page starts"})
@@ -798,6 +815,11 @@ func render(doc map[string]any) map[string]any {
 // storageError maps repository errors to HTTP responses.
 func storageError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, storage.ErrSearchTooExpensive):
+		writeError(w, r, http.StatusUnprocessableEntity, codeSearchTooCostly, "this search needs more time than allowed: use fewer or rarer words, or narrow `where`")
+	case errors.Is(err, storage.ErrIndexBuilding):
+		w.Header().Set("Retry-After", "5")
+		writeError(w, r, http.StatusServiceUnavailable, codeIndexBuilding, "the text index of this collection is being rebuilt: try again in a few seconds")
 	case errors.Is(err, storage.ErrNotFound):
 		writeError(w, r, http.StatusNotFound, codeNotFound, "document not found")
 	case errors.Is(err, storage.ErrConflict):
@@ -1227,3 +1249,32 @@ func explainReferenceFilters(c *registry.Collection, details []Detail) []Detail 
 	}
 	return details
 }
+
+// scopeFilter adds the ?org= and ?team= shorthands of a read to filter, as conditions on
+// _meta.org and _meta.team. It answers 400 and returns false when the collection has no such
+// scope or the value is empty.
+func scopeFilter(w http.ResponseWriter, r *http.Request, c *registry.Collection, filter storage.Filter) (storage.Filter, bool) {
+	for _, f := range scopeFields {
+		if !r.URL.Query().Has(f.key) {
+			continue
+		}
+		if !f.has(c) {
+			writeError(w, r, http.StatusBadRequest, f.notAllowed, "this collection has no "+f.plural)
+			return nil, false
+		}
+		id := r.URL.Query().Get(f.key)
+		if id == "" {
+			writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid query parameters", Detail{Path: f.key, Reason: "must be " + f.article + " " + f.noun + " id"})
+			return nil, false
+		}
+		filter = and(filter, storage.Condition{Field: f.path, Op: storage.OpEq, Value: id})
+	}
+	return filter, true
+}
+
+// maxRelevanceResults is how deep a relevance-sorted search can page: past it the database
+// would score and sort ever more documents to show a page nobody reads.
+const maxRelevanceResults = 1000
+
+// relevanceSort reports whether order_by is the relevance sort.
+func relevanceSort(orderBy string) bool { return strings.TrimSpace(orderBy) == "_relevance" }

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -183,5 +184,50 @@ func TestTutorialAuthorsReference(t *testing.T) {
 	c, ok := reg.Collection("shelf", "main", "assets")
 	if !ok || c.References["author"] == nil || c.References["author"].Key != "_meta.owner" {
 		t.Fatalf("assets references = %+v", c.References)
+	}
+}
+
+// Chapter 22 prints what it adds: the text index entry, the aggregate section and the index the
+// warning asks for. They have to be in the finished realm, which has to load with them.
+func TestTutorialSearchAndDashboard(t *testing.T) {
+	root := filepath.Join("..", "..", "examples", "config", "shelf", "main")
+	read := func(p string) []byte {
+		b, err := os.ReadFile(filepath.Join(root, p))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	// The aggregate section printed in the chapter is the one of pins/collection.yaml.
+	printed := blockAfter(t, "22-search-dashboard", "add this at the end of `config/shelf/main/pins/collection.yaml`")
+	var want, got struct {
+		Aggregate map[string]any `yaml:"aggregate"`
+	}
+	if err := yaml.Unmarshal(read("pins/collection.yaml"), &want); err != nil {
+		t.Fatal(err)
+	}
+	if err := yaml.Unmarshal([]byte(printed), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(want.Aggregate) == 0 || !reflect.DeepEqual(want.Aggregate, got.Aggregate) {
+		t.Fatalf("chapter 22 prints %v, the repository has %v", got.Aggregate, want.Aggregate)
+	}
+	reg, err := Load(filepath.Join("..", "..", "examples", "config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pins, _ := reg.Collection("shelf", "main", "pins")
+	assets, _ := reg.Collection("shelf", "main", "assets")
+	if pins.Aggregate == nil || len(pins.AggregateIndexWarnings()) != 0 {
+		t.Errorf("pins: aggregate %+v, warnings %v: the index of the chapter should silence the warning", pins.Aggregate, pins.AggregateIndexWarnings())
+	}
+	if assets.Text == nil || assets.Text.Fields[0].Weight == 0 {
+		t.Errorf("assets text index = %+v", assets.Text)
+	}
+	// Without the index the chapter shows, the warning is the one the chapter prints.
+	without := *pins
+	without.Indexes = slices.DeleteFunc(slices.Clone(pins.Indexes), func(ix Index) bool { return ix.Keys[0].Field == "author" })
+	if w := without.AggregateIndexWarnings(); len(w) != 1 || !strings.Contains(w[0], `"author" has no index that starts with it`) {
+		t.Errorf("warnings without the index = %v", w)
 	}
 }

@@ -6021,6 +6021,7 @@ paths:
         - { $ref: "#/components/parameters/teamQuery" }
         - { $ref: "#/components/parameters/fileLinks" }
         - { $ref: "#/components/parameters/expand" }
+        - { $ref: "#/components/parameters/language" }
         - { $ref: "#/components/parameters/ifNoneMatch" }
         - name: where
           in: query
@@ -6028,6 +6029,10 @@ paths:
             JSON filter, e.g. `{"price":{"$lt":20}}`. Keys combine with AND;
             `$or` and `$and` take an array of such objects, e.g.
             `{"$or":[{"title":{"$icontains":"go"}},{"body":{"$icontains":"go"}}]}`.
+            `$search` at the top level searches the collection's text index (words,
+            `"quoted phrases"` and `-excluded` words, at most 256 bytes and 10 terms), ANDed
+            with the rest; it can't be inside `$or` or `$and`, and a collection without a
+            text index answers `400 search_not_enabled`.
           schema: { type: string }
         - name: order_by
           in: query
@@ -6035,7 +6040,9 @@ paths:
             Comma-separated fields; `-` prefix for descending. Without it,
             documents are ordered by `_meta.created_at`, then `id`: ids chosen
             by clients have no order of their own. `id` is always the last
-            tiebreaker.
+            tiebreaker. `_relevance` alone, with a `$search`, orders by the search's score
+            (best first, ties by id) and puts it in each document's `_meta.score`; it pages
+            by `skip` up to the first 1,000 results and can't use `after`.
           schema: { type: string }
         - { $ref: "#/components/parameters/limit" }
         - { $ref: "#/components/parameters/skip" }
@@ -6071,6 +6078,21 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        "422":
+          description: >-
+            `search_too_expensive`: a `$search` that needed more time than allowed
+            (`BACKD_AGGREGATE_TIME`, 5 seconds by default): fewer or rarer words, or a narrower
+            `where`.
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
+        "503":
+          description: >-
+            `index_building`: a `$search` while the collection's text index is being rebuilt
+            after its declaration changed. Try again after `Retry-After` seconds.
+          headers:
+            Retry-After: { $ref: "#/components/headers/RetryAfter" }
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
         default: { $ref: "#/components/responses/Error" }
     post:
       tags: [documents]
@@ -6118,6 +6140,103 @@ paths:
         "415": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/{database}/{collection}/_aggregate:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { $ref: "#/components/parameters/collection" }
+    get:
+      tags: [documents]
+      summary: Aggregate documents
+      description: |
+        Summarizes the documents the caller may read: counts and measures, grouped by fields the
+        collection declares in `aggregate:` (collection.yaml). The read rule is applied before
+        grouping, so a total never includes a document a list would hide. The pipeline is
+        fixed; clients only choose declared fields, buckets and metrics.
+
+        Without `group_by` the answer is one group with an empty key (a counter). A missing or
+        null value forms its own `null` group; empty date buckets are not filled in.
+        `sum` and `avg` are exact decimals returned as strings; `count` and `count_distinct`
+        are integers; `min` and `max` are returned as stored. Result names are `<metric>_<field>`.
+      operationId: aggregateDocuments
+      security: [{}, { session: [] }, { apiKey: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/orgQuery" }
+        - { $ref: "#/components/parameters/teamQuery" }
+        - { $ref: "#/components/parameters/language" }
+        - { $ref: "#/components/parameters/ifNoneMatch" }
+        - name: where
+          in: query
+          description: >-
+            The same JSON filter as a list's, `$search` included, ANDed with the read rule before
+            grouping.
+          schema: { type: string }
+        - name: group_by
+          in: query
+          description: >-
+            Up to 3 fields declared in `aggregate.group_by`, separated by commas; a date field
+            takes a bucket: `paid_at:month` (`day`, `week` (ISO, Monday first), `month`, `year`).
+            Bucket keys are text: `2026-09-14`, `2026-W38`, `2026-09`, `2026`.
+          schema: { type: string }
+        - name: metrics
+          in: query
+          description: >-
+            Separated by commas, at most 10; default `count`. `count`; `count_distinct:<field>`
+            (a `group_by` field; exact, and above 10,000 distinct values `422`); `sum:<field>`
+            and `avg:<field>` (numeric fields of `aggregate.metrics`; missing and null are
+            ignored, the average of nothing is null); `min:<field>` and `max:<field>` (numbers
+            and dates of `aggregate.metrics`).
+          schema: { type: string }
+        - name: tz
+          in: query
+          description: IANA time zone of the date buckets (`Europe/Madrid`); default `UTC`.
+          schema: { type: string }
+        - name: order_by
+          in: query
+          description: >-
+            Group keys and result names, `-` for descending: `-count`, `sum_total`,
+            `paid_at:month`. Default: the keys, ascending, null first.
+          schema: { type: string }
+        - name: limit
+          in: query
+          description: Groups returned, 1 to the collection's `max_groups` (1,000 by default); default 100.
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: The groups, and how many there were before `limit`.
+          headers:
+            ETag: { description: "A weak validator over the answer; send it in `If-None-Match`.", schema: { type: string, pattern: '^W/"[0-9a-f]{32}"$' } }
+            Vary: { $ref: "#/components/headers/DataVary" }
+            Cache-Control: { $ref: "#/components/headers/DataCacheControl" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AggregateResponse" }
+        "304": { $ref: "#/components/responses/NotModified" }
+        "400":
+          description: >-
+            `invalid_aggregate` (the details name each parameter and what is wrong),
+            `aggregate_not_enabled` (the collection declares no `aggregate:`) or
+            `invalid_query` for `?org=` and `?team=`.
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "422":
+          description: >-
+            `aggregate_too_expensive`: it needed more time, memory or distinct values than
+            allowed. Narrow `where`, group by fewer fields, or add an index that starts with a
+            `group_by` field.
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503":
+          description: "`index_building`: a `$search` while the text index is being rebuilt."
+          headers:
+            Retry-After: { $ref: "#/components/headers/RetryAfter" }
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/{database}/{collection}/{id}:
@@ -7638,6 +7757,16 @@ components:
         decides what is seen. A batch takes it for all its creates. Fixed at creation: an
         update that names another organization answers `400 immutable_field`.
       schema: { type: string }
+    language:
+      name: language
+      in: query
+      description: |
+        The language a `$search` is stemmed in: a locale code (`es`, `en-GB`, `pt_BR`) mapped to a
+        language of the text index; one with no language of its own searches without stemming.
+        Without it: the signed-in user's locale, then the first language of `Accept-Language`
+        for callers without one, then the index's `default_language`. Only meaningful with
+        `$search` in `where`.
+      schema: { type: string, maxLength: 35 }
     expand:
       name: expand
       in: query
@@ -8388,7 +8517,9 @@ components:
               pattern: "^[a-z][a-z0-9_]{0,63}$"
               description: |
                 backd's codes: invalid_json, validation_error, invalid_query, invalid_path,
-                invalid_header, precondition_required, invalid_expand, expand_too_large, unauthenticated,
+                invalid_header, precondition_required, invalid_expand, expand_too_large,
+                invalid_aggregate, aggregate_not_enabled, aggregate_too_expensive,
+                search_not_enabled, search_too_expensive, index_building, unauthenticated,
                 invalid_credentials, forbidden,
                 not_found, method_not_allowed, conflict, email_taken,
                 write_conflict, version_mismatch, id_required, invalid_id,
@@ -9113,6 +9244,7 @@ components:
         updated_by: { type: string }
         org: { type: string, description: "The organization the document belongs to. Only in collections with `organization` set, and set at creation (`?org=`)." }
         team: { type: string, description: "The team of the organization the document belongs to. Only in collections with `team` set, and set at creation (`?team=`)." }
+        score: { type: number, description: "The relevance of the document to a `$search`, in a list sorted with `order_by=_relevance`. Never stored." }
         deleted_at:
           allOf: [{ $ref: "#/components/schemas/Timestamp" }]
           description: When a soft-deleted document was deleted. Only in the trash (`deleted=only|include`) of a collection with `soft_delete`.
@@ -9389,6 +9521,27 @@ components:
         a single field's file is replaced and a `multiple` field's is added to;
         a reference that is wrong, used or expired is `400 validation_error`.
       additionalProperties: true
+
+    AggregateResponse:
+      type: object
+      additionalProperties: false
+      required: [groups, total_groups]
+      properties:
+        groups:
+          type: array
+          items:
+            type: object
+            required: [key]
+            description: |
+              `key` has one entry per `group_by` field (`null` for missing or null values);
+              the other members are the requested metrics by result name, e.g. `count`,
+              `sum_total`. Sums and averages are exact decimal strings.
+            properties:
+              key: { type: object, additionalProperties: true }
+            additionalProperties: true
+        total_groups:
+          type: integer
+          description: How many groups there were before `limit`.
 
     DocumentList:
       type: object

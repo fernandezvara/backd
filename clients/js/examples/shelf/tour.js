@@ -18,7 +18,7 @@ import { execFileSync } from 'node:child_process'
 import { createHmac } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { deflateSync } from 'node:zlib'
-import { createClient, expand, AuthenticationError, ConflictError, ConsentRequiredError, ForbiddenError, IdTakenError, InvalidIdError, NotFoundError, SecondStepRequiredError, ValidationError, VersionMismatchError, versionStatus } from '../../src/index.js'
+import { createClient, expand, fillBuckets, AuthenticationError, ConflictError, ConsentRequiredError, ForbiddenError, IdTakenError, InvalidIdError, NotFoundError, SecondStepRequiredError, ValidationError, VersionMismatchError, versionStatus } from '../../src/index.js'
 
 const url = process.env.BACKD_URL ?? 'http://localhost:8080'
 const PASSWORD = 'dev-p4ssw0rd!'
@@ -640,6 +640,61 @@ heading('Authors through expansion (ch21)')
   // Writes keep the asset's own ETag and ignore what was expanded.
   const patched = await main(member).collection('assets').patch(asset.id, { body: 'Edited' }, { ifMatch: asset._meta.version })
   check('a write uses the asset\'s own version and is never expanded', patched._meta.version === asset._meta.version + 1 && patched._expanded === undefined)
+}
+
+heading('Search and a dashboard (ch22)')
+{
+  const STAMP = Date.now().toString(36)
+  const word = `quokka${STAMP}`
+  const mine = main(member).collection('assets')
+  await mine.create({ title: `${word} handbook`, kind: 'note', body: 'about a small marsupial', tags: ['docs'] })
+  await mine.create({ title: 'Field notes', kind: 'note', body: `where the ${word} lives, with a handbook` })
+  await mine.create({ title: 'Unrelated', kind: 'note', body: 'nothing to see' })
+
+  // The text index: words in any order, the weighted title first, the score in _meta.score.
+  const found = await mine.search(word, { limit: 10 })
+  check('a search finds the documents with the word, best match first', found.items.length === 2 && found.items[0].title.startsWith(word), JSON.stringify(found.items.map((a) => a.title)))
+  check('the score rides in _meta.score and ranks the title above the body', found.items[0]._meta.score > found.items[1]._meta.score, JSON.stringify(found.items.map((a) => a._meta.score)))
+  const without = await mine.search(`${word} -field`)
+  check('an excluded word leaves out the documents that have it', without.items.length === 1 && without.items[0].title.startsWith(word))
+  const phrase = await mine.search(`"${word} handbook"`)
+  check('a quoted phrase must appear as written', phrase.items.length === 1)
+  await refused('a search can\'t be inside $or (400 invalid_query)', () => mine.list({ where: { $or: [{ $search: word }, { kind: 'link' }] } }), ValidationError, 'invalid_query')
+  await refused('relevance needs a search (400 invalid_query)', () => mine.list({ orderBy: '_relevance' }), ValidationError, 'invalid_query')
+  const counted = await mine.search(word, { count: true, limit: 1 })
+  check('count=true counts every match, not the page', counted.total === 2 && counted.items.length === 1, JSON.stringify(counted.total))
+
+  // The dashboard: a team's pins per member per month, in the team's time zone.
+  const ben = await signedIn(`ben22-${STAMP}@shelf.example`, operator)
+  const dee = await signedIn(`dee22-${STAMP}@shelf.example`, operator)
+  const benId = (await ben.auth.me()).id
+  const pinsOf = (/** @type {any} */ c) => c.db('main').collection('pins')
+  const team = await ben.orgs.create({ name: `Dash ${STAMP}` })
+  await main(operator).fn('team-plan', { org: team.id, timezone: 'Pacific/Auckland' })
+  check('an operator gives the team a time zone, a claim next to its plan', (await ben.orgs.get(team.id)).claims.timezone === 'Pacific/Auckland')
+  await refused('a time zone has to be one (400 invalid_timezone)', () => main(operator).fn('team-plan', { org: team.id, timezone: 'Mars/Base' }), ValidationError, 'invalid_timezone')
+  for (let i = 0; i < 3; i++) await main(ben).fn('pin', { org: team.id, title: `Dash pin ${i}` })
+  const { groups, total_groups } = await pinsOf(ben).inOrg(team.id).aggregate({
+    groupBy: ['author', '_meta.created_at:month'], metrics: ['count'], tz: 'Pacific/Auckland', orderBy: '-count',
+  })
+  check('pins per member per month: the author, the month text and the count', total_groups === 1 && groups[0].key.author === benId && /^\d{4}-\d{2}$/.test(String(groups[0].key['_meta.created_at:month'])) && groups[0].count === 3, JSON.stringify(groups))
+  // A chart wants a point for every month: group by the month alone, then fill the empty ones.
+  const monthly = await pinsOf(ben).inOrg(team.id).aggregate({ groupBy: '_meta.created_at:month', tz: 'Pacific/Auckland' })
+  const thisMonth = String(monthly.groups[0].key['_meta.created_at:month'])
+  const filled = fillBuckets(monthly.groups, { field: '_meta.created_at', unit: 'month', from: thisMonth, to: thisMonth })
+  check('a chart gets its buckets filled', filled.length === 1 && filled[0].count === 3, JSON.stringify(filled))
+  await refused('fillBuckets needs groups of one bucket alone', async () => fillBuckets(groups, { field: '_meta.created_at', unit: 'month', from: thisMonth, to: thisMonth }), TypeError, '')
+  await refused('only declared fields can be grouped by (400 invalid_aggregate)', () => pinsOf(ben).inOrg(team.id).aggregate({ groupBy: 'title' }), ValidationError, 'invalid_aggregate')
+  await refused('someone in no team is refused as for a list: the read rule applies first (403)', () => pinsOf(dee).inOrg(team.id).aggregate({ groupBy: 'author' }), ForbiddenError, 'forbidden')
+  // A member of another team counts nothing of this one.
+  const other = await dee.orgs.create({ name: `Other ${STAMP}` })
+  const none = await pinsOf(dee).inOrg(team.id).aggregate({ groupBy: 'author' })
+  check('a member of another team counts nothing of this one', none.groups.length === 0 && none.total_groups === 0, JSON.stringify(none))
+  await dee.auth.reauth({ method: 'password', password: PASSWORD })
+  await dee.orgs.delete(other.id)
+  await refused('a collection that declares no aggregate: refuses (400 aggregate_not_enabled)', () => main(ben).collection('shares').aggregate(), ValidationError, 'aggregate_not_enabled')
+  await ben.auth.reauth({ method: 'password', password: PASSWORD })
+  await ben.orgs.delete(team.id)
 }
 
 heading('cleanup by hand (ch9)')

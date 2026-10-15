@@ -32,6 +32,8 @@ type adminAPI struct {
 	imageMaxPixels int64
 	// expandMaxArray is the instance's per-array expansion limit, which a config check applies.
 	expandMaxArray int
+	// aggregate are the instance's aggregation limits, which a config check applies.
+	aggregate registry.AggregateLimits
 }
 
 type adminUserKey struct{}

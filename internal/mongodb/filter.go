@@ -40,17 +40,43 @@ func buildFilter(f storage.Filter) (bson.D, error) {
 // buildQuery combines the client's filter with the access filter.
 func buildQuery(q storage.Query) (bson.D, error) {
 	filter, err := buildFilter(q.Filter)
-	if err != nil || q.Access == nil {
-		return filter, err
-	}
-	access, err := buildTree(storage.Simplify(q.Access))
 	if err != nil {
 		return nil, err
 	}
-	if len(filter) == 0 {
-		return access, nil
+	clauses := bson.A{}
+	if len(filter) > 0 {
+		clauses = append(clauses, filter)
 	}
-	return bson.D{{Key: "$and", Value: bson.A{filter, access}}}, nil
+	if q.Access != nil {
+		access, err := buildTree(storage.Simplify(q.Access))
+		if err != nil {
+			return nil, err
+		}
+		if len(access) > 0 {
+			clauses = append(clauses, access)
+		}
+	}
+	if q.Search != nil {
+		clauses = append(clauses, searchClause(q.Search))
+	}
+	switch len(clauses) {
+	case 0:
+		return bson.D{}, nil
+	case 1:
+		return clauses[0].(bson.D), nil
+	}
+	return bson.D{{Key: "$and", Value: clauses}}, nil
+}
+
+// searchClause is the text search as a clause. The text goes in as the value of $search, which
+// the database reads as words and phrases, never as query operators; the language is one of
+// the database's names or "none".
+func searchClause(s *storage.Search) bson.D {
+	d := bson.D{{Key: "$search", Value: s.Text}}
+	if s.Language != "" {
+		d = append(d, bson.E{Key: "$language", Value: s.Language})
+	}
+	return bson.D{{Key: "$text", Value: d}}
 }
 
 // buildTree translates a filter tree: the client's where, or an access

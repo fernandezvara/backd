@@ -73,6 +73,9 @@ Every error uses the same JSON envelope. Success responses are never wrapped.
 | 400 | `id_not_allowed` | A create with an `id` in a collection that generates its ids |
 | 400 | `invalid_expand` | An `expand` that names an unknown reference or field, goes too deep, has too many entries or is malformed; the details name the part. See [Expanding references](documents/#expanding-references) |
 | 400 | `expand_too_large` | An `expand` that would return more documents than the instance allows; nothing partial is returned |
+| 400 | `invalid_aggregate` | An aggregate request whose `group_by`, `metrics`, `order_by`, `limit`, `tz` or `where` is wrong; the details name each one. See [Aggregations](aggregations/) |
+| 400 | `aggregate_not_enabled` | An aggregate request to a collection that declares no [`aggregate:`](../configuration/config-dir/#aggregations) |
+| 400 | `search_not_enabled` | A `$search` in a collection that declares no [text index](../configuration/config-dir/#a-text-index) |
 | 400 | `invalid_query` | Bad `where`, `order_by`, `limit`, `skip` or `count`, or unknown query parameter |
 | 400 | `idempotency_key_required` | A [function](../functions/calling/#idempotency) with `idempotency: required` was called with no `Idempotency-Key` |
 | 401 | `unauthenticated` | Missing, unknown, expired or revoked session token or API key, where credentials are required (see [API keys](../auth/api-keys/#who-can-access-data)) |
@@ -100,6 +103,9 @@ Every error uses the same JSON envelope. Success responses are never wrapped.
 | 415 | `unsupported_media_type` | Wrong `Content-Type` for the method (a `webhook` function's body isn't required to be JSON at all) |
 | 422 | `upload_mismatch` | A direct upload's size or SHA-256 isn't the declared one: the object was deleted |
 | 422 | `idempotency_key_reused` | A [function](../functions/calling/#idempotency) `Idempotency-Key` was already used with different input |
+| 422 | `aggregate_too_expensive` | An [aggregation](aggregations/) that needed more time, memory or distinct values than allowed: narrow `where`, group by fewer fields or add an index |
+| 422 | `search_too_expensive` | A `$search` that needed more time than allowed: fewer or rarer words, or a narrower `where` |
+| 503 | `index_building` | A `$search` while the collection's text index is being rebuilt after its declaration changed; retry after `Retry-After` |
 | 429 | `too_many_requests` | Too many failed logins (see [brute-force protection](../auth/sessions/#brute-force-protection)); or a [function](../functions/calling/#concurrency-limits), or its realm, is at its concurrency limit; or the caller is over a function's [rate limit](../functions/calling/#rate-limits). Wait `Retry-After` seconds |
 | 500 | `function_failed` | A [function](../functions/calling/#calling-a-function) threw an error other than `ctx.error`, crashed, or went over its memory or CPU limit |
 | 500 | `internal_error` | Unexpected failure. Details are only in the logs |

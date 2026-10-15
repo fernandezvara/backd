@@ -126,6 +126,27 @@ Values are checked against the field's schema type:
 | Wildcards (`%`, `_`) in a `$like` / `$ilike` pattern | 4 |
 | Fields in `order_by` | 8 |
 | Nesting of `$or` / `$and` | 4 levels |
+| Text of a `$search` | 256 bytes, 10 terms |
+
+## Full-text search
+
+A collection with a [text index](../../configuration/config-dir/#a-text-index) can be searched with `$search`, which, unlike `$contains`, uses the index:
+
+```http
+GET /v1/shop/blog/articles?where={"$search":"red \"running shoes\" -kids","status":"published"}&order_by=_relevance&limit=20
+```
+
+- **Placement.** `$search` is a key at the top level of `where`, ANDed with the other conditions and with the [read rules](../../auth/rules/). Inside `$or` or `$and` it is `400 invalid_query`: the database can't combine a text search with alternatives. A collection with no text index answers `400 search_not_enabled`.
+- **Syntax.** Words (a document matches any of them), `"quoted phrases"` and `-excluded` words. It is a plain string: nothing in it is read as an operator or a pattern. At most 256 bytes and 20 terms (a phrase is one).
+- **Language.** Words are stemmed in the language of the request: `language=` (a locale code such as `es` or `en-GB`), else the signed-in user's locale, else the first language of `Accept-Language` for anonymous callers, else the index's `default_language`. A locale with no language of its own searches without stemming. Documents are stemmed in their own language, from the index's `language_field`.
+- **Relevance.** `order_by=_relevance`, alone, orders by how well documents match (title weights beat body weights), ties by `id`, and puts the score in each document's `_meta.score`. Relevance pages by `skip`, and only through the first 1,000 results (`400` beyond); there is no `after`. Any other `order_by` works as usual, with the search as a filter.
+- **Elsewhere.** `$search` also works in [aggregations](../aggregations/) (results per category next to a search box) and with [`expand`](../references/). Conditional GET works as for any list.
+- **Cost.** A search that needs more than `BACKD_AGGREGATE_TIME` (5 seconds by default) is `422 search_too_expensive`: many common words match most of a large collection and have to be scored. Fewer or rarer words, or a narrower `where`, fix it.
+- **While the index is rebuilt** (its declaration changed and `backd provision` is replacing it) a search answers `503 index_building` with `Retry-After`.
+
+The [search guide](../search/) covers declaring the index, weights, languages and what search doesn't do.
+
+**`$search` or `$contains`?** `$contains` and `$icontains` look for an exact substring and read every document of the collection: good for a few thousand documents and for partial words. `$search` is for words and phrases in prose, with stemming and ranking, and stays fast on large collections. It doesn't find partial words (`runn`), tolerate typos or return facets.
 
 ## Errors
 

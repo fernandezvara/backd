@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -79,4 +80,57 @@ func mustCreate(t *testing.T, do func(method, path, body, token string) (int, ma
 		t.Fatalf("POST %s: %d %v", path, code, out)
 	}
 	return out["id"].(string)
+}
+
+// A function aggregates as its caller (the read rules apply before grouping) and, with
+// ctx.admin.db, over everything; and it can search.
+func TestFunctionsAggregateAsCallerAndAsAdmin(t *testing.T) {
+	f := newRulesFixture(t)
+	do := func(method, path, body, token string) (int, map[string]any) {
+		t.Helper()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		if body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		f.internal.ServeHTTP(rec, req)
+		var out map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		return rec.Code, out
+	}
+	token := func(c auth.CallbackClaims) string {
+		c.Realm, c.Function = "acme", "app/echo"
+		c.Expires = f.clock.Add(time.Minute)
+		return auth.SignCallback(f.callbackKey, c)
+	}
+	asAda, asBob, admin := token(auth.CallbackClaims{UserID: f.adaID}), token(auth.CallbackClaims{UserID: f.bobID}), token(auth.CallbackClaims{Admin: true})
+	for _, c := range []struct{ who, body string }{
+		{asAda, `{"category": "shoes", "total": 10}`},
+		{asAda, `{"category": "shoes", "total": 5}`},
+		{asBob, `{"category": "hats", "total": 100}`},
+	} {
+		if code, out := do("POST", "/v1/acme/app/sales", c.body, c.who); code != 201 {
+			t.Fatalf("create: %d %v", code, out)
+		}
+	}
+	count := func(token string) any {
+		t.Helper()
+		code, out := do("GET", "/v1/acme/app/sales/_aggregate?metrics=count,sum:total", "", token)
+		if code != 200 {
+			t.Fatalf("aggregate: %d %v", code, out)
+		}
+		g := out["groups"].([]any)[0].(map[string]any)
+		return fmt.Sprint(g["count"], " ", g["sum_total"])
+	}
+	if got := count(asAda); got != "2 15" {
+		t.Errorf("as ada = %v", got)
+	}
+	if got := count(admin); got != "3 115" {
+		t.Errorf("as admin = %v", got)
+	}
+	// Anonymous callbacks have no identity: refused as for a list.
+	if code, _ := do("GET", "/v1/acme/app/sales/_aggregate", "", token(auth.CallbackClaims{})); code != http.StatusUnauthorized {
+		t.Errorf("anonymous callback: %d", code)
+	}
 }

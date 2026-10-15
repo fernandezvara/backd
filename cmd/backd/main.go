@@ -105,6 +105,12 @@ func setup(ctx context.Context, getenv func(string) string, logOut io.Writer) (*
 	if err := reg.CheckExpandLimits(cfg.Expand.MaxArray); err != nil {
 		return nil, fmt.Errorf("invalid config:\n%w", err)
 	}
+	if err := reg.CheckAggregateLimits(cfg.Aggregate); err != nil {
+		return nil, fmt.Errorf("invalid config:\n%w", err)
+	}
+	for _, w := range reg.AggregateWarnings() {
+		log.Warn(w)
+	}
 	if err := checkFunctions(reg, cfg, log); err != nil {
 		return nil, err
 	}
@@ -504,6 +510,7 @@ func (a *app) handlerConfig() httpapi.Config {
 		MaxUploadBytes:    a.cfg.MaxUploadBytes,
 		ImageMaxPixels:    a.cfg.ImageMaxPixels,
 		Expand:            a.cfg.Expand,
+		Aggregate:         a.cfg.Aggregate,
 		ImageTimeout:      a.cfg.ImageTimeout,
 		ImageConcurrency:  a.cfg.ImageConcurrency,
 		OpTimeout:         a.cfg.MongoOpTimeout,
