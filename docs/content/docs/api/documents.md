@@ -249,7 +249,7 @@ GET /v1/shop/blog/posts?expand=author(name,avatar),tags(name),category
 - **Cost headers.** `X-Backd-Expand-Queries` and `X-Backd-Expand-Docs` say what the expansion made and returned; the access log has them too, with the paths and the time spent.
 - **Caching.** The `ETag` of a document stays its own version, so `If-Match` keeps working; an expanded response is `private, no-cache` and never `304`.
 - **Not a join.** `where` and `order_by` use the collection's own fields: a path through a reference is `400 invalid_query`. Filter on the reference's source field instead.
-- **Writes** never expand, and `_expanded` in a body is ignored, like `_meta`.
+- **Writes** never expand, and `_expanded` in a body is ignored, like `_meta`. A [batch](#batch-writes) only writes, so it has nothing to expand. In [functions](../../functions/writing/#expanding-references), `ctx.db` expands as the caller and `ctx.admin.db` with admin access.
 
 ## Replace (PUT)
 

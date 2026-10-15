@@ -123,13 +123,27 @@ Prefer `ctx.db` to `ctx.admin.db` whenever the caller's own rights are enough: t
 
 | Call | Does |
 |---|---|
-| `get(id)` | one document (throws a not-found error if the caller can't read it) |
-| `list({ where, orderBy, limit, skip, after })` | one page: `{ items, has_more, next_cursor }`; `limit` is 1–100; pass `next_cursor` back as `after` for the next page |
+| `get(id, { expand })` | one document (throws a not-found error if the caller can't read it) |
+| `list({ where, orderBy, limit, skip, after, expand })` | one page: `{ items, has_more, next_cursor }`; `limit` is 1–100; pass `next_cursor` back as `after` for the next page |
 | `iterate({ where, orderBy })` | every match, page by page: `for await (const doc of collection.iterate({ … }))` |
 | `create(doc)`, `patch(id, patch)`, `replace(id, doc)`, `delete(id)` | one write; `patch(id, patch, { ifMatch: doc._meta.version })` fails if someone changed the document meanwhile |
 | `db.batch([{ op, collection, … }])` | up to 100 writes across collections in one transaction: all or none |
 
 `where` is the [query language](../../api/querying/): `{ status: "draft", "_meta.created_at": { $lt: cutoff } }`. Through `ctx.db`, the caller's [read rule](../../auth/rules/#read-rules-are-database-filters) also filters every list, so a function can't leak what its caller couldn't see.
+
+### Expanding references
+
+A collection that [declares references](../../configuration/config-dir/#references) returns the referenced documents next to the result when you ask with `expand`, as the [client](../../clients/js/#expanding-references) does:
+
+```ts
+const orders = ctx.db("main").collection("orders");
+const order = await orders.get(id, { expand: "customer(name,email)" });
+order._expanded?.customer;                    // { id, name, email }, or null
+const page = await orders.list({ where: { status: "open" }, expand: "customer(name),lines" });
+```
+
+- **`ctx.db` expands as the caller:** each referenced document has to pass its own collection's read rule for that caller, and is `null` otherwise. **`ctx.admin.db` expands with admin access**, and returns documents the caller of the function could not read: use it deliberately, and select only the fields you mean to return.
+- **The same limits and errors** as for any client (`InvalidExpandError`, `ExpandTooLargeError`); each path costs one query on the server, whatever the page size. See [Expanding references](../../api/documents/#expanding-references).
 
 ## Errors
 
