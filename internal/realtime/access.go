@@ -151,13 +151,14 @@ func (s *Stream) end(event string) {
 		return
 	}
 	s.ending = true
+	freed := s.size
 	s.queue = s.queue[:0]
-	s.hub.charge(-int64(s.size))
-	s.size = 0
 	s.queue = append(s.queue, Frame{Event: event, Data: []byte("{}")})
 	s.size = len(event) + 18
+	held := s.size
 	s.mu.Unlock()
-	s.hub.charge(int64(len(event) + 18))
+	// The hub's lock is never taken under a stream's: enforce takes them the other way round.
+	s.hub.charge(int64(held - freed))
 	s.wake()
 }
 
