@@ -100,3 +100,71 @@ func TestChainCarriesThroughCtxCall(t *testing.T) {
 		}
 	}
 }
+
+// A client can't plant a chain by any route that writes documents: not in the body of a
+// create, a replace or a patch, and not through a batch. A forged chain would let a loop
+// look first-party (depth reset) or make an event look chained (and be dropped).
+func TestNoRouteLetsAClientSetTheChain(t *testing.T) {
+	f := newRulesFixture(t)
+	token := auth.SignCallback(f.callbackKey, auth.CallbackClaims{Realm: "acme", Function: "app/echo", Admin: true, Expires: f.clock.Add(time.Minute)})
+	do := func(method, path, body string) (int, map[string]any) {
+		t.Helper()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		if method == "PATCH" {
+			req.Header.Set("Content-Type", "application/merge-patch+json")
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		f.internal.ServeHTTP(rec, req)
+		var out map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		return rec.Code, out
+	}
+	chainIn := func(doc map[string]any) any {
+		meta, _ := doc["_meta"].(map[string]any)
+		return meta["chain"]
+	}
+	forged := `"_meta": {"chain": {"root": "forged", "depth": 0}}`
+
+	code, doc := do("POST", "/v1/acme/app/private", `{"title": "a"}`)
+	if code != 201 {
+		t.Fatalf("create: %d %v", code, doc)
+	}
+	id := doc["id"].(string)
+	for name, tc := range map[string]struct{ method, path, body string }{
+		"replace":    {"PUT", "/v1/acme/app/private/" + id, `{"title": "b", ` + forged + `}`},
+		"patch":      {"PATCH", "/v1/acme/app/private/" + id, `{"title": "c", ` + forged + `}`},
+		"patch meta": {"PATCH", "/v1/acme/app/private/" + id, `{"_meta": {"chain": {"root": "forged", "depth": 0}}}`},
+		"create":     {"POST", "/v1/acme/app/private", `{"title": "d", ` + forged + `}`},
+	} {
+		code, out := do(tc.method, tc.path, tc.body)
+		if code >= 500 {
+			t.Errorf("%s: %d %v", name, code, out)
+			continue
+		}
+		if code < 300 && chainIn(out) != nil {
+			t.Errorf("%s: the chain was set: %v", name, chainIn(out))
+		}
+	}
+	// Stored too, not only in the answer.
+	code, stored := do("GET", "/v1/acme/app/private/"+id, "")
+	if code != 200 || chainIn(stored) != nil {
+		t.Errorf("stored document: %d chain %v", code, chainIn(stored))
+	}
+	// A batch.
+	code, out := do("POST", "/v1/acme/app/_batch", `{"operations": [
+		{"op": "create", "collection": "private", "document": {"title": "e", `+forged+`}},
+		{"op": "patch", "collection": "private", "id": "`+id+`", "patch": {`+forged+`}}
+	]}`)
+	if code >= 500 {
+		t.Fatalf("batch: %d %v", code, out)
+	}
+	for _, r := range out["results"].([]any) {
+		if m, ok := r.(map[string]any); ok {
+			if doc, ok := m["document"].(map[string]any); ok && chainIn(doc) != nil {
+				t.Errorf("batch: the chain was set: %v", chainIn(doc))
+			}
+		}
+	}
+}

@@ -1,6 +1,8 @@
 package mongodb
 
 import (
+	"context"
+	"go.mongodb.org/mongo-driver/v2/bson"
 	"math/rand/v2"
 	"slices"
 	"testing"
@@ -125,5 +127,43 @@ func TestAccessCollectionNamesAreTheOnesRealtimeRoutesOn(t *testing.T) {
 	want := []string{"users", "sessions", "api_keys", "orgs", "org_members", "org_teams"}
 	if !slices.Equal(AccessCollections, want) {
 		t.Fatalf("AccessCollections = %v, realtime routes on %v", AccessCollections, want)
+	}
+}
+
+// Writes backd makes by itself (an erase) were caused by no trigger: they must not leave the
+// chain an older write put on the document, or the change would read as a chained event.
+func TestSystemWritesDropTheChain(t *testing.T) {
+	_, repo := diffFixture(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	mk := func(owner string) string {
+		id := insert(t, repo, map[string]any{"status": "a", "tags": []any{"x"}}, now, owner)
+		if _, err := repo.coll.UpdateOne(ctx, bson.D{{Key: "_id", Value: id}},
+			bson.D{{Key: "$set", Value: bson.D{{Key: "_meta.chain", Value: bson.D{{Key: "root", Value: "r"}, {Key: "depth", Value: int64(3)}}}}}}); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	chainOf := func(id string) any {
+		var raw bson.M
+		if err := repo.coll.FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&raw); err != nil {
+			t.Fatal(err)
+		}
+		meta, _ := raw["_meta"].(bson.M)
+		return meta["chain"]
+	}
+	a := mk("u1")
+	if _, _, err := repo.AnonymizeOwned(ctx, "u1", nil, nil, nil, 100, now); err != nil {
+		t.Fatal(err)
+	}
+	if c := chainOf(a); c != nil {
+		t.Errorf("an anonymized document kept its chain: %v", c)
+	}
+	b := mk("u2")
+	if _, err := repo.PullReference(ctx, "tags", "x", 100, now); err != nil {
+		t.Fatal(err)
+	}
+	if c := chainOf(b); c != nil {
+		t.Errorf("a reference pull kept the chain: %v", c)
 	}
 }

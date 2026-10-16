@@ -165,6 +165,31 @@ What the numbers decided:
 - **Accepted:** a worst case like the table's last rows (every word in nearly every document) still costs seconds of database time up to the limit. Callers are bounded per instance (a limit of one aggregation at a time, the rate of the realm's other limits); an attacker with many accounts is the general case of any read endpoint and belongs to the edge's rate limiting.
 - **Deferred:** encrypted fields (milestone 16) don't exist yet; when they do, they must be refused in `aggregate.group_by`, `metrics` and text indexes, which is a startup check to add with them.
 
+### Triggers
+
+[Triggers](../../functions/triggers/) run functions from changes of documents. What was reviewed, with tests, and what is left:
+
+**Reviewed and held**
+
+- **No route runs a trigger, and nothing a client sends reaches its input.** The dispatcher makes the job, from the change; the input is the change's ids, version and the fields `fields:` names. The function is internal, so no HTTP route reaches it; a function that calls it with `ctx.call` has its own caller's identity, not the trigger's.
+- **`_meta.chain` can't be forged.** It is stamped from the callback token that only backd signs; `_meta` in the body of a create, replace, patch or batch is ignored (tested for each route), and an update replaces the whole `_meta`, so a write no trigger caused carries no chain. Writes backd makes by itself (an erase's anonymizing, assigning an organization) drop it too: a stale chain would read as a chained event and count against a loop's caps. A removal can't be stamped, and that can't make a loop endless: every cycle has to create or update a document.
+- **A `when` can't take the dispatcher down.** It sees only `document`, `before`, `changed()`, `now` and `appConfig`; no `user`, no `data`, no function with side effects. The engine's memory budget stops expressions built to burn memory or time (a nested iteration over huge ranges is an error in milliseconds): tested, because the dispatcher serves every realm of the deployment.
+- **`by` is information.** It comes from `_meta.updated_by` and is a user id only when a user was the writer; an API key, a function, an erase (`backd:erase`) or an anonymous writer leave it out. Nothing is granted because of it.
+- **Payloads are bounded and minimal.** Jobs carry ids unless `fields:` names paths of the schema (checked at startup), over 256 KiB bodies are left out and flagged, and duplicates collapse on a job id made from the change.
+- **Overload is visible, and bounded exactly.** The backlog ceiling counts the jobs the dispatcher queues at once (a burst can't run past it before the next count), chained events are capped per trigger and by depth, first-party events are never dropped for being many, and everything not queued is a recorded gap.
+- **One dispatcher, fenced.** The lease carries an epoch that every write of the position checks, so an instance that was paused and lost the lease can't move it. A restore of MongoDB invalidates the stored position and records a gap.
+- **Operating it needs the right role.** `triggers status`, `gaps` and `resolve` need the `functions` administration area and are audited; `rescan` runs where `MONGO_URI` is, reads one collection's documents and queues jobs marked `rescan`.
+
+**Accepted, on purpose**
+
+- **A trigger function runs with admin data access** (`ctx.admin.db`), because the realm's configuration declared it. It is the realm's most privileged code: review it like a function with `admin: true`. `backd triggers status` lists every trigger with the note.
+- **The author of a `when` or a function is trusted**, as the author of any rule. What is bounded is accident, not intent.
+- **Bodies in jobs are copies of data.** With `fields: ["*"]` or paths of personal data, the job's input holds copies kept for the function records' retention (`functions.log_retention`, `functions.job_retention`), and **erasing a user doesn't rewrite them**: they expire. Name the fields the function needs, or none and read the document.
+- **`by` of an erased user's other writes** remains their user id on documents they wrote and didn't own, until those documents change; the id is a pseudonym, listed in the personal data scope report as `_meta.updated_by`.
+- **Any instance with `BACKD_TRIGGERS=true` can hold the lease.** They are trusted equally; use `BACKD_TRIGGERS=false` where an instance shouldn't.
+
+**Found and fixed in the review:** a stale chain left on documents by backd's own writes (above), and a backlog count reused for five seconds that let a burst run past the ceiling.
+
 ## What you are responsible for
 
 - **TLS.** `backd` serves plain HTTP; terminate TLS in front of it.
