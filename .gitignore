@@ -37,3 +37,4 @@
 /examples/config/**/_functions/.backd-importmap.json
 /clients/js/test/integration/config/**/_functions/.backd/
 /clients/js/test/integration/config/**/_functions/.backd-importmap.json
+perf-results/

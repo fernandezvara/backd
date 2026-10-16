@@ -96,6 +96,34 @@ MONGO_TEST_URI='mongodb://localhost:27018/?replicaSet=rs0' go test ./...
 MongoDB 8.0 (and the current `latest` image) refuses to start on Linux kernel 6.19 or newer ([SERVER-121912](https://jira.mongodb.org/browse/SERVER-121912)). Use 8.2.
 {{< /hint >}}
 
+## Performance tests
+
+Changes to the change feed, the trigger dispatcher or the realtime hub can make them slower or hungrier without breaking a test. Their scenarios are tests that print results, run at a reduced scale in CI (where they check correctness under load: nothing lost, nothing doubled, every drop accounted for) and at full scale on demand:
+
+```sh
+export MONGO_TEST_URI='mongodb://localhost:27018/?replicaSet=rs0'   # see Testing above
+make perf          # both suites at scale 10, 30 s soaks, results in perf-results/*.txt (a few minutes)
+```
+
+or one at a time, with `-v` to see the `RESULT scenario=… key=value` lines:
+
+| Suite | Command | Measures |
+|---|---|---|
+| Trigger dispatcher (needs MongoDB) | `go test ./internal/triggers -run TestLoad -v` | an import of many documents, a hot collection with several triggers and a costly `when`, a chained storm and the depth cap, the backlog ceiling, a lease failover under traffic, an outage followed by `rescan`, a soak |
+| Realtime hub (scripted history, no database) | `go test ./internal/realtime -run TestLoad -v` | fan-out with and without grouping keys (checks per change), large documents, a mass stall against the memory budget, an organization-wide access change, idle replicas and several instances, a soak with stream churn |
+| Pre-change images and the change stream (needs MongoDB) | `BACKD_MEASURE=1 go test ./internal/mongodb -run MeasurementGate -v` | write cost with and without pre-images, storage per update, stream throughput and several consumers |
+| Aggregations and search (needs MongoDB) | `BACKD_LOAD_TEST=1 go test ./internal/mongodb -run TestAggregateAndSearchLoad -v` | aggregate and search times on 300,000 documents |
+
+The knobs: `BACKD_LOAD_SCALE` multiplies documents, streams and events (1 is the CI size, 10 is what the documented numbers used), `BACKD_SOAK` is the seconds of a soak, `BACKD_LOAD_REPORT=<file>` appends the result lines to a file. Add `-race` to look for concurrency bugs, not for numbers.
+
+The baseline is in the operations guide ([the dispatcher](../operations/events/#measured-under-load) and [the hub](../operations/events/#realtime-under-load)), measured on a development machine, so **compare ratios and orders of magnitude, not absolute numbers**: run `make perf` on the commit before your change and on yours, on the same idle machine, twice each (the first run warms caches), and look at:
+
+- **Dispatcher:** jobs per second of the import and the hot collection, the time to drain after a failover, the heap of the soak (it must stay flat), and that `queued + gaps` still equals the number of changes in the backlog scenario.
+- **Hub:** checks per change with and without keys (the gap between them is the point of the index), microseconds per change, peak buffered memory against the budget, and the heap after the soak.
+- **A regression** is a drop of a third or more in a throughput, a heap that grows with the length of a soak, or a correctness line that fails; the latter fail the test, not just the report.
+
+When a change moves the baseline on purpose, update the tables in the operations guide with the new numbers in the same commit.
+
 ## Translating the admin UI
 
 Every string of the [admin UI](../auth/admin-ui/) is in `ui/admin/src/i18n/en.json`; `es.json` is its Spanish translation, with the same keys and the same `{placeholders}`. A new string goes into `en.json` first and into every other file in the same change: a Vitest check (`npm test` in `ui/admin`, `make ui-test`) fails when a key is missing from one file, when a message uses different placeholders than its English original, or when a translation was left identical to English without being listed as a name or technical word. To add a language, add its file, its code and its own name to `ui/admin/src/i18n/locale.ts` and `i18n/index.ts`, and translate the keys; the language switch and the browser detection pick it up from there.
