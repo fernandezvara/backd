@@ -15,6 +15,7 @@ import (
 	"github.com/fernandezvara/backd/internal/metrics"
 	"github.com/fernandezvara/backd/internal/oauth"
 	"github.com/fernandezvara/backd/internal/push"
+	"github.com/fernandezvara/backd/internal/realtime"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/triggers"
 )
@@ -46,6 +47,10 @@ type Config struct {
 	Expand registry.ExpandLimits
 	// Aggregate are the instance's aggregation limits (BACKD_AGGREGATE_*); zero means the defaults.
 	Aggregate registry.AggregateLimits
+	// Realtime serves POST /v1/{realm}/_realtime; nil when this instance reads no change
+	// stream (BACKD_EVENTS=false). RealtimeLimits are the instance's, for the realm to lower.
+	Realtime       *realtime.Hub
+	RealtimeLimits realtime.Limits
 	// TriggerLimits are the instance's trigger limits (BACKD_TRIGGER_MAX_CHAIN); zero means the defaults.
 	TriggerLimits registry.TriggerLimits
 	// Triggers reads and closes what the trigger dispatcher recorded (status, gaps); nil on an
@@ -167,7 +172,7 @@ func NewHandler(cfg Config) http.Handler {
 	}
 	authRoutes := &authAPI{users: users, reg: cfg.Registry, actions: hostedActions(), opTimeout: opTimeout, oauth: cfg.oauthService(), baseURL: cfg.BackdURL}
 	authRoutes.routes(r)
-	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users, callbackKey: cfg.CallbackKey, objects: newRealmObjects(cfg.Registry, users), baseURL: cfg.BackdURL, maxUpload: maxUploadOf(cfg), imageMaxPixels: cfg.ImageMaxPixels, expand: cfg.Expand.OrDefault(), aggregateLim: cfg.Aggregate.OrDefault(), metrics: cfg.Metrics}
+	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users, callbackKey: cfg.CallbackKey, objects: newRealmObjects(cfg.Registry, users), baseURL: cfg.BackdURL, maxUpload: maxUploadOf(cfg), imageMaxPixels: cfg.ImageMaxPixels, expand: cfg.Expand.OrDefault(), aggregateLim: cfg.Aggregate.OrDefault(), metrics: cfg.Metrics, hub: cfg.Realtime, realtimeLimits: cfg.RealtimeLimits}
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, executorToken: cfg.ExecutorToken, log: cfg.Log, dev: cfg.Dev, concurrency: limiterFor(cfg.Registry), metrics: cfg.Metrics}
 	authRoutes.fns = fns
 	spec := &openAPI{reg: cfg.Registry}

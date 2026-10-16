@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/fernandezvara/backd/internal/rules"
 )
 
 // loadRealtime reads collection.yaml's `realtime:` into c: true marks the collection as one
@@ -73,5 +75,39 @@ func (r *Registry) EventCollections() []EventCollection {
 	slices.SortFunc(out, func(a, b EventCollection) int {
 		return strings.Compare(a.MongoDatabase+"/"+a.Name, b.MongoDatabase+"/"+b.Name)
 	})
+	return out
+}
+
+// RealtimeSettings are a realm's own lower limits for streams; zero means the instance's.
+type RealtimeSettings struct {
+	MaxSubscriptionsPerStream int
+	MaxStreamsPerUser         int
+}
+
+// visibilityKey summarizes what decides who a realtime stream shows a document to: the
+// opt-in, the read rule and soft deletion. A subscription made under another key is stale.
+func (c *Collection) visibilityKey() string {
+	src := ""
+	if rule := c.Rules.For(rules.Read); rule != nil {
+		src = rule.Source
+	}
+	return fmt.Sprintf("%t|%t|%s", c.Realtime, c.SoftDelete != nil, src)
+}
+
+// RealtimeChanged lists the realtime collections of old (as "<mongo database>\x00<name>")
+// whose subscriptions no longer follow the configuration in next: they lost the opt-in, were
+// removed, or what shows their documents changed.
+func RealtimeChanged(old, next *Registry) map[string]bool {
+	out := map[string]bool{}
+	for _, ec := range old.EventCollections() {
+		if !ec.Realtime {
+			continue
+		}
+		oc, _ := old.Collection(ec.Realm, ec.Database, ec.Name)
+		nc, ok := next.Collection(ec.Realm, ec.Database, ec.Name)
+		if !ok || oc == nil || nc.visibilityKey() != oc.visibilityKey() {
+			out[ec.MongoDatabase+"\x00"+ec.Name] = true
+		}
+	}
 	return out
 }

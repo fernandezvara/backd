@@ -37,6 +37,8 @@ type domain struct {
 	feedOpen, feedWatched, feedLag *prometheus.GaugeVec
 	feedReopened, feedEvents       *prometheus.CounterVec
 
+	rtStreams                                                    *prometheus.GaugeVec
+	rtEvents, rtResets, rtRefused                                *prometheus.CounterVec
 	trigEvents, trigEnqueued, trigDeduped, trigGaps, trigDropped *prometheus.CounterVec
 	trigBacklog                                                  *prometheus.GaugeVec
 	trigHandoffs                                                 prometheus.Counter
@@ -53,6 +55,10 @@ func newDomain() domain {
 	snap := &jobSnapshot{stats: map[string][]JobStat{}, needsAttention: map[string]int64{}, serialWaiting: map[string]int64{}}
 	return domain{
 		jobs:            snap,
+		rtStreams:       gauge("realtime_streams", "Realtime streams open on this instance, by realm.", "realm"),
+		rtEvents:        counter("realtime_events_total", "Events sent to realtime streams, by realm and event (created, updated, removed).", "realm", "event"),
+		rtResets:        counter("realtime_resets_total", "Resets sent to realtime streams, by realm and reason: history_expired, access_changed, slow_consumer, preimage_missing or config_changed.", "realm", "reason"),
+		rtRefused:       counter("realtime_refused_total", "Streams refused at open, by realm and reason: instance, user or rate.", "realm", "reason"),
 		trigEvents:      counter("trigger_events_total", "Changes a trigger considered, by realm, collection, trigger and outcome: matched (a job was made), no_match (its condition was false), missing_preimage (the image its condition needs was not there) or error.", "realm", "collection", "trigger", "outcome"),
 		trigEnqueued:    counter("trigger_jobs_enqueued_total", "Jobs the trigger dispatcher queued, by realm.", "realm"),
 		trigDeduped:     counter("trigger_jobs_deduplicated_total", "Jobs the queue collapsed because the same change had been queued before (a replay), by realm.", "realm"),
@@ -110,7 +116,7 @@ func newDomain() domain {
 }
 
 func (d domain) collectors() []prometheus.Collector {
-	return []prometheus.Collector{newJobsCollector(d.jobs), d.jobsDone, d.jobsRetried, d.jobsExpired, d.refreshErrors, d.egress, d.execRuns, d.execTime, d.execRunning, d.sessionsStarted, d.sessionsEnded, d.rateLimited, d.idConflicts, d.aggregations, d.aggregateTime, d.fnCalls, d.fnTime, d.fnRefusals, d.fnReplays, d.execErrors, d.pushUsers, d.pushDeliveries, d.pushPruned, d.feedOpen, d.feedWatched, d.feedLag, d.feedReopened, d.feedEvents, d.trigEvents, d.trigEnqueued, d.trigDeduped, d.trigGaps, d.trigDropped, d.trigBacklog, d.trigHandoffs, d.trigLag, d.trigWatermark, d.trigLease, d.trigEpoch}
+	return []prometheus.Collector{newJobsCollector(d.jobs), d.jobsDone, d.jobsRetried, d.jobsExpired, d.refreshErrors, d.egress, d.execRuns, d.execTime, d.execRunning, d.sessionsStarted, d.sessionsEnded, d.rateLimited, d.idConflicts, d.aggregations, d.aggregateTime, d.fnCalls, d.fnTime, d.fnRefusals, d.fnReplays, d.execErrors, d.pushUsers, d.pushDeliveries, d.pushPruned, d.rtStreams, d.rtEvents, d.rtResets, d.rtRefused, d.feedOpen, d.feedWatched, d.feedLag, d.feedReopened, d.feedEvents, d.trigEvents, d.trigEnqueued, d.trigDeduped, d.trigGaps, d.trigDropped, d.trigBacklog, d.trigHandoffs, d.trigLag, d.trigWatermark, d.trigLease, d.trigEpoch}
 }
 
 // PushUsers counts n users by what planning a push did with them.
@@ -352,5 +358,46 @@ func (o *TriggerObserver) Backlog(realm string, n int) {
 func (o *TriggerObserver) Gap(realm, reason string) {
 	if o != nil {
 		o.m.trigGaps.WithLabelValues(realm, reason).Inc()
+	}
+}
+
+// RealtimeObserver reports realtime streams.
+type RealtimeObserver struct{ m *Metrics }
+
+// Realtime returns the observer for the realtime hub; nil on a nil Metrics.
+func (m *Metrics) Realtime() *RealtimeObserver {
+	if m == nil {
+		return nil
+	}
+	return &RealtimeObserver{m}
+}
+
+func (o *RealtimeObserver) StreamOpened(realm string) {
+	if o != nil {
+		o.m.rtStreams.WithLabelValues(realm).Inc()
+	}
+}
+
+func (o *RealtimeObserver) StreamClosed(realm string) {
+	if o != nil {
+		o.m.rtStreams.WithLabelValues(realm).Dec()
+	}
+}
+
+func (o *RealtimeObserver) Event(realm, event string) {
+	if o != nil {
+		o.m.rtEvents.WithLabelValues(realm, event).Inc()
+	}
+}
+
+func (o *RealtimeObserver) Reset(realm, reason string) {
+	if o != nil {
+		o.m.rtResets.WithLabelValues(realm, reason).Inc()
+	}
+}
+
+func (o *RealtimeObserver) Refused(realm, reason string) {
+	if o != nil {
+		o.m.rtRefused.WithLabelValues(realm, reason).Inc()
 	}
 }

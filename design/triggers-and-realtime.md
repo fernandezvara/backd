@@ -425,12 +425,14 @@ event: reauth
 3. It applies the buffered events, then live ones, **ignoring any event whose version isn't newer** than what it holds. Replays and races are harmless.
 
 **Resuming:**
-- each event's SSE `id` is a resume token: MongoDB's change-stream token plus the realm, the principal (session or key subject) and the issue time, **signed** with a per-realm key stored in the system database — so any instance can verify it after a reconnect through a load balancer, and it can't be forged or presented by someone else;
+- each event's SSE `id` is a resume token: MongoDB's change-stream token plus the realm, the principal (session or key subject) and the issue time, **signed** with a per-realm key derived (HMAC) from the deployment's callback key, which every instance shares — so any instance can verify it after a reconnect through a load balancer, nothing has to be stored, and it can't be forged or presented by someone else (rotating the callback key invalidates outstanding tokens: clients get `invalid_resume_token` and reload);
 - reconnecting with `resume_from` (or `Last-Event-ID`) continues exactly after it;
 - replayed events are evaluated with the subscriber's **current** access, never the access at the time, so a resume can't reveal more than a list would;
 - if the change history no longer reaches it, the affected subscriptions get `reset` (`history_expired`) and the client reloads them.
 
 **History window:** the change-stream retention window — the MongoDB oplog size.
+
+**How a resume is served.** A resumed stream reads the history after its token with a consumer of its own while it holds the changes the shared feed delivers meanwhile; when the replay reaches the first held change it stops and the shared feed carries on (events at or before the last one sent are dropped by cluster time). A stream that resumes in a quiet system therefore holds its own change stream until the first live change; tokens older than a day are `history_expired` without reading.
 
 ## 18. Rules and visibility per subscriber (issue 27.14)
 

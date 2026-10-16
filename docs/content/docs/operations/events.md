@@ -6,7 +6,7 @@ weight: 417
 toc: true
 ---
 
-Realtime subscriptions and function triggers are built on one piece: the **change feed**, which reads MongoDB's [change stream](https://www.mongodb.com/docs/manual/changeStreams/). Triggers are built on it and described here; the subscription endpoint is planned and marked as such.
+Realtime subscriptions and function triggers are built on one piece: the **change feed**, which reads MongoDB's [change stream](https://www.mongodb.com/docs/manual/changeStreams/). [Realtime subscriptions](../../api/realtime/) and triggers are built on it.
 
 ## When it reads
 
@@ -104,9 +104,3 @@ A **gap** says what the dispatcher could not do and for which collection and tri
 ## Sizing the history
 
 A stream that falls behind can only catch up while MongoDB still holds the history it needs: its **oplog**. A consumer that is offline longer than the oplog window loses its position and continues from now, which `backd` reports as a gap (`changefeed_reopens_total{reason="history_lost"}`). Size the oplog for your write volume and the longest outage you want to survive.
-
-## What is planned
-
-- **Subscriptions** (`POST /v1/{realm}/_realtime`), with per-subscriber rules and immediate revocation.
-
-Their [design](https://github.com/fernandezvara/backd/blob/main/design/triggers-and-realtime.md) is in the repository. Until they land, the feed has no subscribers and the visible effects are the two settings, the `realtime:` key, the trigger dispatcher and the [metrics](../metrics/).

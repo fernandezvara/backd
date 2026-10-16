@@ -158,3 +158,9 @@ func (f fanout) Gap(ctx context.Context, g Gap) {
 // effect at once on an open stream (which resumes after its position) and otherwise at the
 // next open.
 func (l *Lazy) SetWatched(set WatchSet) { l.c.SetWatched(set) }
+
+// Watched is what the consumer reads now.
+func (l *Lazy) Watched() WatchSet {
+	set, _ := l.c.watched()
+	return set
+}

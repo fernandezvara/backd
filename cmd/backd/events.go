@@ -8,6 +8,7 @@ import (
 
 	"github.com/fernandezvara/backd/internal/changefeed"
 	"github.com/fernandezvara/backd/internal/mongodb"
+	"github.com/fernandezvara/backd/internal/realtime"
 )
 
 // feedSource connects the change-stream client on its first use: an instance that never has a
@@ -57,6 +58,14 @@ func (a *app) openEvents() func() {
 	set := mongodb.RealtimeWatchSet(a.reg)
 	consumer.SetWatched(set)
 	a.events = changefeed.NewLazy(consumer, 0)
+	a.hub = &realtime.Hub{
+		Feed: a.events, Limits: a.cfg.Realtime, Observer: a.metrics.Realtime(),
+		Replay: func() *changefeed.Consumer {
+			c := &changefeed.Consumer{Name: "realtime-replay", Source: src, Log: a.log, Observer: a.metrics}
+			c.SetWatched(a.events.Watched())
+			return c
+		},
+	}
 	if !set.Empty() {
 		a.log.Info("change feed ready", "realtime_collections", len(set.Collections), "opens_on", "first subscriber")
 	}

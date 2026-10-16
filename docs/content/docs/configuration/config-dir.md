@@ -336,7 +336,7 @@ realtime: true      # the collection's changes may be streamed to subscribed cli
 
 `realtime: true` marks the collection as one whose changes are read from MongoDB's change stream. Without it (or with `false`) nothing is read for the collection, and anything but `true` or `false` stops startup, naming the file.
 
-Subscriptions themselves, the `POST /v1/{realm}/_realtime` endpoint, come in a later step (planned): today the key only declares the collection, and the [change feed](../../operations/events/) it will use is what is built. Nothing is streamed to clients yet.
+Clients follow the collection with [`POST /v1/{realm}/_realtime`](../../api/realtime/), which streams only what the caller may read. The collection needs [pre-change images](../../operations/events/#requirements), which `backd provision` enables; the cost is described on the [change feed](../../operations/events/#what-it-costs) page.
 
 ### Triggers
 

@@ -238,6 +238,16 @@ roles:
 - An email listed in several roles must have the same networks everywhere.
 - [API keys](../../auth/api-keys/#network-restrictions) can be limited too, when they're created.
 
+## Realtime
+
+The `realtime:` section lowers, for this realm, the instance's limits on [realtime streams](../../api/realtime/#limits). It can't raise them.
+
+```yaml
+realtime:
+  max_subscriptions_per_stream: 10   # default: the instance's (20)
+  max_streams_per_user: 2            # default: the instance's (5)
+```
+
 ## Triggers
 
 The `triggers:` section sets the realm's limits for [collection triggers](../config-dir/#triggers). A realm may lower the instance's values and never raise them.

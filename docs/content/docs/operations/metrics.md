@@ -84,6 +84,10 @@ All names start with `backd_`; durations are in seconds.
 | `trigger_watermark_timestamp_seconds` | | When this instance last stored the dispatcher's position: alert when its age grows while it holds the lease. |
 | `trigger_lease_held`, `trigger_lease_epoch` | | `1` while this instance holds the dispatcher's lease, and the lease's epoch. |
 | `trigger_lease_acquired_total` | | Times this instance took the lease. |
+| `realtime_streams` | `realm` | Realtime streams open on this instance. |
+| `realtime_events_total` | `realm`, `event` | Events sent to streams (`created`, `updated`, `removed`). |
+| `realtime_resets_total` | `realm`, `reason` | Resets sent: `history_expired`, `slow_consumer`, `preimage_missing`, `config_changed`. A sustained `preimage_missing` means pre-change images are missing or expired; `slow_consumer` means clients or the buffer limits are too slow. |
+| `realtime_refused_total` | `realm`, `reason` | Streams refused at open: `instance`, `user` or `rate`. |
 | `trigger_gaps_total` | `realm`, `reason` | Gaps recorded: `window` (the dispatcher was away longer than MongoDB keeps history), `preimage_missing` or `backlog` (the realm was at its ceiling). |
 | `build_info` | `version`, `commit` | Always `1`. |
 

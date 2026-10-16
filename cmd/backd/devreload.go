@@ -193,6 +193,11 @@ func (r *reloader) reload(ctx context.Context, changed []string) (*reloadEvent, 
 	if next.events != nil {
 		next.events.SetWatched(mongodb.RealtimeWatchSet(reg))
 	}
+	if next.hub != nil {
+		// Subscriptions made under the old configuration end with a reset: the client
+		// subscribes again under the new one.
+		next.hub.ConfigChanged(registry.RealtimeChanged(cur.reg, reg))
+	}
 	if next.triggers != nil {
 		next.triggers.SetRegistry(reg)
 	}

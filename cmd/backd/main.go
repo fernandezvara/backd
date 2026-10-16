@@ -30,6 +30,7 @@ import (
 	"github.com/fernandezvara/backd/internal/metrics"
 	"github.com/fernandezvara/backd/internal/mongodb"
 	"github.com/fernandezvara/backd/internal/pushsend"
+	"github.com/fernandezvara/backd/internal/realtime"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/rules"
 	"github.com/fernandezvara/backd/internal/settings"
@@ -100,6 +101,8 @@ type app struct {
 	// events is the realtime change feed (BACKD_EVENTS): it opens its stream when the first
 	// subscriber arrives and closes it after the last one left. nil when events are off.
 	events *changefeed.Lazy
+	// hub serves the realtime streams over events; nil with it.
+	hub *realtime.Hub
 }
 
 func setup(ctx context.Context, getenv func(string) string, logOut io.Writer) (*app, error) {
@@ -553,6 +556,8 @@ func (a *app) handlerConfig() httpapi.Config {
 		Expand:            a.cfg.Expand,
 		Aggregate:         a.cfg.Aggregate,
 		TriggerLimits:     a.cfg.TriggerLimits,
+		Realtime:          a.hub,
+		RealtimeLimits:    a.cfg.Realtime,
 		Triggers:          &mongodb.TriggerState{Client: a.client, Deployment: a.cfg.DeploymentID},
 		ImageTimeout:      a.cfg.ImageTimeout,
 		ImageConcurrency:  a.cfg.ImageConcurrency,
