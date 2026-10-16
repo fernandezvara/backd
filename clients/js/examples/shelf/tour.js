@@ -745,6 +745,73 @@ heading('A pipeline on a status (ch23)')
   check('each step ran once: one thank-you, however the changes were delivered', again.length === 1, String(again.length))
 }
 
+heading('Live pins (ch24)')
+{
+  const STAMP = Date.now().toString(36)
+  const gus = await signedIn(`gus-${STAMP}@shelf.example`, operator)
+  const hal = await signedIn(`hal-${STAMP}@shelf.example`, operator)
+  const halId = (await hal.auth.me()).id
+  const team = await gus.orgs.create({ name: `Live ${STAMP}` })
+  const invite = await gus.orgs.invitations(team.id).create({ binding: 'none', roles: ['editor'], maxUses: 1 })
+  await hal.orgs.invitations.accept(invite.token)
+  const until = async (/** @type {() => boolean} */ cond, /** @type {number} */ ms = 15000) => {
+    for (const end = Date.now() + ms; Date.now() < end; ) {
+      if (cond()) return true
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    return false
+  }
+
+  // Gus follows the team's pins; Hal pins and Gus sees it without asking.
+  const live = gus.db('main').collection('pins').inOrg(team.id).subscribe({ load: { sort: '-_meta.created_at', limit: 50 } })
+  const state = await live.ready
+  check('a live list loads first, then follows (status live)', state.status === 'live' && state.items.length === 0, state.status)
+  await main(hal).fn('pin', { org: team.id, title: 'Appears at once' })
+  check('a member\'s pin shows up for the others without a reload', await until(() => live.items.some((p) => p.title === 'Appears at once')))
+  const pinId = live.items[0].id
+  await hal.db('main').collection('pins').delete(pinId)
+  check('a removal reaches the list too', await until(() => live.items.length === 0))
+
+  // A stranger can't subscribe to the team.
+  const ivy = await signedIn(`ivy-${STAMP}@shelf.example`, operator)
+  const peek = ivy.db('main').collection('pins').inOrg(team.id).subscribe({})
+  await peek.ready
+  await main(hal).fn('pin', { org: team.id, title: 'Not for strangers' })
+  await new Promise((r) => setTimeout(r, 500))
+  check('a stranger\'s subscription shows nothing of the team, before or after', peek.items.length === 0)
+  peek.close()
+
+  // Hal follows too; when they are removed from the team their list resets and empties.
+  const halLive = hal.db('main').collection('pins').inOrg(team.id).subscribe({ jitterMs: 50 })
+  await halLive.ready
+  await main(gus).fn('pin', { org: team.id, title: 'Before the removal' })
+  check('the other member sees it too', await until(() => halLive.items.length === 1))
+  /** @type {string[]} */
+  const resets = []
+  halLive.on('reset', (e) => resets.push(e.reason))
+  let lost = false
+  halLive.on('access_lost', () => (lost = true))
+  await gus.orgs.members(team.id).remove(halId)
+  check('a removed member\'s list resets at once (access_changed)', await until(() => resets.includes('access_changed')), JSON.stringify(resets))
+  check('and loses what it showed', await until(() => lost && halLive.items.length === 0))
+  await main(gus).fn('pin', { org: team.id, title: 'After the removal' })
+  await new Promise((r) => setTimeout(r, 500))
+  check('nothing more reaches them', halLive.items.length === 0)
+  live.close()
+  halLive.close()
+
+  // Revoking the session ends the stream.
+  const jo = await signedIn(`jo-${STAMP}@shelf.example`, operator)
+  const joInvite = await gus.orgs.invitations(team.id).create({ binding: 'none', roles: ['editor'], maxUses: 1 })
+  await jo.orgs.invitations.accept(joInvite.token)
+  const joLive = jo.db('main').collection('pins').inOrg(team.id).subscribe({})
+  await joLive.ready
+  let ended = null
+  joLive.on('error', (e) => (ended = e))
+  await jo.auth.logout()
+  check('signing out ends the stream (session_ended)', await until(() => ended !== null) && /** @type {any} */ (ended).code === 'session_ended', String(ended))
+}
+
 heading('cleanup by hand (ch9)')
 const sweep = /** @type {any} */ (await operator.admin.invokeFunction('main/cleanup'))
 const swept = /** @type {any} */ (await sweep.wait({ pollIntervalMs: 300, timeoutMs: 90000 }))

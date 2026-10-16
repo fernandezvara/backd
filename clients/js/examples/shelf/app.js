@@ -49,6 +49,9 @@ const shares = main.collection('shares')
 const notifications = main.collection('notifications')
 const members = main.collection('members')
 const pins = main.collection('pins')
+// The open team's live list (chapter 24), kept out of the component so Alpine doesn't wrap it.
+/** @type {import('backd-js').LiveView | null} */
+let liveTeam = null
 const profiles = main.collection('profiles')
 const outbox = backd.db('mail').collection('outbox')
 
@@ -118,6 +121,7 @@ document.addEventListener('alpine:init', () => {
     teams: [],
     team: null, // the open team's id
     pinList: [],
+    liveStatus: 'connecting', // the pins' stream: connecting, live, resyncing, closed
     dashboard: [],
     dashboardZone: 'UTC',
     teamMembers: [],
@@ -936,19 +940,34 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    // The team being open: its pins (the read rule shows members only theirs,
-    // and ?org= says which) and its members.
+    // The team being open: its pins, kept live (chapter 24: a subscription filtered by the
+    // team, which the read rule narrows to what this member may see) and its members.
     async openTeam(id) {
+      liveTeam?.close()
+      liveTeam = null
       this.team = id
       this.pinList = []
       this.teamMembers = []
+      this.liveStatus = 'connecting'
       this.invite.link = null
       if (!id) return
-      const [page, members] = await Promise.all([
-        pins.inOrg(id).list({ orderBy: '-_meta.created_at', limit: 50 }),
-        backd.orgs.members(id).list(),
-      ])
-      this.pinList = page.items
+      liveTeam = pins.inOrg(id).subscribe({ load: { sort: '-_meta.created_at', limit: 50 } })
+      liveTeam.on('change', (state) => {
+        this.pinList = state.items
+      })
+      liveTeam.on('status', (s) => {
+        this.liveStatus = s
+      })
+      // A reload after a reset found that this member can no longer read the team: the list is
+      // empty and the team's page says so; the teams list is what they see next.
+      liveTeam.on('access_lost', async () => {
+        this.error = 'You are no longer a member of this team.'
+        await this.loadTeams()
+      })
+      liveTeam.on('error', (e) => {
+        this.error = e.message
+      })
+      const members = await backd.orgs.members(id).list()
       this.teamMembers = members.items
       await this.loadDashboard()
     },
@@ -1013,7 +1032,7 @@ document.addEventListener('alpine:init', () => {
         const { title, url, note } = this.pinDraft
         await main.fn('pin', { org: this.team, title, ...(url ? { url } : {}), ...(note ? { note } : {}) })
         this.pinDraft = { title: '', url: '', note: '' }
-        await this.openTeam(this.team)
+        await this.loadDashboard() // the list updates itself, from the stream
       } catch (e) {
         this.error = e.code === 'plan_limit' ? `${e.message}. An operator can put the team on the pro plan.` : e.message
       } finally {
@@ -1025,7 +1044,7 @@ document.addEventListener('alpine:init', () => {
       this.error = null
       try {
         await pins.delete(id)
-        await this.openTeam(this.team)
+        await this.loadDashboard()
       } catch (e) {
         this.error = e.message
       }

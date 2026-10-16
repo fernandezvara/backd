@@ -228,3 +228,28 @@ test('a collection scoped to an organization subscribes with its _meta.org', asy
   assert.deepEqual(srv.streams[0].body.subscriptions[0].where, { done: false, '_meta.org': 'o_1' })
   live.close()
 })
+
+test('a reload that finds the access gone empties the list and keeps the view', async () => {
+  let forbidden = false
+  const srv = server({ list: () => ({ items: [doc('a', 1)], limit: 100, skip: 0, has_more: false }) })
+  const plain = srv.fetch
+  srv.fetch = async (input, init) => {
+    if (forbidden && init?.method !== 'POST') {
+      return new Response(JSON.stringify({ error: { code: 'forbidden', message: 'no read rule' } }), { status: 403, headers: { 'Content-Type': 'application/json' } })
+    }
+    return plain(input, init)
+  }
+  const live = client(srv).realtime.subscribe([{ db: 'main', collection: 'items' }], { jitterMs: 1 })
+  await until(() => srv.streams.length === 1)
+  srv.streams[0].push(ready(['s1']))
+  await live.ready
+  assert.equal(live.items.length, 1)
+  const lost = []
+  live.on('access_lost', (e) => lost.push(e))
+  forbidden = true
+  srv.streams[0].push(frame('reset', { subs: ['s1'], reason: 'access_changed' }))
+  await until(() => lost.length === 1, 'access_lost')
+  assert.deepEqual(live.items, [])
+  assert.equal(live.state.status, 'live')
+  live.close()
+})

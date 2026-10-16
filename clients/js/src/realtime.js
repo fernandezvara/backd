@@ -415,8 +415,9 @@ export class LiveView {
 
   /**
    * Listens: `change` (with the new {@link LiveState}), `status` (a {@link LiveStatus}), `reset` (`{ subscription,
-   * reason }`, when the server asked for a reload) and `error` (an error that stopped the view).
-   * @param {'change' | 'status' | 'reset' | 'error'} event
+   * reason }`, when the server asked for a reload), `access_lost` (`{ subscription }`: a reload found the caller
+   * may no longer read it, and the list is empty) and `error` (an error that stopped the view).
+   * @param {'change' | 'status' | 'reset' | 'access_lost' | 'error'} event
    * @param {(arg: any) => void} fn
    * @returns {() => void} Stops listening.
    */
@@ -572,6 +573,17 @@ export class LiveView {
         this.scheduleChange()
       } catch (err) {
         if (this.closed || generation !== s.generation) return
+        if (err instanceof ForbiddenError && s.everLoaded) {
+          // Access was lost since the list was read (a member removed from a team): the list is
+          // empty for this caller now. The view stays, and loads again if a later reset says so.
+          s.items = new Map()
+          s.buffer = []
+          s.loaded = true
+          this.emit('access_lost', { subscription: s.name })
+          this.status()
+          this.scheduleChange()
+          return
+        }
         if (err instanceof NetworkError || (err instanceof BackdError && err.status >= 500)) {
           // The list could not be read now: try again, after a pause.
           setTimeout(() => this.load(s, false), 1000)
