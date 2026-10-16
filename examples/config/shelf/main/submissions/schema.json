@@ -1,0 +1,12 @@
+{
+  "$comment": "A member's proposal to put one of their drafts in the gallery (chapter 23). The document's status is a small pipeline: submitted, approved by a curator, published by a function.",
+  "type": "object",
+  "properties": {
+    "asset_id":   { "type": "string", "minLength": 1, "description": "The draft the member proposes." },
+    "note":       { "type": "string", "maxLength": 500, "description": "Why it is worth the gallery." },
+    "status":     { "enum": ["submitted", "approved", "published"], "description": "Where it stands in the pipeline." },
+    "decided_by": { "type": ["string", "null"], "description": "The curator who approved it. Only the pipeline's function writes it." }
+  },
+  "required": ["asset_id", "status"],
+  "additionalProperties": false
+}

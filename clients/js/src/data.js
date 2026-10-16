@@ -280,6 +280,24 @@ export class Collection {
   }
 
   /**
+   * Follows this collection live (see `client.realtime.subscribe`): a list that loads first, then
+   * keeps itself current. In a scope (`inOrg`, `inTeam`) the subscription filters on it.
+   * @param {Omit<import('./realtime.js').SubscriptionSpec, 'db' | 'collection'> & import('./realtime.js').SubscribeOptions} [spec]
+   * @returns {import('./realtime.js').LiveView}
+   */
+  subscribe(spec = {}) {
+    const { jitterMs, random, maxBackoffMs, ...rest } = spec
+    /** @type {Record<string, any>} */
+    const where = { ...(typeof rest.where === 'object' ? rest.where : {}) }
+    if (this.org !== undefined) where['_meta.org'] = this.org
+    if (this.team !== undefined) where['_meta.team'] = this.team
+    return this.client.realtime.subscribe(
+      [{ ...rest, db: this.path[0], collection: this.path[1], where: Object.keys(where).length ? where : undefined }],
+      { jitterMs, random, maxBackoffMs },
+    )
+  }
+
+  /**
    * One page of documents the caller may read.
    * @param {ListParams} [params]
    * @param {RequestOptions} [opts]

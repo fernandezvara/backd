@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fernandezvara/backd/internal/realtime"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -52,6 +53,8 @@ type Settings struct {
 	DeploymentID string
 	// TriggerLimits are the instance's trigger limits (BACKD_TRIGGER_MAX_CHAIN).
 	TriggerLimits registry.TriggerLimits
+	// Realtime are the instance's realtime limits (BACKD_REALTIME_*); zero fields mean the defaults.
+	Realtime realtime.Limits
 	// ImageConcurrency is how many images one worker process makes versions of at once
 	// (BACKD_IMAGE_CONCURRENCY); 0 derives it from the container's CPU and memory limits.
 	ImageConcurrency int
@@ -204,6 +207,11 @@ func Load(getenv func(string) string) (Settings, error) {
 		s.Aggregate = l
 	}
 
+	if l, err := RealtimeLimitsFrom(getenv); err != nil {
+		errs = append(errs, err)
+	} else {
+		s.Realtime = l
+	}
 	if l, err := TriggerLimitsFrom(getenv); err != nil {
 		errs = append(errs, err)
 	} else {
@@ -497,6 +505,47 @@ func TriggerLimitsFrom(getenv func(string) string) (registry.TriggerLimits, erro
 		l.MaxChain = n
 	}
 	return l, nil
+}
+
+// RealtimeLimitsFrom reads the instance's realtime limits: BACKD_REALTIME_MAX_SUBSCRIPTIONS_PER_STREAM,
+// BACKD_REALTIME_MAX_STREAMS_PER_USER, BACKD_REALTIME_MAX_STREAMS, BACKD_REALTIME_BUFFER (bytes per
+// stream), BACKD_REALTIME_MEMORY (bytes for all buffers) and BACKD_REALTIME_HEARTBEAT (a duration).
+func RealtimeLimitsFrom(getenv func(string) string) (realtime.Limits, error) {
+	var l realtime.Limits
+	var errs []error
+	num := func(name string, to *int) {
+		v := getenv(name)
+		if v == "" {
+			return
+		}
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			errs = append(errs, fmt.Errorf("%s must be a positive integer, got %q", name, v))
+			return
+		}
+		*to = n
+	}
+	num("BACKD_REALTIME_MAX_SUBSCRIPTIONS_PER_STREAM", &l.SubscriptionsPerStream)
+	num("BACKD_REALTIME_MAX_STREAMS_PER_USER", &l.StreamsPerUser)
+	num("BACKD_REALTIME_MAX_STREAMS", &l.Streams)
+	num("BACKD_REALTIME_BUFFER", &l.BufferBytes)
+	if v := getenv("BACKD_REALTIME_MEMORY"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n < 1 {
+			errs = append(errs, fmt.Errorf("BACKD_REALTIME_MEMORY must be a positive number of bytes, got %q", v))
+		} else {
+			l.Memory = n
+		}
+	}
+	if v := getenv("BACKD_REALTIME_HEARTBEAT"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d < time.Second {
+			errs = append(errs, fmt.Errorf("BACKD_REALTIME_HEARTBEAT must be a duration of at least 1s, got %q", v))
+		} else {
+			l.Heartbeat = d
+		}
+	}
+	return l, errors.Join(errs...)
 }
 
 // DefaultImageMaxPixels is the pixel limit for image versions when none is set.

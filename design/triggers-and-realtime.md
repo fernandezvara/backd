@@ -169,7 +169,11 @@ What this changes: nothing in the decisions. Pre-images stay opt-in per collecti
 4. **No reset storms (27.15):** the organization's access is computed once per change, a subscriber is reset only when their effective access differs before and after, and the client reloads with jitter.
 5. **Batched enqueue (27.4):** matches of a batch of changes go in one unordered insert (duplicate keys tolerated) and the watermark moves once per batch, not per event.
 
-**Defaults** in this design are provisional ("set from measurements") until 27.1's gate and the load tests 27.19/27.20 write results into their issues.
+**Measured by the load tests (27.19)** — same machine, no worker draining the queue, `BACKD_LOAD_SCALE=10`: an import of 20,000 documents queued at ~10,000 jobs/s with 5 MiB of heap growth; a hot collection with three triggers (one with a 40-clause `when`) at ~7,000 jobs/s; a 60 s soak of 110,000 events held the heap at 2.3–2.5 MiB; a failover under 30,000 changes lost and doubled nothing; `max_backlog` held exactly (200 queued, 9,800 recorded as gaps) once the queued jobs were counted against it at once (before, a burst inside the 5 s count cache could run past it); a rescan of 10,000 documents took 0.6 s. `max_backlog` stays at 100,000: the dispatcher is not the bottleneck, the executor is.
+
+**Measured by the load tests (27.20)** — scripted history, `BACKD_LOAD_SCALE=10`: 10,000 streams over 50 organizations, 200 changes: 200 checks per change with a grouping key against 10,000 without (0.8 ms against 9.1 ms per change), the same events delivered; 2,000 clients at 64 KiB documents moved ~1.2 GiB/s of rendered payload; 2,000 stalled clients held buffered memory at the 8 MiB budget (peak = budget) while a client that kept reading kept receiving (it too can be reset when momentarily the largest) — the enforcement was changed to free down to three quarters of the budget in one pass, so a mass stall costs one scan per budget's worth of events; an organization-wide change read each of 10,000 members' access once and reset the 5,000 whose access differed; idle replicas open nothing. `BACKD_REALTIME_MEMORY` stays 256 MiB, `BACKD_REALTIME_BUFFER` 256 KiB.
+
+**Defaults** in this design are provisional ("set from measurements") until 27.1's gate and the load tests 27.19/27.20 write results into their issues; the trigger ones are set (27.19).
 
 **Known and documented, not fixed here:** the function input is one event per run. A `batch:` option — an array of events per run, opt-in per trigger so nothing existing breaks — is a follow-up (§28); until then hot collections want `fields:` and narrow `when:`.
 
@@ -425,12 +429,14 @@ event: reauth
 3. It applies the buffered events, then live ones, **ignoring any event whose version isn't newer** than what it holds. Replays and races are harmless.
 
 **Resuming:**
-- each event's SSE `id` is a resume token: MongoDB's change-stream token plus the realm, the principal (session or key subject) and the issue time, **signed** with a per-realm key stored in the system database — so any instance can verify it after a reconnect through a load balancer, and it can't be forged or presented by someone else;
+- each event's SSE `id` is a resume token: MongoDB's change-stream token plus the realm, the principal (session or key subject) and the issue time, **signed** with a per-realm key derived (HMAC) from the deployment's callback key, which every instance shares — so any instance can verify it after a reconnect through a load balancer, nothing has to be stored, and it can't be forged or presented by someone else (rotating the callback key invalidates outstanding tokens: clients get `invalid_resume_token` and reload);
 - reconnecting with `resume_from` (or `Last-Event-ID`) continues exactly after it;
 - replayed events are evaluated with the subscriber's **current** access, never the access at the time, so a resume can't reveal more than a list would;
 - if the change history no longer reaches it, the affected subscriptions get `reset` (`history_expired`) and the client reloads them.
 
 **History window:** the change-stream retention window — the MongoDB oplog size.
+
+**How a resume is served.** A resumed stream reads the history after its token with a consumer of its own while it holds the changes the shared feed delivers meanwhile; when the replay reaches the first held change it stops and the shared feed carries on (events at or before the last one sent are dropped by cluster time). A stream that resumes in a quiet system therefore holds its own change stream until the first live change; tokens older than a day are `history_expired` without reading.
 
 ## 18. Rules and visibility per subscriber (issue 27.14)
 

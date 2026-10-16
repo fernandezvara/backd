@@ -697,6 +697,119 @@ heading('Search and a dashboard (ch22)')
   await ben.orgs.delete(team.id)
 }
 
+heading('A pipeline on a status (ch23)')
+{
+  const STAMP = Date.now().toString(36)
+  const sleep = (/** @type {number} */ ms) => new Promise((r) => setTimeout(r, ms))
+  const until = async (/** @type {() => Promise<any>} */ probe) => {
+    for (let i = 0; i < 150; i++) {
+      const v = await probe()
+      if (v) return v
+      await sleep(300)
+    }
+    return null
+  }
+  const curatorId = (await curator.auth.me()).id
+  const draftAsset = await main(member).collection('assets').create({ title: `Pipeline ${STAMP}`, kind: 'note', body: 'worth the gallery' })
+  const mine = main(member).collection('submissions')
+
+  // The rules decide who may start and who may move it.
+  await refused('a proposal can only start as submitted (403)', () => mine.create({ asset_id: draftAsset.id, status: 'approved' }), ForbiddenError, '')
+  const proposal = await mine.create({ asset_id: draftAsset.id, status: 'submitted', note: 'for the gallery' })
+  await refused('the author can\'t approve their own proposal (403)', () => mine.patch(proposal.id, { status: 'approved' }), ForbiddenError, '')
+
+  // Step 1: a trigger on created.
+  const noticeOf = async (/** @type {string} */ kind) =>
+    (await main(member).collection('notifications').list({ where: { kind, asset_id: draftAsset.id }, limit: 5 })).items[0]
+  const received = await until(() => noticeOf('submission.received'))
+  check('step 1: the member is told the proposal waits', received?.to_user === (await member.auth.me()).id && /waiting/.test(received?.text ?? ''), JSON.stringify(received))
+  check('a trigger run\'s write carries its place in the chain (depth 0)', received?._meta?.chain?.depth === 0 && typeof received._meta.chain.root === 'string', JSON.stringify(received?._meta))
+
+  // Step 2: the curator's approval is the only thing a client does.
+  await main(curator).collection('submissions').patch(proposal.id, { status: 'approved' })
+  const done = await until(async () => {
+    const s = await main(curator).collection('submissions').get(proposal.id)
+    return s.status === 'published' ? s : null
+  })
+  check('step 2: the function marked it published, naming the curator that approved (by)', done?.decided_by === curatorId, JSON.stringify(done))
+  check('the clients\' rules never allowed that status or that field: only the pipeline wrote them', done?._meta?.updated_by?.startsWith('func:') === true, JSON.stringify(done?._meta))
+  const published = await main(curator).collection('assets').get(draftAsset.id)
+  check('the asset is published', typeof published.published_at === 'string')
+
+  // Step 3 runs because step 2 wrote the status: one level deeper in the same chain.
+  const thanks = await until(() => noticeOf('submission.published'))
+  check('step 3: the author is thanked', /gallery/.test(thanks?.text ?? ''), JSON.stringify(thanks))
+  check('and that run is one level deeper in the chain step 2 started', thanks?._meta?.chain?.depth === 1 && thanks._meta.chain.root === done._meta.chain.root, JSON.stringify({ thanks: thanks?._meta?.chain, done: done?._meta?.chain }))
+  await sleep(1500)
+  const again = (await main(member).collection('notifications').list({ where: { kind: 'submission.published', asset_id: draftAsset.id }, limit: 5 })).items
+  check('each step ran once: one thank-you, however the changes were delivered', again.length === 1, String(again.length))
+}
+
+heading('Live pins (ch24)')
+{
+  const STAMP = Date.now().toString(36)
+  const gus = await signedIn(`gus-${STAMP}@shelf.example`, operator)
+  const hal = await signedIn(`hal-${STAMP}@shelf.example`, operator)
+  const halId = (await hal.auth.me()).id
+  const team = await gus.orgs.create({ name: `Live ${STAMP}` })
+  const invite = await gus.orgs.invitations(team.id).create({ binding: 'none', roles: ['editor'], maxUses: 1 })
+  await hal.orgs.invitations.accept(invite.token)
+  const until = async (/** @type {() => boolean} */ cond, /** @type {number} */ ms = 15000) => {
+    for (const end = Date.now() + ms; Date.now() < end; ) {
+      if (cond()) return true
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    return false
+  }
+
+  // Gus follows the team's pins; Hal pins and Gus sees it without asking.
+  const live = gus.db('main').collection('pins').inOrg(team.id).subscribe({ load: { sort: '-_meta.created_at', limit: 50 } })
+  const state = await live.ready
+  check('a live list loads first, then follows (status live)', state.status === 'live' && state.items.length === 0, state.status)
+  await main(hal).fn('pin', { org: team.id, title: 'Appears at once' })
+  check('a member\'s pin shows up for the others without a reload', await until(() => live.items.some((p) => p.title === 'Appears at once')))
+  const pinId = live.items[0].id
+  await hal.db('main').collection('pins').delete(pinId)
+  check('a removal reaches the list too', await until(() => live.items.length === 0))
+
+  // A stranger can't subscribe to the team.
+  const ivy = await signedIn(`ivy-${STAMP}@shelf.example`, operator)
+  const peek = ivy.db('main').collection('pins').inOrg(team.id).subscribe({})
+  await refused('a stranger can\'t follow the team (403): the read rule shows them nothing', () => peek.ready, ForbiddenError, 'forbidden')
+  await main(hal).fn('pin', { org: team.id, title: 'Not for strangers' })
+  check('and the members\' own view carries on', await until(() => live.items.some((p) => p.title === 'Not for strangers')))
+
+  // Hal follows too; when they are removed from the team their list resets and empties.
+  const halLive = hal.db('main').collection('pins').inOrg(team.id).subscribe({ jitterMs: 50 })
+  await halLive.ready
+  await main(gus).fn('pin', { org: team.id, title: 'Before the removal' })
+  check('the other member sees it too', await until(() => halLive.items.length === 2))
+  /** @type {string[]} */
+  const resets = []
+  halLive.on('reset', (e) => resets.push(e.reason))
+  let lost = false
+  halLive.on('access_lost', () => (lost = true))
+  await gus.orgs.members(team.id).remove(halId)
+  check('a removed member\'s list resets at once (access_changed)', await until(() => resets.includes('access_changed')), JSON.stringify(resets))
+  check('and loses what it showed', await until(() => lost && halLive.items.length === 0))
+  await main(gus).fn('pin', { org: team.id, title: 'After the removal' })
+  await new Promise((r) => setTimeout(r, 500))
+  check('nothing more reaches them', halLive.items.length === 0)
+  live.close()
+  halLive.close()
+
+  // Revoking the session ends the stream.
+  const jo = await signedIn(`jo-${STAMP}@shelf.example`, operator)
+  const joInvite = await gus.orgs.invitations(team.id).create({ binding: 'none', roles: ['editor'], maxUses: 1 })
+  await jo.orgs.invitations.accept(joInvite.token)
+  const joLive = jo.db('main').collection('pins').inOrg(team.id).subscribe({})
+  await joLive.ready
+  let ended = null
+  joLive.on('error', (e) => (ended = e))
+  await jo.auth.logout()
+  check('signing out ends the stream (session_ended)', await until(() => ended !== null) && /** @type {any} */ (ended).code === 'session_ended', String(ended))
+}
+
 heading('cleanup by hand (ch9)')
 const sweep = /** @type {any} */ (await operator.admin.invokeFunction('main/cleanup'))
 const swept = /** @type {any} */ (await sweep.wait({ pollIntervalMs: 300, timeoutMs: 90000 }))

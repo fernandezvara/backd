@@ -4,6 +4,11 @@
 # the caller's memberships.
 organization: required
 
+# Chapter 24: the team's board is live. Subscriptions to this collection are
+# filtered by the caller's read rule on every change, so a member sees only
+# their own teams' pins, and loses the list the moment they leave the team.
+realtime: true
+
 # When a team is deleted, its pins go with it (the other choice is `keep`).
 on_org_delete:
   action: delete

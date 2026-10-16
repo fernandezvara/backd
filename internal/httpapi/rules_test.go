@@ -92,17 +92,17 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 		"acme/consents/marketing/1/en.md":  "Send me news by email.",
 		"acme/consents/marketing/1/es.md":  "Enviadme novedades por correo.",
 		// Public caching of anonymous reads (see public_cache_test.go).
-		"acme/app/news/schema.json":        postsSchema,
-		"acme/app/news/collection.yaml":    "cache: {public: true, max_age: 60}\nsoft_delete: true\nreferences:\n  related: {field: status, collection: projects}\n  trashed: {field: title, collection: bin}\n  post: {field: status, collection: posts}\n" + rulesSection("read: document.published == true || user != nil\ncreate: user != nil\nrestore: hasRole(user, 'staff')\n"),
-		"acme/app/articles/schema.json":    articlesSchema,
-		"acme/app/articles/indexes.json":   `[{"text": {"fields": {"title": 10, "body": 1}, "default_language": "english", "language_field": "lang"}}]`,
+		"acme/app/news/schema.json":         postsSchema,
+		"acme/app/news/collection.yaml":     "cache: {public: true, max_age: 60}\nsoft_delete: true\nreferences:\n  related: {field: status, collection: projects}\n  trashed: {field: title, collection: bin}\n  post: {field: status, collection: posts}\n" + rulesSection("read: document.published == true || user != nil\ncreate: user != nil\nrestore: hasRole(user, 'staff')\n"),
+		"acme/app/articles/schema.json":     articlesSchema,
+		"acme/app/articles/indexes.json":    `[{"text": {"fields": {"title": 10, "body": 1}, "default_language": "english", "language_field": "lang"}}]`,
 		"acme/app/articles/collection.yaml": "aggregate:\n  group_by: [lang, status]\n" + rulesSection("read: user != nil\ncreate: user != nil\n"),
-		"acme/app/sales/schema.json":       salesSchema,
-		"acme/app/sales/collection.yaml":   "aggregate:\n  group_by: [category, paid_at, _meta.owner, _meta.created_at]\n  metrics: [total, paid_at]\n  limits: {max_groups: 50}\n" + rulesSection("read: user != nil && (document._meta.owner == user.id || hasRole(user, 'staff'))\ncreate: user != nil\n"),
-		"acme/app/notes/schema.json":       postsSchema,
-		"acme/app/notes/collection.yaml":   "references:\n  status: {collection: archive}\n  secret: {field: title, collection: private}\n" + rulesSection("read: user != nil\nwrite: user != nil\n"),
-		"acme/app/private/schema.json":     postsSchema,
-		"acme/app/private/collection.yaml": "personal_data:\n  export: exclude\n  reason: fraud scores, exempt from access requests\n",
+		"acme/app/sales/schema.json":        salesSchema,
+		"acme/app/sales/collection.yaml":    "aggregate:\n  group_by: [category, paid_at, _meta.owner, _meta.created_at]\n  metrics: [total, paid_at]\n  limits: {max_groups: 50}\n" + rulesSection("read: user != nil && (document._meta.owner == user.id || hasRole(user, 'staff'))\ncreate: user != nil\n"),
+		"acme/app/notes/schema.json":        postsSchema,
+		"acme/app/notes/collection.yaml":    "references:\n  status: {collection: archive}\n  secret: {field: title, collection: private}\n" + rulesSection("read: user != nil\nwrite: user != nil\n"),
+		"acme/app/private/schema.json":      postsSchema,
+		"acme/app/private/collection.yaml":  "realtime: true\npersonal_data:\n  export: exclude\n  reason: fraud scores, exempt from access requests\n",
 		// A collection that soft-deletes (see soft_delete_test.go).
 		// …and one that soft-deletes without a restore rule (nobody sees its trash).
 		"acme/app/archive/schema.json":     postsSchema,
@@ -131,6 +131,9 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 		"acme/app/memos/collection.yaml":    "organization: optional\non_org_delete:\n  action: keep\nteam: optional\non_team_delete:\n  action: keep\n" + rulesSection("read: user != nil\ncreate: user != nil\n"),
 		"acme/app/plans/schema.json":        postsSchema,
 		"acme/app/plans/collection.yaml":    "organization: required\non_org_delete:\n  action: keep\n" + rulesSection("read: orgClaims(document._meta.org).plan == 'pro'\ncreate: user != nil\n"),
+		// A collection whose changes may be streamed (see realtime_test.go).
+		"acme/app/live/schema.json":     postsSchema,
+		"acme/app/live/collection.yaml": "realtime: true\n" + rulesSection("read: user != nil\ncreate: user != nil\n"),
 		// Functions (see functions_test.go).
 		fnDir + "echo/function.yaml":  "invoke: \"user != nil && user.email_verified\"\n",
 		fnDir + "echo/index.js":       "",

@@ -6,14 +6,14 @@ weight: 417
 toc: true
 ---
 
-Realtime subscriptions and function triggers are built on one piece: the **change feed**, which reads MongoDB's [change stream](https://www.mongodb.com/docs/manual/changeStreams/). This page describes the feed as it is built today. The features on top of it, the subscription endpoint and triggers, are planned and are marked as such.
+Realtime subscriptions and function triggers are built on one piece: the **change feed**, which reads MongoDB's [change stream](https://www.mongodb.com/docs/manual/changeStreams/). [Realtime subscriptions](../../api/realtime/) and triggers are built on it.
 
 ## When it reads
 
 | Setting | Default | Meaning |
 |---|---|---|
 | `BACKD_EVENTS` | `true` | This instance may read the change stream for realtime subscribers. `false` on API replicas keeps stream work off request-serving instances. |
-| `BACKD_TRIGGERS` | `true` | This instance may hold the lease of the trigger dispatcher (planned). |
+| `BACKD_TRIGGERS` | `true` | This instance may hold the lease of the [trigger dispatcher](#the-trigger-dispatcher). Run `false` on instances that should only serve requests. |
 
 Turning the setting on reads nothing by itself. An instance opens its stream **when its first subscriber arrives**, from that moment on, and closes it shortly after the last one leaves. An instance without subscribers does not connect for it and does not scan MongoDB's change history, however many replicas you run.
 
@@ -94,13 +94,63 @@ A **gap** says what the dispatcher could not do and for which collection and tri
 - Over 10,000 documents it asks for `--confirm`. Without an index starting with `_meta.updated_at`, reading the range is a scan of the collection: run it when that is acceptable.
 - It is audited (`triggers.rescan`).
 
+## Operating checklist
+
+- The MongoDB user needs the [change stream privilege](#requirements); `backd provision` enables pre-change images and creates the jobs indexes, and instances in `verify` mode refuse to start without them.
+- Triggers need a running [worker](../../functions/running/) and `BACKD_EXECUTOR_URL` like any async job.
+- Alert on `trigger_gaps_total` (reasons `window`, `backlog`, `preimage_missing`), on `trigger_backlog` approaching `max_backlog`, and on `trigger_dispatch_lag_seconds`.
+- After restoring MongoDB from a backup the stored position is invalid: a gap is recorded and the dispatcher continues from now. `backd triggers rescan` re-emits what matters.
+
+## Realtime in production
+
+Streams are long requests and the change feed reads the whole deployment's history, so a few choices matter:
+
+- **Dedicated instances.** Set `BACKD_EVENTS=false` on instances that only serve requests and route `POST /v1/{realm}/_realtime` to instances with `BACKD_EVENTS=true`. A request to an instance with events off is answered `503 realtime_unavailable`. Each events-enabled instance holds one stream of its own, whatever the number of clients, so adding instances adds streams: a handful is enough.
+- **The proxy.** A stream must not be buffered or timed out like a response: turn response buffering off for the route (`proxy_buffering off` in nginx; backd also sends `X-Accel-Buffering: no`) and set the idle/read timeout well above the heartbeat (`BACKD_REALTIME_HEARTBEAT`, 25 seconds by default). Streams that cross a load balancer reconnect, with a resume token any instance can verify.
+- **Instance limits.** Every open stream costs a connection and a buffer (256 KiB at most): the defaults (`BACKD_REALTIME_MAX_STREAMS` 10,000 and `BACKD_REALTIME_MEMORY` 256 MiB for all buffers) are a ceiling, not a target; measure before raising them. Over the memory budget, the largest buffers are reset rather than the instance slowed.
+- **The MongoDB role.** The stream is opened on the whole deployment: the user in `MONGO_URI` needs the [change stream privilege](#requirements) on every database, and startup says so if it lacks it.
+- **The resume window.** A client that's away longer than MongoDB's oplog covers reloads instead of resuming ([sizing the history](#sizing-the-history)); the longer the oplog, the cheaper reconnections after a deploy or an outage.
+- **What to watch:** `realtime_streams`, `realtime_resets_total` (by reason: `slow_consumer` and `preimage_missing` are the ones to chase), `realtime_subscription_checks_total{kind="scanned"}` and `changefeed_lag_seconds`; the [metrics page](../metrics/) lists them.
+
+## Measured under load
+
+The dispatcher's scenarios run in the repository (`go test ./internal/triggers -run TestLoad`, at a reduced scale in CI; `BACKD_LOAD_SCALE=10` for these numbers). On one developer machine against a single-node MongoDB 8, with no worker draining the queue, so they say what the dispatcher costs, not what your functions do:
+
+| Scenario | Result |
+|---|---|
+| An import of 20,000 documents, one trigger | every change became one job (none dropped, none doubled); 20,000 jobs queued 1.9 s after the writes began, about 10,000 jobs per second; the process heap grew 5 MiB |
+| A hot collection: 15,000 changes, three triggers (one with a 40-clause condition) | 30,000 jobs, exactly the expected ones per trigger, about 7,000 jobs per second including the evaluation of the conditions |
+| A chained storm: 5,000 chained and 5,000 first-party events, `max_chained_per_minute: 20`, `max_chain: 4` | all 5,000 first-party events queued; 20 chained ones; the rest (and events deeper than the cap) dropped and counted |
+| The backlog ceiling: 10,000 changes with `max_backlog: 200` | exactly 200 jobs queued and 9,800 changes recorded as `backlog` gaps: queued plus gaps accounts for every change |
+| A lease failover under traffic: 30,000 changes, the leader stopped after a quarter | every change made exactly one job; the new holder drained what was left in under 3 s |
+| An outage, then `rescan` of 10,000 documents | nothing queued from the changes the dispatcher never saw; the rescan queued all 10,000 in 0.6 s |
+| A soak: 60 seconds, 110,000 events | all queued, the heap stayed at 2.3–2.5 MiB, no growth |
+
+What it means for you:
+
+- **The stream is not the bottleneck.** A single dispatcher keeps up with thousands of matching changes per second; what limits a bulk import is the executor running the functions, not the dispatch.
+- **The default `max_backlog` of 100,000 queued jobs per realm stays.** It is a safety valve, not a throughput target: a realm importing millions of documents will record `backlog` gaps while its workers catch up, and `rescan` re-emits them. Raise it (in `realm.yaml`) only if your workers drain faster than you import.
+- **The ceiling is exact.** The jobs a dispatcher queues count against it immediately, not at the next count of the database.
+
+## Realtime under load
+
+The hub's scenarios run in the repository too (`go test ./internal/realtime -run TestLoad`, reduced in CI; `BACKD_LOAD_SCALE=10` for these numbers), over a scripted history so that they measure the matching and fan-out, not MongoDB. Same developer machine:
+
+| Scenario | Result |
+|---|---|
+| 10,000 streams over 50 organizations, 200 changes | with an equality on `_meta.org`: **200 checks per change**, 0.8 ms of work per change; without one: **10,000 checks per change**, 9.1 ms. The events delivered are identical |
+| 2,000 streams all following one collection, 64 KiB documents | 100,000 events (6 GiB) delivered in 5 s, about 1.2 GiB per second of rendered payload |
+| 2,000 clients that stop reading, against a budget of 8 MiB | buffered memory peaked at the budget and never above it; the stalled streams were reset (`slow_consumer`) and a client that kept reading kept receiving (under a budget this tight it can be reset too when its buffer is momentarily the largest, and reloads) |
+| An organization-wide role change, 10,000 members | each member's access read once, 5,000 resets (the ones whose effective access differed), none repeated; 170 ms in the hub (the reads themselves are database lookups) |
+| Replicas | a replica with no subscribers opened no stream; two instances with subscribers opened one each and each delivered every event |
+| A soak: 30 seconds, 93,000 changes, 934,000 events, streams opening and closing | heap 12 to 16 MiB with the scripted history released, nothing buffered at the end |
+
+What it means for you:
+
+- **Grouping fields are the difference between a cheap stream and an expensive one**: 50 times fewer checks here. See [what a stream costs](../../api/realtime/#what-a-stream-costs).
+- **The memory budget holds**: a mass stall is bounded by `BACKD_REALTIME_MEMORY`, whatever the number of stalled clients, and costs them a reload, not the instance's memory. The default of 256 MiB stays; lower it on small instances.
+- **Access storms are one read per member**, not per event; the reloads are the cost to plan for in very large organizations.
+
 ## Sizing the history
 
 A stream that falls behind can only catch up while MongoDB still holds the history it needs: its **oplog**. A consumer that is offline longer than the oplog window loses its position and continues from now, which `backd` reports as a gap (`changefeed_reopens_total{reason="history_lost"}`). Size the oplog for your write volume and the longest outage you want to survive.
-
-## What is planned
-
-- **Subscriptions** (`POST /v1/{realm}/_realtime`), with per-subscriber rules and immediate revocation.
-- **The rest of the trigger contract**: document bodies in the job (`fields`), who wrote (`by`), chain limits, ordered runs, `backd triggers status` and `rescan`.
-
-Their [design](https://github.com/fernandezvara/backd/blob/main/design/triggers-and-realtime.md) is in the repository. Until they land, the feed has no subscribers and the only visible effects are the two settings, the `realtime:` key and the [metrics](../metrics/).

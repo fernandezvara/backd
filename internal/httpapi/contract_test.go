@@ -346,7 +346,7 @@ func TestContract(t *testing.T) {
 		}
 		return e
 	}
-	f := newRulesFixture(t, func(cfg *Config) { cfg.OAuth = oauthSvc; cfg.Triggers = &fakeTriggerAdmin{} })
+	f := newRulesFixture(t, func(cfg *Config) { cfg.OAuth = oauthSvc; cfg.Triggers = &fakeTriggerAdmin{}; cfg.Realtime = testHub(t) })
 	setUpProviders(t, f)
 	router := f.h.(chi.Routes)
 	f.h = c.wrap(t, f.h)
@@ -1631,6 +1631,15 @@ func TestContract(t *testing.T) {
 	req("GET", "/v1/acme/_config?paths=nope", "", nil, 400)
 	req("GET", "/v1/acme/_config", "", with(nil, "Authorization", "Bearer nope"), 401)
 	req("GET", "/v1/nope/_config", "", nil, 404)
+
+	// Realtime: a stream is a response that doesn't end, so the recorder (which can't flush)
+	// ends it after `ready`; what is checked is the status and the headers.
+	liveSub := `{"subscriptions":[{"id":"a","db":"app","collection":"live"}]}`
+	req("POST", "/v1/acme/_realtime", liveSub, ada, 200)
+	req("POST", "/v1/acme/_realtime", liveSub, ada, 429)
+	req("POST", "/v1/acme/_realtime", `{"subscriptions":[]}`, carl, 400)
+	req("POST", "/v1/acme/_realtime", liveSub, nil, 401)
+	req("POST", "/v1/acme/_realtime", `{"subscriptions":[{"id":"a","db":"app","collection":"private"}]}`, carl, 403)
 	cfgTag := ""
 	{
 		rec, _ := f.doH(t, "GET", "/v1/acme/_config", "", nil)

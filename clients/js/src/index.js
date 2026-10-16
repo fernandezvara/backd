@@ -40,7 +40,12 @@ export {
   VerificationRequiredError,
   SecondStepRequiredError,
   ConsentRequiredError,
+  RealtimeNotEnabledError,
+  TooManySubscriptionsError,
+  InvalidResumeTokenError,
+  SessionEndedError,
 } from './errors.js'
+export { Realtime, LiveView } from './realtime.js'
 export { memoryStorage, localStorageStorage } from './storage.js'
 export { parseReturn as parseOAuthReturn } from './oauth.js'
 
@@ -69,6 +74,10 @@ export { parseReturn as parseOAuthReturn } from './oauth.js'
  * @typedef {import('./push.js').DeviceInput} DeviceInput
  * @typedef {import('./push.js').PermissionState} PermissionState
  * @typedef {import('./errors.js').ErrorDetail} ErrorDetail
+ * @typedef {import('./realtime.js').SubscriptionSpec} SubscriptionSpec
+ * @typedef {import('./realtime.js').LiveState} LiveState
+ * @typedef {import('./realtime.js').LiveStatus} LiveStatus
+ * @typedef {import('./realtime.js').SubscribeOptions} SubscribeOptions
  * @typedef {import('./data.js').Meta} Meta
  * @typedef {import('./data.js').ListParams} ListParams
  * @typedef {import('./data.js').WriteOptions} WriteOptions

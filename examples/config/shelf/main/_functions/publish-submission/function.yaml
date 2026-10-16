@@ -1,0 +1,9 @@
+# Step 2 (chapter 23): a curator approved a proposal. It publishes the asset and
+# marks the proposal published — a write that fires step 3.
+internal: true
+mode: async
+timeout: 30s
+# A failed attempt is tried again; the function is safe to run twice.
+retry:
+  attempts: 3
+  backoff: 5s

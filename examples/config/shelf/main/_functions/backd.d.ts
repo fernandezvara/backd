@@ -244,6 +244,45 @@ export type MainSharesWhere = {
 };
 export type MainSharesOrderByField = "id" | "-id" | "_meta.created_at" | "-_meta.created_at" | "_meta.updated_at" | "-_meta.updated_at" | "_meta.version" | "-_meta.version" | "_meta.owner" | "-_meta.owner" | "_meta.created_by" | "-_meta.created_by" | "_meta.updated_by" | "-_meta.updated_by" | "asset_id" | "-asset_id" | "created_by" | "-created_by" | "expires_at" | "-expires_at" | "token" | "-token";
 export type MainSharesOrderBy = MainSharesOrderByField | `${MainSharesOrderByField},${string}`;
+/** main/submissions */
+export type MainSubmissions = { id: string; _meta: Meta } & { asset_id: string; decided_by?: string | null; note?: string; status: "submitted" | "approved" | "published"; };
+/** main/submissions */
+export type MainSubmissionsInput = { asset_id: string; decided_by?: string | null; note?: string; status: "submitted" | "approved" | "published"; };
+export type MainSubmissionsWhere = {
+  id?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "_meta.created_at"?: DateTimeString | (Ops<DateTimeString> & NullOps & RangeOps<DateTimeString>);
+  "_meta.updated_at"?: DateTimeString | (Ops<DateTimeString> & NullOps & RangeOps<DateTimeString>);
+  "_meta.version"?: number | (Ops<number> & NullOps & RangeOps<number>);
+  "_meta.owner"?: (string | null) | (Ops<(string | null)> & NullOps & RangeOps<string> & TextOps);
+  "_meta.created_by"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "_meta.updated_by"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  asset_id?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  decided_by?: (string | null) | (Ops<(string | null)> & NullOps & RangeOps<string> & TextOps);
+  note?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  status?: ("submitted" | "approved" | "published") | (Ops<("submitted" | "approved" | "published")> & NullOps & RangeOps<"submitted" | "approved" | "published"> & TextOps);
+  $or?: Array<MainSubmissionsWhere>;
+  $and?: Array<MainSubmissionsWhere>;
+};
+export type MainSubmissionsOrderByField = "id" | "-id" | "_meta.created_at" | "-_meta.created_at" | "_meta.updated_at" | "-_meta.updated_at" | "_meta.version" | "-_meta.version" | "_meta.owner" | "-_meta.owner" | "_meta.created_by" | "-_meta.created_by" | "_meta.updated_by" | "-_meta.updated_by" | "asset_id" | "-asset_id" | "decided_by" | "-decided_by" | "note" | "-note" | "status" | "-status";
+export type MainSubmissionsOrderBy = MainSubmissionsOrderByField | `${MainSubmissionsOrderByField},${string}`;
+/** What a trigger of submissions runs its function with: the bodies in before and after ride only with the trigger's fields. */
+export type MainSubmissionsTriggerInput = {
+  id: string;
+  event: "created" | "updated" | "removed";
+  collection: "submissions";
+  doc: { id: string; version: number };
+  version: number;
+  changed: string[];
+  depth: number;
+  root: string;
+  at: DateTimeString;
+  before?: Partial<MainSubmissions> | null;
+  after?: Partial<MainSubmissions> | null;
+  by?: string;
+  truncated?: boolean;
+  rescan?: string;
+};
+
 export type Config = { features?: { export?: { enabled?: boolean; }; }; maintenance?: { enabled?: boolean; message?: string; }; };
 
 export interface Realm {
@@ -267,8 +306,10 @@ export interface Realm {
         pins: { doc: MainPins; input: MainPinsInput; create: MainPinsInput; where: MainPinsWhere; order_by: MainPinsOrderBy; expand: {}; aggregate: { group_by: "author" | "_meta.created_at"; dates: "_meta.created_at"; metrics: never }; trigger: never };
         profiles: { doc: MainProfiles; input: MainProfilesInput; create: MainProfilesInput; where: MainProfilesWhere; order_by: MainProfilesOrderBy; expand: {}; aggregate: never; trigger: never };
         shares: { doc: MainShares; input: MainSharesInput; create: MainSharesInput; where: MainSharesWhere; order_by: MainSharesOrderBy; expand: {}; aggregate: never; trigger: never };
+        submissions: { doc: MainSubmissions; input: MainSubmissionsInput; create: MainSubmissionsInput; where: MainSubmissionsWhere; order_by: MainSubmissionsOrderBy; expand: {}; aggregate: never; trigger: MainSubmissionsTriggerInput };
       };
       functions: {
+        "announce-submission": { input: { after?: Record<string, unknown> | null; at?: string; before?: Record<string, unknown> | null; by?: string; changed?: string[]; collection?: string; depth?: number; doc: { id: string; version: number; [key: string]: unknown; }; event: "created" | "updated" | "removed"; id: string; root?: string; truncated?: boolean; version?: number; [key: string]: unknown; }; output: unknown; mode: "async"; internal: true; calls: never };
         cleanup: { input: unknown; output: unknown; mode: "async"; internal: true; calls: never };
         digest: { input: { since_days?: number; } | null; output: unknown; mode: "async"; internal: false; calls: "notify" };
         download: { input: { document_id: string; field: "file" | "attachments"; file_id?: string; }; output: unknown; mode: "sync"; internal: false; calls: never };
@@ -280,9 +321,11 @@ export interface Realm {
         pin: { input: { note?: string; org: string; title: string; url?: string; }; output: { id: string; limit: number; pins: number; [key: string]: unknown; }; mode: "sync"; internal: false; calls: never };
         preview: { input: { url: string; }; output: unknown; mode: "sync"; internal: false; calls: never };
         publish: { input: { asset_id: string; }; output: unknown; mode: "sync"; internal: false; calls: "notify" };
+        "publish-submission": { input: { after?: Record<string, unknown> | null; at?: string; before?: Record<string, unknown> | null; by?: string; changed?: string[]; collection?: string; depth?: number; doc: { id: string; version: number; [key: string]: unknown; }; event: "created" | "updated" | "removed"; id: string; root?: string; truncated?: boolean; version?: number; [key: string]: unknown; }; output: unknown; mode: "async"; internal: true; calls: never };
         share: { input: { asset_id: string; expires_in?: "week" | "month" | "never"; }; output: unknown; mode: "sync"; internal: false; calls: never };
         "share-open": { input: { token: string; }; output: unknown; mode: "sync"; internal: false; calls: never };
         "team-plan": { input: { org: string; plan?: "free" | "pro"; timezone?: string; }; output: { org: string; plan?: string; timezone?: string; [key: string]: unknown; }; mode: "sync"; internal: false; calls: never };
+        "thank-submitter": { input: { after?: Record<string, unknown> | null; at?: string; before?: Record<string, unknown> | null; by?: string; changed?: string[]; collection?: string; depth?: number; doc: { id: string; version: number; [key: string]: unknown; }; event: "created" | "updated" | "removed"; id: string; root?: string; truncated?: boolean; version?: number; [key: string]: unknown; }; output: unknown; mode: "async"; internal: true; calls: never };
       };
     };
   };
@@ -549,6 +592,7 @@ export type FunctionName = keyof Realm["db"][ThisDatabase]["functions"] & string
 
 /** What each function of this database may use. */
 export interface FunctionFlags {
+  "announce-submission": { webhook: false; admin: true; orgs: true; config_write: false; email: false; push: false; secrets: never };
   cleanup: { webhook: false; admin: false; orgs: false; config_write: false; email: false; push: false; secrets: never };
   digest: { webhook: false; admin: true; orgs: true; config_write: false; email: true; push: false; secrets: never };
   download: { webhook: false; admin: true; orgs: true; config_write: false; email: false; push: false; secrets: never };
@@ -560,9 +604,11 @@ export interface FunctionFlags {
   pin: { webhook: false; admin: true; orgs: true; config_write: false; email: false; push: false; secrets: never };
   preview: { webhook: false; admin: false; orgs: false; config_write: false; email: false; push: false; secrets: never };
   publish: { webhook: false; admin: true; orgs: true; config_write: false; email: false; push: false; secrets: never };
+  "publish-submission": { webhook: false; admin: true; orgs: true; config_write: false; email: false; push: false; secrets: never };
   share: { webhook: false; admin: true; orgs: true; config_write: false; email: false; push: false; secrets: never };
   "share-open": { webhook: false; admin: true; orgs: true; config_write: false; email: false; push: false; secrets: never };
   "team-plan": { webhook: false; admin: true; orgs: true; config_write: false; email: false; push: false; secrets: never };
+  "thank-submitter": { webhook: false; admin: true; orgs: true; config_write: false; email: false; push: false; secrets: never };
 }
 
 type Fn<N extends FunctionName> = Realm["db"][ThisDatabase]["functions"][N];

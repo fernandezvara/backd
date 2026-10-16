@@ -263,8 +263,10 @@ func GenerateFunctions(reg *registry.Registry, realm, database, config string) (
 		if len(secrets) > 0 {
 			sec = strings.Join(secrets, " | ")
 		}
+		// A function a trigger runs always has ctx.admin: the realm declared the trigger.
+		admin := fn.Admin || triggered(rl, database, n)
 		fmt.Fprintf(&flags, "  %s: { webhook: %t; admin: %t; orgs: %t; config_write: %t; email: %t; push: %t; secrets: %s };\n",
-			member(n), fn.Mode == registry.ModeWebhook, fn.Admin, fn.Admin && rl.Settings.Organizations != nil, fn.ConfigWrite, fn.Email, fn.Push != nil, sec)
+			member(n), fn.Mode == registry.ModeWebhook, admin, admin && rl.Settings.Organizations != nil, fn.ConfigWrite, fn.Email, fn.Push != nil, sec)
 	}
 	flags.WriteString("}\n")
 
@@ -333,4 +335,19 @@ export function defineFunction<N extends FunctionName>(name: §${ThisDatabase}/$
 `, dbLit, flags.String())
 	slices.Sort(g.warnings)
 	return &FunctionsOutput{Types: strings.ReplaceAll(b.String(), "§", "`"), Warnings: g.warnings}, nil
+}
+
+// triggered reports whether some collection of the realm has a trigger that runs the function.
+func triggered(rl *registry.Realm, database, name string) bool {
+	ref := database + "/" + name
+	for _, db := range rl.Databases {
+		for _, c := range db.Collections {
+			for _, t := range c.Triggers {
+				if t.Function == ref {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }

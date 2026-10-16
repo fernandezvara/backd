@@ -1,0 +1,43 @@
+# Chapter 23: a pipeline on one document's status. Each step is a trigger of its
+# own, with a function of its own, and a `when` that reads the *transition* — what
+# the status was and what it is — so writing the same status again fires nothing and
+# a function's own write can't loop back through it.
+rules:
+  # A member sees and proposes their own; a curator sees every proposal.
+  read: user != nil && (document._meta.owner == user.id || hasRole(user, 'curator'))
+  create: user != nil && data.status == 'submitted' && data.decided_by == nil
+  # A curator approves, and nothing else: the one change a client may make is
+  # submitted -> approved. "published" and decided_by are the pipeline's.
+  update: >
+    user != nil && hasRole(user, 'curator')
+    && document.status == 'submitted' && data.status == 'approved'
+    && all(changed(), # in ['status'])
+
+triggers:
+  # 1. A proposal arrives: tell the member that it is waiting.
+  announce:
+    events: [created]
+    function: main/announce-submission
+    fields: [asset_id]            # the job carries asset_id; without `fields` it carries only ids
+  # 2. A curator approves: publish the asset and mark the proposal. `session: true`
+  # adds `by`, the curator, to the input; `ordered: true` makes this document's
+  # steps run one after another.
+  approve:
+    events: [updated]
+    when: "before.status == 'submitted' && document.status == 'approved'"
+    function: main/publish-submission
+    fields: [asset_id]
+    session: true
+    ordered: true
+  # 3. The function marked it published (its own write — a chained event, one
+  # level deeper): thank the member.
+  published:
+    events: [updated]
+    when: "before.status != 'published' && document.status == 'published'"
+    function: main/thank-submitter
+    fields: [asset_id]
+    ordered: true
+
+# A proposal goes with the member, like their assets.
+on_owner_delete:
+  action: delete

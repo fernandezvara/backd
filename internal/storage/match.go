@@ -189,3 +189,36 @@ func number(v any) (float64, bool) {
 	}
 	return 0, false
 }
+
+// MatchSupported reports whether Match can evaluate every operator in f, with the semantics
+// MongoDB gives it. Realtime decides who sees a change by evaluating filters in memory, so
+// what it accepts is pinned to this subset.
+func MatchSupported(f Filter) error {
+	switch f := f.(type) {
+	case nil, Const:
+		return nil
+	case And:
+		for _, x := range f {
+			if err := MatchSupported(x); err != nil {
+				return err
+			}
+		}
+	case Or:
+		for _, x := range f {
+			if err := MatchSupported(x); err != nil {
+				return err
+			}
+		}
+	case Not:
+		return MatchSupported(f.Filter)
+	case Condition:
+		switch f.Op {
+		case OpEq, OpNe, OpGt, OpGte, OpLt, OpLte, OpIn, OpNin, OpBetween, OpIsNull:
+			return nil
+		}
+		return fmt.Errorf("operator %s can't be evaluated in memory", f.Op)
+	default:
+		return fmt.Errorf("unsupported filter %T", f)
+	}
+	return nil
+}

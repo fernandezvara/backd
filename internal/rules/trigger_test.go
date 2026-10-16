@@ -135,3 +135,27 @@ func TestReferences(t *testing.T) {
 		t.Errorf("document=%v before=%v", r.References("document"), r.References("before"))
 	}
 }
+
+// A `when` runs inside the dispatcher, which serves every realm of the deployment: an
+// expression that tries to burn memory or time is stopped by the engine's memory budget
+// instead of stalling everyone's triggers (security review of triggers, 27.21).
+func TestTriggerConditionsAreResourceBounded(t *testing.T) {
+	for _, src := range []string{
+		`all(1..3000, all(1..3000, # >= 0))`,
+		`len(1..100000000) > 0`,
+		`all(1..100000, all(1..1000, # >= 0))`,
+	} {
+		r, err := CompileTrigger(src, Schema{})
+		if err != nil {
+			continue // refused at startup is as good
+		}
+		start := time.Now()
+		_, err = r.Fires(nil, map[string]any{"a": 1}, time.Now(), nil)
+		if err == nil {
+			t.Errorf("%s: ran to completion", src)
+		}
+		if d := time.Since(start); d > 2*time.Second {
+			t.Errorf("%s: took %v to be stopped", src, d)
+		}
+	}
+}

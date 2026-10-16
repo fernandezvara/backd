@@ -36,7 +36,13 @@ All runtime configuration comes from environment variables. At startup `backd` c
 | `BACKD_SECRETS_KEY` (or `BACKD_SECRETS_KEY_FILE`) | with functions that declare secrets | — | The master key functions' [secrets](../functions/secrets/#storage-and-the-master-key) are encrypted under |
 | `BACKD_ADMIN_API` | no | `true` | `false` makes this instance serve no `/v1/{realm}/_admin` route: they answer `404` like any unknown route. For public instances when an internal instance has the admin API (see [Production deployment](../operations/production/#admin-api)) |
 | `BACKD_EVENTS` | no | `true` | `false` stops this instance from reading MongoDB's change stream for [realtime](../operations/events/): set it on API replicas when dedicated instances serve subscriptions. Nothing is read until there is something to serve, so `true` costs an idle instance nothing |
-| `BACKD_TRIGGERS` | no | `true` | `false` keeps this instance from holding the lease of the trigger dispatcher (planned: [triggers](../operations/events/#what-is-planned)) |
+| `BACKD_TRIGGERS` | no | `true` | `false` keeps this instance from holding the lease of the trigger dispatcher ([triggers](../operations/events/#the-trigger-dispatcher)); `false` on instances that only serve requests |
+| `BACKD_REALTIME_MAX_SUBSCRIPTIONS_PER_STREAM` | no | `20` | Subscriptions one [realtime](../api/realtime/#limits) stream may hold. A realm may lower it |
+| `BACKD_REALTIME_MAX_STREAMS_PER_USER` | no | `5` | Open streams per user or API key (anonymous callers: per address). A realm may lower it |
+| `BACKD_REALTIME_MAX_STREAMS` | no | `10000` | Open realtime streams on this instance |
+| `BACKD_REALTIME_BUFFER` | no | `262144` | Bytes a stream may have waiting to be sent (and at most 1,000 events) before it is reset with `slow_consumer` |
+| `BACKD_REALTIME_MEMORY` | no | `268435456` | Bytes all streams' buffers may hold on this instance; over it, the largest buffers are reset |
+| `BACKD_REALTIME_HEARTBEAT` | no | `25s` | How often an idle stream sends a comment so proxies keep it open (at least `1s`) |
 | `BACKD_ADMIN_UI` | no | `false` | `true` serves the admin web interface at `/_ui/` when the binary was built with it (release images are); it needs the admin API on the same instance, or startup fails |
 | `BACKD_ADMIN_UI_IDLE` | no | `30m` | how long the admin interface may sit untouched before it signs out and revokes its session |
 | `BACKD_DEV` | no | `false` | `true` reloads the config and rebuilds function sources automatically as the files change (see [Dev mode](../functions/testing/#dev-mode)); `serve` refuses to start unless `HTTP_ADDR` is bound to localhost. Local development only |
