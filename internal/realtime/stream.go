@@ -21,6 +21,14 @@ type Subscription struct {
 	Visible  func(doc map[string]any) (bool, error)
 	// Render turns a stored document into what a read returns.
 	Render func(doc map[string]any) map[string]any
+	// Keys are the equalities the subscription can only be visible under (KeysOf of its
+	// resolved filter): they let a change find it without asking every subscription.
+	Keys []Key
+
+	owner     *Stream
+	filed     string // doc, group or scan: where the index holds it
+	keyField  string
+	keyValues []string
 }
 
 func (s *Subscription) collKey() string { return CollKey(s.DB, s.Coll) }
@@ -45,8 +53,9 @@ func (a cursor) after(b cursor) bool {
 }
 
 type pendingChange struct {
-	c  changefeed.Change
-	at changefeed.Position
+	c     changefeed.Change
+	at    changefeed.Position
+	cands []*Subscription
 }
 
 // Stream is one open connection. It is a changefeed.Handler of the instance's shared feed.
@@ -69,11 +78,10 @@ type Stream struct {
 	resetAt  map[string]time.Time
 	resetDue map[string]bool
 
-	notify  chan struct{}
-	done    chan struct{}
-	release func()
-	cancel  context.CancelFunc
-	once    sync.Once
+	notify chan struct{}
+	done   chan struct{}
+	cancel context.CancelFunc
+	once   sync.Once
 }
 
 func newStream(h *Hub, req Request, lim Limits) *Stream {
@@ -106,16 +114,15 @@ func (s *Stream) Close() {
 		s.closed = true
 		freed := s.size
 		s.queue, s.size, s.pending = nil, 0, nil
-		cancel, release := s.cancel, s.release
+		cancel := s.cancel
+		subs := s.subs
+		s.subs = nil
 		s.mu.Unlock()
 		if cancel != nil {
 			cancel()
 		}
-		if release != nil {
-			release()
-		}
 		s.hub.charge(-int64(freed))
-		s.hub.remove(s)
+		s.hub.remove(s, subs)
 		if s.hub.Observer != nil {
 			s.hub.Observer.StreamClosed(s.realm)
 		}
@@ -256,9 +263,16 @@ func (s *Stream) configChanged(colls map[string]bool) {
 		s.mu.Unlock()
 		return
 	}
+	var removed []*Subscription
+	for _, sub := range s.subs {
+		if colls[sub.collKey()] {
+			removed = append(removed, sub)
+		}
+	}
 	s.subs = kept
 	delta := s.enqueueLocked(s.resetFrame(gone, ReasonConfigChanged))
 	s.mu.Unlock()
+	s.hub.unindex(removed)
 	s.hub.charge(delta)
 	if s.hub.Observer != nil {
 		s.hub.Observer.Reset(s.realm, ReasonConfigChanged)
@@ -266,13 +280,10 @@ func (s *Stream) configChanged(colls map[string]bool) {
 	s.wake()
 }
 
-// --- changefeed.Handler: the live feed ---
+// --- the live feed: the hub finds the candidates and hands each stream its own ---
 
-// Change is called by the shared feed, one change at a time.
-func (s *Stream) Change(_ context.Context, c changefeed.Change, at changefeed.Position) {
-	if c.System {
-		return
-	}
+// deliver gives the stream a change and the subscriptions of it that may be affected.
+func (s *Stream) deliver(c changefeed.Change, at changefeed.Position, cands []*Subscription) {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -292,25 +303,19 @@ func (s *Stream) Change(_ context.Context, c changefeed.Change, at changefeed.Po
 			s.wake()
 			return
 		}
-		s.pending = append(s.pending, pendingChange{c, at})
+		s.pending = append(s.pending, pendingChange{c, at, cands})
 		s.mu.Unlock()
 		return
 	}
-	delta := s.processLocked(c, at)
+	delta := s.processLocked(c, at, cands)
 	s.mu.Unlock()
 	s.hub.charge(delta)
 	s.hub.enforce()
 	s.wake()
 }
 
-// Idle is part of changefeed.Handler: nothing to deliver.
-func (s *Stream) Idle(context.Context, changefeed.Position) {}
-
-// Gap is called when the feed lost history: whatever this stream missed is gone.
-func (s *Stream) Gap(context.Context, changefeed.Gap) { s.resetAll(ReasonHistoryExpired) }
-
 // processLocked evaluates one change for every subscription and queues what they should see.
-func (s *Stream) processLocked(c changefeed.Change, at changefeed.Position) int64 {
+func (s *Stream) processLocked(c changefeed.Change, at changefeed.Position, subs []*Subscription) int64 {
 	cur := cursor{c.At, c.Increment}
 	if s.hasLast && !cur.after(s.last) {
 		return 0 // already handled: a replay overlapping the live feed, or a reopened feed
@@ -320,7 +325,7 @@ func (s *Stream) processLocked(c changefeed.Change, at changefeed.Position) int6
 	var frames []Frame
 	var delta int64
 	missing := false
-	for _, sub := range s.subs {
+	for _, sub := range subs {
 		if sub.DB != c.DB || sub.Coll != c.Coll || (sub.Doc != "" && sub.Doc != c.Key) {
 			continue
 		}
@@ -394,6 +399,20 @@ func (s *Stream) preimageMissingLocked(db, coll string) int64 {
 	return s.enqueueLocked(s.resetFrame(s.idsOfLocked(k), ReasonPreimageMiss))
 }
 
+// preimageMissing resets the collection's subscriptions of this stream, at most once a second.
+func (s *Stream) preimageMissing(db, coll string) {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
+	delta := s.preimageMissingLocked(db, coll)
+	s.mu.Unlock()
+	s.hub.charge(delta)
+	s.hub.enforce()
+	s.wake()
+}
+
 func (s *Stream) flushPreimageReset(k string) {
 	s.mu.Lock()
 	delete(s.resetDue, k)
@@ -440,7 +459,6 @@ func (s *Stream) startReplay(t Token) {
 	s.mu.Lock()
 	s.replay, s.cancel = true, cancel
 	s.mu.Unlock()
-	s.release = s.hub.Feed.Acquire(s)
 	c := s.hub.Replay()
 	go func() {
 		_, _ = c.Run(ctx, changefeed.Position(t.Pos), replayHandler{s})
@@ -459,7 +477,7 @@ func (r replayHandler) Change(_ context.Context, c changefeed.Change, at changef
 		s.mu.Unlock()
 		return
 	}
-	delta := s.processLocked(c, at)
+	delta := s.processLocked(c, at, s.subs)
 	if len(s.pending) > 0 {
 		first := cursor{s.pending[0].c.At, s.pending[0].c.Increment}
 		if !first.after(cursor{c.At, c.Increment}) {
@@ -504,7 +522,7 @@ func (s *Stream) handoffLocked() int64 {
 	s.pending = nil
 	var delta int64
 	for _, p := range pending {
-		delta += s.processLocked(p.c, p.at)
+		delta += s.processLocked(p.c, p.at, p.cands)
 	}
 	return delta
 }

@@ -1,6 +1,7 @@
 package realtime
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"time"
@@ -86,6 +87,9 @@ type Observer interface {
 	Event(realm, event string)
 	Reset(realm, reason string)
 	Refused(realm, reason string)
+	// Checks counts the subscriptions a change was evaluated against: kind "indexed" (found by
+	// document id or key) or "scanned" (no key: asked on every change).
+	Checks(realm, kind string, n int)
 }
 
 // Hub holds the open streams of one instance.
@@ -98,6 +102,10 @@ type Hub struct {
 	Limits   Limits
 	Observer Observer
 	Now      func() time.Time
+
+	imu      sync.RWMutex
+	index    map[string]*collIndex // by CollKey
+	attached func()                // releases the feed while there are streams
 
 	mu       sync.Mutex
 	streams  map[*Stream]struct{}
@@ -185,14 +193,12 @@ func (h *Hub) Open(req Request) (*Stream, error) {
 	if h.Observer != nil {
 		h.Observer.StreamOpened(req.Realm)
 	}
+	h.attach(s)
 	switch {
 	case expired:
 		s.resetAll(ReasonHistoryExpired)
-		s.release = h.Feed.Acquire(s)
 	case tok != nil:
 		s.startReplay(*tok)
-	default:
-		s.release = h.Feed.Acquire(s)
 	}
 	return s, nil
 }
@@ -212,7 +218,8 @@ func (h *Hub) refused(realm, reason string) {
 	}
 }
 
-func (h *Hub) remove(s *Stream) {
+func (h *Hub) remove(s *Stream, subs []*Subscription) {
+	h.unindex(subs)
 	h.mu.Lock()
 	if _, ok := h.streams[s]; ok {
 		delete(h.streams, s)
@@ -220,7 +227,123 @@ func (h *Hub) remove(s *Stream) {
 			delete(h.perUser, s.principal)
 		}
 	}
+	none := len(h.streams) == 0
 	h.mu.Unlock()
+	if none {
+		h.detach()
+	}
+}
+
+// attach indexes the stream's subscriptions and makes sure the feed delivers to the hub.
+func (h *Hub) attach(s *Stream) {
+	h.imu.Lock()
+	if h.index == nil {
+		h.index = map[string]*collIndex{}
+	}
+	for _, sub := range s.subs {
+		sub.owner = s
+		ci := h.index[sub.collKey()]
+		if ci == nil {
+			ci = newCollIndex()
+			h.index[sub.collKey()] = ci
+		}
+		ci.add(sub)
+	}
+	if h.attached == nil {
+		h.attached = h.Feed.Acquire(h)
+	}
+	h.imu.Unlock()
+}
+
+// detach lets the feed close when no stream is left (after its grace).
+func (h *Hub) detach() {
+	h.imu.Lock()
+	release := h.attached
+	h.mu.Lock()
+	idle := len(h.streams) == 0
+	h.mu.Unlock()
+	if idle {
+		h.attached = nil
+	} else {
+		release = nil
+	}
+	h.imu.Unlock()
+	if release != nil {
+		release()
+	}
+}
+
+func (h *Hub) unindex(subs []*Subscription) {
+	if len(subs) == 0 {
+		return
+	}
+	h.imu.Lock()
+	for _, sub := range subs {
+		if ci := h.index[sub.collKey()]; ci != nil && sub.filed != "" {
+			ci.remove(sub)
+			if len(ci.streams) == 0 {
+				delete(h.index, sub.collKey())
+			}
+		}
+	}
+	h.imu.Unlock()
+}
+
+// Change is the hub as the feed's handler: it finds, once per change, the subscriptions the
+// change may matter to, and hands each stream its own.
+func (h *Hub) Change(_ context.Context, c changefeed.Change, at changefeed.Position) {
+	if c.System {
+		return
+	}
+	key := CollKey(c.DB, c.Coll)
+	h.imu.RLock()
+	ci := h.index[key]
+	if ci == nil {
+		h.imu.RUnlock()
+		return
+	}
+	if c.Op != changefeed.Created && c.Before == nil {
+		// The image that says who could see the document is missing: no subscription can be
+		// decided, so each stream with one reloads (coalesced), and nobody is told an id.
+		streams := make([]*Stream, 0, len(ci.streams))
+		for s := range ci.streams {
+			streams = append(streams, s)
+		}
+		h.imu.RUnlock()
+		for _, s := range streams {
+			s.preimageMissing(c.DB, c.Coll)
+		}
+		return
+	}
+	cands, indexed, scanned := ci.candidates(c.Key, c.Before, c.After)
+	h.imu.RUnlock()
+	if h.Observer != nil && len(cands) > 0 {
+		h.Observer.Checks(c.Realm, "indexed", indexed)
+		h.Observer.Checks(c.Realm, "scanned", scanned)
+	}
+	by := map[*Stream][]*Subscription{}
+	for _, sub := range cands {
+		by[sub.owner] = append(by[sub.owner], sub)
+	}
+	for s, subs := range by {
+		s.deliver(c, at, subs)
+	}
+}
+
+// Idle is part of changefeed.Handler: nothing to deliver.
+func (h *Hub) Idle(context.Context, changefeed.Position) {}
+
+// Gap is called when the feed lost history: whatever the streams missed is gone.
+func (h *Hub) Gap(context.Context, changefeed.Gap) {
+	h.mu.Lock()
+	streams := make([]*Stream, 0, len(h.streams))
+	for s := range h.streams {
+		streams = append(streams, s)
+	}
+	h.mu.Unlock()
+	for _, s := range streams {
+		s.resetAll(ReasonHistoryExpired)
+	}
 }
 
 // Streams is how many streams are open.

@@ -49,42 +49,6 @@ type realtimeSubscription struct {
 // maxRealtimeBody bounds a subscribe request: twenty subscriptions of small filters.
 const maxRealtimeBody = 64 << 10
 
-// realtimeOperators are the operators a subscription's `where` may use: the ones the
-// in-memory matcher evaluates with MongoDB's semantics. Text operators and `$search` are
-// refused when subscribing, never silently ignored.
-var realtimeOperators = map[storage.Operator]bool{
-	storage.OpEq: true, storage.OpNe: true, storage.OpGt: true, storage.OpGte: true, storage.OpLt: true,
-	storage.OpLte: true, storage.OpIn: true, storage.OpNin: true, storage.OpBetween: true, storage.OpIsNull: true,
-}
-
-func matcherSubset(f storage.Filter) error {
-	switch f := f.(type) {
-	case nil, storage.Const:
-		return nil
-	case storage.And:
-		for _, x := range f {
-			if err := matcherSubset(x); err != nil {
-				return err
-			}
-		}
-	case storage.Or:
-		for _, x := range f {
-			if err := matcherSubset(x); err != nil {
-				return err
-			}
-		}
-	case storage.Not:
-		return matcherSubset(f.Filter)
-	case storage.Condition:
-		if !realtimeOperators[f.Op] {
-			return errors.New("operator " + string(f.Op) + " can't be used in a subscription")
-		}
-	default:
-		return errors.New("unsupported filter")
-	}
-	return nil
-}
-
 // resumeKey is the key that signs a realm's resume tokens: derived per realm from the
 // instance's callback key, which every instance of a deployment shares, so any of them
 // verifies a token another made, and nothing has to be stored. Without a callback key
@@ -265,7 +229,7 @@ func (d *documents) subscription(r *http.Request, c *registry.Collection, s real
 			}
 			return nil, invalid("where", err.Error())
 		}
-		if err := matcherSubset(f); err != nil {
+		if err := storage.MatchSupported(f); err != nil {
 			return nil, invalid("where", err.Error())
 		}
 		where = f
@@ -280,7 +244,7 @@ func (d *documents) subscription(r *http.Request, c *registry.Collection, s real
 	filter := and(where, ruleFilter)
 	filter = hideDeleted(c, filter)
 	return &realtime.Subscription{
-		DB: c.MongoDatabase, Coll: c.Name, Doc: s.Doc,
+		DB: c.MongoDatabase, Coll: c.Name, Doc: s.Doc, Keys: realtime.KeysOf(filter),
 		Visible: func(doc map[string]any) (bool, error) { return storage.Match(doc, filter) },
 		Render:  render,
 	}, nil

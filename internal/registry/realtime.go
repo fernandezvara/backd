@@ -12,6 +12,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/fernandezvara/backd/internal/rules"
+	"github.com/fernandezvara/backd/internal/storage"
 )
 
 // loadRealtime reads collection.yaml's `realtime:` into c: true marks the collection as one
@@ -110,4 +111,25 @@ func RealtimeChanged(old, next *Registry) map[string]bool {
 		}
 	}
 	return out
+}
+
+// checkRealtimeRead refuses a realtime collection whose read rule can't be decided in memory.
+// A stream evaluates the rule per subscriber, per change, with storage.Match; an operator it
+// doesn't implement would be guessed. The rule is translated for a few probe callers (none,
+// and one with every role), and the result must stay inside what Match evaluates.
+func checkRealtimeRead(c *Collection, path string) error {
+	rule := c.Rules.For(rules.Read)
+	if rule == nil {
+		return nil
+	}
+	for _, u := range []*rules.User{nil, {ID: "probe", Roles: []string{"probe"}}} {
+		f, err := rule.Filter(rules.Values{User: u})
+		if err != nil {
+			continue // a value the probe lacks: decided per request, like any rule
+		}
+		if err := storage.MatchSupported(f); err != nil {
+			return fmt.Errorf("%s: realtime: true needs a read rule that can be evaluated per change: %v", path, err)
+		}
+	}
+	return nil
 }

@@ -323,3 +323,60 @@ func testHub(t *testing.T) *realtime.Hub {
 	t.Cleanup(lazy.Close)
 	return &realtime.Hub{Feed: lazy, Replay: func() *changefeed.Consumer { return mk("replay") }}
 }
+
+// A removal that arrives without its pre-change image is never told as "removed": the
+// subscriber reloads, and a stranger learns nothing, not even the id.
+func TestRealtimeMissingPreimageRevealsNothing(t *testing.T) {
+	f := newRealtimeFixture(t, realtime.Limits{})
+	ada, _ := f.signup(t, "ada@example.com")
+	bob, bobID := f.signup(t, "bob@example.com")
+	_, adaEvents := f.subscribe(t, ada, itemsSub)
+	next(t, adaEvents)
+	_, bobEvents := f.subscribe(t, bob, itemsSub)
+	next(t, bobEvents)
+	time.Sleep(50 * time.Millisecond)
+
+	f.feed.add(changefeed.Change{Realm: "acme", DB: f.mdb, Coll: "items", Op: changefeed.Removed, Key: "secret-doc-id", Version: 9})
+	for name, ch := range map[string]<-chan sseEvent{"ada": adaEvents, "bob": bobEvents} {
+		ev := next(t, ch)
+		if ev.Event != "reset" || !strings.Contains(ev.Data, "preimage_missing") || strings.Contains(ev.Data, "secret-doc-id") {
+			t.Fatalf("%s: %+v", name, ev)
+		}
+	}
+	// And the stream goes on: the next change reaches its owner.
+	time.Sleep(1100 * time.Millisecond)
+	f.feed.add(changefeed.Change{Realm: "acme", DB: f.mdb, Coll: "items", Op: changefeed.Created, Key: "b1", After: f.item("b1", bobID, 1), Version: 1})
+	if ev := next(t, bobEvents); ev.Event != "created" {
+		t.Fatalf("after the reset: %+v", ev)
+	}
+}
+
+// `where` narrows a subscription, and a document subscription follows one id.
+func TestRealtimeWhereAndDocument(t *testing.T) {
+	f := newRealtimeFixture(t, realtime.Limits{})
+	ada, adaID := f.signup(t, "ada@example.com")
+	body := `{"subscriptions":[
+		{"id":"bigs","db":"app","collection":"items","where":{"age":{"$gte":18}}},
+		{"id":"one","db":"app","collection":"items","doc":"i2"}]}`
+	_, evs := f.subscribe(t, ada, body)
+	next(t, evs)
+	time.Sleep(50 * time.Millisecond)
+
+	mk := func(id string, age int64) map[string]any {
+		d := f.item(id, adaID, 1)
+		d["age"] = age
+		return d
+	}
+	f.feed.add(changefeed.Change{Realm: "acme", DB: f.mdb, Coll: "items", Op: changefeed.Created, Key: "i1", After: mk("i1", 5), Version: 1})
+	f.feed.add(changefeed.Change{Realm: "acme", DB: f.mdb, Coll: "items", Op: changefeed.Created, Key: "i2", After: mk("i2", 30), Version: 1})
+	got := map[string]bool{}
+	for i := 0; i < 2; i++ {
+		ev := next(t, evs)
+		var m struct{ Sub string }
+		_ = json.Unmarshal([]byte(ev.Data), &m)
+		got[m.Sub] = true
+	}
+	if !got["bigs"] || !got["one"] {
+		t.Fatalf("i2 reaches both subscriptions (i1, under 18, neither): %v", got)
+	}
+}

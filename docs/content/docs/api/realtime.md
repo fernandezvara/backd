@@ -98,6 +98,18 @@ An instance and a realm set them with the [`BACKD_REALTIME_*` variables](../../c
 A stream is a long request. Put nothing in front of it that buffers or times out responses (for nginx: `proxy_buffering off`, a generous `proxy_read_timeout`; backd sends `X-Accel-Buffering: no`).
 {{< /hint >}}
 
+## What a stream costs
+
+Every change to a realtime collection is checked once against the subscriptions it can matter to, with the caller's `where` and read rule evaluated on the document before and after the change. Subscriptions are filed by the **equalities their filter can only be visible under**, so a change finds its subscribers without asking all of them:
+
+- A subscription to one document (`doc`) is found by its id.
+- A `where` (combined with the read rule) with an equality or `$in` on a field, such as `_meta.org`, `_meta.team` or `status`, is filed under that value. `inOrg`, `hasOrgRole`, `inTeam` and `hasTeamRole` rules become `_meta.org`/`_meta.team` memberships per caller, so they are filed like plain equalities.
+- A subscription with no such equality is **checked on every change** of its collection on that instance.
+
+{{< hint style="tip" title="Best practice" >}}
+Subscribe with an equality on a field that groups your data (`where: { "_meta.org": "o_1" }`, a project id, a room). Without one, the checks per change grow with the number of subscribers; `backd_realtime_subscription_checks_total{kind="scanned"}` shows it.
+{{< /hint >}}
+
 ## What's planned
 
-Rules per subscriber are evaluated today by re-checking each change in memory; closing a stream the moment a session or role changes (`access_changed`, `session_ended`, `reauth`), the JavaScript client's `subscribe()` and the Shelf chapter follow in this milestone.
+Closing a stream the moment a session or role changes (`access_changed`, `session_ended`, `reauth`), the JavaScript client's `subscribe()` and the Shelf chapter follow in this milestone.

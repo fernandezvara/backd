@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/fernandezvara/backd/internal/changefeed"
+	"github.com/fernandezvara/backd/internal/storage"
 )
 
 // fakeSource is a change history: Open reads it from a position onwards and then follows
@@ -72,14 +73,25 @@ func (s *fakeStream) Next(ctx context.Context) (changefeed.Event, error) {
 }
 
 type rec struct {
-	mu     sync.Mutex
-	resets []string
+	mu      sync.Mutex
+	resets  []string
+	indexed int
+	scanned int
 }
 
 func (r *rec) StreamOpened(string)    {}
 func (r *rec) StreamClosed(string)    {}
 func (r *rec) Event(string, string)   {}
 func (r *rec) Refused(string, string) {}
+func (r *rec) Checks(_, kind string, n int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if kind == "indexed" {
+		r.indexed += n
+	} else {
+		r.scanned += n
+	}
+}
 func (r *rec) Reset(_, reason string) {
 	r.mu.Lock()
 	r.resets = append(r.resets, reason)
@@ -404,5 +416,106 @@ func TestConfigChangedRemovesSubscriptions(t *testing.T) {
 	}
 	if len(s.IDs()) != 0 {
 		t.Fatal("the subscription must be gone")
+	}
+}
+
+// keyed is sub with the equality its visibility depends on declared, as a subscription
+// built from `_meta.org == x` is.
+func keyed(id, who string) *Subscription {
+	s := sub(id, who)
+	s.Keys = []Key{{Field: "owner", Values: []any{who}}}
+	return s
+}
+
+// A change is only evaluated against the subscriptions its documents' keys lead to, plus the
+// ones with no key; the answer is the same as asking everyone.
+func TestChangesFindTheirSubscriptionsByKey(t *testing.T) {
+	src := newFakeSource()
+	h := newHub(t, src, Limits{StreamsPerUser: 100})
+	obs := &rec{}
+	h.Observer = obs
+	var mine collector
+	mine.run(t, open(t, h, "user:me", keyed("s", "me")))
+	for i := 0; i < 50; i++ { // fifty other subscribers, each with a key of their own
+		who := "other" + string(rune('a'+i%26)) + string(rune('a'+i/26))
+		open(t, h, "user:"+who, keyed("s", who))
+	}
+	var scanner collector
+	scanner.run(t, open(t, h, "user:scan", sub("s", "me"))) // no key: asked every time
+	time.Sleep(30 * time.Millisecond)
+
+	src.add(changefeed.Change{DB: "db", Coll: "items", Op: changefeed.Created, Key: "1", After: doc("1", "me", 1), Version: 1})
+	mine.events(t, 1)
+	scanner.events(t, 1)
+	obs.mu.Lock()
+	defer obs.mu.Unlock()
+	if obs.indexed != 1 || obs.scanned != 1 {
+		t.Fatalf("checked %d indexed and %d scanned subscriptions of 52, want 1 and 1", obs.indexed, obs.scanned)
+	}
+
+	// A document that leaves the key is found through its image before the change.
+	obs.indexed, obs.scanned = 0, 0
+}
+
+// A key makes a document reachable from both of its images: handing a document over tells
+// the old owner it is gone and the new one that it appeared.
+func TestKeyLookupUsesBothImages(t *testing.T) {
+	src := newFakeSource()
+	h := newHub(t, src, Limits{})
+	var a, b collector
+	a.run(t, open(t, h, "user:a", keyed("s", "a")))
+	b.run(t, open(t, h, "user:b", keyed("s", "b")))
+	time.Sleep(30 * time.Millisecond)
+	src.add(changefeed.Change{DB: "db", Coll: "items", Op: changefeed.Updated, Key: "1", Before: doc("1", "a", 1), After: doc("1", "b", 2), Version: 2})
+	if got := names(a.events(t, 1)); got[0] != "removed" {
+		t.Fatalf("a: %v", got)
+	}
+	if got := names(b.events(t, 1)); got[0] != "created" {
+		t.Fatalf("b: %v", got)
+	}
+}
+
+// A document subscription is found by id.
+func TestDocumentSubscriptionByID(t *testing.T) {
+	src := newFakeSource()
+	h := newHub(t, src, Limits{})
+	one := sub("d", "a")
+	one.Doc = "1"
+	var c collector
+	c.run(t, open(t, h, "user:a", one))
+	time.Sleep(30 * time.Millisecond)
+	src.add(changefeed.Change{DB: "db", Coll: "items", Op: changefeed.Created, Key: "2", After: doc("2", "a", 1), Version: 1})
+	src.add(changefeed.Change{DB: "db", Coll: "items", Op: changefeed.Created, Key: "1", After: doc("1", "a", 1), Version: 1})
+	got := c.events(t, 1)
+	if len(got) != 1 || !contains(string(got[0].Data), `"1"`) {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestKeysOfFilters(t *testing.T) {
+	eq := func(f string, v any) storage.Filter { return storage.Condition{Field: f, Op: storage.OpEq, Value: v} }
+	in := func(f string, v ...any) storage.Filter {
+		return storage.Condition{Field: f, Op: storage.OpIn, Value: v}
+	}
+	for name, tc := range map[string]struct {
+		filter storage.Filter
+		want   int
+	}{
+		"equality":     {eq("_meta.org", "o1"), 1},
+		"membership":   {in("_meta.org", "o1", "o2"), 1},
+		"and":          {storage.And{eq("a", "x"), storage.Condition{Field: "n", Op: storage.OpGt, Value: int64(1)}, in("b", "y")}, 2},
+		"under or":     {storage.Or{eq("a", "x"), eq("b", "y")}, 0},
+		"under not":    {storage.Not{Filter: eq("a", "x")}, 0},
+		"null":         {eq("a", nil), 0},
+		"empty list":   {in("a"), 0},
+		"an array":     {eq("a", []any{"x"}), 0},
+		"not equality": {storage.Condition{Field: "a", Op: storage.OpNe, Value: "x"}, 0},
+	} {
+		if got := len(KeysOf(tc.filter)); got != tc.want {
+			t.Errorf("%s: %d keys, want %d", name, got, tc.want)
+		}
+	}
+	if best, _ := best([]Key{{Field: "status"}, {Field: "_meta.team"}, {Field: "_meta.org"}}); best.Field != "_meta.org" {
+		t.Errorf("best key: %s", best.Field)
 	}
 }

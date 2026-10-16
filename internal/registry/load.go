@@ -419,6 +419,11 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 	if err := loadRealtime(coll, filepath.Join(dir, CollectionFile)); err != nil {
 		return nil, err
 	}
+	if coll.Realtime {
+		if err := checkRealtimeRead(coll, filepath.Join(dir, CollectionFile)); err != nil {
+			return nil, err
+		}
+	}
 	if err := loadTriggers(coll, settings, filepath.Join(dir, CollectionFile)); err != nil {
 		return nil, err
 	}
