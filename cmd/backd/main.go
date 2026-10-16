@@ -105,6 +105,38 @@ type app struct {
 	hub *realtime.Hub
 }
 
+// loadConfig loads CONFIG_DIR and checks it against the instance's limits and the functions'
+// bundles, as startup and a live reload do. It returns the registry and its fingerprint.
+func loadConfig(cfg settings.Settings, log *slog.Logger) (*registry.Registry, string, error) {
+	reg, err := registry.Load(cfg.ConfigDir)
+	if err != nil {
+		return nil, "", fmt.Errorf("invalid config:\n%w", err)
+	}
+	if err := reg.CheckImageLimits(cfg.ImageMaxPixels); err != nil {
+		return nil, "", fmt.Errorf("invalid config:\n%w", err)
+	}
+	if err := reg.CheckExpandLimits(cfg.Expand.MaxArray); err != nil {
+		return nil, "", fmt.Errorf("invalid config:\n%w", err)
+	}
+	if err := reg.CheckAggregateLimits(cfg.Aggregate); err != nil {
+		return nil, "", fmt.Errorf("invalid config:\n%w", err)
+	}
+	if err := reg.CheckTriggerLimits(cfg.TriggerLimits); err != nil {
+		return nil, "", fmt.Errorf("invalid config:\n%w", err)
+	}
+	for _, w := range reg.AggregateWarnings() {
+		log.Warn(w)
+	}
+	if err := checkFunctions(reg, cfg, log); err != nil {
+		return nil, "", err
+	}
+	fingerprint, err := reg.Fingerprint()
+	if err != nil {
+		return nil, "", err
+	}
+	return reg, fingerprint, nil
+}
+
 func setup(ctx context.Context, getenv func(string) string, logOut io.Writer) (*app, error) {
 	cfg, err := settings.Load(getenv)
 	if err != nil {
@@ -112,29 +144,7 @@ func setup(ctx context.Context, getenv func(string) string, logOut io.Writer) (*
 	}
 	log := slog.New(slog.NewJSONHandler(logOut, &slog.HandlerOptions{Level: cfg.LogLevel}))
 
-	reg, err := registry.Load(cfg.ConfigDir)
-	if err != nil {
-		return nil, fmt.Errorf("invalid config:\n%w", err)
-	}
-	if err := reg.CheckImageLimits(cfg.ImageMaxPixels); err != nil {
-		return nil, fmt.Errorf("invalid config:\n%w", err)
-	}
-	if err := reg.CheckExpandLimits(cfg.Expand.MaxArray); err != nil {
-		return nil, fmt.Errorf("invalid config:\n%w", err)
-	}
-	if err := reg.CheckAggregateLimits(cfg.Aggregate); err != nil {
-		return nil, fmt.Errorf("invalid config:\n%w", err)
-	}
-	if err := reg.CheckTriggerLimits(cfg.TriggerLimits); err != nil {
-		return nil, fmt.Errorf("invalid config:\n%w", err)
-	}
-	for _, w := range reg.AggregateWarnings() {
-		log.Warn(w)
-	}
-	if err := checkFunctions(reg, cfg, log); err != nil {
-		return nil, err
-	}
-	fingerprint, err := reg.Fingerprint()
+	reg, fingerprint, err := loadConfig(cfg, log)
 	if err != nil {
 		return nil, err
 	}
@@ -380,7 +390,31 @@ func worker(ctx context.Context, a *app) error {
 		}()
 	}
 	go w.CheckImageDeclarations(ctx)
-	w.Run(ctx, a.cfg.WorkerConcurrency)
+	if !a.cfg.Dev {
+		w.Run(ctx, a.cfg.WorkerConcurrency)
+		return nil
+	}
+	// Dev mode: follow CONFIG_DIR, as `serve` does, so a function or a rule changed on disk is the
+	// one the next job uses. The job loop restarts on the new config; jobs running at that
+	// moment are cancelled and their leases expire, which is fine for development.
+	a.log.Info("dev mode: the worker follows CONFIG_DIR and restarts its job loop when the config changes")
+	cur := a
+	for ctx.Err() == nil {
+		runCtx, cancel := context.WithCancel(ctx)
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			w.Run(runCtx, cur.cfg.WorkerConcurrency)
+		}()
+		next := followConfig(ctx, cur, time.Second)
+		cancel()
+		<-done
+		if next == nil {
+			break
+		}
+		cur = next
+		w = httpapi.NewWorker(cur.handlerConfig(), workerID())
+	}
 	return nil
 }
 

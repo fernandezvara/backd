@@ -191,3 +191,107 @@ func TestServedByFallsBackToTheHandler(t *testing.T) {
 		t.Errorf("dev mode didn't serve the swap handler: %d", rec.Code)
 	}
 }
+
+func followFixture(t *testing.T) (*app, string) {
+	t.Helper()
+	dir := writeConfig(t, map[string]string{
+		"app/realm.yaml":                 "auth: disabled\n",
+		"app/main/notes/schema.json":     strings.Replace(reloadSchema, "%s", "", 1),
+		"app/main/notes/collection.yaml": "{}\n",
+	})
+	cfg := settings.Settings{ConfigDir: dir, Dev: true}
+	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	reg, fp, err := loadConfig(cfg, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &app{cfg: cfg, log: log, reg: reg, fingerprint: fp}, dir
+}
+
+// The worker follows CONFIG_DIR in dev mode: a valid change gives the app for the new config, a
+// change that doesn't load is retried until it does, and files that don't change the config are
+// not a reload.
+func TestWorkerFollowsTheConfig(t *testing.T) {
+	a, dir := followFixture(t)
+	schema := filepath.Join(dir, "app/main/notes/schema.json")
+	got := make(chan *app, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { got <- followConfig(ctx, a, 10*time.Millisecond) }()
+
+	// A stray file: the same config, no reload.
+	edit(t, filepath.Join(dir, "app/notes.txt"), "just a note")
+	select {
+	case <-got:
+		t.Fatal("a file the config doesn't read caused a reload")
+	case <-time.After(150 * time.Millisecond):
+	}
+	// An invalid change is not applied...
+	edit(t, schema, `{ not json`)
+	select {
+	case <-got:
+		t.Fatal("an invalid config was applied")
+	case <-time.After(150 * time.Millisecond):
+	}
+	// ...and fixing the file, without another change in between, is picked up.
+	edit(t, schema, strings.Replace(reloadSchema, "%s", `,"done":{"type":"boolean"}`, 1))
+	select {
+	case next := <-got:
+		if next == nil || next.fingerprint == a.fingerprint {
+			t.Fatalf("next = %+v", next)
+		}
+		if _, ok := next.reg.Realms["app"].Databases["main"].Collections["notes"].RawSchema["properties"].(map[string]any)["done"]; !ok {
+			t.Error("the new schema is not the one returned")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the valid change was not applied")
+	}
+}
+
+// A config that stays invalid until something else catches up (the API building a bundle) is
+// retried on its own: the worker applies it as soon as it loads, with no further file change.
+func TestWorkerRetriesAConfigThatDoesNotLoadYet(t *testing.T) {
+	a, dir := followFixture(t)
+	got := make(chan *app, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { got <- followConfig(ctx, a, 10*time.Millisecond) }()
+	// A reference to a collection that does not exist yet.
+	edit(t, filepath.Join(dir, "app/main/notes/collection.yaml"), "references:\n  later: {field: title, collection: later}\n")
+	select {
+	case <-got:
+		t.Fatal("applied a config that does not load")
+	case <-time.After(200 * time.Millisecond):
+	}
+	// The collection appears, without touching collection.yaml again.
+	if err := os.MkdirAll(filepath.Join(dir, "app/main/later"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "app/main/later/schema.json"), []byte(`{"type":"object"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case next := <-got:
+		if next == nil || next.fingerprint == a.fingerprint {
+			t.Fatalf("next = %+v", next)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the config was not applied once it loaded")
+	}
+}
+
+func TestWorkerFollowStopsWithItsContext(t *testing.T) {
+	a, _ := followFixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan *app, 1)
+	go func() { done <- followConfig(ctx, a, 10*time.Millisecond) }()
+	cancel()
+	select {
+	case next := <-done:
+		if next != nil {
+			t.Fatal("an app after cancellation")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("did not stop")
+	}
+}

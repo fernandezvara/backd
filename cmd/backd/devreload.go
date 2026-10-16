@@ -292,3 +292,48 @@ func diffSnapshots(before, after map[string]string) []string {
 	slices.Sort(out)
 	return out
 }
+
+// followConfig is the worker's counterpart of the reloader in dev mode: it returns the app for the
+// new config once CONFIG_DIR has changed and the change loads and validates, or nil when ctx is
+// done. It keeps trying while the new config doesn't load: the API builds the functions' bundles
+// after a change, and until it has, the config is stale. Each distinct reason is logged once.
+func followConfig(ctx context.Context, cur *app, interval time.Duration) *app {
+	files, _ := snapshot(cur.cfg.ConfigDir)
+	pending := false
+	lastErr := ""
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-t.C:
+		}
+		now, err := snapshot(cur.cfg.ConfigDir)
+		if err != nil {
+			continue
+		}
+		if len(diffSnapshots(files, now)) > 0 {
+			files, pending = now, true
+		}
+		if !pending {
+			continue
+		}
+		reg, fp, err := loadConfig(cur.cfg, cur.log)
+		if err != nil {
+			if msg := err.Error(); msg != lastErr {
+				lastErr = msg
+				cur.log.Warn("dev mode: the config change is not applied yet; the worker keeps running the previous config (it tries again until it loads)", "error", msg)
+			}
+			continue
+		}
+		pending, lastErr = false, ""
+		if fp == cur.fingerprint {
+			continue // changed files, same config (a comment, a stray file)
+		}
+		cur.log.Info("dev mode: worker config reloaded", "fingerprint", fp)
+		next := *cur
+		next.reg, next.fingerprint, next.userServices = reg, fp, nil
+		return &next
+	}
+}
