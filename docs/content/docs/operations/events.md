@@ -132,6 +132,25 @@ What it means for you:
 - **The default `max_backlog` of 100,000 queued jobs per realm stays.** It is a safety valve, not a throughput target: a realm importing millions of documents will record `backlog` gaps while its workers catch up, and `rescan` re-emits them. Raise it (in `realm.yaml`) only if your workers drain faster than you import.
 - **The ceiling is exact.** The jobs a dispatcher queues count against it immediately, not at the next count of the database.
 
+## Realtime under load
+
+The hub's scenarios run in the repository too (`go test ./internal/realtime -run TestLoad`, reduced in CI; `BACKD_LOAD_SCALE=10` for these numbers), over a scripted history so that they measure the matching and fan-out, not MongoDB. Same developer machine:
+
+| Scenario | Result |
+|---|---|
+| 10,000 streams over 50 organizations, 200 changes | with an equality on `_meta.org`: **200 checks per change**, 0.8 ms of work per change; without one: **10,000 checks per change**, 9.1 ms. The events delivered are identical |
+| 2,000 streams all following one collection, 64 KiB documents | 100,000 events (6 GiB) delivered in 5 s, about 1.2 GiB per second of rendered payload |
+| 2,000 clients that stop reading, against a budget of 8 MiB | buffered memory peaked at the budget and never above it; the stalled streams were reset (`slow_consumer`) and the healthy client received all 1,000 events |
+| An organization-wide role change, 10,000 members | each member's access read once, 5,000 resets (the ones whose effective access differed), none repeated; 170 ms in the hub (the reads themselves are database lookups) |
+| Replicas | a replica with no subscribers opened no stream; two instances with subscribers opened one each and each delivered every event |
+| A soak: 30 seconds, 93,000 changes, 934,000 events, streams opening and closing | heap 12 to 16 MiB with the scripted history released, nothing buffered at the end |
+
+What it means for you:
+
+- **Grouping fields are the difference between a cheap stream and an expensive one**: 50 times fewer checks here. See [what a stream costs](../../api/realtime/#what-a-stream-costs).
+- **The memory budget holds**: a mass stall is bounded by `BACKD_REALTIME_MEMORY`, whatever the number of stalled clients, and costs them a reload, not the instance's memory. The default of 256 MiB stays; lower it on small instances.
+- **Access storms are one read per member**, not per event; the reloads are the cost to plan for in very large organizations.
+
 ## Sizing the history
 
 A stream that falls behind can only catch up while MongoDB still holds the history it needs: its **oplog**. A consumer that is offline longer than the oplog window loses its position and continues from now, which `backd` reports as a gap (`changefeed_reopens_total{reason="history_lost"}`). Size the oplog for your write volume and the longest outage you want to survive.

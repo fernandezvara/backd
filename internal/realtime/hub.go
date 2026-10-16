@@ -3,6 +3,7 @@ package realtime
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"time"
 
@@ -373,27 +374,35 @@ func (h *Hub) charge(n int64) {
 }
 
 // enforce drops the largest buffers while the instance is over its memory budget: those
-// streams are reset, so memory stays bounded and no stream ever stalls the change feed.
+// streams are reset, so memory stays bounded and no stream ever stalls the change feed. It
+// frees down to three quarters of the budget in one pass, so a mass stall costs one scan of
+// the streams per budget's worth of events, not one per event.
 func (h *Hub) enforce() {
 	budget := h.limits().Memory
-	for {
-		h.mu.Lock()
-		if h.mem <= budget {
-			h.mu.Unlock()
-			return
-		}
-		var big *Stream
-		bigN := 0
-		for s := range h.streams {
-			if n := s.buffered(); n > bigN {
-				big, bigN = s, n
-			}
-		}
+	h.mu.Lock()
+	if h.mem <= budget {
 		h.mu.Unlock()
-		if big == nil || bigN == 0 {
+		return
+	}
+	type held struct {
+		s *Stream
+		n int
+	}
+	all := make([]held, 0, len(h.streams))
+	for s := range h.streams {
+		if n := s.buffered(); n > 0 {
+			all = append(all, held{s, n})
+		}
+	}
+	over := h.mem - budget*3/4
+	h.mu.Unlock()
+	slices.SortFunc(all, func(a, b held) int { return b.n - a.n })
+	for _, x := range all {
+		if over <= 0 {
 			return
 		}
-		big.slowConsumer()
+		x.s.slowConsumer()
+		over -= int64(x.n)
 	}
 }
 
