@@ -1,7 +1,7 @@
 ---
 title: "Metrics"
 description: "Prometheus metrics from every backd process on a private port: how to turn them on, what they hold, and why the port must never be public."
-icon: "monitoring"
+icon: "chart-line"
 weight: 415
 toc: true
 ---

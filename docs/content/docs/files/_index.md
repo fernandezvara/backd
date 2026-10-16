@@ -1,7 +1,7 @@
 ---
 title: "Files"
 description: "Let documents carry files, kept in the realm's own S3-compatible object storage: how a realm connects its storage, and what backd checks."
-icon: "folder_open"
+icon: "folder-open"
 weight: 570
 toc: true
 ---

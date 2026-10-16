@@ -1,7 +1,7 @@
 ---
 title: "Async jobs"
 description: "Run work in the background with mode: async, and know when it finished: polling, the JavaScript client, the CLI, and completion patterns inside the function."
-icon: "receipt_long"
+icon: "receipt"
 weight: 555
 toc: true
 ---

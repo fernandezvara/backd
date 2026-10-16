@@ -1,7 +1,7 @@
 ---
 title: "Sign in with Google, Microsoft or Apple"
 description: "Let users sign in with an external identity provider: configuration, the redirect flow, linking rules, errors and security."
-icon: "log-in"
+icon: "sign-in"
 weight: 530
 toc: true
 ---

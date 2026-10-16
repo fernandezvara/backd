@@ -1,7 +1,7 @@
 ---
 title: "Getting started"
 description: "Run backd locally with the development stack: released images, your own config with live reload, the API and the worker apart, Prometheus and Grafana."
-icon: "rocket_launch"
+icon: "rocket-launch"
 weight: 100
 toc: true
 ---

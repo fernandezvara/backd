@@ -1,7 +1,7 @@
 ---
 title: "Organizations in functions"
 description: "Read the caller's memberships with ctx.user.orgs, create documents in an organization with ctx.db, and manage organizations from a function with admin access."
-icon: "domain"
+icon: "buildings"
 weight: 585
 toc: true
 ---

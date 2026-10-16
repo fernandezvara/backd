@@ -1,7 +1,7 @@
 ---
 title: "Email"
 description: "Send transactional email through any provider: you write one function, backd renders the messages."
-icon: "mail"
+icon: "envelope"
 weight: 558
 toc: true
 ---

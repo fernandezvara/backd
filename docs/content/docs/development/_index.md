@@ -230,7 +230,7 @@ The documentation site is built with [Hugo](https://gohugo.io/) and the [hugodok
 
 **Front matter**
 
-Each page needs `title`, `description` (shown in navigation and section lists), `icon` (a name from the theme's built-in icon set, such as `settings` or `lock`; unknown names show a generic document icon), `weight` and `toc: true`.
+Each page needs `title`, `description` (shown in navigation and section lists), `icon` (a [Phosphor](https://fernandezvara.github.io/hugodoks/docs/shortcodes/icons/) icon name, `kebab-case`, such as `gear-six` or `lock`; unknown names render blank), `weight` and `toc: true`. The theme's [documentation](https://fernandezvara.github.io/hugodoks/) covers the shortcodes and site params the pages here use.
 
 **Commands**
 

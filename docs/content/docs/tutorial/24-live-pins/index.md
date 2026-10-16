@@ -1,7 +1,7 @@
 ---
 title: "24. Live pins"
 description: "Make a team's pinboard live: one subscription filtered by team, what a removed member sees, what the stream costs and how to check it with the metrics."
-icon: "bolt"
+icon: "lightning"
 weight: 440
 toc: true
 ---

@@ -1,7 +1,7 @@
 ---
 title: "Running in production"
 description: "The executor, workers and egress: how to run them."
-icon: "monitor_heart"
+icon: "heartbeat"
 weight: 563
 toc: true
 ---

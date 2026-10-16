@@ -1,7 +1,7 @@
 ---
 title: "Full-text search"
 description: "A guide to searching with a text index: declaring fields and weights, languages and stemming, the search syntax, relevance and paging, $search versus $contains, limits and what it doesn't do."
-icon: "search"
+icon: "magnifying-glass"
 weight: 328
 toc: true
 ---

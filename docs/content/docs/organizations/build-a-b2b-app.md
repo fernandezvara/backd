@@ -1,7 +1,7 @@
 ---
 title: "Build a B2B app"
 description: "A step-by-step recipe: declare organization roles, mark collections, write rules, create the organization at sign-up, invite people and switch between organizations."
-icon: "business_center"
+icon: "briefcase"
 weight: 521
 toc: true
 ---

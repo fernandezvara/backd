@@ -1,7 +1,7 @@
 ---
 title: "FCM: Android, and iOS apps on the FCM SDK"
 description: "Set up Firebase Cloud Messaging for a realm: the Firebase console steps, the service account, the realm.yaml keys and the egress hosts."
-icon: "brand-firebase"
+icon: "fire-simple"
 weight: 585
 toc: true
 ---

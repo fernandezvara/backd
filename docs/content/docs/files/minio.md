@@ -1,7 +1,7 @@
 ---
 title: "MinIO"
 description: "Use a self-hosted MinIO as a realm's storage, in development and in production."
-icon: "dns"
+icon: "hard-drives"
 weight: 573
 toc: true
 ---

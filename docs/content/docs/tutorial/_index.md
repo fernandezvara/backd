@@ -1,7 +1,7 @@
 ---
 title: "Tutorial"
 description: "Build Shelf, a team asset library, one feature per chapter — every chapter ends in a working app."
-icon: "school"
+icon: "graduation-cap"
 weight: 200
 toc: true
 ---

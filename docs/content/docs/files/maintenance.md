@@ -1,7 +1,7 @@
 ---
 title: "Keeping storage tidy"
 description: "What happens to a file's object when its document changes or is deleted, erasing users, usage totals, backups, and backd storage usage and reconcile."
-icon: "cleaning_services"
+icon: "broom"
 weight: 579
 toc: true
 ---

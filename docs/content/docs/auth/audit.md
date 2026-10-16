@@ -1,7 +1,7 @@
 ---
 title: "Audit trail"
 description: "A permanent, append-only record of who changed users, roles, network restrictions, API keys and invitations, and when."
-icon: "history"
+icon: "clock-counter-clockwise"
 weight: 560
 toc: true
 ---

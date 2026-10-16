@@ -1,6 +1,6 @@
 baseURL = "https://fernandezvara.github.io/backd/"
 languageCode = "en-us"
-title = "backd"
+title = "back(d)"
 enableGitInfo = true
 
 [markup.goldmark.renderer]
@@ -94,12 +94,13 @@ enableGitInfo = true
     editPage = true
     lastMod = true
     aiAssist = true
+    aiAssistIcon = "sparkle"
     repoURL = "https://github.com/fernandezvara/backd"
     repoBranch = "main"
     repoContentDir = "docs/content"
 
   [params.brand]
-    icon = "database"
+    icon = "sliders"
 
 [menu]
   [[menu.primary]]

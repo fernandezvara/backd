@@ -1,7 +1,7 @@
 ---
 title: "Clients"
 description: "Libraries for calling backd from applications."
-icon: "integration_instructions"
+icon: "package"
 weight: 600
 toc: true
 ---

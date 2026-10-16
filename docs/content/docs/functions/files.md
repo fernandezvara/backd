@@ -1,7 +1,7 @@
 ---
 title: "Files in functions"
 description: "Read, write, remove and link a document's files from a function with files(id, field), as the caller or as the function, and two recipes: a thumbnail and a counted download."
-icon: "attach_file"
+icon: "paperclip"
 weight: 566
 toc: true
 ---

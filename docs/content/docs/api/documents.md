@@ -1,7 +1,7 @@
 ---
 title: "Documents"
 description: "Create, read, replace, patch and delete documents; versions, If-Match and If-None-Match."
-icon: "description"
+icon: "file-text"
 weight: 310
 toc: true
 ---

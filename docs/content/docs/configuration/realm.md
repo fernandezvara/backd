@@ -1,7 +1,7 @@
 ---
 title: "Realm settings (realm.yaml)"
 description: "Configure authentication, sign-up, sessions, passwords, CORS and roles for a realm."
-icon: "domain"
+icon: "buildings"
 weight: 215
 toc: true
 ---

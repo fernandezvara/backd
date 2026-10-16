@@ -1,7 +1,7 @@
 ---
 title: "Compliance with backd"
 description: "What backd provides for privacy compliance (personal data scope, consents, erasure, retention) and what stays your job."
-icon: "policy"
+icon: "shield-check"
 weight: 567
 toc: true
 ---

@@ -1,7 +1,7 @@
 ---
 title: "Consents"
 description: "Versioned consent texts kept with the config, accepted and recorded as proof, and served to apps."
-icon: "fact_check"
+icon: "clipboard-text"
 weight: 566
 toc: true
 ---

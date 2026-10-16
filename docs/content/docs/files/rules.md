@@ -1,7 +1,7 @@
 ---
 title: "Rules for files"
 description: "How access rules decide who uploads, removes and downloads files, and how to reserve a file field for functions."
-icon: "policy"
+icon: "shield-check"
 weight: 578
 toc: true
 ---

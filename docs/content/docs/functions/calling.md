@@ -1,7 +1,7 @@
 ---
 title: "Calling functions"
 description: "Call a function over HTTP, from the JavaScript client or the CLI; the answers, limits, rate limits and idempotency."
-icon: "api"
+icon: "brackets-curly"
 weight: 553
 toc: true
 ---

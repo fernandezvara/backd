@@ -1,7 +1,7 @@
 ---
 title: "Admin API"
 description: "Manage a realm's users and roles from server-side services with an API key."
-icon: "admin_panel_settings"
+icon: "shield-star"
 weight: 550
 toc: true
 ---

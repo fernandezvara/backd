@@ -1,7 +1,7 @@
 ---
 title: "Users and passwords"
 description: "Create and manage a realm's users with backd user or the admin API."
-icon: "group"
+icon: "users"
 weight: 510
 toc: true
 ---

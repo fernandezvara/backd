@@ -1,7 +1,7 @@
 ---
 title: "Connecting storage"
 description: "storage: in realm.yaml, the access keys as realm secrets, the prefix each backd instance needs, and backd storage check."
-icon: "cloud_upload"
+icon: "cloud-arrow-up"
 weight: 571
 toc: true
 ---

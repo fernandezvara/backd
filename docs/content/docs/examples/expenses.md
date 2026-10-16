@@ -1,7 +1,7 @@
 ---
 title: "Expenses without functions"
 description: "A shared-expenses example: what access rules can enforce today, and the holes that need server-side functions."
-icon: "receipt_long"
+icon: "receipt"
 weight: 720
 toc: true
 ---

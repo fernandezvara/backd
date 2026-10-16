@@ -1,7 +1,7 @@
 ---
 title: "Examples"
 description: "Example applications built on backd, and what each one shows."
-icon: "apps"
+icon: "squares-four"
 weight: 700
 toc: true
 ---

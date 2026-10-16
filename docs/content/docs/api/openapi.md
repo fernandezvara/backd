@@ -1,7 +1,7 @@
 ---
 title: "Your realm's OpenAPI"
 description: "backd openapi and /_openapi.json: an OpenAPI 3.1 document for one realm's client API, generated from its config, for typed clients in other languages."
-icon: "api"
+icon: "brackets-curly"
 weight: 340
 toc: true
 ---

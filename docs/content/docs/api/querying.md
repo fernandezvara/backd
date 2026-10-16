@@ -1,7 +1,7 @@
 ---
 title: "Querying"
 description: "Filter with where, sort with order_by, paginate and count."
-icon: "search"
+icon: "magnifying-glass"
 weight: 320
 toc: true
 ---

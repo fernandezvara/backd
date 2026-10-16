@@ -1,7 +1,7 @@
 ---
 title: "Build, dev and test"
 description: "Bundle functions, iterate in dev mode, call them through a running backd and unit-test their logic."
-icon: "checklist"
+icon: "list-checks"
 weight: 562
 toc: true
 ---

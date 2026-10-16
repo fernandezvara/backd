@@ -1,7 +1,7 @@
 ---
 title: "Files in apps"
 description: "Showing, uploading and downloading files from a web app: links for pictures, download buttons that fetch a fresh link on click, and the pitfalls."
-icon: "web"
+icon: "globe"
 weight: 580
 toc: true
 ---

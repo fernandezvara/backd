@@ -1,7 +1,7 @@
 ---
 title: "Change feed"
 description: "How backd reads MongoDB's change stream for realtime and triggers: when it reads, what it never reads, what it costs and what to size."
-icon: "bolt"
+icon: "lightning"
 weight: 417
 toc: true
 ---

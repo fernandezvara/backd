@@ -1,7 +1,7 @@
 ---
 title: "APNs: iOS"
 description: "Set up Apple's push service for a realm: the key from the Apple Developer account, the identifiers, sandbox and production, and the egress host."
-icon: "brand-apple"
+icon: "apple-logo"
 weight: 586
 toc: true
 ---

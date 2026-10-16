@@ -1,7 +1,7 @@
 ---
 title: "Team roles"
 description: "Roles held within one team of an organization: declare them, give them to members, and list who holds what. Separate from organization roles and from the roles teams carry."
-icon: "groups"
+icon: "users-three"
 weight: 523
 toc: true
 ---

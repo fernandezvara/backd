@@ -1,7 +1,7 @@
 ---
 title: "API keys"
 description: "Give server-side services access to a realm's data with API keys."
-icon: "vpn_key"
+icon: "key"
 weight: 530
 toc: true
 ---

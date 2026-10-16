@@ -1,7 +1,7 @@
 ---
 title: "DigitalOcean Spaces"
 description: "Use a DigitalOcean Space as a realm's storage."
-icon: "water"
+icon: "drop"
 weight: 575
 toc: true
 ---

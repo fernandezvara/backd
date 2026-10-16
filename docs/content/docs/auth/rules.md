@@ -1,7 +1,7 @@
 ---
 title: "Access rules (rules:)"
 description: "Decide per collection which callers may read, create, update and delete documents."
-icon: "policy"
+icon: "shield-check"
 weight: 540
 toc: true
 ---

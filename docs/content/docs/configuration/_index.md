@@ -1,7 +1,7 @@
 ---
 title: "Configuration"
 description: "Environment variables that control backd at runtime."
-icon: "settings"
+icon: "gear-six"
 weight: 200
 toc: true
 ---

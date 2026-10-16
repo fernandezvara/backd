@@ -1,7 +1,7 @@
 ---
 title: "Devices"
 description: "How apps register the devices that receive a user's pushes, and the rules that keep the registry accurate."
-icon: "smartphone"
+icon: "device-mobile"
 weight: 581
 toc: true
 ---

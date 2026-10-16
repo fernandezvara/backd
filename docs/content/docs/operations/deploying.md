@@ -1,7 +1,7 @@
 ---
 title: "Deploying config"
 description: "Build CONFIG_DIR once from a tag of your config repository, deploy the same artifact everywhere, and let backd refuse instances that run anything else."
-icon: "rocket_launch"
+icon: "rocket-launch"
 weight: 405
 toc: true
 ---

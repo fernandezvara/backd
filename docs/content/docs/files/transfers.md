@@ -1,7 +1,7 @@
 ---
 title: "Uploads and downloads"
 description: "Upload a file into a document, download it, remove it, and give an app links to show files."
-icon: "swap_vert"
+icon: "arrows-down-up"
 weight: 577
 toc: true
 ---

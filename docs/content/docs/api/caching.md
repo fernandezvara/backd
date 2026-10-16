@@ -1,7 +1,7 @@
 ---
 title: "Caching and conditional GET"
 description: "ETags, If-None-Match and 304, what the server still does, public caching of anonymous reads, and when to poll."
-icon: "cached"
+icon: "arrows-clockwise"
 weight: 330
 toc: true
 ---

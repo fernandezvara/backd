@@ -1,7 +1,7 @@
 ---
 title: "App configuration"
 description: "Feature flags, maintenance switches and limits for your apps: declared with JSON Schema, changed by admins and functions, read with caching."
-icon: "tune"
+icon: "sliders-horizontal"
 weight: 215
 toc: true
 ---

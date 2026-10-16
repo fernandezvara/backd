@@ -1,7 +1,7 @@
 ---
 title: "HTTP API"
 description: "Request IDs, request bodies, errors and health endpoints."
-icon: "api"
+icon: "brackets-curly"
 weight: 300
 toc: true
 ---

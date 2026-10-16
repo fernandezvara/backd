@@ -1,7 +1,7 @@
 ---
 title: "Cloudflare R2"
 description: "Use a Cloudflare R2 bucket as a realm's storage."
-icon: "cloud_queue"
+icon: "cloud"
 weight: 574
 toc: true
 ---

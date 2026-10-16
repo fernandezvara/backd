@@ -1,7 +1,7 @@
 ---
 title: "Architecture"
 description: "Packages, the query pipeline, storage mapping and conditional writes."
-icon: "account_tree"
+icon: "tree-structure"
 weight: 910
 toc: true
 ---

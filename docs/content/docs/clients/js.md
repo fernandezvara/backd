@@ -1,7 +1,7 @@
 ---
 title: "JavaScript client"
 description: "backd-js: auth, sessions, collections and the admin API from browsers, Node and edge runtimes."
-icon: "javascript"
+icon: "file-js"
 weight: 610
 toc: true
 ---

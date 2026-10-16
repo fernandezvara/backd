@@ -1,7 +1,7 @@
 ---
 title: "Schema validation"
 description: "How schemas are enforced by the API and mirrored in MongoDB."
-icon: "rule"
+icon: "seal-check"
 weight: 220
 toc: true
 ---

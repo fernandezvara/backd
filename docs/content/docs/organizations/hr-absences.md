@@ -1,7 +1,7 @@
 ---
 title: "Example: HR absences"
 description: "A company's absence module built with team roles: employees ask, department managers and delegates decide, HR sees everything. A tested realm."
-icon: "event_busy"
+icon: "calendar-x"
 weight: 528
 toc: true
 ---

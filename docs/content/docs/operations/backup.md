@@ -1,7 +1,7 @@
 ---
 title: "Backup and restore"
 description: "What must be backed up, encrypted backups with mongodump and age, restoring, and what to do after a restore."
-icon: "backup"
+icon: "archive"
 weight: 420
 toc: true
 ---

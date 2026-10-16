@@ -1,7 +1,7 @@
 ---
 title: "Membership hooks"
 description: "Run an internal function when people join, leave or change roles in an organization: onboarding, offboarding and syncing roles, with events that carry a sequence number."
-icon: "webhook"
+icon: "webhooks-logo"
 weight: 524
 toc: true
 ---

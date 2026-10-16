@@ -1,7 +1,7 @@
 ---
 title: "Aggregations"
 description: "Summarize documents for dashboards and counters with GET _aggregate: group by declared fields and date buckets in a time zone, count, sum, average, minimum, maximum and distinct counts, with the read rules applied first."
-icon: "monitoring"
+icon: "chart-line"
 weight: 325
 toc: true
 ---

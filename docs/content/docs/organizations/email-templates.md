@@ -1,7 +1,7 @@
 ---
 title: "Company email templates"
 description: "Let each company edit its own emails for the kinds you allow: a logic-less syntax, a sanitized HTML, required placeholders, previews and test sends."
-icon: "edit_note"
+icon: "note-pencil"
 weight: 526
 toc: true
 ---

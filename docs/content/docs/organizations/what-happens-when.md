@@ -1,7 +1,7 @@
 ---
 title: "What happens when…"
 description: "The consequences of leaving, erasure, deletion, transfers and role changes in an organization, plus the limits and the errors to expect."
-icon: "help"
+icon: "question"
 weight: 523
 toc: true
 ---

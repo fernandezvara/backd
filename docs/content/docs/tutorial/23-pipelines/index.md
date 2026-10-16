@@ -1,7 +1,7 @@
 ---
 title: "23. A pipeline on a status"
 description: "Let members propose assets for the gallery and run the steps that follow, announce, publish and thank, as triggers on the proposal's status."
-icon: "workflow"
+icon: "flow-arrow"
 weight: 430
 toc: true
 ---

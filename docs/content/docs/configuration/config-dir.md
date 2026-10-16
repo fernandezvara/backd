@@ -1,7 +1,7 @@
 ---
 title: "Data model (CONFIG_DIR)"
 description: "Declare realms, databases and collections with schema.json and indexes.json."
-icon: "folder_open"
+icon: "folder-open"
 weight: 210
 toc: true
 ---

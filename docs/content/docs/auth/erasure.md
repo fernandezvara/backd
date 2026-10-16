@@ -1,7 +1,7 @@
 ---
 title: "Deleting and erasing users"
 description: "Deactivate an account and keep its data, or erase a user: a tombstone, and the collections' policies applied. What is kept, and for how long."
-icon: "delete_forever"
+icon: "trash"
 weight: 565
 toc: true
 ---

@@ -1,7 +1,7 @@
 ---
 title: "Workshop tour"
 description: "A guided walk through the cookbook's functions, with an inspector that shows every call the page makes."
-icon: "explore"
+icon: "compass"
 weight: 740
 toc: true
 ---

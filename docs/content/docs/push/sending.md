@@ -1,7 +1,7 @@
 ---
 title: "Sending pushes"
 description: "ctx.push.send: who a push reaches, how a large send is split, what happens to each device and the limits that always apply."
-icon: "send"
+icon: "paper-plane-tilt"
 weight: 582
 toc: true
 ---

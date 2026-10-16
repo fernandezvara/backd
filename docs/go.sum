@@ -8,3 +8,9 @@ github.com/fernandezvara/hugodoks v0.2.1 h1:G6VkvLbqTIsItHSlWphLeGwhdTejGDcWHlvD
 github.com/fernandezvara/hugodoks v0.2.1/go.mod h1:EYI6LmS9XwF6gr5D35tfUXz3MLoGrJy4gszhKYymBzw=
 github.com/fernandezvara/hugodoks v0.3.0 h1:ELleF8Je5ZG51CL8p3ZWPcr9YrMLH8CE1zhNNz86X6w=
 github.com/fernandezvara/hugodoks v0.3.0/go.mod h1:EYI6LmS9XwF6gr5D35tfUXz3MLoGrJy4gszhKYymBzw=
+github.com/fernandezvara/hugodoks v0.4.1 h1:d1Fioig6FgV1VjLm8RuZI+M8yh41m1dcTwv6HqI5Tlo=
+github.com/fernandezvara/hugodoks v0.4.1/go.mod h1:EYI6LmS9XwF6gr5D35tfUXz3MLoGrJy4gszhKYymBzw=
+github.com/fernandezvara/hugodoks v0.4.2 h1:x1BSeszSHPe0x5RD7SwQtb7DFxfZA1Hks4FSxjy3ooI=
+github.com/fernandezvara/hugodoks v0.4.2/go.mod h1:EYI6LmS9XwF6gr5D35tfUXz3MLoGrJy4gszhKYymBzw=
+github.com/fernandezvara/hugodoks v0.4.3 h1:ZgUF3TwAfm5d6wyQay80N2/QxRzX6XZD48talOrg5Qg=
+github.com/fernandezvara/hugodoks v0.4.3/go.mod h1:EYI6LmS9XwF6gr5D35tfUXz3MLoGrJy4gszhKYymBzw=

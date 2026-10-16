@@ -1,7 +1,7 @@
 ---
 title: "Admin UI"
 description: "The web interface for operating a realm: switching it on, who sees what, and where to serve it."
-icon: "dashboard"
+icon: "gauge"
 weight: 552
 toc: true
 ---

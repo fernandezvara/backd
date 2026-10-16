@@ -1,7 +1,7 @@
 ---
 title: "Cookbook"
 description: "Seven complete, tested recipes: a sync function as the caller, a privileged idempotent refund, a background report, a nightly cleanup, a daily digest, a payment webhook and an email delivery function for Postmark."
-icon: "integration_instructions"
+icon: "cooking-pot"
 weight: 565
 toc: true
 ---

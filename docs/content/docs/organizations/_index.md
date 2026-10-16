@@ -1,7 +1,7 @@
 ---
 title: "Organizations"
 description: "Organizations group the users of a customer and the documents that belong to them. The concepts: roles, membership, effective roles, claims, invitations and deletion."
-icon: "domain"
+icon: "buildings"
 weight: 520
 toc: true
 ---

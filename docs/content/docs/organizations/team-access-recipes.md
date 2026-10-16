@@ -1,7 +1,7 @@
 ---
 title: "Team access recipes"
 description: "Departments with managers, delegation with dates, cover from another team, moving people between teams, membership hooks and MFA for sensitive roles."
-icon: "menu_book"
+icon: "book-open"
 weight: 527
 toc: true
 ---

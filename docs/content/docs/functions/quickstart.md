@@ -1,7 +1,7 @@
 ---
 title: "Quickstart"
 description: "Your first function, from an empty directory to a call, its logs and a unit test, in about ten minutes."
-icon: "rocket_launch"
+icon: "rocket-launch"
 weight: 551
 toc: true
 ---

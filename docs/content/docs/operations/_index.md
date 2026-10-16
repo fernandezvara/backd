@@ -1,7 +1,7 @@
 ---
 title: "Operations"
 description: "MongoDB, provisioning, health checks, logging, timeouts, shutdown, and running backd in production."
-icon: "monitor_heart"
+icon: "heartbeat"
 weight: 400
 toc: true
 ---

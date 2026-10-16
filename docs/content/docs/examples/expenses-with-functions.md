@@ -1,7 +1,7 @@
 ---
 title: "Expenses with functions"
 description: "The same shared-expenses app as \"expenses without functions\", with its four fixable holes closed by server-side functions — compared side by side."
-icon: "receipt_long"
+icon: "receipt"
 weight: 730
 toc: true
 ---

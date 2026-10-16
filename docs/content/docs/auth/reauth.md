@@ -1,7 +1,7 @@
 ---
 title: "Re-authentication"
 description: "A fresh proof of identity before sensitive actions: which proof applies to which user, the endpoints that ask for it and how a client sends it."
-icon: "verified"
+icon: "fingerprint"
 weight: 536
 toc: true
 ---

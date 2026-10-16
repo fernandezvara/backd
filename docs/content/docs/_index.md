@@ -1,7 +1,7 @@
 ---
 title: "Documentation"
 description: "What backd is, and where to find things."
-icon: "home"
+icon: "house"
 weight: 1
 toc: true
 ---

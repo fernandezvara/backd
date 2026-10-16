@@ -1,7 +1,7 @@
 ---
 title: "Scheduled functions"
 description: "Run a function on a cron schedule, with no caller: when to use it, the expression syntax, what a run can do, and how to check that it ran and finished."
-icon: "history"
+icon: "clock-counter-clockwise"
 weight: 556
 toc: true
 ---

@@ -1,7 +1,7 @@
 ---
 title: "Realtime"
 description: "Subscribe to a collection's changes over one server-sent event stream: the request, the events, resuming, limits and how to start from a known state."
-icon: "bolt"
+icon: "lightning"
 weight: 332
 toc: true
 ---

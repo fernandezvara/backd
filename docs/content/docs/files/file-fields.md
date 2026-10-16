@@ -1,7 +1,7 @@
 ---
 title: "File fields"
 description: "files: in collection.yaml: which fields of a document carry files, their limits, and what backd keeps in them."
-icon: "attach_file"
+icon: "paperclip"
 weight: 576
 toc: true
 ---

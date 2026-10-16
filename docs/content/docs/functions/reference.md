@@ -1,7 +1,7 @@
 ---
 title: "function.yaml reference"
 description: "Every function.yaml key, the invoke rules, and what backd enforces."
-icon: "settings"
+icon: "gear-six"
 weight: 554
 toc: true
 ---

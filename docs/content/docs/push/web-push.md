@@ -1,7 +1,7 @@
 ---
 title: "Web Push: browsers"
 description: "Set up push for browsers: the VAPID key pair from backd push web-keys, the subject, the subscription hosts, and rotating the key."
-icon: "world"
+icon: "globe"
 weight: 587
 toc: true
 ---

@@ -1,7 +1,7 @@
 ---
 title: "Triggers"
 description: "Run a function when documents change: the input, the identity it runs as, idempotent handlers, transitions, chains, ordering, cost and how to debug."
-icon: "bolt"
+icon: "lightning"
 weight: 559
 toc: true
 ---

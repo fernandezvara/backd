@@ -1,7 +1,7 @@
 ---
 title: "Rules cookbook"
 description: "Copy-ready access rules for organizations: members read, admins delete, roles named by the document, limits by plan and a second factor per organization."
-icon: "menu_book"
+icon: "book-open"
 weight: 522
 toc: true
 ---

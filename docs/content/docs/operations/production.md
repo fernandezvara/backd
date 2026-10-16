@@ -1,7 +1,7 @@
 ---
 title: "Production deployment"
 description: "A tested reference deployment: TLS, rate limits, client addresses, MongoDB with authentication and TLS, least-privilege provisioning, and a hardening checklist."
-icon: "rocket_launch"
+icon: "rocket-launch"
 weight: 410
 toc: true
 ---

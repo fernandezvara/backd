@@ -1,7 +1,7 @@
 ---
 title: "Hardening checklist"
 description: "One page to go through before a backd deployment faces the internet: realms, credentials, the edge, MongoDB and operations."
-icon: "checklist"
+icon: "list-checks"
 weight: 430
 toc: true
 ---
