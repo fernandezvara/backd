@@ -23,6 +23,16 @@ Content-Type: application/json
 
 Read it with `fetch` and a streaming body: `EventSource` can't send an `Authorization` header, and sessions never go in URLs.
 
+## Live queries, not a change log
+
+A stream is a **live query**: it tells a client how *its own view* of a collection changes, not what happened to the collection. That is why events are per subscriber:
+
+- A document that becomes readable to you (a teammate assigns it to you, an update makes it match your `where`) arrives as `created`, even though it was only updated.
+- A document that stops matching arrives as `removed`, even though it still exists. `removed` means *deleted or no longer visible to you*, never "deleted for everyone".
+- A change to a document you never could read produces nothing: you can't learn that it exists.
+
+If you need an audit of everything that happened, use [triggers](../../functions/triggers/) or the [audit trail](../../auth/audit/); a stream shows state.
+
 ## Events
 
 ```
@@ -74,6 +84,18 @@ data: {"subs":["mine"],"reason":"slow_consumer"}
 2. Load each subscription's data with normal list or get calls, keeping the events that arrive meanwhile.
 3. Apply the buffered events, then the live ones, **ignoring any event whose `_meta.version` is not newer** than the document you hold. Replays and races are then harmless.
 
+## Handling `reset`
+
+`reset` says the stream can no longer promise the client has the right state for some subscriptions. The remedy is always the same: **read those subscriptions again**. The JavaScript client does it for you, with a random wait so that many clients reset by one cause don't read at once.
+
+| `reason` | What happened | What to do |
+|---|---|---|
+| `slow_consumer` | The client didn't read fast enough and its buffer was dropped. | Reload. If it repeats, the client is too slow or the subscription too wide: narrow `where`. |
+| `history_expired` | The change history no longer reaches the resume token (the client was away longer than MongoDB's oplog covers, or the token is over a day old). | Reload; consider [sizing the oplog](../../operations/events/#sizing-the-history). |
+| `preimage_missing` | A change arrived without the document as it was, so who could see it can't be told. Nothing is guessed, and nobody is told the id. | Reload. Repeated resets mean [pre-change images](../../operations/events/#requirements) are missing or expiring too early. |
+| `access_changed` | The caller's access to the subscription changed. | Reload; the list may now be empty, or a `403`. |
+| `config_changed` | The collection's rules or its `realtime:` opt-in changed. The subscription is gone from the stream. | Subscribe again, then load. `realtime_not_enabled` means it was switched off. |
+
 ## Resuming
 
 The last event of every change carries an SSE `id`: a **resume token**. After a disconnect, open a stream again with `resume_from` (or the `Last-Event-ID` header) set to the last token you saw, and the stream continues after it.
@@ -82,6 +104,19 @@ The last event of every change carries an SSE `id`: a **resume token**. After a 
 - Replayed events are evaluated with the caller's **current** access, so a resume can never show more than a list would.
 - If the history no longer reaches the token (MongoDB's oplog moved on, or the token is more than a day old) the stream says `reset` with `history_expired` for every subscription: reload them.
 - The token isn't tied to the set of subscriptions: you may add or drop subscriptions when you resume; reconcile new ones by version.
+
+## Errors
+
+| Answer | `code` | Meaning, and what to do |
+|---|---|---|
+| `400` | `invalid_query` | A subscription is wrong (unknown collection, a `where` operator a stream can't use, duplicate ids). `details` name it. |
+| `400` | `realtime_not_enabled` | The collection doesn't declare `realtime: true`. |
+| `400` | `too_many_subscriptions` | Over the per-stream limit: close views, or subscribe with a broader filter. |
+| `400` | `invalid_resume_token` | The token is forged, from another realm or caller, or was signed with a key that has been rotated. Drop it and reload. |
+| `401` | `unauthenticated` | No valid credential: sign in. |
+| `403` | `forbidden` | The caller can read nothing of that collection. `details` name the subscription. |
+| `429` | `too_many_requests` | Too many streams or too fast; honor `Retry-After`. |
+| `503` | `realtime_unavailable` | This instance serves no realtime (`BACKD_EVENTS=false`): route streams to one that does. |
 
 ## Limits
 
@@ -101,6 +136,13 @@ A stream is a long request. Put nothing in front of it that buffers or times out
 {{< /hint >}}
 
 ## What a stream costs
+
+The cost has three parts, and only the first depends on your subscriptions:
+
+- **Checks per change.** Each change is evaluated against the subscriptions it can matter to; the guide below shows how filters keep that small.
+- **Pre-change images.** A realtime collection keeps the previous version of every updated or deleted document in MongoDB's change log, for as long as the log is kept: storage and some write time that grow with document size and change rate ([measured numbers](../../operations/events/#what-it-costs)). Don't mark very large, hot collections `realtime: true`.
+- **The read of the log.** One stream per instance reads the whole deployment's changes, so it costs as much as the cluster's write rate, whatever you subscribe to.
+
 
 Every change to a realtime collection is checked once against the subscriptions it can matter to, with the caller's `where` and read rule evaluated on the document before and after the change. Subscriptions are filed by the **equalities their filter can only be visible under**, so a change finds its subscribers without asking all of them:
 

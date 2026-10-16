@@ -101,6 +101,17 @@ A **gap** says what the dispatcher could not do and for which collection and tri
 - Alert on `trigger_gaps_total` (reasons `window`, `backlog`, `preimage_missing`), on `trigger_backlog` approaching `max_backlog`, and on `trigger_dispatch_lag_seconds`.
 - After restoring MongoDB from a backup the stored position is invalid: a gap is recorded and the dispatcher continues from now. `backd triggers rescan` re-emits what matters.
 
+## Realtime in production
+
+Streams are long requests and the change feed reads the whole deployment's history, so a few choices matter:
+
+- **Dedicated instances.** Set `BACKD_EVENTS=false` on instances that only serve requests and route `POST /v1/{realm}/_realtime` to instances with `BACKD_EVENTS=true`. A request to an instance with events off is answered `503 realtime_unavailable`. Each events-enabled instance holds one stream of its own, whatever the number of clients, so adding instances adds streams: a handful is enough.
+- **The proxy.** A stream must not be buffered or timed out like a response: turn response buffering off for the route (`proxy_buffering off` in nginx; backd also sends `X-Accel-Buffering: no`) and set the idle/read timeout well above the heartbeat (`BACKD_REALTIME_HEARTBEAT`, 25 seconds by default). Streams that cross a load balancer reconnect, with a resume token any instance can verify.
+- **Instance limits.** Every open stream costs a connection and a buffer (256 KiB at most): the defaults (`BACKD_REALTIME_MAX_STREAMS` 10,000 and `BACKD_REALTIME_MEMORY` 256 MiB for all buffers) are a ceiling, not a target; measure before raising them. Over the memory budget, the largest buffers are reset rather than the instance slowed.
+- **The MongoDB role.** The stream is opened on the whole deployment: the user in `MONGO_URI` needs the [change stream privilege](#requirements) on every database, and startup says so if it lacks it.
+- **The resume window.** A client that's away longer than MongoDB's oplog covers reloads instead of resuming ([sizing the history](#sizing-the-history)); the longer the oplog, the cheaper reconnections after a deploy or an outage.
+- **What to watch:** `realtime_streams`, `realtime_resets_total` (by reason: `slow_consumer` and `preimage_missing` are the ones to chase), `realtime_subscription_checks_total{kind="scanned"}` and `changefeed_lag_seconds`; the [metrics page](../metrics/) lists them.
+
 ## Sizing the history
 
 A stream that falls behind can only catch up while MongoDB still holds the history it needs: its **oplog**. A consumer that is offline longer than the oplog window loses its position and continues from now, which `backd` reports as a gap (`changefeed_reopens_total{reason="history_lost"}`). Size the oplog for your write volume and the longest outage you want to survive.
