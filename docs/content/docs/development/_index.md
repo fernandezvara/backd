@@ -30,11 +30,13 @@ toc: true
 | `clients/js/` | The [JavaScript client](../clients/js/) (`backd-js`) |
 | `ui/admin/` | The [admin UI](../auth/admin-ui/): TypeScript, Vue 3, Vite, Vue Router, Pinia and Tailwind. `npm run build` writes into `internal/adminui/dist`, which `internal/adminui` embeds (a Go build without it still works) |
 | `docs/` | This documentation site (Hugo + hugodoks) |
-| `examples/config/` | Sample `CONFIG_DIR` used by `docker-compose.yml`. `workshop/` is the functions cookbook: its code is what the Functions pages quote (through the `example-file` shortcode, which reads it from `examples/config/workshop`), and it is tested for real (Deno unit tests with `make functions-testing-test`, and `TestWorkshopExample`, which runs every function on MongoDB with a real executor and worker) |
-| `docker-compose.yml` | Local stack on `https://localhost:8443`: nginx in front of `backd` + MongoDB, the docs site and the example app |
-| `docker/` | Images and config for the local stack: the docs server (Hugo), nginx, and the certificate templates (`docker/cfd/`) |
+| `examples/config/` | Sample `CONFIG_DIR` used by `docker-compose.yml` and by `make dev-examples`. `workshop/` is the functions cookbook: its code is what the Functions pages quote (through the `example-file` shortcode, which reads it from `examples/config/workshop`), and it is tested for real (Deno unit tests with `make functions-testing-test`, and `TestWorkshopExample`, which runs every function on MongoDB with a real executor and worker) |
+| `docker-compose.yml` | The stack for working **on** backd (`make example`), on `https://localhost:8443`: images built from your checkout, nginx in front of `backd` + MongoDB, the docs site and the example app |
+| `docker-compose.dev.yml` | The stack for working **with** backd (`make dev`), on the same address: released images, your own `./config`, the API and the worker apart, Prometheus and Grafana; see [the two stacks](#the-two-local-stacks) |
+| `docker/` | Images and config for the local stacks: the docs server (Hugo), nginx (`default.conf.template` for `make example`, `dev.conf.template` and the `dev/` landing page for `make dev`), Prometheus, and the certificate templates (`docker/cfd/`) |
 | `docker/certs/` | Generated, gitignored: the local CA and nginx's certificate |
 | `scripts/example.sh` | Runs the local stack for `make example` |
+| `scripts/dev.sh`, `scripts/example-seed.sh` | Run the development stack for `make dev`, `dev-examples`, `dev-down`, `dev-reset`, `dev-logs` and `dev-backd`; seed the example realms (shared with `scripts/example.sh`) |
 | `scripts/check-dashboards.py` | Checks the Grafana dashboards: valid, only documented metrics, a panel for every alert (and, with `--prometheus`, every query) |
 | `scripts/example-ci.sh` | Starts its own local stack and runs every attack script against it, as CI does |
 | `scripts/local-certs.sh` | Creates or renews the local CA and certificate with certsfor |
@@ -47,6 +49,30 @@ toc: true
 | `.github/workflows/release.yml`, `.goreleaser.yaml` | Releases on version tags: binaries, GitHub release, container image (see [Releasing](#releasing)) |
 | `.github/dependabot.yml` | Weekly dependency updates (see [Supply chain](#supply-chain)) |
 | `docker-compose.js.yml` | Stack for the JavaScript client's integration tests (project `backd-js-test`) |
+
+## The two local stacks
+
+| | `make example` | `make dev` / `make dev-examples` |
+|---|---|---|
+| For | Working **on** backd: you change the Go code, the admin UI, the docs or the client | Building **with** backd: you write realms, rules and functions |
+| Images | Built from your checkout every time it needs to | Released `ghcr.io/fernandezvara/backd-executor` (`BACKD_VERSION`, `latest` by default); only `make dev-build` pulls |
+| Config | `examples/config` | `./config` (`CONFIG_DIR`), or the examples with `make dev-examples`; mounted read-write, followed live |
+| Worker | Folded into the API (`serve --with-worker`) | Its own service (`WORKERS=3 make dev`) that follows the config like the API |
+| Docs | Served from `docs/` with live reload | The online site |
+| Observability | Prometheus and Grafana | Prometheus and Grafana |
+| Address | `https://localhost:8443` | `https://localhost:8443`: **the same, so run one at a time**; both use the CA in `docker/certs/` |
+
+The development stack runs the API, the worker, the executor and egress from the **executor image**, which is the backd binary plus the pinned Deno: dev mode needs Deno to bundle functions when they change, and the deployment image (`backd`, distroless) has none. That image carries the admin UI for this reason. The stack is not the production image: functions still run in the executor in both, so the difference is the bundling only.
+
+To test the stack against a build of your checkout instead of a release, build the executor image and name it `local`:
+
+```sh
+docker build -f docker/executor/Dockerfile -t ghcr.io/fernandezvara/backd-executor:local .
+BACKD_VERSION=local make dev-build     # pulls the other images, not this one
+BACKD_VERSION=local make dev
+```
+
+`docker-compose.dev.yml` is checked by `make dev` itself: change it, run the stack, and check the API (`/readyz`), the worker (stop it and see a job stay `queued`), a change to a function while it runs, and `make dev-down` and `make dev-reset` leaving nothing behind.
 
 ## Testing
 
@@ -62,7 +88,8 @@ make js-integration  # JavaScript client against backd + MongoDB in Docker
 make ui           # build the admin UI into internal/adminui/dist, where the Go build embeds it (needs Node)
 make ui-test      # admin UI: type-check, lint (v-html is an error), Vitest
 make ui-e2e       # admin UI: Playwright against a stack of its own (CSP violations and requests to other origins fail it; axe checks the views)
-make example      # the local stack on https://localhost:8443: API, docs (live reload) and example apps behind nginx
+make example      # the stack for working on backd, on https://localhost:8443: built from your checkout, with the docs (live reload) and example apps behind nginx
+make dev-build && make dev   # the stack for working with backd: released images and your ./config (see the next section)
 make hack-expenses  # attack the expenses example on the running local stack
 make hack-expenses-functions  # attack the expenses-with-functions example on the running local stack
 make workshop-tour  # walk the workshop tour without a browser on the running local stack, checking each step

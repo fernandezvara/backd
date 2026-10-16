@@ -99,7 +99,7 @@ The Go runtime (`go_*`) and process (`process_*`) metrics are included.
 Both run a Prometheus that scrapes every backd process on start.
 
 - The [production reference](../production/) sets `METRICS_ADDR` and a generated `METRICS_TOKEN` (`BACKD_METRICS_TOKEN` in `.env`, also written to `secrets/metrics-token` for Prometheus) on `backd`, `worker`, `executor` and `egress`. Prometheus sits on the `func` network, which has no route out, and its own web port listens only on its container's loopback: no other container can reach its UI or query API, and nginx has no route to any metrics port. Look at it with `docker compose exec prometheus wget -qO- http://127.0.0.1:9090/api/v1/targets`, or change `--web.listen-address` and give it a network of its own when you add Grafana. The reference's test checks that the edge answers `404` for `/metrics`, that a request without the token is refused, that every process is scraped and that the key series exist.
-- The local stack (`make example`) runs the same Prometheus at <http://localhost:9090>, with a fixed dev-only token. Its metrics ports aren't published.
+- The development stack (`make dev`) runs the same Prometheus at <http://localhost:9090>, with a fixed dev-only token. Its metrics ports aren't published.
 
 ## Alert rules
 
@@ -119,7 +119,7 @@ Five [Grafana](https://grafana.com/) dashboards are in `deploy/grafana/dashboard
 
 Each alert rule has a panel that shows what it watches: its description says `Alert <name>`, and the panels that have a threshold draw it as a line.
 
-**In the local stack** (`make example`) Grafana runs at <http://localhost:3000>, with no login (it only listens on your machine), the Prometheus data source and these dashboards already loaded, in the `backd` folder.
+**In the development stack** (`make dev`) Grafana runs at <http://localhost:3000>, with no login (it only listens on your machine), the Prometheus data source and these dashboards already loaded, in the `backd` folder.
 
 **In your own Grafana:** add a Prometheus data source with the uid `prometheus` (the dashboards refer to it), then import the files, or point a [file provider](https://grafana.com/docs/grafana/latest/administration/provisioning/#dashboards) at the folder (`deploy/grafana/provisioning/` has both). The panels use the `role` label that the scrape configuration in `deploy/production/prometheus/prometheus.yml` adds to each target; keep it. The [production reference](../production/) doesn't run Grafana, and its Prometheus' web port listens only on its container's loopback. To connect Grafana, change `--web.listen-address` and put Prometheus and Grafana on a network of their own that nothing else (and no function process) shares.
 

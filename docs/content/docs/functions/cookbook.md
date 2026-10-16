@@ -12,11 +12,11 @@ Every recipe here is a function of the `workshop` realm ([`examples/config/works
 
 {{< live-example path="workshop/" text="the workshop tour: every recipe below as a clickable panel, with an inspector" >}}
 
-The repository's local stack serves the realm, and its `backd` runs a worker (`serve --with-worker`), so jobs and schedules work:
+The repository's development stack serves the realm and runs a worker of its own, so jobs and schedules work:
 
 ```sh
-make example                # docker compose up --build; the API is at https://localhost:8443
-docker compose exec backd /backd bootstrap --realm workshop --email ops@example.com   # first administrator
+make dev-build && make dev-examples   # the API is at https://localhost:8443
+make dev-backd ARGS='bootstrap --realm workshop --email ops@example.com'   # first administrator
 # (the workshop tour already offers an operator demo account, so this is only needed to use the CLI)
 
 API=https://localhost:8443/v1/workshop

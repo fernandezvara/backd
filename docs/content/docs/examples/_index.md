@@ -19,4 +19,4 @@ The repository includes example configurations under `examples/config`, and exam
 | [Identity providers - minimal](idtest/) | `idtest` | A minimal example of identity providers configuration |
 | [Shelf (the Tutorial)](../tutorial/) | `shelf` | A team asset library built chapter by chapter: realms, auth, rules, invitations, functions of every mode, jobs, email, a signed webhook, API keys and audit — `tour.js` is its regression test |
 
-`make example` serves the configurations and the applications on `https://localhost:8443`, with an index of the applications at `/example/` (see [Getting started](../getting-started/)).
+`make dev-examples` serves the configurations and the applications on `https://localhost:8443`, with an index of the applications at `/example/` (see [Getting started](../getting-started/)).

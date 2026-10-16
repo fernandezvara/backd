@@ -28,7 +28,7 @@ The repository includes two example apps built with this client and [Alpine.js](
 
 {{< live-example >}}
 
-`make example` serves both at <https://localhost:8443/example/>.
+`make dev-examples` serves both at <https://localhost:8443/example/>.
 
 ## Create a client
 

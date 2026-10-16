@@ -31,7 +31,7 @@ storage:
 
 **Images:** the MinIO project no longer publishes container images (the old `minio/minio` and `quay.io/minio/minio` repositories stopped being pullable). The repository's stacks use [Chainguard's build](https://images.chainguard.dev/directory/image/minio/overview) (`cgr.dev/chainguard/minio` and `cgr.dev/chainguard/minio-client`); both have no shell, so the server can't run a health check and one-shot jobs call `mc` directly. You can also build MinIO from its source. `backd storage check` tells whether whatever you run behaves.
 
-The repository's local stack (`make example`) runs MinIO on `http://localhost:9000` (console `http://localhost:9001`, user `backd-dev`, password `dev-p4ssw0rd!`) and creates a `backd-files` bucket. `backd` reaches it at `http://minio:9000` inside the stack; a browser reaches it at `http://localhost:9000`, so a realm sets both:
+The repository's development stack (`make dev`) runs MinIO on `http://localhost:9000` (console `http://localhost:9001`, user `backd-dev`, password `dev-p4ssw0rd!`) and creates a `backd-files` bucket. `backd` reaches it at `http://minio:9000` inside the stack; a browser reaches it at `http://localhost:9000`, so a realm sets both:
 
 ```yaml
 storage:
