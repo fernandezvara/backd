@@ -339,18 +339,16 @@ func (s *Stream) startRefresh() {
 	if every < 0 {
 		return
 	}
-	var t *time.Timer
-	t = time.AfterFunc(every, func() {
-		select {
-		case <-s.done:
-			return
-		default:
-		}
-		s.reload()
-		t.Reset(every)
-	})
 	go func() {
-		<-s.done
-		t.Stop()
+		tick := time.NewTicker(every)
+		defer tick.Stop()
+		for {
+			select {
+			case <-s.done:
+				return
+			case <-tick.C:
+				s.reload()
+			}
+		}
 	}()
 }
