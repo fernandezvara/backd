@@ -1,6 +1,6 @@
 COMPOSE_TEST = docker compose -f docker-compose.test.yml
 
-.PHONY: lint build ui ui-test ui-e2e test test-local perf vet lint-api openapi-clients shelf-types shelf-types-update js-test js-package js-integration functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour shelf-tour-ci example-attacks release-check
+.PHONY: dev dev-examples dev-build dev-down dev-reset dev-logs dev-backd lint build ui ui-test ui-e2e test test-local perf vet lint-api openapi-clients shelf-types shelf-types-update js-test js-package js-integration functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour shelf-tour-ci example-attacks release-check
 
 build:
 	go build -o bin/backd ./cmd/backd
@@ -98,6 +98,34 @@ docs-serve:
 # Needs only Docker. Ctrl-C stops it all.
 example:
 	scripts/example.sh
+
+# The development stack for people building ON backd: released images, your own ./config
+# (CONFIG_DIR), live reload, the API and the worker apart, Prometheus and Grafana. Nothing is
+# built; `make dev-build` pulls the images and makes the certificates once. docker-compose.dev.yml.
+dev-build:
+	scripts/dev.sh build
+
+dev:
+	scripts/dev.sh up
+
+# The same with the repository's example realms and apps (blog, expenses, shelf, workshop, mailbox).
+dev-examples:
+	EXAMPLES=1 scripts/dev.sh up
+
+dev-down:
+	scripts/dev.sh down
+
+dev-reset:
+	scripts/dev.sh reset
+
+# Follow the logs; S=worker (or backd, executor, ...) for one service.
+dev-logs:
+	scripts/dev.sh logs
+
+# The backd command line in the running dev stack's API container:
+#   make dev-backd ARGS='bootstrap --realm app --email you@example.com'
+dev-backd:
+	scripts/dev.sh backd $(ARGS)
 
 # The production reference deployment (deploy/production), end to end in Docker.
 prod-test:

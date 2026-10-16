@@ -1,0 +1,237 @@
+# The development stack for people who build ON backd (not on backd itself): released
+# images, your own config, no building. HTTPS on https://localhost:8443, with the same
+# local CA as `make example` (docker/certs/).
+#
+#   make dev-build      pull the images, make the certificates and a starter ./config
+#   make dev            start it (nothing is pulled or built) and follow the logs
+#   make dev-down       stop it, keeping the data       make dev-reset   stop it and wipe the data
+#   make dev-logs       follow the logs; S=worker for one service
+#
+#   /                      a page with the links below
+#   /v1/, /healthz, /readyz  the API          /_ui/   the admin web interface
+#   http://localhost:9090  Prometheus         http://localhost:3000  Grafana (no login)
+#   http://localhost:9001  MinIO console (backd-dev / dev-p4ssw0rd!)
+#
+# Your config is CONFIG_DIR (default ./config), mounted READ-WRITE at /config in backd, the
+# worker and functions-build: in dev mode (BACKD_DEV) backd follows it, so a saved change is
+# live in a moment, functions are bundled again, and `backd.d.ts` types are written back for
+# your editor. The API and the worker are separate services; WORKERS=3 make dev starts three.
+#
+# Images: ghcr.io/fernandezvara/backd-executor:${BACKD_VERSION} (latest by default; pin with
+# BACKD_VERSION=v0.9.0) runs backd, the worker, the executor and egress. It is the executor
+# image because it has Deno, which dev mode needs to bundle functions on change; the
+# deployment image (backd, distroless) has none. Do not use this stack for a deployment.
+#
+# WARNING: dev mode, fixed dev-only tokens and the open Grafana are for localhost only.
+name: backd-dev
+
+x-backd-image: &backd-image ghcr.io/fernandezvara/backd-executor:${BACKD_VERSION:-latest}
+# Files backd writes into your config (bundles, types) belong to you, not to root.
+x-dev-user: &dev-user "${DEV_UID:-1000}:${DEV_GID:-1000}"
+
+x-backd-env: &backd-env
+  CONFIG_DIR: /config
+  MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  # Dev mode: follow CONFIG_DIR, bundle functions again, write types, enable dev_only functions.
+  BACKD_DEV: "true"
+  BACKD_DEV_ANY_ADDR: "true"
+  BACKD_URL: https://localhost:8443
+  # Functions: the executor runs them; the worker and the API call it with these dev-only
+  # tokens, and the functions call back to the API's internal listener.
+  BACKD_EXECUTOR_URL: http://executor:9100
+  BACKD_EXECUTOR_TOKEN: local-dev-executor-token-not-a-secret-0123456789
+  BACKD_CALLBACK_URL: http://backd:8081
+  BACKD_CALLBACK_KEY: local-dev-callback-key-not-a-secret-0123456789ab
+  BACKD_SECRETS_KEY: local-dev-secrets-key-not-a-secret-0123456789abc
+  EXECUTOR_PROXY: http://egress:3128
+  BACKD_EGRESS_KEY: local-dev-egress-key-not-a-secret-0123456789abcd
+  METRICS_ADDR: ":9090"
+  METRICS_TOKEN: local-dev-metrics-token-not-a-secret-0123456789
+  # Deno (bundling) and its cache run as your user, which has no home in the image.
+  HOME: /tmp
+  DENO_DIR: /tmp/deno
+
+services:
+  mongo:
+    image: docker.io/library/mongo:8.2
+    # A single-node replica set (backd refuses standalone servers); the health check initiates
+    # it on first start and passes once it is the primary.
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "try { rs.status() } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo:27017'}]}) } if (!db.hello().isWritablePrimary) quit(1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # S3-compatible storage for realms' files (provider: minio in realm.yaml). Dev-only
+  # credentials. Backd reaches it at http://minio:9000, a browser at http://localhost:9000.
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: backd-dev
+      MINIO_ROOT_PASSWORD: dev-p4ssw0rd!
+      MINIO_API_CORS_ALLOW_ORIGIN: "http://localhost:8080,https://localhost:8443"
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio-data:/data
+
+  # One-shot: the bucket (backd-files) the realms use. The image has no shell, so it retries.
+  minio-setup:
+    image: cgr.dev/chainguard/minio-client:latest
+    environment:
+      MC_HOST_local: "http://backd-dev:dev-p4ssw0rd!@minio:9000"
+    command: ["mb", "--ignore-existing", "local/backd-files"]
+    depends_on: [minio]
+    restart: on-failure:20
+
+  # One-shot: bundles every functions project before backd starts (backd refuses stale or
+  # missing bundles). In dev mode backd bundles again whenever a function changes.
+  functions-build:
+    image: *backd-image
+    pull_policy: missing
+    entrypoint: ["/usr/local/bin/backd"]
+    command: ["functions", "build"]
+    user: *dev-user
+    environment:
+      CONFIG_DIR: /config
+      HOME: /tmp
+      DENO_DIR: /tmp/deno
+    volumes:
+      - ${CONFIG_DIR:-./config}:/config
+
+  # The API: the HTTP API, the admin API and UI, the internal listener for functions.
+  backd:
+    image: *backd-image
+    pull_policy: missing
+    entrypoint: ["/usr/local/bin/backd"]
+    command: ["serve"]
+    user: *dev-user
+    environment:
+      <<: *backd-env
+      BACKD_INTERNAL_ADDR: ":8081"
+      BACKD_ADMIN_UI: "true"
+      # Requests arrive through nginx on the compose network.
+      TRUSTED_PROXIES: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7
+    volumes:
+      - ${CONFIG_DIR:-./config}:/config
+    depends_on:
+      mongo:
+        condition: service_healthy
+      functions-build:
+        condition: service_completed_successfully
+    stop_grace_period: 20s
+
+  # Claims and runs async jobs and scheduled functions, on its own: watch it with
+  # `make dev-logs S=worker`. It follows the config like the API does. WORKERS=3 make dev
+  # runs three.
+  worker:
+    image: *backd-image
+    pull_policy: missing
+    entrypoint: ["/usr/local/bin/backd"]
+    command: ["worker"]
+    user: *dev-user
+    environment:
+      <<: *backd-env
+    volumes:
+      - ${CONFIG_DIR:-./config}:/config
+    depends_on:
+      backd:
+        condition: service_started
+    stop_grace_period: 20s
+
+  # One Deno process per function call (docs: Functions → Running in production).
+  executor:
+    image: *backd-image
+    pull_policy: missing
+    environment:
+      BACKD_EXECUTOR_TOKEN: local-dev-executor-token-not-a-secret-0123456789
+      EXECUTOR_PROXY: http://egress:3128
+      BACKD_EGRESS_KEY: local-dev-egress-key-not-a-secret-0123456789abcd
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      METRICS_ADDR: ":9090"
+      METRICS_TOKEN: local-dev-metrics-token-not-a-secret-0123456789
+    depends_on:
+      - backd
+
+  # The only route out for function processes (docs: Egress).
+  egress:
+    image: *backd-image
+    pull_policy: missing
+    entrypoint: ["/usr/local/bin/backd"]
+    command: ["egress"]
+    environment:
+      BACKD_EGRESS_KEY: local-dev-egress-key-not-a-secret-0123456789abcd
+      EGRESS_ALLOW_PRIVATE: "backd:8081"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      METRICS_ADDR: ":9090"
+      METRICS_TOKEN: local-dev-metrics-token-not-a-secret-0123456789
+    depends_on:
+      - backd
+
+  prometheus:
+    image: docker.io/prom/prometheus:v3.5.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=2d
+      - --web.listen-address=:9090
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.dev.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/production/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      - backd
+
+  # Grafana with backd's dashboards and the Prometheus data source. No login: localhost only.
+  grafana:
+    image: docker.io/grafana/grafana:12.2.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/backd-api.json
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
+  # One origin with TLS from the local CA: the API, the admin UI, the example apps and a page
+  # with links.
+  nginx:
+    image: docker.io/library/nginx:1.29-alpine
+    ports:
+      - "127.0.0.1:8443:443"
+      - "127.0.0.1:8080:80"
+    environment:
+      NGINX_ENTRYPOINT_LOCAL_RESOLVERS: "1"
+    volumes:
+      - ./docker/nginx/dev.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./docker/nginx/proxy.inc:/etc/nginx/proxy.inc:ro
+      - ./docker/nginx/dev:/srv/landing:ro
+      - ./docker/certs:/etc/nginx/certs:ro
+      - ./clients/js/examples:/srv/example:ro
+      - ./clients/js/src:/srv/client:ro
+    depends_on:
+      - backd
+
+volumes:
+  mongo-data:
+  minio-data:
+  prometheus-data:
+  grafana-data:

@@ -10,7 +10,7 @@ The [functions cookbook](../../functions/cookbook/) explains each function of th
 
 {{< live-example path="workshop/" text="open the workshop tour" >}}
 
-It is part of the local stack (`make example`, then <https://localhost:8443/example/workshop/>). The page is plain JavaScript on [`backd-js`](../../clients/js/), with no build step, in `clients/js/examples/workshop`; the realm is `examples/config/workshop`.
+It is part of the development stack (`make dev-examples`, then <https://localhost:8443/example/workshop/>). The page is plain JavaScript on [`backd-js`](../../clients/js/), with no build step, in `clients/js/examples/workshop`; the realm is `examples/config/workshop`.
 
 ## The inspector
 
@@ -45,7 +45,7 @@ Every panel has a short **What to notice** box, the code it ran, and links to th
 
 ## Check it without a browser
 
-`make workshop-tour` (with `make example` running) walks the same steps with the same client library and checks what each one says should happen: the tax, the `404` for a stranger's order, the signed webhook and its replay, the refund and its receipt, the report, and what the operator sees. It exits `0` when every check passes. It uses the demo accounts and places new orders on every run, so it can run again and again.
+`make workshop-tour` (with `make dev-examples` running) walks the same steps with the same client library and checks what each one says should happen: the tax, the `404` for a stranger's order, the signed webhook and its replay, the refund and its receipt, the report, and what the operator sees. It exits `0` when every check passes. It uses the demo accounts and places new orders on every run, so it can run again and again.
 
 {{< hint style="note" >}}
 The tour needs the local stack: it relies on dev mode for the functions' logs, on a worker for the jobs, and on demo accounts. Against a production-style deployment the inspector still works, without the function logs, but the demo accounts don't exist.

@@ -75,7 +75,7 @@ done
 Once chapter 1 has written the first config, `docker compose up -d` runs backd at `http://localhost:8080`: nginx serves `app/` at `/`, proxies `/v1` to the API and serves `client/` at `/example/client/`, exactly like the app's importmap expects. `config/` is where you write the realm — chapter by chapter.
 
 {{< hint note >}}
-Working on a `backd` checkout instead? The same files live in the repository: `examples/config/shelf/` is the realm's final state, `clients/js/examples/shelf/` the app, and `make example` serves it at `/example/shelf/` next to the other examples.
+Working on a `backd` checkout instead? The same files live in the repository: `examples/config/shelf/` is the realm's final state, `clients/js/examples/shelf/` the app, and `make dev-examples` serves it at `/example/shelf/` next to the other examples.
 {{< /hint >}}
 
 ## The chapters

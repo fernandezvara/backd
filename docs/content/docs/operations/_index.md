@@ -28,7 +28,7 @@ export MONGO_URI='mongodb://localhost:27017/?replicaSet=rs0'
 - The member's `host` is the address clients use to reach it: `localhost:27017` for a server on your machine, the service name (such as `mongo:27017`) inside a compose network.
 - `replicaSet=rs0` in `MONGO_URI` names the set. Without it, the driver still discovers the set from the host you give.
 - With authentication, a replica set also needs a key file (`--keyFile`), even with one node. The [production reference](production/#mongodb-with-authentication-and-tls) shows how.
-- `make example` and the test setups start a single-node replica set and initiate it from the container's health check.
+- `make dev`, `make example` and the test setups start a single-node replica set and initiate it from the container's health check.
 
 ### Upgrading an existing standalone server
 
@@ -325,5 +325,5 @@ List networks only if every address in them is one of your proxies. Whole privat
 
 - `X-Forwarded-For` is only believed when the connection comes from a trusted proxy. Otherwise clients could pick any address they like.
 - The client is the right-most address in `X-Forwarded-For` that isn't a trusted proxy. Entries further left were supplied by the client and are ignored.
-- The proxy in front of `backd` must overwrite `X-Forwarded-For` with the address it sees, unless it trusts a load balancer in front of it. The [production reference](production/#client-addresses) shows how. The local stack (`make example`) trusts all private ranges for convenience: don't copy that.
+- The proxy in front of `backd` must overwrite `X-Forwarded-For` with the address it sees, unless it trusts a load balancer in front of it. The [production reference](production/#client-addresses) shows how. The local stacks (`make dev`, `make example`) trust all private ranges for convenience: don't copy that.
 - Without `TRUSTED_PROXIES`, `backd` uses the connection's address. Behind a proxy, all clients then share one counter, and a flood of failures from anyone slows down logins for everyone behind that proxy.

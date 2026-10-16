@@ -1,6 +1,6 @@
 ---
 title: "Getting started"
-description: "Run backd with docker compose, or build it from source."
+description: "Run backd locally with the development stack: released images, your own config with live reload, the API and the worker apart, Prometheus and Grafana."
 icon: "rocket_launch"
 weight: 100
 toc: true
@@ -15,17 +15,77 @@ realm            realm.yaml settings; shared user pool with single sign-on
          └─ document  JSON object with server-owned id and _meta
 ```
 
-## Quick start with docker compose
+## Quick start: the development stack
 
-The repository includes a `docker-compose.yml` that runs `backd` and MongoDB with the sample config in `examples/config`, together with this documentation site and the JavaScript client's [example apps](../examples/). nginx serves all of them over HTTPS on one origin, `https://localhost:8443`. Plain `http://localhost:8080` redirects there. It also runs the [functions](../functions/) executor, egress and (folded into `backd`) a worker: the blog realm's sample `stats` function calls the executor for real (`curl https://localhost:8443/v1/blog/main/_func/stats`).
+The repository includes a development stack for building **on** backd: released images, your own configuration, nothing to build. You need Docker (or Podman with `podman-compose`) and the repository checkout, because the stack's files live in it.
 
-| Path | Serves |
+```sh
+make dev-build     # once: pulls the images, makes the local CA and certificate, creates ./config
+make dev           # starts everything (nothing is pulled or built), prints the addresses, follows the logs
+```
+
+`make dev-build` pulls `ghcr.io/fernandezvara/backd-executor:latest` and the other images, and creates a starter configuration in `./config` (a realm `app` with a sample `blog` database) if you have none. Ctrl-C stops the stack and keeps its data.
+
+| Address | Serves |
 |---|---|
-| `/healthz`, `/readyz`, `/v1/…` | `backd`'s API |
-| `/example/` | The [example apps](../examples/): a blog and a shared-expenses app |
-| `/`, `/docs/…` | This documentation site, reloading as you edit `docs/` |
+| `https://localhost:8443/` | A page with links to everything below |
+| `https://localhost:8443/v1/…`, `/healthz`, `/readyz` | `backd`'s API, for the realms in your config |
+| `https://localhost:8443/_ui/` | The [admin web interface](../auth/admin-ui/) |
+| `http://localhost:3000` | Grafana, with backd's [dashboards](../operations/metrics/#dashboards) |
+| `http://localhost:9090` | Prometheus |
+| `http://localhost:9001` | The MinIO console (`backd-dev` / `dev-p4ssw0rd!`), for [files](../files/) |
 
-The sample config:
+Plain `http://localhost:8080` redirects to HTTPS. The stack runs MongoDB, the API, a **worker** of its own, the functions executor, egress, MinIO, Prometheus, Grafana and nginx. The documentation is the [online site](https://fernandezvara.github.io/backd/); the stack serves none.
+
+### Your configuration, live
+
+`CONFIG_DIR` (default `./config`) is mounted **read-write** into the API, the worker and the build step, and the stack runs in [dev mode](../functions/testing/#dev-mode): save a file and backd loads and validates it, keeping the previous configuration if the new one is invalid.
+
+- **Realms, schemas, rules, triggers and templates** change without a restart.
+- **Functions** are bundled again as you save, and `backd.d.ts` is written next to them for your editor.
+- **The worker follows too**, so a changed async function or schedule is the one the next job runs.
+
+Because backd writes into your directory (bundles, `backd.d.ts`), the containers run as you, so the files stay yours. Set another directory with `CONFIG_DIR=~/projects/shop/backd make dev`.
+
+### The API and the worker, apart
+
+The API (`backd`) and the worker (`worker`) are separate containers: a job queued by a request is run by the worker, and with the worker stopped it stays `queued`.
+
+```sh
+make dev-logs                 # everything
+make dev-logs S=worker        # the worker alone (or backd, executor, egress, ...)
+WORKERS=3 make dev            # three workers
+```
+
+In Grafana, the *Processes* dashboard shows the API, the workers, the executor and egress apart (`role` label), and Prometheus's targets page lists every worker.
+
+### Commands
+
+| Command | Does |
+|---|---|
+| `make dev-build` | Pulls the images, makes the certificates, creates `./config` if it is missing. Run it again to update. |
+| `make dev` | Starts the stack and follows the logs. |
+| `make dev-examples` | The same with the repository's [example realms and apps](../examples/) (below). |
+| `make dev-down` | Stops it, keeping the data. |
+| `make dev-reset` | Stops it and deletes the data (MongoDB, MinIO, Prometheus, Grafana). Your `./config` is not touched. |
+| `make dev-logs` | Follows the logs; `S=worker` for one service. |
+| `make dev-backd ARGS='…'` | Runs the `backd` command line in the API container, for example `bootstrap`. |
+
+`BACKD_VERSION` pins the images (`BACKD_VERSION=v0.9.0 make dev-build`); the default is `latest`. The stack is for localhost and development: dev mode, fixed dev-only tokens and an open Grafana. Never use it for a deployment (see [Production deployment](../operations/production/)).
+
+### The first administrator
+
+A realm with no administrator has none to sign in as. Create one with the command line in the API container (it asks for a password):
+
+```sh
+make dev-backd ARGS='bootstrap --realm app --email you@example.com'
+```
+
+The starter realm requires a second factor of administrators, so their first sign-in enrolls one. Empty `mfa.required_roles` in `config/app/realm.yaml` while developing if you prefer.
+
+### The example realms
+
+`make dev-examples` runs the same stack on the repository's `examples/config`, with the example apps at `/example/` and the storage keys and administrators they need already set:
 
 ```
 examples/config/
@@ -52,23 +112,27 @@ examples/config/
         └── _functions/{order_total, refund, refund_receipt, export_orders, nightly_cleanup, daily_digest, payment_webhook}/
 ```
 
+The rest of this page uses those realms, so start with `make dev-examples`:
+
 ```sh
-make example
+make dev-build && make dev-examples
 export CURL_CA_BUNDLE=$PWD/docker/certs/ca.crt   # in another terminal: curl trusts the local CA
 curl https://localhost:8443/readyz
 ```
 
-The first start builds the images and downloads the docs theme, which takes a few minutes; later starts are quick. To start the stack without `make example`, create the certificates first: `scripts/local-certs.sh && docker compose up --build`.
+{{< hint style="note" >}}
+Working on backd itself rather than with it? `make example` builds the images from your checkout and serves this documentation with live reload: see [Development](../development/).
+{{< /hint >}}
 
 ### HTTPS with a local CA
 
-Like a [production deployment](../operations/production/), the local stack only serves HTTPS. Its certificate comes from a local certificate authority that `make example` manages with [certsfor](https://www.certsfor.dev), run as a container (`scripts/local-certs.sh`):
+Like a [production deployment](../operations/production/), the local stack only serves HTTPS. Its certificate comes from a local certificate authority that `make dev-build` and `make dev` manage with [certsfor](https://www.certsfor.dev), run as a container (`scripts/local-certs.sh`):
 
 - **First run:** it creates the CA and a certificate for `localhost`, `127.0.0.1` and `::1`, from the templates in `docker/cfd/`.
-- **Every run:** it asks certsfor for the certificate again, which renews it when less than 20% of its 90-day lifetime is left. Restarting `make example` is enough to keep it valid.
+- **Every run:** it asks certsfor for the certificate again, which renews it when less than 20% of its 90-day lifetime is left. Restarting `make dev` is enough to keep it valid.
 - **Files:** everything goes to `docker/certs/`, which git ignores: `ca.crt` (the CA certificate), `localhost.crt` and `localhost.key` (nginx's certificate and key) and certsfor's database with the CA's key.
 
-Browsers warn about the certificate until you trust the CA. Either accept the warning once for `https://localhost:8443`, or add `docker/certs/ca.crt` to your trust store. `make example` prints the commands for your system when the CA isn't trusted yet:
+Browsers warn about the certificate until you trust the CA. Either accept the warning once for `https://localhost:8443`, or add `docker/certs/ca.crt` to your trust store. `make dev` prints the commands for your system when the CA isn't trusted yet:
 
 | Where | How |
 |---|---|
@@ -114,16 +178,16 @@ The `blog` realm keeps the default `auth: enabled`, and its `posts` have [access
 Keys are created by the realm's administrators. Create the first one with `backd bootstrap`, log in as them with the CLI in the container, and create a key:
 
 ```sh
-docker compose exec backd /backd bootstrap --realm blog --email ops@example.com        # asks for a password
-docker compose exec backd /backd login --realm blog --url http://localhost:8080 --email ops@example.com
-KEY=$(docker compose exec -T backd /backd apikey create --realm blog --name demo --expires 1d)
+make dev-backd ARGS='bootstrap --realm blog --email ops@example.com'        # asks for a password
+make dev-backd ARGS='login --realm blog --url http://localhost:8080 --email ops@example.com'
+KEY=$(make -s dev-backd ARGS='apikey create --realm blog --name demo --expires 1d')
 curl -X POST https://localhost:8443/v1/blog/main/posts -H "Authorization: Bearer $KEY" \
   -H 'Content-Type: application/json' -d '{"title": "Hello", "published": true}'
 curl https://localhost:8443/v1/blog/main/posts        # anonymous: published posts only
 ```
 
 {{< hint style="tip" title="Already done for you" >}}
-The compose file publishes ports 8443 and 8080 on `127.0.0.1` only, because the `shop` example realm has `auth: disabled`. Keep it that way; the dev-only tokens and keys in it are fixed and public.
+`docker-compose.dev.yml` publishes ports 8443 and 8080 on `127.0.0.1` only, because the `shop` example realm has `auth: disabled`. Keep it that way; the dev-only tokens and keys in it are fixed and public.
 {{< /hint >}}
 
 To see web apps use these realms, open the [example apps](../examples/) at <https://localhost:8443/example/>: a [blog](../examples/blog/) on the `blog` realm, and a [shared-expenses app](../examples/expenses/) on the `expenses` realm.

@@ -17,7 +17,8 @@ The configuration is the `expenses` realm in `examples/config/expenses`. The app
 ## Try it
 
 ```sh
-make example
+make dev-build     # once
+make dev-examples  # the development stack with the example realms and apps
 ```
 
 Open <https://localhost:8443/example/expenses-without-functions/>. Sign up: the realm requires a verified address, so the app answers "We sent a link" instead of signing you in. Open the [Mailbox](../../functions/email/#developing-without-a-provider) (the page offers a link; the local stack sends no real mail), press the button in the verification email, and log in. "Forgot your password?" on the login form sends a reset link the same way; it also gets a locked-out user back in. Create a group and invite a second email. Then log out and repeat for that email in the same browser, or in a private window: once it is verified, the group is there. Add expenses as each person, and watch the balances and the "to settle up" list change. "I paid this" records a settlement.
@@ -101,7 +102,7 @@ Hole 5 is closed with email verification, in the realm and in the rules. Holes 1
 
 ## Try the attacks
 
-`hack.js` plays a malicious user with the same client library the app uses. With the local stack running (`make example`):
+`hack.js` plays a malicious user with the same client library the app uses. With the development stack running (`make dev-examples`):
 
 ```sh
 make hack-expenses
