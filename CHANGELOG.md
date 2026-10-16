@@ -4,6 +4,24 @@ All notable changes to `backd` and to its JavaScript client `backd-js`, which ar
 
 Until a stable release is declared, a minor release may have breaking changes; they are listed first.
 
+## 0.8.5
+
+No breaking changes for existing configuration: realtime and triggers are off until a collection declares them. Declaring either needs `backd provision` in `PROVISION_MODE=verify` (pre-change images, new `jobs` indexes), and realtime needs **MongoDB 6.0 or later as a replica set** and a `MONGO_URI` user with the `changeStream` and `find` actions on every database (for example `readAnyDatabase`); `backd` checks all of it at startup and names what's missing. Writes a trigger run makes are stamped `_meta.chain`, a field a client can't set and a function can't drop.
+
+### Added
+
+- **Realtime subscriptions:** `realtime: true` in `collection.yaml` and `POST /v1/{realm}/_realtime`, one server-sent event stream per caller following up to 20 subscriptions (`where` filters or single documents). Events are live-query semantics — `created`, `updated`, `removed` mean entered/changed/left *this caller's* view, so the read rule is evaluated per change and a stranger learns nothing — with signed resume tokens (`Last-Event-ID`), `reset` events that say why to reload (`history_expired`, `slow_consumer`, `preimage_missing`, `access_changed`, `config_changed`), `session_ended` and `reauth` closes, per-instance limits (`BACKD_REALTIME_*`, lowerable per realm), a memory budget that resets the slowest streams instead of stalling, and `BACKD_EVENTS=false` to keep stream work off request-serving replicas. Needs MongoDB's change stream: pre-change images per collection and a user that may read the deployment's stream, both checked at startup.
+- **Triggers:** `triggers:` in `collection.yaml` run an internal async function when documents are created, updated or removed (`events`, a `when` condition on `document`/`before`/`changed()`/`appConfig()`, `fields` to carry paths, `session: true` for the writer's name, `ordered: true` for one document's runs in order). One leased dispatcher per deployment (`BACKD_TRIGGERS`) queues deduplicated, at-least-once jobs; the function always has `ctx.admin.db`. Chains are bounded (`triggers.max_chain`, `max_chained_per_minute`) and a realm's backlog is capped (`max_backlog`), what can't be queued is recorded as a **gap** — inspectable with `backd triggers status|gaps|resolve` over the admin API and repaired with `backd triggers rescan`. Metrics `trigger_dispatch_lag_seconds`, `trigger_gaps_total`, `trigger_dropped_total`, `trigger_backlog`, `jobs_serialized_waiting`.
+- **Exact built-in hooks:** `account.on_signup` and the `organizations.hooks.*` jobs are now queued in the same MongoDB transaction as the change that caused them, with an id made of the event, so a retry is one job, not two.
+- **JavaScript client 0.8.5:** `client.realtime.subscribe()` and `collection.subscribe()` return a `LiveView`: a list that loads first, then keeps itself current through resets (with jittered reloads), reconnects with resume tokens, and reports `connecting`/`live`/`resyncing`/`closed` per subscription. Typed errors `RealtimeNotEnabledError`, `TooManySubscriptionsError`, `InvalidResumeTokenError`, `SessionEndedError`, and the generated trigger input types.
+- **Development stack:** `make dev` (`docker-compose.dev.yml`) serves released images over your own `./config` with live reload, the API and worker apart (`WORKERS=`), Prometheus and Grafana; `make dev-examples` runs the sample realms on it. Plus `make perf`: load and soak suites for the trigger dispatcher and the realtime hub with measured numbers in the docs.
+- **Tutorial:** chapter 23 (a status pipeline built with triggers) and chapter 24 (a team pinboard kept live).
+- **Documentation:** [Realtime](https://fernandezvara.github.io/backd/docs/api/realtime/) (events, resuming, limits, access changes), [Triggers](https://fernandezvara.github.io/backd/docs/functions/triggers/) (input, at-least-once handlers, chains, ordering, debugging), [Change feed](https://fernandezvara.github.io/backd/docs/operations/events/) (requirements, cost, the dispatcher, sizing the oplog) and the [development stack](https://fernandezvara.github.io/backd/docs/development/).
+
+### Not yet
+
+- `_batch` read operations (it only writes), `$search` and `$like` inside a subscription's `where`, and subscribing to backd's own collections wait for later releases.
+
 ## 0.8.4
 
 No breaking changes, apart from two names reserved in `schema.json` (`_expanded`, `_search_lang`). No new system collections; declaring a text index or the indexes an aggregation asks for needs `backd provision` in `PROVISION_MODE=verify`.

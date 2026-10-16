@@ -139,6 +139,16 @@ blog__main.posts
 shop__orders.items
 ```
 
+### Upgrading to v0.8.5
+
+v0.8.5 adds [realtime subscriptions](../api/realtime/) and [triggers](../functions/triggers/), both built on MongoDB's change stream. Nothing is on until a collection declares `realtime:` or `triggers:`, and nothing breaks for config that doesn't. What to check:
+
+1. **Run `backd provision` when you declare `realtime:` or `triggers:`,** before you start instances with `PROVISION_MODE=verify`. Provision enables **pre-change images** on those collections (without them a removal can't be told to the right subscribers, and `verify` refuses to start, naming the collection) and creates the new `jobs` indexes the trigger dispatcher uses (the per-realm backlog count, and `serial_key`/`serial_order` for ordered triggers). Dropping `realtime:` from a collection leaves its images in place; `backd provision --disable-preimages` removes them.
+2. **Realtime needs MongoDB 6.0 or later as a replica set,** which the change feed requires at startup. The stream is opened on the whole deployment, so the `MONGO_URI` user needs the `changeStream` and `find` actions on every database — for example the built-in `readAnyDatabase` role; a confined user that can't get it can't serve realtime. See the [change feed requirements](events/#requirements).
+3. **Split the work per instance.** `BACKD_EVENTS=false` keeps realtime streams off request-serving replicas; `BACKD_TRIGGERS=false` keeps an instance from holding the trigger dispatcher's lease. Both default to `true`, and nothing is read until a collection declares the feature.
+4. **A trigger's writes are stamped `_meta.chain`** (`{root, depth}`) so chains can be bounded (`triggers.max_chain`, `max_chained_per_minute`, `max_backlog` in `realm.yaml`). A client can't set it and a function can't drop it. `backd triggers status|gaps|resolve` and `backd triggers rescan` inspect and repair the dispatcher.
+5. **The JavaScript client is 0.8.5** (`npm install backd-js@latest`): `client.realtime.subscribe()` and `collection.subscribe()` live lists, the generated trigger input types and four typed errors (`RealtimeNotEnabledError`, `TooManySubscriptionsError`, `InvalidResumeTokenError`, `SessionEndedError`). It keeps working with a v0.8.4 server for what existed there; live lists need a v0.8.5 server.
+
 ### Upgrading to v0.8.4
 
 v0.8.4 adds reference expansion, aggregations and full-text search. Nothing is on until a collection declares it, and nothing breaks for config that doesn't. What to check:

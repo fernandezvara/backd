@@ -27,7 +27,7 @@ const user = await admin.users.find('ada@example.com')
 
 ## Versions
 
-`backd-js` is released on the **same version as the backd server** (backd-js 0.8.4 goes with backd v0.8.4). The [upgrade notes](https://fernandezvara.github.io/backd/docs/operations/) say what each release changed.
+`backd-js` is released on the **same version as the backd server** (backd-js 0.8.5 goes with backd v0.8.5). The [upgrade notes](https://fernandezvara.github.io/backd/docs/operations/) say what each release changed.
 
 ## Types
 
