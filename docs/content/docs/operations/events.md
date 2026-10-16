@@ -6,14 +6,14 @@ weight: 417
 toc: true
 ---
 
-Realtime subscriptions and function triggers are built on one piece: the **change feed**, which reads MongoDB's [change stream](https://www.mongodb.com/docs/manual/changeStreams/). This page describes the feed as it is built today. The features on top of it, the subscription endpoint and triggers, are planned and are marked as such.
+Realtime subscriptions and function triggers are built on one piece: the **change feed**, which reads MongoDB's [change stream](https://www.mongodb.com/docs/manual/changeStreams/). Triggers are built on it and described here; the subscription endpoint is planned and marked as such.
 
 ## When it reads
 
 | Setting | Default | Meaning |
 |---|---|---|
 | `BACKD_EVENTS` | `true` | This instance may read the change stream for realtime subscribers. `false` on API replicas keeps stream work off request-serving instances. |
-| `BACKD_TRIGGERS` | `true` | This instance may hold the lease of the trigger dispatcher (planned). |
+| `BACKD_TRIGGERS` | `true` | This instance may hold the lease of the [trigger dispatcher](#the-trigger-dispatcher). Run `false` on instances that should only serve requests. |
 
 Turning the setting on reads nothing by itself. An instance opens its stream **when its first subscriber arrives**, from that moment on, and closes it shortly after the last one leaves. An instance without subscribers does not connect for it and does not scan MongoDB's change history, however many replicas you run.
 
@@ -94,6 +94,13 @@ A **gap** says what the dispatcher could not do and for which collection and tri
 - Over 10,000 documents it asks for `--confirm`. Without an index starting with `_meta.updated_at`, reading the range is a scan of the collection: run it when that is acceptable.
 - It is audited (`triggers.rescan`).
 
+## Operating checklist
+
+- The MongoDB user needs the [change stream privilege](#requirements); `backd provision` enables pre-change images and creates the jobs indexes, and instances in `verify` mode refuse to start without them.
+- Triggers need a running [worker](../../functions/running/) and `BACKD_EXECUTOR_URL` like any async job.
+- Alert on `trigger_gaps_total` (reasons `window`, `backlog`, `preimage_missing`), on `trigger_backlog` approaching `max_backlog`, and on `trigger_dispatch_lag_seconds`.
+- After restoring MongoDB from a backup the stored position is invalid: a gap is recorded and the dispatcher continues from now. `backd triggers rescan` re-emits what matters.
+
 ## Sizing the history
 
 A stream that falls behind can only catch up while MongoDB still holds the history it needs: its **oplog**. A consumer that is offline longer than the oplog window loses its position and continues from now, which `backd` reports as a gap (`changefeed_reopens_total{reason="history_lost"}`). Size the oplog for your write volume and the longest outage you want to survive.
@@ -101,6 +108,5 @@ A stream that falls behind can only catch up while MongoDB still holds the histo
 ## What is planned
 
 - **Subscriptions** (`POST /v1/{realm}/_realtime`), with per-subscriber rules and immediate revocation.
-- **The rest of the trigger contract**: document bodies in the job (`fields`), who wrote (`by`), chain limits, ordered runs, `backd triggers status` and `rescan`.
 
-Their [design](https://github.com/fernandezvara/backd/blob/main/design/triggers-and-realtime.md) is in the repository. Until they land, the feed has no subscribers and the only visible effects are the two settings, the `realtime:` key and the [metrics](../metrics/).
+Their [design](https://github.com/fernandezvara/backd/blob/main/design/triggers-and-realtime.md) is in the repository. Until they land, the feed has no subscribers and the visible effects are the two settings, the `realtime:` key, the trigger dispatcher and the [metrics](../metrics/).

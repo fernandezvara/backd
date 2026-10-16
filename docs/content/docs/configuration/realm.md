@@ -238,6 +238,20 @@ roles:
 - An email listed in several roles must have the same networks everywhere.
 - [API keys](../../auth/api-keys/#network-restrictions) can be limited too, when they're created.
 
+## Triggers
+
+The `triggers:` section sets the realm's limits for [collection triggers](../config-dir/#triggers). A realm may lower the instance's values and never raise them.
+
+```yaml
+triggers:
+  max_per_collection: 20       # triggers one collection may declare (default 20)
+  max_chain: 16                # how deep a chain of trigger runs may go (default 16, at most BACKD_TRIGGER_MAX_CHAIN)
+  max_chained_per_minute: 60   # chained events one trigger may cause per minute (default 60)
+  max_backlog: 100000          # unfinished trigger jobs before events are recorded as gaps (default 100000)
+```
+
+Triggers need `auth` enabled in the realm. [Operating them](../../operations/events/#the-trigger-dispatcher): lease, gaps, `backd triggers status` and `rescan`.
+
 ## Storage
 
 A realm that lets documents carry files connects its own S3-compatible bucket with a `storage:` section: the provider, bucket, a required `prefix`, and the access keys as `secret:NAME` references to realm secrets. See [Connecting storage](../../files/storage/) and the page of your provider ([AWS S3](../../files/aws-s3/), [MinIO](../../files/minio/), [Cloudflare R2](../../files/cloudflare-r2/), [DigitalOcean Spaces](../../files/digitalocean-spaces/)). `backd template realm` writes it commented, with an example for each.

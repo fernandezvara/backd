@@ -55,4 +55,4 @@ backd triggers gaps                                          # what could not be
 - Within seconds of a proposal the member has a notification; after the curator approves, the asset has `published_at`, the proposal is `published` with `decided_by` the curator, and the member has one thank-you.
 - The proposal's history shows `_meta.chain.depth` 0 for the curator's write and 1 for the function's, both with the same `root`.
 
-Read [triggers](../../functions/jobs/) for the delivery guarantees.
+Read [Triggers](../../functions/triggers/) for the delivery guarantees, the cost and how to operate them.
