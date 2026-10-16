@@ -140,7 +140,7 @@ The hub's scenarios run in the repository too (`go test ./internal/realtime -run
 |---|---|
 | 10,000 streams over 50 organizations, 200 changes | with an equality on `_meta.org`: **200 checks per change**, 0.8 ms of work per change; without one: **10,000 checks per change**, 9.1 ms. The events delivered are identical |
 | 2,000 streams all following one collection, 64 KiB documents | 100,000 events (6 GiB) delivered in 5 s, about 1.2 GiB per second of rendered payload |
-| 2,000 clients that stop reading, against a budget of 8 MiB | buffered memory peaked at the budget and never above it; the stalled streams were reset (`slow_consumer`) and the healthy client received all 1,000 events |
+| 2,000 clients that stop reading, against a budget of 8 MiB | buffered memory peaked at the budget and never above it; the stalled streams were reset (`slow_consumer`) and a client that kept reading kept receiving (under a budget this tight it can be reset too when its buffer is momentarily the largest, and reloads) |
 | An organization-wide role change, 10,000 members | each member's access read once, 5,000 resets (the ones whose effective access differed), none repeated; 170 ms in the hub (the reads themselves are database lookups) |
 | Replicas | a replica with no subscribers opened no stream; two instances with subscribers opened one each and each delivered every event |
 | A soak: 30 seconds, 93,000 changes, 934,000 events, streams opening and closing | heap 12 to 16 MiB with the scripted history released, nothing buffered at the end |
