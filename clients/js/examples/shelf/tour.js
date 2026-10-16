@@ -775,17 +775,15 @@ heading('Live pins (ch24)')
   // A stranger can't subscribe to the team.
   const ivy = await signedIn(`ivy-${STAMP}@shelf.example`, operator)
   const peek = ivy.db('main').collection('pins').inOrg(team.id).subscribe({})
-  await peek.ready
+  await refused('a stranger can\'t follow the team (403): the read rule shows them nothing', () => peek.ready, ForbiddenError, 'forbidden')
   await main(hal).fn('pin', { org: team.id, title: 'Not for strangers' })
-  await new Promise((r) => setTimeout(r, 500))
-  check('a stranger\'s subscription shows nothing of the team, before or after', peek.items.length === 0)
-  peek.close()
+  check('and the members\' own view carries on', await until(() => live.items.some((p) => p.title === 'Not for strangers')))
 
   // Hal follows too; when they are removed from the team their list resets and empties.
   const halLive = hal.db('main').collection('pins').inOrg(team.id).subscribe({ jitterMs: 50 })
   await halLive.ready
   await main(gus).fn('pin', { org: team.id, title: 'Before the removal' })
-  check('the other member sees it too', await until(() => halLive.items.length === 1))
+  check('the other member sees it too', await until(() => halLive.items.length === 2))
   /** @type {string[]} */
   const resets = []
   halLive.on('reset', (e) => resets.push(e.reason))

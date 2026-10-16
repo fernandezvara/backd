@@ -265,7 +265,13 @@ func (d *documents) subscription(r *http.Request, c *registry.Collection, s real
 	filter, a, why := d.resolve(r, c, where)
 	if why != "" {
 		return nil, func(w http.ResponseWriter, r *http.Request, at string) {
-			deny(w, r, a, c, rules.Read, why)
+			if a.caller.User == nil {
+				deny(w, r, a, c, rules.Read, why) // 401 for anonymous callers
+				return
+			}
+			logger(r.Context()).Debug("access denied", "collection", c.Realm+"/"+c.Database+"/"+c.Name, "operation", "read", "reason", why)
+			// The detail names the subscription, so a client with several views refuses only the one.
+			writeError(w, r, http.StatusForbidden, codeForbidden, "no access rule allows this operation", Detail{Path: at + ".collection", Reason: "the caller may not read it"})
 		}
 	}
 	return &builtSub{
