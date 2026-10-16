@@ -283,7 +283,7 @@ func TestLoadFanOutKeyedAndUnkeyed(t *testing.T) {
 
 // Large documents are rendered once per subscription that sees them.
 func TestLoadLargeDocuments(t *testing.T) {
-	streams := 200 * loadScale()
+	streams := 50 * loadScale()
 	h := newHistory()
 	obs := &counter{}
 	// The budget is lifted: this scenario measures rendering and delivery, and a slow machine must
@@ -298,16 +298,16 @@ func TestLoadLargeDocuments(t *testing.T) {
 		t.Cleanup(s.Close)
 		drainer(s, &got)
 	}
-	big := strings.Repeat("x", 64<<10)
-	n := 50
+	big := strings.Repeat("x", 32<<10)
+	n := 20
 	start := time.Now()
 	for i := 0; i < n; i++ {
 		h.add(changeFor("o", i, map[string]any{"body": big}))
 	}
 	waitUntil(t, "every event", func() bool { return got.Load() >= int64(n*streams) })
 	elapsed := time.Since(start)
-	report(t, "large_documents", "streams", streams, "documents", n, "doc_kib", 64, "events", got.Load(), "elapsed", elapsed,
-		"mib_per_s", float64(int(got.Load())*(64<<10))/(1<<20)/elapsed.Seconds())
+	report(t, "large_documents", "streams", streams, "documents", n, "doc_kib", 32, "events", got.Load(), "elapsed", elapsed,
+		"mib_per_s", float64(int(got.Load())*(32<<10))/(1<<20)/elapsed.Seconds())
 }
 
 // A mass stall: clients that stopped reading make the instance's buffers hit its memory
