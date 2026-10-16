@@ -16,6 +16,7 @@ const (
 	orgsColl       = "orgs"
 	orgMembersColl = "org_members"
 	orgTeamsColl   = "org_teams"
+	appConfigColl  = "app_config"
 )
 
 // Events that end a stream (design §17.2).
@@ -30,6 +31,13 @@ type Access struct {
 	UserID    string
 	KeyID     string // an API key's document key (its hash)
 	Orgs      []string
+	// Fingerprint summarizes what the caller's access depends on (roles, memberships, second
+	// factor, consents). Resume tokens carry it: replaying history made while the access was
+	// different would show states the caller couldn't see then.
+	Fingerprint string
+	// UsesConfig says a subscribed collection's rules read the app configuration, so a change of
+	// the configuration changes what is visible.
+	UsesConfig bool
 	// Expires is when the credential stops being good; zero: never.
 	Expires time.Time
 	// Reload reads the caller's access again and returns what each subscription (by id) shows
@@ -39,10 +47,11 @@ type Access struct {
 
 // Reloaded is the answer of Access.Reload.
 type Reloaded struct {
-	Ended   bool
-	Orgs    []string
-	Expires time.Time
-	Subs    map[string]Visibility
+	Ended       bool
+	Fingerprint string
+	Orgs        []string
+	Expires     time.Time
+	Subs        map[string]Visibility
 }
 
 // Visibility is what decides, after a reload, what a subscription shows.
@@ -108,6 +117,10 @@ func (s *Stream) systemChange(c changefeed.Change) {
 		if s.inOrg(c.Key) {
 			s.reload()
 		}
+	case appConfigColl:
+		if a.UsesConfig {
+			s.reload()
+		}
 	case orgTeamsColl:
 		// A team's key says nothing of its organization: any stream with memberships looks.
 		s.mu.Lock()
@@ -165,9 +178,14 @@ func (s *Stream) reload() {
 	s.mu.Unlock()
 	go func() {
 		for {
+			// An organization-wide change reaches every member's stream at once: spread the reads
+			// and bound how many run together, so the database sees a trickle, not a burst.
+			time.Sleep(s.hub.reloadDelay())
+			release := s.hub.acquireReload()
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			res, err := s.access.Reload(ctx)
 			cancel()
+			release()
 			s.applyReload(res, err)
 			time.Sleep(minReload)
 			s.mu.Lock()
@@ -199,6 +217,7 @@ func (s *Stream) applyReload(res Reloaded, err error) {
 		return
 	}
 	s.access.Orgs = res.Orgs
+	s.access.Fingerprint = res.Fingerprint
 	if !res.Expires.IsZero() {
 		s.access.Expires = res.Expires
 	}
@@ -304,4 +323,33 @@ func (s *Stream) startExpiry() {
 		}()
 	}
 	arm(exp)
+}
+
+// startRefresh reads the access again every RefreshEvery: what ends by the clock (a role's
+// window, a rule that reads `now`) has no change to report.
+func (s *Stream) startRefresh() {
+	if s.access == nil || s.access.Reload == nil {
+		return
+	}
+	every := s.hub.RefreshEvery
+	if every == 0 {
+		every = 5 * time.Minute
+	}
+	if every < 0 {
+		return
+	}
+	var t *time.Timer
+	t = time.AfterFunc(every, func() {
+		select {
+		case <-s.done:
+			return
+		default:
+		}
+		s.reload()
+		t.Reset(every)
+	})
+	go func() {
+		<-s.done
+		t.Stop()
+	}()
 }

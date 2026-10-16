@@ -3,6 +3,7 @@ package realtime
 import (
 	"context"
 	"errors"
+	"math/rand/v2"
 	"slices"
 	"sync"
 	"time"
@@ -99,11 +100,21 @@ type Hub struct {
 	Feed *changefeed.Lazy
 	// Replay makes a consumer that reads from a resume position, over the same set the Feed
 	// reads. Nil disables resuming: a token is taken as expired history.
-	Replay   func() *changefeed.Consumer
-	Limits   Limits
-	Observer Observer
-	Now      func() time.Time
+	Replay func() *changefeed.Consumer
+	// ReloadJitter spreads the reads of access after a change (up to this long, per stream; default
+	// 250ms, negative for none) and ReloadConcurrency bounds how many run at once (default 16).
+	ReloadJitter time.Duration
+	// RefreshEvery is how often an open stream reads its caller's access again with nothing having
+	// changed: access that ends by the clock (a role window, a rule on `now`) has no event.
+	// Default 5 minutes; negative disables it.
+	RefreshEvery      time.Duration
+	ReloadConcurrency int
+	Limits            Limits
+	Observer          Observer
+	Now               func() time.Time
 
+	semOnce  sync.Once
+	sem      chan struct{}
 	imu      sync.RWMutex
 	index    map[string]*collIndex // by CollKey
 	attached func()                // releases the feed while there are streams
@@ -156,7 +167,11 @@ func (h *Hub) Open(req Request) (*Stream, error) {
 		if err != nil || t.Realm != req.Realm || t.Principal != req.Principal {
 			return nil, ErrBadToken
 		}
-		if h.now().Sub(time.Unix(t.Issued, 0)) > lim.ResumeMaxAge || h.Replay == nil {
+		fp := ""
+		if req.Access != nil {
+			fp = req.Access.Fingerprint
+		}
+		if h.now().Sub(time.Unix(t.Issued, 0)) > lim.ResumeMaxAge || h.Replay == nil || t.Access != fp {
 			expired = true
 		} else {
 			tok = &t
@@ -199,6 +214,7 @@ func (h *Hub) Open(req Request) (*Stream, error) {
 	}
 	h.attach(s)
 	s.startExpiry()
+	s.startRefresh()
 	switch {
 	case expired:
 		s.resetAll(ReasonHistoryExpired)
@@ -426,3 +442,26 @@ func (h *Hub) ConfigChanged(colls map[string]bool) {
 
 // CollKey is how ConfigChanged names a collection.
 func CollKey(db, coll string) string { return db + "\x00" + coll }
+
+func (h *Hub) reloadDelay() time.Duration {
+	j := h.ReloadJitter
+	if j == 0 {
+		j = 250 * time.Millisecond
+	}
+	if j < 0 {
+		return 0
+	}
+	return time.Duration(rand.Int64N(int64(j)))
+}
+
+func (h *Hub) acquireReload() func() {
+	h.semOnce.Do(func() {
+		n := h.ReloadConcurrency
+		if n <= 0 {
+			n = 16
+		}
+		h.sem = make(chan struct{}, n)
+	})
+	h.sem <- struct{}{}
+	return func() { <-h.sem }
+}

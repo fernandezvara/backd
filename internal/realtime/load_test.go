@@ -181,7 +181,7 @@ func loadHub(t *testing.T, h *history, lim Limits, obs Observer) *Hub {
 	if lim.Streams == 0 {
 		lim.Streams = 1 << 20
 	}
-	return &Hub{Feed: lazy, Limits: lim, Observer: obs}
+	return &Hub{Feed: lazy, Limits: lim, Observer: obs, ReloadJitter: 50 * time.Millisecond, ReloadConcurrency: 64, RefreshEvery: -1}
 }
 
 // drainer reads a stream and counts what it gets.

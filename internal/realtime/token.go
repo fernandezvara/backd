@@ -22,6 +22,9 @@ type Token struct {
 	Realm     string `json:"r"`
 	Principal string `json:"u"`
 	Issued    int64  `json:"t"` // unix seconds
+	// Access fingerprints what the caller could see when the token was issued; a resume under
+	// another one (a role or membership changed meanwhile) reloads instead of replaying.
+	Access string `json:"a,omitempty"`
 }
 
 // ErrBadToken means a resume token is malformed, was not signed with this realm's key, or

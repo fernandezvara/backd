@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -109,7 +111,7 @@ func newHub(t *testing.T, src *fakeSource, lim Limits) *Hub {
 	lazy := changefeed.NewLazy(mk("realtime"), time.Minute)
 	t.Cleanup(lazy.Close)
 	lim.OpenInterval = -1
-	return &Hub{Feed: lazy, Replay: func() *changefeed.Consumer { return mk("replay") }, Limits: lim}
+	return &Hub{Feed: lazy, Replay: func() *changefeed.Consumer { return mk("replay") }, Limits: lim, ReloadJitter: -1, RefreshEvery: -1}
 }
 
 // sub follows items whose owner is who.
@@ -654,4 +656,130 @@ func TestStreamEndsWithReauthAtExpiry(t *testing.T) {
 	s := openWith(t, h, "user:a", acc, sub("s", "a"))
 	c.run(t, s)
 	ended(t, s, &c, EventReauth)
+}
+
+// A token made under other access (a role or membership changed, then maybe changed back) is
+// not replayed: history made meanwhile could show states the caller couldn't see then.
+func TestResumeUnderOtherAccessReloads(t *testing.T) {
+	src := newFakeSource()
+	h := newHub(t, src, Limits{})
+	acc := &Access{SessionID: "s1", UserID: "u1", Fingerprint: "before"}
+	var c collector
+	s := openWith(t, h, "user:a", acc, sub("s", "a"))
+	c.run(t, s)
+	time.Sleep(30 * time.Millisecond)
+	src.add(changefeed.Change{DB: "db", Coll: "items", Op: changefeed.Created, Key: "1", After: doc("1", "a", 1), Version: 1})
+	token := c.events(t, 1)[0].ID
+	s.Close()
+	src.add(changefeed.Change{DB: "db", Coll: "items", Op: changefeed.Created, Key: "2", After: doc("2", "a", 1), Version: 1})
+
+	// The same access: the replay brings what was missed.
+	same, err := h.Open(Request{Realm: "r", Principal: "user:a", Key: key, Resume: token, Subscriptions: []*Subscription{sub("s", "a")}, Access: &Access{Fingerprint: "before"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c2 collector
+	c2.run(t, same)
+	if got := c2.events(t, 1); got[0].Event != "created" {
+		t.Fatalf("same access: %v", names(got))
+	}
+	same.Close()
+	// Another one: a reset, and nothing replayed.
+	other, err := h.Open(Request{Realm: "r", Principal: "user:a", Key: key, Resume: token, Subscriptions: []*Subscription{sub("s", "a")}, Access: &Access{Fingerprint: "after"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(other.Close)
+	var c3 collector
+	c3.run(t, other)
+	got := c3.events(t, 1)
+	if got[0].Event != "reset" || !contains(string(got[0].Data), ReasonHistoryExpired) {
+		t.Fatalf("other access: %v", names(got))
+	}
+	time.Sleep(50 * time.Millisecond)
+	if n := len(c3.events0()); n != 1 {
+		t.Fatalf("other access replayed %d events", n)
+	}
+}
+
+// A change of the app configuration reaches the streams whose rules read it, and only those.
+func TestAppConfigChangeReloadsStreamsThatUseIt(t *testing.T) {
+	src := newFakeSource()
+	h := newHub(t, src, Limits{})
+	var uses, plain atomic.Int64
+	mk := func(n *atomic.Int64, usesConfig bool) *Access {
+		return &Access{SessionID: "s", UserID: "u", UsesConfig: usesConfig, Reload: func(context.Context) (Reloaded, error) {
+			n.Add(1)
+			return Reloaded{}, nil
+		}}
+	}
+	openWith(t, h, "user:a", mk(&uses, true), sub("s", "a"))
+	openWith(t, h, "user:b", mk(&plain, false), sub("s", "b"))
+	time.Sleep(30 * time.Millisecond)
+	src.add(system("app_config", "current", changefeed.Updated))
+	waitFor := time.Now().Add(2 * time.Second)
+	for uses.Load() == 0 && time.Now().Before(waitFor) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if uses.Load() != 1 || plain.Load() != 0 {
+		t.Fatalf("reloads: %d for the stream using the configuration, %d for the other", uses.Load(), plain.Load())
+	}
+}
+
+// After a change that reaches every stream, the reads of access run a few at a time.
+func TestReloadsAreBounded(t *testing.T) {
+	src := newFakeSource()
+	h := newHub(t, src, Limits{})
+	h.ReloadConcurrency = 3
+	var running, peak, done atomic.Int64
+	const n = 30
+	for i := 0; i < n; i++ {
+		acc := &Access{SessionID: fmt.Sprint("s", i), UserID: fmt.Sprint("u", i), Orgs: []string{"o"}, Reload: func(context.Context) (Reloaded, error) {
+			cur := running.Add(1)
+			for {
+				p := peak.Load()
+				if cur <= p || peak.CompareAndSwap(p, cur) {
+					break
+				}
+			}
+			time.Sleep(10 * time.Millisecond)
+			running.Add(-1)
+			done.Add(1)
+			return Reloaded{Orgs: []string{"o"}}, nil
+		}}
+		openWith(t, h, fmt.Sprint("user:", i), acc, sub("s", "a"))
+	}
+	time.Sleep(30 * time.Millisecond)
+	src.add(system("orgs", "o", changefeed.Updated))
+	deadline := time.Now().Add(5 * time.Second)
+	for done.Load() < n && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if done.Load() != n {
+		t.Fatalf("%d of %d reloads", done.Load(), n)
+	}
+	if peak.Load() > 3 {
+		t.Fatalf("%d reads ran at once, the bound is 3", peak.Load())
+	}
+}
+
+// Access that ends by the clock has no event: the stream reads it again now and then.
+func TestAccessIsReadAgainPeriodically(t *testing.T) {
+	src := newFakeSource()
+	h := newHub(t, src, Limits{})
+	h.RefreshEvery = 60 * time.Millisecond
+	var calls atomic.Int64
+	acc := &Access{SessionID: "s", UserID: "u", Reload: func(context.Context) (Reloaded, error) {
+		calls.Add(1)
+		return Reloaded{}, nil
+	}}
+	openWith(t, h, "user:a", acc, sub("s", "a"))
+	deadline := time.Now().Add(3 * time.Second)
+	for calls.Load() < 3 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if calls.Load() < 3 {
+		t.Fatalf("%d periodic reloads", calls.Load())
+	}
 }

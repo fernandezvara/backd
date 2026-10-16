@@ -6,11 +6,14 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -313,6 +316,12 @@ func (d *documents) accessOf(r *http.Request, realm string, caller auth.Caller, 
 	}
 	fill(caller)
 	acc.Orgs = d.orgIDs(r, realm, caller)
+	acc.Fingerprint = d.accessFingerprint(r, realm, caller)
+	for _, b := range built {
+		if b.c.Rules.UsesConfig() {
+			acc.UsesConfig = true
+		}
+	}
 	base := context.WithoutCancel(r.Context())
 	acc.Reload = func(ctx context.Context) (realtime.Reloaded, error) {
 		ctx = context.WithValue(mergeValues(ctx, base), callerKey{}, caller)
@@ -328,7 +337,7 @@ func (d *documents) accessOf(r *http.Request, realm string, caller auth.Caller, 
 		}
 		ctx = context.WithValue(ctx, callerKey{}, cur)
 		rr := r.WithContext(ctx)
-		out := realtime.Reloaded{Subs: map[string]realtime.Visibility{}, Orgs: d.orgIDs(rr, realm, cur)}
+		out := realtime.Reloaded{Subs: map[string]realtime.Visibility{}, Orgs: d.orgIDs(rr, realm, cur), Fingerprint: d.accessFingerprint(rr, realm, cur)}
 		if cur.User != nil && !cur.User.Session.ExpiresAt.IsZero() {
 			out.Expires = cur.User.Session.ExpiresAt
 		}
@@ -343,6 +352,47 @@ func (d *documents) accessOf(r *http.Request, realm string, caller auth.Caller, 
 		return out, nil
 	}
 	return acc
+}
+
+// accessFingerprint summarizes what the caller's rules can depend on: who they are, their roles,
+// how they signed in, their consents and their organizations with roles, teams and claims. A
+// resume token carries it, so a replay never shows history made while it was different.
+func (d *documents) accessFingerprint(r *http.Request, realm string, caller auth.Caller) string {
+	type org struct {
+		ID        string
+		Roles     []string
+		Teams     []string
+		TeamRoles map[string][]string
+		Claims    map[string]any
+	}
+	type view struct {
+		Subject  string
+		Roles    []string
+		MFA      bool
+		Methods  []string
+		Consents any
+		Orgs     []org
+	}
+	v := view{Subject: caller.Subject()}
+	if caller.User != nil {
+		u := caller.User.User
+		v.Roles = slices.Sorted(slices.Values(u.Roles))
+		mfa, methods := caller.SignInMethods()
+		v.MFA, v.Methods = mfa, slices.Sorted(slices.Values(methods))
+		v.Consents = u.Consents
+		orgs := d.userOrgs(r, realm, caller)
+		for _, id := range slices.Sorted(maps.Keys(orgs)) {
+			o := orgs[id]
+			tr := map[string][]string{}
+			for k, roles := range o.TeamRoles {
+				tr[k] = slices.Sorted(slices.Values(roles))
+			}
+			v.Orgs = append(v.Orgs, org{ID: id, Roles: slices.Sorted(slices.Values(o.Roles)), Teams: slices.Sorted(slices.Values(o.Teams)), TeamRoles: tr, Claims: o.Claims})
+		}
+	}
+	raw, _ := json.Marshal(v)
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:16])
 }
 
 // orgIDs lists the organizations the caller belongs to (none without a user).

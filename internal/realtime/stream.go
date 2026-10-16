@@ -389,7 +389,11 @@ func (s *Stream) processLocked(c changefeed.Change, at changefeed.Position, subs
 	if len(frames) > 0 {
 		// The resume token rides on the last frame of a change: a client that resumes after
 		// it has everything of that change.
-		frames[len(frames)-1].ID = Seal(s.key, Token{Pos: at, Realm: s.realm, Principal: s.principal, Issued: s.hub.now().Unix()})
+		fp := ""
+		if s.access != nil {
+			fp = s.access.Fingerprint
+		}
+		frames[len(frames)-1].ID = Seal(s.key, Token{Pos: at, Realm: s.realm, Principal: s.principal, Issued: s.hub.now().Unix(), Access: fp})
 		delta += s.enqueueLocked(frames...)
 	}
 	if missing {

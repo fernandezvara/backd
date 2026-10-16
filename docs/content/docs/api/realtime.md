@@ -100,7 +100,7 @@ data: {"subs":["mine"],"reason":"slow_consumer"}
 
 The last event of every change carries an SSE `id`: a **resume token**. After a disconnect, open a stream again with `resume_from` (or the `Last-Event-ID` header) set to the last token you saw, and the stream continues after it.
 
-- A token is signed and bound to the realm and the caller: another caller's, another realm's or a forged one is `400 invalid_resume_token`.
+- A token is signed and bound to the realm, the caller and what their access depended on when it was issued: after a role, membership or team change a token is not replayed (the stream says `reset` with `history_expired`: reload). Another caller's, another realm's or a forged token is `400 invalid_resume_token`.
 - Replayed events are evaluated with the caller's **current** access, so a resume can never show more than a list would.
 - If the history no longer reaches the token (MongoDB's oplog moved on, or the token is more than a day old) the stream says `reset` with `history_expired` for every subscription: reload them.
 - The token isn't tied to the set of subscriptions: you may add or drop subscriptions when you resume; reconcile new ones by version.
@@ -160,6 +160,7 @@ A stream is tied to the session, user or API key that opened it, and to the role
 
 - **Sign-out, revocation, deletion or disabling** of the session, user or key: `session_ended` and the stream closes, within the time it takes the change to reach the instance. Reconnecting with the same credential fails with `401`.
 - **Roles, organization memberships, team roles, organization claims or `require_mfa`**: the stream reads the caller's access again. If the effective access to a subscription differs, that subscription gets `reset` with `access_changed` and follows the new access from then on; if it is the same, nothing is sent. Changes of an organization are coalesced into at most one reload per stream every quarter second.
+- **The app configuration:** a stream whose rules read it (`appConfig(...)`) reloads when the configuration changes. **Time:** access that ends by the clock (a role's window) has no event, so open streams read their access again every five minutes.
 - **Credential lifetime**: a stream never outlives its session or key: at its expiry the stream says `reauth` and closes.
 
 A rule that depends on the clock (`now`) is a different filter at each reload, so such a stream may get a `reset` it didn't need: it is harmless and costs one reload of that subscription.

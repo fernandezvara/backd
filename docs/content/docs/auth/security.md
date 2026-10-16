@@ -190,6 +190,35 @@ What the numbers decided:
 
 **Found and fixed in the review:** a stale chain left on documents by backd's own writes (above), and a backlog count reused for five seconds that let a burst run past the ceiling.
 
+### Realtime
+
+[Realtime streams](../../api/realtime/) send changes to clients as they happen. What was reviewed, with tests, and what is left:
+
+**Reviewed and held**
+
+- **The same rules as a read, on both sides of every change.** A subscriber is told `created`, `updated` or `removed` from evaluating their `where` and the collection's read rule (and soft deletion) on the document before and after the change; `removed` goes only to those who could see it before. A change to a document they could never read produces nothing: not an event, not an id.
+- **The in-memory matcher is verified against MongoDB.** Everything evaluated per change is restricted to the operators `storage.Match` implements; a subscription outside them is refused when subscribing, a realtime collection whose read rule compiles outside them stops startup, and generated documents, callers and filters (arrays, missing and null fields, negations) give the same list in memory as in MongoDB.
+- **A missing pre-change image fails closed.** The affected streams are told to reload (`preimage_missing`, at most once a second per collection); nothing is guessed and no id leaves.
+- **Resume tokens can't be forged, moved or abused.** They are signed with a key derived per realm from the callback key, bound to the realm, the caller and a fingerprint of what the caller's access depends on, and expire; replay is evaluated with current access. A token issued under other access (a role or membership changed since) is not replayed: the stream reloads, so history made while the caller couldn't see it is never shown.
+- **API keys:** scopes are checked per collection when subscribing; a key acting as a user follows that user's rules and its reloads; revoking or expiring it ends its streams.
+- **Access changes reach open streams.** Sessions, users, keys, memberships, teams, organizations and the app configuration are watched through MongoDB projections that carry only document keys and field names (never values, never logged); a change ends the stream or reloads the access, and only a real difference resets. Access that ends by the clock (a role's window) is caught by a periodic read.
+- **Everything is bounded:** subscriptions per stream, streams per caller (anonymous: per address), per instance and opening rate; buffers per stream and in all (the largest reset first); reload reads are spread and run a few at a time.
+
+**Found and fixed in the review**
+
+- **A replay could show history made while access was different** (removed from a team, added back, resumed): tokens now carry an access fingerprint and are not replayed across a change.
+- **A change of the app configuration didn't reach open streams** whose rules read it, so documents a flag had just hidden kept flowing until reconnect. The configuration is watched and the streams reload.
+- **An organization-wide change made every member's stream read the database at once:** reads are now spread and bounded.
+- **Access that ends with the clock had no event:** open streams read their access every five minutes.
+
+**Accepted, on purpose**
+
+- **A stream holds its credential in memory** to read its access again; it is never logged and goes with the stream.
+- **A rule that reads `now` is a different filter every time:** such a subscription may be reset at each periodic read. It reloads one list.
+- **Who can open many streams is bounded per caller, not globally by identity:** an attacker with many addresses can use an instance's stream budget (`BACKD_REALTIME_MAX_STREAMS`). Rate limiting by address belongs in front of backd, as for any request.
+- **An event carries the whole document as a read does,** with no field-level redaction, because reads have none: what a rule shows, the stream shows.
+- **Keys derive from the callback key.** Rotating `BACKD_CALLBACK_KEY` invalidates every outstanding token (clients reload), as it does callback tokens.
+
 ## What you are responsible for
 
 - **TLS.** `backd` serves plain HTTP; terminate TLS in front of it.

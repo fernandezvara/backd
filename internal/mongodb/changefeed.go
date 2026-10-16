@@ -46,6 +46,7 @@ func ConnectFeed(ctx context.Context, uri string) (*mongo.Client, error) {
 // to. Consents live in the user's own document (`users.consents`).
 var AccessCollections = []string{
 	UsersCollection, SessionsCollection, APIKeysCollection, OrgsCollection, OrgMembersCollection, OrgTeamsCollection,
+	AppConfigCollection,
 }
 
 // noisyFields are the fields a system collection updates all the time with nothing anyone
