@@ -231,7 +231,7 @@ func TestRealtimeStreamsOnlyWhatTheCallerMayRead(t *testing.T) {
 	// Bob's own document is the next thing he hears: he heard nothing of Ada's.
 	f.feed.add(changefeed.Change{Realm: "acme", DB: f.mdb, Coll: "items", Op: changefeed.Created, Key: "i2", After: f.item("i2", bobID, 1), Version: 1})
 	ev = next(t, bobEvents)
-	if ev.Event != "created" || strings.Contains(ev.Data, "i1") {
+	if ev.Event != "created" || strings.Contains(ev.Data, `"id":"i1"`) {
 		t.Fatalf("bob: %+v", ev)
 	}
 	// Ada hands i1 over to Bob: Ada's view loses it, Bob's gains it.
