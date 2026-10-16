@@ -37,3 +37,6 @@
 /examples/config/**/_functions/.backd-importmap.json
 /clients/js/test/integration/config/**/_functions/.backd/
 /clients/js/test/integration/config/**/_functions/.backd-importmap.json
+perf-results/
+# The development stack's default config (make dev-build)
+/config/

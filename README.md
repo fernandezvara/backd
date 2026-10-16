@@ -20,7 +20,7 @@ Declare realms, databases and collections as directories on disk, each collectio
 ## Quick start
 
 ```sh
-make example                     # backd + MongoDB with examples/config, docs, example app
+make dev-build && make dev-examples   # the development stack with the example realms and apps
 export CURL_CA_BUNDLE=$PWD/docker/certs/ca.crt   # trust the local CA in curl
 curl https://localhost:8443/readyz
 
@@ -32,11 +32,11 @@ curl -G https://localhost:8443/v1/shop/orders/items \
   --data-urlencode 'order_by=-price' -d count=true
 ```
 
-`make example` serves everything over HTTPS with a certificate from a local CA that it creates (and renews) in `docker/certs/` with [certsfor](https://www.certsfor.dev); it prints how to trust that CA in your browser or system.
+`make dev` serves everything over HTTPS with a certificate from a local CA that it creates (and renews) in `docker/certs/` with [certsfor](https://www.certsfor.dev); it prints how to trust that CA in your browser or system.
 
 - **Data model** — [`examples/config`](examples/config) holds one directory per realm (with a `realm.yaml`), database and collection, each collection with a `schema.json`. `backd template realm <name> --sample` creates a starter realm.
 - **`shop` realm** — `auth: disabled`, so the requests above need no key.
-- **`blog` realm** — access rules let anyone read published posts; writes need a user or an API key, created by the realm's administrators. `docker compose exec backd /backd bootstrap --realm blog --email <email>` creates the first one.
+- **`blog` realm** — access rules let anyone read published posts; writes need a user or an API key, created by the realm's administrators. `make dev-backd ARGS='bootstrap --realm blog --email <email>'` creates the first one.
 
 See [Getting started](https://fernandezvara.github.io/backd/docs/getting-started/) for a full walkthrough.
 
@@ -51,12 +51,13 @@ make test         # full test suite in docker (same as CI)
 make test-local   # tests that need no external services
 make build        # binary in bin/backd
 make docs-serve   # documentation site at http://localhost:1313/backd/
-make example      # everything on https://localhost:8443: API, docs (live reload), JS example app
+make example      # backd's own stack, built from your checkout: API, docs (live reload), JS example app
+make dev          # the development stack for people building ON backd: released images, your ./config with live reload (make dev-build first)
 make prod-test    # end-to-end test of the production reference deployment
 make release-check  # build every release archive into dist/ without publishing
-make hack-expenses  # attack the expenses example (needs make example running)
-make hack-expenses-functions  # attack the expenses-with-functions example (needs make example running)
-make workshop-tour  # walk the workshop tour without a browser and check each step (needs make example running)
+make hack-expenses  # attack the expenses example (needs make dev-examples or make example running)
+make hack-expenses-functions  # attack the expenses-with-functions example (needs make dev-examples or make example running)
+make workshop-tour  # walk the workshop tour without a browser and check each step (needs make dev-examples or make example running)
 make shelf-tour     # replay the Shelf tutorial's checks against the tutorial's own stack
 ```
 

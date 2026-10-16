@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>backd dev stack</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1d2330; --bg: #f7f8fa; --muted: #5d6677; --line: #d9dde5; --accent: #2457d6; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #e6e9ef; --bg: #14171d; --muted: #9aa3b2; --line: #2a303b; --accent: #7aa2ff; } }
+  body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+  main { max-width: 46rem; margin: 0 auto; padding: 2rem 16px 3rem; }
+  h1 { font-size: 1.6rem; margin: 0 0 .25rem; }
+  p.lead { color: var(--muted); margin: 0 0 1.5rem; }
+  h2 { font-size: 1rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 1.75rem 0 .5rem; }
+  ul { list-style: none; padding: 0; margin: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  li { padding: .6rem .9rem; border-top: 1px solid var(--line); display: flex; gap: .75rem; align-items: baseline; flex-wrap: wrap; }
+  li:first-child { border-top: 0; }
+  a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  a:hover { text-decoration: underline; }
+  span { color: var(--muted); font-size: .92rem; }
+  code { font: .88rem ui-monospace, monospace; background: color-mix(in srgb, var(--line) 50%, transparent); padding: .05rem .3rem; border-radius: 4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>backd dev stack</h1>
+  <p class="lead">Released images over your own config. Saving a file in <code>CONFIG_DIR</code> reloads it.</p>
+
+  <h2>Your backd</h2>
+  <ul>
+    <li><a href="/readyz">/readyz</a> <span>the API; try <code>/v1/{realm}/…</code></span></li>
+    <li><a href="/_ui/">/_ui/</a> <span>the admin web interface (an administrator of a realm signs in)</span></li>
+    <li><a href="/example/">/example/</a> <span>the JavaScript client's example apps (run <code>CONFIG_DIR=./examples/config make dev</code> for their realms)</span></li>
+  </ul>
+
+  <h2>Observe</h2>
+  <ul>
+    <li><a href="http://localhost:3000/">Grafana</a> <span>backd's dashboards; “Processes” shows the API and the worker apart</span></li>
+    <li><a href="http://localhost:9090/targets">Prometheus targets</a> <span>backd, worker, executor and egress</span></li>
+    <li><a href="http://localhost:9001/">MinIO console</a> <span><code>backd-dev</code> / <code>dev-p4ssw0rd!</code></span></li>
+  </ul>
+
+  <h2>Documentation</h2>
+  <ul>
+    <li><a href="https://fernandezvara.github.io/backd/">backd documentation</a> <span>online</span></li>
+    <li><a href="https://fernandezvara.github.io/backd/docs/getting-started/">Getting started</a></li>
+    <li><a href="https://fernandezvara.github.io/backd/docs/tutorial/">The Shelf tutorial</a></li>
+    <li><a href="https://fernandezvara.github.io/backd/docs/development/">Using this stack</a> <span><code>make dev-logs S=worker</code>, <code>make dev-down</code>, <code>make dev-reset</code></span></li>
+  </ul>
+</main>
+</body>
+</html>

@@ -15,7 +15,8 @@ The configuration is the `expenses-with-functions` realm in `examples/config/exp
 ## Try it
 
 ```sh
-make example
+make dev-build     # once
+make dev-examples  # the development stack with the example realms and apps
 ```
 
 Open <https://localhost:8443/example/expenses-with-functions/>. It looks and works exactly like [expenses without functions](../expenses/#try-it) — sign up, create a group, invite a second email, add expenses, watch balances — with one visible difference: "I paid this" now says the other person needs to confirm it, and a pending settlement shows a "Confirm received" button to its receiver.

@@ -110,6 +110,9 @@ type RealmSettings struct {
 	// Triggers are realm.yaml's `triggers:` limits (design/triggers-and-realtime.md §7); read
 	// them through TriggerLimits, which applies the instance's.
 	Triggers TriggerSettings
+	// Realtime are realm.yaml's `realtime:` limits, which only lower the instance's
+	// (design/triggers-and-realtime.md §17); zero means the instance's.
+	Realtime RealtimeSettings
 	// FunctionsMaxConcurrency caps how many function calls may run at once
 	// on this backd instance (functions.max_concurrency); 0 means
 	// unlimited. Applies whether or not auth is enabled.
@@ -413,6 +416,10 @@ type realmDoc struct {
 			RevertEmailChange string `yaml:"revert_email_change"`
 		} `yaml:"tokens"`
 	} `yaml:"account"`
+	Realtime *struct {
+		MaxSubscriptionsPerStream *int `yaml:"max_subscriptions_per_stream"`
+		MaxStreamsPerUser         *int `yaml:"max_streams_per_user"`
+	} `yaml:"realtime"`
 	Triggers *struct {
 		MaxChain            *int `yaml:"max_chain"`
 		MaxChainedPerMinute *int `yaml:"max_chained_per_minute"`
@@ -705,6 +712,24 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 		}
 	}
 
+	if rt := doc.Realtime; rt != nil {
+		for _, f := range []struct {
+			key string
+			in  *int
+			to  *int
+		}{
+			{"max_subscriptions_per_stream", rt.MaxSubscriptionsPerStream, &s.Realtime.MaxSubscriptionsPerStream},
+			{"max_streams_per_user", rt.MaxStreamsPerUser, &s.Realtime.MaxStreamsPerUser},
+		} {
+			switch {
+			case f.in == nil:
+			case *f.in < 1:
+				errs = append(errs, fmt.Errorf("realtime.%s: must be at least 1, got %d", f.key, *f.in))
+			default:
+				*f.to = *f.in
+			}
+		}
+	}
 	if t := doc.Triggers; t != nil {
 		for _, f := range []struct {
 			key  string

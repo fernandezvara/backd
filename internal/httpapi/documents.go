@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -22,6 +23,7 @@ import (
 	"github.com/fernandezvara/backd/internal/jsonnum"
 	"github.com/fernandezvara/backd/internal/metrics"
 	"github.com/fernandezvara/backd/internal/query"
+	"github.com/fernandezvara/backd/internal/realtime"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/rules"
 	"github.com/fernandezvara/backd/internal/storage"
@@ -65,6 +67,13 @@ type documents struct {
 	// with callback tokens signed with callbackKey (and nothing else).
 	internal    bool
 	callbackKey []byte
+
+	// hub serves realtime streams (nil when this instance has none); realtimeLimits are the
+	// instance's. processKey signs resume tokens of realms without system data.
+	hub            *realtime.Hub
+	realtimeLimits realtime.Limits
+	procKey        []byte
+	procOnce       sync.Once
 	// dups limits the creates of custom ids that exist, per caller.
 	dups    dupLimiter
 	metrics *metrics.Metrics
@@ -79,6 +88,10 @@ func (d *documents) routes(r chi.Router) {
 	})
 	r.With(noStore, withTimeout(d.opTimeout), requireContentType("application/json")).Post("/v1/{realm}/{database}/_batch", d.batch)
 	r.With(dataCaching, withTimeout(d.opTimeout)).Get("/v1/{realm}/_config", d.readAppConfig)
+	if !d.internal {
+		// No timeout and no body type check: a stream lives as long as its client does.
+		r.With(noStore, requireContentType("application/json")).Post("/v1/{realm}/_realtime", d.realtime)
+	}
 }
 
 // mountDocuments registers the document operations of one collection: the

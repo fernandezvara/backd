@@ -28,7 +28,7 @@ The repository includes two example apps built with this client and [Alpine.js](
 
 {{< live-example >}}
 
-`make example` serves both at <https://localhost:8443/example/>.
+`make dev-examples` serves both at <https://localhost:8443/example/>.
 
 ## Create a client
 
@@ -488,6 +488,35 @@ export default async function (input: Realm["db"]["main"]["collections"]["orders
 }
 ```
 
+## Live lists
+
+`client.realtime.subscribe()` follows collections that declare [`realtime: true`](../../api/realtime/): it loads each list, keeps it current from the stream and tells you when it changes.
+
+```js
+const live = client.realtime.subscribe([
+  { db: 'main', collection: 'items', where: { '_meta.org': orgId }, load: { sort: '-_meta.created_at', limit: 50 } },
+])
+live.on('change', (state) => render(state.items))   // sorted, reconciled
+live.on('status', (s) => showBanner(s))             // 'connecting' | 'live' | 'resyncing' | 'closed'
+await live.ready                                    // the first load
+live.close()
+
+// The same, from a collection (an organization or team scope becomes a `where` on `_meta.org`/`_meta.team`):
+const mine = client.db('main').collection('items').inOrg(orgId).subscribe({ load: { sort: '-_meta.created_at' } })
+```
+
+What the client does for you:
+
+- **One stream per client**, multiplexed over every view's subscriptions (the server allows 20 per stream). Adding or closing a subscription reopens it with the last resume token.
+- **Stream first, then load:** the stream opens, each list is read with a normal list call, and the events that arrived meanwhile are applied after it, **ignoring any whose `_meta.version` is not newer**. New documents are inserted in the `load.sort` order, and the list is trimmed to `load.limit` (100 by default).
+- **Resume:** after a dropped connection the stream continues after the last event, with the caller's current access; the list is not read again. A token the server refuses, or history it no longer holds, reloads the lists.
+- **Resets:** when the server says `reset` (a slow client, a changed access, missing history) the affected list is reloaded after a random wait of up to `jitterMs` (1,000 by default), while the last list stays available and the status is `resyncing`.
+- **Credentials:** at the end of a credential's lifetime (`reauth`) the client reconnects with the current one. When the session is revoked (`session_ended`) the view stops and `error` carries a `SessionEndedError`; sign in again and subscribe again.
+- **References:** `references: { author: { field: 'author_id', collection: 'profiles', fields: ['name'] } }` keeps the referenced documents in `state.references.author` (by id), reading the missing ones in one batched call. They are read under the normal rules; subscribe to the referenced collection too if they must update live.
+- **Errors** are typed: `RealtimeNotEnabledError` and `TooManySubscriptionsError` (`ValidationError`s), `InvalidResumeTokenError` (handled for you) and `SessionEndedError`.
+
+A list bounded by `load.limit` can't refill itself when a document leaves it: a removal makes it shorter until the next reload, so subscribe with an equality on a grouping field and keep `limit` above what you show.
+
 ## Push notifications
 
 `client.push` registers this device so that functions can push the signed-in user: `register({ platform, token })`, `devices()`, `unregister()`, `registerOnLaunch(getToken)` and, for browsers, `subscribeWeb({ registration })`, which asks for the permission and does nothing when it is denied.
@@ -700,6 +729,8 @@ Every answer that isn't 2xx throws a `BackdError`, or one of its subclasses:
 | `LastOrgManagerError` (a `ConflictError`) | 409 | `last_org_manager`: the organization needs someone who can manage it |
 | `VersionMismatchError` | 412 | `version_mismatch` |
 | `ConsentRequiredError` | 400, 403 | `consent_required`; `consents` lists what to accept, as `{ name, version }` |
+| `RealtimeNotEnabledError`, `TooManySubscriptionsError`, `InvalidResumeTokenError` (`ValidationError`s) | 400 | `realtime_not_enabled`, `too_many_subscriptions`, `invalid_resume_token`: see [live lists](#live-lists) |
+| `SessionEndedError` (an `AuthenticationError`) | — | `session_ended`: the stream's session, user or key is gone |
 | `RetryableError` | 429, 503 | `too_many_requests`, `unavailable`; `retryAfter` in milliseconds |
 | `NetworkError` | 0 | `network_error`, `aborted` |
 

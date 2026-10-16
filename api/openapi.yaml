@@ -4945,6 +4945,72 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_realtime:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+    post:
+      tags: [documents]
+      summary: Subscribe to changes
+      description: |
+        Opens a stream (`text/event-stream`, read with `fetch` streaming) of the changes of
+        one or more collections that declare `realtime: true`, limited to what the caller may
+        read. A session or API key goes in `Authorization`, never in the URL. Subscriptions
+        are validated before the stream starts; the stream then begins with `ready`.
+
+        Events: `created`, `updated` (`data: {sub, doc}`; the document as a read returns it),
+        `removed` (`{sub, id, version}`, also when an update made the document invisible to
+        this caller), `reset` (`{subs, reason}`: reload those subscriptions; `reason` is
+        `history_expired`, `access_changed`, `slow_consumer`, `preimage_missing` or
+        `config_changed`, after which the subscription is gone and must be made again),
+        `session_ended` (the session, user or key is gone) and `reauth` (the credential's
+        lifetime is over), both followed by the stream closing, and comments (`: heartbeat`). Each change's last event carries an SSE `id`, a signed resume
+        token bound to this realm and caller: send it as `resume_from` (or `Last-Event-ID`)
+        to continue after it; events replayed are evaluated with the caller's current access.
+
+        `where` may use only comparison, `$in`, `$nin`, `$between` and `$isNull` operators and
+        their `$and`/`$or`; `$search`, `$like` and the text operators, `order_by`, `limit` and
+        `expand` are not part of a stream. To start from a known state: open the stream, wait
+        for `ready`, load the data with list calls and apply the events received meanwhile,
+        ignoring those whose `_meta.version` is not newer than the document held.
+      operationId: realtimeSubscribe
+      security: [{ session: [] }, { apiKey: [] }, {}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [subscriptions]
+              properties:
+                subscriptions:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [id, db, collection]
+                    properties:
+                      id: { type: string, maxLength: 64, description: "Names the subscription in events; unique in the request." }
+                      db: { type: string }
+                      collection: { type: string }
+                      where: { type: object, description: "A filter, as in a list's `where`, limited to the operators listed above." }
+                      doc: { type: string, description: "Follow one document by id instead of a filter." }
+                resume_from: { type: string, description: "A resume token from a previous stream." }
+      responses:
+        "200":
+          description: The stream.
+          headers:
+            Cache-Control: { schema: { type: string } }
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_consents:
     parameters:
       - { $ref: "#/components/parameters/realm" }

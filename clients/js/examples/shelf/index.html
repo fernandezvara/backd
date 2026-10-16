@@ -336,7 +336,7 @@
           <p class="muted">You hold: <code x-text="(currentTeam?.roles || []).join(', ')"></code></p>
 
           <article>
-            <header>Pins</header>
+            <header>Pins <small class="muted" x-text="liveStatus === 'live' ? '● live' : liveStatus"></small></header>
             <p class="muted" x-show="!pinList.length">Nothing pinned yet.</p>
             <ul>
               <template x-for="p in pinList" :key="p.id">

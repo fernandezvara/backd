@@ -34,7 +34,8 @@ With placeholders left in place the realm still loads — `backd` warns that a p
 ## Try it
 
 ```sh
-make example
+make dev-build     # once
+make dev-examples  # the development stack with the example realms and apps
 ```
 
 Open <https://localhost:8443/example/providers/> and press a provider button: the browser goes to the provider and comes back to the page, which redeems the one-time code for a session and shows the result — a welcome line on the first sign-in, "Signed in" after that, or a readable message for every `?backd_error=` outcome (`cancelled`, `account_exists`, `link_conflict`, …). Signed in, the page lists the account's sign-in methods (provider, address, verified, when it was linked and last used), removes any but the last, and links another provider to the same account.

@@ -39,6 +39,22 @@ func systemWrite(now time.Time) (set bson.D, inc bson.D) {
 		bson.D{{Key: "_meta.version", Value: 1}}
 }
 
+// noChain drops `_meta.chain` from an update that backd makes on its own: the write was
+// caused by no trigger, so the change must not carry the chain an older write left (it would
+// read as a chained event, and count against a loop's caps).
+func noChain(update bson.D) bson.D {
+	for i, e := range update {
+		if e.Key == "$unset" {
+			if u, ok := e.Value.(bson.D); ok {
+				out := append(bson.D(nil), update...)
+				out[i].Value = append(append(bson.D(nil), u...), bson.E{Key: "_meta.chain", Value: ""})
+				return out
+			}
+		}
+	}
+	return append(update, bson.E{Key: "$unset", Value: bson.D{{Key: "_meta.chain", Value: ""}}})
+}
+
 func (r *Repository) CountOwned(ctx context.Context, owner string) (int64, error) {
 	n, err := r.coll.CountDocuments(ctx, ownedBy(owner))
 	return n, mapError(err)
@@ -167,6 +183,7 @@ func (r *Repository) AnonymizeOwned(ctx context.Context, owner string, remove []
 		}
 		update = append(update, bson.E{Key: "$unset", Value: unset})
 	}
+	update = noChain(update)
 	if len(fileFields) > 0 {
 		// One document at a time, returning what it held before: the files reported are
 		// exactly those the update removed.
@@ -205,7 +222,7 @@ func (r *Repository) PullReference(ctx context.Context, field, value string, lim
 	}
 	set, inc := systemWrite(now)
 	res, err := r.coll.UpdateMany(ctx, bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: ids}}}, {Key: f, Value: value}},
-		bson.D{{Key: "$pull", Value: bson.D{{Key: f, Value: value}}}, {Key: "$set", Value: set}, {Key: "$inc", Value: inc}})
+		noChain(bson.D{{Key: "$pull", Value: bson.D{{Key: f, Value: value}}}, {Key: "$set", Value: set}, {Key: "$inc", Value: inc}}))
 	if err != nil {
 		return 0, mapError(err)
 	}
@@ -220,7 +237,7 @@ func (r *Repository) ClearReference(ctx context.Context, field, value string, li
 	}
 	set, inc := systemWrite(now)
 	res, err := r.coll.UpdateMany(ctx, bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: ids}}}, {Key: f, Value: value}},
-		bson.D{{Key: "$unset", Value: bson.D{{Key: f, Value: ""}}}, {Key: "$set", Value: set}, {Key: "$inc", Value: inc}})
+		noChain(bson.D{{Key: "$unset", Value: bson.D{{Key: f, Value: ""}}}, {Key: "$set", Value: set}, {Key: "$inc", Value: inc}}))
 	if err != nil {
 		return 0, mapError(err)
 	}
@@ -284,7 +301,7 @@ func (r *Repository) ClearOwnerInOrgs(ctx context.Context, owner string, limit i
 	set, inc := systemWrite(now)
 	set = append(set, bson.E{Key: "_meta.owner", Value: nil})
 	res, err := r.coll.UpdateMany(ctx, bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: ids}}}, {Key: "_meta.owner", Value: owner}},
-		bson.D{{Key: "$set", Value: set}, {Key: "$inc", Value: inc}})
+		noChain(bson.D{{Key: "$set", Value: set}, {Key: "$inc", Value: inc}}))
 	if err != nil {
 		return 0, mapError(err)
 	}

@@ -75,7 +75,7 @@ done
 Once chapter 1 has written the first config, `docker compose up -d` runs backd at `http://localhost:8080`: nginx serves `app/` at `/`, proxies `/v1` to the API and serves `client/` at `/example/client/`, exactly like the app's importmap expects. `config/` is where you write the realm — chapter by chapter.
 
 {{< hint note >}}
-Working on a `backd` checkout instead? The same files live in the repository: `examples/config/shelf/` is the realm's final state, `clients/js/examples/shelf/` the app, and `make example` serves it at `/example/shelf/` next to the other examples.
+Working on a `backd` checkout instead? The same files live in the repository: `examples/config/shelf/` is the realm's final state, `clients/js/examples/shelf/` the app, and `make dev-examples` serves it at `/example/shelf/` next to the other examples.
 {{< /hint >}}
 
 ## The chapters
@@ -105,6 +105,7 @@ Working on a `backd` checkout instead? The same files live in the repository: `e
 | 21 | [Authors with references](21-authors/) | a `profiles` collection with a unique index on `_meta.owner`, an `author` reference from `_meta.owner`, `expand=author(name,avatar)` on the gallery, the cost headers, `null` for what a reader can't see |
 | 22 | [Search and a team dashboard](22-search-dashboard/) | a weighted text index on assets, `$search` sorted by relevance in the user's language, an `aggregate:` on pins with its missing-index warning and fix, a team time zone claim and pins per member per month |
 | 23 | [A pipeline on a status](23-pipelines/) | `triggers:` on a collection, a `when` over the transition, `by` from the session, ordered steps, chains and `_meta.chain`, `fakeTrigger`, `backd triggers status` |
+| 24 | [Live pins](24-live-pins/) | `realtime: true` on pins, a subscription filtered by team with `inOrg(...).subscribe()`, a list that follows other members' pins, what a removed member sees, `session_ended`, and the `realtime_subscription_checks_total` metric for grouped versus unfiltered subscriptions |
 
 
 

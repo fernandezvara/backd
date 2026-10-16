@@ -10,6 +10,9 @@ import (
 	"strings"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/fernandezvara/backd/internal/rules"
+	"github.com/fernandezvara/backd/internal/storage"
 )
 
 // loadRealtime reads collection.yaml's `realtime:` into c: true marks the collection as one
@@ -74,4 +77,59 @@ func (r *Registry) EventCollections() []EventCollection {
 		return strings.Compare(a.MongoDatabase+"/"+a.Name, b.MongoDatabase+"/"+b.Name)
 	})
 	return out
+}
+
+// RealtimeSettings are a realm's own lower limits for streams; zero means the instance's.
+type RealtimeSettings struct {
+	MaxSubscriptionsPerStream int
+	MaxStreamsPerUser         int
+}
+
+// visibilityKey summarizes what decides who a realtime stream shows a document to: the
+// opt-in, the read rule and soft deletion. A subscription made under another key is stale.
+func (c *Collection) visibilityKey() string {
+	src := ""
+	if rule := c.Rules.For(rules.Read); rule != nil {
+		src = rule.Source
+	}
+	return fmt.Sprintf("%t|%t|%s", c.Realtime, c.SoftDelete != nil, src)
+}
+
+// RealtimeChanged lists the realtime collections of old (as "<mongo database>\x00<name>")
+// whose subscriptions no longer follow the configuration in next: they lost the opt-in, were
+// removed, or what shows their documents changed.
+func RealtimeChanged(old, next *Registry) map[string]bool {
+	out := map[string]bool{}
+	for _, ec := range old.EventCollections() {
+		if !ec.Realtime {
+			continue
+		}
+		oc, _ := old.Collection(ec.Realm, ec.Database, ec.Name)
+		nc, ok := next.Collection(ec.Realm, ec.Database, ec.Name)
+		if !ok || oc == nil || nc.visibilityKey() != oc.visibilityKey() {
+			out[ec.MongoDatabase+"\x00"+ec.Name] = true
+		}
+	}
+	return out
+}
+
+// checkRealtimeRead refuses a realtime collection whose read rule can't be decided in memory.
+// A stream evaluates the rule per subscriber, per change, with storage.Match; an operator it
+// doesn't implement would be guessed. The rule is translated for a few probe callers (none,
+// and one with every role), and the result must stay inside what Match evaluates.
+func checkRealtimeRead(c *Collection, path string) error {
+	rule := c.Rules.For(rules.Read)
+	if rule == nil {
+		return nil
+	}
+	for _, u := range []*rules.User{nil, {ID: "probe", Roles: []string{"probe"}}} {
+		f, err := rule.Filter(rules.Values{User: u})
+		if err != nil {
+			continue // a value the probe lacks: decided per request, like any rule
+		}
+		if err := storage.MatchSupported(f); err != nil {
+			return fmt.Errorf("%s: realtime: true needs a read rule that can be evaluated per change: %v", path, err)
+		}
+	}
+	return nil
 }

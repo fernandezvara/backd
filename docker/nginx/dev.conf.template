@@ -1,0 +1,57 @@
+# One origin for the development stack (docker-compose.dev.yml), on https://localhost:8443
+# (http://localhost:8080 redirects there):
+#   /healthz /readyz /v1/  → backd          /_ui/  → the admin web interface
+#   /example/              → the JavaScript client's example apps
+#   /                      → a page with links
+#
+# A template: the nginx image fills in ${NGINX_LOCAL_RESOLVERS}. The upstream is a variable, so a
+# restarted backd container is found at its new address.
+resolver ${NGINX_LOCAL_RESOLVERS} valid=5s ipv6=off;
+
+server {
+    listen 80;
+    server_name localhost;
+    return 301 https://localhost:8443$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name localhost;
+    ssl_certificate     /etc/nginx/certs/localhost.crt;
+    ssl_certificate_key /etc/nginx/certs/localhost.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    # Relative Location headers: nginx listens on 443 but is published on 8443.
+    absolute_redirect off;
+    client_max_body_size 2m;
+
+    set $backd http://backd:8080;
+
+    location = /healthz { proxy_pass $backd; include /etc/nginx/proxy.inc; }
+    location = /readyz  { proxy_pass $backd; include /etc/nginx/proxy.inc; }
+    location /v1/       {
+        proxy_pass $backd;
+        include /etc/nginx/proxy.inc;
+        # Realtime streams (POST /v1/{realm}/_realtime) are long responses.
+        proxy_buffering off;
+        proxy_read_timeout 1h;
+    }
+    location /_ui/      { proxy_pass $backd; include /etc/nginx/proxy.inc; }
+
+    location = /example { return 301 /example/; }
+    location /example/client/ {
+        alias /srv/client/;
+        add_header Cache-Control "no-store";
+    }
+    location /example/ {
+        alias /srv/example/;
+        add_header Cache-Control "no-store";
+    }
+
+    location / {
+        root /srv/landing;
+        index index.html;
+        add_header Cache-Control "no-store";
+    }
+}

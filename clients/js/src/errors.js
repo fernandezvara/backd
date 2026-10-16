@@ -38,6 +38,21 @@ export class ValidationError extends BackdError {}
 /** 401: missing, invalid or expired credentials, or a wrong email or password. */
 export class AuthenticationError extends BackdError {}
 
+/** 400 `realtime_not_enabled`: the collection doesn't declare `realtime: true` (or lost it). */
+export class RealtimeNotEnabledError extends ValidationError {}
+
+/** 400 `too_many_subscriptions`: a stream may hold only so many subscriptions. */
+export class TooManySubscriptionsError extends ValidationError {}
+
+/** 400 `invalid_resume_token`: a resume token is not valid for this caller; the client drops it and reloads. */
+export class InvalidResumeTokenError extends ValidationError {}
+
+/**
+ * The stream's session, user or key is gone (the server said `session_ended`). Live views stop and report this;
+ * sign in again and subscribe again.
+ */
+export class SessionEndedError extends AuthenticationError {}
+
 /** 403: the caller isn't allowed to do this. */
 export class ForbiddenError extends BackdError {}
 
@@ -233,6 +248,12 @@ function typedClass(code, fallback) {
   switch (code) {
     case 'consent_required':
       return ConsentRequiredError
+    case 'realtime_not_enabled':
+      return RealtimeNotEnabledError
+    case 'too_many_subscriptions':
+      return TooManySubscriptionsError
+    case 'invalid_resume_token':
+      return InvalidResumeTokenError
     case 'id_required':
     case 'invalid_id':
     case 'id_not_allowed':

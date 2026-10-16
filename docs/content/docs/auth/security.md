@@ -165,6 +165,60 @@ What the numbers decided:
 - **Accepted:** a worst case like the table's last rows (every word in nearly every document) still costs seconds of database time up to the limit. Callers are bounded per instance (a limit of one aggregation at a time, the rate of the realm's other limits); an attacker with many accounts is the general case of any read endpoint and belongs to the edge's rate limiting.
 - **Deferred:** encrypted fields (milestone 16) don't exist yet; when they do, they must be refused in `aggregate.group_by`, `metrics` and text indexes, which is a startup check to add with them.
 
+### Triggers
+
+[Triggers](../../functions/triggers/) run functions from changes of documents. What was reviewed, with tests, and what is left:
+
+**Reviewed and held**
+
+- **No route runs a trigger, and nothing a client sends reaches its input.** The dispatcher makes the job, from the change; the input is the change's ids, version and the fields `fields:` names. The function is internal, so no HTTP route reaches it; a function that calls it with `ctx.call` has its own caller's identity, not the trigger's.
+- **`_meta.chain` can't be forged.** It is stamped from the callback token that only backd signs; `_meta` in the body of a create, replace, patch or batch is ignored (tested for each route), and an update replaces the whole `_meta`, so a write no trigger caused carries no chain. Writes backd makes by itself (an erase's anonymizing, assigning an organization) drop it too: a stale chain would read as a chained event and count against a loop's caps. A removal can't be stamped, and that can't make a loop endless: every cycle has to create or update a document.
+- **A `when` can't take the dispatcher down.** It sees only `document`, `before`, `changed()`, `now` and `appConfig`; no `user`, no `data`, no function with side effects. The engine's memory budget stops expressions built to burn memory or time (a nested iteration over huge ranges is an error in milliseconds): tested, because the dispatcher serves every realm of the deployment.
+- **`by` is information.** It comes from `_meta.updated_by` and is a user id only when a user was the writer; an API key, a function, an erase (`backd:erase`) or an anonymous writer leave it out. Nothing is granted because of it.
+- **Payloads are bounded and minimal.** Jobs carry ids unless `fields:` names paths of the schema (checked at startup), over 256 KiB bodies are left out and flagged, and duplicates collapse on a job id made from the change.
+- **Overload is visible, and bounded exactly.** The backlog ceiling counts the jobs the dispatcher queues at once (a burst can't run past it before the next count), chained events are capped per trigger and by depth, first-party events are never dropped for being many, and everything not queued is a recorded gap.
+- **One dispatcher, fenced.** The lease carries an epoch that every write of the position checks, so an instance that was paused and lost the lease can't move it. A restore of MongoDB invalidates the stored position and records a gap.
+- **Operating it needs the right role.** `triggers status`, `gaps` and `resolve` need the `functions` administration area and are audited; `rescan` runs where `MONGO_URI` is, reads one collection's documents and queues jobs marked `rescan`.
+
+**Accepted, on purpose**
+
+- **A trigger function runs with admin data access** (`ctx.admin.db`), because the realm's configuration declared it. It is the realm's most privileged code: review it like a function with `admin: true`. `backd triggers status` lists every trigger with the note.
+- **The author of a `when` or a function is trusted**, as the author of any rule. What is bounded is accident, not intent.
+- **Bodies in jobs are copies of data.** With `fields: ["*"]` or paths of personal data, the job's input holds copies kept for the function records' retention (`functions.log_retention`, `functions.job_retention`), and **erasing a user doesn't rewrite them**: they expire. Name the fields the function needs, or none and read the document.
+- **`by` of an erased user's other writes** remains their user id on documents they wrote and didn't own, until those documents change; the id is a pseudonym, listed in the personal data scope report as `_meta.updated_by`.
+- **Any instance with `BACKD_TRIGGERS=true` can hold the lease.** They are trusted equally; use `BACKD_TRIGGERS=false` where an instance shouldn't.
+
+**Found and fixed in the review:** a stale chain left on documents by backd's own writes (above), and a backlog count reused for five seconds that let a burst run past the ceiling.
+
+### Realtime
+
+[Realtime streams](../../api/realtime/) send changes to clients as they happen. What was reviewed, with tests, and what is left:
+
+**Reviewed and held**
+
+- **The same rules as a read, on both sides of every change.** A subscriber is told `created`, `updated` or `removed` from evaluating their `where` and the collection's read rule (and soft deletion) on the document before and after the change; `removed` goes only to those who could see it before. A change to a document they could never read produces nothing: not an event, not an id.
+- **The in-memory matcher is verified against MongoDB.** Everything evaluated per change is restricted to the operators `storage.Match` implements; a subscription outside them is refused when subscribing, a realtime collection whose read rule compiles outside them stops startup, and generated documents, callers and filters (arrays, missing and null fields, negations) give the same list in memory as in MongoDB.
+- **A missing pre-change image fails closed.** The affected streams are told to reload (`preimage_missing`, at most once a second per collection); nothing is guessed and no id leaves.
+- **Resume tokens can't be forged, moved or abused.** They are signed with a key derived per realm from the callback key, bound to the realm, the caller and a fingerprint of what the caller's access depends on, and expire; replay is evaluated with current access. A token issued under other access (a role or membership changed since) is not replayed: the stream reloads, so history made while the caller couldn't see it is never shown.
+- **API keys:** scopes are checked per collection when subscribing; a key acting as a user follows that user's rules and its reloads; revoking or expiring it ends its streams.
+- **Access changes reach open streams.** Sessions, users, keys, memberships, teams, organizations and the app configuration are watched through MongoDB projections that carry only document keys and field names (never values, never logged); a change ends the stream or reloads the access, and only a real difference resets. Access that ends by the clock (a role's window) is caught by a periodic read.
+- **Everything is bounded:** subscriptions per stream, streams per caller (anonymous: per address), per instance and opening rate; buffers per stream and in all (the largest reset first); reload reads are spread and run a few at a time.
+
+**Found and fixed in the review**
+
+- **A replay could show history made while access was different** (removed from a team, added back, resumed): tokens now carry an access fingerprint and are not replayed across a change.
+- **A change of the app configuration didn't reach open streams** whose rules read it, so documents a flag had just hidden kept flowing until reconnect. The configuration is watched and the streams reload.
+- **An organization-wide change made every member's stream read the database at once:** reads are now spread and bounded.
+- **Access that ends with the clock had no event:** open streams read their access every five minutes.
+
+**Accepted, on purpose**
+
+- **A stream holds its credential in memory** to read its access again; it is never logged and goes with the stream.
+- **A rule that reads `now` is a different filter every time:** such a subscription may be reset at each periodic read. It reloads one list.
+- **Who can open many streams is bounded per caller, not globally by identity:** an attacker with many addresses can use an instance's stream budget (`BACKD_REALTIME_MAX_STREAMS`). Rate limiting by address belongs in front of backd, as for any request.
+- **An event carries the whole document as a read does,** with no field-level redaction, because reads have none: what a rule shows, the stream shows.
+- **Keys derive from the callback key.** Rotating `BACKD_CALLBACK_KEY` invalidates every outstanding token (clients reload), as it does callback tokens.
+
 ## What you are responsible for
 
 - **TLS.** `backd` serves plain HTTP; terminate TLS in front of it.

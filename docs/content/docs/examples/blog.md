@@ -17,7 +17,8 @@ The configuration is the `blog` realm in `examples/config/blog`. The application
 ## Try it
 
 ```sh
-make example
+make dev-build     # once
+make dev-examples  # the development stack with the example realms and apps
 ```
 
 Open <https://localhost:8443/example/blog/> (see [HTTPS with a local CA](../../getting-started/#https-with-a-local-ca) to avoid the certificate warning). Sign up, write a post as a draft, then publish it. Log out: the published post is still there, and the draft isn't. Sign up as a second user in a private window: you can read the first user's published posts, but not edit them.
