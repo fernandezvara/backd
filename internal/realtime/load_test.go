@@ -286,7 +286,9 @@ func TestLoadLargeDocuments(t *testing.T) {
 	streams := 200 * loadScale()
 	h := newHistory()
 	obs := &counter{}
-	hub := loadHub(t, h, Limits{BufferBytes: 8 << 20, BufferEvents: 100000}, obs)
+	// The budget is lifted: this scenario measures rendering and delivery, and a slow machine must
+	// not turn a slow reader into a reset (the budget has its own scenario).
+	hub := loadHub(t, h, Limits{BufferBytes: 64 << 20, BufferEvents: 100000, Memory: 16 << 30}, obs)
 	var got atomic.Int64
 	for i := 0; i < streams; i++ {
 		s, err := hub.Open(Request{Realm: "r", Principal: fmt.Sprint("u", i), Key: key, Subscriptions: []*Subscription{orgSub("s", "o")}})
