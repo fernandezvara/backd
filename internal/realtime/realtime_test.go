@@ -17,9 +17,20 @@ import (
 // fakeSource is a change history: Open reads it from a position onwards and then follows
 // what is appended. Position is the index of the last change read, as text.
 type fakeSource struct {
+	opens   atomic.Int64
 	mu      sync.Mutex
 	history []changefeed.Change
 	wake    chan struct{}
+}
+
+// settle waits until the feed is reading: it opens, from now, when the first stream does, and a
+// change added before that is not part of what it reads.
+func (f *fakeSource) settle() {
+	deadline := time.Now().Add(5 * time.Second)
+	for f.opens.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(30 * time.Millisecond)
 }
 
 func newFakeSource() *fakeSource { return &fakeSource{wake: make(chan struct{}, 64)} }
@@ -39,6 +50,7 @@ func (f *fakeSource) add(c changefeed.Change) {
 }
 
 func (f *fakeSource) Open(_ context.Context, _ changefeed.WatchSet, after changefeed.Position) (changefeed.Stream, error) {
+	f.opens.Add(1)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	n := len(f.history)
@@ -195,7 +207,7 @@ func TestVisibilityDecidesTheEvent(t *testing.T) {
 	var mine, theirs collector
 	mine.run(t, open(t, h, "user:a", sub("s", "a")))
 	theirs.run(t, open(t, h, "user:b", sub("s", "b")))
-	time.Sleep(30 * time.Millisecond)
+	src.settle()
 
 	src.add(changefeed.Change{DB: "db", Coll: "items", Op: changefeed.Created, Key: "1", After: doc("1", "a", 1), Version: 1})
 	src.add(changefeed.Change{DB: "db", Coll: "items", Op: changefeed.Updated, Key: "1", Before: doc("1", "a", 1), After: doc("1", "a", 2), Version: 2})
@@ -241,7 +253,7 @@ func TestMissingPreimageFailsClosed(t *testing.T) {
 	var c, stranger collector
 	c.run(t, open(t, h, "user:a", sub("s", "a")))
 	stranger.run(t, open(t, h, "user:b", sub("s", "b")))
-	time.Sleep(30 * time.Millisecond)
+	src.settle()
 
 	src.add(changefeed.Change{DB: "db", Coll: "items", Op: changefeed.Removed, Key: "secret-id", Version: 4})
 	got := c.events(t, 1)
@@ -272,7 +284,7 @@ func TestSlowConsumerIsReset(t *testing.T) {
 	src := newFakeSource()
 	h := newHub(t, src, Limits{BufferEvents: 3})
 	s := open(t, h, "user:a", sub("s", "a"))
-	time.Sleep(30 * time.Millisecond)
+	src.settle()
 	for i := 0; i < 10; i++ { // nobody is reading
 		src.add(changefeed.Change{DB: "db", Coll: "items", Op: changefeed.Created, Key: "x", After: doc("x", "a", i+1), Version: int64(i + 1)})
 	}
@@ -337,7 +349,7 @@ func TestResumeReplaysThenGoesLive(t *testing.T) {
 	first := open(t, h, "user:a", sub("s", "a"))
 	var c1 collector
 	c1.run(t, first)
-	time.Sleep(30 * time.Millisecond)
+	src.settle()
 	src.add(changefeed.Change{DB: "db", Coll: "items", Op: changefeed.Created, Key: "1", After: doc("1", "a", 1), Version: 1})
 	f := c1.events(t, 1)
 	token := f[0].ID
@@ -444,7 +456,7 @@ func TestChangesFindTheirSubscriptionsByKey(t *testing.T) {
 	}
 	var scanner collector
 	scanner.run(t, open(t, h, "user:scan", sub("s", "me"))) // no key: asked every time
-	time.Sleep(30 * time.Millisecond)
+	src.settle()
 
 	src.add(changefeed.Change{DB: "db", Coll: "items", Op: changefeed.Created, Key: "1", After: doc("1", "me", 1), Version: 1})
 	mine.events(t, 1)
@@ -467,7 +479,7 @@ func TestKeyLookupUsesBothImages(t *testing.T) {
 	var a, b collector
 	a.run(t, open(t, h, "user:a", keyed("s", "a")))
 	b.run(t, open(t, h, "user:b", keyed("s", "b")))
-	time.Sleep(30 * time.Millisecond)
+	src.settle()
 	src.add(changefeed.Change{DB: "db", Coll: "items", Op: changefeed.Updated, Key: "1", Before: doc("1", "a", 1), After: doc("1", "b", 2), Version: 2})
 	if got := names(a.events(t, 1)); got[0] != "removed" {
 		t.Fatalf("a: %v", got)
@@ -485,7 +497,7 @@ func TestDocumentSubscriptionByID(t *testing.T) {
 	one.Doc = "1"
 	var c collector
 	c.run(t, open(t, h, "user:a", one))
-	time.Sleep(30 * time.Millisecond)
+	src.settle()
 	src.add(changefeed.Change{DB: "db", Coll: "items", Op: changefeed.Created, Key: "2", After: doc("2", "a", 1), Version: 1})
 	src.add(changefeed.Change{DB: "db", Coll: "items", Op: changefeed.Created, Key: "1", After: doc("1", "a", 1), Version: 1})
 	got := c.events(t, 1)
@@ -571,10 +583,10 @@ func TestSystemChangesEndStreams(t *testing.T) {
 			c.run(t, s)
 			o := openWith(t, h, "user:b", &Access{SessionID: "s2", UserID: "u2"}, sub("s", "b"))
 			other.run(t, o)
-			time.Sleep(30 * time.Millisecond)
+			src.settle()
 			src.add(tc.change)
 			ended(t, s, &c, EventSessionEnded)
-			time.Sleep(30 * time.Millisecond)
+			src.settle()
 			if len(other.events0()) != 0 {
 				t.Fatalf("an unrelated stream heard %v", other.events0())
 			}
@@ -609,7 +621,7 @@ func TestAccessReloadResetsOnlyWhenItChanged(t *testing.T) {
 	var c collector
 	s := openWith(t, h, "user:a", acc, keyed("s", "a"))
 	c.run(t, s)
-	time.Sleep(30 * time.Millisecond)
+	src.settle()
 
 	src.add(system("org_members", "o1/u1", changefeed.Updated))
 	time.Sleep(400 * time.Millisecond)
@@ -643,7 +655,7 @@ func TestReloadEndsAStreamWhoseCredentialIsGone(t *testing.T) {
 	var c collector
 	s := openWith(t, h, "user:a", acc, sub("s", "a"))
 	c.run(t, s)
-	time.Sleep(30 * time.Millisecond)
+	src.settle()
 	src.add(system("users", "u1", changefeed.Updated))
 	ended(t, s, &c, EventSessionEnded)
 }
@@ -667,7 +679,7 @@ func TestResumeUnderOtherAccessReloads(t *testing.T) {
 	var c collector
 	s := openWith(t, h, "user:a", acc, sub("s", "a"))
 	c.run(t, s)
-	time.Sleep(30 * time.Millisecond)
+	src.settle()
 	src.add(changefeed.Change{DB: "db", Coll: "items", Op: changefeed.Created, Key: "1", After: doc("1", "a", 1), Version: 1})
 	token := c.events(t, 1)[0].ID
 	s.Close()
@@ -715,7 +727,7 @@ func TestAppConfigChangeReloadsStreamsThatUseIt(t *testing.T) {
 	}
 	openWith(t, h, "user:a", mk(&uses, true), sub("s", "a"))
 	openWith(t, h, "user:b", mk(&plain, false), sub("s", "b"))
-	time.Sleep(30 * time.Millisecond)
+	src.settle()
 	src.add(system("app_config", "current", changefeed.Updated))
 	waitFor := time.Now().Add(2 * time.Second)
 	for uses.Load() == 0 && time.Now().Before(waitFor) {
@@ -750,7 +762,7 @@ func TestReloadsAreBounded(t *testing.T) {
 		}}
 		openWith(t, h, fmt.Sprint("user:", i), acc, sub("s", "a"))
 	}
-	time.Sleep(30 * time.Millisecond)
+	src.settle()
 	src.add(system("orgs", "o", changefeed.Updated))
 	deadline := time.Now().Add(5 * time.Second)
 	for done.Load() < n && time.Now().Before(deadline) {

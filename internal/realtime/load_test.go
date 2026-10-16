@@ -219,6 +219,14 @@ func changeFor(org string, i int, extra map[string]any) changefeed.Change {
 	return changefeed.Change{Realm: "r", DB: "db", Coll: "items", Op: changefeed.Created, Key: fmt.Sprint("d", i), After: d, Version: 1}
 }
 
+// feedOpen waits for the hub's feed to be reading: it opens from the moment of the first
+// stream, so a change added before that is not part of what it reads.
+func feedOpen(t *testing.T, h *history, want int64) {
+	t.Helper()
+	waitUntil(t, "the feed to open", func() bool { return h.opens.Load() >= want })
+	time.Sleep(50 * time.Millisecond)
+}
+
 func waitUntil(t *testing.T, what string, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(60 * time.Second)
@@ -254,7 +262,7 @@ func TestLoadFanOutKeyedAndUnkeyed(t *testing.T) {
 			t.Cleanup(s.Close)
 			drainer(s, &got)
 		}
-		time.Sleep(50 * time.Millisecond)
+		feedOpen(t, h, 1)
 		start := time.Now()
 		var cs []changefeed.Change
 		for i := 0; i < changes; i++ {
@@ -298,6 +306,7 @@ func TestLoadLargeDocuments(t *testing.T) {
 		t.Cleanup(s.Close)
 		drainer(s, &got)
 	}
+	feedOpen(t, h, 1)
 	big := strings.Repeat("x", 32<<10)
 	n := 20
 	start := time.Now()
@@ -345,6 +354,7 @@ func TestLoadSlowClientsAndMemoryBudget(t *testing.T) {
 			return nil
 		})
 	}()
+	feedOpen(t, h, 1)
 	big := strings.Repeat("x", 1<<10)
 	n := 1000
 	var peak atomic.Int64
@@ -406,7 +416,7 @@ func TestLoadAccessChangeStorm(t *testing.T) {
 		var sink atomic.Int64
 		drainer(s, &sink)
 	}
-	time.Sleep(100 * time.Millisecond)
+	feedOpen(t, h, 1)
 	start := time.Now()
 	h.add(changefeed.Change{Realm: "r", DB: "r__system", Coll: "orgs", System: true, Op: changefeed.Updated, Key: "o1"})
 	waitUntil(t, "every reload", func() bool { return reloads.Load() >= int64(members) })
@@ -446,7 +456,7 @@ func TestLoadRealmsInstancesAndIdleReplicas(t *testing.T) {
 			drainer(s, &got[i])
 		}
 	}
-	time.Sleep(50 * time.Millisecond)
+	feedOpen(t, h, 2)
 	for i := 0; i < 100; i++ {
 		h.add(changeFor(fmt.Sprint("o", i%5), i, nil))
 	}

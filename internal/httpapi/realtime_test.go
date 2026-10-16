@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,8 +25,19 @@ import (
 
 // feedFake is a change history the realtime hub reads, appended to by the tests.
 type feedFake struct {
-	mu   sync.Mutex
-	hist []changefeed.Change
+	opens atomic.Int64
+	mu    sync.Mutex
+	hist  []changefeed.Change
+}
+
+// settle waits until the feed is reading: it opens, from now, with the first stream, and a change
+// added before that is not part of what it reads.
+func (f *feedFake) settle() {
+	deadline := time.Now().Add(5 * time.Second)
+	for f.opens.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(50 * time.Millisecond)
 }
 
 func (f *feedFake) add(c changefeed.Change) {
@@ -36,6 +48,7 @@ func (f *feedFake) add(c changefeed.Change) {
 }
 
 func (f *feedFake) Open(_ context.Context, _ changefeed.WatchSet, after changefeed.Position) (changefeed.Stream, error) {
+	f.opens.Add(1)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	n := len(f.hist)
@@ -220,7 +233,7 @@ func TestRealtimeStreamsOnlyWhatTheCallerMayRead(t *testing.T) {
 	}
 	_, bobEvents := f.subscribe(t, bob, itemsSub)
 	next(t, bobEvents)
-	time.Sleep(50 * time.Millisecond)
+	f.feed.settle()
 
 	d := f.item("i1", adaID, 1)
 	f.feed.add(changefeed.Change{Realm: "acme", DB: f.mdb, Coll: "items", Op: changefeed.Created, Key: "i1", After: d, Version: 1})
@@ -293,7 +306,7 @@ func TestRealtimeResumeIsBoundToTheCaller(t *testing.T) {
 	bob, _ := f.signup(t, "bob@example.com")
 	_, evs := f.subscribe(t, ada, itemsSub)
 	next(t, evs)
-	time.Sleep(50 * time.Millisecond)
+	f.feed.settle()
 	f.feed.add(changefeed.Change{Realm: "acme", DB: f.mdb, Coll: "items", Op: changefeed.Created, Key: "i1", After: f.item("i1", adaID, 1), Version: 1})
 	token := next(t, evs).ID
 
@@ -334,7 +347,7 @@ func TestRealtimeMissingPreimageRevealsNothing(t *testing.T) {
 	next(t, adaEvents)
 	_, bobEvents := f.subscribe(t, bob, itemsSub)
 	next(t, bobEvents)
-	time.Sleep(50 * time.Millisecond)
+	f.feed.settle()
 
 	f.feed.add(changefeed.Change{Realm: "acme", DB: f.mdb, Coll: "items", Op: changefeed.Removed, Key: "secret-doc-id", Version: 9})
 	for name, ch := range map[string]<-chan sseEvent{"ada": adaEvents, "bob": bobEvents} {
@@ -360,7 +373,7 @@ func TestRealtimeWhereAndDocument(t *testing.T) {
 		{"id":"one","db":"app","collection":"items","doc":"i2"}]}`
 	_, evs := f.subscribe(t, ada, body)
 	next(t, evs)
-	time.Sleep(50 * time.Millisecond)
+	f.feed.settle()
 
 	mk := func(id string, age int64) map[string]any {
 		d := f.item(id, adaID, 1)
@@ -411,7 +424,7 @@ func TestRealtimeStreamEndsWhenItsSessionIsRevoked(t *testing.T) {
 	next(t, adaEvents)
 	_, bobEvents := f.subscribe(t, bob, itemsSub)
 	next(t, bobEvents)
-	time.Sleep(50 * time.Millisecond)
+	f.feed.settle()
 
 	// Another session's end is none of Ada's business.
 	f.feed.add(changefeed.Change{Realm: "acme", DB: "acme__system", Coll: "sessions", System: true, Op: changefeed.Removed, Key: "someone-else"})
@@ -446,7 +459,7 @@ func TestRealtimeReloadFindsARevokedSession(t *testing.T) {
 	ada, adaID := f.signup(t, "ada@example.com")
 	_, evs := f.subscribe(t, ada, itemsSub)
 	next(t, evs)
-	time.Sleep(50 * time.Millisecond)
+	f.feed.settle()
 	f.logout(t, ada)
 	f.feed.add(changefeed.Change{Realm: "acme", DB: "acme__system", Coll: "org_members", System: true, Op: changefeed.Updated, Key: "o1/" + adaID})
 	if ev := next(t, evs); ev.Event != "session_ended" {
