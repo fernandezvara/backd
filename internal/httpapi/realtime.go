@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -112,6 +113,7 @@ func (d *documents) realtime(w http.ResponseWriter, r *http.Request) {
 	}
 
 	subs := make([]*realtime.Subscription, 0, len(req.Subscriptions))
+	var built []*builtSub
 	seen := map[string]bool{}
 	for i, s := range req.Subscriptions {
 		at := "subscriptions[" + strconv.Itoa(i) + "]"
@@ -135,13 +137,14 @@ func (d *documents) realtime(w http.ResponseWriter, r *http.Request) {
 		if hasAuth && !scopeAllows(w, r, caller, auth.ScopeRead, c.Database, c.Name) {
 			return
 		}
-		sub, status := d.subscription(r, c, s, hasAuth)
+		b, status := d.subscription(r, c, s)
 		if status != nil {
 			status(w, r, at)
 			return
 		}
-		sub.ID = s.ID
-		subs = append(subs, sub)
+		b.sub.ID = s.ID
+		built = append(built, b)
+		subs = append(subs, b.sub)
 	}
 
 	key := d.resumeKey(realm)
@@ -154,6 +157,7 @@ func (d *documents) realtime(w http.ResponseWriter, r *http.Request) {
 	stream, err := d.hub.Open(realtime.Request{
 		Realm: realm, Principal: principal, Key: key, Subscriptions: subs, Resume: req.ResumeFrom,
 		MaxStreamsPerUser: rl.Settings.Realtime.MaxStreamsPerUser,
+		Access:            d.accessOf(r, realm, caller, built),
 	})
 	switch {
 	case errors.Is(err, realtime.ErrBadToken):
@@ -207,9 +211,33 @@ func (d *documents) realtime(w http.ResponseWriter, r *http.Request) {
 	_ = stream.Run(r.Context(), write)
 }
 
+// builtSub is a subscription with what it needs to be evaluated again after the caller's
+// access changed.
+type builtSub struct {
+	sub    *realtime.Subscription
+	c      *registry.Collection
+	where  storage.Filter
+	filter storage.Filter // the resolved filter now in force
+}
+
+// resolve combines the subscription's filter with the caller's read rule and soft deletion.
+// why is non-empty when the caller may read nothing of the collection.
+func (d *documents) resolve(r *http.Request, c *registry.Collection, where storage.Filter) (storage.Filter, access, string) {
+	a := d.accessIn(r, c)
+	ruleFilter, why := readRuleFilter(a, c)
+	if why != "" {
+		return storage.Const(false), a, why
+	}
+	return hideDeleted(c, and(where, ruleFilter)), a, ""
+}
+
+func visibleBy(filter storage.Filter) func(map[string]any) (bool, error) {
+	return func(doc map[string]any) (bool, error) { return storage.Match(doc, filter) }
+}
+
 // subscription builds what one stream entry follows. On a refusal it returns the function
 // that answers the request.
-func (d *documents) subscription(r *http.Request, c *registry.Collection, s realtimeSubscription, hasAuth bool) (*realtime.Subscription, func(http.ResponseWriter, *http.Request, string)) {
+func (d *documents) subscription(r *http.Request, c *registry.Collection, s realtimeSubscription) (*builtSub, func(http.ResponseWriter, *http.Request, string)) {
 	invalid := func(path, reason string) func(http.ResponseWriter, *http.Request, string) {
 		return func(w http.ResponseWriter, r *http.Request, at string) {
 			writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid subscription", Detail{Path: at + "." + path, Reason: reason})
@@ -234,20 +262,111 @@ func (d *documents) subscription(r *http.Request, c *registry.Collection, s real
 		}
 		where = f
 	}
-	a := d.accessIn(r, c)
-	ruleFilter, why := readRuleFilter(a, c)
+	filter, a, why := d.resolve(r, c, where)
 	if why != "" {
 		return nil, func(w http.ResponseWriter, r *http.Request, at string) {
 			deny(w, r, a, c, rules.Read, why)
 		}
 	}
-	filter := and(where, ruleFilter)
-	filter = hideDeleted(c, filter)
-	return &realtime.Subscription{
-		DB: c.MongoDatabase, Coll: c.Name, Doc: s.Doc, Keys: realtime.KeysOf(filter),
-		Visible: func(doc map[string]any) (bool, error) { return storage.Match(doc, filter) },
-		Render:  render,
+	return &builtSub{
+		c: c, where: where, filter: filter,
+		sub: &realtime.Subscription{
+			DB: c.MongoDatabase, Coll: c.Name, Doc: s.Doc, Keys: realtime.KeysOf(filter),
+			Visible: visibleBy(filter), Render: render,
+		},
 	}, nil
+}
+
+// accessOf describes the stream's tie to its caller and how to read that access again.
+func (d *documents) accessOf(r *http.Request, realm string, caller auth.Caller, built []*builtSub) *realtime.Access {
+	svc := d.users(realm)
+	if svc == nil || (caller.User == nil && caller.Key == nil) {
+		return nil
+	}
+	acc := &realtime.Access{}
+	credential, _ := bearerToken(r)
+	behalf := r.Header.Get(onBehalfHeader)
+	// The credential is only used from here on, in memory, to read the access again: the
+	// stream ends with it.
+	if cs, src, _ := credentialOf(r, svc.Settings); credential == "" && src == fromCookie {
+		credential = cs
+	}
+	fill := func(c auth.Caller) {
+		if c.User != nil {
+			acc.SessionID, acc.UserID = c.User.Session.ID, c.User.User.ID
+			if !c.User.Session.ExpiresAt.IsZero() {
+				acc.Expires = c.User.Session.ExpiresAt
+			}
+		}
+		if c.Key != nil {
+			acc.KeyID = c.Key.Hash
+			if c.Key.ExpiresAt != nil {
+				acc.Expires = *c.Key.ExpiresAt
+			}
+		}
+	}
+	fill(caller)
+	acc.Orgs = d.orgIDs(r, realm, caller)
+	base := context.WithoutCancel(r.Context())
+	acc.Reload = func(ctx context.Context) (realtime.Reloaded, error) {
+		ctx = context.WithValue(mergeValues(ctx, base), callerKey{}, caller)
+		cur, err := svc.Identify(ctx, credential)
+		if err == nil && behalf != "" {
+			cur, err = svc.OnBehalfOf(ctx, cur, behalf)
+		}
+		switch {
+		case errors.Is(err, auth.ErrUnauthenticated), errors.Is(err, auth.ErrUserDisabled), errors.Is(err, auth.ErrNotFound):
+			return realtime.Reloaded{Ended: true}, nil
+		case err != nil:
+			return realtime.Reloaded{}, err
+		}
+		ctx = context.WithValue(ctx, callerKey{}, cur)
+		rr := r.WithContext(ctx)
+		out := realtime.Reloaded{Subs: map[string]realtime.Visibility{}, Orgs: d.orgIDs(rr, realm, cur)}
+		if cur.User != nil && !cur.User.Session.ExpiresAt.IsZero() {
+			out.Expires = cur.User.Session.ExpiresAt
+		}
+		for _, b := range built {
+			filter, _, _ := d.resolve(rr, b.c, b.where)
+			changed := !reflect.DeepEqual(filter, b.filter)
+			if changed {
+				b.filter = filter
+			}
+			out.Subs[b.sub.ID] = realtime.Visibility{Changed: changed, Visible: visibleBy(filter), Keys: realtime.KeysOf(filter)}
+		}
+		return out, nil
+	}
+	return acc
+}
+
+// orgIDs lists the organizations the caller belongs to (none without a user).
+func (d *documents) orgIDs(r *http.Request, realm string, caller auth.Caller) []string {
+	if caller.User == nil {
+		return nil
+	}
+	orgs := d.userOrgs(r, realm, caller)
+	out := make([]string, 0, len(orgs))
+	for id := range orgs {
+		out = append(out, id)
+	}
+	return out
+}
+
+// mergeValues keeps ctx's deadline and cancellation and the values of base.
+func mergeValues(ctx, base context.Context) context.Context {
+	return valuesCtx{Context: ctx, base: base}
+}
+
+type valuesCtx struct {
+	context.Context
+	base context.Context
+}
+
+func (v valuesCtx) Value(key any) any {
+	if x := v.Context.Value(key); x != nil {
+		return x
+	}
+	return v.base.Value(key)
 }
 
 // processKey is a random key that lives as long as the process.

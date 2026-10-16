@@ -29,6 +29,8 @@ type Subscription struct {
 	filed     string // doc, group or scan: where the index holds it
 	keyField  string
 	keyValues []string
+
+	pendingKeys []Key // the keys after a reload, until the index takes them
 }
 
 func (s *Subscription) collKey() string { return CollKey(s.DB, s.Coll) }
@@ -78,8 +80,14 @@ type Stream struct {
 	resetAt  map[string]time.Time
 	resetDue map[string]bool
 
+	access    *Access
+	ending    bool // an end event is queued: the stream closes once it is written
+	reloading bool
+	dirty     bool
+
 	notify chan struct{}
 	done   chan struct{}
+	ended  chan struct{} // closed when Run returned
 	cancel context.CancelFunc
 	once   sync.Once
 }
@@ -87,8 +95,8 @@ type Stream struct {
 func newStream(h *Hub, req Request, lim Limits) *Stream {
 	return &Stream{
 		hub: h, realm: req.Realm, principal: req.Principal, key: req.Key, lim: lim,
-		subs:   append([]*Subscription(nil), req.Subscriptions...),
-		notify: make(chan struct{}, 1), done: make(chan struct{}),
+		subs: append([]*Subscription(nil), req.Subscriptions...), access: req.Access,
+		notify: make(chan struct{}, 1), done: make(chan struct{}), ended: make(chan struct{}),
 		resetAt: map[string]time.Time{}, resetDue: map[string]bool{},
 	}
 }
@@ -132,11 +140,18 @@ func (s *Stream) Close() {
 
 // Run writes the stream's frames with w until ctx is done, w fails or the stream is closed.
 func (s *Stream) Run(ctx context.Context, w func(Frame) error) error {
+	defer s.finished()
 	t := time.NewTicker(s.lim.Heartbeat)
 	defer t.Stop()
 	for {
 		if err := s.drain(w); err != nil {
 			return err
+		}
+		s.mu.Lock()
+		ending := s.ending && len(s.queue) == 0
+		s.mu.Unlock()
+		if ending {
+			return nil
 		}
 		select {
 		case <-ctx.Done():
@@ -149,6 +164,14 @@ func (s *Stream) Run(ctx context.Context, w func(Frame) error) error {
 				return err
 			}
 		}
+	}
+}
+
+func (s *Stream) finished() {
+	select {
+	case <-s.ended:
+	default:
+		close(s.ended)
 	}
 }
 
@@ -285,7 +308,7 @@ func (s *Stream) configChanged(colls map[string]bool) {
 // deliver gives the stream a change and the subscriptions of it that may be affected.
 func (s *Stream) deliver(c changefeed.Change, at changefeed.Position, cands []*Subscription) {
 	s.mu.Lock()
-	if s.closed {
+	if s.closed || s.ending {
 		s.mu.Unlock()
 		return
 	}
@@ -520,6 +543,9 @@ func (s *Stream) handoffLocked() int64 {
 	}
 	pending := s.pending
 	s.pending = nil
+	if s.access != nil {
+		go s.reload() // changes of the caller's access while replaying were not watched
+	}
 	var delta int64
 	for _, p := range pending {
 		delta += s.processLocked(p.c, p.at, p.cands)

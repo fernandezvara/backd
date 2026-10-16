@@ -118,3 +118,12 @@ func TestSubscriptionFiltersMatchMongoDB(t *testing.T) {
 	}
 	t.Logf("%d (rule, caller, where) combinations compared over %d documents", checked, len(docs))
 }
+
+// The realtime package routes access changes by the names of the system collections
+// (internal/realtime/access.go); they must be the ones the change feed watches and reports.
+func TestAccessCollectionNamesAreTheOnesRealtimeRoutesOn(t *testing.T) {
+	want := []string{"users", "sessions", "api_keys", "orgs", "org_members", "org_teams"}
+	if !slices.Equal(AccessCollections, want) {
+		t.Fatalf("AccessCollections = %v, realtime routes on %v", AccessCollections, want)
+	}
+}

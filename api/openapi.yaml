@@ -4961,8 +4961,9 @@ paths:
         `removed` (`{sub, id, version}`, also when an update made the document invisible to
         this caller), `reset` (`{subs, reason}`: reload those subscriptions; `reason` is
         `history_expired`, `access_changed`, `slow_consumer`, `preimage_missing` or
-        `config_changed`, after which the subscription is gone and must be made again) and
-        comments (`: heartbeat`). Each change's last event carries an SSE `id`, a signed resume
+        `config_changed`, after which the subscription is gone and must be made again),
+        `session_ended` (the session, user or key is gone) and `reauth` (the credential's
+        lifetime is over), both followed by the stream closing, and comments (`: heartbeat`). Each change's last event carries an SSE `id`, a signed resume
         token bound to this realm and caller: send it as `resume_from` (or `Last-Event-ID`)
         to continue after it; events replayed are evaluated with the caller's current access.
 

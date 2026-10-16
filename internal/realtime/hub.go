@@ -134,6 +134,9 @@ type Request struct {
 	Resume        string // a token, or ""
 	// Limits lower the instance's: per stream subscriptions and streams per user, from the realm.
 	MaxStreamsPerUser int
+	// Access ties the stream to its caller's session, user or key, so that changes of them
+	// reach it; nil for anonymous callers and realms without authentication.
+	Access *Access
 }
 
 // ErrTooManySubscriptions is returned when a request has more subscriptions than allowed.
@@ -194,6 +197,7 @@ func (h *Hub) Open(req Request) (*Stream, error) {
 		h.Observer.StreamOpened(req.Realm)
 	}
 	h.attach(s)
+	s.startExpiry()
 	switch {
 	case expired:
 		s.resetAll(ReasonHistoryExpired)
@@ -293,6 +297,7 @@ func (h *Hub) unindex(subs []*Subscription) {
 // change may matter to, and hands each stream its own.
 func (h *Hub) Change(_ context.Context, c changefeed.Change, at changefeed.Position) {
 	if c.System {
+		h.systemChange(c)
 		return
 	}
 	key := CollKey(c.DB, c.Coll)
@@ -343,6 +348,7 @@ func (h *Hub) Gap(context.Context, changefeed.Gap) {
 	h.mu.Unlock()
 	for _, s := range streams {
 		s.resetAll(ReasonHistoryExpired)
+		s.reload() // system changes may be among what was lost
 	}
 }
 

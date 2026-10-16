@@ -210,3 +210,113 @@ func lastSlash(p string) int {
 	}
 	return len(p)
 }
+
+// A session removed from the realm's system collections reaches an open stream through the
+// projected system watch, and ends it.
+func TestSessionRevocationReachesTheStream(t *testing.T) {
+	uri := os.Getenv("MONGO_TEST_URI")
+	if uri == "" {
+		t.Skip("MONGO_TEST_URI not set; skipping integration test")
+	}
+	ctx := context.Background()
+	client, err := mongodb.Connect(ctx, uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Disconnect(ctx) //nolint:errcheck
+	realm := "t" + xid.New().String()
+	t.Cleanup(func() {
+		names, _ := client.ListDatabaseNames(ctx, bson.D{{Key: "name", Value: bson.D{{Key: "$regex", Value: "^" + realm + "__"}}}})
+		for _, n := range names {
+			_ = client.Database(n).Drop(ctx)
+		}
+	})
+	root := t.TempDir()
+	for p, c := range map[string]string{
+		realm + "/realm.yaml":                  "auth: enabled\nsignup: open\n",
+		realm + "/main/orders/schema.json":     `{"type":"object","properties":{"status":{"type":"string"}}}`,
+		realm + "/main/orders/collection.yaml": "realtime: true\n",
+	} {
+		full := root + "/" + p
+		if err := os.MkdirAll(full[:len(full)-lastSlash(full)-1], 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(c), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	if err := (&mongodb.Provisioner{Client: client, Registry: reg, Log: log}).Apply(ctx); err != nil {
+		t.Fatal(err)
+	}
+	feedClient, err := mongodb.ConnectFeed(ctx, uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer feedClient.Disconnect(ctx) //nolint:errcheck
+	set := mongodb.RealtimeWatchSet(reg)
+	c := &changefeed.Consumer{Name: "realtime", Source: mongodb.NewChangeSource(feedClient), Log: log}
+	c.SetWatched(set)
+	lazy := changefeed.NewLazy(c, time.Second)
+	defer lazy.Close()
+	hub := &realtime.Hub{Feed: lazy, Limits: realtime.Limits{OpenInterval: -1}}
+
+	sessions := client.Database(mongodb.SystemDatabaseName(realm)).Collection(mongodb.SessionsCollection)
+	sub := &realtime.Subscription{ID: "s", DB: realm + "__main", Coll: "orders",
+		Visible: func(map[string]any) (bool, error) { return true, nil },
+		Render:  func(d map[string]any) map[string]any { return d }}
+	mine, other := "sess-mine-"+xid.New().String(), "sess-other-"+xid.New().String()
+	stream, err := hub.Open(realtime.Request{
+		Realm: realm, Principal: "user:a", Key: []byte("0123456789abcdef0123456789abcdef"),
+		Subscriptions: []*realtime.Subscription{sub}, Access: &realtime.Access{SessionID: mine, UserID: "u1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	frames := make(chan realtime.Frame, 8)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = stream.Run(ctx, func(f realtime.Frame) error {
+			if f.Event != "" {
+				frames <- f
+			}
+			return nil
+		})
+	}()
+	time.Sleep(500 * time.Millisecond)
+	for _, id := range []string{mine, other} {
+		if _, err := sessions.InsertOne(ctx, bson.D{{Key: "_id", Value: id}, {Key: "user_id", Value: "u1"}, {Key: "token_hash", Value: "secret-hash-" + id}, {Key: "created_at", Value: time.Now()}, {Key: "last_used_at", Value: time.Now()}, {Key: "expires_at", Value: time.Now().Add(time.Hour)}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := sessions.DeleteOne(ctx, bson.D{{Key: "_id", Value: other}}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case f := <-frames:
+		t.Fatalf("someone else's session ended this stream: %s", f.Event)
+	case <-time.After(500 * time.Millisecond):
+	}
+	if _, err := sessions.DeleteOne(ctx, bson.D{{Key: "_id", Value: mine}}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case f := <-frames:
+		if f.Event != realtime.EventSessionEnded {
+			t.Fatalf("got %s", f.Event)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("the stream was not ended")
+	}
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return")
+	}
+}

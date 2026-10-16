@@ -49,6 +49,8 @@ data: {"subs":["mine"],"reason":"slow_consumer"}
 | `updated` | A document that was in the subscription changed. |
 | `removed` | A document left it: it was deleted, or an update made it invisible to this caller. Carries only the `id` and the last `version`. |
 | `reset` | Reload these subscriptions with normal reads (see below). |
+| `session_ended` | The session, user or API key behind the stream is gone (signed out, revoked, deleted, disabled). The stream closes; sign in again. |
+| `reauth` | The credential's lifetime is over. The stream closes; reconnect with a fresh credential and the last resume token. |
 | `: heartbeat` | A comment every 25 seconds so proxies keep the connection open. |
 
 - **Documents are what a read returns** for this caller: the same fields, `_meta.version` included, no `_expanded`.
@@ -110,6 +112,16 @@ Every change to a realtime collection is checked once against the subscriptions 
 Subscribe with an equality on a field that groups your data (`where: { "_meta.org": "o_1" }`, a project id, a room). Without one, the checks per change grow with the number of subscribers; `backd_realtime_subscription_checks_total{kind="scanned"}` shows it.
 {{< /hint >}}
 
+## When access changes
+
+A stream is tied to the session, user or API key that opened it, and to the roles, memberships and teams its rules depend on.
+
+- **Sign-out, revocation, deletion or disabling** of the session, user or key: `session_ended` and the stream closes, within the time it takes the change to reach the instance. Reconnecting with the same credential fails with `401`.
+- **Roles, organization memberships, team roles, organization claims or `require_mfa`**: the stream reads the caller's access again. If the effective access to a subscription differs, that subscription gets `reset` with `access_changed` and follows the new access from then on; if it is the same, nothing is sent. Changes of an organization are coalesced into at most one reload per stream every quarter second.
+- **Credential lifetime**: a stream never outlives its session or key: at its expiry the stream says `reauth` and closes.
+
+A rule that depends on the clock (`now`) is a different filter at each reload, so such a stream may get a `reset` it didn't need: it is harmless and costs one reload of that subscription.
+
 ## What's planned
 
-Closing a stream the moment a session or role changes (`access_changed`, `session_ended`, `reauth`), the JavaScript client's `subscribe()` and the Shelf chapter follow in this milestone.
+The JavaScript client's `subscribe()` (which handles `reset`, `reauth` and `session_ended` for you) and the Shelf chapter follow in this milestone.

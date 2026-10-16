@@ -380,3 +380,76 @@ func TestRealtimeWhereAndDocument(t *testing.T) {
 		t.Fatalf("i2 reaches both subscriptions (i1, under 18, neither): %v", got)
 	}
 }
+
+func (f *realtimeFixture) logout(t *testing.T, token string) {
+	t.Helper()
+	p, err := f.svc.Authenticate(context.Background(), token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.Logout(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (f *realtimeFixture) sessionID(t *testing.T, token string) string {
+	t.Helper()
+	p, err := f.svc.Authenticate(context.Background(), token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p.Session.ID
+}
+
+// A session that is revoked ends the stream it opened: the client is told, and the stream closes.
+func TestRealtimeStreamEndsWhenItsSessionIsRevoked(t *testing.T) {
+	f := newRealtimeFixture(t, realtime.Limits{})
+	ada, adaID := f.signup(t, "ada@example.com")
+	bob, _ := f.signup(t, "bob@example.com")
+	sid := f.sessionID(t, ada)
+	_, adaEvents := f.subscribe(t, ada, itemsSub)
+	next(t, adaEvents)
+	_, bobEvents := f.subscribe(t, bob, itemsSub)
+	next(t, bobEvents)
+	time.Sleep(50 * time.Millisecond)
+
+	// Another session's end is none of Ada's business.
+	f.feed.add(changefeed.Change{Realm: "acme", DB: "acme__system", Coll: "sessions", System: true, Op: changefeed.Removed, Key: "someone-else"})
+	f.feed.add(changefeed.Change{Realm: "acme", DB: f.mdb, Coll: "items", Op: changefeed.Created, Key: "i1", After: f.item("i1", adaID, 1), Version: 1})
+	if ev := next(t, adaEvents); ev.Event != "created" {
+		t.Fatalf("an unrelated session ended Ada's stream: %+v", ev)
+	}
+	// The session is revoked in the store, and the change reaches the feed.
+	f.logout(t, ada)
+	f.feed.add(changefeed.Change{Realm: "acme", DB: "acme__system", Coll: "sessions", System: true, Op: changefeed.Removed, Key: sid})
+	if ev := next(t, adaEvents); ev.Event != "session_ended" {
+		t.Fatalf("got %+v", ev)
+	}
+	select {
+	case _, ok := <-adaEvents:
+		if ok {
+			t.Fatal("the stream stayed open")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the stream did not close")
+	}
+	// Reconnecting with the revoked credential is refused.
+	if resp, _ := f.subscribe(t, ada, itemsSub); resp.StatusCode != 401 {
+		t.Fatalf("reconnect: %d", resp.StatusCode)
+	}
+}
+
+// A change of memberships makes the stream read the access again: with the credential gone
+// (here: revoked without its own event) it ends.
+func TestRealtimeReloadFindsARevokedSession(t *testing.T) {
+	f := newRealtimeFixture(t, realtime.Limits{})
+	ada, adaID := f.signup(t, "ada@example.com")
+	_, evs := f.subscribe(t, ada, itemsSub)
+	next(t, evs)
+	time.Sleep(50 * time.Millisecond)
+	f.logout(t, ada)
+	f.feed.add(changefeed.Change{Realm: "acme", DB: "acme__system", Coll: "org_members", System: true, Op: changefeed.Updated, Key: "o1/" + adaID})
+	if ev := next(t, evs); ev.Event != "session_ended" {
+		t.Fatalf("got %+v", ev)
+	}
+}

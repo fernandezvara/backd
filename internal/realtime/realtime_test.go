@@ -519,3 +519,139 @@ func TestKeysOfFilters(t *testing.T) {
 		t.Errorf("best key: %s", best.Field)
 	}
 }
+
+func openWith(t *testing.T, h *Hub, principal string, acc *Access, subs ...*Subscription) *Stream {
+	t.Helper()
+	s, err := h.Open(Request{Realm: "r", Principal: principal, Key: key, Subscriptions: subs, Access: acc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Close)
+	return s
+}
+
+func system(coll, key string, op changefeed.Op) changefeed.Change {
+	return changefeed.Change{Realm: "r", DB: "r__system", Coll: coll, System: true, Op: op, Key: key}
+}
+
+func ended(t *testing.T, s *Stream, c *collector, event string) {
+	t.Helper()
+	got := c.events(t, 1)
+	if got[0].Event != event {
+		t.Fatalf("got %v, want %s", names(got), event)
+	}
+	select {
+	case <-time.After(2 * time.Second):
+		t.Fatal("the stream did not end")
+	case <-runDone(s):
+	}
+}
+
+// runDone is closed when Run returned for the stream's collector (Close is called by it).
+func runDone(s *Stream) <-chan struct{} { return s.ended }
+
+// A session, a user or a key that goes away ends the streams that depended on it, and only those.
+func TestSystemChangesEndStreams(t *testing.T) {
+	for name, tc := range map[string]struct {
+		access Access
+		change changefeed.Change
+	}{
+		"session": {Access{SessionID: "s1", UserID: "u1"}, system("sessions", "s1", changefeed.Removed)},
+		"user":    {Access{SessionID: "s1", UserID: "u1"}, system("users", "u1", changefeed.Removed)},
+		"key":     {Access{KeyID: "k1"}, system("api_keys", "k1", changefeed.Removed)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			src := newFakeSource()
+			h := newHub(t, src, Limits{})
+			acc := tc.access
+			var c, other collector
+			s := openWith(t, h, "user:a", &acc, sub("s", "a"))
+			c.run(t, s)
+			o := openWith(t, h, "user:b", &Access{SessionID: "s2", UserID: "u2"}, sub("s", "b"))
+			other.run(t, o)
+			time.Sleep(30 * time.Millisecond)
+			src.add(tc.change)
+			ended(t, s, &c, EventSessionEnded)
+			time.Sleep(30 * time.Millisecond)
+			if len(other.events0()) != 0 {
+				t.Fatalf("an unrelated stream heard %v", other.events0())
+			}
+		})
+	}
+}
+
+func (c *collector) events0() []Frame {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]Frame(nil), c.frames...)
+}
+
+// A reload that finds different access resets the subscription and from then on uses the
+// new visibility; one that finds the same changes nothing.
+func TestAccessReloadResetsOnlyWhenItChanged(t *testing.T) {
+	src := newFakeSource()
+	h := newHub(t, src, Limits{})
+	var calls int
+	var mu sync.Mutex
+	changed := false
+	acc := &Access{SessionID: "s1", UserID: "u1", Reload: func(context.Context) (Reloaded, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		calls++
+		return Reloaded{Subs: map[string]Visibility{"s": {
+			Changed: changed,
+			Visible: func(d map[string]any) (bool, error) { return d["owner"] == "b", nil }, // now it shows b's
+			Keys:    []Key{{Field: "owner", Values: []any{"b"}}},
+		}}}, nil
+	}}
+	var c collector
+	s := openWith(t, h, "user:a", acc, keyed("s", "a"))
+	c.run(t, s)
+	time.Sleep(30 * time.Millisecond)
+
+	src.add(system("org_members", "o1/u1", changefeed.Updated))
+	time.Sleep(400 * time.Millisecond)
+	mu.Lock()
+	if calls != 1 {
+		t.Fatalf("%d reloads", calls)
+	}
+	changed = true
+	mu.Unlock()
+	if len(c.events0()) != 0 {
+		t.Fatalf("an unchanged access reset: %v", c.events0())
+	}
+	src.add(system("org_members", "o1/u1", changefeed.Updated))
+	got := c.events(t, 1)
+	if got[0].Event != "reset" || !contains(string(got[0].Data), ReasonAccessChanged) {
+		t.Fatalf("got %v", names(got))
+	}
+	// The subscription now follows b's documents (and was filed again under that key).
+	src.add(changefeed.Change{DB: "db", Coll: "items", Op: changefeed.Created, Key: "1", After: doc("1", "b", 1), Version: 1})
+	if got := c.events(t, 2); got[1].Event != "created" {
+		t.Fatalf("after the reload: %v", names(got))
+	}
+}
+
+func TestReloadEndsAStreamWhoseCredentialIsGone(t *testing.T) {
+	src := newFakeSource()
+	h := newHub(t, src, Limits{})
+	acc := &Access{SessionID: "s1", UserID: "u1", Reload: func(context.Context) (Reloaded, error) {
+		return Reloaded{Ended: true}, nil
+	}}
+	var c collector
+	s := openWith(t, h, "user:a", acc, sub("s", "a"))
+	c.run(t, s)
+	time.Sleep(30 * time.Millisecond)
+	src.add(system("users", "u1", changefeed.Updated))
+	ended(t, s, &c, EventSessionEnded)
+}
+
+func TestStreamEndsWithReauthAtExpiry(t *testing.T) {
+	src := newFakeSource()
+	h := newHub(t, src, Limits{})
+	acc := &Access{SessionID: "s1", UserID: "u1", Expires: time.Now().Add(150 * time.Millisecond)}
+	var c collector
+	s := openWith(t, h, "user:a", acc, sub("s", "a"))
+	c.run(t, s)
+	ended(t, s, &c, EventReauth)
+}
