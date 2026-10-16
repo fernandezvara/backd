@@ -122,6 +122,4 @@ A stream is tied to the session, user or API key that opened it, and to the role
 
 A rule that depends on the clock (`now`) is a different filter at each reload, so such a stream may get a `reset` it didn't need: it is harmless and costs one reload of that subscription.
 
-## What's planned
-
-The JavaScript client's `subscribe()` (which handles `reset`, `reauth` and `session_ended` for you) and the Shelf chapter follow in this milestone.
+The JavaScript client does all of the above for you: see [live lists](../../clients/js/#live-lists).

@@ -3,6 +3,7 @@ import { Push } from './push.js'
 import { Consents } from './consents.js'
 import { Config } from './config.js'
 import { Orgs } from './orgs.js'
+import { Realtime } from './realtime.js'
 import { Auth } from './auth.js'
 import { Database } from './data.js'
 import { xhrFetch } from './xhr.js'
@@ -177,6 +178,8 @@ export class Client {
     this.config = new Config(this, options.configStorage)
     /** Organizations of the signed-in user: members, teams and invitations. */
     this.orgs = new Orgs(this)
+    /** Live lists: subscribe to the changes of collections that declare `realtime: true`. */
+    this.realtime = new Realtime(this)
   }
 
   /** Whether the client was created with an API key. */
@@ -224,6 +227,51 @@ export class Client {
     const res = await this.fetchImpl(url, init)
     onProgress({ loaded: size, total: size })
     return res
+  }
+
+  /**
+   * Opens a server-sent event stream: a POST to /v1/{realm}/… that answers `text/event-stream`. The
+   * answer is returned unread; a refusal throws the error the API sent.
+   * @internal
+   * @param {{ path: string[], body: unknown, signal?: AbortSignal }} req
+   * @returns {Promise<Response>}
+   */
+  async openStream(req) {
+    const url = new URL(this.url + '/v1/' + [this.realm, ...req.path].map(encodeURIComponent).join('/'))
+    /** @type {Record<string, string>} */
+    const headers = { Accept: 'text/event-stream', 'Content-Type': 'application/json', ...this.headers }
+    if (this.types) headers['X-Backd-Types'] = this.types
+    let sentSession = false
+    if (this.apiKey) headers.Authorization = 'Bearer ' + this.apiKey
+    else {
+      const token = await this.storage.get()
+      if (token) {
+        if (token !== COOKIE_SESSION) headers.Authorization = 'Bearer ' + token
+        sentSession = true
+      }
+    }
+    /** @type {Response} */
+    let res
+    try {
+      res = await this.fetchImpl(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(req.body),
+        signal: req.signal,
+        credentials: this.cookies ? 'include' : undefined,
+      })
+    } catch (cause) {
+      throw new NetworkError({
+        status: 0,
+        code: req.signal?.aborted ? 'aborted' : 'network_error',
+        message: req.signal?.aborted ? 'request aborted' : 'network error: ' + String(cause),
+        cause,
+      })
+    }
+    if (res.ok) return res
+    const err = await errorFromResponse(res)
+    if (err.code === 'unauthenticated' && sentSession) await this.auth._expired()
+    throw err
   }
 
   /**
