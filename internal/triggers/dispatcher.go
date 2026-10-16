@@ -530,6 +530,12 @@ func (h *handler) flushLocked(ctx context.Context) error {
 		if h.d.Observer != nil {
 			h.d.Observer.Enqueued(realm, created, len(jobs)-created)
 		}
+		// What was queued counts against the ceiling at once: the count read from the database
+		// is reused for BacklogCacheTTL, and a burst must not run past it in the meantime.
+		if b, ok := h.backlogs[realm]; ok {
+			b.n += created
+			h.backlogs[realm] = b
+		}
 		delete(h.pending, realm)
 		h.npending -= len(jobs)
 	}

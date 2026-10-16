@@ -169,7 +169,9 @@ What this changes: nothing in the decisions. Pre-images stay opt-in per collecti
 4. **No reset storms (27.15):** the organization's access is computed once per change, a subscriber is reset only when their effective access differs before and after, and the client reloads with jitter.
 5. **Batched enqueue (27.4):** matches of a batch of changes go in one unordered insert (duplicate keys tolerated) and the watermark moves once per batch, not per event.
 
-**Defaults** in this design are provisional ("set from measurements") until 27.1's gate and the load tests 27.19/27.20 write results into their issues.
+**Measured by the load tests (27.19)** — same machine, no worker draining the queue, `BACKD_LOAD_SCALE=10`: an import of 20,000 documents queued at ~10,000 jobs/s with 5 MiB of heap growth; a hot collection with three triggers (one with a 40-clause `when`) at ~7,000 jobs/s; a 60 s soak of 110,000 events held the heap at 2.3–2.5 MiB; a failover under 30,000 changes lost and doubled nothing; `max_backlog` held exactly (200 queued, 9,800 recorded as gaps) once the queued jobs were counted against it at once (before, a burst inside the 5 s count cache could run past it); a rescan of 10,000 documents took 0.6 s. `max_backlog` stays at 100,000: the dispatcher is not the bottleneck, the executor is.
+
+**Defaults** in this design are provisional ("set from measurements") until 27.1's gate and the load tests 27.19/27.20 write results into their issues; the trigger ones are set (27.19).
 
 **Known and documented, not fixed here:** the function input is one event per run. A `batch:` option — an array of events per run, opt-in per trigger so nothing existing breaks — is a follow-up (§28); until then hot collections want `fields:` and narrow `when:`.
 

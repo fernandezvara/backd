@@ -112,6 +112,26 @@ Streams are long requests and the change feed reads the whole deployment's histo
 - **The resume window.** A client that's away longer than MongoDB's oplog covers reloads instead of resuming ([sizing the history](#sizing-the-history)); the longer the oplog, the cheaper reconnections after a deploy or an outage.
 - **What to watch:** `realtime_streams`, `realtime_resets_total` (by reason: `slow_consumer` and `preimage_missing` are the ones to chase), `realtime_subscription_checks_total{kind="scanned"}` and `changefeed_lag_seconds`; the [metrics page](../metrics/) lists them.
 
+## Measured under load
+
+The dispatcher's scenarios run in the repository (`go test ./internal/triggers -run TestLoad`, at a reduced scale in CI; `BACKD_LOAD_SCALE=10` for these numbers). On one developer machine against a single-node MongoDB 8, with no worker draining the queue, so they say what the dispatcher costs, not what your functions do:
+
+| Scenario | Result |
+|---|---|
+| An import of 20,000 documents, one trigger | every change became one job (none dropped, none doubled); 20,000 jobs queued 1.9 s after the writes began, about 10,000 jobs per second; the process heap grew 5 MiB |
+| A hot collection: 15,000 changes, three triggers (one with a 40-clause condition) | 30,000 jobs, exactly the expected ones per trigger, about 7,000 jobs per second including the evaluation of the conditions |
+| A chained storm: 5,000 chained and 5,000 first-party events, `max_chained_per_minute: 20`, `max_chain: 4` | all 5,000 first-party events queued; 20 chained ones; the rest (and events deeper than the cap) dropped and counted |
+| The backlog ceiling: 10,000 changes with `max_backlog: 200` | exactly 200 jobs queued and 9,800 changes recorded as `backlog` gaps: queued plus gaps accounts for every change |
+| A lease failover under traffic: 30,000 changes, the leader stopped after a quarter | every change made exactly one job; the new holder drained what was left in under 3 s |
+| An outage, then `rescan` of 10,000 documents | nothing queued from the changes the dispatcher never saw; the rescan queued all 10,000 in 0.6 s |
+| A soak: 60 seconds, 110,000 events | all queued, the heap stayed at 2.3–2.5 MiB, no growth |
+
+What it means for you:
+
+- **The stream is not the bottleneck.** A single dispatcher keeps up with thousands of matching changes per second; what limits a bulk import is the executor running the functions, not the dispatch.
+- **The default `max_backlog` of 100,000 queued jobs per realm stays.** It is a safety valve, not a throughput target: a realm importing millions of documents will record `backlog` gaps while its workers catch up, and `rescan` re-emits them. Raise it (in `realm.yaml`) only if your workers drain faster than you import.
+- **The ceiling is exact.** The jobs a dispatcher queues count against it immediately, not at the next count of the database.
+
 ## Sizing the history
 
 A stream that falls behind can only catch up while MongoDB still holds the history it needs: its **oplog**. A consumer that is offline longer than the oplog window loses its position and continues from now, which `backd` reports as a gap (`changefeed_reopens_total{reason="history_lost"}`). Size the oplog for your write volume and the longest outage you want to survive.
