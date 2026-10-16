@@ -51,9 +51,14 @@ type OnSignupInput struct {
 	Profile  map[string]string `json:"profile,omitempty"`
 }
 
+// onSignupAttempts is how often a failed queuing of account.on_signup is tried.
+const onSignupAttempts = 3
+
 // queueOnSignup queues the call of the realm's account.on_signup function for a new user. The
-// user is already created and the sign-up goes on whatever happens here: a failure is only
-// logged, and the function itself is retried by the job mechanism (its `retry:`).
+// user is already created and the sign-up goes on whatever happens here, so a failure is only
+// logged — after a few attempts: the job's id is made of the user, so trying again can't queue
+// it twice. The function itself is retried by the job mechanism (its `retry:`). What this does
+// not cover is the process dying between creating the account and queuing the call.
 func (s *Users) queueOnSignup(ctx context.Context, u User, provider string, profile map[string]string) {
 	if s.Settings.Account.OnSignup == "" {
 		return
@@ -69,10 +74,16 @@ func (s *Users) queueOnSignup(ctx context.Context, u User, provider string, prof
 		if timeout <= 0 {
 			timeout = defaultOnSignupTimeout
 		}
-		_, err = s.EnqueueJob(ctx, Job{
-			Database: db, Function: fn, Input: input, CallerActor: "system", Origin: OnSignupOrigin,
+		job := Job{
+			ID: KeyedJobID(OnSignupOrigin, u.ID), Database: db, Function: fn, Input: input, CallerActor: "system", Origin: OnSignupOrigin,
 			ActsAsFunction: true, TimeoutMS: timeout.Milliseconds(),
-		})
+		}
+		for attempt := 0; attempt < onSignupAttempts; attempt++ {
+			if _, err = s.EnqueueKeyedJob(ctx, job); err == nil {
+				break
+			}
+			time.Sleep(time.Duration(attempt+1) * 50 * time.Millisecond)
+		}
 	}
 	if err != nil && s.Log != nil {
 		s.Log.Error("could not queue account.on_signup", "user_id", u.ID, "error", err)

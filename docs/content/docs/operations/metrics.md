@@ -59,6 +59,7 @@ All names start with `backd_`; durations are in seconds.
 | `executor_errors_total` | `kind` | Calls that failed because the executor couldn't be used (`unavailable`). |
 | `jobs` | `realm`, `kind`, `state` | Jobs not done yet: `kind` is `function`, `schedule`, `email`, `erase`, `check` (a schema check) or `image` (the versions of an image file); `state` is `queued` (a worker can claim it), `running` (a worker holds its lease) or `waiting` (for a retry's delay). Refreshed every 15 seconds in the background, never when you scrape. |
 | `jobs_oldest_wait_seconds` | `realm`, `kind` | Age of the longest-waiting queued job: the number to alert on when workers fall behind. |
+| `jobs_serialized_waiting` | `realm` | Ordered jobs (an [`ordered` trigger's](../../configuration/config-dir/#triggers)) waiting behind another unfinished job of their key. |
 | `jobs_refreshed_timestamp_seconds` | | When the job gauges were last refreshed; `0` means never. |
 | `jobs_completed_total` | `realm`, `kind`, `status` | Jobs a worker finished. Email and erase outcomes are here: `kind="email"`, `kind="erase"`, `kind="check"`, `kind="image"` and `kind="org"` (organization assignments and cleanups), `status="ok"` or the failure's status. |
 | `jobs_retried_total` | `realm`, `kind` | Failed attempts queued again. |
@@ -69,6 +70,21 @@ All names start with `backd_`; durations are in seconds.
 | `executor_run_duration_seconds` | | How long they took (histogram). |
 | `executor_running` | | Function processes running now. |
 | `egress_requests_total` | `outcome` | Requests to the egress proxy: `allowed`, `denied_credentials`, `denied_host` or `denied_address`. Host names are never labels. Served by `backd egress`. |
+| `changefeed_open` | `consumer` | `1` while a [change-stream](../events/) consumer (`realtime`) has its stream open, `0` while it is idle. |
+| `changefeed_watched_namespaces` | `consumer` | Collections the open stream watches. |
+| `changefeed_lag_seconds` | `consumer` | How far behind the cluster the last change read was. |
+| `changefeed_reopens_total` | `consumer`, `reason` | Streams opened again: `set_changed` (a reload changed what is watched), `error`, or `history_lost` (the change history no longer reached the position). |
+| `changefeed_events_total` | `consumer`, `op`, `source` | Changes read, by `created`/`updated`/`removed` and `app` or `system`. |
+| `trigger_events_total` | `realm`, `collection`, `trigger`, `outcome` | Changes a [trigger](../events/#the-trigger-dispatcher) considered: `matched` (a job was made), `no_match`, `missing_preimage` (the image its condition needs was not in the change) or `error`. |
+| `trigger_jobs_enqueued_total` | `realm` | Jobs the dispatcher queued. |
+| `trigger_jobs_deduplicated_total` | `realm` | Jobs the queue collapsed: the same change was read again after a restart or a handoff. |
+| `trigger_dropped_total` | `realm`, `collection`, `trigger`, `reason` | Events that matched and were not queued: `chain` (deeper than `max_chain`) or `burst` (a chained loop above `max_chained_per_minute`). |
+| `trigger_backlog` | `realm` | Unfinished trigger jobs, as last counted: alert well below `triggers.max_backlog`. |
+| `trigger_dispatch_lag_seconds` | | Seconds from the newest change of a batch to its jobs being queued. |
+| `trigger_watermark_timestamp_seconds` | | When this instance last stored the dispatcher's position: alert when its age grows while it holds the lease. |
+| `trigger_lease_held`, `trigger_lease_epoch` | | `1` while this instance holds the dispatcher's lease, and the lease's epoch. |
+| `trigger_lease_acquired_total` | | Times this instance took the lease. |
+| `trigger_gaps_total` | `realm`, `reason` | Gaps recorded: `window` (the dispatcher was away longer than MongoDB keeps history), `preimage_missing` or `backlog` (the realm was at its ceiling). |
 | `build_info` | `version`, `commit` | Always `1`. |
 
 The Go runtime (`go_*`) and process (`process_*`) metrics are included.

@@ -51,6 +51,7 @@ Documents are returned as bare JSON objects:
     - `updated_by` is who made the last write, in the same form.
 
     Realms with `auth: disabled` don't have them. Documents stored before these fields existed don't gain `owner` or `created_by`; their next write adds `updated_by`.
+  - `chain` (`{root, depth}`) is present only on a write made by a [trigger](../../configuration/config-dir/#triggers) run, or by a function it called: it says where the write sits in a chain of such runs. It comes from the function's credential, so no client can set it, and the next write by anything else removes it.
 - Single-document responses carry `ETag: "<version>"`, for example `ETag: "3"`, and answer `304` to a matching [`If-None-Match`](#revalidating-a-read-if-none-match).
 - Documents written before versioning existed have no `version`. They get `version: 1` on their next write.
 - `_id` and `_meta` in request bodies are always ignored, and so is `id` on `PUT` and `PATCH`. On a create, `id` is [the client's choice](#custom-ids) in a collection that declares `custom_id`, and refused in one that doesn't.

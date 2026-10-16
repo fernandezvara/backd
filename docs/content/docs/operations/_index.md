@@ -49,6 +49,7 @@ At startup, `backd` makes sure MongoDB matches the config. What it does depends 
 - Updates (`collMod`) validators that differ from `schema.json`.
 - Creates indexes declared in `indexes.json` that don't exist yet.
 - Creates or updates the [system database](#realm-system-databases) of every realm with `auth: enabled`.
+- Enables [pre-change images](events/#requirements) (`changeStreamPreAndPostImages`) on collections that declare [`realtime: true`](../configuration/config-dir/#realtime). They are never switched off by a start: see [Disabling them](events/#disabling-pre-change-images).
 - Records the config's fingerprint for each realm (see [Deploying config](deploying/#what-backd-enforces)).
 - Is idempotent and safe to run on every start.
 - If a declared index exists with a different `unique` setting, `apply` stops with an error rather than dropping it. Drop the index manually and restart.
@@ -60,7 +61,7 @@ This is all done for you at startup: validators, declared indexes, the system da
 
 **`verify`**
 
-- Only compares collections, validators and indexes with the config, including the system databases.
+- Only compares collections, validators, indexes and pre-change images with the config, including the system databases.
 - If anything differs, it refuses to start and lists every difference. For example:
 
   ```
@@ -68,6 +69,7 @@ This is all done for you at startup: validators, declared indexes, the system da
     shop__orders.items: collection missing
     shop__orders.clients: validator differs from schema.json
     shop__orders.clients: index (email) missing
+    shop__orders.live: pre-change images are not enabled (this collection is realtime)
   ```
 
 - Then compares the config's fingerprint with the one provisioning recorded for each realm, and refuses to start if it differs or none was recorded: every instance must run the config that was provisioned (see [Deploying config](deploying/#what-backd-enforces)).

@@ -36,6 +36,18 @@ func stampCreate(r *http.Request, meta map[string]any) {
 	meta["owner"] = owner
 	meta["created_by"] = c.Subject()
 	meta["updated_by"] = c.Subject()
+	stampChain(c, meta)
+}
+
+// stampChain marks a write made by a trigger run (or by a function it called) with where it
+// sits in the chain: `_meta.chain = {root, depth}`. The dispatcher reads it from the change,
+// so a write caused by a trigger is told from a first-party one without any lookup. It comes
+// from the callback token, which only backd signs: a client can't set it, and a write that no
+// trigger caused carries none (an update replaces the whole _meta).
+func stampChain(c auth.Caller, meta map[string]any) {
+	if c.Func != nil && c.Func.ChainRoot != "" {
+		meta["chain"] = map[string]any{"root": c.Func.ChainRoot, "depth": int64(c.Func.ChainDepth)}
+	}
 }
 
 // stampUpdate carries the ownership fields (and the organization) over from the stored meta,
@@ -48,6 +60,7 @@ func stampUpdate(r *http.Request, stored, meta map[string]any) {
 	}
 	if c, ok := callerOf(r); ok {
 		meta["updated_by"] = c.Subject()
+		stampChain(c, meta)
 	}
 }
 

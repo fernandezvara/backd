@@ -1,4 +1,4 @@
-import { callTimedOut, createContext, EmailLimitError, emailMessage, fakeEmail, fakeJob, fakePush, FunctionError, MemoryStore, resetIds } from './index.js'
+import { callTimedOut, createContext, EmailLimitError, emailMessage, fakeEmail, fakeJob, fakePush, fakeTrigger, FunctionError, MemoryStore, resetIds } from './index.js'
 import { BackdError, ExpandTooLargeError, InvalidAggregateError, InvalidExpandError, NotFoundError, ValidationError, VersionMismatchError } from '../../js/src/errors.js'
 
 // No test-framework dependency, matching the JS client's "no runtime
@@ -596,4 +596,76 @@ Deno.test('search approximates the text index: words, phrases, exclusions and we
   // The search is also a filter for an aggregation.
   const counted = await articles.aggregate({ where: { $search: 'shoes' }, groupBy: 'status' })
   assertEquals(counted.groups.map((g) => [g.key.status, g.count]), [['draft', 1], ['published', 2]])
+})
+
+Deno.test('fakeTrigger builds the input a trigger function receives', () => {
+  resetIds()
+  const before = { id: 'o1', status: 'draft', total: 10, _meta: { version: 1, updated_at: '2026-10-01T10:00:00.000Z' } }
+  const after = { id: 'o1', status: 'paid', total: 10, note: 'x', _meta: { version: 2, updated_at: '2026-10-01T11:00:00.000Z' } }
+
+  // Ids only by default: no bodies, as a trigger without `fields:`.
+  const plain = fakeTrigger({ event: 'updated', collection: 'orders', before, after })
+  assertEquals(plain, {
+    id: plain.id, event: 'updated', collection: 'orders', doc: { id: 'o1', version: 2 }, version: 2,
+    changed: ['note', 'status'], depth: 0, root: plain.id, at: '2026-10-01T11:00:00.000Z',
+  })
+  assert(plain.id.startsWith('evt'), 'a distinct test id')
+  assert(!('before' in plain) && !('after' in plain) && !('by' in plain))
+
+  // Paths: id, _meta and the listed fields only.
+  const slim = fakeTrigger({ event: 'updated', collection: 'orders', before, after, fields: ['status'], by: 'u_1' })
+  assertEquals(slim.before, { id: 'o1', _meta: before._meta, status: 'draft' })
+  assertEquals(slim.after, { id: 'o1', _meta: after._meta, status: 'paid' })
+  assertEquals(slim.by, 'u_1')
+
+  // Whole documents, and nested paths.
+  assertEquals(fakeTrigger({ event: 'updated', before, after, fields: ['*'] }).after, after)
+  const nested = fakeTrigger({ event: 'created', after: { id: 'n1', address: { city: 'Madrid', zip: '28001' }, _meta: { version: 1 } }, fields: ['address.city'] })
+  assertEquals(nested.after, { id: 'n1', _meta: { version: 1 }, address: { city: 'Madrid' } })
+  assertEquals(nested.before, null)
+  assertEquals(nested.changed, [])
+
+  // A removal: before only, the version of the last document, nulls in the bodies.
+  const gone = fakeTrigger({ event: 'removed', before: after, fields: ['status'] })
+  assertEquals(gone.after, null)
+  assertEquals(gone.doc, { id: 'o1', version: 2 })
+  assertEquals(gone.changed, [])
+
+  // A chained run and a rescan.
+  const chained = fakeTrigger({ event: 'created', after: { id: 'c1', _meta: { version: 1 } }, depth: 3, root: 'r-9', rescan: 'run-1' })
+  assertEquals([chained.depth, chained.root, chained.rescan], [3, 'r-9', 'run-1'])
+
+  // Too large for a job: the bodies are left out and it says so.
+  const huge = fakeTrigger({ event: 'created', after: { id: 'h1', blob: 'x'.repeat(300 * 1024), _meta: { version: 1 } }, fields: ['*'] })
+  assertEquals(huge.truncated, true)
+  assert(!('before' in huge) && !('after' in huge))
+  assertEquals(huge.doc.id, 'h1')
+})
+
+Deno.test('fakeTrigger refuses an event that could not happen', () => {
+  const doc = { id: 'a', _meta: { version: 1 } }
+  assertThrows(() => fakeTrigger({ event: 'inserted', after: doc }), Error)
+  assertThrows(() => fakeTrigger({ event: 'created' }), Error)
+  assertThrows(() => fakeTrigger({ event: 'created', before: doc, after: doc }), Error)
+  assertThrows(() => fakeTrigger({ event: 'removed' }), Error)
+  assertThrows(() => fakeTrigger({ event: 'removed', before: doc, after: doc }), Error)
+  assertThrows(() => fakeTrigger({ event: 'updated' }), Error)
+})
+
+Deno.test('a trigger handler can be tested with fakeTrigger and the fake ctx', async () => {
+  // The shape of a real handler: idempotent on the event id, reads what it needs through admin.
+  async function onPaid(input, ctx) {
+    const seen = ctx.admin.db('main').collection('seen_events')
+    if ((await seen.list({ where: { event_id: input.id } })).items.length > 0) return { skipped: true }
+    await seen.create({ event_id: input.id, order: input.doc.id })
+    return { order: input.doc.id, by: input.by ?? null }
+  }
+  const { ctx } = createContext({ admin: true })
+  const input = fakeTrigger({
+    event: 'updated', collection: 'orders', by: 'u_7',
+    before: { id: 'o1', status: 'draft', _meta: { version: 1 } },
+    after: { id: 'o1', status: 'paid', _meta: { version: 2 } },
+  })
+  assertEquals(await onPaid(input, ctx), { order: 'o1', by: 'u_7' })
+  assertEquals(await onPaid(input, ctx), { skipped: true }, 'the same event twice is one effect')
 })

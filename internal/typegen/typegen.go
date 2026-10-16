@@ -134,6 +134,8 @@ export interface Meta {
   deleted_at?: DateTimeString;
   deleted_by?: string;
   purge_at?: DateTimeString;
+  /** Set on a write made by a trigger run: where it sits in a chain of such writes. */
+  chain?: { root: string; depth: number };
 }
 
 export type Ops<T> = { $eq?: T; $ne?: T; $in?: T[]; $nin?: T[] };
@@ -163,7 +165,7 @@ func (g *gen) realm(rl *registry.Realm, o Options) string {
 		for _, c := range cols {
 			g.entries["collection "+dbName+"/"+c.Name] = ""
 			doc, input, create, where, order := g.collection(&types, dbName, c)
-			fmt.Fprintf(&tree, "        %s: { doc: %s; input: %s; create: %s; where: %s; order_by: %s; expand: %s; aggregate: %s };\n", member(c.Name), doc, input, create, where, order, expandRefs(c), aggregateShape(c))
+			fmt.Fprintf(&tree, "        %s: { doc: %s; input: %s; create: %s; where: %s; order_by: %s; expand: %s; aggregate: %s; trigger: %s };\n", member(c.Name), doc, input, create, where, order, expandRefs(c), aggregateShape(c), g.triggerInput(&types, c, doc))
 		}
 		tree.WriteString("      };\n      functions: {\n")
 		if db.Functions != nil {
@@ -506,4 +508,34 @@ func aggregateShape(c *registry.Collection) string {
 		}
 	}
 	return fmt.Sprintf("{ group_by: %s; dates: %s; metrics: %s }", union(a.GroupBy), union(dates), union(a.Metrics))
+}
+
+// triggerInput emits the input type of the functions a collection's triggers run, and returns
+// its name; "never" for a collection that declares none. The documents are partial: a trigger
+// only carries the bodies its `fields` asks for.
+func (g *gen) triggerInput(w *strings.Builder, c *registry.Collection, doc string) string {
+	if len(c.Triggers) == 0 {
+		return "never"
+	}
+	name := doc + "TriggerInput"
+	fmt.Fprintf(w, `/** What a trigger of %s runs its function with: the bodies in before and after ride only with the trigger's fields. */
+export type %s = {
+  id: string;
+  event: "created" | "updated" | "removed";
+  collection: %s;
+  doc: { id: string; version: number };
+  version: number;
+  changed: string[];
+  depth: number;
+  root: string;
+  at: DateTimeString;
+  before?: Partial<%s> | null;
+  after?: Partial<%s> | null;
+  by?: string;
+  truncated?: boolean;
+  rescan?: string;
+};
+
+`, c.Name, name, literal(c.Name), doc, doc)
+	return name
 }

@@ -27,6 +27,7 @@ Every hook is optional, and each names a function that is **`internal: true`** a
 | `on_member_left` | the member leaves, is removed, or their account is [erased](../../auth/erasure/) | `event`, `org`, `user`, `seq`, `reason`: `left`, `removed` or `erased` |
 | `on_roles_changed` | a member's direct roles, teams or [team roles](../team-roles/) change, or the roles a team carries change (one event per member of the team) | `event`, `org`, `user`, `seq`, `before` and `after`, each with `roles`, `teams`, `team_roles` and `effective_roles` |
 
+- **An event is queued with the change, or not at all.** The membership change and its event are written in one database transaction: if the event can't be queued, the change is not made and the call fails, so nothing changes without its hook and nothing is announced that did not happen. Events carry a job id made of the event (organization, user, `seq`), so queuing one twice is one job.
 - **Nothing changed, no event.** Setting the roles a member already has is not a change.
 - **Windows are not events.** A grant with `from` and `until` is reported when it is *given*, with its window; backd does not call a hook when the window opens or closes.
 - **Tokens and content never travel:** an event holds ids and role names.

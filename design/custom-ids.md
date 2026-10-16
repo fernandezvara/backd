@@ -3,7 +3,7 @@
 - **Issues:** features 25.1–25.6 (milestone `25-custom-ids`)
 - **Status:** decided
 - **Changes an earlier decision:** "the server always generates the ids". It still does by default; collections can now opt in to client ids. `decisions.md` records the change (25.1).
-- **Related designs:** [reference-expansion.md](./reference-expansion.md) (`key: id` default), [field-encryption.md](./field-encryption.md) (values bound to the document id), [export-import.md](./export-import.md), [realtime.md](./realtime.md), [types-openapi.md](./types-openapi.md)
+- **Related designs:** [reference-expansion.md](./reference-expansion.md) (`key: id` default), [field-encryption.md](./field-encryption.md) (values bound to the document id), [export-import.md](./export-import.md), [triggers-and-realtime.md](./triggers-and-realtime.md), [types-openapi.md](./types-openapi.md)
 
 ## 1. The idea
 

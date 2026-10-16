@@ -165,6 +165,8 @@ This optional file holds a collection's policy, in sections that can each be lef
 | `personal_data:` | What a user's data export takes from the collection | [Personal data scope](#personal-data-scope) |
 | `custom_id:` | Collections whose documents get the id the client chooses | [Custom ids](#custom-ids) |
 | `organization:` | Whether documents belong to an organization, and what happens to them when it is deleted | [Organizations](#organizations) |
+| `realtime:` | Whether the collection's changes may be streamed to clients | [Realtime](#realtime) |
+| `triggers:` | Functions to run in the background when documents change | [Triggers](#triggers) |
 | `on_owner_delete:` | What an administrator's **erase** does to the collection when a user is erased (`backd user delete`) | below |
 
 ```yaml
@@ -325,6 +327,73 @@ aggregate:
 - **Checked at startup** against `schema.json`, with the file and the field named. `limits.time` is a duration (at least 100ms) and `limits.max_groups` a number; both may only be lower than the instance's `BACKD_AGGREGATE_TIME` and `BACKD_AGGREGATE_MAX_GROUPS`, or startup stops.
 - **A warning at startup** names each `group_by` field that no index leads with, and the line to add to [`indexes.json`](#indexesjson): grouping by it reads every matching document, in no useful order. `backd config check` prints the same warnings.
 - The request side, `GET …/_aggregate`, is in [Aggregations](../../api/aggregations/), with the [best practices](../../api/aggregations/#best-practices).
+
+### Realtime
+
+```yaml
+realtime: true      # the collection's changes may be streamed to subscribed clients
+```
+
+`realtime: true` marks the collection as one whose changes are read from MongoDB's change stream. Without it (or with `false`) nothing is read for the collection, and anything but `true` or `false` stops startup, naming the file.
+
+Subscriptions themselves, the `POST /v1/{realm}/_realtime` endpoint, come in a later step (planned): today the key only declares the collection, and the [change feed](../../operations/events/) it will use is what is built. Nothing is streamed to clients yet.
+
+### Triggers
+
+A trigger runs an [internal, async function](../../functions/internal/) in the background when documents of the collection change and a condition holds. A document is checked when it is **created**, **updated** or **removed**.
+
+```yaml
+triggers:
+  on_paid:
+    events: [created, updated]
+    when: "document.status == 'paid' && before.status != 'paid'"
+    function: main/on-paid          # <database>/<function>
+    fields: [status, total]         # optional
+    session: true                   # optional
+    ordered: true                   # optional
+```
+
+| Key | Meaning |
+|---|---|
+| `events` | At least one of `created`, `updated`, `removed`. |
+| `when` | Optional condition. It sees `document` (the document after the change), `before` (before it), `changed()` (the top-level fields that differ), `now` and `appConfig("path")`. There is **no `user` and no `data`**: an event has no caller, so the helpers that ask about one (`hasRole`, `inOrg`, …) are errors. Left out, every listed event fires. |
+| `function` | `<database>/<function>`. The function must declare `internal: true` and `mode: async`; startup names the file and trigger when it doesn't. |
+| `fields` | What rides in the job. Without it the job carries ids, the document's version and which fields changed, **not** the documents: the function reads what it needs. Paths of the schema add `before` and `after` trimmed to them; `["*"]` adds them whole. Jobs are kept as long as invocation records, so bodies in them are a choice. |
+| `session` | `true` adds `by`: the user who wrote the document, when a user did. It is information, never an identity. |
+| `ordered` | `true` runs the jobs of one document one at a time. |
+
+- **A transition is the safe shape.** `before.status != 'paid' && document.status == 'paid'` fires once when the value is reached; writing the same value again doesn't fire it again, and the function's own write can't loop through it. A missing `before` (a creation) reads as an empty document, so `before.status` is `nil`.
+- **A removal has no `document`.** A condition that names `document` never matches a removal; to react to removals, read `before`. A trigger listening only to `removed` whose `when` names `document` is refused at startup, because it could never fire.
+- **Field paths are checked against `schema.json`**, like rules: a typo is a startup error, not a trigger that silently never fires.
+- **Chains are bounded.** A trigger's function may write documents that fire other triggers: that is how a pipeline works, and how a bug becomes a loop. Every write a trigger run makes is stamped, so the events it causes know their `depth`; an event deeper than `triggers.max_chain` (default 16, at most the instance's `BACKD_TRIGGER_MAX_CHAIN`) is **not queued**, and neither is a trigger's chained event past `triggers.max_chained_per_minute` (default 60). Both are logged and counted (`trigger_dropped_total`). The transition `when` above makes the common loop impossible to write.
+- **Events that nobody chained are never dropped for being many.** Importing 10,000 documents fires 10,000 events and every one is queued. What protects the database is a ceiling per realm, `triggers.max_backlog` (default 100,000 queued trigger jobs): past it, further events of that realm are recorded as a [gap](../../operations/events/#the-trigger-dispatcher) instead of queued, and other realms carry on.
+- **At most 20 triggers per collection**, lowered with `triggers.max_per_collection` in `realm.yaml`. The `triggers:` section of `realm.yaml` holds `max_per_collection`, `max_chain`, `max_chained_per_minute` and `max_backlog`; the realm may lower `max_chain` and `max_per_collection` below the instance's, never raise them.
+- A collection with triggers needs [pre-change images](../../operations/events/#requirements), which `backd provision` enables.
+
+The [trigger dispatcher](../../operations/events/#the-trigger-dispatcher) queues one background job for each change a trigger matches, and a worker runs it like any [async function](../../functions/jobs/) (a realm needs auth enabled, and a running worker). The job's input is:
+
+```json
+{
+  "id": "3f9ab1c2…",          // the change's id: the same on every replay of it
+  "event": "updated",         // created | updated | removed
+  "collection": "orders",
+  "doc": { "id": "o_17", "version": 4 },
+  "version": 4,               // the document's _meta.version after the change
+  "changed": ["status"],      // top-level fields that differ; empty for created and removed
+  "depth": 0, "root": "3f9ab1c2…",   // where the run sits in a chain of trigger runs
+  "at": "2026-10-15T12:00:00Z",      // when the change was made
+  "before": { … }, "after": { … },   // only with `fields`; null where there is no document
+  "by": "u_9",                       // only with `session: true`, and only when a user wrote
+  "truncated": true                  // when the bodies were left out for size
+}
+```
+
+- **The function runs as itself.** `ctx.user` is `null`, and `ctx.admin.db` is always there, as in a scheduled run: the realm declared the trigger, so its function is trusted with the realm's data, and `admin: true` isn't needed. Treat a trigger function as the realm's most privileged code. Its `secrets` and `network` stay its own declarations.
+- **`by` is information, not identity.** It is the user in `_meta.updated_by`; nothing is granted by it, and it is absent for API keys, functions, backd's own writes (an erase) and anonymous writers. For a removal it is the last writer, not necessarily whoever deleted the document.
+- **Bodies are bounded.** Over 256 KiB the bodies are left out and `truncated` is `true`; the function reads the documents itself.
+- **Runs once, unless it retries.** A failure is final unless the function declares [`retry:`](../../functions/jobs/); an error it raises on purpose (`ctx.error`) is never retried. Handlers should be idempotent anyway, because a change can be delivered again after a restart: deduplicate on `id`.
+- **Its writes are stamped** with `_meta.chain = {root, depth}`, so a change a trigger caused can be told from a first-party one, and the events it makes carry `root` and `depth + 1`.
+- **`ordered: true` runs one document's jobs one at a time, in the order the changes were made.** Without it a document changed three times quickly can have its three runs at once, in any order: handlers then compare `version` with the document's current one. With it a run starts only when the earlier ones of the same document, for this trigger, have finished; a retry waiting out its delay keeps its place. Other documents and other triggers are not held back. The price is throughput on a document that changes often: its runs go one after another, and `jobs_serialized_waiting` counts the ones queued behind.
 
 ### Public caching
 

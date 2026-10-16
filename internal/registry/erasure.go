@@ -89,6 +89,11 @@ type erasureDoc struct {
 	CustomID *customIDDoc `yaml:"custom_id"`
 	// PersonalData overrides what a user's data export takes from the collection.
 	PersonalData *personalDataDoc `yaml:"personal_data"`
+	// Realtime is read by loadRealtime, which checks it; here it is only allowed.
+	Realtime any `yaml:"realtime"`
+	// Triggers is read by loadTriggers, which checks it; here its keys are only checked (a typo
+	// inside a trigger is a YAML error naming the file).
+	Triggers map[string]*triggerDoc `yaml:"triggers"`
 	// Aggregate is read by loadAggregate, which checks it; here it is only allowed.
 	Aggregate *aggregateDoc `yaml:"aggregate"`
 	// References is read by loadReferences, which checks it; here it is only allowed.

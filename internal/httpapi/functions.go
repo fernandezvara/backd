@@ -64,6 +64,18 @@ type callMeta struct {
 	ParentID  string        // the invocation that called this one
 	Depth     int           // nested calls above this one
 	Remaining time.Duration // > 0: the caller's remaining time caps this call's timeout
+	// EventID, ChainRoot and ChainDepth are a trigger run's: the change it was made for, and
+	// where its writes sit in a chain. A function it calls carries them on.
+	EventID    string
+	ChainRoot  string
+	ChainDepth int
+}
+
+// chainRef is where a run sits in a chain of writes caused by trigger runs; the zero value is
+// a run no trigger caused.
+type chainRef struct {
+	Root  string
+	Depth int
 }
 
 // callbackMargin keeps a callback token valid a little past the deadline,
@@ -204,7 +216,8 @@ func (f *functions) invoke(w http.ResponseWriter, r *http.Request) {
 			writeError(w, r, http.StatusForbidden, codeCallTooDeep, fmt.Sprintf("calls can be nested to %d functions", registry.MaxCallChain))
 			return
 		}
-		meta = callMeta{Origin: originFunction, ParentID: fc.Invocation, Depth: fc.Depth + 1, Remaining: max(fc.Expires.Sub(f.docs.now())-callbackMargin, time.Millisecond)}
+		meta = callMeta{Origin: originFunction, ParentID: fc.Invocation, Depth: fc.Depth + 1, Remaining: max(fc.Expires.Sub(f.docs.now())-callbackMargin, time.Millisecond),
+			ChainRoot: fc.ChainRoot, ChainDepth: fc.ChainDepth}
 		// The callee inherits the caller's user and nothing else: no API
 		// key's access, no admin access.
 		caller = auth.Caller{User: caller.User}
@@ -371,7 +384,7 @@ func (f *functions) run(w http.ResponseWriter, r *http.Request, fn *registry.Fun
 			Webhook:        webhook,
 			User:           userEnvelope(caller, f.userOrgsEnvelope(r.Context(), realm, caller)),
 			Secrets:        secrets,
-			Callback:       f.callback(realm, database, name, fn, caller, deadline.Add(callbackMargin), invID, meta.Depth, nil),
+			Callback:       f.callback(realm, database, name, fn, caller, deadline.Add(callbackMargin), invID, meta.Depth, nil, chainRef{Root: meta.ChainRoot, Depth: meta.ChainDepth}),
 			IdempotencyKey: r.Header.Get("Idempotency-Key"),
 			RequestID:      requestID(r.Context()),
 		},
@@ -615,6 +628,7 @@ func (f *functions) enqueue(w http.ResponseWriter, r *http.Request, fn *registry
 		Database: database, Function: name, Input: input, CallerActor: caller.Actor(),
 		TimeoutMS: fn.Timeout.Milliseconds(), RequestID: requestID(r.Context()),
 		Origin: meta.Origin, ParentID: meta.ParentID, Depth: meta.Depth,
+		EventID: meta.EventID, ChainRoot: meta.ChainRoot, ChainDepth: meta.ChainDepth,
 		ActsAsFunction: caller.Func != nil && caller.Func.Admin,
 	}
 	if caller.User != nil {
@@ -785,6 +799,7 @@ func (f *functions) recordInvocation(ctx context.Context, requestID, realm, data
 		JobID:      jobID,
 		ParentID:   meta.ParentID,
 		Origin:     meta.Origin,
+		EventID:    meta.EventID,
 		Logs:       logs,
 		// Steps arrive settled (closed) for a job; a sync call's are closed here.
 		Steps:        auth.CloseSteps(stepsFromExecutor(res.Steps), stepEnding(res.Status), f.docs.now()),
@@ -906,8 +921,8 @@ func (f *functions) userOrgsEnvelope(ctx context.Context, realm string, c auth.C
 
 // callback gives the function its tokens: ctx.db acts as the caller,
 // ctx.admin.db (admin: true only) has full access as the function.
-func (f *functions) callback(realm, database, name string, fn *registry.Function, c auth.Caller, expires time.Time, invID string, depth int, job *auth.Job) *executor.Callback {
-	claims := auth.CallbackClaims{Realm: realm, Function: database + "/" + name, Expires: expires, Calls: fn.Calls, Depth: depth, Inv: invID, Email: fn.Email, Push: fn.Push != nil, Config: fn.ConfigWrite}
+func (f *functions) callback(realm, database, name string, fn *registry.Function, c auth.Caller, expires time.Time, invID string, depth int, job *auth.Job, chain chainRef) *executor.Callback {
+	claims := auth.CallbackClaims{Realm: realm, Function: database + "/" + name, Expires: expires, Calls: fn.Calls, Depth: depth, Inv: invID, Email: fn.Email, Push: fn.Push != nil, Config: fn.ConfigWrite, ChainRoot: chain.Root, ChainDepth: chain.Depth}
 	if job != nil {
 		claims.Job, claims.Attempt = job.ID, job.Attempts
 	}
@@ -923,7 +938,7 @@ func (f *functions) callback(realm, database, name string, fn *registry.Function
 		cb.Config = true
 	}
 	if fn.Admin || (c.Func != nil && c.Func.Admin) {
-		cb.AdminToken = auth.SignCallback(f.docs.callbackKey, auth.CallbackClaims{Realm: realm, Function: database + "/" + name, Admin: true, Expires: expires})
+		cb.AdminToken = auth.SignCallback(f.docs.callbackKey, auth.CallbackClaims{Realm: realm, Function: database + "/" + name, Admin: true, Expires: expires, ChainRoot: chain.Root, ChainDepth: chain.Depth})
 		cb.Orgs = f.docs.reg.Realms[realm] != nil && f.docs.reg.Realms[realm].Settings.Organizations != nil
 	}
 	return cb

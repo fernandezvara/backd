@@ -144,3 +144,32 @@ func TestPushMetrics(t *testing.T) {
 		t.Error("a zero count made a series")
 	}
 }
+
+func TestChangeFeedMetrics(t *testing.T) {
+	var nilm *Metrics
+	nilm.FeedState("realtime", true, 3)
+	nilm.FeedReopened("realtime", "error")
+	nilm.FeedEvent("realtime", "created", false)
+	nilm.FeedLag("realtime", time.Second)
+
+	m := New("v", "c")
+	m.FeedState("realtime", true, 7)
+	m.FeedReopened("realtime", "set_changed")
+	m.FeedReopened("realtime", "set_changed")
+	m.FeedEvent("realtime", "updated", false)
+	m.FeedEvent("realtime", "removed", true)
+	m.FeedLag("realtime", 1500*time.Millisecond)
+	_, body := scrape(t, m, "", nil)
+	for _, want := range []string{
+		`backd_changefeed_open{consumer="realtime"} 1`,
+		`backd_changefeed_watched_namespaces{consumer="realtime"} 7`,
+		`backd_changefeed_reopens_total{consumer="realtime",reason="set_changed"} 2`,
+		`backd_changefeed_events_total{consumer="realtime",op="updated",source="app"} 1`,
+		`backd_changefeed_events_total{consumer="realtime",op="removed",source="system"} 1`,
+		`backd_changefeed_lag_seconds{consumer="realtime"} 1.5`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %s", want)
+		}
+	}
+}

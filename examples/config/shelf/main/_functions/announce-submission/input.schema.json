@@ -1,0 +1,20 @@
+{
+  "$comment": "What a trigger hands its function (chapter 23): ids and what changed always; before and after only with the trigger's `fields`.",
+  "type": "object",
+  "properties": {
+    "id":         { "type": "string", "description": "The change's id: the same on every delivery of it." },
+    "event":      { "enum": ["created", "updated", "removed"] },
+    "collection": { "type": "string" },
+    "doc":        { "type": "object", "properties": { "id": { "type": "string" }, "version": { "type": "integer" } }, "required": ["id", "version"] },
+    "version":    { "type": "integer" },
+    "changed":    { "type": "array", "items": { "type": "string" } },
+    "depth":      { "type": "integer", "description": "How deep in a chain of trigger runs this is: 0 for a change nobody's trigger made." },
+    "root":       { "type": "string" },
+    "at":         { "type": "string" },
+    "before":     { "type": ["object", "null"] },
+    "after":      { "type": ["object", "null"] },
+    "by":         { "type": "string", "description": "The user who wrote, with `session: true` and when a user did." },
+    "truncated":  { "type": "boolean" }
+  },
+  "required": ["id", "event", "doc"]
+}

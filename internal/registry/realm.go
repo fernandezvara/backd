@@ -107,6 +107,9 @@ type RealmSettings struct {
 	// AuditRetention is how long audit records are kept (audit.retention);
 	// DefaultAuditRetention when not set.
 	AuditRetention time.Duration
+	// Triggers are realm.yaml's `triggers:` limits (design/triggers-and-realtime.md §7); read
+	// them through TriggerLimits, which applies the instance's.
+	Triggers TriggerSettings
 	// FunctionsMaxConcurrency caps how many function calls may run at once
 	// on this backd instance (functions.max_concurrency); 0 means
 	// unlimited. Applies whether or not auth is enabled.
@@ -410,6 +413,12 @@ type realmDoc struct {
 			RevertEmailChange string `yaml:"revert_email_change"`
 		} `yaml:"tokens"`
 	} `yaml:"account"`
+	Triggers *struct {
+		MaxChain            *int `yaml:"max_chain"`
+		MaxChainedPerMinute *int `yaml:"max_chained_per_minute"`
+		MaxPerCollection    *int `yaml:"max_per_collection"`
+		MaxBacklog          *int `yaml:"max_backlog"`
+	} `yaml:"triggers"`
 	Functions *struct {
 		MaxConcurrency *int    `yaml:"max_concurrency"`
 		LogRetention   *string `yaml:"log_retention"`
@@ -696,6 +705,29 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 		}
 	}
 
+	if t := doc.Triggers; t != nil {
+		for _, f := range []struct {
+			key  string
+			in   *int
+			to   *int
+			most int
+		}{
+			{"max_chain", t.MaxChain, &s.Triggers.MaxChain, MaxTriggerChain},
+			{"max_chained_per_minute", t.MaxChainedPerMinute, &s.Triggers.MaxChainedPerMinute, 0},
+			{"max_per_collection", t.MaxPerCollection, &s.Triggers.MaxPerCollection, 0},
+			{"max_backlog", t.MaxBacklog, &s.Triggers.MaxBacklog, 0},
+		} {
+			switch {
+			case f.in == nil:
+			case *f.in < 1:
+				errs = append(errs, fmt.Errorf("triggers.%s: must be at least 1, got %d", f.key, *f.in))
+			case f.most > 0 && *f.in > f.most:
+				errs = append(errs, fmt.Errorf("triggers.%s: must be at most %d, got %d", f.key, f.most, *f.in))
+			default:
+				*f.to = *f.in
+			}
+		}
+	}
 	if fn := doc.Functions; fn != nil && fn.MaxConcurrency != nil {
 		n := *fn.MaxConcurrency
 		if n < 1 {

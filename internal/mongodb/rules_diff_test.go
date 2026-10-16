@@ -108,14 +108,15 @@ func provisionOne(t *testing.T, schema string) (*registry.Collection, *Repositor
 	return provisionOneWith(t, schema, "")
 }
 
-// withoutReferences drops the top-level `references:` section of a collection.yaml.
+// withoutReferences drops the top-level `references:` and `triggers:` sections of a
+// collection.yaml: they point at other collections and at functions this realm doesn't hold.
 func withoutReferences(config string) string {
 	var out []string
 	skipping := false
 	for _, line := range strings.Split(config, "\n") {
 		top := line != "" && line[0] != ' ' && line[0] != '#' && line[0] != '\t'
 		if top {
-			skipping = strings.HasPrefix(line, "references:")
+			skipping = strings.HasPrefix(line, "references:") || strings.HasPrefix(line, "triggers:")
 		}
 		if !skipping {
 			out = append(out, line)

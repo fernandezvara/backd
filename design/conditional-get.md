@@ -2,7 +2,7 @@
 
 - **Issues:** features 20.1–20.5 (milestone `20-conditional-get`)
 - **Status:** decided
-- **Related designs:** [reference-expansion.md](./reference-expansion.md) (expanded responses are never `304`), [field-encryption.md](./field-encryption.md) (`reveal` and the representation tag, 16.4), [realtime.md](./realtime.md) (the push alternative to polling)
+- **Related designs:** [reference-expansion.md](./reference-expansion.md) (expanded responses are never `304`), [field-encryption.md](./field-encryption.md) (`reveal` and the representation tag, 16.4), [triggers-and-realtime.md](./triggers-and-realtime.md) (the push alternative to polling)
 
 ## 1. The idea
 
@@ -93,7 +93,7 @@ cache:
 - **Automatic:** `If-None-Match` is sent for cached reads, and on `304` the cached body is returned. For debugging, `client.cacheStats()` reports hits, misses, entries and bytes, and the low-level `client.request()` result says `fromCache`.
 - **Clearing:** on sign-out and user change. After a successful write, the document's entry is dropped; list entries need no marking — every read revalidates anyway (`no-cache`).
 - **Turning it off:** `cache: false` per client or per call. Expanded requests are never cached.
-- **Realtime:** subscriptions (18.5) reuse it for their initial loads.
+- **Realtime:** subscriptions (27.16) reuse it for their initial loads.
 
 ## 7. Documentation (issue 20.5)
 

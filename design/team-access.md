@@ -2,7 +2,7 @@
 
 - **Issues:** features 24.1–24.12 (milestone `24-team-access`)
 - **Status:** decided
-- **Extends:** [organizations.md](./organizations.md) (§2.1: the roles machinery is shared, and nothing here duplicates it), whose backlog item "data owned by a team" this is; related to [mfa-passwordless.md](./mfa-passwordless.md), [query-language.md](./query-language.md), [realtime.md](./realtime.md), [internal-functions.md](./internal-functions.md)
+- **Extends:** [organizations.md](./organizations.md) (§2.1: the roles machinery is shared, and nothing here duplicates it), whose backlog item "data owned by a team" this is; related to [mfa-passwordless.md](./mfa-passwordless.md), [query-language.md](./query-language.md), [triggers-and-realtime.md](./triggers-and-realtime.md), [internal-functions.md](./internal-functions.md)
 
 ## 1. The idea
 
@@ -97,7 +97,7 @@ on_team_delete:
 - **Windows:** a grant can carry `from` and `until` (RFC 3339, UTC; `until` must be after `from`, `400` otherwise). Windows are a property of the shared grant shape, so they work on any grant; this issue turns them on for team roles, and direct organization roles can use them with no change to the model.
   - When memberships are loaded for a request, grants outside their window are left out, compared with `now`.
   - Nothing has to run when a window opens or closes, and access starts and ends on the second.
-  - Realtime streams (18.4) reload access when a window opens or closes: the instance schedules a reload for connected subscribers at the next boundary.
+  - Realtime streams (27.15) reload access when a window opens or closes: the instance schedules a reload for connected subscribers at the next boundary.
 - **Scoped grants:**
   - `grants: [delegate]` on `manager` lets a manager of Sales grant, change the window of, and revoke `delegate` **in Sales only**;
   - they can't grant `manager`, and can't act in other teams;
@@ -110,9 +110,9 @@ on_team_delete:
 
 - **Queries and lists:** `_meta.team` is an allowed query field, and `?team=<id>` is a list shorthand.
 - **Aggregations:** `_meta.team` can be declared in `aggregate.group_by` (21).
-- **Realtime:** filters with `_meta.team` equality are grouping keys for subscriptions (18.3), so a change in Sales reaches only Sales' subscribers.
+- **Realtime:** filters with `_meta.team` equality are grouping keys for subscriptions (27.14), so a change in Sales reaches only Sales' subscribers.
 - **Indexes:** backd adds an index on `_meta.team` (with `_meta.org`) to collections with `team` set.
-- **Access changes:** team role grants, window boundaries and team membership changes trigger the realtime access refresh (18.4).
+- **Access changes:** team role grants, window boundaries and team membership changes trigger the realtime access refresh (27.15).
 
 ## 7. Membership hooks (issue 24.5)
 
@@ -222,7 +222,7 @@ email:
 | 24.1 | Team roles | 14.4 |
 | 24.2 | Team-scoped documents and rules | 24.1, 14.2, 14.5 |
 | 24.3 | Time windows and scoped team role grants | 24.1 |
-| 24.4 | Teams in queries, aggregations and realtime | 24.2, 21.2, 18.3 |
+| 24.4 | Teams in queries, aggregations and realtime | 24.2, 21.2, 27.14 |
 | 24.5 | Organization membership hooks | 14.1, 4.2a |
 | 24.6 | MFA by organization role and team role | 24.1, 14.7 |
 | 24.7 | Team access in functions, the client and types | 24.3, 14.9, 23.2 |

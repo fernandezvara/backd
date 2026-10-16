@@ -22,6 +22,8 @@ All runtime configuration comes from environment variables. At startup `backd` c
 | `BACKD_EXPAND_MAX_PATHS` | no | `5` | Entries of one `expand` parameter |
 | `BACKD_EXPAND_MAX_ARRAY` | no | `100` | Most ids of one `many` reference that an expansion follows; the rest is returned as `truncated`. A reference's `max_expand` may only lower it, and a higher one stops startup |
 | `BACKD_EXPAND_MAX_DOCS` | no | `2000` | Most expanded documents in one response; more is `400 expand_too_large`, before any partial data. The four values are logged at startup |
+| `BACKD_DEPLOYMENT_ID` | no | `default` | Names this backd deployment (1 to 32 characters of `a-z`, `0-9`, `-`, `_`). Only needed when several backd deployments share one MongoDB cluster: it keeps their [trigger dispatchers](../operations/events/#the-trigger-dispatcher) apart |
+| `BACKD_TRIGGER_MAX_CHAIN` | no | `16` | How deep a chain of writes caused by [trigger](config-dir/#triggers) runs may go (1 to 64). A realm's `triggers.max_chain` may only lower it, and a higher one stops startup |
 | `BACKD_AGGREGATE_TIME` | no | `5s` | The most time one [aggregation](config-dir/#aggregations) may run (100ms to 1m). A collection's `aggregate.limits.time` may only lower it, and a higher one stops startup |
 | `BACKD_AGGREGATE_MAX_GROUPS` | no | `1000` | The most groups one aggregation may return (1 to 10000). A collection may only lower it |
 | `BACKD_IMAGE_TIMEOUT` | no | `30s` | How long a worker may take to decode one image and make all its versions; over it, the versions fail with `timeout` |
@@ -33,6 +35,8 @@ All runtime configuration comes from environment variables. At startup `backd` c
 | `BACKD_EXECUTOR_URL`, `BACKD_EXECUTOR_TOKEN`, `BACKD_INTERNAL_ADDR`, `BACKD_CALLBACK_URL`, `BACKD_CALLBACK_KEY` | with functions | — (`:8081` for the address) | The functions executor and the internal listener: see [Running the executor](../functions/running/#running-the-executor) |
 | `BACKD_SECRETS_KEY` (or `BACKD_SECRETS_KEY_FILE`) | with functions that declare secrets | — | The master key functions' [secrets](../functions/secrets/#storage-and-the-master-key) are encrypted under |
 | `BACKD_ADMIN_API` | no | `true` | `false` makes this instance serve no `/v1/{realm}/_admin` route: they answer `404` like any unknown route. For public instances when an internal instance has the admin API (see [Production deployment](../operations/production/#admin-api)) |
+| `BACKD_EVENTS` | no | `true` | `false` stops this instance from reading MongoDB's change stream for [realtime](../operations/events/): set it on API replicas when dedicated instances serve subscriptions. Nothing is read until there is something to serve, so `true` costs an idle instance nothing |
+| `BACKD_TRIGGERS` | no | `true` | `false` keeps this instance from holding the lease of the trigger dispatcher (planned: [triggers](../operations/events/#what-is-planned)) |
 | `BACKD_ADMIN_UI` | no | `false` | `true` serves the admin web interface at `/_ui/` when the binary was built with it (release images are); it needs the admin API on the same instance, or startup fails |
 | `BACKD_ADMIN_UI_IDLE` | no | `30m` | how long the admin interface may sit untouched before it signs out and revokes its session |
 | `BACKD_DEV` | no | `false` | `true` reloads the config and rebuilds function sources automatically as the files change (see [Dev mode](../functions/testing/#dev-mode)); `serve` refuses to start unless `HTTP_ADDR` is bound to localhost. Local development only |

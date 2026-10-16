@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -46,6 +47,11 @@ type Settings struct {
 	Expand registry.ExpandLimits
 	// Aggregate are the instance's limits for aggregations (BACKD_AGGREGATE_*).
 	Aggregate registry.AggregateLimits
+	// DeploymentID is BACKD_DEPLOYMENT_ID (default "default"): what keeps the trigger dispatcher
+	// of this backd deployment apart from another one's when both share a MongoDB cluster.
+	DeploymentID string
+	// TriggerLimits are the instance's trigger limits (BACKD_TRIGGER_MAX_CHAIN).
+	TriggerLimits registry.TriggerLimits
 	// ImageConcurrency is how many images one worker process makes versions of at once
 	// (BACKD_IMAGE_CONCURRENCY); 0 derives it from the container's CPU and memory limits.
 	ImageConcurrency int
@@ -103,6 +109,12 @@ type Settings struct {
 	// WorkerConcurrency caps how many async jobs one worker process runs
 	// at once (WORKER_CONCURRENCY, roadmap F11); default 10.
 	WorkerConcurrency int
+	// Events is BACKD_EVENTS (default true): this instance may read the change stream for
+	// realtime subscribers and serve /_realtime. Triggers is BACKD_TRIGGERS (default true): it may
+	// hold the trigger dispatcher's lease. Neither reads anything until there is something to
+	// serve (design/triggers-and-realtime.md §3).
+	Events   bool
+	Triggers bool
 	// MetricsAddr (METRICS_ADDR) is where a process serves /metrics; empty
 	// means it doesn't. MetricsToken (METRICS_TOKEN) makes it ask for that
 	// bearer token. The port must be private (design/metrics.md).
@@ -133,6 +145,8 @@ func LoadMetrics(getenv func(string) string, reserved ...string) (addr, token st
 	}
 	return addr, token, nil
 }
+
+var deploymentIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
 
 // minSecretLen is the minimum length of the executor token and callback key.
 const minSecretLen = 32
@@ -190,6 +204,12 @@ func Load(getenv func(string) string) (Settings, error) {
 		s.Aggregate = l
 	}
 
+	if l, err := TriggerLimitsFrom(getenv); err != nil {
+		errs = append(errs, err)
+	} else {
+		s.TriggerLimits = l
+	}
+
 	if d, err := duration(getenv, "BACKD_IMAGE_TIMEOUT", "30s", false); err != nil {
 		errs = append(errs, err)
 	} else {
@@ -233,6 +253,23 @@ func Load(getenv func(string) string) (Settings, error) {
 		s.Dev = true
 	default:
 		errs = append(errs, fmt.Errorf("BACKD_DEV must be true or false, got %q", v))
+	}
+	s.DeploymentID = orDefault(getenv("BACKD_DEPLOYMENT_ID"), "default")
+	if !deploymentIDPattern.MatchString(s.DeploymentID) {
+		errs = append(errs, fmt.Errorf("BACKD_DEPLOYMENT_ID must be 1 to 32 characters of a-z, 0-9, - and _, got %q", s.DeploymentID))
+	}
+	s.Events, s.Triggers = true, true
+	for _, flag := range []struct {
+		name string
+		to   *bool
+	}{{"BACKD_EVENTS", &s.Events}, {"BACKD_TRIGGERS", &s.Triggers}} {
+		switch v := strings.ToLower(getenv(flag.name)); v {
+		case "", "true":
+		case "false":
+			*flag.to = false
+		default:
+			errs = append(errs, fmt.Errorf("%s must be true or false, got %q", flag.name, v))
+		}
 	}
 	switch v := strings.ToLower(getenv("BACKD_ADMIN_API")); v {
 	case "", "true":
@@ -446,6 +483,20 @@ func AggregateLimitsFrom(getenv func(string) string) (registry.AggregateLimits, 
 		}
 	}
 	return l, errors.Join(errs...)
+}
+
+// TriggerLimitsFrom reads the instance's trigger limits: BACKD_TRIGGER_MAX_CHAIN, how deep a
+// chain of writes caused by trigger runs may go. A realm's `triggers:` may only lower it.
+func TriggerLimitsFrom(getenv func(string) string) (registry.TriggerLimits, error) {
+	l := registry.DefaultTriggerLimits
+	if v := getenv("BACKD_TRIGGER_MAX_CHAIN"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > registry.MaxTriggerChain {
+			return l, fmt.Errorf("BACKD_TRIGGER_MAX_CHAIN must be an integer between 1 and %d, got %q", registry.MaxTriggerChain, v)
+		}
+		l.MaxChain = n
+	}
+	return l, nil
 }
 
 // DefaultImageMaxPixels is the pixel limit for image versions when none is set.

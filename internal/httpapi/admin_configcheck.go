@@ -133,6 +133,9 @@ func (a *adminAPI) checkConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		err = reg.CheckAggregateLimits(lim)
 	}
+	if err == nil {
+		err = reg.CheckTriggerLimits(a.triggers)
+	}
 	if err != nil {
 		for _, e := range splitErrors(err) {
 			problems = append(problems, problem(e.Error(), tmp+string(filepath.Separator)+name+string(filepath.Separator)))

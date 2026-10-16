@@ -99,6 +99,11 @@ type jobDoc struct {
 	ParentID       string        `bson:"parent_id,omitempty"`
 	RerunOf        string        `bson:"rerun_of,omitempty"`
 	Depth          int32         `bson:"depth,omitempty"`
+	EventID        string        `bson:"event_id,omitempty"`
+	SerialKey      string        `bson:"serial_key,omitempty"`
+	SerialOrder    int64         `bson:"serial_order,omitempty"`
+	ChainRoot      string        `bson:"chain_root,omitempty"`
+	ChainDepth     int32         `bson:"chain_depth,omitempty"`
 	Status         string        `bson:"status"`
 	Attempts       int32         `bson:"attempts"`
 	Failures       int32         `bson:"failures,omitempty"`
@@ -350,6 +355,8 @@ func jobFromDoc(d jobDoc) auth.Job {
 		ID: d.ID, Database: d.Database, Function: d.Function, Input: encodeJSONAny(d.Input),
 		CallerActor: d.CallerActor, CallerUserID: d.CallerUserID, CallerKeyHash: d.CallerKeyHash, Scheduled: d.Scheduled,
 		ActsAsFunction: d.ActsAsFunction, Email: emailJobFromDoc(d.Email), Erase: eraseFromDoc(d.Erase), Revoke: revokeFromDoc(d.Revoke), Push: pushFromDoc(d.Push), Check: checkFromDoc(d.Check), Image: imageFromDoc(d.Image), Assign: assignFromDoc(d.Assign), OrgDelete: orgDeleteFromDoc(d.OrgDelete), Exclusive: d.Exclusive, Origin: d.Origin, ParentID: d.ParentID, RerunOf: d.RerunOf, Depth: int(d.Depth),
+		EventID: d.EventID, ChainRoot: d.ChainRoot, ChainDepth: int(d.ChainDepth),
+		SerialKey: d.SerialKey, SerialOrder: d.SerialOrder,
 		TimeoutMS: d.TimeoutMS, RequestID: d.RequestID,
 		Status: d.Status, Attempts: int(d.Attempts), CreatedAt: d.CreatedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC(),
 		Result: jobResultFromDoc(d.Result), Steps: stepsFromDocs(d.Steps), StepsOmitted: int(d.StepsOmitted),
@@ -364,27 +371,38 @@ func jobFromDoc(d jobDoc) auth.Job {
 	return j
 }
 
-// EnqueueJob inserts a new job, queued for a worker to claim.
-func (s *AuthStore) EnqueueJob(ctx context.Context, j auth.Job) error {
+// jobToDoc is the stored form of a new job.
+func jobToDoc(j auth.Job) (jobDoc, error) {
 	input, err := decodeJSONAny(j.Input)
 	if err != nil {
-		return err
+		return jobDoc{}, err
 	}
 	result, err := jobResultToDoc(j.Result)
 	if err != nil {
-		return err
+		return jobDoc{}, err
 	}
 	var completed *time.Time
 	if !j.CompletedAt.IsZero() {
 		completed = &j.CompletedAt
 	}
-	_, err = s.jobs().InsertOne(ctx, jobDoc{
+	return jobDoc{
 		ID: j.ID, Database: j.Database, Function: j.Function, Input: input,
 		CallerActor: j.CallerActor, CallerUserID: j.CallerUserID, CallerKeyHash: j.CallerKeyHash, Scheduled: j.Scheduled, Status: j.Status,
 		ActsAsFunction: j.ActsAsFunction, Email: emailJobToDoc(j.Email), Erase: eraseToDoc(j.Erase), Revoke: revokeToDoc(j.Revoke), Push: pushToDoc(j.Push), Check: checkToDoc(j.Check), Image: imageToDoc(j.Image), Assign: assignToDoc(j.Assign), OrgDelete: orgDeleteToDoc(j.OrgDelete), Exclusive: j.Exclusive, Origin: j.Origin, ParentID: j.ParentID, RerunOf: j.RerunOf, Depth: int32(j.Depth),
+		EventID: j.EventID, ChainRoot: j.ChainRoot, ChainDepth: int32(j.ChainDepth),
+		SerialKey: j.SerialKey, SerialOrder: j.SerialOrder,
 		Attempts: 0, TimeoutMS: j.TimeoutMS, RequestID: j.RequestID,
 		CreatedAt: j.CreatedAt, CompletedAt: completed, ExpiresAt: j.ExpiresAt, Result: result,
-	})
+	}, nil
+}
+
+// EnqueueJob inserts a new job, queued for a worker to claim.
+func (s *AuthStore) EnqueueJob(ctx context.Context, j auth.Job) error {
+	doc, err := jobToDoc(j)
+	if err != nil {
+		return err
+	}
+	_, err = s.jobs().InsertOne(ctx, doc)
 	if mongo.IsDuplicateKeyError(err) {
 		if strings.Contains(err.Error(), "exclusive") { // the unique index on exclusive, not the id
 			return auth.ErrJobExclusive
@@ -394,6 +412,49 @@ func (s *AuthStore) EnqueueJob(ctx context.Context, j auth.Job) error {
 	return err
 }
 
+// EnqueueJobs inserts jobs that have an id of their own, in one unordered write. A job whose
+// id exists already is skipped, not an error: the ids are derived from what the job is for, so
+// that doing the same thing twice queues it once. It returns how many were new.
+func (s *AuthStore) EnqueueJobs(ctx context.Context, jobs []auth.Job) (int, error) {
+	if len(jobs) == 0 {
+		return 0, nil
+	}
+	docs := make([]any, len(jobs))
+	for i, j := range jobs {
+		d, err := jobToDoc(j)
+		if err != nil {
+			return 0, err
+		}
+		docs[i] = d
+	}
+	res, err := s.jobs().InsertMany(ctx, docs, options.InsertMany().SetOrdered(false))
+	if err == nil {
+		return len(res.InsertedIDs), nil
+	}
+	var bwe mongo.BulkWriteException
+	if errors.As(err, &bwe) && len(bwe.WriteErrors) > 0 {
+		dups := 0
+		for _, we := range bwe.WriteErrors {
+			if we.Code != 11000 {
+				return len(jobs) - len(bwe.WriteErrors), err
+			}
+			dups++
+		}
+		return len(jobs) - dups, nil
+	}
+	return 0, err
+}
+
+// CountTriggerJobs counts the realm's trigger jobs that aren't finished: queued, waiting to be
+// retried, or running. The dispatcher keeps it below the realm's ceiling.
+func (s *AuthStore) CountTriggerJobs(ctx context.Context) (int, error) {
+	n, err := s.jobs().CountDocuments(ctx, bson.D{
+		{Key: "origin", Value: bson.D{{Key: "$regex", Value: "^trigger:"}}},
+		{Key: "status", Value: bson.D{{Key: "$ne", Value: auth.JobDone}}},
+	})
+	return int(n), err
+}
+
 // ClaimJob atomically claims the oldest claimable job: never claimed
 // (status queued, no lease yet), or whose lease has expired (a dead
 // worker's jobs are picked up again). The lease extends to at plus the
@@ -401,23 +462,54 @@ func (s *AuthStore) EnqueueJob(ctx context.Context, j auth.Job) error {
 // claim never needs a second round trip to look the function's timeout
 // up.
 func (s *AuthStore) ClaimJob(ctx context.Context, workerID string, at time.Time, margin time.Duration) (auth.Job, bool, error) {
-	filter := bson.D{
+	// Ordered jobs (a serial key) wait for their predecessors, so they are claimed apart from
+	// the rest. The two are tried in turn, so a steady stream of plain jobs doesn't starve them
+	// nor the other way round.
+	first := s.claimTurn.Add(1)%2 == 0
+	for i := 0; i < 2; i++ {
+		var j auth.Job
+		var ok bool
+		var err error
+		if (i == 0) == first {
+			j, ok, err = s.claimSerial(ctx, workerID, at, margin)
+		} else {
+			j, ok, err = s.claimPlain(ctx, workerID, at, margin)
+		}
+		if err != nil || ok {
+			return j, ok, err
+		}
+	}
+	return auth.Job{}, false, nil
+}
+
+// claimable is the filter of a job a worker may take: not finished, and never claimed or with
+// an expired lease (which is also how a retry's delay is waited out).
+func claimable(at time.Time) bson.D {
+	return bson.D{
 		{Key: "status", Value: bson.D{{Key: "$ne", Value: auth.JobDone}}},
 		{Key: "$or", Value: bson.A{
 			bson.D{{Key: "lease_expires", Value: bson.D{{Key: "$exists", Value: false}}}},
 			bson.D{{Key: "lease_expires", Value: bson.D{{Key: "$lte", Value: at}}}},
 		}},
 	}
+}
+
+func claimUpdate(workerID string, at time.Time, margin time.Duration) mongo.Pipeline {
 	leaseExpires := bson.D{{Key: "$add", Value: bson.A{at, "$timeout_ms", margin.Milliseconds()}}}
-	pipeline := mongo.Pipeline{{{Key: "$set", Value: bson.D{
+	return mongo.Pipeline{{{Key: "$set", Value: bson.D{
 		{Key: "status", Value: auth.JobRunning},
 		{Key: "lease_owner", Value: workerID},
 		{Key: "lease_expires", Value: leaseExpires},
 		{Key: "attempts", Value: bson.D{{Key: "$add", Value: bson.A{"$attempts", int32(1)}}}},
 	}}}, {{Key: "$unset", Value: bson.A{"next_attempt_at", "steps", "steps_omitted"}}}}
+}
+
+// claimPlain claims the oldest claimable job that is not ordered.
+func (s *AuthStore) claimPlain(ctx context.Context, workerID string, at time.Time, margin time.Duration) (auth.Job, bool, error) {
+	filter := append(claimable(at), bson.E{Key: "serial_key", Value: bson.D{{Key: "$exists", Value: false}}})
 	opts := options.FindOneAndUpdate().SetSort(bson.D{{Key: "created_at", Value: 1}}).SetReturnDocument(options.After)
 	var d jobDoc
-	err := s.jobs().FindOneAndUpdate(ctx, filter, pipeline, opts).Decode(&d)
+	err := s.jobs().FindOneAndUpdate(ctx, filter, claimUpdate(workerID, at, margin), opts).Decode(&d)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return auth.Job{}, false, nil
 	}
@@ -425,6 +517,84 @@ func (s *AuthStore) ClaimJob(ctx context.Context, workerID string, at time.Time,
 		return auth.Job{}, false, err
 	}
 	return jobFromDoc(d), true, nil
+}
+
+// serialHeadsLimit is how many serial keys' heads one claim looks at.
+const serialHeadsLimit = 50
+
+// claimSerial claims the head of a serial key: the oldest unfinished job of each key is the
+// only one of that key a worker may run, whether it is queued, waiting out a retry or running
+// (then it is not claimable and neither are its successors). The oldest head goes first.
+func (s *AuthStore) claimSerial(ctx context.Context, workerID string, at time.Time, margin time.Duration) (auth.Job, bool, error) {
+	cur, err := s.jobs().Aggregate(ctx, mongo.Pipeline{
+		{{Key: "$match", Value: bson.D{
+			{Key: "serial_key", Value: bson.D{{Key: "$exists", Value: true}}},
+			{Key: "status", Value: bson.D{{Key: "$ne", Value: auth.JobDone}}},
+		}}},
+		{{Key: "$sort", Value: bson.D{{Key: "serial_key", Value: 1}, {Key: "serial_order", Value: 1}, {Key: "_id", Value: 1}}}},
+		{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: "$serial_key"},
+			{Key: "id", Value: bson.D{{Key: "$first", Value: "$_id"}}},
+			{Key: "order", Value: bson.D{{Key: "$first", Value: "$serial_order"}}},
+			{Key: "lease", Value: bson.D{{Key: "$first", Value: "$lease_expires"}}},
+		}}},
+		// $first of a missing lease_expires is null, which `lease: null` matches.
+		{{Key: "$match", Value: bson.D{{Key: "$or", Value: bson.A{
+			bson.D{{Key: "lease", Value: nil}},
+			bson.D{{Key: "lease", Value: bson.D{{Key: "$lte", Value: at}}}},
+		}}}}},
+		{{Key: "$sort", Value: bson.D{{Key: "order", Value: 1}}}},
+		{{Key: "$limit", Value: serialHeadsLimit}},
+	})
+	if err != nil {
+		return auth.Job{}, false, err
+	}
+	var heads []struct {
+		ID string `bson:"id"`
+	}
+	if err := cur.All(ctx, &heads); err != nil {
+		return auth.Job{}, false, err
+	}
+	for _, h := range heads {
+		filter := append(claimable(at), bson.E{Key: "_id", Value: h.ID})
+		var d jobDoc
+		err := s.jobs().FindOneAndUpdate(ctx, filter, claimUpdate(workerID, at, margin),
+			options.FindOneAndUpdate().SetReturnDocument(options.After)).Decode(&d)
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			continue // another worker took it first
+		}
+		if err != nil {
+			return auth.Job{}, false, err
+		}
+		return jobFromDoc(d), true, nil
+	}
+	return auth.Job{}, false, nil
+}
+
+// SerialWaiting counts the ordered jobs that wait behind another of their key: unfinished
+// jobs with a serial key, less one head for each key.
+func (s *AuthStore) SerialWaiting(ctx context.Context) (int64, error) {
+	cur, err := s.jobs().Aggregate(ctx, mongo.Pipeline{
+		{{Key: "$match", Value: bson.D{
+			{Key: "serial_key", Value: bson.D{{Key: "$exists", Value: true}}},
+			{Key: "status", Value: bson.D{{Key: "$ne", Value: auth.JobDone}}},
+		}}},
+		{{Key: "$group", Value: bson.D{{Key: "_id", Value: "$serial_key"}, {Key: "n", Value: bson.D{{Key: "$sum", Value: 1}}}}}},
+		{{Key: "$group", Value: bson.D{{Key: "_id", Value: nil}, {Key: "n", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$subtract", Value: bson.A{"$n", 1}}}}}}}}},
+	})
+	if err != nil {
+		return 0, err
+	}
+	var rows []struct {
+		N int64 `bson:"n"`
+	}
+	if err := cur.All(ctx, &rows); err != nil {
+		return 0, err
+	}
+	if len(rows) == 0 {
+		return 0, nil
+	}
+	return rows[0].N, nil
 }
 
 // SetJobSteps replaces the steps of the running attempt. The filter names the

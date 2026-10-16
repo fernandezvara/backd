@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"time"
@@ -51,6 +52,18 @@ type Job struct {
 	ParentID       string // the invocation that queued it with ctx.call; empty otherwise
 	RerunOf        string // the finished job an administrator re-ran to make this one; empty otherwise
 	Depth          int    // nested calls above it
+	// EventID is the change that made a trigger's job; ChainRoot and ChainDepth where it sits
+	// in a chain of writes caused by trigger runs (empty and 0 for a job no trigger made, or
+	// called by one: they carry the chain over).
+	EventID    string
+	ChainRoot  string
+	ChainDepth int
+	// SerialKey makes the jobs that share it run one at a time, oldest SerialOrder first (an
+	// `ordered` trigger: one document's changes, in the order they were made). A job whose
+	// predecessor hasn't finished isn't claimed, and a retry waiting out its delay holds its
+	// place. Empty for jobs that run whenever a worker is free.
+	SerialKey   string
+	SerialOrder int64
 	// Email is set on an email job: backd's own request to send a message, which
 	// a worker renders and hands to the realm's delivery function. It holds no
 	// message and no token.
@@ -310,6 +323,48 @@ func (s *Users) EnqueueJob(ctx context.Context, j Job) (Job, error) {
 		return Job{}, err
 	}
 	return j, nil
+}
+
+// EnqueueKeyedJob stores a job whose id says what it is for (j.ID must be set): queuing the same
+// work twice is one job, and the second call is not an error. It returns whether the job is new.
+func (s *Users) EnqueueKeyedJob(ctx context.Context, j Job) (bool, error) {
+	now := s.now()
+	j.Status = JobQueued
+	j.CreatedAt = now
+	j.ExpiresAt = now.Add(pendingJobTTL)
+	err := s.Store.EnqueueJob(ctx, j)
+	if errors.Is(err, ErrJobExists) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// KeyedJobID is the id of a job made for something that happens once, from what identifies
+// it: the same parts give the same id, in the shape of any job id.
+func KeyedJobID(parts ...string) string {
+	h := sha256.New()
+	for _, p := range parts {
+		h.Write([]byte(p))
+		h.Write([]byte{0})
+	}
+	id, err := xid.FromBytes(h.Sum(nil)[:12])
+	if err != nil {
+		return xid.New().String()
+	}
+	return id.String()
+}
+
+// EnqueueJobs stores jobs that carry an id of their own — derived from what they are for, so
+// that the same work queued twice is one job — and returns how many were new. The rest are
+// replays and are skipped.
+func (s *Users) EnqueueJobs(ctx context.Context, jobs []Job) (int, error) {
+	now := s.now()
+	for i := range jobs {
+		jobs[i].Status = JobQueued
+		jobs[i].CreatedAt = now
+		jobs[i].ExpiresAt = now.Add(pendingJobTTL)
+	}
+	return s.Store.EnqueueJobs(ctx, jobs)
 }
 
 // JobFilter selects jobs to list. Zero fields match everything.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -117,31 +118,33 @@ func sameAccess(a, b MemberAccess) bool {
 	return string(ja) == string(jb)
 }
 
-// queueOrgHook queues the call of a hook for one organization and user. A failure is only
-// logged: the change already happened and goes on, and the function is retried by the job
-// mechanism (its `retry:`).
-func (s *Users) queueOrgHook(ctx context.Context, hook registry.OrgHook, origin, org, user string, event func(seq int64) any) {
+// queueOrgHook queues the call of a hook for one organization and user, with a job id made
+// of the event (what, where, whose and its sequence number), so queuing it twice is one job.
+// It returns the error: the callers run it inside the transaction of the change that causes
+// the event, so the event is queued if and only if the change happens. The function itself
+// is retried by the job mechanism (its `retry:`).
+func (s *Users) queueOrgHook(ctx context.Context, hook registry.OrgHook, origin, org, user string, event func(seq int64) any) error {
 	if hook.Function == "" {
-		return
+		return nil
 	}
 	seq, err := s.Store.NextOrgMemberSeq(ctx, org, user)
-	if err == nil {
-		var input []byte
-		if input, err = json.Marshal(event(seq)); err == nil {
-			db, fn, _ := strings.Cut(hook.Function, "/")
-			timeout := hook.Timeout
-			if timeout <= 0 {
-				timeout = defaultOrgHookTimeout
-			}
-			_, err = s.EnqueueJob(ctx, Job{
-				Database: db, Function: fn, Input: input, CallerActor: ActorSystem, Origin: origin,
-				ActsAsFunction: true, TimeoutMS: timeout.Milliseconds(),
-			})
-		}
+	if err != nil {
+		return err
 	}
-	if err != nil && s.Log != nil {
-		s.Log.Error("could not queue an organization hook", "origin", origin, "org", org, "user_id", user, "error", err)
+	input, err := json.Marshal(event(seq))
+	if err != nil {
+		return err
 	}
+	db, fn, _ := strings.Cut(hook.Function, "/")
+	timeout := hook.Timeout
+	if timeout <= 0 {
+		timeout = defaultOrgHookTimeout
+	}
+	_, err = s.EnqueueKeyedJob(ctx, Job{
+		ID: KeyedJobID(origin, org, user, strconv.FormatInt(seq, 10)), Database: db, Function: fn, Input: input,
+		CallerActor: ActorSystem, Origin: origin, ActsAsFunction: true, TimeoutMS: timeout.Milliseconds(),
+	})
+	return err
 }
 
 // hooks returns the realm's hooks, empty when it has no organizations.
@@ -152,46 +155,47 @@ func (s *Users) hooks() registry.OrgHooks {
 	return registry.OrgHooks{}
 }
 
-// putMember stores a membership and calls the hooks the change calls for: on_member_joined for
-// a new membership (invitation says through which, "" for none), on_roles_changed when what
-// the member holds changed. before is nil for a membership that didn't exist.
+// putMember stores a membership and queues the hooks the change calls for, in one
+// transaction: on_member_joined for a new membership (invitation says through which, "" for
+// none), on_roles_changed when what the member holds changed. before is nil for a membership
+// that didn't exist.
 func (s *Users) putMember(ctx context.Context, before *OrgMember, after OrgMember, invitation string) error {
-	if err := s.Store.PutOrgMember(ctx, after); err != nil {
-		return err
-	}
-	s.memberChanged(ctx, before, after, invitation)
-	return nil
+	return s.Store.Transact(ctx, func(ctx context.Context) error {
+		if err := s.Store.PutOrgMember(ctx, after); err != nil {
+			return err
+		}
+		return s.memberChanged(ctx, before, after, invitation)
+	})
 }
 
-// memberChanged calls the hooks for a membership that has just been stored.
-func (s *Users) memberChanged(ctx context.Context, before *OrgMember, after OrgMember, invitation string) {
+// memberChanged queues the hooks for a membership that has just been stored.
+func (s *Users) memberChanged(ctx context.Context, before *OrgMember, after OrgMember, invitation string) error {
 	h := s.hooks()
 	if before == nil {
 		if h.OnMemberJoined.Function == "" {
-			return
+			return nil
 		}
 		access := s.accessOf(ctx, after)
-		s.queueOrgHook(ctx, h.OnMemberJoined, OrgMemberJoinedOrigin, after.Org, after.User, func(seq int64) any {
+		return s.queueOrgHook(ctx, h.OnMemberJoined, OrgMemberJoinedOrigin, after.Org, after.User, func(seq int64) any {
 			return OrgMemberJoined{Event: "member_joined", Org: after.Org, User: after.User, Seq: seq, Invitation: invitation, MemberAccess: access}
 		})
-		return
 	}
 	if h.OnRolesChanged.Function == "" {
-		return
+		return nil
 	}
 	was, now := s.accessOf(ctx, *before), s.accessOf(ctx, after)
 	if sameAccess(was, now) {
-		return
+		return nil
 	}
-	s.queueOrgHook(ctx, h.OnRolesChanged, OrgRolesChangedOrigin, after.Org, after.User, func(seq int64) any {
+	return s.queueOrgHook(ctx, h.OnRolesChanged, OrgRolesChangedOrigin, after.Org, after.User, func(seq int64) any {
 		return OrgRolesChanged{Event: "roles_changed", Org: after.Org, User: after.User, Seq: seq, Before: was, After: now}
 	})
 }
 
-// memberLeft calls on_member_left.
-func (s *Users) memberLeft(ctx context.Context, org, user, reason string) {
+// memberLeft queues on_member_left.
+func (s *Users) memberLeft(ctx context.Context, org, user, reason string) error {
 	h := s.hooks().OnMemberLeft
-	s.queueOrgHook(ctx, h, OrgMemberLeftOrigin, org, user, func(seq int64) any {
+	return s.queueOrgHook(ctx, h, OrgMemberLeftOrigin, org, user, func(seq int64) any {
 		return OrgMemberLeft{Event: "member_left", Org: org, User: user, Seq: seq, Reason: reason}
 	})
 }
@@ -223,8 +227,8 @@ func (s *Users) snapshotTeam(ctx context.Context, orgID, teamID string) []member
 	return out
 }
 
-// teamChanged calls on_roles_changed for the members of a snapshot whose access differs now.
-func (s *Users) teamChanged(ctx context.Context, orgID string, before []memberSnapshot) {
+// teamChanged queues on_roles_changed for the members of a snapshot whose access differs now.
+func (s *Users) teamChanged(ctx context.Context, orgID string, before []memberSnapshot) error {
 	h := s.hooks().OnRolesChanged
 	for _, b := range before {
 		m, err := s.Store.OrgMember(ctx, orgID, b.user)
@@ -235,8 +239,11 @@ func (s *Users) teamChanged(ctx context.Context, orgID string, before []memberSn
 		if sameAccess(b.access, now) {
 			continue
 		}
-		s.queueOrgHook(ctx, h, OrgRolesChangedOrigin, orgID, b.user, func(seq int64) any {
+		if err := s.queueOrgHook(ctx, h, OrgRolesChangedOrigin, orgID, b.user, func(seq int64) any {
 			return OrgRolesChanged{Event: "roles_changed", Org: orgID, User: b.user, Seq: seq, Before: b.access, After: now}
-		})
+		}); err != nil {
+			return err
+		}
 	}
+	return nil
 }

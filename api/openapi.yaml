@@ -5591,6 +5591,98 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/triggers/status:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+    get:
+      tags: [admin]
+      summary: The trigger dispatcher's state and the realm's triggers
+      description: |
+        Whether an instance holds the dispatcher's lease and how old the position it stored is
+        (what to alert on), the realm's triggers with their functions (each one runs with admin
+        data access), the unfinished trigger jobs and the gaps not yet resolved. The lease
+        holder's name is not part of the answer. `dispatcher`, `backlog` and `open_gaps` are
+        null when this instance can't read them. Needs the `functions` area (read is enough).
+      operationId: adminTriggersStatus
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The state.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TriggersStatus" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/triggers/gaps:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+    get:
+      tags: [admin]
+      summary: List what the trigger dispatcher could not turn into jobs
+      description: |
+        The gaps the dispatcher recorded, newest first: `window` (it was away longer than
+        MongoDB keeps history; the gap covers every collection), `preimage_missing` (a change's
+        condition needed an image that was not there; `keys` lists the documents, at most
+        1,000) and `backlog` (the realm was at its ceiling of unfinished trigger jobs). Open
+        ones unless `all=true`. Needs the `functions` area (read is enough).
+      operationId: adminListTriggerGaps
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { name: all, in: query, description: "`true` includes the resolved gaps.", schema: { type: boolean } }
+        - { name: limit, in: query, description: "At most this many (1 to 500; default 100).", schema: { type: integer, minimum: 1, maximum: 500 } }
+      responses:
+        "200":
+          description: The gaps.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/TriggerGap" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/triggers/gaps/{id}/resolve:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { name: id, in: path, required: true, description: The gap's id., schema: { type: string } }
+    post:
+      tags: [admin]
+      summary: Mark a gap as dealt with
+      description: |
+        Closes an open gap: after a rescan of it, or when nothing that matters was lost. Audited
+        as `triggers.gap_resolve` (target `trigger-gap:<id>`). Needs the `functions` area.
+      operationId: adminResolveTriggerGap
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The gap is resolved.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, resolved_at]
+                properties:
+                  id: { type: string }
+                  resolved_at: { $ref: "#/components/schemas/Timestamp" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/functions/{database}/{name}/pause:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -8699,7 +8791,7 @@ components:
         happened and its own console log lines (roadmap F10).
       type: object
       additionalProperties: false
-      required: [id, at, function, actor, mode, status, duration_ms, request_id, job_id, parent_id, origin, logs, steps, steps_omitted]
+      required: [id, at, function, actor, mode, status, duration_ms, request_id, job_id, parent_id, origin, event_id, logs, steps, steps_omitted]
       properties:
         id: { type: string }
         at: { $ref: "#/components/schemas/Timestamp" }
@@ -8715,7 +8807,8 @@ components:
         request_id: { type: [string, "null"] }
         job_id: { type: [string, "null"], description: "The async job this call ran for (roadmap F11); null for sync calls." }
         parent_id: { type: [string, "null"], description: "The invocation that called this one with `ctx.call`; null otherwise." }
-        origin: { type: [string, "null"], description: "What started the call: `http`, `function` (`ctx.call`), `cron`, `admin`, `on_complete:<database>/<name>` (the notification of that function's job ending), or `backd:<event>`. Null for records made before origins were recorded." }
+        origin: { type: [string, "null"], description: "What started the call: `http`, `function` (`ctx.call`), `cron`, `admin`, `trigger:<database>/<collection>/<trigger>` (a trigger of a collection), `on_complete:<database>/<name>` (the notification of that function's job ending), or `backd:<event>`. Null for records made before origins were recorded." }
+        event_id: { type: [string, "null"], description: "For a trigger run, the change it was made for: the same on every replay of that change, and the id functions deduplicate on. Null otherwise." }
         logs:
           type: array
           description: "The function's captured console output, already masked of any declared secrets."
@@ -8862,6 +8955,62 @@ components:
         total: { type: [number, "null"], description: "How much there is to do, when the function said (`ctx.step`'s `total`)." }
         message: { type: [string, "null"] }
         updated_at: { $ref: "#/components/schemas/Timestamp" }
+
+    TriggersStatus:
+      type: object
+      additionalProperties: false
+      required: [dispatcher, triggers, backlog, open_gaps]
+      properties:
+        dispatcher:
+          description: "The deployment's dispatcher; null when this instance can't read its state."
+          oneOf:
+            - type: "null"
+            - type: object
+              additionalProperties: false
+              required: [started, held, epoch, watermark_at, watermark_age_seconds, lease_expires_at]
+              properties:
+                started: { type: boolean, description: "False before any instance has held the lease." }
+                held: { type: boolean, description: "Whether some instance holds the lease right now." }
+                epoch: { type: integer, description: "How many times the lease was taken." }
+                watermark_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }], description: "When the position was last stored." }
+                watermark_age_seconds: { type: [number, "null"], description: "How long ago; what to alert on while the lease is held." }
+                lease_expires_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
+        triggers:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [database, collection, name, events, when, function, fields, session, ordered, runs_with_admin_access]
+            properties:
+              database: { type: string }
+              collection: { type: string }
+              name: { type: string }
+              events: { type: array, items: { type: string, enum: [created, updated, removed] } }
+              when: { type: [string, "null"], description: "The condition's source; null fires on every listed event." }
+              function: { type: string, description: "`<database>/<function>`." }
+              fields: { type: [array, "null"], items: { type: string }, description: "What rides in the job; null is ids only." }
+              session: { type: boolean }
+              ordered: { type: boolean }
+              runs_with_admin_access: { type: boolean, description: "Always true: a trigger's function has `ctx.admin.db`." }
+        backlog: { type: [integer, "null"], description: "Unfinished (queued, waiting or running) trigger jobs of the realm." }
+        open_gaps: { type: [integer, "null"], description: "Gaps not yet resolved." }
+
+    TriggerGap:
+      type: object
+      additionalProperties: false
+      required: [id, reason, realm, collection, trigger, from, to, count, keys, recorded_at, resolved_at]
+      properties:
+        id: { type: string }
+        reason: { type: string, enum: [window, preimage_missing, backlog] }
+        realm: { type: [string, "null"], description: "Null for a window gap, which covers every realm." }
+        collection: { type: [string, "null"] }
+        trigger: { type: [string, "null"] }
+        from: { $ref: "#/components/schemas/Timestamp" }
+        to: { $ref: "#/components/schemas/Timestamp" }
+        count: { type: integer, description: "How many changes it stands for." }
+        keys: { type: array, items: { type: string }, description: "Ids of the documents, at most 1,000." }
+        recorded_at: { $ref: "#/components/schemas/Timestamp" }
+        resolved_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
 
     Schedule:
       type: object
@@ -9252,6 +9401,17 @@ components:
         purge_at:
           allOf: [{ $ref: "#/components/schemas/Timestamp" }]
           description: When a soft-deleted document is removed for good (`soft_delete.retention`).
+        chain:
+          type: object
+          additionalProperties: false
+          required: [root, depth]
+          description: |
+            Set only on a write made by a trigger run (or by a function it called): `root` is the
+            id of the change that started the chain and `depth` how many trigger runs deep this
+            write is. The dispatcher reads it to bound chains; clients can't set it.
+          properties:
+            root: { type: string }
+            depth: { type: integer, minimum: 0 }
 
     Document:
       type: object

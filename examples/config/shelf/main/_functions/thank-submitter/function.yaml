@@ -1,0 +1,4 @@
+# Step 3 (chapter 23): the proposal is published; tell its author.
+internal: true
+mode: async
+timeout: 20s

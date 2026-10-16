@@ -98,6 +98,10 @@ const (
 	AuditSecretSet          = "secret.set"        // details: database ("": realm scope); never the value
 	AuditSecretDelete       = "secret.delete"     // details: database
 	AuditSecretsRotated     = "secret.rotate_key" // by backd secret rotate-key; details: count
+	// AuditTriggerGapResolve is an administrator closing a recorded gap of the trigger dispatcher;
+	// AuditTriggerRescan one re-emitting the changes of a collection.
+	AuditTriggerGapResolve = "triggers.gap_resolve"
+	AuditTriggerRescan     = "triggers.rescan"
 )
 
 // Actors that aren't a credential.

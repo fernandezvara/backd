@@ -104,6 +104,7 @@ Working on a `backd` checkout instead? The same files live in the repository: `e
 | 20 | [Teams as organizations](20-teams/) | `organizations:` in `realm.yaml`, a collection that belongs to teams, invitations as a link and by email, roles inside a team, a `plan` claim read by the `pin` function, `require_mfa`, the last-owner rule and deleting a team with its report |
 | 21 | [Authors with references](21-authors/) | a `profiles` collection with a unique index on `_meta.owner`, an `author` reference from `_meta.owner`, `expand=author(name,avatar)` on the gallery, the cost headers, `null` for what a reader can't see |
 | 22 | [Search and a team dashboard](22-search-dashboard/) | a weighted text index on assets, `$search` sorted by relevance in the user's language, an `aggregate:` on pins with its missing-index warning and fix, a team time zone claim and pins per member per month |
+| 23 | [A pipeline on a status](23-pipelines/) | `triggers:` on a collection, a `when` over the transition, `by` from the session, ordered steps, chains and `_meta.chain`, `fakeTrigger`, `backd triggers status` |
 
 
 

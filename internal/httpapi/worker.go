@@ -392,7 +392,7 @@ func (w *Worker) execute(ctx context.Context, log *slog.Logger, realm string, sv
 	}
 	deadline := w.fns.docs.now().Add(fn.Timeout)
 	invID := xid.New().String()
-	meta := callMeta{Origin: job.Origin, ParentID: job.ParentID, Depth: job.Depth}
+	meta := callMeta{Origin: job.Origin, ParentID: job.ParentID, Depth: job.Depth, EventID: job.EventID, ChainRoot: job.ChainRoot, ChainDepth: job.ChainDepth}
 	if job.Scheduled {
 		meta.Origin = originCron
 	}
@@ -412,7 +412,7 @@ func (w *Worker) execute(ctx context.Context, log *slog.Logger, realm string, sv
 			User:      userEnvelope(caller, w.fns.userOrgsEnvelope(ctx, realm, caller)),
 			Secrets:   secrets,
 			Mask:      mask,
-			Callback:  w.fns.callback(realm, job.Database, job.Function, fn, caller, deadline.Add(callbackMargin), invID, job.Depth, &job),
+			Callback:  w.fns.callback(realm, job.Database, job.Function, fn, caller, deadline.Add(callbackMargin), invID, job.Depth, &job, chainRef{Root: job.ChainRoot, Depth: job.ChainDepth}),
 			RequestID: job.RequestID,
 		},
 	}

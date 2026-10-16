@@ -24,6 +24,7 @@ import (
 
 	"github.com/fernandezvara/backd/internal/adminui"
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/changefeed"
 	"github.com/fernandezvara/backd/internal/executor"
 	"github.com/fernandezvara/backd/internal/httpapi"
 	"github.com/fernandezvara/backd/internal/metrics"
@@ -34,6 +35,7 @@ import (
 	"github.com/fernandezvara/backd/internal/settings"
 	"github.com/fernandezvara/backd/internal/storage"
 	"github.com/fernandezvara/backd/internal/templates"
+	"github.com/fernandezvara/backd/internal/triggers"
 )
 
 // version is set at build time (-ldflags "-X main.version=v1.2.3") by
@@ -67,6 +69,9 @@ func role(name string, action func(context.Context, *app) error) kli.CommandFunc
 		}
 		defer a.close()
 		a.withWorker = name == "serve" && flag(c, "with-worker")
+		if name == "provision" {
+			a.disablePreImages, a.yes = flag(c, "disable-preimages"), flag(c, "yes")
+		}
 		return action(ctx, a)
 	})
 }
@@ -86,6 +91,15 @@ type app struct {
 	metrics *metrics.Metrics
 	// reloadErrors reports why the last live reload failed (dev mode); nil otherwise.
 	reloadErrors func() []string
+	// disablePreImages and yes are provision's --disable-preimages and --yes.
+	disablePreImages, yes bool
+	// feed is the change-stream source both consumers read through; it connects on first use.
+	feed *feedSource
+	// triggers is the trigger dispatcher (BACKD_TRIGGERS); nil when this instance has none.
+	triggers *triggers.Dispatcher
+	// events is the realtime change feed (BACKD_EVENTS): it opens its stream when the first
+	// subscriber arrives and closes it after the last one left. nil when events are off.
+	events *changefeed.Lazy
 }
 
 func setup(ctx context.Context, getenv func(string) string, logOut io.Writer) (*app, error) {
@@ -106,6 +120,9 @@ func setup(ctx context.Context, getenv func(string) string, logOut io.Writer) (*
 		return nil, fmt.Errorf("invalid config:\n%w", err)
 	}
 	if err := reg.CheckAggregateLimits(cfg.Aggregate); err != nil {
+		return nil, fmt.Errorf("invalid config:\n%w", err)
+	}
+	if err := reg.CheckTriggerLimits(cfg.TriggerLimits); err != nil {
 		return nil, fmt.Errorf("invalid config:\n%w", err)
 	}
 	for _, w := range reg.AggregateWarnings() {
@@ -139,8 +156,23 @@ func (a *app) provisioner() *mongodb.Provisioner {
 }
 
 func provision(ctx context.Context, a *app) error {
+	if a.disablePreImages {
+		// Irreversible, so it is listed and refused before anything is applied, until --yes.
+		would, err := a.provisioner().DisablePreImages(ctx, false)
+		if err != nil {
+			return err
+		}
+		if len(would) > 0 && !a.yes {
+			return fmt.Errorf("--disable-preimages would remove the pre-change images of %s for good (the stored images are deleted, and a realtime collection can't get them back for changes already made): run it again with --yes", strings.Join(would, ", "))
+		}
+	}
 	if err := a.provisioner().Apply(ctx); err != nil {
 		return err
+	}
+	if a.disablePreImages {
+		if _, err := a.provisioner().DisablePreImages(ctx, true); err != nil {
+			return err
+		}
 	}
 	if err := a.syncRoles(ctx); err != nil {
 		return err
@@ -209,6 +241,13 @@ func serve(ctx context.Context, a *app) error {
 	if err := a.checkSecrets(ctx); err != nil {
 		return err
 	}
+	if a.cfg.Events && len(a.reg.EventCollections()) > 0 {
+		if err := mongodb.CheckStreamPrivilege(ctx, a.client); err != nil {
+			return err
+		}
+	}
+	defer a.openEvents()()
+	defer a.feedSource().close()
 
 	var reload *reloader
 	var publicHandler http.Handler
@@ -239,6 +278,8 @@ func serve(ctx context.Context, a *app) error {
 	}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	defer a.startTriggers(ctx)()
 
 	if reload != nil {
 		a.log.Warn("BACKD_DEV=true: the config reloads automatically when its files change (a change that doesn't validate is refused and the previous config keeps running) — local development only, never enable this in production")
@@ -511,6 +552,8 @@ func (a *app) handlerConfig() httpapi.Config {
 		ImageMaxPixels:    a.cfg.ImageMaxPixels,
 		Expand:            a.cfg.Expand,
 		Aggregate:         a.cfg.Aggregate,
+		TriggerLimits:     a.cfg.TriggerLimits,
+		Triggers:          &mongodb.TriggerState{Client: a.client, Deployment: a.cfg.DeploymentID},
 		ImageTimeout:      a.cfg.ImageTimeout,
 		ImageConcurrency:  a.cfg.ImageConcurrency,
 		OpTimeout:         a.cfg.MongoOpTimeout,
@@ -1061,7 +1104,15 @@ func (a *app) jobStats(ctx context.Context) (map[string]metrics.RealmJobs, error
 			errs = append(errs, err)
 			continue
 		}
-		out[realm] = metrics.RealmJobs{Stats: stats, NeedsAttention: attention}
+		var waiting int64
+		if w, ok := svc.Store.(interface {
+			SerialWaiting(context.Context) (int64, error)
+		}); ok {
+			if waiting, err = w.SerialWaiting(ctx); err != nil {
+				errs = append(errs, err)
+			}
+		}
+		out[realm] = metrics.RealmJobs{Stats: stats, NeedsAttention: attention, SerialWaiting: waiting}
 	}
 	return out, errors.Join(errs...)
 }

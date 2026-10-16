@@ -94,6 +94,20 @@ func TestFunctionsHistoryAndLogs(t *testing.T) {
 		t.Errorf("history --json: want 2 lines, got:\n%s", out)
 	}
 
+	// A trigger run shows what started it and the change it was made for.
+	svc.RecordInvocation(ctx, auth.InvocationRecord{
+		ID: "inv-trigger", Function: "app/hello", Actor: "func:acme/app/hello", Mode: "async", Status: "ok",
+		Origin: "trigger:app/orders/on_paid", EventID: "3f9ab1c2d4e5f60718293a4b5c6d7e8f", RequestID: "3f9ab1c2d4e5f60718293a4b5c6d7e8f",
+	})
+	out = c.expect(0, "trigger:app/orders/on_paid", "", "functions", "history", "--function", "acme/app/hello", "--url", srv.URL)
+	if !strings.Contains(out, "ORIGIN") || !strings.Contains(out, "EVENT-ID") || !strings.Contains(out, "3f9ab1c2d4e5f60718293a4b5c6d7e8f") {
+		t.Errorf("history with a trigger run:\n%s", out)
+	}
+	out = c.expect(0, `"origin":"trigger:app/orders/on_paid"`, "", "functions", "history", "--function", "acme/app/hello", "--json", "--url", srv.URL)
+	if !strings.Contains(out, `"event_id":"3f9ab1c2d4e5f60718293a4b5c6d7e8f"`) {
+		t.Errorf("history --json lacks the event id:\n%s", out)
+	}
+
 	// A function with no calls has empty, not erroring, history.
 	code, out, _ := c.run("", "functions", "history", "--function", "acme/app/hello2", "--url", srv.URL)
 	if code != 0 || !strings.Contains(out, "STATUS") {

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/fernandezvara/backd/internal/functions"
+	"github.com/fernandezvara/backd/internal/mongodb"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -168,6 +169,9 @@ func (r *reloader) reload(ctx context.Context, changed []string) (*reloadEvent, 
 	if err := reg.CheckAggregateLimits(cur.cfg.Aggregate); err != nil {
 		return nil, fmt.Errorf("invalid config:\n%w", err)
 	}
+	if err := reg.CheckTriggerLimits(cur.cfg.TriggerLimits); err != nil {
+		return nil, fmt.Errorf("invalid config:\n%w", err)
+	}
 	if err := r.build(ctx, reg); err != nil {
 		return nil, err
 	}
@@ -185,6 +189,12 @@ func (r *reloader) reload(ctx context.Context, changed []string) (*reloadEvent, 
 	next.reg, next.fingerprint, next.userServices = reg, fp, nil
 	if err := r.apply(ctx, &next); err != nil {
 		return nil, fmt.Errorf("applying the new config: %w", err)
+	}
+	if next.events != nil {
+		next.events.SetWatched(mongodb.RealtimeWatchSet(reg))
+	}
+	if next.triggers != nil {
+		next.triggers.SetRegistry(reg)
 	}
 	r.public.Store(next.handler())
 	if r.internal != nil {

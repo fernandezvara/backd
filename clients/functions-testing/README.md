@@ -37,6 +37,8 @@ Deno.test("checkout refuses an unknown cart", async () => {
 - `collection.aggregate({ groupBy, metrics, tz, orderBy, limit, where })` follows backd's groups and result names (`count`, `sum_total`, `count_distinct__meta.owner`), `null` groups, exact decimal sums and averages as strings, and buckets (`paid_at:month`) in `tz`; `store.declareAggregate(db, collection, { group_by, metrics })` refuses undeclared fields. **`search(text)` and `$search` are an approximation**: words, `"phrases"` and `-exclusions` matched as substrings of the fields of `store.declareTextIndex(db, collection, { title: 10, body: 1 })`, ranked by those weights, with the score in `_meta.score` and no stemming or languages.
 - `store.seed(database, collection, docs)` to set up data before calling the handler, and `store.all(database, collection)` to inspect what it wrote. Pass the same `store` to several `createContext` calls to share state, e.g. testing that a create shows up in a later list.
 
+- `fakeTrigger({ event, collection, before, after, fields, by })`: the input of a trigger's function as backd builds it (ids and `changed` always, bodies only for `fields`, `truncated` over 256 KiB), refusing events that could not happen. Pass it as the handler's first argument; calling the handler twice with it checks idempotency, since a replay carries the same `id`.
+
 ## What it doesn't do
 
 This is a test double for a function's own logic, not a reimplementation of backd:

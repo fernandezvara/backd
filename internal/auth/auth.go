@@ -359,6 +359,11 @@ type Store interface {
 	// OrgMembershipsOf returns up to limit memberships of a user; CountOrgMembershipsOf counts them.
 	OrgMembershipsOf(ctx context.Context, user string, limit int) ([]OrgMember, error)
 	CountOrgMembershipsOf(ctx context.Context, user string) (int, error)
+	// Transact runs fn so that the store writes it makes with the context it is given either
+	// all happen or none do. A transaction already in progress in ctx is joined, not nested.
+	// fn may run more than once (the database retries a transient conflict), so it must have no
+	// effect beyond those writes.
+	Transact(ctx context.Context, fn func(ctx context.Context) error) error
 	// PutOrgMember creates or replaces a membership (unique per organization and user).
 	PutOrgMember(ctx context.Context, m OrgMember) error
 	// NextOrgMemberSeq returns the next sequence number of the membership events of a user in an
@@ -440,6 +445,9 @@ type Store interface {
 
 	// EnqueueJob stores a new async job (roadmap F11), queued for a worker.
 	EnqueueJob(ctx context.Context, j Job) error
+	// EnqueueJobs inserts jobs that carry their own ids, skipping those that exist; it returns
+	// how many were new.
+	EnqueueJobs(ctx context.Context, jobs []Job) (int, error)
 	// ClaimJob atomically claims the oldest job that's never been claimed,
 	// or whose lease has expired, leasing it to workerID until at plus
 	// the job's own timeout plus margin. found is false when there is

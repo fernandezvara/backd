@@ -263,3 +263,94 @@ func TestOrganizationTypes(t *testing.T) {
 		t.Error("org_roles or team_roles in a realm without organizations")
 	}
 }
+
+// A collection with triggers gets the input type of its trigger functions; one without has
+// `trigger: never`. The type-checks (tsc, when it is installed) cover that it compiles.
+func TestTriggerInputTypes(t *testing.T) {
+	root := t.TempDir()
+	write := func(path, content string) {
+		p := filepath.Join(root, path)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("acme/realm.yaml", "signup: open\n")
+	write("acme/main/orders/schema.json", `{"type": "object", "properties": {"status": {"type": "string"}, "total": {"type": "number"}}}`)
+	write("acme/main/orders/collection.yaml", "triggers:\n  on_paid:\n    events: [created, updated]\n    when: \"document.status == 'paid'\"\n    function: main/on-paid\n")
+	write("acme/main/notes/schema.json", `{"type": "object", "properties": {"title": {"type": "string"}}}`)
+	write("acme/main/_functions/on-paid/function.yaml", "internal: true\nmode: async\n")
+	write("acme/main/_functions/on-paid/index.ts", "export default () => null\n")
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := Generate(reg, Options{Realm: "acme"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"export type MainOrdersTriggerInput = {",
+		`collection: "orders";`,
+		`event: "created" | "updated" | "removed";`,
+		"before?: Partial<MainOrders> | null;",
+		"after?: Partial<MainOrders> | null;",
+		"orders: { doc: MainOrders;",
+		"trigger: MainOrdersTriggerInput }",
+		"notes: { doc: MainNotes;",
+		"trigger: never }",
+	} {
+		if !strings.Contains(out.Types, want) {
+			t.Errorf("missing %q in:\n%s", want, out.Types)
+		}
+	}
+	if strings.Contains(out.Types, "MainNotesTriggerInput") {
+		t.Error("a collection without triggers got an input type")
+	}
+	if tsc, err := exec.LookPath("tsc"); err == nil {
+		f := filepath.Join(t.TempDir(), "acme.d.ts")
+		if err := os.WriteFile(f, []byte(out.Types), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if b, err := exec.Command(tsc, "--ignoreConfig", "--noEmit", "--strict", f).CombinedOutput(); err != nil {
+			t.Errorf("tsc: %v\n%s", err, b)
+		}
+	}
+}
+
+// A function a trigger runs has ctx.admin in its types, without declaring admin: true.
+func TestTriggerFunctionsAreTypedWithAdminAccess(t *testing.T) {
+	root := t.TempDir()
+	write := func(path, content string) {
+		p := filepath.Join(root, path)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("acme/realm.yaml", "signup: open\n")
+	write("acme/main/orders/schema.json", `{"type": "object", "properties": {"status": {"type": "string"}}}`)
+	write("acme/main/orders/collection.yaml", "triggers:\n  on_paid:\n    events: [created]\n    function: main/on-paid\n")
+	write("acme/main/_functions/on-paid/function.yaml", "internal: true\nmode: async\n")
+	write("acme/main/_functions/on-paid/index.ts", "export default () => null\n")
+	write("acme/main/_functions/other/function.yaml", "internal: true\nmode: async\n")
+	write("acme/main/_functions/other/index.ts", "export default () => null\n")
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fns, err := GenerateFunctions(reg, "acme", "main", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(fns.Types, "on_paid: { webhook: false; admin: true;") && !strings.Contains(fns.Types, `"on-paid": { webhook: false; admin: true;`) {
+		t.Errorf("the trigger's function has no admin access in its types:\n%s", fns.Types)
+	}
+	if strings.Contains(fns.Types, "other: { webhook: false; admin: true;") {
+		t.Error("a function no trigger runs got admin access")
+	}
+}
