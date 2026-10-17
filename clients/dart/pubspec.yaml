@@ -1,0 +1,22 @@
+name: backd
+description: >-
+  The pure-Dart client for backd: sign-in and sessions, collections and the
+  query language, files, function jobs, realtime live views and generated
+  realm types. Works in Flutter apps and standalone Dart programs alike.
+version: 0.0.1
+homepage: https://github.com/fernandezvara/backd
+documentation: https://docs.backd.dev/build/clients/dart/
+topics:
+  - api-client
+  - backend
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  crypto: ^3.0.6
+  meta: ^1.15.0
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.0
