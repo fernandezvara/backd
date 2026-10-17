@@ -9,11 +9,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dart-lang/setup-dart@v1
+      # Flutter, not bare Dart: `dart pub get` also resolves ./example,
+      # which needs flutter_test from the Flutter SDK.
+      - uses: subosito/flutter-action@v2
         with:
-          sdk: stable
+          channel: stable
+          cache: true
       - name: Dependencies
-        run: dart pub get
+        run: flutter pub get
         working-directory: clients/dart
       - name: Analyze
         run: dart analyze --fatal-warnings
