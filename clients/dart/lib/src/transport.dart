@@ -57,6 +57,32 @@ final class TransportResponse {
   String get bodyText => utf8.decode(body, allowMalformed: true);
 }
 
+/// The answer, streamed: the status and headers once the response starts,
+/// the body as it arrives — for `text/event-stream`.
+final class TransportStreamResponse {
+  TransportStreamResponse({
+    required this.status,
+    this.reasonPhrase,
+    Map<String, List<String>>? headers,
+    required this.body,
+  }) : headers = headers ?? const {};
+
+  final int status;
+  final String? reasonPhrase;
+
+  /// Response headers by lower-cased name.
+  final Map<String, List<String>> headers;
+
+  /// The response body, chunk by chunk, until it ends.
+  final Stream<List<int>> body;
+
+  /// The first value of a header, whatever its case; null when absent.
+  String? header(String name) {
+    final values = headers[name.toLowerCase()];
+    return (values == null || values.isEmpty) ? null : values.first;
+  }
+}
+
 /// Sends one request and answers with the full response. This is the seam
 /// tests implement to stand in for the network — the `fetch` parameter of
 /// the JavaScript client.
@@ -65,6 +91,11 @@ final class TransportResponse {
 /// `HttpClient`. Requests go out as given: the transport adds no headers of
 /// its own.
 typedef Transport = Future<TransportResponse> Function(TransportRequest request);
+
+/// Sends one request and answers with the headers and a streamed body —
+/// the [Transport] for server-sent event streams.
+typedef StreamTransport = Future<TransportStreamResponse> Function(
+    TransportRequest request);
 
 /// The default [Transport]: `dart:io`'s `HttpClient`. The client that builds
 /// one itself closes it in `BackdClient.close`; a transport passed in stays
@@ -95,6 +126,25 @@ final class HttpTransport {
       reasonPhrase: response.reasonPhrase,
       headers: headers,
       body: bytes.takeBytes(),
+    );
+  }
+
+  /// Sends the request and answers as soon as the headers arrive: the body
+  /// is a stream — the [StreamTransport] for event streams.
+  Future<TransportStreamResponse> openStream(TransportRequest req) async {
+    final request = await _client.openUrl(req.method, req.url);
+    req.headers.forEach(request.headers.set);
+    if (req.body != null) request.add(req.body!);
+    final response = await request.close();
+    final headers = <String, List<String>>{};
+    response.headers.forEach((name, values) {
+      headers[name.toLowerCase()] = values;
+    });
+    return TransportStreamResponse(
+      status: response.statusCode,
+      reasonPhrase: response.reasonPhrase,
+      headers: headers,
+      body: response,
     );
   }
 
