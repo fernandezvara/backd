@@ -207,6 +207,8 @@ class BackdClient<R> {
       _transport = transport;
     }
     auth = Auth(this);
+    config = Config(this, configStorage);
+    configClear = config.clear;
   }
 
   /// Base URL of backd, without trailing slashes.
@@ -245,6 +247,10 @@ class BackdClient<R> {
 
   /// Sign-up, login, the second factor and sessions: `client.auth`.
   late final Auth auth;
+
+  /// The realm's app configuration, with its per-user copy kept per realm:
+  /// `client.config`.
+  late final Config config;
 
   /// The fresh proof of identity `client.auth.reauth()` gave, sent with the
   /// sensitive requests while it is good. Set by the auth module (28.2).

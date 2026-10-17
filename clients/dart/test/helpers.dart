@@ -60,6 +60,7 @@ BackdClient<Object?> testClient(
   FakeTransport transport, {
   String? apiKey,
   TokenStorage? storage,
+  ConfigStorage? configStorage,
   RetryOptions? retry,
   CacheOptions? cache,
   Map<String, String>? headers,
@@ -71,6 +72,7 @@ BackdClient<Object?> testClient(
     realm: 'shelf',
     apiKey: apiKey,
     storage: storage,
+    configStorage: configStorage,
     retry: retry ?? const RetryOptions(),
     cache: cache,
     headers: headers ?? const {},
