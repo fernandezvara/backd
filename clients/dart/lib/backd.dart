@@ -19,6 +19,7 @@ export 'src/client.dart';
 export 'src/config.dart';
 export 'src/data.dart';
 export 'src/errors.dart';
+export 'src/files.dart';
 export 'src/oauth.dart' show OAuthStorage, MemoryOAuthStorage;
 export 'src/storage.dart';
 export 'src/transport.dart';

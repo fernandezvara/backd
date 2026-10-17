@@ -308,6 +308,29 @@ class BackdClient<R> {
     _ownedTransport?.close();
   }
 
+  /// Sends a request to an absolute [uri] — a bucket's signed link — through
+  /// the same transport, without credentials. The files module uses it for
+  /// direct uploads; apps don't.
+  @internal
+  Future<TransportResponse> send(
+    Uri uri, {
+    required String method,
+    Map<String, String>? headers,
+    List<int>? body,
+    void Function(UploadProgress)? onUploadProgress,
+  }) async {
+    if (_closed) throw StateError('BackdClient is closed');
+    final res = await _transport(TransportRequest(
+      method: method,
+      url: uri,
+      headers: headers ?? const {},
+      body: body,
+    ));
+    onUploadProgress?.call(
+        UploadProgress(loaded: body?.length ?? 0, total: body?.length ?? 0));
+    return res;
+  }
+
   /// Sends a request to `/v1/{realm}/…`, adding credentials, and returns the
   /// parsed answer. Non-2xx answers throw a [BackdException].
   Future<RawResponse> request(RequestInit req) async {
