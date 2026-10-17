@@ -2,7 +2,6 @@
 title: "2. Members"
 description: "Turn authentication on: sign-up, sessions, roles, and an account page with password change and account deletion."
 weight: 220
-icon: "dot"
 toc: true
 ---
 

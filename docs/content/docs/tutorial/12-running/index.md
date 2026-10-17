@@ -5,7 +5,7 @@ weight: 320
 toc: true
 ---
 
-The shelf works. The last chapter is about *operating* it: who acts without a session, who did what, and what to review before a real deployment.
+The shelf works. Before the remaining chapters grow it further, this one is about *operating* it: who acts without a session, who did what, and what to review before a real deployment.
 
 ## API keys
 

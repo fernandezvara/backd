@@ -85,6 +85,10 @@ backd types --realm shelf --functions --check
 
 Shelf's CI runs both (`make shelf-types`; `make shelf-types-update` regenerates), so a schema change can't merge without its types.
 
+{{< hint style="note" >}}
+TypeScript is not the only language this trick reaches. `backd openapi --realm shelf --out shelf.openapi.json` emits an **OpenAPI 3.1 document** of the realm's whole client API — collections, sign-in methods, functions and configuration — for generators like openapi-generator (Dart, Kotlin, Swift…). It has the same `--check` drift guard for CI, and a running realm serves it at `GET /v1/shelf/_openapi.json`. See [Your realm's OpenAPI](../../build/api/openapi/).
+{{< /hint >}}
+
 ## You should see
 
 - `backd types` writes `types.d.ts` and `realm.json`; run again, nothing changes.

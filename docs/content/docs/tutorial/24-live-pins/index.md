@@ -14,7 +14,7 @@ One line in `config/shelf/main/pins/collection.yaml`:
 
 {{< example-file path="shelf/main/pins/collection.yaml" lines="6-10" >}}
 
-`realtime: true` is the opt-in: only collections that declare it can be followed, and `backd provision` enables the **pre-change images** MongoDB needs for it (a removal can't be told to the right people without the document as it was). The user in `MONGO_URI` also needs the change stream privilege; the stack of this tutorial already has it from chapter 23. See [the change feed](../../operate/change-feed/) for what it costs.
+`realtime: true` is the opt-in: only collections that declare it can be followed, and `backd provision` enables the **pre-change images** MongoDB needs for it (a removal can't be told to the right people without the document as it was). The user in `MONGO_URI` also needs the change stream privilege; the stack's unauthenticated replica set has had it since the first chapter's `compose.yaml`. See [the change feed](../../operate/change-feed/) for what it costs.
 
 ## Subscribe, filtered by team
 

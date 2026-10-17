@@ -8,10 +8,11 @@ toc: true
 
 Until now every function ran because somebody called it or a clock fired. A **trigger** runs a function because a document *changed*, whoever changed it and from wherever. This chapter builds a small pipeline on a `submissions` collection: a member proposes an asset, a curator approves it, and the rest happens on its own.
 
-```
-created ──► announce-submission          tell the member it is waiting
-status submitted → approved ──► publish-submission   publish the asset, mark it published
-status → published ──► thank-submitter   thank the member
+```mermaid
+flowchart LR
+    created["a proposal is created"] -->|fires| announce["announce-submission<br/>tell the member it is waiting"]
+    approved["submitted → approved"] -->|fires| publish["publish-submission<br/>publish the asset, mark it published"]
+    publish -->|"its own write: status → published"| thank["thank-submitter<br/>thank the member"]
 ```
 
 ## The collection
