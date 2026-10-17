@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -32,7 +33,12 @@ func (a *adminAPI) openapi(w http.ResponseWriter, r *http.Request) {
 // same `backd types` writes from CONFIG_DIR.
 func (a *adminAPI) types(w http.ResponseWriter, r *http.Request) {
 	realm := chi.URLParam(r, "realm")
-	out, err := typegen.Generate(a.reg, typegen.Options{Realm: realm, Database: r.URL.Query().Get("db")})
+	lang := r.URL.Query().Get("lang")
+	if lang != "" && lang != "ts" && lang != "dart" {
+		writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "unknown lang "+strconv.Quote(lang)+": ts or dart")
+		return
+	}
+	out, err := typegen.Generate(a.reg, typegen.Options{Realm: realm, Database: r.URL.Query().Get("db"), Lang: lang})
 	if err != nil {
 		writeError(w, r, http.StatusBadRequest, codeInvalidQuery, err.Error())
 		return

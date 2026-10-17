@@ -25,6 +25,7 @@ export 'src/functions.dart';
 export 'src/orgs.dart';
 export 'src/push.dart';
 export 'src/realtime.dart';
+export 'src/typed.dart';
 export 'src/oauth.dart' show OAuthStorage, MemoryOAuthStorage;
 export 'src/storage.dart';
 export 'src/transport.dart';

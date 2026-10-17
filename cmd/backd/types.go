@@ -21,16 +21,26 @@ import (
 func typesCommand(c *kli.CommandContext) error {
 	realm, db, out := str(c, "realm"), str(c, "db"), str(c, "out")
 	check, diff := flag(c, "check"), flag(c, "diff")
+	lang := str(c, "lang")
+	if lang == "" {
+		lang = "ts"
+	}
+	if lang != "ts" && lang != "dart" {
+		return fmt.Errorf("unknown --lang %q: ts or dart", lang)
+	}
 	if flag(c, "functions") {
+		if lang != "ts" {
+			return fmt.Errorf("--functions writes TypeScript only")
+		}
 		return functionTypesCommand(c, realm, check)
 	}
 
 	var gen *typegen.Output
 	var err error
 	if from := str(c, "from"); from != "" {
-		gen, err = typesFromServer(c, from, realm, db)
+		gen, err = typesFromServer(c, from, realm, db, lang)
 	} else {
-		gen, err = typesFromConfig(c, realm, db)
+		gen, err = typesFromConfig(c, realm, db, lang)
 	}
 	if err != nil {
 		return err
@@ -39,7 +49,11 @@ func typesCommand(c *kli.CommandContext) error {
 		fmt.Fprintf(c.Stderr(), "warning: %s\n", w)
 	}
 
-	typesPath, infoPath := filepath.Join(out, typegen.TypesFile), filepath.Join(out, typegen.InfoFile)
+	typesFile := typegen.TypesFile
+	if lang == "dart" {
+		typesFile = typegen.DartTypesFile
+	}
+	typesPath, infoPath := filepath.Join(out, typesFile), filepath.Join(out, typegen.InfoFile)
 	if !check && !diff {
 		if err := os.MkdirAll(out, 0o755); err != nil {
 			return err
@@ -99,7 +113,7 @@ func typesCommand(c *kli.CommandContext) error {
 	return nil
 }
 
-func typesFromConfig(c *kli.CommandContext, realm, db string) (*typegen.Output, error) {
+func typesFromConfig(c *kli.CommandContext, realm, db, lang string) (*typegen.Output, error) {
 	dir, err := configDir(c)
 	if err != nil {
 		return nil, err
@@ -108,10 +122,10 @@ func typesFromConfig(c *kli.CommandContext, realm, db string) (*typegen.Output, 
 	if err != nil {
 		return nil, fmt.Errorf("invalid config:\n%w", err)
 	}
-	return typegen.Generate(reg, typegen.Options{Realm: realm, Database: db})
+	return typegen.Generate(reg, typegen.Options{Realm: realm, Database: db, Lang: lang})
 }
 
-func typesFromServer(c *kli.CommandContext, from, realm, db string) (*typegen.Output, error) {
+func typesFromServer(c *kli.CommandContext, from, realm, db, lang string) (*typegen.Output, error) {
 	t, err := newTarget(from, realm, c.Getenv, false)
 	if err != nil {
 		return nil, err
@@ -124,6 +138,12 @@ func typesFromServer(c *kli.CommandContext, from, realm, db string) (*typegen.Ou
 	var query url.Values
 	if db != "" {
 		query = url.Values{"db": {db}}
+	}
+	if lang != "" && lang != "ts" {
+		if query == nil {
+			query = url.Values{}
+		}
+		query.Set("lang", lang)
 	}
 	if err := t.call("GET", "_admin/types", query, nil, &body); err != nil {
 		return nil, err
