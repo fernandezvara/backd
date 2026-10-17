@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'client.dart';
+import 'files.dart' as fileio;
+import 'transport.dart' show UploadProgress;
 import 'errors.dart';
 
 /// A stored document: the collection's fields plus `id` and `_meta`
@@ -494,6 +496,64 @@ final class Collection {
       options: options,
     );
   }
+
+  /// The files a document holds in a file field (`files:` in
+  /// collection.yaml): `list`, `get`, `put`, `delete`, `version` and `link`.
+  /// They are the `_files` routes of the API, under the caller's own access
+  /// rules.
+  fileio.Files files(String id, String field) => fileio.Files(client, _path, id, field);
+
+  /// How a file field takes files: `upload` (`proxy` or `direct`),
+  /// `maxSize`, `types`, `multiple` and `maxFiles`. Asked once per client
+  /// and remembered.
+  Future<fileio.FileField> field(String field, {RequestOptions? options}) =>
+      fileio.fileField(client, _path, field, options: options);
+
+  /// Uploads a file into a document's file field, whichever way the field
+  /// takes it (through backd, or straight to the bucket). Resolves with the
+  /// updated document.
+  Future<Doc> uploadFile(
+    String id,
+    String field,
+    Object file, {
+    String? name,
+    String? type,
+    Object? ifMatch,
+    void Function(UploadProgress)? onProgress,
+    RequestOptions? options,
+  }) =>
+      fileio.uploadFile(client, _path, id, field, file,
+          name: name,
+          type: type,
+          ifMatch: ifMatch,
+          onProgress: onProgress,
+          options: options);
+
+  /// Uploads a file for a document that doesn't exist yet. Name
+  /// `PreparedUpload.ref` in the field of a `create`, `put` or `patch`.
+  Future<fileio.PreparedUpload> prepareUpload(
+    String field,
+    Object file, {
+    String? name,
+    String? type,
+    void Function(UploadProgress)? onProgress,
+    RequestOptions? options,
+  }) =>
+      fileio.prepareUpload(client, _path, field, file,
+          name: name, type: type, onProgress: onProgress, options: options);
+
+  /// A link to a file, to show or open: `{ url, expiresAt }`. It works
+  /// without credentials until it expires. With [version] it is null while
+  /// the version isn't ready.
+  Future<fileio.FileLink?> fileUrl(
+    String id,
+    String field,
+    String fileId, {
+    String? version,
+    RequestOptions? options,
+  }) =>
+      fileio.fileUrl(client, _path, id, field, fileId,
+          version: version, options: options);
 
   /// One document; [NotFoundError] if it doesn't exist or the caller may not
   /// read it. A soft-deleted document is only found with [deleted] `only` or
