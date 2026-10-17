@@ -4,6 +4,7 @@ description: "Set up Apple's push service for a realm: the key from the Apple De
 icon: "apple-logo"
 weight: 586
 toc: true
+aliases: ["/docs/operate/providers/apns/"]
 ---
 
 `ios.provider: apns` sends to iPhones and iPads directly through Apple's push service: HTTP/2, authenticated with a **token** signed by a key you create in your Apple Developer account. (Apps on the FCM SDK use [FCM](../fcm/) instead.)
@@ -49,7 +50,7 @@ A token made in one is refused (`BadDeviceToken`) by the other. A realm that ser
 
 ## 4. The network
 
-The worker needs `api.push.apple.com` (or the sandbox host), through the [egress proxy](../../production/#functions-executor-egress-and-worker) of the deployment: it opens a CONNECT tunnel and speaks HTTP/2 inside it, which backd tests. Without a proxy it dials the host directly, public addresses only.
+The worker needs `api.push.apple.com` (or the sandbox host), through the [egress proxy](../../../production/#functions-executor-egress-and-worker) of the deployment: it opens a CONNECT tunnel and speaks HTTP/2 inside it, which backd tests. Without a proxy it dials the host directly, public addresses only.
 
 ## What backd sends and does
 

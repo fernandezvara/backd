@@ -6,7 +6,7 @@ weight: 600
 toc: true
 ---
 
-`backd` itself stores no files. A realm that wants documents to carry files (an avatar, receipts, attachments) **brings its own S3-compatible storage**, from a closed list of providers: [AWS S3](../../operate/providers/aws-s3/), [MinIO](../../operate/providers/minio/), [Cloudflare R2](../../operate/providers/cloudflare-r2/) and [DigitalOcean Spaces](../../operate/providers/digitalocean-spaces/). The bucket stays private: files are only ever reached through `backd`, under the same access rules as the document they belong to.
+`backd` itself stores no files. A realm that wants documents to carry files (an avatar, receipts, attachments) **brings its own S3-compatible storage**, from a closed list of providers: [AWS S3](../../operate/providers/storage/aws-s3/), [MinIO](../../operate/providers/storage/minio/), [Cloudflare R2](../../operate/providers/storage/cloudflare-r2/) and [DigitalOcean Spaces](../../operate/providers/storage/digitalocean-spaces/). The bucket stays private: files are only ever reached through `backd`, under the same access rules as the document they belong to.
 
 {{< hint note >}}
 **What is available.** Everything below, from [connecting storage](../../operate/providers/storage/) to [files in apps](apps/). The Shelf tutorial chapters that use it are the next step of the Files roadmap.

@@ -2,7 +2,7 @@
 title: "Magic links"
 description: "Sign in from an email: a link on the same device, or a code typed on any device. How it works, who can use it and what it protects against."
 icon: "envelope"
-weight: 538
+weight: 530
 toc: true
 ---
 

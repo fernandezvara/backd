@@ -4,6 +4,7 @@ description: "Set up push for browsers: the VAPID key pair from backd push web-k
 icon: "globe"
 weight: 587
 toc: true
+aliases: ["/docs/operate/providers/web-push/"]
 ---
 
 `web.provider: webpush` sends to browsers with the standard Web Push protocol: no account with a vendor, only a **VAPID key pair** that identifies your realm to the browsers' push services (Google, Mozilla, Apple, Microsoft).
@@ -35,7 +36,7 @@ backd secret set --realm acme --name VAPID_SUBJECT      # then type mailto:ops@a
 
 ## 3. The app
 
-The app asks the realm for the public key, subscribes with it and registers the subscription: see [Devices](../../../build/push/devices/) (`GET /_auth/devices/web-key`, then `POST /_auth/devices` with `platform: web` and the subscription as JSON). The JavaScript client does all three with `client.push.subscribeWeb()`.
+The app asks the realm for the public key, subscribes with it and registers the subscription: see [Devices](../../../../build/push/devices/) (`GET /_auth/devices/web-key`, then `POST /_auth/devices` with `platform: web` and the subscription as JSON). The JavaScript client does all three with `client.push.subscribeWeb()`.
 
 ## 4. The network
 

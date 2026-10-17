@@ -131,7 +131,3 @@ The answer has a weak `ETag`, so an unchanged summary costs a `304` with no body
 | `400 invalid_aggregate` | a field, bucket, metric or `tz` that isn't valid or declared | the `details` name the parameter and what is allowed |
 | `400 aggregate_not_enabled` | the collection declares no `aggregate:` | declare the fields in `collection.yaml` |
 | `backd_aggregation_duration_seconds` rising | aggregations are getting slower as data grows | look at which collection ([metrics](../../../operate/metrics/)), narrow it or precompute |
-
-## Caching
-
-The answer has a weak `ETag` over its content and is `private, no-cache`: send it back in `If-None-Match` and an unchanged summary is a `304` with no body. The aggregation still runs (the validator is a hash of the result), so this saves bytes, not database work; for a dashboard that is loaded on every page, keep a counter a function maintains instead.

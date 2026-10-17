@@ -100,7 +100,7 @@ sequenceDiagram
     participant B as backd
     participant P as Invitee
     M->>B: POST /_orgs/{org}/invitations { binding, roles, send }
-    B-->>M: { id, token, link } (shown once; the token is stored hashed)
+    B-->>M: { id, token, link } (shown once the token is stored hashed)
     B->>P: the org-invitation email, when send is true
     P->>B: sign in, then POST /_orgs/invitations/preview { token }
     B-->>P: { org, roles, teams }
@@ -140,4 +140,4 @@ They are different operations with different consequences:
 | The organization | kept as a `deleted` record | stays; becomes `orphaned` if the erased user was its last manager |
 | Undo | an administrator can reactivate it, without members; `delete` documents are gone | no |
 
-The content of an organization is the organization's, not its authors': erasing a person doesn't delete what their company works with.
+The content of an organization is the organization's, not its authors': erasing a person doesn't delete what their organization works with.

@@ -4,6 +4,7 @@ description: "The capture provider, steering outcomes with test tokens, the Mail
 icon: "terminal"
 weight: 584
 toc: true
+aliases: ["/docs/operate/providers/local/"]
 ---
 
 You don't need a device or a provider key to develop with push.
@@ -37,13 +38,13 @@ An app (or a `curl`) registers such a device the usual way: `POST /_auth/devices
 
 ## The Mailbox Push tab
 
-The [Mailbox](../../../build/functions/email/#developing-without-a-provider) of the local stack has a **Push** tab next to *Email*: it lists the captured deliveries, newest first, by platform, outcome and time, and shows each one's title, body, link, data, device and send. Open <https://localhost:8443/example/mailbox/?realm=workshop&tab=push> (or press *Push*).
+The [Mailbox](../../../../build/functions/email/#developing-without-a-provider) of the local stack has a **Push** tab next to *Email*: it lists the captured deliveries, newest first, by platform, outcome and time, and shows each one's title, body, link, data, device and send. Open <https://localhost:8443/example/mailbox/?realm=workshop&tab=push> (or press *Push*).
 
 It reads `GET /v1/<realm>/_dev/push`, which has **no authentication**, like the email outbox it sits next to, and exists only for a realm with a capture provider.
 
 ## In unit tests
 
-`@backd/functions-testing` has `fakePush()`, and `createContext({ push: true })` gives a function `ctx.push.send`, recorded and checked like backd would before queueing. See [Testing functions](../../../build/functions/testing/).
+`@backd/functions-testing` has `fakePush()`, and `createContext({ push: true })` gives a function `ctx.push.send`, recorded and checked like backd would before queueing. See [Testing functions](../../../../build/functions/testing/).
 
 ```ts
 const { ctx, sentPushes } = createContext({ push: { kinds: ["order-shipped"] } });

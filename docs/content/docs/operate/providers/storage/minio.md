@@ -4,6 +4,7 @@ description: "Use a self-hosted MinIO as a realm's storage, in development and i
 icon: "hard-drives"
 weight: 573
 toc: true
+aliases: ["/docs/operate/providers/minio/"]
 ---
 
 ```yaml
@@ -48,7 +49,7 @@ storage:
 
 ## Production
 
-Run MinIO with TLS (a certificate your CA signs, in MinIO's `certs` folder), on a network only `backd` and its worker can reach, and give them the CA with `SSL_CERT_FILE` if it is a private one. The [production reference](../../production/) does exactly this and tests it.
+Run MinIO with TLS (a certificate your CA signs, in MinIO's `certs` folder), on a network only `backd` and its worker can reach, and give them the CA with `SSL_CERT_FILE` if it is a private one. The [production reference](../../../production/) does exactly this and tests it.
 
 Create the bucket, a policy limited to your prefix and a key that uses it:
 
@@ -70,4 +71,4 @@ mc admin policy attach prod files-prod --user backd-files
 
 **Encryption at rest:** MinIO encrypts objects when a KMS (or `MINIO_KMS_SECRET_KEY` in development) is configured and the bucket has default encryption; set it with `mc encrypt set` and confirm it by hand, since `backd storage check` can't read it.
 
-**CORS** is MinIO's API-wide setting (`MINIO_API_CORS_ALLOW_ORIGIN`), not a bucket setting, and it is what [direct uploads](../../../build/files/transfers/#direct-uploads) from a browser need: set it to your app's origin (MinIO answers the headers a signed `PUT` carries, `Content-Type` and `x-amz-checksum-sha256`). `backd storage check` can't read it.
+**CORS** is MinIO's API-wide setting (`MINIO_API_CORS_ALLOW_ORIGIN`), not a bucket setting, and it is what [direct uploads](../../../../build/files/transfers/#direct-uploads) from a browser need: set it to your app's origin (MinIO answers the headers a signed `PUT` carries, `Content-Type` and `x-amz-checksum-sha256`). `backd storage check` can't read it.

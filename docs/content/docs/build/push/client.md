@@ -80,4 +80,4 @@ Content-Type: application/json
 
 ## The example
 
-The **expenses with functions** example sends a push when the receiver of a settlement confirms it: `confirm_settlement` declares `push: { kinds: [settlement-confirmed] }` and calls `ctx.push.send({ user: entry._meta.owner, kind: "settlement-confirmed", … })`. Its realm uses the `capture` provider, and the page registers a demo device with `registerOnLaunch`, so the push shows up in the Mailbox's **Push** tab ([Local development](../../../operate/providers/local/)).
+The **expenses with functions** example sends a push when the receiver of a settlement confirms it: `confirm_settlement` declares `push: { kinds: [settlement-confirmed] }` and calls `ctx.push.send({ user: entry._meta.owner, kind: "settlement-confirmed", … })`. Its realm uses the `capture` provider, and the page registers a demo device with `registerOnLaunch`, so the push shows up in the Mailbox's **Push** tab ([Local development](../../../operate/providers/push/local/)).

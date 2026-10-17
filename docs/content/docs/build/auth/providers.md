@@ -2,7 +2,7 @@
 title: "Sign in with Google, Microsoft or Apple"
 description: "Let users sign in with an external identity provider: configuration, the redirect flow, linking rules, errors and security."
 icon: "sign-in"
-weight: 530
+weight: 540
 toc: true
 ---
 
@@ -74,6 +74,8 @@ sequenceDiagram
 2. The user signs in at the provider, which sends them to backd's callback. backd checks the `state` (good for one use, ten minutes), exchanges the code for an ID token with the provider, and verifies its signature, issuer, audience, expiry and nonce.
 3. backd sends the browser to `redirect_to` with `?backd_code=…` (a one-time login code, valid a minute) or `?backd_error=…`. The parameters carry the `backd_` prefix so that they can't collide with the ones your page already uses; add `backd_provider` (with `account_exists`, the provider that was used) and `backd_linked` (after a link, the provider).
 4. The app redeems it: `POST /v1/{realm}/_auth/token` with `{"code", "code_verifier"}`. The answer is a session, like a login's (`{"cookie": true}` works too). The same code and endpoint end a [magic link](../magic-links/). The code is used up even when the verifier is wrong, so a stolen code is useless without the verifier only your app holds.
+
+A provider sign-in is a first factor like a password: a user with a [second factor](../mfa/) is still asked for it — the redemption above (and the [ID-token sign-in](#native-apps-the-id-token)) answers the challenge instead of the session.
 
 **A session never appears in a URL**: only the short-lived code does.
 

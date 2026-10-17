@@ -4,6 +4,7 @@ description: "Use a DigitalOcean Space as a realm's storage."
 icon: "drop"
 weight: 575
 toc: true
+aliases: ["/docs/operate/providers/digitalocean-spaces/"]
 ---
 
 ```yaml
@@ -30,7 +31,7 @@ storage:
 1. **Create the Space** in the region you will name, with *File listing* restricted (private).
 2. **Create a Spaces access key** (API → Spaces Keys), scoped to that Space with *Read, Write and Delete*. The key and its secret are the two realm secrets.
 3. **Encryption at rest:** Spaces encrypts data at rest; there is nothing to set.
-4. **CORS**, needed for [direct uploads](../../../build/files/transfers/#direct-uploads) and cross-origin downloads: set it in the Space's Settings for your app's origin with `GET`, `PUT` and `HEAD`, and allow the headers `Content-Type` and `x-amz-checksum-sha256`. `backd storage check` can't read it: try an upload from the app.
+4. **CORS**, needed for [direct uploads](../../../../build/files/transfers/#direct-uploads) and cross-origin downloads: set it in the Space's Settings for your app's origin with `GET`, `PUT` and `HEAD`, and allow the headers `Content-Type` and `x-amz-checksum-sha256`. `backd storage check` can't read it: try an upload from the app.
 5. Set the secrets and run `backd storage check --realm <realm>`.
 
 A Spaces key is scoped to a Space, not to a prefix: use a Space per `backd` instance, or keep `prefix` distinct and accept that a key can reach every prefix of its Space.

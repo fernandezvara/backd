@@ -117,9 +117,9 @@ cors:
 ```
 
 - The list applies to every route of the realm: data, `/_auth` and `/_admin`.
-- Preflight requests (`OPTIONS`) from a listed origin get `204` with the allowed methods (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`) and request headers (`Authorization`, `Content-Type`, `If-Match`, `Idempotency-Key`, `Prefer`, `X-Request-ID`). The answer may be cached for 10 minutes.
+- Preflight requests (`OPTIONS`) from a listed origin get `204` with the allowed methods (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`) and request headers (`Authorization`, `Content-Type`, `If-Match`, `If-None-Match`, `Idempotency-Key`, `Prefer`, `X-Backd-Reauth`, `X-Backd-Types`, `X-Request-ID`). The answer may be cached for 10 minutes.
 - Every response under `/v1/` carries `Vary: Origin`, so caches keep answers for different origins apart (see [Caching](../../api/#caching)).
-- Responses to listed origins, errors included, carry `Access-Control-Allow-Origin` and expose `ETag`, `Idempotent-Replayed`, `Location`, `Preference-Applied`, `Retry-After`, `WWW-Authenticate` and `X-Request-ID`.
+- Responses to listed origins, errors included, carry `Access-Control-Allow-Origin` and expose `ETag`, `Idempotent-Replayed`, `Location`, `Preference-Applied`, `Retry-After`, `WWW-Authenticate`, `X-Backd-Types-Stale` and `X-Request-ID`.
 - Credentials travel in the `Authorization` header, so responses don't allow credentials, except in a realm with [session cookies](../../auth/sessions/#session-cookies) (`sessions.cookie`): there, responses to the listed origins carry `Access-Control-Allow-Credentials: true`, and a wildcard origin is refused.
 - `X-Backd-On-Behalf-Of` isn't allowed from browsers: only server-side services with API keys may use it.
 - `*` allows any origin. That's reasonable for public, read-only data; for apps with users, list the origins explicitly.
@@ -264,7 +264,7 @@ Triggers need `auth` enabled in the realm. [Operating them](../../../operate/cha
 
 ## Storage
 
-A realm that lets documents carry files connects its own S3-compatible bucket with a `storage:` section: the provider, bucket, a required `prefix`, and the access keys as `secret:NAME` references to realm secrets. See [Connecting storage](../../../operate/providers/storage/) and the page of your provider ([AWS S3](../../../operate/providers/aws-s3/), [MinIO](../../../operate/providers/minio/), [Cloudflare R2](../../../operate/providers/cloudflare-r2/), [DigitalOcean Spaces](../../../operate/providers/digitalocean-spaces/)). `backd template realm` writes it commented, with an example for each.
+A realm that lets documents carry files connects its own S3-compatible bucket with a `storage:` section: the provider, bucket, a required `prefix`, and the access keys as `secret:NAME` references to realm secrets. See [Connecting storage](../../../operate/providers/storage/) and the page of your provider ([AWS S3](../../../operate/providers/storage/aws-s3/), [MinIO](../../../operate/providers/storage/minio/), [Cloudflare R2](../../../operate/providers/storage/cloudflare-r2/), [DigitalOcean Spaces](../../../operate/providers/storage/digitalocean-spaces/)). `backd template realm` writes it commented, with an example for each.
 
 ## Validation
 

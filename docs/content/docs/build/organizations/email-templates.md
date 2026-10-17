@@ -61,8 +61,8 @@ In the JavaScript client: `client.orgs.templates(org).list() / get / put / delet
 
 - **Preview in a sandbox.** `html` comes already sanitized, but show it in an `<iframe sandbox>` as you would any HTML from users.
 - **Previews with real data** call your function, so they are limited to **30 an hour per organization**.
-- **Test sends** go through the realm's delivery function to the requesting user's address, at most **10 per hour per organization**, and are audited. They also count against the per-recipient email limits.
-- **Everything is audited** (`org.template_save`, `org.template_delete`, `org.template_test`), with who and which kind, never the text.
+- **Test sends** go through the realm's delivery function to the requesting user's address, at most **10 per hour per organization**. They also count against the per-recipient email limits.
+- **Saves and deletes are audited** (`org.template_save`, `org.template_delete`), with who and which kind, never the text.
 
 ## When the company's template fails
 

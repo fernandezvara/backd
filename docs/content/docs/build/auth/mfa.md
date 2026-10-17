@@ -2,7 +2,7 @@
 title: "Multi-factor authentication"
 description: "A second step after the first factor: how a sign-in answers with a challenge, how the second factor is checked, and how rules and functions see how a session was made."
 icon: "user-check"
-weight: 535
+weight: 537
 toc: true
 ---
 

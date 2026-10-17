@@ -108,4 +108,4 @@ A document that stops being anonymously readable (unpublished, deleted, rule cha
 
 Conditional GET makes **polling** cheap: a client that asks every few seconds pays a query and a tiny `304` when nothing changed. It suits dashboards, lists that rarely change, and clients that can't hold a connection open.
 
-Pushing changes as they happen is a different tool, planned as realtime subscriptions, and is the better fit when updates must show up in under a second or the data changes constantly. Realtime subscriptions are not implemented yet; until then, poll with `If-None-Match`.
+Pushing changes as they happen is a different tool: [realtime subscriptions](../realtime/), the better fit when updates must show up in under a second or the data changes constantly. Realtime asks for a collection that opts in with `realtime: true` and holds a connection open; polling works anywhere and needs neither.

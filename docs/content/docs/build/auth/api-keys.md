@@ -2,7 +2,7 @@
 title: "API keys"
 description: "Give server-side services access to a realm's data with API keys."
 icon: "key"
-weight: 530
+weight: 570
 toc: true
 ---
 

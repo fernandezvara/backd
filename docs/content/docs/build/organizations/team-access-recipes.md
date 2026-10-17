@@ -12,7 +12,7 @@ Recipes for [team roles](../team-roles/) and team-scoped documents. Each one is 
 
 | | What it is | Rules ask |
 |---|---|---|
-| **Organization role** | what a person is in the company (`owner`, `hr`, `member`) | `hasOrgRole(document._meta.org, "hr")` |
+| **Organization role** | what a person is in the organization (`owner`, `hr`, `member`) | `hasOrgRole(document._meta.org, "hr")` |
 | **Team** | a group of members. As a *role group* it carries organization roles to everyone in it; as a *document owner* it is where documents live (`_meta.team`) | `inTeam(document._meta.team)` |
 | **Team role** | what a person is *within one team* (`manager` of Sales) | `hasTeamRole(document._meta.team, "manager")` |
 

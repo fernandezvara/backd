@@ -12,23 +12,34 @@ It uses Docker Compose, but each part maps directly onto other platforms: a Kube
 
 ## Architecture
 
+The services that run all the time, and the network each connection uses:
+
+```mermaid
+flowchart LR
+    internet([internet]) -- "443 / 80" --> nginx
+
+    subgraph edge["edge — the only published ports"]
+        nginx["nginx<br/>TLS · rate limits · body size · XFF"]
+    end
+
+    nginx -- "all routes" --> backd["backd<br/>verify mode,<br/>least-privilege user"]
+    nginx -- "/_admin only,<br/>ADMIN_ALLOW_FROM" --> admin["backd-admin<br/>admin API on"]
+
+    backd & admin & worker["worker<br/>async jobs"] -- "data" --> mongo[("MongoDB<br/>auth + TLS")]
+    backd & worker -- "storage" --> minio[("MinIO")]
+    backd & worker -- "func" --> executor["executor<br/>one Deno per call"]
+    executor -- "func" --> egress["egress<br/>CONNECT proxy"]
+    egress -- "uplink" --> internet
+    prom["prometheus — scrapes every :9090 on func"]
 ```
- internet ──443──▶ nginx ─────────▶ backd ─────────▶ MongoDB
-          ──80───▶ (edge)  edge     (verify mode,   data   (auth + TLS,
-                   TLS, limits,     least-privilege  net   internal network)
-                   body size, XFF   user)                      ▲
-                                       │                        │ admin user
-                                       │  func net    provision job
-                                       ▼                (backd provision + grants; one-shot)
-                                    executor ──▶ egress ──▶ internet
-                                    (one Deno       (func net + uplink)
-                                     process/call)
-                                       ▲
-                                       │  func net
-                                    worker (claims and runs async jobs)
-                                       ▲
-                                       │  func net: scrapes each :9090
-                                    prometheus (metrics, alert rules)
+
+`mongo` and `minio` publish nothing; `egress` has the only route out. Then the one-shot jobs around them, all on `data`: `provision` runs before `backd` with the MongoDB admin user; `backup` and `restore` (Compose profile `ops`) run on demand:
+
+```mermaid
+flowchart LR
+    provision["provision<br/>before backd, admin user"] -- "data" --> mongo[("MongoDB")]
+    backup["backup<br/>ops profile"] -- "data" --> mongo
+    restore["restore<br/>ops profile"] -- "data" --> mongo
 ```
 
 - **nginx** is the only thing reachable from outside. It terminates TLS, redirects HTTP to HTTPS, rate-limits requests, caps body sizes and sets the client address that `backd` sees. Its access log (`edge` format) records the path without the query string, because the links in [emails](../../build/functions/email/#links-and-pages) carry their token there.

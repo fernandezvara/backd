@@ -2,7 +2,7 @@
 title: "Consents"
 description: "Versioned consent texts kept with the config, accepted and recorded as proof, and served to apps."
 icon: "clipboard-text"
-weight: 566
+weight: 560
 toc: true
 ---
 

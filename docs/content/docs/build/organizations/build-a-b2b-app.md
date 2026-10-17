@@ -44,7 +44,7 @@ on_org_delete:
   action: delete
 ```
 
-`required` means every project belongs to one organization. `on_org_delete` is what happens to the projects when the organization is deleted: `delete` removes them (the other choice is `keep`). When a person is erased, the projects they made stay with the company, with the owner cleared; nothing to declare.
+`required` means every project belongs to one organization. `on_org_delete` is what happens to the projects when the organization is deleted: `delete` removes them (the other choice is `keep`). When a person is erased, the projects they made stay with the organization, with the owner cleared; nothing to declare.
 
 ## 3. Write the rules
 
@@ -60,7 +60,7 @@ The read rule becomes "`_meta.org` is one of the caller's organizations" inside 
 
 ## 4. Create the organization at sign-up
 
-After the user signs up (and verifies their email), the app creates their company. They become its `owner`:
+After the user signs up (and verifies their email), the app creates their organization. They become its `owner`:
 
 ```js
 await backd.auth.signup({ email, password })
@@ -124,4 +124,4 @@ An administrator (`manage: members`) can give only roles that open no capability
 
 ## What you have
 
-Every customer is isolated by the database query itself, people join by invitation, access ends the moment someone leaves, and no handler was written. Next: limit by plan with [claims](../rules-cookbook/#limit-by-plan-with-claims), require a second factor per company and check [what happens when](../what-happens-when/) a member leaves or an organization is deleted.
+Every customer is isolated by the database query itself, people join by invitation, access ends the moment someone leaves, and no handler was written. Next: limit by plan with [claims](../rules-cookbook/#limit-by-plan-with-claims), require a second factor per organization and check [what happens when](../what-happens-when/) a member leaves or an organization is deleted.

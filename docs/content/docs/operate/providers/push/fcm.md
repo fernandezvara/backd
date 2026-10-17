@@ -4,6 +4,7 @@ description: "Set up Firebase Cloud Messaging for a realm: the Firebase console 
 icon: "fire-simple"
 weight: 585
 toc: true
+aliases: ["/docs/operate/providers/fcm/"]
 ---
 
 FCM is the provider for **Android**, and for **iOS apps that use the FCM SDK** (`ios.provider: fcm`). backd sends through FCM's HTTP v1 API from the worker, with an OAuth2 access token it mints from a **service account**.
@@ -42,7 +43,7 @@ push:
 
 ## 4. The network
 
-Requests go through the [egress proxy](../../production/#functions-executor-egress-and-worker) of the deployment, with a token the worker signs for each delivery unit naming only these hosts:
+Requests go through the [egress proxy](../../../production/#functions-executor-egress-and-worker) of the deployment, with a token the worker signs for each delivery unit naming only these hosts:
 
 | Host | For |
 |---|---|

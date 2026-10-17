@@ -24,11 +24,11 @@ $CONFIG_DIR/<realm>/
 - Each directory under `CONFIG_DIR` is a **realm**. It must contain a [`realm.yaml`](../realm/).
 - Each directory inside a realm is a **database**, stored in the MongoDB database `<realm>__<database>`.
 - Each directory inside a database is a **collection**, stored in a MongoDB collection of the same name. It must contain a `schema.json`.
-- A realm's `email` folder holds its [email templates](../../functions/email/#templates), and `pages` is reserved for the pages backd will serve; neither is a database, so they are never read as one and can't be database names.
+- A realm's `email` folder holds its [email templates](../../functions/email/#templates), `pages` is reserved for the pages backd will serve, `push` holds [push templates](../../push/) and `consents` holds the [consent texts](../../auth/consents/): none is a database, so they are never read as one and can't be database names.
 - A realm's `app-config` folder declares its [app configuration](#app-configuration), and is not a database either.
 - A database's `_functions` directory holds its [functions](../../functions/), not a collection.
 - Other plain files at the realm and database levels are ignored, as are hidden entries (names starting with `.`).
-- Changing the config requires a restart. There is no hot-reload.
+- Changing the config requires a restart — except with `BACKD_DEV=true`, which reloads it live (see [Dev mode](../../functions/testing/#dev-mode)).
 
 ## Starting from a template
 

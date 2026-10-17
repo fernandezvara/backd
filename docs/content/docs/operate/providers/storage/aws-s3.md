@@ -4,6 +4,7 @@ description: "Set up an S3 bucket and a least-privilege key for a backd realm."
 icon: "cloud"
 weight: 572
 toc: true
+aliases: ["/docs/operate/providers/aws-s3/"]
 ---
 
 ```yaml
@@ -46,7 +47,7 @@ storage:
    ```
 
    `prod` is the `prefix`; a staging instance of `backd` gets its own prefix and its own policy. Listing is only for a manual reconcile and for `backd storage check`.
-4. **CORS**, needed for [direct uploads](../../../build/files/transfers/#direct-uploads) and for pages that fetch links across origins. Allow your app's origin with `GET`, `PUT` and `HEAD`, the headers `Content-Type` and `x-amz-checksum-sha256`, and expose `ETag`:
+4. **CORS**, needed for [direct uploads](../../../../build/files/transfers/#direct-uploads) and for pages that fetch links across origins. Allow your app's origin with `GET`, `PUT` and `HEAD`, the headers `Content-Type` and `x-amz-checksum-sha256`, and expose `ETag`:
 
    ```json
    [{"AllowedOrigins": ["https://app.example.com"], "AllowedMethods": ["GET", "PUT", "HEAD"],

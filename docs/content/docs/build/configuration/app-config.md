@@ -113,43 +113,6 @@ rules:
 
 The key must be a string literal naming a declared value. The value is read once for the request, so it is a constant to the query: a rule that depends on it still becomes a database filter.
 
-## Recipe: a maintenance window with cron functions
-
-Two scheduled functions open and close a window, and the app shows the public `maintenance` branch:
-
-```yaml
-# open/function.yaml
-mode: async
-schedule: "0 2 * * 6"        # Saturday 02:00
-config: write
-```
-
-```js
-// open/index.ts
-export default async (ctx) => {
-  await ctx.admin.config.set({
-    "maintenance.enabled": true,
-    "maintenance.message": "Back at 04:00",
-  });
-};
-```
-
-```yaml
-# close/function.yaml
-mode: async
-schedule: "0 4 * * 6"
-config: write
-```
-
-```js
-// close/index.ts
-export default async (ctx) => {
-  await ctx.admin.config.reset(["maintenance"]);
-};
-```
-
-Both changes show in the history with the function as actor, so "who turned maintenance on" always has an answer.
-
 ## Live updates
 
 Pushing a change to open pages without waiting for `cache_ttl` is planned with the realtime stream (`client.config.live()`); it is not built yet. Until then a page sees a change within `cache_ttl`, or when it calls `client.config.load()` after the copy expired, which revalidates for the cost of a `304`. Lower `app_config.cache_ttl` for switches that must reach people quickly: a request that answers `304` is cheap.

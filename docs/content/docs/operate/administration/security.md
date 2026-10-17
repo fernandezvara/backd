@@ -101,7 +101,7 @@ Left as it is, on purpose:
 - **Company context can't be used to probe.** `org` on sign-in, sign-up, magic links and reset requests is used only when the address belongs to a member (or is invited by email); otherwise it is ignored with the same answer and the same work (the lookups run either way).
 - **Data hooks are bounded and never in the way.** Two seconds, 16 KiB, an object; a failure renders without `App`. **Review fix:** a hosted page calls its hook only when it has a company context, so a page anyone can open (a wrong token) can't make the app's function run.
 - **Company templates can't run anything.** The syntax is logic-less with escaped values, sizes are capped, the HTML is sanitized from what a parser understood when a message is made (so a template saved before a rule changed is still safe), and previews and test sends are limited: a test goes to the requester only, 10 an hour per organization, and **previews with real data** (which call the hook) 30 an hour (a review fix).
-- **Audited:** team role grants, window changes and revocations, template saves, deletions and test sends, by ids only, never the text.
+- **Audited:** team role grants, window changes and revocations, and template saves and deletions, by ids only, never the text.
 
 Left as it is, on purpose:
 
