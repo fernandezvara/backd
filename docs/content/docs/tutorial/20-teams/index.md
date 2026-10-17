@@ -5,7 +5,7 @@ weight: 400
 toc: true
 ---
 
-Until now Shelf was one workspace. Real groups want their own corner: *this* team's pins, readable by *this* team and nobody else, with a person who runs it and people who only look. That is what an [organization](../../api/organizations/) is: a team is an organization of the realm, created by whoever starts it, and the rules read who belongs to which.
+Until now Shelf was one workspace. Real groups want their own corner: *this* team's pins, readable by *this* team and nobody else, with a person who runs it and people who only look. That is what an [organization](../../build/organizations/api/) is: a team is an organization of the realm, created by whoever starts it, and the rules read who belongs to which.
 
 The old way to do this is an array of member ids on every document (or a `members` collection to keep in sync). It works until someone leaves: their id stays in the arrays until something removes it, and every rule and every query has to know about the array. An organization has none of that: **access ends the moment someone leaves**, because there is nothing to keep in sync.
 
@@ -96,4 +96,4 @@ A member who holds `editor` both ways keeps it after being taken out of the team
 - The only owner can't leave (`last_org_manager`); with another owner, leaving ends access at once.
 - Deleting the team removes its pins, and `backd orgs owned` counted them first.
 
-Read [Organizations](../../api/organizations/) for the API, [Organizations in functions](../../functions/organizations/) for `ctx.user.orgs` and `ctx.admin.orgs`, and [the rules](../../auth/rules/#organizations) for `inOrg` and `hasOrgRole`.
+Read [Organizations](../../build/organizations/api/) for the API, [Organizations in functions](../../build/organizations/functions/) for `ctx.user.orgs` and `ctx.admin.orgs`, and [the rules](../../build/auth/rules/#organizations) for `inOrg` and `hasOrgRole`.

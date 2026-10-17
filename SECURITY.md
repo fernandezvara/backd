@@ -37,7 +37,7 @@ Out of scope:
 - Denial of service through request volume. Rate limiting belongs in the reverse proxy in front of `backd` (see the operations docs).
 - Weaknesses in how you deploy it, such as serving without TLS or leaking API keys.
 
-Before exposing backd, go through the [hardening checklist](https://fernandezvara.github.io/backd/docs/operations/checklist/) (Operations → Hardening checklist in the documentation). The security model is under Authentication → Security model, and a tested production reference deployment is in [`deploy/production`](deploy/production) (Operations → Production deployment).
+Before exposing backd, go through the [hardening checklist](https://fernandezvara.github.io/backd/docs/operate/checklist/) (Operations → Hardening checklist in the documentation). The security model is under Authentication → Security model, and a tested production reference deployment is in [`deploy/production`](deploy/production) (Operations → Production deployment).
 
 ## Consents and personal data
 

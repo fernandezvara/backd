@@ -1,0 +1,45 @@
+---
+title: "Authentication"
+description: "Users, sign-in methods and passwords in each realm."
+icon: "lock"
+weight: 300
+toc: true
+---
+
+Each realm with `auth: enabled` has its own pool of users and [API keys](api-keys/), stored in the realm's [system database](../../operate/#realm-system-databases). One sign-in is meant to work across all databases of that realm (single sign-on), and never in another realm.
+
+## What's available
+
+| Feature | Status |
+|---|---|
+| [Users and passwords](users/), managed with `backd user` or the admin API | available |
+| [Command-line administration](../../operate/administration/cli/): `backd bootstrap`, `backd login` | available |
+| [Sign-up, login and sessions](sessions/) (`/v1/{realm}/_auth/…`) | available |
+| [API keys](api-keys/) for server-side services, with full access to the realm's data | available |
+| [Access rules](rules/) per collection (`rules:` in `collection.yaml`) | available |
+| [Admin API](../../operate/administration/admin/) for server-side user management | available |
+| [Audit trail](../../operate/administration/audit/) of security-sensitive actions | available |
+| [Deactivating and erasing users](../../operate/administration/erasure/), with per-collection policies for their data | available |
+| [Brute-force protection](sessions/#brute-force-protection) on login | available |
+| [Sign in with Google, Microsoft or Apple](providers/): the redirect flow, linking and sign-up rules | available |
+| [Native sign-in](providers/#native-apps-the-id-token) with the ID token a mobile app holds | available |
+| Apple token revocation when an account is deleted | available |
+| [The profile handover and `account.on_signup`](providers/#the-profile-and-the-sign-up-hook) | available |
+| [Provider sign-in in the JavaScript client](../clients/js/#sign-in-with-google-microsoft-or-apple) | available |
+| [Consents](consents/): versioned texts, records, re-acceptance, withdrawal, rules and gating | available |
+| [Compliance](../../operate/administration/compliance/): personal data scope, retention and recipes | available |
+| Personal data export as a downloadable package | planned |
+| Other OpenID Connect providers | planned |
+
+See the [security model](../../operate/administration/security/) for what `backd` protects, and the [hardening checklist](../../operate/checklist/) before exposing a realm.
+
+## Users and sign-in methods
+
+A user holds only identity data: a unique email, whether that email is verified, roles, and whether the account is disabled. Credentials are not part of the user. Each way of signing in is a separate *sign-in method* (an identity) linked to the user:
+
+- **password** is one kind;
+- **Google**, **Microsoft** and **Apple** are others ([Sign in with providers](providers/)); more kinds are planned.
+
+A user can have several at once, at most one of each kind: a password and a provider, say. They all lead to the same user, so roles, rules and owned documents don't depend on how the user signed in. A user can exist without a password, for example when an operator creates the account first and sets the password later, and can remove any method but the last ([`DELETE /_auth/identities/{provider}`](sessions/#sign-in-methods)).
+
+Application data about a user, such as a display name or avatar, belongs in your own collections, not in the user.

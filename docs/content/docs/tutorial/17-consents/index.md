@@ -114,4 +114,4 @@ The Account page's consent list shows `accepted: version …` for each, from `GE
 - *Account → Consents* has the digest switch; with it off, running the `digest` function from the Admin view makes notifications but no mail.
 - Withdrawing the terms is refused (they are what the account needs).
 
-The tour of the tutorial (`make shelf-tour`) checks it: a sign-up without the terms is `consent_required`, the member holds both consents with their history, the terms can't be withdrawn, and no digest mail follows a withdrawal. Read [Consents](../../auth/consents/) for the whole picture: records, re-acceptance, rules (`hasConsent`), erasure and retention.
+The tour of the tutorial (`make shelf-tour`) checks it: a sign-up without the terms is `consent_required`, the member holds both consents with their history, the terms can't be withdrawn, and no digest mail follows a withdrawal. Read [Consents](../../build/auth/consents/) for the whole picture: records, re-acceptance, rules (`hasConsent`), erasure and retention.

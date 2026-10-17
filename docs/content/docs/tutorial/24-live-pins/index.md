@@ -14,7 +14,7 @@ One line in `config/shelf/main/pins/collection.yaml`:
 
 {{< example-file path="shelf/main/pins/collection.yaml" lines="6-10" >}}
 
-`realtime: true` is the opt-in: only collections that declare it can be followed, and `backd provision` enables the **pre-change images** MongoDB needs for it (a removal can't be told to the right people without the document as it was). The user in `MONGO_URI` also needs the change stream privilege; the stack of this tutorial already has it from chapter 23. See [the change feed](../../operations/events/) for what it costs.
+`realtime: true` is the opt-in: only collections that declare it can be followed, and `backd provision` enables the **pre-change images** MongoDB needs for it (a removal can't be told to the right people without the document as it was). The user in `MONGO_URI` also needs the change stream privilege; the stack of this tutorial already has it from chapter 23. See [the change feed](../../operate/change-feed/) for what it costs.
 
 ## Subscribe, filtered by team
 
@@ -54,4 +54,4 @@ Open the board with the team filter and pin something: `indexed` goes up by one 
 - A member removed from the team: their list resets and empties, and later pins don't reach them.
 - After signing out in another tab, the page stops being live and asks you to sign in.
 
-Read [Realtime](../../api/realtime/) for the protocol and the limits, and [live lists](../../clients/js/#live-lists) for the client.
+Read [Realtime](../../build/api/realtime/) for the protocol and the limits, and [live lists](../../build/clients/js/#live-lists) for the client.

@@ -8,7 +8,7 @@ toc: true
 A collection, a schema, and a page that lists documents. No users yet: anyone on localhost can read and write, which is exactly what you want while the shape of the data settles.
 
 {{< hint warning >}}
-`auth: disabled` means anyone who can reach backd can read and modify its data. Keep this stack on localhost — chapter 2 turns authentication on and [the checklist](../../operations/checklist/) is what you run before anything faces the internet.
+`auth: disabled` means anyone who can reach backd can read and modify its data. Keep this stack on localhost — chapter 2 turns authentication on and [the checklist](../../operate/checklist/) is what you run before anything faces the internet.
 {{< /hint >}}
 
 ## The realm
@@ -29,7 +29,7 @@ Create the directories (`mkdir -p config/shelf/main/assets config/shelf/main/sha
 
 Two things worth noticing:
 
-- **`x-backd-store: "date"`** on `published_at`: the API still accepts and returns RFC 3339 strings, but MongoDB stores a real date, so filters and sorting compare instants ([Dates](../../configuration/config-dir/#dates)).
+- **`x-backd-store: "date"`** on `published_at`: the API still accepts and returns RFC 3339 strings, but MongoDB stores a real date, so filters and sorting compare instants ([Dates](../../build/configuration/config-dir/#dates)).
 - **`file`** is declared but unused — it reserves the field for the file-management chapters.
 
 `shares` holds the public links (chapter 5 creates them):
@@ -70,7 +70,7 @@ curl -s 'http://localhost:8080/v1/shelf/main/assets?order_by=-published_at&limit
 curl -s -G http://localhost:8080/v1/shelf/main/assets --data-urlencode 'where={"tags":"docs"}'
 ```
 
-Repeat the first `curl` with other titles and `"tags":["docs"]` (four or five documents is enough) so the gallery has something to show; the page size in the app is 9, so paging needs more: the second `curl` shows `items`, `has_more` and `next_cursor` — the cursor the app will follow ([Querying](../../api/querying/)).
+Repeat the first `curl` with other titles and `"tags":["docs"]` (four or five documents is enough) so the gallery has something to show; the page size in the app is 9, so paging needs more: the second `curl` shows `items`, `has_more` and `next_cursor` — the cursor the app will follow ([Querying](../../build/api/querying/)).
 
 ## The gallery
 

@@ -71,4 +71,4 @@ Time-based changes need nothing built in: scheduled functions with `config: writ
 Pushing a change to open pages instantly needs realtime updates, which come in a later milestone; until then a page sees a change within `cache_ttl`, or when it regains focus and the copy has expired.
 {{< /hint >}}
 
-The tour (`make shelf-tour`) checks all of it. Read [App configuration](../../configuration/app-config/) for the reference: the schema's limits, per-path rules, the admin API, the functions' `ctx.config` and the client's cache.
+The tour (`make shelf-tour`) checks all of it. Read [App configuration](../../build/configuration/app-config/) for the reference: the schema's limits, per-path rules, the admin API, the functions' `ctx.config` and the client's cache.

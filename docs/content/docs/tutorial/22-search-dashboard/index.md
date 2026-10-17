@@ -94,7 +94,7 @@ const { groups } = await pins.inOrg(team).aggregate({
 - `_meta.created_at:month` is a **bucket**: `day`, `week` (ISO), `month` or `year`, cut in `tz`. Keys are text (`2026-09`).
 - The read rule runs before grouping: a member counts only the pins of their team; someone in no team is refused (`403`, as for a list) and a member of another team counts nothing of this one, and `aggregate` on a collection with no `aggregate:` (try `shares`) is `400 aggregate_not_enabled`.
 - Months with no pins aren't returned. For a chart, `fillBuckets(groups, { field: '_meta.created_at', unit: 'month', from: '2026-01', to: '2026-12' })` adds them with `count: 0`.
-- **A dashboard loaded on every page** is a better fit for a counter a function keeps up to date than for an aggregation per visit; see [Aggregations](../../api/aggregations/#cost-limits-and-errors).
+- **A dashboard loaded on every page** is a better fit for a counter a function keeps up to date than for an aggregation per visit; see [Aggregations](../../build/api/aggregations/#cost-limits-and-errors).
 
 ## You should see
 
@@ -102,4 +102,4 @@ const { groups } = await pins.inOrg(team).aggregate({
 - Declaring `aggregate:` without the index logs the warning; adding `indexes.json` silences it.
 - After `team-plan` gives the team a `timezone`, the Teams view shows *Pins per member per month* in that zone, and an outsider's aggregate is refused or empty.
 
-Read [Full-text search](../../api/querying/#full-text-search), [Aggregations](../../api/aggregations/) and [the client](../../clients/js/#aggregations-and-search).
+Read [Full-text search](../../build/api/querying/#full-text-search), [Aggregations](../../build/api/aggregations/) and [the client](../../build/clients/js/#aggregations-and-search).

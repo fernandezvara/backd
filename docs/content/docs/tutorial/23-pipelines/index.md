@@ -41,7 +41,7 @@ Every write made by a trigger's function carries `_meta.chain = { root, depth }`
 
 ## Test and debug
 
-Test a trigger function with `fakeTrigger` from `@backd/functions-testing`; see [testing functions](../../functions/testing/). In a running realm:
+Test a trigger function with `fakeTrigger` from `@backd/functions-testing`; see [testing functions](../../build/functions/testing/). In a running realm:
 
 ```sh
 backd functions history --function main/publish-submission   # each run, its input and result
@@ -55,4 +55,4 @@ backd triggers gaps                                          # what could not be
 - Within seconds of a proposal the member has a notification; after the curator approves, the asset has `published_at`, the proposal is `published` with `decided_by` the curator, and the member has one thank-you.
 - The proposal's history shows `_meta.chain.depth` 0 for the curator's write and 1 for the function's, both with the same `root`.
 
-Read [Triggers](../../functions/triggers/) for the delivery guarantees, the cost and how to operate them.
+Read [Triggers](../../build/functions/triggers/) for the delivery guarantees, the cost and how to operate them.

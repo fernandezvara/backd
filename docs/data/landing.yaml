@@ -18,7 +18,7 @@ sections:
         url: "docs/getting-started/"
       - text: "Functions"
         icon: function
-        url: "docs/functions/"
+        url: "docs/build/functions/"
         style: secondary
         outline: true
       - text: "GitHub"
@@ -27,7 +27,7 @@ sections:
         style: contrast
         outline: true
 
-    info: "**Open source**, MIT licensed. Before exposing a realm, go through the [hardening checklist](docs/operations/checklist/)."
+    info: "**Open source**, MIT licensed. Before exposing a realm, go through the [hardening checklist](docs/operate/checklist/)."
 
   liveExample:
     enable: true
@@ -77,11 +77,11 @@ sections:
 
       - title: Server-side functions
         icon: function
-        description: "JavaScript or TypeScript next to your collections, run in isolated Deno processes: sync calls, background jobs you can follow, cron schedules, webhooks. Rules, secrets, rate limits, idempotency, a network allowlist and full call history are built in. [Start here](docs/functions/)."
+        description: "JavaScript or TypeScript next to your collections, run in isolated Deno processes: sync calls, background jobs you can follow, cron schedules, webhooks. Rules, secrets, rate limits, idempotency, a network allowlist and full call history are built in. [Start here](docs/build/functions/)."
 
       - title: Typed from your config
         icon: code
-        description: "`backd types` turns the config into TypeScript for your app and your functions, and `backd openapi` into an OpenAPI 3.1 document per realm for client generators. In development the config reloads as you save it. [Typing and OpenAPI](docs/clients/types/)."
+        description: "`backd types` turns the config into TypeScript for your app and your functions, and `backd openapi` into an OpenAPI 3.1 document per realm for client generators. In development the config reloads as you save it. [Typing and OpenAPI](docs/build/clients/types/)."
 
       - title: Files, push and app configuration
         icon: "paperclip"
@@ -89,11 +89,11 @@ sections:
 
       - title: References, aggregations and search
         icon: "magnifying-glass"
-        description: "Declare references between collections and return them next to the result with `expand`, summarize documents with `_aggregate` (group by declared fields, date buckets in a time zone, exact sums) and search prose with a weighted text index, best match first. All declared in config, with rules applied first and the cost bounded. [Start here](docs/api/references/)."
+        description: "Declare references between collections and return them next to the result with `expand`, summarize documents with `_aggregate` (group by declared fields, date buckets in a time zone, exact sums) and search prose with a weighted text index, best match first. All declared in config, with rules applied first and the cost bounded. [Start here](docs/build/api/references/)."
 
       - title: Organizations and team access
         icon: "buildings"
-        description: "Groups of users for B2B apps: roles per organization, teams, team roles with time windows and delegation, documents that belong to an organization or a team, membership hooks and company email templates. [Start here](docs/organizations/)."
+        description: "Groups of users for B2B apps: roles per organization, teams, team roles with time windows and delegation, documents that belong to an organization or a team, membership hooks and company email templates. [Start here](docs/build/organizations/)."
 
       - title: Built for operations
         icon: "heartbeat"

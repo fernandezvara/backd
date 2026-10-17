@@ -74,7 +74,7 @@ docker compose exec backd /backd storage usage --realm shelf
 Two operations to know before this has real data:
 
 - **Backups.** A MongoDB backup doesn't include files. Back the bucket up at the provider (versioning, replication), and after restoring a database run `backd storage reconcile --realm shelf`: it reports the objects no document references, and with `--delete` removes exactly those. It never touches anything younger than 24 hours or with an upload still in flight.
-- **Security.** Links work for whoever holds them until they expire, even if the rules change meanwhile, so keep `presigned_ttl` short on sensitive fields and read [Security of files](../../files/security/).
+- **Security.** Links work for whoever holds them until they expire, even if the rules change meanwhile, so keep `presigned_ttl` short on sensitive fields and read [Security of files](../../build/files/security/).
 
 ## You should see
 

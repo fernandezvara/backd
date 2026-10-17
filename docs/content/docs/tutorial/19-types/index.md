@@ -27,7 +27,7 @@ backd.db('main').fn('publish', { asset_id })        // typed input
 backd.config.get('maintenance.enabled')             // boolean | undefined
 ```
 
-A misspelled collection, a field the schema doesn't have, an operator a type doesn't allow and a wrong function input are now red in the editor ([the client reference](../../clients/js/#typed-client) lists what is typed).
+A misspelled collection, a field the schema doesn't have, an operator a type doesn't allow and a wrong function input are now red in the editor ([the client reference](../../build/clients/js/#typed-client) lists what is typed).
 
 ## Types for the functions
 
@@ -92,4 +92,4 @@ Shelf's CI runs both (`make shelf-types`; `make shelf-types-update` regenerates)
 - With `BACKD_DEV=true`, saving a schema updates `backd.d.ts` without a restart; an invalid one is refused and the old config keeps serving.
 - The app's console warns once when its types are out of date; `--check` fails and `--diff` lists the change.
 
-Read [Generated types](../../clients/types/) for the mapping from JSON Schema, and [Typed functions](../../functions/writing/#typed-functions) for the context.
+Read [Generated types](../../build/clients/types/) for the mapping from JSON Schema, and [Typed functions](../../build/functions/writing/#typed-functions) for the context.
