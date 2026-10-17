@@ -6,10 +6,13 @@ import 'package:meta/meta.dart';
 
 import 'auth.dart';
 import 'cache.dart';
-import 'data.dart';
 import 'config.dart';
+import 'consents.dart';
+import 'data.dart';
 import 'errors.dart';
 import 'oauth.dart';
+import 'orgs.dart';
+import 'push.dart';
 import 'storage.dart';
 import 'transport.dart';
 
@@ -209,6 +212,9 @@ class BackdClient<R> {
     auth = Auth(this);
     config = Config(this, configStorage);
     configClear = config.clear;
+    orgs = Orgs(this);
+    consents = Consents(this);
+    push = Push(this);
   }
 
   /// Base URL of backd, without trailing slashes.
@@ -251,6 +257,15 @@ class BackdClient<R> {
   /// The realm's app configuration, with its per-user copy kept per realm:
   /// `client.config`.
   late final Config config;
+
+  /// Organizations of the signed-in user: `client.orgs`.
+  late final Orgs orgs;
+
+  /// The consents the realm asks for: `client.consents`.
+  late final Consents consents;
+
+  /// Device registration for push notifications: `client.push`.
+  late final Push push;
 
   /// The fresh proof of identity `client.auth.reauth()` gave, sent with the
   /// sensitive requests while it is good. Set by the auth module (28.2).
