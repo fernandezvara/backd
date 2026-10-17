@@ -6,6 +6,7 @@ import 'package:meta/meta.dart';
 
 import 'auth.dart';
 import 'cache.dart';
+import 'data.dart';
 import 'config.dart';
 import 'errors.dart';
 import 'oauth.dart';
@@ -270,6 +271,9 @@ class BackdClient<R> {
 
   /// Whether the client was created with an API key.
   bool get hasApiKey => apiKey != null;
+
+  /// A database of the realm. Its collections hold the documents.
+  Database db(String name) => Database(this, name);
 
   /// How the revalidation cache is doing: reads the server answered `304` to
   /// ([CacheStats.hits]), cacheable reads that came back in full
