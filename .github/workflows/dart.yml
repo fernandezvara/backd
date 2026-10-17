@@ -12,6 +12,9 @@ jobs:
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: stable
+      - name: Dependencies
+        run: dart pub get
+        working-directory: clients/dart
       - name: Analyze
         run: dart analyze --fatal-warnings
         working-directory: clients/dart
@@ -36,6 +39,9 @@ jobs:
           CONFIG_DIR: examples/config
       - name: Linux build toolchain
         run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+      - name: Dependencies
+        run: flutter pub get
+        working-directory: clients/dart/example
       - name: Analyze
         run: flutter analyze
         working-directory: clients/dart/example

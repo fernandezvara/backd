@@ -24,22 +24,26 @@ final class Meta {
   });
 
   factory Meta.fromJson(Map<String, Object?> json) => Meta(
-    createdAt: DateTimeString(json['created_at'] as String),
-    updatedAt: DateTimeString(json['updated_at'] as String),
-    version: (json['version'] as num?)?.toInt(),
-    owner: json['owner'] as String?,
-    createdBy: json['created_by'] as String?,
-    updatedBy: json['updated_by'] as String?,
-    org: json['org'] as String?,
-    team: json['team'] as String?,
-    deletedAt: json['deleted_at'] == null
-        ? null
-        : DateTimeString(json['deleted_at'] as String),
-    deletedBy: json['deleted_by'] as String?,
-    purgeAt: json['purge_at'] == null ? null : DateTimeString(json['purge_at'] as String),
-    chain: json['chain'] == null ? null : Map<String, Object?>.from(json['chain'] as Map),
-    score: json['score'] as num?,
-  );
+        createdAt: DateTimeString(json['created_at'] as String),
+        updatedAt: DateTimeString(json['updated_at'] as String),
+        version: (json['version'] as num?)?.toInt(),
+        owner: json['owner'] as String?,
+        createdBy: json['created_by'] as String?,
+        updatedBy: json['updated_by'] as String?,
+        org: json['org'] as String?,
+        team: json['team'] as String?,
+        deletedAt: json['deleted_at'] == null
+            ? null
+            : DateTimeString(json['deleted_at'] as String),
+        deletedBy: json['deleted_by'] as String?,
+        purgeAt: json['purge_at'] == null
+            ? null
+            : DateTimeString(json['purge_at'] as String),
+        chain: json['chain'] == null
+            ? null
+            : Map<String, Object?>.from(json['chain'] as Map),
+        score: json['score'] as num?,
+      );
 
   final DateTimeString createdAt;
   final DateTimeString updatedAt;
@@ -83,27 +87,26 @@ final class FileDetails {
   });
 
   factory FileDetails.fromJson(Map<String, Object?> json) => FileDetails(
-    id: json['id'] as String,
-    name: json['name'] as String,
-    size: (json['size'] as num).toInt(),
-    type: json['type'] as String,
-    sha256: json['sha256'] as String,
-    uploadedAt: DateTimeString(json['uploaded_at'] as String),
-    width: (json['width'] as num?)?.toInt(),
-    height: (json['height'] as num?)?.toInt(),
-    url: json['url'] as String?,
-    expiresAt: json['expires_at'] == null
-        ? null
-        : DateTimeString(json['expires_at'] as String),
-    versions: json['versions'] == null
-        ? null
-        : {
-            for (final e in (json['versions'] as Map).entries)
-              e.key as String: FileVersionDetails.fromJson(
-                Map<String, Object?>.from(e.value as Map),
-              ),
-          },
-  );
+        id: json['id'] as String,
+        name: json['name'] as String,
+        size: (json['size'] as num).toInt(),
+        type: json['type'] as String,
+        sha256: json['sha256'] as String,
+        uploadedAt: DateTimeString(json['uploaded_at'] as String),
+        width: (json['width'] as num?)?.toInt(),
+        height: (json['height'] as num?)?.toInt(),
+        url: json['url'] as String?,
+        expiresAt: json['expires_at'] == null
+            ? null
+            : DateTimeString(json['expires_at'] as String),
+        versions: json['versions'] == null
+            ? null
+            : {
+                for (final e in (json['versions'] as Map).entries)
+                  e.key as String: FileVersionDetails.fromJson(
+                      Map<String, Object?>.from(e.value as Map)),
+              },
+      );
 
   final String id;
   final String name;
@@ -118,17 +121,17 @@ final class FileDetails {
   final Map<String, FileVersionDetails>? versions;
 
   Map<String, Object?> toJson() => {
-    'id': id,
-    'name': name,
-    'size': size,
-    'type': type,
-    'sha256': sha256,
-    'uploaded_at': uploadedAt.value,
-    if (width != null) 'width': width,
-    if (height != null) 'height': height,
-    if (url != null) 'url': url,
-    if (expiresAt != null) 'expires_at': expiresAt!.value,
-  };
+        'id': id,
+        'name': name,
+        'size': size,
+        'type': type,
+        'sha256': sha256,
+        'uploaded_at': uploadedAt.value,
+        if (width != null) 'width': width,
+        if (height != null) 'height': height,
+        if (url != null) 'url': url,
+        if (expiresAt != null) 'expires_at': expiresAt!.value,
+      };
 }
 
 /// The state of a version made of a file.
@@ -142,7 +145,8 @@ sealed class FileVersionDetails {
       'empty' => const FileVersionEmpty(),
       'skipped' => FileVersionSkipped.fromJson(json),
       'failed' => FileVersionFailed.fromJson(json),
-      _ => throw ArgumentError.value(json['status'], 'status', 'unknown file version'),
+      _ => throw ArgumentError.value(json['status'], 'status',
+          'unknown file version'),
     };
   }
 }
@@ -163,18 +167,19 @@ final class FileVersionReady extends FileVersionDetails {
     this.params,
   }) : super._();
 
-  factory FileVersionReady.fromJson(Map<String, Object?> json) => FileVersionReady(
-    id: json['id'] as String,
-    size: (json['size'] as num).toInt(),
-    type: json['type'] as String,
-    fingerprint: json['fingerprint'] as String,
-    generatedAt: DateTimeString(json['generated_at'] as String),
-    width: (json['width'] as num?)?.toInt(),
-    height: (json['height'] as num?)?.toInt(),
-    params: json['params'] == null
-        ? null
-        : Map<String, Object?>.from(json['params'] as Map),
-  );
+  factory FileVersionReady.fromJson(Map<String, Object?> json) =>
+      FileVersionReady(
+        id: json['id'] as String,
+        size: (json['size'] as num).toInt(),
+        type: json['type'] as String,
+        fingerprint: json['fingerprint'] as String,
+        generatedAt: DateTimeString(json['generated_at'] as String),
+        width: (json['width'] as num?)?.toInt(),
+        height: (json['height'] as num?)?.toInt(),
+        params: json['params'] == null
+            ? null
+            : Map<String, Object?>.from(json['params'] as Map),
+      );
 
   final String id;
   final int size;
@@ -215,7 +220,8 @@ final class FileVersionFailed extends FileVersionDetails {
 final class ExpandedMany<T> {
   const ExpandedMany({required this.items, this.truncated = false});
 
-  factory ExpandedMany.from(Object? raw, T? Function(Map<String, Object?>) decode) {
+  factory ExpandedMany.from(
+      Object? raw, T? Function(Map<String, Object?>) decode) {
     Object? list = raw;
     var truncated = false;
     if (raw is Map) {
@@ -236,29 +242,19 @@ final class ExpandedMany<T> {
 /// What a mail/outbox write accepts.
 
 final class MailOutboxInput {
-  const MailOutboxInput({
-    required this.emailId,
-    this.from,
-    required this.html,
-    required this.kind,
-    this.link,
-    this.locale,
-    required this.subject,
-    required this.text,
-    required this.to,
-  });
+  const MailOutboxInput({required this.emailId, this.from, required this.html, required this.kind, this.link, this.locale, required this.subject, required this.text, required this.to});
 
   factory MailOutboxInput.fromJson(Map<String, Object?> json) => MailOutboxInput(
-    emailId: json['email_id'] as String,
-    from: json['from'] == null ? null : json['from'] as String,
-    html: json['html'] as String,
-    kind: json['kind'] as String,
-    link: json['link'] == null ? null : json['link'] as String,
-    locale: json['locale'] == null ? null : json['locale'] as String,
-    subject: json['subject'] as String,
-    text: json['text'] as String,
-    to: [for (final e in json['to'] as List) e as String],
-  );
+        emailId: json['email_id'] as String,
+        from: json['from'] == null ? null : json['from'] as String,
+        html: json['html'] as String,
+        kind: json['kind'] as String,
+        link: json['link'] == null ? null : json['link'] as String,
+        locale: json['locale'] == null ? null : json['locale'] as String,
+        subject: json['subject'] as String,
+        text: json['text'] as String,
+        to: [for (final e in json['to'] as List) e as String],
+      );
 
   final String emailId;
   final String? from;
@@ -271,49 +267,37 @@ final class MailOutboxInput {
   final List<String> to;
 
   Map<String, Object?> toJson() => {
-    'email_id': emailId,
-    'from': from,
-    'html': html,
-    'kind': kind,
-    'link': link,
-    'locale': locale,
-    'subject': subject,
-    'text': text,
-    'to': to,
-  };
+        'email_id': emailId,
+        'from': from,
+        'html': html,
+        'kind': kind,
+        'link': link,
+        'locale': locale,
+        'subject': subject,
+        'text': text,
+        'to': to,
+      };
 }
 
 /// A mail/outbox document.
 final class MailOutbox {
-  const MailOutbox({
-    required this.id,
-    required this.meta,
-    required this.emailId,
-    this.from,
-    required this.html,
-    required this.kind,
-    this.link,
-    this.locale,
-    required this.subject,
-    required this.text,
-    required this.to,
-  });
+  const MailOutbox({required this.id, required this.meta, required this.emailId, this.from, required this.html, required this.kind, this.link, this.locale, required this.subject, required this.text, required this.to});
 
   factory MailOutbox.fromJson(Map<String, Object?> json) => MailOutbox(
-    id: json['id'] as String,
-    meta: json['_meta'] is Map
-        ? Meta.fromJson(Map<String, Object?>.from(json['_meta'] as Map))
-        : const Meta(createdAt: DateTimeString(''), updatedAt: DateTimeString('')),
-    emailId: json['email_id'] as String,
-    from: json['from'] == null ? null : json['from'] as String,
-    html: json['html'] as String,
-    kind: json['kind'] as String,
-    link: json['link'] == null ? null : json['link'] as String,
-    locale: json['locale'] == null ? null : json['locale'] as String,
-    subject: json['subject'] as String,
-    text: json['text'] as String,
-    to: [for (final e in json['to'] as List) e as String],
-  );
+        id: json['id'] as String,
+        meta: json['_meta'] is Map
+            ? Meta.fromJson(Map<String, Object?>.from(json['_meta'] as Map))
+            : const Meta(createdAt: DateTimeString(''), updatedAt: DateTimeString('')),
+        emailId: json['email_id'] as String,
+        from: json['from'] == null ? null : json['from'] as String,
+        html: json['html'] as String,
+        kind: json['kind'] as String,
+        link: json['link'] == null ? null : json['link'] as String,
+        locale: json['locale'] == null ? null : json['locale'] as String,
+        subject: json['subject'] as String,
+        text: json['text'] as String,
+        to: [for (final e in json['to'] as List) e as String],
+      );
 
   final String id;
   final Meta meta;
@@ -329,16 +313,16 @@ final class MailOutbox {
   final List<String> to;
 
   Map<String, Object?> toJson() => {
-    'email_id': emailId,
-    'from': from,
-    'html': html,
-    'kind': kind,
-    'link': link,
-    'locale': locale,
-    'subject': subject,
-    'text': text,
-    'to': to,
-  };
+        'email_id': emailId,
+        'from': from,
+        'html': html,
+        'kind': kind,
+        'link': link,
+        'locale': locale,
+        'subject': subject,
+        'text': text,
+        'to': to,
+      };
 }
 
 /// The fields `where` of mail/outbox may name.
@@ -422,29 +406,17 @@ enum MainAssetsInputKind {
 }
 
 final class MainAssetsInput {
-  const MainAssetsInput({
-    this.body,
-    this.downloads,
-    required this.kind,
-    this.publishedAt,
-    this.tags,
-    required this.title,
-    this.url,
-  });
+  const MainAssetsInput({this.body, this.downloads, required this.kind, this.publishedAt, this.tags, required this.title, this.url});
 
   factory MainAssetsInput.fromJson(Map<String, Object?> json) => MainAssetsInput(
-    body: json['body'] == null ? null : json['body'] as String,
-    downloads: json['downloads'] == null ? null : (json['downloads'] as num).toInt(),
-    kind: MainAssetsInputKind.maybeValue(json['kind'])!,
-    publishedAt: json['published_at'] == null
-        ? null
-        : DateTimeString(json['published_at'] as String),
-    tags: json['tags'] == null
-        ? null
-        : [for (final e in json['tags'] as List) e as String],
-    title: json['title'] as String,
-    url: json['url'] == null ? null : json['url'] as String,
-  );
+        body: json['body'] == null ? null : json['body'] as String,
+        downloads: json['downloads'] == null ? null : (json['downloads'] as num).toInt(),
+        kind: MainAssetsInputKind.maybeValue(json['kind'])!,
+        publishedAt: json['published_at'] == null ? null : DateTimeString(json['published_at'] as String),
+        tags: json['tags'] == null ? null : [for (final e in json['tags'] as List) e as String],
+        title: json['title'] as String,
+        url: json['url'] == null ? null : json['url'] as String,
+      );
 
   final String? body;
   final int? downloads;
@@ -455,14 +427,14 @@ final class MainAssetsInput {
   final String? url;
 
   Map<String, Object?> toJson() => {
-    'body': body,
-    'downloads': downloads,
-    'kind': kind.value,
-    'published_at': publishedAt?.value,
-    'tags': tags,
-    'title': title,
-    'url': url,
-  };
+        'body': body,
+        'downloads': downloads,
+        'kind': kind.value,
+        'published_at': publishedAt?.value,
+        'tags': tags,
+        'title': title,
+        'url': url,
+      };
 }
 
 enum MainAssetsKind {
@@ -486,48 +458,26 @@ enum MainAssetsKind {
 
 /// A main/assets document.
 final class MainAssets {
-  const MainAssets({
-    required this.id,
-    required this.meta,
-    this.expanded,
-    this.attachments,
-    this.body,
-    this.downloads,
-    this.file,
-    required this.kind,
-    this.publishedAt,
-    this.tags,
-    required this.title,
-    this.url,
-  });
+  const MainAssets({required this.id, required this.meta, this.expanded, this.attachments, this.body, this.downloads, this.file, required this.kind, this.publishedAt, this.tags, required this.title, this.url});
 
   factory MainAssets.fromJson(Map<String, Object?> json) => MainAssets(
-    id: json['id'] as String,
-    meta: json['_meta'] is Map
-        ? Meta.fromJson(Map<String, Object?>.from(json['_meta'] as Map))
-        : const Meta(createdAt: DateTimeString(''), updatedAt: DateTimeString('')),
-    expanded: json['_expanded'] is Map
-        ? MainAssetsExpanded._(Map<String, Object?>.from(json['_expanded'] as Map))
-        : null,
-    attachments: json['attachments'] == null
-        ? null
-        : [
-            for (final e in json['attachments'] as List)
-              FileDetails.fromJson(Map<String, Object?>.from(e as Map)),
-          ],
-    body: json['body'] == null ? null : json['body'] as String,
-    downloads: json['downloads'] == null ? null : (json['downloads'] as num).toInt(),
-    file: json['file'] == null ? null : json['file'] as FileDetails,
-    kind: MainAssetsKind.maybeValue(json['kind'])!,
-    publishedAt: json['published_at'] == null
-        ? null
-        : DateTimeString(json['published_at'] as String),
-    tags: json['tags'] == null
-        ? null
-        : [for (final e in json['tags'] as List) e as String],
-    title: json['title'] as String,
-    url: json['url'] == null ? null : json['url'] as String,
-  );
+        id: json['id'] as String,
+        meta: json['_meta'] is Map
+            ? Meta.fromJson(Map<String, Object?>.from(json['_meta'] as Map))
+            : const Meta(createdAt: DateTimeString(''), updatedAt: DateTimeString('')),
+        expanded: json['_expanded'] is Map
+            ? MainAssetsExpanded._(Map<String, Object?>.from(json['_expanded'] as Map))
+            : null,
+        attachments: json['attachments'] == null ? null : [for (final e in json['attachments'] as List) FileDetails.fromJson(Map<String, Object?>.from(e as Map))],
+        body: json['body'] == null ? null : json['body'] as String,
+        downloads: json['downloads'] == null ? null : (json['downloads'] as num).toInt(),
+        file: json['file'] == null ? null : json['file'] as FileDetails,
+        kind: MainAssetsKind.maybeValue(json['kind'])!,
+        publishedAt: json['published_at'] == null ? null : DateTimeString(json['published_at'] as String),
+        tags: json['tags'] == null ? null : [for (final e in json['tags'] as List) e as String],
+        title: json['title'] as String,
+        url: json['url'] == null ? null : json['url'] as String,
+      );
 
   final String id;
   final Meta meta;
@@ -546,16 +496,16 @@ final class MainAssets {
   final String? url;
 
   Map<String, Object?> toJson() => {
-    'attachments': attachments,
-    'body': body,
-    'downloads': downloads,
-    'file': file,
-    'kind': kind.value,
-    'published_at': publishedAt?.value,
-    'tags': tags,
-    'title': title,
-    'url': url,
-  };
+        'attachments': attachments,
+        'body': body,
+        'downloads': downloads,
+        'file': file,
+        'kind': kind.value,
+        'published_at': publishedAt?.value,
+        'tags': tags,
+        'title': title,
+        'url': url,
+      };
 }
 
 /// A main/profiles document as `expand` returns it: the id and only the fields
@@ -565,18 +515,23 @@ final class MainProfilesPartial {
   const MainProfilesPartial({this.avatar, this.bio, required this.id, this.name});
 
   factory MainProfilesPartial.fromJson(Map<String, Object?> json) => MainProfilesPartial(
-    avatar: json['avatar'] == null ? null : json['avatar'] as String,
-    bio: json['bio'] == null ? null : json['bio'] as String,
-    id: json['id'] as String,
-    name: json['name'] == null ? null : json['name'] as String,
-  );
+        avatar: json['avatar'] == null ? null : json['avatar'] as String,
+        bio: json['bio'] == null ? null : json['bio'] as String,
+        id: json['id'] as String,
+        name: json['name'] == null ? null : json['name'] as String,
+      );
 
   final String? avatar;
   final String? bio;
   final String id;
   final String? name;
 
-  Map<String, Object?> toJson() => {'avatar': avatar, 'bio': bio, 'id': id, 'name': name};
+  Map<String, Object?> toJson() => {
+        'avatar': avatar,
+        'bio': bio,
+        'id': id,
+        'name': name,
+      };
 }
 
 /// The `_expanded` of a main/assets document, decoded on access.
@@ -699,33 +654,31 @@ final class MainImportsInput {
   const MainImportsInput({this.assetId, required this.eventId});
 
   factory MainImportsInput.fromJson(Map<String, Object?> json) => MainImportsInput(
-    assetId: json['asset_id'] == null ? null : json['asset_id'] as String,
-    eventId: json['event_id'] as String,
-  );
+        assetId: json['asset_id'] == null ? null : json['asset_id'] as String,
+        eventId: json['event_id'] as String,
+      );
 
   final String? assetId;
   final String eventId;
 
-  Map<String, Object?> toJson() => {'asset_id': assetId, 'event_id': eventId};
+  Map<String, Object?> toJson() => {
+        'asset_id': assetId,
+        'event_id': eventId,
+      };
 }
 
 /// A main/imports document.
 final class MainImports {
-  const MainImports({
-    required this.id,
-    required this.meta,
-    this.assetId,
-    required this.eventId,
-  });
+  const MainImports({required this.id, required this.meta, this.assetId, required this.eventId});
 
   factory MainImports.fromJson(Map<String, Object?> json) => MainImports(
-    id: json['id'] as String,
-    meta: json['_meta'] is Map
-        ? Meta.fromJson(Map<String, Object?>.from(json['_meta'] as Map))
-        : const Meta(createdAt: DateTimeString(''), updatedAt: DateTimeString('')),
-    assetId: json['asset_id'] == null ? null : json['asset_id'] as String,
-    eventId: json['event_id'] as String,
-  );
+        id: json['id'] as String,
+        meta: json['_meta'] is Map
+            ? Meta.fromJson(Map<String, Object?>.from(json['_meta'] as Map))
+            : const Meta(createdAt: DateTimeString(''), updatedAt: DateTimeString('')),
+        assetId: json['asset_id'] == null ? null : json['asset_id'] as String,
+        eventId: json['event_id'] as String,
+      );
 
   final String id;
   final Meta meta;
@@ -733,7 +686,10 @@ final class MainImports {
   final String? assetId;
   final String eventId;
 
-  Map<String, Object?> toJson() => {'asset_id': assetId, 'event_id': eventId};
+  Map<String, Object?> toJson() => {
+        'asset_id': assetId,
+        'event_id': eventId,
+      };
 }
 
 /// The fields `where` of main/imports may name.
@@ -780,33 +736,31 @@ final class MainMembersInput {
   const MainMembersInput({required this.email, this.name});
 
   factory MainMembersInput.fromJson(Map<String, Object?> json) => MainMembersInput(
-    email: json['email'] as String,
-    name: json['name'] == null ? null : json['name'] as String,
-  );
+        email: json['email'] as String,
+        name: json['name'] == null ? null : json['name'] as String,
+      );
 
   final String email;
   final String? name;
 
-  Map<String, Object?> toJson() => {'email': email, 'name': name};
+  Map<String, Object?> toJson() => {
+        'email': email,
+        'name': name,
+      };
 }
 
 /// A main/members document.
 final class MainMembers {
-  const MainMembers({
-    required this.id,
-    required this.meta,
-    required this.email,
-    this.name,
-  });
+  const MainMembers({required this.id, required this.meta, required this.email, this.name});
 
   factory MainMembers.fromJson(Map<String, Object?> json) => MainMembers(
-    id: json['id'] as String,
-    meta: json['_meta'] is Map
-        ? Meta.fromJson(Map<String, Object?>.from(json['_meta'] as Map))
-        : const Meta(createdAt: DateTimeString(''), updatedAt: DateTimeString('')),
-    email: json['email'] as String,
-    name: json['name'] == null ? null : json['name'] as String,
-  );
+        id: json['id'] as String,
+        meta: json['_meta'] is Map
+            ? Meta.fromJson(Map<String, Object?>.from(json['_meta'] as Map))
+            : const Meta(createdAt: DateTimeString(''), updatedAt: DateTimeString('')),
+        email: json['email'] as String,
+        name: json['name'] == null ? null : json['name'] as String,
+      );
 
   final String id;
   final Meta meta;
@@ -814,7 +768,10 @@ final class MainMembers {
   final String email;
   final String? name;
 
-  Map<String, Object?> toJson() => {'email': email, 'name': name};
+  Map<String, Object?> toJson() => {
+        'email': email,
+        'name': name,
+      };
 }
 
 /// main/members: the id is chosen by the client and never changes; it must be the id of the signed-in user.
@@ -822,17 +779,21 @@ final class MainMembersCreate {
   const MainMembersCreate({required this.id, required this.email, this.name});
 
   factory MainMembersCreate.fromJson(Map<String, Object?> json) => MainMembersCreate(
-    id: json['id'] as String,
-    email: json['email'] as String,
-    name: json['name'] == null ? null : json['name'] as String,
-  );
+        id: json['id'] as String,
+        email: json['email'] as String,
+        name: json['name'] == null ? null : json['name'] as String,
+      );
 
   /// the id is chosen by the client and never changes; it must be the id of the signed-in user.
   final String id;
   final String email;
   final String? name;
 
-  Map<String, Object?> toJson() => {'id': id, 'email': email, 'name': name};
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'email': email,
+        'name': name,
+      };
 }
 
 /// The fields `where` of main/members may name.
@@ -876,21 +837,12 @@ abstract final class MainMembersOrderBy {
 /// What a main/notifications write accepts.
 
 final class MainNotificationsInput {
-  const MainNotificationsInput({
-    this.assetId,
-    required this.kind,
-    this.readAt,
-    required this.text,
-    required this.toUser,
-  });
+  const MainNotificationsInput({this.assetId, required this.kind, this.readAt, required this.text, required this.toUser});
 
-  factory MainNotificationsInput.fromJson(Map<String, Object?> json) =>
-      MainNotificationsInput(
+  factory MainNotificationsInput.fromJson(Map<String, Object?> json) => MainNotificationsInput(
         assetId: json['asset_id'] == null ? null : json['asset_id'] as String,
         kind: json['kind'] as String,
-        readAt: json['read_at'] == null
-            ? null
-            : DateTimeString(json['read_at'] as String),
+        readAt: json['read_at'] == null ? null : DateTimeString(json['read_at'] as String),
         text: json['text'] as String,
         toUser: json['to_user'] as String,
       );
@@ -902,37 +854,29 @@ final class MainNotificationsInput {
   final String toUser;
 
   Map<String, Object?> toJson() => {
-    'asset_id': assetId,
-    'kind': kind,
-    'read_at': readAt?.value,
-    'text': text,
-    'to_user': toUser,
-  };
+        'asset_id': assetId,
+        'kind': kind,
+        'read_at': readAt?.value,
+        'text': text,
+        'to_user': toUser,
+      };
 }
 
 /// A main/notifications document.
 final class MainNotifications {
-  const MainNotifications({
-    required this.id,
-    required this.meta,
-    this.assetId,
-    required this.kind,
-    this.readAt,
-    required this.text,
-    required this.toUser,
-  });
+  const MainNotifications({required this.id, required this.meta, this.assetId, required this.kind, this.readAt, required this.text, required this.toUser});
 
   factory MainNotifications.fromJson(Map<String, Object?> json) => MainNotifications(
-    id: json['id'] as String,
-    meta: json['_meta'] is Map
-        ? Meta.fromJson(Map<String, Object?>.from(json['_meta'] as Map))
-        : const Meta(createdAt: DateTimeString(''), updatedAt: DateTimeString('')),
-    assetId: json['asset_id'] == null ? null : json['asset_id'] as String,
-    kind: json['kind'] as String,
-    readAt: json['read_at'] == null ? null : DateTimeString(json['read_at'] as String),
-    text: json['text'] as String,
-    toUser: json['to_user'] as String,
-  );
+        id: json['id'] as String,
+        meta: json['_meta'] is Map
+            ? Meta.fromJson(Map<String, Object?>.from(json['_meta'] as Map))
+            : const Meta(createdAt: DateTimeString(''), updatedAt: DateTimeString('')),
+        assetId: json['asset_id'] == null ? null : json['asset_id'] as String,
+        kind: json['kind'] as String,
+        readAt: json['read_at'] == null ? null : DateTimeString(json['read_at'] as String),
+        text: json['text'] as String,
+        toUser: json['to_user'] as String,
+      );
 
   final String id;
   final Meta meta;
@@ -944,12 +888,12 @@ final class MainNotifications {
   final String toUser;
 
   Map<String, Object?> toJson() => {
-    'asset_id': assetId,
-    'kind': kind,
-    'read_at': readAt?.value,
-    'text': text,
-    'to_user': toUser,
-  };
+        'asset_id': assetId,
+        'kind': kind,
+        'read_at': readAt?.value,
+        'text': text,
+        'to_user': toUser,
+      };
 }
 
 /// The fields `where` of main/notifications may name.
@@ -1005,11 +949,11 @@ final class MainPinsInput {
   const MainPinsInput({this.author, this.note, required this.title, this.url});
 
   factory MainPinsInput.fromJson(Map<String, Object?> json) => MainPinsInput(
-    author: json['author'] == null ? null : json['author'] as String,
-    note: json['note'] == null ? null : json['note'] as String,
-    title: json['title'] as String,
-    url: json['url'] == null ? null : json['url'] as String,
-  );
+        author: json['author'] == null ? null : json['author'] as String,
+        note: json['note'] == null ? null : json['note'] as String,
+        title: json['title'] as String,
+        url: json['url'] == null ? null : json['url'] as String,
+      );
 
   final String? author;
   final String? note;
@@ -1017,34 +961,27 @@ final class MainPinsInput {
   final String? url;
 
   Map<String, Object?> toJson() => {
-    'author': author,
-    'note': note,
-    'title': title,
-    'url': url,
-  };
+        'author': author,
+        'note': note,
+        'title': title,
+        'url': url,
+      };
 }
 
 /// A main/pins document.
 final class MainPins {
-  const MainPins({
-    required this.id,
-    required this.meta,
-    this.author,
-    this.note,
-    required this.title,
-    this.url,
-  });
+  const MainPins({required this.id, required this.meta, this.author, this.note, required this.title, this.url});
 
   factory MainPins.fromJson(Map<String, Object?> json) => MainPins(
-    id: json['id'] as String,
-    meta: json['_meta'] is Map
-        ? Meta.fromJson(Map<String, Object?>.from(json['_meta'] as Map))
-        : const Meta(createdAt: DateTimeString(''), updatedAt: DateTimeString('')),
-    author: json['author'] == null ? null : json['author'] as String,
-    note: json['note'] == null ? null : json['note'] as String,
-    title: json['title'] as String,
-    url: json['url'] == null ? null : json['url'] as String,
-  );
+        id: json['id'] as String,
+        meta: json['_meta'] is Map
+            ? Meta.fromJson(Map<String, Object?>.from(json['_meta'] as Map))
+            : const Meta(createdAt: DateTimeString(''), updatedAt: DateTimeString('')),
+        author: json['author'] == null ? null : json['author'] as String,
+        note: json['note'] == null ? null : json['note'] as String,
+        title: json['title'] as String,
+        url: json['url'] == null ? null : json['url'] as String,
+      );
 
   final String id;
   final Meta meta;
@@ -1055,11 +992,11 @@ final class MainPins {
   final String? url;
 
   Map<String, Object?> toJson() => {
-    'author': author,
-    'note': note,
-    'title': title,
-    'url': url,
-  };
+        'author': author,
+        'note': note,
+        'title': title,
+        'url': url,
+      };
 }
 
 /// The fields `where` of main/pins may name.
@@ -1123,37 +1060,35 @@ final class MainProfilesInput {
   const MainProfilesInput({this.avatar, this.bio, required this.name});
 
   factory MainProfilesInput.fromJson(Map<String, Object?> json) => MainProfilesInput(
-    avatar: json['avatar'] == null ? null : json['avatar'] as String,
-    bio: json['bio'] == null ? null : json['bio'] as String,
-    name: json['name'] as String,
-  );
+        avatar: json['avatar'] == null ? null : json['avatar'] as String,
+        bio: json['bio'] == null ? null : json['bio'] as String,
+        name: json['name'] as String,
+      );
 
   final String? avatar;
   final String? bio;
   final String name;
 
-  Map<String, Object?> toJson() => {'avatar': avatar, 'bio': bio, 'name': name};
+  Map<String, Object?> toJson() => {
+        'avatar': avatar,
+        'bio': bio,
+        'name': name,
+      };
 }
 
 /// A main/profiles document.
 final class MainProfiles {
-  const MainProfiles({
-    required this.id,
-    required this.meta,
-    this.avatar,
-    this.bio,
-    required this.name,
-  });
+  const MainProfiles({required this.id, required this.meta, this.avatar, this.bio, required this.name});
 
   factory MainProfiles.fromJson(Map<String, Object?> json) => MainProfiles(
-    id: json['id'] as String,
-    meta: json['_meta'] is Map
-        ? Meta.fromJson(Map<String, Object?>.from(json['_meta'] as Map))
-        : const Meta(createdAt: DateTimeString(''), updatedAt: DateTimeString('')),
-    avatar: json['avatar'] == null ? null : json['avatar'] as String,
-    bio: json['bio'] == null ? null : json['bio'] as String,
-    name: json['name'] as String,
-  );
+        id: json['id'] as String,
+        meta: json['_meta'] is Map
+            ? Meta.fromJson(Map<String, Object?>.from(json['_meta'] as Map))
+            : const Meta(createdAt: DateTimeString(''), updatedAt: DateTimeString('')),
+        avatar: json['avatar'] == null ? null : json['avatar'] as String,
+        bio: json['bio'] == null ? null : json['bio'] as String,
+        name: json['name'] as String,
+      );
 
   final String id;
   final Meta meta;
@@ -1162,7 +1097,11 @@ final class MainProfiles {
   final String? bio;
   final String name;
 
-  Map<String, Object?> toJson() => {'avatar': avatar, 'bio': bio, 'name': name};
+  Map<String, Object?> toJson() => {
+        'avatar': avatar,
+        'bio': bio,
+        'name': name,
+      };
 }
 
 /// The fields `where` of main/profiles may name.
@@ -1209,21 +1148,14 @@ abstract final class MainProfilesOrderBy {
 /// What a main/shares write accepts.
 
 final class MainSharesInput {
-  const MainSharesInput({
-    required this.assetId,
-    this.createdBy,
-    this.expiresAt,
-    required this.token,
-  });
+  const MainSharesInput({required this.assetId, this.createdBy, this.expiresAt, required this.token});
 
   factory MainSharesInput.fromJson(Map<String, Object?> json) => MainSharesInput(
-    assetId: json['asset_id'] as String,
-    createdBy: json['created_by'] == null ? null : json['created_by'] as String,
-    expiresAt: json['expires_at'] == null
-        ? null
-        : DateTimeString(json['expires_at'] as String),
-    token: json['token'] as String,
-  );
+        assetId: json['asset_id'] as String,
+        createdBy: json['created_by'] == null ? null : json['created_by'] as String,
+        expiresAt: json['expires_at'] == null ? null : DateTimeString(json['expires_at'] as String),
+        token: json['token'] as String,
+      );
 
   final String assetId;
   final String? createdBy;
@@ -1231,36 +1163,27 @@ final class MainSharesInput {
   final String token;
 
   Map<String, Object?> toJson() => {
-    'asset_id': assetId,
-    'created_by': createdBy,
-    'expires_at': expiresAt?.value,
-    'token': token,
-  };
+        'asset_id': assetId,
+        'created_by': createdBy,
+        'expires_at': expiresAt?.value,
+        'token': token,
+      };
 }
 
 /// A main/shares document.
 final class MainShares {
-  const MainShares({
-    required this.id,
-    required this.meta,
-    required this.assetId,
-    this.createdBy,
-    this.expiresAt,
-    required this.token,
-  });
+  const MainShares({required this.id, required this.meta, required this.assetId, this.createdBy, this.expiresAt, required this.token});
 
   factory MainShares.fromJson(Map<String, Object?> json) => MainShares(
-    id: json['id'] as String,
-    meta: json['_meta'] is Map
-        ? Meta.fromJson(Map<String, Object?>.from(json['_meta'] as Map))
-        : const Meta(createdAt: DateTimeString(''), updatedAt: DateTimeString('')),
-    assetId: json['asset_id'] as String,
-    createdBy: json['created_by'] == null ? null : json['created_by'] as String,
-    expiresAt: json['expires_at'] == null
-        ? null
-        : DateTimeString(json['expires_at'] as String),
-    token: json['token'] as String,
-  );
+        id: json['id'] as String,
+        meta: json['_meta'] is Map
+            ? Meta.fromJson(Map<String, Object?>.from(json['_meta'] as Map))
+            : const Meta(createdAt: DateTimeString(''), updatedAt: DateTimeString('')),
+        assetId: json['asset_id'] as String,
+        createdBy: json['created_by'] == null ? null : json['created_by'] as String,
+        expiresAt: json['expires_at'] == null ? null : DateTimeString(json['expires_at'] as String),
+        token: json['token'] as String,
+      );
 
   final String id;
   final Meta meta;
@@ -1271,11 +1194,11 @@ final class MainShares {
   final String token;
 
   Map<String, Object?> toJson() => {
-    'asset_id': assetId,
-    'created_by': createdBy,
-    'expires_at': expiresAt?.value,
-    'token': token,
-  };
+        'asset_id': assetId,
+        'created_by': createdBy,
+        'expires_at': expiresAt?.value,
+        'token': token,
+      };
 }
 
 /// The fields `where` of main/shares may name.
@@ -1344,15 +1267,9 @@ enum MainSubmissionsInputStatus {
 }
 
 final class MainSubmissionsInput {
-  const MainSubmissionsInput({
-    required this.assetId,
-    this.decidedBy,
-    this.note,
-    required this.status,
-  });
+  const MainSubmissionsInput({required this.assetId, this.decidedBy, this.note, required this.status});
 
-  factory MainSubmissionsInput.fromJson(Map<String, Object?> json) =>
-      MainSubmissionsInput(
+  factory MainSubmissionsInput.fromJson(Map<String, Object?> json) => MainSubmissionsInput(
         assetId: json['asset_id'] as String,
         decidedBy: json['decided_by'] == null ? null : json['decided_by'] as String,
         note: json['note'] == null ? null : json['note'] as String,
@@ -1365,11 +1282,11 @@ final class MainSubmissionsInput {
   final MainSubmissionsInputStatus status;
 
   Map<String, Object?> toJson() => {
-    'asset_id': assetId,
-    'decided_by': decidedBy,
-    'note': note,
-    'status': status.value,
-  };
+        'asset_id': assetId,
+        'decided_by': decidedBy,
+        'note': note,
+        'status': status.value,
+      };
 }
 
 enum MainSubmissionsStatus {
@@ -1393,25 +1310,18 @@ enum MainSubmissionsStatus {
 
 /// A main/submissions document.
 final class MainSubmissions {
-  const MainSubmissions({
-    required this.id,
-    required this.meta,
-    required this.assetId,
-    this.decidedBy,
-    this.note,
-    required this.status,
-  });
+  const MainSubmissions({required this.id, required this.meta, required this.assetId, this.decidedBy, this.note, required this.status});
 
   factory MainSubmissions.fromJson(Map<String, Object?> json) => MainSubmissions(
-    id: json['id'] as String,
-    meta: json['_meta'] is Map
-        ? Meta.fromJson(Map<String, Object?>.from(json['_meta'] as Map))
-        : const Meta(createdAt: DateTimeString(''), updatedAt: DateTimeString('')),
-    assetId: json['asset_id'] as String,
-    decidedBy: json['decided_by'] == null ? null : json['decided_by'] as String,
-    note: json['note'] == null ? null : json['note'] as String,
-    status: MainSubmissionsStatus.maybeValue(json['status'])!,
-  );
+        id: json['id'] as String,
+        meta: json['_meta'] is Map
+            ? Meta.fromJson(Map<String, Object?>.from(json['_meta'] as Map))
+            : const Meta(createdAt: DateTimeString(''), updatedAt: DateTimeString('')),
+        assetId: json['asset_id'] as String,
+        decidedBy: json['decided_by'] == null ? null : json['decided_by'] as String,
+        note: json['note'] == null ? null : json['note'] as String,
+        status: MainSubmissionsStatus.maybeValue(json['status'])!,
+      );
 
   final String id;
   final Meta meta;
@@ -1422,11 +1332,11 @@ final class MainSubmissions {
   final MainSubmissionsStatus status;
 
   Map<String, Object?> toJson() => {
-    'asset_id': assetId,
-    'decided_by': decidedBy,
-    'note': note,
-    'status': status.value,
-  };
+        'asset_id': assetId,
+        'decided_by': decidedBy,
+        'note': note,
+        'status': status.value,
+      };
 }
 
 /// The fields `where` of main/submissions may name.
@@ -1478,8 +1388,7 @@ abstract final class MainSubmissionsOrderBy {
 final class FnMainAnnounceSubmissionInputDoc {
   const FnMainAnnounceSubmissionInputDoc({required this.id, required this.version});
 
-  factory FnMainAnnounceSubmissionInputDoc.fromJson(Map<String, Object?> json) =>
-      FnMainAnnounceSubmissionInputDoc(
+  factory FnMainAnnounceSubmissionInputDoc.fromJson(Map<String, Object?> json) => FnMainAnnounceSubmissionInputDoc(
         id: json['id'] as String,
         version: (json['version'] as num).toInt(),
       );
@@ -1487,7 +1396,10 @@ final class FnMainAnnounceSubmissionInputDoc {
   final String id;
   final int version;
 
-  Map<String, Object?> toJson() => {'id': id, 'version': version};
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'version': version,
+      };
 }
 
 enum FnMainAnnounceSubmissionInputEvent {
@@ -1510,40 +1422,17 @@ enum FnMainAnnounceSubmissionInputEvent {
 }
 
 final class FnMainAnnounceSubmissionInput {
-  const FnMainAnnounceSubmissionInput({
-    this.after,
-    this.at,
-    this.before,
-    this.by,
-    this.changed,
-    this.collection,
-    this.depth,
-    required this.doc,
-    required this.event,
-    required this.id,
-    this.root,
-    this.truncated,
-    this.version,
-  });
+  const FnMainAnnounceSubmissionInput({this.after, this.at, this.before, this.by, this.changed, this.collection, this.depth, required this.doc, required this.event, required this.id, this.root, this.truncated, this.version});
 
-  factory FnMainAnnounceSubmissionInput.fromJson(Map<String, Object?> json) =>
-      FnMainAnnounceSubmissionInput(
-        after: json['after'] == null
-            ? null
-            : Map<String, Object?>.from(json['after'] as Map),
+  factory FnMainAnnounceSubmissionInput.fromJson(Map<String, Object?> json) => FnMainAnnounceSubmissionInput(
+        after: json['after'] == null ? null : Map<String, Object?>.from(json['after'] as Map),
         at: json['at'] == null ? null : json['at'] as String,
-        before: json['before'] == null
-            ? null
-            : Map<String, Object?>.from(json['before'] as Map),
+        before: json['before'] == null ? null : Map<String, Object?>.from(json['before'] as Map),
         by: json['by'] == null ? null : json['by'] as String,
-        changed: json['changed'] == null
-            ? null
-            : [for (final e in json['changed'] as List) e as String],
+        changed: json['changed'] == null ? null : [for (final e in json['changed'] as List) e as String],
         collection: json['collection'] == null ? null : json['collection'] as String,
         depth: json['depth'] == null ? null : (json['depth'] as num).toInt(),
-        doc: FnMainAnnounceSubmissionInputDoc.fromJson(
-          Map<String, Object?>.from(json['doc'] as Map),
-        ),
+        doc: FnMainAnnounceSubmissionInputDoc.fromJson(Map<String, Object?>.from(json['doc'] as Map)),
         event: FnMainAnnounceSubmissionInputEvent.maybeValue(json['event'])!,
         id: json['id'] as String,
         root: json['root'] == null ? null : json['root'] as String,
@@ -1566,20 +1455,20 @@ final class FnMainAnnounceSubmissionInput {
   final int? version;
 
   Map<String, Object?> toJson() => {
-    'after': after,
-    'at': at,
-    'before': before,
-    'by': by,
-    'changed': changed,
-    'collection': collection,
-    'depth': depth,
-    'doc': doc.toJson(),
-    'event': event.value,
-    'id': id,
-    'root': root,
-    'truncated': truncated,
-    'version': version,
-  };
+        'after': after,
+        'at': at,
+        'before': before,
+        'by': by,
+        'changed': changed,
+        'collection': collection,
+        'depth': depth,
+        'doc': doc.toJson(),
+        'event': event.value,
+        'id': id,
+        'root': root,
+        'truncated': truncated,
+        'version': version,
+      };
 }
 
 /// The input of main/digest.
@@ -1588,12 +1477,14 @@ final class FnMainDigestInput {
   const FnMainDigestInput({this.sinceDays});
 
   factory FnMainDigestInput.fromJson(Map<String, Object?> json) => FnMainDigestInput(
-    sinceDays: json['since_days'] == null ? null : (json['since_days'] as num).toInt(),
-  );
+        sinceDays: json['since_days'] == null ? null : (json['since_days'] as num).toInt(),
+      );
 
   final int? sinceDays;
 
-  Map<String, Object?> toJson() => {'since_days': sinceDays};
+  Map<String, Object?> toJson() => {
+        'since_days': sinceDays,
+      };
 }
 
 /// The input of main/download.
@@ -1620,38 +1511,33 @@ final class FnMainDownloadInput {
   const FnMainDownloadInput({required this.documentId, required this.field, this.fileId});
 
   factory FnMainDownloadInput.fromJson(Map<String, Object?> json) => FnMainDownloadInput(
-    documentId: json['document_id'] as String,
-    field: FnMainDownloadInputField.maybeValue(json['field'])!,
-    fileId: json['file_id'] == null ? null : json['file_id'] as String,
-  );
+        documentId: json['document_id'] as String,
+        field: FnMainDownloadInputField.maybeValue(json['field'])!,
+        fileId: json['file_id'] == null ? null : json['file_id'] as String,
+      );
 
   final String documentId;
   final FnMainDownloadInputField field;
   final String? fileId;
 
   Map<String, Object?> toJson() => {
-    'document_id': documentId,
-    'field': field.value,
-    'file_id': fileId,
-  };
+        'document_id': documentId,
+        'field': field.value,
+        'file_id': fileId,
+      };
 }
 
 /// The input of main/notify.
 
 final class FnMainNotifyInput {
-  const FnMainNotifyInput({
-    this.assetId,
-    required this.kind,
-    required this.text,
-    required this.toUser,
-  });
+  const FnMainNotifyInput({this.assetId, required this.kind, required this.text, required this.toUser});
 
   factory FnMainNotifyInput.fromJson(Map<String, Object?> json) => FnMainNotifyInput(
-    assetId: json['asset_id'] == null ? null : json['asset_id'] as String,
-    kind: json['kind'] as String,
-    text: json['text'] as String,
-    toUser: json['to_user'] as String,
-  );
+        assetId: json['asset_id'] == null ? null : json['asset_id'] as String,
+        kind: json['kind'] as String,
+        text: json['text'] as String,
+        toUser: json['to_user'] as String,
+      );
 
   final String? assetId;
   final String kind;
@@ -1659,11 +1545,11 @@ final class FnMainNotifyInput {
   final String toUser;
 
   Map<String, Object?> toJson() => {
-    'asset_id': assetId,
-    'kind': kind,
-    'text': text,
-    'to_user': toUser,
-  };
+        'asset_id': assetId,
+        'kind': kind,
+        'text': text,
+        'to_user': toUser,
+      };
 }
 
 /// The input of main/pin.
@@ -1672,18 +1558,23 @@ final class FnMainPinInput {
   const FnMainPinInput({this.note, required this.org, required this.title, this.url});
 
   factory FnMainPinInput.fromJson(Map<String, Object?> json) => FnMainPinInput(
-    note: json['note'] == null ? null : json['note'] as String,
-    org: json['org'] as String,
-    title: json['title'] as String,
-    url: json['url'] == null ? null : json['url'] as String,
-  );
+        note: json['note'] == null ? null : json['note'] as String,
+        org: json['org'] as String,
+        title: json['title'] as String,
+        url: json['url'] == null ? null : json['url'] as String,
+      );
 
   final String? note;
   final String org;
   final String title;
   final String? url;
 
-  Map<String, Object?> toJson() => {'note': note, 'org': org, 'title': title, 'url': url};
+  Map<String, Object?> toJson() => {
+        'note': note,
+        'org': org,
+        'title': title,
+        'url': url,
+      };
 }
 
 /// The output of main/pin.
@@ -1692,16 +1583,20 @@ final class FnMainPinOutput {
   const FnMainPinOutput({required this.id, required this.limit, required this.pins});
 
   factory FnMainPinOutput.fromJson(Map<String, Object?> json) => FnMainPinOutput(
-    id: json['id'] as String,
-    limit: (json['limit'] as num).toInt(),
-    pins: (json['pins'] as num).toInt(),
-  );
+        id: json['id'] as String,
+        limit: (json['limit'] as num).toInt(),
+        pins: (json['pins'] as num).toInt(),
+      );
 
   final String id;
   final int limit;
   final int pins;
 
-  Map<String, Object?> toJson() => {'id': id, 'limit': limit, 'pins': pins};
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'limit': limit,
+        'pins': pins,
+      };
 }
 
 /// The input of main/preview.
@@ -1709,12 +1604,15 @@ final class FnMainPinOutput {
 final class FnMainPreviewInput {
   const FnMainPreviewInput({required this.url});
 
-  factory FnMainPreviewInput.fromJson(Map<String, Object?> json) =>
-      FnMainPreviewInput(url: json['url'] as String);
+  factory FnMainPreviewInput.fromJson(Map<String, Object?> json) => FnMainPreviewInput(
+        url: json['url'] as String,
+      );
 
   final String url;
 
-  Map<String, Object?> toJson() => {'url': url};
+  Map<String, Object?> toJson() => {
+        'url': url,
+      };
 }
 
 /// The input of main/publish.
@@ -1722,12 +1620,15 @@ final class FnMainPreviewInput {
 final class FnMainPublishInput {
   const FnMainPublishInput({required this.assetId});
 
-  factory FnMainPublishInput.fromJson(Map<String, Object?> json) =>
-      FnMainPublishInput(assetId: json['asset_id'] as String);
+  factory FnMainPublishInput.fromJson(Map<String, Object?> json) => FnMainPublishInput(
+        assetId: json['asset_id'] as String,
+      );
 
   final String assetId;
 
-  Map<String, Object?> toJson() => {'asset_id': assetId};
+  Map<String, Object?> toJson() => {
+        'asset_id': assetId,
+      };
 }
 
 /// The input of main/publish-submission.
@@ -1735,8 +1636,7 @@ final class FnMainPublishInput {
 final class FnMainPublishSubmissionInputDoc {
   const FnMainPublishSubmissionInputDoc({required this.id, required this.version});
 
-  factory FnMainPublishSubmissionInputDoc.fromJson(Map<String, Object?> json) =>
-      FnMainPublishSubmissionInputDoc(
+  factory FnMainPublishSubmissionInputDoc.fromJson(Map<String, Object?> json) => FnMainPublishSubmissionInputDoc(
         id: json['id'] as String,
         version: (json['version'] as num).toInt(),
       );
@@ -1744,7 +1644,10 @@ final class FnMainPublishSubmissionInputDoc {
   final String id;
   final int version;
 
-  Map<String, Object?> toJson() => {'id': id, 'version': version};
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'version': version,
+      };
 }
 
 enum FnMainPublishSubmissionInputEvent {
@@ -1767,40 +1670,17 @@ enum FnMainPublishSubmissionInputEvent {
 }
 
 final class FnMainPublishSubmissionInput {
-  const FnMainPublishSubmissionInput({
-    this.after,
-    this.at,
-    this.before,
-    this.by,
-    this.changed,
-    this.collection,
-    this.depth,
-    required this.doc,
-    required this.event,
-    required this.id,
-    this.root,
-    this.truncated,
-    this.version,
-  });
+  const FnMainPublishSubmissionInput({this.after, this.at, this.before, this.by, this.changed, this.collection, this.depth, required this.doc, required this.event, required this.id, this.root, this.truncated, this.version});
 
-  factory FnMainPublishSubmissionInput.fromJson(Map<String, Object?> json) =>
-      FnMainPublishSubmissionInput(
-        after: json['after'] == null
-            ? null
-            : Map<String, Object?>.from(json['after'] as Map),
+  factory FnMainPublishSubmissionInput.fromJson(Map<String, Object?> json) => FnMainPublishSubmissionInput(
+        after: json['after'] == null ? null : Map<String, Object?>.from(json['after'] as Map),
         at: json['at'] == null ? null : json['at'] as String,
-        before: json['before'] == null
-            ? null
-            : Map<String, Object?>.from(json['before'] as Map),
+        before: json['before'] == null ? null : Map<String, Object?>.from(json['before'] as Map),
         by: json['by'] == null ? null : json['by'] as String,
-        changed: json['changed'] == null
-            ? null
-            : [for (final e in json['changed'] as List) e as String],
+        changed: json['changed'] == null ? null : [for (final e in json['changed'] as List) e as String],
         collection: json['collection'] == null ? null : json['collection'] as String,
         depth: json['depth'] == null ? null : (json['depth'] as num).toInt(),
-        doc: FnMainPublishSubmissionInputDoc.fromJson(
-          Map<String, Object?>.from(json['doc'] as Map),
-        ),
+        doc: FnMainPublishSubmissionInputDoc.fromJson(Map<String, Object?>.from(json['doc'] as Map)),
         event: FnMainPublishSubmissionInputEvent.maybeValue(json['event'])!,
         id: json['id'] as String,
         root: json['root'] == null ? null : json['root'] as String,
@@ -1823,20 +1703,20 @@ final class FnMainPublishSubmissionInput {
   final int? version;
 
   Map<String, Object?> toJson() => {
-    'after': after,
-    'at': at,
-    'before': before,
-    'by': by,
-    'changed': changed,
-    'collection': collection,
-    'depth': depth,
-    'doc': doc.toJson(),
-    'event': event.value,
-    'id': id,
-    'root': root,
-    'truncated': truncated,
-    'version': version,
-  };
+        'after': after,
+        'at': at,
+        'before': before,
+        'by': by,
+        'changed': changed,
+        'collection': collection,
+        'depth': depth,
+        'doc': doc.toJson(),
+        'event': event.value,
+        'id': id,
+        'root': root,
+        'truncated': truncated,
+        'version': version,
+      };
 }
 
 /// The input of main/share.
@@ -1864,14 +1744,17 @@ final class FnMainShareInput {
   const FnMainShareInput({required this.assetId, this.expiresIn});
 
   factory FnMainShareInput.fromJson(Map<String, Object?> json) => FnMainShareInput(
-    assetId: json['asset_id'] as String,
-    expiresIn: FnMainShareInputExpiresIn.maybeValue(json['expires_in']),
-  );
+        assetId: json['asset_id'] as String,
+        expiresIn: FnMainShareInputExpiresIn.maybeValue(json['expires_in']),
+      );
 
   final String assetId;
   final FnMainShareInputExpiresIn? expiresIn;
 
-  Map<String, Object?> toJson() => {'asset_id': assetId, 'expires_in': expiresIn?.value};
+  Map<String, Object?> toJson() => {
+        'asset_id': assetId,
+        'expires_in': expiresIn?.value,
+      };
 }
 
 /// The input of main/share-open.
@@ -1879,12 +1762,15 @@ final class FnMainShareInput {
 final class FnMainShareOpenInput {
   const FnMainShareOpenInput({required this.token});
 
-  factory FnMainShareOpenInput.fromJson(Map<String, Object?> json) =>
-      FnMainShareOpenInput(token: json['token'] as String);
+  factory FnMainShareOpenInput.fromJson(Map<String, Object?> json) => FnMainShareOpenInput(
+        token: json['token'] as String,
+      );
 
   final String token;
 
-  Map<String, Object?> toJson() => {'token': token};
+  Map<String, Object?> toJson() => {
+        'token': token,
+      };
 }
 
 /// The input of main/team-plan.
@@ -1911,20 +1797,20 @@ final class FnMainTeamPlanInput {
   const FnMainTeamPlanInput({required this.org, this.plan, this.timezone});
 
   factory FnMainTeamPlanInput.fromJson(Map<String, Object?> json) => FnMainTeamPlanInput(
-    org: json['org'] as String,
-    plan: FnMainTeamPlanInputPlan.maybeValue(json['plan']),
-    timezone: json['timezone'] == null ? null : json['timezone'] as String,
-  );
+        org: json['org'] as String,
+        plan: FnMainTeamPlanInputPlan.maybeValue(json['plan']),
+        timezone: json['timezone'] == null ? null : json['timezone'] as String,
+      );
 
   final String org;
   final FnMainTeamPlanInputPlan? plan;
   final String? timezone;
 
   Map<String, Object?> toJson() => {
-    'org': org,
-    'plan': plan?.value,
-    'timezone': timezone,
-  };
+        'org': org,
+        'plan': plan?.value,
+        'timezone': timezone,
+      };
 }
 
 /// The output of main/team-plan.
@@ -1932,8 +1818,7 @@ final class FnMainTeamPlanInput {
 final class FnMainTeamPlanOutput {
   const FnMainTeamPlanOutput({required this.org, this.plan, this.timezone});
 
-  factory FnMainTeamPlanOutput.fromJson(Map<String, Object?> json) =>
-      FnMainTeamPlanOutput(
+  factory FnMainTeamPlanOutput.fromJson(Map<String, Object?> json) => FnMainTeamPlanOutput(
         org: json['org'] as String,
         plan: json['plan'] == null ? null : json['plan'] as String,
         timezone: json['timezone'] == null ? null : json['timezone'] as String,
@@ -1943,7 +1828,11 @@ final class FnMainTeamPlanOutput {
   final String? plan;
   final String? timezone;
 
-  Map<String, Object?> toJson() => {'org': org, 'plan': plan, 'timezone': timezone};
+  Map<String, Object?> toJson() => {
+        'org': org,
+        'plan': plan,
+        'timezone': timezone,
+      };
 }
 
 /// The input of main/thank-submitter.
@@ -1951,8 +1840,7 @@ final class FnMainTeamPlanOutput {
 final class FnMainThankSubmitterInputDoc {
   const FnMainThankSubmitterInputDoc({required this.id, required this.version});
 
-  factory FnMainThankSubmitterInputDoc.fromJson(Map<String, Object?> json) =>
-      FnMainThankSubmitterInputDoc(
+  factory FnMainThankSubmitterInputDoc.fromJson(Map<String, Object?> json) => FnMainThankSubmitterInputDoc(
         id: json['id'] as String,
         version: (json['version'] as num).toInt(),
       );
@@ -1960,7 +1848,10 @@ final class FnMainThankSubmitterInputDoc {
   final String id;
   final int version;
 
-  Map<String, Object?> toJson() => {'id': id, 'version': version};
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'version': version,
+      };
 }
 
 enum FnMainThankSubmitterInputEvent {
@@ -1983,40 +1874,17 @@ enum FnMainThankSubmitterInputEvent {
 }
 
 final class FnMainThankSubmitterInput {
-  const FnMainThankSubmitterInput({
-    this.after,
-    this.at,
-    this.before,
-    this.by,
-    this.changed,
-    this.collection,
-    this.depth,
-    required this.doc,
-    required this.event,
-    required this.id,
-    this.root,
-    this.truncated,
-    this.version,
-  });
+  const FnMainThankSubmitterInput({this.after, this.at, this.before, this.by, this.changed, this.collection, this.depth, required this.doc, required this.event, required this.id, this.root, this.truncated, this.version});
 
-  factory FnMainThankSubmitterInput.fromJson(Map<String, Object?> json) =>
-      FnMainThankSubmitterInput(
-        after: json['after'] == null
-            ? null
-            : Map<String, Object?>.from(json['after'] as Map),
+  factory FnMainThankSubmitterInput.fromJson(Map<String, Object?> json) => FnMainThankSubmitterInput(
+        after: json['after'] == null ? null : Map<String, Object?>.from(json['after'] as Map),
         at: json['at'] == null ? null : json['at'] as String,
-        before: json['before'] == null
-            ? null
-            : Map<String, Object?>.from(json['before'] as Map),
+        before: json['before'] == null ? null : Map<String, Object?>.from(json['before'] as Map),
         by: json['by'] == null ? null : json['by'] as String,
-        changed: json['changed'] == null
-            ? null
-            : [for (final e in json['changed'] as List) e as String],
+        changed: json['changed'] == null ? null : [for (final e in json['changed'] as List) e as String],
         collection: json['collection'] == null ? null : json['collection'] as String,
         depth: json['depth'] == null ? null : (json['depth'] as num).toInt(),
-        doc: FnMainThankSubmitterInputDoc.fromJson(
-          Map<String, Object?>.from(json['doc'] as Map),
-        ),
+        doc: FnMainThankSubmitterInputDoc.fromJson(Map<String, Object?>.from(json['doc'] as Map)),
         event: FnMainThankSubmitterInputEvent.maybeValue(json['event'])!,
         id: json['id'] as String,
         root: json['root'] == null ? null : json['root'] as String,
@@ -2039,20 +1907,20 @@ final class FnMainThankSubmitterInput {
   final int? version;
 
   Map<String, Object?> toJson() => {
-    'after': after,
-    'at': at,
-    'before': before,
-    'by': by,
-    'changed': changed,
-    'collection': collection,
-    'depth': depth,
-    'doc': doc.toJson(),
-    'event': event.value,
-    'id': id,
-    'root': root,
-    'truncated': truncated,
-    'version': version,
-  };
+        'after': after,
+        'at': at,
+        'before': before,
+        'by': by,
+        'changed': changed,
+        'collection': collection,
+        'depth': depth,
+        'doc': doc.toJson(),
+        'event': event.value,
+        'id': id,
+        'root': root,
+        'truncated': truncated,
+        'version': version,
+      };
 }
 
 /// The realm's app configuration.
@@ -2060,38 +1928,35 @@ final class FnMainThankSubmitterInput {
 final class ShelfConfigTreeFeaturesExport {
   const ShelfConfigTreeFeaturesExport({this.enabled});
 
-  factory ShelfConfigTreeFeaturesExport.fromJson(Map<String, Object?> json) =>
-      ShelfConfigTreeFeaturesExport(
+  factory ShelfConfigTreeFeaturesExport.fromJson(Map<String, Object?> json) => ShelfConfigTreeFeaturesExport(
         enabled: json['enabled'] == null ? null : json['enabled'] as bool,
       );
 
   final bool? enabled;
 
-  Map<String, Object?> toJson() => {'enabled': enabled};
+  Map<String, Object?> toJson() => {
+        'enabled': enabled,
+      };
 }
 
 final class ShelfConfigTreeFeatures {
   const ShelfConfigTreeFeatures({this.export_});
 
-  factory ShelfConfigTreeFeatures.fromJson(Map<String, Object?> json) =>
-      ShelfConfigTreeFeatures(
-        export_: json['export'] == null
-            ? null
-            : ShelfConfigTreeFeaturesExport.fromJson(
-                Map<String, Object?>.from(json['export'] as Map),
-              ),
+  factory ShelfConfigTreeFeatures.fromJson(Map<String, Object?> json) => ShelfConfigTreeFeatures(
+        export_: json['export'] == null ? null : ShelfConfigTreeFeaturesExport.fromJson(Map<String, Object?>.from(json['export'] as Map)),
       );
 
   final ShelfConfigTreeFeaturesExport? export_;
 
-  Map<String, Object?> toJson() => {'export': export_?.toJson()};
+  Map<String, Object?> toJson() => {
+        'export': export_?.toJson(),
+      };
 }
 
 final class ShelfConfigTreeMaintenance {
   const ShelfConfigTreeMaintenance({this.enabled, this.message});
 
-  factory ShelfConfigTreeMaintenance.fromJson(Map<String, Object?> json) =>
-      ShelfConfigTreeMaintenance(
+  factory ShelfConfigTreeMaintenance.fromJson(Map<String, Object?> json) => ShelfConfigTreeMaintenance(
         enabled: json['enabled'] == null ? null : json['enabled'] as bool,
         message: json['message'] == null ? null : json['message'] as String,
       );
@@ -2099,32 +1964,27 @@ final class ShelfConfigTreeMaintenance {
   final bool? enabled;
   final String? message;
 
-  Map<String, Object?> toJson() => {'enabled': enabled, 'message': message};
+  Map<String, Object?> toJson() => {
+        'enabled': enabled,
+        'message': message,
+      };
 }
 
 final class ShelfConfigTree {
   const ShelfConfigTree({this.features, this.maintenance});
 
   factory ShelfConfigTree.fromJson(Map<String, Object?> json) => ShelfConfigTree(
-    features: json['features'] == null
-        ? null
-        : ShelfConfigTreeFeatures.fromJson(
-            Map<String, Object?>.from(json['features'] as Map),
-          ),
-    maintenance: json['maintenance'] == null
-        ? null
-        : ShelfConfigTreeMaintenance.fromJson(
-            Map<String, Object?>.from(json['maintenance'] as Map),
-          ),
-  );
+        features: json['features'] == null ? null : ShelfConfigTreeFeatures.fromJson(Map<String, Object?>.from(json['features'] as Map)),
+        maintenance: json['maintenance'] == null ? null : ShelfConfigTreeMaintenance.fromJson(Map<String, Object?>.from(json['maintenance'] as Map)),
+      );
 
   final ShelfConfigTreeFeatures? features;
   final ShelfConfigTreeMaintenance? maintenance;
 
   Map<String, Object?> toJson() => {
-    'features': features?.toJson(),
-    'maintenance': maintenance?.toJson(),
-  };
+        'features': features?.toJson(),
+        'maintenance': maintenance?.toJson(),
+      };
 }
 
 /// The app configuration's leaf paths, typed.
@@ -2134,41 +1994,20 @@ final class ShelfConfig {
   final Config _config;
 
   /// The "features.export.enabled" path.
-  Future<bool?> featuresExportEnabled({
-    bool refresh = false,
-    RequestOptions? options,
-  }) async {
-    final v = await _config.get(
-      'features.export.enabled',
-      refresh: refresh,
-      options: options,
-    );
+  Future<bool?> featuresExportEnabled({bool refresh = false, RequestOptions? options}) async {
+    final v = await _config.get('features.export.enabled', refresh: refresh, options: options);
     return v as bool?;
   }
 
   /// The "maintenance.enabled" path.
-  Future<bool?> maintenanceEnabled({
-    bool refresh = false,
-    RequestOptions? options,
-  }) async {
-    final v = await _config.get(
-      'maintenance.enabled',
-      refresh: refresh,
-      options: options,
-    );
+  Future<bool?> maintenanceEnabled({bool refresh = false, RequestOptions? options}) async {
+    final v = await _config.get('maintenance.enabled', refresh: refresh, options: options);
     return v as bool?;
   }
 
   /// The "maintenance.message" path.
-  Future<String?> maintenanceMessage({
-    bool refresh = false,
-    RequestOptions? options,
-  }) async {
-    final v = await _config.get(
-      'maintenance.message',
-      refresh: refresh,
-      options: options,
-    );
+  Future<String?> maintenanceMessage({bool refresh = false, RequestOptions? options}) async {
+    final v = await _config.get('maintenance.message', refresh: refresh, options: options);
     return v as String?;
   }
 }
@@ -2217,14 +2056,8 @@ final class ShelfMail {
 
   /// The "outbox" collection.
   TypedCollection<MailOutbox, MailOutboxInput, MailOutboxInput> get outbox =>
-      TypedCollection(
-        _db.collection('outbox'),
-        MailOutbox.fromJson,
-        (i) => i.toJson(),
-        (i) => i.toJson(),
-      );
+      TypedCollection(_db.collection('outbox'), MailOutbox.fromJson, (i) => i.toJson(), (i) => i.toJson());
 }
-
 /// The "main" database of "shelf", typed.
 final class ShelfMain {
   ShelfMain(this._db);
@@ -2233,212 +2066,91 @@ final class ShelfMain {
 
   /// The "assets" collection.
   TypedCollection<MainAssets, MainAssetsInput, MainAssetsInput> get assets =>
-      TypedCollection(
-        _db.collection('assets'),
-        MainAssets.fromJson,
-        (i) => i.toJson(),
-        (i) => i.toJson(),
-      );
+      TypedCollection(_db.collection('assets'), MainAssets.fromJson, (i) => i.toJson(), (i) => i.toJson());
 
   /// The "imports" collection.
   TypedCollection<MainImports, MainImportsInput, MainImportsInput> get imports =>
-      TypedCollection(
-        _db.collection('imports'),
-        MainImports.fromJson,
-        (i) => i.toJson(),
-        (i) => i.toJson(),
-      );
+      TypedCollection(_db.collection('imports'), MainImports.fromJson, (i) => i.toJson(), (i) => i.toJson());
 
   /// The "members" collection.
   TypedCollection<MainMembers, MainMembersInput, MainMembersCreate> get members =>
-      TypedCollection(
-        _db.collection('members'),
-        MainMembers.fromJson,
-        (i) => i.toJson(),
-        (i) => i.toJson(),
-      );
+      TypedCollection(_db.collection('members'), MainMembers.fromJson, (i) => i.toJson(), (i) => i.toJson());
 
   /// The "notifications" collection.
-  TypedCollection<MainNotifications, MainNotificationsInput, MainNotificationsInput>
-  get notifications => TypedCollection(
-    _db.collection('notifications'),
-    MainNotifications.fromJson,
-    (i) => i.toJson(),
-    (i) => i.toJson(),
-  );
+  TypedCollection<MainNotifications, MainNotificationsInput, MainNotificationsInput> get notifications =>
+      TypedCollection(_db.collection('notifications'), MainNotifications.fromJson, (i) => i.toJson(), (i) => i.toJson());
 
   /// The "pins" collection.
-  TypedCollection<MainPins, MainPinsInput, MainPinsInput> get pins => TypedCollection(
-    _db.collection('pins'),
-    MainPins.fromJson,
-    (i) => i.toJson(),
-    (i) => i.toJson(),
-  );
+  TypedCollection<MainPins, MainPinsInput, MainPinsInput> get pins =>
+      TypedCollection(_db.collection('pins'), MainPins.fromJson, (i) => i.toJson(), (i) => i.toJson());
 
   /// The "profiles" collection.
   TypedCollection<MainProfiles, MainProfilesInput, MainProfilesInput> get profiles =>
-      TypedCollection(
-        _db.collection('profiles'),
-        MainProfiles.fromJson,
-        (i) => i.toJson(),
-        (i) => i.toJson(),
-      );
+      TypedCollection(_db.collection('profiles'), MainProfiles.fromJson, (i) => i.toJson(), (i) => i.toJson());
 
   /// The "shares" collection.
   TypedCollection<MainShares, MainSharesInput, MainSharesInput> get shares =>
-      TypedCollection(
-        _db.collection('shares'),
-        MainShares.fromJson,
-        (i) => i.toJson(),
-        (i) => i.toJson(),
-      );
+      TypedCollection(_db.collection('shares'), MainShares.fromJson, (i) => i.toJson(), (i) => i.toJson());
 
   /// The "submissions" collection.
-  TypedCollection<MainSubmissions, MainSubmissionsInput, MainSubmissionsInput>
-  get submissions => TypedCollection(
-    _db.collection('submissions'),
-    MainSubmissions.fromJson,
-    (i) => i.toJson(),
-    (i) => i.toJson(),
-  );
+  TypedCollection<MainSubmissions, MainSubmissionsInput, MainSubmissionsInput> get submissions =>
+      TypedCollection(_db.collection('submissions'), MainSubmissions.fromJson, (i) => i.toJson(), (i) => i.toJson());
 
   /// Calls main/digest (async: answers a job).
   Future<Job> digest(FnMainDigestInput input, {RequestOptions? options}) async =>
-      (await _db.fn('digest', input.toJson(), respondAsync: true, options: options))
-          as Job;
+      (await _db.fn('digest', input.toJson(), respondAsync: true, options: options)) as Job;
 
   /// Calls main/download.
-  Future<Object?> download(
-    FnMainDownloadInput input, {
-    String? idempotencyKey,
-    RequestOptions? options,
-  }) async {
-    final result = await _db.fn(
-      'download',
-      input.toJson(),
-      idempotencyKey: idempotencyKey,
-      options: options,
-    );
+  Future<Object?> download(FnMainDownloadInput input, {String? idempotencyKey, RequestOptions? options}) async {
+    final result = await _db.fn('download', input.toJson(), idempotencyKey: idempotencyKey, options: options);
     return result;
   }
 
   /// Calls main/export.
-  Future<Object?> export_(
-    Map<String, Object?> input, {
-    String? idempotencyKey,
-    RequestOptions? options,
-  }) async {
-    final result = await _db.fn(
-      'export',
-      input,
-      idempotencyKey: idempotencyKey,
-      options: options,
-    );
+  Future<Object?> export_(Map<String, Object?> input, {String? idempotencyKey, RequestOptions? options}) async {
+    final result = await _db.fn('export', input, idempotencyKey: idempotencyKey, options: options);
     return result;
   }
 
   /// Calls main/import.
-  Future<Object?> import_(
-    Map<String, Object?> input, {
-    String? idempotencyKey,
-    RequestOptions? options,
-  }) async {
-    final result = await _db.fn(
-      'import',
-      input,
-      idempotencyKey: idempotencyKey,
-      options: options,
-    );
+  Future<Object?> import_(Map<String, Object?> input, {String? idempotencyKey, RequestOptions? options}) async {
+    final result = await _db.fn('import', input, idempotencyKey: idempotencyKey, options: options);
     return result;
   }
 
   /// Calls main/pin.
-  Future<FnMainPinOutput> pin(
-    FnMainPinInput input, {
-    String? idempotencyKey,
-    RequestOptions? options,
-  }) async {
-    final result = await _db.fn(
-      'pin',
-      input.toJson(),
-      idempotencyKey: idempotencyKey,
-      options: options,
-    );
+  Future<FnMainPinOutput> pin(FnMainPinInput input, {String? idempotencyKey, RequestOptions? options}) async {
+    final result = await _db.fn('pin', input.toJson(), idempotencyKey: idempotencyKey, options: options);
     return FnMainPinOutput.fromJson(Map<String, Object?>.from(result as Map));
   }
 
   /// Calls main/preview.
-  Future<Object?> preview(
-    FnMainPreviewInput input, {
-    String? idempotencyKey,
-    RequestOptions? options,
-  }) async {
-    final result = await _db.fn(
-      'preview',
-      input.toJson(),
-      idempotencyKey: idempotencyKey,
-      options: options,
-    );
+  Future<Object?> preview(FnMainPreviewInput input, {String? idempotencyKey, RequestOptions? options}) async {
+    final result = await _db.fn('preview', input.toJson(), idempotencyKey: idempotencyKey, options: options);
     return result;
   }
 
   /// Calls main/publish.
-  Future<Object?> publish(
-    FnMainPublishInput input, {
-    String? idempotencyKey,
-    RequestOptions? options,
-  }) async {
-    final result = await _db.fn(
-      'publish',
-      input.toJson(),
-      idempotencyKey: idempotencyKey,
-      options: options,
-    );
+  Future<Object?> publish(FnMainPublishInput input, {String? idempotencyKey, RequestOptions? options}) async {
+    final result = await _db.fn('publish', input.toJson(), idempotencyKey: idempotencyKey, options: options);
     return result;
   }
 
   /// Calls main/share.
-  Future<Object?> share(
-    FnMainShareInput input, {
-    String? idempotencyKey,
-    RequestOptions? options,
-  }) async {
-    final result = await _db.fn(
-      'share',
-      input.toJson(),
-      idempotencyKey: idempotencyKey,
-      options: options,
-    );
+  Future<Object?> share(FnMainShareInput input, {String? idempotencyKey, RequestOptions? options}) async {
+    final result = await _db.fn('share', input.toJson(), idempotencyKey: idempotencyKey, options: options);
     return result;
   }
 
   /// Calls main/share-open.
-  Future<Object?> shareOpen(
-    FnMainShareOpenInput input, {
-    String? idempotencyKey,
-    RequestOptions? options,
-  }) async {
-    final result = await _db.fn(
-      'share-open',
-      input.toJson(),
-      idempotencyKey: idempotencyKey,
-      options: options,
-    );
+  Future<Object?> shareOpen(FnMainShareOpenInput input, {String? idempotencyKey, RequestOptions? options}) async {
+    final result = await _db.fn('share-open', input.toJson(), idempotencyKey: idempotencyKey, options: options);
     return result;
   }
 
   /// Calls main/team-plan.
-  Future<FnMainTeamPlanOutput> teamPlan(
-    FnMainTeamPlanInput input, {
-    String? idempotencyKey,
-    RequestOptions? options,
-  }) async {
-    final result = await _db.fn(
-      'team-plan',
-      input.toJson(),
-      idempotencyKey: idempotencyKey,
-      options: options,
-    );
+  Future<FnMainTeamPlanOutput> teamPlan(FnMainTeamPlanInput input, {String? idempotencyKey, RequestOptions? options}) async {
+    final result = await _db.fn('team-plan', input.toJson(), idempotencyKey: idempotencyKey, options: options);
     return FnMainTeamPlanOutput.fromJson(Map<String, Object?>.from(result as Map));
   }
 }
