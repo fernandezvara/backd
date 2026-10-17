@@ -4,9 +4,11 @@ import 'dart:io' show HttpClient;
 
 import 'package:meta/meta.dart';
 
+import 'auth.dart';
 import 'cache.dart';
 import 'config.dart';
 import 'errors.dart';
+import 'oauth.dart';
 import 'storage.dart';
 import 'transport.dart';
 
@@ -22,6 +24,20 @@ final class RetryOptions {
 
   /// Longest wait between attempts.
   final Duration maxDelay;
+}
+
+/// Per-call options of the client's modules.
+final class RequestOptions {
+  const RequestOptions({this.retry, this.headers, this.cache});
+
+  /// Retries for this call, overriding the client's.
+  final RetryOptions? retry;
+
+  /// Extra headers for this call.
+  final Map<String, String>? headers;
+
+  /// `false` skips the client's revalidation cache for this read.
+  final bool? cache;
 }
 
 /// The fresh proof of identity `client.auth.reauth()` gave, sent with the
@@ -167,6 +183,7 @@ class BackdClient<R> {
     HttpClient? httpClient,
     this.types,
     this.onStaleTypes,
+    this.oauthStorage,
     @visibleForTesting
     Duration Function(int attempt, Duration? retryAfter, Duration maxDelay)
         backoff = _defaultBackoff,
@@ -188,6 +205,7 @@ class BackdClient<R> {
     } else {
       _transport = transport;
     }
+    auth = Auth(this);
   }
 
   /// Base URL of backd, without trailing slashes.
@@ -220,16 +238,28 @@ class BackdClient<R> {
   /// Called once when the server reports stale generated types.
   final void Function()? onStaleTypes;
 
+  /// Where the OAuth flows keep the PKCE verifier while the user is at the
+  /// provider; memory by default (see `auth.signInWith`).
+  final OAuthStorage? oauthStorage;
+
+  /// Sign-up, login, the second factor and sessions: `client.auth`.
+  late final Auth auth;
+
   /// The fresh proof of identity `client.auth.reauth()` gave, sent with the
   /// sensitive requests while it is good. Set by the auth module (28.2).
   @internal
   ReauthProof? proof;
 
   /// Called by the request pipeline when a session token the server refused
-  /// (`unauthenticated`) should expire: the auth module (28.2) clears storage
-  /// and emits the `expired` event.
+  /// (`unauthenticated`) should expire: `auth` clears storage and emits
+  /// `sessionExpired`.
   @internal
   FutureOr<void> Function()? onSessionExpired;
+
+  /// `config` (a later module) sets this so a sign-in or sign-out forgets
+  /// its cached view of the realm's app configuration.
+  @internal
+  FutureOr<void> Function()? configClear;
 
   late final Transport _transport;
   HttpTransport? _ownedTransport;
@@ -250,6 +280,15 @@ class BackdClient<R> {
 
   /// Forgets everything the revalidation cache holds.
   void clearCache() => cache?.clear();
+
+  /// A sign-in or sign-out: the proof dies with the credentials, and what
+  /// was read as someone else (or no one) isn't this caller's.
+  @internal
+  void clearDerivedState() {
+    proof = null;
+    clearCache();
+    configClear?.call();
+  }
 
   /// Releases the HTTP client owned by the default transport. Standalone
   /// programs should call it so the process can exit; a transport passed in
