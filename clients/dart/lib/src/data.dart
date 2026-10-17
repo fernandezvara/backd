@@ -153,6 +153,47 @@ final class BatchDelete extends BatchOperation {
 /// `If-Match` header of a write and the `if_match` of a [BatchOperation].
 String ifMatchValue(Object version) => version is num ? '"$version"' : '$version';
 
+/// One group of an [Collection.aggregate]: [key] has an entry per `groupBy`
+/// field (`null` for documents without a value), and [metrics] the results
+/// named `<metric>_<field>`: `count`, `sum_total`, `avg_total`,
+/// `count_distinct__meta.owner`. Sums and averages are exact decimal strings.
+final class AggregateGroup {
+  const AggregateGroup({required this.key, required this.metrics});
+
+  /// One entry of `key` per groupBy field; everything else is a metric.
+  factory AggregateGroup.fromJson(Map<String, Object?> json) {
+    final key = json['key'] is Map
+        ? Map<String, Object?>.from(json['key'] as Map)
+        : const <String, Object?>{};
+    final metrics = Map<String, Object?>.from(json)..remove('key');
+    return AggregateGroup(key: key, metrics: metrics);
+  }
+
+  final Map<String, Object?> key;
+  final Map<String, Object?> metrics;
+
+  /// The `count` metric, when counted.
+  int? get count => metrics['count'] as int?;
+}
+
+/// The answer of [Collection.aggregate].
+final class AggregateResult {
+  const AggregateResult({required this.groups, required this.totalGroups});
+
+  factory AggregateResult.fromJson(Map<String, Object?> json) => AggregateResult(
+        groups: [
+          for (final g in json['groups'] as List? ?? const [])
+            if (g is Map) AggregateGroup.fromJson(Map<String, Object?>.from(g)),
+        ],
+        totalGroups: json['total_groups'] as int? ?? 0,
+      );
+
+  final List<AggregateGroup> groups;
+
+  /// How many groups there were before `limit`.
+  final int totalGroups;
+}
+
 /// A database of the realm: `client.db(name)`.
 final class Database {
   Database(this.client, this.name);
@@ -336,6 +377,122 @@ final class Collection {
         hasCursor = true;
       }
     }
+  }
+
+  /// Summarizes the documents the caller may read: counts and measures
+  /// grouped by the fields the collection declares in `aggregate:`. The read
+  /// rules apply before grouping, so a total never includes a document a
+  /// list would hide.
+  ///
+  /// ```dart
+  /// final result = await orders.aggregate(
+  ///   groupBy: ['category', 'paid_at:month'],
+  ///   tz: 'Europe/Madrid',
+  ///   metrics: ['count', 'sum:total'],
+  ///   orderBy: '-sum_total',
+  ///   limit: 20,
+  /// );
+  /// result.groups[0].key       // {category: 'shoes', 'paid_at:month': '2026-09'}
+  /// result.groups[0].metrics['sum_total'] // '18234.5' (an exact decimal string)
+  /// ```
+  ///
+  /// [AggregateNotEnabledError] when the collection declares no `aggregate:`,
+  /// [InvalidAggregateError] for a wrong parameter and
+  /// [AggregateTooExpensiveError] when it needs more than allowed.
+  ///
+  /// [groupBy] takes up to 3 declared fields; a date takes a bucket:
+  /// `'paid_at:month'` (`day`, `week`, `month`, `year`). Without it, one
+  /// group with an empty key (a counter). [metrics] are `count` (the
+  /// default), `count_distinct:<field>`, `sum:<field>`, `avg:<field>`,
+  /// `min:<field>`, `max:<field>`; a single string or a list. [tz] is the
+  /// IANA zone of the date buckets (default `UTC`); [limit] the groups
+  /// returned (default 100, at most the collection's maximum).
+  Future<AggregateResult> aggregate({
+    Object? where,
+    Object? groupBy,
+    Object? metrics,
+    String? tz,
+    Object? orderBy,
+    int? limit,
+    String? language,
+    RequestOptions? options,
+  }) async {
+    String? listOf(Object? v) =>
+        v == null ? null : (v is List ? v.join(',') : '$v');
+    final res = await client.request(RequestInit(
+      method: 'GET',
+      path: [..._path, '_aggregate'],
+      query: _compactQuery({
+        'where': switch (where) {
+          null => null,
+          String() => where,
+          _ => jsonEncode(where),
+        },
+        'group_by': listOf(groupBy),
+        'metrics': listOf(metrics),
+        'tz': tz,
+        'order_by': listOf(orderBy),
+        'limit': limit,
+        'language': language,
+        ...scopeQuery(org, team),
+      }),
+      // Aggregations never share the read cache: `_aggregate` is not
+      // cacheable anyway.
+      retry: options?.retry,
+      headers: options?.headers,
+      cache: options?.cache ?? true,
+    ));
+    return AggregateResult.fromJson(res.data as Map<String, Object?>);
+  }
+
+  /// Full-text search, best match first: a [list] whose `where` carries
+  /// [text] as `$search` and whose order is `_relevance`, with each
+  /// document's score in `_meta.score`. [text] is words, `"quoted phrases"`
+  /// and `-excluded` words. Pages with [skip], through the first 1,000
+  /// results. [SearchNotEnabledError] when the collection has no text index,
+  /// [SearchTooExpensiveError] when it needs more time than allowed.
+  ///
+  /// ```dart
+  /// final page = await articles.search(
+  ///   'red "running shoes" -kids',
+  ///   where: {'status': 'published'},
+  ///   limit: 10,
+  /// );
+  /// ```
+  Future<Page<Doc>> search(
+    String text, {
+    Object? where,
+    int? limit,
+    int? skip,
+    bool? count,
+    bool? fileLinks,
+    String? language,
+    String? expand,
+    DeletedDocs? deleted,
+    RequestOptions? options,
+  }) {
+    if (text.trim().isEmpty) {
+      throw ArgumentError.value(
+          text, 'text', 'backd: search needs the text to search for');
+    }
+    final base = switch (where) {
+      null => <String, Object?>{},
+      String() => Map<String, Object?>.from(jsonDecode(where) as Map),
+      Map() => Map<String, Object?>.from(where),
+      _ => throw ArgumentError.value(where, 'where', 'must be a Map or a JSON string'),
+    };
+    return list(
+      where: {...base, '\$search': text},
+      orderBy: '_relevance',
+      limit: limit,
+      skip: skip,
+      count: count,
+      fileLinks: fileLinks,
+      language: language,
+      expand: expand,
+      deleted: deleted,
+      options: options,
+    );
   }
 
   /// One document; [NotFoundError] if it doesn't exist or the caller may not

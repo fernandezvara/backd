@@ -234,6 +234,77 @@ void main() {
     });
   });
 
+  group('aggregate', () {
+    test('builds the _aggregate query and parses groups', () async {
+      final t = FakeTransport()
+        ..answer(respond(200, {
+          'groups': [
+            {
+              'key': {'category': 'shoes', 'paid_at:month': '2026-09'},
+              'count': 12,
+              'sum_total': '18234.5',
+            },
+          ],
+          'total_groups': 40,
+        }));
+      final res = await testClient(t, apiKey: 'k')
+          .db('main')
+          .collection('orders')
+          .inOrg('acme')
+          .aggregate(
+            where: {'status': 'paid'},
+            groupBy: ['category', 'paid_at:month'],
+            metrics: ['count', 'sum:total'],
+            tz: 'Europe/Madrid',
+            orderBy: '-sum_total',
+            limit: 20,
+          );
+      final req = t.requests.single;
+      expect(req.url.path, '/v1/shelf/main/orders/_aggregate');
+      final q = req.url.queryParameters;
+      expect(q['group_by'], 'category,paid_at:month');
+      expect(q['metrics'], 'count,sum:total');
+      expect(q['tz'], 'Europe/Madrid');
+      expect(q['order_by'], '-sum_total');
+      expect(q['limit'], '20');
+      expect(q['org'], 'acme');
+      expect(res.totalGroups, 40);
+      expect(res.groups.single.key['category'], 'shoes');
+      expect(res.groups.single.key['paid_at:month'], '2026-09');
+      expect(res.groups.single.count, 12);
+      expect(res.groups.single.metrics['sum_total'], '18234.5');
+    });
+  });
+
+  group('search', () {
+    test('adds \$search to where and orders by _relevance', () async {
+      final t = FakeTransport()
+        ..answer(respond(200, pageJson([docJson('a')])));
+      final page = await testClient(t, apiKey: 'k')
+          .db('main')
+          .collection('articles')
+          .search('red "running shoes" -kids',
+              where: {'status': 'published'}, limit: 10);
+      final q = t.requests.single.url.queryParameters;
+      expect(jsonDecode(q['where']!), {
+        'status': 'published',
+        '\$search': 'red "running shoes" -kids',
+      });
+      expect(q['order_by'], '_relevance');
+      expect(page.items.single['id'], 'a');
+    });
+
+    test('rejects an empty text', () async {
+      expect(
+        () => testClient(FakeTransport())
+            .db('main')
+            .collection('articles')
+            .search('  '),
+        throwsArgumentError,
+      );
+    });
+  });
+
   group('expand', () {
     test('names, nested names, fields', () {
       expect(expand(['author']), 'author');
