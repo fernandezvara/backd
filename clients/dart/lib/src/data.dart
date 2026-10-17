@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'client.dart';
 import 'files.dart' as fileio;
+import 'functions.dart';
 import 'transport.dart' show UploadProgress;
 import 'errors.dart';
 
@@ -216,21 +217,16 @@ final class Database {
   /// the first request with a key for 24 hours. `org` and `team` scope the
   /// creates (see [Collection.inOrg], [Collection.inTeam]).
   ///
-  /// Returns one entry per operation, in order.
+  /// Runs the operations atomically: all of them or none.
   Future<List<Doc>> batch(
     List<BatchOperation> operations, {
     String? idempotencyKey,
-    String? org,
-    String? team,
     RequestOptions? options,
   }) async {
     final res = await client.request(RequestInit(
       method: 'POST',
       path: [name, '_batch'],
-      body: {
-        'operations': [for (final op in operations) op.toJson()],
-      },
-      query: scopeQuery(org, team),
+      body: {'operations': [for (final op in operations) op.toJson()]},
       headers: {
         ...?options?.headers,
         if (idempotencyKey != null) 'Idempotency-Key': idempotencyKey,
@@ -238,10 +234,48 @@ final class Database {
       retry: options?.retry,
       cache: options?.cache ?? true,
     ));
+    final list = res.data is Map ? (res.data as Map)['results'] : res.data;
     return [
-      for (final r in (res.data as Map)['results'] as List? ?? const [])
-        if (r is Map) Map<String, Object?>.from(r),
+      for (final d in list as List? ?? const [])
+        if (d is Map) Map<String, Object?>.from(d),
     ];
+  }
+
+  /// Calls a function. Returns its output directly for a `sync` function;
+  /// for `async`, a [Job] handle to poll instead of the output
+  /// (`job.status()`, or `job.wait()` for the output). A function's own
+  /// error (`ctx.error(status, code, message)`) arrives as a
+  /// [BackdException] with that status and code — for `async`, only once
+  /// `job.wait()` resolves, not from this call itself.
+  ///
+  /// With [respondAsync] (`Prefer: respond-async`) a `sync` function is
+  /// queued as a job too, and this resolves with its [Job] instead of the
+  /// output: for calls that can take long, or that nobody waits for. It
+  /// runs once, with the function's own limits.
+  Future<Object?> fn(
+    String name,
+    Object? input, {
+    String? idempotencyKey,
+    bool respondAsync = false,
+    RequestOptions? options,
+  }) async {
+    final res = await client.request(RequestInit(
+      method: 'POST',
+      path: [this.name, '_func', name],
+      body: input,
+      headers: {
+        ...?options?.headers,
+        if (idempotencyKey != null) 'Idempotency-Key': idempotencyKey,
+        if (respondAsync) 'Prefer': 'respond-async',
+      },
+      retry: options?.retry,
+      cache: options?.cache ?? true,
+    ));
+    if (res.status == 202) {
+      return Job(client, this.name,
+          Map<String, Object?>.from(res.data as Map));
+    }
+    return res.data;
   }
 }
 
