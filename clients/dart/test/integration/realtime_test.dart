@@ -3,8 +3,6 @@
 @TestOn('vm')
 library;
 
-import 'dart:async';
-
 import 'package:backd/backd.dart';
 import 'package:test/test.dart';
 
@@ -25,26 +23,25 @@ void main() {
         ),
       ]);
 
-      await view.ready.timeout(const Duration(seconds: 15));
+      Object? viewError;
+      view.on('error', (Object? e) => viewError = e);
 
-      final changed = Completer<void>();
-      view.on('change', (_) {
-        if (!changed.isCompleted) changed.complete();
-      });
-      view.on('error', (Object? e) {
-        if (!changed.isCompleted) {
-          changed.completeError(
-              e is Object ? e : StateError('realtime error'));
-        }
-      });
+      await view.ready.timeout(const Duration(seconds: 15));
 
       final created = await c.db('app').collection('posts').create(
           {'title': 'live-post', 'published': true});
 
-      await changed.future.timeout(const Duration(seconds: 15));
-
-      final ids = view.items.map((d) => d['id']);
-      expect(ids, contains(created['id']));
+      // A 'change' event can arrive before the state holds the document (or
+      // fire for the initial snapshot): poll the items until the new doc is
+      // there, with a deadline.
+      final deadline = DateTime.now().add(const Duration(seconds: 15));
+      while (!view.items.any((d) => d['id'] == created['id'])) {
+        if (viewError != null) fail('live view error: $viewError');
+        if (DateTime.now().isAfter(deadline)) {
+          fail('the new document never arrived in the live view');
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
 
       view.close();
     });
