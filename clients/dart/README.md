@@ -94,6 +94,14 @@ desktop app exercising all of it.
 > application holding admin capability is a footgun; a Dart program that
 > truly needs the admin API calls the REST endpoints directly, knowingly.
 
+## Versions
+
+`0.0.x` while the client's surface settles: breaking changes land without a
+major bump, so pin the version (`backd: ^0.0.1` gets fixes only) and read the
+CHANGELOG on upgrades. Once the client reaches parity with the server and
+`backd-js`, its versions align with their release train — a `backd` X.Y will
+always match backd X.Y, like `backd-js` does today.
+
 ## License
 
 See the repository's

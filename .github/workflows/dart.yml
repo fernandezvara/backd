@@ -24,6 +24,12 @@ jobs:
       - name: Test
         run: dart test
         working-directory: clients/dart
+      - name: The package, as a user installs it from pub.dev
+        working-directory: .
+        run: scripts/check-dart-package.sh
+      - name: Integration tests (backd + MongoDB in Docker)
+        working-directory: .
+        run: clients/dart/test/integration/run.sh
 
   shelf-flutter:
     runs-on: ubuntu-latest
