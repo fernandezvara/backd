@@ -13,9 +13,11 @@
 /// power never reach an app that runs on someone's device.
 library;
 
+export 'src/auth.dart';
 export 'src/cache.dart' show CacheEntry, CacheOptions, CacheStats, RevalidationCache;
 export 'src/client.dart';
 export 'src/config.dart' show ConfigStorage;
 export 'src/errors.dart';
+export 'src/oauth.dart' show OAuthStorage, MemoryOAuthStorage;
 export 'src/storage.dart';
 export 'src/transport.dart';
