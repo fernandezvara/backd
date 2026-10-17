@@ -110,7 +110,12 @@ final class HttpTransport {
   Future<TransportResponse> call(TransportRequest req) async {
     final request = await _client.openUrl(req.method, req.url);
     req.headers.forEach(request.headers.set);
-    if (req.body != null) request.add(req.body!);
+    if (req.body != null) {
+      // Without an explicit length dart:io sends the body chunked, which
+      // signed bucket links (and some storages) refuse with 411.
+      request.contentLength = req.body!.length;
+      request.add(req.body!);
+    }
     final response = await request.close();
 
     final headers = <String, List<String>>{};
@@ -134,7 +139,12 @@ final class HttpTransport {
   Future<TransportStreamResponse> openStream(TransportRequest req) async {
     final request = await _client.openUrl(req.method, req.url);
     req.headers.forEach(request.headers.set);
-    if (req.body != null) request.add(req.body!);
+    if (req.body != null) {
+      // Without an explicit length dart:io sends the body chunked, which
+      // signed bucket links (and some storages) refuse with 411.
+      request.contentLength = req.body!.length;
+      request.add(req.body!);
+    }
     final response = await request.close();
     final headers = <String, List<String>>{};
     response.headers.forEach((name, values) {

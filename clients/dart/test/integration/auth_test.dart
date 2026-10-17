@@ -3,6 +3,7 @@
 @TestOn('vm')
 library;
 
+import 'package:backd/backd.dart';
 import 'package:test/test.dart';
 
 import 'env.dart' as env;
@@ -18,7 +19,7 @@ void main() {
       expect(me.email, u.email);
 
       // A second client logs in with the same account.
-      final again = env.client();
+      final again = BackdClient<Object?>(url: env.url, realm: 'itest');
       addTearDown(() async => again.close());
       await again.auth.login(u.email, env.password);
       expect((await again.auth.me()).email, u.email);
