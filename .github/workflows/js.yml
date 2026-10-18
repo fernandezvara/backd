@@ -1,4 +1,4 @@
-name: JavaScript
+name: Client JavaScript
 
 on:
   push:
