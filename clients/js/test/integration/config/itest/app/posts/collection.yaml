@@ -10,3 +10,4 @@ rules:
 
 on_owner_delete:
   action: delete
+realtime: true

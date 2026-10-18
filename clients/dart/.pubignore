@@ -1,0 +1,6 @@
+# What pub.dev does not need: the Flutter demo and the unit tests.
+example
+test
+.dart_tool
+build
+.pubignore

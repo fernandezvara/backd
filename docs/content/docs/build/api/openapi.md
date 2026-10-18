@@ -6,7 +6,7 @@ weight: 340
 toc: true
 ---
 
-The [contract](../#openapi-specification) describes backd's generic API: documents are open objects there, because their fields come from your config. A realm's **generated document** is the same API with your config filled in: every collection with its schema, the sign-in methods the realm enables, its functions with their input and output. Generators of typed clients (openapi-generator, for Dart, Kotlin, Swift and many more) read it.
+The [contract](../#openapi-specification) describes backd's generic API: documents are open objects there, because their fields come from your config. A realm's **generated document** is the same API with your config filled in: every collection with its schema, the sign-in methods the realm enables, its functions with their input and output. Generators of typed clients (openapi-generator, for Kotlin, Swift and many more) read it. Dart and Flutter apps use [package:backd](../../clients/dart/) instead — a hand-written client that doesn't come from a generator.
 
 ```sh
 CONFIG_DIR=./config backd openapi --realm shop --out shop.openapi.json
@@ -37,16 +37,15 @@ Public means anyone learns your collections' field names and your function names
 
 ## Generating clients
 
-**Typed clients for other platforms** come from the document with any generator that reads OpenAPI 3.1. These are the ones backd's CI builds from the example realms:
+**Typed clients for other platforms** come from the document with any generator that reads OpenAPI 3.1. For **Dart and Flutter**, generate nothing — [`package:backd`](../../clients/dart/) is a hand-written client (auth, sessions, files, jobs, realtime), typed with `backd types --lang dart`. For Kotlin, Swift and the rest, a generator:
 
 ```sh
 docker run --rm -v "$PWD:/local" docker.io/openapitools/openapi-generator-cli generate \
-  -i /local/shop.openapi.json -g dart -o /local/clients/dart     # or kotlin, swift5
+  -i /local/shop.openapi.json -g kotlin -o /local/clients/kotlin     # or swift5
 ```
 
 | Platform | Generator (`-g`) |
 |---|---|
-| Dart / Flutter | `dart` |
 | Kotlin | `kotlin` |
 | Swift | `swift5` |
 
