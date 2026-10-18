@@ -28,6 +28,15 @@ server {
 
     set $backd http://backd:8080;
 
+    # Files uploaded through backd: the body is the file, up to the field's
+    # max_size (25 MiB for shelf's assets.file), streamed instead of buffered.
+    location ~ ^/v1/[^/]+/[^/]+/[^/]+(/[^/]+)?/_files/ {
+        client_max_body_size 26m;
+        proxy_request_buffering off;
+        proxy_pass $backd;
+        include /etc/nginx/proxy.inc;
+    }
+
     location = /healthz { proxy_pass $backd; include /etc/nginx/proxy.inc; }
     location = /readyz  { proxy_pass $backd; include /etc/nginx/proxy.inc; }
     location /v1/       {

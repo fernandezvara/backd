@@ -114,6 +114,16 @@ server {
         proxy_pass $backd_admin;
     }
 
+    # Realtime subscriptions: a held-open event stream per subscriber. No
+    # response buffering, a long read timeout, and no request limit — one
+    # request lasts as long as the session does.
+    location ~ ^/v1/[^/]+/_realtime$ {
+        proxy_pass $backd;
+        proxy_buffering off;
+        proxy_http_version 1.1;
+        proxy_read_timeout 1h;
+    }
+
     location /v1/ {
         limit_req zone=api burst=40 nodelay;
         proxy_pass $backd;

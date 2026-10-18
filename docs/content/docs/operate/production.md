@@ -77,6 +77,8 @@ Run one-off jobs (provision, backup, restore) with `--no-deps` while the stack i
 
 nginx listens on 443 with TLS 1.2 and 1.3 only (Mozilla's "intermediate" profile), redirects port 80 to HTTPS, and sends `Strict-Transport-Security: max-age=63072000`.
 
+Clients negotiate HTTP/2 over the TLS connection (ALPN, `http2 on`), so a page's requests share one connection instead of competing for the browser's per-origin limit — and a held-open [realtime](../../build/api/realtime/) stream doesn't cost one of the six slots a browser gives HTTP/1.1. The hop from nginx to `backd` stays HTTP/1.1: nginx can't proxy upstream over HTTP/2, and it needs nothing more — each request is already one keep-alive connection, and streams flush frame by frame either way. Both sides of that split are in `nginx/backd.conf.template`: `http2 on` in the server block, `proxy_http_version 1.1` for the upstream.
+
 Replace `secrets/tls/edge.crt` and `edge.key` with a real certificate, for example from Let's Encrypt (certbot or acme.sh, with a reload of nginx after renewal), or terminate TLS at your cloud load balancer instead. Only add `includeSubDomains` to the HSTS header if every subdomain serves HTTPS.
 
 ## Rate limits
@@ -90,6 +92,8 @@ Replace `secrets/tls/edge.crt` and `edge.key` with a real certificate, for examp
 | `conn` | open connections | 20 at a time | – |
 
 Requests over a limit get `429` with `Retry-After: 60` and the same error envelope as `backd` (`"code": "too_many_requests"`), so clients handle both alike.
+
+One exemption: [realtime](../../build/api/realtime/) subscriptions (`POST /v1/{realm}/_realtime`) have their own location with no `limit_req` — a stream is a single request held open for the life of the session, so a per-request limit can't throttle it anyway. Streams still count toward the `conn` connection limit, and `backd` applies [its own stream limits](../../build/api/realtime/#limits) per caller.
 
 Signup, login and the account flows get the strictest limit because each one costs the server a 64 MiB argon2id hash, sends an email or creates an account. (The hosted pages of the emailed links share it: opening a link and submitting its form are two requests.) With `signup: open`, this limit is your main defence against sign-up spam; consider `signup: invite` if you don't need open registration.
 
@@ -231,5 +235,7 @@ A realm's files live in its own S3-compatible [storage](../providers/storage/). 
 `backd`'s storage client connects directly, and only, to the declared endpoint (see [Connecting storage](../providers/storage/#what-backd-connects-to)): this network placement is the other half of that promise.
 
 ## Hardening checklist
+
+Before going public, go through the [hardening checklist](../checklist/): it covers this deployment, and your realms, credentials and operations.
 
 Before going public, go through the [hardening checklist](../checklist/): it covers this deployment, and your realms, credentials and operations.

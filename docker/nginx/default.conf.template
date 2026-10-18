@@ -42,10 +42,25 @@ server {
     set $backd http://backd:8080;
     set $docs  http://docs:1313;
 
+    # Files uploaded through backd: the body is the file, up to the field's
+    # max_size (25 MiB for shelf's assets.file), streamed instead of buffered.
+    location ~ ^/v1/[^/]+/[^/]+/[^/]+(/[^/]+)?/_files/ {
+        client_max_body_size 26m;
+        proxy_request_buffering off;
+        proxy_pass $backd;
+        include /etc/nginx/proxy.inc;
+    }
+
     # backd's HTTP API.
     location = /healthz { proxy_pass $backd; include /etc/nginx/proxy.inc; }
     location = /readyz  { proxy_pass $backd; include /etc/nginx/proxy.inc; }
-    location /v1/       { proxy_pass $backd; include /etc/nginx/proxy.inc; }
+    location /v1/       {
+        proxy_pass $backd;
+        include /etc/nginx/proxy.inc;
+        # Realtime streams (POST /v1/{realm}/_realtime) are long responses.
+        proxy_buffering off;
+        proxy_read_timeout 1h;
+    }
 
     # The admin web interface (BACKD_ADMIN_UI=true on backd). backd sets its
     # own security headers, CSP included.
