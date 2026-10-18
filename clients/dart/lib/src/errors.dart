@@ -527,7 +527,27 @@ BackdException errorFromResponse(TransportResponse response) {
   final requestId =
       error['request_id'] as String? ?? response.header('x-request-id');
   final retryAfter = parseRetryAfter(response.header('retry-after'));
+  return errorForStatus(
+    status,
+    code: code,
+    message: message,
+    details: details,
+    requestId: requestId,
+    retryAfter: retryAfter,
+  );
+}
 
+/// The [BackdException] subclass for a status and code, built directly — for
+/// answers that never went through a response of their own (OAuth redirect
+/// outcomes, async job results).
+BackdException errorForStatus(
+  int status, {
+  required String code,
+  required String message,
+  List<ErrorDetail> details = const [],
+  String? requestId,
+  Duration? retryAfter,
+}) {
   switch (code) {
     case 'consent_required':
       return ConsentRequiredError(

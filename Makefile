@@ -1,6 +1,6 @@
 COMPOSE_TEST = docker compose -f docker-compose.test.yml
 
-.PHONY: dev dev-examples dev-build dev-down dev-reset dev-logs dev-backd lint build ui ui-test ui-e2e test test-local perf vet lint-api openapi-clients shelf-types shelf-types-update js-test js-package js-integration functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour shelf-tour-ci example-attacks release-check
+.PHONY: dev dev-examples dev-build dev-down dev-reset dev-logs dev-backd lint build ui ui-test ui-e2e test test-local perf vet lint-api openapi-clients shelf-types shelf-types-update js-test js-package js-integration dart-package dart-integration functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour shelf-tour-ci example-attacks release-check
 
 build:
 	go build -o bin/backd ./cmd/backd
@@ -46,6 +46,15 @@ js-package:
 js-integration:
 	cd clients/js && npm ci --silent
 	clients/js/test/integration/run.sh
+
+# Dart and pub.dev (needs Dart or the Flutter SDK; see scripts/check-dart-package.sh).
+dart-package:
+	cd clients/dart && flutter pub get >/dev/null 2>&1 || dart pub get
+	scripts/check-dart-package.sh
+
+# Dart client against a real backd + MongoDB (docker-compose.dart.yml).
+dart-integration:
+	clients/dart/test/integration/run.sh
 
 # @backd/functions-testing's own tests (needs Deno; the dockerized test
 # image already has it).
