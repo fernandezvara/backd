@@ -30,6 +30,7 @@ Realms with `auth: disabled` are open to anyone who can reach `backd`: never exp
 - **Access rules** (`rules:` in `collection.yaml`) decided per document, with read rules applied inside the database query.
 - **Server-side functions** in isolated Deno processes: sync calls, background jobs, cron schedules, webhooks, encrypted secrets, rate limits and a network allowlist.
 - **Files, push, organizations and realtime:** S3-compatible storage per realm, FCM/APNs/Web Push senders, B2B teams and roles, and server-sent events of the changes a caller may read.
+- **Clients:** [`backd-js`](../build/clients/js/) for browsers and Node, [`package:backd`](../build/clients/dart/) for Flutter and standalone Dart, generated [TypeScript or Dart types](../build/clients/types/) per realm, and a per-realm [OpenAPI document](../build/api/openapi/) for every other language.
 - **A production path:** a tested [reference deployment](../operate/production/), a config fingerprint so every instance runs the same configuration, and signed releases.
 
 ## Where to go next

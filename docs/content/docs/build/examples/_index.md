@@ -6,7 +6,7 @@ weight: 900
 toc: true
 ---
 
-The repository includes example configurations under `examples/config`, and example applications built with the [JavaScript client](../clients/js/):
+The repository includes example configurations under `examples/config`, and example applications built with the [JavaScript client](../clients/js/) (Shelf also has a Flutter desktop version, [`clients/dart/example`](https://github.com/fernandezvara/backd/tree/main/clients/dart/example), built with the [Dart client](../clients/dart/)):
 
 | Example | Realm | Shows |
 |---|---|---|

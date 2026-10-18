@@ -17,7 +17,7 @@ You write the application; `backd` serves it. This section covers every feature 
 | Server-side logic: calls, jobs, cron, webhooks, email | [Functions](functions/) |
 | Attachments, uploads, downloads, sharing | [Files](files/) |
 | Reach users' devices | [Push](push/) |
-| Talk to it from JavaScript or generate types | [Clients](clients/) |
+| Talk to it from JavaScript or Dart, or generate clients and types | [Clients](clients/) |
 | See a complete application | [Examples](examples/) |
 
 Running the service itself — deployment, providers, administration — lives in [Operate](../operate/).

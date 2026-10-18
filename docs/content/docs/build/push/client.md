@@ -1,6 +1,6 @@
 ---
-title: "From apps: the JavaScript client"
-description: "client.push: register a device, keep it registered, subscribe a browser, and what mobile apps do with the raw endpoints."
+title: "From apps"
+description: "client.push in the JavaScript and Dart clients: register a device, keep it registered, subscribe a browser, and what other apps do with the raw endpoints."
 icon: "device-mobile"
 weight: 588
 toc: true
@@ -64,9 +64,9 @@ self.addEventListener('notificationclick', (event) => {
 
 `tag` is the push's `group`: a newer push with the same tag replaces the earlier one.
 
-## Mobile apps
+## Mobile and desktop apps
 
-There is no mobile client yet; an app calls the endpoints itself, at each launch and after signing in:
+The [Dart client](../../clients/dart/) has the same `client.push` (`register`, `devices`, `unregister`, `registerOnLaunch`) for Flutter and standalone Dart. An app written without either client calls the endpoints itself, at each launch and after signing in:
 
 ```http
 POST /v1/acme/_auth/devices

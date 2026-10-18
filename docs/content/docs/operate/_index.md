@@ -139,6 +139,14 @@ blog__main.posts
 shop__orders.items
 ```
 
+### Upgrading to v0.9.0
+
+v0.9.0 adds the [Dart client](../build/clients/dart/) and the generators around it. The server changes only add: no new collections, no new configuration, nothing to provision. What to check:
+
+1. **Nothing breaks, and nothing needs provisioning.** If you run `PROVISION_MODE=verify`, no `backd provision` run is needed for this release alone.
+2. **`backd types --lang dart`** writes a realm's `types.dart` (a `ShelfRealm` accessor and document, input, `where`/`orderBy`, function and configuration classes) next to the TypeScript output, and the admin types endpoint takes `?lang=dart`. `backd openapi` keeps feeding openapi-generator for Kotlin, Swift and the rest; `make openapi-clients` builds all three from the example realms' documents.
+3. **The Dart client is `package:backd` on pub.dev** (`dart pub add backd`), versioned on its own: sign-in with the second-factor, magic-link, provider and consent steps, collections, files with direct uploads and image versions, function jobs, live lists over realtime, push devices, app configuration, organizations and generated realm types (`BackdClient<ShelfRealm>`). It has **no admin API, by design**: administration stays in the JavaScript client, the admin UI and the CLI.
+
 ### Upgrading to v0.8.5
 
 v0.8.5 adds [realtime subscriptions](../build/api/realtime/) and [triggers](../build/functions/triggers/), both built on MongoDB's change stream. Nothing is on until a collection declares `realtime:` or `triggers:`, and nothing breaks for config that doesn't. What to check:
