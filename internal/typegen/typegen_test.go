@@ -49,6 +49,73 @@ func TestGoldenShop(t *testing.T) {
 	}
 }
 
+func TestGoldenShopDart(t *testing.T) {
+	reg, err := registry.Load("testdata")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := Generate(reg, Options{Realm: "shop", Lang: "dart"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden := filepath.Join("testdata", "shop.types.dart")
+	if *update {
+		if err := os.WriteFile(golden, []byte(out.Types), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(want) != out.Types {
+		t.Errorf("generated types differ from %s (run go test -update):\n%s", golden, out.Types)
+	}
+	// The fingerprint is shared with the TypeScript output: it is what both
+	// clients send in X-Backd-Types for the stale check.
+	ts, err := Generate(reg, Options{Realm: "shop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Info.Fingerprint != ts.Info.Fingerprint {
+		t.Error("dart and ts fingerprints differ: realm.json isn't shared")
+	}
+	if !strings.Contains(out.Types, "final class MainOrders {") ||
+		!strings.Contains(out.Types, "extension ShopRealmAccess on BackdClient<ShopRealm>") {
+		t.Error("types.dart is missing the document class or the typed accessor")
+	}
+}
+
+// TestDartAnalyzes runs `dart analyze` on the generated file when a Dart SDK
+// is installed (the Dart client package is, at clients/dart).
+func TestDartAnalyzes(t *testing.T) {
+	dart, err := exec.LookPath("dart")
+	if err != nil {
+		t.Skip("dart SDK not installed")
+	}
+	reg, err := registry.Load("testdata")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := Generate(reg, Options{Realm: "shop", Lang: "dart"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The file needs the backd package to analyze against: link it into the
+	// client's workspace so package:backd resolves.
+	pkg := filepath.Join("..", "..", "clients", "dart")
+	generated := filepath.Join(pkg, "lib", "src", "generated_test_shop.dart")
+	if err := os.WriteFile(generated, []byte(out.Types), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(generated)
+	cmd := exec.Command(dart, "analyze", "--fatal-warnings", generated)
+	cmd.Dir = pkg
+	if res, err := cmd.CombinedOutput(); err != nil {
+		t.Errorf("dart analyze %s:\n%s", err, res)
+	}
+}
+
 func TestGenerationIsDeterministic(t *testing.T) {
 	a, b := generate(t, "testdata", "shop"), generate(t, "testdata", "shop")
 	if a.Types != b.Types || a.Info.Fingerprint != b.Info.Fingerprint {

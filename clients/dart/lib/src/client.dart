@@ -7,8 +7,13 @@ import 'package:meta/meta.dart';
 import 'auth.dart';
 import 'cache.dart';
 import 'config.dart';
+import 'consents.dart';
+import 'data.dart';
 import 'errors.dart';
 import 'oauth.dart';
+import 'orgs.dart';
+import 'push.dart';
+import 'realtime.dart';
 import 'storage.dart';
 import 'transport.dart';
 
@@ -180,6 +185,7 @@ class BackdClient<R> {
     this.configStorage,
     this.headers = const {},
     Transport? transport,
+    StreamTransport? streamTransport,
     HttpClient? httpClient,
     this.types,
     this.onStaleTypes,
@@ -205,7 +211,21 @@ class BackdClient<R> {
     } else {
       _transport = transport;
     }
+    _streamTransport = streamTransport ??
+        _ownedTransport?.openStream ??
+        ((req) => _transport(req).then((res) => TransportStreamResponse(
+              status: res.status,
+              reasonPhrase: res.reasonPhrase,
+              headers: res.headers,
+              body: Stream.value(res.body),
+            )));
     auth = Auth(this);
+    config = Config(this, configStorage);
+    configClear = config.clear;
+    orgs = Orgs(this);
+    consents = Consents(this);
+    push = Push(this);
+    realtime = Realtime(this);
   }
 
   /// Base URL of backd, without trailing slashes.
@@ -229,6 +249,9 @@ class BackdClient<R> {
   /// Where `client.config` keeps its copies between runs; null for memory.
   final ConfigStorage? configStorage;
 
+  /// Sends requests whose body is streamed back (event streams).
+  late final StreamTransport _streamTransport;
+
   /// Extra headers for every request.
   final Map<String, String> headers;
 
@@ -244,6 +267,22 @@ class BackdClient<R> {
 
   /// Sign-up, login, the second factor and sessions: `client.auth`.
   late final Auth auth;
+
+  /// The realm's app configuration, with its per-user copy kept per realm:
+  /// `client.config`.
+  late final Config config;
+
+  /// Organizations of the signed-in user: `client.orgs`.
+  late final Orgs orgs;
+
+  /// The consents the realm asks for: `client.consents`.
+  late final Consents consents;
+
+  /// Device registration for push notifications: `client.push`.
+  late final Push push;
+
+  /// Live lists over server-sent events: `client.realtime`.
+  late final Realtime realtime;
 
   /// The fresh proof of identity `client.auth.reauth()` gave, sent with the
   /// sensitive requests while it is good. Set by the auth module (28.2).
@@ -271,6 +310,9 @@ class BackdClient<R> {
   /// Whether the client was created with an API key.
   bool get hasApiKey => apiKey != null;
 
+  /// A database of the realm. Its collections hold the documents.
+  Database db(String name) => Database(this, name);
+
   /// How the revalidation cache is doing: reads the server answered `304` to
   /// ([CacheStats.hits]), cacheable reads that came back in full
   /// ([CacheStats.misses]), and what is kept.
@@ -296,6 +338,90 @@ class BackdClient<R> {
   void close() {
     _closed = true;
     _ownedTransport?.close();
+  }
+
+  /// Opens a server-sent event stream: a POST to `/v1/{realm}/…` that
+  /// answers `text/event-stream`. The answer is returned unread; a refusal
+  /// throws the error the API sent.
+  @internal
+  Future<TransportStreamResponse> openStream({
+    required List<String> path,
+    required Object? body,
+  }) async {
+    if (_closed) throw StateError('BackdClient is closed');
+    final uri = Uri.parse(
+      '$url/v1/${[realm, ...path].map(Uri.encodeComponent).join('/')}',
+    );
+    final headers = <String, String>{
+      'Accept': 'text/event-stream',
+      'Content-Type': 'application/json',
+      ...this.headers,
+    };
+    final types = this.types;
+    if (types != null) headers['X-Backd-Types'] = types;
+    var sentSession = false;
+    if (apiKey != null) {
+      headers['Authorization'] = 'Bearer $apiKey';
+    } else {
+      final token = await storage.get();
+      if (token != null) {
+        headers['Authorization'] = 'Bearer $token';
+        sentSession = true;
+      }
+    }
+    final TransportStreamResponse res;
+    try {
+      res = await _streamTransport(TransportRequest(
+        method: 'POST',
+        url: uri,
+        headers: headers,
+        body: utf8.encode(jsonEncode(body)),
+      ));
+    } catch (cause) {
+      if (cause is BackdException) rethrow;
+      throw NetworkError(
+          status: 0,
+          code: 'network_error',
+          message: 'network error: $cause',
+          cause: cause);
+    }
+    if (res.status >= 200 && res.status < 300) return res;
+    // A refusal is a small JSON answer: read it whole and throw what it sent.
+    final bytes = await res.body.fold<List<int>>(
+        <int>[], (a, b) => a..addAll(b));
+    final err = errorFromResponse(TransportResponse(
+      status: res.status,
+      reasonPhrase: res.reasonPhrase,
+      headers: res.headers,
+      body: bytes,
+    ));
+    if (err.code == 'unauthenticated' && sentSession) {
+      await onSessionExpired?.call();
+    }
+    throw err;
+  }
+
+  /// Sends a request to an absolute [uri] — a bucket's signed link — through
+  /// the same transport, without credentials. The files module uses it for
+  /// direct uploads; apps don't.
+  @internal
+  Future<TransportResponse> send(
+    Uri uri, {
+    required String method,
+    Map<String, String>? headers,
+    List<int>? body,
+    void Function(UploadProgress)? onUploadProgress,
+  }) async {
+    if (_closed) throw StateError('BackdClient is closed');
+    final res = await _transport(TransportRequest(
+      method: method,
+      url: uri,
+      headers: headers ?? const {},
+      body: body,
+    ));
+    onUploadProgress?.call(
+        UploadProgress(loaded: body?.length ?? 0, total: body?.length ?? 0));
+    return res;
   }
 
   /// Sends a request to `/v1/{realm}/…`, adding credentials, and returns the
