@@ -1,0 +1,7 @@
+{
+  "app": "/example/expenses-without-functions/",
+  "accounts": [
+    { "email": "alice@expenses.example" },
+    { "email": "bob@expenses.example" }
+  ]
+}

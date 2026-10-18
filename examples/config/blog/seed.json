@@ -1,0 +1,5 @@
+{
+  "accounts": [
+    { "email": "author@blog.example", "note": "a blog author" }
+  ]
+}

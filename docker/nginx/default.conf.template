@@ -2,6 +2,8 @@
 # (http://localhost:8080 redirects there):
 #   /healthz /readyz /v1/  → backd
 #   /example/              → the JavaScript client's example apps
+#   /local-seed/           → the seeded accounts' sign-in details (gitignored, localhost only)
+#   /                      → the welcome page: links, and the seeded credentials
 #   everything else        → the documentation site (Hugo, with live reload)
 #
 # A template: the nginx image fills in ${NGINX_LOCAL_RESOLVERS} (the
@@ -88,7 +90,22 @@ server {
         proxy_read_timeout 1h;
     }
 
-    # The documentation site: landing page at /, docs under /docs/.
+    # What the scripts write while the stack comes up (scripts/example.sh's stack.json,
+    # example-seed.sh's credentials.json): the welcome page fetches them. Localhost
+    # only, gitignored — the seeded users' QR and recovery codes live here.
+    location /local-seed/ {
+        alias /srv/local-seed/;
+        add_header Cache-Control "no-store";
+    }
+
+    # The welcome page takes / exactly; the documentation site keeps the rest
+    # (/docs/, its assets, the tutorial).
+    location = / {
+        root /srv/landing;
+        try_files /index.html =404;
+        add_header Cache-Control "no-store";
+    }
+
     location / {
         proxy_pass $docs;
         proxy_set_header Host $host;

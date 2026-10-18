@@ -19,7 +19,8 @@ make dev           # starts everything (nothing is pulled or built), prints the 
 
 | Address | Serves |
 |---|---|
-| `https://localhost:8443/` | A page with links to everything below |
+| `https://localhost:8443/` | The welcome page: links to everything below, and the seeded accounts' sign-in details |
+| `https://localhost:8443/local-seed/` | The `local-seed/` files the page reads (`stack.json`, `credentials.json`) — gitignored, localhost only |
 | `https://localhost:8443/v1/…`, `/healthz`, `/readyz` | `backd`'s API, for the realms in your config |
 | `https://localhost:8443/_ui/` | The [admin web interface](../../operate/administration/admin-ui/) |
 | `http://localhost:3000` | Grafana, with backd's [dashboards](../../operate/metrics/#dashboards) |
@@ -56,7 +57,7 @@ In Grafana, the *Processes* dashboard shows the API, the workers, the executor a
 |---|---|
 | `make dev-build` | Pulls the images, makes the certificates, creates `./config` if it is missing. Run it again to update. |
 | `make dev` | Starts the stack and follows the logs. |
-| `make dev-examples` | The same with the repository's [example realms and apps](../../build/examples/) (below). |
+| `make dev-examples` | The same with the repository's [example realms and apps](../../build/examples/) (below), seeded — their users' passwords, TOTP QR and recovery codes are on the welcome page and in `local-seed/credentials.json`. |
 | `make dev-down` | Stops it, keeping the data. |
 | `make dev-reset` | Stops it and deletes the data (MongoDB, MinIO, Prometheus, Grafana). Your `./config` is not touched. |
 | `make dev-logs` | Follows the logs; `S=worker` for one service. |
@@ -112,6 +113,12 @@ examples/config/
         ├── orders/, refunds/, receipts/, reports/, digests/, events/
         └── _functions/{order_total, refund, refund_receipt, export_orders, nightly_cleanup, daily_digest, payment_webhook}/
 ```
+
+The seeder reads each realm's `realm.yaml` for what to create — the seeded
+`roles.*.users`, the signup mode, `account.require_verified_email` and `storage:` —
+so a new example realm needs no script changes; an optional `seed.json` next to the
+`realm.yaml` holds what the realm file can't say (the app's path, demo accounts with
+no role). See `scripts/seed.mjs` for the format.
 
 Start with the examples, and let curl trust the local CA:
 

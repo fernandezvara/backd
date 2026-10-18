@@ -40,3 +40,7 @@
 perf-results/
 # The development stack's default config (make dev-build)
 /config/
+
+# What the local stacks' scripts seed: sign-in details of the example users
+# (passwords, TOTP secrets, recovery codes), served by nginx at /local-seed/
+/local-seed/
