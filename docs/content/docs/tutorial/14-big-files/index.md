@@ -24,7 +24,7 @@ The checksum is computed incrementally while the file is read, so a large file i
 Try it: *My assets → New asset → kind: file*, pick two or three big files as **Attachments**, and watch the bar. Add more to an existing asset with **Add an attachment**. The sixth is refused: `409 too_many_files`, answered before any byte moves.
 
 {{< hint style="tip" title="Best practice" >}}
-`max_files`, `max_size` and `types` are limits `backd` enforces, but a bucket that accepts direct uploads from browsers needs CORS **for your app's origin only**. In production, set it per provider ([provider pages](../../files/)) and let `backd storage check` read it back.
+`max_files`, `max_size` and `types` are limits `backd` enforces, but a bucket that accepts direct uploads from browsers needs CORS **for your app's origin only**. In production, set it per provider ([provider pages](../../build/files/)) and let `backd storage check` read it back.
 {{< /hint >}}
 
 ## A thumbnail, declared
@@ -61,7 +61,7 @@ previewUrl(asset) {
 
 After an upload the app looks again every second and a half, for a few seconds, until `versionStatus(asset.file, 'thumb')` says the worker is done. To link a version by hand, `assets.fileUrl(id, 'file', fileId, { version: 'thumb' })` answers the link, or `null` while the version isn't ready. The API says the same with `404 version_unavailable`, carrying the version's status and reason.
 
-Try it: *My assets → New asset → kind: file*, pick a PNG or JPEG, and watch the card swap its picture for the thumbnail. The worker's memory and how many pictures it handles at once are covered in [Image versions](../../files/file-fields/#image-versions).
+Try it: *My assets → New asset → kind: file*, pick a PNG or JPEG, and watch the card swap its picture for the thumbnail. The worker's memory and how many pictures it handles at once are covered in [Image versions](../../build/files/file-fields/#image-versions).
 
 {{< hint style="tip" title="Already done for you" >}}
 A version has no EXIF and no GPS position, whatever the original carries, and its pixels are upright. A thumbnail is safe to show to people who can't see the original.

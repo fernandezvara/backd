@@ -74,7 +74,7 @@ docker compose exec backd /backd storage usage --realm shelf
 Two operations to know before this has real data:
 
 - **Backups.** A MongoDB backup doesn't include files. Back the bucket up at the provider (versioning, replication), and after restoring a database run `backd storage reconcile --realm shelf`: it reports the objects no document references, and with `--delete` removes exactly those. It never touches anything younger than 24 hours or with an upload still in flight.
-- **Security.** Links work for whoever holds them until they expire, even if the rules change meanwhile, so keep `presigned_ttl` short on sensitive fields and read [Security of files](../../files/security/).
+- **Security.** Links work for whoever holds them until they expire, even if the rules change meanwhile, so keep `presigned_ttl` short on sensitive fields and read [Security of files](../../build/files/security/).
 
 ## You should see
 
@@ -86,4 +86,4 @@ Two operations to know before this has real data:
 
 Next: chapter 16 — [a second factor and magic links](../16-second-factor/).
 
-That is the whole of Shelf: a team asset library with members, rules, invitations, functions, email, webhooks, files and an operator's console, all of it from configuration and a few small functions. Chapter 16 is the last addition; the last stop is [Running it](../12-running/) if you haven't been through it, and then the [documentation](../../) for everything these chapters only touched.
+Files round out the library: members, rules, invitations, functions, email, webhooks, files and an operator's console, all of it from configuration and a few small functions. The chapters ahead harden and grow it — a way in without a password and a second factor for the operators, consents, configuration that changes without a deploy, generated types, teams, search, a document pipeline and a live board — and [Running it](../12-running/) is the operating checkpoint whenever you want it, with the [documentation](../../) covering everything these chapters only touch.

@@ -8,7 +8,7 @@ toc: true
 A collection, a schema, and a page that lists documents. No users yet: anyone on localhost can read and write, which is exactly what you want while the shape of the data settles.
 
 {{< hint warning >}}
-`auth: disabled` means anyone who can reach backd can read and modify its data. Keep this stack on localhost — chapter 2 turns authentication on and [the checklist](../../operations/checklist/) is what you run before anything faces the internet.
+`auth: disabled` means anyone who can reach backd can read and modify its data. Keep this stack on localhost — chapter 2 turns authentication on and [the checklist](../../operate/checklist/) is what you run before anything faces the internet.
 {{< /hint >}}
 
 ## The realm
@@ -29,7 +29,7 @@ Create the directories (`mkdir -p config/shelf/main/assets config/shelf/main/sha
 
 Two things worth noticing:
 
-- **`x-backd-store: "date"`** on `published_at`: the API still accepts and returns RFC 3339 strings, but MongoDB stores a real date, so filters and sorting compare instants ([Dates](../../configuration/config-dir/#dates)).
+- **`x-backd-store: "date"`** on `published_at`: the API still accepts and returns RFC 3339 strings, but MongoDB stores a real date, so filters and sorting compare instants ([Dates](../../build/configuration/config-dir/#dates)).
 - **`file`** is declared but unused — it reserves the field for the file-management chapters.
 
 `shares` holds the public links (chapter 5 creates them):
@@ -70,11 +70,11 @@ curl -s 'http://localhost:8080/v1/shelf/main/assets?order_by=-published_at&limit
 curl -s -G http://localhost:8080/v1/shelf/main/assets --data-urlencode 'where={"tags":"docs"}'
 ```
 
-Repeat the first `curl` with other titles and `"tags":["docs"]` (four or five documents is enough) so the gallery has something to show; the page size in the app is 9, so paging needs more: the second `curl` shows `items`, `has_more` and `next_cursor` — the cursor the app will follow ([Querying](../../api/querying/)).
+Repeat the first `curl` with other titles and `"tags":["docs"]` (four or five documents is enough) so the gallery has something to show; the page size in the app is 9, so paging needs more: the second `curl` shows `items`, `has_more` and `next_cursor` — the cursor the app will follow ([Querying](../../build/api/querying/)).
 
 ## The gallery
 
-The app you downloaded is the **finished Shelf app**, written once for all twelve chapters: a gallery, a form, my assets, notifications, an Admin view and an account page. You don't edit it; each chapter gives the *backend* what one more part of it needs, and that part comes alive. Until then the part reports an error (the Admin view says it needs a signed-in admin, notifications find no collection) — expected, not a mistake of yours.
+The app you downloaded is the **finished Shelf app**, written once for all twenty-four chapters: a gallery, a form, my assets, notifications, an Admin view and an account page. You don't edit it; each chapter gives the *backend* what one more part of it needs, and that part comes alive. Until then the part reports an error (the Admin view says it needs a signed-in admin, notifications find no collection) — expected, not a mistake of yours.
 
 What this chapter's backend already lights up, in `app/app.js`:
 

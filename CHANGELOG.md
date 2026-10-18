@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to `backd` and to its JavaScript client `backd-js`, which are released on the same version from 0.8.2. The upgrade notes, with what needs your action, are in the documentation under [Operations → Upgrading](https://fernandezvara.github.io/backd/docs/operations/); the notes of every release are on the [releases page](https://github.com/fernandezvara/backd/releases).
+All notable changes to `backd` and to its JavaScript client `backd-js`, which are released on the same version from 0.8.2. The upgrade notes, with what needs your action, are in the documentation under [Operations → Upgrading](https://fernandezvara.github.io/backd/docs/operate/); the notes of every release are on the [releases page](https://github.com/fernandezvara/backd/releases).
 
 Until a stable release is declared, a minor release may have breaking changes; they are listed first.
 
@@ -16,7 +16,7 @@ No breaking changes for existing configuration: realtime and triggers are off un
 - **JavaScript client 0.8.5:** `client.realtime.subscribe()` and `collection.subscribe()` return a `LiveView`: a list that loads first, then keeps itself current through resets (with jittered reloads), reconnects with resume tokens, and reports `connecting`/`live`/`resyncing`/`closed` per subscription. Typed errors `RealtimeNotEnabledError`, `TooManySubscriptionsError`, `InvalidResumeTokenError`, `SessionEndedError`, and the generated trigger input types.
 - **Development stack:** `make dev` (`docker-compose.dev.yml`) serves released images over your own `./config` with live reload, the API and worker apart (`WORKERS=`), Prometheus and Grafana; `make dev-examples` runs the sample realms on it. Plus `make perf`: load and soak suites for the trigger dispatcher and the realtime hub with measured numbers in the docs.
 - **Tutorial:** chapter 23 (a status pipeline built with triggers) and chapter 24 (a team pinboard kept live).
-- **Documentation:** [Realtime](https://fernandezvara.github.io/backd/docs/api/realtime/) (events, resuming, limits, access changes), [Triggers](https://fernandezvara.github.io/backd/docs/functions/triggers/) (input, at-least-once handlers, chains, ordering, debugging), [Change feed](https://fernandezvara.github.io/backd/docs/operations/events/) (requirements, cost, the dispatcher, sizing the oplog) and the [development stack](https://fernandezvara.github.io/backd/docs/development/).
+- **Documentation:** [Realtime](https://fernandezvara.github.io/backd/docs/build/api/realtime/) (events, resuming, limits, access changes), [Triggers](https://fernandezvara.github.io/backd/docs/build/functions/triggers/) (input, at-least-once handlers, chains, ordering, debugging), [Change feed](https://fernandezvara.github.io/backd/docs/operate/change-feed/) (requirements, cost, the dispatcher, sizing the oplog) and the [development stack](https://fernandezvara.github.io/backd/docs/contribute/).
 
 ### Not yet
 
@@ -33,7 +33,7 @@ No breaking changes, apart from two names reserved in `schema.json` (`_expanded`
 - **Full-text search:** a text index in `indexes.json` (weights, `default_language`, `language_field`, rebuilt when its declaration changes), `$search` in `where` (words, phrases, exclusions; at most 256 bytes and 10 terms), `language=`, `order_by=_relevance` with `_meta.score`, `$search` inside `_aggregate`, `422 search_too_expensive` and `503 index_building`.
 - **JavaScript client 0.8.4:** `expand()`, `aggregate()`, `search()`, `fillBuckets()`, `_expanded` and aggregations typed from the generated types, and typed errors (`InvalidExpandError`, `ExpandTooLargeError`, `AggregateNotEnabledError`, `InvalidAggregateError`, `AggregateTooExpensiveError`, `SearchNotEnabledError`, `SearchTooExpensiveError`, `IndexBuildingError`).
 - **Tutorial:** chapter 21 (authors through a reference) and chapter 22 (search and a team dashboard).
-- **Documentation:** [References and expansion](https://fernandezvara.github.io/backd/docs/api/references/), [Aggregations](https://fernandezvara.github.io/backd/docs/api/aggregations/) with best practices, the [search guide](https://fernandezvara.github.io/backd/docs/api/search/), and the security review of each in the security model.
+- **Documentation:** [References and expansion](https://fernandezvara.github.io/backd/docs/build/api/references/), [Aggregations](https://fernandezvara.github.io/backd/docs/build/api/aggregations/) with best practices, the [search guide](https://fernandezvara.github.io/backd/docs/build/api/search/), and the security review of each in the security model.
 
 ### Not yet
 
@@ -88,7 +88,7 @@ Not yet: refreshing open realtime streams at team-role window boundaries and `_m
 
 ## 0.8.1
 
-Image versions, metadata removal from JPEG and PNG, storage quotas, multipart direct uploads up to 4 TiB, `rules.yaml` merged into `collection.yaml`, and `backd` without a command printing its help. See [upgrading to v0.8.1](https://fernandezvara.github.io/backd/docs/operations/#upgrading-to-v081).
+Image versions, metadata removal from JPEG and PNG, storage quotas, multipart direct uploads up to 4 TiB, `rules.yaml` merged into `collection.yaml`, and `backd` without a command printing its help. See [upgrading to v0.8.1](https://fernandezvara.github.io/backd/docs/operate/#upgrading-to-v081).
 
 ## 0.8.0 and earlier
 

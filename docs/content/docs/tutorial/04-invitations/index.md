@@ -34,7 +34,7 @@ If you skipped chapter 2's accounts, nobody holds the `admin` role and nobody ca
 docker compose exec backd /backd bootstrap --realm shelf --email operator@shelf.example
 ```
 
-([Create the first administrator](../../auth/cli/) has the details.)
+([Create the first administrator](../../operate/administration/cli/) has the details.)
 
 ## Invite someone
 

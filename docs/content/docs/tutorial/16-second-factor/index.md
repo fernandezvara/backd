@@ -90,7 +90,7 @@ await backd.auth.withProof(
 )
 ```
 
-`withProof` makes the call, and on `reauth_required` asks the person, sends the proof to `POST /_auth/reauth` and repeats the call. The proof lives for five minutes (`reauth.ttl` in the realm), so one prompt covers a settings page. See [Re-authentication](../../auth/reauth/).
+`withProof` makes the call, and on `reauth_required` asks the person, sends the proof to `POST /_auth/reauth` and repeats the call. The proof lives for five minutes (`reauth.ttl` in the realm), so one prompt covers a settings page. See [Re-authentication](../../build/auth/reauth/).
 
 ## You should see
 
@@ -100,4 +100,4 @@ await backd.auth.withProof(
 - *Delete my account* and the email and password changes ask for a code (or the password, without a second factor) before they go.
 - The import log answers `200` to the operator and `403` to a curator.
 
-The tour of the tutorial (`make shelf-tour`) checks all of it with the same client library, including the operator's enrolment through a computed TOTP code. Read [Multi-factor authentication](../../auth/mfa/) and [Magic links](../../auth/magic-links/) for the whole picture: limits, lockouts, break-glass resets and the recovery flow.
+The tour of the tutorial (`make shelf-tour`) checks all of it with the same client library, including the operator's enrolment through a computed TOTP code. Read [Multi-factor authentication](../../build/auth/mfa/) and [Magic links](../../build/auth/magic-links/) for the whole picture: limits, lockouts, break-glass resets and the recovery flow.

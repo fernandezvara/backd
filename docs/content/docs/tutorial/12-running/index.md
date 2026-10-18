@@ -5,7 +5,7 @@ weight: 320
 toc: true
 ---
 
-The shelf works. The last chapter is about *operating* it: who acts without a session, who did what, and what to review before a real deployment.
+The shelf works. Before the remaining chapters grow it further, this one is about *operating* it: who acts without a session, who did what, and what to review before a real deployment.
 
 ## API keys
 
@@ -17,21 +17,21 @@ Sessions are for people; **API keys are for machines** — a CI job that reads t
 backd.admin.apiKeys.create({ name: 'ci-reader', expiresIn: '90d', scopes: ['read:main'] })
 ```
 
-The full key (`bdk_…`) shows **once**, in the creation response — store it in a secret store; `backd` keeps only its prefix. `scopes` limit what a key reaches (`read`, `write`, `call`, optionally `:database` or `:database/name`); `revoke` stops it at once ([API keys](../../auth/api-keys/)). With a key, an unattended script uses the same client: `createClient({ url, realm, apiKey })` — no signup, no session.
+The full key (`bdk_…`) shows **once**, in the creation response — store it in a secret store; `backd` keeps only its prefix. `scopes` limit what a key reaches (`read`, `write`, `call`, optionally `:database` or `:database/name`); `revoke` stops it at once ([API keys](../../build/auth/api-keys/)). With a key, an unattended script uses the same client: `createClient({ url, realm, apiKey })` — no signup, no session.
 
 ## The audit trail
 
-Every admin-visible act is recorded — invites created and sent, keys created and revoked, functions invoked by hand, logins, erasures. `backd.admin.audit.list()` pages it newest first; the Admin view shows who (`user:<id>`, `key:<name>`, `cli:bootstrap`), what (`apikey.create`, `function.invoke_manual`, …) and the target. It never holds secrets or email bodies ([Audit](../../auth/audit/)).
+Every admin-visible act is recorded — invites created and sent, keys created and revoked, functions invoked by hand, logins, erasures. `backd.admin.audit.list()` pages it newest first; the Admin view shows who (`user:<id>`, `key:<name>`, `cli:bootstrap`), what (`apikey.create`, `function.invoke_manual`, …) and the target. It never holds secrets or email bodies ([Audit](../../operate/administration/audit/)).
 
 Try it: create a key, revoke it, refresh the feed — `apikey.create` and `apikey.revoke` both appear, attributed to you.
 
 ## Before the internet sees it
 
-This tutorial ran on a dev stack: `BACKD_DEV` on, `email-capture` storing mail, demo accounts in `realm.yaml`, `dev-secret` webhook keys, `localhost` redirects. The [hardening checklist](../../operations/checklist/) is the page to walk before a realm goes real — for this app specifically:
+This tutorial ran on a dev stack: `BACKD_DEV` on, `email-capture` storing mail, demo accounts in `realm.yaml`, `dev-secret` webhook keys, `localhost` redirects. The [hardening checklist](../../operate/checklist/) is the page to walk before a realm goes real — for this app specifically:
 
 - Swap `email.function` to `mail/postmark` (or your provider), set its secrets — and `email-capture`'s `dev_only` already guards you: `backd` won't start with it outside dev mode.
 - Set real function secrets (`IMPORT_WEBHOOK_SECRET`, Postmark's) — `dev-secret` signs nothing an attacker can't forge.
-- Remove the seeded `roles.*.users` demo accounts and create your own administrator with `backd bootstrap` (chapter 4). Removing a seed from `realm.yaml` does **not** take the role away from the account that already has it — remove it from that user with the admin API (`DELETE /_admin/users/{id}/roles/{role}`, see [Admin API](../../auth/admin/)).
+- Remove the seeded `roles.*.users` demo accounts and create your own administrator with `backd bootstrap` (chapter 4). Removing a seed from `realm.yaml` does **not** take the role away from the account that already has it — remove it from that user with the admin API (`DELETE /_admin/users/{id}/roles/{role}`, see [Admin API](../../operate/administration/admin/)).
 - Keep `signup: invite`: it is the right setting for a team library. Anything else puts the door back.
 - Give every API key a scope and an expiry — the app already creates them that way.
 - Review the `rules:` of each `collection.yaml` and run `backd rules test` in CI.
@@ -66,8 +66,8 @@ This tutorial ran on a dev stack: `BACKD_DEV` on, `email-capture` storing mail, 
 
 ## Where next
 
-- **Deploy it:** [Deploying](../../operations/deploying/) and [Production](../../operations/production/) (TLS, separate networks for the executor and egress, secrets), then the [checklist](../../operations/checklist/) above.
-- **Operate it:** [Backups](../../operations/backup/), [Metrics](../../operations/metrics/) (Prometheus, with dashboards in the repository), and the [audit](../../auth/audit/) feed you saw.
-- **Go deeper on functions:** the [cookbook](../../functions/cookbook/) (payments, exports, retries) and [Testing functions](../../functions/testing/).
-- **Use it from your own app:** the [JavaScript client](../../clients/js/) and the [API reference](../../api/) (`api/openapi.yaml`).
+- **Deploy it:** [Deploying](../../operate/deploying/) and [Production](../../operate/production/) (TLS, separate networks for the executor and egress, secrets), then the [checklist](../../operate/checklist/) above.
+- **Operate it:** [Backups](../../operate/backup/), [Metrics](../../operate/metrics/) (Prometheus, with dashboards in the repository), and the [audit](../../operate/administration/audit/) feed you saw.
+- **Go deeper on functions:** the [cookbook](../../build/functions/cookbook/) (payments, exports, retries) and [Testing functions](../../build/functions/testing/).
+- **Use it from your own app:** the [JavaScript client](../../build/clients/js/) and the [API reference](../../build/api/) (`api/openapi.yaml`).
 - **Test the tutorial itself:** on a checkout, `make shelf-tour` replays everything in this tutorial against a running stack (`clients/js/examples/shelf/tour.js`), and `make shelf-tour-ci` builds the starter folder and the images from the checkout first — the check CI runs on every push, so this tutorial cannot drift from `backd` unnoticed.

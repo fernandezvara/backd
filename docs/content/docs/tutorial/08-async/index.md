@@ -69,7 +69,7 @@ The digest needs "every member" — but realm users live in the **system databas
 
 {{< tutorial-files "main/_functions/digest/input.schema.json main/members/collection.yaml main/members/schema.json" >}}
 
-**One document per user, keyed by the user.** `custom_id: user` makes the document's id the user's own id: the app creates it with `members.create({ id: user.id, email })`, backd refuses an id that isn't the caller's (`400 invalid_id`) and a second document for the same user (`409 id_taken`), and the app reads it back with `members.get(user.id)`. Nothing else is needed to keep one per user: no `user_id` field, no unique index, and no rule comparing the field to `user.id`. (An earlier version of this chapter stored a `user_id` field and kept it unique with an index; see [custom ids](../../configuration/config-dir/#custom-ids) to move a collection like that.)
+**One document per user, keyed by the user.** `custom_id: user` makes the document's id the user's own id: the app creates it with `members.create({ id: user.id, email })`, backd refuses an id that isn't the caller's (`400 invalid_id`) and a second document for the same user (`409 id_taken`), and the app reads it back with `members.get(user.id)`. Nothing else is needed to keep one per user: no `user_id` field, no unique index, and no rule comparing the field to `user.id`. (An earlier version of this chapter stored a `user_id` field and kept it unique with an index; see [custom ids](../../build/configuration/config-dir/#custom-ids) to move a collection like that.)
 
 Rebuild and restart (`docker compose run --rm functions-build && docker compose restart backd`).
 
@@ -83,7 +83,7 @@ while ((status = await job.status()) !== 'done') await sleep(500)
 job.data.result   // { status: 'ok', output: { notified: 4, … } }
 ```
 
-`await job.wait()` returns the function's output once the job is done; `job.status()` polls `GET _jobs/{id}` — `queued`, `running`, `done`; `job.wait()` does the loop for you, and `job.data.result` is either `{ status: 'ok', output }` or the failure (`function_error`, `timeout`, …) with its code ([Jobs](../../functions/jobs/)). The Admin view's **Run by hand** wires exactly this: select `digest`, watch the status flip, read the output.
+`await job.wait()` returns the function's output once the job is done; `job.status()` polls `GET _jobs/{id}` — `queued`, `running`, `done`; `job.wait()` does the loop for you, and `job.data.result` is either `{ status: 'ok', output }` or the failure (`function_error`, `timeout`, …) with its code ([Jobs](../../build/functions/jobs/)). The Admin view's **Run by hand** wires exactly this: select `digest`, watch the status flip, read the output.
 
 Note that `members` fills as people **sign in** with the new app code: sign in once with each of your three accounts now (the accounts of chapter 2 have no row yet), or the digest has nobody to notify. To run it without the app, as the operator:
 

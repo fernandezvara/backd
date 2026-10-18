@@ -47,7 +47,7 @@ compose.yaml                   MongoDB, backd, the executor and egress, for loca
    docker compose up --build
    ```
 
-   `backd` listens on <http://127.0.0.1:8080>, and also runs the worker role (`serve --with-worker`), so async jobs and cron schedules work here. After changing `realm.yaml`, a schema or the rules in `collection.yaml`, repeat with `docker compose up -d --build backd`. To skip the rebuild-per-change loop for function code specifically, run `backd` locally (not in the stack) with `BACKD_DEV=true` — see the [functions docs](https://fernandezvara.github.io/backd/docs/functions/testing/#dev-mode).
+   `backd` listens on <http://127.0.0.1:8080>, and also runs the worker role (`serve --with-worker`), so async jobs and cron schedules work here. After changing `realm.yaml`, a schema or the rules in `collection.yaml`, repeat with `docker compose up -d --build backd`. To skip the rebuild-per-change loop for function code specifically, run `backd` locally (not in the stack) with `BACKD_DEV=true` — see the [functions docs](https://fernandezvara.github.io/backd/docs/build/functions/testing/#dev-mode).
 
 4. Create the first administrator, once the realm is provisioned:
 
@@ -80,8 +80,8 @@ compose.yaml                   MongoDB, backd, the executor and egress, for loca
 3. **Production:** the same two steps with the same image.
 4. **Rollback:** deploy the previous tag the same way — provision, then roll out.
 
-`backd` refuses to start in `verify` mode against a config that wasn't provisioned, or that differs from what was: see [Deploying config](https://fernandezvara.github.io/backd/docs/operations/deploying/) for the full mechanism (`backd config fingerprint`, `/readyz`, what backd checks).
+`backd` refuses to start in `verify` mode against a config that wasn't provisioned, or that differs from what was: see [Deploying config](https://fernandezvara.github.io/backd/docs/operate/deploying/) for the full mechanism (`backd config fingerprint`, `/readyz`, what backd checks).
 
 ## Before production
 
-This local stack skips several things the [hardening checklist](https://fernandezvara.github.io/backd/docs/operations/checklist/) covers for a real deployment: TLS, `admin.allowed_networks`, secrets management (`BACKD_SECRETS_KEY`, backed up separately from the database), rate limiting in front of `/v1/`, and monitoring. Read it before this goes anywhere but your machine. The [production reference](https://github.com/fernandezvara/backd/tree/main/deploy/production) is a complete, tested starting point.
+This local stack skips several things the [hardening checklist](https://fernandezvara.github.io/backd/docs/operate/checklist/) covers for a real deployment: TLS, `admin.allowed_networks`, secrets management (`BACKD_SECRETS_KEY`, backed up separately from the database), rate limiting in front of `/v1/`, and monitoring. Read it before this goes anywhere but your machine. The [production reference](https://github.com/fernandezvara/backd/tree/main/deploy/production) is a complete, tested starting point.

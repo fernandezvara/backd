@@ -28,7 +28,7 @@ roles:
 ```
 
 - **`auth: enabled`** — users, sessions and roles exist; anonymous callers get `401`.
-- **`signup: open`** — anyone may create an account ([alternatives](../../auth/users/): `invite`, `closed`). It is open **only for this chapter and the next**: chapter 4 closes it, and from then on every new member needs an invitation — which only an existing administrator can create.
+- **`signup: open`** — anyone may create an account ([alternatives](../../build/auth/users/): `invite`, `closed`). It is open **only for this chapter and the next**: chapter 4 closes it, and from then on every new member needs an invitation — which only an existing administrator can create.
 - **`roles:`** — `admin` is the operator role (`admin: true` grants the admin API); `curator` matters from chapter 5. The `users:` lists are **seed assignments**: when someone signs up with a listed address, the role attaches. A shortcut for local stacks — never keep seeded users in a real realm.
 
 ## Apply, and create the three accounts
@@ -51,14 +51,14 @@ Do it **now**. Once chapter 4 sets `signup: invite`, a new address can't sign up
 
 ## Signing in
 
-The app's **Sign in** button now does something: `backd.auth.signup()` or `.login()` returns a session the client keeps in `localStorage` (`storage: localStorageStorage('shelf')` — it survives reloads). `backd.auth.me()` on load restores it. A token in `localStorage` is readable by any script on the page, so a real app guards against XSS — or uses HttpOnly [session cookies](../../auth/sessions/#sessions-and-tokens), which the client supports with `cookies: true`.
+The app's **Sign in** button now does something: `backd.auth.signup()` or `.login()` returns a session the client keeps in `localStorage` (`storage: localStorageStorage('shelf')` — it survives reloads). `backd.auth.me()` on load restores it. A token in `localStorage` is readable by any script on the page, so a real app guards against XSS — or uses HttpOnly [session cookies](../../build/auth/sessions/#sessions-and-tokens), which the client supports with `cookies: true`.
 
 ## What the app gains
 
 - **Nav state**: `backd.auth.me()` at load; sign-in button ↔ email + log out.
 - **My assets**: `assets.list({ where: { "_meta.owner": user.id } })` — `_meta` fields are queryable like any other.
 - **Account page**: `backd.auth.changePassword()` works now; email change and password reset are visible but disabled — they need the email stack of chapter 10.
-- **Delete my account**: `backd.auth.deleteAccount()` *deactivates* — your email stays registered, your documents stay. Actual erasure is an admin action that applies each collection's policy ([Deleting and erasing users](../../auth/erasure/)):
+- **Delete my account**: `backd.auth.deleteAccount()` *deactivates* — your email stays registered, your documents stay. Actual erasure is an admin action that applies each collection's policy ([Deleting and erasing users](../../operate/administration/erasure/)):
 
 Create `config/shelf/main/assets/collection.yaml`, and the same file for `shares`, then restart:
 

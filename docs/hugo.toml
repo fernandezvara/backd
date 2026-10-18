@@ -1,6 +1,6 @@
 baseURL = "https://fernandezvara.github.io/backd/"
 languageCode = "en-us"
-title = "backd"
+title = "back(d)"
 enableGitInfo = true
 
 [markup.goldmark.renderer]
@@ -94,12 +94,33 @@ enableGitInfo = true
     editPage = true
     lastMod = true
     aiAssist = true
+    aiAssistIcon = "sparkle"
     repoURL = "https://github.com/fernandezvara/backd"
     repoBranch = "main"
     repoContentDir = "docs/content"
+    navDefaultIcon = "dot-outline"
 
   [params.brand]
-    icon = "database"
+    icon = "sliders"
+
+  # Palette overrides — emitted as CSS variables, no stylesheet edits.
+  # `primary` derives the whole --pico-primary-* family for the light theme;
+  # `primaryDark` does the same for dark (defaults to `primary`).
+  [params.style]
+    #primary = "#016630"
+    primary = "#4b8666"
+    primaryDark = "#4b8666"
+
+  # Raw CSS variable overrides (names without "--"), applied to both themes.
+  # Nest [params.cssvars.light] / [params.cssvars.dark] to scope to one theme.
+  [params.cssvars]
+    pico-border-radius = "0.2em"
+  #   pico-font-family = "Inter, system-ui, sans-serif"
+  #   hd-hint-info = "#8855cc"   # hint accents: hd-hint-{info,note,warning,danger,success,tip}
+  #   [params.cssvars.dark]
+  #     pico-code-background-color = "#0d1117"
+
+
 
 [menu]
   [[menu.primary]]

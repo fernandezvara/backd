@@ -14,11 +14,11 @@ sections:
 
     cta:
       - text: "Get started"
-        icon: rocket_launch
+        icon: "rocket-launch"
         url: "docs/getting-started/"
       - text: "Functions"
         icon: function
-        url: "docs/functions/"
+        url: "docs/build/functions/"
         style: secondary
         outline: true
       - text: "GitHub"
@@ -27,7 +27,7 @@ sections:
         style: contrast
         outline: true
 
-    info: "**Open source**, MIT licensed. Before exposing a realm, go through the [hardening checklist](docs/operations/checklist/)."
+    info: "**Open source**, MIT licensed. Before exposing a realm, go through the [hardening checklist](docs/operate/checklist/)."
 
   liveExample:
     enable: true
@@ -37,8 +37,7 @@ sections:
     text: "**Live examples are running.** A blog and a shared-expenses app, built with Alpine.js and the JavaScript client, on this same server."
     cta:
       text: "Open the examples"
-      icon: rocket_launch
-
+      icon: "rocket-launch"
   features:
     enable: true
     weight: 20
@@ -49,19 +48,19 @@ sections:
 
     items:
       - title: Configuration as files
-        icon: folder_open
+        icon: "folder-open"
         description: "A directory per realm, database and collection. Each collection is a JSON Schema, with optional indexes.json. Invalid config stops startup and names the file."
 
       - title: Schema-validated writes
-        icon: rule
+        icon: "seal-check"
         description: "JSON Schema draft 2020-12 enforced on every write, with field-level errors. The same schema is mirrored as a MongoDB $jsonSchema validator."
 
       - title: Queries without injection
-        icon: search
+        icon: "magnifying-glass"
         description: "Filter with where, sort with order_by, paginate and count. Every field and value is checked against the schema. Client input never reaches MongoDB raw."
 
       - title: Optimistic concurrency
-        icon: sync_lock
+        icon: "arrows-clockwise"
         description: "_meta.version, ETag and If-Match. Every write is conditional, so concurrent updates are never silently lost."
 
       - title: Automatic provisioning
@@ -69,33 +68,33 @@ sections:
         description: "Collections, validators and indexes are created at startup, or verified for least-privilege deployments. Nothing is ever dropped."
 
       - title: Users and single sign-on
-        icon: group
+        icon: "users"
         description: "Built-in users per realm with argon2id passwords, sessions valid across the realm's databases, API keys for services, invitations and brute-force protection. Sign in with Google, Microsoft or Apple, a second factor, magic links, email verification, password reset and address changes through any email provider you call from a function, consents, and erasure of a user's data on request."
 
       - title: Access rules
-        icon: policy
+        icon: "shield-check"
         description: "The rules of each collection decide who may read, create, update and delete each document. Read rules run inside the database query, so lists and counts only show what callers may see."
 
       - title: Server-side functions
         icon: function
-        description: "JavaScript or TypeScript next to your collections, run in isolated Deno processes: sync calls, background jobs you can follow, cron schedules, webhooks. Rules, secrets, rate limits, idempotency, a network allowlist and full call history are built in. [Start here](docs/functions/)."
+        description: "JavaScript or TypeScript next to your collections, run in isolated Deno processes: sync calls, background jobs you can follow, cron schedules, webhooks. Rules, secrets, rate limits, idempotency, a network allowlist and full call history are built in. [Start here](docs/build/functions/)."
 
       - title: Typed from your config
         icon: code
-        description: "`backd types` turns the config into TypeScript for your app and your functions, and `backd openapi` into an OpenAPI 3.1 document per realm for client generators. In development the config reloads as you save it. [Typing and OpenAPI](docs/clients/types/)."
+        description: "`backd types` turns the config into TypeScript for your app and your functions, and `backd openapi` into an OpenAPI 3.1 document per realm for client generators. In development the config reloads as you save it. [Typing and OpenAPI](docs/build/clients/types/)."
 
       - title: Files, push and app configuration
-        icon: attach_file
+        icon: "paperclip"
         description: "Files in your own S3-compatible storage with image versions and quotas, push notifications to FCM, APNs and browsers, and a configuration your apps read, with history and rollback, and conditional GET so they ask only when it changed."
 
       - title: References, aggregations and search
-        icon: search
-        description: "Declare references between collections and return them next to the result with `expand`, summarize documents with `_aggregate` (group by declared fields, date buckets in a time zone, exact sums) and search prose with a weighted text index, best match first. All declared in config, with rules applied first and the cost bounded. [Start here](docs/api/references/)."
+        icon: "magnifying-glass"
+        description: "Declare references between collections and return them next to the result with `expand`, summarize documents with `_aggregate` (group by declared fields, date buckets in a time zone, exact sums) and search prose with a weighted text index, best match first. All declared in config, with rules applied first and the cost bounded. [Start here](docs/build/api/references/)."
 
       - title: Organizations and team access
-        icon: domain
-        description: "Groups of users for B2B apps: roles per organization, teams, team roles with time windows and delegation, documents that belong to an organization or a team, membership hooks and company email templates. [Start here](docs/organizations/)."
+        icon: "buildings"
+        description: "Groups of users for B2B apps: roles per organization, teams, team roles with time windows and delegation, documents that belong to an organization or a team, membership hooks and company email templates. [Start here](docs/build/organizations/)."
 
       - title: Built for operations
-        icon: monitor_heart
+        icon: "heartbeat"
         description: "JSON logs with request IDs, health and readiness probes, Prometheus metrics with Grafana dashboards, request limits, timeouts and graceful shutdown."

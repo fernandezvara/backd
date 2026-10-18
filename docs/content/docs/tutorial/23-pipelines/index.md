@@ -1,17 +1,18 @@
 ---
 title: "23. A pipeline on a status"
 description: "Let members propose assets for the gallery and run the steps that follow, announce, publish and thank, as triggers on the proposal's status."
-icon: "workflow"
+icon: "flow-arrow"
 weight: 430
 toc: true
 ---
 
 Until now every function ran because somebody called it or a clock fired. A **trigger** runs a function because a document *changed*, whoever changed it and from wherever. This chapter builds a small pipeline on a `submissions` collection: a member proposes an asset, a curator approves it, and the rest happens on its own.
 
-```
-created ──► announce-submission          tell the member it is waiting
-status submitted → approved ──► publish-submission   publish the asset, mark it published
-status → published ──► thank-submitter   thank the member
+```mermaid
+flowchart LR
+    created["a proposal is created"] -->|fires| announce["announce-submission<br/>tell the member it is waiting"]
+    approved["submitted → approved"] -->|fires| publish["publish-submission<br/>publish the asset, mark it published"]
+    publish -->|"its own write: status → published"| thank["thank-submitter<br/>thank the member"]
 ```
 
 ## The collection
@@ -41,7 +42,7 @@ Every write made by a trigger's function carries `_meta.chain = { root, depth }`
 
 ## Test and debug
 
-Test a trigger function with `fakeTrigger` from `@backd/functions-testing`; see [testing functions](../../functions/testing/). In a running realm:
+Test a trigger function with `fakeTrigger` from `@backd/functions-testing`; see [testing functions](../../build/functions/testing/). In a running realm:
 
 ```sh
 backd functions history --function main/publish-submission   # each run, its input and result
@@ -55,4 +56,4 @@ backd triggers gaps                                          # what could not be
 - Within seconds of a proposal the member has a notification; after the curator approves, the asset has `published_at`, the proposal is `published` with `decided_by` the curator, and the member has one thank-you.
 - The proposal's history shows `_meta.chain.depth` 0 for the curator's write and 1 for the function's, both with the same `root`.
 
-Read [Triggers](../../functions/triggers/) for the delivery guarantees, the cost and how to operate them.
+Read [Triggers](../../build/functions/triggers/) for the delivery guarantees, the cost and how to operate them.

@@ -1,0 +1,259 @@
+---
+title: "Access rules (rules:)"
+description: "Decide per collection which callers may read, create, update and delete documents."
+icon: "shield-check"
+weight: 550
+toc: true
+---
+
+Each collection of a realm with `auth: enabled` can have a `rules:` section in its `collection.yaml`, next to its `schema.json`. Rules decide, per operation, whether a caller may act on a **whole document**. There are no per-field permissions: data that needs different visibility belongs in a separate collection with its own rules.
+
+```
+$CONFIG_DIR/<realm>/<database>/<collection>/
+    schema.json
+    indexes.json     # optional
+    collection.yaml  # optional — its `rules:` section is the access rules
+    rules.test.yaml  # optional — tests for the rules
+```
+
+The same file holds the collection's other policy: [`files:`](../../files/file-fields/), `soft_delete:` and `on_owner_delete:` (see [the collection file](../../configuration/config-dir/#collectionyaml)). This page is about the `rules:` key.
+
+Rules used to live in a `rules.yaml` of their own. A directory that still has one **does not load**: `backd` stops and names the file, so a forgotten `rules.yaml` can't leave a collection silently without rules. To migrate, indent the file's content by two spaces under a `rules:` key in `collection.yaml` and delete `rules.yaml`.
+
+{{< hint warning >}}
+**API keys are not subject to rules.** A service holding a key can read and change everything in its realm. Rules protect users from each other, not the realm from its own keys: see [API keys](../api-keys/).
+{{< /hint >}}
+
+## Example
+
+```yaml
+# collection.yaml
+rules:
+  # Anyone may read published posts; authors also see their drafts.
+  read: >
+    document.published == true
+    || (user != nil && document._meta.owner == user.id)
+
+  # Signed-in users with a verified email may write posts.
+  create: user != nil && user.email_verified
+
+  # Authors may edit their own posts, but not move them to another status.
+  update: >
+    user != nil && document._meta.owner == user.id
+    && !('status' in changed())
+
+  # Only admins may delete.
+  delete: hasRole(user, 'admin')
+```
+
+## Operations
+
+| Key | Controls |
+|---|---|
+| `read` | Listing documents and fetching one |
+| `create` | `POST` |
+| `update` | `PUT` and `PATCH` |
+| `delete` | `DELETE` (and, in a collection with [soft delete](../../api/documents/#soft-delete), the soft delete) |
+| `restore` | Soft-deleted collections only: reading the trash (`deleted=only\|include`) and `POST …/restore`. Like `read`, it becomes a database filter, so it follows the same limits |
+| `purge` | Soft-deleted collections only: `DELETE …?purge=true`. Evaluated on the stored document, like `delete` |
+| `write` | Shorthand used for `create`, `update` and `delete` when they aren't set; it doesn't cover `restore` or `purge` |
+
+Anything not allowed is denied: an operation without a rule (and no `write` to fall back on) is forbidden for users and anonymous callers. A collection without a `rules:` section is only reachable with API keys.
+
+Each value is an [expr](https://expr-lang.org/docs/language-definition) expression that must be true to allow the operation.
+
+{{< hint note >}}
+YAML reads a value starting with `'`, `!`, `[` or `{` specially, so quote such rules, or use a block (`>`) as in the example above. A rule that quietly parses as something else is one of the few ways to get a rule you didn't write; `backd` refuses to start on most of them, but not all.
+{{< /hint >}}
+
+## What rules can use
+
+| Name | Available on | Meaning |
+|---|---|---|
+| `user` | all | The signed-in user: `user.id`, `user.email`, `user.email_verified`, `user.roles`, and how the session was made, `user.mfa` and `user.methods` (see [multi-factor authentication](../mfa/#how-the-session-remembers)), and `user.consents`, the version of each [consent](../consents/) the user holds. `nil` for anonymous callers |
+| `document` | read, update, delete | The stored document, including `document.id` and `document._meta.*` |
+| `data` | create, update | The document being written: the request body on create, the complete result on update |
+| `now` | all | The current time, only for comparing with a timestamp: `document._meta.created_at`, `document._meta.updated_at`, or a field the schema [stores as a date](../../configuration/config-dir/#dates) |
+| `hasRole(user, 'a', 'b', …)` | all | True if the user has any of the roles; false for anonymous callers |
+| `hasConsent(user, 'a', 'b', …)` | all | True if the user holds every named [consent](../consents/) (any version); false for anonymous callers |
+| `appConfig("a.b")` | all | The value of a key of the realm's [app configuration](../../configuration/app-config/#in-rules), read once for the request. The key is a string literal naming a declared value, or startup fails. Use it for kill switches that must hold on the server: `appConfig("features.export.enabled") == true` |
+| `inOrg(document._meta.org)` | collections with an organization | True when the caller is a member of the document's [organization](#organizations) |
+| `inTeam(document._meta.team)` | collections with a `team` | True when the caller belongs to the document's team |
+| `hasTeamRole(document._meta.team, 'manager')` | collections with a `team` | True when the caller holds that [team role](../../organizations/team-roles/) in the document's team, now (a window that isn't open doesn't count). The role is a string literal |
+| `hasOrgRole(document._meta.org, 'editor')` | collections with an organization | True when the caller holds the [organization role](../../configuration/realm/#organizations) there; the role may also be a field of the document |
+| `orgClaims(document._meta.org).plan == 'pro'` | collections with an organization | A claim of the organization, for the organizations the caller belongs to |
+| `changed()` | update | The top-level fields whose value differs between `document` and `data` |
+
+Rules have no access to the request itself (headers, address) and can't look up other documents. For shared documents, store member ids in an array and check `user.id in document.members`.
+
+### Anonymous callers
+
+A request without credentials is anonymous: `user` is `nil`. So `read: "true"` makes a collection public, and `user != nil` means "any signed-in user".
+
+{{< hint style="tip" title="Already done for you" >}}
+`backd` checks every `rules:` section when it starts and refuses to run, naming the `collection.yaml`, on an unknown field or role, an unguarded `user` field, or a `read` rule that can't become a database filter. A typo can't silently open or close a collection: fix it and restart.
+{{< /hint >}}
+
+Every use of a `user` field must be guarded, so a rule can't misbehave for anonymous callers:
+
+```yaml
+read: user != nil && document._meta.owner == user.id    # ok
+read: document._meta.owner == user.id                   # startup error: add `user != nil &&`
+read: user == nil || user.email_verified                # ok: guarded by `user == nil ||`
+read: document.published || hasRole(user, 'editor')     # ok: hasRole needs no guard
+```
+
+Negations are literal: `!hasRole(user, 'banned')` is true for anonymous callers, because they have no roles.
+
+### Roles
+
+Role names must be declared in the realm's [`realm.yaml`](../../configuration/realm/#roles). Using an undeclared role, with `hasRole` or with `'x' in user.roles`, stops startup. Consent names given to `hasConsent` must be declared under `consents:` and be string literals, and `hasConsent` needs no `user != nil` guard, like `hasRole`.
+
+### Organizations
+
+A collection with [`organization:`](../../configuration/config-dir/#organizations) stores the organization of each document in `document._meta.org`. Three helpers test the caller's memberships, which are read once per request and only when a rule uses them:
+
+```yaml
+rules:
+  read: inOrg(document._meta.org)
+  create: hasOrgRole(data._meta.org, 'editor') || hasOrgRole(data._meta.org, 'owner')
+  update: hasOrgRole(document._meta.org, 'editor')
+  delete: hasOrgRole(document._meta.org, 'owner') || hasOrgRole(document._meta.org, document.audience)
+```
+
+- **They count only memberships that count:** the organization is active (or orphaned) and, when it [requires a second factor](../mfa/), the session used one. For anyone else the helpers are false.
+- **In a read rule they are database filters.** `inOrg(document._meta.org)` becomes "`_meta.org` is one of the caller's organizations", so lists and counts show only what the caller may see. In a read rule the first argument must be `document._meta.org`, and the role of `hasOrgRole` a string literal or a single-valued field of the document, such as `document.audience`.
+- **On create** the organization is `data._meta.org`: the one in `?org=`, which the caller already belongs to.
+- **Claims** are facts about an organization that only realm administrators and functions write. `orgClaims(document._meta.org).plan == "pro"`, `.seats >= 3` and `.plan in ["pro", "team"]` are allowed, and `"a" in orgClaims(document._meta.org).features` for an array claim. A claim can only be compared with a value that doesn't depend on the document, and the comparison is false for organizations the caller doesn't belong to.
+- **Roles, not teams:** rules see the roles a member holds, whether granted directly, by default or through a team.
+- **`user.orgs`** is a map from organization id to `{roles, teams, claims}`, for `create` and `invoke` rules, which are evaluated in memory.
+
+Role names must be declared under `organizations.roles`, or startup fails.
+
+### Read rules are database filters
+
+`read` rules also decide which documents a list returns, so they are applied inside the database query: pages, `has_more` and `count` only ever include readable documents. That's why a `read` rule must be made of:
+
+- comparisons between a document field and a value: `==`, `!=`, `<`, `<=`, `>`, `>=`, with a field on one side;
+- `document.field in [...]` and `value in document.arrayField`;
+- boolean fields on their own (`document.published`);
+- `&&`, `||`, `!` and parentheses.
+
+Compared fields must be declared in `schema.json` with a type that isn't `array`, and not sit inside an array. The database compares arrays element by element (`{tags: "x"}` matches any array containing `"x"`), which differs from what the rule says, so `document.tags == 'x'` stops startup. Write `'x' in document.tags` instead: it means the same in the rule and in the database.
+
+The value side can be anything that doesn't depend on the document: literals, `user` fields, `hasRole(...)`, `now` with arithmetic such as `now - duration('24h')`. It is computed once per request. Rules comparing two document fields, or calling functions on document fields, stop startup with an explanation.
+
+#### Missing and null fields
+
+In a `read` rule, a field that is missing or `null`:
+
+- never equals, exceeds or is in anything: `document.n > 3`, `document.status == 'a'` and `document.status in ['a']` don't match it;
+- matches `== nil`, `!=` and negations: `document.status == nil`, `document.status != 'a'`, `!(document.n > 3)` and `not document.published` all match it.
+
+So `not document.published` includes documents without `published`. If that's not what you want, write `document.published == false`.
+
+These are the database's semantics, and they apply to lists and to fetching one document alike. Tests compare the pushed-down filter with the rule itself on hundreds of documents, for every supported construct, to make sure the database never lists a document the rule doesn't allow.
+
+`create`, `update` and `delete` rules are evaluated in memory, so they can use any expr feature, such as `len(data.title) < 100` or `all(changed(), # in ['title', 'body'])`.
+
+Rules can check the submitted data against the caller, for example to make sure a post is signed with the writer's own email and never re-attributed:
+
+```yaml
+create: user != nil && data.author.email == user.email
+update: user != nil && document._meta.owner == user.id && !('author' in changed())
+```
+
+`changed()` compares top-level fields, so a change anywhere inside `author` (for example `author.email`) counts as `author` changing.
+
+## How rules are applied
+
+In a realm with `auth: enabled`, every data request is decided like this:
+
+| Caller | Rules |
+|---|---|
+| [API key](../api-keys/) | Not applied: full access |
+| Signed-in user (session token) | Applied, with `user` set |
+| API key [acting on behalf of a user](../api-keys/#acting-on-behalf-of-a-user) | Applied, with `user` set to that user |
+| No credentials | Applied, with `user` set to `nil` |
+| Invalid, expired or revoked credentials | Refused with `401`, never treated as anonymous |
+
+For each operation:
+
+- **List** (`GET /collection`): only documents the `read` rule allows are returned. The rule is combined with the client's `where`, so `limit`, `skip`, `has_more` and `count` only ever see readable documents.
+- **Fetch** (`GET /collection/{id}`): the same `read` filter is applied, so a list and a fetch never disagree.
+- **Create**: the `create` rule is checked with `data`, after schema validation.
+- **Update** (`PUT`, `PATCH`): the document must be readable, then the `update` rule is checked with the stored `document` and the complete new `data`, after schema validation.
+- **Delete**: the document must be readable, then the `delete` rule is checked. The delete only happens if the document hasn't changed since it was checked.
+
+### Answers when a rule says no
+
+| Situation | Status |
+|---|---|
+| The caller can't read the document (update, delete or fetch of a document the `read` rule hides) | `404 not_found`, exactly as if it didn't exist |
+| The rule is false for every document (for example `read: user != nil` for an anonymous caller), or the operation isn't allowed | `401 unauthenticated` for anonymous callers, who may be allowed once signed in; `403 forbidden` for signed-in users |
+| No rule for the operation, or no `rules:` section | Same as a false rule |
+
+So a document's existence is only revealed to callers who could read it. A rule that fails while being evaluated (for example comparing a string with a number) denies.
+
+{{< hint warning >}}
+One exception is inherent to [unique indexes](../../configuration/config-dir/#indexesjson): a create or update that repeats a unique value answers `409 conflict`, even if the document holding that value is hidden. That tells the caller the value exists. Don't put unique indexes on values whose existence must stay secret.
+{{< /hint >}}
+
+At `LOG_LEVEL=debug`, every denial is logged (`"msg":"access denied"`) with the collection, the operation and the reason, never the document's contents.
+
+## Checks at startup
+
+`backd` refuses to start, naming the file, when the `rules:` section:
+
+- isn't a mapping of the keys above to expressions, or has an unknown key;
+- has a syntax error, or uses an unknown variable or `user` field;
+- uses a `document` or `data` field that isn't in `schema.json`;
+- uses `document` on create, `data` on read or delete, or `changed()` outside update (a `write` rule is checked for each operation it covers);
+- uses an undeclared role, or a role name that isn't a string literal;
+- uses a `user` field without a guard;
+- uses `now` other than to compare with a timestamp (a `_meta` timestamp or a field stored as a date), or compares a field stored as a date with text or a `user` field;
+- has a `read` rule that can't be a database filter, or that compares an array field or a field without a declared type;
+- exists in a realm with `auth: disabled`.
+
+## Files
+
+Uploads and removals of [file fields](../../files/file-fields/) follow the `update` rule, downloads the `read` rule: see [Rules for files](../../files/rules/).
+
+## Testing rules
+
+`backd rules test` checks your rules without MongoDB and without starting `backd`. It reads a fixture, `rules.test.yaml`, next to each `collection.yaml`: named callers, stored documents, and for each caller which documents they may read, create, update, delete, restore and purge. It prints what fails and exits non-zero, so it fits a CI step before packaging. It needs only `CONFIG_DIR`.
+
+A rule that reads the [app configuration](../../configuration/app-config/#in-rules) gets its values from a top-level `config:` in the fixture, by dot path (`features.export.enabled: false`).
+
+```yaml
+# rules.test.yaml
+now: 2026-10-04T12:00:00Z            # optional: what `now` is in the rules (default 2026-01-01)
+
+users:                               # callers; "anonymous" always exists
+  ada: { id: u1, email: ada@example.com }               # email_verified defaults to true; mfa to false
+  bob: { id: u2, email: bob@example.com, roles: [staff] }   # roles must be declared in realm.yaml
+
+documents:                           # stored documents, by name
+  draft:     { title: Draft, published: false, _meta: { owner: u1 } }
+  published: { title: Hello, published: true, _meta: { owner: u2 } }
+
+tests:
+  - name: anyone reads published posts   # optional
+    as: anonymous                        # a user above; default anonymous
+    read:   { allow: [published], deny: [draft] }
+    create: [ { data: { title: Spam }, expect: deny } ]
+    delete: { deny: [published] }
+
+  - as: ada
+    update:
+      - { document: draft, patch: { published: true }, expect: allow }       # a merge patch, as PATCH sends it
+      - { document: draft, data: { title: Whole, status: x }, expect: deny }  # the complete new document, as PUT sends it
+```
+
+- **Organizations and teams.** A user may belong to organizations, for rules that use [`inOrg`, `hasOrgRole`, `inTeam` and `hasTeamRole`](#organizations): `orgs: { acme: { roles: [member, hr], teams: [sales], team_roles: { sales: [manager] }, claims: { plan: pro } } }` (keys are organization ids; `roles` are the effective roles, `team_roles` map a team id to the roles held there, in force). A document's `_meta` may hold `org` and `team`, and a `create` takes `org` and `team` for `data._meta.org` and `data._meta.team`.
+- `read`, `delete`, `restore` and `purge` list document names under `allow` and `deny` (`restore` and `purge` are for [soft-deleting](../../configuration/config-dir/#soft-delete) collections; a fixture document is in the trash when its `_meta` has `deleted_at`, and a trashed document is seen through the read and restore rules both); `create` takes `data` (the body) with `expect: allow` or `deny`; `update` takes a `document` and either `patch` or `data`, with `expect`.
+- The decisions are the server's. A `read` rule becomes the same database filter, evaluated the way MongoDB does (a missing field, an array, `null`); `update` and `delete` first need the stored document to be readable, so a document the caller can't read is a denial there too (the server answers `404`); a rule that fails while being evaluated denies. A document or body that breaks `schema.json` is a mistake in the fixture, reported as such: the server would answer `400` before it asked the rules.
+- Stored documents get `_meta.owner: null` and `created_at` and `updated_at` equal to `now`, unless the fixture sets `_meta` (`owner`, `org`, `team`, `created_by`, `updated_by`, `version`, `created_at`, `updated_at`, `deleted_at`, `deleted_by`, `purge_at`). Their `id` is their name, unless they have an `id`.
+- Output lists failures with what the rules decided and why; `--verbose` also lists what passes, `--collection realm/database/collection` (or a prefix) runs some collections, and collections with rules and no fixture are listed. `--strict` fails when there are any.
+
+API keys bypass rules, so there is nothing to test for them; what the tests don't cover is the HTTP layer (statuses, `where` filters combined with the rule), which the server's own tests do.

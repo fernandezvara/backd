@@ -65,7 +65,7 @@ The helpers, the two other functions of this chapter and their tests (the finish
 
 ## The dev loop
 
-Functions run as **TypeScript in a Deno process with no permissions** (no disk, no network unless `network:` says so) — one process per call, started by the executor container, so a function can only do what its `function.yaml` and the `ctx` it is handed allow ([how they run](../../functions/writing/)). backd runs the bundled JavaScript, so the sources are bundled before it starts. `functions-build` is the compose service that does it — it uses the executor image, so there is nothing to install. backd refuses to start with stale or missing bundles, so after editing a function you run the build and restart:
+Functions run as **TypeScript in a Deno process with no permissions** (no disk, no network unless `network:` says so) — one process per call, started by the executor container, so a function can only do what its `function.yaml` and the `ctx` it is handed allow ([how they run](../../build/functions/writing/)). backd runs the bundled JavaScript, so the sources are bundled before it starts. `functions-build` is the compose service that does it — it uses the executor image, so there is nothing to install. backd refuses to start with stale or missing bundles, so after editing a function you run the build and restart:
 
 ```sh
 docker compose run --rm functions-build && docker compose restart backd

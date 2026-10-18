@@ -7,26 +7,35 @@
 
 Static checks: every file is valid JSON with a unique uid and title; every panel
 uses the "prometheus" data source and has a query; every backd_ metric a query
-uses is documented in docs/content/docs/operations/metrics.md; every alert rule
+uses is documented in docs/content/docs/operate/metrics.md; every alert rule
 in deploy/production/prometheus/alerts.yml is named in some panel's description
 ("Alert <Name>"), so each alert has a panel showing what it watches.
 With --prometheus, each query must also be accepted by Prometheus (it doesn't
 need data), with the dashboard variables replaced by "match everything".
 """
-import argparse, glob, json, os, re, sys, urllib.parse, urllib.request
+import argparse
+import glob
+import json
+import os
+import re
+import sys
+import urllib.parse
+import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DASH = os.path.join(ROOT, "deploy/grafana/dashboards")
-DOCS = os.path.join(ROOT, "docs/content/docs/operations/metrics.md")
+DOCS = os.path.join(ROOT, "docs/content/docs/operate/metrics.md")
 ALERTS = os.path.join(ROOT, "deploy/production/prometheus/alerts.yml")
 
 errors = []
 def err(msg): errors.append(msg)
 
+
 def panels(doc):
     for p in doc.get("panels", []):
         yield p
         yield from p.get("panels", [])
+
 
 def exprs(doc):
     for p in panels(doc):
@@ -34,6 +43,7 @@ def exprs(doc):
             yield p, t.get("expr", "")
     for v in doc.get("templating", {}).get("list", []):
         yield None, v.get("definition", "")
+
 
 documented = set(re.findall(r"^\| `([a-z_]+)`", open(DOCS).read(), re.M))
 alerts = re.findall(r"- alert: (\w+)", open(ALERTS).read())
@@ -56,7 +66,8 @@ for path in files:
         err(f"{name}: uid {doc.get('uid')} is used twice")
     if doc.get("title") in seen_title:
         err(f"{name}: title {doc.get('title')!r} is used twice")
-    seen_uid.add(doc.get("uid")); seen_title.add(doc.get("title"))
+    seen_uid.add(doc.get("uid"))
+    seen_title.add(doc.get("title"))
     for p in panels(doc):
         if p.get("type") == "row":
             continue
@@ -83,7 +94,8 @@ for a in alerts:
         err(f"alert {a} has no panel whose description says \"Alert {a}\"")
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--prometheus", help="Prometheus URL to run every query against")
+ap.add_argument(
+    "--prometheus", help="Prometheus URL to run every query against")
 args = ap.parse_args()
 if args.prometheus:
     def prepare(e):
@@ -92,11 +104,13 @@ if args.prometheus:
     for where, e in queries:
         if e.startswith("label_values("):
             continue
-        url = args.prometheus.rstrip("/") + "/api/v1/query?" + urllib.parse.urlencode({"query": prepare(e)})
+        url = args.prometheus.rstrip(
+            "/") + "/api/v1/query?" + urllib.parse.urlencode({"query": prepare(e)})
         try:
             body = json.load(urllib.request.urlopen(url, timeout=20))
         except Exception as ex:  # an HTTP 400 carries Prometheus' message
-            msg = getattr(ex, "read", lambda: b"")().decode(errors="replace") or str(ex)
+            msg = getattr(ex, "read", lambda: b"")().decode(
+                errors="replace") or str(ex)
             err(f"{where}: Prometheus refused the query: {msg[:200]}")
             continue
         if body.get("status") != "success":
@@ -106,4 +120,5 @@ if errors:
     print("\n".join(errors), file=sys.stderr)
     print(f"{len(errors)} problem(s)", file=sys.stderr)
     sys.exit(1)
-print(f"{len(files)} dashboards, {len(queries)} queries checked" + (" (and run against Prometheus)" if args.prometheus else ""))
+print(f"{len(files)} dashboards, {len(queries)} queries checked" +
+      (" (and run against Prometheus)" if args.prometheus else ""))

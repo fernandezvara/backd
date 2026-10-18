@@ -27,10 +27,10 @@ backd.db('main').fn('publish', { asset_id })        // typed input
 backd.config.get('maintenance.enabled')             // boolean | undefined
 ```
 
-A misspelled collection, a field the schema doesn't have, an operator a type doesn't allow and a wrong function input are now red in the editor ([the client reference](../../clients/js/#typed-client) lists what is typed).
+A misspelled collection, a field the schema doesn't have, an operator a type doesn't allow and a wrong function input are now red in the editor ([the client reference](../../build/clients/js/#typed-client) lists what is typed).
 
 {{< hint style="tip" title="Writing the app in Dart?" >}}
-`backd types --realm shelf --lang dart` writes the same types as `types.dart`, and [`package:backd`](../../clients/dart/) — the hand-written Dart client — gives you `BackdClient<ShelfRealm>` with `client.typed.main.assets` and the rest typed. The [Shelf demo](https://github.com/fernandezvara/backd/tree/main/clients/dart/example) in `clients/dart/example/` is this tutorial's app as a Flutter desktop program.
+`backd types --realm shelf --lang dart` writes the same types as `types.dart`, and [`package:backd`](../../build/clients/dart/) — the hand-written Dart client — gives you `BackdClient<ShelfRealm>` with `client.typed.main.assets` and the rest typed. The [Shelf demo](https://github.com/fernandezvara/backd/tree/main/clients/dart/example) in `clients/dart/example/` is this tutorial's app as a Flutter desktop program.
 {{< /hint >}}
 
 ## Types for the functions
@@ -89,6 +89,10 @@ backd types --realm shelf --functions --check
 
 Shelf's CI runs both (`make shelf-types`; `make shelf-types-update` regenerates), so a schema change can't merge without its types.
 
+{{< hint style="note" >}}
+TypeScript is not the only language this trick reaches. `backd openapi --realm shelf --out shelf.openapi.json` emits an **OpenAPI 3.1 document** of the realm's whole client API — collections, sign-in methods, functions and configuration — for generators like openapi-generator (Dart, Kotlin, Swift…). It has the same `--check` drift guard for CI, and a running realm serves it at `GET /v1/shelf/_openapi.json`. See [Your realm's OpenAPI](../../build/api/openapi/).
+{{< /hint >}}
+
 ## You should see
 
 - `backd types` writes `types.d.ts` and `realm.json`; run again, nothing changes.
@@ -96,4 +100,4 @@ Shelf's CI runs both (`make shelf-types`; `make shelf-types-update` regenerates)
 - With `BACKD_DEV=true`, saving a schema updates `backd.d.ts` without a restart; an invalid one is refused and the old config keeps serving.
 - The app's console warns once when its types are out of date; `--check` fails and `--diff` lists the change.
 
-Read [Generated types](../../clients/types/) for the mapping from JSON Schema, and [Typed functions](../../functions/writing/#typed-functions) for the context.
+Read [Generated types](../../build/clients/types/) for the mapping from JSON Schema, and [Typed functions](../../build/functions/writing/#typed-functions) for the context.

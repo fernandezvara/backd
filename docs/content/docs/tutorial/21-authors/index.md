@@ -5,7 +5,7 @@ weight: 410
 toc: true
 ---
 
-The gallery shows titles, but not **who** saved them. The name lives somewhere else: the account (email, password, roles) is private, and the *directory* of members is business data. The usual fix is one more request per card, or copying the name into every asset and keeping it up to date. A [reference](../../configuration/config-dir/#references) is the third way: the asset says where its author is, and a read can bring the author along.
+The gallery shows titles, but not **who** saved them. The name lives somewhere else: the account (email, password, roles) is private, and the *directory* of members is business data. The usual fix is one more request per card, or copying the name into every asset and keeping it up to date. A [reference](../../build/configuration/config-dir/#references) is the third way: the asset says where its author is, and a read can bring the author along.
 
 ## A profile per person
 
@@ -81,7 +81,7 @@ X-Backd-Expand-Queries: 1     one query on profiles, for the whole page
 X-Backd-Expand-Docs: 9        nine authors placed
 ```
 
-A page of nine cards costs **one** extra query, not nine. Those numbers don't change with field selection: choosing `name,avatar` makes the response smaller, not the lookup cheaper. What makes it expensive is asking for more paths, more levels or a `many` reference with long arrays; nothing is expanded unless asked, and the server refuses past [its limits](../../api/documents/#expanding-references).
+A page of nine cards costs **one** extra query, not nine. Those numbers don't change with field selection: choosing `name,avatar` makes the response smaller, not the lookup cheaper. What makes it expensive is asking for more paths, more levels or a `many` reference with long arrays; nothing is expanded unless asked, and the server refuses past [its limits](../../build/api/documents/#expanding-references).
 
 ## A profile nobody can read
 
@@ -101,4 +101,4 @@ A page of nine cards costs **one** extra query, not nine. Those numbers don't ch
 - An unknown reference is `400 invalid_expand` that names it; `where` on `author.name` is `400 invalid_query`.
 - The gallery cards show *by Ana*; signed out they show no author.
 
-Read [Expanding references](../../api/documents/#expanding-references) for the limits and [the client](../../clients/js/#expanding-references) for typed `_expanded`.
+Read [Expanding references](../../build/api/documents/#expanding-references) for the limits and [the client](../../build/clients/js/#expanding-references) for typed `_expanded`.
