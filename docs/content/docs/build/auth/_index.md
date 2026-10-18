@@ -40,6 +40,6 @@ Whatever the first factor, a user with a second factor is still asked for it —
 - [Admin API](../../operate/administration/admin/): server-side user management.
 - [Audit trail](../../operate/administration/audit/) of security-sensitive actions.
 - [Deactivating and erasing users](../../operate/administration/erasure/), with per-collection policies for their data; [compliance](../../operate/administration/compliance/) covers personal-data scope, retention and recipes.
-- [Provider sign-in in the JavaScript client](../clients/js/#sign-in-with-google-microsoft-or-apple): `signInWith`, `completeSignIn`, `signInWithIdToken`.
+- Provider sign-in in the clients: [JavaScript](../clients/js/#sign-in-with-google-microsoft-or-apple) and [Dart](../clients/dart/#sign-in-with-a-provider-on-desktop) — `signInWith`, `completeSignIn`, `signInWithIdToken`.
 
 See the [security model](../../operate/administration/security/) for what `backd` protects, and the [hardening checklist](../../operate/checklist/) before exposing a realm. **Planned:** personal-data export as a downloadable package; other OpenID Connect providers (`type: oidc`).

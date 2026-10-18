@@ -56,7 +56,7 @@ Call `POST /_auth/devices` at every launch: it is what keeps a device from going
 
 ## From apps
 
-The [JavaScript client](../client/) wraps these endpoints (`client.push`) and keeps a device registered at every launch and sign-in.
+The [JavaScript and Dart clients](../client/) wrap these endpoints (`client.push`) and keep a device registered at every launch and sign-in.
 
 ## For operators
 

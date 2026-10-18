@@ -235,7 +235,7 @@ Keys for providers belong in [secrets](../../functions/secrets/), read by functi
 | `GET /v1/{realm}/_config` | [Reading](#reading) and the OpenAPI document (`readAppConfig`) |
 | `GET`, `PATCH /_admin/app-config`, `/history`, `/rollback` | [Admin API](../../../operate/administration/admin/#app-configuration) |
 | `backd app-config get\|set\|reset\|history\|rollback` | [Command line](../../../operate/administration/cli/) |
-| `client.config` | [JavaScript client](../../clients/js/#app-configuration) |
+| `client.config` | [JavaScript client](../../clients/js/#app-configuration), [Dart client](../../clients/dart/#app-configuration) |
 | `ctx.config`, `ctx.admin.config`, `config: write` | [From functions](#from-functions), [function.yaml](../../functions/reference/) |
 | `appConfig("a.b")` | [Rules](../../auth/rules/) |
 | `config:` in `rules.test.yaml` | [Testing rules](../../auth/rules/) |
