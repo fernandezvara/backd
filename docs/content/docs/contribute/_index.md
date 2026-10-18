@@ -43,7 +43,9 @@ toc: true
 | `deploy/production/` | The [production reference deployment](../operate/production/) and its end-to-end test |
 | `Dockerfile` | Multi-stage build into a distroless image |
 | `docker-compose.test.yml` | Dockerized test environment (project `backd-test`) |
-| `.github/workflows/ci.yml` | CI: vet, OpenAPI lint, dockerized tests, release configuration check, JavaScript client checks and integration tests, the production reference test, the tutorial replayed against a stack built from the checkout (`make shelf-tour-ci`), docs build |
+| `.github/workflows/ci.yml` | CI: vet, OpenAPI lint, dockerized tests, release configuration check, the production reference test, the tutorial replayed against a stack built from the checkout (`make shelf-tour-ci`), docs build |
+| `.github/workflows/js.yml` | The JavaScript client: type-check, unit tests on Node 22 and 26, the package check and integration tests against `backd` and MongoDB in Docker (`docker-compose.js.yml`) |
+| `.github/workflows/ui.yml` | The admin UI: type-check, lint, unit tests, build, `npm audit` of what ships in the bundle, and its Playwright tests against the example stack |
 | `.github/workflows/pages.yml` | On version tags, builds this documentation site, checks its links and callouts, and publishes it to GitHub Pages (see [Releasing](#releasing)) |
 | `.github/workflows/publish-js.yml` | On `js-v*` tags, publishes the JavaScript client to npm (see [Releasing the JavaScript client](#releasing-the-javascript-client)) |
 | `.github/workflows/release.yml`, `.goreleaser.yaml` | Releases on version tags: binaries, GitHub release, container image (see [Releasing](#releasing)) |
@@ -151,8 +153,8 @@ GitHub Actions runs on every push and pull request:
 
 - `go vet`, a check of the compose files, the OpenAPI lint, the dockerized test suite, and a check of the release configuration;
 - supply chain: `govulncheck`, and a Trivy scan of the image;
-- the JavaScript client: type-check, unit tests and integration tests against `backd` and MongoDB;
-- the admin UI: type-check, lint, unit tests, build and `npm audit` of what ships in the bundle, and its Playwright tests against the example stack (the Go jobs build the UI first, so the binary embeds it);
+- the JavaScript client (`.github/workflows/js.yml`): type-check, unit tests and integration tests against `backd` and MongoDB;
+- the admin UI (`.github/workflows/ui.yml`): type-check, lint, unit tests, build and `npm audit` of what ships in the bundle, and its Playwright tests against the example stack (the Go jobs build the UI first, so the binary embeds it);
 - the [production reference](../operate/production/) test (`deploy/production/test.sh`);
 - a build of this documentation site.
 
