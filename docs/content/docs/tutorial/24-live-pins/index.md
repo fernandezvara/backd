@@ -47,11 +47,33 @@ backd_realtime_subscription_checks_total{kind="scanned"}   # no key: asked every
 
 Open the board with the team filter and pin something: `indexed` goes up by one per subscriber of that team. Subscribe without the filter and `scanned` grows with every change of every team. At a handful of subscribers it doesn't matter; with thousands, grouped subscriptions keep the checks per change to the team's own members. Other numbers worth watching: `backd_realtime_streams`, and `backd_realtime_resets_total` by reason.
 
+## A live gallery
+
+The gallery is the other list that goes stale: a curator publishes, and members find out on their next reload. Add the same line at the end of `config/shelf/main/assets/collection.yaml`:
+
+{{< example-file path="shelf/main/assets/collection.yaml" lines="73-75" >}}
+
+The app follows what it used to list:
+
+```js
+const live = assets.subscribe({ where: { published_at: { $ne: null } }, load: { sort: '-published_at', limit: 9 } })
+live.on('change', (state) => { this.assets = state.items })
+```
+
+The read rule does the rest: when the curator's `publish` stamps `published_at`, the asset becomes visible under the filter and arrives as `created` for every member; an edit arrives as `updated`, and a delete as `removed`. Drafts never match the filter, so they never reach the gallery.
+
+Two things a list read gave the gallery don't come through the stream. The server sends each asset **as stored**, so there are no `file_links` (the thumbnails) and no `expand` (the author of chapter 21). The app reads them itself: one `assets.list({ where: { id: { $in: ids } }, fileLinks: true, expand })` for the assets it doesn't have them for yet, and again only when an asset's files change, so a new download count costs nothing. File links expire after five minutes, so the app reads the ones on screen again every four. **Load more** follows the list again with a larger `limit`.
+
+A search can't be followed. `$search` isn't one of the operators a subscription accepts (the server decides who sees a change by checking the filter in memory), so typing in the search box turns the gallery into a plain list. Clearing the box makes it live again.
+
+This subscription has no equality on a grouping field, so it is a **scanned** one: it is checked on every change of `assets`. At a gallery's scale that is fine, and `kind="scanned"` in the metrics above shows it.
+
 ## You should see
 
 - Two members of a team with the board open: one pins, the other sees it appear; one removes it, it disappears from both.
 - A person who is not in the team and opens the same list sees nothing of it, before or after.
 - A member removed from the team: their list resets and empties, and later pins don't reach them.
 - After signing out in another tab, the page stops being live and asks you to sign in.
+- Two members with the gallery open: a curator publishes a draft and it appears in both, thumbnail and author included; a delete removes it. A search shows "search — not live" until it is cleared.
 
 Read [Realtime](../../build/api/realtime/) for the protocol and the limits, and [live lists](../../build/clients/js/#live-lists) for the client.

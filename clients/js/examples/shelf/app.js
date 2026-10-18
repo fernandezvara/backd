@@ -53,6 +53,22 @@ const pins = main.collection('pins')
 // The open team's live list (chapter 24), kept out of the component so Alpine doesn't wrap it.
 /** @type {import('backd-js').LiveView | null} */
 let liveTeam = null
+// Chapter 24: the gallery's live list, and what the stream doesn't carry. A streamed asset
+// comes as stored: no file links and no expanded author, so `hydrate` reads those for many
+// assets at once and keeps them by id, with the files they were read for (`sig`).
+/** @type {import('backd-js').LiveView | null} */
+let liveGallery = null
+/** @type {any[]} */
+let galleryItems = []
+/** @type {Map<string, { sig: string, file?: any, attachments?: any[], _expanded?: any }>} */
+const galleryExtras = new Map()
+const hydrating = new Set()
+/** @type {ReturnType<typeof setInterval> | null} */
+let galleryTimer = null
+const GALLERY_PAGE = 9
+const LINK_REFRESH_MS = 4 * 60 * 1000 // file links expire after five minutes
+const AUTHOR = expand(['author', ['name', 'avatar']])
+const filesSig = (/** @type {any} */ d) => JSON.stringify([d.file?.id ?? null, versionStatus(d.file, 'thumb').status, (d.attachments ?? []).map((/** @type {any} */ f) => f.id)])
 const profiles = main.collection('profiles')
 const outbox = backd.db('mail').collection('outbox')
 
@@ -153,6 +169,10 @@ document.addEventListener('alpine:init', () => {
     assets: [],
     after: undefined,
     hasMore: false,
+    // Chapter 24: the gallery's stream (connecting, live, resyncing, closed), `static` while
+    // a search is shown, `not live` when the collection can't be followed.
+    galleryStatus: '',
+    galleryLimit: GALLERY_PAGE,
     tag: '',
     sort: '-published_at',
     // Chapter 22: a search text; when set the gallery is a search, best match first.
@@ -411,6 +431,8 @@ document.addEventListener('alpine:init', () => {
     },
 
     async logout() {
+      this.closeGallery()
+      galleryExtras.clear()
       await backd.auth.logout().catch(() => {})
       this.user = null
       this.mine = []
@@ -438,13 +460,13 @@ document.addEventListener('alpine:init', () => {
       this.error = null
       try {
         const common = {
-          limit: 9,
+          limit: GALLERY_PAGE,
           // Chapter 13: every file comes with a link, for the previews shown at
           // once. They expire (five minutes), so downloads fetch a fresh one.
           fileLinks: true,
           // Chapter 21: each asset's author, in the same request. Only the name
           // and the avatar come back; visitors who can't read profiles get null.
-          expand: expand(['author', ['name', 'avatar']]),
+          expand: AUTHOR,
         }
         // Chapter 22: with a search text the gallery asks the text index, best match
         // first, and pages by offset; without one it is the list of before.
@@ -461,11 +483,118 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    // A new filter or sort restarts the list from the first page.
+    // A new filter or sort restarts the list from the first page. Without a search text the
+    // gallery is live (chapter 24); a search is a plain list until the box is cleared.
     async refilter() {
+      this.closeGallery()
       this.assets = []
       this.after = undefined
+      this.hasMore = false
+      if (!this.q.trim() && (this.user || this.open)) {
+        this.galleryLimit = GALLERY_PAGE
+        this.openGallery()
+        return
+      }
+      this.galleryStatus = this.q.trim() ? 'static' : ''
       await this.load()
+    },
+
+    // Load more: a live list grows (and is followed again with the larger limit); a
+    // static one reads the next page.
+    async loadMore() {
+      if (liveGallery) {
+        this.galleryLimit += GALLERY_PAGE
+        this.openGallery()
+        return
+      }
+      await this.load()
+    },
+
+    // After the app changed an asset: a live gallery hears it from the stream; a static
+    // one reads again.
+    async refresh() {
+      if (!liveGallery) await this.refilter()
+    },
+
+    // Chapter 24: the published assets, live. The read rule is checked on every change, so a
+    // curator's publish makes the asset appear for every member, and a delete removes it.
+    openGallery() {
+      this.closeGallery()
+      this.galleryStatus = 'connecting'
+      const view = assets.subscribe({ where: this.where(), load: { sort: this.sort, limit: this.galleryLimit } })
+      liveGallery = view
+      view.on('change', (state) => {
+        if (liveGallery !== view || state.status === 'connecting') return
+        galleryItems = state.items
+        this.showLive()
+      })
+      view.on('status', (s) => {
+        if (liveGallery === view) this.galleryStatus = s
+      })
+      view.on('error', async (e) => {
+        if (liveGallery !== view) return
+        // `realtime: true` isn't on the assets yet (or the stack doesn't stream): the plain list.
+        this.closeGallery()
+        this.assets = []
+        this.after = undefined
+        this.galleryStatus = 'not live'
+        await this.load()
+        if (e.code !== 'realtime_not_enabled' && e.status !== 404 && !this.error) this.error = e.message
+      })
+      galleryTimer = setInterval(() => this.hydrate(galleryItems), LINK_REFRESH_MS)
+    },
+
+    closeGallery() {
+      const view = liveGallery
+      liveGallery = null
+      view?.close()
+      if (galleryTimer) clearInterval(galleryTimer)
+      galleryTimer = null
+      galleryItems = []
+    },
+
+    // The live list as cards: each asset with the links and author read for its files.
+    // Assets not read yet (or whose files changed) are read in one batch.
+    showLive() {
+      const missing = []
+      this.assets = galleryItems.map((d) => {
+        const held = galleryExtras.get(d.id)
+        const same = held?.sig === filesSig(d)
+        if (!same) missing.push(d)
+        if (!held) return d
+        return { ...d, _expanded: held._expanded, ...(same ? { file: held.file, attachments: held.attachments } : {}) }
+      })
+      this.hasMore = galleryItems.length >= this.galleryLimit
+      if (missing.length) this.hydrate(missing)
+    },
+
+    // One list read per 100 assets, with file links and the author: what a streamed asset lacks.
+    async hydrate(items) {
+      const want = items.filter((d) => !hydrating.has(d.id))
+      if (!want.length) return
+      for (const d of want) hydrating.add(d.id)
+      try {
+        for (let i = 0; i < want.length; i += 100) {
+          const chunk = want.slice(i, i + 100)
+          /** @type {Map<string, any>} */
+          let found = new Map()
+          try {
+            const page = await assets.list({ where: { id: { $in: chunk.map((d) => d.id) } }, limit: chunk.length, fileLinks: true, expand: AUTHOR })
+            found = new Map(page.items.map((d) => [d.id, d]))
+          } catch {
+            // The cards show without links for now; the next change or refresh asks again.
+          }
+          // Kept under the files of the asset that was asked for, so a read that is ahead
+          // of the stream doesn't ask again until the stream's update arrives.
+          for (const d of chunk) {
+            const got = found.get(d.id)
+            galleryExtras.set(d.id, { sig: filesSig(d), file: got?.file ?? d.file, attachments: got?.attachments ?? d.attachments, _expanded: got?._expanded })
+          }
+        }
+      } finally {
+        for (const d of want) hydrating.delete(d.id)
+      }
+      if (liveGallery) this.showLive()
     },
 
     // --- files (chapters 13-15) ------------------------------------------------
@@ -516,7 +645,7 @@ document.addEventListener('alpine:init', () => {
       try {
         const { url } = await main.fn('download', { document_id: asset.id, field: file.field, file_id: file.id })
         window.location.assign(url)
-        setTimeout(() => this.refilter(), 1500) // the count moved
+        setTimeout(() => this.refresh(), 1500) // the count moved
       } catch (e) {
         this.error = e.message
       }
@@ -542,7 +671,7 @@ document.addEventListener('alpine:init', () => {
       try {
         const doc = await assets.get(assetId)
         if (versionStatus(doc.file, 'thumb').status !== 'pending') {
-          await Promise.all([this.loadMine(), this.refilter()])
+          await Promise.all([this.loadMine(), this.refresh()])
           return
         }
       } catch {
@@ -582,7 +711,7 @@ document.addEventListener('alpine:init', () => {
         if (this.isImage(made.file)) this.watchThumbnail(made.id)
         this.draft = { title: '', kind: 'link', url: '', body: '', tags: '', file: null, attachments: [] }
         for (const input of document.querySelectorAll('input[type=file]')) input.value = ''
-        await this.refilter()
+        await this.refresh()
         await this.loadMine()
       } catch (e) {
         // 413: over the field's max_size; 415: not a type it takes (backd looks
@@ -650,7 +779,7 @@ document.addEventListener('alpine:init', () => {
         const doc = await assets.uploadFile(asset.id, field, picked, { ifMatch: asset._meta.version, onProgress: this.reportProgress(picked.name) })
         if (field === 'file' && this.isImage(doc.file)) this.watchThumbnail(asset.id)
         await this.loadMine()
-        await this.refilter()
+        await this.refresh()
       } catch (e) {
         this.error = e instanceof VersionMismatchError ? 'Someone else changed this asset first — reload and try again.' : e.message
       } finally {
@@ -666,7 +795,7 @@ document.addEventListener('alpine:init', () => {
       try {
         await assets.deleteFile(asset.id, file.field, file.id, { ifMatch: asset._meta.version })
         await this.loadMine()
-        await this.refilter()
+        await this.refresh()
       } catch (e) {
         this.error = e instanceof VersionMismatchError ? 'Someone else changed this asset first — reload and try again.' : e.message
       } finally {
@@ -686,7 +815,7 @@ document.addEventListener('alpine:init', () => {
         // If-Match: the write is conditional on the version we read.
         await assets.patch(this.editing.id, patch, { ifMatch: this.editing.version })
         this.editing = null
-        await this.refilter()
+        await this.refresh()
         await this.loadMine()
       } catch (e) {
         this.error = e instanceof VersionMismatchError
@@ -816,7 +945,7 @@ document.addEventListener('alpine:init', () => {
       this.error = null
       try {
         await assets.delete(asset.id, { ifMatch: asset._meta?.version })
-        await this.refilter()
+        await this.refresh()
         await this.loadMine()
       } catch (e) {
         this.error = e instanceof VersionMismatchError
@@ -841,7 +970,7 @@ document.addEventListener('alpine:init', () => {
         // result instead of publishing twice.
         await main.fn('publish', { asset_id: asset.id }, { idempotencyKey: `publish-${asset.id}` })
         // publish is sync — no job to poll.
-        await this.refilter()
+        await this.refresh()
         await this.loadMine()
         await this.loadDrafts()
         await this.loadNotifs()

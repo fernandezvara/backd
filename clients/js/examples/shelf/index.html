@@ -90,7 +90,7 @@
     <!-- view: gallery (ch1, wired) — public, paginated, filterable. -->
     <section id="gallery" x-show="view === 'gallery'">
       <hgroup>
-        <h2>Gallery</h2>
+        <h2>Gallery <small class="muted" x-show="galleryStatus" x-text="galleryStatus === 'live' ? '● live' : galleryStatus === 'static' ? 'search — not live' : galleryStatus"></small></h2>
         <p>Everything the workspace has published.</p>
       </hgroup>
 
@@ -109,7 +109,7 @@
       <article x-show="!user && !open">
         <p><a href="#auth">Sign in or sign up</a> to see the gallery.</p>
       </article>
-      <p class="muted" x-show="(user || open) && !busy && assets.length === 0">Nothing published yet.</p>
+      <p class="muted" x-show="(user || open) && !busy && galleryStatus !== 'connecting' && assets.length === 0">Nothing published yet.</p>
       <div class="grid" x-show="user || open">
         <template x-for="asset in assets" :key="asset.id">
           <article>
@@ -145,7 +145,7 @@
       </div>
 
       <footer class="pager">
-        <button class="secondary sm" x-show="hasMore" @click="load" :disabled="busy">Load more</button>
+        <button class="secondary sm" x-show="hasMore" @click="loadMore" :disabled="busy">Load more</button>
       </footer>
     </section>
 
