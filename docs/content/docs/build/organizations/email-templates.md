@@ -1,12 +1,12 @@
 ---
-title: "Company email templates"
-description: "Let each company edit its own emails for the kinds you allow: a logic-less syntax, a sanitized HTML, required placeholders, previews and test sends."
+title: "Organization email templates"
+description: "Let each organization edit its own emails for the kinds you allow: a logic-less syntax, a sanitized HTML, required placeholders, previews and test sends."
 icon: "note-pencil"
 weight: 526
 toc: true
 ---
 
-With [company context](../company-context/) an email can look like the company's. **Company templates** go one step further: the owners of an organization write the text themselves, for the kinds of email you allow, and backd keeps your own files as the fallback.
+With [organization context](../organization-context/) an email can look like the organization's. **Organization templates** go one step further: the owners of an organization write the text themselves, for the kinds of email you allow, and backd keeps your own files as the fallback.
 
 ```yaml
 # realm.yaml
@@ -16,7 +16,7 @@ email:
     permission: manage_org        # who edits: holders of manage: org (the default)
 ```
 
-Every listed kind must have a template in the realm's [`email/` folder](../../functions/email/#templates), which is what a company's version replaces; startup checks it, and that the realm has organizations. `permission` is `manage_org`, `manage_members`, `manage_roles` or `manage_teams`: the [capability](../../configuration/realm/#organizations) that edits them.
+Every listed kind must have a template in the realm's [`email/` folder](../../functions/email/#templates), which is what an organization's version replaces; startup checks it, and that the realm has organizations. `permission` is `manage_org`, `manage_members`, `manage_roles` or `manage_teams`: the [capability](../../configuration/realm/#organizations) that edits them.
 
 ## The syntax
 
@@ -37,7 +37,7 @@ HTML:     {{#App.logo}}<img src="{{App.logo}}" alt="{{App.name}}">{{/App.logo}}
 | `{{^App.logo}}…{{/App.logo}}` | an inverted section: shown when it isn't |
 | `{{! note }}` | a comment |
 
-The values are `Realm`, `Link`, `ExpiresAt`, `User.Email`, `User.Locale`, `Org.Name`, `Data.*` (what the message carries, like `Data.org_name` or `Data.code`) and `App.*` (what your [data hook](../company-context/#supply-the-data-data-hooks) returned). A value that is missing prints nothing.
+The values are `Realm`, `Link`, `ExpiresAt`, `User.Email`, `User.Locale`, `Org.Name`, `Data.*` (what the message carries, like `Data.org_name` or `Data.code`) and `App.*` (what your [data hook](../organization-context/#supply-the-data-data-hooks) returned). A value that is missing prints nothing.
 
 There are **no includes, partials, helpers, raw output or delimiter changes**: a tag that asks for one is an error with its line and column. Sections nest at most 6 deep and repeat at most 1,000 times.
 
@@ -64,9 +64,9 @@ In the JavaScript client: `client.orgs.templates(org).list() / get / put / delet
 - **Test sends** go through the realm's delivery function to the requesting user's address, at most **10 per hour per organization**. They also count against the per-recipient email limits.
 - **Saves and deletes are audited** (`org.template_save`, `org.template_delete`), with who and which kind, never the text.
 
-## When the company's template fails
+## When the organization's template fails
 
-An email made with an organization context uses the company's template for that kind and language, otherwise your file. If the company's can't be used when the message is made, **the message goes out in your text** and the organization's managers get an `email-template-failed` notice, at most once a day for each kind. Add the folder `email/email-template-failed/` to translate or restyle it.
+An email made with an organization context uses the organization's template for that kind and language, otherwise your file. If the organization's can't be used when the message is made, **the message goes out in your text** and the organization's managers get an `email-template-failed` notice, at most once a day for each kind. Add the folder `email/email-template-failed/` to translate or restyle it.
 
 {{< hint style="warning" >}}
 Owners write text your realm sends **from your domain**. The syntax has no way to run code and the HTML is sanitized, but they can still write what they like: let only people you trust edit templates (`overrides.permission`), and keep `customizable` to the kinds that need it.

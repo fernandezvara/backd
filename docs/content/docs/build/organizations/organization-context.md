@@ -1,12 +1,13 @@
 ---
-title: "Company context"
-description: "Make backd's own emails and hosted pages look like each company's: pass the organization, and an internal function supplies the branding as {{.App}}."
+title: "Organization context"
+description: "Make backd's own emails and hosted pages look like each organization's: pass the organization, and an internal function supplies the branding as {{.App}}."
 icon: "palette"
 weight: 525
 toc: true
+aliases: ["/docs/build/organizations/company-context/"]
 ---
 
-backd's own emails (verification, password reset, magic links, MFA and consent notices, organization invitations) and its [hosted pages](../../functions/email/#links-and-pages) are realm-wide. An app that serves many companies wants them to look like each company's. Two things give them **company context**: the request says which organization the person comes from, and an internal function supplies the data, so backd never reads your collections by configuration.
+backd's own emails (verification, password reset, magic links, MFA and consent notices, organization invitations) and its [hosted pages](../../functions/email/#links-and-pages) are realm-wide. An app that serves many organizations wants them to look like each one's. Two things give them **organization context**: the request says which organization the person comes from, and an internal function supplies the data, so backd never reads your collections by configuration.
 
 ## Say where the person comes from
 
@@ -22,7 +23,7 @@ await backd.auth.requestPasswordReset({ email, org })      // also signIn, login
 ```
 
 - **It is a hint, not a fact.** It is used only when the organization exists and the address belongs to one of its members (or has an invitation by email to it). Anything else is ignored **silently**: the same answer and the same work, so `org` can't be used to find out who works where.
-- **Invitations carry their organization**, with no `org` needed: an organization's invitation email is always that company's.
+- **Invitations carry their organization**, with no `org` needed: an organization's invitation email is always that organization's.
 - **It sticks to the flow.** The organization is stored with the token (as `redirect_to` is), so the page its link opens, the result page and the emails that follow (a welcome, a "password changed") keep it.
 - **From functions:** `ctx.email.send({ kind, to_user, data, org })` takes the same, for the organization the message is about (`400` for one that doesn't exist).
 
@@ -31,9 +32,9 @@ await backd.auth.requestPasswordReset({ email, org })      // also signIn, login
 ```yaml
 # realm.yaml
 email:
-  data_hook: core/company-data     # <database>/<function>: internal, sync
+  data_hook: core/org-data         # <database>/<function>: internal, sync
 pages:
-  data_hook: core/company-data     # may be the same function
+  data_hook: core/org-data         # may be the same function
 ```
 
 Before backd renders a system email or a hosted page it calls the hook with:
@@ -47,8 +48,8 @@ Before backd renders a system email or a hosted page it calls the hook with:
 ```ts
 export default async function (ctx, input) {
   if (!input.org) return {};
-  const company = await ctx.admin.db("main").collection("companies").get(input.org);
-  return { name: company.name, color: company.color, logo: company.logo_url };
+  const profile = await ctx.admin.db("main").collection("org_profiles").get(input.org);
+  return { name: profile.name, color: profile.color, logo: profile.logo_url };
 }
 ```
 
@@ -57,8 +58,8 @@ export default async function (ctx, input) {
 <h1 style="color: {{if .App}}{{.App.color}}{{else}}#222{{end}}">{{if .App}}{{.App.name}}{{else}}{{.Realm}}{{end}}</h1>
 ```
 
-- **Guard with `{{if .App}}`.** `.App` is empty when there is no hook, no company or the hook failed. Startup accepts templates that read it.
-- **Pages call the hook only with a company context.** A page that comes without one (a wrong token, a link made without `org`) is rendered with no `App`, and nothing runs: pages are public. Emails always call it, since email limits already bound them.
+- **Guard with `{{if .App}}`.** `.App` is empty when there is no hook, no organization or the hook failed. Startup accepts templates that read it.
+- **Pages call the hook only with an organization context.** A page that comes without one (a wrong token, a link made without `org`) is rendered with no `App`, and nothing runs: pages are public. Emails always call it, since email limits already bound them.
 - **Bounded, and never in the way.** A hook has **2 seconds** and may answer **16 KiB**. On any failure (an error, a timeout, an answer that is too large or isn't an object, a template that can't use what it gave) the message or page renders **without** `App`, and backd logs it: an email is never delayed or dropped by a hook.
 - **Startup checks** that each hook is an internal function with `mode: sync`.
 - **The delivery function** also receives `org` and `app` in the message's `data`, for one that has templates of its own.

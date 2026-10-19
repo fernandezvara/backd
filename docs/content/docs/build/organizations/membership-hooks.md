@@ -6,7 +6,7 @@ weight: 524
 toc: true
 ---
 
-Apps often need to react when someone joins a company: create a profile, add them to a channel, send a welcome. Polling for new members is slow and misses changes; **membership hooks** call an [internal function](../../functions/internal/) for you, in the background, when it happens.
+Apps often need to react when someone joins an organization: create a profile, add them to a channel, send a welcome. Polling for new members is slow and misses changes; **membership hooks** call an [internal function](../../functions/internal/) for you, in the background, when it happens.
 
 ```yaml
 # realm.yaml
@@ -48,7 +48,7 @@ Make handlers **idempotent** too: a retry runs the same event again.
 
 ## Recipe: onboarding and offboarding
 
-- **`on_member_joined`:** create the person's workspace document (`ctx.admin.db`), subscribe them to the company's channels, and send a welcome with `ctx.email.send`. The event says which roles and teams they arrived with, so a department's checklist can start from the team.
+- **`on_member_joined`:** create the person's workspace document (`ctx.admin.db`), subscribe them to the organization's channels, and send a welcome with `ctx.email.send`. The event says which roles and teams they arrived with, so a department's checklist can start from the team.
 - **`on_roles_changed`:** compare `before.effective_roles` with `after.effective_roles` to grant or revoke the access you mirror elsewhere (a billing seat, a Slack group).
 - **`on_member_left`:** archive what they own. With `reason: "erased"` the user no longer exists: don't try to read them.
 

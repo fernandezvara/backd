@@ -47,7 +47,7 @@ In a collection with [teams](../team-roles/#documents-that-belong-to-a-team) nam
 A function with `admin: true`, in a realm with organizations, has `ctx.admin.orgs`: full access, with the function as the actor in the [audit trail](../../../operate/administration/audit/). It is meant for flows such as "a payment arrived: create the organization and set its plan":
 
 ```ts
-const org = await ctx.admin.orgs.create({ name: input.company, owner: input.user_id });
+const org = await ctx.admin.orgs.create({ name: input.organization, owner: input.user_id });
 await ctx.admin.orgs.setClaims(org.id, { plan: "pro", seats: 10 });
 await ctx.admin.orgs.invitations.create(org.id, { binding: "email", email: input.admin_email, roles: ["admin"], send: true });
 ```

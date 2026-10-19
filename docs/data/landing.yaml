@@ -93,7 +93,7 @@ sections:
 
       - title: Organizations and team access
         icon: "buildings"
-        description: "Groups of users for B2B apps: roles per organization, teams, team roles with time windows and delegation, documents that belong to an organization or a team, membership hooks and company email templates. [Start here](docs/build/organizations/)."
+        description: "Groups of users for B2B apps: roles per organization, teams, team roles with time windows and delegation, documents that belong to an organization or a team, membership hooks and organization email templates. [Start here](docs/build/organizations/)."
 
       - title: Built for operations
         icon: "heartbeat"

@@ -52,5 +52,5 @@ The fixture says what each person is in `orgs`: roles, teams and team roles, as 
 ## Around it
 
 - **Onboarding:** an `on_member_joined` [hook](../membership-hooks/) creates the employee's profile, subscribed to their department.
-- **Emails in the company's name:** with [company context](../company-context/) and [owner templates](../email-templates/), the "absence requested" and "absence decided" emails carry the company's brand, and each company edits its own text.
+- **Emails in the organization's name:** with [organization context](../organization-context/) and [organization templates](../email-templates/), the "absence requested" and "absence decided" emails carry the organization's brand, and each one edits its own text.
 - **The app:** `client.db('main').collection('absences').inOrg(org).inTeam(team).create({...})` in the [JavaScript client](../../clients/js/#organizations); the department's managers come from `client.orgs.teams(org).members(team, { role: 'manager' })`.

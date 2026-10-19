@@ -376,7 +376,7 @@ export interface EmailMessage {
   data?: Record<string, unknown>;
   locale?: string;
   requires_consent?: string;
-  /** The organization the message is about: its company context (the email.data_hook) applies. */
+  /** The organization the message is about: its organization context (the email.data_hook) applies. */
   org?: string;
 }
 
