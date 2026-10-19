@@ -1,6 +1,6 @@
 {
   "name": "backd-js",
-  "version": "0.8.5",
+  "version": "0.9.0",
   "description": "JavaScript client for backd: auth, sessions and data for browsers, Node and edge runtimes.",
   "keywords": [
     "backd",

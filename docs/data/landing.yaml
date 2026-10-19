@@ -7,7 +7,7 @@ sections:
     weight: 10
     template: hero
 
-    badge: "v0.8.5 · live views over realtime streams and functions fired by document triggers"
+    badge: "v0.9.0 · the Dart client for Flutter apps, with generated realm types"
 
     title: "backd"
     subtitle: "A **config-driven** REST backend over MongoDB. Declare realms, databases and collections as files on disk, and get a **schema-validated**, **queryable** document API. Add **server-side functions** for the logic clients can't be trusted with: background jobs, cron schedules and webhooks included."

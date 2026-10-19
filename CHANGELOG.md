@@ -4,6 +4,18 @@ All notable changes to `backd` and to its JavaScript client `backd-js`, which ar
 
 Until a stable release is declared, a minor release may have breaking changes; they are listed first.
 
+## 0.9.0
+
+No breaking changes and nothing to provision: the server only gains `backd types --lang dart` and `?lang=dart` on the admin types endpoint. If you run `PROVISION_MODE=verify`, no `backd provision` run is needed for this release alone.
+
+### Added
+
+- **Dart client:** `package:backd` on pub.dev (`dart pub add backd`), versioned on its own (`dart-v*` tags). Sign-in with the second-factor, magic-link, provider and consent steps, collections and the query language, files with direct uploads and image versions, function jobs, live lists over realtime, push device registration, app configuration, organizations and generated realm types (`BackdClient<ShelfRealm>`). It has **no admin API, by design**: administration stays in the JavaScript client, the admin UI and the CLI. The Flutter Shelf demo (`clients/dart/example`) is the tutorial's app end to end.
+- **Dart types:** `backd types --lang dart` writes a realm's `types.dart` (a `ShelfRealm` accessor and document, input, `where`/`orderBy`, function and configuration classes) next to the TypeScript output, and the admin types endpoint takes `?lang=dart`. `backd openapi` keeps feeding openapi-generator for Kotlin, Swift and the rest; `make openapi-clients` builds all three from the example realms' documents.
+- **Project template:** `backd template project` scaffolds a ready-to-use config repository — a realm with a sample database (a `posts` collection and a `stats` function with tests), a local development stack on the released images, a check-only GitHub workflow and an `AGENTS.md` for AI coding assistants.
+- **JavaScript client 0.9.0:** released on the same version as the server, unchanged from 0.8.5.
+- **Documentation:** reorganized per reader (build, operate, contribute), the [Dart client guide](https://fernandezvara.github.io/backd/docs/build/clients/dart/) and the [development environment](https://fernandezvara.github.io/backd/docs/contribute/) updates.
+
 ## 0.8.5
 
 No breaking changes for existing configuration: realtime and triggers are off until a collection declares them. Declaring either needs `backd provision` in `PROVISION_MODE=verify` (pre-change images, new `jobs` indexes), and realtime needs **MongoDB 6.0 or later as a replica set** and a `MONGO_URI` user with the `changeStream` and `find` actions on every database (for example `readAnyDatabase`); `backd` checks all of it at startup and names what's missing. Writes a trigger run makes are stamped `_meta.chain`, a field a client can't set and a function can't drop.
