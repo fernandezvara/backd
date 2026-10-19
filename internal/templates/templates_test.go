@@ -148,12 +148,11 @@ func TestProject(t *testing.T) {
 		"config/shop/main/_functions/stats/index.test.ts",
 		"config/shop/email/verify-email/en.txt",
 		"config/shop/email/invitation/en.html",
-		"Dockerfile",
-		"Dockerfile.executor",
 		"compose.yaml",
 		".gitignore",
-		".github/workflows/ci.yml",
+		".github/workflows/backd.yml",
 		"README.md",
+		"AGENTS.md",
 	}
 	got := map[string]bool{}
 	for _, f := range files {
@@ -176,15 +175,17 @@ func TestProject(t *testing.T) {
 	if _, err := registry.Load(filepath.Join(dir, "config")); err != nil {
 		t.Fatalf("generated config doesn't load: %v", err)
 	}
-	readme, err := os.ReadFile(filepath.Join(dir, "README.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(readme), "__REALM__") || strings.Contains(string(readme), "__DATABASE__") {
-		t.Errorf("README.md still has unreplaced placeholders:\n%s", readme)
-	}
-	if !strings.Contains(string(readme), "shop") || !strings.Contains(string(readme), "main") {
-		t.Errorf("README.md doesn't name the realm/database:\n%s", readme)
+	for _, name := range []string{"README.md", "AGENTS.md"} {
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(data), "__REALM__") || strings.Contains(string(data), "__DATABASE__") {
+			t.Errorf("%s still has unreplaced placeholders:\n%s", name, data)
+		}
+		if !strings.Contains(string(data), "shop") || !strings.Contains(string(data), "main") {
+			t.Errorf("%s doesn't name the realm/database:\n%s", name, data)
+		}
 	}
 
 	// Refuses a non-empty target, and an invalid realm name.

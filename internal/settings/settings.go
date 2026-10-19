@@ -106,6 +106,10 @@ type Settings struct {
 	// isn't localhost, for a container whose ports are published on the
 	// host's localhost only.
 	DevAnyAddr bool
+	// DevLinks is BACKD_DEV_LINKS: extra links the dev landing page at /
+	// shows, "Label=URL;Label=URL" — the local tools next to the API,
+	// like a MinIO console. Dev mode only.
+	DevLinks string
 	// Deno is the deno binary dev mode bundles with; "" means "deno" on
 	// the PATH (BACKD_DEV only; `functions build` reads DENO itself).
 	Deno string
@@ -308,6 +312,7 @@ func Load(getenv func(string) string) (Settings, error) {
 	default:
 		errs = append(errs, fmt.Errorf("BACKD_DEV_ANY_ADDR must be true or false, got %q", v))
 	}
+	s.DevLinks = getenv("BACKD_DEV_LINKS")
 	s.Deno = getenv("DENO")
 
 	s.ExecutorURL = getenv("BACKD_EXECUTOR_URL")

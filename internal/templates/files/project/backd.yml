@@ -1,0 +1,31 @@
+# Checks the config on every push — nothing is built or published. It
+# runs inside the released backd-executor image (the one with Deno, same
+# as compose.yaml), so what CI checks is what you run. It is named
+# backd.yml on purpose: ci.yml is yours to use for your own pipeline.
+name: Backd config check
+on:
+  push:
+    branches: ["**"]
+env:
+  CONFIG_DIR: ./config
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    # The released image, like compose.yaml's. Pin to a tag
+    # (e.g. :v1.2.3) to check with a fixed backd version. --user root:
+    # the image's user can't write .build/ into the mounted checkout.
+    container:
+      image: ghcr.io/fernandezvara/backd-executor:latest
+      options: --user root
+    steps:
+      - uses: actions/checkout@v4
+      # Each function's own logic (the image ships Deno).
+      - name: Test each function's own logic (deno test)
+        run: deno test config/*/*/_functions/
+      # backd refuses stale or missing bundles — build before checking.
+      - name: Bundle the functions
+        run: backd functions build
+      - name: Check the config
+        run: backd config check
+      - name: Test the access rules (no database needed)
+        run: backd rules test

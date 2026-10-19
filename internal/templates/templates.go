@@ -137,10 +137,10 @@ const projectDatabase = sampleDatabase
 
 // Project creates a new, self-contained config repository at dir (which
 // must not already exist): a realm with the sample database and
-// collection, a sample function with tests, the Dockerfiles and compose
-// stack (MongoDB, backd, the executor and egress) for local development,
-// and the CI workflow from the docs' "Deploying config" guide — so
-// "develop locally → CI → promote a tag" works from the first commit.
+// collection, a sample function with tests, a compose stack on the
+// released images (MongoDB, backd in dev mode, the executor, egress and
+// MinIO) for local development, the check-only backd.yml workflow, an
+// AGENTS.md for IDE assistants, and a README.
 func Project(dir, realm string) ([]File, error) {
 	if !registry.ValidName(realm) {
 		return nil, fmt.Errorf("invalid realm name %q: must be lowercase letters and digits, optionally separated by single '-' or '_'", realm)
@@ -188,11 +188,9 @@ func Project(dir, realm string) ([]File, error) {
 	}
 
 	for _, f := range [][2]string{
-		{"Dockerfile", "files/project/Dockerfile"},
-		{"Dockerfile.executor", "files/project/Dockerfile.executor"},
 		{"compose.yaml", "files/project/compose.yaml"},
 		{".gitignore", "files/project/gitignore"},
-		{".github/workflows/ci.yml", "files/project/ci.yml"},
+		{".github/workflows/backd.yml", "files/project/backd.yml"},
 	} {
 		written, err := write(dir, f[0], f[1])
 		out = append(out, written...)
@@ -201,14 +199,19 @@ func Project(dir, realm string) ([]File, error) {
 		}
 	}
 
-	readme, err := files.ReadFile("files/project/README.md")
-	if err != nil {
-		return out, err
-	}
 	r := strings.NewReplacer("__REALM__", realm, "__DATABASE__", projectDatabase)
-	written, err := writeBytes(dir, "README.md", []byte(r.Replace(string(readme))))
-	out = append(out, written...)
-	return out, err
+	for _, name := range []string{"README.md", "AGENTS.md"} {
+		data, err := files.ReadFile("files/project/" + name)
+		if err != nil {
+			return out, err
+		}
+		written, err := writeBytes(dir, name, []byte(r.Replace(string(data))))
+		out = append(out, written...)
+		if err != nil {
+			return out, err
+		}
+	}
+	return out, nil
 }
 
 // Function creates the function <name> in <realm>/<database>/_functions,

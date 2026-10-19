@@ -107,10 +107,10 @@ func TestRunTemplateProject(t *testing.T) {
 		"created   config/shop/realm.yaml",
 		"created   config/shop/main/posts/schema.json",
 		"created   config/shop/main/_functions/stats/index.ts",
-		"created   Dockerfile",
 		"created   compose.yaml",
-		"created   .github/workflows/ci.yml",
+		"created   .github/workflows/backd.yml",
 		"created   README.md",
+		"created   AGENTS.md",
 		"next: cd " + dir,
 	} {
 		if code != 0 || !strings.Contains(out, want) {

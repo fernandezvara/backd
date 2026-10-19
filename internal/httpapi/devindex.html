@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>backd — dev</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, sans-serif; max-width: 52rem; margin: 3rem auto; padding: 0 1.25rem; line-height: 1.5; }
+  h1 { font-size: 1.4rem; }
+  .badge { font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
+           background: #d97706; color: #fff; padding: .15em .5em; border-radius: .25em; vertical-align: middle; }
+  table { border-collapse: collapse; width: 100%; margin: .75rem 0 1.5rem; }
+  th, td { text-align: left; padding: .4rem .75rem .4rem 0; border-bottom: 1px solid #8884; }
+  th { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; opacity: .7; }
+  td.num, th.num { text-align: right; padding-right: 1.5rem; }
+  .realm { font-weight: 600; }
+  .links a { margin-right: 1rem; }
+  code { background: #8882; padding: .1em .35em; border-radius: .25em; font-size: .85em; }
+  .warn { border: 1px solid #d97706; background: #d9770618; padding: .75rem 1rem; border-radius: .375rem; }
+  .warn pre { margin: .5rem 0 0; white-space: pre-wrap; }
+  footer { margin-top: 2.5rem; font-size: .85rem; opacity: .75; }
+</style>
+</head>
+<body>
+<h1>backd <span class="badge">dev</span></h1>
+<p>Development mode: the configuration reloads automatically when its files change. This page exists only while <code>BACKD_DEV=true</code>.</p>
+
+{{if .ReloadErrs}}
+<div class="warn"><strong>The last config reload failed — the previous config keeps running:</strong>{{range .ReloadErrs}}<pre>{{.}}</pre>{{end}}</div>
+{{end}}
+
+<h2>Realms</h2>
+<table>
+  <tr><th>Realm / database</th><th class="num">Collections</th><th class="num">Functions</th><th></th></tr>
+  {{range .Realms}}
+  <tr><td class="realm">{{.Name}}</td><td></td><td></td>
+      <td class="links">{{if $.UI}}<a href="/_ui/r/{{.Name}}">admin ui</a>{{end}}<a href="/v1/{{.Name}}/_openapi.json">openapi</a></td></tr>
+  {{range .Databases}}
+  <tr><td style="padding-left:1.5rem">{{.Name}}</td><td class="num">{{.Collections}}</td><td class="num">{{.Functions}}</td><td></td></tr>
+  {{end}}
+  {{end}}
+</table>
+
+<h2>Status</h2>
+<p class="links"><a href="/healthz">/healthz</a><a href="/readyz">/readyz</a>
+{{if .Fingerprint}} &nbsp;config <code>{{.Fingerprint}}</code>{{end}}</p>
+
+<h2>Links</h2>
+<p class="links"><a href="{{.DocsURL}}">Documentation</a>{{if .UI}}<a href="/_ui/">Admin UI</a>{{end}}{{range .Links}}<a href="{{.URL}}">{{.Label}}</a>{{end}}</p>
+
+<footer>backd development mode — never enable in production.</footer>
+</body>
+</html>
