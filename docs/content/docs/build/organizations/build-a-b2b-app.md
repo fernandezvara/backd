@@ -19,7 +19,7 @@ auth: enabled
 
 organizations:
   roles:
-    owner:  { description: Runs the company, manage: [org, members, roles, teams] }
+    owner:  { description: Runs the organization, manage: [org, members, roles, teams] }
     admin:  { description: Invites and removes people, manage: [members, teams] }
     editor: { description: Creates and edits projects }
     member: { description: Reads }

@@ -59,10 +59,10 @@ No breaking changes. New system collections: `PROVISION_MODE=verify` instances n
 
 - **Organizations:** groups of users per realm, with roles, memberships, invitations (by user, address or open link), teams, a second factor required per organization, and deletion with a report and a resumable cleanup. Documents belong to an organization (`_meta.org`) and rules ask about it with helpers that are pushed down to the query; a realm administrator can move documents between organizations.
 - **Team access:** team roles with time windows and delegation, a second factor required per role, documents that belong to a team (`_meta.team`, `?team=`, `on_team_delete`), and membership hooks (`on_member_joined`, `on_member_left`, `on_roles_changed`) with a sequence per organization and user.
-- **Company context:** the optional `org` on sign-up, login, magic links and reset, `email.data_hook` and `pages.data_hook`, and company versions of the realm's emails (logic-less templates, sanitized HTML, preview and test send, versions).
+- **Organization context:** the optional `org` on sign-up, login, magic links and reset, `email.data_hook` and `pages.data_hook`, and organization versions of the realm's emails (logic-less templates, sanitized HTML, preview and test send, versions).
 - **Surfaces:** functions (`ctx.orgs`, team roles), the admin API and UI (organizations, members, teams, team roles), the `backd data transfer --team` command, and `backd rules test` fixtures with `orgs:`.
-- **Documentation:** the Organizations section (concepts, a B2B app recipe, rules cookbook, team roles and recipes, an HR absences example, hooks, company context, email templates).
-- **JavaScript client 0.8.3:** organizations, teams, team roles, invitations, company email templates and `OrgRoleRequiresMFAError`.
+- **Documentation:** the Organizations section (concepts, a B2B app recipe, rules cookbook, team roles and recipes, an HR absences example, hooks, organization context, email templates).
+- **JavaScript client 0.8.3:** organizations, teams, team roles, invitations, organization email templates and `OrgRoleRequiresMFAError`.
 
 ### Changed
 

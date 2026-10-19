@@ -8,7 +8,9 @@ toc: true
 
 A B2B app needs "administrator of **this** customer, and only of this one". Realm roles are realm-wide, and a list of member ids on each document doesn't say who belongs to a customer or what they may do there. **Organizations** are backd's answer: groups of users, owned by backd like users are, that documents can belong to and that rules can ask about.
 
-This page explains the pieces. The rest of the section puts them to work: [build a B2B app](build-a-b2b-app/), [rules cookbook](rules-cookbook/) and [what happens when…](what-happens-when/). For departments and delegation there is a second layer, [team roles](team-roles/), with [recipes](team-access-recipes/) and a [worked example](hr-absences/); [membership hooks](membership-hooks/), [company context](company-context/) and [company email templates](email-templates/) complete it. The endpoints are in the [organizations API](api/) and the settings in [`realm.yaml`](../configuration/realm/#organizations) and [`collection.yaml`](../configuration/config-dir/#organizations).
+An organization is whatever a group of users is in your app: a company in a B2B product, a workspace, a club, a project — like GitHub's organizations, which aren't companies but any group of people with something in common. The docs and the API say **organization** everywhere the feature is meant; where an example says *company*, it means an organization that happens to be one.
+
+This page explains the pieces. The rest of the section puts them to work: [build a B2B app](build-a-b2b-app/), [rules cookbook](rules-cookbook/) and [what happens when…](what-happens-when/). For departments and delegation there is a second layer, [team roles](team-roles/), with [recipes](team-access-recipes/) and a [worked example](hr-absences/); [membership hooks](membership-hooks/), [organization context](organization-context/) and [organization email templates](email-templates/) complete it. The endpoints are in the [organizations API](api/) and the settings in [`realm.yaml`](../configuration/realm/#organizations) and [`collection.yaml`](../configuration/config-dir/#organizations).
 
 ## The model
 

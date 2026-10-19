@@ -125,7 +125,7 @@ paths:
                 locale: { type: string, description: "The language to use for the user, such as `es` or `es-MX`; mapped silently to one the realm lists." }
                 redirect_to: { type: string, description: "Where the page after the verification link may send the user: an absolute URL within the realm's `email.allowed_redirects` (`400 invalid_redirect` otherwise)." }
                 cookie: { type: boolean, description: "Keep the session in an HttpOnly cookie, as for login." }
-                org: { type: string, description: "The company the person comes from, an organization id. It is used only when the address belongs to one of its members (or has an invitation by email to it): the emails of the flow, and the pages of their links, then carry its context (`email.data_hook`, `pages.data_hook`). Anything else is ignored, with the same answer and work." }
+                org: { type: string, description: "The organization the person comes from, an organization id. It is used only when the address belongs to one of its members (or has an invitation by email to it): the emails of the flow, and the pages of their links, then carry its context (`email.data_hook`, `pages.data_hook`). Anything else is ignored, with the same answer and work." }
                 consents: { $ref: "#/components/schemas/ConsentsGiven" }
       responses:
         "201": { $ref: "#/components/responses/SessionCreated" }
@@ -177,7 +177,7 @@ paths:
               properties:
                 email: { type: string }
                 password: { type: string }
-                org: { type: string, description: "The company the person comes from, an organization id. It is used only when the address belongs to one of its members (or has an invitation by email to it): the emails of the flow, and the pages of their links, then carry its context (`email.data_hook`, `pages.data_hook`). Anything else is ignored, with the same answer and work." }
+                org: { type: string, description: "The organization the person comes from, an organization id. It is used only when the address belongs to one of its members (or has an invitation by email to it): the emails of the flow, and the pages of their links, then carry its context (`email.data_hook`, `pages.data_hook`). Anything else is ignored, with the same answer and work." }
                 cookie:
                   type: boolean
                   description: >-
@@ -331,7 +331,7 @@ paths:
               properties:
                 email: { type: string }
                 redirect_to: { type: string, description: "Where the page after the reset may send the user: within the realm's `email.allowed_redirects`." }
-                org: { type: string, description: "The company the person comes from, an organization id. It is used only when the address belongs to one of its members (or has an invitation by email to it): the emails of the flow, and the pages of their links, then carry its context (`email.data_hook`, `pages.data_hook`). Anything else is ignored, with the same answer and work." }
+                org: { type: string, description: "The organization the person comes from, an organization id. It is used only when the address belongs to one of its members (or has an invitation by email to it): the emails of the flow, and the pages of their links, then carry its context (`email.data_hook`, `pages.data_hook`). Anything else is ignored, with the same answer and work." }
       responses:
         "202":
           description: Accepted.
@@ -2587,7 +2587,7 @@ paths:
                 code_challenge: { type: string, minLength: 43, maxLength: 43, description: "The S256 PKCE challenge of a verifier only the app holds." }
                 redirect_to: { type: string }
                 locale: { type: string }
-                org: { type: string, description: "The company the person comes from, an organization id. It is used only when the address belongs to one of its members (or has an invitation by email to it): the emails of the flow, and the pages of their links, then carry its context (`email.data_hook`, `pages.data_hook`). Anything else is ignored, with the same answer and work." }
+                org: { type: string, description: "The organization the person comes from, an organization id. It is used only when the address belongs to one of its members (or has an invitation by email to it): the emails of the flow, and the pages of their links, then carry its context (`email.data_hook`, `pages.data_hook`). Anything else is ignored, with the same answer and work." }
                 consents: { $ref: "#/components/schemas/ConsentsGiven" }
           application/x-www-form-urlencoded:
             schema:

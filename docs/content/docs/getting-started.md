@@ -10,12 +10,39 @@ toc: true
 
 Core concepts:
 
+```mermaid
+flowchart LR
+    subgraph realm["realm — where you manage the data's security (realm.yaml)"]
+        direction LR
+        subgraph model["data model"]
+            direction LR
+            db["database<br/>MongoDB {realm}__{database}"]
+            col["collection<br/>MongoDB collection"]
+            doc["document<br/>JSON + _meta.id · _meta.owner · _meta.org"]
+            db --> col --> doc
+        end
+        subgraph features["features"]
+            direction TB
+            auth["users · sessions · API keys · organizations<br/>one sign-in for the whole realm"]
+            guards["schema.json validates · indexes.json · collection.yaml rules"]
+            fn["functions — JS/TS<br/>sync · jobs · cron · webhooks · triggers"]
+            notif["email & push<br/>realm templates, delivery functions"]
+            rt["realtime<br/>the changes a caller may read, streamed"]
+        end
+        guards -.guards.-> col
+        rt -.streams.-> doc
+        fn -.sends.-> notif
+    end
 ```
-realm            realm.yaml settings; shared user pool with single sign-on
- └─ database     one application's data  → MongoDB database <realm>__<database>
-     └─ collection   documents validated by schema.json → one MongoDB collection
-         └─ document  JSON object with server-owned id and _meta
-```
+
+- **A realm is where you manage the data's security** — the authority everything inside shares. Users, sessions, API keys, organizations, email templates and secrets belong to one realm, so a realm can be a whole application, or a group of applications that share the same users and get single sign-on across their databases, or a part of an app you want apart by design (a public area next to a private one). Nothing crosses the boundary: the users of one realm never sign in to another, so one `backd` instance can safely serve several unrelated realms. `realm.yaml` holds the realm's settings.
+- **A database groups a realm's collections.** Split them however it helps: `main` for the app's data, another for notifications or logs. It is stored as the MongoDB database `<realm>__<database>`, so anything that speaks MongoDB sees the data laid out plainly.
+- **A collection holds documents of one shape.** Its `schema.json` validates every write, `indexes.json` declares the indexes and `collection.yaml` says who may read, write or delete. It is stored as one MongoDB collection.
+- **A document is a JSON object** in a collection: your fields, plus a server-owned `_meta.id` and `_meta` carrying timestamps, the owner, and the organization and team when they apply.
+- **Users, sessions, API keys and organizations belong to the realm:** one sign-in reaches every database in it, with brute-force protection, invitations, a second factor and consents.
+- **Functions are JS/TS in isolated Deno processes** — sync calls, background jobs, cron, webhooks and triggers — for the logic clients can't be trusted with.
+- **Email and push** use the realm's templates and send through delivery functions you write.
+- **Realtime streams** each caller the changes their rules let them read.
 
 {{< hint warning >}}
 Realms with `auth: disabled` are open to anyone who can reach `backd`: never expose them to the internet. Before exposing any realm, go through the [hardening checklist](../operate/checklist/).
