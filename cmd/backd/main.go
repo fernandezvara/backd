@@ -600,12 +600,27 @@ func (a *app) handlerConfig() httpapi.Config {
 		TrustedProxies:    a.cfg.TrustedProxies,
 		ConfigFingerprint: a.fingerprint,
 		Dev:               a.cfg.Dev,
+		DevLinks:          devLinks(a.cfg.DevLinks),
 		ReloadErrors:      a.reloadErrors,
 		DisableAdminAPI:   a.cfg.DisableAdminAPI,
 		UI:                ui,
 		Metrics:           a.metrics,
 		PushSenders:       pushsend.Senders(pushsend.Config{Proxy: a.cfg.EgressProxy, EgressKey: []byte(a.cfg.EgressKey)}),
 	}
+}
+
+// devLinks parses BACKD_DEV_LINKS ("Label=URL;Label=URL") into the links the
+// dev landing page shows. Entries without '=' are skipped.
+func devLinks(spec string) []httpapi.DevLink {
+	var links []httpapi.DevLink
+	for _, entry := range strings.Split(spec, ";") {
+		label, url, ok := strings.Cut(strings.TrimSpace(entry), "=")
+		if !ok || label == "" || url == "" {
+			continue
+		}
+		links = append(links, httpapi.DevLink{Label: label, URL: url})
+	}
+	return links
 }
 
 func (a *app) executor() *executor.Client {

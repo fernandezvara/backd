@@ -61,7 +61,7 @@ func newCLI(getenv func(string) string, stdin io.Reader, stdout, stderr io.Write
 			required(cc, "collection", "the collection to add the file to")
 		})
 	tpl.SubCommand("project").ShortHelp("create a complete config repository").
-		LongHelp("Creates a complete config repository at --dir (which must not exist yet): the\nrealm and sample database, a sample function with tests, Dockerfiles and a\ncompose stack for local development, and a GitHub Actions CI workflow.\nSee the generated README.md.").
+		LongHelp("Creates a complete config repository at --dir (which must not exist yet): the\nrealm and sample database, a sample function with tests, a compose stack on the\nreleased images for local development (nothing is built), the check-only\nBackd config check workflow, an AGENTS.md and a README.\nSee the generated README.md.").
 		Func(act("template project", templateProject)).
 		Config(func(cc *kli.CommandConfig) {
 			required(cc, "dir", "the directory to create")

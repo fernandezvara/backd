@@ -92,6 +92,9 @@ type Config struct {
 	// Dev rereads function bundle manifests on every call instead of once
 	// (BACKD_DEV), so a background rebuild is served without a restart.
 	Dev bool
+	// DevLinks are extra links the dev landing page at / shows (from
+	// BACKD_DEV_LINKS), for the local tools next to the API.
+	DevLinks []DevLink
 	// DisableAdminAPI leaves every /v1/{realm}/_admin route out: they answer
 	// 404 like any route that doesn't exist (BACKD_ADMIN_API=false).
 	DisableAdminAPI bool
@@ -182,6 +185,9 @@ func NewHandler(cfg Config) http.Handler {
 		spec.protected = noStore(authRoutes.resolveRealm(withTimeout(opTimeout)(admin.requireAdmin(admin.need(registry.RightConfig)(http.HandlerFunc(spec.serve))))))
 	}
 	spec.route(r)
+	if cfg.Dev {
+		r.Get("/", devIndex(cfg))
+	}
 	if cfg.UI != nil {
 		r.Handle("/_ui", http.RedirectHandler("/_ui/", http.StatusMovedPermanently))
 		r.Handle("/_ui/*", cfg.UI)

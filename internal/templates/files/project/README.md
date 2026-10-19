@@ -1,6 +1,6 @@
 # __REALM__
 
-A [backd](https://github.com/fernandezvara/backd) config repository: `config/` is `CONFIG_DIR`, everything else builds, tests and deploys it. Created by `backd template project`.
+A [backd](https://github.com/fernandezvara/backd) config repository: `config/` is `CONFIG_DIR`, everything else runs or checks it. Created by `backd template project`. `AGENTS.md` explains the layout and rules to AI coding assistants working in this repo.
 
 ## Layout
 
@@ -16,46 +16,45 @@ config/__REALM__/
         function.yaml
         index.ts
         index.test.ts
-Dockerfile                     the artifact this project deploys: backd + config
-Dockerfile.executor            the functions executor's image
-compose.yaml                   MongoDB, backd, the executor and egress, for local dev
-.github/workflows/ci.yml       build, check, package on every push and tag
+compose.yaml                   MongoDB, backd, the executor, egress and MinIO — released images, local dev
+.github/workflows/backd.yml    "Backd config check": deno test + build + config check + rules test
+.gitignore                     generated function artifacts (.build/, .backd/) stay out of git
+AGENTS.md                      repo guide for AI coding assistants
 ```
 
 ## Develop locally
 
-1. Set the three secrets `compose.yaml` needs (once):
+1. Create a `.env` file next to `compose.yaml` with the three secrets it needs — once; compose reads `.env` automatically on every run, so it survives new terminals and sessions (`.env` is gitignored):
 
    ```sh
-   export EXECUTOR_TOKEN=$(openssl rand -base64 32)
-   export CALLBACK_KEY=$(openssl rand -base64 32)
-   export EGRESS_KEY=$(openssl rand -base64 32)
+cat > .env <<EOF
+EXECUTOR_TOKEN=$(openssl rand -base64 32)
+CALLBACK_KEY=$(openssl rand -base64 32)
+EGRESS_KEY=$(openssl rand -base64 32)
+EOF
    ```
 
-2. After changing a function's code, bundle it — `backd` refuses stale bundles:
+   The three are required: if one is missing, `docker compose` stops before starting anything and names it.
+
+   On Docker (a rootful daemon, e.g. Docker Desktop) also add `DEV_UID=$(id -u)` and `DEV_GID=$(id -g)` to `.env`, so files backd generates into `config/` belong to you; on rootless podman the default already maps to your user.
+
+2. Bring the stack up — nothing is built, all images are pulled releases:
 
    ```sh
-   CONFIG_DIR=./config backd functions build
-   # without Deno or backd installed locally:
-   docker run --rm -v "$PWD/config:/config" -v "$PWD/backd:/usr/local/bin/backd:ro" \
-     -e CONFIG_DIR=/config docker.io/denoland/deno:alpine-2.9.7 backd functions build
+   docker compose up
    ```
 
-3. Bring the stack up:
+   backd listens on <http://127.0.0.1:8080> with `BACKD_DEV=true`: it follows `config/` live — save a change to a schema, `collection.yaml` or `realm.yaml` and it reloads in a moment; save a function and it's bundled again automatically (the `functions-build` one-shot only matters at `up`, since backd refuses missing bundles). It also runs the worker role (`serve --with-worker`), so async jobs and cron schedules work here.
+
+   <http://127.0.0.1:8080/> itself is a small landing page, only while `BACKD_DEV=true`: the realms and databases currently loaded, links into the admin UI and each realm's OpenAPI, `/healthz`/`/readyz` and the docs — plus whatever `BACKD_DEV_LINKS` adds (MinIO console by default).
+
+3. Create the first administrator, once the realm is provisioned:
 
    ```sh
-   docker compose up --build
+   docker compose exec backd /usr/local/bin/backd bootstrap --realm __REALM__ --email ops@example.com
    ```
 
-   `backd` listens on <http://127.0.0.1:8080>, and also runs the worker role (`serve --with-worker`), so async jobs and cron schedules work here. After changing `realm.yaml`, a schema or the rules in `collection.yaml`, repeat with `docker compose up -d --build backd`. To skip the rebuild-per-change loop for function code specifically, run `backd` locally (not in the stack) with `BACKD_DEV=true` — see the [functions docs](https://fernandezvara.github.io/backd/docs/build/functions/testing/#dev-mode).
-
-4. Create the first administrator, once the realm is provisioned:
-
-   ```sh
-   docker compose exec backd /backd bootstrap --realm __REALM__ --email ops@example.com
-   ```
-
-5. Test a function's own logic without any of the above — no MongoDB, no running backd:
+4. Test a function's own logic without any of the above — no MongoDB, no running backd:
 
    ```sh
    deno test config/__REALM__/__DATABASE__/_functions/
@@ -63,25 +62,29 @@ compose.yaml                   MongoDB, backd, the executor and egress, for loca
 
    `_functions/lib/testing.js` is a fake `ctx` (vendored from `@backd/functions-testing`, not yet published): `ctx.db` is an in-memory store shaped like the JS client. See `stats/index.test.ts` for the pattern, and its header comment for what it does and doesn't cover.
 
-6. Call the sample function directly:
+5. Call the sample function directly:
 
    ```sh
    backd functions invoke --function __REALM__/__DATABASE__/stats --url http://127.0.0.1:8080
    ```
 
-## CI: build, check, package
+## MinIO
 
-`.github/workflows/ci.yml` runs on every push: `deno test`s each function, bundles them, checks the config (`backd config check`), and publishes an image named after the commit to `ghcr.io`. Set `IMAGE` in the workflow to your own `ghcr.io/<org>/<repo>` first.
+The stack includes an S3-compatible store for realms' `storage:` (see the commented `storage:` block in `config/__REALM__/realm.yaml`). Dev-only defaults, overridable in `compose.yaml` or via env:
 
-## Promoting and rolling back
+| Variable | Default | What it is |
+|---|---|---|
+| `MINIO_ROOT_USER` | `backd-dev` | MinIO admin user |
+| `MINIO_ROOT_PASSWORD` | `dev-p4ssw0rd!` | MinIO admin password |
 
-1. **Tag** a commit (`v12`). CI publishes that commit's image under the tag — nothing is rebuilt.
-2. **Staging:** run `backd provision` with the tagged image and an admin `MONGO_URI`, then roll out instances with `PROVISION_MODE=verify`.
-3. **Production:** the same two steps with the same image.
-4. **Rollback:** deploy the previous tag the same way — provision, then roll out.
+- Console: <http://127.0.0.1:9001> (sign in with the values above; create your bucket there)
+- S3 API: <http://127.0.0.1:9000> from your browser (presigned URLs), `http://minio:9000` from backd
+- Point a realm's `storage:` at it with `provider: minio`, `endpoint: http://minio:9000`, `public_endpoint: http://localhost:9000`, `download: presigned`, and `access_key`/`secret_key` as `secret:` references (`backd secret set`).
 
-`backd` refuses to start in `verify` mode against a config that wasn't provisioned, or that differs from what was: see [Deploying config](https://fernandezvara.github.io/backd/docs/operate/deploying/) for the full mechanism (`backd config fingerprint`, `/readyz`, what backd checks).
+## CI
+
+`.github/workflows/backd.yml` — **Backd config check** — runs on every push inside the released `backd-executor` image (pin a tag in the file to fix the version): `deno test` each function, `backd functions build` + `backd config check`, `backd rules test`. It builds and publishes nothing. It's deliberately named `backd.yml`, not `ci.yml`: that name stays free for your own pipeline.
 
 ## Before production
 
-This local stack skips several things the [hardening checklist](https://fernandezvara.github.io/backd/docs/operate/checklist/) covers for a real deployment: TLS, `admin.allowed_networks`, secrets management (`BACKD_SECRETS_KEY`, backed up separately from the database), rate limiting in front of `/v1/`, and monitoring. Read it before this goes anywhere but your machine. The [production reference](https://github.com/fernandezvara/backd/tree/main/deploy/production) is a complete, tested starting point.
+This local stack skips several things the [hardening checklist](https://fernandezvara.github.io/backd/docs/operate/checklist/) covers for a real deployment: TLS, `admin.allowed_networks`, real secrets management (`BACKD_SECRETS_KEY`, backed up separately from the database), rate limiting in front of `/v1/`, and monitoring. Read it before this goes anywhere but your machine. [Deploying config](https://fernandezvara.github.io/backd/docs/operate/deploying/) explains how a config image is packaged and promoted, and the [production reference](https://github.com/fernandezvara/backd/tree/main/deploy/production) is a complete, tested starting point.

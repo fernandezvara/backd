@@ -253,7 +253,7 @@ v0.5.0 adds [cursor pagination](../build/api/querying/), [API key scopes](../bui
 6. **The admin user list is cut by MongoDB now** (`GET /_admin/users` returns `next_cursor`, with `after` to continue; `skip` still works). The command line and the JavaScript client already follow it; a script that read the whole list in one call must follow `next_cursor` for realms with more users than one page.
 7. **Two limits are stricter, one is new.** The login throttle now serializes the password checks of an account across instances, and answers `429` with `Retry-After: 1` if it waits more than 5 seconds for the lock. `sessions.admin_idle_timeout` and `sessions.admin_max_lifetime` (unset: nothing changes) shorten the sessions of users who hold an admin role. See the [hardening checklist](checklist/).
 8. **The JavaScript client is 0.4.0** (`npm install backd-js@latest`): `after` and `iterate` follow cursors, `cookies: true`, `scopes` when creating keys, and `idempotencyKey` on `create` and `batch` (keyed requests are retried by the client). It is versioned apart from the server, and works with a v0.4.0 server for everything that existed before.
-9. **If you copied the template CI** (`backd template project`), add a step `backd rules test` (with `CONFIG_DIR: ./config`) after `backd config check`, as the template now does: it checks your access rules against the cases in each `rules.test.yaml`, with no database.
+9. **If you copied the template workflow** (`backd template project` → `.github/workflows/backd.yml`), add a step `backd rules test` (with `CONFIG_DIR: ./config`) after `backd config check`, as the template now does: it checks your access rules against the cases in each `rules.test.yaml`, with no database.
 
 ### Upgrading to v0.4.0
 

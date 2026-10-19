@@ -17,7 +17,7 @@ So the config is treated like code:
 
 ## The config repository
 
-`backd template project --dir <directory> --realm <realm>` scaffolds this layout in one step — a sample database and function with tests, both Dockerfiles, `compose.yaml` and the CI workflow below — so you don't have to assemble it by hand; see [Starting from a template](../../build/configuration/config-dir/#starting-from-a-template).
+`backd template project --dir <directory> --realm <realm>` scaffolds the repo in one step — the sample database and function, a `compose.yaml` development stack on the released images and a check-only `backd.yml` workflow — so you don't have to assemble it by hand; see [Starting from a template](../../build/configuration/config-dir/#starting-from-a-template). Deploying adds two files of your own: the `Dockerfile` and a packaging workflow, like the ones below.
 
 ```
 my-backd-config/
@@ -27,9 +27,10 @@ my-backd-config/
       orders/
         items/schema.json …
         _functions/          functions, with deno.json, deno.lock, lib/
-  Dockerfile                 the artifact: backd + config
-  compose.yaml               a local stack to develop against
-  .github/workflows/ci.yml   build, check, package
+  compose.yaml               a local stack to develop against (from the template)
+  .github/workflows/backd.yml  checks the config on every push (from the template)
+  Dockerfile                 the artifact: backd + config (yours to add)
+  .github/workflows/ci.yml   build, check, package on tag (yours to add)
 ```
 
 The `Dockerfile` starts from a released `backd` image and adds the config. `backd config check` runs during the image build, so an invalid config never becomes an image:
@@ -59,7 +60,7 @@ cosign verify ghcr.io/fernandezvara/backd:v0.8.5 \
 
 ## Developing locally
 
-Run MongoDB (a single-node [replica set](../#mongodb)) and `backd` on your config, with `PROVISION_MODE=apply` so every restart applies your changes:
+The template's `compose.yaml` already gives you this out of the box — released images and dev mode, no builds. The equivalent minimal stack, if you write your own, is MongoDB (a single-node [replica set](../#mongodb)) and `backd` on your config, with `PROVISION_MODE=apply` so every restart applies your changes:
 
 ```yaml
 # compose.yaml
@@ -72,8 +73,9 @@ services:
       interval: 2s
       retries: 30
   backd:
-    build: .
+    image: ghcr.io/fernandezvara/backd:latest
     command: ["serve"]
+    volumes: ["./config:/config:ro"]
     ports: ["127.0.0.1:8080:8080"]
     environment:
       MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
