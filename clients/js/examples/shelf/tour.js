@@ -810,6 +810,43 @@ heading('Live pins (ch24)')
   check('signing out ends the stream (session_ended)', await until(() => ended !== null) && /** @type {any} */ (ended).code === 'session_ended', String(ended))
 }
 
+heading('Live gallery (ch24)')
+{
+  const STAMP = Date.now().toString(36)
+  const tag = `live-${STAMP}`
+  const until = async (/** @type {() => boolean} */ cond, /** @type {number} */ ms = 15000) => {
+    for (const end = Date.now() + ms; Date.now() < end; ) {
+      if (cond()) return true
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    return false
+  }
+  const mineAssets = main(member).collection('assets')
+  // What the app follows: the published assets, here narrowed to this run's tag.
+  const live = mineAssets.subscribe({ where: { published_at: { $ne: null }, tags: tag }, load: { sort: '-published_at', limit: 50 } })
+  const state = await live.ready
+  check('the gallery loads, then follows (status live)', state.status === 'live' && state.items.length === 0, state.status)
+  const shown = await mineAssets.create({ title: `Live ${STAMP}`, kind: 'note', tags: [tag] })
+  const other = await mineAssets.create({ title: `Elsewhere ${STAMP}`, kind: 'note', tags: [`${tag}-other`] })
+  const draftOnly = await mineAssets.create({ title: `Still a draft ${STAMP}`, kind: 'note', tags: [tag] })
+  await new Promise((r) => setTimeout(r, 500))
+  check('a draft is not in the gallery', !live.items.some((a) => a.id === draftOnly.id))
+  await main(curator).fn('publish', { asset_id: shown.id }, { idempotencyKey: `publish-${shown.id}` })
+  await main(curator).fn('publish', { asset_id: other.id }, { idempotencyKey: `publish-${other.id}` })
+  check("a curator's publish appears without a reload", await until(() => live.items.some((a) => a.id === shown.id)))
+  check('an asset outside the filter (another tag) does not', !live.items.some((a) => a.id === other.id))
+  const current = await mineAssets.get(shown.id)
+  await mineAssets.patch(shown.id, { title: `Live ${STAMP} (edited)` }, { ifMatch: current._meta.version })
+  check('an edit reaches the card', await until(() => live.items.some((a) => a.id === shown.id && a.title.endsWith('(edited)'))))
+  await mineAssets.delete(shown.id)
+  check('a delete removes it', await until(() => live.items.length === 0))
+  live.close()
+  await mineAssets.delete(other.id)
+  await mineAssets.delete(draftOnly.id)
+  // A search can't be followed: the app shows it as a plain list until it is cleared.
+  await refused('a search is not a live filter (400 invalid_query)', () => mineAssets.subscribe({ where: { $search: 'live' } }).ready, ValidationError, 'invalid_query')
+}
+
 heading('cleanup by hand (ch9)')
 const sweep = /** @type {any} */ (await operator.admin.invokeFunction('main/cleanup'))
 const swept = /** @type {any} */ (await sweep.wait({ pollIntervalMs: 300, timeoutMs: 90000 }))

@@ -69,3 +69,7 @@ references:
     field: _meta.owner
     collection: profiles
     key: _meta.owner
+
+# Chapter 24: the gallery is live too. The read rule above decides, on every
+# change, who is told: publishing an asset makes it appear for every member.
+realtime: true
