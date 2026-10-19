@@ -85,7 +85,7 @@ enableGitInfo = true
   description = "Config-driven REST backend over MongoDB"
 
   [params.footer]
-    copyright = "© 2026 backd contributors · [MIT License](https://github.com/fernandezvara/backd/blob/main/LICENSE)"
+    copyright = "© 2026 [@fernandezvara](https://github.com/fernandezvara/) contributors · [MIT License](https://github.com/fernandezvara/backd/blob/main/LICENSE)"
 
   [params.social]
     github = "fernandezvara/backd"
