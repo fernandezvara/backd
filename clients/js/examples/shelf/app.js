@@ -29,11 +29,10 @@ import { createClient, expand, localStorageStorage, NotFoundError, SecondStepReq
 /** @typedef {import('./backd/types').Realm} Realm */
 
 // The fingerprint of the types this app was written against (backd/realm.json). Only a
-// development build sends it: elsewhere there is no header and no warning.
-const devTypes = ['localhost', '127.0.0.1'].includes(window.location.hostname)
-  ? await fetch('./backd/realm.json').then((r) => r.json()).then((i) => i.fingerprint).catch(() => undefined)
-  : undefined
-
+// development build sends it: elsewhere there is no header and no warning. No top-level
+// await here: the module must finish before Alpine's deferred script runs, or it misses
+// `alpine:init` below and nothing is registered. The client's `types` is read per
+// request, so it can be attached when the fetch lands.
 /** @type {import('backd-js').TypedClient<Realm>} */
 const backd = /** @type {any} */ (createClient({
   url: window.location.origin,
@@ -41,8 +40,10 @@ const backd = /** @type {any} */ (createClient({
   // Sessions survive reloads. In a real app, guard against XSS before
   // trusting localStorage (or use cookie sessions).
   storage: localStorageStorage('shelf'),
-  types: devTypes,
 }))
+if (['localhost', '127.0.0.1'].includes(window.location.hostname)) {
+  fetch('./backd/realm.json').then((r) => r.json()).then((i) => { backd.types = i.fingerprint }).catch(() => undefined)
+}
 const main = backd.db('main')
 const assets = main.collection('assets')
 const shares = main.collection('shares')
@@ -964,7 +965,21 @@ document.addEventListener('alpine:init', () => {
         this.error = 'You are no longer a member of this team.'
         await this.loadTeams()
       })
-      liveTeam.on('error', (e) => {
+      liveTeam.on('error', async (e) => {
+        // Chapter 24 hasn't set `realtime: true` on pins yet (or the stack
+        // doesn't stream): fall back to the plain list, without live updates.
+        if (e.code === 'realtime_not_enabled' || e.status === 404) {
+          liveTeam?.close()
+          liveTeam = null
+          try {
+            const page = await pins.inOrg(id).list({ orderBy: '-_meta.created_at', limit: 50 })
+            if (this.team === id) this.pinList = page.items
+            this.liveStatus = 'not live'
+          } catch (err) {
+            this.error = /** @type {Error} */ (err).message
+          }
+          return
+        }
         this.error = e.message
       })
       const members = await backd.orgs.members(id).list()

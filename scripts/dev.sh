@@ -37,6 +37,36 @@ compose=(docker compose -f docker-compose.dev.yml)
 ca=docker/certs/ca.crt
 origin=https://localhost:8443
 image="ghcr.io/fernandezvara/backd-executor:$BACKD_VERSION"
+seed_dir=local-seed
+
+# The welcome page (/) reads local-seed/stack.json for its links and
+# local-seed/credentials.json for the seeded accounts (written by
+# example-seed.sh when EXAMPLES=1). Gitignored, localhost only.
+write_stack_json() {
+  mkdir -p "$seed_dir"
+  local example_link=''
+  [ "${EXAMPLES:-}" = 1 ] && example_link='{"href":"/example/","label":"/example/","note":"the example apps: blog, expenses, shelf, the workshop, the mailbox"},'
+  cat > "$seed_dir/stack.json" <<EOF
+{
+  "title": "backd dev stack",
+  "lead": "Released images over your own config ($CONFIG_DIR, mounted read-write: save a file and backd reloads it).",
+  "sections": [
+    {"title": "Your backd", "links": [
+      {"href": "/readyz", "label": "/readyz", "note": "the API; try /v1/{realm}/…"},
+      {"href": "/_ui/", "label": "/_ui/", "note": "the admin web interface"},
+      $example_link
+      {"href": "https://fernandezvara.github.io/backd/", "label": "Documentation", "note": "online"}
+    ]},
+    {"title": "Observe", "links": [
+      {"href": "http://localhost:3000/", "label": "Grafana", "note": "backd's dashboards"},
+      {"href": "http://localhost:9090/targets", "label": "Prometheus targets", "note": "backd, worker, executor and egress"},
+      {"href": "http://localhost:9001/", "label": "MinIO console", "note": "backd-dev / dev-p4ssw0rd!"}
+    ]}
+  ],
+  "credentials_hint": "No seeded accounts. Create the first administrator of a realm with: make dev-backd ARGS='bootstrap --realm <realm> --email you@example.com'"
+}
+EOF
+}
 
 # A starter config when there is none: a realm "app" with the sample blog database. It is
 # yours to change; backd follows it.
@@ -122,6 +152,7 @@ case "${1:-up}" in
     trap 'cleanup; exit 0' INT TERM
 
     scripts/local-certs.sh   # renews the certificate when it is about to expire; the CA stays
+    write_stack_json         # before nginx mounts $seed_dir, so it is yours, not root's
     echo "Starting the stack from $image (nothing is built)…"
     # backd refuses stale or missing bundles: build them first, and wait for it (not every
     # compose implementation waits for a one-shot service).
@@ -135,7 +166,10 @@ case "${1:-up}" in
     examples=""
     if [ "${EXAMPLES:-}" = 1 ]; then
       echo "Seeding the example realms…"
-      ORIGIN=$origin CA=$ca BACKD_EXEC="${compose[*]} exec -T backd /usr/local/bin/backd" scripts/example-seed.sh
+      ORIGIN=$origin CA=$ca SEED_DIR=$seed_dir \
+        BACKD_EXEC="${compose[*]} exec -T backd /usr/local/bin/backd" \
+        EXEC_EXEC="${compose[*]} exec -T executor" \
+        scripts/example-seed.sh
       examples="  $origin/example/     the example apps: blog, expenses, shelf, the workshop, the mailbox (operator@shelf.example and
                        admin@adminui.example have the password dev-p4ssw0rd!)
 "
@@ -147,7 +181,8 @@ case "${1:-up}" in
     fi
     cat <<MSG
 
-  $origin/             links to everything below
+  $origin/             the welcome page: links, and the seeded accounts' sign-in details
+                       (passwords, TOTP QR and recovery codes — from ./local-seed/, gitignored)
   $origin/v1/…         the API, with the realms in $CONFIG_DIR
   $origin/_ui/         the admin web interface
 $examples  http://localhost:3000/ Grafana    http://localhost:9090/ Prometheus    http://localhost:9001/ MinIO console

@@ -1,0 +1,6 @@
+{
+  "accounts": [
+    { "email": "ada@example.com", "note": "a customer" },
+    { "email": "bob@example.com", "note": "a customer" }
+  ]
+}

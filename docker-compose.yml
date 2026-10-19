@@ -1,8 +1,9 @@
 # The local stack, on one origin: https://localhost:8443 (http://localhost:8080
 # redirects there). nginx's certificate comes from a local CA that
 # scripts/local-certs.sh creates and renews in docker/certs/.
-#   /            documentation site (live reload while you edit docs/)
-#   /docs/       documentation pages
+#   /            welcome page: links and the seeded accounts' sign-in details
+#   /docs/       documentation site (live reload while you edit docs/)
+#   /local-seed/ the seeded credentials the welcome page reads (gitignored)
 #   /example/    the JavaScript client's example apps (clients/js/examples)
 #   /v1/, /healthz, /readyz   backd's API
 #   http://localhost:9090     Prometheus (scrapes backd, the executor and egress)
@@ -146,6 +147,15 @@ services:
       LOG_LEVEL: info
       METRICS_ADDR: ":9090"
       METRICS_TOKEN: local-dev-metrics-token-not-a-secret-0123456789
+    volumes:
+      # What scripts/example-seed.sh needs in the container: the seeder, the JS
+      # client it uses, the realm configuration it reads (each realm's realm.yaml
+      # says what to seed) and the credentials the previous run wrote (its stored
+      # TOTP secret is a rerun's second factor).
+      - ./scripts:/seed:ro
+      - ./clients/js:/client:ro
+      - ./examples/config:/seed-config:ro
+      - ./local-seed:/local-seed:ro
     depends_on:
       - backd
 
@@ -224,9 +234,13 @@ services:
     volumes:
       - ./docker/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ./docker/nginx/proxy.inc:/etc/nginx/proxy.inc:ro
+      - ./docker/nginx/landing:/srv/landing:ro
       - ./docker/certs:/etc/nginx/certs:ro
       - ./clients/js/examples:/srv/example:ro
       - ./clients/js/src:/srv/client:ro
+      # The scripts' output the welcome page reads (stack.json, credentials.json).
+      # Gitignored; scripts/example.sh creates it before the stack starts.
+      - ./local-seed:/srv/local-seed:ro
     depends_on:
       - backd
       - docs

@@ -2,7 +2,8 @@
 # (http://localhost:8080 redirects there):
 #   /healthz /readyz /v1/  → backd          /_ui/  → the admin web interface
 #   /example/              → the JavaScript client's example apps
-#   /                      → a page with links
+#   /local-seed/           → the seeded accounts' sign-in details (gitignored, localhost only)
+#   /                      → the welcome page: links, and the seeded credentials
 #
 # A template: the nginx image fills in ${NGINX_LOCAL_RESOLVERS}. The upstream is a variable, so a
 # restarted backd container is found at its new address.
@@ -28,6 +29,15 @@ server {
 
     set $backd http://backd:8080;
 
+    # Files uploaded through backd: the body is the file, up to the field's
+    # max_size (25 MiB for shelf's assets.file), streamed instead of buffered.
+    location ~ ^/v1/[^/]+/[^/]+/[^/]+(/[^/]+)?/_files/ {
+        client_max_body_size 26m;
+        proxy_request_buffering off;
+        proxy_pass $backd;
+        include /etc/nginx/proxy.inc;
+    }
+
     location = /healthz { proxy_pass $backd; include /etc/nginx/proxy.inc; }
     location = /readyz  { proxy_pass $backd; include /etc/nginx/proxy.inc; }
     location /v1/       {
@@ -46,6 +56,14 @@ server {
     }
     location /example/ {
         alias /srv/example/;
+        add_header Cache-Control "no-store";
+    }
+
+    # What the scripts write while the stack comes up (scripts/dev.sh's stack.json,
+    # example-seed.sh's credentials.json): the welcome page fetches them. Localhost
+    # only, gitignored — the seeded users' QR and recovery codes live here.
+    location /local-seed/ {
+        alias /srv/local-seed/;
         add_header Cache-Control "no-store";
     }
 

@@ -1,0 +1,166 @@
+<!doctype html>
+<!--
+  The welcome page of the local stacks (docker-compose.yml and
+  docker-compose.dev.yml), served by nginx at /. It reads what the scripts
+  write while the stack comes up — local-seed/stack.json (the stack's links,
+  from scripts/dev.sh or scripts/example.sh) and local-seed/credentials.json
+  (the seeded accounts, from scripts/example-seed.sh, with the one-off values
+  a sign-in shows only once: the TOTP QR and the recovery codes). Everything
+  renders from JSON, so the same file serves every stack. local-seed/ is
+  gitignored; all of it is development material, localhost only.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>backd local stack</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1d2330; --bg: #f7f8fa; --muted: #5d6677; --line: #d9dde5; --accent: #2457d6; --card: #fff; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #e6e9ef; --bg: #14171d; --muted: #9aa3b2; --line: #2a303b; --accent: #7aa2ff; --card: #1b2028; } }
+  body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+  main { max-width: 46rem; margin: 0 auto; padding: 2rem 16px 3rem; }
+  h1 { font-size: 1.6rem; margin: 0 0 .25rem; }
+  p.lead { color: var(--muted); margin: 0 0 1.5rem; }
+  h2 { font-size: 1rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 1.75rem 0 .5rem; }
+  ul.links { list-style: none; padding: 0; margin: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  ul.links li { padding: .6rem .9rem; border-top: 1px solid var(--line); display: flex; gap: .75rem; align-items: baseline; flex-wrap: wrap; }
+  ul.links li:first-child { border-top: 0; }
+  a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  a:hover { text-decoration: underline; }
+  span.note { color: var(--muted); font-size: .92rem; }
+  code { font: .88rem ui-monospace, monospace; background: color-mix(in srgb, var(--line) 50%, transparent); padding: .05rem .3rem; border-radius: 4px; }
+  .card { border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: .9rem 1rem; margin: 0 0 1rem; }
+  .card h3 { margin: 0 0 .1rem; font-size: 1.05rem; }
+  .card .realm { color: var(--muted); font-size: .85rem; text-transform: uppercase; letter-spacing: .05em; }
+  .kv { display: flex; gap: .5rem; align-items: baseline; margin: .3rem 0; flex-wrap: wrap; }
+  .kv b { font-size: .8rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; min-width: 5.5rem; }
+  button.copy { font: inherit; font-size: .75rem; padding: .1rem .5rem; border: 1px solid var(--line); border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; }
+  button.copy:hover { color: var(--fg); }
+  .mfa { display: flex; gap: 1rem; align-items: flex-start; margin-top: .6rem; flex-wrap: wrap; }
+  .mfa img { width: 160px; height: 160px; border: 1px solid var(--line); border-radius: 8px; background: #fff; padding: 6px; }
+  .codes { display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: .25rem .75rem; font-family: ui-monospace, monospace; font-size: .9rem; margin: .4rem 0 0; padding: 0; list-style: none; }
+  details { margin-top: .5rem; }
+  summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
+  .uri { word-break: break-all; font-size: .8rem; }
+  .warn { border-left: 3px solid var(--accent); padding: .4rem .9rem; color: var(--muted); font-size: .9rem; }
+  footer { color: var(--muted); font-size: .85rem; margin-top: 2rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">backd local stack</h1>
+  <p class="lead" id="lead"></p>
+  <div id="sections"></div>
+  <div id="credentials"></div>
+  <footer id="foot"></footer>
+</main>
+<script type="module">
+// The two JSON documents the scripts leave in local-seed/. Both are optional:
+// a stack started by hand (`docker compose up`) shows the defaults below.
+const get = async (p) => {
+  try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.json() : null }
+  catch { return null }
+};
+const el = (tag, cls, text) => {
+  const e = document.createElement(tag)
+  if (cls) e.className = cls
+  if (text != null) e.textContent = text
+  return e
+};
+const copyBtn = (value) => {
+  const b = el('button', 'copy', 'copy')
+  b.type = 'button'
+  b.onclick = () => { navigator.clipboard?.writeText(value); b.textContent = 'copied'; setTimeout(() => b.textContent = 'copy', 1200) }
+  return b
+};
+
+const DEFAULT = {
+  title: 'backd local stack',
+  lead: 'The API is at /v1/{realm}/…; /readyz answers when the stack is up.',
+  sections: [{
+    title: 'Links',
+    links: [
+      { href: '/readyz', label: '/readyz', note: 'the API; try /v1/{realm}/…' },
+      { href: '/_ui/', label: '/_ui/', note: 'the admin web interface' },
+      { href: 'http://localhost:3000/', label: 'Grafana', note: "backd's dashboards" },
+      { href: 'http://localhost:9090/targets', label: 'Prometheus targets', note: '' },
+      { href: 'http://localhost:9001/', label: 'MinIO console', note: 'backd-dev / dev-p4ssw0rd!' },
+      { href: 'https://fernandezvara.github.io/backd/', label: 'Documentation', note: 'online' },
+    ],
+  }],
+}
+
+const [stack, creds] = await Promise.all([get('/local-seed/stack.json'), get('/local-seed/credentials.json')])
+const info = { ...DEFAULT, ...(stack ?? {}) }
+
+document.getElementById('title').textContent = info.title
+document.getElementById('lead').textContent = info.lead ?? ''
+document.getElementById('foot').textContent =
+  'This page and the credentials it shows come from local-seed/ (gitignored), written by the stack\'s scripts. Localhost development material only.'
+
+// Seeded accounts: sign-in link, the password, and whatever the first sign-in
+// would have shown once — the TOTP QR, its secret and the recovery codes.
+const credsBox = document.getElementById('credentials')
+const accounts = creds?.accounts ?? []
+if (accounts.length) {
+  credsBox.append(el('h2', null, 'Seeded accounts'))
+  for (const a of accounts) {
+    const card = el('section', 'card')
+    const head = el('h3')
+    head.append(el('a', null, a.sign_in || '#'))
+    head.lastChild.href = a.sign_in || '#'
+    head.append(' ', el('span', 'realm', `${a.realm} realm`))
+    card.append(head)
+    if (a.note) card.append(el('p', 'note', a.note))
+    const mail = el('div', 'kv'); mail.append(el('b', null, 'email'), el('code', null, a.email), copyBtn(a.email))
+    const pw = el('div', 'kv'); pw.append(el('b', null, 'password'), el('code', null, a.password), copyBtn(a.password))
+    card.append(mail, pw)
+    if (a.mfa) {
+      const box = el('details', 'second-factor')
+      box.append(el('summary', null, 'Second factor: TOTP secret, QR and recovery codes'))
+      const mfa = el('div', 'mfa')
+      const img = new Image(); img.src = a.mfa.qr; img.alt = `TOTP QR for ${a.email}`
+      const side = el('div')
+      side.append(el('p', 'note', 'The second factor is enrolled already: add this secret to an authenticator app (scan the QR or type it), or use a recovery code at sign-in.'))
+      const s = el('div', 'kv'); s.append(el('b', null, 'totp secret'), el('code', null, a.mfa.secret), copyBtn(a.mfa.secret))
+      side.append(s)
+      const d = el('details'); d.append(el('summary', null, 'otpauth:// address'), el('p', 'uri', a.mfa.otpauth_uri))
+      side.append(d)
+      mfa.append(img, side)
+      box.append(mfa)
+      if (a.recovery_codes?.length) {
+        box.append(el('p', 'note', 'Recovery codes (each works once):'))
+        const list = el('ul', 'codes')
+        for (const c of a.recovery_codes) list.append(el('li', null, c))
+        box.append(list)
+      }
+      card.append(box)
+    }
+    credsBox.append(card)
+  }
+} else {
+  credsBox.append(el('h2', null, 'Seeded accounts'))
+  credsBox.append(el('p', 'warn', null))
+  const hint = credsBox.querySelector('.warn')
+  hint.textContent = info.credentials_hint ??
+    'No seeded accounts yet. Create the first administrator of a realm with `make dev-backd ARGS="bootstrap --realm <realm> --email you@example.com"`; its sign-in details then appear here when the seed script runs.'
+}
+
+// The stack's link sections, from local-seed/stack.json.
+const sections = document.getElementById('sections')
+for (const s of info.sections ?? []) {
+  sections.append(el('h2', null, s.title))
+  const ul = el('ul', 'links')
+  for (const l of s.links ?? []) {
+    const li = el('li')
+    const a = el('a', null, l.label); a.href = l.href
+    li.append(a)
+    if (l.note) li.append(el('span', null, l.note))
+    ul.append(li)
+  }
+  sections.append(ul)
+}
+for (const n of info.notes ?? []) sections.append(el('p', 'note', n))
+</script>
+</body>
+</html>

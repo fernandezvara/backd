@@ -30,6 +30,32 @@ trap 'cleanup; exit 0' INT TERM
 scripts/local-certs.sh
 ca=docker/certs/ca.crt
 origin=https://localhost:8443
+seed_dir=local-seed
+
+# The welcome page (/, in front of the docs site) reads local-seed/stack.json for
+# its links and local-seed/credentials.json for the seeded accounts (written by
+# example-seed.sh below). Gitignored; created before `up` so nginx's mount of
+# $seed_dir belongs to you, not to root.
+mkdir -p "$seed_dir"
+cat > "$seed_dir/stack.json" <<EOF
+{
+  "title": "backd example stack",
+  "lead": "backd from this checkout, the example realms and apps, the docs site and the observability stack on one origin.",
+  "sections": [
+    {"title": "Explore", "links": [
+      {"href": "/docs/", "label": "/docs/", "note": "the documentation site (edits in docs/ reload the page)"},
+      {"href": "/example/", "label": "/example/", "note": "the example apps: blog, expenses, shelf, the workshop, the mailbox"},
+      {"href": "/_ui/", "label": "/_ui/", "note": "the admin web interface (sign in to the adminui realm)"},
+      {"href": "/readyz", "label": "/readyz", "note": "the API; try /v1/{realm}/…"}
+    ]},
+    {"title": "Observe", "links": [
+      {"href": "http://localhost:3000/", "label": "Grafana", "note": "backd's dashboards"},
+      {"href": "http://localhost:9090/targets", "label": "Prometheus targets", "note": "backd, executor and egress"},
+      {"href": "http://localhost:9001/", "label": "MinIO console", "note": "backd-dev / dev-p4ssw0rd!"}
+    ]}
+  ]
+}
+EOF
 
 echo "Starting MongoDB, backd, the docs and nginx (the first run builds images)…"
 docker compose up -d --build
@@ -45,8 +71,12 @@ ready || {
   exit 1
 }
 
-# The example realms: storage keys and their administrators (scripts/example-seed.sh).
-ORIGIN=$origin CA=$ca BACKD_EXEC='docker compose exec -T backd /backd' scripts/example-seed.sh
+# The example realms: storage keys and their administrators (scripts/example-seed.sh),
+# whose one-off sign-in details (TOTP QR, recovery codes) land in $seed_dir/credentials.json.
+ORIGIN=$origin CA=$ca SEED_DIR=$seed_dir \
+  BACKD_EXEC='docker compose exec -T backd /backd' \
+  EXEC_EXEC='docker compose exec -T executor' \
+  scripts/example-seed.sh
 
 # Tell how to trust the local CA, unless the system already does.
 if curl -sf "$origin/readyz" >/dev/null 2>&1; then
@@ -78,7 +108,9 @@ fi
 
 cat <<MSG
 
-  $origin/            the docs site (edits in docs/ reload the page)
+  $origin/            the welcome page: links, and the seeded accounts' sign-in details
+                      (passwords, TOTP QR and recovery codes — from ./local-seed/, gitignored)
+  $origin/docs/       the documentation site (edits in docs/ reload the page)
   $origin/example/    the example apps (clients/js/examples): blog, expenses, shelf
                       (operator@shelf.example and admin@adminui.example, password dev-p4ssw0rd!, have the storage keys set)
   $origin/v1/…        backd's API (realms: blog, shop)

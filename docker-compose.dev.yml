@@ -7,7 +7,8 @@
 #   make dev-down       stop it, keeping the data       make dev-reset   stop it and wipe the data
 #   make dev-logs       follow the logs; S=worker for one service
 #
-#   /                      a page with the links below
+#   /                      the welcome page: links, and the seeded accounts'
+#                          sign-in details (from ./local-seed/, gitignored)
 #   /v1/, /healthz, /readyz  the API          /_ui/   the admin web interface
 #   http://localhost:9090  Prometheus         http://localhost:3000  Grafana (no login)
 #   http://localhost:9001  MinIO console (backd-dev / dev-p4ssw0rd!)
@@ -158,6 +159,15 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       METRICS_ADDR: ":9090"
       METRICS_TOKEN: local-dev-metrics-token-not-a-secret-0123456789
+    volumes:
+      # What scripts/example-seed.sh needs in the container: the seeder, the JS
+      # client it uses, the realm configuration it reads (each realm's realm.yaml
+      # says what to seed) and the credentials the previous run wrote (its stored
+      # TOTP secret is a rerun's second factor).
+      - ./scripts:/seed:ro
+      - ./clients/js:/client:ro
+      - ${CONFIG_DIR:-./config}:/seed-config:ro
+      - ./local-seed:/local-seed:ro
     depends_on:
       - backd
 
@@ -223,10 +233,13 @@ services:
     volumes:
       - ./docker/nginx/dev.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ./docker/nginx/proxy.inc:/etc/nginx/proxy.inc:ro
-      - ./docker/nginx/dev:/srv/landing:ro
+      - ./docker/nginx/landing:/srv/landing:ro
       - ./docker/certs:/etc/nginx/certs:ro
       - ./clients/js/examples:/srv/example:ro
       - ./clients/js/src:/srv/client:ro
+      # The scripts' output the welcome page reads (stack.json, credentials.json).
+      # Gitignored; scripts/dev.sh creates it before the stack starts.
+      - ./local-seed:/srv/local-seed:ro
     depends_on:
       - backd
 
