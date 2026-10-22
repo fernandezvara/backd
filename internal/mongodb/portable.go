@@ -129,8 +129,8 @@ func (s *AuthStore) ImportSystem(ctx context.Context, collection string, docs []
 		doc := toBSON(d)
 		var have bson.D
 		err := coll.FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&have)
-		switch {
-		case err == nil:
+		switch err {
+		case nil:
 			x, _ := exportpkg.EncodeDocument(portableFromBSON(have))
 			y, _ := exportpkg.EncodeDocument(d)
 			switch {
@@ -148,7 +148,7 @@ func (s *AuthStore) ImportSystem(ctx context.Context, collection string, docs []
 			default:
 				res.Outcome, res.Reason = auth.PortableConflict, "a different document with this id exists in the target"
 			}
-		case err == mongo.ErrNoDocuments:
+		case mongo.ErrNoDocuments:
 			res.Outcome = auth.PortableCreated
 			if field := clashingUnique(ctx, coll, unique, doc, id); field != "" {
 				res.Outcome, res.Reason = auth.PortableConflict, "a document with this "+field+" exists in the target"
