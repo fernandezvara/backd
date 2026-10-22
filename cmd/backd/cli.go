@@ -455,6 +455,16 @@ func registerRemote(cfg *kli.Config) {
 		optional(cc, "value", "import this key: key:<base64url>, env:VAR or file:PATH")
 		boolean(cc, "json", "print the answer as JSON")
 	})
+	sec.SubCommand("rotate").ShortHelp("give a field key a new value, without rewriting any document").
+		LongHelp("Replaces the value of a field key and wraps every data key it protected again, so nothing in the database\nis rewritten and the change is instant. With --generate the new key is printed once on standard output; with\n--value you bring your own (key:<base64url>, env:VAR or file:PATH). --resume finishes a rotation that stopped\nhalf way: until it finishes the previous value is kept and nothing is lost. Keep your old copy for backups made\nbefore the rotation. Needs a full administrator and a fresh proof. " + adminAPINote).
+		Func(act("secret rotate", secretRotate)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "name", "the key's name")
+		boolean(cc, "generate", "make a new random key and show it once")
+		optional(cc, "value", "the new key: key:<base64url>, env:VAR or file:PATH")
+		boolean(cc, "resume", "finish a rotation that stopped before it ended")
+		boolean(cc, "json", "print the answer as JSON")
+	})
 	sec.SubCommand("list").ShortHelp("list the realm's secrets (never their values)").
 		Func(act("secret list", secretList)).Config(remote)
 	sec.SubCommand("delete").ShortHelp("delete a secret; a function that declares it answers secret_missing again").

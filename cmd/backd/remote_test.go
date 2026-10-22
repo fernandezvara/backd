@@ -323,6 +323,18 @@ organizations:
 	if !strings.Contains(out, "HEALTH") || !strings.Contains(out, "key") || strings.Contains(out, keyText) {
 		t.Errorf("secret list with keys:\n%s", out)
 	}
+	// Rotating: a new key is shown once, with the fingerprints of both; nothing is left pending.
+	code, rotOut, rotErr := c.run("", "secret", "rotate", "--realm", "acme", "--name", "HEALTH", "--generate")
+	newKey := strings.TrimSpace(rotOut)
+	if code != 0 || len(newKey) != 43 || newKey == keyText || !strings.Contains(rotErr, "rotated") || !strings.Contains(rotErr, "HEALTH:"+fp[1]) || strings.Contains(rotErr, newKey) {
+		t.Fatalf("secret rotate: %d %q %q", code, rotOut, rotErr)
+	}
+	c.env["NEXT_KEY"] = keyText
+	c.expect(0, "rotated", "", "secret", "rotate", "--realm", "acme", "--name", "HEALTH", "--value", "env:NEXT_KEY")
+	c.expect(1, "409 conflict", "", "secret", "rotate", "--realm", "acme", "--name", "HEALTH", "--resume")
+	c.expect(1, "404 not_found", "", "secret", "rotate", "--realm", "acme", "--name", "NOPE", "--generate")
+	c.expect(2, "exactly one of --generate, --value and --resume", "", "secret", "rotate", "--realm", "acme", "--name", "HEALTH")
+	c.expect(2, "exactly one of --generate, --value and --resume", "", "secret", "rotate", "--realm", "acme", "--name", "HEALTH", "--generate", "--resume")
 	c.expect(0, `secret "realm.HEALTH" deleted`, "", "secret", "delete", "--realm", "acme", "--name", "HEALTH")
 	c.expect(0, `secret "realm.COPY" deleted`, "", "secret", "delete", "--realm", "acme", "--name", "COPY")
 

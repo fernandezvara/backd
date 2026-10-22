@@ -83,6 +83,18 @@ func (m *MemStore) CreateSecret(_ context.Context, s auth.Secret) error {
 	return nil
 }
 
+func (m *MemStore) ReplaceKeySecret(_ context.Context, s auth.Secret, ifVersion int) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	have, ok := m.secrets[secretKey(s.Database, s.Name)]
+	if !ok || max(have.Version, 1) != ifVersion {
+		return false, nil
+	}
+	s.CreatedAt = have.CreatedAt
+	m.secrets[secretKey(s.Database, s.Name)] = s
+	return true, nil
+}
+
 func (m *MemStore) SecretByScope(_ context.Context, database, name string) (auth.Secret, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

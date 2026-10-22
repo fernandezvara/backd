@@ -119,6 +119,8 @@ const (
 	// generated. Never the key.
 	AuditKeyCreate = "secret.key.create"
 	AuditKeyDelete = "secret.key.delete"
+	// A field key was rotated; details: fingerprint (the new one), previous, rewrapped.
+	AuditKeyRotate = "secret.key.rotate"
 	// AuditTriggerGapResolve is an administrator closing a recorded gap of the trigger dispatcher;
 	// AuditTriggerRescan one re-emitting the changes of a collection.
 	AuditTriggerGapResolve = "triggers.gap_resolve"

@@ -1185,6 +1185,12 @@ func TestContract(t *testing.T) {
 	req("POST", ad+"/secrets", `{"name": "SPARE", "type": "key", "generate": true}`, nil, 401)
 	req("POST", ad+"/secrets", `{"name": "SPARE", "type": "key", "generate": true}`, with(ada, "Content-Type", "application/json"), 403)
 	req("PUT", ad+"/secrets/HEALTH", `{"value": "x"}`, json(key), 409)
+	req("POST", ad+"/secrets/HEALTH/rotate", `{"generate": true}`, json(key), 200)
+	req("POST", ad+"/secrets/HEALTH/rotate", `{}`, json(key), 400)
+	req("POST", ad+"/secrets/HEALTH/rotate", `{"resume": true}`, json(key), 409)
+	req("POST", ad+"/secrets/NOPE/rotate", `{"generate": true}`, json(key), 404)
+	req("POST", ad+"/secrets/HEALTH/rotate", `{"generate": true}`, nil, 401)
+	req("POST", ad+"/secrets/HEALTH/rotate", `{"generate": true}`, with(ada, "Content-Type", "application/json"), 403)
 	f.svc.KeyUses = func(string) []string { return []string{"app/notes.body"} }
 	req("DELETE", ad+"/secrets/HEALTH", "", key, 409)
 	f.svc.KeyUses = nil

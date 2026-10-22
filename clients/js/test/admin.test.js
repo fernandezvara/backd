@@ -261,6 +261,21 @@ test('secrets: field keys are created once and listed with a fingerprint', async
   assert.deepEqual(k.used_by, ['main/patients.notes'])
 })
 
+test('secrets: a field key is rotated, generated, imported or resumed', async () => {
+  const done = { name: 'HEALTH', type: 'key', fingerprint: '11111111', previous_fingerprint: '9f2c41d0', version: 2, rewrapped: 3 }
+  const m = mockFetch([{ body: { ...done, key: 'k'.repeat(43) } }, { body: done }, { body: done }])
+  const a = adminOf(m)
+  const r = await a.secrets.rotateKey('HEALTH')
+  assert.equal(r.rewrapped, 3)
+  assert.equal(m.calls[0].method, 'POST')
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/secrets/HEALTH/rotate')
+  assert.deepEqual(m.calls[0].body, { generate: true })
+  await a.secrets.rotateKey('HEALTH', { value: 'v'.repeat(43) })
+  assert.deepEqual(m.calls[1].body, { value: 'v'.repeat(43) })
+  await a.secrets.rotateKey('HEALTH', { resume: true })
+  assert.deepEqual(m.calls[2].body, { resume: true })
+})
+
 test('invocations listing', async () => {
   const rec = { id: 'i1', at: '2026-10-02T10:00:00.000Z', function: 'main/refund_receipt', actor: 'user:u1', mode: 'async', status: 'ok', code: null,
     duration_ms: 12, request_id: 'r1', job_id: 'j1', parent_id: 'i0', origin: 'function', logs: [] }

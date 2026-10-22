@@ -186,6 +186,18 @@ import { Job } from './functions.js'
  */
 
 /**
+ * A field key just rotated. `key` is set only for a generated key, and only this once.
+ * @typedef {object} RotatedKey
+ * @property {string} name
+ * @property {'key'} type
+ * @property {string} fingerprint            Of the new value.
+ * @property {string} previous_fingerprint
+ * @property {number} version                How many values the key has had.
+ * @property {number} rewrapped              Data keys wrapped again by this call.
+ * @property {string} [key]                  The generated key, base64url: save it now.
+ */
+
+/**
  * A field key just created. `key` is set only for a generated key, and only this once.
  * @typedef {object} CreatedKey
  * @property {string} name
@@ -972,6 +984,22 @@ class AdminSecrets {
     if (value) body.value = value
     else body.generate = true
     return (await this.admin._request({ method: 'POST', path: ['secrets'], body, reauth: true, ...opts })).data
+  }
+
+  /**
+   * Gives a field key a new value and wraps again every data key it protected, without
+   * rewriting any document. Generates the new key (in the answer, once), imports `value`, or
+   * with `resume` finishes a rotation that stopped half way. Needs full admin access and a fresh
+   * re-authentication.
+   * @param {string} name
+   * @param {{ value?: string, resume?: boolean }} [input]   Without either, a new key is generated.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<RotatedKey>}
+   */
+  async rotateKey(name, { value, resume } = {}, opts) {
+    /** @type {Record<string, unknown>} */
+    const body = value ? { value } : resume ? { resume: true } : { generate: true }
+    return (await this.admin._request({ method: 'POST', path: ['secrets', name, 'rotate'], body, reauth: true, ...opts })).data
   }
 
   /**

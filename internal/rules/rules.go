@@ -81,6 +81,9 @@ type Schema struct {
 	// DateField reports whether a path is stored as a date (x-backd-store:
 	// date): its value is a time in rules, comparable with `now`. May be nil.
 	DateField func(path string) bool
+	// EncryptedField reports whether a document path is stored encrypted: a read rule, which is
+	// applied inside the query, can't compare it. May be nil.
+	EncryptedField func(path string) bool
 	// Roles are the role names declared in realm.yaml.
 	Roles []string
 	// Consents are the consent names declared in realm.yaml, for hasConsent.

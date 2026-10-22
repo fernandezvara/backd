@@ -32,7 +32,12 @@ const (
 type Error struct {
 	Path   string
 	Reason string
+	// Code is set for errors with a name of their own (CodeFieldEncrypted); empty otherwise.
+	Code string
 }
+
+// CodeFieldEncrypted marks the error of a query that names an encrypted field.
+const CodeFieldEncrypted = "field_encrypted"
 
 // Errors is returned when a query is invalid; it lists every problem found.
 type Errors []Error
@@ -232,6 +237,10 @@ func (p *parser) field(path string, v any) {
 	f, ok := lookup(p.fields, path)
 	if !ok {
 		p.fail(path, "unknown field")
+		return
+	}
+	if f.Encrypted {
+		p.errs = append(p.errs, Error{Path: strings.TrimSuffix("where."+p.loc+path, "."), Reason: "is encrypted: it can't be filtered on", Code: CodeFieldEncrypted})
 		return
 	}
 
@@ -521,11 +530,14 @@ func ParseOrderBy(s string, fields map[string]registry.Field) ([]storage.SortFie
 				sf.Desc = true
 				sf.Field = sf.Field[1:]
 			}
-			switch _, ok := lookup(fields, sf.Field); {
+			f, ok := lookup(fields, sf.Field)
+			switch {
 			case sf.Field == "":
 				errs = append(errs, Error{Path: "order_by", Reason: "empty field name"})
 			case !ok:
 				errs = append(errs, Error{Path: "order_by." + sf.Field, Reason: "unknown field"})
+			case f.Encrypted:
+				errs = append(errs, Error{Path: "order_by." + sf.Field, Reason: "is encrypted: it can't be sorted on", Code: CodeFieldEncrypted})
 			case seen[sf.Field]:
 				errs = append(errs, Error{Path: "order_by." + sf.Field, Reason: "duplicate field"})
 			default:

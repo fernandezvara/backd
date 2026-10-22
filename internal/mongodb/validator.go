@@ -95,7 +95,14 @@ func translate(s any, path string, om *[]Omission) map[string]any {
 	return map[string]any{}
 }
 
+// encryptedMarker replaces the schema of an encrypted field (EncryptedSchema): the database
+// stores binary there, whatever the plaintext's schema says.
+const encryptedMarker = "x-backd-encrypted"
+
 func translateObject(s map[string]any, path string, om *[]Omission) map[string]any {
+	if marked, _ := s[encryptedMarker].(bool); marked {
+		return map[string]any{"bsonType": "binData"}
+	}
 	out := map[string]any{}
 	for k, v := range s {
 		sub := path + "/" + escapePointer(k)
@@ -252,4 +259,31 @@ func pointerOrRoot(p string) string {
 		return "/"
 	}
 	return p
+}
+
+// EncryptedSchema returns schema with each of paths declared as binary: the database stores an
+// encrypted field as BSON binary, while schema.json validates the plaintext (the API validates
+// that before the field is encrypted). It never modifies schema.
+func EncryptedSchema(schema map[string]any, paths []string) map[string]any {
+	out := deepCopy(schema).(map[string]any)
+	for _, p := range paths {
+		cur := out
+		parts := strings.Split(p, ".")
+		for i, name := range parts {
+			props, _ := cur["properties"].(map[string]any)
+			if props == nil {
+				break
+			}
+			if i == len(parts)-1 {
+				props[name] = map[string]any{encryptedMarker: true}
+				break
+			}
+			next, _ := props[name].(map[string]any)
+			if next == nil {
+				break
+			}
+			cur = next
+		}
+	}
+	return out
 }

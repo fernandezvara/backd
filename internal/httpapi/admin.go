@@ -148,6 +148,7 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		r.With(keys).Delete("/apikeys/{name}", a.revokeAPIKey)
 		r.With(secrets).Get("/secrets", a.listSecrets)
 		r.With(secrets, json).Post("/secrets", a.createKey)
+		r.With(secrets, json).Post("/secrets/{name}/rotate", a.rotateKey)
 		r.With(secrets, json).Put("/secrets/{name}", a.setSecret)
 		r.With(secrets).Delete("/secrets/{name}", a.deleteSecret)
 		r.With(audit).Get("/audit", a.listAudit)

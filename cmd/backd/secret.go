@@ -185,7 +185,17 @@ func rotateRealmSecrets(ctx context.Context, a *app, realm string, oldCipher, ne
 		if err != nil {
 			return n, err
 		}
-		s.Ciphertext, s.Nonce, s.KeyID = ct, nonce, newCipher.KeyID
+		s.Ciphertext, s.Nonce = ct, nonce
+		if s.PrevCiphertext != "" { // a key whose rotation is unfinished holds two values
+			prev, err := oldCipher.Open(s.PrevCiphertext, s.PrevNonce, s.KeyID)
+			if err != nil {
+				return n, fmt.Errorf("%s: %w", secretRef(s.Database, s.Name), err)
+			}
+			if s.PrevCiphertext, s.PrevNonce, err = newCipher.Seal(prev); err != nil {
+				return n, err
+			}
+		}
+		s.KeyID = newCipher.KeyID
 		if err := store.UpsertSecret(ctx, s); err != nil {
 			return n, fmt.Errorf("%s: %w", secretRef(s.Database, s.Name), err)
 		}

@@ -276,6 +276,12 @@ func (a *adminAPI) exportPlan(w http.ResponseWriter, r *http.Request, realm stri
 			return
 		}
 	}
+	// Until encrypted fields travel as ciphertext (design/field-encryption.md §9, issue 16.6), a
+	// package would carry them in the clear: the server never decrypts for an export.
+	if enc := encryptedCollections(rl, database, names); len(enc) > 0 {
+		writeError(w, r, http.StatusUnprocessableEntity, codeConflict, "these collections encrypt fields, and export can't carry them yet: leave them out with --db/--collection ("+strings.Join(enc, ", ")+")")
+		return
+	}
 	if details := a.checkExtract(rl, database, names, fields, where); len(details) > 0 {
 		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", details...)
 		return
@@ -733,4 +739,25 @@ func (a *adminAPI) anonymizeDocument(ctx context.Context, r *http.Request, c *re
 			delete(doc, name)
 		}
 	}
+}
+
+// encryptedCollections lists, as database/collection, the collections an export of database
+// (all when empty) and names (all when none) would read that encrypt a field.
+func encryptedCollections(rl *registry.Realm, database string, names []string) []string {
+	var out []string
+	for dn, db := range rl.Databases {
+		if database != "" && dn != database {
+			continue
+		}
+		for cn, c := range db.Collections {
+			if len(names) > 0 && !slices.Contains(names, cn) {
+				continue
+			}
+			if len(c.Encrypted) > 0 {
+				out = append(out, dn+"/"+cn)
+			}
+		}
+	}
+	slices.Sort(out)
+	return out
 }

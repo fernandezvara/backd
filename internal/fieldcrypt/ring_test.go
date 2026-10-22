@@ -1,0 +1,184 @@
+package fieldcrypt
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"strings"
+	"testing"
+
+	"github.com/fernandezvara/backd/internal/registry"
+)
+
+func testRing(t *testing.T) (*Ring, *registry.Collection, *MemStore) {
+	t.Helper()
+	store := NewMemStore()
+	keys := map[string][]byte{"HEALTH": bytes.Repeat([]byte{7}, 32), "TAX": bytes.Repeat([]byte{9}, 32)}
+	ring := &Ring{Realm: "clinic", Store: store, Keys: func(_ context.Context, name string) (Material, error) {
+		k, ok := keys[name]
+		if !ok {
+			return Material{}, ErrUnavailable
+		}
+		return Material{Current: k, Version: 1}, nil
+	}}
+	c := &registry.Collection{Realm: "clinic", Database: "main", Name: "patients", Encrypted: []registry.EncryptedField{
+		{Path: "address.street", Key: "HEALTH"}, {Path: "notes", Key: "HEALTH"}, {Path: "tax_id", Key: "TAX"},
+	}}
+	if err := ring.Ensure(context.Background(), c); err != nil {
+		t.Fatal(err)
+	}
+	return ring, c, store
+}
+
+func TestValuesAreSealedAndOpenedWithAnyJSONType(t *testing.T) {
+	ctx := context.Background()
+	ring, c, _ := testRing(t)
+	doc := map[string]any{
+		"id": "p1", "name": "Ada", "notes": map[string]any{"allergies": []any{"nuts", int64(3)}, "ok": true},
+		"tax_id": int64(12345678), "address": map[string]any{"street": "Main 1", "city": "Madrid"},
+	}
+	sealed, err := ring.Encrypt(ctx, c, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The caller's document is untouched; the copy holds binary where the fields were.
+	if doc["tax_id"] != int64(12345678) || doc["address"].(map[string]any)["street"] != "Main 1" {
+		t.Fatalf("the original changed: %v", doc)
+	}
+	for _, p := range []string{"notes", "tax_id"} {
+		if _, ok := sealed[p].(Ciphertext); !ok {
+			t.Errorf("%s is %T", p, sealed[p])
+		}
+	}
+	addr := sealed["address"].(map[string]any)
+	if _, ok := addr["street"].(Ciphertext); !ok || addr["city"] != "Madrid" || sealed["name"] != "Ada" {
+		t.Errorf("sealed = %v", sealed)
+	}
+	if len(sealed["tax_id"].(Ciphertext)) > Overhead+len("12345678")+1 {
+		t.Errorf("overhead too large: %d", len(sealed["tax_id"].(Ciphertext)))
+	}
+
+	if err := ring.Decrypt(ctx, c, sealed); err != nil {
+		t.Fatal(err)
+	}
+	if sealed["tax_id"] != int64(12345678) || sealed["address"].(map[string]any)["street"] != "Main 1" {
+		t.Errorf("opened = %v", sealed)
+	}
+	n := sealed["notes"].(map[string]any)
+	if n["ok"] != true || n["allergies"].([]any)[1] != int64(3) {
+		t.Errorf("notes = %v", n)
+	}
+}
+
+func TestAbsentFieldsStayAbsentAndNullIsSealed(t *testing.T) {
+	ctx := context.Background()
+	ring, c, _ := testRing(t)
+	sealed, _ := ring.Encrypt(ctx, c, map[string]any{"id": "p1", "notes": nil})
+	if _, has := sealed["tax_id"]; has {
+		t.Error("an absent field appeared")
+	}
+	if _, ok := sealed["notes"].(Ciphertext); !ok {
+		t.Errorf("null is %T", sealed["notes"])
+	}
+	if err := ring.Decrypt(ctx, c, sealed); err != nil || sealed["notes"] != nil {
+		t.Errorf("null back: %v %v", sealed["notes"], err)
+	}
+}
+
+func TestAValueCopiedElsewhereFailsToDecrypt(t *testing.T) {
+	ctx := context.Background()
+	ring, c, _ := testRing(t)
+	a, _ := ring.Encrypt(ctx, c, map[string]any{"id": "p1", "tax_id": "B1", "notes": "n"})
+	// Into another document.
+	other := map[string]any{"id": "p2", "tax_id": a["tax_id"]}
+	if err := ring.Decrypt(ctx, c, other); !errors.Is(err, ErrCorrupt) {
+		t.Errorf("another document: %v", err)
+	}
+	// Into another field of the same document (same key, different path).
+	swapped := map[string]any{"id": "p1", "notes": a["tax_id"]}
+	if err := ring.Decrypt(ctx, c, swapped); !errors.Is(err, ErrCorrupt) && !errors.Is(err, ErrUnavailable) {
+		t.Errorf("another field: %v", err)
+	}
+	// Altered bytes.
+	ct := append(Ciphertext(nil), a["notes"].(Ciphertext)...)
+	ct[len(ct)-1] ^= 1
+	if err := ring.Decrypt(ctx, c, map[string]any{"id": "p1", "notes": ct}); !errors.Is(err, ErrCorrupt) {
+		t.Errorf("altered: %v", err)
+	}
+	// Truncated or of another version.
+	for _, bad := range []Ciphertext{{1, 2, 3}, append(Ciphertext{9}, make([]byte, 60)...)} {
+		if err := ring.Decrypt(ctx, c, map[string]any{"id": "p1", "notes": bad}); !errors.Is(err, ErrCorrupt) {
+			t.Errorf("malformed: %v", err)
+		}
+	}
+}
+
+func TestPlaintextLeftFromBeforeIsRead(t *testing.T) {
+	ctx := context.Background()
+	ring, c, _ := testRing(t)
+	doc := map[string]any{"id": "p1", "notes": "written before encryption"}
+	if err := ring.Decrypt(ctx, c, doc); err != nil || doc["notes"] != "written before encryption" {
+		t.Errorf("%v %v", doc, err)
+	}
+}
+
+func TestErrorsNeverHoldValues(t *testing.T) {
+	ctx := context.Background()
+	ring, c, store := testRing(t)
+	sealed, _ := ring.Encrypt(ctx, c, map[string]any{"id": "p1", "notes": "SECRET-VALUE-1"})
+	// A key that can't be used: the error names the field, not the value.
+	store.Keys = map[string]Record{}
+	ring2 := &Ring{Realm: "clinic", Store: store, Keys: ring.Keys}
+	err := ring2.Decrypt(ctx, c, sealed)
+	if !errors.Is(err, ErrUnavailable) || strings.Contains(err.Error(), "SECRET-VALUE-1") {
+		t.Errorf("err = %v", err)
+	}
+	if _, err := ring2.Encrypt(ctx, c, map[string]any{"id": "p1", "notes": "SECRET-VALUE-1"}); !errors.Is(err, ErrUnavailable) || strings.Contains(err.Error(), "SECRET-VALUE-1") {
+		t.Errorf("encrypt err = %v", err)
+	}
+}
+
+func TestEnsureCreatesOneKeyPerFieldAndIsRepeatable(t *testing.T) {
+	ctx := context.Background()
+	ring, c, store := testRing(t)
+	if len(store.Keys) != 3 {
+		t.Fatalf("keys = %d", len(store.Keys))
+	}
+	if err := ring.Ensure(ctx, c); err != nil || len(store.Keys) != 3 {
+		t.Errorf("again: %v %d", err, len(store.Keys))
+	}
+	// Fields never share data keys, even when they share a field key.
+	seen := map[string]bool{}
+	for _, r := range store.Keys {
+		if seen[r.ID] {
+			t.Error("a shared id")
+		}
+		seen[r.ID] = true
+	}
+	// A missing field key fails the field, naming it.
+	c2 := &registry.Collection{Realm: "clinic", Database: "main", Name: "other", Encrypted: []registry.EncryptedField{{Path: "x", Key: "NOPE"}}}
+	if err := ring.Ensure(ctx, c2); !errors.Is(err, ErrUnavailable) || !strings.Contains(err.Error(), "other.x") {
+		t.Errorf("missing key: %v", err)
+	}
+}
+
+func TestWrapIsBoundToItsFieldAndId(t *testing.T) {
+	fk := bytes.Repeat([]byte{1}, 32)
+	id, dk, _ := NewDataKey()
+	f := Field{Realm: "r", Database: "d", Collection: "c", Path: "p"}
+	w, err := Wrap(fk, dk, id, f, KindData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := Unwrap(fk, w, id, f, KindData); err != nil || !bytes.Equal(got, dk) {
+		t.Fatalf("unwrap: %v", err)
+	}
+	other := f
+	other.Path = "q"
+	if _, err := Unwrap(fk, w, id, other, KindData); !errors.Is(err, ErrUnavailable) {
+		t.Errorf("another field: %v", err)
+	}
+	if _, err := Unwrap(bytes.Repeat([]byte{2}, 32), w, id, f, KindData); !errors.Is(err, ErrUnavailable) {
+		t.Errorf("another key: %v", err)
+	}
+}

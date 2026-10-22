@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/fernandezvara/backd/internal/fieldcrypt"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -30,14 +31,23 @@ var (
 	ErrKeyValue = errors.New("a key is 32 bytes, written in base64url")
 )
 
-// KeyInUseError is a refusal to delete a key that fields still name.
+// KeyInUseError is a refusal to delete a key that fields still name, or that still wraps data
+// keys (and with them, values).
 type KeyInUseError struct {
-	Name string
-	Uses []string
+	Name     string
+	Uses     []string
+	DataKeys int64
 }
 
 func (e *KeyInUseError) Error() string {
-	return fmt.Sprintf("the key %s is used by %s", e.Name, strings.Join(e.Uses, ", "))
+	var parts []string
+	if len(e.Uses) > 0 {
+		parts = append(parts, strings.Join(e.Uses, ", "))
+	}
+	if e.DataKeys > 0 {
+		parts = append(parts, fmt.Sprintf("%d data key(s) that encrypted values depend on", e.DataKeys))
+	}
+	return fmt.Sprintf("the key %s is used by %s", e.Name, strings.Join(parts, " and "))
 }
 
 // KeyFingerprint is the first 8 hex characters of SHA-256 over a fixed label and the key: it
@@ -104,7 +114,7 @@ func (s *Users) CreateKey(ctx context.Context, name, value, by string) (CreatedK
 	now := s.now()
 	fp := KeyFingerprint(raw)
 	if err := s.Store.CreateSecret(ctx, Secret{
-		Name: name, Type: SecretTypeKey, Fingerprint: fp, Ciphertext: ct, Nonce: nonce, KeyID: s.Cipher.KeyID,
+		Name: name, Type: SecretTypeKey, Fingerprint: fp, Version: 1, Ciphertext: ct, Nonce: nonce, KeyID: s.Cipher.KeyID,
 		CreatedAt: now, UpdatedAt: now, UpdatedBy: by,
 	}); err != nil {
 		return CreatedKey{}, err
@@ -135,8 +145,14 @@ func (s *Users) DeleteKey(ctx context.Context, name string) error {
 	if have.Type != SecretTypeKey {
 		return ErrSecretNotFound
 	}
-	if uses := s.KeyUsedBy(name); len(uses) > 0 {
-		return &KeyInUseError{Name: name, Uses: uses}
+	var dataKeys int64
+	if ds, ok := s.Store.(fieldcrypt.Store); ok {
+		if dataKeys, err = ds.DataKeysByKey(ctx, name); err != nil {
+			return err
+		}
+	}
+	if uses := s.KeyUsedBy(name); len(uses) > 0 || dataKeys > 0 {
+		return &KeyInUseError{Name: name, Uses: uses, DataKeys: dataKeys}
 	}
 	if err := s.Store.DeleteSecret(ctx, "", name); err != nil {
 		return err
@@ -144,4 +160,153 @@ func (s *Users) DeleteKey(ctx context.Context, name string) error {
 	s.clearSecretCache("", name)
 	s.Audit(ctx, AuditKeyDelete, secretTarget("", name), map[string]any{"fingerprint": have.Fingerprint})
 	return nil
+}
+
+// ErrNoKey means the secret is missing or is not a key.
+var ErrNoKey = errors.New("no such key")
+
+// Errors of a rotation.
+var (
+	// ErrRotationPending means a rotation started and was not finished: resume it first.
+	ErrRotationPending = errors.New("a rotation of this key is unfinished: resume it first")
+	// ErrNoRotation means there is nothing to resume.
+	ErrNoRotation = errors.New("no rotation of this key is pending")
+)
+
+// KeyMaterial returns a field key's value for the data keys it wraps; it implements
+// fieldcrypt.Ring.Keys. The value is opened from the sealed store and never leaves the process.
+func (s *Users) KeyMaterial(ctx context.Context, name string) (fieldcrypt.Material, error) {
+	if s.Cipher == nil {
+		return fieldcrypt.Material{}, fieldcrypt.ErrUnavailable
+	}
+	sec, err := s.Store.SecretByScope(ctx, "", name)
+	if err != nil || sec.Type != SecretTypeKey {
+		return fieldcrypt.Material{}, fmt.Errorf("%w: the key %s does not exist", fieldcrypt.ErrUnavailable, name)
+	}
+	open := func(ct, nonce string) ([]byte, error) {
+		text, err := s.Cipher.Open(ct, nonce, sec.KeyID)
+		if err != nil {
+			return nil, fieldcrypt.ErrUnavailable
+		}
+		return DecodeKey(text)
+	}
+	m := fieldcrypt.Material{Version: max(sec.Version, 1)}
+	if m.Current, err = open(sec.Ciphertext, sec.Nonce); err != nil {
+		return fieldcrypt.Material{}, fmt.Errorf("%w: the key %s can't be opened", fieldcrypt.ErrUnavailable, name)
+	}
+	if sec.PrevCiphertext != "" {
+		if m.Previous, err = open(sec.PrevCiphertext, sec.PrevNonce); err != nil {
+			return fieldcrypt.Material{}, fmt.Errorf("%w: the key %s can't be opened", fieldcrypt.ErrUnavailable, name)
+		}
+		m.PreviousVersion = sec.PrevVersion
+	}
+	return m, nil
+}
+
+// RotatedKey is what a rotation answers. Value is set only for a generated key.
+type RotatedKey struct {
+	Name        string
+	Fingerprint string
+	Previous    string
+	Version     int
+	Rewrapped   int
+	Resumed     bool
+	Value       string
+}
+
+// RotateKey replaces a field key's value and re-wraps every data key it wrapped, so no document
+// is rewritten (design/field-encryption.md §5.3). value is the new key in base64url, or empty
+// to generate one; resume continues a rotation that stopped before it finished, with the value
+// that rotation chose. While it runs the previous value stays, so every data key stays
+// readable; it is dropped only when none is wrapped by it any more.
+func (s *Users) RotateKey(ctx context.Context, name, value string, resume bool, by string) (RotatedKey, error) {
+	if s.Cipher == nil {
+		return RotatedKey{}, ErrSecretsNotConfigured
+	}
+	ds, _ := s.Store.(fieldcrypt.Store)
+	have, err := s.Store.SecretByScope(ctx, "", name)
+	if errors.Is(err, ErrSecretNotFound) || (err == nil && have.Type != SecretTypeKey) {
+		return RotatedKey{}, ErrNoKey
+	}
+	if err != nil {
+		return RotatedKey{}, err
+	}
+	pending := have.PrevCiphertext != ""
+	out := RotatedKey{Name: name, Resumed: pending}
+	switch {
+	case pending && !resume:
+		return RotatedKey{}, ErrRotationPending
+	case !pending && resume:
+		return RotatedKey{}, ErrNoRotation
+	case !pending:
+		generated := value == ""
+		var raw []byte
+		if generated {
+			raw, err = NewKey()
+		} else {
+			raw, err = DecodeKey(value)
+		}
+		if err != nil {
+			return RotatedKey{}, err
+		}
+		text := base64.RawURLEncoding.EncodeToString(raw)
+		ct, nonce, err := s.Cipher.Seal(text)
+		if err != nil {
+			return RotatedKey{}, err
+		}
+		next := have
+		next.PrevCiphertext, next.PrevNonce, next.PrevVersion = have.Ciphertext, have.Nonce, max(have.Version, 1)
+		next.Ciphertext, next.Nonce, next.KeyID = ct, nonce, s.Cipher.KeyID
+		next.Version, next.Fingerprint = next.PrevVersion+1, KeyFingerprint(raw)
+		next.UpdatedAt, next.UpdatedBy = s.now(), by
+		ok, err := s.Store.ReplaceKeySecret(ctx, next, next.PrevVersion)
+		if err != nil {
+			return RotatedKey{}, err
+		}
+		if !ok {
+			return RotatedKey{}, ErrRotationPending
+		}
+		if generated {
+			out.Value = text
+		}
+		have = next
+	}
+	out.Fingerprint, out.Version = have.Fingerprint, max(have.Version, 1)
+	out.Previous = s.previousFingerprint(ctx, have)
+	s.clearSecretCache("", name)
+	m, err := s.KeyMaterial(ctx, name)
+	if err != nil {
+		return out, err
+	}
+	if ds != nil {
+		if out.Rewrapped, err = fieldcrypt.Rewrap(ctx, ds, s.Realm, name, m); err != nil {
+			return out, err
+		}
+	}
+	// Nothing is wrapped by the previous value any more: drop it.
+	done := have
+	done.PrevCiphertext, done.PrevNonce, done.PrevVersion = "", "", 0
+	done.UpdatedAt = s.now()
+	if _, err := s.Store.ReplaceKeySecret(ctx, done, out.Version); err != nil {
+		return out, err
+	}
+	s.clearSecretCache("", name)
+	s.Audit(ctx, AuditKeyRotate, secretTarget("", name), map[string]any{"fingerprint": out.Fingerprint, "previous": out.Previous, "rewrapped": out.Rewrapped})
+	return out, nil
+}
+
+// previousFingerprint is the fingerprint of the value a rotation replaced.
+func (s *Users) previousFingerprint(ctx context.Context, sec Secret) string {
+	if sec.PrevCiphertext == "" {
+		return ""
+	}
+	text, err := s.Cipher.Open(sec.PrevCiphertext, sec.PrevNonce, sec.KeyID)
+	if err != nil {
+		return ""
+	}
+	raw, err := DecodeKey(text)
+	if err != nil {
+		return ""
+	}
+	return KeyFingerprint(raw)
 }

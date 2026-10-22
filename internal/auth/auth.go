@@ -582,6 +582,9 @@ type Store interface {
 	UpsertSecret(ctx context.Context, s Secret) error
 	// CreateSecret stores a new secret, ErrSecretExists if the scope and name are taken.
 	CreateSecret(ctx context.Context, s Secret) error
+	// ReplaceKeySecret stores a rotated key if the stored one still has version ifVersion; false
+	// when it does not (another rotation got there first).
+	ReplaceKeySecret(ctx context.Context, s Secret, ifVersion int) (bool, error)
 	// SecretByScope returns one secret; ErrSecretNotFound if none.
 	SecretByScope(ctx context.Context, database, name string) (Secret, error)
 	// ListSecrets returns every secret's metadata, sorted by database

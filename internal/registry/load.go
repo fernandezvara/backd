@@ -401,6 +401,9 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 	if err := loadOrganization(coll, settings, filepath.Join(dir, CollectionFile)); err != nil {
 		return nil, err
 	}
+	if err := loadEncryption(coll, filepath.Join(dir, CollectionFile)); err != nil {
+		return nil, err
+	}
 	if err := loadIndexes(coll, filepath.Join(dir, indexesFile)); err != nil {
 		return nil, err
 	}
@@ -416,9 +419,6 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 	if err := loadAggregate(coll, filepath.Join(dir, CollectionFile)); err != nil {
 		return nil, err
 	}
-	if err := loadEncryption(coll, filepath.Join(dir, CollectionFile)); err != nil {
-		return nil, err
-	}
 	if err := loadRealtime(coll, filepath.Join(dir, CollectionFile)); err != nil {
 		return nil, err
 	}
@@ -428,6 +428,9 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 		}
 	}
 	if err := loadTriggers(coll, settings, filepath.Join(dir, CollectionFile)); err != nil {
+		return nil, err
+	}
+	if err := checkEncryption(coll, filepath.Join(dir, CollectionFile)); err != nil {
 		return nil, err
 	}
 	if coll.SoftDelete == nil && coll.Rules != nil {
@@ -509,16 +512,17 @@ func (c *Collection) ruleSchema(settings RealmSettings) rules.Schema {
 			_, ok := c.Fields[p]
 			return ok
 		},
-		ScalarField: c.ScalarField,
-		ArrayField:  c.ArrayField,
-		DateField:   c.DateField,
-		Roles:       roles,
-		Consents:    settings.ConsentNames(),
-		ConfigLeaf:  c.configLeaf,
-		OrgRoles:    orgRoles(settings),
-		InOrgs:      c.InOrganizations(),
-		TeamRoles:   teamRoles(settings),
-		InTeams:     c.InTeams(),
+		ScalarField:    c.ScalarField,
+		ArrayField:     c.ArrayField,
+		EncryptedField: c.IsEncrypted,
+		DateField:      c.DateField,
+		Roles:          roles,
+		Consents:       settings.ConsentNames(),
+		ConfigLeaf:     c.configLeaf,
+		OrgRoles:       orgRoles(settings),
+		InOrgs:         c.InOrganizations(),
+		TeamRoles:      teamRoles(settings),
+		InTeams:        c.InTeams(),
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	"github.com/fernandezvara/backd/internal/changefeed"
+	"github.com/fernandezvara/backd/internal/fieldcrypt"
 )
 
 const itemSchema = `{"type":"object","properties":{"name":{"type":"string"}}}`
@@ -360,3 +361,63 @@ type handlerFunc func(changefeed.Change)
 func (h handlerFunc) Change(_ context.Context, c changefeed.Change, _ changefeed.Position) { h(c) }
 func (handlerFunc) Idle(context.Context, changefeed.Position)                              {}
 func (handlerFunc) Gap(context.Context, changefeed.Gap)                                    {}
+
+func TestFeedOpensEncryptedFieldsWithTheDecryptHook(t *testing.T) {
+	f := newFeedFixture(t)
+	ctx := context.Background()
+	var seen []string
+	f.src.Decrypt = func(_ context.Context, n changefeed.Namespace, doc map[string]any) error {
+		ct, ok := doc["name"].(fieldcrypt.Ciphertext)
+		if !ok {
+			return nil
+		}
+		seen = append(seen, n.Realm+" "+n.Coll)
+		doc["name"] = "opened:" + string(ct)
+		return nil
+	}
+	st, err := f.src.Open(ctx, f.set, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	sealed := func(v string) bson.Binary { return bson.Binary{Subtype: 6, Data: []byte(v)} }
+	if _, err := f.items.InsertOne(ctx, bson.D{{Key: "_id", Value: "e1"}, {Key: "_meta", Value: bson.D{{Key: "version", Value: int64(1)}}}, {Key: "name", Value: sealed("a")}}); err != nil {
+		t.Fatal(err)
+	}
+	c := next(t, ctx, st)
+	if c.After["name"] != "opened:a" || len(seen) != 1 || seen[0] != f.realm+" items" {
+		t.Fatalf("created = %+v seen %v", c, seen)
+	}
+	repl := bson.D{{Key: "_id", Value: "e1"}, {Key: "_meta", Value: bson.D{{Key: "version", Value: int64(2)}}}, {Key: "name", Value: sealed("b")}}
+	if _, err := f.items.ReplaceOne(ctx, bson.D{{Key: "_id", Value: "e1"}}, repl); err != nil {
+		t.Fatal(err)
+	}
+	if c = next(t, ctx, st); c.Before["name"] != "opened:a" || c.After["name"] != "opened:b" {
+		t.Fatalf("replaced = %+v", c)
+	}
+
+	// A document the hook can't open stops the feed with an error that holds no value.
+	f.src.Decrypt = func(context.Context, changefeed.Namespace, map[string]any) error { return fieldcrypt.ErrUnavailable }
+	st2, err := f.src.Open(ctx, f.set, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st2.Close()
+	if _, err := f.items.InsertOne(ctx, bson.D{{Key: "_id", Value: "e2"}, {Key: "_meta", Value: bson.D{{Key: "version", Value: int64(1)}}}, {Key: "name", Value: sealed("secret")}}); err != nil {
+		t.Fatal(err)
+	}
+	nctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	for {
+		ev, err := st2.Next(nctx)
+		if err != nil {
+			if !errors.Is(err, fieldcrypt.ErrUnavailable) {
+				t.Fatalf("err = %v", err)
+			}
+			break
+		}
+		if ev.Change != nil {
+			t.Fatalf("a change got through: %+v", ev.Change)
+		}
+	}
+}

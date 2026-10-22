@@ -3,6 +3,7 @@ package auth_test
 import (
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 
 	. "github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/auth/authtest"
+	"github.com/fernandezvara/backd/internal/fieldcrypt"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -144,3 +146,140 @@ func TestAKeyInUseCantBeDeleted(t *testing.T) {
 		t.Errorf("a plain secret is not a key: %v", err)
 	}
 }
+
+func newRotationUsers(t *testing.T) (*Users, *authtest.MemStore, *fieldcrypt.MemStore, *time.Time) {
+	t.Helper()
+	clock := time.Date(2126, 10, 22, 12, 0, 0, 0, time.UTC)
+	store := authtest.NewMemStore()
+	svc := newSecretsUsers(t, store, "clinic", &clock, nil)
+	return svc, store, nil, &clock
+}
+
+func TestRotatingAKeyRewrapsItsDataKeysAndKeepsThemReadable(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _, _ := newRotationUsers(t)
+	store := fieldcrypt.NewMemStore()
+	svc.Store = &keyedStore{MemStore: svc.Store.(*authtest.MemStore), Store: store}
+	k, err := svc.CreateKey(ctx, "HEALTH", "", "ops")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ring := &fieldcrypt.Ring{Realm: "clinic", Store: store, Keys: svc.KeyMaterial}
+	c := &registry.Collection{Realm: "clinic", Database: "main", Name: "patients", Encrypted: []registry.EncryptedField{{Path: "notes", Key: "HEALTH"}, {Path: "history", Key: "HEALTH"}}}
+	if err := ring.Ensure(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := ring.Encrypt(ctx, c, map[string]any{"id": "p1", "notes": "n", "history": "h"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := svc.RotateKey(ctx, "HEALTH", "", false, "ops")
+	if err != nil || res.Rewrapped != 2 || res.Value == "" || res.Value == k.Value || res.Fingerprint == k.Fingerprint || res.Previous != k.Fingerprint || res.Version != 2 {
+		t.Fatalf("rotate: %+v %v", res, err)
+	}
+	// Every data key now carries the new version, and the previous value is gone.
+	for _, r := range store.Keys {
+		if r.WrapVersion != 2 {
+			t.Errorf("a data key is still wrapped by version %d", r.WrapVersion)
+		}
+	}
+	sec, _ := svc.Store.SecretByScope(ctx, "", "HEALTH")
+	if sec.PrevCiphertext != "" || sec.Version != 2 || sec.Fingerprint != res.Fingerprint {
+		t.Errorf("secret after: %+v", sec)
+	}
+	// A new process opens the old values with the new key alone.
+	fresh := &fieldcrypt.Ring{Realm: "clinic", Store: store, Keys: svc.KeyMaterial}
+	if err := fresh.Decrypt(ctx, c, doc); err != nil || doc["notes"] != "n" || doc["history"] != "h" {
+		t.Errorf("after: %v %v", doc, err)
+	}
+	// The old copy of the key no longer opens anything.
+	oldRaw, _ := DecodeKey(k.Value)
+	for _, r := range store.Keys {
+		id, _ := hexDecode(r.ID)
+		if _, err := fieldcrypt.Unwrap(oldRaw, r.Wrapped, id, r.Field("clinic"), r.Kind); err == nil {
+			t.Error("the old key still opens a data key")
+		}
+	}
+	// A key being used can be rotated to a value the owner brings.
+	raw := []byte("0123456789abcdef0123456789abcdef")
+	own := base64.RawURLEncoding.EncodeToString(raw)
+	if res, err := svc.RotateKey(ctx, "HEALTH", own, false, "ops"); err != nil || res.Value != "" || res.Fingerprint != KeyFingerprint(raw) || res.Version != 3 {
+		t.Errorf("own value: %+v %v", res, err)
+	}
+	if _, err := svc.RotateKey(ctx, "HEALTH", "short", false, "ops"); !errors.Is(err, ErrKeyValue) {
+		t.Errorf("bad value: %v", err)
+	}
+	if _, err := svc.RotateKey(ctx, "NOPE", "", false, "ops"); !errors.Is(err, ErrNoKey) {
+		t.Errorf("missing: %v", err)
+	}
+	if _, err := svc.RotateKey(ctx, "HEALTH", "", true, "ops"); !errors.Is(err, ErrNoRotation) {
+		t.Errorf("resume with nothing pending: %v", err)
+	}
+	// A key with data keys under it can't be deleted, even once no field names it.
+	var inUse *KeyInUseError
+	if err := svc.DeleteKey(ctx, "HEALTH"); !errors.As(err, &inUse) || inUse.DataKeys != 2 {
+		t.Errorf("delete: %v", err)
+	}
+}
+
+func TestAnInterruptedRotationKeepsBothValuesUntilItIsResumed(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _, _ := newRotationUsers(t)
+	store := &failingRewrap{MemStore: fieldcrypt.NewMemStore()}
+	svc.Store = &keyedStore{MemStore: svc.Store.(*authtest.MemStore), Store: store}
+	if _, err := svc.CreateKey(ctx, "HEALTH", "", "ops"); err != nil {
+		t.Fatal(err)
+	}
+	ring := &fieldcrypt.Ring{Realm: "clinic", Store: store, Keys: svc.KeyMaterial}
+	c := &registry.Collection{Realm: "clinic", Database: "main", Name: "patients", Encrypted: []registry.EncryptedField{{Path: "notes", Key: "HEALTH"}, {Path: "history", Key: "HEALTH"}}}
+	if err := ring.Ensure(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	doc, _ := ring.Encrypt(ctx, c, map[string]any{"id": "p1", "notes": "n", "history": "h"})
+
+	store.failAfter = 1
+	if _, err := svc.RotateKey(ctx, "HEALTH", "", false, "ops"); err == nil {
+		t.Fatal("the rotation should have stopped")
+	}
+	// Half the data keys are on each version: everything still opens.
+	fresh := &fieldcrypt.Ring{Realm: "clinic", Store: store, Keys: svc.KeyMaterial}
+	if err := fresh.Decrypt(ctx, c, doc); err != nil || doc["notes"] != "n" || doc["history"] != "h" {
+		t.Fatalf("mid rotation: %v %v", doc, err)
+	}
+	// Starting another is refused; resuming finishes it.
+	if _, err := svc.RotateKey(ctx, "HEALTH", "", false, "ops"); !errors.Is(err, ErrRotationPending) {
+		t.Errorf("another rotation: %v", err)
+	}
+	store.failAfter = 0
+	res, err := svc.RotateKey(ctx, "HEALTH", "", true, "ops")
+	if err != nil || !res.Resumed || res.Rewrapped != 1 || res.Value != "" {
+		t.Fatalf("resume: %+v %v", res, err)
+	}
+	sec, _ := svc.Store.SecretByScope(ctx, "", "HEALTH")
+	if sec.PrevCiphertext != "" {
+		t.Error("the previous value was kept after the rotation finished")
+	}
+}
+
+// keyedStore gives a MemStore the data keys of a fieldcrypt store.
+type keyedStore struct {
+	*authtest.MemStore
+	fieldcrypt.Store
+}
+
+// failingRewrap fails the rewrap of every data key after the first failAfter ones succeeded.
+type failingRewrap struct {
+	*fieldcrypt.MemStore
+	failAfter, done int
+}
+
+func (f *failingRewrap) RewrapDataKey(ctx context.Context, id string, wrapped []byte, from, to int) (bool, error) {
+	if f.failAfter > 0 && f.done >= f.failAfter {
+		return false, errors.New("disk on fire")
+	}
+	f.done++
+	return f.MemStore.RewrapDataKey(ctx, id, wrapped, from, to)
+}
+
+func hexDecode(s string) ([]byte, error) { return hex.DecodeString(s) }

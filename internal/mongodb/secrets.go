@@ -13,22 +13,27 @@ import (
 )
 
 type secretDoc struct {
-	ID          string    `bson:"_id"`
-	Database    string    `bson:"database"`
-	Name        string    `bson:"name"`
-	Type        string    `bson:"type,omitempty"`
-	Fingerprint string    `bson:"fingerprint,omitempty"`
-	Ciphertext  string    `bson:"ciphertext"`
-	Nonce       string    `bson:"nonce"`
-	KeyID       string    `bson:"key_id"`
-	CreatedAt   time.Time `bson:"created_at"`
-	UpdatedAt   time.Time `bson:"updated_at"`
-	UpdatedBy   string    `bson:"updated_by"`
+	ID             string    `bson:"_id"`
+	Database       string    `bson:"database"`
+	Name           string    `bson:"name"`
+	Type           string    `bson:"type,omitempty"`
+	Fingerprint    string    `bson:"fingerprint,omitempty"`
+	Version        int       `bson:"version,omitempty"`
+	PrevCiphertext string    `bson:"prev_ciphertext,omitempty"`
+	PrevNonce      string    `bson:"prev_nonce,omitempty"`
+	PrevVersion    int       `bson:"prev_version,omitempty"`
+	Ciphertext     string    `bson:"ciphertext"`
+	Nonce          string    `bson:"nonce"`
+	KeyID          string    `bson:"key_id"`
+	CreatedAt      time.Time `bson:"created_at"`
+	UpdatedAt      time.Time `bson:"updated_at"`
+	UpdatedBy      string    `bson:"updated_by"`
 }
 
 func (d secretDoc) secret() auth.Secret {
 	return auth.Secret{
-		Database: d.Database, Name: d.Name, Type: d.Type, Fingerprint: d.Fingerprint, Ciphertext: d.Ciphertext, Nonce: d.Nonce, KeyID: d.KeyID,
+		Database: d.Database, Name: d.Name, Type: d.Type, Fingerprint: d.Fingerprint,
+		Version: d.Version, PrevCiphertext: d.PrevCiphertext, PrevNonce: d.PrevNonce, PrevVersion: d.PrevVersion, Ciphertext: d.Ciphertext, Nonce: d.Nonce, KeyID: d.KeyID,
 		CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC(), UpdatedBy: d.UpdatedBy,
 	}
 }
@@ -55,6 +60,10 @@ func (s *AuthStore) UpsertSecret(ctx context.Context, sec auth.Secret) error {
 			{Key: "name", Value: sec.Name},
 			{Key: "type", Value: sec.Type},
 			{Key: "fingerprint", Value: sec.Fingerprint},
+			{Key: "version", Value: sec.Version},
+			{Key: "prev_ciphertext", Value: sec.PrevCiphertext},
+			{Key: "prev_nonce", Value: sec.PrevNonce},
+			{Key: "prev_version", Value: sec.PrevVersion},
 			{Key: "ciphertext", Value: sec.Ciphertext},
 			{Key: "nonce", Value: sec.Nonce},
 			{Key: "key_id", Value: sec.KeyID},
@@ -71,13 +80,33 @@ func (s *AuthStore) UpsertSecret(ctx context.Context, sec auth.Secret) error {
 // the existence check.
 func (s *AuthStore) CreateSecret(ctx context.Context, sec auth.Secret) error {
 	_, err := s.secrets().InsertOne(ctx, secretDoc{
-		ID: secretID(sec.Database, sec.Name), Database: sec.Database, Name: sec.Name, Type: sec.Type, Fingerprint: sec.Fingerprint,
+		ID: secretID(sec.Database, sec.Name), Database: sec.Database, Name: sec.Name, Type: sec.Type, Fingerprint: sec.Fingerprint, Version: sec.Version,
 		Ciphertext: sec.Ciphertext, Nonce: sec.Nonce, KeyID: sec.KeyID, CreatedAt: sec.CreatedAt, UpdatedAt: sec.UpdatedAt, UpdatedBy: sec.UpdatedBy,
 	})
 	if mongo.IsDuplicateKeyError(err) {
 		return auth.ErrSecretExists
 	}
 	return err
+}
+
+// ReplaceKeySecret implements auth.Store: the filter holds the version the rotation started from,
+// so two rotations can't both win.
+func (s *AuthStore) ReplaceKeySecret(ctx context.Context, sec auth.Secret, ifVersion int) (bool, error) {
+	versionIs := bson.D{{Key: "version", Value: ifVersion}}
+	if ifVersion == 1 {
+		versionIs = bson.D{{Key: "$or", Value: bson.A{bson.D{{Key: "version", Value: 1}}, bson.D{{Key: "version", Value: bson.D{{Key: "$exists", Value: false}}}}}}}
+	}
+	filter := append(bson.D{{Key: "_id", Value: secretID(sec.Database, sec.Name)}}, versionIs...)
+	res, err := s.secrets().UpdateOne(ctx, filter, bson.D{{Key: "$set", Value: bson.D{
+		{Key: "fingerprint", Value: sec.Fingerprint}, {Key: "version", Value: sec.Version},
+		{Key: "ciphertext", Value: sec.Ciphertext}, {Key: "nonce", Value: sec.Nonce}, {Key: "key_id", Value: sec.KeyID},
+		{Key: "prev_ciphertext", Value: sec.PrevCiphertext}, {Key: "prev_nonce", Value: sec.PrevNonce}, {Key: "prev_version", Value: sec.PrevVersion},
+		{Key: "updated_at", Value: sec.UpdatedAt}, {Key: "updated_by", Value: sec.UpdatedBy},
+	}}})
+	if err != nil {
+		return false, err
+	}
+	return res.MatchedCount == 1, nil
 }
 
 func (s *AuthStore) SecretByScope(ctx context.Context, database, name string) (auth.Secret, error) {

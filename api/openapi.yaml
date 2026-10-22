@@ -4700,6 +4700,62 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/secrets/{name}/rotate:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - name: name
+        in: path
+        required: true
+        schema: { type: string, description: "The field key's name." }
+    post:
+      tags: [admin]
+      summary: Rotate a field key
+      description: |
+        Gives a field key a new value and wraps every data key it protected again with it: no
+        document is rewritten, so the change is instant. The new value is generated here and
+        returned once (`generate: true`) or brought by the caller (`value`, 32 bytes in base64url).
+        `resume: true` finishes a rotation that stopped before the end; until a rotation finishes
+        the previous value is kept, so nothing becomes unreadable. Give exactly one of the three.
+        Needs full admin access and a fresh re-authentication; audited as `secret.key.rotate` with
+        the new and previous fingerprints. Keep your old copy of the key for backups made before.
+      operationId: adminRotateKey
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                generate: { type: boolean }
+                value: { type: string, description: "The new key: 32 bytes in base64url." }
+                resume: { type: boolean }
+      responses:
+        "200":
+          description: The key was rotated. The response is never cached.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [name, type, fingerprint, previous_fingerprint, version, rewrapped]
+                properties:
+                  name: { type: string }
+                  type: { type: string, enum: [key] }
+                  fingerprint: { type: string, description: "Of the new value." }
+                  previous_fingerprint: { type: string }
+                  version: { type: integer, description: "How many values the key has had." }
+                  rewrapped: { type: integer, description: "Data keys wrapped again by this call." }
+                  key: { type: string, description: "A generated key, base64url. Only this once." }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/config:
     parameters: [{ $ref: "#/components/parameters/realm" }]
     get:
@@ -9343,7 +9399,8 @@ components:
                 write_conflict, version_mismatch, id_required, invalid_id,
                 id_not_allowed, id_taken, payload_too_large,
                 unsupported_media_type, too_many_requests, internal_error,
-                unavailable; for function calls also function_failed,
+                unavailable, field_encrypted (a `where` or `order_by` names an encrypted
+                field); for function calls also function_failed,
                 function_timeout, invalid_output, secret_missing,
                 idempotency_key_required, idempotency_key_reused and
                 request_in_progress. A function's own errors (`ctx.error`)
@@ -9359,6 +9416,7 @@ components:
                 properties:
                   path: { type: string }
                   reason: { type: string }
+                  code: { type: string, description: "Set when the problem has a code of its own, such as `field_encrypted`." }
             request_id: { type: string, minLength: 1 }
 
     User:

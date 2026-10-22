@@ -20,6 +20,7 @@ import (
 	"github.com/rs/xid"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/fieldcrypt"
 	"github.com/fernandezvara/backd/internal/jsonnum"
 	"github.com/fernandezvara/backd/internal/metrics"
 	"github.com/fernandezvara/backd/internal/query"
@@ -317,7 +318,7 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 	q, details := parseListQuery(r.URL.Query(), c.Fields)
 	details = explainReferenceFilters(c, details)
 	if len(details) > 0 {
-		writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid query parameters", details...)
+		writeError(w, r, http.StatusBadRequest, queryCode(details), "invalid query parameters", details...)
 		return
 	}
 	if q.Search != nil || q.Relevance {
@@ -404,7 +405,7 @@ func parseListQuery(v url.Values, fields map[string]registry.Field) (storage.Que
 		var qe query.Errors
 		if errors.As(err, &qe) {
 			for _, e := range qe {
-				details = append(details, Detail{Path: e.Path, Reason: e.Reason})
+				details = append(details, Detail{Path: e.Path, Reason: e.Reason, Code: e.Code})
 			}
 		}
 	}
@@ -851,6 +852,10 @@ func storageError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, storage.ErrUnavailable), errors.Is(err, context.DeadlineExceeded):
 		logger(r.Context()).Error("storage unavailable", "error", err)
 		writeError(w, r, http.StatusServiceUnavailable, codeUnavailable, "storage unavailable")
+	case errors.Is(err, fieldcrypt.ErrUnavailable), errors.Is(err, fieldcrypt.ErrCorrupt):
+		// Never the field's value: the errors carry only where the problem is.
+		logger(r.Context()).Error("encrypted field", "error", err)
+		writeError(w, r, http.StatusInternalServerError, codeInternal, "an encrypted field can't be read or written: its key is not available (see the server log)")
 	default:
 		logger(r.Context()).Error("storage error", "error", err)
 		writeError(w, r, http.StatusInternalServerError, codeInternal, "internal error")
@@ -1291,3 +1296,14 @@ const maxRelevanceResults = 1000
 
 // relevanceSort reports whether order_by is the relevance sort.
 func relevanceSort(orderBy string) bool { return strings.TrimSpace(orderBy) == "_relevance" }
+
+// queryCode is the code of a refused query: field_encrypted when it names an encrypted field,
+// invalid_query otherwise.
+func queryCode(details []Detail) string {
+	for _, d := range details {
+		if d.Code == codeFieldEncrypted {
+			return codeFieldEncrypted
+		}
+	}
+	return codeInvalidQuery
+}

@@ -188,6 +188,9 @@ type Field struct {
 	// schema.json): clients send and read RFC 3339 strings, queries compare
 	// dates.
 	Date bool
+	// Encrypted marks a field stored encrypted (collection.yaml's fields.<path>.encrypt), and the
+	// fields inside it: queries refuse them, rules can't compare them.
+	Encrypted bool
 }
 
 // Has reports whether the field's declared types include t. An

@@ -82,6 +82,10 @@ type ChangeSource struct {
 	Client *mongo.Client
 	// MaxAwait is how long the server holds a read open waiting for changes; 0 is one second.
 	MaxAwait time.Duration
+	// Decrypt opens the encrypted fields of a changed document, in place (nil: the collections
+	// of this deployment encrypt nothing). The consumers of the feed work on plaintext, as a
+	// read through the API does.
+	Decrypt func(ctx context.Context, n changefeed.Namespace, doc map[string]any) error
 }
 
 // NewChangeSource reads change streams on client (see ConnectFeed).
@@ -115,7 +119,7 @@ func (s *ChangeSource) Open(ctx context.Context, set changefeed.WatchSet, after 
 		ns[n.DB+"\x00"+n.Coll] = n
 		system[n.DB+"\x00"+n.Coll] = true
 	}
-	st := &changeStream{cs: cs, ns: ns, system: system}
+	st := &changeStream{cs: cs, ns: ns, system: system, decrypt: s.Decrypt}
 	st.last = bytesCopy(cs.ResumeToken())
 	return st, nil
 }
@@ -243,6 +247,8 @@ type changeStream struct {
 	ns     map[string]changefeed.Namespace
 	system map[string]bool
 	last   []byte // the last position handed out, to report a quiet period only once
+	// decrypt opens the encrypted fields of the documents of a change (see ChangeSource.Decrypt).
+	decrypt func(ctx context.Context, n changefeed.Namespace, doc map[string]any) error
 }
 
 func (s *changeStream) Position() changefeed.Position { return bytesCopy(s.cs.ResumeToken()) }
@@ -257,6 +263,17 @@ func (s *changeStream) Next(ctx context.Context) (changefeed.Event, error) {
 			c, ok, err := s.decode(s.cs.Current)
 			if err != nil {
 				return changefeed.Event{}, err
+			}
+			if ok && !c.System && s.decrypt != nil {
+				n := s.ns[c.DB+"\x00"+c.Coll]
+				for _, d := range []map[string]any{c.After, c.Before} {
+					if d == nil {
+						continue
+					}
+					if err := s.decrypt(ctx, n, d); err != nil {
+						return changefeed.Event{}, err
+					}
+				}
 			}
 			pos := bytesCopy(s.cs.ResumeToken())
 			s.last = pos

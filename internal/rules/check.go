@@ -405,6 +405,8 @@ func filterable(n ast.Node, schema Schema) error {
 // scalar checks that a read rule compares a single-valued field.
 func scalar(schema Schema, path string) error {
 	switch {
+	case schema.EncryptedField != nil && schema.EncryptedField(path):
+		return fmt.Errorf("read rules: document.%s is encrypted, which the database can't compare: a read rule can't use it (create, update and delete rules read it in memory)", path)
 	case schema.ScalarField(path):
 		return nil
 	case schema.ArrayField(path):

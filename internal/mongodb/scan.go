@@ -29,6 +29,9 @@ func (r *Repository) ScanAfter(ctx context.Context, afterID string, limit int) (
 	for i, d := range docs {
 		out[i] = fromBSON(d)
 	}
+	if err := r.open(ctx, out...); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 

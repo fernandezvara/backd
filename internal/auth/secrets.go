@@ -37,12 +37,19 @@ type Secret struct {
 	Type     string // "": a value functions and providers may read; SecretTypeKey: a field key
 	// Fingerprint identifies a key's value without revealing it (KeyFingerprint); empty for values.
 	Fingerprint string
-	Ciphertext  string // base64
-	Nonce       string // base64
-	KeyID       string // fingerprint of the key it was encrypted with
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	UpdatedBy   string
+	// Version counts a key's values: 1 when created, +1 at each rotation (0 reads as 1).
+	// Prev* hold the value being replaced while a rotation is unfinished, sealed like the
+	// current one, so data keys wrapped by it can still be opened until they are re-wrapped.
+	Version        int
+	PrevCiphertext string
+	PrevNonce      string
+	PrevVersion    int
+	Ciphertext     string // base64
+	Nonce          string // base64
+	KeyID          string // fingerprint of the key it was encrypted with
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	UpdatedBy      string
 }
 
 // SecretMeta is a secret without its value, as listed: names, scope and

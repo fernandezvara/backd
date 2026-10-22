@@ -16,6 +16,7 @@ import (
 	"runtime/debug"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/changefeed"
 	"github.com/fernandezvara/backd/internal/executor"
+	"github.com/fernandezvara/backd/internal/fieldcrypt"
 	"github.com/fernandezvara/backd/internal/httpapi"
 	"github.com/fernandezvara/backd/internal/metrics"
 	"github.com/fernandezvara/backd/internal/mongodb"
@@ -86,7 +88,10 @@ type app struct {
 	client *mongo.Client
 
 	userServices func(string) *auth.Users // built once by realmUsers
-	fingerprint  string                   // of CONFIG_DIR (registry.Fingerprint)
+	// rings are the realms' field encryption, built on first use (fieldRing).
+	ringsMu     sync.Mutex
+	rings       map[string]*fieldcrypt.Ring
+	fingerprint string // of CONFIG_DIR (registry.Fingerprint)
 	// withWorker runs the worker role in this process too (serve --with-worker).
 	withWorker bool
 	// metrics records what this process does; nil when METRICS_ADDR is unset.
@@ -243,6 +248,9 @@ func serve(ctx context.Context, a *app) error {
 		return err
 	}
 	if err := checkEncryptionKeys(ctx, a.reg, a.realmUsers()); err != nil {
+		return err
+	}
+	if err := a.ensureDataKeys(ctx); err != nil {
 		return err
 	}
 	a.logSecurityWarnings()
@@ -587,7 +595,7 @@ func (a *app) handlerConfig() httpapi.Config {
 		ExecutorToken:     a.cfg.ExecutorToken,
 		Log:               a.log,
 		Registry:          a.reg,
-		Store:             &mongodb.Store{Client: a.client},
+		Store:             a.documentStore(),
 		Ready:             func(ctx context.Context) error { return a.client.Ping(ctx, nil) },
 		MaxBodyBytes:      a.cfg.MaxBodyBytes,
 		MaxUploadBytes:    a.cfg.MaxUploadBytes,

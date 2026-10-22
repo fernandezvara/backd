@@ -131,6 +131,7 @@ Paths are relative to `/v1/{realm}/_admin`. Bodies are JSON (`Content-Type: appl
 | `DELETE /apikeys/{name}` | none | `204`; the key stops working at once |
 | `GET /secrets` | none | `200` with the realm's [secrets](../../../build/functions/secrets/)' metadata (never their values); a [field key](../../../build/configuration/field-keys/) also has its `fingerprint` and `used_by` |
 | `POST /secrets` | `{"name", "type": "key", "generate": true}` or `{"name", "type": "key", "value"}` | `201` with `name`, `type`, `fingerprint` and, for a generated key, `key`: shown only here. `409` if the name is taken. Full admin access and a fresh proof |
+| `POST /secrets/{name}/rotate` | `{"generate": true}`, `{"value"}` or `{"resume": true}` | `200` with `fingerprint`, `previous_fingerprint`, `version`, `rewrapped` and, for a generated key, `key`: shown only here. `409` if a rotation is pending (resume it) or none is. Full admin access and a fresh proof |
 | `PUT /secrets/{name}` | `{"value", "database"?}` | `204`; creates or replaces the value; `409` if the name is a field key |
 | `DELETE /secrets/{name}` | none; query `database`? | `204`; a [field key](../../../build/configuration/field-keys/) needs full admin access and a fresh proof, and `409` while a field uses it |
 | `GET /audit` | none; query `action`, `actor`, `target`, `since`, `until` (RFC 3339), `limit`, `skip` | `200` with a page of [audit records](../audit/), newest first |

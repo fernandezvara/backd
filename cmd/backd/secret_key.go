@@ -73,3 +73,60 @@ func keyIsHeld(t *target, name string) (bool, error) {
 	}
 	return false, nil
 }
+
+// secretRotate gives a key a new value and re-wraps what it protects. A generated key goes to
+// standard output once, like a created one.
+func secretRotate(c *kli.CommandContext) error {
+	t, err := targetOf(c, false)
+	if err != nil {
+		return err
+	}
+	generate, resume, src := flag(c, "generate"), flag(c, "resume"), str(c, "value")
+	n := 0
+	for _, set := range []bool{generate, resume, src != ""} {
+		if set {
+			n++
+		}
+	}
+	if n != 1 {
+		return usageErr(errors.New("give exactly one of --generate, --value and --resume"))
+	}
+	body := map[string]any{}
+	switch {
+	case generate:
+		body["generate"] = true
+	case resume:
+		body["resume"] = true
+	default:
+		v, err := readKeySource(src, c.Getenv, c.Stderr())
+		if err != nil {
+			return err
+		}
+		body["value"] = v
+	}
+	uio := ioOf(c)
+	proof, err := t.proof(uio)
+	if err != nil {
+		return err
+	}
+	name := str(c, "name")
+	var out struct {
+		Fingerprint string `json:"fingerprint"`
+		Previous    string `json:"previous_fingerprint"`
+		Rewrapped   int    `json:"rewrapped"`
+		Key         string `json:"key"`
+	}
+	if _, err := t.callHeaders("POST", "_admin/secrets/"+url.PathEscape(name)+"/rotate", nil, body, &out, proof); err != nil {
+		return err
+	}
+	if flag(c, "json") {
+		return json.NewEncoder(uio.stdout).Encode(out)
+	}
+	if out.Key != "" {
+		fmt.Fprintln(uio.stdout, out.Key)
+		fmt.Fprintf(uio.stderr, "Key %s rotated: %s:%s replaces %s:%s, %d data key(s) wrapped again, no document rewritten.\nThis is the only time the new key is shown. Store it somewhere safe outside backd, and keep the old one for backups made before today.\n", name, name, out.Fingerprint, name, out.Previous, out.Rewrapped)
+		return nil
+	}
+	fmt.Fprintf(uio.stderr, "Key %s rotated: %s:%s replaces %s:%s, %d data key(s) wrapped again, no document rewritten.\n", name, name, out.Fingerprint, name, out.Previous, out.Rewrapped)
+	return nil
+}

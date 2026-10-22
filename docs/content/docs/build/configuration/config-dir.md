@@ -167,6 +167,7 @@ This optional file holds a collection's policy, in sections that can each be lef
 | `organization:` | Whether documents belong to an organization, and what happens to them when it is deleted | [Organizations](#organizations) |
 | `realtime:` | Whether the collection's changes may be streamed to clients | [Realtime](#realtime) |
 | `triggers:` | Functions to run in the background when documents change | [Triggers](#triggers) |
+| `fields:` | Which fields are stored encrypted, and with which key | [Field keys](../field-keys/) |
 | `on_owner_delete:` | What an administrator's **erase** does to the collection when a user is erased (`backd user delete`) | below |
 
 ```yaml

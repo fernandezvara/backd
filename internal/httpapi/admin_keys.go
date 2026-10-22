@@ -59,6 +59,56 @@ func (a *adminAPI) createKey(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// rotateKey handles POST /secrets/{name}/rotate: the key gets a new value (generated here and
+// returned once, or imported), every data key it wrapped is wrapped again, and no document is
+// touched. `resume` finishes a rotation that stopped half way. Same proof as creating a key.
+func (a *adminAPI) rotateKey(w http.ResponseWriter, r *http.Request) {
+	if !needFullWithReauth(w, r, "rotating a key") {
+		return
+	}
+	obj, ok := readObject(w, r)
+	if !ok {
+		return
+	}
+	f, ok := fields(w, r, obj, map[string]string{"generate": "bool?", "value": "string?", "resume": "bool?"})
+	if !ok {
+		return
+	}
+	generate, _ := f["generate"].(bool)
+	value, _ := f["value"].(string)
+	resume, _ := f["resume"].(bool)
+	n := 0
+	for _, set := range []bool{generate, value != "", resume} {
+		if set {
+			n++
+		}
+	}
+	if n != 1 {
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "generate", Reason: "give exactly one of generate: true, value and resume: true"})
+		return
+	}
+	caller, _ := callerOf(r)
+	res, err := usersOf(r).RotateKey(r.Context(), chi.URLParam(r, "name"), value, resume, caller.Actor())
+	switch {
+	case errors.Is(err, auth.ErrNoKey):
+		writeError(w, r, http.StatusNotFound, codeNotFound, "key not found")
+	case errors.Is(err, auth.ErrRotationPending), errors.Is(err, auth.ErrNoRotation):
+		writeError(w, r, http.StatusConflict, codeConflict, err.Error())
+	case errors.Is(err, auth.ErrKeyValue):
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "value", Reason: err.Error()})
+	case err != nil:
+		logger(r.Context()).Error("key rotation stopped", "key", chi.URLParam(r, "name"), "error", err)
+		writeError(w, r, http.StatusInternalServerError, codeInternal, "the rotation stopped before it finished: nothing is lost, the previous value is kept. Resume it with resume: true")
+	default:
+		out := map[string]any{"name": res.Name, "type": auth.SecretTypeKey, "fingerprint": res.Fingerprint, "previous_fingerprint": res.Previous, "version": res.Version, "rewrapped": res.Rewrapped}
+		if res.Value != "" {
+			out["key"] = res.Value
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, http.StatusOK, out)
+	}
+}
+
 // deleteKey is the part of DELETE /secrets/{name} for a key: the same proof, and a refusal
 // while a field still names it.
 func (a *adminAPI) deleteKey(w http.ResponseWriter, r *http.Request) {

@@ -153,13 +153,17 @@ func (a *adminAPI) importBegin(w http.ResponseWriter, r *http.Request, realm str
 				missing = append(missing, Detail{Path: db.Name + "/" + col.Name, Reason: "the manifest names an unexpected part"})
 				continue
 			}
+			if len(c.Collections[col.Name].Encrypted) > 0 {
+				missing = append(missing, Detail{Path: db.Name + "/" + col.Name, Reason: "this collection encrypts fields, and import can't write them yet (issue 16.6)"})
+				continue
+			}
 			if files := c.Collections[col.Name].Files; len(files) > 0 {
 				fileFields[db.Name+"/"+col.Name] = slices.Sorted(maps.Keys(files))
 			}
 		}
 	}
 	if len(missing) > 0 {
-		refuse(w, r, "the package holds collections the target realm doesn't have; add them to its configuration first", missing...)
+		refuse(w, r, "the package can't be imported into this realm as it is (collections the realm doesn't configure need adding to its configuration first)", missing...)
 		return
 	}
 	var warnings []string
