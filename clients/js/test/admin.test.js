@@ -24,6 +24,37 @@ test('admin needs an API key or a session', async () => {
   assert.equal(m.calls[0].headers.Authorization, 'Bearer bds_admin')
 })
 
+test('password expiry, reset links and ending every session', async () => {
+  const m = mockFetch([
+    { status: 204 }, { body: { link: 'https://api.test/v1/acme/_auth/reset-password?token=t', expires_at: '2026-10-22T20:15:00.000Z' } },
+    { body: { accounts: 3, epoch: null } },
+    { body: { valid_after: '2026-10-22T20:00:00.000Z', accounts: 3, sessions: 7, notify_job: 'j1' } },
+    { status: 202, body: { id: 'j2', status: 'queued' } }, { body: { sessions: 2 } },
+  ])
+  const a = adminOf(m)
+  await a.users.expirePassword('u1', { reason: 'support case' })
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/users/u1/expire-password')
+  assert.deepEqual(m.calls[0].body, { reason: 'support case' })
+
+  assert.deepEqual(await a.users.resetLink('u1', { redirectTo: 'https://app.example/done' }), { link: 'https://api.test/v1/acme/_auth/reset-password?token=t', expiresAt: '2026-10-22T20:15:00.000Z' })
+  assert.equal(m.calls[1].url.pathname, '/v1/acme/_admin/users/u1/reset-link')
+  assert.deepEqual(m.calls[1].body, { redirect_to: 'https://app.example/done' })
+
+  assert.deepEqual(await a.passwords.state(), { accounts: 3, epoch: null })
+  assert.equal(m.calls[2].url.pathname, '/v1/acme/_admin/passwords')
+
+  const done = await a.passwords.expireAll({ reason: 'leaked backup', keepSessions: true, notify: true })
+  assert.equal(done.sessions, 7)
+  assert.equal(m.calls[3].url.pathname, '/v1/acme/_admin/passwords/expire')
+  assert.deepEqual(m.calls[3].body, { reason: 'leaked backup', keep_sessions: true, notify: true })
+
+  assert.deepEqual(await a.passwords.notify(), { id: 'j2', status: 'queued' })
+  assert.equal(m.calls[4].url.pathname, '/v1/acme/_admin/passwords/notify')
+  assert.deepEqual(await a.sessions.revokeAll(), { sessions: 2 })
+  assert.equal(m.calls[5].method, 'DELETE')
+  assert.equal(m.calls[5].url.pathname, '/v1/acme/_admin/sessions')
+})
+
 test('API keys and networks', async () => {
   const info = { name: 'billing', role: 'data', prefix: 'bdk_abcdef', networks: [], created_at: '2026-09-26T12:00:00.000Z', last_used_at: null, expires_at: null }
   const m = mockFetch([

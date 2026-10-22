@@ -234,6 +234,7 @@
     "unverified": "Sin verificar",
     "verified": "Verificado",
     "noRoles": "Sin roles",
+    "passwordExpired": "Contraseña caducada",
     "create": {
       "title": "Crear usuario",
       "open": "Crear usuario",
@@ -267,6 +268,26 @@
       "label": "Nueva contraseña",
       "help": "Cierra todas las sesiones del usuario.",
       "done": "Contraseña cambiada; sesiones cerradas."
+    },
+    "expire": {
+      "open": "Caducar contraseña",
+      "title": "¿Caducar la contraseña?",
+      "body": "La contraseña actual deja de abrir la cuenta hasta que la persona la restablezca o le pongas una nueva. Sus sesiones se conservan. Si el realm envía correo, al iniciar sesión con ella recibe un enlace para restablecerla.",
+      "reason": "Motivo (para el registro de auditoría)",
+      "action": "Caducar contraseña",
+      "done": "Contraseña caducada."
+    },
+    "resetLink": {
+      "open": "Enlace de restablecimiento",
+      "title": "Crear un enlace de restablecimiento",
+      "body": "Un enlace de un solo uso para que la persona elija una contraseña nueva, para cuando no se puede llegar a su correo. No se envía nada. Quien tenga el enlace puede quedarse con la cuenta: entrégalo por un canal de confianza.",
+      "redirect": "Redirección posterior (opcional)",
+      "redirectHelp": "Una dirección dentro de las redirecciones permitidas del realm.",
+      "action": "Crear enlace",
+      "shownTitle": "Enlace de restablecimiento",
+      "shownBody": "Se muestra una sola vez. Funciona una vez y caduca el {date}.",
+      "label": "Enlace",
+      "close": "Hecho"
     },
     "email": {
       "open": "Cambiar correo",
@@ -350,6 +371,41 @@
     },
     "networks": {
       "title": "Redes"
+    }
+  },
+  "passwords": {
+    "title": "Contraseñas y sesiones",
+    "loadFailed": "No se pudo cargar el estado de las contraseñas.",
+    "allValid": "No se ha aplicado ninguna caducidad. {accounts} cuentas tienen contraseña.",
+    "expiredSince": "Las contraseñas establecidas antes del {date} caducaron. {accounts} cuentas tienen contraseña.",
+    "expire": {
+      "open": "Caducar todas las contraseñas",
+      "title": "¿Caducar todas las contraseñas?",
+      "body": "La contraseña de {accounts} cuentas deja de funcionar. Cada persona elige una nueva con un restablecimiento; al iniciar sesión con la antigua recibe el correo. No se puede deshacer.",
+      "reason": "Motivo (para la auditoría y el correo)",
+      "reasonHelp": "Se muestra a los usuarios en el correo, cuando se envía.",
+      "keepSessions": "Conservar las sesiones (una rotación planificada, no una brecha)",
+      "notify": "Enviar a cada usuario un enlace para elegir una contraseña nueva",
+      "type": "Escribe {n} para confirmar",
+      "mismatch": "Escribe el número de cuentas, {n}, para confirmar.",
+      "action": "Caducar todas las contraseñas",
+      "done": "Contraseñas caducadas: {accounts} cuentas, {sessions} sesiones cerradas."
+    },
+    "tell": {
+      "open": "Avisar a los usuarios",
+      "title": "¿Avisar a los usuarios?",
+      "body": "Envía a cada usuario cuya contraseña caducó un enlace para elegir una nueva. Se omite a quien ya fue avisado y se aplican los límites de correo. Se ejecuta como un trabajo que puedes seguir en la lista de trabajos.",
+      "action": "Empezar",
+      "done": "Se ha empezado a avisar a los usuarios."
+    },
+    "revoke": {
+      "open": "Cerrar todas las sesiones",
+      "title": "¿Cerrar todas las sesiones?",
+      "body": "Todo el mundo, tú incluido, vuelve a iniciar sesión. Las contraseñas no se tocan.",
+      "type": "Escribe {realm} para confirmar",
+      "mismatch": "Escribe el nombre del realm, {realm}, para confirmar.",
+      "action": "Cerrar todas las sesiones",
+      "done": "{sessions} sesiones cerradas."
     }
   },
   "invitations": {
@@ -940,6 +996,7 @@
   },
   "proof": {
     "intro": "Esta clave sobrevive a tu sesión: confirma que eres tú.",
+    "introAction": "Esta acción necesita una prueba reciente de que eres tú.",
     "password": "Tu contraseña",
     "totp": "Código de tu aplicación de autenticación",
     "recovery": "Un código de recuperación",

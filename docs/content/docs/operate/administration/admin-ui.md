@@ -47,13 +47,15 @@ The **Users** page lists the realm's users, a page at a time, and searches by em
 
 - **create** a user, with or without a password (without one they can't sign in until a password is set);
 - **remove a way to sign in** (asks for the method's name; the last one can't be removed);
-- **disable** or **enable** them (disabling ends their sessions), mark the address **verified**, **set a password** (which ends their sessions) and **change the email** (offered only when the realm sends email, because both addresses are told);
+- **disable** or **enable** them (disabling ends their sessions), mark the address **verified**, **set a password** (which ends their sessions), **expire the password** (it stops opening the account until they reset it; their sessions stay), make a **reset link** for a user the email can't reach (offered only when the realm sends email: the link is shown once, after a fresh proof of identity) and **change the email** (offered only when the realm sends email, because both addresses are told);
 - **add and remove roles**, from the roles `realm.yaml` declares. An assignment that `realm.yaml` doesn't list for that user is marked *only in the database*: a rebuilt realm wouldn't have it. Reading which roles are declared and seeded needs the `config` area; without it the role is typed by name and the server checks it;
 - **revoke a session**: its token stops working at once;
 - **remove a device** registered for [push notifications](../../../build/push/devices/) (the **Devices** section appears in a realm with `push:`): it stops receiving pushes at once, and the removal is audited;
 - **delete** the user: the dialog first shows what they own in every collection with a [policy](../erasure/), and asks for the user's email to be typed before it erases. Erasing is irreversible; disabling keeps the data.
 
 **Invitations** lists the pending ones (who they are for, who created them, when they expire). Creating one shows its token once, to copy; *Email an invitation* has backd send it (offered only when the realm sends email); *Revoke* asks for the word to be typed.
+
+A full administrator also gets a **Passwords and sessions** panel on the Users page for the first minutes of a leak ([`backd user expire-passwords`](../../../build/auth/users/#expiring-every-password) from the browser): it shows when passwords were last expired and how many accounts have one, and offers **Expire every password** (a reason, whether to keep the sessions and, when the realm sends email, whether to email every user a link; you confirm by typing the number of accounts it affects), **Tell the users** (starts or continues the [notification job](../../../build/auth/users/#telling-the-users)) and **End every session** (you confirm by typing the realm name). Each asks for a fresh proof of identity. A user whose password an administrator expired is marked in the list and in their page.
 
 A read-only level sees the Users page only when the realm's `admin.read_access.users` grants it, and then without any control that changes something. The same holds for every area: a control appears only when `whoami` says the level may use it.
 

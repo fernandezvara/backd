@@ -168,7 +168,7 @@ paths:
 
         A correct password that was set before the realm's password epoch, or after an
         administrator expired it, gets no session: `401 password_expired`, and a reset email is
-        queued (when the realm sends email) as a reset request would, with the same limits: the `password-expired` message, with a link to choose a new password. A
+        queued (when the realm sends email) as a reset request would, with the same limits: the `password-expired` message, with a link to choose a new password. When that email was queued the error's `details` hold `{path: reset_email, reason: queued}`, so an app can say so. A
         wrong password is still `invalid_credentials`, so the answer says nothing to someone
         who doesn't know the password. A new password (reset, change, administrator) makes the
         account usable again.
@@ -2895,6 +2895,43 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/passwords:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [admin]
+      summary: The realm's password epoch and how many accounts have a password
+      description: |
+        What `POST /_admin/passwords/expire` would affect: the number of accounts with a password,
+        and the current epoch (null before any expiry): who set it, when, and the reason.
+      operationId: adminPasswordState
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The state.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [epoch, accounts]
+                properties:
+                  accounts: { type: integer }
+                  epoch:
+                    oneOf:
+                      - type: "null"
+                      - type: object
+                        additionalProperties: false
+                        required: [valid_after, set_by, set_at, reason]
+                        properties:
+                          valid_after: { $ref: "#/components/schemas/Timestamp" }
+                          set_by: { type: string }
+                          set_at: { $ref: "#/components/schemas/Timestamp" }
+                          reason: { type: [string, "null"] }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_admin/passwords/expire:
@@ -9340,6 +9377,7 @@ components:
       additionalProperties: false
       required: [id, email, email_verified, roles, locale, disabled, admin_networks, login_networks, created_at, updated_at, erased_at, password_expired_at]
       properties:
+        password_expired: { type: boolean, description: "Whether the password is expired now (an expiry of this user or the realm's epoch). Only in the answer of `GET /_admin/users/{id}`; lists leave it out." }
         password_expired_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }], description: "When an administrator expired this user's password (`POST /_admin/users/{id}/expire-password`): a password set before it no longer opens the account. Null when none did; a realm-wide epoch is not shown here." }
         erased_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }], description: "When the user was erased; a tombstone has no email of its own, no roles and can't be enabled." }
         id: { type: string }

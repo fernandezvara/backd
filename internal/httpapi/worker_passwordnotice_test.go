@@ -202,6 +202,30 @@ func TestPasswordNoticeWaitsForTheEmailLimitsAndGoesOn(t *testing.T) {
 	}
 }
 
+func TestARefusedSignInSaysTheResetEmailWasQueued(t *testing.T) {
+	f := newRulesFixture(t)
+	f.svc.Realm = "acme"
+	fiveAccounts(t, f)
+	at := time.Now().Add(time.Hour)
+	f.svc.Now = func() time.Time { return at }
+	if _, err := f.svc.ExpireAllPasswords(context.Background(), "", true); err != nil {
+		t.Fatal(err)
+	}
+	hdr := map[string]string{"Content-Type": "application/json"}
+	rec, out := f.doH(t, "POST", "/v1/acme/_auth/login", `{"email": "ok@example.com", "password": "dev-p4ssw0rd!"}`, hdr)
+	details, _ := out["error"].(map[string]any)["details"].([]any)
+	if rec.Code != 401 || errCode(out) != "password_expired" || len(details) != 1 || details[0].(map[string]any)["path"] != "reset_email" {
+		t.Fatalf("the refused sign-in: %d %v", rec.Code, out)
+	}
+	// Past the per-address limit nothing is queued, and the answer doesn't claim it was.
+	f.svc.Settings.Email.Limits.PerKindPerHour = 0
+	defer func() { f.svc.Settings.Email.Limits.PerKindPerHour = 100 }()
+	_, out = f.doH(t, "POST", "/v1/acme/_auth/login", `{"email": "ok@example.com", "password": "dev-p4ssw0rd!"}`, hdr)
+	if d, _ := out["error"].(map[string]any)["details"].([]any); errCode(out) != "password_expired" || len(d) != 0 {
+		t.Errorf("without the email: %v", out)
+	}
+}
+
 func TestACancelledPasswordNoticeCanStartAgain(t *testing.T) {
 	f := newRulesFixture(t)
 	f.svc.Realm = "acme"

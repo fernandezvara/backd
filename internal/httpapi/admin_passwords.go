@@ -190,3 +190,22 @@ func (a *adminAPI) resetLink(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, map[string]any{"link": link, "expires_at": formatTime(expires.UTC())})
 }
+
+// passwordState handles GET /passwords: the realm's password epoch (null before any expiry) and
+// how many accounts have a password, to confirm an expiry with.
+func (a *adminAPI) passwordState(w http.ResponseWriter, r *http.Request) {
+	st, err := usersOf(r).PasswordState(r.Context())
+	if err != nil {
+		adminError(w, r, err)
+		return
+	}
+	var epoch any
+	if !st.Epoch.ValidAfter.IsZero() {
+		e := map[string]any{"valid_after": formatTime(st.Epoch.ValidAfter), "set_by": st.Epoch.SetBy, "set_at": formatTime(st.Epoch.SetAt), "reason": nil}
+		if st.Epoch.Reason != "" {
+			e["reason"] = st.Epoch.Reason
+		}
+		epoch = e
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"epoch": epoch, "accounts": st.Accounts})
+}

@@ -195,7 +195,7 @@ func (s *Users) SignIn(ctx context.Context, email, password, ip string) (Redeeme
 		return nil
 	})
 	if errors.Is(err, ErrPasswordExpired) {
-		s.mailExpiredPassword(ctx, u, ip)
+		err = &PasswordExpiredError{EmailQueued: s.mailExpiredPassword(ctx, u, ip)}
 	}
 	if err != nil {
 		return Redeemed{}, err

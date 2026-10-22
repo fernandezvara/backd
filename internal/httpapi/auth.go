@@ -593,7 +593,12 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 	case errors.Is(err, auth.ErrInvalidCredentials):
 		writeError(w, r, http.StatusUnauthorized, codeInvalidCreds, err.Error())
 	case errors.Is(err, auth.ErrPasswordExpired):
-		writeError(w, r, http.StatusUnauthorized, codePasswordExpired, err.Error())
+		var details []Detail
+		if pe := (*auth.PasswordExpiredError)(nil); errors.As(err, &pe) && pe.EmailQueued {
+			// The reset email is on its way: the app can say so.
+			details = append(details, Detail{Path: "reset_email", Reason: "queued"})
+		}
+		writeError(w, r, http.StatusUnauthorized, codePasswordExpired, err.Error(), details...)
 	case errors.Is(err, auth.ErrSameEmail):
 		writeError(w, r, http.StatusBadRequest, codeValidation, err.Error(), Detail{Path: "new_email", Reason: "is already the address of this account"})
 	case errors.As(err, &el):

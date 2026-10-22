@@ -7,9 +7,11 @@ import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FormDialog from '@/components/FormDialog.vue'
+import ProofField from '@/components/ProofField.vue'
 import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
 import { errorText, formatDate } from '@/lib/format'
+import { useProof } from '@/lib/proof'
 import { useRealmConfig } from '@/stores/config'
 import { useSession } from '@/stores/session'
 import { useToasts } from '@/stores/toasts'
@@ -21,6 +23,7 @@ const router = useRouter()
 const session = useSession()
 const toasts = useToasts()
 const realmConfig = useRealmConfig()
+const proof = useProof()
 
 const user = ref<AdminUser>()
 const loadError = ref('')
@@ -87,6 +90,35 @@ function useFieldDialog(run: (value: string) => Promise<unknown>, done: (value: 
   }
 }
 const password = useFieldDialog((v) => admin.users.setPassword(props.id, v), () => t('user.password.done'))
+const expireReason = useFieldDialog((v) => admin.users.expirePassword(props.id, { reason: v.trim() || undefined }), () => t('user.expire.done'))
+
+// A reset link: made with a fresh proof, shown once.
+const linkOpen = ref(false)
+const linkRedirect = ref('')
+const linkBusy = ref(false)
+const linkError = ref('')
+const linkShown = ref<{ link: string; expiresAt: string }>()
+const linkResult = ref(false)
+function showLink() {
+  linkRedirect.value = ''
+  linkError.value = ''
+  linkOpen.value = true
+  void proof.prepare()
+}
+async function makeLink() {
+  linkBusy.value = true
+  linkError.value = ''
+  try {
+    await proof.prove()
+    linkShown.value = await admin.users.resetLink(props.id, { redirectTo: linkRedirect.value.trim() || undefined })
+    linkOpen.value = false
+    linkResult.value = true
+  } catch (e) {
+    linkError.value = errorText(e, t('common.unexpected'))
+  } finally {
+    linkBusy.value = false
+  }
+}
 const email = useFieldDialog((v) => admin.users.changeEmail(props.id, v.trim()), (v) => t('user.email.done', { email: v.trim() }))
 
 // Roles: the realm's declared roles and who is seeded in realm.yaml come from
@@ -249,7 +281,10 @@ async function erase() {
   }
 }
 
-const statusText = computed(() => (erased.value ? t('users.erased') : user.value?.disabled ? t('users.disabled') : t('users.active')))
+const statusText = computed(() => {
+  const base = erased.value ? t('users.erased') : user.value?.disabled ? t('users.disabled') : t('users.active')
+  return user.value?.password_expired && !erased.value ? `${base} · ${t('users.passwordExpired')}` : base
+})
 
 onMounted(async () => {
   await load()
@@ -290,6 +325,8 @@ onMounted(async () => {
       <AppButton variant="secondary" @click="toggleDisabled">{{ user.disabled ? t('user.enable') : t('user.disable') }}</AppButton>
       <AppButton v-if="!user.email_verified" variant="secondary" @click="markVerified">{{ t('user.verify') }}</AppButton>
       <AppButton variant="secondary" @click="password.show">{{ t('user.password.open') }}</AppButton>
+      <AppButton variant="secondary" data-testid="expire-password" @click="expireReason.show">{{ t('user.expire.open') }}</AppButton>
+      <AppButton v-if="realmConfig.sendsEmail !== false && !user.disabled" variant="secondary" data-testid="reset-link" @click="showLink">{{ t('user.resetLink.open') }}</AppButton>
       <AppButton v-if="realmConfig.sendsEmail !== false" variant="secondary" @click="email.show">{{ t('user.email.open') }}</AppButton>
       <AppButton variant="danger" @click="erasing = true">{{ t('user.erase.open') }}</AppButton>
     </div>
@@ -425,6 +462,19 @@ onMounted(async () => {
         </div>
       </section>
     </template>
+
+    <FormDialog v-model:open="expireReason.open.value" :title="t('user.expire.title')" :description="t('user.expire.body')" :submit="t('user.expire.action')" :busy="expireReason.busy.value" :error="expireReason.error.value" @submit="expireReason.submit">
+      <TextField v-model="expireReason.value.value" :label="t('user.expire.reason')" autocomplete="off" />
+    </FormDialog>
+
+    <FormDialog v-model:open="linkOpen" :title="t('user.resetLink.title')" :description="t('user.resetLink.body')" :submit="t('user.resetLink.action')" :busy="linkBusy" :error="linkError" @submit="makeLink">
+      <TextField v-model="linkRedirect" :label="t('user.resetLink.redirect')" :help="t('user.resetLink.redirectHelp')" autocomplete="off" />
+      <ProofField v-if="proof.needed.value" v-model="proof.value.value" :intro="t('proof.introAction')" :method="proof.method.value" :code-sent="proof.codeSent.value" @send-code="proof.sendCode" />
+    </FormDialog>
+
+    <FormDialog v-model:open="linkResult" :title="t('user.resetLink.shownTitle')" :description="t('user.resetLink.shownBody', { date: linkShown ? formatDate(linkShown.expiresAt) : '' })" :submit="t('user.resetLink.close')" @submit="linkResult = false">
+      <TextField :model-value="linkShown?.link ?? ''" :label="t('user.resetLink.label')" autocomplete="off" readonly data-testid="reset-link-value" />
+    </FormDialog>
 
     <FormDialog v-model:open="password.open.value" :title="t('user.password.title')" :submit="t('common.save')" :busy="password.busy.value" :error="password.error.value" @submit="password.submit">
       <TextField v-model="password.value.value" type="password" :label="t('user.password.label')" :help="t('user.password.help')" autocomplete="new-password" required />

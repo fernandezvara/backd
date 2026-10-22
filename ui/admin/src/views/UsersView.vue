@@ -6,6 +6,7 @@ import { useRouter } from 'vue-router'
 import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
 import FormDialog from '@/components/FormDialog.vue'
+import PasswordsPanel from '@/components/PasswordsPanel.vue'
 import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
 import { errorText, formatDate } from '@/lib/format'
@@ -54,6 +55,8 @@ watch(q, () => {
 onMounted(() => void load())
 
 const canWrite = computed(() => session.canWrite('users'))
+// The actions of a leak reach every account: the server needs full administration for them.
+const isFull = computed(() => session.access?.level === 'full')
 
 const statusOf = (u: AdminUser) => (u.erased_at ? t('users.erased') : u.disabled ? t('users.disabled') : t('users.active'))
 
@@ -93,6 +96,8 @@ async function create() {
     <AppButton v-if="canWrite" @click="openCreate">{{ t('users.create.open') }}</AppButton>
   </div>
 
+  <PasswordsPanel v-if="canWrite && isFull" :realm="realm" />
+
   <form class="mt-4 max-w-md" role="search" @submit.prevent="load()">
     <TextField v-model="q" type="search" :label="t('users.search')" :help="t('users.searchHelp')" autocomplete="off" />
   </form>
@@ -117,7 +122,7 @@ async function create() {
           <td class="px-3 py-2">
             <RouterLink :to="{ name: 'user', params: { realm, id: u.id } }" class="font-medium underline">{{ u.email }}</RouterLink>
           </td>
-          <td class="px-3 py-2">{{ statusOf(u) }}<span v-if="!u.email_verified && !u.erased_at"> · {{ t('users.unverified') }}</span></td>
+          <td class="px-3 py-2">{{ statusOf(u) }}<span v-if="!u.email_verified && !u.erased_at"> · {{ t('users.unverified') }}</span><span v-if="u.password_expired_at && !u.erased_at" data-testid="password-expired-tag"> · {{ t('users.passwordExpired') }}</span></td>
           <td class="px-3 py-2">{{ u.roles.length ? u.roles.join(', ') : t('users.noRoles') }}</td>
           <td class="px-3 py-2">{{ formatDate(u.created_at) }}</td>
         </tr>

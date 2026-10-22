@@ -51,6 +51,24 @@ import { Job } from './functions.js'
  * @property {string} created_at
  * @property {string} updated_at
  * @property {string | null} erased_at   When the user was erased; a tombstone keeps only its id (and a placeholder email).
+ * @property {string | null} password_expired_at   When an administrator expired this user's password; null when none did.
+ * @property {boolean} [password_expired]   Whether the password is expired now (this user's expiry or the realm's epoch); only in `users.get()`.
+ */
+
+/**
+ * The realm's password epoch and how many accounts have a password.
+ * @typedef {object} PasswordState
+ * @property {number} accounts   Accounts with a password.
+ * @property {{ valid_after: string, set_by: string, set_at: string, reason: string | null } | null} epoch   The latest expiry of every password; null before any.
+ */
+
+/**
+ * What expiring every password did.
+ * @typedef {object} PasswordsExpired
+ * @property {string} valid_after   Passwords set before this stopped working.
+ * @property {number} accounts      Accounts with a password.
+ * @property {number} sessions      Sessions ended.
+ * @property {string} [notify_job]  The job telling the users, when asked for.
  */
 
 /**
@@ -350,6 +368,10 @@ export class Admin {
     this.client = client
     /** Users and their roles. */
     this.users = new AdminUsers(this)
+    /** Expire every password of the realm and tell the users (after a leak). */
+    this.passwords = new AdminPasswords(this)
+    /** End every session of the realm. */
+    this.sessions = new AdminSessions(this)
     /** Invitations for realms with `signup: invite`. */
     this.invitations = new AdminInvitations(this)
     /** The realm's API keys. */
@@ -667,6 +689,33 @@ class AdminUsers {
   }
 
   /**
+   * Expires a user's password: it stops opening the account (`PasswordExpiredError` at sign-in,
+   * which queues the email with a reset link) until they reset it or you set a new one. Their
+   * sessions are left alone. Audited.
+   * @param {string} id
+   * @param {{ reason?: string }} [input]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async expirePassword(id, input = {}, opts) {
+    await this.admin._request({ method: 'POST', path: ['users', id, 'expire-password'], body: input.reason ? { reason: input.reason } : undefined, ...opts })
+  }
+
+  /**
+   * Makes a one-time link for the user to choose a new password, for a user the email can't reach.
+   * Nothing is sent; the link is in the answer only, and whoever holds it can take the account.
+   * Needs a fresh re-authentication, which the client asks for like any sensitive action.
+   * @param {string} id
+   * @param {{ redirectTo?: string }} [input]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ link: string, expiresAt: string }>}
+   */
+  async resetLink(id, input = {}, opts) {
+    const { data } = await this.admin._request({ method: 'POST', path: ['users', id, 'reset-link'], body: input.redirectTo ? { redirect_to: input.redirectTo } : undefined, reauth: true, ...opts })
+    return { link: data.link, expiresAt: data.expires_at }
+  }
+
+  /**
    * What erasing a user would do: counts per collection that declares a policy,
    * and the collections an erase leaves alone. No document content.
    * @param {string} id
@@ -724,6 +773,70 @@ class AdminUsers {
   async setNetworks(id, { adminNetworks = [], loginNetworks = [] }, opts) {
     const body = { admin_networks: adminNetworks, login_networks: loginNetworks }
     return (await this.admin._request({ method: 'PUT', path: ['users', id, 'networks'], body, ...opts })).data
+  }
+}
+
+class AdminPasswords {
+  /** @param {Admin} admin */
+  constructor(admin) {
+    /** @internal */
+    this.admin = admin
+  }
+
+  /**
+   * The realm's password epoch and the number of accounts with a password: what expiring every
+   * password would affect.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<PasswordState>}
+   */
+  async state(opts) {
+    return (await this.admin._request({ method: 'GET', path: ['passwords'], ...opts })).data
+  }
+
+  /**
+   * Expires every password set until now and, unless `keepSessions`, ends every session. With
+   * `notify` it also starts the job that emails each user a link to choose a new one (a realm
+   * without email refuses, before anything changes). Needs full admin access and a fresh
+   * re-authentication.
+   * @param {{ reason?: string, keepSessions?: boolean, notify?: boolean }} [input]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<PasswordsExpired>}
+   */
+  async expireAll({ reason, keepSessions, notify } = {}, opts) {
+    /** @type {Record<string, unknown>} */
+    const body = {}
+    if (reason) body.reason = reason
+    if (keepSessions) body.keep_sessions = true
+    if (notify) body.notify = true
+    return (await this.admin._request({ method: 'POST', path: ['passwords', 'expire'], body, reauth: true, ...opts })).data
+  }
+
+  /**
+   * Starts (or after a cancel or a failure, starts again) the job that emails every user whose
+   * password was expired a link to choose a new one; users already told are skipped.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ id: string, status: string }>}
+   */
+  async notify(opts) {
+    return (await this.admin._request({ method: 'POST', path: ['passwords', 'notify'], reauth: true, ...opts })).data
+  }
+}
+
+class AdminSessions {
+  /** @param {Admin} admin */
+  constructor(admin) {
+    /** @internal */
+    this.admin = admin
+  }
+
+  /**
+   * Ends every session of the realm, and the push devices they registered, without touching any
+   * password. Needs full admin access and a fresh re-authentication.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ sessions: number }>}
+   */
+  async revokeAll(opts) {
+    return (await this.admin._request({ method: 'DELETE', path: ['sessions'], reauth: true, ...opts })).data
   }
 }
 

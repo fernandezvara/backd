@@ -80,6 +80,7 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		r.With(users, json).Post("/push/test", a.testPush)
 		r.With(users).Delete("/push/devices", a.removePushDevices)
 		r.With(users).Get("/users", a.listUsers)
+		r.With(users).Get("/passwords", a.passwordState)
 		r.With(users).Post("/passwords/expire", a.expireAllPasswords)
 		r.With(users).Post("/passwords/notify", a.notifyExpiredPasswords)
 		r.With(users).Delete("/sessions", a.revokeAllSessions)
@@ -450,7 +451,16 @@ func (a *adminAPI) createUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *adminAPI) getUser(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, adminUserJSON(adminUserOf(r), usersOf(r).LocaleOf(adminUserOf(r))))
+	u := adminUserOf(r)
+	out := adminUserJSON(u, usersOf(r).LocaleOf(u))
+	// Whether the password is expired now, the realm's epoch included: one read here, so lists don't pay it.
+	expired, err := usersOf(r).PasswordExpiredFor(r.Context(), u)
+	if err != nil {
+		adminError(w, r, err)
+		return
+	}
+	out["password_expired"] = expired
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (a *adminAPI) updateUser(w http.ResponseWriter, r *http.Request) {

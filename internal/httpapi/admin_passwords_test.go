@@ -20,6 +20,9 @@ func TestAdminExpireEveryPassword(t *testing.T) {
 	}
 	key := jsonHdr(adminKey)
 	url := admin + "/passwords/expire"
+	if _, out := f.doH(t, "GET", admin+"/passwords", "", key); out["epoch"] != nil {
+		t.Errorf("an epoch before any expiry: %v", out)
+	}
 
 	// Rights: a read-only administrator is refused, a session needs a fresh proof.
 	f.bobHolds(t, "viewer")
@@ -63,6 +66,15 @@ func TestAdminExpireEveryPassword(t *testing.T) {
 	rec, out = f.doH(t, "POST", "/v1/acme/_auth/login", `{"email": "ada@example.com", "password": "dev-p4ssw0rd!"}`, map[string]string{"Content-Type": "application/json"})
 	if rec.Code != http.StatusUnauthorized || errCode(out) != "password_expired" {
 		t.Errorf("sign in after the epoch: %d %v", rec.Code, out)
+	}
+	// The state before and the detail of a user show the expiry.
+	rec, out = f.doH(t, "GET", admin+"/passwords", "", key)
+	epoch, _ := out["epoch"].(map[string]any)
+	if rec.Code != http.StatusOK || out["accounts"].(float64) < 2 || epoch["reason"] != "leaked backup" || epoch["valid_after"] == "" {
+		t.Errorf("state: %d %v", rec.Code, out)
+	}
+	if rec, out := f.doH(t, "GET", admin+"/users/"+f.adaID, "", key); rec.Code != http.StatusOK || out["password_expired"] != true {
+		t.Errorf("a user's detail: %d %v", rec.Code, out)
 	}
 	// An epoch moves forward only: the same instant is refused.
 	if rec, out := f.doH(t, "POST", url, `{}`, key); rec.Code != http.StatusConflict {

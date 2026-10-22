@@ -38,7 +38,9 @@ func TestAPasswordSetBeforeTheEpochIsExpired(t *testing.T) {
 	if ok, err := store.SetPasswordEpoch(ctx, PasswordEpoch{ValidAfter: *clock, SetBy: "cli", SetAt: *clock}); !ok || err != nil {
 		t.Fatalf("set epoch: %v %v", ok, err)
 	}
-	if err := signIn(); !errors.Is(err, ErrPasswordExpired) {
+	err := signIn()
+	var pe *PasswordExpiredError
+	if !errors.Is(err, ErrPasswordExpired) || !errors.As(err, &pe) || !pe.EmailQueued {
 		t.Fatalf("expired password: %v", err)
 	}
 	// A wrong password is still a wrong password: the answer doesn't tell it expired.

@@ -15,6 +15,16 @@ import (
 // (design/breach-response.md §3).
 var ErrPasswordExpired = errors.New("this password has expired: set a new one with a password reset, or ask an administrator")
 
+// PasswordExpiredError is ErrPasswordExpired for a sign-in: it also says whether the
+// password-expired email, with a reset link, was queued for the user (errors.Is matches
+// ErrPasswordExpired).
+type PasswordExpiredError struct{ EmailQueued bool }
+
+func (e *PasswordExpiredError) Error() string { return ErrPasswordExpired.Error() }
+
+// Is makes errors.Is(err, ErrPasswordExpired) true.
+func (e *PasswordExpiredError) Is(target error) bool { return target == ErrPasswordExpired }
+
 // PasswordEpoch is the moment before which no password is valid in a realm. It only moves
 // forward; a password set after it (reset, change, administrator) is valid again.
 type PasswordEpoch struct {
@@ -97,6 +107,36 @@ func (s *Users) RevokeAllSessions(ctx context.Context) (int64, error) {
 	return n, nil
 }
 
+// PasswordExpiredFor says whether the user's password is expired now: they have one, and it was
+// set before the realm's epoch or their own expiry. A user with no password isn't.
+func (s *Users) PasswordExpiredFor(ctx context.Context, u User) (bool, error) {
+	id, err := s.Store.IdentityOf(ctx, u.ID, ProviderPassword)
+	if errors.Is(err, ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return s.passwordExpired(ctx, u, id)
+}
+
+// PasswordStatus is the realm's password epoch and how many accounts have a password.
+type PasswordStatus struct {
+	Epoch    PasswordEpoch // the zero value when none was set
+	Accounts int64
+}
+
+// PasswordState reports the realm's epoch and the number of accounts with a password, what an
+// administrator confirms before expiring every password.
+func (s *Users) PasswordState(ctx context.Context) (PasswordStatus, error) {
+	epoch, err := s.Store.PasswordEpoch(ctx)
+	if err != nil {
+		return PasswordStatus{}, err
+	}
+	n, err := s.Store.CountPasswordIdentities(ctx)
+	return PasswordStatus{Epoch: epoch, Accounts: n}, err
+}
+
 // ExpirePassword expires one user's password: it stops opening the account until the user
 // resets it or an administrator sets a new one. Sessions are left alone.
 func (s *Users) ExpirePassword(ctx context.Context, email, reason string) error {
@@ -120,24 +160,25 @@ func (s *Users) ExpirePassword(ctx context.Context, email, reason string) error 
 // with a reset link. It is rate-limited like a reset request (per address and per client),
 // counts in the email limits, and fails quietly: the answer to the sign-in doesn't depend on
 // it. A user who was sent it is marked as told, so a later notification run skips them.
-func (s *Users) mailExpiredPassword(ctx context.Context, u User, ip string) {
+func (s *Users) mailExpiredPassword(ctx context.Context, u User, ip string) bool {
 	if s.Settings.Email == nil || u.Disabled {
-		return
+		return false
 	}
 	sum := sha256.Sum256([]byte(u.Email))
 	if s.RateLimit(ctx, "reset:to:"+hex.EncodeToString(sum[:]), resetPerAddress, resetWindow) != nil {
-		return
+		return false
 	}
 	if k := IPKey(ip); k != "" && s.RateLimit(ctx, "reset:"+k, resetPerIP, resetWindow) != nil {
-		return
+		return false
 	}
 	epoch, err := s.Store.PasswordEpoch(ctx)
 	if err != nil {
-		return
+		return false
 	}
 	if _, err := s.QueueEmail(ctx, EmailRequest{Kind: email.PasswordExpired, UserID: u.ID, Address: u.Email, Locale: s.LocaleOf(u), ClientIP: ip, Event: epoch.Reason}); err != nil {
-		return
+		return false
 	}
 	now := s.now()
 	_ = s.Store.UpdateUser(ctx, u.ID, UserUpdate{PasswordNotifiedAt: &now}, now)
+	return true
 }
