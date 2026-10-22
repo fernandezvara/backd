@@ -1,6 +1,6 @@
 ---
-title: "Exporting a realm"
-description: "backd export: write a realm, a database or some collections, with their files, as a package you can keep, inspect or move."
+title: "Exporting and importing a realm"
+description: "backd export and import: move a realm, a database or some collections, with their files, between instances as a package, or extract a report."
 icon: "export"
 weight: 568
 toc: true
@@ -9,7 +9,7 @@ toc: true
 `backd export` writes the documents and files of a realm to a **package**: a plain directory (or one `.tar.gz`) you can read with ordinary tools. It is the supported way to take data out of `backd` without `mongodump`: it goes through the [admin API](../admin/), so it needs no access to MongoDB, and it writes documents the way the API shows them.
 
 {{< hint style="note" title="Planned" >}}
-Importing a package, authentication data, direct mode against MongoDB and anonymized exports are planned for the same feature. This page covers what exists now: the export.
+Authentication data (users and their sign-in methods), direct mode against MongoDB, anonymized exports and encrypted fields are planned for the same feature. This page covers what exists now: exporting a package or a report, and importing a package.
 {{< /hint >}}
 
 ## Exporting
@@ -88,13 +88,42 @@ Every part is checked as it arrives and listed in `<out>/.export-progress.json`.
 Treat a package like the database it came from: keep it where only the people who may read the realm can, do not commit it, and delete it when you are done. It is written with owner-only permissions.
 {{< /hint >}}
 
+## Importing
+
+```
+backd import --realm clinic --from ./clinic-2026-10-09 --dry-run
+backd import --realm clinic --from ./clinic-2026-10-09
+backd import --realm clinic --from ./clinic-2026-10-09.tar.gz --mode replace
+```
+
+`--from` is a package directory or the `.tar.gz` that `--archive` wrote. Like the export, it needs full admin access and a fresh proof of identity for sessions, and it is [audited](../audit/) (`import`, `import.done`). The import goes in this order, and **nothing is written until all of it is known**:
+
+1. **The package is verified.** The manifest's format must be one this `backd` reads, and the SHA-256 of every file it lists must match. A package made with `--fields` (partial) and a CSV extract are refused.
+2. **Everything is validated against the target realm's own configuration**, which may differ from the source's: each collection must exist there, and every document is checked as the API would check one a client sent: its id (the collection's `custom_id` rules, or a generated id), its fields against `schema.json`, its files against the file fields (and their size limits), and its unique indexes against what the target holds. The result is a report: counts per outcome, and the first invalid or conflicting documents with their line and reasons. **`--dry-run` stops here.**
+3. **The files are uploaded**, through the target's storage, before the documents that reference them.
+4. **The documents are written** with their **ids and `_meta` kept** (creation and update times, version, owner, trash state), so references between documents, file links and ownership stay valid. Files are counted in the realm's storage usage and the image versions their fields declare are queued for the workers: versions are not in the package.
+
+| `--mode` | A document whose id exists in the target |
+|---|---|
+| `create` (the default) | The same document is left alone; a **different** one is a conflict and nothing is written |
+| `skip` | The existing document is kept |
+| `replace` | The existing document is overwritten, and files it no longer holds are queued for deletion |
+
+Invalid documents stop the import. `--skip-invalid` leaves them out instead and writes them, with their reasons, to `--report` (`import-report.json` by default). A conflict always stops it.
+
+**An interrupted import is finished by running the same command again**: a document already written is found identical and left alone, whatever the mode, and files are uploaded again with the same bytes. Documents are sent in chunks, so memory doesn't grow with the package.
+
+{{< hint style="warning" title="The import writes like any other writer" >}}
+Triggers and realtime subscriptions see imported documents as ordinary creations and updates. Documents of users and organizations the target doesn't have are imported and counted in the report: their owners can't sign in there until you bring the users across. The config fingerprint of the package is compared with the instance's and a difference is a warning, never a refusal: validation decides what is accepted.
+{{< /hint >}}
+
 ## Not a backup
 
 Collections are read one after another while the app keeps working, so a package is not a snapshot of one instant, and it leaves out the system data a restore needs. For backups see [Backup and restore](../../backup/).
 
 ## The admin API
 
-`backd export` is a client of `GET /v1/{realm}/_admin/export`:
+`backd export` is a client of `/v1/{realm}/_admin/export`:
 
 | Request | Answer |
 |---|---|
@@ -104,3 +133,12 @@ Collections are read one after another while the app keeps working, so a package
 | `DELETE /export?complete=true` | `204`: the export ended; releases the realm and audits what was streamed |
 
 All of them need full admin access; the plan needs the re-authentication header for sessions. `409 export_lease` means the lease is missing, expired or another administrator's.
+
+`backd import` is a client of `/v1/{realm}/_admin/import`; the [OpenAPI document](../../../build/api/openapi/) has the details:
+
+| Request | Answer |
+|---|---|
+| `POST /import` `{manifest, mode?, skip_invalid?, dry_run?}` | `200` with a `lease`, the size of the chunks to send and warnings. `422 import_refused` when the package can't be read or names collections the realm lacks. One export or import of a realm runs at a time (`409 export_running`) |
+| `POST /import?phase=validate\|write&part=<database>/<collection>.jsonl` | The body is whole lines of that part. `200` with the counts by outcome (`created`, `replaced`, `skipped`, `unchanged`, `conflict`, `invalid`), the first problems with their line, and how many documents belong to users or organizations the target lacks. `write` is refused on a dry run |
+| `PUT /import?file=<database>/<collection>/<file id>` | The file's bytes, checked against `X-Backd-Sha256`; a file that arrives different is deleted |
+| `DELETE /import?complete=true` | `204`: releases the realm and audits the counts |

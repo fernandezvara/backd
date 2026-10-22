@@ -151,7 +151,7 @@ func requestMetrics(m *metrics.Metrics) func(http.Handler) http.Handler {
 func limitBody(max int64) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isFileUpload(r) { // a file's size is limited by its field and BACKD_MAX_UPLOAD_BYTES
+			if isFileUpload(r) || isImportFile(r) { // a file's size is limited by its field and BACKD_MAX_UPLOAD_BYTES
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -282,4 +282,10 @@ func noStore(next http.Handler) http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		next.ServeHTTP(w, r)
 	})
+}
+
+// isImportFile reports whether the request is PUT …/_admin/import: a file of an import, whose
+// size its file field limits.
+func isImportFile(r *http.Request) bool {
+	return r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/_admin/import")
 }

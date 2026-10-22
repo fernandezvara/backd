@@ -27,6 +27,8 @@ import (
 const (
 	codeExportRunning = "export_running"
 	codeExportLease   = "export_lease"
+	leaseExport       = "export"
+	leaseImport       = "import"
 
 	// exportHeader carries the export's lease on every part request.
 	exportHeader = "X-Backd-Export"
@@ -43,6 +45,7 @@ const (
 // plan takes it, every part request renews it and DELETE (or a silent TTL) releases it.
 type exportLease struct {
 	id      string
+	kind    string // leaseExport or leaseImport
 	actor   string
 	expires time.Time
 	scope   string
@@ -50,6 +53,9 @@ type exportLease struct {
 	// fields and where narrow every collection of the export (a reporting extract).
 	fields []string
 	where  string
+	// An import's options and what it has done, by outcome.
+	imp      *importRun
+	outcomes map[string]int64
 	// What this export has streamed, for the audit record of its end.
 	documents map[string]int64
 	files     int64
@@ -78,11 +84,11 @@ func (e *exportLeases) take(realm, actor, resume string, l *exportLease, now tim
 }
 
 // renew returns the realm's lease when id is it and the actor holds it, extending it.
-func (e *exportLeases) renew(realm, actor, id string, now time.Time) *exportLease {
+func (e *exportLeases) renew(realm, actor, id, kind string, now time.Time) *exportLease {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	l, ok := e.leases[realm]
-	if !ok || l.id != id || l.actor != actor || !now.Before(l.expires) {
+	if !ok || l.id != id || l.actor != actor || l.kind != kind || !now.Before(l.expires) {
 		return nil
 	}
 	l.expires = now.Add(exportLeaseTTL)
@@ -241,7 +247,7 @@ func (a *adminAPI) exportPlan(w http.ResponseWriter, r *http.Request, realm stri
 	id := make([]byte, 16)
 	_, _ = rand.Read(id)
 	now := time.Now()
-	l := &exportLease{id: hex.EncodeToString(id), actor: caller.Actor(), expires: now.Add(exportLeaseTTL), scope: scope, flags: m.Flags, fields: fields, where: where}
+	l := &exportLease{kind: leaseExport, id: hex.EncodeToString(id), actor: caller.Actor(), expires: now.Add(exportLeaseTTL), scope: scope, flags: m.Flags, fields: fields, where: where}
 	if !a.exports.take(realm, caller.Actor(), r.Header.Get(exportHeader), l, now) {
 		writeError(w, r, http.StatusConflict, codeExportRunning, "an export of this realm is already running; wait for it to finish (a silent one is released after ten minutes)")
 		return
@@ -303,10 +309,14 @@ func hasFieldPath(c *registry.Collection, path string) bool {
 
 // leaseOf checks the export lease of a part request.
 func (a *adminAPI) leaseOf(w http.ResponseWriter, r *http.Request, realm string) *exportLease {
+	return a.leaseKind(w, r, realm, leaseExport)
+}
+
+func (a *adminAPI) leaseKind(w http.ResponseWriter, r *http.Request, realm, kind string) *exportLease {
 	caller, _ := callerOf(r)
-	l := a.exports.renew(realm, caller.Actor(), r.Header.Get(exportHeader), time.Now())
+	l := a.exports.renew(realm, caller.Actor(), r.Header.Get(exportHeader), kind, time.Now())
 	if l == nil {
-		writeError(w, r, http.StatusConflict, codeExportLease, "no export of this realm is running for this administrator: start one with GET /_admin/export and send its lease in "+exportHeader)
+		writeError(w, r, http.StatusConflict, codeExportLease, "no "+kind+" of this realm is running for this administrator: start one and send its lease in "+exportHeader)
 	}
 	return l
 }

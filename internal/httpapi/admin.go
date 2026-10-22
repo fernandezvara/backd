@@ -47,13 +47,16 @@ type adminUserKey struct{}
 func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Handler, timeout func(http.Handler) http.Handler) {
 	r.Route("/v1/{realm}/_admin", func(r chi.Router) {
 		// An export streams for as long as the data takes: it bounds each batch itself.
-		r.Use(noStore, resolveRealm, skipPath("/_admin/export", timeout), a.requireAdmin)
+		r.Use(noStore, resolveRealm, skipPath("/_admin/export", skipPath("/_admin/import", timeout)), a.requireAdmin)
 		json := requireContentType("application/json")
 		r.Get("/whoami", a.whoami)
 		r.With(a.need(registry.RightConfig)).Get("/config", a.config)
 		r.With(a.need(registry.RightConfig)).Get("/types", a.types)
 		r.With(a.needRead(registry.RightData)).Get("/export", a.export)
 		r.With(a.needRead(registry.RightData)).Delete("/export", a.finishExport)
+		r.With(a.needRead(registry.RightData)).Post("/import", a.importHandler)
+		r.With(a.needRead(registry.RightData)).Put("/import", a.importHandler)
+		r.With(a.needRead(registry.RightData)).Delete("/import", a.finishImport)
 		r.With(a.need(registry.RightConfig)).Get("/openapi.json", a.openapi)
 		r.With(a.needRead(registry.RightConfig), requireContentType("application/json")).Post("/config/check", a.checkConfig)
 		r.With(a.needRead(registry.RightConfig)).Post("/storage/check", a.checkStorage)

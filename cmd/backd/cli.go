@@ -487,6 +487,17 @@ func registerRemote(cfg *kli.Config) {
 		boolean(cc, "no-files", "leave the files out: only the documents")
 	})
 
+	cfg.Command("import").ShortHelp("read an export package into a realm").
+		LongHelp("Reads a package made by backd export (--from: its directory or .tar.gz) into the realm. First every checksum of the package\nis verified, then the running backd validates every document against the target's own configuration (ids, schemas,\nfile limits, unique values, the documents already there) and nothing is written until all of it is known; --dry-run stops\nthere and prints what would happen. Then the files are uploaded and the documents written with their ids and _meta kept, so\nreferences and file links stay valid. --mode create (the default) refuses a different document with the same id, skip leaves\nexisting documents alone and replace overwrites them. Invalid documents stop the import unless --skip-invalid, which writes\nthem to --report (default import-report.json). Running the same command again after an interruption finishes the job: what\nwas written is found identical and left alone. Partial packages and CSV extracts are refused. Needs full admin access and a\nfresh proof that it is you. Audited as import and import.done. " + adminAPINote).
+		Func(act("import", importAction)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "from", "the package: its directory, or the .tar.gz that export --archive wrote")
+		cc.Define("mode").String().Flag("mode").Default("create").Description("create (fail on an existing id), skip (keep existing documents) or replace (overwrite them)")
+		boolean(cc, "dry-run", "validate everything and write nothing")
+		boolean(cc, "skip-invalid", "leave out the documents that are invalid for the target instead of stopping")
+		optional(cc, "report", "write the problems found to this JSON file")
+	})
+
 	cons := cfg.Command("consents").ShortHelp("manage the consents users accept")
 	cons.SubCommand("notify").ShortHelp("email the users who hold an older version of a consent").
 		LongHelp("Queues the `consent-updated` email for every user who accepted an older version of the consent than the\ncurrent one (and, for a required consent, who accepted none). Publishing a version never sends anything by itself:\nthis is the only way, and the email limits apply, so a large realm may need to run it again later. Needs the\nusers area with write access. Audited as consents.notify. " + adminAPINote).

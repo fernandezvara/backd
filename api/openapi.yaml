@@ -4918,6 +4918,166 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/import:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+    post:
+      tags: [admin]
+      summary: Start an import, or send a chunk of one
+      description: |
+        The server side of `backd import`. Without `phase` it **starts** an import: the body is the
+        package's manifest (without checksums) and the options. It checks that the package can be
+        read at all (the format, not a `partial` package, not a CSV extract, no authentication data
+        yet, every collection configured in this realm), takes the realm's lease (one export or
+        import of a realm runs at a time per instance, `409 export_running`) and answers it with the
+        size of the chunks to send. With `phase=validate` or `phase=write` and `part`
+        (`<database>/<collection>.jsonl`) the body is a chunk of whole JSON Lines of that part; every
+        document in it is checked against **this** realm's configuration: its id, `_meta`, its fields
+        against the collection's schema, its files against the file fields, the documents the target
+        already holds (`create` refuses a different document with the same id, `skip` keeps the
+        existing one, `replace` overwrites it; an identical one is `unchanged` in every mode) and the
+        unique indexes. `write` also writes the documents that pass, with their ids and `_meta` kept,
+        counts their files in the storage usage and queues the image versions their files wait for.
+        Writing is idempotent, so an interrupted import is finished by sending the same chunks again.
+        Users and organizations the target doesn't have are counted, not refused. Needs full admin
+        access; a session also needs a fresh re-authentication to start. Audited as `import` and
+        `import.done`, never with content.
+      operationId: adminImport
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/reauth" }
+        - name: X-Backd-Export
+          in: header
+          description: The lease (required with `phase`); on a start, the lease of an interrupted import to take over.
+          schema: { type: string }
+        - name: phase
+          in: query
+          schema: { type: string, enum: [validate, write] }
+        - name: part
+          in: query
+          description: "`<database>/<collection>.jsonl`, with `phase`."
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [manifest]
+              properties:
+                manifest: { type: object, description: The package's manifest.json; checksums may be left out. }
+                mode: { type: string, enum: [create, skip, replace], default: create }
+                skip_invalid: { type: boolean }
+                dry_run: { type: boolean, description: "Validate only; a chunk with `phase=write` is then refused." }
+          application/x-ndjson:
+            schema: { type: string, description: "Whole lines of one part, up to `max_chunk_bytes`." }
+      responses:
+        "200":
+          description: The lease, or the result for the chunk.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImportAnswer" }
+        "400":
+          description: An invalid body, mode or phase.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404":
+          description: No such part in this realm.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: "`export_running` (another export or import holds the realm), `export_lease` (the lease is missing, expired, not an import's or another administrator's) or a write on a dry run."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: "`import_refused`: the package can't be imported into this realm; `details` name each collection this realm lacks."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      tags: [admin]
+      summary: Store a file of an import
+      description: |
+        Stores the body under the key a document of `file` (`<database>/<collection>/<file id>`)
+        expects, through backd's storage client, and verifies it against `X-Backd-Sha256` (hex): a
+        file that arrives different is deleted. Send the files before the documents that reference
+        them. The size limit is the file field's. Needs the import's lease.
+      operationId: adminImportFile
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - name: X-Backd-Export
+          in: header
+          required: true
+          schema: { type: string }
+        - name: X-Backd-Sha256
+          in: header
+          required: true
+          schema: { type: string }
+        - name: file
+          in: query
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "204": { description: Stored. }
+        "400":
+          description: "A missing checksum, or `checksum_mismatch`."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404":
+          description: No such file field, or the realm has no storage.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: "`export_lease`, or a dry run."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: "`storage_unavailable`."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      summary: End an import
+      description: Releases the lease and writes the `import.done` audit record with the counts by outcome. Needs full admin access and the import's lease.
+      operationId: adminImportDone
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - name: X-Backd-Export
+          in: header
+          required: true
+          schema: { type: string }
+        - name: complete
+          in: query
+          schema: { type: boolean }
+      responses:
+        "204": { description: Released. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "`export_lease`."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/storage/check:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -9045,6 +9205,40 @@ components:
               file: { type: string, description: "The file the message is about, relative to the realm, when it names one." }
               message: { type: string }
 
+    ImportAnswer:
+      type: object
+      description: The start of an import (`lease` and the rest of the first group), or the result for one chunk.
+      properties:
+        lease: { type: string }
+        expires_in: { type: integer }
+        max_chunk_bytes: { type: integer, format: int64, description: The largest chunk to send. }
+        warnings: { type: array, items: { type: string } }
+        file_fields:
+          type: object
+          additionalProperties: { type: array, items: { type: string } }
+        documents: { type: integer, description: Documents in the chunk. }
+        counts:
+          type: object
+          description: "Documents by outcome: created, replaced, skipped, unchanged, conflict, invalid. In `validate` they say what `write` would do."
+          additionalProperties: { type: integer }
+        problems:
+          type: array
+          description: The first documents that are invalid or conflict, with their line in the chunk.
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              line: { type: integer }
+              outcome: { type: string, enum: [invalid, conflict] }
+              problems:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    path: { type: string }
+                    reason: { type: string }
+        missing_owners: { type: integer, description: Documents whose owner doesn't exist in this realm. }
+        missing_orgs: { type: integer, description: Documents whose organization doesn't exist in this realm. }
     ExportPlan:
       type: object
       required: [lease, expires_in, manifest, file_fields]

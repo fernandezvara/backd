@@ -155,7 +155,7 @@ Be careful when taking an admin role away from yourself: once no one holds an ad
 | `backd audit` | Print the realm's [audit trail](../audit/), newest first |
 | `backd data check\|transfer\|assign-org` | Check stored documents against their schemas, move documents between collections, or assign them an organization |
 | `backd storage check\|usage\|reconcile` | Check a realm's [object storage](../../providers/storage/), report its usage, or clean up orphans (see [Keeping storage tidy](../../storage-maintenance/)) |
-| `backd export` | Write a realm, database or collections, with their files, as a [package](../export-import/) |
+| `backd export`, `backd import` | Write a realm, database or collections, with their files, as a [package](../export-import/), or read one into a realm |
 | `backd files regenerate` | Rebuild [image versions](../../../build/files/file-fields/#image-versions) the documents already hold |
 | `backd compliance scope` | What a user's [personal data export](../compliance/) covers |
 | `backd consents notify\|record` | Manage the [consents](../../../build/auth/consents/) users accept |

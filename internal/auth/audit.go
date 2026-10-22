@@ -94,6 +94,11 @@ const (
 	// complete). Never the content.
 	AuditExport     = "export"
 	AuditExportDone = "export.done"
+	// An administrator started an import (target import:<realm>; details: mode, dry_run, skip_invalid,
+	// databases, source_realm) and finished it (details: mode, dry_run, files, complete and a count per
+	// outcome: created, replaced, skipped, unchanged, conflict, invalid). Never the content.
+	AuditImport     = "import"
+	AuditImportDone = "import.done"
 	// An administrator ran `backd storage check`; details: ok, provider, bucket.
 	AuditStorageCheck = "storage.check"
 	// An administrator ran `backd storage reconcile`; details: delete, orphans, deleted.

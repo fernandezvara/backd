@@ -3,6 +3,8 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,6 +25,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/exportpkg"
 	"github.com/fernandezvara/backd/internal/oauth"
 	"github.com/fernandezvara/backd/internal/oauth/oauthtest"
 	"github.com/fernandezvara/backd/internal/registry"
@@ -1292,6 +1295,47 @@ func TestContract(t *testing.T) {
 		f.reg.Realms["acme"].Settings.Storage = savedStorage
 		req("DELETE", exp+"?complete=true", "", lh, 204)
 		req("DELETE", exp, "", lh, 409)
+	}
+	// Importing a package: the start, a chunk validated and written, a file, the end.
+	{
+		imp := ad + "/import"
+		manifest := `{"manifest": {"format": 1, "realm": "acme", "databases": [{"name": "app", "collections": [{"name": "library", "part": "app/library.jsonl"}]}]}`
+		req("POST", imp, manifest+`}`, nil, 401)
+		req("POST", imp, manifest+`}`, ada, 403)
+		req("PUT", imp+"?file=app/library/x", "x", nil, 401)
+		req("DELETE", imp, "", nil, 401)
+		req("DELETE", imp, "", ada, 403)
+		req("PUT", imp+"?file=app/library/x", "x", ada, 403)
+		req("POST", imp, `nope`, key, 400)
+		req("POST", imp, `{"manifest": {"format": 9}}`, key, 422)
+		started := req("POST", imp, manifest+`, "mode": "replace"}`, key, 200)
+		ih := with(key, "X-Backd-Export", started["lease"].(string))
+		req("POST", imp, manifest+`}`, key, 409)
+		req("POST", imp+"?phase=validate&part=app/library.jsonl", "", with(key, "X-Backd-Export", "nope"), 409)
+		req("POST", imp+"?phase=nothing&part=app/library.jsonl", "", ih, 400)
+		req("POST", imp+"?phase=validate&part=app/ghost.jsonl", "", ih, 404)
+		doc, _ := exportpkg.EncodeDocument(map[string]any{"id": "9m4e2mr0ui3e8a20014g", "title": "imported", "_meta": map[string]any{"version": int64(1), "created_at": time.Now().UTC(), "updated_at": time.Now().UTC()}})
+		out := req("POST", imp+"?phase=validate&part=app/library.jsonl", string(doc)+"\n", with(ih, "Content-Type", "application/x-ndjson"), 200)
+		if out["counts"].(map[string]any)["created"] != float64(1) {
+			t.Errorf("validate: %v", out)
+		}
+		req("POST", imp+"?phase=write&part=app/library.jsonl", string(doc)+"\n", with(ih, "Content-Type", "application/x-ndjson"), 200)
+		sum := sha256.Sum256([]byte("bytes"))
+		req("PUT", imp+"?file=app/library/fl_0123456789abcdefghij", "bytes", with(ih, "X-Backd-Sha256", hex.EncodeToString(sum[:])), 204)
+		req("PUT", imp+"?file=app/library/fl_0123456789abcdefghij", "bytes", ih, 400)
+		req("PUT", imp+"?file=app/library/fl_0123456789abcdefghij", "bytes", with(with(key, "X-Backd-Export", "nope"), "X-Backd-Sha256", hex.EncodeToString(sum[:])), 409)
+		req("PUT", imp+"?file=app/ghost/x", "bytes", with(ih, "X-Backd-Sha256", hex.EncodeToString(sum[:])), 404)
+		ghost := f.reg.Realms["acme"].Settings.Storage
+		broken := *ghost
+		broken.AccessKey = "IMPORT_KEY_NOT_SET"
+		f.reg.Realms["acme"].Settings.Storage = &broken
+		req("PUT", imp+"?file=app/library/fl_0123456789abcdefghij", "bytes", with(ih, "X-Backd-Sha256", hex.EncodeToString(sum[:])), 503)
+		f.reg.Realms["acme"].Settings.Storage = ghost
+		req("DELETE", imp+"?complete=true", "", ih, 204)
+		req("DELETE", imp, "", ih, 409)
+		dry := req("POST", imp, manifest+`, "dry_run": true}`, key, 200)
+		req("POST", imp+"?phase=write&part=app/library.jsonl", "", with(key, "X-Backd-Export", dry["lease"].(string)), 409)
+		req("DELETE", imp, "", with(key, "X-Backd-Export", dry["lease"].(string)), 204)
 	}
 	// Files: upload, download, remove and clear, on the data route and the admin data route.
 	png := "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + strings.Repeat("x", 20)

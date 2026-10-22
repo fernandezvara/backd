@@ -9,6 +9,7 @@ Until a stable release is declared, a minor release may have breaking changes; t
 ### Added
 
 - **Export packages:** `backd export --realm r [--db d] [--collection c,…] --out dir [--archive] [--no-files]` writes a realm's documents (soft-deleted ones included, in the API representation with Extended JSON for dates and binary) and files as a lossless package with a checksummed manifest, through `GET /_admin/export` (full admin access, re-authentication for sessions, one export per realm at a time, resumable). Audited as `export` and `export.done`. Import, authentication data, direct mode and anonymized exports follow.
+- **Import:** `backd import --from <package|.tar.gz> [--mode create|skip|replace] [--dry-run] [--skip-invalid] [--report file]` verifies the package's checksums, has the running `backd` validate every document against the target realm's configuration (ids, schemas, file limits, unique values, existing documents) before anything is written, uploads the files and writes the documents with their ids and `_meta` kept. Writing is idempotent, so an interrupted import is finished by running it again. Through `POST/PUT/DELETE /_admin/import`; audited as `import` and `import.done`.
 - **Reporting extracts and CSV:** `backd export --fields a,b.c --where '{…}' --format csv` narrows an export to some fields and the documents matching a filter (for one collection), and writes one RFC 4180 table per collection with flattened columns. Field-selected packages are marked `partial`; CSV is lossy and never importable.
 
 ## 0.9.0
