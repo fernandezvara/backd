@@ -237,7 +237,7 @@ func fetchCSV(t *target, out, part string, q url.Values, headers map[string]stri
 		return exportedPart{}, err
 	}
 	tmpPath := filepath.Join(out, filepath.FromSlash(tmp))
-	defer os.Remove(tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }()
 	src, err := os.Open(tmpPath)
 	if err != nil {
 		return exportedPart{}, err
