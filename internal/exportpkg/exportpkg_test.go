@@ -94,3 +94,15 @@ func TestSafePart(t *testing.T) {
 		}
 	}
 }
+
+func TestSelect(t *testing.T) {
+	doc := map[string]any{"id": "a", "name": "n", "secret": "s", "address": map[string]any{"city": "c", "zip": "z"}, "_meta": map[string]any{"owner": "u", "version": int64(2)}}
+	got := Select(doc, []string{"name", "address.city", "_meta.owner", "ghost", "address.ghost.deeper"})
+	want := map[string]any{"id": "a", "name": "n", "address": map[string]any{"city": "c"}, "_meta": map[string]any{"owner": "u"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v", got)
+	}
+	if whole := Select(doc, []string{"address"}); len(whole["address"].(map[string]any)) != 2 || whole["_meta"] != nil {
+		t.Errorf("an object keeps all of it: %v", whole)
+	}
+}

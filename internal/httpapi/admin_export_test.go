@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -157,4 +158,87 @@ func TestAdminExport(t *testing.T) {
 	if rec, _ := f.doH(t, "GET", url, "", f.withProof(t, f.bob)); rec.Code != http.StatusOK {
 		t.Errorf("a session with proof: %d", rec.Code)
 	}
+}
+
+func TestAdminExportExtract(t *testing.T) {
+	f := newRulesFixture(t)
+	f.svc.Realm = "acme"
+	_, adminKey, err := f.svc.CreateAPIKey(context.Background(), "extract-admin", auth.KeyOptions{Role: auth.KeyRoleAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := bearer(adminKey)
+	seedNotes(f, 1100, nil, nil)
+	f.store.mu.Lock()
+	for i := 1; i <= 1100; i += 2 {
+		f.store.docs["acme__app.notes"][fmt.Sprintf("n%05d", i)]["published"] = false
+	}
+	f.store.mu.Unlock()
+	url := admin + "/export"
+	plan := func(query string, want int) map[string]any {
+		t.Helper()
+		rec, out := f.doH(t, "GET", url+"?"+query, "", key)
+		if rec.Code != want {
+			t.Fatalf("%s: %d %v", query, rec.Code, out)
+		}
+		if want == http.StatusOK {
+			return out
+		}
+		return out
+	}
+	part := func(lease string) []map[string]any {
+		t.Helper()
+		req := httptest.NewRequest("GET", url+"?part=app/notes.jsonl", nil)
+		req.Header.Set("Authorization", "Bearer "+adminKey)
+		req.Header.Set(exportHeader, lease)
+		w := httptest.NewRecorder()
+		f.h.ServeHTTP(w, req)
+		var docs []map[string]any
+		if err := exportpkg.ReadDocuments(w.Body, func(_ int, d map[string]any) error { docs = append(docs, d); return nil }); err != nil {
+			t.Fatal(err)
+		}
+		return docs
+	}
+	end := func(lease string) {
+		f.doH(t, "DELETE", url, "", map[string]string{"Authorization": "Bearer " + adminKey, exportHeader: lease})
+	}
+
+	// Bad options are refused before anything is taken.
+	for name, q := range map[string]string{
+		"a field that isn't there": "database=app&collection=notes&fields=title,ghost",
+		"a where for a realm":      `where={"published":true}`,
+		"a where for two":          `database=app&collection=notes&collection=archive&where={"published":true}`,
+		"a where on a non-field":   `database=app&collection=notes&where={"ghost":1}`,
+		"an unknown format":        "format=xml",
+	} {
+		_ = name
+		plan(q, http.StatusBadRequest)
+	}
+
+	// Fields: id always, the rest as asked, and the package is partial.
+	p := plan("database=app&collection=notes&fields=title,_meta.version", http.StatusOK)
+	if p["manifest"].(map[string]any)["flags"].(map[string]any)["partial"] != true {
+		t.Errorf("flags: %v", p["manifest"])
+	}
+	docs := part(p["lease"].(string))
+	if len(docs) != 1100 || len(docs[0]) != 3 || docs[0]["title"] != "a title" || docs[0]["published"] != nil || docs[0]["_meta"].(map[string]any)["version"] != int64(1) || len(docs[0]["_meta"].(map[string]any)) != 1 {
+		t.Fatalf("fields: %d %v", len(docs), docs[0])
+	}
+	end(p["lease"].(string))
+
+	// Where: the matching documents only, in pages across the whole collection.
+	p = plan(`database=app&collection=notes&where={"published":false}&fields=published`, http.StatusOK)
+	docs = part(p["lease"].(string))
+	if len(docs) != 550 || docs[0]["id"] != "n00001" || docs[549]["id"] != "n01099" {
+		t.Fatalf("where: %d %v", len(docs), docs[len(docs)-1])
+	}
+	end(p["lease"].(string))
+
+	// CSV extracts hold no files and are marked.
+	p = plan("database=app&collection=notes&format=csv", http.StatusOK)
+	flags := p["manifest"].(map[string]any)["flags"].(map[string]any)
+	if flags["csv"] != true || flags["no_files"] != true || len(p["file_fields"].(map[string]any)) != 0 {
+		t.Errorf("csv plan: %v", p)
+	}
+	end(p["lease"].(string))
 }

@@ -58,6 +58,8 @@ type Flags struct {
 	Anonymized bool `json:"anonymized"`
 	Auth       bool `json:"auth"`
 	NoFiles    bool `json:"no_files"`
+	// CSV marks a flat reporting extract: lossy, never importable.
+	CSV bool `json:"csv"`
 }
 
 // Database is a database of the realm in a package.

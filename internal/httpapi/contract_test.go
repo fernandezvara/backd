@@ -1278,6 +1278,7 @@ func TestContract(t *testing.T) {
 		plan := req("GET", exp+"?database=app&collection=library", "", key, 200)
 		lh := with(key, "X-Backd-Export", plan["lease"].(string))
 		req("GET", exp, "", key, 409)
+		req("GET", exp+"?database=app&collection=library&fields=ghost", "", key, 400)
 		req("GET", exp+"?part=app/library.jsonl", "", key, 409)
 		req("GET", exp+"?part=ghost/library.jsonl", "", lh, 404)
 		req("GET", exp+"?part=app/library.jsonl", "", lh, 200)

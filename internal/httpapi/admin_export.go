@@ -19,6 +19,8 @@ import (
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/exportpkg"
+	"github.com/fernandezvara/backd/internal/query"
+	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage"
 )
 
@@ -45,6 +47,9 @@ type exportLease struct {
 	expires time.Time
 	scope   string
 	flags   exportpkg.Flags
+	// fields and where narrow every collection of the export (a reporting extract).
+	fields []string
+	where  string
 	// What this export has streamed, for the audit record of its end.
 	documents map[string]int64
 	files     int64
@@ -167,7 +172,19 @@ func (a *adminAPI) exportPlan(w http.ResponseWriter, r *http.Request, realm stri
 		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "database", Reason: "is required with collection"})
 		return
 	}
-	noFiles := q.Get("files") == "false"
+	csvOut := q.Get("format") == "csv"
+	if f := q.Get("format"); f != "" && f != "csv" && f != "jsonl" {
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "format", Reason: "must be jsonl or csv"})
+		return
+	}
+	noFiles := q.Get("files") == "false" || csvOut
+	var fields []string
+	for _, f := range strings.Split(q.Get("fields"), ",") {
+		if f = strings.TrimSpace(f); f != "" && f != "id" {
+			fields = append(fields, f)
+		}
+	}
+	where := q.Get("where")
 	rl := a.reg.Realms[realm]
 	if rl == nil || (database != "" && rl.Databases[database] == nil) {
 		writeError(w, r, http.StatusNotFound, codeNotFound, "no such database in this realm")
@@ -179,11 +196,15 @@ func (a *adminAPI) exportPlan(w http.ResponseWriter, r *http.Request, realm stri
 			return
 		}
 	}
+	if details := a.checkExtract(rl, database, names, fields, where); len(details) > 0 {
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", details...)
+		return
+	}
 	hasStorage := rl.Settings.Storage != nil
 	m := &exportpkg.Manifest{
 		Format: exportpkg.FormatVersion, BackdVersion: a.version, Realm: realm, CreatedAt: time.Now().UTC(),
 		Operator: caller.Actor(), Fingerprint: a.fingerprint,
-		Flags:     exportpkg.Flags{NoFiles: noFiles || !hasStorage},
+		Flags:     exportpkg.Flags{NoFiles: noFiles || !hasStorage, Partial: len(fields) > 0, CSV: csvOut},
 		Encrypted: []exportpkg.EncryptedField{}, Checksums: map[string]string{},
 	}
 	fileFields := map[string][]string{}
@@ -220,15 +241,64 @@ func (a *adminAPI) exportPlan(w http.ResponseWriter, r *http.Request, realm stri
 	id := make([]byte, 16)
 	_, _ = rand.Read(id)
 	now := time.Now()
-	l := &exportLease{id: hex.EncodeToString(id), actor: caller.Actor(), expires: now.Add(exportLeaseTTL), scope: scope, flags: m.Flags}
+	l := &exportLease{id: hex.EncodeToString(id), actor: caller.Actor(), expires: now.Add(exportLeaseTTL), scope: scope, flags: m.Flags, fields: fields, where: where}
 	if !a.exports.take(realm, caller.Actor(), r.Header.Get(exportHeader), l, now) {
 		writeError(w, r, http.StatusConflict, codeExportRunning, "an export of this realm is already running; wait for it to finish (a silent one is released after ten minutes)")
 		return
 	}
 	usersOf(r).Audit(r.Context(), auth.AuditExport, "export:"+scope, map[string]any{
 		"database": database, "collections": len(names), "files": !m.Flags.NoFiles, "partial": m.Flags.Partial,
+		"fields": len(fields), "filtered": where != "", "csv": csvOut,
 	})
 	writeJSON(w, http.StatusOK, exportPlan{Lease: l.id, ExpiresIn: int(exportLeaseTTL.Seconds()), Manifest: m, FileFields: fileFields})
+}
+
+// checkExtract validates the options of a reporting extract: --where needs exactly one
+// collection and is parsed against its schema as the API does; every field path must exist in
+// at least one of the collections.
+func (a *adminAPI) checkExtract(rl *registry.Realm, database string, names, fields []string, where string) []Detail {
+	var details []Detail
+	if where != "" {
+		if database == "" || len(names) != 1 {
+			return []Detail{{Path: "where", Reason: "needs exactly one collection (database and collection)"}}
+		}
+		if _, err := query.ParseWhere(where, rl.Databases[database].Collections[names[0]].Fields); err != nil {
+			details = append(details, queryDetails(err)...)
+		}
+	}
+	for _, f := range fields {
+		found := false
+		for dbName, db := range rl.Databases {
+			if database != "" && dbName != database {
+				continue
+			}
+			for name, c := range db.Collections {
+				if (len(names) == 0 || slices.Contains(names, name)) && hasFieldPath(c, f) {
+					found = true
+				}
+			}
+		}
+		if !found {
+			details = append(details, Detail{Path: "fields", Reason: "no such field: " + f})
+		}
+	}
+	return details
+}
+
+// hasFieldPath reports whether path names a field of the collection, or an object holding some.
+func hasFieldPath(c *registry.Collection, path string) bool {
+	if path == "_meta" || strings.HasPrefix(path, "_meta.") {
+		return true
+	}
+	if _, ok := c.Fields[path]; ok {
+		return true
+	}
+	for k := range c.Fields {
+		if strings.HasPrefix(k, path+".") {
+			return true
+		}
+	}
+	return false
 }
 
 // leaseOf checks the export lease of a part request.
@@ -256,8 +326,17 @@ func (a *adminAPI) exportPart(w http.ResponseWriter, r *http.Request, realm, par
 		return
 	}
 	c := rl.Databases[database].Collections[name]
-	sc, ok := a.fns.docs.store.Repository(c).(storage.Scanner)
-	if !ok {
+	repo := a.fns.docs.store.Repository(c)
+	var filter storage.Filter
+	if l.where != "" {
+		var err error
+		if filter, err = query.ParseWhere(l.where, c.Fields); err != nil {
+			writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", queryDetails(err)...)
+			return
+		}
+	}
+	sc, scannable := repo.(storage.Scanner)
+	if filter == nil && !scannable {
 		writeError(w, r, http.StatusNotImplemented, codeInternal, "this storage can't be scanned")
 		return
 	}
@@ -270,7 +349,19 @@ func (a *adminAPI) exportPart(w http.ResponseWriter, r *http.Request, realm, par
 	for {
 		_ = rc.SetWriteDeadline(time.Now().Add(exportWriteWindow))
 		ctx, cancel := context.WithTimeout(r.Context(), a.fns.docs.opTimeout)
-		batch, err := sc.ScanAfter(ctx, after, exportBatch)
+		var batch []storage.Document
+		var err error
+		if filter == nil {
+			batch, err = sc.ScanAfter(ctx, after, exportBatch)
+		} else {
+			q := storage.Query{Filter: filter, Sort: []storage.SortField{{Field: "id"}}, Limit: exportBatch}
+			if after != "" {
+				q.After = storage.Condition{Field: "id", Op: storage.OpGt, Value: after}
+			}
+			var page storage.Page
+			page, err = repo.List(ctx, q)
+			batch = page.Items
+		}
 		cancel()
 		if err != nil {
 			// The status line is gone once bytes were sent: cut the stream, which the CLI
@@ -282,6 +373,10 @@ func (a *adminAPI) exportPart(w http.ResponseWriter, r *http.Request, realm, par
 			panic(http.ErrAbortHandler)
 		}
 		for _, doc := range batch {
+			after, _ = doc["id"].(string)
+			if len(l.fields) > 0 {
+				doc = exportpkg.Select(doc, l.fields)
+			}
 			line, err := exportpkg.EncodeDocument(doc)
 			if err != nil {
 				logger(r.Context()).Error("export encode failed", "error", err, "collection", database+"/"+name)
@@ -291,7 +386,6 @@ func (a *adminAPI) exportPart(w http.ResponseWriter, r *http.Request, realm, par
 			_ = bw.WriteByte('\n')
 			size += int64(len(line)) + 1
 			docs++
-			after, _ = doc["id"].(string)
 		}
 		if err := bw.Flush(); err != nil {
 			return

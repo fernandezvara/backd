@@ -4827,6 +4827,25 @@ paths:
           in: query
           description: "`false` leaves the files out."
           schema: { type: string, enum: ["false"] }
+        - name: fields
+          in: query
+          description: >-
+            A reporting extract: comma-separated field paths (`name,address.city`, `_meta.owner`)
+            to keep of every document, `id` always. The package is marked `partial`. A path that
+            exists in none of the collections is `400`.
+          schema: { type: string }
+        - name: where
+          in: query
+          description: >-
+            A reporting extract: only the documents matching this filter, in the syntax of the
+            data API's `where`. Needs `database` and exactly one `collection`. Invalid filters are `400`.
+          schema: { type: string }
+        - name: format
+          in: query
+          description: >-
+            `csv` marks the plan as a flat extract (no files, `flags.csv`); the client turns the
+            streamed documents into one table per collection. `jsonl` is the default.
+          schema: { type: string, enum: [jsonl, csv] }
         - name: part
           in: query
           description: "`<database>/<collection>.jsonl`: stream this collection's documents."
@@ -4849,6 +4868,11 @@ paths:
               schema: { type: string, format: binary }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
+        "400":
+          description: An invalid `fields`, `where` or `format`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "404":
           description: No such database, collection, part or file, or the realm has no storage.
           content:
@@ -9045,6 +9069,7 @@ components:
                 anonymized: { type: boolean }
                 auth: { type: boolean }
                 no_files: { type: boolean }
+                csv: { type: boolean, description: A flat reporting extract; never importable. }
             databases:
               type: array
               items:

@@ -180,3 +180,49 @@ func TestExportScopeNoFilesAndArchive(t *testing.T) {
 	// An archive isn't overwritten.
 	c.expect(1, "exists", "", "export", "--realm", "acme", "--url", srv.URL, "--out", out, "--archive")
 }
+
+func TestExportCSVExtract(t *testing.T) {
+	var planQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		switch {
+		case r.Method == "DELETE":
+			w.WriteHeader(http.StatusNoContent)
+		case q.Get("part") == "app/notes.jsonl":
+			_, _ = io.WriteString(w, "{\"id\":\"n1\",\"title\":\"one, two\",\"meta\":{\"a\":1}}\n{\"id\":\"n2\",\"title\":\"=1+1\"}\n")
+		default:
+			planQuery = r.URL.RawQuery
+			_, _ = io.WriteString(w, `{"lease":"L","manifest":{"format":1,"realm":"acme","flags":{"partial":true,"csv":true,"no_files":true},"databases":[{"name":"app","collections":[{"name":"notes","part":"app/notes.jsonl"}]}],"encrypted_fields":[]},"file_fields":{}}`)
+		}
+	}))
+	defer srv.Close()
+	c := &cliEnv{t: t, env: map[string]string{"BACKD_CREDENTIALS": filepath.Join(t.TempDir(), "credentials"), "BACKD_API_KEY": "bdk_x"}}
+	out := filepath.Join(t.TempDir(), "report")
+	base := []string{"export", "--realm", "acme", "--url", srv.URL, "--out", out}
+
+	c.expect(2, "--where needs", "", append(base, "--where", `{"a":1}`)...)
+	c.expect(2, "want jsonl or csv", "", append(base, "--format", "xml")...)
+	c.expect(2, "--no-files has no meaning", "", append(base, "--format", "csv", "--no-files")...)
+	c.expect(0, "exported 2 documents", "", append(base, "--db", "app", "--collection", "notes", "--format", "csv", "--fields", "title,meta", "--where", `{"title":"x"}`)...)
+	if planQuery != "collection=notes&database=app&fields=title%2Cmeta&format=csv&where=%7B%22title%22%3A%22x%22%7D" {
+		t.Errorf("plan request: %s", planQuery)
+	}
+	got, err := os.ReadFile(filepath.Join(out, "app", "notes.csv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "id,title,meta.a\nn1,\"one, two\",1\nn2,'=1+1,\n"; string(got) != want {
+		t.Errorf("csv:\n%s\nwant:\n%s", got, want)
+	}
+	if _, err := os.Stat(filepath.Join(out, "app", "notes.jsonl.tmp")); err == nil {
+		t.Error("the temporary documents were left")
+	}
+	if _, err := os.Stat(filepath.Join(out, "_system")); err == nil {
+		t.Error("an extract has no system data")
+	}
+	data, _ := os.ReadFile(filepath.Join(out, "manifest.json"))
+	m, err := exportpkg.ParseManifest(data)
+	if err != nil || !m.Flags.CSV || !m.Flags.Partial || m.Checksums["app/notes.csv"] == "" || len(m.Checksums) != 1 || m.Databases[0].Collections[0].Part != "app/notes.csv" || m.Databases[0].Collections[0].Documents != 2 {
+		t.Errorf("manifest: %+v %v", m, err)
+	}
+}

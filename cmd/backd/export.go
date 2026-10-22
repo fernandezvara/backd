@@ -50,6 +50,20 @@ func exportAction(c *kli.CommandContext) error {
 	if len(collections) > 0 && database == "" {
 		return usageErr(errors.New("--collection needs --db"))
 	}
+	format, fields, where := str(c, "format"), splitList(str(c, "fields")), str(c, "where")
+	if format == "" {
+		format = "jsonl"
+	}
+	if format != "jsonl" && format != "csv" {
+		return usageErr(fmt.Errorf("--format: want jsonl or csv, got %q", format))
+	}
+	if where != "" && (database == "" || len(collections) != 1) {
+		return usageErr(errors.New("--where needs --db and exactly one --collection"))
+	}
+	csvOut := format == "csv"
+	if csvOut && flag(c, "no-files") {
+		return usageErr(errors.New("--no-files has no meaning with --format csv: a CSV extract never holds files"))
+	}
 	t, err := targetOf(c, false)
 	if err != nil {
 		return err
@@ -76,6 +90,15 @@ func exportAction(c *kli.CommandContext) error {
 	}
 	if flag(c, "no-files") {
 		q.Set("files", "false")
+	}
+	if len(fields) > 0 {
+		q.Set("fields", strings.Join(fields, ","))
+	}
+	if where != "" {
+		q.Set("where", where)
+	}
+	if csvOut {
+		q.Set("format", "csv")
 	}
 	headers := map[string]string{}
 	for k, v := range proof {
@@ -106,12 +129,21 @@ func exportAction(c *kli.CommandContext) error {
 		for ci := range db.Collections {
 			col := &db.Collections[ci]
 			key := db.Name + "/" + col.Name
+			remotePart := col.Part
+			if csvOut {
+				col.Part = strings.TrimSuffix(col.Part, ".jsonl") + ".csv"
+			}
 			part, ok := progress.Parts[col.Part]
 			if ok && partIntact(out, col.Part, part) {
 				fmt.Fprintf(stderr, "%s: already exported (%d documents)\n", key, part.Documents)
 			} else {
 				fmt.Fprintf(stderr, "%s: exporting…\n", key)
-				if part, err = fetchPart(t, out, col.Part, url.Values{"part": {col.Part}}, lease, true); err != nil {
+				if csvOut {
+					part, err = fetchCSV(t, out, col.Part, url.Values{"part": {remotePart}}, lease, fields)
+				} else {
+					part, err = fetchPart(t, out, col.Part, url.Values{"part": {remotePart}}, lease, true)
+				}
+				if err != nil {
 					return err
 				}
 				progress.Parts[col.Part] = part
@@ -132,14 +164,16 @@ func exportAction(c *kli.CommandContext) error {
 			}
 		}
 	}
-	// The wrapped keys of encrypted fields; empty until a realm has encrypted fields.
-	if err := os.MkdirAll(filepath.Join(out, "_system"), 0o700); err != nil {
-		return err
+	if !csvOut {
+		// The wrapped keys of encrypted fields; empty until a realm has encrypted fields.
+		if err := os.MkdirAll(filepath.Join(out, "_system"), 0o700); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(out, filepath.FromSlash(exportpkg.DataKeysName)), nil, 0o600); err != nil {
+			return err
+		}
+		m.Checksums[exportpkg.DataKeysName] = exportpkg.NewHasher().Sum()
 	}
-	if err := os.WriteFile(filepath.Join(out, filepath.FromSlash(exportpkg.DataKeysName)), nil, 0o600); err != nil {
-		return err
-	}
-	m.Checksums[exportpkg.DataKeysName] = exportpkg.NewHasher().Sum()
 	for _, db := range m.Databases {
 		for _, ref := range fileIDs[db.Name] {
 			collection, id, _ := strings.Cut(ref, "/")
@@ -192,6 +226,41 @@ func exportAction(c *kli.CommandContext) error {
 	fmt.Fprintf(stderr, "exported %d documents and %d files to %s\nthe package holds data of the realm: keep it where only the people who may read the realm can, and delete it when you are done\n", docs, m.Files, result)
 	fmt.Fprintln(c.Stdout(), result)
 	return nil
+}
+
+// fetchCSV downloads a collection's documents and writes them as a CSV table at part. The
+// documents wait in a temporary file because the columns are known only after the last one.
+func fetchCSV(t *target, out, part string, q url.Values, headers map[string]string, fields []string) (exportedPart, error) {
+	tmp := strings.TrimSuffix(part, ".csv") + ".jsonl.tmp"
+	got, err := fetchPart(t, out, tmp, q, headers, true)
+	if err != nil {
+		return exportedPart{}, err
+	}
+	tmpPath := filepath.Join(out, filepath.FromSlash(tmp))
+	defer os.Remove(tmpPath)
+	src, err := os.Open(tmpPath)
+	if err != nil {
+		return exportedPart{}, err
+	}
+	defer src.Close()
+	dst := filepath.Join(out, filepath.FromSlash(part))
+	f, err := os.OpenFile(dst+".partial", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return exportedPart{}, err
+	}
+	h := exportpkg.NewHasher()
+	_, err = exportpkg.WriteCSV(src, io.MultiWriter(f, h), fields)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(dst+".partial", dst)
+	}
+	if err != nil {
+		_ = os.Remove(dst + ".partial")
+		return exportedPart{}, fmt.Errorf("%s: %w", part, err)
+	}
+	return exportedPart{Checksum: h.Sum(), Size: h.Size(), Documents: got.Documents}, nil
 }
 
 func splitList(s string) []string {

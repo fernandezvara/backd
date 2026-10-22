@@ -474,12 +474,15 @@ func registerRemote(cfg *kli.Config) {
 		boolean(cc, "json", "print the report as JSON")
 	})
 	cfg.Command("export").ShortHelp("write a realm, database or collection as a package").
-		LongHelp("Reads the realm's documents and files from a running backd into a package: a directory with manifest.json,\n<database>/<collection>.jsonl (the API representation of every document, soft-deleted ones included, with dates and\nbinary values in Extended JSON) and <database>/_files/<file id>, or one .tar.gz with --archive. The package is lossless;\nbackd import reads it. Each part is verified as it arrives and recorded in <out>/.export-progress.json, so running the\nsame command again after an interruption continues from the last complete part. Only one export of a realm runs at a time.\nNever exported: sessions, tokens, counters, jobs, history, secrets and the audit trail. Needs full admin access and a fresh\nproof that it is you. Audited as export and export.done. " + adminAPINote).
+		LongHelp("Reads the realm's documents and files from a running backd into a package: a directory with manifest.json,\n<database>/<collection>.jsonl (the API representation of every document, soft-deleted ones included, with dates and\nbinary values in Extended JSON) and <database>/_files/<file id>, or one .tar.gz with --archive. The package is lossless;\nbackd import reads it. Each part is verified as it arrives and recorded in <out>/.export-progress.json, so running the\nsame command again after an interruption continues from the last complete part. Only one export of a realm runs at a time.\n--fields and --where narrow it to a reporting extract (a --fields package is partial and can't be imported) and --format csv writes one flat, lossy table per collection for spreadsheets, without files. Never exported: sessions, tokens, counters, jobs, history, secrets and the audit trail. Needs full admin access and a fresh\nproof that it is you. Audited as export and export.done. " + adminAPINote).
 		Func(act("export", exportAction)).Config(func(cc *kli.CommandConfig) {
 		remote(cc)
 		required(cc, "out", "the package directory to write (with --archive, the archive is <out>.tar.gz)")
 		optional(cc, "db", "only this database")
 		optional(cc, "collection", "only these collections of --db: comma-separated names")
+		optional(cc, "fields", "only these fields: comma-separated paths such as name,address.city (id is always there); the package is marked partial and can't be imported")
+		optional(cc, "where", "only the documents matching this filter (the API's where syntax), for one --collection")
+		optional(cc, "format", "jsonl (a package, the default) or csv (a flat table per collection for spreadsheets: lossy, no files, can't be imported)")
 		boolean(cc, "archive", "write one <out>.tar.gz instead of a directory")
 		boolean(cc, "no-files", "leave the files out: only the documents")
 	})
