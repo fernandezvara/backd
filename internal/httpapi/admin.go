@@ -28,6 +28,10 @@ type adminAPI struct {
 	reg          *registry.Registry
 	fns          *functions      // runs functions by hand (see adminInvoke)
 	fingerprint  string          // the config this instance runs (readyz shows it too)
+	version      string          // this build's version, recorded in export packages
+	env          string          // BACKD_ENV: production, staging…
+	offline      bool            // the CLI's direct mode: every request is a full administrator's
+	exports      exportLeases    // the export in progress per realm
 	reloadErrors func() []string // why the last live reload failed (BACKD_DEV); nil without one
 	// imageMaxPixels is the instance's image pixel limit, which a config check applies to the draft.
 	imageMaxPixels int64
@@ -44,11 +48,18 @@ type adminUserKey struct{}
 
 func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Handler, timeout func(http.Handler) http.Handler) {
 	r.Route("/v1/{realm}/_admin", func(r chi.Router) {
-		r.Use(noStore, resolveRealm, timeout, a.requireAdmin)
+		// An export streams for as long as the data takes: it bounds each batch itself.
+		r.Use(noStore, resolveRealm, skipPath("/_admin/export", skipPath("/_admin/import", timeout)), a.requireAdmin)
 		json := requireContentType("application/json")
 		r.Get("/whoami", a.whoami)
 		r.With(a.need(registry.RightConfig)).Get("/config", a.config)
 		r.With(a.need(registry.RightConfig)).Get("/types", a.types)
+		r.With(a.needRead(registry.RightData)).Get("/export", a.export)
+		r.With(a.needRead(registry.RightData), requireContentType("application/json")).Post("/export", a.export)
+		r.With(a.needRead(registry.RightData)).Delete("/export", a.finishExport)
+		r.With(a.needRead(registry.RightData)).Post("/import", a.importHandler)
+		r.With(a.needRead(registry.RightData)).Put("/import", a.importHandler)
+		r.With(a.needRead(registry.RightData)).Delete("/import", a.finishImport)
 		r.With(a.need(registry.RightConfig)).Get("/openapi.json", a.openapi)
 		r.With(a.needRead(registry.RightConfig), requireContentType("application/json")).Post("/config/check", a.checkConfig)
 		r.With(a.needRead(registry.RightConfig)).Post("/storage/check", a.checkStorage)
@@ -171,6 +182,15 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 // and sessions of users holding one of the realm's admin roles.
 func (a *adminAPI) requireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if a.offline {
+			// Direct mode: the operator holds the database, which is more than any admin
+			// credential. The records it writes say so.
+			setActor(r.Context(), auth.ActorOffline)
+			caller := auth.Caller{Key: &auth.APIKey{Name: "offline", Role: auth.KeyRoleAdmin}}
+			ctx := auth.WithOffline(context.WithValue(r.Context(), callerKey{}, caller))
+			next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, adminAccessKey{}, registry.AdminAccess{Write: registry.AllRights})))
+			return
+		}
 		// The realm's admin networks come first: outside them the admin
 		// API doesn't exist, and credentials aren't even looked at.
 		users := usersOf(r)

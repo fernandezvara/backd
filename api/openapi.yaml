@@ -4783,6 +4783,384 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/export:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+    get:
+      tags: [admin]
+      summary: Export the realm as a package, part by part
+      description: |
+        The server side of `backd export`. Without `part` or `file` it starts an export: it takes the
+        realm's export lease (one export of a realm runs at a time per instance, `409 export_running`;
+        a lease that is silent for ten minutes expires, and the administrator who held one can take it
+        over by sending it in `X-Backd-Export`) and answers the **plan**: the lease, the package's
+        manifest as far as it is known before reading (document counts are estimates, checksums are
+        the client's to add) and, per collection, the file fields to look in for the files to fetch.
+        With `part` it streams one collection's documents as JSON Lines, every document once in `id`
+        order, soft-deleted ones included, in the API representation with dates and binary values as
+        MongoDB Extended JSON (relaxed). With `file` it streams a file's object through backd's
+        storage client. Part and file requests carry the lease in `X-Backd-Export`. Memory does not
+        grow with the size of the collection. Encrypted fields, when a realm has them, are sent as
+        stored. Never exported: sessions, tokens, counters, jobs, history, secrets and the audit trail.
+        Needs full admin access; a session also needs a fresh re-authentication on the plan request.
+        Audited as `export` (the plan) and `export.done` (see `DELETE`), never with content.
+      operationId: adminExport
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/reauth" }
+        - name: X-Backd-Export
+          in: header
+          required: false
+          description: The lease the plan gave (required with `part` and `file`); on a plan request, the lease of an interrupted export to take over.
+          schema: { type: string }
+        - name: database
+          in: query
+          description: The plan covers only this database.
+          schema: { type: string }
+        - name: collection
+          in: query
+          description: The plan covers only these collections of `database` (repeatable).
+          schema: { type: array, items: { type: string } }
+          style: form
+          explode: true
+        - name: files
+          in: query
+          description: "`false` leaves the files out."
+          schema: { type: string, enum: ["false"] }
+        - name: fields
+          in: query
+          description: >-
+            A reporting extract: comma-separated field paths (`name,address.city`, `_meta.owner`)
+            to keep of every document, `id` always. The package is marked `partial`. A path that
+            exists in none of the collections is `400`.
+          schema: { type: string }
+        - name: where
+          in: query
+          description: >-
+            A reporting extract: only the documents matching this filter, in the syntax of the
+            data API's `where`. Needs `database` and exactly one `collection`. Invalid filters are `400`.
+          schema: { type: string }
+        - name: include
+          in: query
+          description: >-
+            `auth` adds the realm's authentication data: users, identities with their password
+            hashes, organizations, memberships, teams, second-factor enrollments and push devices
+            (parts `_system/auth/<collection>.jsonl`). Whole realm only: it can't be combined with
+            `database`, `fields`, `where` or `format`. The fields the realm sealed with its secrets
+            (TOTP secrets, device tokens, Apple refresh tokens) are opened by the server and sealed
+            again under a **one-time export key**, which the plan returns once in `export_key`;
+            recovery codes (keyed hashes) and the sessions devices belong to don't travel. Audited
+            as `export.auth`.
+          schema: { type: string, enum: [auth] }
+        - name: format
+          in: query
+          description: >-
+            `csv` marks the plan as a flat extract (no files, `flags.csv`); the client turns the
+            streamed documents into one table per collection. `jsonl` is the default.
+          schema: { type: string, enum: [jsonl, csv] }
+        - name: part
+          in: query
+          description: "`<database>/<collection>.jsonl`: stream this collection's documents."
+          schema: { type: string }
+        - name: file
+          in: query
+          description: "`<database>/<collection>/<file id>`: stream this file's object."
+          schema: { type: string }
+      responses:
+        "200":
+          description: The plan, a collection's documents or a file's object.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExportPlan" }
+            application/x-ndjson:
+              schema: { type: string }
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "400":
+          description: An invalid `fields`, `where` or `format`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: No such database, collection, part or file, or the realm has no storage.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: "`export_running` (another export holds the realm) or `export_lease` (the lease is missing, expired or another administrator's)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: "`storage_unavailable`: the files can't be read."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [admin]
+      summary: Start an export with options that don't belong in a URL
+      description: |
+        Starts an export like `GET` without `part` or `file` (same query parameters, same plan) and
+        takes a JSON body for the **anonymization** of a staging copy. With `anonymize` every
+        collection's `on_owner_delete` `remove` and `replace` rules are applied to every exported
+        document, whatever its owner; the addresses of users held in `pull` and `unset` fields that
+        say `email` are rewritten like the users' own; files are left out (and the references to
+        them removed) unless `anonymize_files` is `keep`; and with `include=auth` emails become
+        `user-<id>@example.invalid`, identities of external providers stay behind, password hashes
+        are dropped (or replaced by the hash of `staging_password`, one password for every user)
+        and second factors and devices are not exported, so no export key is made. `anonymize_config`
+        is a YAML file of per-collection `remove` and `replace` rules added on top of the policies,
+        checked against the schemas like an erase policy is. The manifest is marked `anonymized`.
+      operationId: adminExportStart
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/reauth" }
+        - name: X-Backd-Export
+          in: header
+          required: false
+          description: The lease of an interrupted export to take over.
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                anonymize: { type: boolean }
+                anonymize_files: { type: string, enum: [keep] }
+                anonymize_config: { type: string, description: "YAML: `collections: {<database>/<collection>: {remove: [...], replace: {...}}}`." }
+                staging_password: { type: string, description: "With `include=auth`: the password every user gets. At least the realm's `password.min_length`." }
+      responses:
+        "200":
+          description: The plan.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExportPlan" }
+        "400":
+          description: An option that makes no sense, or anonymization rules the schemas refuse; `details` name each problem.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "`export_running`."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      summary: End an export
+      description: |
+        Releases the realm's export lease and writes the `export.done` audit record with what the
+        export streamed (collections, documents, files, bytes; `complete` as the client says), and
+        answers those totals. Needs
+        full admin access and the lease in `X-Backd-Export`.
+      operationId: adminExportDone
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - name: X-Backd-Export
+          in: header
+          required: true
+          schema: { type: string }
+        - name: complete
+          in: query
+          description: "`true` when the client wrote the whole package."
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: Released, with what the export streamed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  collections: { type: integer }
+                  documents: { type: integer, format: int64 }
+                  files: { type: integer, format: int64 }
+                  bytes: { type: integer, format: int64 }
+                  auth_unavailable: { type: integer, format: int64, description: Second factors and devices left behind because the realm's secrets key could not open them. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "`export_lease`: the lease is missing, expired or another administrator's."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/import:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+    post:
+      tags: [admin]
+      summary: Start an import, or send a chunk of one
+      description: |
+        The server side of `backd import`. Without `phase` it **starts** an import: the body is the
+        package's manifest (without checksums) and the options. It checks that the package can be
+        read at all (the format, not a `partial` package, not a CSV extract, every collection configured
+        in this realm), takes the realm's lease (one export or
+        import of a realm runs at a time per instance, `409 export_running`) and answers it with the
+        size of the chunks to send. With `phase=validate` or `phase=write` and `part`
+        (`<database>/<collection>.jsonl`, or `_system/auth/<collection>.jsonl` for authentication
+        data, whose documents the store checks as they are: ids, unique values such as emails, and
+        the shape of its collections; its sealed fields arrive as `{"$plain": value}` and are sealed
+        under this realm's key) the body is a chunk of whole JSON Lines of that part; every
+        document in it is checked against **this** realm's configuration: its id, `_meta`, its fields
+        against the collection's schema, its files against the file fields, the documents the target
+        already holds (`create` refuses a different document with the same id, `skip` keeps the
+        existing one, `replace` overwrites it; an identical one is `unchanged` in every mode) and the
+        unique indexes. `write` also writes the documents that pass, with their ids and `_meta` kept,
+        counts their files in the storage usage and queues the image versions their files wait for.
+        Writing is idempotent, so an interrupted import is finished by sending the same chunks again.
+        Users and organizations the target doesn't have are counted, not refused. Needs full admin
+        access; a session also needs a fresh re-authentication to start. Audited as `import` and
+        `import.done`, never with content.
+      operationId: adminImport
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/reauth" }
+        - name: X-Backd-Export
+          in: header
+          description: The lease (required with `phase`); on a start, the lease of an interrupted import to take over.
+          schema: { type: string }
+        - name: phase
+          in: query
+          schema: { type: string, enum: [validate, write] }
+        - name: part
+          in: query
+          description: "`<database>/<collection>.jsonl`, with `phase`."
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [manifest]
+              properties:
+                manifest: { type: object, description: The package's manifest.json; checksums may be left out. }
+                mode: { type: string, enum: [create, skip, replace], default: create }
+                skip_invalid: { type: boolean }
+                dry_run: { type: boolean, description: "Validate only; a chunk with `phase=write` is then refused." }
+          application/x-ndjson:
+            schema: { type: string, description: "Whole lines of one part, up to `max_chunk_bytes`." }
+      responses:
+        "200":
+          description: The lease, or the result for the chunk.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImportAnswer" }
+        "400":
+          description: An invalid body, mode or phase.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404":
+          description: No such part in this realm.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: "`export_running` (another export or import holds the realm), `export_lease` (the lease is missing, expired, not an import's or another administrator's) or a write on a dry run."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: "`import_refused`: the package can't be imported into this realm; `details` name each collection this realm lacks."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      tags: [admin]
+      summary: Store a file of an import
+      description: |
+        Stores the body under the key a document of `file` (`<database>/<collection>/<file id>`)
+        expects, through backd's storage client, and verifies it against `X-Backd-Sha256` (hex): a
+        file that arrives different is deleted. Send the files before the documents that reference
+        them. The size limit is the file field's. Needs the import's lease.
+      operationId: adminImportFile
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - name: X-Backd-Export
+          in: header
+          required: true
+          schema: { type: string }
+        - name: X-Backd-Sha256
+          in: header
+          required: true
+          schema: { type: string }
+        - name: file
+          in: query
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "204": { description: Stored. }
+        "400":
+          description: "A missing checksum, or `checksum_mismatch`."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404":
+          description: No such file field, or the realm has no storage.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: "`export_lease`, or a dry run."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: "`storage_unavailable`."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      summary: End an import
+      description: Releases the lease and writes the `import.done` audit record with the counts by outcome. Needs full admin access and the import's lease.
+      operationId: adminImportDone
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - name: X-Backd-Export
+          in: header
+          required: true
+          schema: { type: string }
+        - name: complete
+          in: query
+          schema: { type: boolean }
+      responses:
+        "204": { description: Released. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "`export_lease`."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/storage/check:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -8910,6 +9288,105 @@ components:
               file: { type: string, description: "The file the message is about, relative to the realm, when it names one." }
               message: { type: string }
 
+    ImportAnswer:
+      type: object
+      description: The start of an import (`lease` and the rest of the first group), or the result for one chunk.
+      properties:
+        lease: { type: string }
+        expires_in: { type: integer }
+        max_chunk_bytes: { type: integer, format: int64, description: The largest chunk to send. }
+        warnings: { type: array, items: { type: string } }
+        file_fields:
+          type: object
+          additionalProperties: { type: array, items: { type: string } }
+        documents: { type: integer, description: Documents in the chunk. }
+        counts:
+          type: object
+          description: "Documents by outcome: created, replaced, skipped, unchanged, conflict, invalid. In `validate` they say what `write` would do."
+          additionalProperties: { type: integer }
+        problems:
+          type: array
+          description: The first documents that are invalid or conflict, with their line in the chunk.
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              line: { type: integer }
+              outcome: { type: string, enum: [invalid, conflict] }
+              problems:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    path: { type: string }
+                    reason: { type: string }
+        missing_owners: { type: integer, description: Documents whose owner doesn't exist in this realm. }
+        missing_orgs: { type: integer, description: Documents whose organization doesn't exist in this realm. }
+    ExportPlan:
+      type: object
+      required: [lease, expires_in, manifest, file_fields]
+      properties:
+        lease: { type: string, description: "Send it in `X-Backd-Export` on every part, file and end request." }
+        expires_in: { type: integer, description: Seconds a silent export keeps its lease. }
+        export_key: { type: string, description: "With `include=auth`: the one-time key the package's sealed authentication fields are sealed under. Shown in this answer only." }
+        manifest:
+          type: object
+          description: The package's `manifest.json` without checksums; document counts are estimates until the parts are read.
+          required: [format, backd_version, realm, created_at, operator, config_fingerprint, flags, databases, encrypted_fields]
+          properties:
+            format: { type: integer }
+            backd_version: { type: string }
+            realm: { type: string }
+            created_at: { type: string, format: date-time }
+            operator: { type: string }
+            config_fingerprint: { type: string }
+            flags:
+              type: object
+              properties:
+                partial: { type: boolean }
+                anonymized: { type: boolean }
+                auth: { type: boolean }
+                no_files: { type: boolean }
+                csv: { type: boolean, description: A flat reporting extract; never importable. }
+            databases:
+              type: array
+              items:
+                type: object
+                properties:
+                  name: { type: string }
+                  collections:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: { type: string }
+                        documents: { type: integer, format: int64 }
+                        part: { type: string, description: The `part` that streams it. }
+            encrypted_fields:
+              type: array
+              items:
+                type: object
+                properties:
+                  path: { type: string }
+                  key: { type: string }
+                  fingerprint: { type: string }
+                  form: { type: string, enum: [ciphertext, plaintext] }
+            files: { type: integer, format: int64 }
+            checksums: { type: object, additionalProperties: { type: string } }
+            auth:
+              type: array
+              description: With `include=auth`, the authentication data parts.
+              items:
+                type: object
+                properties:
+                  name: { type: string }
+                  documents: { type: integer, format: int64 }
+                  part: { type: string }
+            auth_key_fingerprint: { type: string, description: "The fingerprint of the export key, which an import checks the key it is given against." }
+        file_fields:
+          type: object
+          description: "`<database>/<collection>` to its file fields, which hold the ids of the files to fetch."
+          additionalProperties: { type: array, items: { type: string } }
     StorageCheck:
       type: object
       additionalProperties: false

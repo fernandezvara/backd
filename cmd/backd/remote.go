@@ -346,3 +346,104 @@ func (t *target) explain(path string, e *apiError) error {
 	}
 	return e
 }
+
+// open sends a GET to /v1/{realm}/{path} and returns the response with its body still to read,
+// for answers too big to hold (an export's parts): no client timeout, the caller closes the
+// body. Errors are decoded as call does.
+func (t *target) open(path string, query url.Values, reqHeaders map[string]string) (*http.Response, error) {
+	u := t.url + "/v1/" + url.PathEscape(t.realm) + "/" + path
+	if len(query) > 0 {
+		u += "?" + query.Encode()
+	}
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return nil, err
+	}
+	if t.credential != "" {
+		req.Header.Set("Authorization", "Bearer "+t.credential)
+	}
+	for k, v := range reqHeaders {
+		req.Header.Set(k, v)
+	}
+	hc := *t.http
+	hc.Timeout = 0
+	res, err := hc.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("can't reach %s: %w", t.url, err)
+	}
+	if res.StatusCode < 300 {
+		return res, nil
+	}
+	defer res.Body.Close()
+	data, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	var env struct {
+		Error struct {
+			Code      string `json:"code"`
+			Message   string `json:"message"`
+			Details   []struct{ Path, Reason string }
+			RequestID string `json:"request_id"`
+		} `json:"error"`
+	}
+	e := &apiError{Status: res.StatusCode, Code: "http_error", Message: http.StatusText(res.StatusCode)}
+	if json.Unmarshal(data, &env) == nil && env.Error.Code != "" {
+		e.Code, e.Message, e.RequestID = env.Error.Code, env.Error.Message, env.Error.RequestID
+		e.Details = env.Error.Details
+	}
+	return nil, t.explain(path, e)
+}
+
+// send sends body (size bytes, -1 when unknown) to /v1/{realm}/{path} and decodes a JSON answer
+// into out (when not nil). It has no client timeout, for uploads; errors are decoded as call does.
+func (t *target) send(method, path string, query url.Values, body io.Reader, size int64, contentType string, reqHeaders map[string]string, out any) error {
+	u := t.url + "/v1/" + url.PathEscape(t.realm) + "/" + path
+	if len(query) > 0 {
+		u += "?" + query.Encode()
+	}
+	req, err := http.NewRequest(method, u, body)
+	if err != nil {
+		return err
+	}
+	if size >= 0 {
+		req.ContentLength = size
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	if t.credential != "" {
+		req.Header.Set("Authorization", "Bearer "+t.credential)
+	}
+	for k, v := range reqHeaders {
+		req.Header.Set(k, v)
+	}
+	hc := *t.http
+	hc.Timeout = 0
+	res, err := hc.Do(req)
+	if err != nil {
+		return fmt.Errorf("can't reach %s: %w", t.url, err)
+	}
+	defer res.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(res.Body, 16<<20))
+	if err != nil {
+		return err
+	}
+	if res.StatusCode >= 300 {
+		var env struct {
+			Error struct {
+				Code      string `json:"code"`
+				Message   string `json:"message"`
+				Details   []struct{ Path, Reason string }
+				RequestID string `json:"request_id"`
+			} `json:"error"`
+		}
+		e := &apiError{Status: res.StatusCode, Code: "http_error", Message: http.StatusText(res.StatusCode)}
+		if json.Unmarshal(data, &env) == nil && env.Error.Code != "" {
+			e.Code, e.Message, e.RequestID = env.Error.Code, env.Error.Message, env.Error.RequestID
+			e.Details = env.Error.Details
+		}
+		return t.explain(path, e)
+	}
+	if out != nil && len(data) > 0 {
+		return json.Unmarshal(data, out)
+	}
+	return nil
+}

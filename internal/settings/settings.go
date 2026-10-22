@@ -51,6 +51,9 @@ type Settings struct {
 	// DeploymentID is BACKD_DEPLOYMENT_ID (default "default"): what keeps the trigger dispatcher
 	// of this backd deployment apart from another one's when both share a MongoDB cluster.
 	DeploymentID string
+	// Env is BACKD_ENV (default empty): what this instance is for, such as development, staging
+	// or production. Only imports use it, to warn about data that doesn't belong in it.
+	Env string
 	// TriggerLimits are the instance's trigger limits (BACKD_TRIGGER_MAX_CHAIN).
 	TriggerLimits registry.TriggerLimits
 	// Realtime are the instance's realtime limits (BACKD_REALTIME_*); zero fields mean the defaults.
@@ -269,6 +272,10 @@ func Load(getenv func(string) string) (Settings, error) {
 	s.DeploymentID = orDefault(getenv("BACKD_DEPLOYMENT_ID"), "default")
 	if !deploymentIDPattern.MatchString(s.DeploymentID) {
 		errs = append(errs, fmt.Errorf("BACKD_DEPLOYMENT_ID must be 1 to 32 characters of a-z, 0-9, - and _, got %q", s.DeploymentID))
+	}
+	s.Env = strings.ToLower(strings.TrimSpace(getenv("BACKD_ENV")))
+	if s.Env != "" && !deploymentIDPattern.MatchString(s.Env) {
+		errs = append(errs, fmt.Errorf("BACKD_ENV must be 1 to 32 characters of a-z, 0-9, - and _ (for example production or staging), got %q", s.Env))
 	}
 	s.Events, s.Triggers = true, true
 	for _, flag := range []struct {

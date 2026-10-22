@@ -473,6 +473,40 @@ func registerRemote(cfg *kli.Config) {
 		boolean(cc, "delete", "remove the unreferenced objects instead of only reporting them")
 		boolean(cc, "json", "print the report as JSON")
 	})
+	cfg.Command("export").ShortHelp("write a realm, database or collection as a package").
+		LongHelp("Reads the realm's documents and files from a running backd into a package: a directory with manifest.json,\n<database>/<collection>.jsonl (the API representation of every document, soft-deleted ones included, with dates and\nbinary values in Extended JSON) and <database>/_files/<file id>, or one .tar.gz with --archive. The package is lossless;\nbackd import reads it. Each part is verified as it arrives and recorded in <out>/.export-progress.json, so running the\nsame command again after an interruption continues from the last complete part. Only one export of a realm runs at a time.\n--fields and --where narrow it to a reporting extract (a --fields package is partial and can't be imported) and --format csv writes one flat, lossy table per collection for spreadsheets, without files. --include auth adds the realm's authentication data, audited as export.auth. --anonymize makes a copy for staging (see its flags); the manifest says so, and import warns about a package that doesn't fit the instance's BACKD_ENV. Never exported: sessions, tokens, counters, jobs, history, secrets and the audit trail. Needs full admin access and a fresh\nproof that it is you. Audited as export and export.done. " + adminAPINote).
+		Func(act("export", exportAction)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "out", "the package directory to write (with --archive, the archive is <out>.tar.gz)")
+		optional(cc, "db", "only this database")
+		optional(cc, "collection", "only these collections of --db: comma-separated names")
+		optional(cc, "fields", "only these fields: comma-separated paths such as name,address.city (id is always there); the package is marked partial and can't be imported")
+		optional(cc, "where", "only the documents matching this filter (the API's where syntax), for one --collection")
+		optional(cc, "format", "jsonl (a package, the default) or csv (a flat table per collection for spreadsheets: lossy, no files, can't be imported)")
+		optional(cc, "include", "auth: also export the realm's users with their password hashes, organizations, memberships, teams, second factors and push devices (whole realm only); a one-time export key is shown once")
+		boolean(cc, "anonymize", "make a staging copy: each collection's on_owner_delete remove/replace rules are applied to every document, files are left out, and with --include auth emails become user-<id>@example.invalid and password hashes, second factors and devices are dropped")
+		optional(cc, "anonymize-config", "with --anonymize: a YAML file adding or overriding rules per collection (collections: {<database>/<collection>: {remove: [...], replace: {...}}}), checked against the schemas")
+		optional(cc, "staging-password", "with --anonymize --include auth: one password every user gets (env:<VAR>, file:<path> or key:<value>)")
+		optional(cc, "anonymize-files", "with --anonymize: keep, to export the files too (they often hold personal data)")
+		optional(cc, "auth-key-out", "write the export key of --include auth to this file (readable only by you) instead of showing it")
+		directFlags(cc)
+		boolean(cc, "archive", "write one <out>.tar.gz instead of a directory")
+		boolean(cc, "no-files", "leave the files out: only the documents")
+	})
+
+	cfg.Command("import").ShortHelp("read an export package into a realm").
+		LongHelp("Reads a package made by backd export (--from: its directory or .tar.gz) into the realm. First every checksum of the package\nis verified, then the running backd validates every document against the target's own configuration (ids, schemas,\nfile limits, unique values, the documents already there) and nothing is written until all of it is known; --dry-run stops\nthere and prints what would happen. Then the files are uploaded and the documents written with their ids and _meta kept, so\nreferences and file links stay valid. --mode create (the default) refuses a different document with the same id, skip leaves\nexisting documents alone and replace overwrites them. Invalid documents stop the import unless --skip-invalid, which writes\nthem to --report (default import-report.json). Running the same command again after an interruption finishes the job: what\nwas written is found identical and left alone. Partial packages and CSV extracts are refused. Needs full admin access and a\nfresh proof that it is you. Audited as import and import.done. " + adminAPINote).
+		Func(act("import", importAction)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "from", "the package: its directory, or the .tar.gz that export --archive wrote")
+		cc.Define("mode").String().Flag("mode").Default("create").Description("create (fail on an existing id), skip (keep existing documents) or replace (overwrite them)")
+		boolean(cc, "dry-run", "validate everything and write nothing")
+		boolean(cc, "skip-invalid", "leave out the documents that are invalid for the target instead of stopping")
+		optional(cc, "report", "write the problems found to this JSON file")
+		optional(cc, "auth-key", "the export key of a package exported with --include auth: key:<value>, env:<VAR> or file:<path>; without it users arrive without second factors and push devices")
+		directFlags(cc)
+	})
+
 	cons := cfg.Command("consents").ShortHelp("manage the consents users accept")
 	cons.SubCommand("notify").ShortHelp("email the users who hold an older version of a consent").
 		LongHelp("Queues the `consent-updated` email for every user who accepted an older version of the consent than the\ncurrent one (and, for a required consent, who accepted none). Publishing a version never sends anything by itself:\nthis is the only way, and the email limits apply, so a large realm may need to run it again later. Needs the\nusers area with write access. Audited as consents.notify. " + adminAPINote).

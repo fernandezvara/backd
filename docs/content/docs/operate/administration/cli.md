@@ -26,7 +26,7 @@ Two commands write to MongoDB directly instead: `backd bootstrap`, which creates
 | `backd functions build\|types` | `CONFIG_DIR` | `CONFIG_DIR` (`build` also needs Deno) |
 | `backd bootstrap --realm <realm> --email <email>` | MongoDB, once per realm | `CONFIG_DIR`, `MONGO_URI`, a provisioned realm |
 | `backd login`, `backd logout`, `backd whoami`, `backd account …` | A running `backd` | Its URL |
-| `backd user …`, `backd apikey …`, `backd data transfer\|assign-org`, `backd orgs list\|show\|create\|owned\|delete\|reactivate\|members\|add-member\|invite\|invitations\|revoke-invitation\|assign-owner\|claims-set`, `backd push devices\|remove-device\|sends\|test`, `backd audit …`, `backd secret set\|list\|delete`, `backd functions invoke\|history\|logs\|jobs`, `backd triggers status\|gaps\|resolve`, `backd storage check\|usage\|reconcile`, `backd compliance scope`, `backd consents notify\|record`, `backd app-config get\|set\|reset\|history\|rollback` | A running `backd`, through the [admin API](../admin/) or the function's own route | Its URL, and a stored session or `BACKD_API_KEY` |
+| `backd user …`, `backd apikey …`, `backd data transfer\|assign-org`, `backd orgs list\|show\|create\|owned\|delete\|reactivate\|members\|add-member\|invite\|invitations\|revoke-invitation\|assign-owner\|claims-set`, `backd push devices\|remove-device\|sends\|test`, `backd audit …`, `backd secret set\|list\|delete`, `backd functions invoke\|history\|logs\|jobs`, `backd triggers status\|gaps\|resolve`, `backd storage check\|usage\|reconcile`, `backd export`, `backd compliance scope`, `backd consents notify\|record`, `backd app-config get\|set\|reset\|history\|rollback` | A running `backd`, through the [admin API](../admin/) or the function's own route | Its URL, and a stored session or `BACKD_API_KEY` |
 | `backd triggers rescan` | MongoDB, directly, like `backd provision`: it may read a whole collection | `CONFIG_DIR`, `MONGO_URI` |
 | `backd secret rotate-key` | MongoDB, directly (not the admin API) | `CONFIG_DIR`, `MONGO_URI`, `BACKD_SECRETS_KEY`, `BACKD_SECRETS_NEW_KEY` |
 | `backd version` | Nothing | Nothing |
@@ -155,6 +155,7 @@ Be careful when taking an admin role away from yourself: once no one holds an ad
 | `backd audit` | Print the realm's [audit trail](../audit/), newest first |
 | `backd data check\|transfer\|assign-org` | Check stored documents against their schemas, move documents between collections, or assign them an organization |
 | `backd storage check\|usage\|reconcile` | Check a realm's [object storage](../../providers/storage/), report its usage, or clean up orphans (see [Keeping storage tidy](../../storage-maintenance/)) |
+| `backd export`, `backd import` | Write a realm, database or collections, with their files, as a [package](../export-import/), or read one into a realm |
 | `backd files regenerate` | Rebuild [image versions](../../../build/files/file-fields/#image-versions) the documents already hold |
 | `backd compliance scope` | What a user's [personal data export](../compliance/) covers |
 | `backd consents notify\|record` | Manage the [consents](../../../build/auth/consents/) users accept |

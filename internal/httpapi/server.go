@@ -73,6 +73,18 @@ type Config struct {
 	// ConfigFingerprint identifies the config this instance runs; /readyz
 	// reports it so operators can check every instance runs the same one.
 	ConfigFingerprint string
+	// Version is this build's version, which export packages record.
+	Version string
+	// Env is BACKD_ENV (production, staging…): what this instance is for. An import warns about
+	// data that doesn't belong in it.
+	Env string
+	// Offline serves the CLI's direct mode, in the process and never on a listener: the admin
+	// API takes every request as that of a full administrator working offline. Never set it
+	// on a handler that is served.
+	Offline bool
+	// StorageAccessKey and StorageSecretKey, when set, are the storage credentials every realm
+	// uses instead of its secrets (direct mode without a master key).
+	StorageAccessKey, StorageSecretKey string
 	// ReloadErrors returns what stopped the last live reload of the config (BACKD_DEV), for
 	// the admin configuration view's warnings; nil when nothing reloads.
 	ReloadErrors func() []string
@@ -175,12 +187,12 @@ func NewHandler(cfg Config) http.Handler {
 	}
 	authRoutes := &authAPI{users: users, reg: cfg.Registry, actions: hostedActions(), opTimeout: opTimeout, oauth: cfg.oauthService(), baseURL: cfg.BackdURL}
 	authRoutes.routes(r)
-	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users, callbackKey: cfg.CallbackKey, objects: newRealmObjects(cfg.Registry, users), baseURL: cfg.BackdURL, maxUpload: maxUploadOf(cfg), imageMaxPixels: cfg.ImageMaxPixels, expand: cfg.Expand.OrDefault(), aggregateLim: cfg.Aggregate.OrDefault(), metrics: cfg.Metrics, hub: cfg.Realtime, realtimeLimits: cfg.RealtimeLimits}
+	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users, callbackKey: cfg.CallbackKey, objects: newRealmObjects(cfg.Registry, users).withKeys(cfg.StorageAccessKey, cfg.StorageSecretKey), baseURL: cfg.BackdURL, maxUpload: maxUploadOf(cfg), imageMaxPixels: cfg.ImageMaxPixels, expand: cfg.Expand.OrDefault(), aggregateLim: cfg.Aggregate.OrDefault(), metrics: cfg.Metrics, hub: cfg.Realtime, realtimeLimits: cfg.RealtimeLimits}
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, executorToken: cfg.ExecutorToken, log: cfg.Log, dev: cfg.Dev, concurrency: limiterFor(cfg.Registry), metrics: cfg.Metrics}
 	authRoutes.fns = fns
 	spec := &openAPI{reg: cfg.Registry}
 	if !cfg.DisableAdminAPI {
-		admin := &adminAPI{users: users, reg: cfg.Registry, fns: fns, fingerprint: cfg.ConfigFingerprint, reloadErrors: cfg.ReloadErrors, imageMaxPixels: cfg.ImageMaxPixels, expandMaxArray: cfg.Expand.OrDefault().MaxArray, aggregate: cfg.Aggregate, triggers: cfg.TriggerLimits, triggerAdmin: cfg.Triggers}
+		admin := &adminAPI{users: users, reg: cfg.Registry, fns: fns, fingerprint: cfg.ConfigFingerprint, version: cfg.Version, env: cfg.Env, offline: cfg.Offline, reloadErrors: cfg.ReloadErrors, imageMaxPixels: cfg.ImageMaxPixels, expandMaxArray: cfg.Expand.OrDefault().MaxArray, aggregate: cfg.Aggregate, triggers: cfg.TriggerLimits, triggerAdmin: cfg.Triggers}
 		admin.routes(r, authRoutes.resolveRealm, withTimeout(opTimeout))
 		spec.protected = noStore(authRoutes.resolveRealm(withTimeout(opTimeout)(admin.requireAdmin(admin.need(registry.RightConfig)(http.HandlerFunc(spec.serve))))))
 	}

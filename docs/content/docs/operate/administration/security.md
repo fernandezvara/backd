@@ -219,6 +219,35 @@ What the numbers decided:
 - **An event carries the whole document as a read does,** with no field-level redaction, because reads have none: what a rule shows, the stream shows.
 - **Keys derive from the callback key.** Rotating `BACKD_CALLBACK_KEY` invalidates every outstanding token (clients reload), as it does callback tokens.
 
+
+### Export and import
+
+[Export and import](../export-import/) take a realm's data out of one instance and into another, so they were reviewed as a way to read and to write everything. What was reviewed, with tests, and what is left:
+
+**Reviewed and held**
+
+- **Only a full administrator, and every start and end is audited.** Export and import need every admin area with write access (a read-only or partial role gets `403`), and a session also needs a fresh re-authentication to start. `export`, `export.done`, `import`, `import.done` and `export.auth` carry scope, counts and flags, never a document, a field, a key or a password.
+- **A lease binds each transfer to its administrator.** The id is 128 random bits, tied to the realm and the actor, renewed by every request, released at the end or after ten minutes of silence; another administrator, an export lease on an import route or an expired one is `409 export_lease`. Parts can't be asked for without it.
+- **Never exported:** sessions, login codes, challenges, email and invitation tokens, API keys, secrets, counters, jobs and function logs, push send records, consent records and the audit trail. Authentication data is a separate, explicit choice (`--include auth`, whole realm only).
+- **The export key.** What the realm sealed with its secrets key (authenticator secrets, device tokens, Apple tokens) is opened by the server and sealed again under a one-time key of 256 random bits, shown once in the plan (no-store) and by the CLI on the terminal or in a file created `0600`; the manifest and audit hold only a fingerprint that can't be turned back into the key. The CLI opens the fields on the operator's machine; the key is never sent. Recovery codes (keyed hashes) are emptied, devices lose their session. A secret the realm can't open stays behind and is counted.
+- **An import validates as a client would be.** Ids, `_meta` (an allowlist of the fields the server writes, with their types: a package can't set `chain` or invent a field), the schema on the API form, file ids, sizes and the field's limits, unique values and existing documents are checked before any write; a file is held to its field's size as it arrives and deleted if its SHA-256 differs. Writes are by id and idempotent, so a repeat changes nothing.
+- **The package is checked before it is trusted.** Every file is verified against the manifest's SHA-256; every path the import will open comes from the manifest and must be the one the format names and be checksummed; archives are extracted only as plain files under relative paths without dot segments, never over an existing file, never as links.
+- **Direct mode asks for no credential, and cannot be reached from the network.** `Config.Offline` is set only by the CLI for a handler it calls in its own process; the same handler on a listener would not have it. Its records are written as `cli:offline` with `offline: true`.
+- **An anonymized copy** applies the erase policies' rules and the override file, rewrites the addresses of users held in `pull`/`unset` fields, drops file references, users' networks, pending and previous addresses, password hashes (or sets one known password), external-provider identities, second factors and devices; no sealed value leaves, so no export key exists. Tested for the absence of every original address, field and hash.
+- **CSV is neutralised** against spreadsheet formulas (a leading apostrophe on text that starts with `=`, `+`, `-` or `@`), and is never importable.
+
+**Accepted, on purpose**
+
+- **A package is as sensitive as its data.** With `--include auth` it holds password hashes; checksums protect against damage, not tampering (whoever can change the package can change the manifest too): move packages over a channel you trust. See [Keeping packages safe](../export-import/keeping-packages-safe/).
+- **Plaintext secrets cross the connection on import.** The authenticator secrets and device tokens arrive as plaintext over the authenticated TLS connection so the target can seal them under its own key; there is no way to seal them for a key the CLI doesn't have.
+- **A full administrator can write any object under the realm's prefix** through the file route of an import (ids must be well formed), and can import users with any roles: they could already create both.
+- **Locks are per instance.** Two instances behind a balancer can each hold an export or import lease for a realm; an offline import is guarded by the instances' heartbeat (45 seconds) and `--force`, and does not look at workers.
+- **An archive is not size-limited on extraction**, and the CLI stages a CSV extract's documents in a temporary file next to the output: both are the operator's own disk.
+- **A crashed import is audited by its start only.** `import.done` (with the counts) is written when the CLI ends the import; the documents written before a crash are found again, unchanged, by running it again.
+- **Anonymization changes only what is declared.** A collection without a policy, free text that holds a name and fields that identify someone indirectly stay as they are; organizations (names, claims) are kept on purpose.
+
+**Found and fixed in the review:** the authentication parts of a manifest could name any local path (they are now checked against the format and the checksums, like every other part); `_meta` of an imported document was accepted as it came; an imported file was not held to its field's size; the key file could keep the permissions of a file that was already there; a user's `admin_networks` and `login_networks` survived an anonymized export.
+
 ## What you are responsible for
 
 - **TLS.** `backd` serves plain HTTP; terminate TLS in front of it.

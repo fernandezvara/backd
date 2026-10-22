@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/fernandezvara/kli"
+	"github.com/rs/xid"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	"github.com/fernandezvara/backd/internal/adminui"
@@ -261,6 +262,7 @@ func serve(ctx context.Context, a *app) error {
 	}
 	defer a.openEvents()()
 	defer a.feedSource().close()
+	defer a.announce(ctx)()
 
 	var reload *reloader
 	var publicHandler http.Handler
@@ -599,6 +601,8 @@ func (a *app) handlerConfig() httpapi.Config {
 		Users:             a.realmUsers(),
 		TrustedProxies:    a.cfg.TrustedProxies,
 		ConfigFingerprint: a.fingerprint,
+		Version:           version,
+		Env:               a.cfg.Env,
 		Dev:               a.cfg.Dev,
 		DevLinks:          devLinks(a.cfg.DevLinks),
 		ReloadErrors:      a.reloadErrors,
@@ -1207,4 +1211,42 @@ func storageOrigins(reg *registry.Registry) []string {
 		}
 	}
 	return out
+}
+
+// heartbeatEvery is how often a serving instance says it is alive (see mongodb.InstanceLiveFor).
+const heartbeatEvery = 15 * time.Second
+
+// announce makes this instance known to the offline tools (`backd import --direct` refuses to
+// write into a realm somebody serves) until the returned function is called.
+func (a *app) announce(ctx context.Context) func() {
+	id := xid.New().String()
+	realms := a.reg.RealmNames()
+	beat := func(c context.Context) {
+		if err := mongodb.Heartbeat(c, a.client, id, realms, time.Now()); err != nil {
+			a.log.Warn("could not record this instance's heartbeat; an offline import would not see it", "error", err)
+		}
+	}
+	beat(ctx)
+	hbCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		t := time.NewTicker(heartbeatEvery)
+		defer t.Stop()
+		for {
+			select {
+			case <-hbCtx.Done():
+				return
+			case <-t.C:
+				beat(hbCtx)
+			}
+		}
+	}()
+	return func() {
+		cancel()
+		<-done
+		rel, stop := context.WithTimeout(context.Background(), 5*time.Second)
+		defer stop()
+		mongodb.ReleaseInstance(rel, a.client, id)
+	}
 }

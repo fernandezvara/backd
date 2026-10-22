@@ -8,6 +8,20 @@ toc: true
 
 `backd` keeps all state in MongoDB. The config directory describes the structure (collections, validators, indexes, rules), and provisioning can rebuild it at any time, but not the data. Back up MongoDB, and keep the config directory in version control.
 
+## Backup or export?
+
+They look alike, because both copy your data, but they answer different needs:
+
+| | Backup and restore (this page) | [Export and import](../administration/export-import/) |
+|---|---|---|
+| For | Disaster recovery: getting the same deployment back | Moving data: to another instance, a staging copy, a report |
+| Copies | Whole MongoDB databases, system data included (sessions, API keys, secrets, the audit trail) | Documents and files, and users only if you ask; never sessions, tokens, secrets or the audit trail |
+| Restores onto | The same configuration and master key | Any instance, whose own configuration validates every document first |
+| Can change the data on the way | No | Yes: choose fields, filter, anonymize, convert to CSV |
+| Consistency | `mongodump` of a replica set can be a snapshot | Collections are read one after another |
+
+Take backups for recovery; use export and import when the data is going somewhere else. [Direct mode](../administration/export-import/direct-mode/#reading-an-old-backup) joins the two: it reads a restored backup as a package.
+
 ## What a backup must include
 
 | Database | Holds | Rebuilt from config? |
@@ -144,6 +158,10 @@ Practise restores regularly on a scratch environment. The reference's test (`mak
 4. the backup is restored, then the provision job and the stack run;
 5. the test checks that the user logs in with their password and reads their own draft (still hidden from anonymous callers), and that an API key and the published documents are back.
 
+## Reading a backup without restoring over production
+
+To look at a backup, or take part of it elsewhere, restore it into a throwaway MongoDB and run [`backd export --direct`](../administration/export-import/direct-mode/#reading-an-old-backup) against it with the configuration it was made under: you get a package you can inspect, import into another instance or turn into CSV, and production is not touched.
+
 ## After a restore
 
 {{< hint warning >}}
@@ -170,5 +188,5 @@ An encrypted backup is safe for as long as its private key is. If a backup leaks
 
 - end every session (see above);
 - revoke and reissue every API key;
-- have every user change their password (`backd` can't send reset emails yet, so plan how to reach them);
+- make every leaked password hash useless. Users can choose a new password themselves through the [password reset](../../build/auth/sessions/#password-reset) when the realm has [`email`](../../build/functions/email/) configured, but nothing forces them to: until a user changes it, the hash in the backup still opens their account (guessing it offline is what a leak makes possible). Today that takes one step per user: `backd user set-password` with a long random password (it also ends their sessions and tells them with a `password-changed` email), after which they use *Forgot password*. Script it over the first column of `backd user list` (`openssl rand -base64 24 | backd user set-password --realm blog --email …` reads the password from standard input), and tell your users what to expect, because their old password will simply stop working;
 - rotate the age key pair.
