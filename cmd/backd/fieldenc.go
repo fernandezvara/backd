@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/fernandezvara/backd/internal/fieldcrypt"
 	"github.com/fernandezvara/backd/internal/mongodb"
@@ -13,9 +14,12 @@ import (
 // wrapped by the `key` secrets it holds. nil for a realm without auth (it has nowhere to keep
 // keys; a collection that encrypts a field is refused at startup).
 func (a *app) fieldRing(realm string) *fieldcrypt.Ring {
-	a.ringsMu.Lock()
-	defer a.ringsMu.Unlock()
-	if r, ok := a.rings[realm]; ok {
+	if a.rings == nil {
+		a.rings = &ringState{} // first used while the app is being set up, before any request
+	}
+	a.rings.mu.Lock()
+	defer a.rings.mu.Unlock()
+	if r, ok := a.rings.byRealm[realm]; ok {
 		return r
 	}
 	var ring *fieldcrypt.Ring
@@ -24,11 +28,17 @@ func (a *app) fieldRing(realm string) *fieldcrypt.Ring {
 			ring = &fieldcrypt.Ring{Realm: realm, Store: ds, Keys: svc.KeyMaterial}
 		}
 	}
-	if a.rings == nil {
-		a.rings = map[string]*fieldcrypt.Ring{}
+	if a.rings.byRealm == nil {
+		a.rings.byRealm = map[string]*fieldcrypt.Ring{}
 	}
-	a.rings[realm] = ring
+	a.rings.byRealm[realm] = ring
 	return ring
+}
+
+// ringState holds the realms' field encryption, built on first use.
+type ringState struct {
+	mu      sync.Mutex
+	byRealm map[string]*fieldcrypt.Ring
 }
 
 // documentStore hands out the repositories of documents, encrypting and decrypting the fields

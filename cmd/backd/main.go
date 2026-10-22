@@ -16,7 +16,6 @@ import (
 	"runtime/debug"
 	"slices"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -28,7 +27,6 @@ import (
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/changefeed"
 	"github.com/fernandezvara/backd/internal/executor"
-	"github.com/fernandezvara/backd/internal/fieldcrypt"
 	"github.com/fernandezvara/backd/internal/httpapi"
 	"github.com/fernandezvara/backd/internal/metrics"
 	"github.com/fernandezvara/backd/internal/mongodb"
@@ -88,9 +86,9 @@ type app struct {
 	client *mongo.Client
 
 	userServices func(string) *auth.Users // built once by realmUsers
-	// rings are the realms' field encryption, built on first use (fieldRing).
-	ringsMu     sync.Mutex
-	rings       map[string]*fieldcrypt.Ring
+	// rings are the realms' field encryption, built on first use (fieldRing). A pointer, because
+	// a live reload copies the app and starts over with the new config.
+	rings       *ringState
 	fingerprint string // of CONFIG_DIR (registry.Fingerprint)
 	// withWorker runs the worker role in this process too (serve --with-worker).
 	withWorker bool
