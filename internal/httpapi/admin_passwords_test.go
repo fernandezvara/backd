@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,5 +66,49 @@ func TestAdminExpireEveryPassword(t *testing.T) {
 	// An epoch moves forward only: the same instant is refused.
 	if rec, out := f.doH(t, "POST", url, `{}`, key); rec.Code != http.StatusConflict {
 		t.Errorf("the same instant: %d %v", rec.Code, out)
+	}
+}
+
+func TestAdminExpirePasswordsAndTellTheUsers(t *testing.T) {
+	f := newRulesFixture(t)
+	f.svc.Realm = "acme"
+	_, adminKey, err := f.svc.CreateAPIKey(context.Background(), "breach", auth.KeyOptions{Role: auth.KeyRoleAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := jsonHdr(adminKey)
+	login := func() int {
+		rec, _ := f.doH(t, "POST", "/v1/acme/_auth/login", `{"email": "ada@example.com", "password": "dev-p4ssw0rd!"}`, map[string]string{"Content-Type": "application/json"})
+		return rec.Code
+	}
+
+	// Without email, notify is refused before anything changes.
+	settings := f.svc.Settings
+	f.svc.Settings.Email = nil
+	rec, out := f.doH(t, "POST", admin+"/passwords/expire", `{"notify": true}`, key)
+	if rec.Code != http.StatusConflict || !strings.Contains(out["error"].(map[string]any)["message"].(string), "reset-link") {
+		t.Errorf("notify without email: %d %v", rec.Code, out)
+	}
+	if rec, _ := f.doH(t, "POST", admin+"/passwords/notify", ``, key); rec.Code != http.StatusConflict {
+		t.Errorf("notify route without email: %d", rec.Code)
+	}
+	if login() != http.StatusOK {
+		t.Error("the refused request expired passwords anyway")
+	}
+	f.svc.Settings = settings
+
+	// Before any expiry there is nobody to tell.
+	if rec, _ := f.doH(t, "POST", admin+"/passwords/notify", ``, key); rec.Code != http.StatusConflict {
+		t.Errorf("notify before an expiry: %d", rec.Code)
+	}
+	at := time.Now().Add(time.Hour)
+	f.svc.Now = func() time.Time { return at }
+	rec, out = f.doH(t, "POST", admin+"/passwords/expire", `{"notify": true, "reason": "drill"}`, key)
+	job, _ := out["notify_job"].(string)
+	if rec.Code != http.StatusOK || job == "" {
+		t.Fatalf("expire and notify: %d %v", rec.Code, out)
+	}
+	if rec, out := f.doH(t, "GET", admin+"/jobs/"+job, "", key); rec.Code != http.StatusOK || out["origin"] != "backd:password.notify" || out["function"] != "password-notice" {
+		t.Errorf("the job: %d %v", rec.Code, out)
 	}
 }

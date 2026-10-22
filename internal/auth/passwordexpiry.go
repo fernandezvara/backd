@@ -2,8 +2,12 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"time"
+
+	"github.com/fernandezvara/backd/internal/email"
 )
 
 // ErrPasswordExpired means the password is correct but was set before the realm's password
@@ -112,12 +116,28 @@ func (s *Users) ExpirePassword(ctx context.Context, email, reason string) error 
 	return nil
 }
 
-// mailExpiredPassword sends the reset email a refused sign-in leads to, as a reset request
-// would: it is rate-limited like one, counts in the email limits, and fails quietly (the
-// answer to the sign-in does not depend on it).
+// mailExpiredPassword sends the email a refused sign-in leads to: the password-expired message
+// with a reset link. It is rate-limited like a reset request (per address and per client),
+// counts in the email limits, and fails quietly: the answer to the sign-in doesn't depend on
+// it. A user who was sent it is marked as told, so a later notification run skips them.
 func (s *Users) mailExpiredPassword(ctx context.Context, u User, ip string) {
 	if s.Settings.Email == nil || u.Disabled {
 		return
 	}
-	_ = s.RequestPasswordReset(ctx, u.Email, "", ip, "")
+	sum := sha256.Sum256([]byte(u.Email))
+	if s.RateLimit(ctx, "reset:to:"+hex.EncodeToString(sum[:]), resetPerAddress, resetWindow) != nil {
+		return
+	}
+	if k := IPKey(ip); k != "" && s.RateLimit(ctx, "reset:"+k, resetPerIP, resetWindow) != nil {
+		return
+	}
+	epoch, err := s.Store.PasswordEpoch(ctx)
+	if err != nil {
+		return
+	}
+	if _, err := s.QueueEmail(ctx, EmailRequest{Kind: email.PasswordExpired, UserID: u.ID, Address: u.Email, Locale: s.LocaleOf(u), ClientIP: ip, Event: epoch.Reason}); err != nil {
+		return
+	}
+	now := s.now()
+	_ = s.Store.UpdateUser(ctx, u.ID, UserUpdate{PasswordNotifiedAt: &now}, now)
 }

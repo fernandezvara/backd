@@ -58,16 +58,21 @@ const (
 	// ConsentUpdated asks people to review the new version of a consent
 	// ({{.Data.event}} is the consent's name); it is only sent by `backd consents notify`.
 	ConsentUpdated = "consent-updated"
+	// PasswordExpired tells a user their password no longer opens the account and carries the
+	// reset link ({{.Link}}, {{.ExpiresAt}}); {{.Data.event}} is the reason the operator gave,
+	// when there is one. It is sent by `backd user expire-passwords --notify` and when an expired
+	// password is used to sign in.
+	PasswordExpired = "password-expired"
 )
 
 // SystemKinds are the kinds backd knows; `backd template realm` writes an
 // English template for each.
-var SystemKinds = []string{VerifyEmail, ResetPassword, AccountExists, PasswordChanged, Welcome, ChangeEmail, EmailChanged, Invitation, OrgInvitation, SecurityNotice, MFAFailed, ReauthCode, MFAReset, MagicLink, NoAccount, TemplateFailed, ConsentUpdated}
+var SystemKinds = []string{VerifyEmail, ResetPassword, AccountExists, PasswordChanged, Welcome, ChangeEmail, EmailChanged, Invitation, OrgInvitation, SecurityNotice, MFAFailed, ReauthCode, MFAReset, MagicLink, NoAccount, TemplateFailed, ConsentUpdated, PasswordExpired}
 
 // BuiltInKinds are system kinds a realm does not have to ship: when its email folder has
 // none, the built-in English text is used for every listed locale, so a realm that
 // existed before them keeps working. A folder of the kind replaces the built-in text.
-var BuiltInKinds = []string{OrgInvitation, SecurityNotice, MFAFailed, ReauthCode, MFAReset, MagicLink, NoAccount, TemplateFailed, ConsentUpdated}
+var BuiltInKinds = []string{OrgInvitation, SecurityNotice, MFAFailed, ReauthCode, MFAReset, MagicLink, NoAccount, TemplateFailed, ConsentUpdated, PasswordExpired}
 
 // RequiredKinds must have a template in every realm that configures email.
 var RequiredKinds = []string{VerifyEmail, ResetPassword, AccountExists, PasswordChanged}
@@ -81,7 +86,7 @@ func TokenPurpose(kind string) Purpose {
 	switch kind {
 	case VerifyEmail:
 		return "verify-email"
-	case ResetPassword:
+	case ResetPassword, PasswordExpired:
 		return "reset-password"
 	case ChangeEmail:
 		return "change-email"

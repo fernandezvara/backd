@@ -80,6 +80,7 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		r.With(users).Delete("/push/devices", a.removePushDevices)
 		r.With(users).Get("/users", a.listUsers)
 		r.With(users).Post("/passwords/expire", a.expireAllPasswords)
+		r.With(users).Post("/passwords/notify", a.notifyExpiredPasswords)
 		r.With(users).Delete("/sessions", a.revokeAllSessions)
 		r.With(users, json).Post("/consents/notify", a.notifyConsent)
 		r.With(users).Get("/mfa", a.mfaOverview)
@@ -1353,6 +1354,11 @@ func (a *adminAPI) cancelJob(w http.ResponseWriter, r *http.Request) {
 			rightRefused(w, r, fmt.Sprintf("cancelling a schema check needs the %q admin right; your roles open: %s", registry.RightData, have))
 			return
 		}
+	} else if ok && found.PasswordNotice != nil {
+		if !have.CanWrite(registry.RightUsers) {
+			rightRefused(w, r, fmt.Sprintf("cancelling the notification of the users needs the %q admin right to change; your roles open: %s", registry.RightUsers, have))
+			return
+		}
 	} else if ok && found.Image != nil {
 		if !have.CanWrite(registry.RightConfig) {
 			rightRefused(w, r, fmt.Sprintf("cancelling a regeneration of image versions needs the %q admin right to change; your roles open: %s", registry.RightConfig, have))
@@ -1415,6 +1421,9 @@ func jobSummaryJSON(j auth.Job) map[string]any {
 	function := j.Database + "/" + j.Function
 	if j.Check != nil {
 		function = checkScope(j.Check.Database, j.Check.Collection)
+	}
+	if j.PasswordNotice != nil {
+		function = "password-notice"
 	}
 	out := map[string]any{
 		"id":              j.ID,

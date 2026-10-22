@@ -230,6 +230,9 @@ func (m *MemStore) UpdateUser(_ context.Context, id string, upd auth.UserUpdate,
 	if upd.PasswordExpiredAt != nil {
 		u.PasswordExpiredAt = *upd.PasswordExpiredAt
 	}
+	if upd.PasswordNotifiedAt != nil {
+		u.PasswordNotifiedAt = *upd.PasswordNotifiedAt
+	}
 	u.UpdatedAt = now
 	m.users[id] = u
 	return nil
@@ -420,6 +423,40 @@ func (m *MemStore) DeleteAllSessions(context.Context) (int64, error) {
 	clear(m.sessions)
 	clear(m.devices)
 	return n, nil
+}
+
+func (m *MemStore) PasswordUserIDs(_ context.Context, before time.Time, after string, limit int) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []string
+	for _, i := range m.identities {
+		if i.Provider != auth.ProviderPassword || i.UserID <= after {
+			continue
+		}
+		changed := i.PasswordChangedAt
+		if changed.IsZero() {
+			changed = i.CreatedAt
+		}
+		if changed.Before(before) {
+			out = append(out, i.UserID)
+		}
+	}
+	sort.Strings(out)
+	return out[:min(limit, len(out))], nil
+}
+
+func (m *MemStore) SetPasswordNoticeProgress(_ context.Context, jobID, after string, c auth.PasswordNoticeCounts) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	j, ok := m.jobs[jobID]
+	if !ok || j.PasswordNotice == nil {
+		return auth.ErrNotFound
+	}
+	pn := *j.PasswordNotice
+	pn.After, pn.PasswordNoticeCounts = after, c
+	j.PasswordNotice = &pn
+	m.jobs[jobID] = j
+	return nil
 }
 
 func (m *MemStore) CountPasswordIdentities(context.Context) (int64, error) {

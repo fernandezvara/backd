@@ -168,7 +168,7 @@ paths:
 
         A correct password that was set before the realm's password epoch, or after an
         administrator expired it, gets no session: `401 password_expired`, and a reset email is
-        queued (when the realm sends email) as a reset request would, with the same limits. A
+        queued (when the realm sends email) as a reset request would, with the same limits: the `password-expired` message, with a link to choose a new password. A
         wrong password is still `invalid_credentials`, so the answer says nothing to someone
         who doesn't know the password. A new password (reset, change, administrator) makes the
         account usable again.
@@ -2921,6 +2921,7 @@ paths:
               properties:
                 reason: { type: string, maxLength: 500, description: "Why, for the audit trail." }
                 keep_sessions: { type: boolean, description: "Keep the sessions: a planned rotation rather than a breach." }
+                notify: { type: boolean, description: "Also start the job that emails every user a link to choose a new password (`409` before anything changes when the realm sends no email)." }
       responses:
         "200":
           description: The epoch and what it touched.
@@ -2934,7 +2935,43 @@ paths:
                   valid_after: { $ref: "#/components/schemas/Timestamp" }
                   accounts: { type: integer, description: "Accounts with a password." }
                   sessions: { type: integer, description: "Sessions ended." }
+                  notify_job: { type: string, description: "The id of the notification job, with `notify`. Follow it with `GET /_admin/jobs/{id}`." }
         "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/passwords/notify:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [admin]
+      summary: Tell the users whose password expired to choose a new one
+      description: |
+        Starts the job (origin `backd:password.notify`) that walks the users with a password, in id
+        order, and queues the `password-expired` email, a reset link each, for those whose
+        password was set before the realm's epoch: enabled, with a verified address, and not told
+        already (after the epoch). It goes through the email queue, so the email limits apply:
+        users they hold back are told after a wait, not failed. The job reports its progress as a
+        step, can be cancelled with `POST /_admin/jobs/{id}/cancel`, and starting it again after a
+        cancel or a failure goes on without writing to anyone twice. One at a time (`409` with the
+        running job's id). `409` too without `email:` in `realm.yaml`, or before any password was
+        expired. Needs full admin access and, for a session, a fresh re-authentication. Audited as
+        `password.expire_notify` when it ends.
+      operationId: adminNotifyExpiredPasswords
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "202":
+          description: The job.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [id, status]
+                properties:
+                  id: { type: string }
+                  status: { type: string }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }

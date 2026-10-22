@@ -154,6 +154,10 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 		data.Data["event"], extra["event"] = job.Email.Event, job.Email.Event
 		data.Data["codes_left"], extra["codes_left"] = job.Email.CodesLeft, job.Email.CodesLeft
 	}
+	if kind == email.PasswordExpired && job.Email.Event == "" {
+		// The template asks whether there is a reason: it must find the key.
+		data.Data["event"], extra["event"] = "", ""
+	}
 	if purpose := email.TokenPurpose(kind); purpose != "" && !notice {
 		base := es.PublicURL
 		if base == "" {
@@ -168,6 +172,10 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 			spec.Address = address // what the link acts on
 		}
 		ttl := svc.Settings.Account.TokenLifetime(purpose)
+		if kind == email.PasswordExpired {
+			// Sent to everyone at once and read later: a day at least.
+			ttl = max(ttl, 24*time.Hour)
+		}
 		if invitationID != "" {
 			inv, _, _ := svc.InvitationByID(ctx, invitationID)
 			ttl = inv.ExpiresAt.Sub(svc.Clock())

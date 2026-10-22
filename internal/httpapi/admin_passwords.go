@@ -58,7 +58,7 @@ func (a *adminAPI) expireAllPasswords(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"reason": "string?", "keep_sessions": "bool?"})
+	f, ok := fields(w, r, obj, map[string]string{"reason": "string?", "keep_sessions": "bool?", "notify": "bool?"})
 	if !ok {
 		return
 	}
@@ -68,14 +68,55 @@ func (a *adminAPI) expireAllPasswords(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	keep, _ := f["keep_sessions"].(bool)
-	res, err := usersOf(r).ExpireAllPasswords(r.Context(), reason, keep)
+	notify, _ := f["notify"].(bool)
+	svc := usersOf(r)
+	if notify && svc.Settings.Email == nil {
+		// Refused before anything changes: telling users needs email, and the choice is the operator's.
+		writeError(w, r, http.StatusConflict, codeConflict, "the realm has no email section: nothing can be sent. Expire without notify and give each user a reset link (POST /users/{id}/reset-link)")
+		return
+	}
+	res, err := svc.ExpireAllPasswords(r.Context(), reason, keep)
 	switch {
 	case errors.Is(err, auth.ErrEpochNotLater):
 		writeError(w, r, http.StatusConflict, codeConflict, err.Error()+": try again in a moment")
+		return
+	case err != nil:
+		adminError(w, r, err)
+		return
+	}
+	out := map[string]any{"valid_after": formatTime(res.ValidAfter), "accounts": res.Accounts, "sessions": res.Sessions}
+	if notify {
+		job, err := svc.StartPasswordNotice(r.Context(), actorOf(r), requestID(r.Context()))
+		if err != nil {
+			// The passwords are expired already; say so, and how to start the notification again.
+			writeError(w, r, http.StatusConflict, codeConflict, "the passwords were expired, but the notification did not start ("+err.Error()+"): run it again with POST /passwords/notify")
+			return
+		}
+		out["notify_job"] = job.ID
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// notifyExpiredPasswords handles POST /passwords/notify: it starts, or after a cancel or a
+// failure starts again, the job that emails every user whose password the realm's epoch
+// expired. Users already told are skipped.
+func (a *adminAPI) notifyExpiredPasswords(w http.ResponseWriter, r *http.Request) {
+	if !needFullWithReauth(w, r, "telling every user") {
+		return
+	}
+	job, err := usersOf(r).StartPasswordNotice(r.Context(), actorOf(r), requestID(r.Context()))
+	var running *auth.ErrPasswordNoticeRunning
+	switch {
+	case errors.Is(err, auth.ErrEmailNotConfigured):
+		writeError(w, r, http.StatusConflict, codeConflict, "the realm has no email section: nothing can be sent. Give each user a reset link instead (POST /users/{id}/reset-link)")
+	case errors.Is(err, auth.ErrNoPasswordEpoch):
+		writeError(w, r, http.StatusConflict, codeConflict, err.Error())
+	case errors.As(err, &running):
+		writeError(w, r, http.StatusConflict, codeConflict, err.Error())
 	case err != nil:
 		adminError(w, r, err)
 	default:
-		writeJSON(w, http.StatusOK, map[string]any{"valid_after": formatTime(res.ValidAfter), "accounts": res.Accounts, "sessions": res.Sessions})
+		writeJSON(w, http.StatusAccepted, map[string]any{"id": job.ID, "status": job.Status})
 	}
 }
 
@@ -91,4 +132,10 @@ func (a *adminAPI) revokeAllSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"sessions": n})
+}
+
+// actorOf names the administrator for a job's caller.
+func actorOf(r *http.Request) string {
+	caller, _ := callerOf(r)
+	return caller.Actor()
 }

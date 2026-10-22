@@ -25,6 +25,7 @@ Every command also takes `--url`, to pick the server for that command.
 | `backd user set-password --realm <realm> --email <email>` | Set or replace the password, and revoke all of the user's sessions |
 | `backd user expire-password --realm <realm> --email <email> [--reason <text>]` | [Expire](#expiring-a-password) the password: it stops opening the account until the user resets it; sessions are kept |
 | `backd user expire-passwords --realm <realm> --yes [--reason <text>] [--keep-sessions]` | [Expire every password](#expiring-every-password) of the realm and end every session: the first step after a leak |
+| `backd user notify-expired --realm <realm>` | [Email](#telling-the-users) every user whose password was expired a link to choose a new one (also `expire-passwords --notify`) |
 | `backd user revoke-sessions --realm <realm> --all --yes` | End every session of the realm and leave passwords alone |
 | `backd user change-email --realm <realm> --email <email> --new-email <email>` | Change the user's address at once, as an administrator (needs [`email`](../../functions/email/); see [the admin API](../../../operate/administration/admin/#changing-a-users-email)) |
 | `backd user identities --realm <realm> --email <email>` | List the user's ways to sign in: a password and the [providers](../providers/) they use, with the address each reported and when it was linked and last used |
@@ -79,7 +80,17 @@ After a leak of a backup or a credential dump, `backd user expire-passwords --re
 - **It needs full administration and a fresh proof of identity** (the CLI asks for it), and is audited as `password.expire` with the reason and the counts.
 - **`backd user revoke-sessions --all --yes`** ends every session, and the devices they registered, without touching passwords. It is audited as `session.revoke_all`.
 
-The admin API calls are `POST /_admin/passwords/expire` (`{"reason"?, "keep_sessions"?}`) and `DELETE /_admin/sessions`. Telling every user by email and reset links for users the email cannot reach are not part of this step yet.
+The admin API calls are `POST /_admin/passwords/expire` (`{"reason"?, "keep_sessions"?}`) and `DELETE /_admin/sessions`. 
+
+### Telling the users
+
+A user whose password stopped working finds out by trying it, and that sign-in sends them the `password-expired` email with a link. To tell everyone without waiting, add `--notify` (`"notify": true` in the API): `backd user expire-passwords --realm blog --yes --notify`, or later `backd user notify-expired --realm blog`. A job then walks the users with a password and queues one [email](../../functions/email/) each through the normal email queue:
+
+- **Who:** enabled users with a verified address whose password the epoch expired and who were not told after it. A user created or reset since is not selected; users who only use providers or magic links have no password to expire.
+- **Once each:** a user is marked as told when their message is queued, so repeating, cancelling and starting again, or a worker that dies and is replaced never writes to anyone twice. `notify-expired` goes on from where it was.
+- **Within the email limits:** the [limits](../../functions/email/) apply as for any message. Users they hold back are told after a wait (up to an hour), not failed, and the job reports how many.
+- **Following it:** the job is `backd:password.notify`; `backd functions jobs` lists it with its progress, and `backd functions cancel` stops it (cancelling the job does not undo what was queued). It ends audited as `password.expire_notify` with the counts.
+- **Without email:** a realm that sends no email refuses `--notify` before expiring anything; give each user a link yourself instead.
 
 ## Roles
 

@@ -19,7 +19,7 @@ func resetJobs(t *testing.T, svc *Users) int {
 	}
 	n := 0
 	for _, j := range jobs {
-		if j.Email != nil && j.Email.Kind == "reset-password" {
+		if j.Email != nil && j.Email.Kind == "password-expired" {
 			n++
 		}
 	}

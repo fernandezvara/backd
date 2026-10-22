@@ -325,6 +325,8 @@ organizations:
 	// Last, because they end the session this test signed in with.
 	c.expect(0, "logged in", pw+"\n", "login", "--realm", "acme", "--email", "ada@example.com")
 	c.expect(1, "add --yes to confirm", "", "user", "expire-passwords", "--realm", "acme")
+	c.expect(1, "the realm has no email section", pw+"\n", "user", "expire-passwords", "--realm", "acme", "--yes", "--notify")
+	c.expect(1, "the realm has no email section", pw+"\n", "user", "notify-expired", "--realm", "acme")
 	c.expect(2, "--all is required", "", "user", "revoke-sessions", "--realm", "acme")
 	c.expect(1, "add --yes to confirm", "", "user", "revoke-sessions", "--realm", "acme", "--all")
 	c.expect(0, "sessions ended", pw+"\n", "user", "revoke-sessions", "--realm", "acme", "--all", "--yes")

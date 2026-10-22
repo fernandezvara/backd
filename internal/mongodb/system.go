@@ -131,18 +131,19 @@ var systemCollections = []systemCollection{
 	{
 		name: UsersCollection,
 		validator: jsonSchema([]string{"_id", "email", "email_verified", "roles", "disabled", "created_at", "updated_at"}, map[string]any{
-			"_id":                 str(),
-			"email":               str(),
-			"email_verified":      typ("bool"),
-			"roles":               map[string]any{"bsonType": "array", "items": str()},
-			"disabled":            typ("bool"),
-			"locale":              str(),
-			"consents":            typ("object"),
-			"password_expired_at": typ("date"),
-			"admin_networks":      map[string]any{"bsonType": "array", "items": str()},
-			"login_networks":      map[string]any{"bsonType": "array", "items": str()},
-			"created_at":          typ("date"),
-			"updated_at":          typ("date"),
+			"_id":                  str(),
+			"email":                str(),
+			"email_verified":       typ("bool"),
+			"roles":                map[string]any{"bsonType": "array", "items": str()},
+			"disabled":             typ("bool"),
+			"locale":               str(),
+			"consents":             typ("object"),
+			"password_expired_at":  typ("date"),
+			"password_notified_at": typ("date"),
+			"admin_networks":       map[string]any{"bsonType": "array", "items": str()},
+			"login_networks":       map[string]any{"bsonType": "array", "items": str()},
+			"created_at":           typ("date"),
+			"updated_at":           typ("date"),
 		}),
 		// Sparse, so users from future providers that give no email don't
 		// collide on a missing value.
@@ -314,6 +315,7 @@ var systemCollections = []systemCollection{
 			"expires_at":      typ("date"),
 			"result":          typ("object"),
 			"check":           typ("object"),
+			"password_notice": typ("object"),
 			"exclusive":       str(),        // only one unfinished job holds a name (unique index below)
 			"steps":           typ("array"), // [{n, name, status, ...}] the running attempt reported (ctx.step)
 			"steps_omitted":   typ("int"),

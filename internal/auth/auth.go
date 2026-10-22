@@ -52,8 +52,11 @@ type User struct {
 	// PasswordExpiredAt, when set, expires the user's password if it was set before it
 	// (design/breach-response.md §3); a new password makes the account usable again.
 	PasswordExpiredAt time.Time
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	// PasswordNotifiedAt is when the user was last sent the email that tells them to choose a
+	// new password; a notification run skips whoever was told after the epoch.
+	PasswordNotifiedAt time.Time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 // Identity is one way a user signs in.
@@ -107,6 +110,8 @@ type UserUpdate struct {
 	LoginNetworks *registry.Networks // set (empty clears)
 	// PasswordExpiredAt expires the user's password as of that time.
 	PasswordExpiredAt *time.Time
+	// PasswordNotifiedAt records that the user was told to choose a new password.
+	PasswordNotifiedAt *time.Time
 }
 
 var (
@@ -207,6 +212,11 @@ type Store interface {
 	// and says how many sessions. CountPasswordIdentities says how many accounts have a password.
 	DeleteAllSessions(ctx context.Context) (int64, error)
 	CountPasswordIdentities(ctx context.Context) (int64, error)
+	// PasswordUserIDs returns, in id order, up to limit ids of users, after the id `after`,
+	// whose password was set before the time: the accounts an epoch at that time expires.
+	PasswordUserIDs(ctx context.Context, before time.Time, after string, limit int) ([]string, error)
+	// SetPasswordNoticeProgress keeps a notification job's place and counts.
+	SetPasswordNoticeProgress(ctx context.Context, jobID, after string, c PasswordNoticeCounts) error
 	// PutIdentity creates the identity, or, when one with the same provider
 	// and subject exists, updates its credentials and UpdatedAt (keeping its
 	// ID and CreatedAt). ErrIdentityExists when the user already has another

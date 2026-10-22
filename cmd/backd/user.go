@@ -157,7 +157,7 @@ func userExpirePasswords(c *userCtx) error {
 		}
 		return errors.New(msg + ": add --yes to confirm")
 	}
-	body := map[string]any{"keep_sessions": flag(c.cmd, "keep-sessions")}
+	body := map[string]any{"keep_sessions": flag(c.cmd, "keep-sessions"), "notify": flag(c.cmd, "notify")}
 	if r := str(c.cmd, "reason"); r != "" {
 		body["reason"] = r
 	}
@@ -165,6 +165,7 @@ func userExpirePasswords(c *userCtx) error {
 		ValidAfter string `json:"valid_after"`
 		Accounts   int64
 		Sessions   int64
+		NotifyJob  string `json:"notify_job"`
 	}
 	proof, err := c.t.proof(c.uio)
 	if err != nil {
@@ -174,6 +175,24 @@ func userExpirePasswords(c *userCtx) error {
 		return err
 	}
 	fmt.Fprintf(c.uio.stdout, "every password set before %s expired: %d accounts with a password, %d sessions ended\nusers choose a new password with a reset (a sign-in with the old one queues the email), or you set one with `backd user set-password`\n", out.ValidAfter, out.Accounts, out.Sessions)
+	if out.NotifyJob != "" {
+		fmt.Fprintf(c.uio.stdout, "telling the users by email: job %s (follow it with `backd functions jobs`; `backd user notify-expired` starts it again if it is cancelled or fails)\n", out.NotifyJob)
+	}
+	return nil
+}
+
+func userNotifyExpired(c *userCtx) error {
+	var out struct {
+		ID string `json:"id"`
+	}
+	proof, err := c.t.proof(c.uio)
+	if err != nil {
+		return err
+	}
+	if _, err := c.t.callHeaders("POST", "_admin/passwords/notify", nil, nil, &out, proof); err != nil {
+		return err
+	}
+	fmt.Fprintf(c.uio.stdout, "telling the users whose password expired: job %s; users already told are skipped (follow it with `backd functions jobs`)\n", out.ID)
 	return nil
 }
 

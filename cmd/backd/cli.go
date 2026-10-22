@@ -241,8 +241,10 @@ func registerRemote(cfg *kli.Config) {
 	user("expire-passwords", "expire every password of the realm and end every session (the first minutes of a leak)", false, userExpirePasswords, func(cc *kli.CommandConfig) {
 		optional(cc, "reason", "why, for the audit trail")
 		boolean(cc, "keep-sessions", "keep the sessions (a planned rotation, not a breach)")
+		boolean(cc, "notify", "also email every user a link to choose a new password (needs email in realm.yaml)")
 		boolean(cc, "yes", "confirm: every user will have to choose a new password")
 	})
+	user("notify-expired", "email every user whose password was expired a link to choose a new one; starts again after a cancel or failure", false, userNotifyExpired, nil)
 	user("revoke-sessions", "end every session of the realm, leaving passwords alone", false, userRevokeSessions, func(cc *kli.CommandConfig) {
 		boolean(cc, "all", "end the sessions of every user")
 		boolean(cc, "yes", "confirm")

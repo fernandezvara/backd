@@ -24,6 +24,7 @@ const (
 	AuditUserPurged       = "user.purged_unverified" // details: count; never addresses
 	AuditUserClaimed      = "user.claimed"           // an unverified account taken over by its mailbox's owner; details: methods, mfa
 	AuditSessionRevokeAll = "session.revoke_all"     // an administrator ended every session of the realm; details: count
+	AuditPasswordNotify   = "password.expire_notify" // the notification run ended; details: counts
 	AuditPasswordExpire   = "password.expire"        // details: scope (user or realm), reason
 	AuditUserDisable      = "user.disable"
 	AuditUserEnable       = "user.enable"

@@ -42,16 +42,18 @@ type userDoc struct {
 	// Consents is the summary of the user's consent records: consent name to accepted version.
 	Consents          map[string]string `bson:"consents,omitempty"`
 	PasswordExpiredAt *time.Time        `bson:"password_expired_at,omitempty"`
-	CreatedAt         time.Time         `bson:"created_at"`
-	UpdatedAt         time.Time         `bson:"updated_at"`
+	// When the user was last sent the email that tells them to choose a new password.
+	PasswordNotifiedAt *time.Time `bson:"password_notified_at,omitempty"`
+	CreatedAt          time.Time  `bson:"created_at"`
+	UpdatedAt          time.Time  `bson:"updated_at"`
 }
 
 func (d userDoc) user() auth.User {
 	return auth.User{
 		ID: d.ID, Email: d.Email, EmailVerified: d.EmailVerified, PendingEmail: d.PendingEmail, PreviousEmail: d.PreviousEmail, ErasedAt: utcOrZero(d.ErasedAt), Roles: d.Roles, Disabled: d.Disabled, Locale: d.Locale,
 		AdminNetworks: networks(d.AdminNetworks), LoginNetworks: networks(d.LoginNetworks), Consents: d.Consents,
-		PasswordExpiredAt: utcOrZero(d.PasswordExpiredAt),
-		CreatedAt:         d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC(),
+		PasswordExpiredAt: utcOrZero(d.PasswordExpiredAt), PasswordNotifiedAt: utcOrZero(d.PasswordNotifiedAt),
+		CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC(),
 	}
 }
 
@@ -256,6 +258,9 @@ func (s *AuthStore) UpdateUser(ctx context.Context, id string, upd auth.UserUpda
 		unset = append(unset, bson.E{Key: "password_expired_at", Value: ""})
 	default:
 		set = append(set, bson.E{Key: "password_expired_at", Value: *upd.PasswordExpiredAt})
+	}
+	if upd.PasswordNotifiedAt != nil {
+		set = append(set, bson.E{Key: "password_notified_at", Value: *upd.PasswordNotifiedAt})
 	}
 	update := bson.D{{Key: "$set", Value: set}}
 	if len(unset) > 0 {
@@ -462,6 +467,34 @@ func (s *AuthStore) DeleteAllSessions(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 	return res.DeletedCount, nil
+}
+
+// PasswordUserIDs implements auth.Store: the password identities set before the time (or, for
+// ones from before the time was recorded, created before it), by user id.
+func (s *AuthStore) PasswordUserIDs(ctx context.Context, before time.Time, after string, limit int) ([]string, error) {
+	filter := bson.D{
+		{Key: "provider", Value: auth.ProviderPassword},
+		{Key: "user_id", Value: bson.D{{Key: "$gt", Value: after}}},
+		{Key: "$or", Value: bson.A{
+			bson.D{{Key: "password_changed_at", Value: bson.D{{Key: "$lt", Value: before}}}},
+			bson.D{{Key: "password_changed_at", Value: bson.D{{Key: "$exists", Value: false}}}, {Key: "created_at", Value: bson.D{{Key: "$lt", Value: before}}}},
+		}},
+	}
+	cur, err := s.identities().Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "user_id", Value: 1}}).SetLimit(int64(limit)).SetProjection(bson.D{{Key: "user_id", Value: 1}}))
+	if err != nil {
+		return nil, err
+	}
+	var docs []struct {
+		UserID string `bson:"user_id"`
+	}
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	out := make([]string, len(docs))
+	for i, d := range docs {
+		out[i] = d.UserID
+	}
+	return out, nil
 }
 
 // CountPasswordIdentities implements auth.Store.
