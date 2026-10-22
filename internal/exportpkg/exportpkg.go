@@ -38,18 +38,21 @@ const (
 
 // Manifest describes a package.
 type Manifest struct {
-	Format       int                    `json:"format"`
-	BackdVersion string                 `json:"backd_version"`
-	Realm        string                 `json:"realm"`
-	CreatedAt    time.Time              `json:"created_at"`
-	Operator     string                 `json:"operator"`
-	Fingerprint  string                 `json:"config_fingerprint"`
-	Flags        Flags                  `json:"flags"`
-	Databases    []Database             `json:"databases"`
-	Encrypted    []EncryptedField       `json:"encrypted_fields"`
-	Checksums    map[string]string      `json:"checksums"`
-	Files        int64                  `json:"files"`
-	Extra        map[string]interface{} `json:"extra,omitempty"`
+	Format       int               `json:"format"`
+	BackdVersion string            `json:"backd_version"`
+	Realm        string            `json:"realm"`
+	CreatedAt    time.Time         `json:"created_at"`
+	Operator     string            `json:"operator"`
+	Fingerprint  string            `json:"config_fingerprint"`
+	Flags        Flags             `json:"flags"`
+	Databases    []Database        `json:"databases"`
+	Encrypted    []EncryptedField  `json:"encrypted_fields"`
+	Checksums    map[string]string `json:"checksums"`
+	Files        int64             `json:"files"`
+	// Auth lists the authentication data parts (with --include auth); AuthKey is the fingerprint
+	// of the one-time export key their realm-sealed fields are sealed under.
+	Auth    []Collection `json:"auth,omitempty"`
+	AuthKey string       `json:"auth_key_fingerprint,omitempty"`
 }
 
 // Flags are the package's properties an import has to respect.
@@ -88,6 +91,9 @@ type EncryptedField struct {
 func CollectionPart(database, collection string) string {
 	return database + "/" + collection + ".jsonl"
 }
+
+// AuthPart is the package path of a collection of authentication data.
+func AuthPart(collection string) string { return "_system/auth/" + collection + ".jsonl" }
 
 // FilePart is the package path of a file's object.
 func FilePart(database, fileID string) string {

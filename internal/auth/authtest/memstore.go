@@ -22,6 +22,7 @@ type MemStore struct {
 	appconfig.MemStore
 
 	mu          sync.Mutex
+	portable    map[string]map[string]map[string]any // collection -> id -> raw document (SeedPortable)
 	users       map[string]auth.User
 	identities  map[string]auth.Identity // provider/subject → identity
 	sessions    map[string]auth.Session  // id → session

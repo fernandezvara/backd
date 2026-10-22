@@ -94,6 +94,9 @@ const (
 	// complete). Never the content.
 	AuditExport     = "export"
 	AuditExportDone = "export.done"
+	// AuditExportAuth is an export that includes authentication data: users, password hashes,
+	// organizations, memberships, teams, second factors and devices (details: collections).
+	AuditExportAuth = "export.auth"
 	// An administrator started an import (target import:<realm>; details: mode, dry_run, skip_invalid,
 	// databases, source_realm) and finished it (details: mode, dry_run, files, complete and a count per
 	// outcome: created, replaced, skipped, unchanged, conflict, invalid). Never the content.

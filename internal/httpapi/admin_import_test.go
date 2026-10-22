@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/auth/authtest"
 	"github.com/fernandezvara/backd/internal/exportpkg"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage/storagetest"
@@ -106,7 +107,6 @@ func TestAdminImport(t *testing.T) {
 		"another format":     manifest(func(m *exportpkg.Manifest) { m.Format = 9 }),
 		"a partial package":  manifest(func(m *exportpkg.Manifest) { m.Flags.Partial = true }),
 		"a CSV extract":      manifest(func(m *exportpkg.Manifest) { m.Flags.CSV = true }),
-		"authentication":     manifest(func(m *exportpkg.Manifest) { m.Flags.Auth = true }),
 		"a missing database": manifest(func(m *exportpkg.Manifest) { m.Databases[0].Name = "ghost" }),
 		"an odd part":        manifest(func(m *exportpkg.Manifest) { m.Databases[0].Collections[0].Part = "../notes.jsonl" }),
 	} {
@@ -296,5 +296,86 @@ func TestAdminImportFiles(t *testing.T) {
 	_, out = f.doH(t, "POST", url+"?phase=validate&part=app/library.jsonl", big, map[string]string{"Authorization": "Bearer " + adminKey, exportHeader: lease})
 	if out["counts"].(map[string]any)["invalid"] != float64(1) {
 		t.Errorf("a large file: %v", out)
+	}
+}
+
+func TestAdminImportAuthData(t *testing.T) {
+	f := newRulesFixture(t)
+	f.svc.Realm = "acme"
+	ctx := context.Background()
+	var err error
+	if f.svc.Cipher, err = auth.NewSecretCipher([]byte("01234567890123456789012345678901")); err != nil {
+		t.Fatal(err)
+	}
+	_, adminKey, err := f.svc.CreateAPIKey(ctx, "import-auth", auth.KeyOptions{Role: auth.KeyRoleAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mem := f.svc.Store.(*authtest.MemStore)
+	url := admin + "/import"
+	jh := jsonHdr(adminKey)
+	m := &exportpkg.Manifest{Format: 1, Realm: "acme", Flags: exportpkg.Flags{Auth: true}, AuthKey: "x",
+		Databases: []exportpkg.Database{{Name: "app", Collections: []exportpkg.Collection{{Name: "notes", Part: "app/notes.jsonl"}}}}}
+	for _, c := range auth.PortableCollections {
+		m.Auth = append(m.Auth, exportpkg.Collection{Name: c, Part: exportpkg.AuthPart(c)})
+	}
+	mb, _ := m.Marshal()
+	rec, b := f.doH(t, "POST", url, `{"manifest": `+string(mb)+`}`, jh)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("begin: %d %v", rec.Code, b)
+	}
+	lease := b["lease"].(string)
+	lh := map[string]string{"Authorization": "Bearer " + adminKey, exportHeader: lease, "Content-Type": "application/x-ndjson"}
+	at := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	line := func(d map[string]any) string {
+		l, _ := exportpkg.EncodeDocument(d)
+		return string(l) + "\n"
+	}
+	user := line(map[string]any{"id": "u1", "email": "ada@example.com", "roles": []any{}, "created_at": at})
+	mfa := line(map[string]any{"id": "u1", "secret": map[string]any{"$plain": "JBSWY3DPEHPK3PXP"}, "enabled_at": at, "recovery_codes": []any{}})
+	sealed := line(map[string]any{"id": "u2", "secret": "keyid.nonce.ct", "enabled_at": at})
+	post := func(phase, part, body string) map[string]any {
+		rec, out := f.doH(t, "POST", url+"?phase="+phase+"&part="+part, body, lh)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s %s: %d %v", phase, part, rec.Code, out)
+		}
+		return out
+	}
+	if out := post("validate", "_system/auth/users.jsonl", user); out["counts"].(map[string]any)["created"] != float64(1) || len(mem.Portable("users")) != 0 {
+		t.Errorf("validate: %v", out)
+	}
+	if out := post("write", "_system/auth/users.jsonl", user); out["counts"].(map[string]any)["created"] != float64(1) || len(mem.Portable("users")) != 1 {
+		t.Errorf("write: %v", out)
+	}
+	if out := post("write", "_system/auth/users.jsonl", user); out["counts"].(map[string]any)["unchanged"] != float64(1) {
+		t.Errorf("again: %v", out)
+	}
+	// The secret arrives as plaintext and is stored sealed under this realm's key.
+	post("write", "_system/auth/mfa.jsonl", mfa)
+	stored := mem.Portable("mfa")["u1"]["secret"].(string)
+	if plain, err := f.svc.OpenToken(stored); err != nil || plain != "JBSWY3DPEHPK3PXP" || stored == "JBSWY3DPEHPK3PXP" {
+		t.Errorf("stored secret: %q %v", plain, err)
+	}
+	if out := post("write", "_system/auth/mfa.jsonl", mfa); out["counts"].(map[string]any)["unchanged"] != float64(1) {
+		t.Errorf("mfa again: %v", out)
+	}
+	if out := post("validate", "_system/auth/mfa.jsonl", sealed); out["counts"].(map[string]any)["invalid"] != float64(1) {
+		t.Errorf("a secret that arrives sealed: %v", out)
+	}
+	// The users of the package are owners that exist for its documents.
+	doc := importLines(t, 1, func(i int, d map[string]any) { d["_meta"].(map[string]any)["owner"] = "u1" })
+	if out := post("validate", "app/notes.jsonl", doc); out["missing_owners"] != float64(0) {
+		t.Errorf("owner: %v", out)
+	}
+	// A part that isn't authentication data of this backd is refused.
+	if rec, _ := f.doH(t, "POST", url+"?phase=validate&part=_system/auth/sessions.jsonl", user, lh); rec.Code != http.StatusNotFound {
+		t.Errorf("sessions: %d", rec.Code)
+	}
+	bad := *m
+	bad.Auth = []exportpkg.Collection{{Name: "sessions", Part: exportpkg.AuthPart("sessions")}}
+	bb, _ := bad.Marshal()
+	f.doH(t, "DELETE", url, "", lh)
+	if rec, _ := f.doH(t, "POST", url, `{"manifest": `+string(bb)+`}`, jh); rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("an unknown auth part: %d", rec.Code)
 	}
 }

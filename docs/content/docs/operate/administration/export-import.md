@@ -9,7 +9,7 @@ toc: true
 `backd export` writes the documents and files of a realm to a **package**: a plain directory (or one `.tar.gz`) you can read with ordinary tools. It is the supported way to take data out of `backd` without `mongodump`: it goes through the [admin API](../admin/), so it needs no access to MongoDB, and it writes documents the way the API shows them.
 
 {{< hint style="note" title="Planned" >}}
-Authentication data (users and their sign-in methods), direct mode against MongoDB, anonymized exports and encrypted fields are planned for the same feature. This page covers what exists now: exporting a package or a report, and importing a package.
+Direct mode against MongoDB, anonymized exports and encrypted fields are planned for the same feature. This page covers what exists now: exporting a package or a report, importing a package, and moving users with `--include auth`.
 {{< /hint >}}
 
 ## Exporting
@@ -29,6 +29,8 @@ backd export --realm clinic --db main --collection patients,visits --out ./clini
 | `--fields` | A [reporting extract](#reporting-extracts-and-csv): only these fields |
 | `--where` | Only the documents matching a filter, for one `--collection` |
 | `--format` | `jsonl` (a package, the default) or `csv` |
+| `--include auth` | Also export the realm's [authentication data](#moving-users) |
+| `--auth-key-out` | With `--include auth`: write the export key to this file instead of showing it |
 
 It needs **full admin access** and, when you are signed in with a session, a fresh proof that it is you (the same one [creating an API key](../admin/) asks for). With an admin API key in `BACKD_API_KEY` nothing more is asked. Both start and end of every export are [audited](../audit/) (`export`, `export.done`) with the scope and the counts, never the content.
 
@@ -77,6 +79,37 @@ The CSV is a **flat view and loses information**, so it can never be imported:
 | text starting with `=`, `+`, `-` or `@` | an apostrophe is put in front, so a spreadsheet shows it instead of running it as a formula |
 
 Columns are the union over all documents: `id` first, then the fields in the order you gave (or alphabetically), then `_meta`. The documents are held in a temporary file next to the output while the columns are worked out.
+
+## Moving users
+
+A package holds documents only: the users who own them stay behind unless you ask. `--include auth` adds, for the **whole realm** (not with `--db`, `--collection`, `--fields` or CSV), `_system/auth/<collection>.jsonl` for:
+
+| Collection | What it holds |
+|---|---|
+| `users`, `identities` | Accounts and their sign-in methods, **password hashes included** |
+| `orgs`, `org_members`, `org_teams` | Organizations, memberships (with their roles) and teams |
+| `mfa` | Second-factor enrollments (authenticator apps) |
+| `devices` | Push notification devices |
+
+Never included: sessions, login codes, challenges, email and invitation tokens, API keys, secrets and the audit trail. Users are signed out of the old instance's sessions, not carried: they sign in again.
+
+Some of those fields are sealed with the **realm's secrets key** on the instance they come from: the authenticator secrets, the device tokens and Apple refresh tokens. That key never leaves an instance, so the server opens them and seals them again under a **one-time export key** it makes for this export and shows to you **once**:
+
+```
+backd export --realm clinic --include auth --out ./clinic-auth --auth-key-out ./clinic.key
+backd import --realm clinic2 --from ./clinic-auth --auth-key file:./clinic.key
+```
+
+- Without `--auth-key-out` the key is printed on the terminal, once; `backd` keeps no copy. The manifest records only its fingerprint, which `import` checks the key against.
+- On import, `--auth-key` takes `key:<value>`, `env:<VAR>` or `file:<path>` (a file readable by others draws a warning; the value form ends up in shell history and process lists, so prefer the others). The key is used **only on the machine running the import**: it opens the sealed fields there and sends them over the authenticated connection to be sealed under the target realm's own key.
+- **Without the key**, users, identities, organizations, memberships and teams are imported, but without second factors, push devices and Apple tokens. The command says so; users with required second factors enroll again at their next sign-in.
+- **Recovery codes don't travel.** They are keyed hashes under the realm's master key and can't be re-keyed: users with an authenticator keep it and generate new recovery codes.
+- Authentication data is fetched whole on every run, even when resuming, because the export key belongs to one run. Import it first: it is sent before the documents, so the owners they name exist when they are checked; documents owned by users that are in the package are not reported as missing.
+- Importing uses the same modes as documents (`create`, `skip`, `replace`) and the same idempotence. The store checks each document as it is — the id, unique values such as emails and provider identities, the shape its collection keeps — and a repeated email is a conflict.
+
+{{< hint style="warning" title="The package then holds credentials" >}}
+Password hashes let anyone with the package try passwords offline, and the export key opens the authenticator secrets. Keep the package and the key apart, in different places, and delete both when the move is done. Both actions are audited (`export.auth`, `import`).
+{{< /hint >}}
 
 ## Big realms and interruptions
 
@@ -127,7 +160,7 @@ Collections are read one after another while the app keeps working, so a package
 
 | Request | Answer |
 |---|---|
-| `GET /export?database=&collection=&files=false&fields=&where=&format=` | `200` with the plan: a `lease`, the manifest as far as it can be known (counts are estimates), and the file fields of each collection. `409 export_running` while another export holds the realm. A previous `lease` in `X-Backd-Export` takes over an interrupted export of the same administrator |
+| `GET /export?database=&collection=&files=false&fields=&where=&format=&include=` | `200` with the plan: a `lease`, the manifest as far as it can be known (counts are estimates), and the file fields of each collection. `409 export_running` while another export holds the realm. With `include=auth` the answer also has the one-time `export_key`. A previous `lease` in `X-Backd-Export` takes over an interrupted export of the same administrator |
 | `GET /export?part=<database>/<collection>.jsonl` | The collection's documents as `application/x-ndjson`, with the lease in `X-Backd-Export` |
 | `GET /export?file=<database>/<collection>/<file id>` | The file's object, through `backd`'s storage client |
 | `DELETE /export?complete=true` | `204`: the export ended; releases the realm and audits what was streamed |

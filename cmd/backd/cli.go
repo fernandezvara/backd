@@ -474,7 +474,7 @@ func registerRemote(cfg *kli.Config) {
 		boolean(cc, "json", "print the report as JSON")
 	})
 	cfg.Command("export").ShortHelp("write a realm, database or collection as a package").
-		LongHelp("Reads the realm's documents and files from a running backd into a package: a directory with manifest.json,\n<database>/<collection>.jsonl (the API representation of every document, soft-deleted ones included, with dates and\nbinary values in Extended JSON) and <database>/_files/<file id>, or one .tar.gz with --archive. The package is lossless;\nbackd import reads it. Each part is verified as it arrives and recorded in <out>/.export-progress.json, so running the\nsame command again after an interruption continues from the last complete part. Only one export of a realm runs at a time.\n--fields and --where narrow it to a reporting extract (a --fields package is partial and can't be imported) and --format csv writes one flat, lossy table per collection for spreadsheets, without files. Never exported: sessions, tokens, counters, jobs, history, secrets and the audit trail. Needs full admin access and a fresh\nproof that it is you. Audited as export and export.done. " + adminAPINote).
+		LongHelp("Reads the realm's documents and files from a running backd into a package: a directory with manifest.json,\n<database>/<collection>.jsonl (the API representation of every document, soft-deleted ones included, with dates and\nbinary values in Extended JSON) and <database>/_files/<file id>, or one .tar.gz with --archive. The package is lossless;\nbackd import reads it. Each part is verified as it arrives and recorded in <out>/.export-progress.json, so running the\nsame command again after an interruption continues from the last complete part. Only one export of a realm runs at a time.\n--fields and --where narrow it to a reporting extract (a --fields package is partial and can't be imported) and --format csv writes one flat, lossy table per collection for spreadsheets, without files. --include auth adds the realm's authentication data, audited as export.auth. Never exported: sessions, tokens, counters, jobs, history, secrets and the audit trail. Needs full admin access and a fresh\nproof that it is you. Audited as export and export.done. " + adminAPINote).
 		Func(act("export", exportAction)).Config(func(cc *kli.CommandConfig) {
 		remote(cc)
 		required(cc, "out", "the package directory to write (with --archive, the archive is <out>.tar.gz)")
@@ -483,6 +483,8 @@ func registerRemote(cfg *kli.Config) {
 		optional(cc, "fields", "only these fields: comma-separated paths such as name,address.city (id is always there); the package is marked partial and can't be imported")
 		optional(cc, "where", "only the documents matching this filter (the API's where syntax), for one --collection")
 		optional(cc, "format", "jsonl (a package, the default) or csv (a flat table per collection for spreadsheets: lossy, no files, can't be imported)")
+		optional(cc, "include", "auth: also export the realm's users with their password hashes, organizations, memberships, teams, second factors and push devices (whole realm only); a one-time export key is shown once")
+		optional(cc, "auth-key-out", "write the export key of --include auth to this file (readable only by you) instead of showing it")
 		boolean(cc, "archive", "write one <out>.tar.gz instead of a directory")
 		boolean(cc, "no-files", "leave the files out: only the documents")
 	})
@@ -496,6 +498,7 @@ func registerRemote(cfg *kli.Config) {
 		boolean(cc, "dry-run", "validate everything and write nothing")
 		boolean(cc, "skip-invalid", "leave out the documents that are invalid for the target instead of stopping")
 		optional(cc, "report", "write the problems found to this JSON file")
+		optional(cc, "auth-key", "the export key of a package exported with --include auth: key:<value>, env:<VAR> or file:<path>; without it users arrive without second factors and push devices")
 	})
 
 	cons := cfg.Command("consents").ShortHelp("manage the consents users accept")

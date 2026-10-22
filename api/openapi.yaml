@@ -4840,6 +4840,18 @@ paths:
             A reporting extract: only the documents matching this filter, in the syntax of the
             data API's `where`. Needs `database` and exactly one `collection`. Invalid filters are `400`.
           schema: { type: string }
+        - name: include
+          in: query
+          description: >-
+            `auth` adds the realm's authentication data: users, identities with their password
+            hashes, organizations, memberships, teams, second-factor enrollments and push devices
+            (parts `_system/auth/<collection>.jsonl`). Whole realm only: it can't be combined with
+            `database`, `fields`, `where` or `format`. The fields the realm sealed with its secrets
+            (TOTP secrets, device tokens, Apple refresh tokens) are opened by the server and sealed
+            again under a **one-time export key**, which the plan returns once in `export_key`;
+            recovery codes (keyed hashes) and the sessions devices belong to don't travel. Audited
+            as `export.auth`.
+          schema: { type: string, enum: [auth] }
         - name: format
           in: query
           description: >-
@@ -4927,11 +4939,14 @@ paths:
       description: |
         The server side of `backd import`. Without `phase` it **starts** an import: the body is the
         package's manifest (without checksums) and the options. It checks that the package can be
-        read at all (the format, not a `partial` package, not a CSV extract, no authentication data
-        yet, every collection configured in this realm), takes the realm's lease (one export or
+        read at all (the format, not a `partial` package, not a CSV extract, every collection configured
+        in this realm), takes the realm's lease (one export or
         import of a realm runs at a time per instance, `409 export_running`) and answers it with the
         size of the chunks to send. With `phase=validate` or `phase=write` and `part`
-        (`<database>/<collection>.jsonl`) the body is a chunk of whole JSON Lines of that part; every
+        (`<database>/<collection>.jsonl`, or `_system/auth/<collection>.jsonl` for authentication
+        data, whose documents the store checks as they are: ids, unique values such as emails, and
+        the shape of its collections; its sealed fields arrive as `{"$plain": value}` and are sealed
+        under this realm's key) the body is a chunk of whole JSON Lines of that part; every
         document in it is checked against **this** realm's configuration: its id, `_meta`, its fields
         against the collection's schema, its files against the file fields, the documents the target
         already holds (`create` refuses a different document with the same id, `skip` keeps the
@@ -9245,6 +9260,7 @@ components:
       properties:
         lease: { type: string, description: "Send it in `X-Backd-Export` on every part, file and end request." }
         expires_in: { type: integer, description: Seconds a silent export keeps its lease. }
+        export_key: { type: string, description: "With `include=auth`: the one-time key the package's sealed authentication fields are sealed under. Shown in this answer only." }
         manifest:
           type: object
           description: The package's `manifest.json` without checksums; document counts are estimates until the parts are read.
@@ -9289,6 +9305,16 @@ components:
                   form: { type: string, enum: [ciphertext, plaintext] }
             files: { type: integer, format: int64 }
             checksums: { type: object, additionalProperties: { type: string } }
+            auth:
+              type: array
+              description: With `include=auth`, the authentication data parts.
+              items:
+                type: object
+                properties:
+                  name: { type: string }
+                  documents: { type: integer, format: int64 }
+                  part: { type: string }
+            auth_key_fingerprint: { type: string, description: "The fingerprint of the export key, which an import checks the key it is given against." }
         file_fields:
           type: object
           description: "`<database>/<collection>` to its file fields, which hold the ids of the files to fetch."

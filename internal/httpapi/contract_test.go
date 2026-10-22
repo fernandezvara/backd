@@ -1295,6 +1295,12 @@ func TestContract(t *testing.T) {
 		f.reg.Realms["acme"].Settings.Storage = savedStorage
 		req("DELETE", exp+"?complete=true", "", lh, 204)
 		req("DELETE", exp, "", lh, 409)
+		req("GET", exp+"?include=auth&database=app", "", key, 400)
+		withAuth := req("GET", exp+"?include=auth", "", key, 200)
+		if len(withAuth["export_key"].(string)) != 43 {
+			t.Errorf("export key: %v", withAuth["export_key"])
+		}
+		req("DELETE", exp, "", with(key, "X-Backd-Export", withAuth["lease"].(string)), 204)
 	}
 	// Importing a package: the start, a chunk validated and written, a file, the end.
 	{
@@ -1320,6 +1326,7 @@ func TestContract(t *testing.T) {
 			t.Errorf("validate: %v", out)
 		}
 		req("POST", imp+"?phase=write&part=app/library.jsonl", string(doc)+"\n", with(ih, "Content-Type", "application/x-ndjson"), 200)
+		req("POST", imp+"?phase=validate&part=_system/auth/users.jsonl", `{"id":"u9","email":"nine@example.com","roles":[]}`+"\n", with(ih, "Content-Type", "application/x-ndjson"), 200)
 		sum := sha256.Sum256([]byte("bytes"))
 		req("PUT", imp+"?file=app/library/fl_0123456789abcdefghij", "bytes", with(ih, "X-Backd-Sha256", hex.EncodeToString(sum[:])), 204)
 		req("PUT", imp+"?file=app/library/fl_0123456789abcdefghij", "bytes", ih, 400)

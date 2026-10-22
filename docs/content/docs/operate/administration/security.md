@@ -219,6 +219,8 @@ What the numbers decided:
 - **An event carries the whole document as a read does,** with no field-level redaction, because reads have none: what a rule shows, the stream shows.
 - **Keys derive from the callback key.** Rotating `BACKD_CALLBACK_KEY` invalidates every outstanding token (clients reload), as it does callback tokens.
 
+- **Exports and imports are admin actions with their own limits.** Both need full admin access and, for sessions, a fresh re-authentication, and are audited with counts and never content. Authentication data (`--include auth`: password hashes, second factors, push devices) is a separate, explicit choice audited as `export.auth`. What the realm sealed with its secrets leaves only under a one-time export key shown once; the master key, secrets, sessions, tokens and the audit trail never leave. Recovery codes can't travel (users get new ones). On import the export key is used only on the operator's machine, and what it opens is sent to be sealed under the target realm's own key. A package holds the data it was made from: see [Exporting and importing](../export-import/).
+
 ## What you are responsible for
 
 - **TLS.** `backd` serves plain HTTP; terminate TLS in front of it.

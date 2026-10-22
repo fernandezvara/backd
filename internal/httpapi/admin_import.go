@@ -124,9 +124,16 @@ func (a *adminAPI) importBegin(w http.ResponseWriter, r *http.Request, realm str
 	case m.Flags.CSV:
 		refuse(w, r, "a CSV extract can't be imported: it is a flat, lossy view")
 		return
-	case m.Flags.Auth:
-		refuse(w, r, "this package holds authentication data, which this version of backd can't import yet")
+	}
+	if _, portable := usersOf(r).Store.(auth.PortableStore); m.Flags.Auth && !portable {
+		refuse(w, r, "this package holds authentication data and this realm's store can't import it")
 		return
+	}
+	for _, p := range m.Auth {
+		if !m.Flags.Auth || !slices.Contains(auth.PortableCollections, p.Name) || p.Part != exportpkg.AuthPart(p.Name) {
+			refuse(w, r, "the manifest names an authentication part this backd doesn't know: "+p.Part)
+			return
+		}
 	}
 	rl := a.reg.Realms[realm]
 	var missing []Detail
@@ -195,6 +202,10 @@ func (a *adminAPI) importChunk(w http.ResponseWriter, r *http.Request, realm, ph
 	}
 	if phase == "write" && l.imp.dryRun {
 		writeError(w, r, http.StatusConflict, codeExportLease, "this import is a dry run: it validates and writes nothing")
+		return
+	}
+	if coll, isAuth := strings.CutPrefix(strings.TrimSuffix(part, ".jsonl"), "_system/auth/"); isAuth && strings.HasSuffix(part, ".jsonl") && slices.Contains(auth.PortableCollections, coll) {
+		a.importAuthChunk(w, r, l, coll, phase == "write")
 		return
 	}
 	database, name, ok := strings.Cut(strings.TrimSuffix(part, ".jsonl"), "/")
@@ -618,4 +629,81 @@ func (a *adminAPI) finishImport(w http.ResponseWriter, r *http.Request) {
 	a.exports.release(realm, l)
 	usersOf(r).Audit(r.Context(), auth.AuditImportDone, "import:"+realm, details)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// importAuthChunk validates or writes a chunk of one collection of authentication data. The
+// documents are raw system documents: there is no schema of the app to check them against, so
+// the store says what it would do with each (the id, the unique values, the shape its
+// collection stores), and the users and organizations it holds are remembered as owners and
+// organizations that exist for the documents imported after them.
+func (a *adminAPI) importAuthChunk(w http.ResponseWriter, r *http.Request, l *exportLease, coll string, write bool) {
+	body, err := io.ReadAll(r.Body)
+	var tooBig *http.MaxBytesError
+	if errors.As(err, &tooBig) {
+		tooLarge(w, r, tooBig.Limit)
+		return
+	}
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, codeInvalidJSON, "could not read the request body")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), importWindow)
+	defer cancel()
+	var results []importDocResult
+	var docs []map[string]any
+	var at []int
+	for i, line := range bytes.Split(body, []byte{'\n'}) {
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		doc, err := exportpkg.DecodeDocument(line)
+		res := importDocResult{Line: i + 1}
+		if err != nil {
+			res.Outcome, res.Problems = outInvalid, []Detail{{Path: "", Reason: "not a document: " + err.Error()}}
+		} else {
+			res.ID, _ = doc["id"].(string)
+			docs, at = append(docs, doc), append(at, len(results))
+		}
+		results = append(results, res)
+	}
+	got, err := usersOf(r).ImportAuthDocs(ctx, coll, docs, l.imp.mode, write)
+	if err != nil {
+		adminError(w, r, err)
+		return
+	}
+	run := l.imp
+	for j, g := range got {
+		res := &results[at[j]]
+		res.Outcome = g.Outcome
+		if g.Reason != "" {
+			res.Problems = []Detail{{Path: "", Reason: g.Reason}}
+		}
+		if g.Outcome == auth.PortableInvalid && !write {
+			continue
+		}
+		switch coll {
+		case "users":
+			run.mu.Lock()
+			run.owners[g.ID] = true
+			run.mu.Unlock()
+		case "orgs":
+			run.mu.Lock()
+			run.orgs[g.ID] = true
+			run.mu.Unlock()
+		}
+	}
+	counts := map[string]int{}
+	problems := []importDocResult{}
+	for _, res := range results {
+		counts[res.Outcome]++
+		if (res.Outcome == outInvalid || res.Outcome == outConflict) && len(problems) < 200 {
+			problems = append(problems, res)
+		}
+	}
+	a.exports.mu.Lock()
+	for k, n := range counts {
+		l.outcomes["auth_"+k] += int64(n)
+	}
+	a.exports.mu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]any{"documents": len(results), "counts": counts, "problems": problems, "missing_owners": 0, "missing_orgs": 0})
 }

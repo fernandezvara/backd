@@ -20,6 +20,7 @@ import (
 
 	"github.com/fernandezvara/kli"
 
+	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/exportpkg"
 )
 
@@ -96,6 +97,22 @@ func importAction(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
+	var ek *auth.SecretCipher
+	if spec := str(c, "auth-key"); spec != "" {
+		text, err := readKeySource(spec, c.Getenv, stderr)
+		if err != nil {
+			return usageErr(fmt.Errorf("--auth-key: %w", err))
+		}
+		if ek, err = auth.ExportKey(text); err != nil {
+			return usageErr(fmt.Errorf("--auth-key: %w", err))
+		}
+		if m.AuthKey != "" && ek.KeyID != m.AuthKey {
+			return fmt.Errorf("--auth-key is not the key this package was exported with (its fingerprint is %s, the package's is %s)", ek.KeyID, m.AuthKey)
+		}
+	}
+	if m.Flags.Auth && ek == nil {
+		fmt.Fprintln(stderr, "note: no --auth-key: users, identities, organizations and teams are imported, but without second factors, push devices and Apple tokens (users enroll again at their next sign-in)")
+	}
 	t, err := targetOf(c, false)
 	if err != nil {
 		return err
@@ -128,7 +145,7 @@ func importAction(c *kli.CommandContext) error {
 	}
 
 	fmt.Fprintln(stderr, "validating every document against the target's configuration…")
-	val, err := runPhase(t, dir, m, "validate", lease, begun.MaxChunkBytes, stderr)
+	val, err := runPhase(t, dir, m, "validate", lease, begun.MaxChunkBytes, ek, stderr)
 	if err != nil {
 		return err
 	}
@@ -160,7 +177,7 @@ func importAction(c *kli.CommandContext) error {
 		return err
 	}
 	fmt.Fprintln(stderr, "writing documents…")
-	wr, err := runPhase(t, dir, m, "write", lease, begun.MaxChunkBytes, stderr)
+	wr, err := runPhase(t, dir, m, "write", lease, begun.MaxChunkBytes, ek, stderr)
 	if err != nil {
 		return err
 	}
@@ -214,8 +231,36 @@ func writeImportReport(path string, t *importTotals) error {
 }
 
 // runPhase sends every collection of the package, in chunks, to one phase of the import.
-func runPhase(t *target, dir string, m *exportpkg.Manifest, phase string, lease map[string]string, maxChunk int64, stderr io.Writer) (*importTotals, error) {
+func runPhase(t *target, dir string, m *exportpkg.Manifest, phase string, lease map[string]string, maxChunk int64, ek *auth.SecretCipher, stderr io.Writer) (*importTotals, error) {
 	totals := &importTotals{counts: map[string]int{}}
+	// Authentication data first, so the owners of the documents exist when they are checked.
+	for _, ap := range m.Auth {
+		f, err := os.Open(filepath.Join(dir, filepath.FromSlash(ap.Part)))
+		if err != nil {
+			return nil, err
+		}
+		err = eachChunk(f, maxChunk, func(chunk []byte, firstLine int) error {
+			chunk, err := prepareAuthChunk(ap.Name, chunk, ek)
+			if err != nil {
+				return fmt.Errorf("%s: %w", ap.Part, err)
+			}
+			if len(chunk) == 0 {
+				return nil
+			}
+			var ans importChunkAnswer
+			q := url.Values{"phase": {phase}, "part": {ap.Part}}
+			if err := t.send("POST", "_admin/import", q, bytes.NewReader(chunk), int64(len(chunk)), "application/x-ndjson", lease, &ans); err != nil {
+				return fmt.Errorf("%s: %w", ap.Part, err)
+			}
+			totals.add(ap.Part, firstLine-1, ans)
+			return nil
+		})
+		f.Close()
+		if err != nil {
+			return nil, err
+		}
+		fmt.Fprintf(stderr, "  %s done\n", ap.Part)
+	}
 	for _, db := range m.Databases {
 		for _, col := range db.Collections {
 			f, err := os.Open(filepath.Join(dir, filepath.FromSlash(col.Part)))
@@ -480,4 +525,29 @@ func verifyPackage(dir string, stderr io.Writer) (*exportpkg.Manifest, error) {
 	}
 	fmt.Fprintf(stderr, "package checked: %d files match their checksums\n", len(parts))
 	return m, nil
+}
+
+// prepareAuthChunk gets a chunk of authentication data ready for the server: with the export
+// key, the fields sealed under it are opened here and sent as plaintext for the target to seal
+// under its own key (the key never leaves this machine); without it, second factors and devices
+// are left out and the sealed fields of the rest removed.
+func prepareAuthChunk(collection string, chunk []byte, ek *auth.SecretCipher) ([]byte, error) {
+	var out bytes.Buffer
+	err := exportpkg.ReadDocuments(bytes.NewReader(chunk), func(_ int, doc map[string]any) error {
+		if ek != nil {
+			if err := auth.PortableToPlain(collection, doc, ek); err != nil {
+				return err
+			}
+		} else if !auth.PortableWithoutSecrets(collection, doc) {
+			return nil
+		}
+		line, err := exportpkg.EncodeDocument(doc)
+		if err != nil {
+			return err
+		}
+		out.Write(line)
+		out.WriteByte('\n')
+		return nil
+	})
+	return out.Bytes(), err
 }

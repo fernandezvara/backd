@@ -9,8 +9,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/auth/authtest"
 	"github.com/fernandezvara/backd/internal/exportpkg"
 )
 
@@ -241,4 +243,105 @@ func TestAdminExportExtract(t *testing.T) {
 		t.Errorf("csv plan: %v", p)
 	}
 	end(p["lease"].(string))
+}
+
+// Authentication data leaves with the whole realm only, and what the realm sealed is sealed
+// again under a one-time key the plan hands over once.
+func TestAdminExportAuthData(t *testing.T) {
+	f := newRulesFixture(t)
+	f.svc.Realm = "acme"
+	ctx := context.Background()
+	var err error
+	if f.svc.Cipher, err = auth.NewSecretCipher([]byte("01234567890123456789012345678901")); err != nil {
+		t.Fatal(err)
+	}
+	_, adminKey, err := f.svc.CreateAPIKey(ctx, "auth-export", auth.KeyOptions{Role: auth.KeyRoleAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mem := f.svc.Store.(*authtest.MemStore)
+	at := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	sealedSecret, _ := f.svc.SealToken("JBSWY3DPEHPK3PXP")
+	sealedDevice, _ := f.svc.SealToken("fcm-token")
+	mem.SeedPortable("users", map[string]any{"id": "u1", "email": "ada@example.com", "email_verified": true, "roles": []any{}, "disabled": false, "created_at": at, "updated_at": at})
+	mem.SeedPortable("identities", map[string]any{"id": "i1", "user_id": "u1", "provider": "password", "subject": "u1", "password_hash": "$argon2id$v=19$hash", "created_at": at, "updated_at": at})
+	mem.SeedPortable("mfa", map[string]any{"id": "u1", "secret": sealedSecret, "enabled_at": at, "last_step": int64(3), "recovery_codes": []any{"keyedhash1", "keyedhash2"}})
+	mem.SeedPortable("devices", map[string]any{"id": "d1", "user_id": "u1", "session_id": "s1", "platform": "ios", "token_hash": "h", "token": sealedDevice, "created_at": at, "last_seen": at})
+	mem.SeedPortable("devices", map[string]any{"id": "d2", "user_id": "u1", "session_id": "s1", "platform": "ios", "token_hash": "h2", "token": "ffffffffffffffff.bm9uY2U=.Y3Q=", "created_at": at, "last_seen": at}) // sealed under another key
+	url := admin + "/export"
+	key := bearer(adminKey)
+
+	for name, q := range map[string]string{
+		"with a database": "include=auth&database=app",
+		"with fields":     "include=auth&fields=title",
+		"with csv":        "include=auth&format=csv",
+		"another include": "include=sessions",
+	} {
+		_ = name
+		if rec, _ := f.doH(t, "GET", url+"?"+q, "", key); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: %d", name, rec.Code)
+		}
+	}
+	rec, plan := f.doH(t, "GET", url+"?include=auth", "", key)
+	ek, _ := plan["export_key"].(string)
+	m, _ := plan["manifest"].(map[string]any)
+	if rec.Code != http.StatusOK || len(ek) != 43 || m["auth_key_fingerprint"] == "" || m["flags"].(map[string]any)["auth"] != true || len(m["auth"].([]any)) != len(auth.PortableCollections) {
+		t.Fatalf("plan: %d %v", rec.Code, plan)
+	}
+	cipher, err := auth.ExportKey(ek)
+	if err != nil || cipher.KeyID != m["auth_key_fingerprint"] {
+		t.Fatalf("the fingerprint is not the key's: %v", err)
+	}
+	lease := plan["lease"].(string)
+	read := func(coll string) []map[string]any {
+		req := httptest.NewRequest("GET", url+"?part=_system/auth/"+coll+".jsonl", nil)
+		req.Header.Set("Authorization", "Bearer "+adminKey)
+		req.Header.Set(exportHeader, lease)
+		w := httptest.NewRecorder()
+		f.h.ServeHTTP(w, req)
+		var docs []map[string]any
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", coll, w.Code, w.Body)
+		}
+		if err := exportpkg.ReadDocuments(w.Body, func(_ int, d map[string]any) error { docs = append(docs, d); return nil }); err != nil {
+			t.Fatal(err)
+		}
+		return docs
+	}
+	if ids := read("identities"); len(ids) != 1 || ids[0]["password_hash"] != "$argon2id$v=19$hash" {
+		t.Errorf("identities: %v", ids)
+	}
+	mfa := read("mfa")
+	if len(mfa) != 1 || mfa[0]["recovery_codes"] == nil || len(mfa[0]["recovery_codes"].([]any)) != 0 {
+		t.Fatalf("mfa: %v", mfa)
+	}
+	if plain, err := auth.OpenWith(cipher, mfa[0]["secret"].(string)); err != nil || plain != "JBSWY3DPEHPK3PXP" {
+		t.Errorf("the secret under the export key: %q %v", plain, err)
+	}
+	if _, err := f.svc.OpenToken(mfa[0]["secret"].(string)); err == nil {
+		t.Error("the secret is still sealed under the realm's key")
+	}
+	// A device whose token the realm can't open stays behind; the other loses its session.
+	devs := read("devices")
+	if len(devs) != 1 || devs[0]["id"] != "d1" || devs[0]["session_id"] != "" {
+		t.Errorf("devices: %v", devs)
+	}
+	if rec, _ := f.doH(t, "GET", url+"?part=_system/auth/sessions.jsonl", "", map[string]string{"Authorization": "Bearer " + adminKey, exportHeader: lease}); rec.Code != http.StatusNotFound {
+		t.Errorf("sessions are not exportable: %d", rec.Code)
+	}
+	f.doH(t, "DELETE", url+"?complete=true", "", map[string]string{"Authorization": "Bearer " + adminKey, exportHeader: lease})
+
+	// Audited as its own event, with the key's fingerprint and never the key.
+	entries, _, err := f.svc.AuditTrail(ctx, auth.AuditFilter{Action: auth.AuditExportAuth, Limit: 5})
+	if err != nil || len(entries) != 1 || entries[0].Details["key_fingerprint"] != cipher.KeyID {
+		t.Fatalf("audit: %v %v", entries, err)
+	}
+	if strings.Contains(fmt.Sprint(entries[0].Details), ek) {
+		t.Error("the audit record holds the export key")
+	}
+	// A plain export carries none of it.
+	_, plan = f.doH(t, "GET", url, "", key)
+	if plan["export_key"] != nil || plan["manifest"].(map[string]any)["flags"].(map[string]any)["auth"] != false || plan["manifest"].(map[string]any)["auth"] != nil {
+		t.Errorf("a plain plan: %v", plan)
+	}
 }

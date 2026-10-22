@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -10,6 +11,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/exportpkg"
 )
 
 // importServer is a backd that takes an import and records what it was sent.
@@ -193,5 +197,151 @@ func TestEachChunk(t *testing.T) {
 	want := []string{"aaaa\nbbbb\n", "cc\n", "dddddddddddd\n", "e\n"}
 	if strings.Join(chunks, "|") != strings.Join(want, "|") || firsts[0] != 1 || firsts[1] != 3 || firsts[2] != 4 || firsts[3] != 5 {
 		t.Errorf("chunks %q firsts %v", chunks, firsts)
+	}
+}
+
+// authPackage writes a package of authentication data by hand: a user, an identity with an
+// Apple token and a second factor, sealed under an export key the test returns.
+func authPackage(t *testing.T) (dir, keyText string) {
+	t.Helper()
+	keyText = "a-one-time-export-key-of-43-characters-abcd"
+	ek, err := auth.ExportKey(keyText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seal := func(v string) string {
+		s, err := auth.SealWith(ek, v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	dir = t.TempDir()
+	m := &exportpkg.Manifest{Format: 1, Realm: "acme", AuthKey: ek.KeyID, Flags: exportpkg.Flags{Auth: true}, Checksums: map[string]string{}}
+	docs := map[string][]map[string]any{
+		"users":      {{"id": "u1", "email": "ada@example.com"}},
+		"identities": {{"id": "i1", "user_id": "u1", "provider": "apple", "apple_refresh_token": seal("apple-refresh")}},
+		"mfa":        {{"id": "u1", "secret": seal("JBSWY3DPEHPK3PXP"), "recovery_codes": []any{}}},
+		"devices":    {{"id": "d1", "user_id": "u1", "token": seal("fcm"), "session_id": ""}},
+	}
+	for _, coll := range auth.PortableCollections {
+		var b bytes.Buffer
+		for _, d := range docs[coll] {
+			line, _ := exportpkg.EncodeDocument(d)
+			b.Write(line)
+			b.WriteByte('\n')
+		}
+		part := exportpkg.AuthPart(coll)
+		path := filepath.Join(dir, filepath.FromSlash(part))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, b.Bytes(), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		h := exportpkg.NewHasher()
+		h.Write(b.Bytes())
+		m.Checksums[part] = h.Sum()
+		m.Auth = append(m.Auth, exportpkg.Collection{Name: coll, Part: part, Documents: int64(len(docs[coll]))})
+	}
+	data, _ := m.Marshal()
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return dir, keyText
+}
+
+func TestImportAuthDataOpensSecretsLocally(t *testing.T) {
+	dir, keyText := authPackage(t)
+	s := &importServer{}
+	srv := httptest.NewServer(s.handler())
+	defer srv.Close()
+	c := &cliEnv{t: t, env: map[string]string{"BACKD_CREDENTIALS": filepath.Join(t.TempDir(), "credentials"), "BACKD_API_KEY": "bdk_x", "EXPORT_KEY": keyText}}
+	base := []string{"import", "--realm", "acme", "--url", srv.URL, "--from", dir}
+	// Chunks are big enough here: one request a part.
+	s.begin = nil
+
+	// With the key, the sealed fields reach the server as plaintext, and the key never does.
+	c.expect(0, "imported", "", append(base, "--auth-key", "env:EXPORT_KEY")...)
+	all := ""
+	for _, b := range s.bodies {
+		all += b
+	}
+	if !strings.Contains(s.bodies["write:_system/auth/mfa.jsonl"], `"secret":{"$plain":"JBSWY3DPEHPK3PXP"}`) || !strings.Contains(s.bodies["write:_system/auth/devices.jsonl"], `"$plain":"fcm"`) || !strings.Contains(s.bodies["write:_system/auth/identities.jsonl"], `"$plain":"apple-refresh"`) {
+		t.Errorf("bodies: %v", s.bodies)
+	}
+	if strings.Contains(all, keyText) {
+		t.Error("the export key was sent")
+	}
+	if !strings.HasPrefix(strings.Join(s.calls, " "), "begin validate:_system/auth/users.jsonl") {
+		t.Errorf("authentication data goes first: %v", s.calls)
+	}
+
+	// Without it, second factors and devices stay out and the Apple token is dropped.
+	s.calls, s.bodies = nil, nil
+	c.expect(0, "without second factors", "", base...)
+	if _, sent := s.bodies["write:_system/auth/mfa.jsonl"]; sent {
+		t.Errorf("mfa was sent: %v", s.bodies)
+	}
+	if _, sent := s.bodies["write:_system/auth/devices.jsonl"]; sent {
+		t.Error("devices were sent")
+	}
+	if b := s.bodies["write:_system/auth/identities.jsonl"]; !strings.Contains(b, `"provider":"apple"`) || strings.Contains(b, "apple_refresh_token") {
+		t.Errorf("identities: %s", b)
+	}
+
+	// A key that isn't the package's, or isn't a key, is refused before the server hears of it.
+	s.calls = nil
+	c.expect(1, "not the key this package was exported with", "", append(base, "--auth-key", "key:another-one-time-export-key-of-43-chars-xxxx")...)
+	c.expect(2, "--auth-key", "", append(base, "--auth-key", "env:NOT_SET")...)
+	c.expect(2, "--auth-key", "", append(base, "--auth-key", "nonsense")...)
+	if len(s.calls) != 0 {
+		t.Errorf("the server was called: %v", s.calls)
+	}
+}
+
+func TestExportAuthDataShowsTheKeyOnce(t *testing.T) {
+	const keyText = "a-one-time-export-key-of-43-characters-abcd"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		switch {
+		case r.Method == "DELETE":
+			w.WriteHeader(http.StatusNoContent)
+		case q.Get("part") == "_system/auth/users.jsonl":
+			_, _ = io.WriteString(w, "{\"id\":\"u1\",\"email\":\"ada@example.com\"}\n")
+		case q.Get("part") != "":
+		default:
+			if q.Get("include") != "auth" {
+				t.Errorf("include not sent: %v", q)
+			}
+			_, _ = io.WriteString(w, `{"lease":"L","export_key":"`+keyText+`","manifest":{"format":1,"realm":"acme","flags":{"auth":true},"auth_key_fingerprint":"fp","databases":[],"auth":[{"name":"users","part":"_system/auth/users.jsonl"}],"encrypted_fields":[]},"file_fields":{}}`)
+		}
+	}))
+	defer srv.Close()
+	c := &cliEnv{t: t, env: map[string]string{"BACKD_CREDENTIALS": filepath.Join(t.TempDir(), "credentials"), "BACKD_API_KEY": "bdk_x"}}
+	out := filepath.Join(t.TempDir(), "pkg")
+
+	c.expect(2, "whole realm", "", "export", "--realm", "acme", "--url", srv.URL, "--out", out, "--include", "auth", "--db", "app")
+	c.expect(2, "--include", "", "export", "--realm", "acme", "--url", srv.URL, "--out", out, "--include", "sessions")
+	c.expect(2, "needs --include auth", "", "export", "--realm", "acme", "--url", srv.URL, "--out", out, "--auth-key-out", "k")
+	got := c.expect(0, "EXPORT KEY (shown once", "", "export", "--realm", "acme", "--url", srv.URL, "--out", out, "--include", "auth")
+	_ = got
+	data, _ := os.ReadFile(filepath.Join(out, "manifest.json"))
+	m, err := exportpkg.ParseManifest(data)
+	if err != nil || !m.Flags.Auth || len(m.Auth) != 1 || m.Auth[0].Documents != 1 || m.Checksums["_system/auth/users.jsonl"] == "" || m.AuthKey != "fp" {
+		t.Errorf("manifest: %+v %v", m, err)
+	}
+	// Into a file instead: readable only by the operator, and not printed.
+	keyFile := filepath.Join(t.TempDir(), "export.key")
+	out2 := filepath.Join(t.TempDir(), "pkg")
+	code, _, errOut := c.run("", "export", "--realm", "acme", "--url", srv.URL, "--out", out2, "--include", "auth", "--auth-key-out", keyFile)
+	if code != 0 || strings.Contains(errOut, keyText) {
+		t.Errorf("key file: %d %s", code, errOut)
+	}
+	if b, err := os.ReadFile(keyFile); err != nil || strings.TrimSpace(string(b)) != keyText {
+		t.Errorf("key file: %q %v", b, err)
+	}
+	if st, _ := os.Stat(keyFile); st.Mode().Perm() != 0o600 {
+		t.Errorf("key file mode: %v", st.Mode())
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"io"
@@ -54,8 +55,10 @@ type exportLease struct {
 	fields []string
 	where  string
 	// An import's options and what it has done, by outcome.
-	imp      *importRun
-	outcomes map[string]int64
+	imp *importRun
+	// exportKey seals the realm-sealed fields of authentication data (--include auth).
+	exportKey *auth.SecretCipher
+	outcomes  map[string]int64
 	// What this export has streamed, for the audit record of its end.
 	documents map[string]int64
 	files     int64
@@ -139,6 +142,9 @@ type exportPlan struct {
 	ExpiresIn  int                 `json:"expires_in"`
 	Manifest   *exportpkg.Manifest `json:"manifest"`
 	FileFields map[string][]string `json:"file_fields"`
+	// ExportKey seals the realm-sealed fields of authentication data. It is in this answer only:
+	// the operator keeps it, and backd never shows it again.
+	ExportKey string `json:"export_key,omitempty"`
 }
 
 // export answers GET /v1/{realm}/_admin/export. Without `part` or `file` it takes the realm's
@@ -191,6 +197,25 @@ func (a *adminAPI) exportPlan(w http.ResponseWriter, r *http.Request, realm stri
 		}
 	}
 	where := q.Get("where")
+	includeAuth := false
+	for _, inc := range strings.Split(q.Get("include"), ",") {
+		switch strings.TrimSpace(inc) {
+		case "":
+		case "auth":
+			includeAuth = true
+		default:
+			writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "include", Reason: "must be auth"})
+			return
+		}
+	}
+	if includeAuth && (database != "" || len(fields) > 0 || where != "" || csvOut) {
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "include", Reason: "authentication data is exported with the whole realm: not with a database, collections, fields, a filter or CSV"})
+		return
+	}
+	if _, portable := usersOf(r).Store.(auth.PortableStore); includeAuth && !portable {
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "include", Reason: "this realm's store can't export authentication data"})
+		return
+	}
 	rl := a.reg.Realms[realm]
 	if rl == nil || (database != "" && rl.Databases[database] == nil) {
 		writeError(w, r, http.StatusNotFound, codeNotFound, "no such database in this realm")
@@ -212,6 +237,19 @@ func (a *adminAPI) exportPlan(w http.ResponseWriter, r *http.Request, realm stri
 		Operator: caller.Actor(), Fingerprint: a.fingerprint,
 		Flags:     exportpkg.Flags{NoFiles: noFiles || !hasStorage, Partial: len(fields) > 0, CSV: csvOut},
 		Encrypted: []exportpkg.EncryptedField{}, Checksums: map[string]string{},
+	}
+	m.Flags.Auth = includeAuth
+	var exportKey string
+	var keyCipher *auth.SecretCipher
+	if includeAuth {
+		raw := make([]byte, 32)
+		_, _ = rand.Read(raw)
+		exportKey = base64.RawURLEncoding.EncodeToString(raw)
+		keyCipher, _ = auth.ExportKey(exportKey)
+		m.AuthKey = keyCipher.KeyID
+		for _, name := range auth.PortableCollections {
+			m.Auth = append(m.Auth, exportpkg.Collection{Name: name, Part: exportpkg.AuthPart(name)})
+		}
 	}
 	fileFields := map[string][]string{}
 	scope := realm
@@ -247,7 +285,7 @@ func (a *adminAPI) exportPlan(w http.ResponseWriter, r *http.Request, realm stri
 	id := make([]byte, 16)
 	_, _ = rand.Read(id)
 	now := time.Now()
-	l := &exportLease{kind: leaseExport, id: hex.EncodeToString(id), actor: caller.Actor(), expires: now.Add(exportLeaseTTL), scope: scope, flags: m.Flags, fields: fields, where: where}
+	l := &exportLease{kind: leaseExport, id: hex.EncodeToString(id), actor: caller.Actor(), expires: now.Add(exportLeaseTTL), scope: scope, flags: m.Flags, fields: fields, where: where, exportKey: keyCipher}
 	if !a.exports.take(realm, caller.Actor(), r.Header.Get(exportHeader), l, now) {
 		writeError(w, r, http.StatusConflict, codeExportRunning, "an export of this realm is already running; wait for it to finish (a silent one is released after ten minutes)")
 		return
@@ -256,7 +294,10 @@ func (a *adminAPI) exportPlan(w http.ResponseWriter, r *http.Request, realm stri
 		"database": database, "collections": len(names), "files": !m.Flags.NoFiles, "partial": m.Flags.Partial,
 		"fields": len(fields), "filtered": where != "", "csv": csvOut,
 	})
-	writeJSON(w, http.StatusOK, exportPlan{Lease: l.id, ExpiresIn: int(exportLeaseTTL.Seconds()), Manifest: m, FileFields: fileFields})
+	if includeAuth {
+		usersOf(r).Audit(r.Context(), auth.AuditExportAuth, "export:"+scope, map[string]any{"collections": len(m.Auth), "key_fingerprint": m.AuthKey})
+	}
+	writeJSON(w, http.StatusOK, exportPlan{Lease: l.id, ExpiresIn: int(exportLeaseTTL.Seconds()), Manifest: m, FileFields: fileFields, ExportKey: exportKey})
 }
 
 // checkExtract validates the options of a reporting extract: --where needs exactly one
@@ -327,6 +368,10 @@ func (a *adminAPI) leaseKind(w http.ResponseWriter, r *http.Request, realm, kind
 func (a *adminAPI) exportPart(w http.ResponseWriter, r *http.Request, realm, part string) {
 	l := a.leaseOf(w, r, realm)
 	if l == nil {
+		return
+	}
+	if coll, isAuth := strings.CutPrefix(strings.TrimSuffix(part, ".jsonl"), "_system/auth/"); isAuth && strings.HasSuffix(part, ".jsonl") {
+		a.exportAuthPart(w, r, l, coll)
 		return
 	}
 	database, name, ok := strings.Cut(strings.TrimSuffix(part, ".jsonl"), "/")
@@ -489,4 +534,62 @@ func (a *adminAPI) finishExport(w http.ResponseWriter, r *http.Request) {
 	a.exports.release(realm, l)
 	usersOf(r).Audit(r.Context(), auth.AuditExportDone, "export:"+l.scope, details)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// exportAuthPart streams a collection of authentication data. Fields sealed with the realm's
+// secrets are opened here and sealed again under the export's one-time key; the rest is sent
+// as stored (password hashes included, which is why this needs --include auth).
+func (a *adminAPI) exportAuthPart(w http.ResponseWriter, r *http.Request, l *exportLease, coll string) {
+	if l.exportKey == nil || !slices.Contains(auth.PortableCollections, coll) {
+		writeError(w, r, http.StatusNotFound, codeNotFound, "no such part in this package")
+		return
+	}
+	svc := usersOf(r)
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	rc := http.NewResponseController(w)
+	bw := bufio.NewWriterSize(w, 64<<10)
+	var docs, size, unavailable int64
+	defer func() {
+		a.exports.count(l, "auth/"+coll, docs, 0, size)
+		a.exports.mu.Lock()
+		if l.outcomes == nil {
+			l.outcomes = map[string]int64{}
+		}
+		l.outcomes["auth_unavailable"] += unavailable
+		a.exports.mu.Unlock()
+	}()
+	after := ""
+	for {
+		_ = rc.SetWriteDeadline(time.Now().Add(exportWriteWindow))
+		ctx, cancel := context.WithTimeout(r.Context(), a.fns.docs.opTimeout)
+		batch, lost, last, read, err := svc.ExportAuthDocs(ctx, coll, after, exportBatch, l.exportKey)
+		cancel()
+		if err != nil {
+			logger(r.Context()).Error("export of authentication data failed", "error", err, "collection", coll)
+			if docs == 0 {
+				adminError(w, r, err)
+				return
+			}
+			panic(http.ErrAbortHandler)
+		}
+		unavailable += int64(lost)
+		for _, doc := range batch {
+			line, err := exportpkg.EncodeDocument(doc)
+			if err != nil {
+				panic(http.ErrAbortHandler)
+			}
+			_, _ = bw.Write(line)
+			_ = bw.WriteByte('\n')
+			size += int64(len(line)) + 1
+			docs++
+		}
+		if err := bw.Flush(); err != nil {
+			return
+		}
+		_ = rc.Flush()
+		after = last
+		if read < exportBatch {
+			return
+		}
+	}
 }

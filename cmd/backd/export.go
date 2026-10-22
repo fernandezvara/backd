@@ -38,6 +38,7 @@ type exportPlan struct {
 	Lease      string              `json:"lease"`
 	Manifest   *exportpkg.Manifest `json:"manifest"`
 	FileFields map[string][]string `json:"file_fields"`
+	ExportKey  string              `json:"export_key"`
 }
 
 // exportAction handles `backd export`: it takes the realm's export from the running backd part
@@ -61,6 +62,16 @@ func exportAction(c *kli.CommandContext) error {
 		return usageErr(errors.New("--where needs --db and exactly one --collection"))
 	}
 	csvOut := format == "csv"
+	include := str(c, "include")
+	if include != "" && include != "auth" {
+		return usageErr(fmt.Errorf("--include: want auth, got %q", include))
+	}
+	if include == "auth" && (database != "" || len(fields) > 0 || csvOut) {
+		return usageErr(errors.New("--include auth exports the whole realm: not with --db, --collection, --fields, --where or --format csv"))
+	}
+	if keyOut := str(c, "auth-key-out"); keyOut != "" && include != "auth" {
+		return usageErr(errors.New("--auth-key-out needs --include auth"))
+	}
 	if csvOut && flag(c, "no-files") {
 		return usageErr(errors.New("--no-files has no meaning with --format csv: a CSV extract never holds files"))
 	}
@@ -99,6 +110,9 @@ func exportAction(c *kli.CommandContext) error {
 	}
 	if csvOut {
 		q.Set("format", "csv")
+	}
+	if include != "" {
+		q.Set("include", include)
 	}
 	headers := map[string]string{}
 	for k, v := range proof {
@@ -164,6 +178,18 @@ func exportAction(c *kli.CommandContext) error {
 			}
 		}
 	}
+	// Authentication data: fetched whole every time (never resumed), because the export key that
+	// seals its secrets belongs to this run alone.
+	for i := range m.Auth {
+		part := m.Auth[i].Part
+		fmt.Fprintf(stderr, "%s: exporting…\n", part)
+		got, err := fetchPart(t, out, part, url.Values{"part": {part}}, lease, true)
+		if err != nil {
+			return err
+		}
+		m.Auth[i].Documents = got.Documents
+		m.Checksums[part] = got.Checksum
+	}
 	if !csvOut {
 		// The wrapped keys of encrypted fields; empty until a realm has encrypted fields.
 		if err := os.MkdirAll(filepath.Join(out, "_system"), 0o700); err != nil {
@@ -206,6 +232,16 @@ func exportAction(c *kli.CommandContext) error {
 	_ = os.Remove(filepath.Join(out, progressName))
 	if _, err := t.callHeaders("DELETE", "_admin/export", url.Values{"complete": {"true"}}, nil, nil, lease); err != nil {
 		fmt.Fprintf(stderr, "the package is complete, but the server wasn't told: %v\n", err)
+	}
+	if plan.ExportKey != "" {
+		if keyOut := str(c, "auth-key-out"); keyOut != "" {
+			if err := os.WriteFile(keyOut, []byte(plan.ExportKey+"\n"), 0o600); err != nil {
+				return fmt.Errorf("the package is complete, but its export key could not be written (%v): export again", err)
+			}
+			fmt.Fprintf(stderr, "the export key was written to %s\n", keyOut)
+		} else {
+			fmt.Fprintf(stderr, "\nEXPORT KEY (shown once; backd keeps no copy): %s\nThe package holds password hashes. Second factors and push devices in it are sealed under this key: import with\n--auth-key to carry them, or users arrive without them. Keep it apart from the package.\n\n", plan.ExportKey)
+		}
 	}
 	result := out
 	if archive {
