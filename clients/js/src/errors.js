@@ -179,6 +179,12 @@ export class ExpandTooLargeError extends ValidationError {}
  */
 export class InvalidAggregateError extends ValidationError {}
 
+/**
+ * 400 `field_encrypted`: a `where` or `orderBy` names an encrypted field, or asks more of one than
+ * equality (`=` and `$in`, on a field with `search: equality`). The `details` name the field.
+ */
+export class FieldEncryptedError extends ValidationError {}
+
 /** 400 `aggregate_not_enabled`: the collection declares no `aggregate:` in its collection.yaml. */
 export class AggregateNotEnabledError extends ValidationError {}
 
@@ -308,6 +314,8 @@ function typedClass(code, fallback) {
       return IndexBuildingError
     case 'invalid_expand':
       return InvalidExpandError
+    case 'field_encrypted':
+      return FieldEncryptedError
     case 'expand_too_large':
       return ExpandTooLargeError
   }

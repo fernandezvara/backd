@@ -237,7 +237,8 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 		pending.attached(r, d, c, doc["id"].(string), docOwner(doc))
 	}
 	w.Header().Set("Location", r.URL.JoinPath(url.PathEscape(doc["id"].(string))).Path)
-	out := render(doc)
+	shown, _ := d.revealerFor(r, c).view(doc)
+	out := render(shown)
 	d.auditData(r, auth.AuditDataCreate, c, doc["id"].(string))
 	claim.complete(r.Context(), http.StatusCreated, out)
 	w.Header().Set("ETag", etag(version(doc)))
@@ -263,16 +264,19 @@ func (d *documents) get(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	rv := d.revealerFor(r, c)
+	shown, redacted := rv.view(doc)
+	rv.flush()
 	var out map[string]any
 	if plan != nil {
-		out = render(doc)
+		out = render(shown)
 		if !d.expandInto(w, r, plan, []storage.Document{doc}, []map[string]any{out}) {
 			return
 		}
 	}
 	if r.URL.Query().Get("file_links") == "true" && len(c.Files) > 0 {
 		if out == nil {
-			out = render(doc)
+			out = render(shown)
 		}
 		if !d.addFileLinks(w, r, c, []map[string]any{out}) {
 			return
@@ -293,13 +297,15 @@ func (d *documents) get(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, out)
 		return
 	}
-	tag := docETag(version(doc), "") // nothing is redacted per caller yet
+	// What the caller may not see of the encrypted fields is part of the tag, so a caller whose
+	// reveal outcome changes never gets a stale 304; If-Match still compares the version only.
+	tag := docETag(version(doc), representationTag(redacted))
 	readHeaders(w, tag)
 	d.publicCache(w, r, c, view)
 	if notModified(w, r, tag) {
 		return
 	}
-	writeJSON(w, http.StatusOK, render(doc))
+	writeJSON(w, http.StatusOK, render(shown))
 }
 
 type listResponse struct {
@@ -347,9 +353,16 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := listResponse{Items: make([]map[string]any, 0, len(page.Items)), Limit: q.Limit, Skip: q.Skip, HasMore: page.HasMore, Total: page.Total}
+	rv := d.revealerFor(r, c)
+	var hidden []string
 	for _, doc := range page.Items {
-		resp.Items = append(resp.Items, render(doc))
+		shown, red := rv.view(doc)
+		for _, p := range red {
+			hidden = append(hidden, doc["id"].(string)+":"+p)
+		}
+		resp.Items = append(resp.Items, render(shown))
 	}
+	rv.flush()
 	plan, ok := d.expandPlanOf(w, r, c)
 	if !ok {
 		return
@@ -379,7 +392,7 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The query and the rules have run: the validator covers what this caller sees.
-	tag := listETag(page.Items, "", resp.HasMore, resp.NextCursor, resp.Total) // nothing is redacted per caller yet
+	tag := listETag(page.Items, representationTag(hidden), resp.HasMore, resp.NextCursor, resp.Total)
 	readHeaders(w, tag)
 	d.publicCache(w, r, c, view)
 	if notModified(w, r, tag) {
@@ -603,7 +616,7 @@ func (d *documents) write(w http.ResponseWriter, r *http.Request, c *registry.Co
 				pending.attached(r, d, c, fields["id"].(string), docOwner(current))
 			}
 			d.auditData(r, auth.AuditDataUpdate, c, fields["id"].(string))
-			writeDocument(w, http.StatusOK, fields)
+			d.writeViewed(w, r, c, http.StatusOK, fields)
 			return
 		case errors.Is(err, storage.ErrVersionMismatch) && cond.specific():
 			writeError(w, r, http.StatusPreconditionFailed, codeVersionMismatch, "document was modified concurrently; If-Match no longer matches")
@@ -1054,7 +1067,8 @@ func (d *documents) restore(w http.ResponseWriter, r *http.Request) {
 		case err == nil:
 			d.auditData(r, auth.AuditDataRestore, c, id)
 			w.Header().Set("ETag", etag(version(restored)))
-			writeJSON(w, http.StatusOK, render(restored))
+			shown, _ := d.revealerFor(r, c).view(restored)
+			writeJSON(w, http.StatusOK, render(shown))
 			return
 		case errors.Is(err, storage.ErrVersionMismatch) && cond.specific():
 			writeError(w, r, http.StatusPreconditionFailed, codeVersionMismatch, "document was modified concurrently; If-Match no longer matches")

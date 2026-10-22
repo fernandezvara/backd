@@ -37,6 +37,10 @@ const (
 	// Config is the read rule of a path of the realm's app configuration
 	// (app-config/rules.yaml): it sees `user` and `now`, with no document.
 	Config Op = "config"
+	// Reveal is the `reveal:` of an encrypted field: whether a caller who may read a document
+	// sees the field's value or null. It sees `document` (the whole plaintext) and `user`, and is
+	// evaluated per document, in memory.
+	Reveal Op = "reveal"
 	// Trigger is the `when:` of a collection's trigger (collection.yaml): it sees the
 	// document before and after a change, `changed()`, `now` (the change's time) and the
 	// app configuration — and no caller, because an event has none.
@@ -292,6 +296,12 @@ func (r *Rule) AlwaysTrue() bool {
 func (r *Rule) AlwaysFalse() bool {
 	b, ok := r.tree.(*ast.BoolNode)
 	return ok && !b.Value
+}
+
+// CompileReveal compiles and checks the `reveal:` of an encrypted field. It may use `document`,
+// `user`, `now`, hasRole and the organization helpers like an update rule, but not `data`.
+func CompileReveal(src string, schema Schema) (*Rule, error) {
+	return compile(Reveal, string(Reveal), src, schema)
 }
 
 // CompileTrigger compiles and checks the `when:` of a trigger. It may use `document` (after

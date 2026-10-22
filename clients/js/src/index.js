@@ -25,6 +25,7 @@ export {
   OrgRoleRequiresMFAError,
   NotTeamMemberError,
   InvalidExpandError,
+  FieldEncryptedError,
   ExpandTooLargeError,
   InvalidAggregateError,
   AggregateNotEnabledError,

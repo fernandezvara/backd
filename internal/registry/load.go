@@ -434,6 +434,9 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 		return nil, err
 	}
 	coll.addBlindIndexes()
+	if err := loadReveal(coll, settings, filepath.Join(dir, CollectionFile)); err != nil {
+		return nil, err
+	}
 	if coll.SoftDelete == nil && coll.Rules != nil {
 		for _, op := range []rules.Op{rules.Restore, rules.Purge} {
 			if coll.Rules.For(op) != nil {

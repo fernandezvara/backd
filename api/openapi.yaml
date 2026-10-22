@@ -10295,6 +10295,14 @@ components:
         purge_at:
           allOf: [{ $ref: "#/components/schemas/Timestamp" }]
           description: When a soft-deleted document is removed for good (`soft_delete.retention`).
+        redacted:
+          type: array
+          items: { type: string }
+          description: |
+            The encrypted fields (dot paths) the caller may not see, by the field's `reveal` rule:
+            they come back `null`, so a `null` of one of these is hidden, not empty. Absent when
+            nothing is hidden. A conditional GET's ETag carries a suffix (`"12.r3f9a1c2b"`) when it
+            is present.
         chain:
           type: object
           additionalProperties: false

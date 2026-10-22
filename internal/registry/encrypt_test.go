@@ -112,7 +112,7 @@ func TestEncryptedFieldsStillLetOtherRulesReadThem(t *testing.T) {
 func encryptTreeFiles2(t *testing.T, yaml string) (*Registry, error) {
 	t.Helper()
 	return Load(writeTree(t, map[string]string{
-		"clinic/realm.yaml":                    "signup: open\n",
+		"clinic/realm.yaml":                    "signup: open\nroles:\n  staff: {admin: true}\n",
 		"clinic/main/patients/schema.json":     patientsSchema,
 		"clinic/main/patients/collection.yaml": yaml,
 	}))
@@ -167,6 +167,35 @@ func TestSearchOptionsOfEncryptedFieldsAreChecked(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := encryptTreeFiles2(t, "fields:\n  tax_id:\n    encrypt: "+tc.cfg+"\n")
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("err = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestRevealRulesAreCompiledAgainstTheCollection(t *testing.T) {
+	cfg := func(reveal string) string {
+		return "fields:\n  tax_id:\n    encrypt: {key: TAX}\n    reveal: " + reveal + "\n"
+	}
+	reg, err := encryptTreeFiles2(t, cfg(`user != nil && (hasRole(user, 'staff') || document._meta.owner == user.id)`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := reg.Realms["clinic"].Databases["main"].Collections["patients"]
+	if f, _ := c.EncryptedAt("tax_id"); f.Reveal == nil || !strings.Contains(f.RevealSource, "hasRole") || len(c.Revealing()) != 1 {
+		t.Errorf("tax_id = %+v", f)
+	}
+	for name, tc := range map[string]struct{ yaml, want string }{
+		"unknown field":   {cfg(`document.nope == 1`), "unknown field document.nope"},
+		"data":            {cfg(`data.notes != nil`), "`data` is only available on create and update"},
+		"unknown role":    {cfg(`hasRole(user, 'wizard')`), "wizard"},
+		"unguarded":       {cfg(`user.id == document._meta.owner`), "user"},
+		"syntax":          {cfg(`user !=`), "reveal"},
+		"without encrypt": {"fields:\n  notes:\n    reveal: user != nil\n", "declares nothing"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := encryptTreeFiles2(t, tc.yaml)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err = %v, want %q", err, tc.want)
 			}

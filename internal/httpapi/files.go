@@ -324,7 +324,7 @@ func (d *documents) attachFile(w http.ResponseWriter, r *http.Request, j attachJ
 			}
 			d.auditData(r, auth.AuditDataUpdate, c, docID)
 			w.Header().Set("Location", j.location)
-			writeDocument(w, http.StatusCreated, fields)
+			d.writeViewed(w, r, c, http.StatusCreated, fields)
 			return
 		case errors.Is(err, storage.ErrVersionMismatch) && cond.specific():
 			abandon()
@@ -427,7 +427,7 @@ func (d *documents) removeFiles(w http.ResponseWriter, r *http.Request, fileID s
 			}
 			d.filesGone(r.Context(), c, docOwner(current), removed, reason)
 			d.auditData(r, auth.AuditDataUpdate, c, docID)
-			writeDocument(w, http.StatusOK, fields)
+			d.writeViewed(w, r, c, http.StatusOK, fields)
 			return
 		case errors.Is(err, storage.ErrVersionMismatch) && cond.specific():
 			writeError(w, r, http.StatusPreconditionFailed, codeVersionMismatch, "document was modified concurrently; If-Match no longer matches")

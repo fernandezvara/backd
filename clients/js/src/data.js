@@ -22,6 +22,7 @@ import { Job } from './functions.js'
  * @property {string} [deleted_at] RFC3339 timestamp; only on soft-deleted documents (collections with `soft_delete`).
  * @property {string} [deleted_by] Who deleted it, like `updated_by`.
  * @property {string} [purge_at]   RFC3339 timestamp: when it is removed for good (`soft_delete.retention`).
+ * @property {string[]} [redacted]  The encrypted fields the caller may not see (their `reveal` rule said no): they come back `null`, and a `null` here is hidden, not empty. Absent when nothing is hidden.
  * @property {{ root: string, depth: number }} [chain]  Set on a write made by a trigger run: where it sits in a chain of such writes.
  */
 

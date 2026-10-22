@@ -45,7 +45,7 @@ func check(r *Rule, schema Schema) error {
 					add("`document` is not available on create (use `data`)")
 				}
 			case "data":
-				if r.Op == Read || r.Op == Delete || r.Op == Restore || r.Op == Purge {
+				if r.Op == Read || r.Op == Delete || r.Op == Restore || r.Op == Purge || r.Op == Reveal {
 					add("`data` is only available on create and update")
 				}
 			case "changed":

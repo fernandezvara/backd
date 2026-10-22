@@ -9,7 +9,9 @@ import (
 	"slices"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
+
+	"github.com/fernandezvara/backd/internal/rules"
 )
 
 // EncryptedField is a field of a collection stored encrypted (collection.yaml's
@@ -26,6 +28,10 @@ type EncryptedField struct {
 	Normalize []string
 	// Unique makes the blind index unique: two documents can't hold the same value.
 	Unique bool
+	// Reveal decides, per document, whether a caller who may read it sees the field; nil: every
+	// reader does. RevealSource is its text.
+	Reveal       *rules.Rule
+	RevealSource string
 }
 
 // SearchEquality is the only kind of search an encrypted field offers.
@@ -68,6 +74,8 @@ func (c *Collection) EncryptedAt(path string) (EncryptedField, bool) {
 // fieldDoc is one entry of collection.yaml's fields: here it is only allowed; loadEncryption
 // reads it.
 type fieldDoc struct {
+	// Reveal is compiled by loadReveal, once the rules' schema exists.
+	Reveal  string `yaml:"reveal"`
 	Encrypt *struct {
 		Key       string   `yaml:"key"`
 		Search    string   `yaml:"search"`
@@ -100,7 +108,7 @@ func loadEncryption(c *Collection, path string) error {
 	for _, p := range sortedKeys(doc.Fields) {
 		d := doc.Fields[p]
 		if d == nil || d.Encrypt == nil {
-			fail("%s: declares nothing (use `encrypt`)", p)
+			fail("%s: declares nothing (use `encrypt`, and `reveal` to choose who sees it)", p)
 			continue
 		}
 		if !ValidSecretName(d.Encrypt.Key) {
@@ -275,4 +283,67 @@ func (r *Realm) EncryptionKeyNames() []string {
 		}
 	}
 	return sortedKeys(seen)
+}
+
+// loadReveal compiles the `reveal:` of each encrypted field against the collection's fields and
+// the realm's roles, after the rules, whose schema it shares.
+func loadReveal(c *Collection, settings RealmSettings, path string) error {
+	if len(c.Encrypted) == 0 {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var doc struct {
+		Fields map[string]*fieldDoc `yaml:"fields"`
+	}
+	if yaml.NewDecoder(bytes.NewReader(data)).Decode(&doc) != nil {
+		return nil
+	}
+	var errs []error
+	for i, ef := range c.Encrypted {
+		d := doc.Fields[ef.Path]
+		if d == nil || d.Reveal == "" {
+			continue
+		}
+		r, err := rules.CompileReveal(d.Reveal, c.ruleSchema(settings))
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: fields.%s.reveal: %w", path, ef.Path, err))
+			continue
+		}
+		c.Encrypted[i].Reveal, c.Encrypted[i].RevealSource = r, d.Reveal
+	}
+	return errors.Join(errs...)
+}
+
+// RevealUsesOrgs reports whether a reveal rule needs the caller's organization memberships.
+func (c *Collection) RevealUsesOrgs() bool {
+	for _, f := range c.Encrypted {
+		if f.Reveal != nil && f.Reveal.UsesOrgs() {
+			return true
+		}
+	}
+	return false
+}
+
+// RevealUsesConfig reports whether a reveal rule reads the app configuration.
+func (c *Collection) RevealUsesConfig() bool {
+	for _, f := range c.Encrypted {
+		if f.Reveal != nil && f.Reveal.UsesConfig() {
+			return true
+		}
+	}
+	return false
+}
+
+// Revealing lists the encrypted fields that have a reveal rule.
+func (c *Collection) Revealing() []EncryptedField {
+	var out []EncryptedField
+	for _, f := range c.Encrypted {
+		if f.Reveal != nil {
+			out = append(out, f)
+		}
+	}
+	return out
 }

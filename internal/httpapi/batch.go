@@ -159,8 +159,15 @@ func (d *documents) batch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rendered := make([]map[string]any, len(results))
+	reveals := map[*registry.Collection]*revealer{}
 	for i, doc := range results {
-		rendered[i] = render(doc)
+		rv, ok := reveals[ops[i].collection]
+		if !ok {
+			rv = d.revealerFor(r, ops[i].collection)
+			reveals[ops[i].collection] = rv
+		}
+		shown, _ := rv.view(doc)
+		rendered[i] = render(shown)
 		id, _ := doc["id"].(string)
 		action := map[string]string{"create": auth.AuditDataCreate, "delete": auth.AuditDataDelete}[ops[i].kind]
 		if action == "" {

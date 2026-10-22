@@ -373,3 +373,193 @@ func TestReadRulesPushEqualityOnEncryptedFieldsDown(t *testing.T) {
 		t.Errorf("a document the rule forbids: %d", rec.Code)
 	}
 }
+
+// revealClinic is clinic with a reveal rule on the notes, a doctor role, a read-only
+// administrator who may read data, and visits that reference their patient.
+func revealClinic(t *testing.T) (f *fixture, realm, base string, logs *strings.Builder) {
+	t.Helper()
+	realm = "t" + xid.New().String()
+	logs = &strings.Builder{}
+	f = mongoFixture(t, map[string]string{
+		realm + "/realm.yaml":                    "signup: open\nroles:\n  doctor: {}\n  staff: {admin: true}\n  auditor: {admin: read}\nadmin:\n  read_access: {data: true}\n",
+		realm + "/main/patients/schema.json":     clinicSchema,
+		realm + "/main/patients/collection.yaml": "fields:\n  notes:\n    encrypt: {key: HEALTH}\n    reveal: user != nil && (hasRole(user, 'doctor') || document._meta.owner == user.id)\n  history:\n    encrypt: {key: HEALTH}\n  address.street:\n    encrypt: {key: HEALTH}\n    reveal: hasRole(user, 'doctor')\nrules:\n  read: user != nil\n  write: user != nil\n",
+		realm + "/main/visits/schema.json":       `{"type":"object","properties":{"patient":{"type":"string"},"reason":{"type":"string"}}}`,
+		realm + "/main/visits/collection.yaml":   "references:\n  patient: {field: patient, collection: patients}\nrules:\n  read: user != nil\n  write: user != nil\n",
+	}, func(c *Config) { c.Log = slog.New(slog.NewJSONHandler(logs, nil)) })
+	ctx := context.Background()
+	if _, err := f.users[realm].CreateKey(ctx, "HEALTH", "", "test"); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range f.reg.Realms[realm].Databases["main"].Collections {
+		if err := f.rings[realm].Ensure(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return f, realm, "/v1/" + realm + "/main", logs
+}
+
+func TestRevealRulesHideEncryptedFieldsFromWhoMayNotSeeThem(t *testing.T) {
+	f, realm, base, _ := revealClinic(t)
+	ctx := context.Background()
+	ada := signedIn(t, f, realm, "ada@example.com")
+	bob := signedIn(t, f, realm, "bob@example.com")
+	patients := base + "/patients"
+
+	rec, created := f.doH(t, "POST", patients, `{"name": "Ana", "notes": "allergic to nuts", "history": {"visits": 3}, "address": {"street": "Main 1", "city": "Madrid"}}`, ada)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body)
+	}
+	id := created["id"].(string)
+	// The owner created it: the response is the owner's view (notes yes, street no: not a doctor).
+	meta := created["_meta"].(map[string]any)
+	if created["notes"] != "allergic to nuts" || created["address"].(map[string]any)["street"] != nil || fmt.Sprint(meta["redacted"]) != "[address.street]" {
+		t.Errorf("the owner's view of a create: %v", created)
+	}
+
+	view := func(who map[string]string) (map[string]any, string) {
+		t.Helper()
+		rec, out := f.doH(t, "GET", patients+"/"+id, "", who)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("get: %d %s", rec.Code, rec.Body)
+		}
+		return out, rec.Header().Get("ETag")
+	}
+	// A reader who passes the rule sees the field; one who doesn't gets null and the list of what is hidden.
+	adaDoc, adaTag := view(ada)
+	if adaDoc["notes"] != "allergic to nuts" || fmt.Sprint(adaDoc["_meta"].(map[string]any)["redacted"]) != "[address.street]" {
+		t.Errorf("ada: %v", adaDoc)
+	}
+	bobDoc, bobTag := view(bob)
+	if bobDoc["notes"] != nil || bobDoc["history"].(map[string]any)["visits"] != float64(3) ||
+		fmt.Sprint(bobDoc["_meta"].(map[string]any)["redacted"]) != "[address.street notes]" {
+		t.Errorf("bob: %v", bobDoc)
+	}
+	if _, has := bobDoc["notes"]; !has {
+		t.Error("a hidden field is absent instead of null: the client can't tell")
+	}
+	if adaTag == bobTag || !strings.Contains(bobTag, ".r") || !strings.HasPrefix(adaTag, `"1.r`) {
+		t.Errorf("tags: %s %s", adaTag, bobTag)
+	}
+	// Lists apply the same rule per document.
+	_, list := f.doH(t, "GET", patients, "", bob)
+	if it := list["items"].([]any)[0].(map[string]any); it["notes"] != nil || fmt.Sprint(it["_meta"].(map[string]any)["redacted"]) != "[address.street notes]" {
+		t.Errorf("list: %v", it)
+	}
+
+	// Conditional GET: bob's tag is his view's; when his role changes the view does, and the old tag stops matching.
+	if rec, _ := f.doH(t, "GET", patients+"/"+id, "", map[string]string{"Authorization": bob["Authorization"], "If-None-Match": bobTag}); rec.Code != http.StatusNotModified {
+		t.Errorf("same view: %d", rec.Code)
+	}
+	if err := f.users[realm].AddRole(ctx, "bob@example.com", "doctor"); err != nil {
+		t.Fatal(err)
+	}
+	rec, _ = f.doH(t, "GET", patients+"/"+id, "", map[string]string{"Authorization": bob["Authorization"], "If-None-Match": bobTag})
+	if rec.Code != http.StatusOK {
+		t.Errorf("a revealed view must not be a 304: %d", rec.Code)
+	}
+	if doc, tag := view(bob); doc["notes"] != "allergic to nuts" || doc["address"].(map[string]any)["street"] != "Main 1" || tag != `"1"` || doc["_meta"].(map[string]any)["redacted"] != nil {
+		t.Errorf("bob as a doctor: %v %s", doc, tag)
+	}
+	if err := f.users[realm].RemoveRole(ctx, "bob@example.com", "doctor"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Writing needs no reveal: bob changes the street he can't read, and the notes he can't read stay as they were.
+	rec, out := f.doH(t, "PATCH", patients+"/"+id, `{"address": {"street": "Side 2", "city": "Madrid"}}`, asMergePatch(bob))
+	if rec.Code != http.StatusOK || out["notes"] != nil || fmt.Sprint(out["_meta"].(map[string]any)["redacted"]) != "[address.street notes]" {
+		t.Errorf("patch answer: %d %v", rec.Code, out)
+	}
+	rec, _ = f.doH(t, "PATCH", patients+"/"+id, `{"name": "Ana B."}`, asMergePatch(bob))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch: %d %s", rec.Code, rec.Body)
+	}
+	if doc, _ := view(ada); doc["notes"] != "allergic to nuts" || doc["name"] != "Ana B." {
+		t.Errorf("a patch by someone who can't read the notes changed them: %v", doc)
+	}
+	if rec, _ := f.doH(t, "PATCH", patients+"/"+id, `{"notes": "no allergies"}`, asMergePatch(bob)); rec.Code != http.StatusOK {
+		t.Errorf("replacing a hidden field: %d", rec.Code)
+	}
+	if doc, _ := view(ada); doc["notes"] != "no allergies" {
+		t.Errorf("the replaced notes: %v", doc["notes"])
+	}
+	if doc, _ := view(bob); doc["notes"] != nil {
+		t.Errorf("bob reads what he wrote: %v", doc["notes"])
+	}
+
+	// A batch answers with the caller's view too.
+	rec, bout := f.doH(t, "POST", base+"/_batch", `{"operations": [{"op": "patch", "collection": "patients", "id": "`+id+`", "patch": {"name": "Ana C."}}]}`, bob)
+	if res := bout["results"].([]any)[0].(map[string]any); rec.Code != http.StatusOK || res["notes"] != nil {
+		t.Errorf("batch: %d %v", rec.Code, bout)
+	}
+
+	// An expanded patient is shown by the patient collection's own rules.
+	rec, visit := f.doH(t, "POST", base+"/visits", `{"patient": "`+id+`", "reason": "checkup"}`, ada)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("visit: %d %s", rec.Code, rec.Body)
+	}
+	for who, wantNotes := range map[string]any{"ada": "no allergies", "bob": nil} {
+		hdr := map[string]string{"ada": ada["Authorization"], "bob": bob["Authorization"]}[who]
+		_, v := f.doH(t, "GET", base+"/visits/"+visit["id"].(string)+"?expand=patient", "", map[string]string{"Authorization": hdr})
+		p := v["_expanded"].(map[string]any)["patient"].(map[string]any)
+		if p["notes"] != wantNotes {
+			t.Errorf("expanded as %s: %v", who, p)
+		}
+	}
+	_, v := f.doH(t, "GET", base+"/visits/"+visit["id"].(string)+"?expand=patient(name,notes)", "", bob)
+	if p := v["_expanded"].(map[string]any)["patient"].(map[string]any); p["notes"] != nil || fmt.Sprint(p["_meta"]) != "map[redacted:[notes]]" {
+		t.Errorf("a selection says what it hides: %v", p)
+	}
+}
+
+func TestAdministratorsReadEncryptedFieldsThroughTheDataRoute(t *testing.T) {
+	f, realm, base, logs := revealClinic(t)
+	ctx := context.Background()
+	ada := signedIn(t, f, realm, "ada@example.com")
+	rec, created := f.doH(t, "POST", base+"/patients", `{"name": "Ana", "notes": "n1", "history": {"visits": 1}, "address": {"street": "Main 1"}}`, ada)
+	if rec.Code != http.StatusCreated {
+		t.Fatal(rec.Body)
+	}
+	id := created["id"].(string)
+	f.doH(t, "POST", base+"/patients", `{"name": "Ben", "notes": "n2"}`, ada)
+
+	_, adminKey, _ := f.users[realm].CreateAPIKey(ctx, "ops", auth.KeyOptions{Role: auth.KeyRoleAdmin})
+	boss := map[string]string{"Authorization": "Bearer " + adminKey}
+	data := "/v1/" + realm + "/_admin/data/main/patients"
+	// A full administrator sees plaintext (past the reveal rules), and each read is audited with fields and a count.
+	rec, got := f.doH(t, "GET", data+"/"+id, "", boss)
+	if rec.Code != http.StatusOK || got["notes"] != "n1" || got["address"].(map[string]any)["street"] != "Main 1" {
+		t.Fatalf("admin get: %d %v", rec.Code, got)
+	}
+	f.doH(t, "GET", data, "", boss)
+	_, trail := f.doH(t, "GET", "/v1/"+realm+"/_admin/audit?action=data.reveal", "", boss)
+	items := trail["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("one record per read: %v", trail)
+	}
+	list := items[0].(map[string]any)["details"].(map[string]any) // newest first: the list
+	if list["documents"] != float64(2) || list["fields"] != "address.street,history,notes" || list["collection"] != "patients" {
+		t.Errorf("the list's record: %v", list)
+	}
+	if raw := fmt.Sprint(trail); strings.Contains(raw, "n1") || strings.Contains(raw, "Main 1") {
+		t.Error("the audit trail holds a value")
+	}
+
+	// A read-only administrator who may read data gets every encrypted field redacted.
+	auditor := signedIn(t, f, realm, "auditor@example.com")
+	if err := f.users[realm].AddRole(ctx, "auditor@example.com", "auditor"); err != nil {
+		t.Fatal(err)
+	}
+	rec, got = f.doH(t, "GET", data+"/"+id, "", auditor)
+	if rec.Code != http.StatusOK || got["name"] != "Ana" || got["notes"] != nil || got["history"] != nil || got["address"].(map[string]any)["street"] != nil ||
+		fmt.Sprint(got["_meta"].(map[string]any)["redacted"]) != "[address.street history notes]" {
+		t.Errorf("read-only admin: %d %v", rec.Code, got)
+	}
+	_, trail = f.doH(t, "GET", "/v1/"+realm+"/_admin/audit?action=data.reveal", "", boss)
+	if n := len(trail["items"].([]any)); n != 2 {
+		t.Errorf("a redacted read was audited as a reveal: %d records", n)
+	}
+	if l := logs.String(); strings.Contains(l, "n1") || strings.Contains(l, "Main 1") {
+		t.Error("the log holds a value")
+	}
+}

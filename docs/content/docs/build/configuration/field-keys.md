@@ -96,7 +96,7 @@ A database can't compare what it can't read, so `backd` refuses, **at startup** 
 - an `aggregate` group or metric;
 - a field used by a **read rule**, unless it has a blind index and the rule only uses `==` or `in` on it. `create`, `update` and `delete` rules read the plain value in memory, so they can use it freely.
 
-A request that filters or sorts by an encrypted field (`where`, `order_by`) answers `400 field_encrypted`, naming the field, unless the field has a [blind index](#search-an-encrypted-field), which answers equality. Who may see a field in the answer is planned.
+A request that filters or sorts by an encrypted field (`where`, `order_by`) answers `400 field_encrypted`, naming the field, unless the field has a [blind index](#search-an-encrypted-field), which answers equality. Who may see a field in the answer is decided by its [`reveal` rule](#who-sees-an-encrypted-field).
 
 Everything that reads documents sees the plain value: the API, `_batch`, functions (`ctx.db`), the admin data views, [triggers](../config-dir/#triggers) and realtime. The documents of a collection that encrypts a field can't be exported or imported yet (`422` naming the collections): the package format has to carry them as ciphertext first, and the server never decrypts for an export.
 
@@ -126,6 +126,35 @@ GET /v1/clinic/main/patients?where={"tax_id": {"$in": ["B1234", "C99"]}}
 {{< hint warning >}}
 **What a blind index reveals.** Equal values have equal indexes, so someone holding a dump can tell which documents share a value, though not what the value is. That is fine for values with many possibilities (tax ids, emails, card fingerprints). Do **not** use it for values with few (blood type, yes/no, a country): the groups they form would give them away. Documents written before the index existed aren't found by a search until the migration of a later release builds theirs.
 {{< /hint >}}
+
+## Who sees an encrypted field
+
+By default whoever may read a document sees its encrypted fields in plain. A `reveal` rule narrows that, per field, after the read rule has let the document through:
+
+```yaml
+fields:
+  health_notes:
+    encrypt: { key: HEALTH }
+    reveal: user != nil && (hasRole(user, 'doctor') || document._meta.owner == user.id)
+```
+
+The rule is an [access rule](../../auth/rules/) that sees `document` (all of it, in plain), `user`, `now`, `hasRole`, the organization helpers (`hasOrgRole(document._meta.org, 'admin')`) and `appConfig`; it can't see `data`. Like any rule, guard `user` against anonymous callers. It is checked when `backd` starts, and an error names the field.
+
+For a reader the rule refuses, the field comes back **`null`** and the document lists it:
+
+```json
+{ "id": "…", "name": "Ana", "health_notes": null, "_meta": { "redacted": ["health_notes"], … } }
+```
+
+so an app can tell *hidden* from *empty* (`null` means empty only when the path is not in `_meta.redacted`). A rule that can't be decided hides the field.
+
+- **Writing needs no reveal.** A caller allowed to update can replace a field they can't read; the answer to their write is their own view. A `PATCH` of another field leaves a hidden field as it was.
+- **Rules still read the plain value.** `update` and `delete` rules, and `before`/`after` in [triggers](../config-dir/#triggers), see encrypted fields whether or not the caller may.
+- **Expanded documents** apply their own collection's `reveal`; a selection (`expand=patient(name,notes)`) lists in `_meta.redacted` the selected fields it hides.
+- **Functions.** `ctx.db` acts as the caller and follows their `reveal`; `ctx.admin.db` sees the plain value. API keys do too, as they pass the rules.
+- **Realtime** events carry the same view, evaluated for the caller who subscribed; a change to their access ends the stream.
+- **Administrators.** A full administrator reading through the [admin data route](../../../operate/administration/admin/#data) sees every field, and each such read is audited (`data.reveal`: the fields and how many documents, never a value). A read-only administrator who may read data always gets them redacted.
+- **Caching.** An answer with hidden fields has a representation tag in its `ETag` (`"12.r3f9a1c2b"`), so a caller whose view changes (a role granted, a document handed over) never gets a stale `304`. `If-Match` still compares the version only.
 
 ## Rotate a key
 

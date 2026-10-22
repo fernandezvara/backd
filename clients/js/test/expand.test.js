@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createClient, expand, InvalidExpandError, ExpandTooLargeError, ValidationError } from '../src/index.js'
+import { createClient, expand, FieldEncryptedError, InvalidExpandError, ExpandTooLargeError, ValidationError } from '../src/index.js'
 import { mockFetch } from './helpers.js'
 
 const meta = { created_at: '2026-10-01T00:00:00.000Z', updated_at: '2026-10-01T00:00:00.000Z' }
@@ -50,6 +50,25 @@ test('iterate carries expand to every page', async () => {
   for await (const d of posts.iterate({ limit: 1, expand: 'author' })) n += d._expanded ? 1 : 0
   assert.equal(n, 2)
   assert.deepEqual(f.calls.map((c) => new URL(c.url).searchParams.get('expand')), ['author', 'author'])
+})
+
+test('field_encrypted is a typed error, and _meta.redacted is typed', async () => {
+  const f = mockFetch([
+    { status: 400, body: { error: { code: 'field_encrypted', message: 'invalid query parameters', details: [{ path: 'where.tax_id', reason: "is encrypted: it can't be filtered on", code: 'field_encrypted' }], request_id: 'r1' } } },
+    { body: { id: 'p1', name: 'Ana', notes: null, _meta: { ...meta, version: 1, redacted: ['notes'] } } },
+  ])
+  const patients = createClient({ url: 'https://api.test', realm: 'acme', fetch: f.fetch }).db('main').collection('patients')
+  await assert.rejects(patients.list({ where: { tax_id: { $ne: 'x' } } }), (e) => {
+    assert.ok(e instanceof FieldEncryptedError && e instanceof ValidationError)
+    assert.equal(e.code, 'field_encrypted')
+    assert.equal(e.details[0].path, 'where.tax_id')
+    return true
+  })
+  const doc = await patients.get('p1')
+  /** @type {string[] | undefined} */
+  const hidden = doc._meta.redacted
+  assert.deepEqual(hidden, ['notes'])
+  assert.equal(doc.notes, null)
 })
 
 test('invalid_expand and expand_too_large are typed errors', async () => {

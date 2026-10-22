@@ -63,6 +63,7 @@ Each realm with `auth: enabled` keeps an **audit trail**: one record per securit
 | `invitation.create`, `invitation.revoke` | An invitation is created or revoked | `bound_to_email` (whether it is), `expires_at` |
 | `invitation.sent` | An invitation is emailed to its address | `expires_at` |
 | `admin.login` | A user holding an admin role logs in | `session_id` |
+| `data.reveal` | A full administrator read documents that hold [encrypted fields](../../../build/configuration/field-keys/#who-sees-an-encrypted-field) in plain through the admin data route (one record per read) | `database`, `collection`, `fields`, `documents`; never a value |
 | `data.create`, `data.update`, `data.delete`, `data.restore`, `data.purge` | A document is written through the [admin data route](../admin/#data) (a batch audits each operation) | `database`, `collection`, `id`; the target is `doc:<database>/<collection>/<id>`; never content |
 | `session.revoke` | An administrator ends a user's session ([admin API](../admin/)) | `session` |
 | `admin.refused` | An admin API request is refused: by a network restriction, or because the administrator's roles don't open the [area](../admin/#admin-rights) or hold the rights of the user or role involved | `reason`, `method`, `path` |
