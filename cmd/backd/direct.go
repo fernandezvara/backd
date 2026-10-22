@@ -227,8 +227,6 @@ type pipeWriter struct {
 	ready  chan struct{}
 }
 
-func (w *pipeWriter) release() { w.once.Do(func() { close(w.ready) }) }
-
 func (w *pipeWriter) Header() http.Header { return w.header }
 
 func (w *pipeWriter) WriteHeader(status int) {
