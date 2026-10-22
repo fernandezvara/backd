@@ -16,6 +16,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -520,11 +521,24 @@ func verifyPackage(dir string, stderr io.Writer) (*exportpkg.Manifest, error) {
 			bad = append(bad, p+": checksum differs")
 		}
 	}
+	// Every path the import will open comes from the manifest, so each must be the one this
+	// package format names, and be checksummed: a hostile manifest can't point it elsewhere.
 	for _, db := range m.Databases {
 		for _, col := range db.Collections {
+			if !exportpkg.SafePart(db.Name) || !exportpkg.SafePart(col.Name) || col.Part != exportpkg.CollectionPart(db.Name, col.Name) {
+				return nil, fmt.Errorf("the manifest names an unexpected part for %s/%s: %q", db.Name, col.Name, col.Part)
+			}
 			if _, ok := m.Checksums[col.Part]; !ok {
 				bad = append(bad, col.Part+": not in the manifest's checksums")
 			}
+		}
+	}
+	for _, ap := range m.Auth {
+		if !slices.Contains(auth.PortableCollections, ap.Name) || ap.Part != exportpkg.AuthPart(ap.Name) {
+			return nil, fmt.Errorf("the manifest names an authentication part this backd doesn't know: %q", ap.Part)
+		}
+		if _, ok := m.Checksums[ap.Part]; !ok {
+			bad = append(bad, ap.Part+": not in the manifest's checksums")
 		}
 	}
 	if len(bad) > 0 {

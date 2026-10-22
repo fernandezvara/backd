@@ -368,7 +368,7 @@ func TestAdminExportAnonymized(t *testing.T) {
 	}}
 	f.store.mu.Unlock()
 	mem := f.svc.Store.(*authtest.MemStore)
-	mem.SeedPortable("users", map[string]any{"id": ada.ID, "email": "ada@example.com", "pending_email": "new@example.com", "roles": []any{}, "created_at": at, "updated_at": at})
+	mem.SeedPortable("users", map[string]any{"id": ada.ID, "email": "ada@example.com", "pending_email": "new@example.com", "admin_networks": []any{"203.0.113.0/24"}, "login_networks": []any{"198.51.100.7"}, "roles": []any{}, "created_at": at, "updated_at": at})
 	mem.SeedPortable("identities",
 		map[string]any{"id": "i1", "user_id": ada.ID, "provider": "password", "subject": ada.ID, "password_hash": "$argon2id$original", "created_at": at, "updated_at": at},
 		map[string]any{"id": "i2", "user_id": ada.ID, "provider": "google", "subject": "google-sub-1234", "email": "ada@gmail.com", "created_at": at, "updated_at": at})
@@ -431,7 +431,7 @@ func TestAdminExportAnonymized(t *testing.T) {
 		t.Errorf("order: %v", o)
 	}
 	users := read(lease, "_system/auth/users.jsonl")
-	if len(users) != 1 || users[0]["email"] != auth.AnonymousEmail(ada.ID) || users[0]["pending_email"] != nil {
+	if len(users) != 1 || users[0]["email"] != auth.AnonymousEmail(ada.ID) || users[0]["pending_email"] != nil || users[0]["admin_networks"] != nil || users[0]["login_networks"] != nil {
 		t.Errorf("users: %v", users)
 	}
 	ids := read(lease, "_system/auth/identities.jsonl")
@@ -450,7 +450,7 @@ func TestAdminExportAnonymized(t *testing.T) {
 	}
 	// And no original address is anywhere in what was streamed.
 	all := fmt.Sprint(orders, users, ids)
-	for _, secret := range []string{"ada@example.com", "ada@gmail.com", "new@example.com", "stranger@elsewhere.com", "+34 600", "google-sub-1234", "$argon2id$original"} {
+	for _, secret := range []string{"ada@example.com", "ada@gmail.com", "new@example.com", "stranger@elsewhere.com", "+34 600", "203.0.113.0", "198.51.100.7", "google-sub-1234", "$argon2id$original"} {
 		if strings.Contains(all, secret) {
 			t.Errorf("%q survived the anonymization", secret)
 		}

@@ -289,6 +289,16 @@ func TestAdminImportFiles(t *testing.T) {
 	if rec.Code != http.StatusOK || out["counts"].(map[string]any)["created"] != float64(1) {
 		t.Fatalf("write: %d %v", rec.Code, out)
 	}
+	// The bytes of a file are held to the field's size as they arrive, and what came is not kept.
+	bigContent := bytes.Repeat([]byte("x"), 70<<10) // the biggest field of the collection takes 64 KiB
+	bigSum := sha256.Sum256(bigContent)
+	bigID := "fl_zzzzzzzzzzzzzzzzzzzz"
+	if w := put(bigID, hex.EncodeToString(bigSum[:]), bigContent); w.Code != http.StatusRequestEntityTooLarge || len(fake.Object("imp/acme/app/library/"+bigID)) != 0 {
+		t.Errorf("a file past the field's limit: %d", w.Code)
+	}
+	if w := put("fl_short", hex.EncodeToString(sum[:]), content); w.Code != http.StatusNotFound {
+		t.Errorf("an id that is not a file id: %d", w.Code)
+	}
 	// A file larger than the field allows is invalid for the target.
 	big := importLines(t, 1, func(i int, d map[string]any) {
 		d["manual"] = map[string]any{"id": fileID, "name": "manual.pdf", "size": int64(1 << 20), "type": "application/pdf", "sha256": hex.EncodeToString(sum[:]), "uploaded_at": time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)}
@@ -407,6 +417,46 @@ func TestAdminImportWarnsAboutTheEnvironment(t *testing.T) {
 		warnings, _ := out["warnings"].([]any)
 		if rec.Code != http.StatusOK || (tc.warn == "") != (len(warnings) == 0) || (tc.warn != "" && !strings.Contains(warnings[0].(string), tc.warn)) {
 			t.Errorf("env %q anonymized %v: %d %v", tc.env, tc.anonymized, rec.Code, warnings)
+		}
+	}
+}
+
+// A package can't give a document a field the server reserves, or the wrong kind of one.
+func TestAdminImportHoldsMetaToWhatTheServerWrites(t *testing.T) {
+	f := newRulesFixture(t)
+	f.svc.Realm = "acme"
+	_, adminKey, err := f.svc.CreateAPIKey(context.Background(), "meta", auth.KeyOptions{Role: auth.KeyRoleAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := &exportpkg.Manifest{Format: 1, Realm: "acme", Databases: []exportpkg.Database{{Name: "app", Collections: []exportpkg.Collection{{Name: "notes", Part: "app/notes.jsonl"}}}}}
+	mb, _ := m.Marshal()
+	_, b := f.doH(t, "POST", admin+"/import", `{"manifest": `+string(mb)+`}`, jsonHdr(adminKey))
+	lh := map[string]string{"Authorization": "Bearer " + adminKey, exportHeader: b["lease"].(string), "Content-Type": "application/x-ndjson"}
+	at := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	for name, tc := range map[string]struct {
+		meta map[string]any
+		ok   bool
+	}{
+		"the usual":              {map[string]any{"owner": "u1", "org": "o1", "team": "t1", "created_by": "u1", "updated_by": "u1"}, true},
+		"trashed":                {map[string]any{"deleted_at": at, "deleted_by": "u1", "purge_at": at}, true},
+		"a chain":                {map[string]any{"chain": map[string]any{"root": "r1", "depth": int64(2)}}, true},
+		"a field of its own":     {map[string]any{"is_admin": true}, false},
+		"an owner that isn't":    {map[string]any{"owner": int64(7)}, false},
+		"a deletion without day": {map[string]any{"deleted_at": "yesterday"}, false},
+		"a chain of nonsense":    {map[string]any{"chain": map[string]any{"root": "r1"}}, false},
+		"a score":                {map[string]any{"score": 3.5}, false},
+	} {
+		doc := importLines(t, 1, func(i int, d map[string]any) {
+			for k, v := range tc.meta {
+				d["_meta"].(map[string]any)[k] = v
+			}
+		})
+		rec, out := f.doH(t, "POST", admin+"/import?phase=validate&part=app/notes.jsonl", doc, lh)
+		counts, _ := out["counts"].(map[string]any)
+		invalid := counts["invalid"] == float64(1)
+		if rec.Code != http.StatusOK || invalid == tc.ok {
+			t.Errorf("%s: %d %v", name, rec.Code, out)
 		}
 	}
 }

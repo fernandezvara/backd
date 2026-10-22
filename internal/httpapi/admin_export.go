@@ -327,7 +327,10 @@ func (a *adminAPI) exportPlan(w http.ResponseWriter, r *http.Request, realm stri
 		}
 	} else if includeAuth {
 		raw := make([]byte, 32)
-		_, _ = rand.Read(raw)
+		if _, err := rand.Read(raw); err != nil {
+			adminError(w, r, err)
+			return
+		}
 		exportKey = base64.RawURLEncoding.EncodeToString(raw)
 		keyCipher, _ = auth.ExportKey(exportKey)
 		m.AuthKey = keyCipher.KeyID
@@ -547,7 +550,7 @@ func (a *adminAPI) exportFile(w http.ResponseWriter, r *http.Request, realm, fil
 	}
 	parts := strings.Split(file, "/")
 	rl := a.reg.Realms[realm]
-	if len(parts) != 3 || rl == nil || rl.Databases[parts[0]] == nil || rl.Databases[parts[0]].Collections[parts[1]] == nil || len(rl.Databases[parts[0]].Collections[parts[1]].Files) == 0 || !exportpkg.SafePart(parts[2]) {
+	if len(parts) != 3 || rl == nil || rl.Databases[parts[0]] == nil || rl.Databases[parts[0]].Collections[parts[1]] == nil || len(rl.Databases[parts[0]].Collections[parts[1]].Files) == 0 || !fileIDPattern.MatchString(parts[2]) {
 		writeError(w, r, http.StatusNotFound, codeNotFound, "no such file in this package")
 		return
 	}

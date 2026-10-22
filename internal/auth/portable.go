@@ -101,6 +101,8 @@ func (a *AuthAnonymize) apply(collection string, d map[string]any) (keep bool) {
 		d["email"] = AnonymousEmail(id)
 		delete(d, "pending_email")
 		delete(d, "previous_email")
+		delete(d, "admin_networks") // where a person works from is personal data too
+		delete(d, "login_networks")
 	case "identities":
 		if d["provider"] != ProviderPassword {
 			return false

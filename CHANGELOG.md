@@ -6,6 +6,10 @@ Until a stable release is declared, a minor release may have breaking changes; t
 
 ## Unreleased
 
+### Security
+
+- **Export and import review:** the manifest's authentication parts and every collection part must be the path the format names and be checksummed (a hostile package could make `backd import` read a local file); an imported document's `_meta` is held to the fields the server writes; imported files are held to their field's size; `--auth-key-out` creates a `0600` file even over an existing one; anonymized users lose `admin_networks` and `login_networks`. See the security model page.
+
 ### Added
 
 - **Documentation:** the guides and reference of [exporting and importing](https://fernandezvara.github.io/backd/docs/operate/administration/export-import/): moving an app, seeding staging, reporting extracts, direct mode, the package format and manifest, every flag, the admin API, the errors with what to do, and keeping packages and keys safe.

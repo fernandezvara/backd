@@ -345,3 +345,59 @@ func TestExportAuthDataShowsTheKeyOnce(t *testing.T) {
 		t.Errorf("key file mode: %v", st.Mode())
 	}
 }
+
+// Every path an import opens comes out of the manifest, so a manifest that points anywhere else
+// is refused before a file is read.
+func TestImportRefusesAManifestThatPointsElsewhere(t *testing.T) {
+	dir, _ := authPackage(t)
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(outside, []byte("{\"id\":\"x\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rewrite := func(mod func(m *exportpkg.Manifest)) {
+		data, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		m, err := exportpkg.ParseManifest(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mod(m)
+		out, _ := m.Marshal()
+		if err := os.WriteFile(filepath.Join(dir, "manifest.json"), out, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var stderr bytes.Buffer
+	c := &cliEnv{t: t, env: map[string]string{"BACKD_API_KEY": "bdk_x", "BACKD_URL": "http://127.0.0.1:1"}}
+	_ = stderr
+	rel, _ := filepath.Rel(dir, outside)
+	rewrite(func(m *exportpkg.Manifest) { m.Auth[0].Part = rel })
+	c.expect(1, "authentication part this backd doesn't know", "", "import", "--realm", "acme", "--from", dir, "--dry-run")
+	rewrite(func(m *exportpkg.Manifest) {
+		m.Auth[0].Part = exportpkg.AuthPart(m.Auth[0].Name)
+		m.Databases = []exportpkg.Database{{Name: "..", Collections: []exportpkg.Collection{{Name: "x", Part: "../x.jsonl"}}}}
+	})
+	c.expect(1, "unexpected part", "", "import", "--realm", "acme", "--from", dir, "--dry-run")
+	rewrite(func(m *exportpkg.Manifest) {
+		m.Databases = nil
+		delete(m.Checksums, m.Auth[0].Part)
+	})
+	c.expect(1, "not in the manifest's checksums", "", "import", "--realm", "acme", "--from", dir, "--dry-run")
+}
+
+func TestWriteSecretFileTightensAnExistingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "k")
+	if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeSecretFile(path, "new\n"); err != nil {
+		t.Fatal(err)
+	}
+	st, _ := os.Stat(path)
+	b, _ := os.ReadFile(path)
+	if st.Mode().Perm() != 0o600 || string(b) != "new\n" {
+		t.Errorf("%v %q", st.Mode(), b)
+	}
+}

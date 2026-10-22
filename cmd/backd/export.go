@@ -284,7 +284,7 @@ func exportAction(c *kli.CommandContext) error {
 	}
 	if plan.ExportKey != "" {
 		if keyOut := str(c, "auth-key-out"); keyOut != "" {
-			if err := os.WriteFile(keyOut, []byte(plan.ExportKey+"\n"), 0o600); err != nil {
+			if err := writeSecretFile(keyOut, plan.ExportKey+"\n"); err != nil {
 				return fmt.Errorf("the package is complete, but its export key could not be written (%v): export again", err)
 			}
 			fmt.Fprintf(stderr, "the export key was written to %s\n", keyOut)
@@ -552,4 +552,22 @@ func openTarget(c *kli.CommandContext) (*target, func(), *direct, error) {
 		return nil, nil, nil, err
 	}
 	return d.t, d.close, d, nil
+}
+
+// writeSecretFile writes a file only its owner can read, even if one with wider permissions
+// was there before.
+func writeSecretFile(path, content string) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
+		return err
+	}
+	if _, err := f.WriteString(content); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }

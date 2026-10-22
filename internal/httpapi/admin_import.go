@@ -12,6 +12,7 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -25,6 +26,9 @@ import (
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage"
 )
+
+// fileIDPattern is the shape of the id of a file, which the file fields' schema also demands.
+var fileIDPattern = regexp.MustCompile(`^fl_[0-9a-z]{20}$`)
 
 const (
 	codeImportRefused = "import_refused"
@@ -429,6 +433,7 @@ func (a *adminAPI) checkImported(c *registry.Collection, doc map[string]any) []D
 	if _, ok := meta["version"].(int64); !ok {
 		problems = append(problems, Detail{Path: "_meta.version", Reason: "must be an integer"})
 	}
+	problems = append(problems, checkImportedMeta(meta)...)
 	for _, k := range []string{"created_at", "updated_at"} {
 		if _, ok := meta[k].(time.Time); !ok {
 			problems = append(problems, Detail{Path: "_meta." + k, Reason: "must be a date"})
@@ -577,9 +582,18 @@ func (a *adminAPI) importFile(w http.ResponseWriter, r *http.Request, realm, fil
 	parts := strings.Split(file, "/")
 	rl := a.reg.Realms[realm]
 	sum := strings.ToLower(r.Header.Get("X-Backd-Sha256"))
-	if len(parts) != 3 || rl.Databases[parts[0]] == nil || rl.Databases[parts[0]].Collections[parts[1]] == nil || len(rl.Databases[parts[0]].Collections[parts[1]].Files) == 0 || !exportpkg.SafePart(parts[2]) {
+	if len(parts) != 3 || rl.Databases[parts[0]] == nil || rl.Databases[parts[0]].Collections[parts[1]] == nil || len(rl.Databases[parts[0]].Collections[parts[1]].Files) == 0 || !fileIDPattern.MatchString(parts[2]) {
 		writeError(w, r, http.StatusNotFound, codeNotFound, "no such file field in the target realm")
 		return
+	}
+	// The biggest file any of the collection's file fields takes, and never past the instance's
+	// upload limit: the bytes are counted as they arrive.
+	var limit int64
+	for _, f := range rl.Databases[parts[0]].Collections[parts[1]].Files {
+		limit = max(limit, f.MaxSize)
+	}
+	if d := a.fns.docs.maxUpload; d > 0 {
+		limit = min(limit, d)
 	}
 	if len(sum) != 64 {
 		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "X-Backd-Sha256", Reason: "is required: the hex SHA-256 of the file"})
@@ -599,8 +613,14 @@ func (a *adminAPI) importFile(w http.ResponseWriter, r *http.Request, realm, fil
 	}
 	key := obj.Key(realm, parts[0], parts[1], parts[2])
 	h := sha256.New()
-	body := io.TeeReader(deadlineReader{r.Body, http.NewResponseController(w)}, h)
+	body := io.TeeReader(deadlineReader{http.MaxBytesReader(w, r.Body, limit), http.NewResponseController(w)}, h)
 	if err := obj.PutStream(r.Context(), key, body, ""); err != nil {
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			_ = obj.Delete(r.Context(), key)
+			tooLarge(w, r, tooBig.Limit)
+			return
+		}
 		logger(r.Context()).Error("import: store a file", "error", err)
 		writeError(w, r, http.StatusServiceUnavailable, codeStorageUnavailable, "the storage could not take the file")
 		return
@@ -712,4 +732,35 @@ func (a *adminAPI) importAuthChunk(w http.ResponseWriter, r *http.Request, l *ex
 	}
 	a.exports.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{"documents": len(results), "counts": counts, "problems": problems, "missing_owners": 0, "missing_orgs": 0})
+}
+
+// checkImportedMeta holds `_meta` to what the server itself writes: a package can't smuggle in
+// a field the API reserves, or give one the wrong type.
+func checkImportedMeta(meta map[string]any) []Detail {
+	var problems []Detail
+	for _, k := range slices.Sorted(maps.Keys(meta)) {
+		v := meta[k]
+		switch k {
+		case "version", "created_at", "updated_at":
+			// checked by the caller
+		case "owner", "created_by", "updated_by", "org", "team", "deleted_by":
+			if _, ok := v.(string); !ok && v != nil {
+				problems = append(problems, Detail{Path: "_meta." + k, Reason: "must be text"})
+			}
+		case "deleted_at", "purge_at":
+			if _, ok := v.(time.Time); !ok {
+				problems = append(problems, Detail{Path: "_meta." + k, Reason: "must be a date"})
+			}
+		case "chain":
+			c, _ := v.(map[string]any)
+			_, root := c["root"].(string)
+			_, depth := c["depth"].(int64)
+			if !root || !depth || len(c) != 2 {
+				problems = append(problems, Detail{Path: "_meta.chain", Reason: "must be {root, depth}"})
+			}
+		default:
+			problems = append(problems, Detail{Path: "_meta." + k, Reason: "is not a field the server keeps"})
+		}
+	}
+	return problems
 }
