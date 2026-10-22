@@ -1,7 +1,7 @@
 {
   "generator": "1",
   "realm": "shelf",
-  "fingerprint": "3e568f78b7250c62656c454abf45d79ea1ece710cfe9f63c63e612f49e0992f7",
+  "fingerprint": "95b4957c1ca2cc95f4a4089d4fe59d87d3fb7b863306e8a9072e6e799ff72753",
   "entries": {
     "collection mail/outbox": "",
     "collection main/assets": "",
@@ -161,6 +161,7 @@
     "template email no-account": "",
     "template email org-invitation": "",
     "template email password-changed": "",
+    "template email password-expired": "",
     "template email reauth-code": "",
     "template email reset-password": "",
     "template email security-notice": "",
