@@ -188,5 +188,5 @@ An encrypted backup is safe for as long as its private key is. If a backup leaks
 
 - end every session (see above);
 - revoke and reissue every API key;
-- have every user change their password (`backd` can't send reset emails yet, so plan how to reach them);
+- make every leaked password hash useless. Users can choose a new password themselves through the [password reset](../../build/auth/sessions/#password-reset) when the realm has [`email`](../../build/functions/email/) configured, but nothing forces them to: until a user changes it, the hash in the backup still opens their account (guessing it offline is what a leak makes possible). Today that takes one step per user: `backd user set-password` with a long random password (it also ends their sessions and tells them with a `password-changed` email), after which they use *Forgot password*. Script it over the first column of `backd user list` (`openssl rand -base64 24 | backd user set-password --realm blog --email …` reads the password from standard input), and tell your users what to expect, because their old password will simply stop working;
 - rotate the age key pair.
