@@ -528,3 +528,28 @@ func TestUserLocale(t *testing.T) {
 		t.Errorf("a user's locale is always shown: %d %v", code, me)
 	}
 }
+
+func TestAuthLoginWithAnExpiredPassword(t *testing.T) {
+	f := newAuthFixture(t)
+	f.signup(t, "ada@example.com")
+
+	later := time.Now().Add(time.Hour)
+	if ok, err := f.store.SetPasswordEpoch(context.Background(), auth.PasswordEpoch{ValidAfter: later, SetBy: "test", SetAt: later}); !ok || err != nil {
+		t.Fatal(ok, err)
+	}
+	f.svc.Now = func() time.Time { return later.Add(time.Minute) }
+
+	rec, out := f.do(t, "POST", authBase+"/login", `{"email": "ada@example.com", "password": "dev-p4ssw0rd!"}`)
+	if rec.Code != http.StatusUnauthorized || errCode(out) != "password_expired" || out["token"] != nil {
+		t.Errorf("expired password: %d %v", rec.Code, out)
+	}
+	// Only the right password learns that it expired.
+	rec, out = f.do(t, "POST", authBase+"/login", `{"email": "ada@example.com", "password": "dev-p4ssw0rd!0"}`)
+	if rec.Code != http.StatusUnauthorized || errCode(out) != "invalid_credentials" {
+		t.Errorf("wrong password: %d %v", rec.Code, out)
+	}
+	rec, out = f.do(t, "POST", authBase+"/login", `{"email": "nobody@example.com", "password": "dev-p4ssw0rd!"}`)
+	if rec.Code != http.StatusUnauthorized || errCode(out) != "invalid_credentials" {
+		t.Errorf("unknown user: %d %v", rec.Code, out)
+	}
+}

@@ -592,6 +592,8 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 		writeError(w, r, http.StatusBadRequest, codeInvalidChallenge, "the challenge is invalid or expired: sign in again")
 	case errors.Is(err, auth.ErrInvalidCredentials):
 		writeError(w, r, http.StatusUnauthorized, codeInvalidCreds, err.Error())
+	case errors.Is(err, auth.ErrPasswordExpired):
+		writeError(w, r, http.StatusUnauthorized, codePasswordExpired, err.Error())
 	case errors.Is(err, auth.ErrSameEmail):
 		writeError(w, r, http.StatusBadRequest, codeValidation, err.Error(), Detail{Path: "new_email", Reason: "is already the address of this account"})
 	case errors.As(err, &el):

@@ -136,6 +136,19 @@ func userSetPassword(c *userCtx) error {
 	return nil
 }
 
+func userExpirePassword(c *userCtx) error {
+	body := map[string]string{}
+	if r := str(c.cmd, "reason"); r != "" {
+		body["reason"] = r
+	}
+	u, err := c.onUser("POST", "/expire-password", body)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(c.uio.stdout, "the password of %s expired; they can sign in again after a password reset or a new password from an administrator (their sessions were kept)\n", u.Email)
+	return nil
+}
+
 func userChangeEmail(c *userCtx) error {
 	u, err := c.onUser("POST", "/email", map[string]string{"email": str(c.cmd, "new-email")})
 	if err != nil {

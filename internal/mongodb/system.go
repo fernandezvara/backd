@@ -58,6 +58,9 @@ const (
 	// AppConfigHistoryCollection the versions that led to them (design/app-config.md §4).
 	AppConfigCollection        = "app_config"
 	AppConfigHistoryCollection = "app_config_history"
+	// SecurityStateCollection holds the realm's operator decisions that outlive deployments:
+	// the password epoch (design/breach-response.md §3).
+	SecurityStateCollection = "security_state"
 	// OrgsCollection, OrgMembersCollection, OrgTeamsCollection and OrgInvitationsCollection hold
 	// the realm's organizations, their memberships, teams and invitations
 	// (design/organizations.md §4).
@@ -128,17 +131,18 @@ var systemCollections = []systemCollection{
 	{
 		name: UsersCollection,
 		validator: jsonSchema([]string{"_id", "email", "email_verified", "roles", "disabled", "created_at", "updated_at"}, map[string]any{
-			"_id":            str(),
-			"email":          str(),
-			"email_verified": typ("bool"),
-			"roles":          map[string]any{"bsonType": "array", "items": str()},
-			"disabled":       typ("bool"),
-			"locale":         str(),
-			"consents":       typ("object"),
-			"admin_networks": map[string]any{"bsonType": "array", "items": str()},
-			"login_networks": map[string]any{"bsonType": "array", "items": str()},
-			"created_at":     typ("date"),
-			"updated_at":     typ("date"),
+			"_id":                 str(),
+			"email":               str(),
+			"email_verified":      typ("bool"),
+			"roles":               map[string]any{"bsonType": "array", "items": str()},
+			"disabled":            typ("bool"),
+			"locale":              str(),
+			"consents":            typ("object"),
+			"password_expired_at": typ("date"),
+			"admin_networks":      map[string]any{"bsonType": "array", "items": str()},
+			"login_networks":      map[string]any{"bsonType": "array", "items": str()},
+			"created_at":          typ("date"),
+			"updated_at":          typ("date"),
 		}),
 		// Sparse, so users from future providers that give no email don't
 		// collide on a missing value.
@@ -157,6 +161,7 @@ var systemCollections = []systemCollection{
 			"email":               str(),
 			"email_verified":      typ("bool"),
 			"last_used_at":        typ("date"),
+			"password_changed_at": typ("date"),
 			"apple_refresh_token": str(),
 			"apple_client_id":     str(),
 			"created_at":          typ("date"),
@@ -644,6 +649,17 @@ var systemCollections = []systemCollection{
 			{keys: bson.D{{Key: "token_hash", Value: 1}}, unique: true},
 			{keys: bson.D{{Key: "org", Value: 1}, {Key: "created_at", Value: -1}}},
 		},
+	},
+	{
+		name: SecurityStateCollection,
+		// One document per decision; _id names it ("password_epoch").
+		validator: jsonSchema([]string{"_id"}, map[string]any{
+			"_id":         str(),
+			"valid_after": typ("date"),
+			"set_by":      str(),
+			"set_at":      typ("date"),
+			"reason":      str(),
+		}),
 	},
 	{
 		name: AppConfigCollection,

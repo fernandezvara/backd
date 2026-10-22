@@ -23,6 +23,7 @@ Every command also takes `--url`, to pick the server for that command.
 | `backd user create --realm <realm> --email <email> --no-password` | Create a user without a password; they can't sign in with one until it's set |
 | `backd user list --realm <realm>` | List the realm's users |
 | `backd user set-password --realm <realm> --email <email>` | Set or replace the password, and revoke all of the user's sessions |
+| `backd user expire-password --realm <realm> --email <email> [--reason <text>]` | [Expire](#expiring-a-password) the password: it stops opening the account until the user resets it; sessions are kept |
 | `backd user change-email --realm <realm> --email <email> --new-email <email>` | Change the user's address at once, as an administrator (needs [`email`](../../functions/email/); see [the admin API](../../../operate/administration/admin/#changing-a-users-email)) |
 | `backd user identities --realm <realm> --email <email>` | List the user's ways to sign in: a password and the [providers](../providers/) they use, with the address each reported and when it was linked and last used |
 | `backd user mfa-reset --realm <realm> --email <email> --yes` | Remove a user's [second factor](../mfa/#when-a-user-loses-it) and recovery codes and end their sessions; `--local` is the break-glass form that acts on the database |
@@ -60,6 +61,12 @@ printf '%s\n' "$NEW_PASSWORD" | backd user set-password --realm demo --email ada
 {{< hint warning >}}
 Deleting a user can't be undone, so the command needs `--yes`. The documents they own are **kept**, with their `owner` pointing at a user that no longer exists; they are not erased.
 {{< /hint >}}
+
+## Expiring a password
+
+`backd user expire-password` makes a user's current password useless without changing it or touching their sessions, for a support case or a password you no longer trust. The user's next sign-in with that password is refused with `401 password_expired` (a wrong password is still `invalid_credentials`, so the answer tells nothing to someone who doesn't know it), and when the realm sends [email](../../functions/email/) a reset email is queued, as if they had asked for one. Choosing a new password through the [reset](../sessions/#password-reset), or an administrator running `set-password`, makes the account usable again; there is nothing to clear. The action is [audited](../../../operate/administration/audit/) as `password.expire`, with the optional `--reason`.
+
+Users who sign in with a provider or a magic link have no password to expire, and an expired password does not skip or start the [second factor](../mfa/): it is refused first. The same action is `POST /_admin/users/{id}/expire-password` in the [admin API](../../../operate/administration/admin/).
 
 ## Roles
 

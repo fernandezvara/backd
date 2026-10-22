@@ -79,6 +79,7 @@ Paths are relative to `/v1/{realm}/_admin`. Bodies are JSON (`Content-Type: appl
 | `GET /users/{id}/sessions` | none | `200` with the user's unexpired sessions, newest first (`id`, `created_at`, `last_used_at`, `expires_at`; never a token) |
 | `DELETE /users/{id}/sessions/{session_id}` | none | `204`; the session's token stops working at once; audited as `session.revoke`. `404` for an unknown session |
 | `POST /users/{id}/password` | `{"password"}` | `204` |
+| `POST /users/{id}/expire-password` | `{"reason"?}` | `204`; the password stops opening the account until it is reset ([details](../../../build/auth/users/#expiring-a-password)) |
 | `GET /users/{id}/owned` | none | `200` with [what erasing the user would do](#previewing-an-erase) |
 | `POST /users/{id}/email` | `{"email"}` | `200` with the user; [changes the address](#changing-a-users-email) |
 | `PUT /users/{id}/roles/{role}` | none | `200` with the user |

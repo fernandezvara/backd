@@ -952,7 +952,7 @@ func TestContract(t *testing.T) {
 		{"GET", "/users/" + f.bobID, ""}, {"GET", "/users/" + f.bobID + "/owned", ""}, {"PATCH", "/users/" + f.bobID, `{"disabled": false}`},
 		{"DELETE", "/users/" + f.bobID, ""}, {"POST", "/users/" + f.bobID + "/password", `{"password": "dev-p4ssw0rd!"}`},
 		{"PUT", "/users/" + f.bobID + "/roles/admin", ""}, {"DELETE", "/users/" + f.bobID + "/roles/admin", ""},
-		{"POST", "/users/" + f.bobID + "/email", `{"email": "z@example.com"}`},
+		{"POST", "/users/" + f.bobID + "/email", `{"email": "z@example.com"}`}, {"POST", "/users/" + f.bobID + "/expire-password", ""},
 		{"GET", "/invitations", ""}, {"POST", "/invitations", `{}`}, {"DELETE", "/invitations/x", ""},
 	}
 	for _, op := range adminOps {
@@ -984,6 +984,11 @@ func TestContract(t *testing.T) {
 	req("POST", ad+"/users/"+dan+"/password", `{"password": "dev-p4ssw0rd!2"}`, key, 204)
 	req("POST", ad+"/users/"+dan+"/password", `{"password": "short"}`, key, 400)
 	req("POST", ad+"/users/nope/password", `{"password": "dev-p4ssw0rd!2"}`, key, 404)
+	req("POST", ad+"/users/"+dan+"/expire-password", `{"reason": "contract test"}`, json(key), 204)
+	req("POST", ad+"/users/"+dan+"/expire-password", "", key, 204)
+	req("POST", ad+"/users/"+dan+"/expire-password", `{"reason": 7}`, json(key), 400)
+	req("POST", ad+"/users/nope/expire-password", "", key, 404)
+	req("POST", ad+"/users/"+dan+"/password", `{"password": "dev-p4ssw0rd!2"}`, key, 204)
 	req("PUT", ad+"/users/"+dan+"/roles/admin", "", key, 200)
 	req("PUT", ad+"/users/"+dan+"/roles/root", "", key, 400)
 	req("PUT", ad+"/users/nope/roles/admin", "", key, 404)

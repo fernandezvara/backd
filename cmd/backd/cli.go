@@ -235,6 +235,9 @@ func registerRemote(cfg *kli.Config) {
 	})
 	user("list", "list the realm's users", false, userList, nil)
 	user("set-password", "set or replace the password; revokes all sessions", true, userSetPassword, nil)
+	user("expire-password", "expire the user's password: it stops opening the account until they reset it; sessions are kept", true, userExpirePassword, func(cc *kli.CommandConfig) {
+		optional(cc, "reason", "why, for the audit trail")
+	})
 	user("change-email", "change the user's email at once (needs email in realm.yaml); revokes all sessions", true, userChangeEmail, func(cc *kli.CommandConfig) {
 		required(cc, "new-email", "the new email address")
 	})

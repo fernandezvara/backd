@@ -51,6 +51,7 @@ type MemStore struct {
 	sends       map[string]*memSend               // id → push send
 	outbox      []auth.PushOutboxEntry            // what the capture provider took
 	orgState    *memOrgs                          // organizations and their members
+	epoch       auth.PasswordEpoch
 	// FailPutIdentity, when set, is returned by PutIdentity.
 	FailPutIdentity error
 }
@@ -226,6 +227,9 @@ func (m *MemStore) UpdateUser(_ context.Context, id string, upd auth.UserUpdate,
 	if upd.LoginNetworks != nil {
 		u.LoginNetworks = *upd.LoginNetworks
 	}
+	if upd.PasswordExpiredAt != nil {
+		u.PasswordExpiredAt = *upd.PasswordExpiredAt
+	}
 	u.UpdatedAt = now
 	m.users[id] = u
 	return nil
@@ -281,6 +285,9 @@ func (m *MemStore) PutIdentity(_ context.Context, id auth.Identity) error {
 			return auth.ErrIdentityExists
 		}
 		cur.PasswordHash, cur.UpdatedAt = id.PasswordHash, id.UpdatedAt
+		if id.PasswordHash != "" {
+			cur.PasswordChangedAt = id.UpdatedAt
+		}
 		m.identities[k] = cur
 		return nil
 	}
@@ -289,8 +296,42 @@ func (m *MemStore) PutIdentity(_ context.Context, id auth.Identity) error {
 			return auth.ErrIdentityExists
 		}
 	}
+	if id.PasswordHash != "" {
+		id.PasswordChangedAt = id.UpdatedAt
+	}
 	m.identities[k] = id
 	return nil
+}
+
+// ForgetPasswordChangedAt clears the recorded change time of an identity, as if it came from
+// before backd recorded it.
+func (m *MemStore) ForgetPasswordChangedAt(id auth.Identity) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	k := id.Provider + "/" + id.Subject
+	cur, ok := m.identities[k]
+	if !ok {
+		return auth.ErrNotFound
+	}
+	cur.PasswordChangedAt = time.Time{}
+	m.identities[k] = cur
+	return nil
+}
+
+func (m *MemStore) PasswordEpoch(context.Context) (auth.PasswordEpoch, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.epoch, nil
+}
+
+func (m *MemStore) SetPasswordEpoch(_ context.Context, e auth.PasswordEpoch) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !e.ValidAfter.After(m.epoch.ValidAfter) {
+		return false, nil
+	}
+	m.epoch = e
+	return true, nil
 }
 
 func (m *MemStore) ListIdentities(_ context.Context, userID string) ([]auth.Identity, error) {

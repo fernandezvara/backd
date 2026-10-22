@@ -40,16 +40,18 @@ type userDoc struct {
 	AdminNetworks []string   `bson:"admin_networks,omitempty"`
 	LoginNetworks []string   `bson:"login_networks,omitempty"`
 	// Consents is the summary of the user's consent records: consent name to accepted version.
-	Consents  map[string]string `bson:"consents,omitempty"`
-	CreatedAt time.Time         `bson:"created_at"`
-	UpdatedAt time.Time         `bson:"updated_at"`
+	Consents          map[string]string `bson:"consents,omitempty"`
+	PasswordExpiredAt *time.Time        `bson:"password_expired_at,omitempty"`
+	CreatedAt         time.Time         `bson:"created_at"`
+	UpdatedAt         time.Time         `bson:"updated_at"`
 }
 
 func (d userDoc) user() auth.User {
 	return auth.User{
 		ID: d.ID, Email: d.Email, EmailVerified: d.EmailVerified, PendingEmail: d.PendingEmail, PreviousEmail: d.PreviousEmail, ErasedAt: utcOrZero(d.ErasedAt), Roles: d.Roles, Disabled: d.Disabled, Locale: d.Locale,
 		AdminNetworks: networks(d.AdminNetworks), LoginNetworks: networks(d.LoginNetworks), Consents: d.Consents,
-		CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC(),
+		PasswordExpiredAt: utcOrZero(d.PasswordExpiredAt),
+		CreatedAt:         d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC(),
 	}
 }
 
@@ -76,6 +78,8 @@ type identityDoc struct {
 	Email         string    `bson:"email,omitempty"`
 	EmailVerified bool      `bson:"email_verified,omitempty"`
 	LastUsedAt    time.Time `bson:"last_used_at,omitempty"`
+	// When a password identity's password was created or last replaced.
+	PasswordChangedAt time.Time `bson:"password_changed_at,omitempty"`
 	// Apple's refresh token, sealed, and the client id it belongs to.
 	AppleRefreshToken string    `bson:"apple_refresh_token,omitempty"`
 	AppleClientID     string    `bson:"apple_client_id,omitempty"`
@@ -86,7 +90,7 @@ type identityDoc struct {
 func (d identityDoc) identity() auth.Identity {
 	return auth.Identity{
 		ID: d.ID, UserID: d.UserID, Provider: d.Provider, Subject: d.Subject, PasswordHash: d.PasswordHash,
-		Email: d.Email, EmailVerified: d.EmailVerified, LastUsedAt: d.LastUsedAt.UTC(),
+		Email: d.Email, EmailVerified: d.EmailVerified, LastUsedAt: d.LastUsedAt.UTC(), PasswordChangedAt: d.PasswordChangedAt.UTC(),
 		AppleRefreshToken: d.AppleRefreshToken, AppleClientID: d.AppleClientID,
 		CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC(),
 	}
@@ -246,6 +250,13 @@ func (s *AuthStore) UpdateUser(ctx context.Context, id string, upd auth.UserUpda
 			set = append(set, bson.E{Key: key, Value: n.Strings()})
 		}
 	}
+	switch {
+	case upd.PasswordExpiredAt == nil:
+	case upd.PasswordExpiredAt.IsZero():
+		unset = append(unset, bson.E{Key: "password_expired_at", Value: ""})
+	default:
+		set = append(set, bson.E{Key: "password_expired_at", Value: *upd.PasswordExpiredAt})
+	}
 	update := bson.D{{Key: "$set", Value: set}}
 	if len(unset) > 0 {
 		update = append(update, bson.E{Key: "$unset", Value: unset})
@@ -335,7 +346,7 @@ func (s *AuthStore) PutIdentity(ctx context.Context, id auth.Identity) error {
 	filter := bson.D{{Key: "provider", Value: id.Provider}, {Key: "subject", Value: id.Subject}, {Key: "user_id", Value: id.UserID}}
 	set := bson.D{{Key: "updated_at", Value: id.UpdatedAt}}
 	if id.PasswordHash != "" {
-		set = append(set, bson.E{Key: "password_hash", Value: id.PasswordHash})
+		set = append(set, bson.E{Key: "password_hash", Value: id.PasswordHash}, bson.E{Key: "password_changed_at", Value: id.UpdatedAt})
 	}
 	setOnInsert := bson.D{{Key: "_id", Value: id.ID}, {Key: "user_id", Value: id.UserID}, {Key: "created_at", Value: id.CreatedAt}}
 	if id.Email != "" {

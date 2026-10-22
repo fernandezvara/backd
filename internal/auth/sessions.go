@@ -172,8 +172,9 @@ func (s *Users) Login(ctx context.Context, email, password, ip string) (Principa
 func (s *Users) SignIn(ctx context.Context, email, password, ip string) (Redeemed, error) {
 	var u User
 	err := s.throttled(ctx, email, ip, func() error {
+		var id Identity
 		var err error
-		if u, err = s.verifyLogin(ctx, email, password); err != nil {
+		if u, id, err = s.verifyLogin(ctx, email, password); err != nil {
 			return err
 		}
 		// Outside the user's login networks, the right password fails
@@ -181,11 +182,21 @@ func (s *Users) SignIn(ctx context.Context, email, password, ip string) (Redeeme
 		if !u.LoginNetworks.Allows(ip) {
 			return ErrInvalidCredentials
 		}
+		// A correct password that expired opens nothing; the answer is safe because only
+		// the right password gets it.
+		if expired, err := s.passwordExpired(ctx, u, id); err != nil {
+			return err
+		} else if expired {
+			return ErrPasswordExpired
+		}
 		if s.Settings.Account.RequireVerifiedEmail && !u.EmailVerified {
 			return ErrEmailNotVerified
 		}
 		return nil
 	})
+	if errors.Is(err, ErrPasswordExpired) {
+		s.mailExpiredPassword(ctx, u, ip)
+	}
 	if err != nil {
 		return Redeemed{}, err
 	}
@@ -194,37 +205,38 @@ func (s *Users) SignIn(ctx context.Context, email, password, ip string) (Redeeme
 	return out, err
 }
 
-// verifyLogin returns the user if password is theirs, else
+// verifyLogin returns the user, and their password identity, if password is theirs, else
 // ErrInvalidCredentials.
-func (s *Users) verifyLogin(ctx context.Context, email, password string) (User, error) {
+func (s *Users) verifyLogin(ctx context.Context, email, password string) (User, Identity, error) {
 	hash := ""
+	var ident Identity
 	u, err := s.byEmail(ctx, email)
 	switch {
 	case err == nil:
 		id, err := s.Store.Identity(ctx, ProviderPassword, u.ID)
 		if err != nil && !errors.Is(err, ErrNotFound) {
-			return User{}, err
+			return User{}, Identity{}, err
 		}
-		hash = id.PasswordHash
+		hash, ident = id.PasswordHash, id
 	case !errors.Is(err, ErrNotFound):
-		return User{}, err
+		return User{}, Identity{}, err
 	}
 	// Without a real hash, verify against a dummy one for equal timing;
 	// the result is ignored.
 	real := hash != ""
 	if !real {
 		if hash, err = s.dummyHash(ctx); err != nil {
-			return User{}, err
+			return User{}, Identity{}, err
 		}
 	}
 	ok, err := s.Hasher.Verify(ctx, password, hash)
 	if err != nil {
-		return User{}, err
+		return User{}, Identity{}, err
 	}
 	if !ok || !real || u.Disabled {
-		return User{}, ErrInvalidCredentials
+		return User{}, Identity{}, ErrInvalidCredentials
 	}
-	return u, nil
+	return u, ident, nil
 }
 
 // dummyHashes holds, per set of hashing parameters, a hash to verify
@@ -435,6 +447,15 @@ func (s *Users) comparePassword(ctx context.Context, u User, password string) er
 	}
 	if !ok {
 		return ErrInvalidCredentials
+	}
+	// The caller's user may be older than the last expiry; read the current one.
+	if u, err = s.Store.UserByID(ctx, u.ID); err != nil {
+		return err
+	}
+	if expired, err := s.passwordExpired(ctx, u, id); err != nil {
+		return err
+	} else if expired {
+		return ErrPasswordExpired
 	}
 	return nil
 }

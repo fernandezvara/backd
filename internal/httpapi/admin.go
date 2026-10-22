@@ -99,6 +99,7 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 			r.With(json).Patch("/", a.updateUser)
 			r.Delete("/", a.deleteUser)
 			r.With(json).Post("/password", a.setPassword)
+			r.Post("/expire-password", a.expirePassword)
 			r.With(json).Post("/email", a.changeEmail)
 			r.Put("/roles/{role}", a.addRole)
 			r.Delete("/roles/{role}", a.removeRole)
@@ -796,6 +797,10 @@ func adminUserJSON(u auth.User, locale string) map[string]any {
 	out["admin_networks"] = u.AdminNetworks.Strings()
 	out["login_networks"] = u.LoginNetworks.Strings()
 	out["updated_at"] = formatTime(u.UpdatedAt)
+	out["password_expired_at"] = nil
+	if !u.PasswordExpiredAt.IsZero() {
+		out["password_expired_at"] = formatTime(u.PasswordExpiredAt)
+	}
 	out["erased_at"] = nil
 	if !u.ErasedAt.IsZero() {
 		out["erased_at"] = formatTime(u.ErasedAt)
