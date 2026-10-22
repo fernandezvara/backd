@@ -30,6 +30,7 @@ type adminAPI struct {
 	fingerprint  string          // the config this instance runs (readyz shows it too)
 	version      string          // this build's version, recorded in export packages
 	env          string          // BACKD_ENV: production, staging…
+	baseURL      string          // BACKD_URL: backd's public address, for the links an administrator hands out
 	offline      bool            // the CLI's direct mode: every request is a full administrator's
 	exports      exportLeases    // the export in progress per realm
 	reloadErrors func() []string // why the last live reload failed (BACKD_DEV); nil without one
@@ -79,6 +80,10 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		r.With(users, json).Post("/push/test", a.testPush)
 		r.With(users).Delete("/push/devices", a.removePushDevices)
 		r.With(users).Get("/users", a.listUsers)
+		r.With(users).Get("/passwords", a.passwordState)
+		r.With(users).Post("/passwords/expire", a.expireAllPasswords)
+		r.With(users).Post("/passwords/notify", a.notifyExpiredPasswords)
+		r.With(users).Delete("/sessions", a.revokeAllSessions)
 		r.With(users, json).Post("/consents/notify", a.notifyConsent)
 		r.With(users).Get("/mfa", a.mfaOverview)
 		r.With(users, json).Post("/users", a.createUser)
@@ -99,6 +104,8 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 			r.With(json).Patch("/", a.updateUser)
 			r.Delete("/", a.deleteUser)
 			r.With(json).Post("/password", a.setPassword)
+			r.Post("/expire-password", a.expirePassword)
+			r.Post("/reset-link", a.resetLink)
 			r.With(json).Post("/email", a.changeEmail)
 			r.Put("/roles/{role}", a.addRole)
 			r.Delete("/roles/{role}", a.removeRole)
@@ -444,7 +451,16 @@ func (a *adminAPI) createUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *adminAPI) getUser(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, adminUserJSON(adminUserOf(r), usersOf(r).LocaleOf(adminUserOf(r))))
+	u := adminUserOf(r)
+	out := adminUserJSON(u, usersOf(r).LocaleOf(u))
+	// Whether the password is expired now, the realm's epoch included: one read here, so lists don't pay it.
+	expired, err := usersOf(r).PasswordExpiredFor(r.Context(), u)
+	if err != nil {
+		adminError(w, r, err)
+		return
+	}
+	out["password_expired"] = expired
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (a *adminAPI) updateUser(w http.ResponseWriter, r *http.Request) {
@@ -796,6 +812,10 @@ func adminUserJSON(u auth.User, locale string) map[string]any {
 	out["admin_networks"] = u.AdminNetworks.Strings()
 	out["login_networks"] = u.LoginNetworks.Strings()
 	out["updated_at"] = formatTime(u.UpdatedAt)
+	out["password_expired_at"] = nil
+	if !u.PasswordExpiredAt.IsZero() {
+		out["password_expired_at"] = formatTime(u.PasswordExpiredAt)
+	}
 	out["erased_at"] = nil
 	if !u.ErasedAt.IsZero() {
 		out["erased_at"] = formatTime(u.ErasedAt)
@@ -1346,6 +1366,11 @@ func (a *adminAPI) cancelJob(w http.ResponseWriter, r *http.Request) {
 			rightRefused(w, r, fmt.Sprintf("cancelling a schema check needs the %q admin right; your roles open: %s", registry.RightData, have))
 			return
 		}
+	} else if ok && found.PasswordNotice != nil {
+		if !have.CanWrite(registry.RightUsers) {
+			rightRefused(w, r, fmt.Sprintf("cancelling the notification of the users needs the %q admin right to change; your roles open: %s", registry.RightUsers, have))
+			return
+		}
 	} else if ok && found.Image != nil {
 		if !have.CanWrite(registry.RightConfig) {
 			rightRefused(w, r, fmt.Sprintf("cancelling a regeneration of image versions needs the %q admin right to change; your roles open: %s", registry.RightConfig, have))
@@ -1408,6 +1433,9 @@ func jobSummaryJSON(j auth.Job) map[string]any {
 	function := j.Database + "/" + j.Function
 	if j.Check != nil {
 		function = checkScope(j.Check.Database, j.Check.Collection)
+	}
+	if j.PasswordNotice != nil {
+		function = "password-notice"
 	}
 	out := map[string]any{
 		"id":              j.ID,

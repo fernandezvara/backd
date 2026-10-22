@@ -136,6 +136,110 @@ func userSetPassword(c *userCtx) error {
 	return nil
 }
 
+func userExpirePassword(c *userCtx) error {
+	body := map[string]string{}
+	if r := str(c.cmd, "reason"); r != "" {
+		body["reason"] = r
+	}
+	u, err := c.onUser("POST", "/expire-password", body)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(c.uio.stdout, "the password of %s expired; they can sign in again after a password reset or a new password from an administrator (their sessions were kept)\n", u.Email)
+	return nil
+}
+
+func userExpirePasswords(c *userCtx) error {
+	if !flag(c.cmd, "yes") {
+		msg := "this expires the password of every account in the realm and ends every session"
+		if flag(c.cmd, "keep-sessions") {
+			msg = "this expires the password of every account in the realm"
+		}
+		return errors.New(msg + ": add --yes to confirm")
+	}
+	body := map[string]any{"keep_sessions": flag(c.cmd, "keep-sessions"), "notify": flag(c.cmd, "notify")}
+	if r := str(c.cmd, "reason"); r != "" {
+		body["reason"] = r
+	}
+	var out struct {
+		ValidAfter string `json:"valid_after"`
+		Accounts   int64
+		Sessions   int64
+		NotifyJob  string `json:"notify_job"`
+	}
+	proof, err := c.t.proof(c.uio)
+	if err != nil {
+		return err
+	}
+	if _, err := c.t.callHeaders("POST", "_admin/passwords/expire", nil, body, &out, proof); err != nil {
+		return err
+	}
+	fmt.Fprintf(c.uio.stdout, "every password set before %s expired: %d accounts with a password, %d sessions ended\nusers choose a new password with a reset (a sign-in with the old one queues the email), or you set one with `backd user set-password`\n", out.ValidAfter, out.Accounts, out.Sessions)
+	if out.NotifyJob != "" {
+		fmt.Fprintf(c.uio.stdout, "telling the users by email: job %s (follow it with `backd functions jobs`; `backd user notify-expired` starts it again if it is cancelled or fails)\n", out.NotifyJob)
+	}
+	return nil
+}
+
+func userNotifyExpired(c *userCtx) error {
+	var out struct {
+		ID string `json:"id"`
+	}
+	proof, err := c.t.proof(c.uio)
+	if err != nil {
+		return err
+	}
+	if _, err := c.t.callHeaders("POST", "_admin/passwords/notify", nil, nil, &out, proof); err != nil {
+		return err
+	}
+	fmt.Fprintf(c.uio.stdout, "telling the users whose password expired: job %s; users already told are skipped (follow it with `backd functions jobs`)\n", out.ID)
+	return nil
+}
+
+func userRevokeSessions(c *userCtx) error {
+	if !flag(c.cmd, "all") {
+		return usageErr(errors.New("--all is required: it ends the sessions of every user (to end one user's, set a password or disable them)"))
+	}
+	if !flag(c.cmd, "yes") {
+		return errors.New("this ends every session in the realm: add --yes to confirm")
+	}
+	var out struct{ Sessions int64 }
+	proof, err := c.t.proof(c.uio)
+	if err != nil {
+		return err
+	}
+	if _, err := c.t.callHeaders("DELETE", "_admin/sessions", nil, nil, &out, proof); err != nil {
+		return err
+	}
+	fmt.Fprintf(c.uio.stdout, "%d sessions ended\n", out.Sessions)
+	return nil
+}
+
+func userResetLink(c *userCtx) error {
+	body := map[string]string{}
+	if r := str(c.cmd, "redirect-to"); r != "" {
+		body["redirect_to"] = r
+	}
+	u, err := c.find()
+	if err != nil {
+		return err
+	}
+	proof, err := c.t.proof(c.uio)
+	if err != nil {
+		return err
+	}
+	var out struct {
+		Link      string
+		ExpiresAt string `json:"expires_at"`
+	}
+	if _, err := c.t.callHeaders("POST", "_admin/users/"+url.PathEscape(u.ID)+"/reset-link", nil, body, &out, proof); err != nil {
+		return err
+	}
+	fmt.Fprintln(c.uio.stdout, out.Link)
+	fmt.Fprintf(c.uio.stderr, "reset link for %s, shown once; it works once and expires at %s. Hand it over by a channel you trust: whoever holds it can set the password. Nothing was sent.\n", u.Email, out.ExpiresAt)
+	return nil
+}
+
 func userChangeEmail(c *userCtx) error {
 	u, err := c.onUser("POST", "/email", map[string]string{"email": str(c.cmd, "new-email")})
 	if err != nil {

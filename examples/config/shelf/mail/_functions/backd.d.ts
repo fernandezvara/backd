@@ -351,6 +351,7 @@ export interface Realm {
       "no-account": Record<string, unknown>;
       "org-invitation": Record<string, unknown>;
       "password-changed": Record<string, unknown>;
+      "password-expired": Record<string, unknown>;
       "reauth-code": Record<string, unknown>;
       "reset-password": Record<string, unknown>;
       "security-notice": Record<string, unknown>;

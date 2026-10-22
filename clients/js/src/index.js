@@ -15,6 +15,7 @@ export {
   BackdError,
   ValidationError,
   AuthenticationError,
+  PasswordExpiredError,
   ForbiddenError,
   NotFoundError,
   ConflictError,
@@ -112,6 +113,8 @@ export { parseReturn as parseOAuthReturn } from './oauth.js'
  * @typedef {import('./admin.js').PushSend} PushSend
  * @typedef {import('./admin.js').PushStatus} PushStatus
  * @typedef {import('./admin.js').UserPage} UserPage
+ * @typedef {import('./admin.js').PasswordState} PasswordState
+ * @typedef {import('./admin.js').PasswordsExpired} PasswordsExpired
  * @typedef {import('./admin.js').Invitation} Invitation
  * @typedef {import('./admin.js').NewInvitation} NewInvitation
  * @typedef {import('./admin.js').SentInvitation} SentInvitation

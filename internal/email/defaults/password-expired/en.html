@@ -1,0 +1,4 @@
+<p>Hello,</p>
+<p>The password of <strong>{{.User.Email}}</strong> for {{.Realm}} can no longer be used{{if .Data.event}}: {{.Data.event}}{{end}}. To keep using your account, choose a new one:</p>
+<p><a href="{{.Link}}">Choose a new password</a></p>
+<p>The link works once and expires on {{.ExpiresAt.Format "2006-01-02 15:04"}} UTC. If it has expired, use "Forgot password" on the sign-in page to get a new one.</p>

@@ -54,6 +54,7 @@ Go through this page before any realm faces the internet, and again after changi
 - [ ] **MongoDB requires TLS and authentication**, and isn't reachable from the internet.
 - [ ] **`backd` runs with `PROVISION_MODE=verify`** as a user limited to the configured collections; admin credentials are only available to the provisioning step. See [least-privilege provisioning](../production/#least-privilege-provisioning).
 - [ ] **Encrypted backups** of every data and `<realm>___system` database run on a schedule, are copied off the server, and a restore has been practised. The decryption key isn't on the server. See [Backup and restore](../backup/).
+- [ ] **Someone has read [If credentials leak](../if-credentials-leak/)** and knows who runs `backd user expire-passwords` when a backup or a credential dump leaks, and where the admin credentials for it are kept.
 
 ## Operations
 

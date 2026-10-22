@@ -48,9 +48,15 @@ type User struct {
 	LoginNetworks registry.Networks
 	// Consents is the version of each consent the user has accepted and not
 	// withdrawn: the summary of their consent records, for rules and sign-in.
-	Consents  map[string]string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	Consents map[string]string
+	// PasswordExpiredAt, when set, expires the user's password if it was set before it
+	// (design/breach-response.md §3); a new password makes the account usable again.
+	PasswordExpiredAt time.Time
+	// PasswordNotifiedAt is when the user was last sent the email that tells them to choose a
+	// new password; a notification run skips whoever was told after the epoch.
+	PasswordNotifiedAt time.Time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 // Identity is one way a user signs in.
@@ -70,6 +76,9 @@ type Identity struct {
 	// LastUsedAt is the last successful sign-in with this identity; zero if
 	// none was recorded yet.
 	LastUsedAt time.Time
+	// PasswordChangedAt is when a password identity's password was created or last replaced;
+	// zero for identities from before it was recorded, which count as changed at CreatedAt.
+	PasswordChangedAt time.Time
 	// AppleRefreshToken is Apple's refresh token, sealed with the realm's secrets cipher
 	// (see SealToken) and kept only to revoke it when the account goes away; AppleClientID
 	// is the client id it was issued to.
@@ -99,6 +108,10 @@ type UserUpdate struct {
 	Locale        *string
 	AdminNetworks *registry.Networks // set (empty clears)
 	LoginNetworks *registry.Networks // set (empty clears)
+	// PasswordExpiredAt expires the user's password as of that time.
+	PasswordExpiredAt *time.Time
+	// PasswordNotifiedAt records that the user was told to choose a new password.
+	PasswordNotifiedAt *time.Time
 }
 
 var (
@@ -190,6 +203,20 @@ type Store interface {
 	ReopenJob(ctx context.Context, id string, expiresAt time.Time) (bool, error)
 	// DeleteUser removes the user with their identities and sessions.
 	DeleteUser(ctx context.Context, id string) error
+	// PasswordEpoch returns the realm's password epoch, the zero value when none was set.
+	// SetPasswordEpoch stores e when its ValidAfter is later than the current one and says
+	// whether it did: an epoch only moves forward.
+	PasswordEpoch(ctx context.Context) (PasswordEpoch, error)
+	SetPasswordEpoch(ctx context.Context, e PasswordEpoch) (bool, error)
+	// DeleteAllSessions revokes every session of the realm, and the devices they registered,
+	// and says how many sessions. CountPasswordIdentities says how many accounts have a password.
+	DeleteAllSessions(ctx context.Context) (int64, error)
+	CountPasswordIdentities(ctx context.Context) (int64, error)
+	// PasswordUserIDs returns, in id order, up to limit ids of users, after the id `after`,
+	// whose password was set before the time: the accounts an epoch at that time expires.
+	PasswordUserIDs(ctx context.Context, before time.Time, after string, limit int) ([]string, error)
+	// SetPasswordNoticeProgress keeps a notification job's place and counts.
+	SetPasswordNoticeProgress(ctx context.Context, jobID, after string, c PasswordNoticeCounts) error
 	// PutIdentity creates the identity, or, when one with the same provider
 	// and subject exists, updates its credentials and UpdatedAt (keeping its
 	// ID and CreatedAt). ErrIdentityExists when the user already has another

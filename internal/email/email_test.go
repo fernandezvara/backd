@@ -94,6 +94,29 @@ func TestLoadProblems(t *testing.T) {
 	}
 }
 
+func TestThePasswordExpiredMessageCarriesTheReasonAndTheResetLink(t *testing.T) {
+	dir := t.TempDir()
+	writeDefaults(t, dir)
+	tpl, errs := Load(dir, []string{"en"})
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	at := time.Date(2026, 10, 3, 12, 30, 0, 0, time.UTC)
+	data := Data{Realm: "blog", User: User{Email: "ana@example.com"}, Link: "https://x.example/v1/blog/_auth/reset-password?token=abc", ExpiresAt: at, Data: map[string]any{"event": "a backup leaked"}}
+	msg, err := tpl.Render(PasswordExpired, "en", data)
+	if err != nil || msg.Subject != "Choose a new password for blog" || !strings.Contains(msg.Text, "a backup leaked") || !strings.Contains(msg.Text, "?token=abc") || !strings.Contains(msg.HTML, `href="https://x.example/v1/blog/_auth/reset-password?token=abc"`) {
+		t.Fatalf("with a reason: %+v, %v", msg, err)
+	}
+	data.Data["event"] = ""
+	msg, err = tpl.Render(PasswordExpired, "en", data)
+	if err != nil || strings.Contains(msg.Text, "used:") {
+		t.Errorf("without a reason: %+v, %v", msg, err)
+	}
+	if TokenPurpose(PasswordExpired) != TokenPurpose(ResetPassword) {
+		t.Error("the message carries a reset token")
+	}
+}
+
 func TestPurposes(t *testing.T) {
 	for kind, want := range map[string]Purpose{VerifyEmail: "verify-email", ResetPassword: "reset-password", ChangeEmail: "change-email", EmailChanged: "revert-email-change", Invitation: "invitation", Welcome: "", AccountExists: "", PasswordChanged: ""} {
 		if got := TokenPurpose(kind); got != want {

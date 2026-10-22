@@ -458,7 +458,9 @@ export class Auth {
    * Signs in with email and password. The answer is the session, or, for a user with a second
    * factor, an {@link MfaChallenge} to finish with {@link Auth#verifyMfa}, or an
    * {@link EnrollmentChallenge}: check `'challenge' in result`. Nothing is stored until a session.
-   * `org` is the company the person comes from (see {@link MagicLink#request}).
+   * `org` is the company the person comes from (see {@link MagicLink#request}). A right password that
+   * an administrator expired rejects with a `PasswordExpiredError` (`resetEmailQueued` says whether
+   * backd queued the email with the link to choose a new one).
    * @param {{ email: string, password: string, org?: string }} input
    * @param {RequestOptions} [opts]
    * @returns {Promise<SignInResult>}
@@ -472,6 +474,7 @@ export class Auth {
   /**
    * Signs in with email and password and promises a session: a user who needs a second step makes
    * this reject with a {@link SecondStepRequiredError} (use {@link Auth#signIn} to get the step as a value).
+   * An expired password rejects with a `PasswordExpiredError`.
    * @param {{ email: string, password: string, org?: string }} input
    * @param {RequestOptions} [opts]
    * @returns {Promise<Session>}
@@ -825,7 +828,7 @@ export class Auth {
    * and sends it with the sensitive requests while it is good (the realm's `reauth.ttl`, 5 minutes
    * by default), so one prompt covers a settings page. A wrong proof is a `AuthenticationError`
    * (`invalid_credentials`) or a `ValidationError` (`invalid_code`) and counts against the same
-   * limits as signing in.
+   * limits as signing in. A password an administrator expired is a `PasswordExpiredError`.
    * @param {{ method: 'totp' | 'recovery_code' | 'password' | 'email_code', code?: string, password?: string }} input
    * @param {RequestOptions} [opts]
    * @returns {Promise<{ reauthToken: string, expiresAt: string }>}

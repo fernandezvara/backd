@@ -48,6 +48,25 @@ export class TooManySubscriptionsError extends ValidationError {}
 export class InvalidResumeTokenError extends ValidationError {}
 
 /**
+ * 401 `password_expired`: the password is right, but it was set before an administrator expired it
+ * (`backd user expire-passwords`), so it opens nothing until the user chooses a new one. Only the
+ * right password gets this answer (a wrong one is `invalid_credentials`). `resetEmailQueued` says
+ * that backd queued the email with the link to choose a new password, so the app can say "we sent
+ * you an email"; when it is false (the realm sends no email, or the limits held it back) offer
+ * `auth.requestPasswordReset({ email })`, which is the same flow a user starts with *Forgot
+ * password*, or tell them to ask their administrator. The session of a signed-in user is not
+ * ended by this: it comes from signing in or from `auth.reauth({ method: 'password' })`.
+ */
+export class PasswordExpiredError extends AuthenticationError {
+  /** @param {ConstructorParameters<typeof BackdError>[0]} init */
+  constructor(init) {
+    super(init)
+    /** @type {boolean} */
+    this.resetEmailQueued = (init.details ?? []).some((d) => d.path === 'reset_email')
+  }
+}
+
+/**
  * The stream's session, user or key is gone (the server said `session_ended`). Live views stop and report this;
  * sign in again and subscribe again.
  */
@@ -248,6 +267,8 @@ function typedClass(code, fallback) {
   switch (code) {
     case 'consent_required':
       return ConsentRequiredError
+    case 'password_expired':
+      return PasswordExpiredError
     case 'realtime_not_enabled':
       return RealtimeNotEnabledError
     case 'too_many_subscriptions':

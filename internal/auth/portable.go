@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // The realm's authentication data that moves with an app (design/export-import.md §7): the
@@ -94,7 +95,7 @@ func AnonymizedCollections() []string {
 // AnonymousEmail is the address an anonymized export gives the user with that id.
 func AnonymousEmail(userID string) string { return "user-" + userID + "@example.invalid" }
 
-func (a *AuthAnonymize) apply(collection string, d map[string]any) (keep bool) {
+func (a *AuthAnonymize) apply(collection string, d map[string]any, now time.Time) (keep bool) {
 	switch collection {
 	case "users":
 		id, _ := d["id"].(string)
@@ -103,12 +104,16 @@ func (a *AuthAnonymize) apply(collection string, d map[string]any) (keep bool) {
 		delete(d, "previous_email")
 		delete(d, "admin_networks") // where a person works from is personal data too
 		delete(d, "login_networks")
+		// Whatever was done about passwords in production says nothing about the copy's own.
+		delete(d, "password_expired_at")
+		delete(d, "password_notified_at")
 	case "identities":
 		if d["provider"] != ProviderPassword {
 			return false
 		}
 		if a.PasswordHash != "" {
-			d["password_hash"] = a.PasswordHash
+			// A new password, set now: a password epoch the staging realm holds doesn't expire it.
+			d["password_hash"], d["password_changed_at"] = a.PasswordHash, now.UTC()
 		} else {
 			delete(d, "password_hash")
 		}
@@ -137,7 +142,7 @@ func (s *Users) ExportAuthDocs(ctx context.Context, collection, afterID string, 
 	out = make([]map[string]any, 0, len(docs))
 	for _, d := range docs {
 		if anon != nil {
-			if anon.apply(collection, d) {
+			if anon.apply(collection, d, s.now()) {
 				out = append(out, d)
 			}
 			continue

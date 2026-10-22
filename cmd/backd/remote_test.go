@@ -144,6 +144,8 @@ organizations:
 	c.expect(0, "has no password yet", "", "user", "create", "--realm", "acme", "--email", "dan@example.com", "--no-password")
 	c.expect(0, "password set for dan@example.com", "dev-p4ssw0rd!4\n", "user", "set-password", "--realm", "acme", "--email", "dan@example.com")
 	c.expect(1, "user not found: nobody@example.com", "x\n", "user", "set-password", "--realm", "acme", "--email", "nobody@example.com")
+	c.expect(0, "the password of dan@example.com expired", "", "user", "expire-password", "--realm", "acme", "--email", "dan@example.com", "--reason", "support case")
+	c.expect(1, "user not found: nobody@example.com", "", "user", "expire-password", "--realm", "acme", "--email", "nobody@example.com")
 	c.expect(1, "this realm doesn't send email", "", "user", "change-email", "--realm", "acme", "--email", "bob@example.com", "--new-email", "bob.new@example.com")
 	c.expect(0, "bob@example.com (id ", "", "user", "owned", "--realm", "acme", "--email", "bob@example.com")
 	out := c.expect(0, "PROVIDER", "", "user", "identities", "--realm", "acme", "--email", "bob@example.com")
@@ -319,6 +321,19 @@ organizations:
 	c.expect(1, "run `backd login --realm acme --url "+srv.URL+"`", "", "user", "list", "--realm", "acme")
 	c.expect(0, "logged out", "", "logout", "--realm", "acme")
 	c.expect(1, "not logged in", "", "user", "list", "--realm", "acme")
+
+	// Last, because they end the session this test signed in with.
+	c.expect(0, "logged in", pw+"\n", "login", "--realm", "acme", "--email", "ada@example.com")
+	c.expect(1, "the reset page is served with the realm's email section", pw+"\n", "user", "reset-link", "--realm", "acme", "--email", "ada@example.com")
+	c.expect(1, "user not found: nobody@example.com", pw+"\n", "user", "reset-link", "--realm", "acme", "--email", "nobody@example.com")
+	c.expect(1, "add --yes to confirm", "", "user", "expire-passwords", "--realm", "acme")
+	c.expect(1, "the realm has no email section", pw+"\n", "user", "expire-passwords", "--realm", "acme", "--yes", "--notify")
+	c.expect(1, "the realm has no email section", pw+"\n", "user", "notify-expired", "--realm", "acme")
+	c.expect(2, "--all is required", "", "user", "revoke-sessions", "--realm", "acme")
+	c.expect(1, "add --yes to confirm", "", "user", "revoke-sessions", "--realm", "acme", "--all")
+	c.expect(0, "sessions ended", pw+"\n", "user", "revoke-sessions", "--realm", "acme", "--all", "--yes")
+	c.expect(0, "logged in", pw+"\n", "login", "--realm", "acme", "--email", "ada@example.com")
+	c.expect(0, "accounts with a password", pw+"\n", "user", "expire-passwords", "--realm", "acme", "--yes", "--reason", "drill", "--keep-sessions")
 }
 
 func TestLoginArguments(t *testing.T) {

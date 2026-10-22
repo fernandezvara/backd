@@ -235,6 +235,23 @@ func registerRemote(cfg *kli.Config) {
 	})
 	user("list", "list the realm's users", false, userList, nil)
 	user("set-password", "set or replace the password; revokes all sessions", true, userSetPassword, nil)
+	user("expire-password", "expire the user's password: it stops opening the account until they reset it; sessions are kept", true, userExpirePassword, func(cc *kli.CommandConfig) {
+		optional(cc, "reason", "why, for the audit trail")
+	})
+	user("expire-passwords", "expire every password of the realm and end every session (the first minutes of a leak)", false, userExpirePasswords, func(cc *kli.CommandConfig) {
+		optional(cc, "reason", "why, for the audit trail")
+		boolean(cc, "keep-sessions", "keep the sessions (a planned rotation, not a breach)")
+		boolean(cc, "notify", "also email every user a link to choose a new password (needs email in realm.yaml)")
+		boolean(cc, "yes", "confirm: every user will have to choose a new password")
+	})
+	user("notify-expired", "email every user whose password was expired a link to choose a new one; starts again after a cancel or failure", false, userNotifyExpired, nil)
+	user("revoke-sessions", "end every session of the realm, leaving passwords alone", false, userRevokeSessions, func(cc *kli.CommandConfig) {
+		boolean(cc, "all", "end the sessions of every user")
+		boolean(cc, "yes", "confirm")
+	})
+	user("reset-link", "print a one-time link for the user to choose a new password, for a user the email can't reach (nothing is sent)", true, userResetLink, func(cc *kli.CommandConfig) {
+		optional(cc, "redirect-to", "where the page sends the user afterwards (must be in email.allowed_redirects)")
+	})
 	user("change-email", "change the user's email at once (needs email in realm.yaml); revokes all sessions", true, userChangeEmail, func(cc *kli.CommandConfig) {
 		required(cc, "new-email", "the new email address")
 	})

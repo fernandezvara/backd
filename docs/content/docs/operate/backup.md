@@ -172,21 +172,15 @@ Before reopening the service:
 
 - **API keys revoked since the backup work again.** Revoke them again (`backd apikey list`, `backd apikey revoke`). Keys created since the backup are gone; issue new ones.
 - **Users disabled or deleted since the backup are back**, with their roles as they were. Disable or delete them again. Roles seeded in `realm.yaml` are reapplied at startup.
-- **Password changes since the backup are undone**, so an old password that was changed because it leaked works again. Ask affected users to change their passwords, or set new ones with `backd user set-password`.
+- **Password changes since the backup are undone**, and so is an expiry: the password epoch is in the system database, so a restore of a backup older than `backd user expire-passwords` brings the older epoch back, and an old password that was changed or expired because it leaked works again. Run `backd user expire-passwords --realm blog --yes` again after the restore (`GET /_admin/passwords` shows the epoch in force), or set new passwords with `backd user set-password`.
 - **Sessions come back**, including ones that were logged out. Sessions that have expired since are refused, and MongoDB deletes them. If in doubt, end every session in the realm, and everyone logs in again:
 
   ```sh
-  docker compose --env-file .env run --rm --no-deps provision \
-    sh -c 'mongosh "$MONGO_URI" --quiet --eval "db.getSiblingDB(\"blog___system\").sessions.deleteMany({})"'
+  backd user revoke-sessions --realm blog --all --yes
   ```
 
 - **Failed-login counters** come back too; they expire within 15 minutes.
 
 ## If a backup leaks
 
-An encrypted backup is safe for as long as its private key is. If a backup leaks unencrypted, or leaks together with its key, treat it as a breach of the realm's accounts:
-
-- end every session (see above);
-- revoke and reissue every API key;
-- make every leaked password hash useless. Users can choose a new password themselves through the [password reset](../../build/auth/sessions/#password-reset) when the realm has [`email`](../../build/functions/email/) configured, but nothing forces them to: until a user changes it, the hash in the backup still opens their account (guessing it offline is what a leak makes possible). Today that takes one step per user: `backd user set-password` with a long random password (it also ends their sessions and tells them with a `password-changed` email), after which they use *Forgot password*. Script it over the first column of `backd user list` (`openssl rand -base64 24 | backd user set-password --realm blog --email …` reads the password from standard input), and tell your users what to expect, because their old password will simply stop working;
-- rotate the age key pair.
+An encrypted backup is safe for as long as its private key is. If a backup leaks unencrypted, or together with its key, treat it as a breach of the realm's accounts: [If credentials leak](../if-credentials-leak/) has the steps in order, with the commands, what your users will see and how long it takes. The first one is a single command, `backd user expire-passwords --realm blog --yes --notify`.

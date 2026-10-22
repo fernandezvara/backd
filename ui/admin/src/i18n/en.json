@@ -234,6 +234,7 @@
     "unverified": "Unverified",
     "verified": "Verified",
     "noRoles": "No roles",
+    "passwordExpired": "Password expired",
     "create": {
       "title": "Create user",
       "open": "Create user",
@@ -267,6 +268,26 @@
       "label": "New password",
       "help": "Ends all of the user's sessions.",
       "done": "Password changed; sessions ended."
+    },
+    "expire": {
+      "open": "Expire password",
+      "title": "Expire the password?",
+      "body": "The current password stops opening the account until the user resets it or you set a new one. Their sessions are kept. If the realm sends email, signing in with it sends them a reset link.",
+      "reason": "Reason (for the audit trail)",
+      "action": "Expire password",
+      "done": "Password expired."
+    },
+    "resetLink": {
+      "open": "Reset link",
+      "title": "Make a reset link",
+      "body": "A one-time link for the user to choose a new password, for when their email can't be reached. Nothing is sent. Whoever holds the link can take the account: hand it over by a channel you trust.",
+      "redirect": "Redirect after (optional)",
+      "redirectHelp": "An address within the realm's allowed redirects.",
+      "action": "Make link",
+      "shownTitle": "Reset link",
+      "shownBody": "Shown once. It works once and expires on {date}.",
+      "label": "Link",
+      "close": "Done"
     },
     "email": {
       "open": "Change email",
@@ -350,6 +371,41 @@
     },
     "networks": {
       "title": "Networks"
+    }
+  },
+  "passwords": {
+    "title": "Passwords and sessions",
+    "loadFailed": "The password state could not be loaded.",
+    "allValid": "No expiry has been applied. {accounts} accounts have a password.",
+    "expiredSince": "Passwords set before {date} were expired. {accounts} accounts have a password.",
+    "expire": {
+      "open": "Expire every password",
+      "title": "Expire every password?",
+      "body": "The password of {accounts} accounts stops working. Users choose a new one with a reset; a sign-in with the old one sends them the email. This can't be undone.",
+      "reason": "Reason (for the audit trail and the email)",
+      "reasonHelp": "Shown to the users in the email, when it is sent.",
+      "keepSessions": "Keep the sessions (a planned rotation, not a breach)",
+      "notify": "Email every user a link to choose a new password",
+      "type": "Type {n} to confirm",
+      "mismatch": "Type the number of accounts, {n}, to confirm.",
+      "action": "Expire every password",
+      "done": "Passwords expired: {accounts} accounts, {sessions} sessions ended."
+    },
+    "tell": {
+      "open": "Tell the users",
+      "title": "Tell the users?",
+      "body": "Emails every user whose password was expired a link to choose a new one. Users already told are skipped, and the email limits apply. It runs as a job you can follow in the jobs list.",
+      "action": "Start",
+      "done": "Telling the users has started."
+    },
+    "revoke": {
+      "open": "End every session",
+      "title": "End every session?",
+      "body": "Everyone, including you, signs in again. Passwords are not touched.",
+      "type": "Type {realm} to confirm",
+      "mismatch": "Type the realm name, {realm}, to confirm.",
+      "action": "End every session",
+      "done": "{sessions} sessions ended."
     }
   },
   "invitations": {
@@ -940,6 +996,7 @@
   },
   "proof": {
     "intro": "This key outlives your session: confirm that it is you.",
+    "introAction": "This action needs a fresh proof that it is you.",
     "password": "Your password",
     "totp": "Code from your authenticator app",
     "recovery": "A recovery code",

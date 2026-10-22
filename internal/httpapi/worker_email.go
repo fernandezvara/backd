@@ -154,12 +154,12 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 		data.Data["event"], extra["event"] = job.Email.Event, job.Email.Event
 		data.Data["codes_left"], extra["codes_left"] = job.Email.CodesLeft, job.Email.CodesLeft
 	}
+	if kind == email.PasswordExpired && job.Email.Event == "" {
+		// The template asks whether there is a reason: it must find the key.
+		data.Data["event"], extra["event"] = "", ""
+	}
 	if purpose := email.TokenPurpose(kind); purpose != "" && !notice {
-		base := es.PublicURL
-		if base == "" {
-			base = w.backdURL
-		}
-		if base == "" {
+		if _, ok := tokenLink(es, w.backdURL, realm, purpose, ""); !ok {
 			w.fail(ctx, log, svc, job, "backd's public address is unknown (BACKD_URL or email.public_url)")
 			return nil, nil, false
 		}
@@ -168,6 +168,10 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 			spec.Address = address // what the link acts on
 		}
 		ttl := svc.Settings.Account.TokenLifetime(purpose)
+		if kind == email.PasswordExpired {
+			// Sent to everyone at once and read later: a day at least.
+			ttl = max(ttl, 24*time.Hour)
+		}
 		if invitationID != "" {
 			inv, _, _ := svc.InvitationByID(ctx, invitationID)
 			ttl = inv.ExpiresAt.Sub(svc.Clock())
@@ -177,11 +181,7 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 			log.Warn("create the email's token; leaving the job to be retried", "error", err)
 			return nil, nil, false
 		}
-		data.Link = strings.TrimRight(base, "/") + "/v1/" + realm + "/_auth/" + purpose.LinkPath() + "?token=" + token
-		if own := es.Links[flowKey(purpose)]; own != "" {
-			// The app hosts this page: the link goes to it, and it posts the token as JSON.
-			data.Link = strings.Replace(own, "{token}", token, 1)
-		}
+		data.Link, _ = tokenLink(es, w.backdURL, realm, purpose, token)
 		data.ExpiresAt = expires.UTC()
 		extra["link"] = data.Link
 		extra["expires_at"] = data.ExpiresAt.Format(time.RFC3339)

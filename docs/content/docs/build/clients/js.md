@@ -138,6 +138,20 @@ await backd.auth.revertEmailChange(token)                       // the link sent
 await backd.auth.acceptInvitation({ token, password, locale })  // an emailed invitation
 ```
 
+When an administrator [expires passwords](../../auth/users/#expiring-every-password), signing in with the old one throws a `PasswordExpiredError`. Tell the person what happened and what to do next:
+
+```js
+try {
+  await backd.auth.login({ email, password })
+} catch (e) {
+  if (e instanceof PasswordExpiredError) {
+    // e.resetEmailQueued: backd already emailed the link to choose a new password
+    if (!e.resetEmailQueued) await backd.auth.requestPasswordReset({ email })  // the same as "Forgot password"
+    showMessage('Your password was reset by an administrator: check your email for the link to choose a new one.')
+  } else throw e
+}
+```
+
 - A token that is expired, used or unknown rejects with a `ValidationError` whose `code` is `invalid_token`; a password the policy refuses rejects with a `ValidationError` naming `password` and leaves the token usable. A reset request past the realm's limits rejects with a `RetryableError`.
 - `redirectTo` (here and in `signup`) must be within the realm's `email.allowed_redirects`: it is where the page after the link may send the user.
 - After `resetPassword`, `confirmEmailChange`, `revertEmailChange` and `acceptInvitation` the user logs in: none of them starts a session, and the first three end the sessions that exist.
@@ -715,6 +729,7 @@ Every answer that isn't 2xx throws a `BackdError`, or one of its subclasses:
 | `ValidationError` | 400 | `validation_error`, `invalid_json`, `invalid_query`, `invalid_header` |
 | `InvalidIdError` (a `ValidationError`) | 400 | `id_required`, `invalid_id`, `id_not_allowed`: the `id` of a [custom id](#custom-ids) create |
 | `AuthenticationError` | 401 | `unauthenticated`, `invalid_credentials` |
+| `PasswordExpiredError` (an `AuthenticationError`) | 401 | `password_expired`: the password is right but an administrator [expired it](../../auth/users/#expiring-every-password); `resetEmailQueued` says whether backd queued the email with the link to choose a new one. Only the right password gets this answer, from `auth.login()`, `auth.signIn()` and `auth.reauth()` |
 | `ForbiddenError` | 403 | `forbidden` |
 | `NotFoundError` | 404 | `not_found` |
 | `ConflictError` | 409 | `email_taken`, `conflict`, `write_conflict` |
@@ -781,6 +796,12 @@ const user = await backd.admin.users.create({ email: 'bob@example.com', password
 await backd.admin.users.get(user.id)
 await backd.admin.users.update(user.id, { emailVerified: true, disabled: false })
 await backd.admin.users.setPassword(user.id, newPassword)        // ends their sessions
+await backd.admin.users.expirePassword(user.id, { reason })      // the password stops opening the account until they reset it
+const { link } = await backd.admin.users.resetLink(user.id)     // a one-time link, shown once, nothing sent (fresh proof needed)
+await backd.admin.passwords.state()                              // { accounts, epoch }: what expiring every password affects
+await backd.admin.passwords.expireAll({ reason, notify: true })  // every password, every session; notify emails each user a link
+await backd.admin.passwords.notify()                             // (re)starts that email job; users already told are skipped
+await backd.admin.sessions.revokeAll()                           // every session of the realm, passwords untouched
 await backd.admin.users.addRole(user.id, 'editor')               // roles declared in realm.yaml
 await backd.admin.users.removeRole(user.id, 'editor')
 await backd.admin.users.owned(user.id)                          // what erasing them would do, per collection with a policy

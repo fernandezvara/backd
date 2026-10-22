@@ -130,6 +130,8 @@ curl -X POST https://localhost:8443/v1/blog/_auth/login \
 
 Any failure returns the same `401 invalid_credentials`: unknown email, wrong password, a user without a password, or a disabled user. Repeated failures are slowed down (see [brute-force protection](#brute-force-protection)). Unknown emails take the same time to answer as known ones, so neither the response nor its timing reveals whether an email is registered.
 
+A password that was **expired** (an administrator ran [`backd user expire-password`](../users/#expiring-a-password), or [every password was expired](../users/#expiring-every-password) after the day it was set) is refused only when it is the right one: `401 password_expired`, and the `password-expired` [email](../../functions/email/), with a link to choose a new password, is queued when the realm sends email, with the limits of a reset request. The same applies to proving yourself again with the password (`POST /_auth/reauth`), and to finishing a second step, an enrollment or the acceptance of consents that a password sign-in started before the passwords were expired: they end in the same answer. Setting a new password makes the account usable again.
+
 A user with [`login_networks`](../../configuration/realm/#network-restrictions) can only log in from those networks: elsewhere, the right password answers `401 invalid_credentials` too, and counts as a failure. Their session also only works from those networks.
 
 ### Email verification
@@ -261,6 +263,7 @@ An invitation [sent by email](../../../operate/administration/admin/#emailing-an
 | 400 | `validation_error` | Missing, wrongly typed or unknown fields; invalid email; password breaks the policy |
 | 401 | `unauthenticated` | No `Authorization: Bearer` header, or the token is unknown, expired, revoked, or its user is disabled |
 | 401 | `invalid_credentials` | Wrong email or password, or wrong current password |
+| 401 | `password_expired` | The password is right but was [expired](../users/#expiring-a-password): reset it |
 | 400 | `invalid_redirect` | `redirect_to` isn't within the realm's `email.allowed_redirects` |
 | 400 | `invalid_token` | An email link's token is unknown, expired, used or for another purpose (JSON endpoints) |
 | 403 | `forbidden` | Sign-up is closed in this realm, or needs a valid invitation |

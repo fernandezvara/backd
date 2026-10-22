@@ -79,6 +79,11 @@ Paths are relative to `/v1/{realm}/_admin`. Bodies are JSON (`Content-Type: appl
 | `GET /users/{id}/sessions` | none | `200` with the user's unexpired sessions, newest first (`id`, `created_at`, `last_used_at`, `expires_at`; never a token) |
 | `DELETE /users/{id}/sessions/{session_id}` | none | `204`; the session's token stops working at once; audited as `session.revoke`. `404` for an unknown session |
 | `POST /users/{id}/password` | `{"password"}` | `204` |
+| `POST /users/{id}/expire-password` | `{"reason"?}` | `204`; the password stops opening the account until it is reset ([details](../../../build/auth/users/#expiring-a-password)) |
+| `POST /users/{id}/reset-link` | `{"redirect_to"?}`; full admin access and a fresh re-authentication | `200 {link, expires_at}`: a [one-time link](../../../build/auth/users/#a-reset-link-without-email) to choose a new password, shown once, nothing sent; `409` without `email:`, a public address, or for a disabled user |
+| `POST /passwords/expire` | `{"reason"?, "keep_sessions"?, "notify"?}`; needs full admin access and, for a session, a fresh re-authentication | `200 {valid_after, accounts, sessions}`: every password set before now stops opening its account and, unless `keep_sessions`, every session ends ([details](../../../build/auth/users/#expiring-every-password)) |
+| `POST /passwords/notify` | none; full admin access and a fresh re-authentication | `202 {id, status}`: starts the job that [emails every user](../../../build/auth/users/#telling-the-users) whose password was expired a link to choose a new one; `409` while one runs, before any expiry, or without `email:` |
+| `DELETE /sessions` | none; full admin access and a fresh re-authentication | `200 {sessions}`: every session of the realm ends, passwords untouched |
 | `GET /users/{id}/owned` | none | `200` with [what erasing the user would do](#previewing-an-erase) |
 | `POST /users/{id}/email` | `{"email"}` | `200` with the user; [changes the address](#changing-a-users-email) |
 | `PUT /users/{id}/roles/{role}` | none | `200` with the user |

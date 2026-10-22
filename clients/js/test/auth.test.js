@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createClient, AuthenticationError, NetworkError, RetryableError, ValidationError, VerificationRequiredError, localStorageStorage, memoryStorage } from '../src/index.js'
+import { createClient, AuthenticationError, PasswordExpiredError, NetworkError, RetryableError, ValidationError, VerificationRequiredError, localStorageStorage, memoryStorage } from '../src/index.js'
 import { mockFetch, errorBody, session, user } from './helpers.js'
 
 /** @param {ReturnType<typeof mockFetch>} m */
@@ -64,6 +64,31 @@ test('a failed login throws without touching the stored session', async () => {
   await assert.rejects(c.auth.login({ email: 'a@x.io', password: 'bad' }), (/** @type {any} */ e) => e instanceof AuthenticationError && e.code === 'invalid_credentials')
   assert.equal(await c.auth.token(), 'bds_old')
   assert.deepEqual(events, [])
+})
+
+test('an expired password is a typed error that says whether the reset email was queued', async () => {
+  const body = (/** @type {Array<{ path: string, reason: string }>} */ details) => ({ error: { code: 'password_expired', message: 'this password has expired', details, request_id: 'r1' } })
+  const m = mockFetch([
+    { status: 401, body: body([{ path: 'reset_email', reason: 'queued' }]) },
+    { status: 401, body: body([]) },
+    { status: 401, body: body([{ path: 'reset_email', reason: 'queued' }]) },
+    { status: 202, body: { status: 'accepted' } },
+  ])
+  const { c, events } = clientWith(m)
+  await assert.rejects(c.auth.login({ email: 'a@x.io', password: 'dev-p4ssw0rd!' }), (/** @type {any} */ e) =>
+    e instanceof PasswordExpiredError && e instanceof AuthenticationError && e.status === 401 && e.code === 'password_expired' && e.resetEmailQueued === true)
+  await assert.rejects(c.auth.signIn({ email: 'a@x.io', password: 'dev-p4ssw0rd!' }), (/** @type {any} */ e) => e instanceof PasswordExpiredError && e.resetEmailQueued === false)
+  assert.deepEqual(events, [], 'a refused sign-in announces nothing')
+
+  // Proving yourself again with an expired password is refused the same way, and does not end the session.
+  await c.storage.set('bds_live')
+  await assert.rejects(c.auth.reauth({ method: 'password', password: 'dev-p4ssw0rd!' }), PasswordExpiredError)
+  assert.equal(await c.auth.token(), 'bds_live')
+  assert.deepEqual(events, [])
+
+  // The same flow as a user's Forgot password starts the email when none was queued.
+  await c.auth.requestPasswordReset({ email: 'a@x.io' })
+  assert.equal(m.calls[3].url.pathname, '/v1/acme/_auth/reset-password/request')
 })
 
 test('a refused session token expires the session', async () => {

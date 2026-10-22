@@ -249,6 +249,9 @@ func (s *Users) VerifyMFA(ctx context.Context, challenge, method, code, ip strin
 	if err != nil {
 		return Verified{}, err
 	}
+	if err := s.refuseExpiredFactor(ctx, u, c.Factor); err != nil {
+		return Verified{}, err
+	}
 	second := MethodTOTP
 	if method == MethodRecovery {
 		second = "recovery"

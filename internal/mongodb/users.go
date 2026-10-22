@@ -40,15 +40,19 @@ type userDoc struct {
 	AdminNetworks []string   `bson:"admin_networks,omitempty"`
 	LoginNetworks []string   `bson:"login_networks,omitempty"`
 	// Consents is the summary of the user's consent records: consent name to accepted version.
-	Consents  map[string]string `bson:"consents,omitempty"`
-	CreatedAt time.Time         `bson:"created_at"`
-	UpdatedAt time.Time         `bson:"updated_at"`
+	Consents          map[string]string `bson:"consents,omitempty"`
+	PasswordExpiredAt *time.Time        `bson:"password_expired_at,omitempty"`
+	// When the user was last sent the email that tells them to choose a new password.
+	PasswordNotifiedAt *time.Time `bson:"password_notified_at,omitempty"`
+	CreatedAt          time.Time  `bson:"created_at"`
+	UpdatedAt          time.Time  `bson:"updated_at"`
 }
 
 func (d userDoc) user() auth.User {
 	return auth.User{
 		ID: d.ID, Email: d.Email, EmailVerified: d.EmailVerified, PendingEmail: d.PendingEmail, PreviousEmail: d.PreviousEmail, ErasedAt: utcOrZero(d.ErasedAt), Roles: d.Roles, Disabled: d.Disabled, Locale: d.Locale,
 		AdminNetworks: networks(d.AdminNetworks), LoginNetworks: networks(d.LoginNetworks), Consents: d.Consents,
+		PasswordExpiredAt: utcOrZero(d.PasswordExpiredAt), PasswordNotifiedAt: utcOrZero(d.PasswordNotifiedAt),
 		CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC(),
 	}
 }
@@ -76,6 +80,8 @@ type identityDoc struct {
 	Email         string    `bson:"email,omitempty"`
 	EmailVerified bool      `bson:"email_verified,omitempty"`
 	LastUsedAt    time.Time `bson:"last_used_at,omitempty"`
+	// When a password identity's password was created or last replaced.
+	PasswordChangedAt time.Time `bson:"password_changed_at,omitempty"`
 	// Apple's refresh token, sealed, and the client id it belongs to.
 	AppleRefreshToken string    `bson:"apple_refresh_token,omitempty"`
 	AppleClientID     string    `bson:"apple_client_id,omitempty"`
@@ -86,7 +92,7 @@ type identityDoc struct {
 func (d identityDoc) identity() auth.Identity {
 	return auth.Identity{
 		ID: d.ID, UserID: d.UserID, Provider: d.Provider, Subject: d.Subject, PasswordHash: d.PasswordHash,
-		Email: d.Email, EmailVerified: d.EmailVerified, LastUsedAt: d.LastUsedAt.UTC(),
+		Email: d.Email, EmailVerified: d.EmailVerified, LastUsedAt: d.LastUsedAt.UTC(), PasswordChangedAt: d.PasswordChangedAt.UTC(),
 		AppleRefreshToken: d.AppleRefreshToken, AppleClientID: d.AppleClientID,
 		CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC(),
 	}
@@ -246,6 +252,16 @@ func (s *AuthStore) UpdateUser(ctx context.Context, id string, upd auth.UserUpda
 			set = append(set, bson.E{Key: key, Value: n.Strings()})
 		}
 	}
+	switch {
+	case upd.PasswordExpiredAt == nil:
+	case upd.PasswordExpiredAt.IsZero():
+		unset = append(unset, bson.E{Key: "password_expired_at", Value: ""})
+	default:
+		set = append(set, bson.E{Key: "password_expired_at", Value: *upd.PasswordExpiredAt})
+	}
+	if upd.PasswordNotifiedAt != nil {
+		set = append(set, bson.E{Key: "password_notified_at", Value: *upd.PasswordNotifiedAt})
+	}
 	update := bson.D{{Key: "$set", Value: set}}
 	if len(unset) > 0 {
 		update = append(update, bson.E{Key: "$unset", Value: unset})
@@ -335,7 +351,7 @@ func (s *AuthStore) PutIdentity(ctx context.Context, id auth.Identity) error {
 	filter := bson.D{{Key: "provider", Value: id.Provider}, {Key: "subject", Value: id.Subject}, {Key: "user_id", Value: id.UserID}}
 	set := bson.D{{Key: "updated_at", Value: id.UpdatedAt}}
 	if id.PasswordHash != "" {
-		set = append(set, bson.E{Key: "password_hash", Value: id.PasswordHash})
+		set = append(set, bson.E{Key: "password_hash", Value: id.PasswordHash}, bson.E{Key: "password_changed_at", Value: id.UpdatedAt})
 	}
 	setOnInsert := bson.D{{Key: "_id", Value: id.ID}, {Key: "user_id", Value: id.UserID}, {Key: "created_at", Value: id.CreatedAt}}
 	if id.Email != "" {
@@ -439,6 +455,51 @@ func (s *AuthStore) DeleteSessions(ctx context.Context, userID string) (int64, e
 		return 0, err
 	}
 	return res.DeletedCount, nil
+}
+
+// DeleteAllSessions implements auth.Store.
+func (s *AuthStore) DeleteAllSessions(ctx context.Context) (int64, error) {
+	if _, err := s.devices().DeleteMany(ctx, bson.D{}); err != nil {
+		return 0, err
+	}
+	res, err := s.sessions().DeleteMany(ctx, bson.D{})
+	if err != nil {
+		return 0, err
+	}
+	return res.DeletedCount, nil
+}
+
+// PasswordUserIDs implements auth.Store: the password identities set before the time (or, for
+// ones from before the time was recorded, created before it), by user id.
+func (s *AuthStore) PasswordUserIDs(ctx context.Context, before time.Time, after string, limit int) ([]string, error) {
+	filter := bson.D{
+		{Key: "provider", Value: auth.ProviderPassword},
+		{Key: "user_id", Value: bson.D{{Key: "$gt", Value: after}}},
+		{Key: "$or", Value: bson.A{
+			bson.D{{Key: "password_changed_at", Value: bson.D{{Key: "$lt", Value: before}}}},
+			bson.D{{Key: "password_changed_at", Value: bson.D{{Key: "$exists", Value: false}}}, {Key: "created_at", Value: bson.D{{Key: "$lt", Value: before}}}},
+		}},
+	}
+	cur, err := s.identities().Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "user_id", Value: 1}}).SetLimit(int64(limit)).SetProjection(bson.D{{Key: "user_id", Value: 1}}))
+	if err != nil {
+		return nil, err
+	}
+	var docs []struct {
+		UserID string `bson:"user_id"`
+	}
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	out := make([]string, len(docs))
+	for i, d := range docs {
+		out[i] = d.UserID
+	}
+	return out, nil
+}
+
+// CountPasswordIdentities implements auth.Store.
+func (s *AuthStore) CountPasswordIdentities(ctx context.Context) (int64, error) {
+	return s.identities().CountDocuments(ctx, bson.D{{Key: "provider", Value: auth.ProviderPassword}})
 }
 
 type sessionDoc struct {

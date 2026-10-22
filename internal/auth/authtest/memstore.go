@@ -51,6 +51,7 @@ type MemStore struct {
 	sends       map[string]*memSend               // id → push send
 	outbox      []auth.PushOutboxEntry            // what the capture provider took
 	orgState    *memOrgs                          // organizations and their members
+	epoch       auth.PasswordEpoch
 	// FailPutIdentity, when set, is returned by PutIdentity.
 	FailPutIdentity error
 }
@@ -226,6 +227,12 @@ func (m *MemStore) UpdateUser(_ context.Context, id string, upd auth.UserUpdate,
 	if upd.LoginNetworks != nil {
 		u.LoginNetworks = *upd.LoginNetworks
 	}
+	if upd.PasswordExpiredAt != nil {
+		u.PasswordExpiredAt = *upd.PasswordExpiredAt
+	}
+	if upd.PasswordNotifiedAt != nil {
+		u.PasswordNotifiedAt = *upd.PasswordNotifiedAt
+	}
 	u.UpdatedAt = now
 	m.users[id] = u
 	return nil
@@ -281,6 +288,9 @@ func (m *MemStore) PutIdentity(_ context.Context, id auth.Identity) error {
 			return auth.ErrIdentityExists
 		}
 		cur.PasswordHash, cur.UpdatedAt = id.PasswordHash, id.UpdatedAt
+		if id.PasswordHash != "" {
+			cur.PasswordChangedAt = id.UpdatedAt
+		}
 		m.identities[k] = cur
 		return nil
 	}
@@ -289,8 +299,42 @@ func (m *MemStore) PutIdentity(_ context.Context, id auth.Identity) error {
 			return auth.ErrIdentityExists
 		}
 	}
+	if id.PasswordHash != "" {
+		id.PasswordChangedAt = id.UpdatedAt
+	}
 	m.identities[k] = id
 	return nil
+}
+
+// ForgetPasswordChangedAt clears the recorded change time of an identity, as if it came from
+// before backd recorded it.
+func (m *MemStore) ForgetPasswordChangedAt(id auth.Identity) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	k := id.Provider + "/" + id.Subject
+	cur, ok := m.identities[k]
+	if !ok {
+		return auth.ErrNotFound
+	}
+	cur.PasswordChangedAt = time.Time{}
+	m.identities[k] = cur
+	return nil
+}
+
+func (m *MemStore) PasswordEpoch(context.Context) (auth.PasswordEpoch, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.epoch, nil
+}
+
+func (m *MemStore) SetPasswordEpoch(_ context.Context, e auth.PasswordEpoch) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !e.ValidAfter.After(m.epoch.ValidAfter) {
+		return false, nil
+	}
+	m.epoch = e
+	return true, nil
 }
 
 func (m *MemStore) ListIdentities(_ context.Context, userID string) ([]auth.Identity, error) {
@@ -370,6 +414,61 @@ func (m *MemStore) Identity(_ context.Context, provider, subject string) (auth.I
 
 func (m *MemStore) DeleteSessions(_ context.Context, userID string) (int64, error) {
 	return m.DeleteOtherSessions(context.Background(), userID, "")
+}
+
+func (m *MemStore) DeleteAllSessions(context.Context) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := int64(len(m.sessions))
+	clear(m.sessions)
+	clear(m.devices)
+	return n, nil
+}
+
+func (m *MemStore) PasswordUserIDs(_ context.Context, before time.Time, after string, limit int) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []string
+	for _, i := range m.identities {
+		if i.Provider != auth.ProviderPassword || i.UserID <= after {
+			continue
+		}
+		changed := i.PasswordChangedAt
+		if changed.IsZero() {
+			changed = i.CreatedAt
+		}
+		if changed.Before(before) {
+			out = append(out, i.UserID)
+		}
+	}
+	sort.Strings(out)
+	return out[:min(limit, len(out))], nil
+}
+
+func (m *MemStore) SetPasswordNoticeProgress(_ context.Context, jobID, after string, c auth.PasswordNoticeCounts) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	j, ok := m.jobs[jobID]
+	if !ok || j.PasswordNotice == nil {
+		return auth.ErrNotFound
+	}
+	pn := *j.PasswordNotice
+	pn.After, pn.PasswordNoticeCounts = after, c
+	j.PasswordNotice = &pn
+	m.jobs[jobID] = j
+	return nil
+}
+
+func (m *MemStore) CountPasswordIdentities(context.Context) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var n int64
+	for _, i := range m.identities {
+		if i.Provider == auth.ProviderPassword {
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (m *MemStore) CreateSession(_ context.Context, s auth.Session) error {

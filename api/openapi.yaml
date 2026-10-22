@@ -165,6 +165,13 @@ paths:
         code for the session at `POST /_auth/mfa/verify`; a user in a role the realm requires to
         use MFA who has none yet gets `{mfa_enrollment_required, challenge}`. A challenge is not
         a session, and it is only given after the password was checked.
+
+        A correct password that was set before the realm's password epoch, or after an
+        administrator expired it, gets no session: `401 password_expired`, and a reset email is
+        queued (when the realm sends email) as a reset request would, with the same limits: the `password-expired` message, with a link to choose a new password. When that email was queued the error's `details` hold `{path: reset_email, reason: queued}`, so an app can say so. A
+        wrong password is still `invalid_credentials`, so the answer says nothing to someone
+        who doesn't know the password. A new password (reset, change, administrator) makes the
+        account usable again.
       operationId: login
       requestBody:
         required: true
@@ -2491,7 +2498,8 @@ paths:
         without one, `email_code` (a code sent by `POST /_auth/reauth/email-code`) for a user with
         neither. The token is bound to the session, stored only as a hash, and works for the
         realm's `reauth.ttl` and any number of actions in it. Wrong proofs count against the same
-        limits as signing in.
+        limits as signing in. A correct but expired password (`password_expired` at sign-in) is
+        refused with `401 password_expired`: the user resets it first.
       operationId: reauth
       security: [{ session: [] }]
       requestBody:
@@ -2883,6 +2891,226 @@ paths:
                 password: { type: string, minLength: 8, maxLength: 128 }
       responses:
         "204": { description: Password set. }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/passwords:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [admin]
+      summary: The realm's password epoch and how many accounts have a password
+      description: |
+        What `POST /_admin/passwords/expire` would affect: the number of accounts with a password,
+        and the current epoch (null before any expiry): who set it, when, and the reason.
+      operationId: adminPasswordState
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The state.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [epoch, accounts]
+                properties:
+                  accounts: { type: integer }
+                  epoch:
+                    oneOf:
+                      - type: "null"
+                      - type: object
+                        additionalProperties: false
+                        required: [valid_after, set_by, set_at, reason]
+                        properties:
+                          valid_after: { $ref: "#/components/schemas/Timestamp" }
+                          set_by: { type: string }
+                          set_at: { $ref: "#/components/schemas/Timestamp" }
+                          reason: { type: [string, "null"] }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/passwords/expire:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [admin]
+      summary: Expire every password of the realm
+      description: |
+        Moves the realm's password epoch to now: every password set before it stops opening its
+        account (`401 password_expired` at sign-in, which queues a reset email), and, unless
+        `keep_sessions`, every session ends. A restore of older data doesn't bring old passwords
+        back, because the epoch is in the system database. The epoch only moves forward (`409`
+        when one as late as now exists). Needs full admin access, and a session a fresh
+        re-authentication. Audited as `password.expire` with the reason and the counts.
+      operationId: adminExpirePasswords
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason: { type: string, maxLength: 500, description: "Why, for the audit trail." }
+                keep_sessions: { type: boolean, description: "Keep the sessions: a planned rotation rather than a breach." }
+                notify: { type: boolean, description: "Also start the job that emails every user a link to choose a new password (`409` before anything changes when the realm sends no email)." }
+      responses:
+        "200":
+          description: The epoch and what it touched.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [valid_after, accounts, sessions]
+                properties:
+                  valid_after: { $ref: "#/components/schemas/Timestamp" }
+                  accounts: { type: integer, description: "Accounts with a password." }
+                  sessions: { type: integer, description: "Sessions ended." }
+                  notify_job: { type: string, description: "The id of the notification job, with `notify`. Follow it with `GET /_admin/jobs/{id}`." }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/passwords/notify:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [admin]
+      summary: Tell the users whose password expired to choose a new one
+      description: |
+        Starts the job (origin `backd:password.notify`) that walks the users with a password, in id
+        order, and queues the `password-expired` email, a reset link each, for those whose
+        password was set before the realm's epoch: enabled, with a verified address, and not told
+        already (after the epoch). It goes through the email queue, so the email limits apply:
+        users they hold back are told after a wait, not failed. The job reports its progress as a
+        step, can be cancelled with `POST /_admin/jobs/{id}/cancel`, and starting it again after a
+        cancel or a failure goes on without writing to anyone twice. One at a time (`409` with the
+        running job's id). `409` too without `email:` in `realm.yaml`, or before any password was
+        expired. Needs full admin access and, for a session, a fresh re-authentication. Audited as
+        `password.expire_notify` when it ends.
+      operationId: adminNotifyExpiredPasswords
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "202":
+          description: The job.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [id, status]
+                properties:
+                  id: { type: string }
+                  status: { type: string }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/sessions:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    delete:
+      tags: [admin]
+      summary: End every session of the realm
+      description: |
+        Revokes every session, and the push devices they registered, without touching any
+        password. Needs full admin access, and a session a fresh re-authentication. Audited as
+        `session.revoke_all`.
+      operationId: adminRevokeAllSessions
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: How many sessions ended.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [sessions]
+                properties:
+                  sessions: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/users/{id}/reset-link:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    post:
+      tags: [admin]
+      summary: Make a password reset link for a user
+      description: |
+        A one-time link to choose a new password, for a user the email can't reach (hand it over out
+        of band). It is the link a reset email carries and works the same: it sets the password,
+        ends the user's sessions and sends `password-changed`; unused, it expires like a reset
+        token (`account.tokens.reset_password`). Nothing is sent, and the link is in this answer
+        only. The realm needs `email:` (its pages serve the form) and a public address. Needs full
+        admin access and, for a session, a fresh re-authentication; an administrator can't make
+        one for a user with rights they lack. `409` for a disabled or erased user. Audited as
+        `password.reset_link` (administrator and user, never the token).
+      operationId: adminResetLink
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                redirect_to: { type: string, description: "Where the page sends the user afterwards; must be within `email.allowed_redirects`." }
+      responses:
+        "200":
+          description: The link, once.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [link, expires_at]
+                properties:
+                  link: { type: string }
+                  expires_at: { $ref: "#/components/schemas/Timestamp" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/users/{id}/expire-password:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    post:
+      tags: [admin]
+      summary: Expire a user's password
+      description: |
+        The password stops opening the account (`401 password_expired` at sign-in, and at
+        re-authentication with the password) until the user resets it or an administrator sets a
+        new one. The user's sessions are left alone. Audited as `password.expire`.
+      operationId: adminExpirePassword
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason: { type: string, maxLength: 500, description: "Why, for the audit trail." }
+      responses:
+        "204": { description: Password expired. }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
@@ -9056,7 +9284,7 @@ components:
                 invalid_header, precondition_required, invalid_expand, expand_too_large,
                 invalid_aggregate, aggregate_not_enabled, aggregate_too_expensive,
                 search_not_enabled, search_too_expensive, index_building, unauthenticated,
-                invalid_credentials, forbidden,
+                invalid_credentials, password_expired, forbidden,
                 not_found, method_not_allowed, conflict, email_taken,
                 write_conflict, version_mismatch, id_required, invalid_id,
                 id_not_allowed, id_taken, payload_too_large,
@@ -9147,8 +9375,10 @@ components:
     AdminUser:
       type: object
       additionalProperties: false
-      required: [id, email, email_verified, roles, locale, disabled, admin_networks, login_networks, created_at, updated_at, erased_at]
+      required: [id, email, email_verified, roles, locale, disabled, admin_networks, login_networks, created_at, updated_at, erased_at, password_expired_at]
       properties:
+        password_expired: { type: boolean, description: "Whether the password is expired now (an expiry of this user or the realm's epoch). Only in the answer of `GET /_admin/users/{id}`; lists leave it out." }
+        password_expired_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }], description: "When an administrator expired this user's password (`POST /_admin/users/{id}/expire-password`): a password set before it no longer opens the account. Null when none did; a realm-wide epoch is not shown here." }
         erased_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }], description: "When the user was erased; a tombstone has no email of its own, no roles and can't be enabled." }
         id: { type: string }
         email: { type: string }

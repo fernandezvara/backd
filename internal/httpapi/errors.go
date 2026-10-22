@@ -13,6 +13,7 @@ const (
 	codeInvalidPath       = "invalid_path"
 	codeUnauthenticated   = "unauthenticated"
 	codeInvalidCreds      = "invalid_credentials"
+	codePasswordExpired   = "password_expired"
 	codeForbidden         = "forbidden"
 	codeEmailTaken        = "email_taken"
 	codeTooManyRequests   = "too_many_requests"

@@ -69,6 +69,25 @@ func hostedActions() []hostedAction {
 	}
 }
 
+// tokenLink is the link an email carries for a token of purpose: a page of backd's own at its
+// public address (the realm's email.public_url, else BACKD_URL), or the app's page when the
+// realm names one. ok is false when backd's public address is unknown.
+func tokenLink(es *registry.EmailSettings, backdURL, realm string, purpose email.Purpose, token string) (link string, ok bool) {
+	base := es.PublicURL
+	if base == "" {
+		base = backdURL
+	}
+	if base == "" {
+		return "", false
+	}
+	link = strings.TrimRight(base, "/") + "/v1/" + realm + "/_auth/" + purpose.LinkPath() + "?token=" + token
+	if own := es.Links[flowKey(purpose)]; own != "" {
+		// The app hosts this page: the link goes to it, and it posts the token as JSON.
+		link = strings.Replace(own, "{token}", token, 1)
+	}
+	return link, true
+}
+
 // flowKey is the name a purpose has in realm.yaml (redirects.verify_email).
 func flowKey(p email.Purpose) string { return strings.ReplaceAll(string(p), "-", "_") }
 

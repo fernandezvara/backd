@@ -83,6 +83,9 @@ type Job struct {
 	// Push is set on the jobs of a push send (origin PushOrigin): planning an audience, a batch
 	// of users, or a delivery unit.
 	Push *PushJob
+	// PasswordNotice is set on the job that tells the users with an expired password to choose
+	// a new one (origin PasswordNoticeOrigin).
+	PasswordNotice *PasswordNoticeJob
 	// Exclusive, when set, lets only one job of that name be unfinished at a
 	// time: enqueuing another fails with ErrJobExclusive.
 	Exclusive     string
@@ -296,7 +299,7 @@ func (s *Users) RerunJob(ctx context.Context, id string, timeoutMS int64) (Job, 
 	if !found {
 		return Job{}, ErrNotFound
 	}
-	if j.Email != nil || j.Erase != nil || j.Check != nil || j.Image != nil || j.Assign != nil || j.OrgDelete != nil || j.Revoke != nil || j.Push != nil {
+	if j.Email != nil || j.Erase != nil || j.Check != nil || j.Image != nil || j.Assign != nil || j.OrgDelete != nil || j.Revoke != nil || j.Push != nil || j.PasswordNotice != nil {
 		return Job{}, ErrJobNotFunction
 	}
 	if j.Status != JobDone {
