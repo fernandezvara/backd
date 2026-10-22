@@ -3,6 +3,8 @@ package fieldcrypt
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -15,8 +17,11 @@ import (
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
-// Kinds of keys a field has.
-const KindData = "data"
+// Kinds of keys a field has: the data key encrypts its values, the index key keys its blind index.
+const (
+	KindData  = "data"
+	KindIndex = "index"
+)
 
 // Statuses of a data key.
 const (
@@ -138,37 +143,48 @@ func (r *Ring) unwrap(ctx context.Context, rec Record) ([]byte, error) {
 // (field, generation) makes one win, and the others use its key.
 func (r *Ring) Ensure(ctx context.Context, c *registry.Collection) error {
 	for _, ef := range c.Encrypted {
-		f := r.field(c, ef.Path)
-		if _, ok, err := r.Store.ActiveDataKey(ctx, f.Database, f.Collection, f.Path, KindData); err != nil {
-			return err
-		} else if ok {
-			continue
+		kinds := []string{KindData}
+		if ef.Search != "" {
+			kinds = append(kinds, KindIndex)
 		}
-		m, err := r.Keys(ctx, ef.Key)
-		if err != nil {
-			return fmt.Errorf("%s/%s.%s: %w", f.Database, f.Collection, f.Path, err)
-		}
-		id, dk, err := NewDataKey()
-		if err != nil {
-			return err
-		}
-		wrapped, err := Wrap(m.Current, dk, id, f, KindData)
-		if err != nil {
-			return err
-		}
-		if _, err := r.Store.CreateDataKey(ctx, Record{
-			ID: hex.EncodeToString(id), Database: f.Database, Collection: f.Collection, Path: f.Path, Kind: KindData,
-			Generation: 1, Key: ef.Key, Wrapped: wrapped, WrapVersion: m.Version, Status: StatusActive, CreatedAt: r.now().UTC(),
-		}); err != nil {
-			return err
+		for _, kind := range kinds {
+			if err := r.ensureKey(ctx, c, ef, kind); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
+func (r *Ring) ensureKey(ctx context.Context, c *registry.Collection, ef registry.EncryptedField, kind string) error {
+	f := r.field(c, ef.Path)
+	if _, ok, err := r.Store.ActiveDataKey(ctx, f.Database, f.Collection, f.Path, kind); err != nil {
+		return err
+	} else if ok {
+		return nil
+	}
+	m, err := r.Keys(ctx, ef.Key)
+	if err != nil {
+		return fmt.Errorf("%s/%s.%s: %w", f.Database, f.Collection, f.Path, err)
+	}
+	id, dk, err := NewDataKey()
+	if err != nil {
+		return err
+	}
+	wrapped, err := Wrap(m.Current, dk, id, f, kind)
+	if err != nil {
+		return err
+	}
+	_, err = r.Store.CreateDataKey(ctx, Record{
+		ID: hex.EncodeToString(id), Database: f.Database, Collection: f.Collection, Path: f.Path, Kind: kind,
+		Generation: 1, Key: ef.Key, Wrapped: wrapped, WrapVersion: m.Version, Status: StatusActive, CreatedAt: r.now().UTC(),
+	})
+	return err
+}
+
 // writeKey returns the data key a field's new values are encrypted with.
-func (r *Ring) writeKey(ctx context.Context, f Field) (id, key []byte, err error) {
-	k := r.activeKey(f)
+func (r *Ring) writeKey(ctx context.Context, f Field, kind string) (id, key []byte, err error) {
+	k := kind + "\x00" + r.activeKey(f)
 	now := r.now()
 	r.mu.Lock()
 	if a, ok := r.active[k]; ok && now.Before(a.expires) {
@@ -176,12 +192,12 @@ func (r *Ring) writeKey(ctx context.Context, f Field) (id, key []byte, err error
 		return a.id, a.key, nil
 	}
 	r.mu.Unlock()
-	rec, ok, err := r.Store.ActiveDataKey(ctx, f.Database, f.Collection, f.Path, KindData)
+	rec, ok, err := r.Store.ActiveDataKey(ctx, f.Database, f.Collection, f.Path, kind)
 	if err != nil {
 		return nil, nil, err
 	}
 	if !ok {
-		return nil, nil, fmt.Errorf("%w: the field %s/%s.%s has no data key yet", ErrUnavailable, f.Database, f.Collection, f.Path)
+		return nil, nil, fmt.Errorf("%w: the field %s/%s.%s has no %s key yet", ErrUnavailable, f.Database, f.Collection, f.Path, kind)
 	}
 	dk, err := r.unwrap(ctx, rec)
 	if err != nil {
@@ -236,6 +252,11 @@ func (r *Ring) Encrypt(ctx context.Context, c *registry.Collection, doc map[stri
 	id, _ := doc["id"].(string)
 	out := doc
 	copied := false
+	if _, has := doc[registry.BlindRoot]; has && len(c.Searchable()) > 0 {
+		// Blind indexes are the server's: whatever a client sent under that name is dropped.
+		out, copied = shallow(doc), true
+		delete(out, registry.BlindRoot)
+	}
 	for _, ef := range c.Encrypted {
 		v, ok := lookup(doc, ef.Path)
 		if !ok {
@@ -249,7 +270,7 @@ func (r *Ring) Encrypt(ctx context.Context, c *registry.Collection, doc map[stri
 		if err != nil {
 			return nil, fmt.Errorf("the field %s can't be encrypted: %w", ef.Path, errors.New("not a JSON value"))
 		}
-		kid, dk, err := r.writeKey(ctx, f)
+		kid, dk, err := r.writeKey(ctx, f, KindData)
 		if err != nil {
 			return nil, err
 		}
@@ -261,8 +282,67 @@ func (r *Ring) Encrypt(ctx context.Context, c *registry.Collection, doc map[stri
 			out, copied = shallow(doc), true
 		}
 		store(out, ef.Path, ct)
+		if ef.Search != "" {
+			b, err := r.blind(ctx, f, ef, v)
+			if err != nil {
+				return nil, err
+			}
+			bidx, _ := out[registry.BlindRoot].(map[string]any)
+			next := make(map[string]any, len(bidx)+1)
+			for k, x := range bidx {
+				next[k] = x
+			}
+			next[strings.ReplaceAll(ef.Path, ".", "~")] = b
+			out[registry.BlindRoot] = next
+		}
 	}
 	return out, nil
+}
+
+// blind computes the blind index of a plaintext value of a searchable field: an HMAC-SHA-256,
+// keyed by the field's index key, of the normalized value, so equal values have equal indexes
+// and nothing else about them shows (design/field-encryption.md §6.1).
+func (r *Ring) blind(ctx context.Context, f Field, ef registry.EncryptedField, v any) ([]byte, error) {
+	_, key, err := r.writeKey(ctx, f, KindIndex)
+	if err != nil {
+		return nil, err
+	}
+	plain, err := json.Marshal(Normalize(ef.Normalize, v))
+	if err != nil {
+		return nil, errors.New("not a JSON value")
+	}
+	mac := hmac.New(sha256.New, key)
+	mac.Write(ad("backd-field-blind-v1", ef.Path))
+	mac.Write(plain)
+	return mac.Sum(nil), nil
+}
+
+// Blind returns the blind index to look a value of a searchable field up by.
+func (r *Ring) Blind(ctx context.Context, c *registry.Collection, path string, v any) ([]byte, error) {
+	ef, ok := c.EncryptedAt(path)
+	if !ok || ef.Search == "" {
+		return nil, fmt.Errorf("%s is not a searchable encrypted field", path)
+	}
+	return r.blind(ctx, r.field(c, path), ef, v)
+}
+
+// Normalize applies a field's normalizations (trim, lower, upper) to a value; only strings change.
+func Normalize(ops []string, v any) any {
+	s, ok := v.(string)
+	if !ok {
+		return v
+	}
+	for _, op := range ops {
+		switch op {
+		case "trim":
+			s = strings.TrimSpace(s)
+		case "lower":
+			s = strings.ToLower(s)
+		case "upper":
+			s = strings.ToUpper(s)
+		}
+	}
+	return s
 }
 
 // Decrypt opens the encrypted fields of a document read from storage, in place. A value that

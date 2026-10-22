@@ -117,3 +117,59 @@ func encryptTreeFiles2(t *testing.T, yaml string) (*Registry, error) {
 		"clinic/main/patients/collection.yaml": yaml,
 	}))
 }
+
+func TestSearchableEncryptedFieldsDeclareTheirBlindIndexes(t *testing.T) {
+	reg, err := encryptTreeFiles2(t, "fields:\n  tax_id:\n    encrypt: {key: TAX, search: equality, unique: true}\n  notes:\n    encrypt: {key: HEALTH, search: equality, normalize: [trim, lower]}\n  profile.phone:\n    encrypt: {key: HEALTH}\nsoft_delete: true\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := reg.Realms["clinic"].Databases["main"].Collections["patients"]
+	if !c.IsSearchable("tax_id") || !c.IsSearchable("notes") || c.IsSearchable("profile.phone") || !c.IsEncrypted("profile.phone") {
+		t.Errorf("flags: %+v", c.Fields)
+	}
+	if f, _ := c.EncryptedAt("notes"); f.Search != SearchEquality || strings.Join(f.Normalize, ",") != "trim,lower" || f.Unique {
+		t.Errorf("notes = %+v", f)
+	}
+	var blind []Index
+	for _, ix := range c.Indexes {
+		if ix.Blind {
+			blind = append(blind, ix)
+		}
+	}
+	if len(blind) != 2 {
+		t.Fatalf("blind indexes = %+v", c.Indexes)
+	}
+	// A unique one is unique like any other: a deleted document's value can be used again.
+	var tax Index
+	for _, ix := range blind {
+		if ix.Keys[0].Field == BlindField("tax_id") {
+			tax = ix
+		}
+	}
+	if !tax.Unique || tax.Keys[len(tax.Keys)-1].Field != MetaDeletedAt {
+		t.Errorf("tax_id index = %+v", tax)
+	}
+	if BlindField("profile.phone") != "_bidx.profile~phone" {
+		t.Errorf("blind field = %s", BlindField("profile.phone"))
+	}
+	if _, err := encryptTreeFiles2(t, "fields:\n  x:\n    encrypt: {key: K}\n"); err == nil {
+		t.Error("an undeclared field")
+	}
+}
+
+func TestSearchOptionsOfEncryptedFieldsAreChecked(t *testing.T) {
+	for name, tc := range map[string]struct{ cfg, want string }{
+		"kind":       {"{key: K, search: fuzzy}", `"fuzzy" is not a kind of search`},
+		"normalize":  {"{key: K, normalize: [trim]}", "needs `search: equality`"},
+		"unique":     {"{key: K, unique: true}", "needs `search: equality`"},
+		"operation":  {"{key: K, search: equality, normalize: [reverse]}", `"reverse" is not a normalization`},
+		"underscore": {"{key: K, search: equality, normalize: [upper], unique: maybe}", "maybe"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := encryptTreeFiles2(t, "fields:\n  tax_id:\n    encrypt: "+tc.cfg+"\n")
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("err = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}

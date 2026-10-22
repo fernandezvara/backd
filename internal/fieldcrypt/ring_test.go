@@ -182,3 +182,61 @@ func TestWrapIsBoundToItsFieldAndId(t *testing.T) {
 		t.Errorf("another key: %v", err)
 	}
 }
+
+func TestBlindIndexesAreEqualForEqualValuesAndNothingElse(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemStore()
+	key := bytes.Repeat([]byte{3}, 32)
+	ring := &Ring{Realm: "clinic", Store: store, Keys: func(context.Context, string) (Material, error) { return Material{Current: key, Version: 1}, nil }}
+	c := &registry.Collection{Realm: "clinic", Database: "main", Name: "patients", Encrypted: []registry.EncryptedField{
+		{Path: "tax_id", Key: "TAX", Search: registry.SearchEquality, Normalize: []string{"trim", "upper"}},
+		{Path: "other", Key: "TAX", Search: registry.SearchEquality},
+		{Path: "notes", Key: "TAX"},
+	}}
+	if err := ring.Ensure(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	// Two keys per searchable field (data and index), one for the rest; none shared.
+	if len(store.Keys) != 5 {
+		t.Fatalf("keys = %d", len(store.Keys))
+	}
+	blind := func(path string, v any) string {
+		b, err := ring.Blind(ctx, c, path, v)
+		if err != nil || len(b) != 32 {
+			t.Fatalf("blind(%s, %v): %v", path, v, err)
+		}
+		return string(b)
+	}
+	if blind("tax_id", " b1234 ") != blind("tax_id", "B1234") {
+		t.Error("normalization didn't equate the values")
+	}
+	if blind("tax_id", "B1234") == blind("tax_id", "B1235") {
+		t.Error("different values collide")
+	}
+	if blind("tax_id", "B1") == blind("other", "B1") {
+		t.Error("the same value in two fields has one index: it would link them")
+	}
+	if blind("other", "b1") == blind("other", "B1") {
+		t.Error("a field without normalization folded case")
+	}
+	if blind("other", int64(5)) != blind("other", float64(5)) || blind("other", int64(5)) == blind("other", "5") {
+		t.Error("numbers and text")
+	}
+	// The sealed document carries the index under the flat name, and plaintext values stay out of it.
+	sealed, err := ring.Encrypt(ctx, c, map[string]any{"id": "p1", "tax_id": "b1", "notes": "n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx := sealed[registry.BlindRoot].(map[string]any)
+	if string(idx["tax_id"].([]byte)) != blind("tax_id", "B1") || len(idx) != 1 {
+		t.Errorf("index = %v", idx)
+	}
+	// A client's own _bidx is dropped.
+	sealed, _ = ring.Encrypt(ctx, c, map[string]any{"id": "p1", registry.BlindRoot: map[string]any{"other": []byte("forged")}})
+	if _, has := sealed[registry.BlindRoot]; has {
+		t.Errorf("a forged index survived: %v", sealed)
+	}
+	if _, err := ring.Blind(ctx, c, "notes", "n"); err == nil {
+		t.Error("a field without search has a blind index")
+	}
+}

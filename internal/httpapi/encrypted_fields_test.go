@@ -2,8 +2,10 @@ package httpapi
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +19,7 @@ import (
 const clinicSchema = `{"type":"object","additionalProperties":false,"required":["name"],"properties":{
   "name":{"type":"string"},
   "tax_id":{"type":"string","pattern":"^[A-Z][0-9]+$"},
+  "handle":{"type":"string"},
   "notes":{"type":["string","null"]},
   "history":{"type":"object"},
   "address":{"type":"object","properties":{"street":{"type":"string"},"city":{"type":"string"}}}}}`
@@ -29,7 +32,9 @@ func clinic(t *testing.T) (f *fixture, realm string, base string, keys map[strin
 	f = mongoFixture(t, map[string]string{
 		realm + "/realm.yaml":                    "signup: open\nroles:\n  staff: {admin: true}\n",
 		realm + "/main/patients/schema.json":     clinicSchema,
-		realm + "/main/patients/collection.yaml": "fields:\n  tax_id:\n    encrypt: {key: TAX}\n  notes:\n    encrypt: {key: HEALTH}\n  history:\n    encrypt: {key: HEALTH}\n  address.street:\n    encrypt: {key: HEALTH}\nrules:\n  read: user != nil\n  write: user != nil\n",
+		realm + "/main/lookups/schema.json":      `{"type":"object","properties":{"code":{"type":"string"},"label":{"type":"string"}}}`,
+		realm + "/main/lookups/collection.yaml":  "fields:\n  code:\n    encrypt: {key: TAX, search: equality}\nrules:\n  read: user != nil && document.code in ['X1', 'X2']\n  write: user != nil\n",
+		realm + "/main/patients/collection.yaml": "fields:\n  tax_id:\n    encrypt: {key: TAX, search: equality, unique: true}\n  handle:\n    encrypt: {key: TAX, search: equality, normalize: [trim, lower]}\n  notes:\n    encrypt: {key: HEALTH}\n  history:\n    encrypt: {key: HEALTH}\n  address.street:\n    encrypt: {key: HEALTH}\nrules:\n  read: user != nil\n  write: user != nil\n",
 	}, func(c *Config) { c.Log = slog.New(slog.NewJSONHandler(logs, nil)) })
 	ctx := context.Background()
 	keys = map[string]string{}
@@ -188,7 +193,7 @@ func TestEncryptedFieldsAreCiphertextInMongoDBAndPlaintextThroughTheAPI(t *testi
 	}
 
 	// Queries and sorting on encrypted fields are refused, with a code of their own.
-	for _, q := range []string{`?where={"tax_id":"C99"}`, `?where={"address.street":"x"}`, `?where={"notes":{"$contains":"a"}}`, `?order_by=tax_id`} {
+	for _, q := range []string{`?where={"tax_id":{"$ne":"C99"}}`, `?where={"tax_id":{"$gt":"A"}}`, `?where={"tax_id":{"$startsWith":"C"}}`, `?where={"tax_id":null}`, `?where={"tax_id":{"$isNull":true}}`, `?where={"address.street":"x"}`, `?where={"notes":{"$contains":"a"}}`, `?order_by=tax_id`, `?order_by=-handle`} {
 		rec, out := f.doH(t, "GET", base+q, "", ada)
 		if rec.Code != http.StatusBadRequest || errCode(out) != "field_encrypted" || !strings.Contains(rec.Body.String(), "encrypted") {
 			t.Errorf("%s: %d %s", q, rec.Code, rec.Body)
@@ -245,5 +250,126 @@ func TestExportAndImportRefuseCollectionsWithEncryptedFields(t *testing.T) {
 	rec, out := f.doH(t, "GET", "/v1/"+realm+"/_admin/export", "", map[string]string{"Authorization": "Bearer " + adminKey})
 	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "main/patients") {
 		t.Errorf("export: %d %v", rec.Code, out)
+	}
+}
+
+func TestSearchableEncryptedFieldsAnswerEqualityThroughTheBlindIndex(t *testing.T) {
+	f, realm, base, _, _ := clinic(t)
+	ada := signedIn(t, f, realm, "ada@example.com")
+	ids := map[string]string{}
+	for _, p := range []struct{ name, tax, handle string }{{"Ana", "B1", "  Ana.Garcia "}, {"Ben", "B2", "ben"}, {"Cy", "B3", "ANA.GARCIA"}} {
+		rec, out := f.doH(t, "POST", base, `{"name": "`+p.name+`", "tax_id": "`+p.tax+`", "handle": "`+p.handle+`"}`, ada)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("%s: %d %s", p.name, rec.Code, rec.Body)
+		}
+		ids[p.name] = out["id"].(string)
+	}
+	names := func(q string) string {
+		t.Helper()
+		rec, out := f.doH(t, "GET", base+"?order_by=name&where="+url.QueryEscape(q), "", ada)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", q, rec.Code, rec.Body)
+		}
+		var got []string
+		for _, it := range out["items"].([]any) {
+			got = append(got, it.(map[string]any)["name"].(string))
+		}
+		return strings.Join(got, ",")
+	}
+	if got := names(`{"tax_id":"B2"}`); got != "Ben" {
+		t.Errorf("= : %q", got)
+	}
+	if got := names(`{"tax_id":{"$in":["B1","B3","B9"]}}`); got != "Ana,Cy" {
+		t.Errorf("in: %q", got)
+	}
+	if got := names(`{"tax_id":"B9"}`); got != "" {
+		t.Errorf("no match: %q", got)
+	}
+	// Normalization applies to what is stored and to what is searched for.
+	if got := names(`{"handle":"ana.garcia"}`); got != "Ana,Cy" {
+		t.Errorf("normalized: %q", got)
+	}
+	if got := names(`{"handle":" ANA.garcia  "}`); got != "Ana,Cy" {
+		t.Errorf("normalized query: %q", got)
+	}
+	if got := names(`{"$or":[{"tax_id":"B1"},{"handle":"ben"}]}`); got != "Ana,Ben" {
+		t.Errorf("or: %q", got)
+	}
+	if got := names(`{"tax_id":"B1","name":"Cy"}`); got != "" {
+		t.Errorf("combined with a plain field: %q", got)
+	}
+	// Counts follow the same filter.
+	if _, out := f.doH(t, "GET", base+`?count=true&where={"handle":"ana.garcia"}`, "", ada); out["total"] != float64(2) {
+		t.Errorf("total: %v", out["total"])
+	}
+
+	// The blind index is hidden: stored, indexed, and never returned or accepted.
+	d := stored(t, f, realm, ids["Ana"])
+	if !strings.Contains(d.String(), "_bidx") {
+		t.Errorf("no blind index stored: %s", d)
+	}
+	_, got := f.doH(t, "GET", base+"/"+ids["Ana"], "", ada)
+	if _, has := got["_bidx"]; has || strings.Contains(fmt.Sprint(got), "bidx") {
+		t.Errorf("the blind index is returned: %v", got)
+	}
+	// A client-sent _bidx is dropped, not stored.
+	rec, forged := f.doH(t, "POST", base, `{"name": "Dee", "tax_id": "B4", "_bidx": {"tax_id": "AAAA"}}`, ada)
+	if rec.Code == http.StatusCreated {
+		if raw := stored(t, f, realm, forged["id"].(string)).String(); strings.Contains(raw, "AAAA") {
+			t.Errorf("a forged index was stored: %s", raw)
+		}
+	}
+
+	// Equal values clash on a unique blind index, naming the field, not the index.
+	rec, out := f.doH(t, "POST", base, `{"name": "Dup", "tax_id": "B1"}`, ada)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "tax_id") || strings.Contains(rec.Body.String(), "bidx") {
+		t.Errorf("duplicate: %d %v", rec.Code, out)
+	}
+	// Documents without the field don't clash with each other on a unique blind index.
+	for _, n := range []string{"NoTax1", "NoTax2"} {
+		if rec, _ := f.doH(t, "POST", base, `{"name": "`+n+`"}`, ada); rec.Code != http.StatusCreated {
+			t.Errorf("%s: %d %s", n, rec.Code, rec.Body)
+		}
+	}
+	// Changing it away frees the value; patching to a taken one clashes.
+	if rec, _ := f.doH(t, "PATCH", base+"/"+ids["Ana"], `{"tax_id": "B7"}`, asMergePatch(ada)); rec.Code != http.StatusOK {
+		t.Errorf("change: %d %s", rec.Code, rec.Body)
+	}
+	if rec, _ := f.doH(t, "POST", base, `{"name": "Reuse", "tax_id": "B1"}`, ada); rec.Code != http.StatusCreated {
+		t.Errorf("reuse: %d %s", rec.Code, rec.Body)
+	}
+	if rec, _ := f.doH(t, "PATCH", base+"/"+ids["Ben"], `{"tax_id": "B7"}`, asMergePatch(ada)); rec.Code != http.StatusConflict {
+		t.Errorf("patch to a taken value: %d", rec.Code)
+	}
+	if got := names(`{"tax_id":"B7"}`); got != "Ana" {
+		t.Errorf("after change: %q", got)
+	}
+}
+
+func TestReadRulesPushEqualityOnEncryptedFieldsDown(t *testing.T) {
+	f, realm, _, _, _ := clinic(t)
+	ada := signedIn(t, f, realm, "ada@example.com")
+	base := "/v1/" + realm + "/main/lookups"
+	ids := map[string]string{}
+	for _, code := range []string{"X1", "X2", "X3"} {
+		rec, out := f.doH(t, "POST", base, `{"code": "`+code+`", "label": "`+code+`"}`, ada)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("%s: %d %s", code, rec.Code, rec.Body)
+		}
+		ids[code] = out["id"].(string)
+	}
+	rec, out := f.doH(t, "GET", base+"?order_by=label", "", ada)
+	var labels []string
+	for _, it := range out["items"].([]any) {
+		labels = append(labels, it.(map[string]any)["label"].(string))
+	}
+	if rec.Code != http.StatusOK || strings.Join(labels, ",") != "X1,X2" {
+		t.Errorf("list through the rule: %d %v", rec.Code, labels)
+	}
+	if rec, _ := f.doH(t, "GET", base+"/"+ids["X1"], "", ada); rec.Code != http.StatusOK {
+		t.Errorf("an allowed document: %d", rec.Code)
+	}
+	if rec, _ := f.doH(t, "GET", base+"/"+ids["X3"], "", ada); rec.Code != http.StatusNotFound {
+		t.Errorf("a document the rule forbids: %d", rec.Code)
 	}
 }

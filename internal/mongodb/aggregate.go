@@ -28,6 +28,13 @@ var bucketFormats = map[string]string{
 // client sent becomes a stage, a field name or an operator: fields come from the declaration
 // and everything else from this function.
 func (r *Repository) Aggregate(ctx context.Context, q storage.AggregateQuery) (storage.AggregateResult, error) {
+	var err error
+	if q.Filter, err = r.blindFilter(ctx, q.Filter); err != nil {
+		return storage.AggregateResult{}, err
+	}
+	if q.Access, err = r.blindFilter(ctx, q.Access); err != nil {
+		return storage.AggregateResult{}, err
+	}
 	match, err := buildQuery(storage.Query{Filter: q.Filter, Access: q.Access, Search: q.Search})
 	if err != nil {
 		return storage.AggregateResult{}, err

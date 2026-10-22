@@ -159,6 +159,11 @@ func (p *Provisioner) validator(c *registry.Collection) map[string]any {
 		schema = EncryptedSchema(schema, paths)
 	}
 	v, omissions := Validator(schema, hidden...)
+	if len(c.Searchable()) > 0 {
+		// The blind indexes, one binary per searchable field.
+		props := v["$jsonSchema"].(map[string]any)["properties"].(map[string]any)
+		props[registry.BlindRoot] = map[string]any{"bsonType": "object"}
+	}
 	for _, o := range omissions {
 		p.Log.Info("schema keyword not enforced by the database validator",
 			"file", c.SchemaPath, "path", o.Path, "keyword", o.Keyword)

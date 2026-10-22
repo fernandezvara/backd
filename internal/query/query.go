@@ -239,8 +239,8 @@ func (p *parser) field(path string, v any) {
 		p.fail(path, "unknown field")
 		return
 	}
-	if f.Encrypted {
-		p.errs = append(p.errs, Error{Path: strings.TrimSuffix("where."+p.loc+path, "."), Reason: "is encrypted: it can't be filtered on", Code: CodeFieldEncrypted})
+	if f.Encrypted && !f.Searchable {
+		p.encrypted(path, "is encrypted: it can't be filtered on")
 		return
 	}
 
@@ -277,8 +277,24 @@ func (p *parser) add(path string, op storage.Operator, v any) {
 	*p.cur = append(*p.cur, storage.Condition{Field: path, Op: op, Value: v})
 }
 
+// encrypted records the refusal of a query on an encrypted field.
+func (p *parser) encrypted(at, reason string) {
+	p.errs = append(p.errs, Error{Path: strings.TrimSuffix("where."+p.loc+at, "."), Reason: reason, Code: CodeFieldEncrypted})
+}
+
 func (p *parser) operator(path string, f field, op string, v any) {
 	at := path + "." + op
+	if f.Encrypted {
+		// Searchable (the others never get here): only equality and `in`, through the blind index.
+		switch {
+		case op != "$eq" && op != "$in":
+			p.encrypted(at, "is encrypted with a blind index, which only answers $eq and $in")
+			return
+		case op == "$eq" && v == nil:
+			p.encrypted(at, "can't search an encrypted field for null")
+			return
+		}
+	}
 	switch {
 	case op == "$eq" || op == "$ne":
 		val, err := equalityValue(f, v)

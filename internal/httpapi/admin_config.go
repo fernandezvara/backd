@@ -202,6 +202,9 @@ func orStrings(in []string) []string {
 func collectionConfig(c *registry.Collection, rel func(string) string) map[string]any {
 	indexes := []any{}
 	for _, ix := range c.Indexes {
+		if ix.Blind {
+			continue // internal: the blind index of an encrypted field
+		}
 		indexes = append(indexes, map[string]any{"fields": ix.String(), "unique": ix.Unique, "ttl": ix.TTL})
 	}
 	out := map[string]any{

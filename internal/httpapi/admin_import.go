@@ -477,7 +477,7 @@ func (a *adminAPI) checkImported(c *registry.Collection, doc map[string]any) []D
 // clash with in the target, or "".
 func (a *adminAPI) uniqueClash(ctx context.Context, repo storage.Repository, c *registry.Collection, doc map[string]any) (string, error) {
 	for _, ix := range c.Indexes {
-		if !ix.Unique || ix.TTL {
+		if !ix.Unique || ix.TTL || ix.Blind {
 			continue
 		}
 		var conds storage.And

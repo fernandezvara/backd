@@ -39,7 +39,7 @@ const (
 )
 
 // reservedFields are system-owned and may not be declared by a schema.
-var reservedFields = []string{"id", "_id", "_meta", "_expanded", TextSearchField}
+var reservedFields = []string{"id", "_id", "_meta", "_expanded", TextSearchField, BlindRoot}
 
 var draft2020URIs = map[string]bool{
 	"https://json-schema.org/draft/2020-12/schema":  true,
@@ -433,6 +433,7 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 	if err := checkEncryption(coll, filepath.Join(dir, CollectionFile)); err != nil {
 		return nil, err
 	}
+	coll.addBlindIndexes()
 	if coll.SoftDelete == nil && coll.Rules != nil {
 		for _, op := range []rules.Op{rules.Restore, rules.Purge} {
 			if coll.Rules.For(op) != nil {
@@ -512,17 +513,18 @@ func (c *Collection) ruleSchema(settings RealmSettings) rules.Schema {
 			_, ok := c.Fields[p]
 			return ok
 		},
-		ScalarField:    c.ScalarField,
-		ArrayField:     c.ArrayField,
-		EncryptedField: c.IsEncrypted,
-		DateField:      c.DateField,
-		Roles:          roles,
-		Consents:       settings.ConsentNames(),
-		ConfigLeaf:     c.configLeaf,
-		OrgRoles:       orgRoles(settings),
-		InOrgs:         c.InOrganizations(),
-		TeamRoles:      teamRoles(settings),
-		InTeams:        c.InTeams(),
+		ScalarField:     c.ScalarField,
+		ArrayField:      c.ArrayField,
+		EncryptedField:  c.IsEncrypted,
+		SearchableField: c.IsSearchable,
+		DateField:       c.DateField,
+		Roles:           roles,
+		Consents:        settings.ConsentNames(),
+		ConfigLeaf:      c.configLeaf,
+		OrgRoles:        orgRoles(settings),
+		InOrgs:          c.InOrganizations(),
+		TeamRoles:       teamRoles(settings),
+		InTeams:         c.InTeams(),
 	}
 }
 

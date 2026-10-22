@@ -170,13 +170,15 @@ func compileRules(t *testing.T, c *registry.Collection, content string) *rules.S
 			_, ok := c.Fields[p]
 			return ok || (p == registry.MetaOrg && c.InOrganizations()) || (p == registry.MetaTeam && c.InTeams())
 		},
-		ScalarField: c.ScalarField,
-		ArrayField:  c.ArrayField,
-		Roles:       diffRoles,
-		OrgRoles:    []string{"owner", "admin", "editor", "viewer", "member", "hr"},
-		InOrgs:      c.InOrganizations(),
-		TeamRoles:   []string{"manager", "delegate"},
-		InTeams:     c.InTeams(),
+		ScalarField:     c.ScalarField,
+		ArrayField:      c.ArrayField,
+		EncryptedField:  c.IsEncrypted,
+		SearchableField: c.IsSearchable,
+		Roles:           diffRoles,
+		OrgRoles:        []string{"owner", "admin", "editor", "viewer", "member", "hr"},
+		InOrgs:          c.InOrganizations(),
+		TeamRoles:       []string{"manager", "delegate"},
+		InTeams:         c.InTeams(),
 	})
 	if len(errs) > 0 {
 		t.Fatalf("%s: %v", content, errs)

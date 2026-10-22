@@ -84,6 +84,9 @@ type Schema struct {
 	// EncryptedField reports whether a document path is stored encrypted: a read rule, which is
 	// applied inside the query, can't compare it. May be nil.
 	EncryptedField func(path string) bool
+	// SearchableField reports whether an encrypted path has a blind index: a read rule may then
+	// compare it with == or `in`, nothing else. May be nil.
+	SearchableField func(path string) bool
 	// Roles are the role names declared in realm.yaml.
 	Roles []string
 	// Consents are the consent names declared in realm.yaml, for hasConsent.

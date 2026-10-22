@@ -9400,7 +9400,7 @@ components:
                 id_not_allowed, id_taken, payload_too_large,
                 unsupported_media_type, too_many_requests, internal_error,
                 unavailable, field_encrypted (a `where` or `order_by` names an encrypted
-                field); for function calls also function_failed,
+                field, or does more with one than equality through its blind index); for function calls also function_failed,
                 function_timeout, invalid_output, secret_missing,
                 idempotency_key_required, idempotency_key_reused and
                 request_in_progress. A function's own errors (`ctx.error`)

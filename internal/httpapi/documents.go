@@ -852,6 +852,8 @@ func storageError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, storage.ErrUnavailable), errors.Is(err, context.DeadlineExceeded):
 		logger(r.Context()).Error("storage unavailable", "error", err)
 		writeError(w, r, http.StatusServiceUnavailable, codeUnavailable, "storage unavailable")
+	case errors.Is(err, storage.ErrFieldEncrypted):
+		writeError(w, r, http.StatusBadRequest, codeFieldEncrypted, "the query uses an encrypted field in a way its blind index can't answer: equality and `in` on a field with `search: equality` are the only searches")
 	case errors.Is(err, fieldcrypt.ErrUnavailable), errors.Is(err, fieldcrypt.ErrCorrupt):
 		// Never the field's value: the errors carry only where the problem is.
 		logger(r.Context()).Error("encrypted field", "error", err)

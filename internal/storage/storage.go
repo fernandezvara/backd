@@ -198,6 +198,9 @@ var (
 	ErrIndexBuilding = errors.New("text index not available")
 	// ErrUnavailable means the storage backend could not be reached in time.
 	ErrUnavailable = errors.New("storage unavailable")
+	// ErrFieldEncrypted means a query names an encrypted field in a way its blind index can't
+	// answer (anything but equality and `in` on a searchable field).
+	ErrFieldEncrypted = errors.New("field is encrypted")
 	// ErrConflict means a write violated a unique index. The concrete error
 	// is a *ConflictError.
 	ErrConflict = errors.New("unique constraint violated")

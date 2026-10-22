@@ -63,8 +63,8 @@ func fromBSON(d bson.D) storage.Document {
 		if key == "_id" {
 			key = "id"
 		}
-		if key == registry.TextSearchField {
-			continue // the stored search language: never part of a document
+		if key == registry.TextSearchField || key == registry.BlindRoot {
+			continue // the stored search language and the blind indexes: never part of a document
 		}
 		out[key] = fromBSONValue(e.Value)
 	}

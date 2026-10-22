@@ -94,11 +94,38 @@ A database can't compare what it can't read, so `backd` refuses, **at startup** 
 - a field inside another encrypted field;
 - a `replace`, `pull` or `unset` target of `on_owner_delete` (`remove` is fine);
 - an `aggregate` group or metric;
-- a field used by a **read rule**. `create`, `update` and `delete` rules read the plain value in memory, so they can use it.
+- a field used by a **read rule**, unless it has a blind index and the rule only uses `==` or `in` on it. `create`, `update` and `delete` rules read the plain value in memory, so they can use it freely.
 
-A request that filters or sorts by an encrypted field (`where`, `order_by`) answers `400 field_encrypted`, naming the field. Searching by an encrypted field, rules on it and who may see it in the answer are planned.
+A request that filters or sorts by an encrypted field (`where`, `order_by`) answers `400 field_encrypted`, naming the field, unless the field has a [blind index](#search-an-encrypted-field), which answers equality. Who may see a field in the answer is planned.
 
 Everything that reads documents sees the plain value: the API, `_batch`, functions (`ctx.db`), the admin data views, [triggers](../config-dir/#triggers) and realtime. The documents of a collection that encrypts a field can't be exported or imported yet (`422` naming the collections): the package format has to carry them as ciphertext first, and the server never decrypts for an export.
+
+## Search an encrypted field
+
+By default an encrypted field can't be queried. When you need to look documents up by it, ask for a **blind index**:
+
+```yaml
+fields:
+  tax_id:
+    encrypt:
+      key: TAX
+      search: equality          # a blind index for = and in
+      normalize: [trim, upper]  # applied before the index only: " b1234 " finds "B1234"
+      unique: true              # two documents can't hold the same value (409 on a clash)
+```
+
+```
+GET /v1/clinic/main/patients?where={"tax_id": "B1234"}
+GET /v1/clinic/main/patients?where={"tax_id": {"$in": ["B1234", "C99"]}}
+```
+
+`backd` stores, next to the encrypted value, a keyed hash (HMAC-SHA-256 under a random index key that the field key wraps, like a data key) of the normalized value, in a hidden indexed field that is never returned or accepted. A query is translated to a lookup of the hash of what you asked for. `normalize` takes `trim`, `lower` and `upper`, in order, and changes nothing but the index: the stored value keeps its case and spaces. `unique: true` needs `search`, because the index is what is unique; a document without the field doesn't clash with another, and with [soft delete](../config-dir/#soft-delete) a deleted document's value can be used again.
+
+**Only equality works** (`=`, `$eq` and `$in`; `null` can't be searched for). Ranges, `$ne`, text operators, sorting, counting distinct values and grouping answer `400 field_encrypted`. A read rule can compare the field the same way, with a value that doesn't come from the document: `document.tax_id == user.tax_id` or `document.code in ['X1', 'X2']`.
+
+{{< hint warning >}}
+**What a blind index reveals.** Equal values have equal indexes, so someone holding a dump can tell which documents share a value, though not what the value is. That is fine for values with many possibilities (tax ids, emails, card fingerprints). Do **not** use it for values with few (blood type, yes/no, a country): the groups they form would give them away. Documents written before the index existed aren't found by a search until the migration of a later release builds theirs.
+{{< /hint >}}
 
 ## Rotate a key
 

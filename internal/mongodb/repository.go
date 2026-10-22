@@ -164,6 +164,13 @@ func (r *Repository) Get(ctx context.Context, id string) (storage.Document, erro
 }
 
 func (r *Repository) List(ctx context.Context, q storage.Query) (storage.Page, error) {
+	var err error
+	if q.Filter, err = r.blindFilter(ctx, q.Filter); err != nil {
+		return storage.Page{}, err
+	}
+	if q.Access, err = r.blindFilter(ctx, q.Access); err != nil {
+		return storage.Page{}, err
+	}
 	filter, err := buildQuery(q)
 	if err != nil {
 		return storage.Page{}, err
@@ -332,6 +339,9 @@ func duplicateKeyFields(err error) []string {
 			f := el.Key()
 			if f == "_id" {
 				f = "id"
+			}
+			if rest, ok := strings.CutPrefix(f, registry.BlindPrefix); ok {
+				f = strings.ReplaceAll(rest, "~", ".") // the encrypted field a blind index stands for
 			}
 			fields = append(fields, f)
 		}

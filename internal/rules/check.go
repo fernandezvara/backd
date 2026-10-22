@@ -372,7 +372,7 @@ func filterable(n ast.Node, schema Schema) error {
 			return errors.Join(filterable(n.Left, schema), filterable(n.Right, schema))
 		case "in":
 			if p, ok := docPath(n.Left); ok && !refs(n.Right, "document") {
-				return scalar(schema, p) // field in [values]
+				return scalar(schema, p, "in") // field in [values]
 			}
 			if p, ok := docPath(n.Right); ok && !refs(n.Left, "document") {
 				if !schema.ArrayField(p) {
@@ -383,10 +383,10 @@ func filterable(n ast.Node, schema Schema) error {
 		default:
 			if comparisons[n.Operator] {
 				if p, ok := docPath(n.Left); ok && !refs(n.Right, "document") {
-					return scalar(schema, p)
+					return scalar(schema, p, n.Operator)
 				}
 				if p, ok := docPath(n.Right); ok && !refs(n.Left, "document") {
-					return scalar(schema, p)
+					return scalar(schema, p, n.Operator)
 				}
 			}
 		}
@@ -396,17 +396,24 @@ func filterable(n ast.Node, schema Schema) error {
 		}
 	case *ast.MemberNode:
 		if p, ok := docPath(n); ok {
-			return scalar(schema, p) // a boolean field
+			return scalar(schema, p, "") // a boolean field
 		}
 	}
 	return fmt.Errorf("read rules must be database filters: `%s` isn't a comparison between a document field and a value", n.String())
 }
 
 // scalar checks that a read rule compares a single-valued field.
-func scalar(schema Schema, path string) error {
+func scalar(schema Schema, path, op string) error {
 	switch {
 	case schema.EncryptedField != nil && schema.EncryptedField(path):
-		return fmt.Errorf("read rules: document.%s is encrypted, which the database can't compare: a read rule can't use it (create, update and delete rules read it in memory)", path)
+		// The database can compare an encrypted field only through its blind index, for equality.
+		if schema.SearchableField != nil && schema.SearchableField(path) {
+			if op == "==" || op == "in" {
+				return nil
+			}
+			return fmt.Errorf("read rules: document.%s is encrypted with a blind index, which only answers == and `in`; `%s` can't be used on it", path, op)
+		}
+		return fmt.Errorf("read rules: document.%s is encrypted without `search: equality`, so the database can't compare it: a read rule can't use it (create, update and delete rules read it in memory)", path)
 	case schema.ScalarField(path):
 		return nil
 	case schema.ArrayField(path):
