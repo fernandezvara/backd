@@ -80,6 +80,8 @@ Paths are relative to `/v1/{realm}/_admin`. Bodies are JSON (`Content-Type: appl
 | `DELETE /users/{id}/sessions/{session_id}` | none | `204`; the session's token stops working at once; audited as `session.revoke`. `404` for an unknown session |
 | `POST /users/{id}/password` | `{"password"}` | `204` |
 | `POST /users/{id}/expire-password` | `{"reason"?}` | `204`; the password stops opening the account until it is reset ([details](../../../build/auth/users/#expiring-a-password)) |
+| `POST /passwords/expire` | `{"reason"?, "keep_sessions"?}`; needs full admin access and, for a session, a fresh re-authentication | `200 {valid_after, accounts, sessions}`: every password set before now stops opening its account and, unless `keep_sessions`, every session ends ([details](../../../build/auth/users/#expiring-every-password)) |
+| `DELETE /sessions` | none; full admin access and a fresh re-authentication | `200 {sessions}`: every session of the realm ends, passwords untouched |
 | `GET /users/{id}/owned` | none | `200` with [what erasing the user would do](#previewing-an-erase) |
 | `POST /users/{id}/email` | `{"email"}` | `200` with the user; [changes the address](#changing-a-users-email) |
 | `PUT /users/{id}/roles/{role}` | none | `200` with the user |

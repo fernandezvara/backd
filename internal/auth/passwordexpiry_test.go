@@ -157,3 +157,79 @@ func TestAnExpiredPasswordDoesNotStartTheSecondFactor(t *testing.T) {
 		t.Errorf("= %+v, %v", out, err)
 	}
 }
+
+func TestExpiringEveryPasswordEndsTheSessions(t *testing.T) {
+	ctx := context.Background()
+	svc, store, clock, ada := enrollFixture(t)
+	if _, err := svc.Create(ctx, "bob@example.com", ptr(expiryPassword)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Create(ctx, "nopass@example.com", nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range []string{ada.Email, "bob@example.com"} {
+		if _, _, err := svc.Login(ctx, e, expiryPassword, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	*clock = clock.Add(time.Hour)
+	res, err := svc.ExpireAllPasswords(ctx, "leaked backup", false)
+	if err != nil || res.Accounts != 2 || res.Sessions != 2 || !res.ValidAfter.Equal(*clock) {
+		t.Fatalf("= %+v, %v", res, err)
+	}
+	if n, _ := store.DeleteAllSessions(ctx); n != 0 {
+		t.Errorf("%d sessions left", n)
+	}
+	for _, e := range []string{ada.Email, "bob@example.com"} {
+		if _, err := svc.SignIn(ctx, e, expiryPassword, ""); !errors.Is(err, ErrPasswordExpired) {
+			t.Errorf("%s: %v", e, err)
+		}
+	}
+	// The epoch only moves forward: the same instant is refused, a later one is not.
+	if _, err := svc.ExpireAllPasswords(ctx, "", false); !errors.Is(err, ErrEpochNotLater) {
+		t.Errorf("same instant: %v", err)
+	}
+	*clock = clock.Add(time.Minute)
+	if _, err := svc.ExpireAllPasswords(ctx, "", false); err != nil {
+		t.Errorf("later: %v", err)
+	}
+	recs, _, err := svc.AuditTrail(ctx, AuditFilter{Action: AuditPasswordExpire, Limit: 10})
+	if err != nil || len(recs) != 2 {
+		t.Fatalf("audit: %v %v", recs, err)
+	}
+	var found bool
+	for _, r := range recs {
+		if r.Details["reason"] == "leaked backup" && r.Details["accounts"] == int64(2) {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("audit details: %+v", recs)
+	}
+}
+
+func TestExpiringEveryPasswordCanKeepTheSessions(t *testing.T) {
+	ctx := context.Background()
+	svc, store, clock, ada := enrollFixture(t)
+	p, _, err := svc.Login(ctx, ada.Email, expiryPassword, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	*clock = clock.Add(time.Hour)
+	res, err := svc.ExpireAllPasswords(ctx, "planned rotation", true)
+	if err != nil || res.Sessions != 0 {
+		t.Fatalf("= %+v, %v", res, err)
+	}
+	if left, _ := store.ListSessions(ctx, ada.ID); len(left) != 1 || left[0].ID != p.Session.ID {
+		t.Errorf("sessions left: %+v", left)
+	}
+	n, err := svc.RevokeAllSessions(ctx)
+	if err != nil || n != 1 {
+		t.Errorf("revoke all: %d %v", n, err)
+	}
+	// Passwords are untouched by revoking sessions: the earlier epoch still applies.
+	if _, err := svc.SignIn(ctx, ada.Email, expiryPassword, ""); !errors.Is(err, ErrPasswordExpired) {
+		t.Errorf("after revoke: %v", err)
+	}
+}

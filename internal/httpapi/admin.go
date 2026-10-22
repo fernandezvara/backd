@@ -79,6 +79,8 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		r.With(users, json).Post("/push/test", a.testPush)
 		r.With(users).Delete("/push/devices", a.removePushDevices)
 		r.With(users).Get("/users", a.listUsers)
+		r.With(users).Post("/passwords/expire", a.expireAllPasswords)
+		r.With(users).Delete("/sessions", a.revokeAllSessions)
 		r.With(users, json).Post("/consents/notify", a.notifyConsent)
 		r.With(users).Get("/mfa", a.mfaOverview)
 		r.With(users, json).Post("/users", a.createUser)

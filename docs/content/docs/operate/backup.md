@@ -176,8 +176,7 @@ Before reopening the service:
 - **Sessions come back**, including ones that were logged out. Sessions that have expired since are refused, and MongoDB deletes them. If in doubt, end every session in the realm, and everyone logs in again:
 
   ```sh
-  docker compose --env-file .env run --rm --no-deps provision \
-    sh -c 'mongosh "$MONGO_URI" --quiet --eval "db.getSiblingDB(\"blog___system\").sessions.deleteMany({})"'
+  backd user revoke-sessions --realm blog --all --yes
   ```
 
 - **Failed-login counters** come back too; they expire within 15 minutes.
@@ -188,5 +187,5 @@ An encrypted backup is safe for as long as its private key is. If a backup leaks
 
 - end every session (see above);
 - revoke and reissue every API key;
-- make every leaked password hash useless. Users can choose a new password themselves through the [password reset](../../build/auth/sessions/#password-reset) when the realm has [`email`](../../build/functions/email/) configured, but nothing forces them to: until a user changes it, the hash in the backup still opens their account (guessing it offline is what a leak makes possible). Today that takes one step per user: `backd user set-password` with a long random password (it also ends their sessions and tells them with a `password-changed` email), after which they use *Forgot password*. Script it over the first column of `backd user list` (`openssl rand -base64 24 | backd user set-password --realm blog --email …` reads the password from standard input), and tell your users what to expect, because their old password will simply stop working;
+- make every leaked password hash useless: `backd user expire-passwords --realm blog --yes --reason "leaked backup"` expires every password set until now and ends every session. A user who then signs in with the old password gets `401 password_expired` and, when the realm has [`email`](../../build/functions/email/) configured, a password reset email; the same epoch also covers a later restore of older data. Users who don't try can use *Forgot password* at any time, and for a user the email can't reach an administrator sets a password with `backd user set-password`. Telling every user by email and reset links for users without email come with the rest of the [breach response](../../build/auth/users/#expiring-every-password);
 - rotate the age key pair.

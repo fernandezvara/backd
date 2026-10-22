@@ -321,6 +321,15 @@ organizations:
 	c.expect(1, "run `backd login --realm acme --url "+srv.URL+"`", "", "user", "list", "--realm", "acme")
 	c.expect(0, "logged out", "", "logout", "--realm", "acme")
 	c.expect(1, "not logged in", "", "user", "list", "--realm", "acme")
+
+	// Last, because they end the session this test signed in with.
+	c.expect(0, "logged in", pw+"\n", "login", "--realm", "acme", "--email", "ada@example.com")
+	c.expect(1, "add --yes to confirm", "", "user", "expire-passwords", "--realm", "acme")
+	c.expect(2, "--all is required", "", "user", "revoke-sessions", "--realm", "acme")
+	c.expect(1, "add --yes to confirm", "", "user", "revoke-sessions", "--realm", "acme", "--all")
+	c.expect(0, "sessions ended", pw+"\n", "user", "revoke-sessions", "--realm", "acme", "--all", "--yes")
+	c.expect(0, "logged in", pw+"\n", "login", "--realm", "acme", "--email", "ada@example.com")
+	c.expect(0, "accounts with a password", pw+"\n", "user", "expire-passwords", "--realm", "acme", "--yes", "--reason", "drill", "--keep-sessions")
 }
 
 func TestLoginArguments(t *testing.T) {

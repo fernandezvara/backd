@@ -3,6 +3,7 @@ package mongodb
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -81,5 +82,37 @@ func TestPasswordsRecordWhenTheyChangedAndUsersWhenTheyExpired(t *testing.T) {
 	}
 	if got, _ := s.UserByID(ctx, u.ID); !got.PasswordExpiredAt.IsZero() {
 		t.Errorf("not cleared: %v", got.PasswordExpiredAt)
+	}
+}
+
+func TestEverySessionOfALargeRealmEndsAtOnce(t *testing.T) {
+	ctx := context.Background()
+	s, realm := authFixture(t)
+	now := time.Date(2126, 10, 9, 12, 0, 0, 0, time.UTC)
+	svc := usersOn(t, s, realm, "master-key-0123456789abcdef-012345", now)
+	pw := "dev-p4ssw0rd!"
+	for i := range 3 {
+		if _, err := svc.Create(ctx, "user"+string(rune('a'+i))+"@example.com", &pw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := svc.Create(ctx, "nopassword@example.com", nil); err != nil {
+		t.Fatal(err)
+	}
+	const sessions = 2500
+	for i := range sessions {
+		id := fmt.Sprintf("s%05d", i)
+		if err := s.CreateSession(ctx, auth.Session{ID: id, UserID: "u" + id, TokenHash: id, CreatedAt: now, LastUsedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	later := now.Add(time.Minute)
+	svc.Now = func() time.Time { return later }
+	res, err := svc.ExpireAllPasswords(ctx, "test", false)
+	if err != nil || res.Accounts != 3 || res.Sessions != sessions {
+		t.Fatalf("= %+v, %v", res, err)
+	}
+	if n, err := svc.RevokeAllSessions(ctx); err != nil || n != 0 {
+		t.Errorf("a second time: %d %v", n, err)
 	}
 }

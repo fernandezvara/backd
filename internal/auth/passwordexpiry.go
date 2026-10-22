@@ -37,6 +37,62 @@ func (s *Users) passwordExpired(ctx context.Context, u User, id Identity) (bool,
 	return !epoch.ValidAfter.IsZero() && changed.Before(epoch.ValidAfter), nil
 }
 
+// ErrEpochNotLater means the realm already has a password epoch as late as now: it only
+// moves forward (a clock behind the one that set it, or two commands in the same instant).
+var ErrEpochNotLater = errors.New("a password epoch as late as this one already exists")
+
+// ExpireResult is what ExpireAllPasswords did.
+type ExpireResult struct {
+	ValidAfter time.Time
+	// Accounts is how many accounts have a password, and so are affected; Sessions how many
+	// sessions ended.
+	Accounts, Sessions int64
+}
+
+// ExpireAllPasswords moves the realm's password epoch to now: every password set before it
+// stops opening its account, and a restore of older system data doesn't bring them back.
+// Sessions end too, unless keepSessions (a planned rotation rather than a leak). The epoch
+// only moves forward. The reason goes to the audit trail.
+func (s *Users) ExpireAllPasswords(ctx context.Context, reason string, keepSessions bool) (ExpireResult, error) {
+	now := s.now()
+	epoch := PasswordEpoch{ValidAfter: now, SetBy: auditSource(ctx).Actor, SetAt: now, Reason: reason}
+	ok, err := s.Store.SetPasswordEpoch(ctx, epoch)
+	if err != nil {
+		return ExpireResult{}, err
+	}
+	if !ok {
+		return ExpireResult{}, ErrEpochNotLater
+	}
+	res := ExpireResult{ValidAfter: now}
+	if res.Accounts, err = s.Store.CountPasswordIdentities(ctx); err != nil {
+		return res, err
+	}
+	if !keepSessions {
+		if res.Sessions, err = s.Store.DeleteAllSessions(ctx); err != nil {
+			return res, err
+		}
+		s.Metrics.SessionsEnded(s.Realm, "passwords_expired", res.Sessions)
+	}
+	details := map[string]any{"scope": "realm", "accounts": res.Accounts, "sessions": res.Sessions, "keep_sessions": keepSessions}
+	if reason != "" {
+		details["reason"] = reason
+	}
+	s.Audit(ctx, AuditPasswordExpire, "realm", details)
+	return res, nil
+}
+
+// RevokeAllSessions ends every session of the realm and says how many; passwords are not
+// touched.
+func (s *Users) RevokeAllSessions(ctx context.Context) (int64, error) {
+	n, err := s.Store.DeleteAllSessions(ctx)
+	if err != nil {
+		return 0, err
+	}
+	s.Metrics.SessionsEnded(s.Realm, "revoked_all", n)
+	s.Audit(ctx, AuditSessionRevokeAll, "realm", map[string]any{"sessions": n})
+	return n, nil
+}
+
 // ExpirePassword expires one user's password: it stops opening the account until the user
 // resets it or an administrator sets a new one. Sessions are left alone.
 func (s *Users) ExpirePassword(ctx context.Context, email, reason string) error {

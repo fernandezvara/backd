@@ -413,6 +413,27 @@ func (m *MemStore) DeleteSessions(_ context.Context, userID string) (int64, erro
 	return m.DeleteOtherSessions(context.Background(), userID, "")
 }
 
+func (m *MemStore) DeleteAllSessions(context.Context) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := int64(len(m.sessions))
+	clear(m.sessions)
+	clear(m.devices)
+	return n, nil
+}
+
+func (m *MemStore) CountPasswordIdentities(context.Context) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var n int64
+	for _, i := range m.identities {
+		if i.Provider == auth.ProviderPassword {
+			n++
+		}
+	}
+	return n, nil
+}
+
 func (m *MemStore) CreateSession(_ context.Context, s auth.Session) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

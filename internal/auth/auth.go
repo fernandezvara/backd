@@ -203,6 +203,10 @@ type Store interface {
 	// whether it did: an epoch only moves forward.
 	PasswordEpoch(ctx context.Context) (PasswordEpoch, error)
 	SetPasswordEpoch(ctx context.Context, e PasswordEpoch) (bool, error)
+	// DeleteAllSessions revokes every session of the realm, and the devices they registered,
+	// and says how many sessions. CountPasswordIdentities says how many accounts have a password.
+	DeleteAllSessions(ctx context.Context) (int64, error)
+	CountPasswordIdentities(ctx context.Context) (int64, error)
 	// PutIdentity creates the identity, or, when one with the same provider
 	// and subject exists, updates its credentials and UpdatedAt (keeping its
 	// ID and CreatedAt). ErrIdentityExists when the user already has another

@@ -24,6 +24,8 @@ Every command also takes `--url`, to pick the server for that command.
 | `backd user list --realm <realm>` | List the realm's users |
 | `backd user set-password --realm <realm> --email <email>` | Set or replace the password, and revoke all of the user's sessions |
 | `backd user expire-password --realm <realm> --email <email> [--reason <text>]` | [Expire](#expiring-a-password) the password: it stops opening the account until the user resets it; sessions are kept |
+| `backd user expire-passwords --realm <realm> --yes [--reason <text>] [--keep-sessions]` | [Expire every password](#expiring-every-password) of the realm and end every session: the first step after a leak |
+| `backd user revoke-sessions --realm <realm> --all --yes` | End every session of the realm and leave passwords alone |
 | `backd user change-email --realm <realm> --email <email> --new-email <email>` | Change the user's address at once, as an administrator (needs [`email`](../../functions/email/); see [the admin API](../../../operate/administration/admin/#changing-a-users-email)) |
 | `backd user identities --realm <realm> --email <email>` | List the user's ways to sign in: a password and the [providers](../providers/) they use, with the address each reported and when it was linked and last used |
 | `backd user mfa-reset --realm <realm> --email <email> --yes` | Remove a user's [second factor](../mfa/#when-a-user-loses-it) and recovery codes and end their sessions; `--local` is the break-glass form that acts on the database |
@@ -67,6 +69,17 @@ Deleting a user can't be undone, so the command needs `--yes`. The documents the
 `backd user expire-password` makes a user's current password useless without changing it or touching their sessions, for a support case or a password you no longer trust. The user's next sign-in with that password is refused with `401 password_expired` (a wrong password is still `invalid_credentials`, so the answer tells nothing to someone who doesn't know it), and when the realm sends [email](../../functions/email/) a reset email is queued, as if they had asked for one. Choosing a new password through the [reset](../sessions/#password-reset), or an administrator running `set-password`, makes the account usable again; there is nothing to clear. The action is [audited](../../../operate/administration/audit/) as `password.expire`, with the optional `--reason`.
 
 Users who sign in with a provider or a magic link have no password to expire, and an expired password does not skip or start the [second factor](../mfa/): it is refused first. The same action is `POST /_admin/users/{id}/expire-password` in the [admin API](../../../operate/administration/admin/).
+
+## Expiring every password
+
+After a leak of a backup or a credential dump, `backd user expire-passwords --realm blog --yes --reason "leaked backup"` makes every existing password useless in one step. It sets the realm's **password epoch** to now: a password set before it stops opening its account (`401 password_expired` for the right password, with the reset email described above), and every session ends. `--keep-sessions` leaves the sessions, for a planned rotation rather than a breach. The answer says how many accounts have a password and how many sessions ended.
+
+- **One write, whatever the number of users.** A user created or a password reset after it is valid; restoring a backup of *older* system data brings the older epoch back, so run the command again after such a restore.
+- **It only moves forward**, and cannot be undone through the API; a user recovers with a reset, or you set a password with `set-password`.
+- **It needs full administration and a fresh proof of identity** (the CLI asks for it), and is audited as `password.expire` with the reason and the counts.
+- **`backd user revoke-sessions --all --yes`** ends every session, and the devices they registered, without touching passwords. It is audited as `session.revoke_all`.
+
+The admin API calls are `POST /_admin/passwords/expire` (`{"reason"?, "keep_sessions"?}`) and `DELETE /_admin/sessions`. Telling every user by email and reset links for users the email cannot reach are not part of this step yet.
 
 ## Roles
 

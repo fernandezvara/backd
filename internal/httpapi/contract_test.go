@@ -953,6 +953,7 @@ func TestContract(t *testing.T) {
 		{"DELETE", "/users/" + f.bobID, ""}, {"POST", "/users/" + f.bobID + "/password", `{"password": "dev-p4ssw0rd!"}`},
 		{"PUT", "/users/" + f.bobID + "/roles/admin", ""}, {"DELETE", "/users/" + f.bobID + "/roles/admin", ""},
 		{"POST", "/users/" + f.bobID + "/email", `{"email": "z@example.com"}`}, {"POST", "/users/" + f.bobID + "/expire-password", ""},
+		{"POST", "/passwords/expire", ""}, {"DELETE", "/sessions", ""},
 		{"GET", "/invitations", ""}, {"POST", "/invitations", `{}`}, {"DELETE", "/invitations/x", ""},
 	}
 	for _, op := range adminOps {
@@ -2791,6 +2792,12 @@ func TestContract(t *testing.T) {
 		req("DELETE", mem, "", key, 204)
 		_ = other
 	}
+
+	// The actions of a breach come last: they end every session the checks above used.
+	req("POST", ad+"/passwords/expire", `{"reason": 7}`, json(key), 400)
+	req("POST", ad+"/passwords/expire", `{"reason": "contract test", "keep_sessions": true}`, json(key), 200)
+	req("POST", ad+"/passwords/expire", ``, key, 409) // the same instant is not later
+	req("DELETE", ad+"/sessions", "", key, 200)
 
 	c.verify(t, router)
 

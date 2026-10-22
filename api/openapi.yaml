@@ -2897,6 +2897,75 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/passwords/expire:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [admin]
+      summary: Expire every password of the realm
+      description: |
+        Moves the realm's password epoch to now: every password set before it stops opening its
+        account (`401 password_expired` at sign-in, which queues a reset email), and, unless
+        `keep_sessions`, every session ends. A restore of older data doesn't bring old passwords
+        back, because the epoch is in the system database. The epoch only moves forward (`409`
+        when one as late as now exists). Needs full admin access, and a session a fresh
+        re-authentication. Audited as `password.expire` with the reason and the counts.
+      operationId: adminExpirePasswords
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason: { type: string, maxLength: 500, description: "Why, for the audit trail." }
+                keep_sessions: { type: boolean, description: "Keep the sessions: a planned rotation rather than a breach." }
+      responses:
+        "200":
+          description: The epoch and what it touched.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [valid_after, accounts, sessions]
+                properties:
+                  valid_after: { $ref: "#/components/schemas/Timestamp" }
+                  accounts: { type: integer, description: "Accounts with a password." }
+                  sessions: { type: integer, description: "Sessions ended." }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/sessions:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    delete:
+      tags: [admin]
+      summary: End every session of the realm
+      description: |
+        Revokes every session, and the push devices they registered, without touching any
+        password. Needs full admin access, and a session a fresh re-authentication. Audited as
+        `session.revoke_all`.
+      operationId: adminRevokeAllSessions
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: How many sessions ended.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [sessions]
+                properties:
+                  sessions: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/users/{id}/expire-password:
     parameters:
       - { $ref: "#/components/parameters/realm" }

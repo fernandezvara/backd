@@ -452,6 +452,23 @@ func (s *AuthStore) DeleteSessions(ctx context.Context, userID string) (int64, e
 	return res.DeletedCount, nil
 }
 
+// DeleteAllSessions implements auth.Store.
+func (s *AuthStore) DeleteAllSessions(ctx context.Context) (int64, error) {
+	if _, err := s.devices().DeleteMany(ctx, bson.D{}); err != nil {
+		return 0, err
+	}
+	res, err := s.sessions().DeleteMany(ctx, bson.D{})
+	if err != nil {
+		return 0, err
+	}
+	return res.DeletedCount, nil
+}
+
+// CountPasswordIdentities implements auth.Store.
+func (s *AuthStore) CountPasswordIdentities(ctx context.Context) (int64, error) {
+	return s.identities().CountDocuments(ctx, bson.D{{Key: "provider", Value: auth.ProviderPassword}})
+}
+
 type sessionDoc struct {
 	ID         string    `bson:"_id"`
 	TokenHash  string    `bson:"token_hash"`

@@ -15,7 +15,8 @@ Each realm with `auth: enabled` keeps an **audit trail**: one record per securit
 | `user.create` | An administrator (or `backd bootstrap`) creates a user | `password` (whether one was set), `roles` (seeded from `realm.yaml`) |
 | `user.signup` | A user signs up | `invited`, `roles` |
 | `user.password` | An administrator sets a user's password | |
-| `password.expire` | An administrator [expires](../../../build/auth/users/#expiring-a-password) a user's password | `scope` (`user`), `reason` |
+| `password.expire` | An administrator [expires](../../../build/auth/users/#expiring-a-password) a user's password, or [every password](../../../build/auth/users/#expiring-every-password) of the realm (target `realm`) | `scope` (`user` or `realm`), `reason`; for the realm also `accounts`, `sessions`, `keep_sessions` |
+| `session.revoke_all` | An administrator ended every session of the realm | `sessions` |
 | `user.password_change` | A user changes their own password | |
 | `user.verify_email` | An administrator marks an email as verified, or not; or a user verifies it with the link in their email | `verified` |
 | `user.password_reset` | A user sets a new password with a reset link | `verified_address` |

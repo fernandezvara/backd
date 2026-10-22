@@ -149,6 +149,53 @@ func userExpirePassword(c *userCtx) error {
 	return nil
 }
 
+func userExpirePasswords(c *userCtx) error {
+	if !flag(c.cmd, "yes") {
+		msg := "this expires the password of every account in the realm and ends every session"
+		if flag(c.cmd, "keep-sessions") {
+			msg = "this expires the password of every account in the realm"
+		}
+		return errors.New(msg + ": add --yes to confirm")
+	}
+	body := map[string]any{"keep_sessions": flag(c.cmd, "keep-sessions")}
+	if r := str(c.cmd, "reason"); r != "" {
+		body["reason"] = r
+	}
+	var out struct {
+		ValidAfter string `json:"valid_after"`
+		Accounts   int64
+		Sessions   int64
+	}
+	proof, err := c.t.proof(c.uio)
+	if err != nil {
+		return err
+	}
+	if _, err := c.t.callHeaders("POST", "_admin/passwords/expire", nil, body, &out, proof); err != nil {
+		return err
+	}
+	fmt.Fprintf(c.uio.stdout, "every password set before %s expired: %d accounts with a password, %d sessions ended\nusers choose a new password with a reset (a sign-in with the old one queues the email), or you set one with `backd user set-password`\n", out.ValidAfter, out.Accounts, out.Sessions)
+	return nil
+}
+
+func userRevokeSessions(c *userCtx) error {
+	if !flag(c.cmd, "all") {
+		return usageErr(errors.New("--all is required: it ends the sessions of every user (to end one user's, set a password or disable them)"))
+	}
+	if !flag(c.cmd, "yes") {
+		return errors.New("this ends every session in the realm: add --yes to confirm")
+	}
+	var out struct{ Sessions int64 }
+	proof, err := c.t.proof(c.uio)
+	if err != nil {
+		return err
+	}
+	if _, err := c.t.callHeaders("DELETE", "_admin/sessions", nil, nil, &out, proof); err != nil {
+		return err
+	}
+	fmt.Fprintf(c.uio.stdout, "%d sessions ended\n", out.Sessions)
+	return nil
+}
+
 func userChangeEmail(c *userCtx) error {
 	u, err := c.onUser("POST", "/email", map[string]string{"email": str(c.cmd, "new-email")})
 	if err != nil {
