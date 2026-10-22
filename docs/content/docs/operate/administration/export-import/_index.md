@@ -17,6 +17,10 @@ toc: true
 | Look up the package format, every flag, the admin API or an error | [Reference](reference/) |
 | Keep packages and keys safe | [Keeping packages safe](keeping-packages-safe/) |
 
+## Export or backup?
+
+An export is for moving data, not for recovering a deployment: it leaves out the system data a restore needs (sessions, API keys, secrets, the audit trail) and reads the collections one after another, not as one snapshot. For disaster recovery use [Backup and restore](../../backup/); to read a backup as a package, restore it into a throwaway MongoDB and use [direct mode](direct-mode/#reading-an-old-backup).
+
 ## At a glance
 
 ```

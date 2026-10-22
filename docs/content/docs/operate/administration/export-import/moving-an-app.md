@@ -125,4 +125,4 @@ Treat a package like the database it came from: keep it where only the people wh
 
 ## Not a backup
 
-Collections are read one after another while the app keeps working, so a package is not a snapshot of one instant, and it leaves out the system data a restore needs. For backups see [Backup and restore](../../../backup/).
+Collections are read one after another while the app keeps working, so a package is not a snapshot of one instant, and it leaves out the system data a restore needs. For backups, which are what you restore a deployment from, see [Backup and restore](../../../backup/#backup-or-export).

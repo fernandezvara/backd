@@ -8,6 +8,20 @@ toc: true
 
 `backd` keeps all state in MongoDB. The config directory describes the structure (collections, validators, indexes, rules), and provisioning can rebuild it at any time, but not the data. Back up MongoDB, and keep the config directory in version control.
 
+## Backup or export?
+
+They look alike, because both copy your data, but they answer different needs:
+
+| | Backup and restore (this page) | [Export and import](../administration/export-import/) |
+|---|---|---|
+| For | Disaster recovery: getting the same deployment back | Moving data: to another instance, a staging copy, a report |
+| Copies | Whole MongoDB databases, system data included (sessions, API keys, secrets, the audit trail) | Documents and files, and users only if you ask; never sessions, tokens, secrets or the audit trail |
+| Restores onto | The same configuration and master key | Any instance, whose own configuration validates every document first |
+| Can change the data on the way | No | Yes: choose fields, filter, anonymize, convert to CSV |
+| Consistency | `mongodump` of a replica set can be a snapshot | Collections are read one after another |
+
+Take backups for recovery; use export and import when the data is going somewhere else. [Direct mode](../administration/export-import/direct-mode/#reading-an-old-backup) joins the two: it reads a restored backup as a package.
+
 ## What a backup must include
 
 | Database | Holds | Rebuilt from config? |
