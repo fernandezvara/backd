@@ -79,6 +79,7 @@ After a leak of a backup or a credential dump, `backd user expire-passwords --re
 - **One write, whatever the number of users.** A user created or a password reset after it is valid; restoring a backup of *older* system data brings the older epoch back, so run the command again after such a restore.
 - **It only moves forward**, and cannot be undone through the API; a user recovers with a reset, or you set a password with `set-password`.
 - **It needs full administration and a fresh proof of identity** (the CLI asks for it), and is audited as `password.expire` with the reason and the counts.
+- **The whole response to a leak**, in order and with what users will see, is in [If credentials leak](../../../operate/if-credentials-leak/).
 - **`backd user revoke-sessions --all --yes`** ends every session, and the devices they registered, without touching passwords. It is audited as `session.revoke_all`.
 
 The admin API calls are `POST /_admin/passwords/expire` (`{"reason"?, "keep_sessions"?}`) and `DELETE /_admin/sessions`. 

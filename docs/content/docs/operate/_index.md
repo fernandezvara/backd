@@ -109,7 +109,7 @@ Each realm with `auth: enabled` has a system database named `<realm>___system` (
 
 Each collection has a `$jsonSchema` validator that checks its required fields and their types. The TTL indexes make MongoDB delete expired sessions, invitations, counters, audit records, invocation records, jobs and idempotency claims automatically. If one of these indexes exists with different options (for example `expires_at` without TTL, so sessions would never expire), `apply` and `verify` fail and name it; drop the index and let `backd` recreate it.
 
-Treat the system databases as sensitive: they contain password hashes and token hashes. Back them up with the rest of the realm's data, encrypted: only role seeds can be rebuilt from the config. Tokens and keys are stored only as hashes, so a leaked backup doesn't reveal usable credentials, but password hashes can still be attacked offline. See [Backup and restore](backup/).
+Treat the system databases as sensitive: they contain password hashes and token hashes. Back them up with the rest of the realm's data, encrypted: only role seeds can be rebuilt from the config. Tokens and keys are stored only as hashes, so a leaked backup doesn't reveal usable credentials, but password hashes can still be attacked offline. See [Backup and restore](backup/), and [If credentials leak](if-credentials-leak/) for what to do if one does.
 
 ### Least-privilege deployments
 
