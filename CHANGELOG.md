@@ -4,6 +4,12 @@ All notable changes to `backd` and to its JavaScript client `backd-js`, which ar
 
 Until a stable release is declared, a minor release may have breaking changes; they are listed first.
 
+## Unreleased
+
+### Added
+
+- **Export packages:** `backd export --realm r [--db d] [--collection c,…] --out dir [--archive] [--no-files]` writes a realm's documents (soft-deleted ones included, in the API representation with Extended JSON for dates and binary) and files as a lossless package with a checksummed manifest, through `GET /_admin/export` (full admin access, re-authentication for sessions, one export per realm at a time, resumable). Audited as `export` and `export.done`. Import, CSV, authentication data, direct mode and anonymized exports follow.
+
 ## 0.9.0
 
 No breaking changes and nothing to provision: the server only gains `backd types --lang dart` and `?lang=dart` on the admin types endpoint. If you run `PROVISION_MODE=verify`, no `backd provision` run is needed for this release alone.

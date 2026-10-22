@@ -1264,6 +1264,34 @@ func TestContract(t *testing.T) {
 	if out := req("POST", store, ``, key, 200); out["ok"] != true || out["checksum_sha256"] != "verified" {
 		t.Errorf("storage check: %v", out)
 	}
+	// The export of the realm: the plan, one export at a time, a collection's documents, a file's object.
+	{
+		exp := ad + "/export"
+		req("GET", exp, "", nil, 401)
+		req("GET", exp, "", ada, 403)
+		req("DELETE", exp, "", nil, 401)
+		req("DELETE", exp, "", ada, 403)
+		pngData := "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + strings.Repeat("x", 20)
+		pu := req("POST", "/v1/acme/app/library/_files/avatar/uploads", pngData, with(key, "Content-Type", "image/png"), 201)
+		doc := req("POST", "/v1/acme/app/library", `{"title": "exported", "avatar": {"upload": "`+pu["upload_id"].(string)+`", "token": "`+pu["upload_token"].(string)+`"}}`, key, 201)
+		fileID := doc["avatar"].(map[string]any)["id"].(string)
+		plan := req("GET", exp+"?database=app&collection=library", "", key, 200)
+		lh := with(key, "X-Backd-Export", plan["lease"].(string))
+		req("GET", exp, "", key, 409)
+		req("GET", exp+"?part=app/library.jsonl", "", key, 409)
+		req("GET", exp+"?part=ghost/library.jsonl", "", lh, 404)
+		req("GET", exp+"?part=app/library.jsonl", "", lh, 200)
+		req("GET", exp+"?file=app/library/"+fileID, "", lh, 200)
+		req("GET", exp+"?file=app/library/nothing", "", lh, 404)
+		savedStorage := f.reg.Realms["acme"].Settings.Storage
+		broken := *savedStorage
+		broken.AccessKey = "EXPORT_KEY_NOT_SET"
+		f.reg.Realms["acme"].Settings.Storage = &broken
+		req("GET", exp+"?file=app/library/"+fileID, "", lh, 503)
+		f.reg.Realms["acme"].Settings.Storage = savedStorage
+		req("DELETE", exp+"?complete=true", "", lh, 204)
+		req("DELETE", exp, "", lh, 409)
+	}
 	// Files: upload, download, remove and clear, on the data route and the admin data route.
 	png := "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + strings.Repeat("x", 20)
 	typed := func(h map[string]string, ct string) map[string]string { return with(h, "Content-Type", ct) }

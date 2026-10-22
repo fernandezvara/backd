@@ -599,6 +599,7 @@ func (a *app) handlerConfig() httpapi.Config {
 		Users:             a.realmUsers(),
 		TrustedProxies:    a.cfg.TrustedProxies,
 		ConfigFingerprint: a.fingerprint,
+		Version:           version,
 		Dev:               a.cfg.Dev,
 		DevLinks:          devLinks(a.cfg.DevLinks),
 		ReloadErrors:      a.reloadErrors,

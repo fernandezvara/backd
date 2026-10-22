@@ -89,6 +89,11 @@ const (
 	// schedule:<database>/<function>.
 	AuditSchedulePause  = "schedule.pause"
 	AuditScheduleResume = "schedule.resume"
+	// An administrator started an export package (target export:<scope>; details: database,
+	// collections, files, partial) and finished it (details: collections, documents, files, bytes,
+	// complete). Never the content.
+	AuditExport     = "export"
+	AuditExportDone = "export.done"
 	// An administrator ran `backd storage check`; details: ok, provider, bucket.
 	AuditStorageCheck = "storage.check"
 	// An administrator ran `backd storage reconcile`; details: delete, orphans, deleted.

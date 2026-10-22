@@ -4783,6 +4783,117 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/export:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+    get:
+      tags: [admin]
+      summary: Export the realm as a package, part by part
+      description: |
+        The server side of `backd export`. Without `part` or `file` it starts an export: it takes the
+        realm's export lease (one export of a realm runs at a time per instance, `409 export_running`;
+        a lease that is silent for ten minutes expires, and the administrator who held one can take it
+        over by sending it in `X-Backd-Export`) and answers the **plan**: the lease, the package's
+        manifest as far as it is known before reading (document counts are estimates, checksums are
+        the client's to add) and, per collection, the file fields to look in for the files to fetch.
+        With `part` it streams one collection's documents as JSON Lines, every document once in `id`
+        order, soft-deleted ones included, in the API representation with dates and binary values as
+        MongoDB Extended JSON (relaxed). With `file` it streams a file's object through backd's
+        storage client. Part and file requests carry the lease in `X-Backd-Export`. Memory does not
+        grow with the size of the collection. Encrypted fields, when a realm has them, are sent as
+        stored. Never exported: sessions, tokens, counters, jobs, history, secrets and the audit trail.
+        Needs full admin access; a session also needs a fresh re-authentication on the plan request.
+        Audited as `export` (the plan) and `export.done` (see `DELETE`), never with content.
+      operationId: adminExport
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/reauth" }
+        - name: X-Backd-Export
+          in: header
+          required: false
+          description: The lease the plan gave (required with `part` and `file`); on a plan request, the lease of an interrupted export to take over.
+          schema: { type: string }
+        - name: database
+          in: query
+          description: The plan covers only this database.
+          schema: { type: string }
+        - name: collection
+          in: query
+          description: The plan covers only these collections of `database` (repeatable).
+          schema: { type: array, items: { type: string } }
+          style: form
+          explode: true
+        - name: files
+          in: query
+          description: "`false` leaves the files out."
+          schema: { type: string, enum: ["false"] }
+        - name: part
+          in: query
+          description: "`<database>/<collection>.jsonl`: stream this collection's documents."
+          schema: { type: string }
+        - name: file
+          in: query
+          description: "`<database>/<collection>/<file id>`: stream this file's object."
+          schema: { type: string }
+      responses:
+        "200":
+          description: The plan, a collection's documents or a file's object.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExportPlan" }
+            application/x-ndjson:
+              schema: { type: string }
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404":
+          description: No such database, collection, part or file, or the realm has no storage.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: "`export_running` (another export holds the realm) or `export_lease` (the lease is missing, expired or another administrator's)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: "`storage_unavailable`: the files can't be read."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      summary: End an export
+      description: |
+        Releases the realm's export lease and writes the `export.done` audit record with what the
+        export streamed (collections, documents, files, bytes; `complete` as the client says). Needs
+        full admin access and the lease in `X-Backd-Export`.
+      operationId: adminExportDone
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - name: X-Backd-Export
+          in: header
+          required: true
+          schema: { type: string }
+        - name: complete
+          in: query
+          description: "`true` when the client wrote the whole package."
+          schema: { type: boolean }
+      responses:
+        "204": { description: Released. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "`export_lease`: the lease is missing, expired or another administrator's."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/storage/check:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -8910,6 +9021,59 @@ components:
               file: { type: string, description: "The file the message is about, relative to the realm, when it names one." }
               message: { type: string }
 
+    ExportPlan:
+      type: object
+      required: [lease, expires_in, manifest, file_fields]
+      properties:
+        lease: { type: string, description: "Send it in `X-Backd-Export` on every part, file and end request." }
+        expires_in: { type: integer, description: Seconds a silent export keeps its lease. }
+        manifest:
+          type: object
+          description: The package's `manifest.json` without checksums; document counts are estimates until the parts are read.
+          required: [format, backd_version, realm, created_at, operator, config_fingerprint, flags, databases, encrypted_fields]
+          properties:
+            format: { type: integer }
+            backd_version: { type: string }
+            realm: { type: string }
+            created_at: { type: string, format: date-time }
+            operator: { type: string }
+            config_fingerprint: { type: string }
+            flags:
+              type: object
+              properties:
+                partial: { type: boolean }
+                anonymized: { type: boolean }
+                auth: { type: boolean }
+                no_files: { type: boolean }
+            databases:
+              type: array
+              items:
+                type: object
+                properties:
+                  name: { type: string }
+                  collections:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: { type: string }
+                        documents: { type: integer, format: int64 }
+                        part: { type: string, description: The `part` that streams it. }
+            encrypted_fields:
+              type: array
+              items:
+                type: object
+                properties:
+                  path: { type: string }
+                  key: { type: string }
+                  fingerprint: { type: string }
+                  form: { type: string, enum: [ciphertext, plaintext] }
+            files: { type: integer, format: int64 }
+            checksums: { type: object, additionalProperties: { type: string } }
+        file_fields:
+          type: object
+          description: "`<database>/<collection>` to its file fields, which hold the ids of the files to fetch."
+          additionalProperties: { type: array, items: { type: string } }
     StorageCheck:
       type: object
       additionalProperties: false

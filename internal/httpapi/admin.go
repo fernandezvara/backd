@@ -28,6 +28,8 @@ type adminAPI struct {
 	reg          *registry.Registry
 	fns          *functions      // runs functions by hand (see adminInvoke)
 	fingerprint  string          // the config this instance runs (readyz shows it too)
+	version      string          // this build's version, recorded in export packages
+	exports      exportLeases    // the export in progress per realm
 	reloadErrors func() []string // why the last live reload failed (BACKD_DEV); nil without one
 	// imageMaxPixels is the instance's image pixel limit, which a config check applies to the draft.
 	imageMaxPixels int64
@@ -44,11 +46,14 @@ type adminUserKey struct{}
 
 func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Handler, timeout func(http.Handler) http.Handler) {
 	r.Route("/v1/{realm}/_admin", func(r chi.Router) {
-		r.Use(noStore, resolveRealm, timeout, a.requireAdmin)
+		// An export streams for as long as the data takes: it bounds each batch itself.
+		r.Use(noStore, resolveRealm, skipPath("/_admin/export", timeout), a.requireAdmin)
 		json := requireContentType("application/json")
 		r.Get("/whoami", a.whoami)
 		r.With(a.need(registry.RightConfig)).Get("/config", a.config)
 		r.With(a.need(registry.RightConfig)).Get("/types", a.types)
+		r.With(a.needRead(registry.RightData)).Get("/export", a.export)
+		r.With(a.needRead(registry.RightData)).Delete("/export", a.finishExport)
 		r.With(a.need(registry.RightConfig)).Get("/openapi.json", a.openapi)
 		r.With(a.needRead(registry.RightConfig), requireContentType("application/json")).Post("/config/check", a.checkConfig)
 		r.With(a.needRead(registry.RightConfig)).Post("/storage/check", a.checkStorage)

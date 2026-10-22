@@ -73,6 +73,8 @@ type Config struct {
 	// ConfigFingerprint identifies the config this instance runs; /readyz
 	// reports it so operators can check every instance runs the same one.
 	ConfigFingerprint string
+	// Version is this build's version, which export packages record.
+	Version string
 	// ReloadErrors returns what stopped the last live reload of the config (BACKD_DEV), for
 	// the admin configuration view's warnings; nil when nothing reloads.
 	ReloadErrors func() []string
@@ -180,7 +182,7 @@ func NewHandler(cfg Config) http.Handler {
 	authRoutes.fns = fns
 	spec := &openAPI{reg: cfg.Registry}
 	if !cfg.DisableAdminAPI {
-		admin := &adminAPI{users: users, reg: cfg.Registry, fns: fns, fingerprint: cfg.ConfigFingerprint, reloadErrors: cfg.ReloadErrors, imageMaxPixels: cfg.ImageMaxPixels, expandMaxArray: cfg.Expand.OrDefault().MaxArray, aggregate: cfg.Aggregate, triggers: cfg.TriggerLimits, triggerAdmin: cfg.Triggers}
+		admin := &adminAPI{users: users, reg: cfg.Registry, fns: fns, fingerprint: cfg.ConfigFingerprint, version: cfg.Version, reloadErrors: cfg.ReloadErrors, imageMaxPixels: cfg.ImageMaxPixels, expandMaxArray: cfg.Expand.OrDefault().MaxArray, aggregate: cfg.Aggregate, triggers: cfg.TriggerLimits, triggerAdmin: cfg.Triggers}
 		admin.routes(r, authRoutes.resolveRealm, withTimeout(opTimeout))
 		spec.protected = noStore(authRoutes.resolveRealm(withTimeout(opTimeout)(admin.requireAdmin(admin.need(registry.RightConfig)(http.HandlerFunc(spec.serve))))))
 	}

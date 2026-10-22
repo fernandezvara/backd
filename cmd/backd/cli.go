@@ -473,6 +473,17 @@ func registerRemote(cfg *kli.Config) {
 		boolean(cc, "delete", "remove the unreferenced objects instead of only reporting them")
 		boolean(cc, "json", "print the report as JSON")
 	})
+	cfg.Command("export").ShortHelp("write a realm, database or collection as a package").
+		LongHelp("Reads the realm's documents and files from a running backd into a package: a directory with manifest.json,\n<database>/<collection>.jsonl (the API representation of every document, soft-deleted ones included, with dates and\nbinary values in Extended JSON) and <database>/_files/<file id>, or one .tar.gz with --archive. The package is lossless;\nbackd import reads it. Each part is verified as it arrives and recorded in <out>/.export-progress.json, so running the\nsame command again after an interruption continues from the last complete part. Only one export of a realm runs at a time.\nNever exported: sessions, tokens, counters, jobs, history, secrets and the audit trail. Needs full admin access and a fresh\nproof that it is you. Audited as export and export.done. " + adminAPINote).
+		Func(act("export", exportAction)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "out", "the package directory to write (with --archive, the archive is <out>.tar.gz)")
+		optional(cc, "db", "only this database")
+		optional(cc, "collection", "only these collections of --db: comma-separated names")
+		boolean(cc, "archive", "write one <out>.tar.gz instead of a directory")
+		boolean(cc, "no-files", "leave the files out: only the documents")
+	})
+
 	cons := cfg.Command("consents").ShortHelp("manage the consents users accept")
 	cons.SubCommand("notify").ShortHelp("email the users who hold an older version of a consent").
 		LongHelp("Queues the `consent-updated` email for every user who accepted an older version of the consent than the\ncurrent one (and, for a required consent, who accepted none). Publishing a version never sends anything by itself:\nthis is the only way, and the email limits apply, so a large realm may need to run it again later. Needs the\nusers area with write access. Audited as consents.notify. " + adminAPINote).
