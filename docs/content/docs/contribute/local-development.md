@@ -198,7 +198,7 @@ To start over, remove the CA from your trust store and delete `docker/certs/`; t
 
 ## Building backd from source
 
-`backd` needs Go 1.27.2 or later.
+`backd` needs Go 1.27.3 or later.
 
 ```sh
 git clone https://github.com/fernandezvara/backd

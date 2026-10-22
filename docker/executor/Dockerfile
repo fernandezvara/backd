@@ -15,7 +15,7 @@ COPY clients/js clients/js
 COPY ui/admin ui/admin
 RUN mkdir -p internal/adminui/dist && (cd clients/js && npm ci --ignore-scripts --no-audit --no-fund) && cd ui/admin && npm ci --no-audit --no-fund && npm run build
 
-FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.27.2-alpine AS build
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.27.3-alpine AS build
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev
