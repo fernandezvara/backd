@@ -146,7 +146,7 @@ Practise restores regularly on a scratch environment. The reference's test (`mak
 
 ## Reading a backup without restoring over production
 
-To look at a backup, or take part of it elsewhere, restore it into a throwaway MongoDB and run [`backd export --direct`](../administration/export-import/#reading-an-old-backup) against it with the configuration it was made under: you get a package you can inspect, import into another instance or turn into CSV, and production is not touched.
+To look at a backup, or take part of it elsewhere, restore it into a throwaway MongoDB and run [`backd export --direct`](../administration/export-import/direct-mode/#reading-an-old-backup) against it with the configuration it was made under: you get a package you can inspect, import into another instance or turn into CSV, and production is not touched.
 
 ## After a restore
 

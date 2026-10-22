@@ -16,4 +16,5 @@ These pages are for whoever runs a realm — not for application code:
 | See who did what | [Audit trail](audit/) |
 | Deactivate or erase a user | [Deleting and erasing users](erasure/) |
 | Personal data, consents, retention | [Compliance](compliance/) |
+| Move an app between instances, seed staging, extract a report | [Exporting and importing](export-import/) |
 | What backd protects, and the pre-exposure checklist | [Security model](security/) |
