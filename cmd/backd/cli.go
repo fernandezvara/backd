@@ -249,6 +249,9 @@ func registerRemote(cfg *kli.Config) {
 		boolean(cc, "all", "end the sessions of every user")
 		boolean(cc, "yes", "confirm")
 	})
+	user("reset-link", "print a one-time link for the user to choose a new password, for a user the email can't reach (nothing is sent)", true, userResetLink, func(cc *kli.CommandConfig) {
+		optional(cc, "redirect-to", "where the page sends the user afterwards (must be in email.allowed_redirects)")
+	})
 	user("change-email", "change the user's email at once (needs email in realm.yaml); revokes all sessions", true, userChangeEmail, func(cc *kli.CommandConfig) {
 		required(cc, "new-email", "the new email address")
 	})

@@ -952,7 +952,7 @@ func TestContract(t *testing.T) {
 		{"GET", "/users/" + f.bobID, ""}, {"GET", "/users/" + f.bobID + "/owned", ""}, {"PATCH", "/users/" + f.bobID, `{"disabled": false}`},
 		{"DELETE", "/users/" + f.bobID, ""}, {"POST", "/users/" + f.bobID + "/password", `{"password": "dev-p4ssw0rd!"}`},
 		{"PUT", "/users/" + f.bobID + "/roles/admin", ""}, {"DELETE", "/users/" + f.bobID + "/roles/admin", ""},
-		{"POST", "/users/" + f.bobID + "/email", `{"email": "z@example.com"}`}, {"POST", "/users/" + f.bobID + "/expire-password", ""},
+		{"POST", "/users/" + f.bobID + "/email", `{"email": "z@example.com"}`}, {"POST", "/users/" + f.bobID + "/expire-password", ""}, {"POST", "/users/" + f.bobID + "/reset-link", ""},
 		{"POST", "/passwords/expire", ""}, {"POST", "/passwords/notify", ""}, {"DELETE", "/sessions", ""},
 		{"GET", "/invitations", ""}, {"POST", "/invitations", `{}`}, {"DELETE", "/invitations/x", ""},
 	}
@@ -989,6 +989,12 @@ func TestContract(t *testing.T) {
 	req("POST", ad+"/users/"+dan+"/expire-password", "", key, 204)
 	req("POST", ad+"/users/"+dan+"/expire-password", `{"reason": 7}`, json(key), 400)
 	req("POST", ad+"/users/nope/expire-password", "", key, 404)
+	req("POST", ad+"/users/"+dan+"/reset-link", `{"redirect_to": "https://evil.example/"}`, json(key), 400)
+	req("POST", ad+"/users/nope/reset-link", "", key, 404)
+	req("POST", ad+"/users/"+dan+"/reset-link", "", key, 200)
+	req("PATCH", ad+"/users/"+dan, `{"disabled": true}`, json(key), 200)
+	req("POST", ad+"/users/"+dan+"/reset-link", "", key, 409) // a disabled user gets none
+	req("PATCH", ad+"/users/"+dan, `{"disabled": false}`, json(key), 200)
 	req("POST", ad+"/users/"+dan+"/password", `{"password": "dev-p4ssw0rd!2"}`, key, 204)
 	req("PUT", ad+"/users/"+dan+"/roles/admin", "", key, 200)
 	req("PUT", ad+"/users/"+dan+"/roles/root", "", key, 400)

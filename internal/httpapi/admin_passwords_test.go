@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -110,5 +111,99 @@ func TestAdminExpirePasswordsAndTellTheUsers(t *testing.T) {
 	}
 	if rec, out := f.doH(t, "GET", admin+"/jobs/"+job, "", key); rec.Code != http.StatusOK || out["origin"] != "backd:password.notify" || out["function"] != "password-notice" {
 		t.Errorf("the job: %d %v", rec.Code, out)
+	}
+}
+
+func TestAdminResetLink(t *testing.T) {
+	f := newRulesFixture(t)
+	f.svc.Realm = "acme"
+	ctx := context.Background()
+	_, adminKey, err := f.svc.CreateAPIKey(ctx, "support", auth.KeyOptions{Role: auth.KeyRoleAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := jsonHdr(adminKey)
+	url := admin + "/users/" + f.adaID + "/reset-link"
+
+	// Rights: read-only administrators are refused, a session needs a fresh proof.
+	f.bobHolds(t, "viewer")
+	if rec, _ := f.doH(t, "POST", url, `{}`, f.withProof(t, f.bob)); rec.Code != http.StatusForbidden {
+		t.Errorf("a read-only administrator: %d", rec.Code)
+	}
+	f.bobHolds(t, "staff")
+	if rec, out := f.doH(t, "POST", url, `{}`, jsonHdr(f.bob)); rec.Code != http.StatusUnauthorized || errCode(out) != "reauth_required" {
+		t.Errorf("a session without proof: %d %v", rec.Code, out)
+	}
+	if rec, _ := f.doH(t, "POST", url, `{}`, nil); rec.Code != http.StatusUnauthorized {
+		t.Errorf("no credentials: %d", rec.Code)
+	}
+	if rec, out := f.doH(t, "POST", url, `{"redirect_to": "https://evil.example/"}`, key); rec.Code != http.StatusBadRequest || errCode(out) != "invalid_redirect" {
+		t.Errorf("a redirect outside the allowed ones: %d %v", rec.Code, out)
+	}
+	if rec, _ := f.doH(t, "POST", admin+"/users/nope/reset-link", ``, key); rec.Code != http.StatusNotFound {
+		t.Errorf("an unknown user: %d", rec.Code)
+	}
+
+	rec, out := f.doH(t, "POST", url, ``, key)
+	link, _ := out["link"].(string)
+	_, token, found := strings.Cut(link, "/v1/acme/_auth/reset-password?token=")
+	if rec.Code != http.StatusOK || !found || token == "" || out["expires_at"] == "" || rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("the link: %d %v", rec.Code, out)
+	}
+	// Nothing was sent: no reset email is queued, and the audit record names the user, not the token.
+	jobs, _, _ := f.svc.Jobs(ctx, auth.JobFilter{Limit: 100})
+	for _, j := range jobs {
+		if j.Email != nil && j.Email.Kind == "reset-password" {
+			t.Error("making a link queued an email")
+		}
+	}
+	trail, _, _ := f.svc.AuditTrail(ctx, auth.AuditFilter{Action: auth.AuditPasswordResetLink, Limit: 5})
+	if len(trail) != 1 || trail[0].Target != "user:"+f.adaID {
+		t.Fatalf("audit: %+v", trail)
+	}
+	if b, _ := json.Marshal(trail[0]); strings.Contains(string(b), token) {
+		t.Error("the audit record holds the token")
+	}
+
+	// Using it works as a reset does: the password changes, the sessions end, the link is used up.
+	rec, out = f.doH(t, "POST", "/v1/acme/_auth/reset-password", `{"token": "`+token+`", "password": "dev-p4ssw0rd!9"}`, map[string]string{"Content-Type": "application/json"})
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("use the link: %d %v", rec.Code, out)
+	}
+	if code, _ := f.as(t, f.ada, "GET", "/v1/acme/_auth/me", ""); code != http.StatusUnauthorized {
+		t.Errorf("a session after the reset: %d", code)
+	}
+	if rec, _ := f.doH(t, "POST", "/v1/acme/_auth/login", `{"email": "ada@example.com", "password": "dev-p4ssw0rd!9"}`, map[string]string{"Content-Type": "application/json"}); rec.Code != http.StatusOK {
+		t.Errorf("sign in with the new password: %d", rec.Code)
+	}
+	rec, out = f.doH(t, "POST", "/v1/acme/_auth/reset-password", `{"token": "`+token+`", "password": "dev-p4ssw0rd!8"}`, map[string]string{"Content-Type": "application/json"})
+	if rec.Code != http.StatusBadRequest || errCode(out) != "invalid_token" {
+		t.Errorf("the link twice: %d %v", rec.Code, out)
+	}
+	jobs, _, _ = f.svc.Jobs(ctx, auth.JobFilter{Limit: 100})
+	told := false
+	for _, j := range jobs {
+		told = told || (j.Email != nil && j.Email.Kind == "password-changed")
+	}
+	if !told {
+		t.Error("the user wasn't told that the password changed")
+	}
+
+	// An unused link expires like a reset token.
+	_, out = f.doH(t, "POST", url, ``, key)
+	_, stale, _ := strings.Cut(out["link"].(string), "?token=")
+	f.svc.Now = func() time.Time { return time.Now().Add(48 * time.Hour) }
+	rec, out = f.doH(t, "POST", "/v1/acme/_auth/reset-password", `{"token": "`+stale+`", "password": "dev-p4ssw0rd!7"}`, map[string]string{"Content-Type": "application/json"})
+	if rec.Code != http.StatusBadRequest || errCode(out) != "invalid_token" {
+		t.Errorf("an expired link: %d %v", rec.Code, out)
+	}
+	f.svc.Now = nil
+
+	// A disabled user gets no link.
+	if err := f.svc.SetDisabled(ctx, "ada@example.com", true); err != nil {
+		t.Fatal(err)
+	}
+	if rec, _ := f.doH(t, "POST", url, ``, key); rec.Code != http.StatusConflict {
+		t.Errorf("a disabled user: %d", rec.Code)
 	}
 }

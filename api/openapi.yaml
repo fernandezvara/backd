@@ -3003,6 +3003,53 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/users/{id}/reset-link:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    post:
+      tags: [admin]
+      summary: Make a password reset link for a user
+      description: |
+        A one-time link to choose a new password, for a user the email can't reach (hand it over out
+        of band). It is the link a reset email carries and works the same: it sets the password,
+        ends the user's sessions and sends `password-changed`; unused, it expires like a reset
+        token (`account.tokens.reset_password`). Nothing is sent, and the link is in this answer
+        only. The realm needs `email:` (its pages serve the form) and a public address. Needs full
+        admin access and, for a session, a fresh re-authentication; an administrator can't make
+        one for a user with rights they lack. `409` for a disabled or erased user. Audited as
+        `password.reset_link` (administrator and user, never the token).
+      operationId: adminResetLink
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                redirect_to: { type: string, description: "Where the page sends the user afterwards; must be within `email.allowed_redirects`." }
+      responses:
+        "200":
+          description: The link, once.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [link, expires_at]
+                properties:
+                  link: { type: string }
+                  expires_at: { $ref: "#/components/schemas/Timestamp" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/users/{id}/expire-password:
     parameters:
       - { $ref: "#/components/parameters/realm" }

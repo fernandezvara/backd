@@ -26,6 +26,7 @@ Every command also takes `--url`, to pick the server for that command.
 | `backd user expire-password --realm <realm> --email <email> [--reason <text>]` | [Expire](#expiring-a-password) the password: it stops opening the account until the user resets it; sessions are kept |
 | `backd user expire-passwords --realm <realm> --yes [--reason <text>] [--keep-sessions]` | [Expire every password](#expiring-every-password) of the realm and end every session: the first step after a leak |
 | `backd user notify-expired --realm <realm>` | [Email](#telling-the-users) every user whose password was expired a link to choose a new one (also `expire-passwords --notify`) |
+| `backd user reset-link --realm <realm> --email <email> [--redirect-to <url>]` | Print a [one-time reset link](#a-reset-link-without-email) for a user the email can't reach; nothing is sent |
 | `backd user revoke-sessions --realm <realm> --all --yes` | End every session of the realm and leave passwords alone |
 | `backd user change-email --realm <realm> --email <email> --new-email <email>` | Change the user's address at once, as an administrator (needs [`email`](../../functions/email/); see [the admin API](../../../operate/administration/admin/#changing-a-users-email)) |
 | `backd user identities --realm <realm> --email <email>` | List the user's ways to sign in: a password and the [providers](../providers/) they use, with the address each reported and when it was linked and last used |
@@ -91,6 +92,21 @@ A user whose password stopped working finds out by trying it, and that sign-in s
 - **Within the email limits:** the [limits](../../functions/email/) apply as for any message. Users they hold back are told after a wait (up to an hour), not failed, and the job reports how many.
 - **Following it:** the job is `backd:password.notify`; `backd functions jobs` lists it with its progress, and `backd functions cancel` stops it (cancelling the job does not undo what was queued). It ends audited as `password.expire_notify` with the counts.
 - **Without email:** a realm that sends no email refuses `--notify` before expiring anything; give each user a link yourself instead.
+
+## A reset link without email
+
+When a user can't be reached by email (the mailbox is lost or never worked), `backd user reset-link --realm blog --email ada@example.com` prints a one-time link to choose a new password, and sends nothing:
+
+```sh
+backd user reset-link --realm blog --email ada@example.com
+# https://api.example.com/v1/blog/_auth/reset-password?token=…
+# reset link for ada@example.com, shown once; it works once and expires at 2026-10-22T20:15:00Z. …
+```
+
+- **It is the link a reset email carries.** Opening it shows the hosted form; using it sets the password, ends the user's sessions, tells them with `password-changed` and uses the token up. Unused, it expires like a reset token ([`account.tokens.reset_password`](../../configuration/realm/#account), an hour by default). `--redirect-to` must be within the realm's `email.allowed_redirects`, like a reset's.
+- **Hand it over by a channel you trust.** Whoever holds the link can take the account, so it is as strong as the channel you use. It is shown once; make another if it is lost.
+- **Needs the realm's `email` section** (it serves the form and knows the public address) and full administration with a fresh proof of identity. An administrator can't make one for a user with rights they lack, nor for a disabled user.
+- **Audited** as `password.reset_link` with the administrator and the user, never the token. The admin API call is `POST /_admin/users/{id}/reset-link`.
 
 ## Roles
 

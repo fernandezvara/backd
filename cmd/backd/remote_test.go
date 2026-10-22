@@ -324,6 +324,8 @@ organizations:
 
 	// Last, because they end the session this test signed in with.
 	c.expect(0, "logged in", pw+"\n", "login", "--realm", "acme", "--email", "ada@example.com")
+	c.expect(1, "the reset page is served with the realm's email section", pw+"\n", "user", "reset-link", "--realm", "acme", "--email", "ada@example.com")
+	c.expect(1, "user not found: nobody@example.com", pw+"\n", "user", "reset-link", "--realm", "acme", "--email", "nobody@example.com")
 	c.expect(1, "add --yes to confirm", "", "user", "expire-passwords", "--realm", "acme")
 	c.expect(1, "the realm has no email section", pw+"\n", "user", "expire-passwords", "--realm", "acme", "--yes", "--notify")
 	c.expect(1, "the realm has no email section", pw+"\n", "user", "notify-expired", "--realm", "acme")

@@ -215,6 +215,31 @@ func userRevokeSessions(c *userCtx) error {
 	return nil
 }
 
+func userResetLink(c *userCtx) error {
+	body := map[string]string{}
+	if r := str(c.cmd, "redirect-to"); r != "" {
+		body["redirect_to"] = r
+	}
+	u, err := c.find()
+	if err != nil {
+		return err
+	}
+	proof, err := c.t.proof(c.uio)
+	if err != nil {
+		return err
+	}
+	var out struct {
+		Link      string
+		ExpiresAt string `json:"expires_at"`
+	}
+	if _, err := c.t.callHeaders("POST", "_admin/users/"+url.PathEscape(u.ID)+"/reset-link", nil, body, &out, proof); err != nil {
+		return err
+	}
+	fmt.Fprintln(c.uio.stdout, out.Link)
+	fmt.Fprintf(c.uio.stderr, "reset link for %s, shown once; it works once and expires at %s. Hand it over by a channel you trust: whoever holds it can set the password. Nothing was sent.\n", u.Email, out.ExpiresAt)
+	return nil
+}
+
 func userChangeEmail(c *userCtx) error {
 	u, err := c.onUser("POST", "/email", map[string]string{"email": str(c.cmd, "new-email")})
 	if err != nil {

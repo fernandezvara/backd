@@ -30,6 +30,7 @@ type adminAPI struct {
 	fingerprint  string          // the config this instance runs (readyz shows it too)
 	version      string          // this build's version, recorded in export packages
 	env          string          // BACKD_ENV: production, staging…
+	baseURL      string          // BACKD_URL: backd's public address, for the links an administrator hands out
 	offline      bool            // the CLI's direct mode: every request is a full administrator's
 	exports      exportLeases    // the export in progress per realm
 	reloadErrors func() []string // why the last live reload failed (BACKD_DEV); nil without one
@@ -103,6 +104,7 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 			r.Delete("/", a.deleteUser)
 			r.With(json).Post("/password", a.setPassword)
 			r.Post("/expire-password", a.expirePassword)
+			r.Post("/reset-link", a.resetLink)
 			r.With(json).Post("/email", a.changeEmail)
 			r.Put("/roles/{role}", a.addRole)
 			r.Delete("/roles/{role}", a.removeRole)

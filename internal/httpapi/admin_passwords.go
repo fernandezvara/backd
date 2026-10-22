@@ -4,7 +4,10 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/email"
 )
 
 // expirePassword handles POST /users/{id}/expire-password: the user's password stops
@@ -138,4 +141,52 @@ func (a *adminAPI) revokeAllSessions(w http.ResponseWriter, r *http.Request) {
 func actorOf(r *http.Request) string {
 	caller, _ := callerOf(r)
 	return caller.Actor()
+}
+
+// resetLink handles POST /users/{id}/reset-link: a one-time link to choose a new password, for
+// a user the email can't reach. It is the link a reset email carries, and using it works the
+// same; nothing is sent. The link is in this answer only, so it needs full admin access and a
+// fresh proof of identity, and the audit record never holds it.
+func (a *adminAPI) resetLink(w http.ResponseWriter, r *http.Request) {
+	if !needFullWithReauth(w, r, "making a reset link") {
+		return
+	}
+	obj, ok := optionalObject(w, r)
+	if !ok {
+		return
+	}
+	f, ok := fields(w, r, obj, map[string]string{"redirect_to": "string?"})
+	if !ok {
+		return
+	}
+	redirectTo, _ := f["redirect_to"].(string)
+	realm := chi.URLParam(r, "realm")
+	svc := usersOf(r)
+	rl := a.reg.Realms[realm]
+	if rl == nil || rl.Pages == nil || svc.Settings.Email == nil {
+		writeError(w, r, http.StatusConflict, codeConflict, "the reset page is served with the realm's email section: without it, set a password with POST /users/{id}/password and tell the user")
+		return
+	}
+	es := svc.Settings.Email
+	if redirectTo != "" && !es.AllowedRedirect(redirectTo) {
+		writeError(w, r, http.StatusBadRequest, codeInvalidRedirect, "redirect_to must be an absolute URL within the realm's email.allowed_redirects", Detail{Path: "redirect_to", Reason: "is not allowed"})
+		return
+	}
+	purpose := email.TokenPurpose(email.ResetPassword)
+	if _, ok := tokenLink(es, a.baseURL, realm, purpose, ""); !ok {
+		writeError(w, r, http.StatusConflict, codeConflict, "backd's public address is unknown (BACKD_URL or email.public_url)")
+		return
+	}
+	token, expires, err := svc.CreateResetLink(r.Context(), adminUserOf(r).ID, redirectTo)
+	if errors.Is(err, auth.ErrResetLinkUser) {
+		writeError(w, r, http.StatusConflict, codeConflict, err.Error())
+		return
+	}
+	if err != nil {
+		adminError(w, r, err)
+		return
+	}
+	link, _ := tokenLink(es, a.baseURL, realm, purpose, token)
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"link": link, "expires_at": formatTime(expires.UTC())})
 }
