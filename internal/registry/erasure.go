@@ -180,45 +180,8 @@ func loadErasure(c *Collection, settings RealmSettings, path string) error {
 	}
 
 	required := requiredPaths(c.RawSchema)
-	known := func(field, key string) bool {
-		if strings.HasPrefix(field, "_meta") || field == "id" {
-			add("%s: %s is a system field", key, field)
-			return false
-		}
-		if _, ok := c.Fields[field]; !ok {
-			add("%s: %s is not a field of schema.json", key, field)
-			return false
-		}
-		if c.throughArray(field) {
-			add("%s: %s is inside an array, which a policy can't reach (name a field outside the array)", key, field)
-			return false
-		}
-		return true
-	}
-
-	for _, f := range p.Remove {
-		if !known(f, "remove") {
-			continue
-		}
-		if _, replaced := p.Replace[f]; replaced {
-			add("remove: %s is also in replace", f)
-		} else if required[f] {
-			add("remove: %s is required by schema.json, so removing it would make the document invalid (replace it instead)", f)
-		}
-	}
-	for _, f := range slices.Sorted(mapKeys(p.Replace)) {
-		if !known(f, "replace") {
-			continue
-		}
-		if reason := invalidFieldValue(c.Schema, f, p.Replace[f]); reason != "" {
-			add("replace: the value for %s doesn't satisfy schema.json: %s", f, reason)
-		}
-		for _, ix := range c.Indexes {
-			if ix.Unique && slices.ContainsFunc(ix.Keys, func(k IndexKey) bool { return k.Field == f }) {
-				add("replace: %s is in a unique index, so every erased document would get the same value and conflict", f)
-			}
-		}
-	}
+	known := func(field, key string) bool { return c.knownPolicyField(field, key, add) }
+	c.checkRemoveReplace(p.Remove, p.Replace, add)
 	for _, f := range slices.Sorted(mapKeys(p.Pull)) {
 		if !known(f, "pull") {
 			continue
@@ -392,4 +355,53 @@ func invalidFieldValue(schema *jsonschema.Schema, path string, value any) string
 	}
 	walk(ve)
 	return strings.Join(reasons, "; ")
+}
+
+// knownPolicyField reports whether field can be named by a data policy (a field of schema.json
+// outside the system fields and arrays), adding the reason when it can't.
+func (c *Collection) knownPolicyField(field, key string, add func(format string, args ...any)) bool {
+	if strings.HasPrefix(field, "_meta") || field == "id" {
+		add("%s: %s is a system field", key, field)
+		return false
+	}
+	if _, ok := c.Fields[field]; !ok {
+		add("%s: %s is not a field of schema.json", key, field)
+		return false
+	}
+	if c.throughArray(field) {
+		add("%s: %s is inside an array, which a policy can't reach (name a field outside the array)", key, field)
+		return false
+	}
+	return true
+}
+
+// checkRemoveReplace checks the fields a policy removes and sets, so that the documents stay
+// valid: they exist, removed ones are not required, a value satisfies the schema, and a field in a
+// unique index isn't given one value everywhere. It is the check of an erase policy's
+// remove and replace, and of an anonymization rule's.
+func (c *Collection) checkRemoveReplace(remove []string, replace map[string]any, add func(format string, args ...any)) {
+	required := requiredPaths(c.RawSchema)
+	for _, f := range remove {
+		if !c.knownPolicyField(f, "remove", add) {
+			continue
+		}
+		if _, replaced := replace[f]; replaced {
+			add("remove: %s is also in replace", f)
+		} else if required[f] {
+			add("remove: %s is required by schema.json, so removing it would make the document invalid (replace it instead)", f)
+		}
+	}
+	for _, f := range slices.Sorted(mapKeys(replace)) {
+		if !c.knownPolicyField(f, "replace", add) {
+			continue
+		}
+		if reason := invalidFieldValue(c.Schema, f, replace[f]); reason != "" {
+			add("replace: the value for %s doesn't satisfy schema.json: %s", f, reason)
+		}
+		for _, ix := range c.Indexes {
+			if ix.Unique && slices.ContainsFunc(ix.Keys, func(k IndexKey) bool { return k.Field == f }) {
+				add("replace: %s is in a unique index, so every erased document would get the same value and conflict", f)
+			}
+		}
+	}
 }

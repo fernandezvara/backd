@@ -4901,6 +4901,62 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [admin]
+      summary: Start an export with options that don't belong in a URL
+      description: |
+        Starts an export like `GET` without `part` or `file` (same query parameters, same plan) and
+        takes a JSON body for the **anonymization** of a staging copy. With `anonymize` every
+        collection's `on_owner_delete` `remove` and `replace` rules are applied to every exported
+        document, whatever its owner; the addresses of users held in `pull` and `unset` fields that
+        say `email` are rewritten like the users' own; files are left out (and the references to
+        them removed) unless `anonymize_files` is `keep`; and with `include=auth` emails become
+        `user-<id>@example.invalid`, identities of external providers stay behind, password hashes
+        are dropped (or replaced by the hash of `staging_password`, one password for every user)
+        and second factors and devices are not exported, so no export key is made. `anonymize_config`
+        is a YAML file of per-collection `remove` and `replace` rules added on top of the policies,
+        checked against the schemas like an erase policy is. The manifest is marked `anonymized`.
+      operationId: adminExportStart
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/reauth" }
+        - name: X-Backd-Export
+          in: header
+          required: false
+          description: The lease of an interrupted export to take over.
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                anonymize: { type: boolean }
+                anonymize_files: { type: string, enum: [keep] }
+                anonymize_config: { type: string, description: "YAML: `collections: {<database>/<collection>: {remove: [...], replace: {...}}}`." }
+                staging_password: { type: string, description: "With `include=auth`: the password every user gets. At least the realm's `password.min_length`." }
+      responses:
+        "200":
+          description: The plan.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExportPlan" }
+        "400":
+          description: An option that makes no sense, or anonymization rules the schemas refuse; `details` name each problem.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "`export_running`."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
     delete:
       tags: [admin]
       summary: End an export

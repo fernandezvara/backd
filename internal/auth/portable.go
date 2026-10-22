@@ -77,12 +77,49 @@ func (s *Users) portable() (PortableStore, error) {
 	return p, nil
 }
 
+// AuthAnonymize turns the authentication data of an export into that of a staging copy:
+// emails become user-<id>@example.invalid, password hashes are dropped (or replaced by one
+// known password's), identities of external providers stay behind, and second factors and
+// devices are not exported at all (see AnonymizedCollections).
+type AuthAnonymize struct {
+	// PasswordHash, when set, is the hash every password identity gets.
+	PasswordHash string
+}
+
+// AnonymizedCollections are the portable collections an anonymized export carries.
+func AnonymizedCollections() []string {
+	return []string{"users", "identities", "orgs", "org_members", "org_teams"}
+}
+
+// AnonymousEmail is the address an anonymized export gives the user with that id.
+func AnonymousEmail(userID string) string { return "user-" + userID + "@example.invalid" }
+
+func (a *AuthAnonymize) apply(collection string, d map[string]any) (keep bool) {
+	switch collection {
+	case "users":
+		id, _ := d["id"].(string)
+		d["email"] = AnonymousEmail(id)
+		delete(d, "pending_email")
+		delete(d, "previous_email")
+	case "identities":
+		if d["provider"] != ProviderPassword {
+			return false
+		}
+		if a.PasswordHash != "" {
+			d["password_hash"] = a.PasswordHash
+		} else {
+			delete(d, "password_hash")
+		}
+	}
+	return true
+}
+
 // ExportAuthDocs reads a page of a portable collection for an export package. Fields sealed
 // with the realm's cipher are opened and sealed again under ek, the export key; a value that
 // can't be opened (no cipher here, or sealed under another key) is left out and counted in
 // unavailable. last is the id of the last document read and read how many there were, whatever
 // was left out, so the next page can continue after it. Fields in PortableReset are emptied.
-func (s *Users) ExportAuthDocs(ctx context.Context, collection, afterID string, limit int, ek *SecretCipher) (out []map[string]any, unavailable int, last string, read int, err error) {
+func (s *Users) ExportAuthDocs(ctx context.Context, collection, afterID string, limit int, ek *SecretCipher, anon *AuthAnonymize) (out []map[string]any, unavailable int, last string, read int, err error) {
 	p, err := s.portable()
 	if err != nil {
 		return nil, 0, "", 0, err
@@ -97,6 +134,12 @@ func (s *Users) ExportAuthDocs(ctx context.Context, collection, afterID string, 
 	}
 	out = make([]map[string]any, 0, len(docs))
 	for _, d := range docs {
+		if anon != nil {
+			if anon.apply(collection, d) {
+				out = append(out, d)
+			}
+			continue
+		}
 		for f, v := range PortableReset(collection) {
 			d[f] = v
 		}

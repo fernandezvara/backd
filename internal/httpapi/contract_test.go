@@ -1296,6 +1296,12 @@ func TestContract(t *testing.T) {
 		req("DELETE", exp+"?complete=true", "", lh, 200)
 		req("DELETE", exp, "", lh, 409)
 		req("GET", exp+"?include=auth&database=app", "", key, 400)
+		req("POST", exp, `{"anonymize": true}`, nil, 401)
+		req("POST", exp, `{"anonymize": true}`, ada, 403)
+		req("POST", exp+"?database=app", `{"anonymize": true, "anonymize_config": "collections:\n  app/library:\n    remove: [nothing]\n"}`, key, 400)
+		anon := req("POST", exp+"?database=app&collection=library", `{"anonymize": true}`, key, 200)
+		req("POST", exp, `{"anonymize": true}`, key, 409)
+		req("DELETE", exp, "", with(key, "X-Backd-Export", anon["lease"].(string)), 200)
 		withAuth := req("GET", exp+"?include=auth", "", key, 200)
 		if len(withAuth["export_key"].(string)) != 43 {
 			t.Errorf("export key: %v", withAuth["export_key"])

@@ -75,6 +75,9 @@ type Config struct {
 	ConfigFingerprint string
 	// Version is this build's version, which export packages record.
 	Version string
+	// Env is BACKD_ENV (production, staging…): what this instance is for. An import warns about
+	// data that doesn't belong in it.
+	Env string
 	// Offline serves the CLI's direct mode, in the process and never on a listener: the admin
 	// API takes every request as that of a full administrator working offline. Never set it
 	// on a handler that is served.
@@ -189,7 +192,7 @@ func NewHandler(cfg Config) http.Handler {
 	authRoutes.fns = fns
 	spec := &openAPI{reg: cfg.Registry}
 	if !cfg.DisableAdminAPI {
-		admin := &adminAPI{users: users, reg: cfg.Registry, fns: fns, fingerprint: cfg.ConfigFingerprint, version: cfg.Version, offline: cfg.Offline, reloadErrors: cfg.ReloadErrors, imageMaxPixels: cfg.ImageMaxPixels, expandMaxArray: cfg.Expand.OrDefault().MaxArray, aggregate: cfg.Aggregate, triggers: cfg.TriggerLimits, triggerAdmin: cfg.Triggers}
+		admin := &adminAPI{users: users, reg: cfg.Registry, fns: fns, fingerprint: cfg.ConfigFingerprint, version: cfg.Version, env: cfg.Env, offline: cfg.Offline, reloadErrors: cfg.ReloadErrors, imageMaxPixels: cfg.ImageMaxPixels, expandMaxArray: cfg.Expand.OrDefault().MaxArray, aggregate: cfg.Aggregate, triggers: cfg.TriggerLimits, triggerAdmin: cfg.Triggers}
 		admin.routes(r, authRoutes.resolveRealm, withTimeout(opTimeout))
 		spec.protected = noStore(authRoutes.resolveRealm(withTimeout(opTimeout)(admin.requireAdmin(admin.need(registry.RightConfig)(http.HandlerFunc(spec.serve))))))
 	}

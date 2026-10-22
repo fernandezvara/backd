@@ -14,6 +14,7 @@ import (
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/auth/authtest"
 	"github.com/fernandezvara/backd/internal/exportpkg"
+	"github.com/fernandezvara/backd/internal/storage"
 )
 
 func TestAdminExport(t *testing.T) {
@@ -343,5 +344,126 @@ func TestAdminExportAuthData(t *testing.T) {
 	_, plan = f.doH(t, "GET", url, "", key)
 	if plan["export_key"] != nil || plan["manifest"].(map[string]any)["flags"].(map[string]any)["auth"] != false || plan["manifest"].(map[string]any)["auth"] != nil {
 		t.Errorf("a plain plan: %v", plan)
+	}
+}
+
+// A staging copy keeps no original email and none of the fields an erase would remove.
+func TestAdminExportAnonymized(t *testing.T) {
+	f := newRulesFixture(t)
+	f.svc.Realm = "acme"
+	ctx := context.Background()
+	_, adminKey, err := f.svc.CreateAPIKey(ctx, "anon-export", auth.KeyOptions{Role: auth.KeyRoleAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ada, err := f.svc.Find(ctx, "ada@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	f.store.mu.Lock()
+	f.store.docs = map[string]map[string]storage.Document{"acme__app.orders": {
+		"o1": {"id": "o1", "buyer": "Ada Lovelace", "phone": "+34 600 000 000", "members": []any{"ada@example.com", "stranger@elsewhere.com"}, "paid_by": ada.ID,
+			"_meta": map[string]any{"version": int64(1), "created_at": at, "updated_at": at, "owner": ada.ID}},
+	}}
+	f.store.mu.Unlock()
+	mem := f.svc.Store.(*authtest.MemStore)
+	mem.SeedPortable("users", map[string]any{"id": ada.ID, "email": "ada@example.com", "pending_email": "new@example.com", "roles": []any{}, "created_at": at, "updated_at": at})
+	mem.SeedPortable("identities",
+		map[string]any{"id": "i1", "user_id": ada.ID, "provider": "password", "subject": ada.ID, "password_hash": "$argon2id$original", "created_at": at, "updated_at": at},
+		map[string]any{"id": "i2", "user_id": ada.ID, "provider": "google", "subject": "google-sub-1234", "email": "ada@gmail.com", "created_at": at, "updated_at": at})
+	mem.SeedPortable("mfa", map[string]any{"id": ada.ID, "secret": "sealed"})
+	mem.SeedPortable("orgs", map[string]any{"id": "org1", "name": "Acme Clinic"})
+	url := admin + "/export"
+	post := func(body string) (*httptest.ResponseRecorder, map[string]any) {
+		return f.doH(t, "POST", url, body, jsonHdr(adminKey))
+	}
+	read := func(lease, part string) []map[string]any {
+		req := httptest.NewRequest("GET", url+"?part="+part, nil)
+		req.Header.Set("Authorization", "Bearer "+adminKey)
+		req.Header.Set(exportHeader, lease)
+		w := httptest.NewRecorder()
+		f.h.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", part, w.Code, w.Body)
+		}
+		var docs []map[string]any
+		if err := exportpkg.ReadDocuments(w.Body, func(_ int, d map[string]any) error { docs = append(docs, d); return nil }); err != nil {
+			t.Fatal(err)
+		}
+		return docs
+	}
+
+	// Options that make no sense, and rules the schema refuses, are refused before anything starts.
+	for name, body := range map[string]string{
+		"a password without users":    `{"anonymize": true, "staging_password": "dev-p4ssw0rd!"}`,
+		"a config without anonymize":  `{"anonymize_config": "collections: {}"}`,
+		"a field that isn't there":    `{"anonymize": true, "anonymize_config": "collections:\n  app/orders:\n    remove: [nothing]\n"}`,
+		"a collection that isn't":     `{"anonymize": true, "anonymize_config": "collections:\n  app/ghost:\n    remove: [x]\n"}`,
+		"files other than keep":       `{"anonymize": true, "anonymize_files": "all"}`,
+		"a body that isn't JSON":      `nope`,
+		"a staging password too weak": `{"anonymize": true, "staging_password": "x"}`,
+	} {
+		_ = name
+		q := "?database=app"
+		if strings.Contains(name, "too weak") {
+			q = "?include=auth"
+		}
+		if rec, out := f.doH(t, "POST", url+q, body, jsonHdr(adminKey)); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: %d %v", name, rec.Code, out)
+		}
+	}
+
+	rec, plan := f.doH(t, "POST", url+"?include=auth", `{"anonymize": true, "staging_password": "dev-p4ssw0rd!", "anonymize_config": "collections:\n  app/orders:\n    replace: {buyer: \"Override\"}\n"}`, jsonHdr(adminKey))
+	m, _ := plan["manifest"].(map[string]any)
+	if rec.Code != http.StatusOK || m["flags"].(map[string]any)["anonymized"] != true || m["flags"].(map[string]any)["no_files"] != true || plan["export_key"] != nil || len(m["auth"].([]any)) != len(auth.AnonymizedCollections()) {
+		t.Fatalf("plan: %d %v", rec.Code, plan)
+	}
+	lease := plan["lease"].(string)
+
+	orders := read(lease, "app/orders.jsonl")
+	if len(orders) != 1 {
+		t.Fatalf("orders: %v", orders)
+	}
+	o := orders[0]
+	members := o["members"].([]any)
+	if o["phone"] != nil || o["buyer"] != "Override" || members[0] != auth.AnonymousEmail(ada.ID) || !strings.HasSuffix(members[1].(string), "@example.invalid") || o["paid_by"] != ada.ID {
+		t.Errorf("order: %v", o)
+	}
+	users := read(lease, "_system/auth/users.jsonl")
+	if len(users) != 1 || users[0]["email"] != auth.AnonymousEmail(ada.ID) || users[0]["pending_email"] != nil {
+		t.Errorf("users: %v", users)
+	}
+	ids := read(lease, "_system/auth/identities.jsonl")
+	if len(ids) != 1 || ids[0]["provider"] != "password" {
+		t.Fatalf("identities: %v", ids)
+	}
+	if ok, err := f.svc.Hasher.Verify(ctx, "dev-p4ssw0rd!", ids[0]["password_hash"].(string)); err != nil || !ok {
+		t.Errorf("the staging password: %v %v", ok, err)
+	}
+	if got := read(lease, "_system/auth/orgs.jsonl"); len(got) != 1 || got[0]["name"] != "Acme Clinic" {
+		t.Errorf("organizations are kept: %v", got)
+	}
+	// Nothing sealed leaves, nor a second factor.
+	if rec, _ := f.doH(t, "GET", url+"?part=_system/auth/mfa.jsonl", "", map[string]string{"Authorization": "Bearer " + adminKey, exportHeader: lease}); rec.Code != http.StatusNotFound {
+		t.Errorf("mfa of an anonymized export: %d", rec.Code)
+	}
+	// And no original address is anywhere in what was streamed.
+	all := fmt.Sprint(orders, users, ids)
+	for _, secret := range []string{"ada@example.com", "ada@gmail.com", "new@example.com", "stranger@elsewhere.com", "+34 600", "google-sub-1234", "$argon2id$original"} {
+		if strings.Contains(all, secret) {
+			t.Errorf("%q survived the anonymization", secret)
+		}
+	}
+	f.doH(t, "DELETE", url, "", map[string]string{"Authorization": "Bearer " + adminKey, exportHeader: lease})
+
+	// Without --include auth and without an override file, the policy alone applies.
+	rec, plan = post(`{"anonymize": true}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("plan: %d %v", rec.Code, plan)
+	}
+	o = read(plan["lease"].(string), "app/orders.jsonl")[0]
+	if o["buyer"] != "Erased customer" || o["phone"] != nil {
+		t.Errorf("the policy alone: %v", o)
 	}
 }

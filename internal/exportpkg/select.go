@@ -40,3 +40,45 @@ func copyPath(dst, src map[string]any, parts []string) {
 		dst[parts[0]] = next
 	}
 }
+
+// Remove deletes the value at a dotted path of a document, if it is there.
+func Remove(doc map[string]any, path string) {
+	parts := strings.Split(path, ".")
+	cur := doc
+	for _, p := range parts[:len(parts)-1] {
+		next, ok := cur[p].(map[string]any)
+		if !ok {
+			return
+		}
+		cur = next
+	}
+	delete(cur, parts[len(parts)-1])
+}
+
+// Set puts a value at a dotted path of a document, making the objects on the way.
+func Set(doc map[string]any, path string, value any) {
+	parts := strings.Split(path, ".")
+	cur := doc
+	for _, p := range parts[:len(parts)-1] {
+		next, ok := cur[p].(map[string]any)
+		if !ok {
+			next = map[string]any{}
+			cur[p] = next
+		}
+		cur = next
+	}
+	cur[parts[len(parts)-1]] = value
+}
+
+// Get returns the value at a dotted path of a document, or nil.
+func Get(doc map[string]any, path string) any {
+	var cur any = doc
+	for _, p := range strings.Split(path, ".") {
+		m, ok := cur.(map[string]any)
+		if !ok {
+			return nil
+		}
+		cur = m[p]
+	}
+	return cur
+}

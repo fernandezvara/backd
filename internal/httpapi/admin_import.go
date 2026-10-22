@@ -162,6 +162,12 @@ func (a *adminAPI) importBegin(w http.ResponseWriter, r *http.Request, realm str
 	if m.Fingerprint != "" && m.Fingerprint != a.fingerprint {
 		warnings = append(warnings, "the package was made from a different configuration than this instance runs; every document is validated against this one")
 	}
+	switch {
+	case !m.Flags.Anonymized && a.env == "staging":
+		warnings = append(warnings, "this package is not anonymized and this instance is BACKD_ENV=staging: real personal data would be copied into it (export with --anonymize)")
+	case m.Flags.Anonymized && a.env == "production":
+		warnings = append(warnings, "this package is anonymized (emails, passwords and some fields replaced) and this instance is BACKD_ENV=production: the documents it holds would replace real data with staging data")
+	}
 	if m.Realm != "" && m.Realm != realm {
 		warnings = append(warnings, fmt.Sprintf("the package comes from realm %q", m.Realm))
 	}

@@ -72,7 +72,7 @@ func TestAuthDataMovesBetweenRealms(t *testing.T) {
 	}
 	var packaged = map[string][][]byte{}
 	for _, coll := range auth.PortableCollections {
-		docs, unavailable, _, _, err := from.ExportAuthDocs(ctx, coll, "", 100, ek)
+		docs, unavailable, _, _, err := from.ExportAuthDocs(ctx, coll, "", 100, ek, nil)
 		if err != nil || unavailable != 0 {
 			t.Fatalf("export %s: %v (%d unavailable)", coll, err, unavailable)
 		}

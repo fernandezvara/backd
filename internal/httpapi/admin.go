@@ -29,6 +29,7 @@ type adminAPI struct {
 	fns          *functions      // runs functions by hand (see adminInvoke)
 	fingerprint  string          // the config this instance runs (readyz shows it too)
 	version      string          // this build's version, recorded in export packages
+	env          string          // BACKD_ENV: production, staging…
 	offline      bool            // the CLI's direct mode: every request is a full administrator's
 	exports      exportLeases    // the export in progress per realm
 	reloadErrors func() []string // why the last live reload failed (BACKD_DEV); nil without one
@@ -54,6 +55,7 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		r.With(a.need(registry.RightConfig)).Get("/config", a.config)
 		r.With(a.need(registry.RightConfig)).Get("/types", a.types)
 		r.With(a.needRead(registry.RightData)).Get("/export", a.export)
+		r.With(a.needRead(registry.RightData), requireContentType("application/json")).Post("/export", a.export)
 		r.With(a.needRead(registry.RightData)).Delete("/export", a.finishExport)
 		r.With(a.needRead(registry.RightData)).Post("/import", a.importHandler)
 		r.With(a.needRead(registry.RightData)).Put("/import", a.importHandler)

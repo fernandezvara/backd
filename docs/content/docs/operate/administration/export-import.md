@@ -8,9 +8,7 @@ toc: true
 
 `backd export` writes the documents and files of a realm to a **package**: a plain directory (or one `.tar.gz`) you can read with ordinary tools. It is the supported way to take data out of `backd` without `mongodump`: it goes through the [admin API](../admin/), so it needs no access to MongoDB, and it writes documents the way the API shows them.
 
-{{< hint style="note" title="Planned" >}}
-Anonymized exports and encrypted fields are planned for the same feature. This page covers what exists now: exporting a package or a report, importing a package, moving users with `--include auth`, and working offline with `--direct`.
-{{< /hint >}}
+Encrypted fields are planned for the same feature. This page covers what exists now: exporting a package or a report, importing a package, moving users with `--include auth`, making an anonymized copy for staging and working offline with `--direct`.
 
 ## Exporting
 
@@ -29,6 +27,7 @@ backd export --realm clinic --db main --collection patients,visits --out ./clini
 | `--fields` | A [reporting extract](#reporting-extracts-and-csv): only these fields |
 | `--where` | Only the documents matching a filter, for one `--collection` |
 | `--format` | `jsonl` (a package, the default) or `csv` |
+| `--anonymize` | Make a [staging copy](#seeding-staging) |
 | `--include auth` | Also export the realm's [authentication data](#moving-users) |
 | `--auth-key-out` | With `--include auth`: write the export key to this file instead of showing it |
 
@@ -111,6 +110,35 @@ backd import --realm clinic2 --from ./clinic-auth --auth-key file:./clinic.key
 Password hashes let anyone with the package try passwords offline, and the export key opens the authenticator secrets. Keep the package and the key apart, in different places, and delete both when the move is done. Both actions are audited (`export.auth`, `import`).
 {{< /hint >}}
 
+## Seeding staging
+
+A staging or test instance is only as safe as the data in it. `--anonymize` turns an export into a copy that holds no real person's details, using what you already declared for [erasing a user](../erasure/):
+
+```
+backd export --realm clinic --include auth --anonymize --anonymize-config staging.yaml \
+  --staging-password env:STAGING_PASS --out ./clinic-staging
+backd import --realm clinic --from ./clinic-staging     # on the staging instance
+```
+
+- **Collections.** Each collection's [`on_owner_delete`](../erasure/) `remove` and `replace` are applied to **every** document, whoever owns it. They were already checked against the schema, so the documents stay valid. The fields of `pull` and `unset` that hold an **email** are rewritten with the same addresses as the users' (an address that belongs to no user becomes `unknown-<hash>@example.invalid`). A collection without a policy is exported as it is: write one, or use the override file.
+- **Users** (with `--include auth`). Emails become `user-<id>@example.invalid`; pending and previous addresses are dropped; identities of external providers (Google, Apple…) stay behind, so nobody can sign in to staging with a real account; password hashes are dropped, or replaced by the hash of `--staging-password`, one password every user can sign in with (as long as the realm's `password.min_length`); second factors and push devices are not exported, and nothing sealed leaves, so no export key is made. Organizations, memberships and teams are kept, like the owners of documents (ids are not personal data).
+- **Files** are left out, and the references to them are removed from the documents, unless you pass `--anonymize-files keep`: uploads often hold personal data.
+- **The override file** adds rules per collection, on top of the policies, with the same keys and the same checks as an erase policy (the field exists and isn't a system field, a removed field isn't required, a value satisfies the schema, a replaced field isn't in a unique index):
+
+  ```yaml
+  collections:
+    main/patients:
+      remove: [notes, phone]
+      replace: {surname: "Doe"}
+  ```
+
+  A rule in the file wins over the same field in the policy. A problem is refused before anything is read, naming the collection and field.
+- **The manifest is marked `anonymized`.** `import` compares it with the instance's [`BACKD_ENV`](../../../build/configuration/): a package that is not anonymized into `staging`, or an anonymized one into `production`, draws a warning (never a refusal).
+
+{{< hint style="warning" title="Anonymized is not the same as safe" >}}
+Only the fields you name are changed. Free text that holds a name, a field that identifies someone indirectly, or a collection without a policy stays as it is: review the rules for every collection that holds personal data, and look at the copy before you share it.
+{{< /hint >}}
+
 ## Direct mode: without a running backd
 
 `--direct` runs the same export and import **in the command itself**, straight on MongoDB and `CONFIG_DIR`: use it when the server is stopped or can't be reached, or to read a backup.
@@ -187,7 +215,7 @@ Collections are read one after another while the app keeps working, so a package
 
 | Request | Answer |
 |---|---|
-| `GET /export?database=&collection=&files=false&fields=&where=&format=&include=` | `200` with the plan: a `lease`, the manifest as far as it can be known (counts are estimates), and the file fields of each collection. `409 export_running` while another export holds the realm. With `include=auth` the answer also has the one-time `export_key`. A previous `lease` in `X-Backd-Export` takes over an interrupted export of the same administrator |
+| `GET /export?database=&collection=&files=false&fields=&where=&format=&include=`, or `POST /export` with the same query and a JSON body `{anonymize?, anonymize_files?, anonymize_config?, staging_password?}` | `200` with the plan: a `lease`, the manifest as far as it can be known (counts are estimates), and the file fields of each collection. `409 export_running` while another export holds the realm. With `include=auth` the answer also has the one-time `export_key`. A previous `lease` in `X-Backd-Export` takes over an interrupted export of the same administrator |
 | `GET /export?part=<database>/<collection>.jsonl` | The collection's documents as `application/x-ndjson`, with the lease in `X-Backd-Export` |
 | `GET /export?file=<database>/<collection>/<file id>` | The file's object, through `backd`'s storage client |
 | `DELETE /export?complete=true` | `200`: the export ended; releases the realm, audits what was streamed and answers those totals, with how many second factors and devices could not be carried (`auth_unavailable`) |

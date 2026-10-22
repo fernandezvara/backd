@@ -226,3 +226,48 @@ func TestExportCSVExtract(t *testing.T) {
 		t.Errorf("manifest: %+v %v", m, err)
 	}
 }
+
+func TestExportAnonymizeSendsTheOptionsInTheBody(t *testing.T) {
+	var method, body, query string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		switch {
+		case r.Method == "DELETE":
+			w.WriteHeader(http.StatusNoContent)
+		case q.Get("part") != "":
+		default:
+			method, query = r.Method, r.URL.RawQuery
+			b, _ := io.ReadAll(r.Body)
+			body = string(b)
+			_, _ = io.WriteString(w, `{"lease":"L","manifest":{"format":1,"realm":"acme","flags":{"anonymized":true,"no_files":true},"databases":[],"encrypted_fields":[]},"file_fields":{}}`)
+		}
+	}))
+	defer srv.Close()
+	c := &cliEnv{t: t, env: map[string]string{"BACKD_CREDENTIALS": filepath.Join(t.TempDir(), "credentials"), "BACKD_API_KEY": "bdk_x", "STAGING_PASS": "dev-p4ssw0rd!"}}
+	cfg := filepath.Join(t.TempDir(), "staging.yaml")
+	if err := os.WriteFile(cfg, []byte("collections: {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	base := []string{"export", "--realm", "acme", "--url", srv.URL}
+	dir := func() []string { return append(base, "--out", filepath.Join(t.TempDir(), "pkg")) }
+
+	c.expect(2, "--anonymize-config needs --anonymize", "", append(dir(), "--anonymize-config", cfg)...)
+	c.expect(2, "--staging-password needs --anonymize", "", append(dir(), "--staging-password", "env:STAGING_PASS")...)
+	c.expect(2, "--anonymize-files needs --anonymize", "", append(dir(), "--anonymize-files", "keep")...)
+	c.expect(2, "needs --include auth", "", append(dir(), "--anonymize", "--staging-password", "env:STAGING_PASS")...)
+	c.expect(2, "--anonymize-files: want keep", "", append(dir(), "--anonymize", "--anonymize-files", "all")...)
+	c.expect(2, "--anonymize-config", "", append(dir(), "--anonymize", "--anonymize-config", "/nonexistent.yaml")...)
+	c.expect(0, "exported", "", append(dir(), "--anonymize", "--anonymize-config", cfg, "--anonymize-files", "keep")...)
+	if method != "POST" || query != "" || !strings.Contains(body, `"anonymize":true`) || !strings.Contains(body, `"anonymize_files":"keep"`) || !strings.Contains(body, "collections: {}") {
+		t.Errorf("plan: %s ?%s %s", method, query, body)
+	}
+	c.expect(0, "exported", "", append(dir(), "--anonymize", "--include", "auth", "--staging-password", "env:STAGING_PASS")...)
+	if !strings.Contains(body, `"staging_password":"dev-p4ssw0rd!"`) || strings.Contains(query, "dev-p4ssw0rd") {
+		t.Errorf("the password must travel in the body only: ?%s %s", query, body)
+	}
+	// Without --anonymize it stays a GET with no body.
+	c.expect(0, "exported", "", dir()...)
+	if method != "GET" || body != "" {
+		t.Errorf("plain plan: %s %q", method, body)
+	}
+}

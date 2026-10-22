@@ -351,3 +351,23 @@ func TestTriggerMaxChain(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadEnv(t *testing.T) {
+	base := map[string]string{"CONFIG_DIR": "/cfg", "MONGO_URI": "mongodb://m"}
+	with := func(v string) map[string]string {
+		m := map[string]string{"BACKD_ENV": v}
+		for k, x := range base {
+			m[k] = x
+		}
+		return m
+	}
+	if s, err := Load(env(with(" Staging "))); err != nil || s.Env != "staging" {
+		t.Errorf("staging: %q %v", s.Env, err)
+	}
+	if s, err := Load(env(base)); err != nil || s.Env != "" {
+		t.Errorf("unset: %q %v", s.Env, err)
+	}
+	if _, err := Load(env(with("pre prod"))); err == nil || !strings.Contains(err.Error(), "BACKD_ENV") {
+		t.Errorf("a name with a space: %v", err)
+	}
+}

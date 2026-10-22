@@ -602,6 +602,7 @@ func (a *app) handlerConfig() httpapi.Config {
 		TrustedProxies:    a.cfg.TrustedProxies,
 		ConfigFingerprint: a.fingerprint,
 		Version:           version,
+		Env:               a.cfg.Env,
 		Dev:               a.cfg.Dev,
 		DevLinks:          devLinks(a.cfg.DevLinks),
 		ReloadErrors:      a.reloadErrors,

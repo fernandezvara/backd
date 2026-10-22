@@ -379,3 +379,34 @@ func TestAdminImportAuthData(t *testing.T) {
 		t.Errorf("an unknown auth part: %d", rec.Code)
 	}
 }
+
+// A package that doesn't fit the instance's BACKD_ENV is a warning, never a refusal.
+func TestAdminImportWarnsAboutTheEnvironment(t *testing.T) {
+	for _, tc := range []struct {
+		env        string
+		anonymized bool
+		warn       string
+	}{
+		{"staging", false, "not anonymized"},
+		{"staging", true, ""},
+		{"production", true, "is anonymized"},
+		{"production", false, ""},
+		{"", false, ""},
+		{"", true, ""},
+	} {
+		f := newRulesFixture(t, func(c *Config) { c.Env = tc.env })
+		f.svc.Realm = "acme"
+		_, adminKey, err := f.svc.CreateAPIKey(context.Background(), "env", auth.KeyOptions{Role: auth.KeyRoleAdmin})
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := &exportpkg.Manifest{Format: 1, Realm: "acme", Flags: exportpkg.Flags{Anonymized: tc.anonymized},
+			Databases: []exportpkg.Database{{Name: "app", Collections: []exportpkg.Collection{{Name: "notes", Part: "app/notes.jsonl"}}}}}
+		mb, _ := m.Marshal()
+		rec, out := f.doH(t, "POST", admin+"/import", `{"manifest": `+string(mb)+`}`, jsonHdr(adminKey))
+		warnings, _ := out["warnings"].([]any)
+		if rec.Code != http.StatusOK || (tc.warn == "") != (len(warnings) == 0) || (tc.warn != "" && !strings.Contains(warnings[0].(string), tc.warn)) {
+			t.Errorf("env %q anonymized %v: %d %v", tc.env, tc.anonymized, rec.Code, warnings)
+		}
+	}
+}

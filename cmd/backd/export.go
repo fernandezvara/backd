@@ -75,6 +75,43 @@ func exportAction(c *kli.CommandContext) error {
 	if csvOut && flag(c, "no-files") {
 		return usageErr(errors.New("--no-files has no meaning with --format csv: a CSV extract never holds files"))
 	}
+	anonymize := flag(c, "anonymize")
+	var planBody map[string]any
+	if anonymize {
+		planBody = map[string]any{"anonymize": true}
+		if v := str(c, "anonymize-files"); v != "" {
+			if v != "keep" {
+				return usageErr(fmt.Errorf("--anonymize-files: want keep, got %q", v))
+			}
+			planBody["anonymize_files"] = v
+		}
+		if path := str(c, "anonymize-config"); path != "" {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return usageErr(fmt.Errorf("--anonymize-config: %w", err))
+			}
+			planBody["anonymize_config"] = string(data)
+		}
+		if spec := str(c, "staging-password"); spec != "" {
+			if include != "auth" {
+				return usageErr(errors.New("--staging-password needs --include auth: without users there is no password to set"))
+			}
+			pw, err := readKeySource(spec, c.Getenv, c.Stderr())
+			if err != nil {
+				return usageErr(fmt.Errorf("--staging-password: %w", err))
+			}
+			planBody["staging_password"] = pw
+		}
+		if csvOut {
+			return usageErr(errors.New("--anonymize writes a package: not with --format csv"))
+		}
+	} else {
+		for _, f := range []string{"anonymize-config", "staging-password", "anonymize-files"} {
+			if str(c, f) != "" {
+				return usageErr(fmt.Errorf("--%s needs --anonymize", f))
+			}
+		}
+	}
 	t, closeT, _, err := openTarget(c)
 	if err != nil {
 		return err
@@ -123,7 +160,12 @@ func exportAction(c *kli.CommandContext) error {
 		headers["X-Backd-Export"] = progress.Lease
 	}
 	var plan exportPlan
-	if _, err := t.callHeaders("GET", "_admin/export", q, nil, &plan, headers); err != nil {
+	method := "GET"
+	var requestBody any
+	if planBody != nil {
+		method, requestBody = "POST", planBody
+	}
+	if _, err := t.callHeaders(method, "_admin/export", q, requestBody, &plan, headers); err != nil {
 		var ae *apiError
 		if errors.As(err, &ae) && ae.Code == "export_running" {
 			return fmt.Errorf("%w\nonly one export of a realm runs at a time", err)

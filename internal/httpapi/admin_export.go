@@ -4,9 +4,12 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"maps"
 	"net/http"
@@ -54,6 +57,8 @@ type exportLease struct {
 	// fields and where narrow every collection of the export (a reporting extract).
 	fields []string
 	where  string
+	// anon is set when the export is anonymized (a staging copy).
+	anon *exportAnon
 	// An import's options and what it has done, by outcome.
 	imp *importRun
 	// exportKey seals the realm-sealed fields of authentication data (--include auth).
@@ -63,6 +68,28 @@ type exportLease struct {
 	documents map[string]int64
 	files     int64
 	bytes     int64
+}
+
+// exportAnon is what an anonymized export does, fixed by its plan.
+type exportAnon struct {
+	rules        map[string]*registry.AnonRule // by <database>/<collection>
+	dropFiles    bool                          // the files are left out, so the references to them go
+	passwordHash string                        // the known password's hash, if one was asked for
+}
+
+func (l *exportLease) anonAuth() *auth.AuthAnonymize {
+	if l.anon == nil {
+		return nil
+	}
+	return &auth.AuthAnonymize{PasswordHash: l.anon.passwordHash}
+}
+
+// exportBody is the JSON body of POST /_admin/export: the options that don't belong in a URL.
+type exportBody struct {
+	Anonymize       bool   `json:"anonymize"`
+	AnonymizeFiles  string `json:"anonymize_files"`
+	Config          string `json:"anonymize_config"`
+	StagingPassword string `json:"staging_password"`
 }
 
 // exportLeases is the exports in progress, by realm.
@@ -161,6 +188,8 @@ func (a *adminAPI) export(w http.ResponseWriter, r *http.Request) {
 	realm := chi.URLParam(r, "realm")
 	q := r.URL.Query()
 	switch {
+	case r.Method == http.MethodPost:
+		a.exportPlan(w, r, realm)
 	case q.Get("part") != "":
 		a.exportPart(w, r, realm, q.Get("part"))
 	case q.Get("file") != "":
@@ -179,6 +208,14 @@ func (a *adminAPI) exportPlan(w http.ResponseWriter, r *http.Request, realm stri
 			return
 		}
 	}
+	var body exportBody
+	if r.Method == http.MethodPost {
+		data, err := io.ReadAll(r.Body)
+		if err != nil || json.Unmarshal(data, &body) != nil {
+			writeError(w, r, http.StatusBadRequest, codeInvalidJSON, `the body must be {"anonymize"?, "anonymize_files"?, "anonymize_config"?, "staging_password"?}`)
+			return
+		}
+	}
 	database, names := q.Get("database"), q["collection"]
 	if len(names) > 0 && database == "" {
 		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "database", Reason: "is required with collection"})
@@ -189,7 +226,7 @@ func (a *adminAPI) exportPlan(w http.ResponseWriter, r *http.Request, realm stri
 		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "format", Reason: "must be jsonl or csv"})
 		return
 	}
-	noFiles := q.Get("files") == "false" || csvOut
+	noFiles := q.Get("files") == "false" || csvOut || (body.Anonymize && body.AnonymizeFiles != "keep")
 	var fields []string
 	for _, f := range strings.Split(q.Get("fields"), ",") {
 		if f = strings.TrimSpace(f); f != "" && f != "id" {
@@ -212,6 +249,18 @@ func (a *adminAPI) exportPlan(w http.ResponseWriter, r *http.Request, realm stri
 		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "include", Reason: "authentication data is exported with the whole realm: not with a database, collections, fields, a filter or CSV"})
 		return
 	}
+	if !body.Anonymize && (body.AnonymizeFiles != "" || body.Config != "" || body.StagingPassword != "") {
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "anonymize", Reason: "is required with anonymize_files, anonymize_config and staging_password"})
+		return
+	}
+	if body.AnonymizeFiles != "" && body.AnonymizeFiles != "keep" {
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "anonymize_files", Reason: "must be keep"})
+		return
+	}
+	if body.StagingPassword != "" && !includeAuth {
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "staging_password", Reason: "needs include=auth: there are no users without it"})
+		return
+	}
 	if _, portable := usersOf(r).Store.(auth.PortableStore); includeAuth && !portable {
 		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "include", Reason: "this realm's store can't export authentication data"})
 		return
@@ -231,6 +280,35 @@ func (a *adminAPI) exportPlan(w http.ResponseWriter, r *http.Request, realm stri
 		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", details...)
 		return
 	}
+	var anon *exportAnon
+	if body.Anonymize {
+		overrides, err := registry.ParseAnonymizeConfig([]byte(body.Config))
+		if err != nil {
+			writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "anonymize_config", Reason: err.Error()})
+			return
+		}
+		rules, err := registry.AnonymizeRules(rl, overrides)
+		if err != nil {
+			var details []Detail
+			for _, e := range strings.Split(err.Error(), "\n") {
+				details = append(details, Detail{Path: "anonymize_config", Reason: e})
+			}
+			writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", details...)
+			return
+		}
+		anon = &exportAnon{rules: rules, dropFiles: noFiles}
+		if body.StagingPassword != "" {
+			svc := usersOf(r)
+			if len(body.StagingPassword) < svc.Settings.PasswordMinLength {
+				writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "staging_password", Reason: fmt.Sprintf("must be at least %d characters (the realm's password.min_length)", svc.Settings.PasswordMinLength)})
+				return
+			}
+			if anon.passwordHash, err = svc.Hasher.Hash(r.Context(), body.StagingPassword); err != nil {
+				adminError(w, r, err)
+				return
+			}
+		}
+	}
 	hasStorage := rl.Settings.Storage != nil
 	m := &exportpkg.Manifest{
 		Format: exportpkg.FormatVersion, BackdVersion: a.version, Realm: realm, CreatedAt: time.Now().UTC(),
@@ -239,9 +317,15 @@ func (a *adminAPI) exportPlan(w http.ResponseWriter, r *http.Request, realm stri
 		Encrypted: []exportpkg.EncryptedField{}, Checksums: map[string]string{},
 	}
 	m.Flags.Auth = includeAuth
+	m.Flags.Anonymized = anon != nil
 	var exportKey string
 	var keyCipher *auth.SecretCipher
-	if includeAuth {
+	if includeAuth && anon != nil {
+		// Nothing sealed by the realm is in an anonymized copy: no export key.
+		for _, name := range auth.AnonymizedCollections() {
+			m.Auth = append(m.Auth, exportpkg.Collection{Name: name, Part: exportpkg.AuthPart(name)})
+		}
+	} else if includeAuth {
 		raw := make([]byte, 32)
 		_, _ = rand.Read(raw)
 		exportKey = base64.RawURLEncoding.EncodeToString(raw)
@@ -285,14 +369,14 @@ func (a *adminAPI) exportPlan(w http.ResponseWriter, r *http.Request, realm stri
 	id := make([]byte, 16)
 	_, _ = rand.Read(id)
 	now := time.Now()
-	l := &exportLease{kind: leaseExport, id: hex.EncodeToString(id), actor: caller.Actor(), expires: now.Add(exportLeaseTTL), scope: scope, flags: m.Flags, fields: fields, where: where, exportKey: keyCipher}
+	l := &exportLease{kind: leaseExport, id: hex.EncodeToString(id), actor: caller.Actor(), expires: now.Add(exportLeaseTTL), scope: scope, flags: m.Flags, fields: fields, where: where, exportKey: keyCipher, anon: anon}
 	if !a.exports.take(realm, caller.Actor(), r.Header.Get(exportHeader), l, now) {
 		writeError(w, r, http.StatusConflict, codeExportRunning, "an export of this realm is already running; wait for it to finish (a silent one is released after ten minutes)")
 		return
 	}
 	usersOf(r).Audit(r.Context(), auth.AuditExport, "export:"+scope, map[string]any{
 		"database": database, "collections": len(names), "files": !m.Flags.NoFiles, "partial": m.Flags.Partial,
-		"fields": len(fields), "filtered": where != "", "csv": csvOut,
+		"fields": len(fields), "filtered": where != "", "csv": csvOut, "anonymized": anon != nil,
 	})
 	if includeAuth {
 		usersOf(r).Audit(r.Context(), auth.AuditExportAuth, "export:"+scope, map[string]any{"collections": len(m.Auth), "key_fingerprint": m.AuthKey})
@@ -429,6 +513,9 @@ func (a *adminAPI) exportPart(w http.ResponseWriter, r *http.Request, realm, par
 		}
 		for _, doc := range batch {
 			after, _ = doc["id"].(string)
+			if l.anon != nil {
+				a.anonymizeDocument(ctx, r, c, database+"/"+name, l.anon, doc)
+			}
 			if len(l.fields) > 0 {
 				doc = exportpkg.Select(doc, l.fields)
 			}
@@ -544,7 +631,11 @@ func (a *adminAPI) finishExport(w http.ResponseWriter, r *http.Request) {
 // secrets are opened here and sealed again under the export's one-time key; the rest is sent
 // as stored (password hashes included, which is why this needs --include auth).
 func (a *adminAPI) exportAuthPart(w http.ResponseWriter, r *http.Request, l *exportLease, coll string) {
-	if l.exportKey == nil || !slices.Contains(auth.PortableCollections, coll) {
+	allowed := auth.PortableCollections
+	if l.anon != nil {
+		allowed = auth.AnonymizedCollections()
+	}
+	if (l.exportKey == nil && l.anon == nil) || !slices.Contains(allowed, coll) {
 		writeError(w, r, http.StatusNotFound, codeNotFound, "no such part in this package")
 		return
 	}
@@ -566,7 +657,7 @@ func (a *adminAPI) exportAuthPart(w http.ResponseWriter, r *http.Request, l *exp
 	for {
 		_ = rc.SetWriteDeadline(time.Now().Add(exportWriteWindow))
 		ctx, cancel := context.WithTimeout(r.Context(), a.fns.docs.opTimeout)
-		batch, lost, last, read, err := svc.ExportAuthDocs(ctx, coll, after, exportBatch, l.exportKey)
+		batch, lost, last, read, err := svc.ExportAuthDocs(ctx, coll, after, exportBatch, l.exportKey, l.anonAuth())
 		cancel()
 		if err != nil {
 			logger(r.Context()).Error("export of authentication data failed", "error", err, "collection", coll)
@@ -594,6 +685,49 @@ func (a *adminAPI) exportAuthPart(w http.ResponseWriter, r *http.Request, l *exp
 		after = last
 		if read < exportBatch {
 			return
+		}
+	}
+}
+
+// anonymizeDocument applies an anonymized export's rules to one document: the collection's
+// removed and replaced fields, the addresses of users it holds (rewritten like the users' own),
+// and the references to files that are not in the copy.
+func (a *adminAPI) anonymizeDocument(ctx context.Context, r *http.Request, c *registry.Collection, key string, anon *exportAnon, doc map[string]any) {
+	if rule := anon.rules[key]; rule != nil {
+		for _, f := range rule.Remove {
+			exportpkg.Remove(doc, f)
+		}
+		for f, v := range rule.Replace {
+			exportpkg.Set(doc, f, v)
+		}
+		svc := usersOf(r)
+		rewrite := func(v any) any {
+			email, ok := v.(string)
+			if !ok {
+				return v
+			}
+			if u, err := svc.Find(ctx, email); err == nil {
+				return auth.AnonymousEmail(u.ID)
+			}
+			sum := sha256.Sum256([]byte(strings.ToLower(email)))
+			return "unknown-" + hex.EncodeToString(sum[:4]) + "@example.invalid"
+		}
+		for _, f := range rule.Emails {
+			switch v := exportpkg.Get(doc, f).(type) {
+			case string:
+				exportpkg.Set(doc, f, rewrite(v))
+			case []any:
+				out := make([]any, len(v))
+				for i, e := range v {
+					out[i] = rewrite(e)
+				}
+				exportpkg.Set(doc, f, out)
+			}
+		}
+	}
+	if anon.dropFiles {
+		for name := range c.Files {
+			delete(doc, name)
 		}
 	}
 }
