@@ -65,7 +65,7 @@ func (e *exportLeases) take(realm, actor, resume string, l *exportLease, now tim
 	if e.leases == nil {
 		e.leases = map[string]*exportLease{}
 	}
-	if cur, ok := e.leases[realm]; ok && now.Before(cur.expires) && !(cur.id == resume && cur.actor == actor) {
+	if cur, ok := e.leases[realm]; ok && now.Before(cur.expires) && (cur.id != resume || cur.actor != actor) {
 		return false
 	}
 	e.leases[realm] = l
