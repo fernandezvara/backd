@@ -32,7 +32,7 @@ backd secret list --realm blog
 backd secret delete --realm blog --database shop --name STRIPE_KEY
 ```
 
-Values are write-only: `backd secret list` and `GET /_admin/secrets` show only the scope, name and who last changed a secret, never its value. A changed or deleted value reaches running functions within about a minute (decrypted values are cached briefly, so `backd` doesn't decrypt on every call).
+Keys for [field encryption](../../configuration/field-keys/) live in the same store but are a type of their own: a function that declares one answers `secret_missing`, as if it didn't exist. Values are write-only: `backd secret list` and `GET /_admin/secrets` show only the scope, name and who last changed a secret, never its value. A changed or deleted value reaches running functions within about a minute (decrypted values are cached briefly, so `backd` doesn't decrypt on every call).
 
 ### Storage and the master key
 

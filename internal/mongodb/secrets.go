@@ -13,20 +13,22 @@ import (
 )
 
 type secretDoc struct {
-	ID         string    `bson:"_id"`
-	Database   string    `bson:"database"`
-	Name       string    `bson:"name"`
-	Ciphertext string    `bson:"ciphertext"`
-	Nonce      string    `bson:"nonce"`
-	KeyID      string    `bson:"key_id"`
-	CreatedAt  time.Time `bson:"created_at"`
-	UpdatedAt  time.Time `bson:"updated_at"`
-	UpdatedBy  string    `bson:"updated_by"`
+	ID          string    `bson:"_id"`
+	Database    string    `bson:"database"`
+	Name        string    `bson:"name"`
+	Type        string    `bson:"type,omitempty"`
+	Fingerprint string    `bson:"fingerprint,omitempty"`
+	Ciphertext  string    `bson:"ciphertext"`
+	Nonce       string    `bson:"nonce"`
+	KeyID       string    `bson:"key_id"`
+	CreatedAt   time.Time `bson:"created_at"`
+	UpdatedAt   time.Time `bson:"updated_at"`
+	UpdatedBy   string    `bson:"updated_by"`
 }
 
 func (d secretDoc) secret() auth.Secret {
 	return auth.Secret{
-		Database: d.Database, Name: d.Name, Ciphertext: d.Ciphertext, Nonce: d.Nonce, KeyID: d.KeyID,
+		Database: d.Database, Name: d.Name, Type: d.Type, Fingerprint: d.Fingerprint, Ciphertext: d.Ciphertext, Nonce: d.Nonce, KeyID: d.KeyID,
 		CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC(), UpdatedBy: d.UpdatedBy,
 	}
 }
@@ -51,6 +53,8 @@ func (s *AuthStore) UpsertSecret(ctx context.Context, sec auth.Secret) error {
 		{Key: "$set", Value: bson.D{
 			{Key: "database", Value: sec.Database},
 			{Key: "name", Value: sec.Name},
+			{Key: "type", Value: sec.Type},
+			{Key: "fingerprint", Value: sec.Fingerprint},
 			{Key: "ciphertext", Value: sec.Ciphertext},
 			{Key: "nonce", Value: sec.Nonce},
 			{Key: "key_id", Value: sec.KeyID},
@@ -60,6 +64,19 @@ func (s *AuthStore) UpsertSecret(ctx context.Context, sec auth.Secret) error {
 		{Key: "$setOnInsert", Value: bson.D{{Key: "created_at", Value: sec.CreatedAt}}},
 	}
 	_, err := s.secrets().UpdateByID(ctx, id, update, options.UpdateOne().SetUpsert(true))
+	return err
+}
+
+// CreateSecret stores a secret that must not exist yet: the deterministic id makes the insert
+// the existence check.
+func (s *AuthStore) CreateSecret(ctx context.Context, sec auth.Secret) error {
+	_, err := s.secrets().InsertOne(ctx, secretDoc{
+		ID: secretID(sec.Database, sec.Name), Database: sec.Database, Name: sec.Name, Type: sec.Type, Fingerprint: sec.Fingerprint,
+		Ciphertext: sec.Ciphertext, Nonce: sec.Nonce, KeyID: sec.KeyID, CreatedAt: sec.CreatedAt, UpdatedAt: sec.UpdatedAt, UpdatedBy: sec.UpdatedBy,
+	})
+	if mongo.IsDuplicateKeyError(err) {
+		return auth.ErrSecretExists
+	}
 	return err
 }
 

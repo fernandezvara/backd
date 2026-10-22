@@ -38,6 +38,7 @@ In scope:
 - **Admin API** — `/v1/{realm}/_admin`.
 - **Admin web interface** — served at `/_ui/`: its CSP and headers, how it holds the admin token, and any way to run script in it or read that token.
 - **CLI** — the commands that use the admin API (`backd login`, `user`, `apikey`, `secret`, `bootstrap`) and the credentials file it keeps.
+- **Field keys** — `POST /v1/{realm}/_admin/secrets` with `type: key`, `backd secret create`: a key's value shown more than once or kept outside the sealed store, in a log, an audit record or an error; a function, provider or setting that can read one; a key created, replaced or deleted without a full administrator and a fresh proof; a key deleted while a field uses it; a fingerprint that reveals the key.
 - **Audit trail** — `/v1/{realm}/_admin/audit`: records that are missing, alterable, or that contain secrets.
 - **User erasure** — `DELETE /v1/{realm}/_admin/users/{id}`: personal data it leaves behind beyond what the docs list, or an erase that skips silently.
 - **Server-side functions** — `/v1/{realm}/{database}/_func/…`: the executor, its sandbox and limits, callback credentials and the internal listener, `backd egress` and its per-invocation tokens, a function's ability to reach anything other than what it declares — including over raw TCP or to a private address a declared host name resolves to — and its secrets: `/v1/{realm}/_admin/secrets`, their encryption at rest, and a function's ability to read another database's or realm's.

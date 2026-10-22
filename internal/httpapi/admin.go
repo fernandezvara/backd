@@ -147,6 +147,7 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		r.With(keys, json).Post("/apikeys", a.createAPIKey)
 		r.With(keys).Delete("/apikeys/{name}", a.revokeAPIKey)
 		r.With(secrets).Get("/secrets", a.listSecrets)
+		r.With(secrets, json).Post("/secrets", a.createKey)
 		r.With(secrets, json).Put("/secrets/{name}", a.setSecret)
 		r.With(secrets).Delete("/secrets/{name}", a.deleteSecret)
 		r.With(audit).Get("/audit", a.listAudit)
@@ -1069,9 +1070,14 @@ func (a *adminAPI) revokeAPIKey(w http.ResponseWriter, r *http.Request) {
 // secretMetaJSON never includes a value: secrets are write-only through
 // this API.
 func secretMetaJSON(m auth.SecretMeta) map[string]any {
+	t := m.Type
+	if t == "" {
+		t = "secret"
+	}
 	return map[string]any{
 		"database":   m.Database,
 		"name":       m.Name,
+		"type":       t,
 		"created_at": formatTime(m.CreatedAt),
 		"updated_at": formatTime(m.UpdatedAt),
 		"updated_by": m.UpdatedBy,
@@ -1085,8 +1091,17 @@ func (a *adminAPI) listSecrets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	items := make([]map[string]any, len(secrets))
+	svc := usersOf(r)
 	for i, s := range secrets {
 		items[i] = secretMetaJSON(s)
+		if s.Type == auth.SecretTypeKey {
+			items[i]["fingerprint"] = s.Fingerprint
+			uses := svc.KeyUsedBy(s.Name)
+			if uses == nil {
+				uses = []string{}
+			}
+			items[i]["used_by"] = uses
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
@@ -1130,6 +1145,10 @@ func (a *adminAPI) setSecret(w http.ResponseWriter, r *http.Request) {
 	}
 	caller, _ := callerOf(r)
 	if err := usersOf(r).SetSecret(r.Context(), database, name, value, caller.Actor()); err != nil {
+		if errors.Is(err, auth.ErrSecretIsKey) {
+			writeError(w, r, http.StatusConflict, codeConflict, err.Error())
+			return
+		}
 		adminError(w, r, err)
 		return
 	}
@@ -1141,6 +1160,10 @@ func (a *adminAPI) setSecret(w http.ResponseWriter, r *http.Request) {
 // starts answering secret_missing again.
 func (a *adminAPI) deleteSecret(w http.ResponseWriter, r *http.Request) {
 	database := r.URL.Query().Get("database")
+	if have, err := usersOf(r).Store.SecretByScope(r.Context(), database, chi.URLParam(r, "name")); err == nil && have.Type == auth.SecretTypeKey {
+		a.deleteKey(w, r)
+		return
+	}
 	err := usersOf(r).DeleteSecret(r.Context(), database, chi.URLParam(r, "name"))
 	if errors.Is(err, auth.ErrSecretNotFound) {
 		writeError(w, r, http.StatusNotFound, codeNotFound, "secret not found")

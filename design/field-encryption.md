@@ -1,8 +1,8 @@
 # Design: field-level encryption
 
 - **Issues:** features 16.1–16.9 (milestone `16-field-encryption`)
-- **Status:** decided 
-- **Related designs:** [mfa-passwordless.md](./mfa-passwordless.md) (reauth for sensitive admin actions), [reference-expansion.md](./reference-expansion.md) (expanded documents), [organizations.md](./organizations.md) (rules used in `reveal`), [file-storage.md](./file-storage.md) (bucket encryption), [export-import.md](./export-import.md) (offline access, 16.6), f6 (job steps)
+- **Status:** decided; implemented in issues 16.1–16.9 (see §16 for what the other designs changed and §17 for deviations as they land)
+- **Related designs:** [mfa-passwordless.md](./mfa-passwordless.md) (reauth for sensitive admin actions), [reference-expansion.md](./reference-expansion.md) (expanded documents), [organizations.md](./organizations.md) (rules used in `reveal`), [file-storage.md](./file-storage.md) (bucket encryption), [export-import.md](./export-import.md) (offline access, 16.6), [breach-response.md](./breach-response.md) (a leaked key or master key), [compliance.md](./compliance.md) (personal data exports), [account-lifecycle.md](./account-lifecycle.md) (erasure policies), org-sso (organization secrets, an independent use of the secrets store), f6 (job steps)
 
 ## 1. The idea
 
@@ -292,3 +292,28 @@ backd export decrypt ./clinic --field tax_id key:3q2-7wX... --out ./clinic-plain
 - Per-user keys for crypto-shredding (erasing a user by destroying their key).
 - Admin UI: encryption status, keys with fingerprints and usage, migration jobs.
 - External key management (cloud KMS or Vault) to hold field keys outside backd.
+
+## 16. Considerations from other designs
+
+Designs written after this one touch it. None changes a decision above; each fixes how the neighbour and field encryption fit.
+
+- **Breach response ([breach-response.md](./breach-response.md)).**
+  - `backd secret rotate-key` (the master key) re-seals every secret, field keys included, and keeps their type and fingerprint. A leaked **master key together with the realm's secrets** (§11) exposes the field keys too: after such a leak the runbook rotates the master key *and* each field key (`backd secret rotate NAME`, instant, §5.3), and, if the data keys may have leaked as well, rekeys and migrates.
+  - A leaked *field key* alone is the "key copy may have leaked" row of §5.3: rotate it. A leaked dump of ciphertext is only as useful as the keys it is paired with.
+  - The runbook ("If credentials leak") gains a field-key section with 16.8, when rotation exists to be documented.
+- **Organization SSO (milestone 30).** Organization-scoped secrets are a scope of the existing secrets store, sealed with the instance key; they do not use field encryption (a handful of values the store already seals). `key` secrets are **realm scope only**: a key names a field of the realm's collections.
+- **Export and import ([export-import.md](./export-import.md)).** Realm secrets, key secrets included, are never exported. A restore gets its keys back with `backd secret create --type key --value …` (§9), which is why creation accepts an import and why the fingerprint exists. The authentication data in a package (sealed with the realm's cipher, re-sealed under a one-time export key) is a separate mechanism and not field encryption.
+- **Compliance ([compliance.md](./compliance.md)).** The personal data export is the one place the server decrypts for a download (a documented exception, 19.x): it needs the field keys to be available to the server, which they are (sealed under the master key), and it respects `reveal` only for what the person may see of their own data.
+- **Erasure ([account-lifecycle.md](./account-lifecycle.md)).** `on_owner_delete` `replace` on an encrypted field is refused at startup (§3.2) because the replacement would have to be encrypted per document; `remove` and `pull`/`unset` are allowed, since removing a value needs no key.
+
+## 17. Implementation notes
+
+Written as the issues land.
+
+- **16.1 (`key` secrets).**
+  - Keys are secrets with `type: key` and a stored `fingerprint` (`SHA-256("backd-field-key-v1|" + key)`, first 8 hex characters), in the same collection and sealed with the same cipher as every secret. The sealed text is the key in base64url without padding.
+  - `POST /_admin/secrets` creates (never overwrites: `409`); a plain `PUT` over a key is `409`; `DELETE` of a key needs full admin plus reauth and is refused while a field names it. Listings gain `type`, and for keys `fingerprint` and `used_by`. The area (`secrets`) is enough to list; full admin plus reauth is needed to create or delete a key. Audited as `secret.key.create` / `secret.key.delete`.
+  - `ResolveSecrets` treats a key as missing: no function, provider or setting can read a field key.
+  - `backd secret create --type key (--generate | --value key:|env:|file:)` prints a generated key on standard output alone, so it can be redirected; `--json` prints the answer.
+  - `collection.yaml` accepts `fields.<path>.encrypt.key` from this issue (the path must be in `schema.json`, the key name valid), so that "startup fails when a field names a missing key or a plain secret" is real; 16.2 adds the exclusion checks and `search`, `normalize`, `unique`, 16.4 `reveal`.
+  - **Deviation:** `backd secret rotate NAME` (and its re-wrap of data keys) is delivered with 16.2, where data keys exist; before that there is nothing to re-wrap and replacing a key's value would be a way to lose data. Rotating a key's value therefore does not exist in 16.1.

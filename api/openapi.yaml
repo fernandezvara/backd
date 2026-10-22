@@ -4578,7 +4578,7 @@ paths:
     get:
       tags: [admin]
       summary: List secrets
-      description: Metadata only — scope, name and who last changed it. Values are write-only.
+      description: Metadata only — scope, name, type and who last changed it; for keys also the fingerprint and the fields using them. Values are write-only.
       operationId: adminListSecrets
       security: [{ apiKey: [] }, { session: [] }]
       responses:
@@ -4594,6 +4594,54 @@ paths:
                   items: { type: array, items: { $ref: "#/components/schemas/Secret" } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+    post:
+      tags: [admin]
+      summary: Create a field key
+      description: |
+        Creates a `key` secret for field encryption: 32 random bytes the server generates
+        (`generate: true`) or a key you import (`value`, 32 bytes in base64url). **A generated key
+        is in this answer and nowhere else, ever**: the developer keeps the only copy, and a lost
+        key means the values encrypted with it are lost. Imported keys answer with the fingerprint
+        alone. A name already taken, by a key or by a plain secret, is refused with `409`. Needs
+        full admin access (every area) and a fresh re-authentication; audited as
+        `secret.key.create` with the name and fingerprint, never the key. Values of plain secrets
+        are set with `PUT /_admin/secrets/{name}`.
+      operationId: adminCreateKey
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, type]
+              properties:
+                name: { type: string, description: "Upper-case letters, digits and _, starting with a letter." }
+                type: { type: string, enum: [key] }
+                generate: { type: boolean, description: "Make a new random key. Give exactly one of `generate` and `value`." }
+                value: { type: string, description: "Import this key: 32 bytes in base64url." }
+      responses:
+        "201":
+          description: The key was created. The response is never cached.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [name, type, fingerprint]
+                properties:
+                  name: { type: string }
+                  type: { type: string, enum: [key] }
+                  fingerprint: { type: string }
+                  key: { type: string, description: "A generated key, base64url. Only this once." }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_admin/secrets/{name}:
@@ -4630,20 +4678,26 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
     delete:
       tags: [admin]
       summary: Delete a secret
-      description: A function that declares it answers `secret_missing` again.
+      description: |
+        A function that declares it answers `secret_missing` again. Deleting a field key needs
+        full admin access and a fresh re-authentication, and is refused with `409` while any field
+        still names it; audited as `secret.key.delete`.
       operationId: adminDeleteSecret
       security: [{ apiKey: [] }, { session: [] }]
       parameters:
+        - { $ref: "#/components/parameters/reauth" }
         - { name: database, in: query, description: "Its database scope; absent means the realm scope.", schema: { type: string } }
       responses:
         "204": { description: Secret deleted. }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_admin/config:
@@ -9431,10 +9485,19 @@ components:
       description: A secret's metadata, as listed — never its value.
       type: object
       additionalProperties: false
-      required: [database, name, created_at, updated_at, updated_by]
+      required: [database, name, type, created_at, updated_at, updated_by]
       properties:
         database: { type: string, description: "Its database scope; empty means the realm scope." }
         name: { type: string }
+        type:
+          type: string
+          enum: [secret, key]
+          description: "A `key` is a field-encryption key (`POST /_admin/secrets`); only field encryption reads it, no function or provider does."
+        fingerprint: { type: string, description: "Keys only: the first 8 hex characters of SHA-256 over a fixed label and the key. It identifies a saved copy; the key itself is never shown again." }
+        used_by:
+          type: array
+          items: { type: string }
+          description: "Keys only: the fields that name this key, as `database/collection.path`."
         created_at: { $ref: "#/components/schemas/Timestamp" }
         updated_at: { $ref: "#/components/schemas/Timestamp" }
         updated_by: { type: string, description: "Who last set it, e.g. `user:<id>` or `key:<name>`." }

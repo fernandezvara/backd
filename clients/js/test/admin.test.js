@@ -241,6 +241,26 @@ test('secrets: list, set and delete', async () => {
   assert.equal(m2.calls[1].url.searchParams.get('database'), 'main')
 })
 
+test('secrets: field keys are created once and listed with a fingerprint', async () => {
+  const m = mockFetch([
+    { status: 201, body: { name: 'HEALTH', type: 'key', fingerprint: '9f2c41d0', key: 'k'.repeat(43) } },
+    { status: 201, body: { name: 'TAX', type: 'key', fingerprint: '12345678' } },
+    { body: { items: [{ database: '', name: 'HEALTH', type: 'key', fingerprint: '9f2c41d0', used_by: ['main/patients.notes'], created_at: 'x', updated_at: 'x', updated_by: 'user:u1' }] } },
+  ])
+  const a = adminOf(m)
+  const made = await a.secrets.createKey('HEALTH')
+  assert.equal(made.key?.length, 43)
+  assert.equal(m.calls[0].method, 'POST')
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/secrets')
+  assert.deepEqual(m.calls[0].body, { name: 'HEALTH', type: 'key', generate: true })
+  const imported = await a.secrets.createKey('TAX', { value: 'v'.repeat(43) })
+  assert.equal(imported.key, undefined)
+  assert.deepEqual(m.calls[1].body, { name: 'TAX', type: 'key', value: 'v'.repeat(43) })
+  const [k] = await a.secrets.list()
+  assert.equal(k.fingerprint, '9f2c41d0')
+  assert.deepEqual(k.used_by, ['main/patients.notes'])
+})
+
 test('invocations listing', async () => {
   const rec = { id: 'i1', at: '2026-10-02T10:00:00.000Z', function: 'main/refund_receipt', actor: 'user:u1', mode: 'async', status: 'ok', code: null,
     duration_ms: 12, request_id: 'r1', job_id: 'j1', parent_id: 'i0', origin: 'function', logs: [] }

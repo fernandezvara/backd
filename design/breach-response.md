@@ -56,7 +56,7 @@ The backup guide used to say reset emails could not be sent; that was wrong, and
 
 ## 6. Sessions and keys
 
-- `backd user revoke-sessions --realm r --all` deletes every session of the realm (`--email` for one user already exists through disable and set-password). API keys stay with `backd apikey revoke`/create; the runbook lists them. Secrets are rotated with `backd secret rotate-key`.
+- `backd user revoke-sessions --realm r --all` deletes every session of the realm (`--email` for one user already exists through disable and set-password). API keys stay with `backd apikey revoke`/create; the runbook lists them. Secrets are rotated with `backd secret rotate-key`. Field keys ([field-encryption.md](./field-encryption.md)) are secrets too: `rotate-key` re-seals them under the new master key, but a master key leaked together with the realm's secrets exposes them as well, so the runbook rotates each field key then (`backd secret rotate`, field-encryption §5.3, §16).
 - `expire-passwords` ends sessions by default; `--keep-sessions` leaves them (for a planned rotation, not a breach).
 
 ## 7. Security considerations
@@ -90,6 +90,7 @@ The backup guide used to say reset emails could not be sent; that was wrong, and
 
 - `password.max_age` and a warning before it.
 - Dart client support in its own milestone.
+- A field-key section in the runbook, written with field encryption's documentation (16.8).
 - Breach lists (k-anonymity checks against known-compromised passwords) at sign-up and reset.
 
 ## 11. Security review (issue 29.8)

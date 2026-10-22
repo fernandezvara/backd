@@ -416,6 +416,9 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 	if err := loadAggregate(coll, filepath.Join(dir, CollectionFile)); err != nil {
 		return nil, err
 	}
+	if err := loadEncryption(coll, filepath.Join(dir, CollectionFile)); err != nil {
+		return nil, err
+	}
 	if err := loadRealtime(coll, filepath.Join(dir, CollectionFile)); err != nil {
 		return nil, err
 	}

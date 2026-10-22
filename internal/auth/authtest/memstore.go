@@ -73,6 +73,16 @@ func (m *MemStore) UpsertSecret(_ context.Context, s auth.Secret) error {
 	return nil
 }
 
+func (m *MemStore) CreateSecret(_ context.Context, s auth.Secret) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.secrets[secretKey(s.Database, s.Name)]; ok {
+		return auth.ErrSecretExists
+	}
+	m.secrets[secretKey(s.Database, s.Name)] = s
+	return nil
+}
+
 func (m *MemStore) SecretByScope(_ context.Context, database, name string) (auth.Secret, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

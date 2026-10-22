@@ -100,6 +100,8 @@ type erasureDoc struct {
 	References map[string]*referenceDoc `yaml:"references"`
 	// Files is read by parseFiles, which checks it; here it is only allowed.
 	Files map[string]*fileFieldDoc `yaml:"files"`
+	// Fields is read by loadEncryption, which checks it; here it is only allowed.
+	Fields map[string]*fieldDoc `yaml:"fields"`
 	// Rules is read by loadRules, which checks it; here it is only allowed.
 	Rules map[string]string `yaml:"rules"`
 	// Organization and OnOrgDelete are read by loadOrganization; here they are only allowed.

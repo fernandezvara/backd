@@ -580,6 +580,8 @@ type Store interface {
 	// UpsertSecret creates or replaces the secret at (database, name),
 	// keeping its original CreatedAt on an update.
 	UpsertSecret(ctx context.Context, s Secret) error
+	// CreateSecret stores a new secret, ErrSecretExists if the scope and name are taken.
+	CreateSecret(ctx context.Context, s Secret) error
 	// SecretByScope returns one secret; ErrSecretNotFound if none.
 	SecretByScope(ctx context.Context, database, name string) (Secret, error)
 	// ListSecrets returns every secret's metadata, sorted by database

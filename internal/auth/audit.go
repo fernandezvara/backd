@@ -115,6 +115,10 @@ const (
 	AuditSecretSet          = "secret.set"        // details: database ("": realm scope); never the value
 	AuditSecretDelete       = "secret.delete"     // details: database
 	AuditSecretsRotated     = "secret.rotate_key" // by backd secret rotate-key; details: count
+	// A field key was created, imported or deleted; target secret:realm/NAME, details: fingerprint,
+	// generated. Never the key.
+	AuditKeyCreate = "secret.key.create"
+	AuditKeyDelete = "secret.key.delete"
 	// AuditTriggerGapResolve is an administrator closing a recorded gap of the trigger dispatcher;
 	// AuditTriggerRescan one re-emitting the changes of a collection.
 	AuditTriggerGapResolve = "triggers.gap_resolve"

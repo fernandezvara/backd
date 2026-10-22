@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/auth/authtest"
 	"github.com/fernandezvara/backd/internal/email"
 	"github.com/fernandezvara/backd/internal/registry"
 	"io"
@@ -240,5 +242,47 @@ func TestUnprotectedAdminRoles(t *testing.T) {
 	s.MFA = registry.MFASettings{Off: true}
 	if got := unprotectedAdminRoles(s); len(got) != 0 {
 		t.Errorf("MFA off: %v", got)
+	}
+}
+
+func TestStartupRefusesAFieldWithoutItsKey(t *testing.T) {
+	ctx := context.Background()
+	root := writeConfig(t, map[string]string{
+		"clinic/realm.yaml":                    "signup: open\n",
+		"clinic/main/patients/schema.json":     `{"type":"object","properties":{"tax_id":{"type":"string"},"notes":{"type":"string"}}}`,
+		"clinic/main/patients/collection.yaml": "fields:\n  tax_id:\n    encrypt: {key: TAX}\n  notes:\n    encrypt: {key: HEALTH}\n",
+	})
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := authtest.NewMemStore()
+	cipher, _ := auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
+	svc := &auth.Users{Store: store, Realm: "clinic", Cipher: cipher}
+	users := func(string) *auth.Users { return svc }
+
+	err = checkEncryptionKeys(ctx, reg, users)
+	if err == nil || !strings.Contains(err.Error(), "main/patients.tax_id names the key TAX, which does not exist") || !strings.Contains(err.Error(), "HEALTH") || !strings.Contains(err.Error(), "--type key --generate --name HEALTH") {
+		t.Fatalf("missing keys: %v", err)
+	}
+	if err := svc.SetSecret(ctx, "", "TAX", "a plain secret", "x"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreateKey(ctx, "HEALTH", "", "x"); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkEncryptionKeys(ctx, reg, users); err == nil || !strings.Contains(err.Error(), "TAX, which is a plain secret") || strings.Contains(err.Error(), "HEALTH") {
+		t.Fatalf("a plain secret: %v", err)
+	}
+	svc.DeleteSecret(ctx, "", "TAX")
+	if _, err := svc.CreateKey(ctx, "TAX", "", "x"); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkEncryptionKeys(ctx, reg, users); err != nil {
+		t.Errorf("with both keys: %v", err)
+	}
+	// A realm without auth has nowhere to keep keys.
+	if err := checkEncryptionKeys(ctx, reg, func(string) *auth.Users { return nil }); err == nil || !strings.Contains(err.Error(), "needs `auth` enabled") {
+		t.Errorf("no auth: %v", err)
 	}
 }

@@ -1178,6 +1178,18 @@ func TestContract(t *testing.T) {
 	req("DELETE", ad+"/secrets/KEY", "", nil, 401)
 	req("DELETE", ad+"/secrets/KEY", "", ada, 403)
 
+	// Field keys (16.1): created once, never overwritten, listed with a fingerprint.
+	req("POST", ad+"/secrets", `{"name": "HEALTH", "type": "key", "generate": true}`, json(key), 201)
+	req("POST", ad+"/secrets", `{"name": "HEALTH", "type": "key", "generate": true}`, json(key), 409)
+	req("POST", ad+"/secrets", `{"name": "SPARE", "type": "key"}`, json(key), 400)
+	req("POST", ad+"/secrets", `{"name": "SPARE", "type": "key", "generate": true}`, nil, 401)
+	req("POST", ad+"/secrets", `{"name": "SPARE", "type": "key", "generate": true}`, with(ada, "Content-Type", "application/json"), 403)
+	req("PUT", ad+"/secrets/HEALTH", `{"value": "x"}`, json(key), 409)
+	f.svc.KeyUses = func(string) []string { return []string{"app/notes.body"} }
+	req("DELETE", ad+"/secrets/HEALTH", "", key, 409)
+	f.svc.KeyUses = nil
+	req("DELETE", ad+"/secrets/HEALTH", "", key, 204)
+
 	// Functions (fake executor).
 	fn := "/v1/acme/app/_func/"
 	req("POST", fn+"echo", `{"n": 1}`, ada, 200)

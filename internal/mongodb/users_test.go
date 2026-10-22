@@ -823,3 +823,31 @@ func TestAPIKeyScopesOnMongoDB(t *testing.T) {
 		t.Errorf("an unparsable grant should allow nothing: %+v, %v", k.Scopes, err)
 	}
 }
+
+func TestKeySecretsKeepTheirTypeAndFingerprintAndNeverOverwrite(t *testing.T) {
+	ctx := context.Background()
+	s, realm := authFixture(t)
+	svc := usersOn(t, s, realm, "master-key-0123456789abcdef-012345", time.Date(2126, 10, 22, 12, 0, 0, 0, time.UTC))
+	k, err := svc.CreateKey(ctx, "HEALTH", "", "key:ops")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreateKey(ctx, "HEALTH", "", "key:ops"); !errors.Is(err, auth.ErrSecretExists) {
+		t.Errorf("a second HEALTH: %v", err)
+	}
+	if err := svc.SetSecret(ctx, "", "PLAIN", "v", "key:ops"); err != nil {
+		t.Fatal(err)
+	}
+	list, err := svc.ListSecrets(ctx)
+	if err != nil || len(list) != 2 || list[0].Name != "HEALTH" || list[0].Type != auth.SecretTypeKey || list[0].Fingerprint != k.Fingerprint || list[1].Type != "" {
+		t.Fatalf("list: %+v %v", list, err)
+	}
+	// Re-sealing under a new master key (secret rotate-key) keeps what the key is.
+	sec, _ := s.SecretByScope(ctx, "", "HEALTH")
+	if err := s.UpsertSecret(ctx, sec); err != nil {
+		t.Fatal(err)
+	}
+	if back, _ := s.SecretByScope(ctx, "", "HEALTH"); back.Type != auth.SecretTypeKey || back.Fingerprint != k.Fingerprint {
+		t.Errorf("after an upsert: %+v", back)
+	}
+}

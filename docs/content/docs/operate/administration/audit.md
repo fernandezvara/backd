@@ -58,6 +58,7 @@ Each realm with `auth: enabled` keeps an **audit trail**: one record per securit
 | `org.require_mfa` | An organization turns its second-factor requirement on or off | `value` |
 | `org.delete`, `org.deleted`, `org.reactivate` | An organization is deleted (access ends), its cleanup ends, or it is brought back | `by`, `job_id` / `counts` (documents removed per collection; never content) / `slug` |
 | `org.claims`, `org.owner_assign` | Claims are replaced; a manager is assigned | `keys` / `user` |
+| `secret.key.create`, `secret.key.delete` | A [field key](../../../build/configuration/field-keys/) is created, imported or deleted | `fingerprint`, `generated`; never the key |
 | `apikey.create`, `apikey.revoke` | An API key is created or revoked | `role`, `networks`, `expires_at` |
 | `invitation.create`, `invitation.revoke` | An invitation is created or revoked | `bound_to_email` (whether it is), `expires_at` |
 | `invitation.sent` | An invitation is emailed to its address | `expires_at` |

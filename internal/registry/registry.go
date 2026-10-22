@@ -88,6 +88,7 @@ type Collection struct {
 	Team         string
 	OnTeamDelete string
 	configLeaf   func(string) bool     // appConfig() in rules: whether a path is a value of the realm's configuration
+	Encrypted    []EncryptedField      // collection.yaml's fields:, sorted by path; nil: none
 	Files        map[string]*FileField // file fields from collection.yaml's files:; their schema is already in Schema and RawSchema
 }
 

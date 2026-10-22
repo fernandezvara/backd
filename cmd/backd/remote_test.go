@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -301,6 +302,29 @@ organizations:
 	c.expect(0, `secret "realm.SHARED" deleted`, "", "secret", "delete", "--realm", "acme", "--name", "SHARED")
 	c.expect(1, `no secret named "realm.SHARED"`, "", "secret", "delete", "--realm", "acme", "--name", "SHARED")
 	c.expect(0, `secret "KEY" deleted`, "", "secret", "delete", "--realm", "acme", "--database", "app", "--name", "KEY")
+
+	// Field keys: generated and shown once on standard output, imported from a variable.
+	code, keyOut, keyErr := c.run("", "secret", "create", "--realm", "acme", "--name", "HEALTH", "--type", "key", "--generate")
+	keyText := strings.TrimSpace(keyOut)
+	if code != 0 || len(keyText) != 43 || !strings.Contains(keyErr, "HEALTH:") || !strings.Contains(keyErr, "only time") || strings.Contains(keyErr, keyText) {
+		t.Fatalf("secret create: %d %q %q", code, keyOut, keyErr)
+	}
+	c.expect(1, "409 conflict", "", "secret", "create", "--realm", "acme", "--name", "HEALTH", "--type", "key", "--generate")
+	c.env["IMPORTED_KEY"] = keyText
+	_, _, importErr := c.run("", "secret", "create", "--realm", "acme", "--name", "COPY", "--type", "key", "--value", "env:IMPORTED_KEY")
+	fp := regexp.MustCompile(`HEALTH:([0-9a-f]{8})`).FindStringSubmatch(keyErr)
+	if fp == nil || !strings.Contains(importErr, "imported, fingerprint COPY:"+fp[1]) {
+		t.Errorf("the same key has the same fingerprint: %q vs %q", keyErr, importErr)
+	}
+	c.expect(2, "exactly one of --generate and --value", "", "secret", "create", "--realm", "acme", "--name", "X", "--type", "key")
+	c.expect(2, "--type must be key", "", "secret", "create", "--realm", "acme", "--name", "X", "--type", "text", "--generate")
+	c.expect(1, "400 validation_error", "", "secret", "create", "--realm", "acme", "--name", "X", "--type", "key", "--value", "key:short")
+	out = c.expect(0, "FINGERPRINT", "", "secret", "list", "--realm", "acme")
+	if !strings.Contains(out, "HEALTH") || !strings.Contains(out, "key") || strings.Contains(out, keyText) {
+		t.Errorf("secret list with keys:\n%s", out)
+	}
+	c.expect(0, `secret "realm.HEALTH" deleted`, "", "secret", "delete", "--realm", "acme", "--name", "HEALTH")
+	c.expect(0, `secret "realm.COPY" deleted`, "", "secret", "delete", "--realm", "acme", "--name", "COPY")
 
 	_, dataKey, _ := c.run(pw+"\n", "apikey", "create", "--realm", "acme", "--name", "service", "--expires", "1d")
 	c.env["BACKD_API_KEY"] = strings.TrimSpace(dataKey)
