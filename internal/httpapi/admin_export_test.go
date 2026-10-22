@@ -368,9 +368,9 @@ func TestAdminExportAnonymized(t *testing.T) {
 	}}
 	f.store.mu.Unlock()
 	mem := f.svc.Store.(*authtest.MemStore)
-	mem.SeedPortable("users", map[string]any{"id": ada.ID, "email": "ada@example.com", "pending_email": "new@example.com", "admin_networks": []any{"203.0.113.0/24"}, "login_networks": []any{"198.51.100.7"}, "roles": []any{}, "created_at": at, "updated_at": at})
+	mem.SeedPortable("users", map[string]any{"id": ada.ID, "email": "ada@example.com", "pending_email": "new@example.com", "admin_networks": []any{"203.0.113.0/24"}, "login_networks": []any{"198.51.100.7"}, "password_expired_at": at, "password_notified_at": at, "roles": []any{}, "created_at": at, "updated_at": at})
 	mem.SeedPortable("identities",
-		map[string]any{"id": "i1", "user_id": ada.ID, "provider": "password", "subject": ada.ID, "password_hash": "$argon2id$original", "created_at": at, "updated_at": at},
+		map[string]any{"id": "i1", "user_id": ada.ID, "provider": "password", "subject": ada.ID, "password_hash": "$argon2id$original", "password_changed_at": at, "created_at": at, "updated_at": at},
 		map[string]any{"id": "i2", "user_id": ada.ID, "provider": "google", "subject": "google-sub-1234", "email": "ada@gmail.com", "created_at": at, "updated_at": at})
 	mem.SeedPortable("mfa", map[string]any{"id": ada.ID, "secret": "sealed"})
 	mem.SeedPortable("orgs", map[string]any{"id": "org1", "name": "Acme Clinic"})
@@ -440,6 +440,15 @@ func TestAdminExportAnonymized(t *testing.T) {
 	}
 	if ok, err := f.svc.Hasher.Verify(ctx, "dev-p4ssw0rd!", ids[0]["password_hash"].(string)); err != nil || !ok {
 		t.Errorf("the staging password: %v %v", ok, err)
+	}
+	// The copy's password is new: not expired by what production did, and set after the export began.
+	if changed, ok := ids[0]["password_changed_at"].(time.Time); !ok || !changed.After(at) {
+		t.Errorf("password_changed_at of the staging password: %v", ids[0]["password_changed_at"])
+	}
+	for _, u := range read(lease, "_system/auth/users.jsonl") {
+		if u["password_expired_at"] != nil || u["password_notified_at"] != nil {
+			t.Errorf("an operator's password history in an anonymized copy: %v", u)
+		}
 	}
 	if got := read(lease, "_system/auth/orgs.jsonl"); len(got) != 1 || got[0]["name"] != "Acme Clinic" {
 		t.Errorf("organizations are kept: %v", got)

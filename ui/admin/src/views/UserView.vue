@@ -99,6 +99,10 @@ const linkBusy = ref(false)
 const linkError = ref('')
 const linkShown = ref<{ link: string; expiresAt: string }>()
 const linkResult = ref(false)
+// The link is shown once: it is not kept after the dialog closes.
+watch(linkResult, (open) => {
+  if (!open) linkShown.value = undefined
+})
 function showLink() {
   linkRedirect.value = ''
   linkError.value = ''

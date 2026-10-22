@@ -235,3 +235,56 @@ func TestExpiringEveryPasswordCanKeepTheSessions(t *testing.T) {
 		t.Errorf("after revoke: %v", err)
 	}
 }
+
+// A second step that was waiting when the passwords were expired must not turn into a session.
+func TestAChallengeMadeBeforeTheExpiryGivesNoSession(t *testing.T) {
+	ctx := context.Background()
+	f := newMFAFixture(t)
+	challenge := f.challenge(t)
+	*f.clock = f.clock.Add(time.Minute)
+	if _, err := f.svc.ExpireAllPasswords(ctx, "", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.VerifyMFA(ctx, challenge, MethodTOTP, f.code(t, 0), ""); !errors.Is(err, ErrPasswordExpired) {
+		t.Fatalf("the second step after the expiry: %v", err)
+	}
+	if sessions, _ := f.store.ListSessions(ctx, f.user.ID); len(sessions) != 0 {
+		t.Errorf("%d sessions after an expired first factor", len(sessions))
+	}
+	// A new password, then a new sign-in, is fine.
+	*f.clock = f.clock.Add(time.Minute)
+	if err := f.svc.SetPassword(ctx, f.user.Email, "dev-p4ssw0rd!2"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := f.svc.SignIn(ctx, f.user.Email, "dev-p4ssw0rd!2", "")
+	if err != nil || out.Challenge == nil {
+		t.Fatalf("sign in again: %+v %v", out, err)
+	}
+}
+
+// A first factor that is not a password has nothing to expire.
+func TestAChallengeOfAnotherFirstFactorIsNotRefused(t *testing.T) {
+	f := newMFAFixture(t)
+	if err := f.svc.RefuseExpiredFactor(context.Background(), f.user, "google"); err != nil {
+		t.Errorf("= %v", err)
+	}
+}
+
+func TestUsingAResetLinkUsesUpTheOthers(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _, ada := enrollFixture(t)
+	first, _, err := svc.CreateResetLink(ctx, ada.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _, err := svc.CreateResetLink(ctx, ada.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ResetPassword(ctx, first, "dev-p4ssw0rd!2"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ResetPassword(ctx, second, "dev-p4ssw0rd!3"); !errors.Is(err, ErrInvalidToken) {
+		t.Errorf("the other link after one was used: %v", err)
+	}
+}
