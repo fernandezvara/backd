@@ -485,6 +485,7 @@ func registerRemote(cfg *kli.Config) {
 		optional(cc, "format", "jsonl (a package, the default) or csv (a flat table per collection for spreadsheets: lossy, no files, can't be imported)")
 		optional(cc, "include", "auth: also export the realm's users with their password hashes, organizations, memberships, teams, second factors and push devices (whole realm only); a one-time export key is shown once")
 		optional(cc, "auth-key-out", "write the export key of --include auth to this file (readable only by you) instead of showing it")
+		directFlags(cc)
 		boolean(cc, "archive", "write one <out>.tar.gz instead of a directory")
 		boolean(cc, "no-files", "leave the files out: only the documents")
 	})
@@ -499,6 +500,7 @@ func registerRemote(cfg *kli.Config) {
 		boolean(cc, "skip-invalid", "leave out the documents that are invalid for the target instead of stopping")
 		optional(cc, "report", "write the problems found to this JSON file")
 		optional(cc, "auth-key", "the export key of a package exported with --include auth: key:<value>, env:<VAR> or file:<path>; without it users arrive without second factors and push devices")
+		directFlags(cc)
 	})
 
 	cons := cfg.Command("consents").ShortHelp("manage the consents users accept")

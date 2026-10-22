@@ -4906,7 +4906,8 @@ paths:
       summary: End an export
       description: |
         Releases the realm's export lease and writes the `export.done` audit record with what the
-        export streamed (collections, documents, files, bytes; `complete` as the client says). Needs
+        export streamed (collections, documents, files, bytes; `complete` as the client says), and
+        answers those totals. Needs
         full admin access and the lease in `X-Backd-Export`.
       operationId: adminExportDone
       security: [{ apiKey: [] }, { session: [] }]
@@ -4920,7 +4921,18 @@ paths:
           description: "`true` when the client wrote the whole package."
           schema: { type: boolean }
       responses:
-        "204": { description: Released. }
+        "200":
+          description: Released, with what the export streamed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  collections: { type: integer }
+                  documents: { type: integer, format: int64 }
+                  files: { type: integer, format: int64 }
+                  bytes: { type: integer, format: int64 }
+                  auth_unavailable: { type: integer, format: int64, description: Second factors and devices left behind because the realm's secrets key could not open them. }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "409":

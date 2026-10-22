@@ -33,6 +33,9 @@ type realmObjects struct {
 	users   func(realm string) *auth.Users
 	connect func(storage.ObjectsConfig) (*storage.Objects, error)
 
+	// access and secret, when set, replace the realm's secrets as the storage credentials.
+	access, secret string
+
 	mu    sync.Mutex
 	cache map[string]*cachedObjects
 }
@@ -44,6 +47,14 @@ type cachedObjects struct {
 
 func newRealmObjects(reg *registry.Registry, users func(string) *auth.Users) *realmObjects {
 	return &realmObjects{reg: reg, users: users, connect: storage.NewObjects, cache: map[string]*cachedObjects{}}
+}
+
+// withKeys makes every realm use these credentials, when both are given.
+func (s *realmObjects) withKeys(access, secret string) *realmObjects {
+	if access != "" && secret != "" {
+		s.access, s.secret = access, secret
+	}
+	return s
 }
 
 // settings returns the realm's storage settings, or errNoStorage.
@@ -84,13 +95,18 @@ func (s *realmObjects) For(ctx context.Context, realm string) (*storage.Objects,
 	if svc == nil {
 		return nil, errNoStorage
 	}
-	refs := []registry.SecretRef{{Realm: true, Name: st.AccessKey}, {Realm: true, Name: st.SecretKey}}
-	values, missing, err := svc.ResolveSecrets(ctx, refs, "")
-	if err != nil {
-		return nil, fmt.Errorf("%w: reading the access keys: %v", errStorageUnavailable, err)
-	}
-	if len(missing) > 0 {
-		return nil, fmt.Errorf("%w: the secret(s) %s of the realm are not set (backd secret set)", errStorageUnavailable, strings.Join(missing, ", "))
+	values := map[string]string{"realm." + st.AccessKey: s.access, "realm." + st.SecretKey: s.secret}
+	if s.access == "" {
+		refs := []registry.SecretRef{{Realm: true, Name: st.AccessKey}, {Realm: true, Name: st.SecretKey}}
+		var missing []string
+		var err error
+		values, missing, err = svc.ResolveSecrets(ctx, refs, "")
+		if err != nil {
+			return nil, fmt.Errorf("%w: reading the access keys: %v", errStorageUnavailable, err)
+		}
+		if len(missing) > 0 {
+			return nil, fmt.Errorf("%w: the secret(s) %s of the realm are not set (backd secret set)", errStorageUnavailable, strings.Join(missing, ", "))
+		}
 	}
 	cfg := storage.ObjectsConfig{
 		Provider: st.Provider, Endpoint: st.Endpoint, PublicEndpoint: st.PublicEndpoint, Region: st.Region, Bucket: st.Bucket, Prefix: st.Prefix,

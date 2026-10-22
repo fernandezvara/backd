@@ -103,7 +103,7 @@ func TestAdminExport(t *testing.T) {
 	}
 
 	// Finishing releases the realm and audits what was streamed.
-	if rec, _ := f.doH(t, "DELETE", url+"?complete=true", "", hdr); rec.Code != http.StatusNoContent {
+	if rec, _ := f.doH(t, "DELETE", url+"?complete=true", "", hdr); rec.Code != http.StatusOK {
 		t.Fatalf("finish: %d", rec.Code)
 	}
 	var started, done map[string]any

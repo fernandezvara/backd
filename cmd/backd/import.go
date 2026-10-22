@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -113,9 +114,15 @@ func importAction(c *kli.CommandContext) error {
 	if m.Flags.Auth && ek == nil {
 		fmt.Fprintln(stderr, "note: no --auth-key: users, identities, organizations and teams are imported, but without second factors, push devices and Apple tokens (users enroll again at their next sign-in)")
 	}
-	t, err := targetOf(c, false)
+	t, closeT, d, err := openTarget(c)
 	if err != nil {
 		return err
+	}
+	defer closeT()
+	if d != nil && !dry {
+		if err := d.refuseIfServed(context.Background(), flag(c, "force"), stderr); err != nil {
+			return err
+		}
 	}
 	proof, err := t.proof(ioOf(c))
 	if err != nil {

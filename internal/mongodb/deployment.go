@@ -81,3 +81,55 @@ func (p *Provisioner) verifyFingerprint(ctx context.Context) error {
 	}
 	return nil
 }
+
+// InstancesCollection holds, in the deployment database, one document per running `backd
+// serve`: the realms it serves and when it last said so. An offline import (`backd import
+// --direct`) refuses to run while an instance serving the realm is alive.
+const InstancesCollection = "instances"
+
+// InstanceLiveFor is how long after its last heartbeat an instance counts as running.
+const InstanceLiveFor = 45 * time.Second
+
+func instances(client *mongo.Client) *mongo.Collection {
+	return client.Database(DeploymentDatabase).Collection(InstancesCollection)
+}
+
+// Heartbeat records that the instance id serves realms, and forgets the instances that have
+// been silent for a day.
+func Heartbeat(ctx context.Context, client *mongo.Client, id string, realms []string, now time.Time) error {
+	_, err := instances(client).ReplaceOne(ctx, bson.D{{Key: "_id", Value: id}},
+		bson.D{{Key: "realms", Value: realms}, {Key: "heartbeat", Value: now}}, options.Replace().SetUpsert(true))
+	if err != nil {
+		return err
+	}
+	_, err = instances(client).DeleteMany(ctx, bson.D{{Key: "heartbeat", Value: bson.D{{Key: "$lt", Value: now.Add(-24 * time.Hour)}}}})
+	return err
+}
+
+// ReleaseInstance removes an instance that is shutting down.
+func ReleaseInstance(ctx context.Context, client *mongo.Client, id string) {
+	_, _ = instances(client).DeleteOne(ctx, bson.D{{Key: "_id", Value: id}})
+}
+
+// ActiveInstances returns the ids of the instances that serve the realm and have been heard
+// from within InstanceLiveFor.
+func ActiveInstances(ctx context.Context, client *mongo.Client, realm string, now time.Time) ([]string, error) {
+	cur, err := instances(client).Find(ctx, bson.D{
+		{Key: "realms", Value: realm},
+		{Key: "heartbeat", Value: bson.D{{Key: "$gt", Value: now.Add(-InstanceLiveFor)}}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var docs []struct {
+		ID string `bson:"_id"`
+	}
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	ids := make([]string, len(docs))
+	for i, d := range docs {
+		ids[i] = d.ID
+	}
+	return ids, nil
+}

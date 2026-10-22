@@ -513,7 +513,7 @@ func (a *adminAPI) exportFile(w http.ResponseWriter, r *http.Request, realm, fil
 }
 
 // finishExport answers DELETE /v1/{realm}/_admin/export: the CLI says the export ended, which
-// releases the realm and writes the audit record with what was streamed. 204.
+// releases the realm and writes the audit record with what was streamed. 200 with those totals, and how many second factors and devices could not be carried because the realm's secrets key was not available.
 func (a *adminAPI) finishExport(w http.ResponseWriter, r *http.Request) {
 	if !adminAccessOf(r).Full() {
 		rightRefused(w, r, "exporting a realm needs full admin access; you hold: "+adminAccessOf(r).String())
@@ -529,11 +529,15 @@ func (a *adminAPI) finishExport(w http.ResponseWriter, r *http.Request) {
 	for _, n := range l.documents {
 		docs += n
 	}
+	unavailable := l.outcomes["auth_unavailable"]
 	details := map[string]any{"collections": len(l.documents), "documents": docs, "files": l.files, "bytes": l.bytes, "complete": r.URL.Query().Get("complete") == "true"}
+	if unavailable > 0 {
+		details["auth_unavailable"] = unavailable
+	}
 	a.exports.mu.Unlock()
 	a.exports.release(realm, l)
 	usersOf(r).Audit(r.Context(), auth.AuditExportDone, "export:"+l.scope, details)
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, map[string]any{"collections": len(l.documents), "documents": docs, "files": l.files, "bytes": l.bytes, "auth_unavailable": unavailable})
 }
 
 // exportAuthPart streams a collection of authentication data. Fields sealed with the realm's

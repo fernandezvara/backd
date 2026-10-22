@@ -144,6 +144,10 @@ Practise restores regularly on a scratch environment. The reference's test (`mak
 4. the backup is restored, then the provision job and the stack run;
 5. the test checks that the user logs in with their password and reads their own draft (still hidden from anonymous callers), and that an API key and the published documents are back.
 
+## Reading a backup without restoring over production
+
+To look at a backup, or take part of it elsewhere, restore it into a throwaway MongoDB and run [`backd export --direct`](../administration/export-import/#reading-an-old-backup) against it with the configuration it was made under: you get a package you can inspect, import into another instance or turn into CSV, and production is not touched.
+
 ## After a restore
 
 {{< hint warning >}}

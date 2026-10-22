@@ -1293,14 +1293,14 @@ func TestContract(t *testing.T) {
 		f.reg.Realms["acme"].Settings.Storage = &broken
 		req("GET", exp+"?file=app/library/"+fileID, "", lh, 503)
 		f.reg.Realms["acme"].Settings.Storage = savedStorage
-		req("DELETE", exp+"?complete=true", "", lh, 204)
+		req("DELETE", exp+"?complete=true", "", lh, 200)
 		req("DELETE", exp, "", lh, 409)
 		req("GET", exp+"?include=auth&database=app", "", key, 400)
 		withAuth := req("GET", exp+"?include=auth", "", key, 200)
 		if len(withAuth["export_key"].(string)) != 43 {
 			t.Errorf("export key: %v", withAuth["export_key"])
 		}
-		req("DELETE", exp, "", with(key, "X-Backd-Export", withAuth["lease"].(string)), 204)
+		req("DELETE", exp, "", with(key, "X-Backd-Export", withAuth["lease"].(string)), 200)
 	}
 	// Importing a package: the start, a chunk validated and written, a file, the end.
 	{

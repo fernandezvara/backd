@@ -119,6 +119,8 @@ const (
 
 // Actors that aren't a credential.
 const (
+	// ActorOffline is the CLI working directly on MongoDB (export and import --direct).
+	ActorOffline = "cli:offline"
 	// ActorConfig applies realm.yaml's role and network seeds.
 	ActorConfig = "config:realm.yaml"
 	// ActorInstance is an operator with direct access to the instance's database and key
@@ -165,6 +167,14 @@ type AuditSource struct {
 
 type auditSourceKey struct{}
 
+type offlineKey struct{}
+
+// WithOffline marks a context as that of an offline operation: the audit records written
+// under it say `offline: true`. Only the CLI's direct mode sets it.
+func WithOffline(ctx context.Context) context.Context {
+	return context.WithValue(ctx, offlineKey{}, true)
+}
+
 // WithAuditSource returns a context whose audit records take their actor,
 // request id and client address from source, called when a record is
 // written (the actor may be known only after authentication).
@@ -203,6 +213,13 @@ func (s *Users) AuditAs(ctx context.Context, actor, action, target string, detai
 	src := auditSource(ctx)
 	if actor != "" {
 		src.Actor = actor
+	}
+	if off, _ := ctx.Value(offlineKey{}).(bool); off {
+		marked := map[string]any{"offline": true}
+		for k, v := range details {
+			marked[k] = v
+		}
+		details = marked
 	}
 	now := s.now()
 	rec := AuditRecord{

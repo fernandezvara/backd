@@ -75,10 +75,11 @@ func exportAction(c *kli.CommandContext) error {
 	if csvOut && flag(c, "no-files") {
 		return usageErr(errors.New("--no-files has no meaning with --format csv: a CSV extract never holds files"))
 	}
-	t, err := targetOf(c, false)
+	t, closeT, _, err := openTarget(c)
 	if err != nil {
 		return err
 	}
+	defer closeT()
 	if archive {
 		if _, err := os.Stat(out + ".tar.gz"); err == nil {
 			return fmt.Errorf("%s.tar.gz exists: choose another --out or remove it", out)
@@ -230,8 +231,14 @@ func exportAction(c *kli.CommandContext) error {
 		return err
 	}
 	_ = os.Remove(filepath.Join(out, progressName))
-	if _, err := t.callHeaders("DELETE", "_admin/export", url.Values{"complete": {"true"}}, nil, nil, lease); err != nil {
+	var totals struct {
+		AuthUnavailable int64 `json:"auth_unavailable"`
+	}
+	if _, err := t.callHeaders("DELETE", "_admin/export", url.Values{"complete": {"true"}}, nil, &totals, lease); err != nil {
 		fmt.Fprintf(stderr, "the package is complete, but the server wasn't told: %v\n", err)
+	}
+	if totals.AuthUnavailable > 0 {
+		fmt.Fprintf(stderr, "warning: %d second factors or push devices were left out because the realm's secrets key could not open them (with --direct, pass --master-key)\n", totals.AuthUnavailable)
 	}
 	if plan.ExportKey != "" {
 		if keyOut := str(c, "auth-key-out"); keyOut != "" {
@@ -485,4 +492,22 @@ func archiveDir(dir, dst string) error {
 		_ = os.Remove(dst)
 	}
 	return err
+}
+
+// openTarget is the server the command talks to: a running backd, or with --direct this
+// process over MongoDB. The returned direct is nil for a running backd.
+func openTarget(c *kli.CommandContext) (*target, func(), *direct, error) {
+	isDirect, err := usesDirect(c)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if !isDirect {
+		t, err := targetOf(c, false)
+		return t, func() {}, nil, err
+	}
+	d, err := openDirect(c)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return d.t, d.close, d, nil
 }

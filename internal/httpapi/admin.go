@@ -29,6 +29,7 @@ type adminAPI struct {
 	fns          *functions      // runs functions by hand (see adminInvoke)
 	fingerprint  string          // the config this instance runs (readyz shows it too)
 	version      string          // this build's version, recorded in export packages
+	offline      bool            // the CLI's direct mode: every request is a full administrator's
 	exports      exportLeases    // the export in progress per realm
 	reloadErrors func() []string // why the last live reload failed (BACKD_DEV); nil without one
 	// imageMaxPixels is the instance's image pixel limit, which a config check applies to the draft.
@@ -179,6 +180,15 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 // and sessions of users holding one of the realm's admin roles.
 func (a *adminAPI) requireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if a.offline {
+			// Direct mode: the operator holds the database, which is more than any admin
+			// credential. The records it writes say so.
+			setActor(r.Context(), auth.ActorOffline)
+			caller := auth.Caller{Key: &auth.APIKey{Name: "offline", Role: auth.KeyRoleAdmin}}
+			ctx := auth.WithOffline(context.WithValue(r.Context(), callerKey{}, caller))
+			next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, adminAccessKey{}, registry.AdminAccess{Write: registry.AllRights})))
+			return
+		}
 		// The realm's admin networks come first: outside them the admin
 		// API doesn't exist, and credentials aren't even looked at.
 		users := usersOf(r)

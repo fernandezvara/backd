@@ -9,7 +9,7 @@ toc: true
 `backd export` writes the documents and files of a realm to a **package**: a plain directory (or one `.tar.gz`) you can read with ordinary tools. It is the supported way to take data out of `backd` without `mongodump`: it goes through the [admin API](../admin/), so it needs no access to MongoDB, and it writes documents the way the API shows them.
 
 {{< hint style="note" title="Planned" >}}
-Direct mode against MongoDB, anonymized exports and encrypted fields are planned for the same feature. This page covers what exists now: exporting a package or a report, importing a package, and moving users with `--include auth`.
+Anonymized exports and encrypted fields are planned for the same feature. This page covers what exists now: exporting a package or a report, importing a package, moving users with `--include auth`, and working offline with `--direct`.
 {{< /hint >}}
 
 ## Exporting
@@ -111,6 +111,33 @@ backd import --realm clinic2 --from ./clinic-auth --auth-key file:./clinic.key
 Password hashes let anyone with the package try passwords offline, and the export key opens the authenticator secrets. Keep the package and the key apart, in different places, and delete both when the move is done. Both actions are audited (`export.auth`, `import`).
 {{< /hint >}}
 
+## Direct mode: without a running backd
+
+`--direct` runs the same export and import **in the command itself**, straight on MongoDB and `CONFIG_DIR`: use it when the server is stopped or can't be reached, or to read a backup.
+
+```
+backd export --direct --mongo-uri env:MONGO_URI --realm clinic --no-files --out ./clinic-offline
+backd import --direct --mongo-uri env:MONGO_URI --realm clinic --from ./clinic-offline
+```
+
+| Flag | Meaning |
+|---|---|
+| `--direct` | Work on MongoDB and `CONFIG_DIR` (an environment variable, as for `serve`) |
+| `--mongo-uri` | The MongoDB URI, or `env:<VAR>` / `file:<path>`; default `BACKD_MONGO_URI`, then `MONGO_URI` |
+| `--master-key` | The secrets master key (`env:` / `file:`); default `BACKD_SECRETS_KEY` |
+| `--storage-key`, `--storage-secret` | The storage credentials, instead of the realm's secrets (`env:` / `file:`) |
+| `--force` | Import while an instance serves the realm |
+
+- **What it needs.** `CONFIG_DIR` is read to know the schemas, the file fields and the indexes; the functions' bundles are not built, so no Deno is needed. The realm must have authentication enabled. The command validates and writes exactly as the network path does, and nothing is provisioned or changed in MongoDB's structure.
+- **The master key is not needed for data.** It **is** needed for two things: **files**, because the storage credentials are realm secrets (give `--storage-key` and `--storage-secret` instead, or leave files out with `--no-files`), and the **authentication data sealed by the realm** (authenticator secrets, push device tokens, Apple tokens) with `--include auth`: without `--master-key` they stay behind and the command says how many.
+- **Refuses while the realm is served.** Every `backd serve` records a heartbeat in MongoDB (`backd___deployment.instances`, every 15 seconds); an offline import will not write while an instance that serves the realm was heard from in the last 45 seconds, because two writers could clash. `--force` writes anyway, with a warning. An export only reads and never refuses, but it is not a snapshot while the realm is being written.
+- **Audited, as offline.** The records go into the realm's audit trail with the actor `cli:offline` and `offline: true`, like any other.
+- **No credentials are asked for.** Whoever holds MongoDB and the configuration already holds more than any admin account: protect that access accordingly.
+
+### Reading an old backup
+
+You do not need a separate tool to read a `mongodump`: restore it into any MongoDB with `mongorestore`, point `--mongo-uri` at it and run `backd export --direct` with the configuration the backup was made under. The result is an ordinary package you can inspect, import into another instance or hand to an analyst as CSV.
+
 ## Big realms and interruptions
 
 The server reads each collection in pages and streams it, so memory does not grow with the size of the data. Only **one export of a realm runs at a time** (`409 export_running`); an export that goes silent for ten minutes loses its place.
@@ -163,7 +190,7 @@ Collections are read one after another while the app keeps working, so a package
 | `GET /export?database=&collection=&files=false&fields=&where=&format=&include=` | `200` with the plan: a `lease`, the manifest as far as it can be known (counts are estimates), and the file fields of each collection. `409 export_running` while another export holds the realm. With `include=auth` the answer also has the one-time `export_key`. A previous `lease` in `X-Backd-Export` takes over an interrupted export of the same administrator |
 | `GET /export?part=<database>/<collection>.jsonl` | The collection's documents as `application/x-ndjson`, with the lease in `X-Backd-Export` |
 | `GET /export?file=<database>/<collection>/<file id>` | The file's object, through `backd`'s storage client |
-| `DELETE /export?complete=true` | `204`: the export ended; releases the realm and audits what was streamed |
+| `DELETE /export?complete=true` | `200`: the export ended; releases the realm, audits what was streamed and answers those totals, with how many second factors and devices could not be carried (`auth_unavailable`) |
 
 All of them need full admin access; the plan needs the re-authentication header for sessions. `409 export_lease` means the lease is missing, expired or another administrator's.
 
