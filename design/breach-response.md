@@ -1,7 +1,7 @@
 # Design: breach response and password expiry
 
 - **Issues:** features 29.2–29.6, docs 29.7, review 29.8 (milestone `29-breach-response`)
-- **Status:** decided after full code review
+- **Status:** decided after full code review; security review done (§11)
 - **Related designs:** [account-lifecycle.md](./account-lifecycle.md) (reset, change, `password-changed`), [mfa-passwordless.md](./mfa-passwordless.md) (reauth, session methods), [email-delivery.md](./email-delivery.md) (kinds, limits, queue), [export-import.md](./export-import.md) (packages hold password hashes)
 
 ## 1. The problem
@@ -91,3 +91,25 @@ The backup guide used to say reset emails could not be sent; that was wrong, and
 - `password.max_age` and a warning before it.
 - Dart client support in its own milestone.
 - Breach lists (k-anonymity checks against known-compromised passwords) at sign-up and reset.
+
+## 11. Security review (issue 29.8)
+
+Reviewed after 29.7, against the code. Fixed (with tests):
+
+- **A pending second step survived the expiry.** A challenge made by a correct password (a second-factor step, an enrollment, consents to accept) could be completed after the passwords were expired and gave a session. Finishing any of them now re-checks the password when the first factor was one (`refuseExpiredFactor`), so `password_expired` is also the answer there.
+- **Reset links outlived a reset.** Using one reset link left the user's other reset links valid, which matters more now that the notification link lasts a day and an administrator can make more. Setting a password with a link uses up all of the user's reset links.
+- **Anonymized copies inherited production's password history.** An anonymized export now gives the staging password a `password_changed_at` of the export and leaves out `password_expired_at` and `password_notified_at`, so an epoch in the staging realm does not expire the staging password.
+- **The reset link stayed in the admin interface's memory** after its dialog closed; it is cleared on close.
+
+Checked and sound: a wrong password, an unknown address, a disabled user and a login outside the user's networks all answer `invalid_credentials` after the same hash; `password_expired` follows only a verified password; the epoch moves forward only (a conditional upsert, and a clock behind answers `409`); expiring every password, ending every session, notifying and making reset links need full administration and a fresh proof for sessions, and one user's expiry and reset link follow the rules that stop an administrator acting on someone with more rights (tested); the link of a reset link is built from `BACKD_URL`/`email.public_url`, never from a request header, and neither it nor a token reaches the audit trail or a log; the notification marks a user told only after the message is queued and walks users in id order in batches of a hundred, so a repeat, a cancel, or a worker that dies and is replaced writes to nobody twice.
+
+Accepted, and documented where it matters:
+
+- **The refused sign-in is an oracle for a correct password**, and queues an email to the account's owner. That is what the design chose: the owner is told when someone has their old password. The email is limited per address and per client like a reset request.
+- **A crash between queueing a message and marking the user leaves one duplicate**, in preference to a lost message.
+- **A notification email that is not delivered within the job retention (48 hours) is dropped**, and its user was marked told; they can use *Forgot password*.
+- **A sign-in or a reset in flight at the instant of the expiry** can finish on the wrong side of it: a session created a millisecond after `DeleteAllSessions`, or a password set a millisecond before the epoch counted as expired. The runbook says to run `revoke-sessions` again when in doubt; the user resets again.
+- **Clocks between instances** must agree (as they must for every token): an instance whose clock runs ahead sets an epoch in the others' future, and passwords set meanwhile count as expired until then.
+- **`--keep-sessions` leaves stolen sessions alive**, by design (a planned rotation, not a breach).
+- **A user with an expired password and a live session is offered password re-authentication**, which refuses; they reset instead.
+- **Login codes and OAuth states are not purged** by ending every session: they are minted by a provider sign-in, last a minute and are single-use.

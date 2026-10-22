@@ -147,6 +147,8 @@ func TestAdminRightsNoEscalation(t *testing.T) {
 	}
 	for _, c := range []struct{ name, method, path, body string }{
 		{"password", "POST", "/users/" + f.adaID + "/password", `{"password":"a long enough password"}`},
+		{"expire the password", "POST", "/users/" + f.adaID + "/expire-password", ""},
+		{"a reset link", "POST", "/users/" + f.adaID + "/reset-link", ""},
 		{"address", "POST", "/users/" + f.adaID + "/email", `{"email":"ada2@example.com"}`},
 		{"disable", "PATCH", "/users/" + f.adaID, `{"disabled":true}`},
 		{"erase", "DELETE", "/users/" + f.adaID, ""},

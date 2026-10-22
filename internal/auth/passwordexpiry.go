@@ -137,6 +137,30 @@ func (s *Users) PasswordState(ctx context.Context) (PasswordStatus, error) {
 	return PasswordStatus{Epoch: epoch, Accounts: n}, err
 }
 
+// refuseExpiredFactor stops a sign-in that was started with a password and is finishing now: a
+// challenge (second factor, enrollment, consents) made before the password was expired must not
+// turn into a session after. Other first factors have no password to expire.
+func (s *Users) refuseExpiredFactor(ctx context.Context, u User, factor string) error {
+	if factor != ProviderPassword {
+		return nil
+	}
+	id, err := s.Store.IdentityOf(ctx, u.ID, ProviderPassword)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	expired, err := s.passwordExpired(ctx, u, id)
+	if err != nil {
+		return err
+	}
+	if expired {
+		return ErrPasswordExpired
+	}
+	return nil
+}
+
 // ExpirePassword expires one user's password: it stops opening the account until the user
 // resets it or an administrator sets a new one. Sessions are left alone.
 func (s *Users) ExpirePassword(ctx context.Context, email, reason string) error {

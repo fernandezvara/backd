@@ -74,6 +74,11 @@ func (s *Users) ResetPassword(ctx context.Context, token, password string) (Emai
 	if err := s.putPassword(ctx, u.ID, hash, now); err != nil {
 		return EmailToken{}, err
 	}
+	// The user chose a password: the other reset links they were sent (a notice of an expired
+	// password, a forgotten-password request, a link an administrator made) are used up too.
+	if err := s.Store.InvalidateEmailTokens(ctx, u.ID, string(email.TokenPurpose(email.ResetPassword)), now); err != nil && s.Log != nil {
+		s.Log.Error("use up the user's other reset links", "error", err)
+	}
 	if !u.EmailVerified {
 		yes := true
 		if err := s.Store.UpdateUser(ctx, u.ID, UserUpdate{EmailVerified: &yes}, now); err != nil {

@@ -80,6 +80,9 @@ func (s *Users) AcceptConsents(ctx context.Context, challenge string, given map[
 	if err != nil {
 		return Verified{}, err
 	}
+	if err := s.refuseExpiredFactor(ctx, u, c.Factor); err != nil {
+		return Verified{}, err
+	}
 	// What is still missing counts what the user holds plus what they accept now.
 	if err := s.checkConsentsGiven(u.Consents, given); err != nil {
 		return Verified{}, err

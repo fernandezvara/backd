@@ -256,7 +256,13 @@ func (s *Users) enrollChallenge(ctx context.Context, token string) (AuthChalleng
 	if errors.Is(err, ErrNotFound) || (err == nil && (u.Disabled || !u.ErasedAt.IsZero())) {
 		return AuthChallenge{}, User{}, ErrInvalidChallenge
 	}
-	return c, u, err
+	if err != nil {
+		return AuthChallenge{}, User{}, err
+	}
+	if err := s.refuseExpiredFactor(ctx, u, c.Factor); err != nil {
+		return AuthChallenge{}, User{}, err
+	}
+	return c, u, nil
 }
 
 // BeginEnrollment starts the TOTP setup of a user whose sign-in is waiting for one (their
