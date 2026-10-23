@@ -1,3 +1,15 @@
+## 0.0.5
+
+- New errors: `PasswordExpiredError` (`password_expired`, with
+  `resetEmailQueued`) and `FieldEncryptedError` (`field_encrypted`), matching
+  `backd-js`.
+- `fillBuckets` and `bucketKey` for aggregations over date buckets.
+- `Collection.deleteFile` and `Collection.downloadFile`, which the
+  documentation already described.
+- Generated types: `Meta.redacted`, the encrypted fields a caller may not see.
+- The example app builds with `file_picker` 11 (`FilePicker.pickFiles` is
+  static), which fixes `dart analyze --fatal-warnings` for the package.
+
 ## 0.0.4
 
 - Upgraded library and dependency versions across the package and the

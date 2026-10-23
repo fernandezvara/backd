@@ -259,7 +259,7 @@ await posts.delete(id);
 ```
 
 - `where` and `orderBy` use `backd`'s [query language](../../api/querying/) as it is: the client only serializes them. Write the operators with a leading `\$` in Dart (`'\$ilike'`, `'published_at': {'\$notNull': true}`), and keep the map inside an `orderBy` — a bare string.
-- Documents come back as `Map<String, Object?>`: your fields plus `id` and `_meta` (`created_at`, `updated_at`, `version`, and in realms with authentication `owner`, `created_by`, `updated_by`). Generated realm types (see [Typed client](#typed-client)) turn them into classes.
+- Documents come back as `Map<String, Object?>`: your fields plus `id` and `_meta` (`created_at`, `updated_at`, `version`, and in realms with authentication `owner`, `created_by`, `updated_by`). `_meta.redacted` lists the [encrypted fields](../../encryption/) the caller may not see: they come back `null`, and that `null` means hidden, not empty. Generated realm types (see [Typed client](#typed-client)) turn them into classes.
 - What a user sees and may change is decided by the collection's [access rules](../../auth/rules/). A document they can't read answers `NotFoundError`; an operation they can't do answers `ForbiddenError`, or `AuthenticationError` when they aren't signed in.
 - `iterate` follows each page's `next_cursor`, so documents created, changed or deleted while it runs never shift a page, and the end is as fast as the start. A cursor can't follow an `orderBy` on arrays, objects or fields of mixed types: `iterate` then fetches by offset (`skip`), where documents created or deleted meanwhile can be skipped or repeated. `after` can't be combined with `skip`; see [paging with a cursor](../../api/querying/#paging-with-a-cursor).
 
@@ -351,6 +351,7 @@ page.items[0]['_meta']['score'];          // the relevance; `language: 'es'` pic
 - **`aggregate(...)`**: `groupBy` and `metrics` take a string or a list, `orderBy` a key or result name (`'-count'`), `tz` an IANA zone, `limit` at most the collection's maximum. Without `groupBy` the answer is one group with an empty `key`, for a counter.
 - **`search(text, ...)`** takes a list's parameters except `orderBy` and `after`; pages with `skip` through the first 1,000 results.
 - **Errors:** `AggregateNotEnabledError`, `InvalidAggregateError` and `SearchNotEnabledError` (400, `ValidationError`s), `AggregateTooExpensiveError` and `SearchTooExpensiveError` (422) and `IndexBuildingError` (503, a `RetryableError`: the text index is being rebuilt, and `retryAfter` says when to try again).
+- **`fillBuckets(groups, field: 'paid_at', unit: BucketUnit.month, from: '2026-01', to: DateTime.now(), empty: {'sum_total': '0'})`** adds the buckets an aggregation left out, so a chart has a point for every day, week, month or year in the range. The groups must be grouped only by that one date field (`groupBy: 'paid_at:month'`); empty ones get `count: 0` and the metrics of `empty`; a `null` group stays first. `bucketKey(date, unit)` writes the key the server uses.
 - **Typed:** in a client typed from `backd types`, `aggregate` only accepts the declared fields (a bucket only on dates), and a collection that declares no `aggregate:` has none.
 
 ### Custom ids
@@ -432,6 +433,7 @@ final info = await docs.fileField('receipts');             // upload, maxSize, t
 - **`files(id, field).version(name)`** has `regenerate()`, `generate(params)` and `delete()` for a made version: they wait for a worker and resolve with the version's state (see [Versions of an image](../../files/functions/#versions-of-an-image)); they are what a function uses.
 - **`files(id, field).get(fileId: …)`** fetches the file's bytes — save them to disk, or hand them to `Image.memory`. It throws `version_unavailable` for a file that isn't ready yet.
 - **`fileLinks: true`** on `get` and `list` adds `url` and `expires_at` to every file. Links expire; use it for what is shown at once.
+- **`downloadFile(id, field, fileId)`** resolves with a fresh link, like `fileUrl` but never `null`: open it with `url_launcher` or hand it to an HTTP client. (The JavaScript client navigates the browser; a Dart app has no page to navigate.)
 - **`deleteFile(id, field, fileId, {ifMatch})`** removes one file. `files(id, field).delete()` clears the field.
 - **`files(id, field)`** is the lower level: `put`, `get` (the bytes), `link`, `delete` and `list`, which is also what a [function](../../files/functions/) uses.
 - **`fileField(field)`** says how the field takes files (asked once, then remembered): to show `max_size` and `types` and refuse a file before sending it.
@@ -693,6 +695,7 @@ Every answer that isn't 2xx throws a `BackdException`, or one of its subclasses:
 | `ValidationError` | 400 | `validation_error`, `invalid_json`, `invalid_query`, `invalid_header` |
 | `InvalidIdError` (a `ValidationError`) | 400 | `id_required`, `invalid_id`, `id_not_allowed`: the `id` of a [custom id](#custom-ids) create |
 | `AuthenticationError` | 401 | `unauthenticated`, `invalid_credentials` |
+| `PasswordExpiredError` (an `AuthenticationError`) | 401 | `password_expired`: the password is right, but an administrator expired it. `resetEmailQueued` says that backd queued the email with the link to choose a new one; when it is `false`, offer `auth.requestPasswordReset(email: …)` or tell the user to ask their administrator |
 | `ForbiddenError` | 403 | `forbidden` |
 | `NotFoundError` | 404 | `not_found` |
 | `ConflictError` | 409 | `email_taken`, `conflict`, `write_conflict` |
@@ -700,6 +703,7 @@ Every answer that isn't 2xx throws a `BackdException`, or one of its subclasses:
 | `NotOrgMemberError`, `OrgRequiresMFAError`, `OrgRoleRequiresMFAError` (`ForbiddenError`s) | 403 | `not_org_member` (also for an unknown organization), `org_requires_mfa`, `org_role_requires_mfa` (`details` names the role) |
 | `NotTeamMemberError` (a `ForbiddenError`) | 403 | `not_team_member`: not a member of the team and no team role there (the same for an unknown team) |
 | `TeamError` (a `ValidationError`) | 400 | `team_required`, `team_not_allowed` |
+| `FieldEncryptedError` (a `ValidationError`) | 400 | `field_encrypted`: a `where` or `orderBy` names an [encrypted field](../../encryption/), or asks more of it than equality; `details` name the field |
 | `InvalidExpandError`, `ExpandTooLargeError` (`ValidationError`s) | 400 | `invalid_expand` (`details` name the part), `expand_too_large`: see [expanding references](#expanding-references) |
 | `AggregateNotEnabledError`, `InvalidAggregateError`, `SearchNotEnabledError` (`ValidationError`s) | 400 | `aggregate_not_enabled`, `invalid_aggregate`, `search_not_enabled`: see [aggregations and search](#aggregations-and-search) |
 | `AggregateTooExpensiveError`, `SearchTooExpensiveError` | 422 | `aggregate_too_expensive`, `search_too_expensive` |

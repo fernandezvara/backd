@@ -86,6 +86,28 @@ class AuthenticationError extends BackdException {
   });
 }
 
+/// 401 `password_expired`: the password is right, but an administrator
+/// expired it, so it opens nothing until the user chooses a new one. Only the
+/// right password gets this answer (a wrong one is `invalid_credentials`).
+///
+/// [resetEmailQueued] says that backd queued the email with the link to choose
+/// a new password, so the app can say "we sent you an email". When it is false
+/// (the realm sends no email, or the limits held it back) offer
+/// `auth.requestPasswordReset`, or tell the user to ask their administrator.
+/// A signed-in user's session is not ended by this.
+final class PasswordExpiredError extends AuthenticationError {
+  PasswordExpiredError({
+    required super.status,
+    required super.code,
+    required super.message,
+    super.details = const [],
+    super.requestId,
+    super.cause,
+  }) : resetEmailQueued = details.any((d) => d.path == 'reset_email');
+
+  final bool resetEmailQueued;
+}
+
 /// 400 `realtime_not_enabled`: the collection doesn't declare `realtime: true`
 /// (or lost it).
 final class RealtimeNotEnabledError extends ValidationError {
@@ -295,6 +317,20 @@ final class TeamError extends ValidationError {
 /// part.
 final class InvalidExpandError extends ValidationError {
   const InvalidExpandError({
+    required super.status,
+    required super.code,
+    required super.message,
+    super.details,
+    super.requestId,
+    super.cause,
+  });
+}
+
+/// 400 `field_encrypted`: a `where` or `orderBy` names an encrypted field, or
+/// asks more of one than equality (`=` and `in`, on a field with
+/// `search: equality`). The [details] name the field.
+final class FieldEncryptedError extends ValidationError {
+  const FieldEncryptedError({
     required super.status,
     required super.code,
     required super.message,
@@ -551,6 +587,22 @@ BackdException errorForStatus(
   switch (code) {
     case 'consent_required':
       return ConsentRequiredError(
+        status: status,
+        code: code,
+        message: message,
+        details: details,
+        requestId: requestId,
+      );
+    case 'password_expired':
+      return PasswordExpiredError(
+        status: status,
+        code: code,
+        message: message,
+        details: details,
+        requestId: requestId,
+      );
+    case 'field_encrypted':
+      return FieldEncryptedError(
         status: status,
         code: code,
         message: message,

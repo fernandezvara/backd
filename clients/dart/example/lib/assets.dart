@@ -376,7 +376,7 @@ class _DraftsTabState extends State<DraftsTab> {
   }
 
   Future<void> upload(MainAssets a) async {
-    final picked = await FilePicker.platform.pickFiles();
+    final picked = await FilePicker.pickFiles();
     final path = picked?.files.single.path;
     if (path == null) return;
     final bytes = await File(path).readAsBytes();
