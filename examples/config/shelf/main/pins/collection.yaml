@@ -9,6 +9,19 @@ organization: required
 # their own teams' pins, and loses the list the moment they leave the team.
 realtime: true
 
+# Chapter 25: a pin may carry private notes. They are encrypted before they
+# reach MongoDB, with a key the operator holds a copy of (SHELF_NOTES, created
+# with `backd secret create`, see the chapter), so a dump or a backup shows
+# ciphertext. `reveal` decides who sees them in an answer: the member who
+# pinned it and the team's admins and owners. Everybody else who can read the
+# pin gets `null` and `_meta.redacted: ["private_notes"]`.
+fields:
+  private_notes:
+    encrypt: { key: SHELF_NOTES }
+    reveal: >
+      user != nil && (document.author == user.id
+      || hasOrgRole(document._meta.org, 'admin') || hasOrgRole(document._meta.org, 'owner'))
+
 # When a team is deleted, its pins go with it (the other choice is `keep`).
 on_org_delete:
   action: delete

@@ -235,8 +235,12 @@ func TestEncryptedFieldsTravelAsCiphertextAndOpenWithTheirKeys(t *testing.T) {
 	if _, err := dst.repo.Get(ctx, firstID(t, dst)); err == nil {
 		t.Fatal("a value opened without its key")
 	}
-	if _, err := dst.svc.CreateKey(ctx, "HEALTH", src.keys["HEALTH"], "recovery"); err != nil {
-		t.Fatal(err)
+	// Offline, with no running backd, which would refuse to start without the key anyway.
+	dc.expect(0, "imported, fingerprint HEALTH:", "", "secret", "create", "--realm", dst.name, "--type", "key", "--name", "HEALTH", "--value", "key:"+src.keys["HEALTH"], "--direct")
+	dc.expect(0, "exists already", "", "secret", "create", "--realm", dst.name, "--type", "key", "--name", "HEALTH", "--generate", "--skip-existing", "--direct")
+	dc.expect(1, "409", "", "secret", "create", "--realm", dst.name, "--type", "key", "--name", "HEALTH", "--generate", "--direct")
+	if out := dc.expect(0, "FINGERPRINT", "", "secret", "list", "--realm", dst.name, "--direct"); !strings.Contains(out, "HEALTH") || strings.Contains(out, src.keys["HEALTH"]) {
+		t.Errorf("secret list --direct: %s", out)
 	}
 	dst.ring.Reset()
 	if d, err := dst.repo.Get(ctx, firstID(t, dst)); err != nil || d["notes"] == nil {

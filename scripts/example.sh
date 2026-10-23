@@ -58,6 +58,12 @@ cat > "$seed_dir/stack.json" <<EOF
 EOF
 
 echo "Starting MongoDB, backd, the docs and nginx (the first run builds images)…"
+# The Shelf's pins keep private notes encrypted (tutorial chapter 25) with a key backd must find
+# at start: create it first, offline, if it isn't there. The example is disposable, so the value
+# is not kept.
+docker compose build backd >/dev/null
+docker compose run --rm backd provision >/dev/null
+docker compose run --rm --no-deps backd secret create --direct --realm shelf --type key --generate --name SHELF_NOTES --skip-existing >/dev/null
 docker compose up -d --build
 
 # The docs take longest: Hugo downloads the theme on the first run.

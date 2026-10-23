@@ -446,14 +446,16 @@ func registerRemote(cfg *kli.Config) {
 		LongHelp("The value is read from the terminal without echo, or the first line of\nstandard input when it isn't a terminal. Without --database it's the realm\nscope (realm.NAME in function.yaml); with it, that database's scope (NAME, for\nfunctions of that database only, never another's).").
 		Func(act("secret set", secretSet)).Config(secretFlags)
 	sec.SubCommand("create").ShortHelp("create a field key: generated and shown once, or imported").
-		LongHelp("Creates a key for field encryption (design: a `key` secret). With --generate the server makes 32\nrandom bytes and prints them, base64url, on standard output ONCE, with the fingerprint on standard error:\nsave the key outside backd, because nothing ever shows it again and a lost key means the values encrypted\nwith it are lost. With --value it imports a key you already hold (key:<base64url>, env:VAR or file:PATH),\nfor a restore or a staging copy. Needs a full administrator and a fresh proof that it is you. Audited with the\nname and fingerprint, never the key. " + adminAPINote).
+		LongHelp("Creates a key for field encryption (design: a `key` secret). With --generate the server makes 32\nrandom bytes and prints them, base64url, on standard output ONCE, with the fingerprint on standard error:\nsave the key outside backd, because nothing ever shows it again and a lost key means the values encrypted\nwith it are lost. With --value it imports a key you already hold (key:<base64url>, env:VAR or file:PATH),\nfor a restore or a staging copy. Needs a full administrator and a fresh proof that it is you. Audited with the\nname and fingerprint, never the key. With --direct it works straight on MongoDB and CONFIG_DIR, with no running backd: how\nyou create the key a field names when backd refuses to start without it, or restore keys after losing the secrets. " + adminAPINote).
 		Func(act("secret create", secretCreate)).Config(func(cc *kli.CommandConfig) {
 		remote(cc)
 		required(cc, "name", "the key's name, such as HEALTH")
 		required(cc, "type", "the kind of secret to create: key")
 		boolean(cc, "generate", "make a new random key and show it once")
 		optional(cc, "value", "import this key: key:<base64url>, env:VAR or file:PATH")
+		boolean(cc, "skip-existing", "succeed, changing nothing, when a secret with that name exists (for scripts)")
 		boolean(cc, "json", "print the answer as JSON")
+		directFlags(cc)
 	})
 	sec.SubCommand("rotate").ShortHelp("give a field key a new value, without rewriting any document").
 		LongHelp("Replaces the value of a field key and wraps every data key it protected again, so nothing in the database\nis rewritten and the change is instant. With --generate the new key is printed once on standard output; with\n--value you bring your own (key:<base64url>, env:VAR or file:PATH). --resume finishes a rotation that stopped\nhalf way: until it finishes the previous value is kept and nothing is lost. Keep your old copy for backups made\nbefore the rotation. Needs a full administrator and a fresh proof. " + adminAPINote).
@@ -464,9 +466,13 @@ func registerRemote(cfg *kli.Config) {
 		optional(cc, "value", "the new key: key:<base64url>, env:VAR or file:PATH")
 		boolean(cc, "resume", "finish a rotation that stopped before it ended")
 		boolean(cc, "json", "print the answer as JSON")
+		directFlags(cc)
 	})
 	sec.SubCommand("list").ShortHelp("list the realm's secrets (never their values)").
-		Func(act("secret list", secretList)).Config(remote)
+		Func(act("secret list", secretList)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		directFlags(cc)
+	})
 	sec.SubCommand("delete").ShortHelp("delete a secret; a function that declares it answers secret_missing again").
 		Func(act("secret delete", secretDelete)).Config(secretFlags)
 	sec.SubCommand("rotate-key").ShortHelp("re-encrypt every realm's secrets under a new master key").

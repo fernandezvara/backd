@@ -143,7 +143,7 @@ document.addEventListener('alpine:init', () => {
     dashboardZone: 'UTC',
     teamMembers: [],
     teamName: '',
-    pinDraft: { title: '', url: '', note: '' },
+    pinDraft: { title: '', url: '', note: '', private_notes: '' },
     invite: { email: '', roles: 'editor', link: null, sent: false },
     joinOffer: null, // { token, org, roles }: what ?join=<token> offers
     joinToken: null,
@@ -1173,9 +1173,9 @@ document.addEventListener('alpine:init', () => {
       this.busy = true
       this.error = null
       try {
-        const { title, url, note } = this.pinDraft
-        await main.fn('pin', { org: this.team, title, ...(url ? { url } : {}), ...(note ? { note } : {}) })
-        this.pinDraft = { title: '', url: '', note: '' }
+        const { title, url, note, private_notes } = this.pinDraft
+        await main.fn('pin', { org: this.team, title, ...(url ? { url } : {}), ...(note ? { note } : {}), ...(private_notes ? { private_notes } : {}) })
+        this.pinDraft = { title: '', url: '', note: '', private_notes: '' }
         await this.loadDashboard() // the list updates itself, from the stream
       } catch (e) {
         this.error = e.code === 'plan_limit' ? `${e.message}. An operator can put the team on the pro plan.` : e.message

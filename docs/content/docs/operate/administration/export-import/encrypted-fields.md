@@ -75,8 +75,10 @@ The **dry run lists which fields need which key**; a real import refuses (`422`)
 If an instance loses its master key or its secrets, the encrypted data in MongoDB is still there, and so are the wrapped data keys; only the field keys are missing. Save them back **under the same names**:
 
 ```
-backd secret create --realm clinic --type key --name HEALTH --value file:./health.key
+backd secret create --direct --realm clinic --type key --name HEALTH --value file:./health.key
 ```
+
+`--direct` works on MongoDB and `CONFIG_DIR` with no running `backd`, which matters here: `backd` refuses to start while a field names a key that doesn't exist, so the keys have to come back first.
 
 Its fingerprint must match the one you wrote down (it is printed). Everything becomes readable again, with no export and no import. A field whose key was **never saved** is unrecoverable: that is what field encryption is for, and why [the key page](../../../../build/configuration/field-keys/) asks you to save a key before using it.
 

@@ -157,6 +157,12 @@ case "${1:-up}" in
     # backd refuses stale or missing bundles: build them first, and wait for it (not every
     # compose implementation waits for a one-shot service).
     "${compose[@]}" run --rm functions-build
+    if [ "${EXAMPLES:-}" = 1 ]; then
+      # The Shelf's private notes (tutorial chapter 25) are encrypted with a key backd must find
+      # at start; the examples are disposable, so the value is not kept.
+      "${compose[@]}" run --rm backd provision >/dev/null
+      "${compose[@]}" run --rm --no-deps backd secret create --direct --realm shelf --type key --generate --name SHELF_NOTES --skip-existing >/dev/null
+    fi
     "${compose[@]}" up -d --scale "worker=${WORKERS:-1}"
 
     ready() { curl -sf --cacert "$ca" "$origin/readyz" >/dev/null; }

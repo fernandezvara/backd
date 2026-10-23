@@ -35,6 +35,8 @@ backd secret create --realm clinic --type key --name HEALTH --value env:HEALTH_K
 
 `--value` takes `key:<base64url>`, `env:<VAR>` or `file:<path>`; a key is 32 bytes written in base64url. Importing never prints the key: it answers with the fingerprint.
 
+With `--direct` the command works straight on MongoDB and `CONFIG_DIR`, with no running `backd` and no sign-in: how you create a key before the first start of a realm whose configuration already names it (`backd` refuses to start without it), and how you restore keys after losing the secrets. Add `--skip-existing` in a script to leave a key that exists as it is.
+
 A name that is taken, by a key or by any other secret, is refused (`409`): creating a key never overwrites one. Names follow the rule of every secret: upper-case letters, digits and `_`, starting with a letter. Keys live in the realm scope.
 
 ## Fingerprints

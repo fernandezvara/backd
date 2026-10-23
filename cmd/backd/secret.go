@@ -53,10 +53,11 @@ func secretSet(c *kli.CommandContext) error {
 }
 
 func secretList(c *kli.CommandContext) error {
-	t, err := targetOf(c, false)
+	t, closeT, _, err := openTarget(c)
 	if err != nil {
 		return err
 	}
+	defer closeT()
 	var page struct{ Items []secret }
 	if err := t.call("GET", "_admin/secrets", nil, nil, &page); err != nil {
 		return err

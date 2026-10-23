@@ -12,10 +12,11 @@ import (
 // secretCreate creates a field key: generated here by the server and printed once, or imported
 // from --value. The key goes to standard output alone, so it can be redirected to a file.
 func secretCreate(c *kli.CommandContext) error {
-	t, err := targetOf(c, false)
+	t, closeT, _, err := openTarget(c)
 	if err != nil {
 		return err
 	}
+	defer closeT()
 	if typ := str(c, "type"); typ != "key" {
 		return usageErr(fmt.Errorf("--type must be key (plain secrets are set with `backd secret set`), got %q", typ))
 	}
@@ -45,6 +46,11 @@ func secretCreate(c *kli.CommandContext) error {
 		Key         string `json:"key"`
 	}
 	if _, err := t.callHeaders("POST", "_admin/secrets", nil, body, &out, proof); err != nil {
+		var ae *apiError
+		if flag(c, "skip-existing") && errors.As(err, &ae) && ae.Status == 409 {
+			fmt.Fprintf(uio.stderr, "Key %s exists already: left as it is.\n", name)
+			return nil
+		}
 		return err
 	}
 	if flag(c, "json") {
@@ -77,10 +83,11 @@ func keyIsHeld(t *target, name string) (bool, error) {
 // secretRotate gives a key a new value and re-wraps what it protects. A generated key goes to
 // standard output once, like a created one.
 func secretRotate(c *kli.CommandContext) error {
-	t, err := targetOf(c, false)
+	t, closeT, _, err := openTarget(c)
 	if err != nil {
 		return err
 	}
+	defer closeT()
 	generate, resume, src := flag(c, "generate"), flag(c, "resume"), str(c, "value")
 	n := 0
 	for _, set := range []bool{generate, resume, src != ""} {
