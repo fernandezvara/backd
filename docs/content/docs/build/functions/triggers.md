@@ -26,7 +26,7 @@ export default defineFunction("main/on-paid", async (ctx) => {
 })
 ```
 
-`id` is the change's id (the same on every replay), `doc` is `{ id, version }`, `changed` the top-level fields that differ, `before`/`after` are present only for the paths in `fields`, `by` only with `session: true`, and `truncated` when the bodies were left out for size (over 256 KiB). The [config reference](../../configuration/config-dir/#triggers) has the full table; `fakeTrigger` in the [testing helpers](../testing/) builds it exactly.
+`id` is the change's id (the same on every replay), `doc` is `{ id, version }`, `changed` the top-level fields that differ, `before`/`after` are present only for the paths in `fields` (never an [encrypted field](../../encryption/): a job keeps its input in the database, so those paths are left out and listed in `redacted`; the function reads the document itself), `by` only with `session: true`, and `truncated` when the bodies were left out for size (over 256 KiB). The [config reference](../../configuration/config-dir/#triggers) has the full table; `fakeTrigger` in the [testing helpers](../testing/) builds it exactly.
 
 ## The function runs as itself
 

@@ -165,7 +165,7 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	claim, ok := d.claimKey(w, r, c.Name, body) // Idempotency-Key, if the request has one
+	claim, ok := d.claimKey(w, r, c.Name, body, len(c.Encrypted) > 0) // Idempotency-Key, if the request has one
 	if !ok {
 		return
 	}
@@ -240,7 +240,9 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 	shown, _ := d.revealerFor(r, c).view(doc)
 	out := render(shown)
 	d.auditData(r, auth.AuditDataCreate, c, doc["id"].(string))
-	claim.complete(r.Context(), http.StatusCreated, out)
+	// The remembered answer lives in the system database: it never holds an encrypted field in plain.
+	kept, _ := d.storedView(c, doc)
+	claim.complete(r.Context(), http.StatusCreated, render(kept))
 	w.Header().Set("ETag", etag(version(doc)))
 	writeJSON(w, http.StatusCreated, out)
 }

@@ -33,6 +33,7 @@ type collectionTriggers struct {
 	triggers                    []*registry.Trigger
 	timeouts                    map[string]time.Duration // by trigger name: the function's timeout
 	functions                   map[string][2]string     // by trigger name: database, function
+	encrypted                   []string                 // paths of the collection's encrypted fields
 }
 
 // empty reports whether no collection declares a trigger.
@@ -48,6 +49,9 @@ func buildIndex(reg *registry.Registry) *index {
 			ct := &collectionTriggers{
 				realm: c.Realm, database: c.Database, collection: c.Name, triggers: c.Triggers,
 				timeouts: map[string]time.Duration{}, functions: map[string][2]string{},
+			}
+			for _, ef := range c.Encrypted {
+				ct.encrypted = append(ct.encrypted, ef.Path)
 			}
 			for _, t := range c.Triggers {
 				fdb, fn := splitFunction(t.Function)
@@ -195,7 +199,12 @@ func (ct *collectionTriggers) job(t *registry.Trigger, c changefeed.Change, even
 		"depth": depth, "root": root, "at": c.At.UTC().Format(time.RFC3339),
 	}
 	if len(t.Fields) > 0 {
-		in["before"], in["after"] = project(c.Before, t.Fields), project(c.After, t.Fields)
+		// A job keeps its input in the database for as long as jobs are kept: an encrypted field
+		// is never part of it (the change arrives decrypted), the function reads it itself.
+		in["before"], in["after"] = withoutPaths(project(c.Before, t.Fields), ct.encrypted), withoutPaths(project(c.After, t.Fields), ct.encrypted)
+		if len(ct.encrypted) > 0 {
+			in["redacted"] = ct.encrypted
+		}
 	}
 	if t.Session {
 		if by := writerOf(c); by != "" {
@@ -245,6 +254,40 @@ func project(doc map[string]any, fields []string) any {
 		pick(doc, out, strings.Split(path, "."))
 	}
 	return out
+}
+
+// withoutPaths returns doc (a document or nil) without the values at paths, copying what it
+// changes.
+func withoutPaths(doc any, paths []string) any {
+	m, ok := doc.(map[string]any)
+	if !ok || len(paths) == 0 {
+		return doc
+	}
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	for _, p := range paths {
+		dropPath(out, strings.Split(p, "."))
+	}
+	return out
+}
+
+func dropPath(m map[string]any, path []string) {
+	if len(path) == 1 {
+		delete(m, path[0])
+		return
+	}
+	next, ok := m[path[0]].(map[string]any)
+	if !ok {
+		return
+	}
+	cp := make(map[string]any, len(next))
+	for k, v := range next {
+		cp[k] = v
+	}
+	m[path[0]] = cp
+	dropPath(cp, path[1:])
 }
 
 // pick copies the value at path from src into dst, keeping the nesting.

@@ -45,7 +45,7 @@ type idemClaim struct {
 //   - (nil, true) when the request carries no key: go on;
 //   - (claim, true) when the key is new: go on, then complete or release it;
 //   - (nil, false) when it already answered (a replay, or an error).
-func (d *documents) claimKey(w http.ResponseWriter, r *http.Request, scope string, body map[string]any) (*idemClaim, bool) {
+func (d *documents) claimKey(w http.ResponseWriter, r *http.Request, scope string, body map[string]any, keyed bool) (*idemClaim, bool) {
 	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 	if key == "" {
 		return nil, true
@@ -67,12 +67,18 @@ func (d *documents) claimKey(w http.ResponseWriter, r *http.Request, scope strin
 	}
 	raw, _ := json.Marshal(body) // keys sorted: the same content hashes the same
 	sum := sha256.Sum256(raw)
+	inputHash := hex.EncodeToString(sum[:])
+	if keyed && svc.Cipher != nil {
+		// A body that holds encrypted fields is hashed under the secrets key: a plain hash of a
+		// short value (an id number) could be guessed offline from a dump of the system database.
+		inputHash = svc.Cipher.MAC(string(raw))
+	}
 	rec := auth.IdempotencyRecord{
 		// "doc:" keeps these apart from functions' records (function names never hold a colon).
 		ID:          auth.IdempotencyID("doc:"+database, scope, caller.Subject(), key),
 		Function:    database + "/" + scope,
 		CallerActor: caller.Actor(),
-		InputHash:   hex.EncodeToString(sum[:]),
+		InputHash:   inputHash,
 		Mode:        "sync",
 	}
 	existing, claimed, err := svc.ClaimIdempotency(r.Context(), rec)

@@ -1128,3 +1128,22 @@ func TestOrderedTriggersGiveTheirJobsASerialKeyPerDocument(t *testing.T) {
 		t.Errorf("d1's jobs are not ordered by the time of the changes: %+v", d1)
 	}
 }
+
+func TestJobInputsNeverHoldEncryptedFields(t *testing.T) {
+	ct := &collectionTriggers{collection: "orders", encrypted: []string{"card", "billing.iban"}, functions: map[string][2]string{"t": {"main", "f"}}}
+	tr := &registry.Trigger{Name: "t", Fields: []string{"*"}}
+	before := map[string]any{"id": "o1", "card": "4111", "billing": map[string]any{"iban": "ES00", "city": "Madrid"}}
+	c := change(changefeed.Updated, "o1", 2, 1, before, map[string]any{"id": "o1", "card": "4222", "billing": map[string]any{"iban": "ES11", "city": "Madrid"}})
+	j := ct.job(tr, c, "e1")
+	for _, secret := range []string{"4111", "4222", "ES00", "ES11"} {
+		if strings.Contains(string(j.Input), secret) {
+			t.Errorf("the job input holds %q: %s", secret, j.Input)
+		}
+	}
+	if !strings.Contains(string(j.Input), "Madrid") || !strings.Contains(string(j.Input), `"redacted":["card","billing.iban"]`) {
+		t.Errorf("input = %s", j.Input)
+	}
+	if before["card"] != "4111" || before["billing"].(map[string]any)["iban"] != "ES00" {
+		t.Error("the change was modified")
+	}
+}

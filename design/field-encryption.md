@@ -357,3 +357,38 @@ Written as the issues land.
   - Filters are rewritten in the repository: a condition on a searchable field becomes one on its blind field; every other condition on an encrypted field, a comparison with `null` and a list holding `null` fail with `storage.ErrFieldEncrypted` (`400 field_encrypted`), for client filters, access filters and aggregations alike. A `null` is refused, not matched, because a missing field and a null can't be told apart through an index, and an access filter that guessed would over-grant under `!`.
   - Read rules: `==` and `in` against a document-independent value compile; `!=`, ranges, bare use and arrays are refused naming the field. The pushdown property test gained encrypted fields (`encrypted_pushdown_test.go`): searchable ones agree with the rules' in-memory evaluation across callers and documents with the field missing.
   - `_bidx` is a reserved name (not declarable in `schema.json`); a client's `_bidx` is dropped on write and the field is never read back.
+
+## 18. Security review (issue 16.9)
+
+The internal review followed §11's list: key secrets and their API, the write and read paths, logs and errors, rules and pushdown, reveal and admin access, migration, export and import, recovery. The question for each place was the same: **where else does an encrypted field's plaintext, a key, or a blind-index value end up, and who can read it there?**
+
+### Findings
+
+| # | Where | Finding | Decision |
+| --- | --- | --- | --- |
+| 1 | `Idempotency-Key` on a create or a batch | The answer remembered for a retry was the *revealed* document, stored in `<realm>___system.idempotency` for 24 hours: plaintext of encrypted fields in a dump, outside every key. | **Fixed.** The remembered answer hides every encrypted field (`null`, `_meta.redacted`) whoever asked; a replay therefore differs from the first answer in those fields. `storedView` in `internal/httpapi/reveal.go`. |
+| 2 | Same record, `input_hash` | A plain SHA-256 of the request body: a short encrypted value (an id number) could be guessed offline from a dump of the system database, the rest of the body being known. | **Fixed.** For batches and collections with encrypted fields the hash is a keyed hash (`SecretCipher.MAC`) under the master key. Other creates keep the plain hash (nothing sensitive). |
+| 3 | Trigger jobs | The change feed arrives decrypted (§17, 16.2); `before`/`after` went into the job's input, kept in the jobs collection for as long as the realm keeps jobs. | **Fixed.** Encrypted paths are left out of `before`/`after` and listed in `redacted`; the function reads the document with its admin access. A `when` rule still sees the plaintext in memory. |
+| 4 | Blind index | Equal values have equal indexes, so the database shows which documents share a value, and a unique blind index turns a write into an oracle for "does this value exist" for anyone who can write. | **Accepted, documented** (§6.1, security model page): use `search: equality` for values with a wide range. |
+| 5 | Errors and logs | Checked every error built in `fieldcrypt`, the repository, the migration and the handlers: they name the database, collection and path, never a value, a key or an index. Reveal rules that fail log the path and the rule error. A rule *error text* from `expr` can quote a value of the document (`document.x` in a type error). | **Accepted with a limit:** `fieldcrypt` errors are pinned by `TestErrorsNeverHoldValues`. A reveal rule that fails is logged with the rule engine's own error text, which this review did not prove free of document values in every case; the rule only runs on the plain document in memory and the log is the operator's. |
+| 6 | Audit | `data.reveal` records counts and the collection, never values; migration records carry counts only. | No finding. |
+| 7 | Exports | Ciphertext and wrapped data keys only; the CLI opens with keys the operator gives. Realm secrets, key secrets included, never leave. | No finding. |
+| 8 | Recovery | A realm cannot start without its keys, so a lost key fails closed. `secret create --direct` is the one way to bring a key back before the server starts; it needs the database credentials and the master key, which already read everything. | No finding. |
+| 9 | Realtime, restore, uploads, expand, transfer | Every output path goes through the revealer (§17, 16.4); the realtime resume token holds positions, not documents. | No finding. |
+| 10 | `metrics` | No metric is labelled by a field or a value. | No finding. |
+
+### What the review could not cover
+
+The **outside cryptography review** (format, key wrapping, associated data, nonce handling, blind index, normalization) is a person's work and is **pending**: the author of the code is not the reviewer. It is to be arranged by the project owner before production use of the feature is recommended. The brief for the reviewer:
+
+- **Scope:** `internal/fieldcrypt` (`format.go`, `ring.go`, `portable.go`) and the published specification, `docs/content/docs/operate/administration/export-import/encrypted-format.md`, with the vectors in `internal/fieldcrypt/testdata/vectors.json` (checked by `TestTheFormatMatchesItsPublishedVectors`, regenerated with `go test ./internal/fieldcrypt -update-vectors`).
+- **Questions:**
+  1. Is AES-256-GCM with a random 96-bit nonce per value and one data key per field safe for the expected volume (2^32 values per key is the usual bound; what happens to a very large collection and how soon should a generation change be forced)?
+  2. Are the associated data (realm, database, collection, path, document id) and the wrapping data (`backd-field-wrap-v1`, kind, id) unambiguous, and does binding to the document id cause any problem for `_batch`, custom ids or moves between organizations?
+  3. Is the blind index (HMAC-SHA-256 over path and canonical JSON of the normalized value, under its own index key) acceptable for equality search, what does it leak beyond equality and frequency, and is normalization (`trim`, `lower`, `upper`) free of collisions that merge distinct values?
+  4. Key hierarchy: field key → data keys (value key, index key) → values. Is the wrapping, the rotation (a version on the key, previous value kept sealed until every data key is re-wrapped) and the fingerprint (first 8 hex of a SHA-256 over a fixed label) sound? Does the fingerprint help an attacker?
+  5. Canonical JSON (no HTML escaping, sorted keys, number form): any ambiguity that makes two readers produce different bytes for the same value?
+  6. Format versioning: is the first byte enough to introduce another algorithm later without a downgrade path?
+- **Out of scope:** the secrets cipher for the field key's own storage (`SecretCipher`, reviewed with the secrets feature), TLS, the host.
+
+Until the review is done, the encryption guide says so (*Field encryption*, "Review status").

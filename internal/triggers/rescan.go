@@ -93,7 +93,7 @@ func Rescan(ctx context.Context, reg *registry.Registry, req RescanRequest, src 
 	if ct == nil {
 		return res, nil
 	}
-	ct = &collectionTriggers{realm: ct.realm, database: ct.database, collection: ct.collection, triggers: triggers, timeouts: ct.timeouts, functions: ct.functions}
+	ct = &collectionTriggers{realm: ct.realm, database: ct.database, collection: ct.collection, triggers: triggers, timeouts: ct.timeouts, functions: ct.functions, encrypted: ct.encrypted}
 
 	var batch []Job
 	flush := func() error {

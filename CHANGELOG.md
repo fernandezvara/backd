@@ -8,6 +8,7 @@ Until a stable release is declared, a minor release may have breaking changes; t
 
 ### Security
 
+- **Field encryption review:** an `Idempotency-Key` answer is no longer remembered with encrypted fields in plain (they come back `null` with `_meta.redacted` on a replay) and its request hash is keyed; the input of a trigger job leaves out encrypted fields and lists them in `redacted`.
 - **Breach response review:** a second step, an enrollment or a consent prompt that a password sign-in started before the passwords were expired can no longer finish into a session; using a reset link uses up the user's other reset links; an anonymized export no longer carries the production history of passwords (`password_expired_at`, `password_notified_at`) and gives the staging password a current change time.
 - **Export and import review:** the manifest's authentication parts and every collection part must be the path the format names and be checksummed (a hostile package could make `backd import` read a local file); an imported document's `_meta` is held to the fields the server writes; imported files are held to their field's size; `--auth-key-out` creates a `0600` file even over an existing one; anonymized users lose `admin_networks` and `login_networks`. See the security model page.
 

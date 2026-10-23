@@ -64,3 +64,20 @@ func TestWhoIsShownEncryptedFieldsInPlain(t *testing.T) {
 		t.Error("a nil revealer must show everything")
 	}
 }
+
+func TestKeptAnswersHoldNoEncryptedField(t *testing.T) {
+	c := &registry.Collection{Realm: "clinic", Database: "main", Name: "patients", Encrypted: []registry.EncryptedField{{Path: "tax_id", Key: "K"}}}
+	d := &documents{now: time.Now}
+	doc := map[string]any{"id": "p1", "tax_id": "t", "name": "Ada", "_meta": map[string]any{"version": 1}}
+	kept, hidden := d.storedView(c, doc)
+	if kept["tax_id"] != nil || kept["name"] != "Ada" || len(hidden) != 1 {
+		t.Errorf("kept = %v, hidden = %v", kept, hidden)
+	}
+	if doc["tax_id"] != "t" {
+		t.Error("the document was modified")
+	}
+	plain := &registry.Collection{Name: "notes"}
+	if same, _ := d.storedView(plain, doc); same["tax_id"] != "t" {
+		t.Error("a collection without encrypted fields keeps its answers whole")
+	}
+}

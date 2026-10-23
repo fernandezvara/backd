@@ -106,7 +106,7 @@ func (d *documents) batch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	a := d.accessFor(r)
-	claim, ok := d.claimKey(w, r, "_batch", body) // Idempotency-Key, if the request has one
+	claim, ok := d.claimKey(w, r, "_batch", body, true) // Idempotency-Key, if the request has one
 	if !ok {
 		return
 	}
@@ -159,6 +159,7 @@ func (d *documents) batch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rendered := make([]map[string]any, len(results))
+	kept := make([]map[string]any, len(results)) // what an idempotent retry is told: encrypted fields never in plain
 	reveals := map[*registry.Collection]*revealer{}
 	for i, doc := range results {
 		rv, ok := reveals[ops[i].collection]
@@ -168,6 +169,8 @@ func (d *documents) batch(w http.ResponseWriter, r *http.Request) {
 		}
 		shown, _ := rv.view(doc)
 		rendered[i] = render(shown)
+		k, _ := d.storedView(ops[i].collection, doc)
+		kept[i] = render(k)
 		id, _ := doc["id"].(string)
 		action := map[string]string{"create": auth.AuditDataCreate, "delete": auth.AuditDataDelete}[ops[i].kind]
 		if action == "" {
@@ -179,7 +182,7 @@ func (d *documents) batch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	answer := map[string]any{"results": rendered}
-	claim.complete(r.Context(), http.StatusOK, answer)
+	claim.complete(r.Context(), http.StatusOK, map[string]any{"results": kept})
 	writeJSON(w, http.StatusOK, answer)
 }
 

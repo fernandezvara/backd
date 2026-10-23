@@ -16,6 +16,10 @@ fields:
     reveal: user != nil && hasRole(user, 'doctor')
 ```
 
+## Review status
+
+The feature has had an internal security review (see the [security model](../../operate/administration/security/)). The storage format is published, with test vectors, so that it can be reviewed by someone else; an **outside cryptography review is still pending**. Until it is done, weigh that when the data is regulated.
+
 ## What it protects, and what it doesn't
 
 | Protected | Not protected |

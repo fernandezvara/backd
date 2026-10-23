@@ -117,7 +117,7 @@ Idempotency-Key: order-42
 
 It is the mechanism of [function calls](../../functions/calling/#idempotency), applied to creates and to [batches](#batch-writes):
 
-- The first request with a key runs, and its answer is remembered for **24 hours**. The same key with the same body returns that answer again, `201` with the document **as it was created** (even if it was changed or deleted since), with `Idempotent-Replayed: true`. Two bodies with the same content, in any key order or spacing, are the same body.
+- The first request with a key runs, and its answer is remembered for **24 hours**. The same key with the same body returns that answer again, `201` with the document **as it was created** (even if it was changed or deleted since), with `Idempotent-Replayed: true`. Two bodies with the same content, in any key order or spacing, are the same body. The remembered answer is kept in the realm's system database, so a collection with [encrypted fields](../../encryption/) remembers it with those fields `null` and listed in `_meta.redacted`, whoever may read them: a replay never holds them in plain, read the document for their value.
 - The same key with **another body** answers `422 idempotency_key_reused`. The same key while the first request is **still running** answers `409 request_in_progress`: wait and retry.
 - **Only a success is remembered.** A request that fails (invalid body, refused by the rules, a unique conflict) created nothing, so the key stays free for the corrected retry.
 - A key is private to the **collection** and the **caller**: another user, or an API key, can use the same string without meeting it. 1–200 characters of letters, digits, `.`, `_`, `:` and `-`; anything else is `400`.

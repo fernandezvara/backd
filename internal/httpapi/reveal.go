@@ -66,6 +66,15 @@ func (d *documents) revealerFor(r *http.Request, c *registry.Collection) *reveal
 	return rv
 }
 
+// storedView is doc with every encrypted field hidden, whoever asks: for answers kept in the
+// system database (idempotency records), which must not hold plaintext.
+func (d *documents) storedView(c *registry.Collection, doc map[string]any) (map[string]any, []string) {
+	if len(c.Encrypted) == 0 {
+		return doc, nil
+	}
+	return (&revealer{c: c, mode: revealNone, d: d}).view(doc)
+}
+
 // view returns doc as the caller may see it and the paths it hides. doc is not modified.
 func (rv *revealer) view(doc map[string]any) (map[string]any, []string) {
 	if rv == nil {
