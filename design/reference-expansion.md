@@ -151,7 +151,7 @@ Instance values are logged at startup. Collections can only lower them.
 
 ## 10. JavaScript client (issue 15.4)
 
-- **Option:** `expand` on `get`, `list` and batch reads, as a string or a small builder: `expand(["author", ["name", "avatar"]], "tags")`.
+- **Option:** `expand` on `get` and `list`, as a string or a small builder: `expand(["author", ["name", "avatar"]], "tags")`.
 - **Never automatic:** the client never adds `expand` by default or in helpers.
 - **Types:** TypeScript types put expanded results in `_expanded` with `T | null`. `truncated` is surfaced.
 - **Errors:** `invalid_expand` and `expand_too_large` as typed `BackdError`s.
