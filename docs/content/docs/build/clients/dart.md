@@ -22,7 +22,7 @@ The package's only dependencies are Dart-team packages (`crypto` for file checks
 
 ## Example app
 
-The repository includes a Flutter desktop demo built with this client — [Shelf](https://github.com/fernandezvara/backd/tree/main/clients/dart/example), the same app the [JavaScript tutorial](../../../tutorial/) builds: sign-in with the second-factor and magic-link steps, member and curator flows, publishing and public links, files, app configuration and the live pins view. It is also `backd types --lang dart` end-to-end: every call goes through the realm's generated types.
+The repository includes a Flutter desktop demo built with this client — [Shelf](https://github.com/fernandezvara/backd/tree/main/clients/dart-examples), the same app the [JavaScript tutorial](../../../tutorial/) builds: sign-in with the second-factor and magic-link steps, member and curator flows, publishing and public links, files, app configuration and the live pins view. It is also `backd types --lang dart` end-to-end: every call goes through the realm's generated types.
 
 For a smaller start, the README's quickstart is [a standalone script](#a-standalone-script).
 

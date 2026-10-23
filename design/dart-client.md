@@ -28,7 +28,7 @@ Three deliveries ride on the client: its own page on the docs site, a Flutter de
 | Cache | The same revalidation cache (ETag/`If-None-Match`, credential-scoped) and the same `_config` cache |
 | OAuth on desktop | The app owns the redirect (deep link or loopback server); the client exposes `signInWith` + `completeSignIn`, no `completeOnLoad` |
 | Flutter web | Out of scope for v1 (SSE needs streaming responses `dart:html`/`package:web` fetch doesn't give us cleanly); a follow-up |
-| Demo | Flutter desktop app in `clients/dart/example/` (own pubspec, path dependency; fallback `examples/flutter-shelf`) |
+| Demo | Flutter desktop app in `clients/dart-examples/` (own pubspec, path dependency; outside the package so that publishing needs no Flutter SDK) |
 | Versioning | `dart-v*` tags → `publish-dart.yml`; `0.0.x` until parity, then aligned with server/`backd-js` releases |
 
 ## 3. Feature recopilation: the `backd-js` surface
@@ -67,7 +67,8 @@ clients/dart/
 │                           # config.dart, realtime.dart, cache.dart, storage.dart,
 │                           # oauth.dart, errors.dart, expand.dart, buckets.dart
 ├── test/                   # dart test, mocked HttpClient
-└── example/                # the Shelf Flutter demo (§13), own pubspec, path dep
+
+clients/dart-examples/      # the Shelf Flutter demo (§13), own pubspec, path dep ../dart
 ```
 
 - **Dependencies:** kept to a minimum, mirroring `backd-js`'s "no dependencies" stance. `dart:io`, `dart:convert` and `dart:async` do the transport, JSON and streams. The only package dependencies allowed are Dart-team packages — `package:crypto` for file checksums; SSE and multipart are parsed by hand (both are small).
@@ -214,7 +215,7 @@ Same backd-specific types: `_meta`, file-field details, `_expanded` per referenc
 
 ## 13. Shelf Flutter demo (issue 28.11)
 
-A Flutter app in `clients/dart/example/` (own `pubspec.yaml` with a path dependency on `package:backd`; `examples/flutter-shelf` as the fallback if packaging rules push it out). Desktop targets only — Linux, macOS, Windows — and it does what the JS Shelf app does: sign-in (including the second factor and magic link), the member/curator flows, publishing and public links, files and shared links, app configuration, and the live pins chapter's realtime view. It compiles its realm types with `backd types --lang dart`, demonstrating the generator end-to-end, and CI at least analyzes and builds one desktop target (`flutter build linux`) so it can't rot.
+A Flutter app in `clients/dart-examples/` (own `pubspec.yaml` with a path dependency on `package:backd`). It lives beside the package, not inside it: `dart pub get` in `clients/dart` then needs no Flutter SDK, and publishing runs on bare Dart. Desktop targets only — Linux, macOS, Windows — and it does what the JS Shelf app does: sign-in (including the second factor and magic link), the member/curator flows, publishing and public links, files and shared links, app configuration, and the live pins chapter's realtime view. It compiles its realm types with `backd types --lang dart`, demonstrating the generator end-to-end, and CI at least analyzes and builds one desktop target (`flutter build linux`) so it can't rot.
 
 ## 14. Exclusions and the admin boundary
 

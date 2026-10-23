@@ -139,6 +139,17 @@ blog__main.posts
 shop__orders.items
 ```
 
+### Upgrading to v0.9.1
+
+v0.9.1 adds [field encryption](../build/encryption/), breach-response tools (password expiry, ending every session, one-time reset links) and export and import with anonymized copies for staging. Nothing breaks for existing configuration, but the release adds system collections and validators, so it needs `backd provision`. What to check:
+
+1. **Run `backd provision`** with an admin-privileged `MONGO_URI`. It creates the `data_keys` and `security_state` system collections and updates the validators of the existing ones. With `PROVISION_MODE=verify` the instances refuse to start until it has run.
+2. **Field encryption and password expiry are off until you use them.** A field is encrypted when `collection.yaml` gives it `fields.<path>.encrypt.key`; create the key first with `backd secret create` (it is shown once: save it).
+3. **Grant the service's user the new collections** if you run with least-privilege grants: `backd databases --collections` prints them with the others.
+4. **Run `backd types` again** to get `redacted` in the generated TypeScript types; `backd types --lang dart` does the same for Dart.
+5. **The Dart client moves to the release train.** `package:backd` 0.9.1 goes with `backd` v0.9.1 and `backd-js` 0.9.1; it was `0.0.5`, and a caret on a `0.0.x` version never picks a newer one, so change `backd: ^0.0.5` to `backd: ^0.9.1`.
+6. **Export and import are stricter.** An import checks the paths and checksums of every part of a package and holds `_meta` and file sizes to the fields' rules; a package that was edited by hand may now be refused.
+
 ### Upgrading to v0.9.0
 
 v0.9.0 adds the [Dart client](../build/clients/dart/) and the generators around it. The server changes only add: no new collections, no new configuration, nothing to provision. What to check:

@@ -47,9 +47,9 @@ js-integration:
 	cd clients/js && npm ci --silent
 	clients/js/test/integration/run.sh
 
-# Dart and pub.dev (needs Dart or the Flutter SDK; see scripts/check-dart-package.sh).
+# Dart and pub.dev (needs Dart; see scripts/check-dart-package.sh).
 dart-package:
-	cd clients/dart && flutter pub get >/dev/null 2>&1 || dart pub get
+	cd clients/dart && dart pub get
 	scripts/check-dart-package.sh
 
 # Dart client against a real backd + MongoDB (docker-compose.dart.yml).

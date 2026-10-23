@@ -13,7 +13,7 @@ collection and function call in the app goes through them.
 
 ```console
 $ make dev-examples      # a backd with the shelf realm on :8080
-$ cd clients/dart/example
+$ cd clients/dart-examples
 $ flutter pub get
 $ flutter run -d linux   # or macos / windows
 ```
@@ -25,7 +25,7 @@ member/curator accounts the dev stack ships.
 ## The generated types
 
 ```console
-$ CONFIG_DIR=examples/config backd types --realm shelf --lang dart --out clients/dart/example/lib/backd
+$ CONFIG_DIR=examples/config backd types --realm shelf --lang dart --out clients/dart-examples/lib/backd
 ```
 
 regenerates `lib/backd/types.dart` and `lib/backd/realm.json`; `--check` in

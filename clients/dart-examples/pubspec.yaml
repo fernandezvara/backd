@@ -33,7 +33,7 @@ dependencies:
 
   # The client under test, from the package next door.
   backd:
-    path: ..
+    path: ../dart
   file_picker: ^11.0.3
 
 dev_dependencies:
