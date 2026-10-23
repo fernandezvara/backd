@@ -140,9 +140,9 @@ Instance values are logged at startup. Collections can only lower them.
   - conditional GET (backlog) applies only without `expand`.
 - **Writes:** creates and updates don't expand their responses.
 
-## 9. Batch reads and functions (issue 15.3)
+## 9. Functions, and why not `_batch` (issue 15.3)
 
-- **`_batch`:** read operations accept `expand` with the same syntax and limits. The total cap applies per batch.
+- **`_batch`:** has no read operations (every operation writes), so there is nothing to expand there. A function that needs related documents reads with `ctx.db`, below. If `_batch` ever gains reads, they take `expand` with the same syntax and limits and the total cap applies per batch.
 - **Functions:**
   - `ctx.db.collection("posts").get(id, { expand: "author(name)" })` and `.list({ where, expand })`;
   - `ctx.admin.db` expands with admin access, which the docs make explicit;
@@ -201,7 +201,7 @@ Documentation is a priority for this feature:
 |---|---|---|
 | 15.1 | Declare references in `collection.yaml` | — |
 | 15.2 | Expand references in reads | 15.1 |
-| 15.3 | Expansion in batch reads and functions | 15.2 |
+| 15.3 | Expansion in functions (`_batch` has no reads) | 15.2 |
 | 15.4 | Expansion in the JavaScript client | 15.2 |
 | 15.5 | Shelf: item authors through expansion | 15.4 |
 | 15.6 | Reference expansion documentation | 15.5 |
