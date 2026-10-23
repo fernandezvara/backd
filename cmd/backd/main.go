@@ -86,7 +86,10 @@ type app struct {
 	client *mongo.Client
 
 	userServices func(string) *auth.Users // built once by realmUsers
-	fingerprint  string                   // of CONFIG_DIR (registry.Fingerprint)
+	// rings are the realms' field encryption, built on first use (fieldRing). A pointer, because
+	// a live reload copies the app and starts over with the new config.
+	rings       *ringState
+	fingerprint string // of CONFIG_DIR (registry.Fingerprint)
 	// withWorker runs the worker role in this process too (serve --with-worker).
 	withWorker bool
 	// metrics records what this process does; nil when METRICS_ADDR is unset.
@@ -242,6 +245,13 @@ func serve(ctx context.Context, a *app) error {
 	if err := a.syncRoles(ctx); err != nil {
 		return err
 	}
+	if err := checkEncryptionKeys(ctx, a.reg, a.realmUsers()); err != nil {
+		return err
+	}
+	if err := a.ensureDataKeys(ctx); err != nil {
+		return err
+	}
+	a.logEncryption(ctx)
 	a.logSecurityWarnings()
 	a.logStorageSecrets(ctx, a.realmUsers())
 	a.logProviders(ctx, a.realmUsers())
@@ -584,7 +594,7 @@ func (a *app) handlerConfig() httpapi.Config {
 		ExecutorToken:     a.cfg.ExecutorToken,
 		Log:               a.log,
 		Registry:          a.reg,
-		Store:             &mongodb.Store{Client: a.client},
+		Store:             a.documentStore(),
 		Ready:             func(ctx context.Context) error { return a.client.Ping(ctx, nil) },
 		MaxBodyBytes:      a.cfg.MaxBodyBytes,
 		MaxUploadBytes:    a.cfg.MaxUploadBytes,
@@ -713,7 +723,7 @@ func (a *app) realmUsers() func(string) *auth.Users {
 	services := map[string]*auth.Users{}
 	for name, rl := range a.reg.Realms {
 		if rl.Settings.AuthEnabled {
-			services[name] = &auth.Users{Store: mongodb.NewAuthStore(a.client, name), Hasher: hasher, Settings: rl.Settings, Realm: name, Log: a.log, Cipher: cipher, Cache: cache, Metrics: a.metrics}
+			services[name] = &auth.Users{Store: mongodb.NewAuthStore(a.client, name), Hasher: hasher, Settings: rl.Settings, Realm: name, Log: a.log, Cipher: cipher, Cache: cache, Metrics: a.metrics, KeyUses: rl.EncryptionKeyUses}
 		}
 	}
 	a.userServices = func(realm string) *auth.Users { return services[realm] }
@@ -759,6 +769,40 @@ func (a *app) logStorageSecrets(ctx context.Context, users func(string) *auth.Us
 			a.log.Info("realm storage", "realm", rl.Name, "provider", st.Provider, "bucket", st.Bucket, "prefix", st.Prefix)
 		}
 	}
+}
+
+// checkEncryptionKeys refuses to start when a field is declared encrypted with a key that does
+// not exist, or that is a plain secret, so no document is ever written, or read, without it
+// (design/field-encryption.md §3.2). The messages name the field and what to run.
+func checkEncryptionKeys(ctx context.Context, reg *registry.Registry, users func(string) *auth.Users) error {
+	var errs []error
+	for _, rl := range reg.SortedRealms() {
+		names := rl.EncryptionKeyNames()
+		if len(names) == 0 {
+			continue
+		}
+		svc := users(rl.Name)
+		if svc == nil {
+			errs = append(errs, fmt.Errorf("realm %s: fields are declared encrypted (%s), but the realm has no auth, so it has no keys: field encryption needs `auth` enabled in realm.yaml", rl.Name, strings.Join(rl.EncryptionKeyUses(names[0]), ", ")))
+			continue
+		}
+		for _, name := range names {
+			uses := strings.Join(rl.EncryptionKeyUses(name), ", ")
+			sec, err := svc.Store.SecretByScope(ctx, "", name)
+			switch {
+			case errors.Is(err, auth.ErrSecretNotFound):
+				errs = append(errs, fmt.Errorf("realm %s: %s names the key %s, which does not exist: create it with `backd secret create --realm %s --type key --generate --name %s` and save the value it prints once", rl.Name, uses, name, rl.Name, name))
+			case err != nil:
+				return fmt.Errorf("realm %s: reading the key %s: %w", rl.Name, name, err)
+			case sec.Type != auth.SecretTypeKey:
+				errs = append(errs, fmt.Errorf("realm %s: %s names %s, which is a plain secret, not a key: keys are created with `--type key`", rl.Name, uses, name))
+			}
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("invalid encryption setup:\n%w", errors.Join(errs...))
+	}
+	return nil
 }
 
 // logProviders says which sign-in providers each realm offers and the callback address

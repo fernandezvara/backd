@@ -241,6 +241,61 @@ test('secrets: list, set and delete', async () => {
   assert.equal(m2.calls[1].url.searchParams.get('database'), 'main')
 })
 
+test('secrets: field keys are created once and listed with a fingerprint', async () => {
+  const m = mockFetch([
+    { status: 201, body: { name: 'HEALTH', type: 'key', fingerprint: '9f2c41d0', key: 'k'.repeat(43) } },
+    { status: 201, body: { name: 'TAX', type: 'key', fingerprint: '12345678' } },
+    { body: { items: [{ database: '', name: 'HEALTH', type: 'key', fingerprint: '9f2c41d0', used_by: ['main/patients.notes'], created_at: 'x', updated_at: 'x', updated_by: 'user:u1' }] } },
+  ])
+  const a = adminOf(m)
+  const made = await a.secrets.createKey('HEALTH')
+  assert.equal(made.key?.length, 43)
+  assert.equal(m.calls[0].method, 'POST')
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/secrets')
+  assert.deepEqual(m.calls[0].body, { name: 'HEALTH', type: 'key', generate: true })
+  const imported = await a.secrets.createKey('TAX', { value: 'v'.repeat(43) })
+  assert.equal(imported.key, undefined)
+  assert.deepEqual(m.calls[1].body, { name: 'TAX', type: 'key', value: 'v'.repeat(43) })
+  const [k] = await a.secrets.list()
+  assert.equal(k.fingerprint, '9f2c41d0')
+  assert.deepEqual(k.used_by, ['main/patients.notes'])
+})
+
+test('secrets: a field key is rotated, generated, imported or resumed', async () => {
+  const done = { name: 'HEALTH', type: 'key', fingerprint: '11111111', previous_fingerprint: '9f2c41d0', version: 2, rewrapped: 3 }
+  const m = mockFetch([{ body: { ...done, key: 'k'.repeat(43) } }, { body: done }, { body: done }])
+  const a = adminOf(m)
+  const r = await a.secrets.rotateKey('HEALTH')
+  assert.equal(r.rewrapped, 3)
+  assert.equal(m.calls[0].method, 'POST')
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/secrets/HEALTH/rotate')
+  assert.deepEqual(m.calls[0].body, { generate: true })
+  await a.secrets.rotateKey('HEALTH', { value: 'v'.repeat(43) })
+  assert.deepEqual(m.calls[1].body, { value: 'v'.repeat(43) })
+  await a.secrets.rotateKey('HEALTH', { resume: true })
+  assert.deepEqual(m.calls[2].body, { resume: true })
+})
+
+test('encryption: status, rekey and migrate', async () => {
+  const job = { id: 'j1', function: 'encrypt:main/patients', status: 'queued', origin: 'backd:encrypt.migrate' }
+  const m = mockFetch([
+    { body: { collections: [{ database: 'main', collection: 'patients', complete: false, migration: null, fields: [{ path: 'notes', configured: true, search: false, plaintext: 5, encrypted: 0, current: 0, old: 0, complete: false, generations: [] }] }] } },
+    { body: { database: 'main', collection: 'patients', field: 'notes', generation: 2, status: 'active' } },
+    { status: 202, body: job },
+    { status: 202, body: job },
+  ])
+  const a = adminOf(m)
+  const [st] = await a.encryption.status({ database: 'main', collection: 'patients' })
+  assert.equal(st.fields[0].plaintext, 5)
+  assert.equal(m.calls[0].url.searchParams.get('collection'), 'patients')
+  assert.equal((await a.encryption.rekey({ database: 'main', collection: 'patients', field: 'notes' })).generation, 2)
+  assert.equal(m.calls[1].url.pathname, '/v1/acme/_admin/encryption/rekey')
+  await a.encryption.migrate({ database: 'main', collection: 'patients', fields: ['notes'], dryRun: true })
+  assert.deepEqual(m.calls[2].body, { database: 'main', collection: 'patients', fields: ['notes'], dry_run: true })
+  await a.encryption.migrate({ database: 'main', collection: 'patients' })
+  assert.deepEqual(m.calls[3].body, { database: 'main', collection: 'patients' })
+})
+
 test('invocations listing', async () => {
   const rec = { id: 'i1', at: '2026-10-02T10:00:00.000Z', function: 'main/refund_receipt', actor: 'user:u1', mode: 'async', status: 'ok', code: null,
     duration_ms: 12, request_id: 'r1', job_id: 'j1', parent_id: 'i0', origin: 'function', logs: [] }

@@ -32,24 +32,37 @@ const secretCacheTTL = 60 * time.Second
 // Users it's stored through), a scope and a name. Database empty means
 // the realm scope; otherwise it's the database scope.
 type Secret struct {
-	Database   string // "": realm scope
-	Name       string
-	Ciphertext string // base64
-	Nonce      string // base64
-	KeyID      string // fingerprint of the key it was encrypted with
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	UpdatedBy  string
+	Database string // "": realm scope
+	Name     string
+	Type     string // "": a value functions and providers may read; SecretTypeKey: a field key
+	// Fingerprint identifies a key's value without revealing it (KeyFingerprint); empty for values.
+	Fingerprint string
+	// Version counts a key's values: 1 when created, +1 at each rotation (0 reads as 1).
+	// Prev* hold the value being replaced while a rotation is unfinished, sealed like the
+	// current one, so data keys wrapped by it can still be opened until they are re-wrapped.
+	Version        int
+	PrevCiphertext string
+	PrevNonce      string
+	PrevVersion    int
+	Ciphertext     string // base64
+	Nonce          string // base64
+	KeyID          string // fingerprint of the key it was encrypted with
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	UpdatedBy      string
 }
 
 // SecretMeta is a secret without its value, as listed: names, scope and
 // who last changed it, never the value.
 type SecretMeta struct {
-	Database  string
-	Name      string
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	UpdatedBy string
+	Database string
+	Name     string
+	Type     string
+	// Fingerprint is set for keys.
+	Fingerprint string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	UpdatedBy   string
 }
 
 // SecretCipher encrypts and decrypts secret values with AES-256-GCM,
@@ -177,6 +190,9 @@ func (s *Users) SetSecret(ctx context.Context, database, name, value, by string)
 	if !registry.ValidSecretName(name) {
 		return fmt.Errorf("invalid secret name %q: must be upper-case letters, digits and _, starting with a letter", name)
 	}
+	if have, err := s.Store.SecretByScope(ctx, database, name); err == nil && have.Type == SecretTypeKey {
+		return ErrSecretIsKey
+	}
 	ct, nonce, err := s.Cipher.Seal(value)
 	if err != nil {
 		return err
@@ -202,7 +218,7 @@ func (s *Users) ListSecrets(ctx context.Context) ([]SecretMeta, error) {
 	}
 	out := make([]SecretMeta, len(secrets))
 	for i, sec := range secrets {
-		out[i] = SecretMeta{Database: sec.Database, Name: sec.Name, CreatedAt: sec.CreatedAt, UpdatedAt: sec.UpdatedAt, UpdatedBy: sec.UpdatedBy}
+		out[i] = SecretMeta{Database: sec.Database, Name: sec.Name, Type: sec.Type, Fingerprint: sec.Fingerprint, CreatedAt: sec.CreatedAt, UpdatedAt: sec.UpdatedAt, UpdatedBy: sec.UpdatedBy}
 	}
 	return out, nil
 }
@@ -210,6 +226,9 @@ func (s *Users) ListSecrets(ctx context.Context) ([]SecretMeta, error) {
 // DeleteSecret removes the value at scope and name; ErrSecretNotFound if
 // none. Functions that declare it start answering secret_missing again.
 func (s *Users) DeleteSecret(ctx context.Context, database, name string) error {
+	if have, err := s.Store.SecretByScope(ctx, database, name); err == nil && have.Type == SecretTypeKey {
+		return s.DeleteKey(ctx, name)
+	}
 	if err := s.Store.DeleteSecret(ctx, database, name); err != nil {
 		return err
 	}
@@ -257,6 +276,12 @@ func (s *Users) ResolveSecrets(ctx context.Context, refs []registry.SecretRef, d
 		}
 		if err != nil {
 			return nil, nil, err
+		}
+		if sec.Type == SecretTypeKey {
+			// A field key is for field encryption only: no function, provider or setting reads it.
+			s.putSecretCache(db, ref.Name, "", true, now)
+			missing = append(missing, ref.String())
+			continue
 		}
 		v, err := s.Cipher.Open(sec.Ciphertext, sec.Nonce, sec.KeyID)
 		if err != nil {

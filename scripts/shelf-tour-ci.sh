@@ -47,6 +47,12 @@ cp clients/js/src/*.js "$dir/client/"
 cp -r examples/config/shelf "$dir/config/shelf"
 find "$dir/config" -name .build -prune -exec rm -rf {} +
 
+# The pins' private notes (chapter 25) are encrypted with a key the operator creates, and backd
+# refuses to start without it: provision the database, create the key offline (the chapter does
+# the same by hand), then start everything.
+docker compose -f "$compose" run --rm backd provision >/dev/null
+docker compose -f "$compose" run --rm --no-deps backd secret create --direct --realm shelf --type key --generate --name SHELF_NOTES >/dev/null
+
 docker compose -f "$compose" up -d
 
 ready() { curl -sf http://localhost:8080/readyz >/dev/null; }

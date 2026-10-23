@@ -88,6 +88,7 @@ type Collection struct {
 	Team         string
 	OnTeamDelete string
 	configLeaf   func(string) bool     // appConfig() in rules: whether a path is a value of the realm's configuration
+	Encrypted    []EncryptedField      // collection.yaml's fields:, sorted by path; nil: none
 	Files        map[string]*FileField // file fields from collection.yaml's files:; their schema is already in Schema and RawSchema
 }
 
@@ -95,6 +96,9 @@ type Collection struct {
 type Index struct {
 	Keys   []IndexKey
 	Unique bool
+	// Blind marks the index of an encrypted field's blind index (hidden field `_bidx.<path>`):
+	// internal, created with a filter that leaves out documents without it.
+	Blind bool
 	// TTL makes MongoDB delete a document when the date its single key holds
 	// has passed (soft_delete.retention's purge_at).
 	TTL bool
@@ -157,7 +161,7 @@ func (c *Collection) ScalarField(path string) bool {
 		return true
 	}
 	f, ok := c.Fields[path]
-	return ok && len(f.Types) > 0 && !slices.Contains(f.Types, "array") && !c.throughArray(path)
+	return ok && !f.Encrypted && len(f.Types) > 0 && !slices.Contains(f.Types, "array") && !c.throughArray(path)
 }
 
 // ArrayField reports whether path is declared as an array (only), with no
@@ -187,6 +191,11 @@ type Field struct {
 	// schema.json): clients send and read RFC 3339 strings, queries compare
 	// dates.
 	Date bool
+	// Encrypted marks a field stored encrypted (collection.yaml's fields.<path>.encrypt), and the
+	// fields inside it: queries refuse them, rules can't compare them.
+	Encrypted bool
+	// Searchable marks an encrypted field with a blind index: equality only.
+	Searchable bool
 }
 
 // Has reports whether the field's declared types include t. An

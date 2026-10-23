@@ -63,6 +63,34 @@ import { Job } from './functions.js'
  */
 
 /**
+ * How the values of one encrypted field are stored.
+ * @typedef {object} EncryptedFieldStatus
+ * @property {string} path
+ * @property {boolean} configured     False for a field the configuration no longer encrypts.
+ * @property {string} [key]           The field key's name.
+ * @property {string} [fingerprint]   Its fingerprint.
+ * @property {boolean} search         Whether the field has a blind index.
+ * @property {number} plaintext       Documents holding the value in plain.
+ * @property {number} encrypted       …encrypted.
+ * @property {number} current         …sealed with the active data key.
+ * @property {number} old             …sealed with another.
+ * @property {number} [indexed]       Documents whose blind index is built (searchable fields).
+ * @property {number} [unindexed]
+ * @property {boolean} complete       Nothing is left to migrate for this field.
+ * @property {Array<{ kind: 'data' | 'index', generation: number, status: 'active' | 'decrypt_only' | 'retired', key: string, wrap_version: number, values?: number }>} generations
+ */
+
+/**
+ * How a collection's encrypted fields are stored, and its latest migration.
+ * @typedef {object} EncryptionStatus
+ * @property {string} database
+ * @property {string} collection
+ * @property {boolean} complete
+ * @property {EncryptedFieldStatus[]} fields
+ * @property {object | null} migration
+ */
+
+/**
  * What expiring every password did.
  * @typedef {object} PasswordsExpired
  * @property {string} valid_after   Passwords set before this stopped working.
@@ -177,9 +205,33 @@ import { Job } from './functions.js'
  * @typedef {object} SecretInfo
  * @property {string} database     Its database scope; empty means the realm scope.
  * @property {string} name
+ * @property {'secret' | 'key'} type  A `key` is a field-encryption key: no function reads it.
+ * @property {string} [fingerprint]   Keys only: identifies the key's value without revealing it.
+ * @property {string[]} [used_by]     Keys only: the `database/collection.path` fields that use it.
  * @property {string} created_at
  * @property {string} updated_at
  * @property {string} updated_by   Who last set it, such as `user:<id>` or `key:<name>`.
+ */
+
+/**
+ * A field key just rotated. `key` is set only for a generated key, and only this once.
+ * @typedef {object} RotatedKey
+ * @property {string} name
+ * @property {'key'} type
+ * @property {string} fingerprint            Of the new value.
+ * @property {string} previous_fingerprint
+ * @property {number} version                How many values the key has had.
+ * @property {number} rewrapped              Data keys wrapped again by this call.
+ * @property {string} [key]                  The generated key, base64url: save it now.
+ */
+
+/**
+ * A field key just created. `key` is set only for a generated key, and only this once.
+ * @typedef {object} CreatedKey
+ * @property {string} name
+ * @property {'key'} type
+ * @property {string} fingerprint
+ * @property {string} [key]   The generated key, base64url: save it now, nothing shows it again.
  */
 
 /**
@@ -370,6 +422,8 @@ export class Admin {
     this.users = new AdminUsers(this)
     /** Expire every password of the realm and tell the users (after a leak). */
     this.passwords = new AdminPasswords(this)
+    /** Encrypted fields: how they are stored, new data-key generations, migrations. */
+    this.encryption = new AdminEncryption(this)
     /** End every session of the realm. */
     this.sessions = new AdminSessions(this)
     /** Invitations for realms with `signup: invite`. */
@@ -776,6 +830,52 @@ class AdminUsers {
   }
 }
 
+class AdminEncryption {
+  /** @param {Admin} admin */
+  constructor(admin) {
+    /** @internal */
+    this.admin = admin
+  }
+
+  /**
+   * How the encrypted fields of the realm (or of one collection) are stored: plaintext, current and
+   * old values, blind index coverage, keys and generations.
+   * @param {{ database?: string, collection?: string }} [scope]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<EncryptionStatus[]>}
+   */
+  async status({ database, collection } = {}, opts) {
+    return (await this.admin._request({ method: 'GET', path: ['encryption'], query: { database, collection }, ...opts })).data.collections
+  }
+
+  /**
+   * Starts a new generation of an encrypted field's data key; existing values stay readable until
+   * a migration seals them again. Needs full admin access and a fresh re-authentication.
+   * @param {{ database: string, collection: string, field: string }} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ database: string, collection: string, field: string, generation: number, status: string }>}
+   */
+  async rekey(input, opts) {
+    return (await this.admin._request({ method: 'POST', path: ['encryption', 'rekey'], body: input, reauth: true, ...opts })).data
+  }
+
+  /**
+   * Queues the job that brings a collection's stored documents in line with its encryption
+   * configuration (`dryRun` only counts). Follow it with `admin.jobs.get`. Needs full admin access
+   * and a fresh re-authentication.
+   * @param {{ database: string, collection: string, fields?: string[], dryRun?: boolean }} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<Job>}
+   */
+  async migrate({ database, collection, fields, dryRun }, opts) {
+    /** @type {Record<string, unknown>} */
+    const body = { database, collection }
+    if (fields) body.fields = fields
+    if (dryRun) body.dry_run = true
+    return (await this.admin._request({ method: 'POST', path: ['encryption', 'migrate'], body, reauth: true, ...opts })).data
+  }
+}
+
 class AdminPasswords {
   /** @param {Admin} admin */
   constructor(admin) {
@@ -946,15 +1046,49 @@ class AdminSecrets {
   }
 
   /**
+   * Creates a field-encryption key: generated by the server (its value is in the answer, once)
+   * or imported from `value`, 32 bytes in base64url. Needs full admin access and a fresh
+   * re-authentication.
+   * @param {string} name   Upper-case letters, digits and `_`.
+   * @param {{ value?: string }} [input]   Without `value`, a new key is generated.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<CreatedKey>}
+   */
+  async createKey(name, { value } = {}, opts) {
+    /** @type {Record<string, unknown>} */
+    const body = { name, type: 'key' }
+    if (value) body.value = value
+    else body.generate = true
+    return (await this.admin._request({ method: 'POST', path: ['secrets'], body, reauth: true, ...opts })).data
+  }
+
+  /**
+   * Gives a field key a new value and wraps again every data key it protected, without
+   * rewriting any document. Generates the new key (in the answer, once), imports `value`, or
+   * with `resume` finishes a rotation that stopped half way. Needs full admin access and a fresh
+   * re-authentication.
+   * @param {string} name
+   * @param {{ value?: string, resume?: boolean }} [input]   Without either, a new key is generated.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<RotatedKey>}
+   */
+  async rotateKey(name, { value, resume } = {}, opts) {
+    /** @type {Record<string, unknown>} */
+    const body = value ? { value } : resume ? { resume: true } : { generate: true }
+    return (await this.admin._request({ method: 'POST', path: ['secrets', name, 'rotate'], body, reauth: true, ...opts })).data
+  }
+
+  /**
    * Removes a secret's value: a function that declares it answers
-   * `secret_missing` again.
+   * `secret_missing` again. Deleting a key needs a fresh re-authentication, and is refused while
+   * fields still use it.
    * @param {string} name
    * @param {{ database?: string }} [scope]
    * @param {RequestOptions} [opts]
    * @returns {Promise<void>}
    */
   async delete(name, { database } = {}, opts) {
-    await this.admin._request({ method: 'DELETE', path: ['secrets', name], query: { database }, ...opts })
+    await this.admin._request({ method: 'DELETE', path: ['secrets', name], query: { database }, reauth: true, ...opts })
   }
 }
 

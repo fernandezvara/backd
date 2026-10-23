@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/fernandezvara/kli"
@@ -18,9 +19,13 @@ import (
 type secret struct {
 	Database  string `json:"database"`
 	Name      string `json:"name"`
+	Type      string `json:"type"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 	UpdatedBy string `json:"updated_by"`
+	// Fingerprint and UsedBy are set for keys.
+	Fingerprint string   `json:"fingerprint"`
+	UsedBy      []string `json:"used_by"`
 }
 
 func secretSet(c *kli.CommandContext) error {
@@ -48,22 +53,27 @@ func secretSet(c *kli.CommandContext) error {
 }
 
 func secretList(c *kli.CommandContext) error {
-	t, err := targetOf(c, false)
+	t, closeT, _, err := openTarget(c)
 	if err != nil {
 		return err
 	}
+	defer closeT()
 	var page struct{ Items []secret }
 	if err := t.call("GET", "_admin/secrets", nil, nil, &page); err != nil {
 		return err
 	}
 	tw := tabwriter.NewWriter(c.Stdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "SCOPE\tNAME\tUPDATED\tUPDATED BY")
+	fmt.Fprintln(tw, "SCOPE\tNAME\tTYPE\tFINGERPRINT\tUPDATED\tUPDATED BY\tUSED BY")
 	for _, s := range page.Items {
 		scope := s.Database
 		if scope == "" {
 			scope = "realm"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", scope, s.Name, s.UpdatedAt, s.UpdatedBy)
+		fp := "-"
+		if s.Fingerprint != "" {
+			fp = s.Fingerprint
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", scope, s.Name, s.Type, fp, s.UpdatedAt, s.UpdatedBy, strings.Join(s.UsedBy, ","))
 	}
 	return tw.Flush()
 }
@@ -79,7 +89,16 @@ func secretDelete(c *kli.CommandContext) error {
 		q.Set("database", database)
 	}
 	var ae *apiError
-	if err := t.call("DELETE", "_admin/secrets/"+url.PathEscape(name), q, nil, nil); err != nil {
+	var proof map[string]string
+	if held, err := keyIsHeld(t, name); err != nil {
+		return err
+	} else if held && database == "" {
+		// Deleting a key loses what it protects: a person proves who they are again first.
+		if proof, err = t.proof(ioOf(c)); err != nil {
+			return err
+		}
+	}
+	if _, err := t.callHeaders("DELETE", "_admin/secrets/"+url.PathEscape(name), q, nil, nil, proof); err != nil {
 		if errors.As(err, &ae) && ae.Status == 404 {
 			return fmt.Errorf("no secret named %q", secretRef(database, name))
 		}
@@ -167,7 +186,17 @@ func rotateRealmSecrets(ctx context.Context, a *app, realm string, oldCipher, ne
 		if err != nil {
 			return n, err
 		}
-		s.Ciphertext, s.Nonce, s.KeyID = ct, nonce, newCipher.KeyID
+		s.Ciphertext, s.Nonce = ct, nonce
+		if s.PrevCiphertext != "" { // a key whose rotation is unfinished holds two values
+			prev, err := oldCipher.Open(s.PrevCiphertext, s.PrevNonce, s.KeyID)
+			if err != nil {
+				return n, fmt.Errorf("%s: %w", secretRef(s.Database, s.Name), err)
+			}
+			if s.PrevCiphertext, s.PrevNonce, err = newCipher.Seal(prev); err != nil {
+				return n, err
+			}
+		}
+		s.KeyID = newCipher.KeyID
 		if err := store.UpsertSecret(ctx, s); err != nil {
 			return n, fmt.Errorf("%s: %w", secretRef(s.Database, s.Name), err)
 		}

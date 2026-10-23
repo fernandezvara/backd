@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/fernandezvara/backd/internal/fieldcrypt"
 )
 
 // WriteCSV turns a JSON Lines stream of documents into one RFC 4180 table, and returns how
@@ -129,6 +131,8 @@ func flatten(prefix string, v any, emit func(key, cell string)) {
 		emit(prefix, t.UTC().Format(time.RFC3339Nano))
 	case []byte:
 		emit(prefix, base64.StdEncoding.EncodeToString(t))
+	case fieldcrypt.Ciphertext:
+		emit(prefix, base64.StdEncoding.EncodeToString(t)) // an encrypted value nobody opened
 	case []any:
 		b, _ := json.Marshal(toExtendedText(t))
 		emit(prefix, safeCell(string(b)))

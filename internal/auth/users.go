@@ -27,7 +27,10 @@ type Users struct {
 	// resolves as missing. Cache holds decrypted values briefly, shared
 	// across every realm's Users (NewSecretCache); nil disables caching.
 	Cipher *SecretCipher
-	Cache  *SecretCache
+	// KeyUses names where a field key is used (collection fields, for the key's listing and for
+	// refusing to delete it); nil when the server wires none.
+	KeyUses func(name string) []string
+	Cache   *SecretCache
 
 	// Metrics counts sessions and limits; nil turns it off.
 	Metrics *metrics.Metrics

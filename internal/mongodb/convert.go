@@ -7,6 +7,7 @@ import (
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 
+	"github.com/fernandezvara/backd/internal/fieldcrypt"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage"
 )
@@ -48,6 +49,8 @@ func toBSONValue(v any) any {
 		return a
 	case time.Time:
 		return bson.NewDateTimeFromTime(t)
+	case fieldcrypt.Ciphertext:
+		return bson.Binary{Subtype: bson.TypeBinaryEncrypted, Data: t}
 	}
 	return v
 }
@@ -60,8 +63,8 @@ func fromBSON(d bson.D) storage.Document {
 		if key == "_id" {
 			key = "id"
 		}
-		if key == registry.TextSearchField {
-			continue // the stored search language: never part of a document
+		if key == registry.TextSearchField || key == registry.BlindRoot || key == registry.EncRoot {
+			continue // the stored search language and the blind indexes: never part of a document
 		}
 		out[key] = fromBSONValue(e.Value)
 	}
@@ -92,6 +95,10 @@ func fromBSONValue(v any) any {
 		return t.String()
 	case bson.Null, bson.Undefined:
 		return nil
+	case bson.Binary:
+		if t.Subtype == bson.TypeBinaryEncrypted {
+			return fieldcrypt.Ciphertext(t.Data)
+		}
 	case string, bool, int64, float64, nil:
 		return t
 	}

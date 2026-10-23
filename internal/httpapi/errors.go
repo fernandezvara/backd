@@ -10,6 +10,7 @@ const (
 	codeInvalidJSON       = "invalid_json"
 	codeValidation        = "validation_error"
 	codeInvalidQuery      = "invalid_query"
+	codeFieldEncrypted    = "field_encrypted"
 	codeInvalidPath       = "invalid_path"
 	codeUnauthenticated   = "unauthenticated"
 	codeInvalidCreds      = "invalid_credentials"
@@ -49,6 +50,8 @@ const (
 type Detail struct {
 	Path   string `json:"path"`
 	Reason string `json:"reason"`
+	// Code names the problem when it has a code of its own, such as field_encrypted.
+	Code string `json:"code,omitempty"`
 }
 
 type errorBody struct {

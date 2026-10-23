@@ -137,6 +137,7 @@ type expandRun struct {
 	queries int
 	docs    int
 	targets map[*registry.Collection]targetAccess
+	reveals map[*registry.Collection]*revealer
 }
 
 // targetAccess is what the caller may read of a target collection.
@@ -218,7 +219,10 @@ func (run *expandRun) follow(ctx context.Context, parents []storage.Document, ou
 	var tDocs []storage.Document
 	var tOuts []map[string]any
 	for _, k := range slices.Sorted(maps.Keys(found)) {
-		o := selectFields(found[k], n.fields)
+		// The target's own reveal rules decide what of it the caller sees.
+		shown, redacted := run.reveal(n.target).view(found[k])
+		o := selectFields(shown, n.fields)
+		markRedacted(o, n.fields, redacted)
 		shaped[k] = o
 		tDocs = append(tDocs, found[k])
 		tOuts = append(tOuts, o)
@@ -262,6 +266,19 @@ func (run *expandRun) follow(ctx context.Context, parents []storage.Document, ou
 
 // access is what the caller may read of target: the same identity as the request, the
 // target's own read rule, and an API key's scopes.
+// reveal is the request's view of a target collection's encrypted fields, made once per target.
+func (run *expandRun) reveal(target *registry.Collection) *revealer {
+	if rv, ok := run.reveals[target]; ok {
+		return rv
+	}
+	if run.reveals == nil {
+		run.reveals = map[*registry.Collection]*revealer{}
+	}
+	rv := run.d.revealerFor(run.r, target)
+	run.reveals[target] = rv
+	return rv
+}
+
 func (run *expandRun) access(target *registry.Collection) targetAccess {
 	if a, ok := run.targets[target]; ok {
 		return a
@@ -347,6 +364,23 @@ func selectFields(doc storage.Document, fields []string) map[string]any {
 		setPath(out, f, v)
 	}
 	return render(out)
+}
+
+// markRedacted lists, in an expanded document that was cut to some fields, which of those the
+// caller may not see, as a full document does in _meta.redacted.
+func markRedacted(out map[string]any, fields, redacted []string) {
+	if fields == nil || len(redacted) == 0 {
+		return
+	}
+	var hidden []any
+	for _, p := range redacted {
+		if slices.Contains(fields, p) {
+			hidden = append(hidden, p)
+		}
+	}
+	if len(hidden) > 0 {
+		out["_meta"] = map[string]any{"redacted": hidden}
+	}
 }
 
 func setPath(m map[string]any, path string, v any) {

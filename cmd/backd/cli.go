@@ -445,8 +445,34 @@ func registerRemote(cfg *kli.Config) {
 	sec.SubCommand("set").ShortHelp("create or replace a secret's value").
 		LongHelp("The value is read from the terminal without echo, or the first line of\nstandard input when it isn't a terminal. Without --database it's the realm\nscope (realm.NAME in function.yaml); with it, that database's scope (NAME, for\nfunctions of that database only, never another's).").
 		Func(act("secret set", secretSet)).Config(secretFlags)
+	sec.SubCommand("create").ShortHelp("create a field key: generated and shown once, or imported").
+		LongHelp("Creates a key for field encryption (design: a `key` secret). With --generate the server makes 32\nrandom bytes and prints them, base64url, on standard output ONCE, with the fingerprint on standard error:\nsave the key outside backd, because nothing ever shows it again and a lost key means the values encrypted\nwith it are lost. With --value it imports a key you already hold (key:<base64url>, env:VAR or file:PATH),\nfor a restore or a staging copy. Needs a full administrator and a fresh proof that it is you. Audited with the\nname and fingerprint, never the key. With --direct it works straight on MongoDB and CONFIG_DIR, with no running backd: how\nyou create the key a field names when backd refuses to start without it, or restore keys after losing the secrets. " + adminAPINote).
+		Func(act("secret create", secretCreate)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "name", "the key's name, such as HEALTH")
+		required(cc, "type", "the kind of secret to create: key")
+		boolean(cc, "generate", "make a new random key and show it once")
+		optional(cc, "value", "import this key: key:<base64url>, env:VAR or file:PATH")
+		boolean(cc, "skip-existing", "succeed, changing nothing, when a secret with that name exists (for scripts)")
+		boolean(cc, "json", "print the answer as JSON")
+		directFlags(cc)
+	})
+	sec.SubCommand("rotate").ShortHelp("give a field key a new value, without rewriting any document").
+		LongHelp("Replaces the value of a field key and wraps every data key it protected again, so nothing in the database\nis rewritten and the change is instant. With --generate the new key is printed once on standard output; with\n--value you bring your own (key:<base64url>, env:VAR or file:PATH). --resume finishes a rotation that stopped\nhalf way: until it finishes the previous value is kept and nothing is lost. Keep your old copy for backups made\nbefore the rotation. Needs a full administrator and a fresh proof. " + adminAPINote).
+		Func(act("secret rotate", secretRotate)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "name", "the key's name")
+		boolean(cc, "generate", "make a new random key and show it once")
+		optional(cc, "value", "the new key: key:<base64url>, env:VAR or file:PATH")
+		boolean(cc, "resume", "finish a rotation that stopped before it ended")
+		boolean(cc, "json", "print the answer as JSON")
+		directFlags(cc)
+	})
 	sec.SubCommand("list").ShortHelp("list the realm's secrets (never their values)").
-		Func(act("secret list", secretList)).Config(remote)
+		Func(act("secret list", secretList)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		directFlags(cc)
+	})
 	sec.SubCommand("delete").ShortHelp("delete a secret; a function that declares it answers secret_missing again").
 		Func(act("secret delete", secretDelete)).Config(secretFlags)
 	sec.SubCommand("rotate-key").ShortHelp("re-encrypt every realm's secrets under a new master key").
@@ -506,9 +532,18 @@ func registerRemote(cfg *kli.Config) {
 		optional(cc, "staging-password", "with --anonymize --include auth: one password every user gets (env:<VAR>, file:<path> or key:<value>)")
 		optional(cc, "anonymize-files", "with --anonymize: keep, to export the files too (they often hold personal data)")
 		optional(cc, "auth-key-out", "write the export key of --include auth to this file (readable only by you) instead of showing it")
+		optional(cc, "field", "open encrypted fields with their keys: <path>=<key:|env:|file:…> entries separated by ';' (path as health_notes, or main/patients.health_notes); the others stay ciphertext")
 		directFlags(cc)
 		boolean(cc, "archive", "write one <out>.tar.gz instead of a directory")
 		boolean(cc, "no-files", "leave the files out: only the documents")
+	})
+
+	cfg.Command("export-decrypt").ShortHelp("open encrypted fields of an export package, offline").
+		LongHelp("Copies a package (--from: its directory or .tar.gz) to --out with the encrypted fields you give a key for opened (--field, as in backd export): no server, no database and no master key are involved, only the package's wrapped data keys and your field keys. Every key is checked against the fingerprint the manifest records, and a wrong one is reported by field and key name. Fields without a key stay ciphertext, and the manifest says which are which. The result holds plaintext: keep it as carefully as the keys.").
+		Func(act("export-decrypt", exportDecrypt)).Config(func(cc *kli.CommandConfig) {
+		required(cc, "from", "the package: its directory, or the .tar.gz that export --archive wrote")
+		required(cc, "out", "the directory to write the opened package to")
+		required(cc, "field", "the keys: <path>=<key:|env:|file:…> entries separated by ';'")
 	})
 
 	cfg.Command("import").ShortHelp("read an export package into a realm").
@@ -521,6 +556,7 @@ func registerRemote(cfg *kli.Config) {
 		boolean(cc, "skip-invalid", "leave out the documents that are invalid for the target instead of stopping")
 		optional(cc, "report", "write the problems found to this JSON file")
 		optional(cc, "auth-key", "the export key of a package exported with --include auth: key:<value>, env:<VAR> or file:<path>; without it users arrive without second factors and push devices")
+		optional(cc, "field", "keys for encrypted fields the package holds as ciphertext: <path>=<key:|env:|file:…> entries separated by ';'; needed when the target does not hold the same key (the dry run lists which fields need which)")
 		directFlags(cc)
 	})
 
@@ -673,6 +709,38 @@ func registerRemote(cfg *kli.Config) {
 		required(cc, "org", "the organization's id")
 		optional(cc, "where", "only documents matching this JSON filter")
 		boolean(cc, "dry-run", "count the documents without changing anything")
+	})
+	enc := cfg.Command("encrypt").ShortHelp("see and change how encrypted fields are stored")
+	encFlags := func(cc *kli.CommandConfig) {
+		required(cc, "realm", "the realm")
+		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+	}
+	enc.SubCommand("status").ShortHelp("count how the values of each encrypted field are stored").
+		LongHelp("For every collection that encrypts fields (or once did), per field: documents holding the value in plaintext, encrypted, sealed with the current data key and with an older one, how many have their blind index, the key with its fingerprint and the generations of its data keys. A collection is complete when nothing is left to migrate. It counts documents, so on a big collection it takes a moment. " + adminAPINote).
+		Func(act("encrypt status", encryptStatus)).Config(func(cc *kli.CommandConfig) {
+		encFlags(cc)
+		optional(cc, "database", "only this database")
+		optional(cc, "collection", "only this collection (needs --database)")
+		boolean(cc, "json", "print the answer as JSON")
+	})
+	enc.SubCommand("rekey").ShortHelp("start a new generation of a field's data key").
+		LongHelp("Gives an encrypted field a fresh data key: new values are sealed with it, and the existing ones stay readable until `backd encrypt migrate` seals them again. For data keys that may have leaked (a server's memory, a decrypted dump); replacing the field key (`backd secret rotate`) never needs it. Needs a full administrator and a fresh proof. " + adminAPINote).
+		Func(act("encrypt rekey", encryptRekey)).Config(func(cc *kli.CommandConfig) {
+		encFlags(cc)
+		required(cc, "database", "the database")
+		required(cc, "collection", "the collection")
+		required(cc, "field", "the encrypted field's path")
+	})
+	enc.SubCommand("migrate").ShortHelp("bring a collection's stored documents in line with its encryption configuration").
+		LongHelp("Runs a background job on a worker that reads the collection in id order, at most 1000 documents a second, and rewrites only what differs: plaintext values are encrypted, values under an older data key or generation sealed again, blind indexes built or rebuilt, and values of fields that are no longer encrypted opened. It goes on from where it stopped if a worker dies, never changes `_meta.version`, and at the end retires the data keys nothing uses. --dry-run only counts. Equality searches can miss documents whose index is not built yet until it finishes. Needs a full administrator and a fresh proof. " + adminAPINote).
+		Func(act("encrypt migrate", encryptMigrate)).Config(func(cc *kli.CommandConfig) {
+		encFlags(cc)
+		required(cc, "database", "the database")
+		required(cc, "collection", "the collection")
+		optional(cc, "field", "only these encrypted fields: comma-separated paths (fields no longer encrypted are always opened)")
+		boolean(cc, "dry-run", "count what would change without changing it")
+		boolean(cc, "no-wait", "start the job and print its id, without following it")
+		cc.Define("interval").String().Flag("interval").Default("2s").Description("how often to ask the server for progress")
 	})
 	fn := cfg.Command("functions").ShortHelp("build, call and inspect server-side functions")
 	fn.SubCommand("build").ShortHelp("bundle every function in CONFIG_DIR with deno").

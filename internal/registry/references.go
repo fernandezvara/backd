@@ -207,6 +207,10 @@ func checkReferences(rl *Realm) []error {
 					errs = append(errs, fmt.Errorf("%s: collection %q does not exist in database %q; collections: %s", where, ref.Collection, ref.Database, strings.Join(slices.Sorted(maps.Keys(tdb.Collections)), ", ")))
 					continue
 				}
+				if target.IsEncrypted(ref.Key) {
+					errs = append(errs, fmt.Errorf("%s: key %q of %s/%s is an encrypted field, and expanding a reference needs the plain value", where, ref.Key, ref.Database, ref.Collection))
+					continue
+				}
 				if ref.Key != "id" && !target.hasUniqueIndexOn(ref.Key) {
 					errs = append(errs, fmt.Errorf("%s: key %q of %s/%s needs a unique index of its own in its indexes.json, so each value matches at most one document: add {\"fields\": [%q], \"unique\": true}", where, ref.Key, ref.Database, ref.Collection, ref.Key))
 				}

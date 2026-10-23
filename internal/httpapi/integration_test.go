@@ -18,6 +18,7 @@ import (
 	"github.com/rs/xid"
 
 	backdauth "github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/fieldcrypt"
 	"github.com/fernandezvara/backd/internal/mongodb"
 	"github.com/fernandezvara/backd/internal/registry"
 )
@@ -25,7 +26,7 @@ import (
 // mongoFixture provisions the given config files (paths relative to
 // CONFIG_DIR, e.g. "realm/db/coll/schema.json") in a real MongoDB and returns
 // a fixture serving them. It skips the test when MONGO_TEST_URI is unset.
-func mongoFixture(t *testing.T, files map[string]string) *fixture {
+func mongoFixture(t *testing.T, files map[string]string, opts ...func(*Config)) *fixture {
 	t.Helper()
 	uri := os.Getenv("MONGO_TEST_URI")
 	if uri == "" {
@@ -74,15 +75,24 @@ func mongoFixture(t *testing.T, files map[string]string) *fixture {
 	// Realms whose realm.yaml enables auth get a user service.
 	hasher := backdauth.NewHasher(2, backdauth.Argon2Params{Memory: 64, Time: 1, Threads: 1})
 	services := map[string]*backdauth.Users{}
+	rings := map[string]*fieldcrypt.Ring{}
 	for name, rl := range reg.Realms {
 		if rl.Settings.AuthEnabled {
-			services[name] = &backdauth.Users{Store: mongodb.NewAuthStore(client, name), Hasher: hasher, Settings: rl.Settings}
+			services[name] = &backdauth.Users{Store: mongodb.NewAuthStore(client, name), Hasher: hasher, Settings: rl.Settings, Realm: name}
+			if len(rl.EncryptionKeyNames()) > 0 {
+				// Field encryption needs the secrets cipher; its keys are created by the test.
+				services[name].Cipher, _ = backdauth.NewSecretCipher([]byte("01234567890123456789012345678901"))
+				services[name].KeyUses = rl.EncryptionKeyUses
+				rings[name] = &fieldcrypt.Ring{Realm: name, Store: services[name].Store.(fieldcrypt.Store), Keys: services[name].KeyMaterial}
+			}
 		}
 	}
-	f := newFixtureWith(t, reg, &mongodb.Store{Client: client}, func(c *Config) {
+	f := newFixtureWith(t, reg, &mongodb.Store{Client: client, Crypt: func(realm string) *fieldcrypt.Ring { return rings[realm] }}, append([]func(*Config){func(c *Config) {
 		c.Users = func(realm string) *backdauth.Users { return services[realm] }
-	})
+	}}, opts...)...)
 	f.users = services
+	f.rings = rings
+	f.mongo = client
 	return f
 }
 

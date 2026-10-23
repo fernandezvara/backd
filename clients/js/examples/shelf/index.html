@@ -344,6 +344,9 @@
                   <a :href="p.url" target="_blank" rel="noopener" x-text="p.title" x-show="p.url"></a>
                   <span x-text="p.title" x-show="!p.url"></span>
                   <span class="muted" x-text="p.note"></span>
+                  <!-- view: private notes (ch25) — encrypted in the database; the pin's author and the team's admins read them, everybody else gets null and a mark. -->
+                  <em x-show="p.private_notes" x-text="'🔒 ' + p.private_notes"></em>
+                  <small class="muted" x-show="p.private_notes == null && p._meta.redacted?.includes('private_notes')">🔒 private notes are hidden from you</small>
                   <button class="link sm" @click="removePin(p.id)" x-show="holds('admin', 'owner') || p.author === user?.id">remove</button>
                 </li>
               </template>
@@ -352,6 +355,7 @@
               <input x-model="pinDraft.title" placeholder="Title" :required="holds('editor', 'admin', 'owner')" maxlength="200">
               <input x-model="pinDraft.url" type="url" placeholder="https://…">
               <input x-model="pinDraft.note" placeholder="Why it matters">
+              <input x-model="pinDraft.private_notes" placeholder="Private notes (you and the team's admins)" maxlength="2000">
               <button type="submit" :disabled="busy">Pin</button>
             </form>
           </article>

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -301,6 +302,46 @@ organizations:
 	c.expect(0, `secret "realm.SHARED" deleted`, "", "secret", "delete", "--realm", "acme", "--name", "SHARED")
 	c.expect(1, `no secret named "realm.SHARED"`, "", "secret", "delete", "--realm", "acme", "--name", "SHARED")
 	c.expect(0, `secret "KEY" deleted`, "", "secret", "delete", "--realm", "acme", "--database", "app", "--name", "KEY")
+
+	// Field keys: generated and shown once on standard output, imported from a variable.
+	code, keyOut, keyErr := c.run("", "secret", "create", "--realm", "acme", "--name", "HEALTH", "--type", "key", "--generate")
+	keyText := strings.TrimSpace(keyOut)
+	if code != 0 || len(keyText) != 43 || !strings.Contains(keyErr, "HEALTH:") || !strings.Contains(keyErr, "only time") || strings.Contains(keyErr, keyText) {
+		t.Fatalf("secret create: %d %q %q", code, keyOut, keyErr)
+	}
+	c.expect(1, "409 conflict", "", "secret", "create", "--realm", "acme", "--name", "HEALTH", "--type", "key", "--generate")
+	c.env["IMPORTED_KEY"] = keyText
+	_, _, importErr := c.run("", "secret", "create", "--realm", "acme", "--name", "COPY", "--type", "key", "--value", "env:IMPORTED_KEY")
+	fp := regexp.MustCompile(`HEALTH:([0-9a-f]{8})`).FindStringSubmatch(keyErr)
+	if fp == nil || !strings.Contains(importErr, "imported, fingerprint COPY:"+fp[1]) {
+		t.Errorf("the same key has the same fingerprint: %q vs %q", keyErr, importErr)
+	}
+	c.expect(2, "exactly one of --generate and --value", "", "secret", "create", "--realm", "acme", "--name", "X", "--type", "key")
+	c.expect(2, "--type must be key", "", "secret", "create", "--realm", "acme", "--name", "X", "--type", "text", "--generate")
+	c.expect(1, "400 validation_error", "", "secret", "create", "--realm", "acme", "--name", "X", "--type", "key", "--value", "key:short")
+	out = c.expect(0, "FINGERPRINT", "", "secret", "list", "--realm", "acme")
+	if !strings.Contains(out, "HEALTH") || !strings.Contains(out, "key") || strings.Contains(out, keyText) {
+		t.Errorf("secret list with keys:\n%s", out)
+	}
+	// Rotating: a new key is shown once, with the fingerprints of both; nothing is left pending.
+	code, rotOut, rotErr := c.run("", "secret", "rotate", "--realm", "acme", "--name", "HEALTH", "--generate")
+	newKey := strings.TrimSpace(rotOut)
+	if code != 0 || len(newKey) != 43 || newKey == keyText || !strings.Contains(rotErr, "rotated") || !strings.Contains(rotErr, "HEALTH:"+fp[1]) || strings.Contains(rotErr, newKey) {
+		t.Fatalf("secret rotate: %d %q %q", code, rotOut, rotErr)
+	}
+	c.env["NEXT_KEY"] = keyText
+	c.expect(0, "rotated", "", "secret", "rotate", "--realm", "acme", "--name", "HEALTH", "--value", "env:NEXT_KEY")
+	c.expect(1, "409 conflict", "", "secret", "rotate", "--realm", "acme", "--name", "HEALTH", "--resume")
+	c.expect(1, "404 not_found", "", "secret", "rotate", "--realm", "acme", "--name", "NOPE", "--generate")
+	c.expect(2, "exactly one of --generate, --value and --resume", "", "secret", "rotate", "--realm", "acme", "--name", "HEALTH")
+	c.expect(2, "exactly one of --generate, --value and --resume", "", "secret", "rotate", "--realm", "acme", "--name", "HEALTH", "--generate", "--resume")
+	// Encryption: nothing of this realm encrypts, and the commands say so or refuse.
+	c.expect(0, "no collection of this realm encrypts fields", "", "encrypt", "status", "--realm", "acme")
+	c.expect(2, "--collection needs --database", "", "encrypt", "status", "--realm", "acme", "--collection", "notes")
+	c.expect(1, "404 not_found", "", "encrypt", "migrate", "--realm", "acme", "--database", "app", "--collection", "nope")
+	c.expect(1, "400 validation_error", "", "encrypt", "rekey", "--realm", "acme", "--database", "app", "--collection", "notes", "--field", "title")
+	c.expect(0, `secret "realm.HEALTH" deleted`, "", "secret", "delete", "--realm", "acme", "--name", "HEALTH")
+	c.expect(0, `secret "realm.COPY" deleted`, "", "secret", "delete", "--realm", "acme", "--name", "COPY")
 
 	_, dataKey, _ := c.run(pw+"\n", "apikey", "create", "--realm", "acme", "--name", "service", "--expires", "1d")
 	c.env["BACKD_API_KEY"] = strings.TrimSpace(dataKey)

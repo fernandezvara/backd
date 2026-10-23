@@ -115,6 +115,19 @@ const (
 	AuditSecretSet          = "secret.set"        // details: database ("": realm scope); never the value
 	AuditSecretDelete       = "secret.delete"     // details: database
 	AuditSecretsRotated     = "secret.rotate_key" // by backd secret rotate-key; details: count
+	// A field key was created, imported or deleted; target secret:realm/NAME, details: fingerprint,
+	// generated. Never the key.
+	AuditKeyCreate = "secret.key.create"
+	AuditKeyDelete = "secret.key.delete"
+	// A field key was rotated; details: fingerprint (the new one), previous, rewrapped.
+	AuditKeyRotate = "secret.key.rotate"
+	// An administrator read encrypted fields in plain through the data route; details: database,
+	// collection, fields, documents. Never a value.
+	AuditDataReveal = "data.reveal"
+	// An administrator started an encryption migration, or rekeyed a field; and the job's result.
+	AuditEncryptStart   = "encrypt.start"   // details: database, collection, fields, dry_run, job_id
+	AuditEncryptRekey   = "encrypt.rekey"   // details: database, collection, field, generation
+	AuditEncryptMigrate = "encrypt.migrate" // by the job; details: job_id, counts, retired_keys
 	// AuditTriggerGapResolve is an administrator closing a recorded gap of the trigger dispatcher;
 	// AuditTriggerRescan one re-emitting the changes of a collection.
 	AuditTriggerGapResolve = "triggers.gap_resolve"

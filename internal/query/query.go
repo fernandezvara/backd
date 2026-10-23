@@ -32,7 +32,12 @@ const (
 type Error struct {
 	Path   string
 	Reason string
+	// Code is set for errors with a name of their own (CodeFieldEncrypted); empty otherwise.
+	Code string
 }
+
+// CodeFieldEncrypted marks the error of a query that names an encrypted field.
+const CodeFieldEncrypted = "field_encrypted"
 
 // Errors is returned when a query is invalid; it lists every problem found.
 type Errors []Error
@@ -234,6 +239,10 @@ func (p *parser) field(path string, v any) {
 		p.fail(path, "unknown field")
 		return
 	}
+	if f.Encrypted && !f.Searchable {
+		p.encrypted(path, "is encrypted: it can't be filtered on")
+		return
+	}
 
 	ops, isObj := v.(map[string]any)
 	if !isObj || !hasOperatorKeys(ops) {
@@ -268,8 +277,24 @@ func (p *parser) add(path string, op storage.Operator, v any) {
 	*p.cur = append(*p.cur, storage.Condition{Field: path, Op: op, Value: v})
 }
 
+// encrypted records the refusal of a query on an encrypted field.
+func (p *parser) encrypted(at, reason string) {
+	p.errs = append(p.errs, Error{Path: strings.TrimSuffix("where."+p.loc+at, "."), Reason: reason, Code: CodeFieldEncrypted})
+}
+
 func (p *parser) operator(path string, f field, op string, v any) {
 	at := path + "." + op
+	if f.Encrypted {
+		// Searchable (the others never get here): only equality and `in`, through the blind index.
+		switch {
+		case op != "$eq" && op != "$in":
+			p.encrypted(at, "is encrypted with a blind index, which only answers $eq and $in")
+			return
+		case op == "$eq" && v == nil:
+			p.encrypted(at, "can't search an encrypted field for null")
+			return
+		}
+	}
 	switch {
 	case op == "$eq" || op == "$ne":
 		val, err := equalityValue(f, v)
@@ -521,11 +546,14 @@ func ParseOrderBy(s string, fields map[string]registry.Field) ([]storage.SortFie
 				sf.Desc = true
 				sf.Field = sf.Field[1:]
 			}
-			switch _, ok := lookup(fields, sf.Field); {
+			f, ok := lookup(fields, sf.Field)
+			switch {
 			case sf.Field == "":
 				errs = append(errs, Error{Path: "order_by", Reason: "empty field name"})
 			case !ok:
 				errs = append(errs, Error{Path: "order_by." + sf.Field, Reason: "unknown field"})
+			case f.Encrypted:
+				errs = append(errs, Error{Path: "order_by." + sf.Field, Reason: "is encrypted: it can't be sorted on", Code: CodeFieldEncrypted})
 			case seen[sf.Field]:
 				errs = append(errs, Error{Path: "order_by." + sf.Field, Reason: "duplicate field"})
 			default:

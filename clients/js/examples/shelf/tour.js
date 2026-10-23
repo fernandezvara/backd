@@ -16,7 +16,9 @@
 // and event id is new or looked up first. Exits 0 when every check passes.
 import { execFileSync } from 'node:child_process'
 import { createHmac } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { deflateSync } from 'node:zlib'
 import { createClient, expand, fillBuckets, AuthenticationError, ConflictError, ConsentRequiredError, ForbiddenError, IdTakenError, InvalidIdError, NotFoundError, SecondStepRequiredError, ValidationError, VersionMismatchError, versionStatus } from '../../src/index.js'
 
@@ -845,6 +847,79 @@ heading('Live gallery (ch24)')
   await mineAssets.delete(draftOnly.id)
   // A search can't be followed: the app shows it as a plain list until it is cleared.
   await refused('a search is not a live filter (400 invalid_query)', () => mineAssets.subscribe({ where: { $search: 'live' } }).ready, ValidationError, 'invalid_query')
+}
+
+heading('Private notes (ch25)')
+{
+  const STAMP = Date.now().toString(36)
+  const SECRET = `the vendor's price is ${STAMP}`
+  const ben = await signedIn(`ben25-${STAMP}@shelf.example`, operator)
+  const cy = await signedIn(`cy25-${STAMP}@shelf.example`, operator)
+  const eve = await signedIn(`eve25-${STAMP}@shelf.example`, operator)
+  const dee = await signedIn(`dee25-${STAMP}@shelf.example`, operator)
+  const deeId = (await dee.auth.me()).id
+  const pinsOf = (/** @type {any} */ c) => c.db('main').collection('pins')
+  const hidden = (/** @type {any} */ p) => p.private_notes === null && p._meta.redacted?.includes('private_notes')
+
+  // The key: created and saved (here: by the stack's start), listed with its fingerprint and the field using it.
+  const keyInfo = (await operator.admin.secrets.list()).find((k) => k.name === 'SHELF_NOTES')
+  check('SHELF_NOTES is a key with a fingerprint, used by the pins\' private notes', keyInfo?.type === 'key' && /^[0-9a-f]{8}$/.test(keyInfo.fingerprint ?? '') && (keyInfo.used_by ?? []).includes('main/pins.private_notes'), JSON.stringify(keyInfo))
+  await refused('a plain secret write can\'t replace a key (409)', () => operator.admin.secrets.set('SHELF_NOTES', 'x'), ConflictError, 'conflict')
+
+  // A team: Ben owns it, Cy edits, Eve is a plain member, Dee is an admin.
+  const team = await ben.orgs.create({ name: `Notes ${STAMP}` })
+  for (const [who, roles] of /** @type {const} */ ([[cy, ['editor']], [eve, []], [dee, []]])) {
+    const link = await ben.orgs.invitations(team.id).create({ binding: 'none', roles, maxUses: 1 })
+    await who.orgs.invitations.accept(link.token)
+  }
+  await ben.orgs.members(team.id).update(deeId, ['admin'])
+
+  // The author writes private notes; who may read them is decided by `reveal`.
+  const made = /** @type {any} */ (await main(cy).fn('pin', { org: team.id, title: 'Quote', private_notes: SECRET }))
+  const seenBy = async (/** @type {any} */ c) => (await pinsOf(c).inOrg(team.id).list()).items.find((p) => p.id === made.id)
+  check('the author reads the private notes', (await seenBy(cy)).private_notes === SECRET)
+  check('the team\'s owner reads them', (await seenBy(ben)).private_notes === SECRET)
+  check('so does an admin', (await seenBy(dee)).private_notes === SECRET)
+  const eves = await seenBy(eve)
+  check('a plain member reads the pin, with the notes null and listed in _meta.redacted', eves.title === 'Quote' && hidden(eves), JSON.stringify(eves))
+  const etag = (await fetch(`${url}/v1/shelf/main/pins/${made.id}?org=${team.id}`, { headers: { Authorization: `Bearer ${await eve.storage.get()}` } })).headers.get('etag') ?? ''
+  check('what is hidden is part of the ETag, so a change of view never gets a stale 304', /\.r[0-9a-f]{8}"$/.test(etag), etag)
+  check('a team search by the note finds nothing (an encrypted field can\'t be queried)', await pinsOf(cy).inOrg(team.id).list({ where: { private_notes: SECRET } }).then(() => false, (e) => e.code === 'field_encrypted'))
+
+  // The database holds ciphertext.
+  const raw = execFileSync('docker', [...composeArgs, 'exec', '-T', 'mongo', 'mongosh', '--quiet', '--eval', `EJSON.stringify(db.getSiblingDB('shelf__main').pins.findOne({_id: '${made.id}'}))`]).toString()
+  check('MongoDB holds binary of subtype 6 where the notes are', raw.includes('"subType":"06"') && !raw.includes(SECRET) && raw.includes('Quote'), raw.slice(0, 300))
+
+  // Rotating the key is instant: nothing is rewritten, everything still reads, and the new key is shown once.
+  const version = (await seenBy(cy))._meta.version
+  await operatorProof()
+  const rotated = /** @type {any} */ (await operator.admin.secrets.rotateKey('SHELF_NOTES'))
+  check('rotating returns the new key once, with both fingerprints, and wraps the data keys again', typeof rotated.key === 'string' && rotated.key.length === 43 && rotated.fingerprint !== rotated.previous_fingerprint && rotated.rewrapped >= 1, JSON.stringify({ ...rotated, key: '…' }))
+  const after = await seenBy(cy)
+  check('after the rotation the notes read the same and no pin was rewritten', after.private_notes === SECRET && after._meta.version === version)
+
+  // An export: ciphertext unless you hold the key, and the key opens only what it protects.
+  const dir = `/tmp/shelf-pins-${STAMP}`
+  const mine = mkdtempSync(join(tmpdir(), 'shelf-export-'))
+  const exportPins = (/** @type {string} */ out, /** @type {string[]} */ extra = []) =>
+    inStack(['export', '--direct', '--realm', 'shelf', '--db', 'main', '--collection', 'pins', '--no-files', '--out', out, ...extra])
+  const pinsOut = (/** @type {string} */ out, /** @type {string} */ name) => {
+    execFileSync('docker', [...composeArgs, 'cp', `backd:${out}/main/pins.jsonl`, join(mine, name)], { stdio: 'ignore' })
+    return readFileSync(join(mine, name), 'utf8')
+  }
+  exportPins(dir)
+  const closed = pinsOut(dir, 'closed.jsonl')
+  check('an export without the key holds ciphertext and the title', closed.includes('"subType":"06"') && !closed.includes(SECRET) && closed.includes('Quote'))
+  exportPins(`${dir}-open`, ['--field', `private_notes=key:${rotated.key}`])
+  const open = pinsOut(`${dir}-open`, 'open.jsonl')
+  check('an export with the key opens the notes', open.includes(SECRET))
+  let wrong = false
+  try {
+    exportPins(`${dir}-wrong`, ['--field', `private_notes=key:${'A'.repeat(43)}`])
+  } catch {
+    wrong = true
+  }
+  check('a wrong key is refused, by its fingerprint', wrong)
 }
 
 heading('cleanup by hand (ch9)')

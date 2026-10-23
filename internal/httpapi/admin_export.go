@@ -23,6 +23,7 @@ import (
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/exportpkg"
+	"github.com/fernandezvara/backd/internal/fieldcrypt"
 	"github.com/fernandezvara/backd/internal/query"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage"
@@ -54,6 +55,8 @@ type exportLease struct {
 	expires time.Time
 	scope   string
 	flags   exportpkg.Flags
+	// collections are the ones the export covers, as <database>/<collection>.
+	collections []string
 	// fields and where narrow every collection of the export (a reporting extract).
 	fields []string
 	where  string
@@ -339,6 +342,7 @@ func (a *adminAPI) exportPlan(w http.ResponseWriter, r *http.Request, realm stri
 		}
 	}
 	fileFields := map[string][]string{}
+	var exported []string
 	scope := realm
 	if database != "" {
 		scope += "/" + database
@@ -357,6 +361,13 @@ func (a *adminAPI) exportPlan(w http.ResponseWriter, r *http.Request, realm stri
 			}
 			c := rl.Databases[dbName].Collections[name]
 			col := exportpkg.Collection{Name: name, Part: exportpkg.CollectionPart(dbName, name)}
+			exported = append(exported, dbName+"/"+name)
+			entries, err := a.encryptedEntries(r.Context(), usersOf(r), c)
+			if err != nil {
+				storageError(w, r, err)
+				return
+			}
+			m.Encrypted = append(m.Encrypted, entries...)
 			if sc, ok := a.fns.docs.store.Repository(c).(storage.Scanner); ok {
 				if n, err := sc.EstimatedCount(r.Context()); err == nil {
 					col.Documents = n
@@ -372,7 +383,7 @@ func (a *adminAPI) exportPlan(w http.ResponseWriter, r *http.Request, realm stri
 	id := make([]byte, 16)
 	_, _ = rand.Read(id)
 	now := time.Now()
-	l := &exportLease{kind: leaseExport, id: hex.EncodeToString(id), actor: caller.Actor(), expires: now.Add(exportLeaseTTL), scope: scope, flags: m.Flags, fields: fields, where: where, exportKey: keyCipher, anon: anon}
+	l := &exportLease{kind: leaseExport, id: hex.EncodeToString(id), actor: caller.Actor(), expires: now.Add(exportLeaseTTL), scope: scope, flags: m.Flags, fields: fields, where: where, exportKey: keyCipher, anon: anon, collections: exported}
 	if !a.exports.take(realm, caller.Actor(), r.Header.Get(exportHeader), l, now) {
 		writeError(w, r, http.StatusConflict, codeExportRunning, "an export of this realm is already running; wait for it to finish (a silent one is released after ten minutes)")
 		return
@@ -461,6 +472,10 @@ func (a *adminAPI) exportPart(w http.ResponseWriter, r *http.Request, realm, par
 		a.exportAuthPart(w, r, l, coll)
 		return
 	}
+	if part == exportpkg.DataKeysName {
+		a.exportDataKeys(w, r, l, realm)
+		return
+	}
 	database, name, ok := strings.Cut(strings.TrimSuffix(part, ".jsonl"), "/")
 	rl := a.reg.Realms[realm]
 	if !ok || !strings.HasSuffix(part, ".jsonl") || rl == nil || rl.Databases[database] == nil || rl.Databases[database].Collections[name] == nil {
@@ -490,7 +505,8 @@ func (a *adminAPI) exportPart(w http.ResponseWriter, r *http.Request, realm, par
 	defer func() { a.exports.count(l, database+"/"+name, docs, 0, size) }()
 	for {
 		_ = rc.SetWriteDeadline(time.Now().Add(exportWriteWindow))
-		ctx, cancel := context.WithTimeout(r.Context(), a.fns.docs.opTimeout)
+		// The server never decrypts for an export: encrypted fields leave as they are stored.
+		ctx, cancel := context.WithTimeout(storage.WithRawEncrypted(r.Context()), a.fns.docs.opTimeout)
 		var batch []storage.Document
 		var err error
 		if filter == nil {
@@ -733,4 +749,79 @@ func (a *adminAPI) anonymizeDocument(ctx context.Context, r *http.Request, c *re
 			delete(doc, name)
 		}
 	}
+}
+
+// encryptedEntries lists, for the manifest, the encrypted fields of a collection: those the
+// configuration encrypts and those that once were and may still hold encrypted values. The
+// documents of a package always hold them as ciphertext; the fingerprint is the field key's.
+func (a *adminAPI) encryptedEntries(ctx context.Context, svc *auth.Users, c *registry.Collection) ([]exportpkg.EncryptedField, error) {
+	fingerprint := func(key string) string {
+		if sec, err := svc.Store.SecretByScope(ctx, "", key); err == nil {
+			return sec.Fingerprint
+		}
+		return ""
+	}
+	var out []exportpkg.EncryptedField
+	seen := map[string]bool{}
+	for _, ef := range c.Encrypted {
+		seen[ef.Path] = true
+		out = append(out, exportpkg.EncryptedField{Database: c.Database, Collection: c.Name, Path: ef.Path, Key: ef.Key, Fingerprint: fingerprint(ef.Key), Form: exportpkg.FormCiphertext})
+	}
+	ks, ok := svc.Store.(fieldcrypt.Store)
+	if !ok {
+		return out, nil
+	}
+	paths, err := ks.DataKeyPaths(ctx, c.Database, c.Name)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range paths {
+		if seen[p] {
+			continue
+		}
+		recs, err := ks.DataKeysOf(ctx, c.Database, c.Name, p)
+		if err != nil || len(recs) == 0 {
+			return out, err
+		}
+		key := recs[len(recs)-1].Key
+		out = append(out, exportpkg.EncryptedField{Database: c.Database, Collection: c.Name, Path: p, Key: key, Fingerprint: fingerprint(key), Form: exportpkg.FormCiphertext})
+	}
+	return out, nil
+}
+
+// exportDataKeys streams the wrapped keys (data and index) of the encrypted fields of the
+// collections the export covers, one record per line (`_system/data_keys.jsonl`). They are
+// useless without the field keys, which never leave the developer's hands.
+func (a *adminAPI) exportDataKeys(w http.ResponseWriter, r *http.Request, l *exportLease, realm string) {
+	svc := usersOf(r)
+	ks, ok := svc.Store.(fieldcrypt.Store)
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	if !ok {
+		return
+	}
+	bw := bufio.NewWriter(w)
+	for _, key := range l.collections {
+		database, name, _ := strings.Cut(key, "/")
+		paths, err := ks.DataKeyPaths(r.Context(), database, name)
+		if err != nil {
+			logger(r.Context()).Error("export of data keys failed", "error", err, "collection", key)
+			panic(http.ErrAbortHandler)
+		}
+		for _, p := range paths {
+			recs, err := ks.DataKeysOf(r.Context(), database, name, p)
+			if err != nil {
+				logger(r.Context()).Error("export of data keys failed", "error", err, "collection", key)
+				panic(http.ErrAbortHandler)
+			}
+			for _, rec := range recs {
+				line, err := fieldcrypt.EncodeKeyLine(rec)
+				if err != nil {
+					panic(http.ErrAbortHandler)
+				}
+				_, _ = bw.Write(line)
+				_ = bw.WriteByte('\n')
+			}
+		}
+	}
+	_ = bw.Flush()
 }

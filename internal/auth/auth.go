@@ -217,6 +217,8 @@ type Store interface {
 	PasswordUserIDs(ctx context.Context, before time.Time, after string, limit int) ([]string, error)
 	// SetPasswordNoticeProgress keeps a notification job's place and counts.
 	SetPasswordNoticeProgress(ctx context.Context, jobID, after string, c PasswordNoticeCounts) error
+	// SetEncryptProgress keeps an encryption migration's place and counts.
+	SetEncryptProgress(ctx context.Context, jobID, after string, c EncryptCounts) error
 	// PutIdentity creates the identity, or, when one with the same provider
 	// and subject exists, updates its credentials and UpdatedAt (keeping its
 	// ID and CreatedAt). ErrIdentityExists when the user already has another
@@ -580,6 +582,11 @@ type Store interface {
 	// UpsertSecret creates or replaces the secret at (database, name),
 	// keeping its original CreatedAt on an update.
 	UpsertSecret(ctx context.Context, s Secret) error
+	// CreateSecret stores a new secret, ErrSecretExists if the scope and name are taken.
+	CreateSecret(ctx context.Context, s Secret) error
+	// ReplaceKeySecret stores a rotated key if the stored one still has version ifVersion; false
+	// when it does not (another rotation got there first).
+	ReplaceKeySecret(ctx context.Context, s Secret, ifVersion int) (bool, error)
 	// SecretByScope returns one secret; ErrSecretNotFound if none.
 	SecretByScope(ctx context.Context, database, name string) (Secret, error)
 	// ListSecrets returns every secret's metadata, sorted by database

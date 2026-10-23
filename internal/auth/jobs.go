@@ -86,6 +86,9 @@ type Job struct {
 	// PasswordNotice is set on the job that tells the users with an expired password to choose
 	// a new one (origin PasswordNoticeOrigin).
 	PasswordNotice *PasswordNoticeJob
+	// Encrypt is set on the job that migrates a collection's documents to its encryption
+	// configuration (origin EncryptOrigin).
+	Encrypt *EncryptJob
 	// Exclusive, when set, lets only one job of that name be unfinished at a
 	// time: enqueuing another fails with ErrJobExclusive.
 	Exclusive     string
@@ -299,7 +302,7 @@ func (s *Users) RerunJob(ctx context.Context, id string, timeoutMS int64) (Job, 
 	if !found {
 		return Job{}, ErrNotFound
 	}
-	if j.Email != nil || j.Erase != nil || j.Check != nil || j.Image != nil || j.Assign != nil || j.OrgDelete != nil || j.Revoke != nil || j.Push != nil || j.PasswordNotice != nil {
+	if j.Email != nil || j.Erase != nil || j.Check != nil || j.Image != nil || j.Assign != nil || j.OrgDelete != nil || j.Revoke != nil || j.Push != nil || j.PasswordNotice != nil || j.Encrypt != nil {
 		return Job{}, ErrJobNotFunction
 	}
 	if j.Status != JobDone {

@@ -20,6 +20,7 @@ import (
 	"github.com/rs/xid"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/fieldcrypt"
 	"github.com/fernandezvara/backd/internal/jsonnum"
 	"github.com/fernandezvara/backd/internal/metrics"
 	"github.com/fernandezvara/backd/internal/query"
@@ -164,7 +165,7 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	claim, ok := d.claimKey(w, r, c.Name, body) // Idempotency-Key, if the request has one
+	claim, ok := d.claimKey(w, r, c.Name, body, len(c.Encrypted) > 0) // Idempotency-Key, if the request has one
 	if !ok {
 		return
 	}
@@ -236,9 +237,12 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 		pending.attached(r, d, c, doc["id"].(string), docOwner(doc))
 	}
 	w.Header().Set("Location", r.URL.JoinPath(url.PathEscape(doc["id"].(string))).Path)
-	out := render(doc)
+	shown, _ := d.revealerFor(r, c).view(doc)
+	out := render(shown)
 	d.auditData(r, auth.AuditDataCreate, c, doc["id"].(string))
-	claim.complete(r.Context(), http.StatusCreated, out)
+	// The remembered answer lives in the system database: it never holds an encrypted field in plain.
+	kept, _ := d.storedView(c, doc)
+	claim.complete(r.Context(), http.StatusCreated, render(kept))
 	w.Header().Set("ETag", etag(version(doc)))
 	writeJSON(w, http.StatusCreated, out)
 }
@@ -262,16 +266,19 @@ func (d *documents) get(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	rv := d.revealerFor(r, c)
+	shown, redacted := rv.view(doc)
+	rv.flush()
 	var out map[string]any
 	if plan != nil {
-		out = render(doc)
+		out = render(shown)
 		if !d.expandInto(w, r, plan, []storage.Document{doc}, []map[string]any{out}) {
 			return
 		}
 	}
 	if r.URL.Query().Get("file_links") == "true" && len(c.Files) > 0 {
 		if out == nil {
-			out = render(doc)
+			out = render(shown)
 		}
 		if !d.addFileLinks(w, r, c, []map[string]any{out}) {
 			return
@@ -292,13 +299,15 @@ func (d *documents) get(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, out)
 		return
 	}
-	tag := docETag(version(doc), "") // nothing is redacted per caller yet
+	// What the caller may not see of the encrypted fields is part of the tag, so a caller whose
+	// reveal outcome changes never gets a stale 304; If-Match still compares the version only.
+	tag := docETag(version(doc), representationTag(redacted))
 	readHeaders(w, tag)
 	d.publicCache(w, r, c, view)
 	if notModified(w, r, tag) {
 		return
 	}
-	writeJSON(w, http.StatusOK, render(doc))
+	writeJSON(w, http.StatusOK, render(shown))
 }
 
 type listResponse struct {
@@ -317,7 +326,7 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 	q, details := parseListQuery(r.URL.Query(), c.Fields)
 	details = explainReferenceFilters(c, details)
 	if len(details) > 0 {
-		writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid query parameters", details...)
+		writeError(w, r, http.StatusBadRequest, queryCode(details), "invalid query parameters", details...)
 		return
 	}
 	if q.Search != nil || q.Relevance {
@@ -346,9 +355,16 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := listResponse{Items: make([]map[string]any, 0, len(page.Items)), Limit: q.Limit, Skip: q.Skip, HasMore: page.HasMore, Total: page.Total}
+	rv := d.revealerFor(r, c)
+	var hidden []string
 	for _, doc := range page.Items {
-		resp.Items = append(resp.Items, render(doc))
+		shown, red := rv.view(doc)
+		for _, p := range red {
+			hidden = append(hidden, doc["id"].(string)+":"+p)
+		}
+		resp.Items = append(resp.Items, render(shown))
 	}
+	rv.flush()
 	plan, ok := d.expandPlanOf(w, r, c)
 	if !ok {
 		return
@@ -378,7 +394,7 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The query and the rules have run: the validator covers what this caller sees.
-	tag := listETag(page.Items, "", resp.HasMore, resp.NextCursor, resp.Total) // nothing is redacted per caller yet
+	tag := listETag(page.Items, representationTag(hidden), resp.HasMore, resp.NextCursor, resp.Total)
 	readHeaders(w, tag)
 	d.publicCache(w, r, c, view)
 	if notModified(w, r, tag) {
@@ -404,7 +420,7 @@ func parseListQuery(v url.Values, fields map[string]registry.Field) (storage.Que
 		var qe query.Errors
 		if errors.As(err, &qe) {
 			for _, e := range qe {
-				details = append(details, Detail{Path: e.Path, Reason: e.Reason})
+				details = append(details, Detail{Path: e.Path, Reason: e.Reason, Code: e.Code})
 			}
 		}
 	}
@@ -602,7 +618,7 @@ func (d *documents) write(w http.ResponseWriter, r *http.Request, c *registry.Co
 				pending.attached(r, d, c, fields["id"].(string), docOwner(current))
 			}
 			d.auditData(r, auth.AuditDataUpdate, c, fields["id"].(string))
-			writeDocument(w, http.StatusOK, fields)
+			d.writeViewed(w, r, c, http.StatusOK, fields)
 			return
 		case errors.Is(err, storage.ErrVersionMismatch) && cond.specific():
 			writeError(w, r, http.StatusPreconditionFailed, codeVersionMismatch, "document was modified concurrently; If-Match no longer matches")
@@ -851,6 +867,12 @@ func storageError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, storage.ErrUnavailable), errors.Is(err, context.DeadlineExceeded):
 		logger(r.Context()).Error("storage unavailable", "error", err)
 		writeError(w, r, http.StatusServiceUnavailable, codeUnavailable, "storage unavailable")
+	case errors.Is(err, storage.ErrFieldEncrypted):
+		writeError(w, r, http.StatusBadRequest, codeFieldEncrypted, "the query uses an encrypted field in a way its blind index can't answer: equality and `in` on a field with `search: equality` are the only searches")
+	case errors.Is(err, fieldcrypt.ErrUnavailable), errors.Is(err, fieldcrypt.ErrCorrupt):
+		// Never the field's value: the errors carry only where the problem is.
+		logger(r.Context()).Error("encrypted field", "error", err)
+		writeError(w, r, http.StatusInternalServerError, codeInternal, "an encrypted field can't be read or written: its key is not available (see the server log)")
 	default:
 		logger(r.Context()).Error("storage error", "error", err)
 		writeError(w, r, http.StatusInternalServerError, codeInternal, "internal error")
@@ -1047,7 +1069,8 @@ func (d *documents) restore(w http.ResponseWriter, r *http.Request) {
 		case err == nil:
 			d.auditData(r, auth.AuditDataRestore, c, id)
 			w.Header().Set("ETag", etag(version(restored)))
-			writeJSON(w, http.StatusOK, render(restored))
+			shown, _ := d.revealerFor(r, c).view(restored)
+			writeJSON(w, http.StatusOK, render(shown))
 			return
 		case errors.Is(err, storage.ErrVersionMismatch) && cond.specific():
 			writeError(w, r, http.StatusPreconditionFailed, codeVersionMismatch, "document was modified concurrently; If-Match no longer matches")
@@ -1291,3 +1314,14 @@ const maxRelevanceResults = 1000
 
 // relevanceSort reports whether order_by is the relevance sort.
 func relevanceSort(orderBy string) bool { return strings.TrimSpace(orderBy) == "_relevance" }
+
+// queryCode is the code of a refused query: field_encrypted when it names an encrypted field,
+// invalid_query otherwise.
+func queryCode(details []Detail) string {
+	for _, d := range details {
+		if d.Code == codeFieldEncrypted {
+			return codeFieldEncrypted
+		}
+	}
+	return codeInvalidQuery
+}

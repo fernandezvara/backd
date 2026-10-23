@@ -11,6 +11,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
+	"github.com/fernandezvara/backd/internal/fieldcrypt"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage"
 )
@@ -18,11 +19,19 @@ import (
 // Store hands out repositories backed by one MongoDB client.
 type Store struct {
 	Client *mongo.Client
+	// Crypt returns the realm's field encryption; nil (or a nil result) means the realm has none,
+	// which is only valid while none of its collections encrypts a field.
+	Crypt func(realm string) *fieldcrypt.Ring
 }
 
 // Repository returns the repository of a configured collection.
 func (s *Store) Repository(c *registry.Collection) storage.Repository {
-	r := &Repository{coll: s.Client.Database(c.MongoDatabase).Collection(c.Name)}
+	r := &Repository{coll: s.Client.Database(c.MongoDatabase).Collection(c.Name), c: c}
+	if s.Crypt != nil {
+		// Also for a collection that encrypts nothing now: values of a field that once was
+		// encrypted are opened on read until a migration opens them for good.
+		r.ring = s.Crypt(c.Realm)
+	}
 	if c.Text != nil {
 		r.languageField = c.Text.LanguageField
 	}
@@ -49,6 +58,9 @@ func (s *Store) Transact(ctx context.Context, fn func(ctx context.Context) error
 // Repository implements storage.Repository for one MongoDB collection.
 type Repository struct {
 	coll *mongo.Collection
+	c    *registry.Collection
+	// ring seals and opens the collection's encrypted fields; nil when it has none.
+	ring *fieldcrypt.Ring
 	// languageField is the document field (API path) holding a locale code, for a collection
 	// whose text index has a language_field: the stored copy the index reads is kept in step
 	// on every write.
@@ -105,8 +117,42 @@ func lookupPath(doc map[string]any, path string) any {
 
 var _ storage.Repository = (*Repository)(nil)
 
+// seal returns doc as it is stored: its encrypted fields sealed. doc itself is not changed.
+func (r *Repository) seal(ctx context.Context, doc storage.Document) (storage.Document, error) {
+	if r.c == nil || len(r.c.Encrypted) == 0 {
+		return doc, nil
+	}
+	if r.ring == nil {
+		return nil, fmt.Errorf("%w: this instance has no field encryption for the realm", fieldcrypt.ErrUnavailable)
+	}
+	return r.ring.Encrypt(ctx, r.c, doc)
+}
+
+// open decrypts the encrypted fields of documents just read, in place.
+func (r *Repository) open(ctx context.Context, docs ...storage.Document) error {
+	if r.c == nil || storage.RawEncrypted(ctx) {
+		return nil
+	}
+	if r.ring == nil {
+		if len(r.c.Encrypted) == 0 {
+			return nil
+		}
+		return fmt.Errorf("%w: this instance has no field encryption for the realm", fieldcrypt.ErrUnavailable)
+	}
+	for _, d := range docs {
+		if err := r.ring.Decrypt(ctx, r.c, d); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *Repository) Create(ctx context.Context, doc storage.Document) error {
-	_, err := r.coll.InsertOne(ctx, r.bsonOf(doc))
+	doc, err := r.seal(ctx, doc)
+	if err != nil {
+		return err
+	}
+	_, err = r.coll.InsertOne(ctx, r.bsonOf(doc))
 	return mapError(err)
 }
 
@@ -115,10 +161,21 @@ func (r *Repository) Get(ctx context.Context, id string) (storage.Document, erro
 	if err := r.coll.FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&d); err != nil {
 		return nil, mapError(err)
 	}
-	return fromBSON(d), nil
+	doc := fromBSON(d)
+	if err := r.open(ctx, doc); err != nil {
+		return nil, err
+	}
+	return doc, nil
 }
 
 func (r *Repository) List(ctx context.Context, q storage.Query) (storage.Page, error) {
+	var err error
+	if q.Filter, err = r.blindFilter(ctx, q.Filter); err != nil {
+		return storage.Page{}, err
+	}
+	if q.Access, err = r.blindFilter(ctx, q.Access); err != nil {
+		return storage.Page{}, err
+	}
 	filter, err := buildQuery(q)
 	if err != nil {
 		return storage.Page{}, err
@@ -185,6 +242,9 @@ func (r *Repository) List(ctx context.Context, q storage.Query) (storage.Page, e
 		}
 		page.Items = append(page.Items, doc)
 	}
+	if err := r.open(ctx, page.Items...); err != nil {
+		return storage.Page{}, err
+	}
 	if q.Count {
 		n, err := r.coll.CountDocuments(ctx, filter)
 		if err != nil {
@@ -197,6 +257,10 @@ func (r *Repository) List(ctx context.Context, q storage.Query) (storage.Page, e
 
 func (r *Repository) Replace(ctx context.Context, doc storage.Document, ifVersion int64) error {
 	id, _ := doc["id"].(string)
+	doc, err := r.seal(ctx, doc)
+	if err != nil {
+		return err
+	}
 	res, err := r.coll.ReplaceOne(ctx, versionFilter(id, &ifVersion), r.bsonOf(doc))
 	if err != nil {
 		return mapError(err)
@@ -280,6 +344,9 @@ func duplicateKeyFields(err error) []string {
 			f := el.Key()
 			if f == "_id" {
 				f = "id"
+			}
+			if rest, ok := strings.CutPrefix(f, registry.BlindPrefix); ok {
+				f = strings.ReplaceAll(rest, "~", ".") // the encrypted field a blind index stands for
 			}
 			fields = append(fields, f)
 		}

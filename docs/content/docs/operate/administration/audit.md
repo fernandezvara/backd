@@ -58,10 +58,13 @@ Each realm with `auth: enabled` keeps an **audit trail**: one record per securit
 | `org.require_mfa` | An organization turns its second-factor requirement on or off | `value` |
 | `org.delete`, `org.deleted`, `org.reactivate` | An organization is deleted (access ends), its cleanup ends, or it is brought back | `by`, `job_id` / `counts` (documents removed per collection; never content) / `slug` |
 | `org.claims`, `org.owner_assign` | Claims are replaced; a manager is assigned | `keys` / `user` |
+| `secret.key.create`, `secret.key.rotate`, `secret.key.delete` | A [field key](../../../build/configuration/field-keys/) is created, imported, rotated or deleted | `fingerprint` (the new one), `generated` or `previous` and `rewrapped`; never the key |
 | `apikey.create`, `apikey.revoke` | An API key is created or revoked | `role`, `networks`, `expires_at` |
 | `invitation.create`, `invitation.revoke` | An invitation is created or revoked | `bound_to_email` (whether it is), `expires_at` |
 | `invitation.sent` | An invitation is emailed to its address | `expires_at` |
 | `admin.login` | A user holding an admin role logs in | `session_id` |
+| `encrypt.start`, `encrypt.rekey`, `encrypt.migrate` | An [encryption migration](../../../build/configuration/field-keys/#change-encryption-on-existing-data) was started, a field rekeyed, or a migration finished (by the job) | `database`, `collection`, `fields`, `dry_run`, `job_id`, `generation`; the counts and the number of retired keys; never a value |
+| `data.reveal` | A full administrator read documents that hold [encrypted fields](../../../build/configuration/field-keys/#who-sees-an-encrypted-field) in plain through the admin data route (one record per read) | `database`, `collection`, `fields`, `documents`; never a value |
 | `data.create`, `data.update`, `data.delete`, `data.restore`, `data.purge` | A document is written through the [admin data route](../admin/#data) (a batch audits each operation) | `database`, `collection`, `id`; the target is `doc:<database>/<collection>/<id>`; never content |
 | `session.revoke` | An administrator ends a user's session ([admin API](../admin/)) | `session` |
 | `admin.refused` | An admin API request is refused: by a network restriction, or because the administrator's roles don't open the [area](../admin/#admin-rights) or hold the rights of the user or role involved | `reason`, `method`, `path` |

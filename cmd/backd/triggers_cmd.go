@@ -210,7 +210,9 @@ func triggersRescan(c *kli.CommandContext) error {
 		Realm: str(c, "realm"), Database: str(c, "database"), Collection: str(c, "collection"),
 		Trigger: str(c, "trigger"), Since: since, Until: until, Confirm: flag(c, "confirm"), Run: xid.New().String(),
 	}
-	res, err := triggers.Rescan(ctx, a.reg, req, &mongodb.DocScanner{Client: a.client}, jobQueue{a}, func(ctx context.Context, realm string) map[string]any {
+	res, err := triggers.Rescan(ctx, a.reg, req, &mongodb.DocScanner{Client: a.client, Decrypt: func(ctx context.Context, mongoDB, coll string, doc map[string]any) error {
+		return a.decryptDocument(ctx, req.Realm, mongoDB, coll, doc)
+	}}, jobQueue{a}, func(ctx context.Context, realm string) map[string]any {
 		return a.triggerConfig(ctx, a.reg, realm)
 	})
 	if err != nil {

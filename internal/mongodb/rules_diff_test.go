@@ -1,6 +1,7 @@
 package mongodb
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fernandezvara/backd/internal/fieldcrypt"
 	"github.com/fernandezvara/backd/internal/jsonnum"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/rules"
@@ -149,7 +151,19 @@ func provisionOneWith(t *testing.T, schema, config string) (*registry.Collection
 		t.Fatal(err)
 	}
 	c, _ := reg.Collection(realm, "app", "items")
-	return c, &Repository{coll: client.Database(c.MongoDatabase).Collection(c.Name)}
+	repo := &Repository{coll: client.Database(c.MongoDatabase).Collection(c.Name)}
+	if len(c.Encrypted) > 0 {
+		// A sample with encrypted fields (the Shelf's pins): the repository seals and opens them
+		// with keys kept in memory, as the server does with the realm's.
+		key := bytes.Repeat([]byte{5}, 32)
+		repo.c, repo.ring = c, &fieldcrypt.Ring{Realm: realm, Store: fieldcrypt.NewMemStore(), Keys: func(context.Context, string) (fieldcrypt.Material, error) {
+			return fieldcrypt.Material{Current: key, Version: 1}, nil
+		}}
+		if err := repo.ring.Ensure(context.Background(), c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return c, repo
 }
 
 func compileRead(t *testing.T, c *registry.Collection, src string) *rules.Rule {
@@ -170,13 +184,15 @@ func compileRules(t *testing.T, c *registry.Collection, content string) *rules.S
 			_, ok := c.Fields[p]
 			return ok || (p == registry.MetaOrg && c.InOrganizations()) || (p == registry.MetaTeam && c.InTeams())
 		},
-		ScalarField: c.ScalarField,
-		ArrayField:  c.ArrayField,
-		Roles:       diffRoles,
-		OrgRoles:    []string{"owner", "admin", "editor", "viewer", "member", "hr"},
-		InOrgs:      c.InOrganizations(),
-		TeamRoles:   []string{"manager", "delegate"},
-		InTeams:     c.InTeams(),
+		ScalarField:     c.ScalarField,
+		ArrayField:      c.ArrayField,
+		EncryptedField:  c.IsEncrypted,
+		SearchableField: c.IsSearchable,
+		Roles:           diffRoles,
+		OrgRoles:        []string{"owner", "admin", "editor", "viewer", "member", "hr"},
+		InOrgs:          c.InOrganizations(),
+		TeamRoles:       []string{"manager", "delegate"},
+		InTeams:         c.InTeams(),
 	})
 	if len(errs) > 0 {
 		t.Fatalf("%s: %v", content, errs)

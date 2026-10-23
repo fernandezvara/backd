@@ -150,7 +150,23 @@ func (p *Provisioner) validator(c *registry.Collection) map[string]any {
 	if c.Text != nil && c.Text.LanguageField != "" {
 		hidden = append(hidden, registry.TextSearchField)
 	}
-	v, omissions := Validator(c.RawSchema, hidden...)
+	schema := c.RawSchema
+	if len(c.Encrypted) > 0 {
+		paths := make([]string, len(c.Encrypted))
+		for i, f := range c.Encrypted {
+			paths[i] = f.Path
+		}
+		schema = EncryptedSchema(schema, paths)
+	}
+	v, omissions := Validator(schema, hidden...)
+	if len(c.Encrypted) > 0 {
+		// The hidden maps of an encrypted collection: blind indexes and data key ids. A collection
+		// that stopped encrypting a field keeps them on the documents it has not migrated yet,
+		// which a strict schema must accept.
+		props := v["$jsonSchema"].(map[string]any)["properties"].(map[string]any)
+		props[registry.BlindRoot] = map[string]any{"bsonType": "object"}
+		props[registry.EncRoot] = map[string]any{"bsonType": "object"}
+	}
 	for _, o := range omissions {
 		p.Log.Info("schema keyword not enforced by the database validator",
 			"file", c.SchemaPath, "path", o.Path, "keyword", o.Keyword)

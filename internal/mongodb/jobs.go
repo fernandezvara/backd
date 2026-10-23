@@ -93,6 +93,7 @@ type jobDoc struct {
 	Push           *pushJobDoc        `bson:"push,omitempty"`
 	Check          *checkJobDoc       `bson:"check,omitempty"`
 	PasswordNotice *passwordNoticeDoc `bson:"password_notice,omitempty"`
+	Encrypt        *encryptJobDoc     `bson:"encrypt,omitempty"`
 	Image          *imageJobDoc       `bson:"image,omitempty"`
 	Assign         *assignJobDoc      `bson:"assign,omitempty"`
 	OrgDelete      string             `bson:"org_delete,omitempty"`
@@ -211,6 +212,47 @@ func (s *AuthStore) SetPasswordNoticeProgress(ctx context.Context, jobID, after 
 	_, err := s.jobs().UpdateByID(ctx, jobID, bson.D{{Key: "$set", Value: bson.D{
 		{Key: "password_notice.after", Value: after}, {Key: "password_notice.queued", Value: c.Queued},
 		{Key: "password_notice.skipped", Value: c.Skipped}, {Key: "password_notice.deferred", Value: c.Deferred},
+	}}})
+	return err
+}
+
+type encryptJobDoc struct {
+	Database    string   `bson:"database"`
+	Collection  string   `bson:"collection"`
+	Fields      []string `bson:"fields,omitempty"`
+	DryRun      bool     `bson:"dry_run,omitempty"`
+	After       string   `bson:"after,omitempty"`
+	Scanned     int64    `bson:"scanned"`
+	Encrypted   int64    `bson:"encrypted"`
+	Reencrypted int64    `bson:"reencrypted"`
+	Decrypted   int64    `bson:"decrypted"`
+	Indexed     int64    `bson:"indexed"`
+	Marked      int64    `bson:"marked"`
+	Conflicts   int64    `bson:"conflicts"`
+}
+
+func encryptToDoc(e *auth.EncryptJob) *encryptJobDoc {
+	if e == nil {
+		return nil
+	}
+	return &encryptJobDoc{Database: e.Database, Collection: e.Collection, Fields: e.Fields, DryRun: e.DryRun, After: e.After,
+		Scanned: e.Scanned, Encrypted: e.Encrypted, Reencrypted: e.Reencrypted, Decrypted: e.Decrypted, Indexed: e.Indexed, Marked: e.Marked, Conflicts: e.Conflicts}
+}
+
+func encryptFromDoc(d *encryptJobDoc) *auth.EncryptJob {
+	if d == nil {
+		return nil
+	}
+	return &auth.EncryptJob{Database: d.Database, Collection: d.Collection, Fields: d.Fields, DryRun: d.DryRun, After: d.After,
+		EncryptCounts: auth.EncryptCounts{Scanned: d.Scanned, Encrypted: d.Encrypted, Reencrypted: d.Reencrypted, Decrypted: d.Decrypted, Indexed: d.Indexed, Marked: d.Marked, Conflicts: d.Conflicts}}
+}
+
+// SetEncryptProgress implements auth.Store.
+func (s *AuthStore) SetEncryptProgress(ctx context.Context, jobID, after string, c auth.EncryptCounts) error {
+	_, err := s.jobs().UpdateByID(ctx, jobID, bson.D{{Key: "$set", Value: bson.D{
+		{Key: "encrypt.after", Value: after}, {Key: "encrypt.scanned", Value: c.Scanned}, {Key: "encrypt.encrypted", Value: c.Encrypted},
+		{Key: "encrypt.reencrypted", Value: c.Reencrypted}, {Key: "encrypt.decrypted", Value: c.Decrypted}, {Key: "encrypt.indexed", Value: c.Indexed},
+		{Key: "encrypt.marked", Value: c.Marked}, {Key: "encrypt.conflicts", Value: c.Conflicts},
 	}}})
 	return err
 }
@@ -387,7 +429,7 @@ func jobFromDoc(d jobDoc) auth.Job {
 	j := auth.Job{
 		ID: d.ID, Database: d.Database, Function: d.Function, Input: encodeJSONAny(d.Input),
 		CallerActor: d.CallerActor, CallerUserID: d.CallerUserID, CallerKeyHash: d.CallerKeyHash, Scheduled: d.Scheduled,
-		ActsAsFunction: d.ActsAsFunction, Email: emailJobFromDoc(d.Email), Erase: eraseFromDoc(d.Erase), Revoke: revokeFromDoc(d.Revoke), Push: pushFromDoc(d.Push), Check: checkFromDoc(d.Check), PasswordNotice: passwordNoticeFromDoc(d.PasswordNotice), Image: imageFromDoc(d.Image), Assign: assignFromDoc(d.Assign), OrgDelete: orgDeleteFromDoc(d.OrgDelete), Exclusive: d.Exclusive, Origin: d.Origin, ParentID: d.ParentID, RerunOf: d.RerunOf, Depth: int(d.Depth),
+		ActsAsFunction: d.ActsAsFunction, Email: emailJobFromDoc(d.Email), Erase: eraseFromDoc(d.Erase), Revoke: revokeFromDoc(d.Revoke), Push: pushFromDoc(d.Push), Check: checkFromDoc(d.Check), PasswordNotice: passwordNoticeFromDoc(d.PasswordNotice), Encrypt: encryptFromDoc(d.Encrypt), Image: imageFromDoc(d.Image), Assign: assignFromDoc(d.Assign), OrgDelete: orgDeleteFromDoc(d.OrgDelete), Exclusive: d.Exclusive, Origin: d.Origin, ParentID: d.ParentID, RerunOf: d.RerunOf, Depth: int(d.Depth),
 		EventID: d.EventID, ChainRoot: d.ChainRoot, ChainDepth: int(d.ChainDepth),
 		SerialKey: d.SerialKey, SerialOrder: d.SerialOrder,
 		TimeoutMS: d.TimeoutMS, RequestID: d.RequestID,
@@ -421,7 +463,7 @@ func jobToDoc(j auth.Job) (jobDoc, error) {
 	return jobDoc{
 		ID: j.ID, Database: j.Database, Function: j.Function, Input: input,
 		CallerActor: j.CallerActor, CallerUserID: j.CallerUserID, CallerKeyHash: j.CallerKeyHash, Scheduled: j.Scheduled, Status: j.Status,
-		ActsAsFunction: j.ActsAsFunction, Email: emailJobToDoc(j.Email), Erase: eraseToDoc(j.Erase), Revoke: revokeToDoc(j.Revoke), Push: pushToDoc(j.Push), Check: checkToDoc(j.Check), PasswordNotice: passwordNoticeToDoc(j.PasswordNotice), Image: imageToDoc(j.Image), Assign: assignToDoc(j.Assign), OrgDelete: orgDeleteToDoc(j.OrgDelete), Exclusive: j.Exclusive, Origin: j.Origin, ParentID: j.ParentID, RerunOf: j.RerunOf, Depth: int32(j.Depth),
+		ActsAsFunction: j.ActsAsFunction, Email: emailJobToDoc(j.Email), Erase: eraseToDoc(j.Erase), Revoke: revokeToDoc(j.Revoke), Push: pushToDoc(j.Push), Check: checkToDoc(j.Check), PasswordNotice: passwordNoticeToDoc(j.PasswordNotice), Encrypt: encryptToDoc(j.Encrypt), Image: imageToDoc(j.Image), Assign: assignToDoc(j.Assign), OrgDelete: orgDeleteToDoc(j.OrgDelete), Exclusive: j.Exclusive, Origin: j.Origin, ParentID: j.ParentID, RerunOf: j.RerunOf, Depth: int32(j.Depth),
 		EventID: j.EventID, ChainRoot: j.ChainRoot, ChainDepth: int32(j.ChainDepth),
 		SerialKey: j.SerialKey, SerialOrder: j.SerialOrder,
 		Attempts: 0, TimeoutMS: j.TimeoutMS, RequestID: j.RequestID,

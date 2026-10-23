@@ -10,7 +10,11 @@ import (
 )
 
 // DocScanner implements triggers.DocSource: documents by when they were last written.
-type DocScanner struct{ Client *mongo.Client }
+type DocScanner struct {
+	Client *mongo.Client
+	// Decrypt opens the encrypted fields of a document, in place; nil when nothing is encrypted.
+	Decrypt func(ctx context.Context, mongoDatabase, collection string, doc map[string]any) error
+}
 
 func updatedBetween(since, until time.Time) bson.D {
 	rng := bson.D{}
@@ -44,7 +48,13 @@ func (d *DocScanner) Updated(ctx context.Context, mongoDatabase, collection stri
 		if err := cur.Decode(&raw); err != nil {
 			return err
 		}
-		if err := fn(fromBSON(raw)); err != nil {
+		doc := fromBSON(raw)
+		if d.Decrypt != nil {
+			if err := d.Decrypt(ctx, mongoDatabase, collection, doc); err != nil {
+				return err
+			}
+		}
+		if err := fn(doc); err != nil {
 			return err
 		}
 	}

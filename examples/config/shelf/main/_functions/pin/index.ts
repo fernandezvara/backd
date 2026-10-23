@@ -6,7 +6,7 @@ const LIMITS: Record<string, number> = { free: 5, pro: 100 };
 const WRITERS = ["owner", "admin", "editor"];
 
 export default defineFunction("main/pin", async (ctx) => {
-  const { org, title, url, note } = ctx.input;
+  const { org, title, url, note, private_notes } = ctx.input;
   // ctx.user.orgs is what the caller is in every team they belong to: their
   // effective roles there, the team's claims, and whether the membership
   // counts for this session (a team that requires a second factor).
@@ -24,6 +24,8 @@ export default defineFunction("main/pin", async (ctx) => {
     throw ctx.error(409, "plan_limit", `The ${plan} plan holds ${limit} pins`);
   }
 
-  const pin = await pins.create({ title, url, note, author: ctx.user!.id }, { org });
+  // `private_notes` is an encrypted field (chapter 25): backd seals it on the way in, and
+  // `reveal` in the collection decides who reads it. Nothing here deals with keys.
+  const pin = await pins.create({ title, url, note, private_notes, author: ctx.user!.id }, { org });
   return { id: pin.id, pins: total + 1, limit };
 });

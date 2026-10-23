@@ -18,7 +18,7 @@ clinic-2026-10-09/
   main/patients.jsonl              one file per collection
   main/visits.jsonl
   main/_files/<file id>            the object of every file the documents reference
-  _system/data_keys.jsonl          wrapped keys of encrypted fields (empty until those exist)
+  _system/data_keys.jsonl          wrapped keys of encrypted fields (empty without any)
   _system/auth/users.jsonl         only with --include auth
   _system/auth/identities.jsonl    … orgs, org_members, org_teams, mfa, devices
 ```
@@ -39,7 +39,7 @@ clinic-2026-10-09/
       {"name": "patients", "documents": 1204, "part": "main/patients.jsonl"}
     ]}
   ],
-  "encrypted_fields": [],
+  "encrypted_fields": [{"database": "main", "collection": "patients", "path": "notes", "key": "HEALTH", "fingerprint": "9f2c41d0", "form": "ciphertext"}],
   "auth": [{"name": "users", "documents": 31, "part": "_system/auth/users.jsonl"}],
   "auth_key_fingerprint": "6f42f0e47d8b8cc9",
   "files": 87,
@@ -58,6 +58,7 @@ clinic-2026-10-09/
 | `flags.auth` | Holds authentication data (the `auth` parts) |
 | `flags.no_files` | Made without files (`--no-files`, an anonymized or CSV export) |
 | `databases[].collections[]` | Each collection's document count and the package path of its documents |
+| `encrypted_fields[]` | Each [encrypted field](../encrypted-fields/): its `database`, `collection`, `path`, the field key's `key` name and `fingerprint`, and `form` (`ciphertext`, or `plaintext` once someone opened it with the key) |
 | `auth`, `auth_key_fingerprint` | The authentication data parts, and the fingerprint of the one-time export key their sealed fields are sealed under |
 | `checksums` | The SHA-256 of **every** other file, as `sha256:<hex>` |
 
@@ -96,6 +97,7 @@ Common flags are `--realm` (required), `--url` (the server; default `BACKD_URL`,
 | `--anonymize-config` | YAML of per-collection `remove` and `replace` rules |
 | `--staging-password` | One password for every user: `env:<VAR>`, `file:<path>` or `key:<value>` |
 | `--anonymize-files keep` | Export files in an anonymized copy |
+| `--field` | Keys to open [encrypted fields](../encrypted-fields/): `<path>=<key:\|env:\|file:…>` entries separated by `;` |
 
 ### backd import
 
@@ -107,6 +109,17 @@ Common flags are `--realm` (required), `--url` (the server; default `BACKD_URL`,
 | `--skip-invalid` | Leave out the documents that are invalid for the target |
 | `--report` | Write the problems found to this JSON file (default with `--skip-invalid`: `import-report.json`) |
 | `--auth-key` | The export key of a package with authentication data: `env:<VAR>`, `file:<path>` or `key:<value>` |
+| `--field` | Source keys for encrypted fields the target can't open itself, as in `export` |
+
+### backd export-decrypt
+
+Opens [encrypted fields](../encrypted-fields/) of a package, offline.
+
+| Flag | Effect |
+|---|---|
+| `--from` | The package: its directory or `.tar.gz` (required) |
+| `--out` | A new directory for the opened copy (required) |
+| `--field` | The keys, as in `export` (required) |
 
 ### Direct-mode flags
 
@@ -150,7 +163,7 @@ All of them need full admin access; the plan needs the re-authentication header 
 | `403` naming an admin right | The credential doesn't hold full admin access | Use an admin API key or a user whose roles open every area |
 | `409 export_running` | An export or import of this realm is running (on this instance) | Wait for it; a silent one is released after ten minutes |
 | `409 export_lease` | The lease is missing, expired, another administrator's, or the other kind (export or import) | Start again; an interrupted export resumes from its progress file |
-| `422 import_refused` | The package can't be imported here: another format, partial, a CSV extract, collections the realm doesn't have, or authentication data this store can't take | Read the details; add the collections to the configuration, or export again without `--fields` / as a package |
+| `422 import_refused` | The package can't be imported here: another format, partial, a CSV extract, collections the realm doesn't have, authentication data this store can't take, or [encrypted fields](../encrypted-fields/#importing) nobody here can open | Read the details; add the collections to the configuration, or export again without `--fields` / as a package |
 | `400` on `fields`, `where`, `include`, `format`, `anonymize_config`, `staging_password` | An option makes no sense, or a rule is refused by a schema | The details name each problem |
 | `400 checksum_mismatch` | A file arrived different from its checksum and was deleted | Run the import again |
 | `404` for a collection or file | The part isn't in the realm, or the realm has no storage | Check the configuration |
@@ -160,3 +173,5 @@ All of them need full admin access; the plan needs the re-authentication header 
 | `nothing was written: fix the problems above` | The validation found invalid documents or conflicts | Fix the configuration or data, use `--mode`, or `--skip-invalid` for invalid ones |
 | `realm … is served by … running backd instance(s)` | A direct import while an instance serves the realm | Stop it, or `--force` if you know it isn't writing |
 | `… is not the key this package was exported with` | The wrong `--auth-key` | Use the key printed by that export |
+| `the key given for … has the fingerprint …, but … is encrypted with the key …` | A `--field` key is not the one the field was encrypted with | Use the key whose fingerprint the manifest records |
+| `--field … matches no encrypted field of the package` | A typo, or the field is already plaintext | Check `encrypted_fields` in the manifest |

@@ -234,12 +234,12 @@ func (d *documents) accessIn(r *http.Request, c *registry.Collection) access {
 	}
 	// appConfig() in the collection's rules: the configuration is read once for the request,
 	// and only when a rule asks for it.
-	if c != nil && c.Rules.UsesConfig() {
+	if c != nil && (c.Rules.UsesConfig() || c.RevealUsesConfig()) {
 		a.values.Config = d.configValues(r, c.Realm)
 	}
 	// The organization helpers and user.orgs: the memberships are read once for the request,
 	// and only when a rule asks for them.
-	if c != nil && caller.User != nil && c.Rules.UsesOrgs() {
+	if c != nil && caller.User != nil && (c.Rules.UsesOrgs() || c.RevealUsesOrgs()) {
 		orgs := d.userOrgs(r, c.Realm, caller)
 		a.values.Orgs = orgs
 		a.values.User.Orgs = orgs

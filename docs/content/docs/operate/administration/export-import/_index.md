@@ -36,4 +36,4 @@ backd import --realm clinic --from ./clinic-2026-10-09.tar.gz
 - **Authentication data only when asked.** Users, password hashes, second factors and push devices travel only with `--include auth`; secrets, sessions and tokens never do.
 - **Needs full admin access** and, for a signed-in session, a fresh proof of identity. With an admin API key nothing more is asked.
 
-Encrypted fields in packages are planned together with field encryption and are not available yet.
+- **Encrypted fields stay ciphertext** unless you give their keys: the server never decrypts for an export. See [Encrypted fields](encrypted-fields/).

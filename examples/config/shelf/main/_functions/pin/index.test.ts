@@ -34,6 +34,13 @@ Deno.test("an editor pins; the pin is the team's and names its author", async ()
   if (pin.author !== "u1" || pin.title !== "Handbook") throw new Error(JSON.stringify(pin));
 });
 
+Deno.test("private notes are written with the pin, for backd to encrypt", async () => {
+  const { store, run } = call(ana(["editor"]), { org: "o1", title: "Plan", private_notes: "ask for a raise" });
+  await run();
+  const [pin] = store.all("main", "pins") as { private_notes: string }[];
+  if (pin.private_notes !== "ask for a raise") throw new Error(JSON.stringify(pin));
+});
+
 Deno.test("a plain member can't pin, and a stranger is not a member", async () => {
   const member = await refusal(call(ana(["member"]), { org: "o1", title: "x" }).run);
   if (member.status !== 403) throw new Error(JSON.stringify(member));

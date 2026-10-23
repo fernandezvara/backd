@@ -18,7 +18,10 @@ import (
 	"testing"
 	"time"
 
+	"go.mongodb.org/mongo-driver/v2/mongo"
+
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/fieldcrypt"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage"
 )
@@ -299,6 +302,10 @@ type fixture struct {
 	users   map[string]*auth.Users
 	reg     *registry.Registry
 	backing Store // the store the server was built with (MongoDB or memory)
+	// rings are the field encryption of realms with encrypted fields, and mongo the client
+	// to look at what is stored (MongoDB fixtures).
+	rings map[string]*fieldcrypt.Ring
+	mongo *mongo.Client
 }
 
 func newFixture(t *testing.T, opts ...func(*Config)) *fixture {
@@ -979,4 +986,21 @@ func TestOpTimeout(t *testing.T) {
 	if elapsed := time.Since(start); elapsed > 2*time.Second {
 		t.Errorf("request took %s despite a 50ms op timeout", elapsed)
 	}
+}
+
+// memRepo can migrate nothing, but answers like a repository that does, so the admin API's
+// encryption routes can be exercised on the in-memory store.
+func (r *memRepo) Prepare(context.Context) error            { return nil }
+func (r *memRepo) Retire(context.Context) ([]string, error) { return nil, nil }
+func (r *memRepo) MigrateBatch(context.Context, string, int, storage.MigrateOptions) (storage.MigrateResult, error) {
+	return storage.MigrateResult{}, nil
+}
+func (r *memRepo) EncryptionStatus(context.Context) ([]storage.FieldStatus, error) { return nil, nil }
+func (r *memRepo) CountNotCurrent(context.Context, string) (int64, error)          { return 0, nil }
+func (r *memRepo) CountSealedWith(context.Context, string, string) (int64, error)  { return 0, nil }
+func (r *memRepo) Generations(context.Context, string) ([]storage.KeyGeneration, error) {
+	return nil, nil
+}
+func (r *memRepo) Rekey(context.Context, string) (storage.KeyGeneration, error) {
+	return storage.KeyGeneration{Generation: 2, Status: "active"}, nil
 }

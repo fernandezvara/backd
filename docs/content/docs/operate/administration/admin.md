@@ -38,7 +38,10 @@ An admin role can open the whole admin API (`admin: true`), only some of its are
 | `invitations` | `/invitations` |
 | `apikeys` | `/apikeys` |
 | `secrets` | `/secrets` |
-| `audit` | `GET /audit` |
+| `audit` | `GET /encryption` | none; query `database`?, `collection`? | `200` with, per collection that encrypts (or once did) and per field, how the values are stored: `plaintext`, `encrypted`, `current`, `old`, `indexed`, the key with its fingerprint, the generations of its data keys and the latest migration; `complete` says nothing is left to migrate. Needs the `data` area (reading is enough) |
+| `POST /encryption/rekey` | `{"database", "collection", "field"}` | `200 {generation, status}`: a new generation of the field's data key. Full admin access and a fresh proof |
+| `POST /encryption/migrate` | `{"database", "collection", "fields"?, "dry_run"?}` | `202` with the [job](../../../build/functions/jobs/) that brings the stored documents in line with the configuration ([details](../../../build/configuration/field-keys/#change-encryption-on-existing-data)); `409` if one is running for the collection. Full admin access and a fresh proof |
+| `GET /audit` |
 | `functions` | `GET /triggers/status`, `GET /triggers/gaps` and `POST /triggers/gaps/{id}/resolve`; `POST /functions/{database}/{name}/invoke`, `GET /invocations`, `GET /jobs`, `GET /jobs/{id}`, `POST /jobs/{id}/cancel` and `…/rerun`, `GET /schedules`, and `POST /functions/{database}/{name}/pause` and `…/resume`; and reading any job through the data API |
 | `data` | the admin data route (documents past their collections' rules), and the [schema checks](../../../build/configuration/validation/#finding-documents-that-no-longer-match) (`GET` and `POST /data-checks`, read is enough; cancelling one needs only this area) |
 | `config` | `GET /config`, the read-only view of the realm's configuration, `POST /config/check`, which checks a change to the configuration, and `POST /storage/check`, which checks the realm's object storage |
@@ -129,9 +132,11 @@ Paths are relative to `/v1/{realm}/_admin`. Bodies are JSON (`Content-Type: appl
 | `GET /apikeys` | none | `200` with the realm's API keys (never the keys themselves) |
 | `POST /apikeys` | `{"name", "role"?, "expires_in"?, "networks"?, "scopes"?}` | `201` with the key, shown only here |
 | `DELETE /apikeys/{name}` | none | `204`; the key stops working at once |
-| `GET /secrets` | none | `200` with the realm's [secrets](../../../build/functions/secrets/)' metadata (never their values) |
-| `PUT /secrets/{name}` | `{"value", "database"?}` | `204`; creates or replaces the value |
-| `DELETE /secrets/{name}` | none; query `database`? | `204` |
+| `GET /secrets` | none | `200` with the realm's [secrets](../../../build/functions/secrets/)' metadata (never their values); a [field key](../../../build/configuration/field-keys/) also has its `fingerprint` and `used_by` |
+| `POST /secrets` | `{"name", "type": "key", "generate": true}` or `{"name", "type": "key", "value"}` | `201` with `name`, `type`, `fingerprint` and, for a generated key, `key`: shown only here. `409` if the name is taken. Full admin access and a fresh proof |
+| `POST /secrets/{name}/rotate` | `{"generate": true}`, `{"value"}` or `{"resume": true}` | `200` with `fingerprint`, `previous_fingerprint`, `version`, `rewrapped` and, for a generated key, `key`: shown only here. `409` if a rotation is pending (resume it) or none is. Full admin access and a fresh proof |
+| `PUT /secrets/{name}` | `{"value", "database"?}` | `204`; creates or replaces the value; `409` if the name is a field key |
+| `DELETE /secrets/{name}` | none; query `database`? | `204`; a [field key](../../../build/configuration/field-keys/) needs full admin access and a fresh proof, and `409` while a field uses it |
 | `GET /audit` | none; query `action`, `actor`, `target`, `since`, `until` (RFC 3339), `limit`, `skip` | `200` with a page of [audit records](../audit/), newest first |
 | `GET /jobs/{id}` | none | `200` with the job as the listing shows it, plus `steps` (every [step](../../../build/functions/jobs/#reporting-progress-from-a-long-job) the running or last attempt reported) and `steps_omitted`; `404` for an unknown id |
 | `POST /jobs/{id}/cancel` | none | `200` with the job, now `done` with the result `cancelled`: a queued, retrying or running function job ends at once and a worker running it stops the run. `409` when it has already finished or isn't a function's job. Audited. See [Cancelling and re-running a job](../../../build/functions/jobs/#cancelling-and-re-running-a-job) |
@@ -229,6 +234,7 @@ curl -X PUT https://localhost:8443/v1/blog/_admin/secrets/STRIPE_KEY \
 - Without `database`, the secret is in the **realm scope** (`realm.NAME` in `function.yaml`); with it, that **database's scope** (`NAME`, readable only by functions of that database — never another's, even in the same realm).
 - `value` must not be empty; `name` must be upper-case letters, digits and `_`, starting with a letter (`400` otherwise). Setting an existing scope and name replaces its value; `GET /secrets` never includes it, only who last set it and when.
 - A change reaches running functions within about a minute (decrypted values are cached briefly); deleting one makes a function that declares it answer `500 secret_missing` again.
+- **Field keys** ([Field keys](../../../build/configuration/field-keys/)) are secrets of `type: key`: 32 bytes that only field encryption reads, never a function. `POST /secrets` generates one (returned once, base64url, with its fingerprint) or imports one; every other call lists them without the value.
 - Answers `500` (`internal_error`) if the server has no `BACKD_SECRETS_KEY` configured: an operator problem, not something a request can fix.
 
 ### Previewing an erase
@@ -279,7 +285,7 @@ Every change is audited as `appconfig.change` with the version, the kind and the
 `/v1/{realm}/_admin/data/{database}/{collection}[/{id}]` (and `/data/{database}/_batch`) serve the [data routes](../../../build/api/documents/)' operations to an administrator **past the collection's rules**: list, get, create, `PUT`, `PATCH`, `DELETE` (soft or hard as the collection decides, with `?purge=true` and `…/restore` for a [soft-deleting](../../../build/configuration/config-dir/#soft-delete) one), and the `deleted` and `where` parameters of the data routes. Everything else is the same: the schema validates every write, `_meta.version`, `ETag` and `If-Match` work, errors have the same shape. It needs the `data` [area](#admin-rights): `admin: true` and an admin key have it, an area list has it only if it names `data`, and a read-only administrator reads only when `admin.read_access.data` is `true` (every change answers `403`).
 
 - A document created here has **no owner** (`_meta.owner` is `null`): the administrator didn't create it for themselves. `created_by` and `updated_by` record who did, `user:<id>` or `key:<name>`.
-- **Writes are audited**, never their content: `data.create`, `data.update`, `data.delete`, `data.restore` and `data.purge`, with the actor and the target `doc:<database>/<collection>/<id>`. Reads are not in the audit trail; they carry the actor in the access log.
+- **Writes are audited**, never their content: `data.create`, `data.update`, `data.delete`, `data.restore` and `data.purge`, with the actor and the target `doc:<database>/<collection>/<id>`. Reads are not in the audit trail (they carry the actor in the access log), except a read that shows [encrypted fields](../../../build/configuration/field-keys/#who-sees-an-encrypted-field) in plain to a full administrator, which is audited as `data.reveal` with the fields and the number of documents. A read-only administrator always gets those fields redacted.
 - Two more routes exist only here, for [organizations](../../../build/api/documents/#fixing-data-as-an-administrator): `POST /{id}/_transfer` moves a document to another organization, and `POST /_assign_org` gives the documents of an adopted collection that have none one (`data.transfer` and `data.assign_org`, audited).
 - The normal data routes are unchanged: an administrator using an app is bound by its rules there.
 - With `BACKD_ADMIN_API=false` the route doesn't exist (`404`).

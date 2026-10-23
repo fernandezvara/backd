@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/auth/authtest"
 	"github.com/fernandezvara/backd/internal/email"
 	"github.com/fernandezvara/backd/internal/registry"
 	"io"
@@ -129,7 +131,7 @@ func TestRunDatabases(t *testing.T) {
 	if code := run([]string{"databases", "--collections"}, getenv, nil, &stdout, &stderr); code != 0 {
 		t.Fatalf("--collections: exit code %d, stderr %q", code, stderr.String())
 	}
-	want := "backd___deployment.realms\nblog___system.api_keys\nblog___system.app_config\nblog___system.app_config_history\nblog___system.audit\nblog___system.auth_challenges\nblog___system.consent_records\nblog___system.devices\nblog___system.email_tokens\nblog___system.file_deletions\nblog___system.file_journal\nblog___system.idempotency\nblog___system.identities\nblog___system.invitations\nblog___system.invocations\nblog___system.jobs\nblog___system.login_attempts\nblog___system.login_codes\nblog___system.mfa\nblog___system.oauth_states\nblog___system.org_invitations\nblog___system.org_member_seq\nblog___system.org_members\nblog___system.org_teams\nblog___system.org_templates\nblog___system.orgs\nblog___system.push_outbox\nblog___system.push_sends\nblog___system.schedules\nblog___system.schema_checks\nblog___system.secrets\nblog___system.security_state\n" +
+	want := "backd___deployment.realms\nblog___system.api_keys\nblog___system.app_config\nblog___system.app_config_history\nblog___system.audit\nblog___system.auth_challenges\nblog___system.consent_records\nblog___system.data_keys\nblog___system.devices\nblog___system.email_tokens\nblog___system.file_deletions\nblog___system.file_journal\nblog___system.idempotency\nblog___system.identities\nblog___system.invitations\nblog___system.invocations\nblog___system.jobs\nblog___system.login_attempts\nblog___system.login_codes\nblog___system.mfa\nblog___system.oauth_states\nblog___system.org_invitations\nblog___system.org_member_seq\nblog___system.org_members\nblog___system.org_teams\nblog___system.org_templates\nblog___system.orgs\nblog___system.push_outbox\nblog___system.push_sends\nblog___system.schedules\nblog___system.schema_checks\nblog___system.secrets\nblog___system.security_state\n" +
 		"blog___system.sessions\nblog___system.storage_usage\nblog___system.users\nblog__cms.pages\nblog__main.posts\nshop__orders.items\n"
 	if stdout.String() != want {
 		t.Errorf("--collections: stdout = %q, want %q", stdout.String(), want)
@@ -240,5 +242,47 @@ func TestUnprotectedAdminRoles(t *testing.T) {
 	s.MFA = registry.MFASettings{Off: true}
 	if got := unprotectedAdminRoles(s); len(got) != 0 {
 		t.Errorf("MFA off: %v", got)
+	}
+}
+
+func TestStartupRefusesAFieldWithoutItsKey(t *testing.T) {
+	ctx := context.Background()
+	root := writeConfig(t, map[string]string{
+		"clinic/realm.yaml":                    "signup: open\n",
+		"clinic/main/patients/schema.json":     `{"type":"object","properties":{"tax_id":{"type":"string"},"notes":{"type":"string"}}}`,
+		"clinic/main/patients/collection.yaml": "fields:\n  tax_id:\n    encrypt: {key: TAX}\n  notes:\n    encrypt: {key: HEALTH}\n",
+	})
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := authtest.NewMemStore()
+	cipher, _ := auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
+	svc := &auth.Users{Store: store, Realm: "clinic", Cipher: cipher}
+	users := func(string) *auth.Users { return svc }
+
+	err = checkEncryptionKeys(ctx, reg, users)
+	if err == nil || !strings.Contains(err.Error(), "main/patients.tax_id names the key TAX, which does not exist") || !strings.Contains(err.Error(), "HEALTH") || !strings.Contains(err.Error(), "--type key --generate --name HEALTH") {
+		t.Fatalf("missing keys: %v", err)
+	}
+	if err := svc.SetSecret(ctx, "", "TAX", "a plain secret", "x"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreateKey(ctx, "HEALTH", "", "x"); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkEncryptionKeys(ctx, reg, users); err == nil || !strings.Contains(err.Error(), "TAX, which is a plain secret") || strings.Contains(err.Error(), "HEALTH") {
+		t.Fatalf("a plain secret: %v", err)
+	}
+	svc.DeleteSecret(ctx, "", "TAX")
+	if _, err := svc.CreateKey(ctx, "TAX", "", "x"); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkEncryptionKeys(ctx, reg, users); err != nil {
+		t.Errorf("with both keys: %v", err)
+	}
+	// A realm without auth has nowhere to keep keys.
+	if err := checkEncryptionKeys(ctx, reg, func(string) *auth.Users { return nil }); err == nil || !strings.Contains(err.Error(), "needs `auth` enabled") {
+		t.Errorf("no auth: %v", err)
 	}
 }

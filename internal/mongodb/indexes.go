@@ -148,6 +148,11 @@ func (p *Provisioner) applyIndexes(ctx context.Context, c *registry.Collection, 
 			// A document goes when the date in its key (purge_at) has passed.
 			opts.SetExpireAfterSeconds(0)
 		}
+		if ix.Blind {
+			// Documents without the field (not set, or from before the field was encrypted)
+			// are left out, so many of them can lack it in a unique index.
+			opts.SetPartialFilterExpression(bson.D{{Key: mongoField(ix.Keys[0].Field), Value: bson.D{{Key: "$type", Value: "binData"}}}})
+		}
 		model := mongo.IndexModel{Keys: indexKeys(ix), Options: opts}
 		name, err := coll.Indexes().CreateOne(ctx, model)
 		if err != nil {

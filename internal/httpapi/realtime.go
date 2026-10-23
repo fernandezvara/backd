@@ -277,11 +277,18 @@ func (d *documents) subscription(r *http.Request, c *registry.Collection, s real
 			writeError(w, r, http.StatusForbidden, codeForbidden, "no access rule allows this operation", Detail{Path: at + ".collection", Reason: "the caller may not read it"})
 		}
 	}
+	// An event carries the document as a read would: encrypted fields follow their reveal rules,
+	// evaluated for the caller the subscription was made by (a change of their access ends the stream).
+	rv := d.revealerFor(r, c)
+	show := func(doc map[string]any) map[string]any {
+		shown, _ := rv.view(doc)
+		return render(shown)
+	}
 	return &builtSub{
 		c: c, where: where, filter: filter,
 		sub: &realtime.Subscription{
 			DB: c.MongoDatabase, Coll: c.Name, Doc: s.Doc, Keys: realtime.KeysOf(filter),
-			Visible: visibleBy(filter), Render: render,
+			Visible: visibleBy(filter), Render: show,
 		},
 	}, nil
 }

@@ -17,7 +17,7 @@ var helpGroups = []struct {
 }{
 	{"Develop", []string{"template", "config", "rules", "databases", "types", "openapi", "functions"}},
 	{"Session", []string{"login", "logout", "whoami", "account"}},
-	{"Administer a realm", []string{"bootstrap", "user", "orgs", "apikey", "push", "secret", "audit", "data", "storage", "files", "export", "import", "compliance", "consents", "app-config", "triggers"}},
+	{"Administer a realm", []string{"bootstrap", "user", "orgs", "apikey", "push", "secret", "encrypt", "audit", "data", "storage", "files", "export", "export-decrypt", "import", "compliance", "consents", "app-config", "triggers"}},
 	{"Server", []string{"serve", "provision", "worker", "executor", "egress"}},
 	{"General", []string{"help", "version"}},
 }

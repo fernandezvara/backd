@@ -4578,7 +4578,7 @@ paths:
     get:
       tags: [admin]
       summary: List secrets
-      description: Metadata only — scope, name and who last changed it. Values are write-only.
+      description: Metadata only — scope, name, type and who last changed it; for keys also the fingerprint and the fields using them. Values are write-only.
       operationId: adminListSecrets
       security: [{ apiKey: [] }, { session: [] }]
       responses:
@@ -4594,6 +4594,54 @@ paths:
                   items: { type: array, items: { $ref: "#/components/schemas/Secret" } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+    post:
+      tags: [admin]
+      summary: Create a field key
+      description: |
+        Creates a `key` secret for field encryption: 32 random bytes the server generates
+        (`generate: true`) or a key you import (`value`, 32 bytes in base64url). **A generated key
+        is in this answer and nowhere else, ever**: the developer keeps the only copy, and a lost
+        key means the values encrypted with it are lost. Imported keys answer with the fingerprint
+        alone. A name already taken, by a key or by a plain secret, is refused with `409`. Needs
+        full admin access (every area) and a fresh re-authentication; audited as
+        `secret.key.create` with the name and fingerprint, never the key. Values of plain secrets
+        are set with `PUT /_admin/secrets/{name}`.
+      operationId: adminCreateKey
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, type]
+              properties:
+                name: { type: string, description: "Upper-case letters, digits and _, starting with a letter." }
+                type: { type: string, enum: [key] }
+                generate: { type: boolean, description: "Make a new random key. Give exactly one of `generate` and `value`." }
+                value: { type: string, description: "Import this key: 32 bytes in base64url." }
+      responses:
+        "201":
+          description: The key was created. The response is never cached.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [name, type, fingerprint]
+                properties:
+                  name: { type: string }
+                  type: { type: string, enum: [key] }
+                  fingerprint: { type: string }
+                  key: { type: string, description: "A generated key, base64url. Only this once." }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_admin/secrets/{name}:
@@ -4630,20 +4678,249 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
     delete:
       tags: [admin]
       summary: Delete a secret
-      description: A function that declares it answers `secret_missing` again.
+      description: |
+        A function that declares it answers `secret_missing` again. Deleting a field key needs
+        full admin access and a fresh re-authentication, and is refused with `409` while any field
+        still names it; audited as `secret.key.delete`.
       operationId: adminDeleteSecret
       security: [{ apiKey: [] }, { session: [] }]
       parameters:
+        - { $ref: "#/components/parameters/reauth" }
         - { name: database, in: query, description: "Its database scope; absent means the realm scope.", schema: { type: string } }
       responses:
         "204": { description: Secret deleted. }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/secrets/{name}/rotate:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - name: name
+        in: path
+        required: true
+        schema: { type: string, description: "The field key's name." }
+    post:
+      tags: [admin]
+      summary: Rotate a field key
+      description: |
+        Gives a field key a new value and wraps every data key it protected again with it: no
+        document is rewritten, so the change is instant. The new value is generated here and
+        returned once (`generate: true`) or brought by the caller (`value`, 32 bytes in base64url).
+        `resume: true` finishes a rotation that stopped before the end; until a rotation finishes
+        the previous value is kept, so nothing becomes unreadable. Give exactly one of the three.
+        Needs full admin access and a fresh re-authentication; audited as `secret.key.rotate` with
+        the new and previous fingerprints. Keep your old copy of the key for backups made before.
+      operationId: adminRotateKey
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                generate: { type: boolean }
+                value: { type: string, description: "The new key: 32 bytes in base64url." }
+                resume: { type: boolean }
+      responses:
+        "200":
+          description: The key was rotated. The response is never cached.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [name, type, fingerprint, previous_fingerprint, version, rewrapped]
+                properties:
+                  name: { type: string }
+                  type: { type: string, enum: [key] }
+                  fingerprint: { type: string, description: "Of the new value." }
+                  previous_fingerprint: { type: string }
+                  version: { type: integer, description: "How many values the key has had." }
+                  rewrapped: { type: integer, description: "Data keys wrapped again by this call." }
+                  key: { type: string, description: "A generated key, base64url. Only this once." }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/encryption:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [admin]
+      summary: How encrypted fields are stored
+      description: |
+        For each collection that encrypts fields, or once did, and per field: how many documents
+        hold the value in plaintext, encrypted, sealed with the current data key (`current`) and
+        with an older one (`old`), how many have their blind index, the field key with its
+        fingerprint, the generations of its data keys with how many values each seals, and the
+        latest migration. A collection is `complete` when nothing is left to migrate. It counts
+        documents, so on a big collection it takes a moment. Needs the `data` area (reading is
+        enough).
+      operationId: adminGetEncryption
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { name: database, in: query, schema: { type: string } }
+        - { name: collection, in: query, description: "Needs `database`.", schema: { type: string } }
+      responses:
+        "200":
+          description: The collections that encrypt, or once did.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [collections]
+                properties:
+                  collections:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [database, collection, fields, complete, migration]
+                      properties:
+                        database: { type: string }
+                        collection: { type: string }
+                        complete: { type: boolean }
+                        fields:
+                          type: array
+                          items:
+                            type: object
+                            additionalProperties: false
+                            required: [path, configured, search, plaintext, encrypted, current, old, complete, generations]
+                            properties:
+                              path: { type: string }
+                              configured: { type: boolean, description: "False for a field the configuration no longer encrypts." }
+                              key: { type: string }
+                              fingerprint: { type: string }
+                              search: { type: boolean }
+                              plaintext: { type: integer }
+                              encrypted: { type: integer }
+                              current: { type: integer }
+                              old: { type: integer }
+                              indexed: { type: integer }
+                              unindexed: { type: integer }
+                              complete: { type: boolean }
+                              generations:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: false
+                                  required: [kind, generation, status, key, wrap_version]
+                                  properties:
+                                    kind: { type: string, enum: [data, index] }
+                                    generation: { type: integer }
+                                    status: { type: string, enum: [active, decrypt_only, retired] }
+                                    key: { type: string }
+                                    wrap_version: { type: integer }
+                                    values: { type: integer }
+                        migration:
+                          type: [object, "null"]
+                          description: The latest migration job of the collection.
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/encryption/rekey:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [admin]
+      summary: Start a new generation of a field's data key
+      description: |
+        New values of the field are sealed with a fresh data key; the existing ones stay readable
+        until a migration seals them again. For data keys that may have leaked; replacing the
+        field key alone (`POST /_admin/secrets/{name}/rotate`) never needs it. Needs full admin
+        access and a fresh re-authentication; audited as `encrypt.rekey`.
+      operationId: adminRekeyField
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [database, collection, field]
+              properties:
+                database: { type: string }
+                collection: { type: string }
+                field: { type: string, description: "The encrypted field's path." }
+      responses:
+        "200":
+          description: The new generation is active.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [database, collection, field, generation, status]
+                properties:
+                  database: { type: string }
+                  collection: { type: string }
+                  field: { type: string }
+                  generation: { type: integer }
+                  status: { type: string }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/encryption/migrate:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [admin]
+      summary: Migrate a collection's documents to its encryption configuration
+      description: |
+        Queues a background job that reads the collection in id order (at most 1,000 documents a
+        second) and rewrites only what differs: plaintext values are encrypted, values under an
+        older data key or generation sealed again, blind indexes built or rebuilt, values of
+        fields that are no longer encrypted opened. `_meta.version` never changes. It goes on
+        from where it stopped if a worker dies, and at the end retires the data keys nothing
+        uses. With `dry_run` it only counts. One migration per collection at a time (`409`).
+        Needs full admin access and a fresh re-authentication; audited as `encrypt.start` and,
+        by the job, `encrypt.migrate`. Follow it with `GET /_admin/jobs/{id}`.
+      operationId: adminMigrateEncryption
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [database, collection]
+              properties:
+                database: { type: string }
+                collection: { type: string }
+                fields: { type: array, items: { type: string }, description: "Only these encrypted fields (fields no longer encrypted are always opened)." }
+                dry_run: { type: boolean }
+      responses:
+        "202":
+          description: The job is queued.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobSummary" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_admin/config:
@@ -5028,8 +5305,12 @@ paths:
         order, soft-deleted ones included, in the API representation with dates and binary values as
         MongoDB Extended JSON (relaxed). With `file` it streams a file's object through backd's
         storage client. Part and file requests carry the lease in `X-Backd-Export`. Memory does not
-        grow with the size of the collection. Encrypted fields, when a realm has them, are sent as
-        stored. Never exported: sessions, tokens, counters, jobs, history, secrets and the audit trail.
+        grow with the size of the collection. **Encrypted fields are always sent as stored (ciphertext,
+        BSON binary of subtype 6 as `{"$binary": {"base64": …, "subType": "06"}}`): the server never
+        decrypts for an export.** The manifest lists each (`encrypted_fields`, with the field key's name
+        and fingerprint), and `part=_system/data_keys.jsonl` streams their wrapped data and index keys
+        (format: "Encrypted fields format" in the documentation), which only the holder of the field
+        keys can open. Never exported: sessions, tokens, counters, jobs, history, secrets and the audit trail.
         Needs full admin access; a session also needs a fresh re-authentication on the plan request.
         Audited as `export` (the plan) and `export.done` (see `DELETE`), never with content.
       operationId: adminExport
@@ -5247,7 +5528,13 @@ paths:
         against the collection's schema, its files against the file fields, the documents the target
         already holds (`create` refuses a different document with the same id, `skip` keeps the
         existing one, `replace` overwrites it; an identical one is `unchanged` in every mode) and the
-        unique indexes. `write` also writes the documents that pass, with their ids and `_meta` kept,
+        unique indexes. An encrypted field the package holds as ciphertext is opened by the target
+        itself when it encrypts that field with the same key (same fingerprint): the CLI first sends
+        the package's wrapped data keys (`phase=keys`, part `_system/data_keys.jsonl`), the values are
+        opened with the target's copy of the key and sealed again under its own keys as they are
+        written. A field nobody here can open is refused at the start (`422`, naming each; a dry run
+        lists them in `needs_keys` instead): the importer opens it with the source key before sending
+        and says so in the manifest (`form: plaintext`). `write` also writes the documents that pass, with their ids and `_meta` kept,
         counts their files in the storage usage and queues the image versions their files wait for.
         Writing is idempotent, so an interrupted import is finished by sending the same chunks again.
         Users and organizations the target doesn't have are counted, not refused. Needs full admin
@@ -5263,10 +5550,10 @@ paths:
           schema: { type: string }
         - name: phase
           in: query
-          schema: { type: string, enum: [validate, write] }
+          schema: { type: string, enum: [validate, write, keys] }
         - name: part
           in: query
-          description: "`<database>/<collection>.jsonl`, with `phase`."
+          description: "`<database>/<collection>.jsonl`, with `phase`; `_system/data_keys.jsonl` with `phase=keys`."
           schema: { type: string }
       requestBody:
         content:
@@ -9289,7 +9576,8 @@ components:
                 write_conflict, version_mismatch, id_required, invalid_id,
                 id_not_allowed, id_taken, payload_too_large,
                 unsupported_media_type, too_many_requests, internal_error,
-                unavailable; for function calls also function_failed,
+                unavailable, field_encrypted (a `where` or `order_by` names an encrypted
+                field, or does more with one than equality through its blind index); for function calls also function_failed,
                 function_timeout, invalid_output, secret_missing,
                 idempotency_key_required, idempotency_key_reused and
                 request_in_progress. A function's own errors (`ctx.error`)
@@ -9305,6 +9593,7 @@ components:
                 properties:
                   path: { type: string }
                   reason: { type: string }
+                  code: { type: string, description: "Set when the problem has a code of its own, such as `field_encrypted`." }
             request_id: { type: string, minLength: 1 }
 
     User:
@@ -9431,10 +9720,19 @@ components:
       description: A secret's metadata, as listed — never its value.
       type: object
       additionalProperties: false
-      required: [database, name, created_at, updated_at, updated_by]
+      required: [database, name, type, created_at, updated_at, updated_by]
       properties:
         database: { type: string, description: "Its database scope; empty means the realm scope." }
         name: { type: string }
+        type:
+          type: string
+          enum: [secret, key]
+          description: "A `key` is a field-encryption key (`POST /_admin/secrets`); only field encryption reads it, no function or provider does."
+        fingerprint: { type: string, description: "Keys only: the first 8 hex characters of SHA-256 over a fixed label and the key. It identifies a saved copy; the key itself is never shown again." }
+        used_by:
+          type: array
+          items: { type: string }
+          description: "Keys only: the fields that name this key, as `database/collection.path`."
         created_at: { $ref: "#/components/schemas/Timestamp" }
         updated_at: { $ref: "#/components/schemas/Timestamp" }
         updated_by: { type: string, description: "Who last set it, e.g. `user:<id>` or `key:<name>`." }
@@ -9526,6 +9824,15 @@ components:
         expires_in: { type: integer }
         max_chunk_bytes: { type: integer, format: int64, description: The largest chunk to send. }
         warnings: { type: array, items: { type: string } }
+        needs_keys:
+          type: array
+          description: On a dry run, the encrypted fields of the package nobody here can open, and why. Refused with `422` otherwise.
+          items:
+            type: object
+            properties:
+              path: { type: string, description: "`<database>/<collection>.<field>`." }
+              reason: { type: string }
+        keys_needed: { type: boolean, description: The target opens some ciphertext itself and wants the package's wrapped keys (`phase=keys`). }
         file_fields:
           type: object
           additionalProperties: { type: array, items: { type: string } }
@@ -9597,10 +9904,12 @@ components:
               items:
                 type: object
                 properties:
+                  database: { type: string }
+                  collection: { type: string }
                   path: { type: string }
-                  key: { type: string }
-                  fingerprint: { type: string }
-                  form: { type: string, enum: [ciphertext, plaintext] }
+                  key: { type: string, description: "The field key's name." }
+                  fingerprint: { type: string, description: "The field key's fingerprint, to check a key against." }
+                  form: { type: string, enum: [ciphertext, plaintext], description: "ciphertext: the documents hold the values as stored; plaintext: someone opened them with the key." }
             files: { type: integer, format: int64 }
             checksums: { type: object, additionalProperties: { type: string } }
             auth:
@@ -10174,6 +10483,14 @@ components:
         purge_at:
           allOf: [{ $ref: "#/components/schemas/Timestamp" }]
           description: When a soft-deleted document is removed for good (`soft_delete.retention`).
+        redacted:
+          type: array
+          items: { type: string }
+          description: |
+            The encrypted fields (dot paths) the caller may not see, by the field's `reveal` rule:
+            they come back `null`, so a `null` of one of these is hidden, not empty. Absent when
+            nothing is hidden. A conditional GET's ETag carries a suffix (`"12.r3f9a1c2b"`) when it
+            is present.
         chain:
           type: object
           additionalProperties: false

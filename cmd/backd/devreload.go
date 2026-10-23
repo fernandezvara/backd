@@ -186,7 +186,7 @@ func (r *reloader) reload(ctx context.Context, changed []string) (*reloadEvent, 
 		return nil, nil
 	}
 	next := *cur
-	next.reg, next.fingerprint, next.userServices = reg, fp, nil
+	next.reg, next.fingerprint, next.userServices, next.rings = reg, fp, nil, nil
 	if err := r.apply(ctx, &next); err != nil {
 		return nil, fmt.Errorf("applying the new config: %w", err)
 	}
@@ -333,7 +333,7 @@ func followConfig(ctx context.Context, cur *app, interval time.Duration) *app {
 		}
 		cur.log.Info("dev mode: worker config reloaded", "fingerprint", fp)
 		next := *cur
-		next.reg, next.fingerprint, next.userServices = reg, fp, nil
+		next.reg, next.fingerprint, next.userServices, next.rings = reg, fp, nil, nil
 		return &next
 	}
 }

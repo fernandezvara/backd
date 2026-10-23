@@ -1,7 +1,7 @@
 {
   "generator": "1",
   "realm": "shelf",
-  "fingerprint": "95b4957c1ca2cc95f4a4089d4fe59d87d3fb7b863306e8a9072e6e799ff72753",
+  "fingerprint": "cfacdef9fe2646a46d8a405935ef0f6033ded599433179e16c238f66891603ad",
   "entries": {
     "collection mail/outbox": "",
     "collection main/assets": "",
@@ -54,6 +54,7 @@
     "field main/notifications to_user": "string (required)",
     "field main/pins author": "string",
     "field main/pins note": "string",
+    "field main/pins private_notes": "string",
     "field main/pins title": "string (required)",
     "field main/pins url": "string",
     "field main/profiles avatar": "string",
@@ -111,7 +112,7 @@
     "function main/notify internal": "true",
     "function main/notify mode": "sync",
     "function main/notify output": "unknown",
-    "function main/pin input": "{ note?: string; org: string; title: string; url?: string; }",
+    "function main/pin input": "{ note?: string; org: string; private_notes?: string; title: string; url?: string; }",
     "function main/pin internal": "false",
     "function main/pin mode": "sync",
     "function main/pin output": "{ id: string; limit: number; pins: number; [key: string]: unknown; }",

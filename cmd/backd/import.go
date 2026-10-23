@@ -32,6 +32,13 @@ type importBeginAnswer struct {
 	MaxChunkBytes int64               `json:"max_chunk_bytes"`
 	Warnings      []string            `json:"warnings"`
 	FileFields    map[string][]string `json:"file_fields"`
+	// NeedsKeys are the encrypted fields of the package nobody here can open; KeysNeeded says
+	// the target opens some itself and wants the package's wrapped keys.
+	NeedsKeys []struct {
+		Path   string `json:"path"`
+		Reason string `json:"reason"`
+	} `json:"needs_keys"`
+	KeysNeeded bool `json:"keys_needed"`
 }
 
 // importProblem is a document that did not pass, or clashed, as the server reports it.
@@ -99,6 +106,18 @@ func importAction(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
+	keys, err := parseFieldKeys(str(c, "field"), c.Getenv, stderr)
+	if err != nil {
+		return usageErr(err)
+	}
+	packKeys, err := packageKeys(dir)
+	if err != nil {
+		return err
+	}
+	dec, err := newDecryptor(m, keys, packKeys)
+	if err != nil {
+		return usageErr(err)
+	}
 	var ek *auth.SecretCipher
 	if spec := str(c, "auth-key"); spec != "" {
 		text, err := readKeySource(spec, c.Getenv, stderr)
@@ -131,6 +150,16 @@ func importAction(c *kli.CommandContext) error {
 	}
 	slim := *m
 	slim.Checksums = nil
+	// The fields this command opens arrive in plaintext, and the manifest it sends says so.
+	slim.Encrypted = append([]exportpkg.EncryptedField(nil), m.Encrypted...)
+	for i := range slim.Encrypted {
+		e := &slim.Encrypted[i]
+		for _, opened := range dec.opened[e.Database+"/"+e.Collection] {
+			if opened.Path == e.Path {
+				e.Form = exportpkg.FormPlaintext
+			}
+		}
+	}
 	var begun importBeginAnswer
 	body := map[string]any{"manifest": slim, "mode": mode, "skip_invalid": skipInvalid, "dry_run": dry}
 	if _, err := t.callHeaders("POST", "_admin/import", nil, body, &begun, proof); err != nil {
@@ -148,12 +177,25 @@ func importAction(c *kli.CommandContext) error {
 	for _, w := range begun.Warnings {
 		fmt.Fprintf(stderr, "warning: %s\n", w)
 	}
+	if len(begun.NeedsKeys) > 0 {
+		fmt.Fprintln(stderr, "these encrypted fields need a key to be imported (--field <path>=<key:|env:|file:…>):")
+		for _, n := range begun.NeedsKeys {
+			fmt.Fprintf(stderr, "  %s: %s\n", n.Path, n.Reason)
+		}
+		complete = true
+		return errors.New("the package can't be imported until those keys are given")
+	}
+	if begun.KeysNeeded {
+		if err := sendDataKeys(t, dir, lease, begun.MaxChunkBytes); err != nil {
+			return err
+		}
+	}
 	if err := checkFileRefs(dir, m, begun.FileFields, stderr); err != nil {
 		return err
 	}
 
 	fmt.Fprintln(stderr, "validating every document against the target's configuration…")
-	val, err := runPhase(t, dir, m, "validate", lease, begun.MaxChunkBytes, ek, stderr)
+	val, err := runPhase(t, dir, m, "validate", lease, begun.MaxChunkBytes, ek, dec, stderr)
 	if err != nil {
 		return err
 	}
@@ -185,7 +227,7 @@ func importAction(c *kli.CommandContext) error {
 		return err
 	}
 	fmt.Fprintln(stderr, "writing documents…")
-	wr, err := runPhase(t, dir, m, "write", lease, begun.MaxChunkBytes, ek, stderr)
+	wr, err := runPhase(t, dir, m, "write", lease, begun.MaxChunkBytes, ek, dec, stderr)
 	if err != nil {
 		return err
 	}
@@ -239,7 +281,7 @@ func writeImportReport(path string, t *importTotals) error {
 }
 
 // runPhase sends every collection of the package, in chunks, to one phase of the import.
-func runPhase(t *target, dir string, m *exportpkg.Manifest, phase string, lease map[string]string, maxChunk int64, ek *auth.SecretCipher, stderr io.Writer) (*importTotals, error) {
+func runPhase(t *target, dir string, m *exportpkg.Manifest, phase string, lease map[string]string, maxChunk int64, ek *auth.SecretCipher, dec *decryptor, stderr io.Writer) (*importTotals, error) {
 	totals := &importTotals{counts: map[string]int{}}
 	// Authentication data first, so the owners of the documents exist when they are checked.
 	for _, ap := range m.Auth {
@@ -276,6 +318,10 @@ func runPhase(t *target, dir string, m *exportpkg.Manifest, phase string, lease 
 				return nil, err
 			}
 			err = eachChunk(f, maxChunk, func(chunk []byte, firstLine int) error {
+				chunk, err := dec.chunk(db.Name, col.Name, chunk)
+				if err != nil {
+					return fmt.Errorf("%s: %w", col.Part, err)
+				}
 				var ans importChunkAnswer
 				q := url.Values{"phase": {phase}, "part": {col.Part}}
 				if err := t.send("POST", "_admin/import", q, bytes.NewReader(chunk), int64(len(chunk)), "application/x-ndjson", lease, &ans); err != nil {
@@ -571,4 +617,22 @@ func prepareAuthChunk(collection string, chunk []byte, ek *auth.SecretCipher) ([
 		return nil
 	})
 	return out.Bytes(), err
+}
+
+// sendDataKeys gives the server the package's wrapped keys, which it opens the ciphertext of
+// fields it shares a key with.
+func sendDataKeys(t *target, dir string, lease map[string]string, maxChunk int64) error {
+	f, err := os.Open(filepath.Join(dir, filepath.FromSlash(exportpkg.DataKeysName)))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return eachChunk(f, maxChunk, func(chunk []byte, _ int) error {
+		var ans struct{}
+		q := url.Values{"phase": {"keys"}, "part": {exportpkg.DataKeysName}}
+		return t.send("POST", "_admin/import", q, bytes.NewReader(chunk), int64(len(chunk)), "application/x-ndjson", lease, &ans)
+	})
 }

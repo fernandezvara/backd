@@ -1178,6 +1178,24 @@ func TestContract(t *testing.T) {
 	req("DELETE", ad+"/secrets/KEY", "", nil, 401)
 	req("DELETE", ad+"/secrets/KEY", "", ada, 403)
 
+	// Field keys (16.1): created once, never overwritten, listed with a fingerprint.
+	req("POST", ad+"/secrets", `{"name": "HEALTH", "type": "key", "generate": true}`, json(key), 201)
+	req("POST", ad+"/secrets", `{"name": "HEALTH", "type": "key", "generate": true}`, json(key), 409)
+	req("POST", ad+"/secrets", `{"name": "SPARE", "type": "key"}`, json(key), 400)
+	req("POST", ad+"/secrets", `{"name": "SPARE", "type": "key", "generate": true}`, nil, 401)
+	req("POST", ad+"/secrets", `{"name": "SPARE", "type": "key", "generate": true}`, with(ada, "Content-Type", "application/json"), 403)
+	req("PUT", ad+"/secrets/HEALTH", `{"value": "x"}`, json(key), 409)
+	req("POST", ad+"/secrets/HEALTH/rotate", `{"generate": true}`, json(key), 200)
+	req("POST", ad+"/secrets/HEALTH/rotate", `{}`, json(key), 400)
+	req("POST", ad+"/secrets/HEALTH/rotate", `{"resume": true}`, json(key), 409)
+	req("POST", ad+"/secrets/NOPE/rotate", `{"generate": true}`, json(key), 404)
+	req("POST", ad+"/secrets/HEALTH/rotate", `{"generate": true}`, nil, 401)
+	req("POST", ad+"/secrets/HEALTH/rotate", `{"generate": true}`, with(ada, "Content-Type", "application/json"), 403)
+	f.svc.KeyUses = func(string) []string { return []string{"app/notes.body"} }
+	req("DELETE", ad+"/secrets/HEALTH", "", key, 409)
+	f.svc.KeyUses = nil
+	req("DELETE", ad+"/secrets/HEALTH", "", key, 204)
+
 	// Functions (fake executor).
 	fn := "/v1/acme/app/_func/"
 	req("POST", fn+"echo", `{"n": 1}`, ada, 200)
@@ -2052,6 +2070,27 @@ func TestContract(t *testing.T) {
 		req("POST", assign, `{"org": "`+orgID+`"}`, key, 409) // one at a time per collection
 	}
 
+	// Encryption (16.5): the status of a realm that encrypts nothing, a migration queued once, and a
+	// rekey of a field the collection is made to encrypt for the moment.
+	req("GET", ad+"/encryption", "", key, 200)
+	req("GET", ad+"/encryption?collection=posts", "", key, 400)
+	req("GET", ad+"/encryption", "", nil, 401)
+	req("GET", ad+"/encryption", "", ada, 403)
+	req("POST", ad+"/encryption/migrate", `{"database": "app", "collection": "posts", "fields": ["title"]}`, json(key), 400)
+	req("POST", ad+"/encryption/migrate", `{"database": "app", "collection": "nosuch"}`, json(key), 404)
+	req("POST", ad+"/encryption/migrate", `{"database": "app", "collection": "posts"}`, nil, 401)
+	req("POST", ad+"/encryption/migrate", `{"database": "app", "collection": "posts"}`, with(ada, "Content-Type", "application/json"), 403)
+	req("POST", ad+"/encryption/migrate", `{"database": "app", "collection": "posts", "dry_run": true}`, json(key), 202)
+	req("POST", ad+"/encryption/migrate", `{"database": "app", "collection": "posts"}`, json(key), 409)
+	posts := f.reg.Realms["acme"].Databases["app"].Collections["posts"]
+	req("POST", ad+"/encryption/rekey", `{"database": "app", "collection": "posts", "field": "title"}`, json(key), 400)
+	posts.Encrypted = []registry.EncryptedField{{Path: "title", Key: "K"}}
+	req("POST", ad+"/encryption/rekey", `{"database": "app", "collection": "posts", "field": "title"}`, json(key), 200)
+	posts.Encrypted = nil
+	req("POST", ad+"/encryption/rekey", `{"database": "app", "collection": "nosuch", "field": "title"}`, json(key), 404)
+	req("POST", ad+"/encryption/rekey", `{"database": "app", "collection": "posts", "field": "title"}`, nil, 401)
+	req("POST", ad+"/encryption/rekey", `{"database": "app", "collection": "posts", "field": "title"}`, with(ada, "Content-Type", "application/json"), 403)
+
 	// A worker runs from here on, for what waits on one: making versions of images.
 	runWorker(t, newTestWorker(t, f))
 	for _, base := range []string{"/v1/acme/app/library", ad + "/data/app/library"} {
@@ -2802,9 +2841,16 @@ func TestContract(t *testing.T) {
 	// The actions of a breach come last: they end every session the checks above used.
 	req("GET", ad+"/passwords", "", key, 200)
 	req("POST", ad+"/passwords/expire", `{"reason": 7}`, json(key), 400)
+	// (A worker is running by now and may finish a job before the next request, so nothing here
+	// depends on a job still being queued: the 409 comes from a realm without email.)
+	email := f.svc.Settings.Email
+	f.svc.Settings.Email = nil
+	req("POST", ad+"/passwords/notify", "", key, 409)
+	f.svc.Settings.Email = email
 	expired := req("POST", ad+"/passwords/expire", `{"reason": "contract test", "keep_sessions": true, "notify": true}`, json(key), 200)
-	req("POST", ad+"/passwords/notify", "", key, 409) // the run just started is still going
-	req("POST", ad+"/jobs/"+expired["notify_job"].(string)+"/cancel", "", key, 200)
+	if rec, _ := f.doH(t, "POST", ad+"/jobs/"+expired["notify_job"].(string)+"/cancel", "", key); rec.Code != 200 && rec.Code != 409 { // cancelled, or the worker was first
+		t.Errorf("cancel of the notification: %d", rec.Code)
+	}
 	req("POST", ad+"/passwords/notify", "", key, 202)
 	req("POST", ad+"/passwords/expire", ``, key, 409) // the same instant is not later
 	req("DELETE", ad+"/sessions", "", key, 200)

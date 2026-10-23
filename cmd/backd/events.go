@@ -19,6 +19,8 @@ type feedSource struct {
 	mu     sync.Mutex
 	client *mongo.Client
 	src    *mongodb.ChangeSource
+	// decrypt opens the encrypted fields of the documents the feed carries.
+	decrypt func(ctx context.Context, n changefeed.Namespace, doc map[string]any) error
 }
 
 func (f *feedSource) Open(ctx context.Context, set changefeed.WatchSet, after changefeed.Position) (changefeed.Stream, error) {
@@ -30,6 +32,7 @@ func (f *feedSource) Open(ctx context.Context, set changefeed.WatchSet, after ch
 			return nil, err
 		}
 		f.client, f.src = client, mongodb.NewChangeSource(client)
+		f.src.Decrypt = f.decrypt
 	}
 	src := f.src
 	f.mu.Unlock()
@@ -76,7 +79,9 @@ func (a *app) openEvents() func() {
 // trigger dispatcher (each opens its own stream on it). It connects on first use.
 func (a *app) feedSource() *feedSource {
 	if a.feed == nil {
-		a.feed = &feedSource{uri: a.cfg.MongoURI}
+		a.feed = &feedSource{uri: a.cfg.MongoURI, decrypt: func(ctx context.Context, n changefeed.Namespace, doc map[string]any) error {
+			return a.decryptDocument(ctx, n.Realm, n.DB, n.Coll, doc)
+		}}
 	}
 	return a.feed
 }

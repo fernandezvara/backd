@@ -312,6 +312,10 @@ func (w *Worker) runJob(ctx context.Context, realm string, svc *auth.Users, job 
 		w.runRevoke(ctx, log, realm, svc, job) // not a function: a worker tells Apple itself
 		return
 	}
+	if job.Encrypt != nil {
+		w.runEncrypt(ctx, log, realm, svc, job) // not a function: a worker rewrites how values are stored
+		return
+	}
 	if job.PasswordNotice != nil {
 		w.runPasswordNotice(ctx, log, realm, svc, job) // not a function: a worker queues the emails itself
 		return
@@ -515,6 +519,9 @@ func jobKind(j auth.Job) string {
 	}
 	if j.PasswordNotice != nil {
 		return "password_notice"
+	}
+	if j.Encrypt != nil {
+		return "encrypt"
 	}
 	return metrics.JobKind(j.Email != nil, j.Erase != nil, j.Check != nil, j.Image != nil, j.Assign != nil || j.OrgDelete != nil, j.Scheduled)
 }

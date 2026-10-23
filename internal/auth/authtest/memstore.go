@@ -73,6 +73,28 @@ func (m *MemStore) UpsertSecret(_ context.Context, s auth.Secret) error {
 	return nil
 }
 
+func (m *MemStore) CreateSecret(_ context.Context, s auth.Secret) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.secrets[secretKey(s.Database, s.Name)]; ok {
+		return auth.ErrSecretExists
+	}
+	m.secrets[secretKey(s.Database, s.Name)] = s
+	return nil
+}
+
+func (m *MemStore) ReplaceKeySecret(_ context.Context, s auth.Secret, ifVersion int) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	have, ok := m.secrets[secretKey(s.Database, s.Name)]
+	if !ok || max(have.Version, 1) != ifVersion {
+		return false, nil
+	}
+	s.CreatedAt = have.CreatedAt
+	m.secrets[secretKey(s.Database, s.Name)] = s
+	return true, nil
+}
+
 func (m *MemStore) SecretByScope(_ context.Context, database, name string) (auth.Secret, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -455,6 +477,20 @@ func (m *MemStore) SetPasswordNoticeProgress(_ context.Context, jobID, after str
 	pn := *j.PasswordNotice
 	pn.After, pn.PasswordNoticeCounts = after, c
 	j.PasswordNotice = &pn
+	m.jobs[jobID] = j
+	return nil
+}
+
+func (m *MemStore) SetEncryptProgress(_ context.Context, jobID, after string, c auth.EncryptCounts) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	j, ok := m.jobs[jobID]
+	if !ok || j.Encrypt == nil {
+		return auth.ErrNotFound
+	}
+	ej := *j.Encrypt
+	ej.After, ej.EncryptCounts = after, c
+	j.Encrypt = &ej
 	m.jobs[jobID] = j
 	return nil
 }

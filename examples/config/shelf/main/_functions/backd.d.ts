@@ -41,6 +41,8 @@ export interface Meta {
   deleted_at?: DateTimeString;
   deleted_by?: string;
   purge_at?: DateTimeString;
+  /** Encrypted fields the caller may not see: they come back null, and a null here is hidden, not empty. */
+  redacted?: string[];
   /** Set on a write made by a trigger run: where it sits in a chain of such writes. */
   chain?: { root: string; depth: number };
 }
@@ -182,9 +184,9 @@ export type MainNotificationsWhere = {
 export type MainNotificationsOrderByField = "id" | "-id" | "_meta.created_at" | "-_meta.created_at" | "_meta.updated_at" | "-_meta.updated_at" | "_meta.version" | "-_meta.version" | "_meta.owner" | "-_meta.owner" | "_meta.created_by" | "-_meta.created_by" | "_meta.updated_by" | "-_meta.updated_by" | "asset_id" | "-asset_id" | "kind" | "-kind" | "read_at" | "-read_at" | "text" | "-text" | "to_user" | "-to_user";
 export type MainNotificationsOrderBy = MainNotificationsOrderByField | `${MainNotificationsOrderByField},${string}`;
 /** main/pins */
-export type MainPins = { id: string; _meta: Meta } & { author?: string; note?: string; title: string; url?: string; [key: string]: unknown; };
+export type MainPins = { id: string; _meta: Meta } & { author?: string; note?: string; private_notes?: string; title: string; url?: string; [key: string]: unknown; };
 /** main/pins */
-export type MainPinsInput = { author?: string; note?: string; title: string; url?: string; [key: string]: unknown; };
+export type MainPinsInput = { author?: string; note?: string; private_notes?: string; title: string; url?: string; [key: string]: unknown; };
 export type MainPinsWhere = {
   id?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
   "_meta.created_at"?: DateTimeString | (Ops<DateTimeString> & NullOps & RangeOps<DateTimeString>);
@@ -196,12 +198,13 @@ export type MainPinsWhere = {
   "_meta.org"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
   author?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
   note?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  private_notes?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
   title?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
   url?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
   $or?: Array<MainPinsWhere>;
   $and?: Array<MainPinsWhere>;
 };
-export type MainPinsOrderByField = "id" | "-id" | "_meta.created_at" | "-_meta.created_at" | "_meta.updated_at" | "-_meta.updated_at" | "_meta.version" | "-_meta.version" | "_meta.owner" | "-_meta.owner" | "_meta.created_by" | "-_meta.created_by" | "_meta.updated_by" | "-_meta.updated_by" | "_meta.org" | "-_meta.org" | "author" | "-author" | "note" | "-note" | "title" | "-title" | "url" | "-url";
+export type MainPinsOrderByField = "id" | "-id" | "_meta.created_at" | "-_meta.created_at" | "_meta.updated_at" | "-_meta.updated_at" | "_meta.version" | "-_meta.version" | "_meta.owner" | "-_meta.owner" | "_meta.created_by" | "-_meta.created_by" | "_meta.updated_by" | "-_meta.updated_by" | "_meta.org" | "-_meta.org" | "author" | "-author" | "note" | "-note" | "private_notes" | "-private_notes" | "title" | "-title" | "url" | "-url";
 export type MainPinsOrderBy = MainPinsOrderByField | `${MainPinsOrderByField},${string}`;
 /** main/profiles */
 export type MainProfiles = { id: string; _meta: Meta } & { avatar?: string; bio?: string; name: string; };
@@ -318,7 +321,7 @@ export interface Realm {
         "maintenance-close": { input: unknown; output: unknown; mode: "async"; internal: true; calls: never };
         "maintenance-open": { input: unknown; output: unknown; mode: "async"; internal: true; calls: never };
         notify: { input: { asset_id?: string; kind: string; text: string; to_user: string; }; output: unknown; mode: "sync"; internal: true; calls: never };
-        pin: { input: { note?: string; org: string; title: string; url?: string; }; output: { id: string; limit: number; pins: number; [key: string]: unknown; }; mode: "sync"; internal: false; calls: never };
+        pin: { input: { note?: string; org: string; private_notes?: string; title: string; url?: string; }; output: { id: string; limit: number; pins: number; [key: string]: unknown; }; mode: "sync"; internal: false; calls: never };
         preview: { input: { url: string; }; output: unknown; mode: "sync"; internal: false; calls: never };
         publish: { input: { asset_id: string; }; output: unknown; mode: "sync"; internal: false; calls: "notify" };
         "publish-submission": { input: { after?: Record<string, unknown> | null; at?: string; before?: Record<string, unknown> | null; by?: string; changed?: string[]; collection?: string; depth?: number; doc: { id: string; version: number; [key: string]: unknown; }; event: "created" | "updated" | "removed"; id: string; root?: string; truncated?: boolean; version?: number; [key: string]: unknown; }; output: unknown; mode: "async"; internal: true; calls: never };

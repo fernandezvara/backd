@@ -5,7 +5,8 @@
     "title":  { "type": "string", "minLength": 1, "maxLength": 200, "description": "What the pin is called." },
     "url":    { "type": "string", "format": "uri", "description": "The page worth keeping." },
     "note":   { "type": "string", "maxLength": 1000, "description": "Why the team should look at it." },
-    "author": { "type": "string", "description": "The member who pinned it (a user id), set by the pin function." }
+    "author": { "type": "string", "description": "The member who pinned it (a user id), set by the pin function." },
+    "private_notes": { "type": "string", "maxLength": 2000, "description": "What only the author and the team's admins may read (chapter 25): stored encrypted, with the SHELF_NOTES key." }
   },
   "required": ["title"]
 }

@@ -61,6 +61,9 @@ const (
 	// SecurityStateCollection holds the realm's operator decisions that outlive deployments:
 	// the password epoch (design/breach-response.md §3).
 	SecurityStateCollection = "security_state"
+	// DataKeysCollection holds the wrapped data keys of encrypted fields, one per field and
+	// generation (design/field-encryption.md §4.2).
+	DataKeysCollection = "data_keys"
 	// OrgsCollection, OrgMembersCollection, OrgTeamsCollection and OrgInvitationsCollection hold
 	// the realm's organizations, their memberships, teams and invitations
 	// (design/organizations.md §4).
@@ -662,6 +665,26 @@ var systemCollections = []systemCollection{
 			"set_at":      typ("date"),
 			"reason":      str(),
 		}),
+	},
+	{
+		name: DataKeysCollection,
+		validator: jsonSchema([]string{"_id", "database", "collection", "path", "kind", "generation", "key", "wrapped", "wrap_version", "status", "created_at"}, map[string]any{
+			"_id":          str(),
+			"database":     str(),
+			"collection":   str(),
+			"path":         str(),
+			"kind":         map[string]any{"enum": bson.A{"data", "index"}},
+			"generation":   map[string]any{"bsonType": bson.A{"int", "long"}},
+			"key":          str(),
+			"wrapped":      typ("binData"),
+			"wrap_version": map[string]any{"bsonType": bson.A{"int", "long"}},
+			"status":       map[string]any{"enum": bson.A{"active", "decrypt_only", "retired"}},
+			"created_at":   typ("date"),
+		}),
+		indexes: []systemIndex{
+			{keys: bson.D{{Key: "database", Value: 1}, {Key: "collection", Value: 1}, {Key: "path", Value: 1}, {Key: "kind", Value: 1}, {Key: "generation", Value: 1}}, unique: true},
+			{keys: bson.D{{Key: "key", Value: 1}, {Key: "wrap_version", Value: 1}}},
+		},
 	},
 	{
 		name: AppConfigCollection,

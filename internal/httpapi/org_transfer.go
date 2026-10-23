@@ -210,7 +210,7 @@ func (d *documents) transfer(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	w.Header().Set("ETag", etag(version(fields)))
-	writeDocument(w, http.StatusOK, fields)
+	d.writeViewed(w, r, c, http.StatusOK, fields)
 }
 
 // assignOrg handles POST /_admin/data/{database}/{collection}/_assign_org: the adoption of a

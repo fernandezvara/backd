@@ -16,6 +16,7 @@ import (
 	"github.com/fernandezvara/kli"
 
 	"github.com/fernandezvara/backd/internal/exportpkg"
+	"github.com/fernandezvara/backd/internal/fieldcrypt"
 )
 
 // progressName is the file an interrupted export leaves in its directory: the lease and the
@@ -112,6 +113,10 @@ func exportAction(c *kli.CommandContext) error {
 			}
 		}
 	}
+	keys, err := parseFieldKeys(str(c, "field"), c.Getenv, c.Stderr())
+	if err != nil {
+		return usageErr(err)
+	}
 	t, closeT, _, err := openTarget(c)
 	if err != nil {
 		return err
@@ -180,6 +185,34 @@ func exportAction(c *kli.CommandContext) error {
 	stderr := c.Stderr()
 	m := plan.Manifest
 	m.Checksums = map[string]string{}
+	// The wrapped keys of encrypted fields come first: the documents are opened with them when a
+	// key was given. Without encrypted fields the part is empty.
+	dataKeys := map[string]fieldcrypt.Record{}
+	if !csvOut {
+		got, done := progress.Parts[exportpkg.DataKeysName]
+		if !done || !partIntact(out, exportpkg.DataKeysName, got) {
+			var err error
+			if got, err = fetchPart(t, out, exportpkg.DataKeysName, url.Values{"part": {exportpkg.DataKeysName}}, lease, true); err != nil {
+				return err
+			}
+			progress.Parts[exportpkg.DataKeysName] = got
+			if err := saveProgress(out, progress); err != nil {
+				return err
+			}
+		}
+		m.Checksums[exportpkg.DataKeysName] = got.Checksum
+		if dataKeys, err = packageKeys(out); err != nil {
+			return err
+		}
+	} else if len(keys) > 0 {
+		if dataKeys, err = fetchKeyRecords(t, lease); err != nil {
+			return err
+		}
+	}
+	dec, err := newDecryptor(m, keys, dataKeys)
+	if err != nil {
+		return usageErr(err)
+	}
 	fileIDs := map[string][]string{} // database -> file ids, in order
 	for di := range m.Databases {
 		db := &m.Databases[di]
@@ -196,7 +229,7 @@ func exportAction(c *kli.CommandContext) error {
 			} else {
 				fmt.Fprintf(stderr, "%s: exporting…\n", key)
 				if csvOut {
-					part, err = fetchCSV(t, out, col.Part, url.Values{"part": {remotePart}}, lease, fields)
+					part, err = fetchCSV(t, out, col.Part, url.Values{"part": {remotePart}}, lease, fields, dec, db.Name, col.Name)
 				} else {
 					part, err = fetchPart(t, out, col.Part, url.Values{"part": {remotePart}}, lease, true)
 				}
@@ -233,15 +266,26 @@ func exportAction(c *kli.CommandContext) error {
 		m.Auth[i].Documents = got.Documents
 		m.Checksums[part] = got.Checksum
 	}
-	if !csvOut {
-		// The wrapped keys of encrypted fields; empty until a realm has encrypted fields.
-		if err := os.MkdirAll(filepath.Join(out, "_system"), 0o700); err != nil {
+	if !csvOut && dec.any() {
+		fmt.Fprintln(stderr, "opening the encrypted fields you gave a key for…")
+		n, err := decryptPackage(out, m, dec)
+		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(filepath.Join(out, filepath.FromSlash(exportpkg.DataKeysName)), nil, 0o600); err != nil {
+		for _, db := range m.Databases {
+			for _, col := range db.Collections {
+				if len(dec.opened[db.Name+"/"+col.Name]) > 0 {
+					progress.Parts[col.Part] = exportedPart{Checksum: m.Checksums[col.Part], Size: fileSize(out, col.Part), Documents: col.Documents}
+				}
+			}
+		}
+		if err := saveProgress(out, progress); err != nil {
 			return err
 		}
-		m.Checksums[exportpkg.DataKeysName] = exportpkg.NewHasher().Sum()
+		fmt.Fprintf(stderr, "%d encrypted fields are in plaintext in this package: keep it as carefully as the keys\n", n)
+	}
+	if left := ciphertextFields(m); len(left) > 0 && !csvOut {
+		fmt.Fprintf(stderr, "still encrypted in the package (no key given): %s\n", strings.Join(left, ", "))
 	}
 	for _, db := range m.Databases {
 		for _, ref := range fileIDs[db.Name] {
@@ -315,7 +359,7 @@ func exportAction(c *kli.CommandContext) error {
 
 // fetchCSV downloads a collection's documents and writes them as a CSV table at part. The
 // documents wait in a temporary file because the columns are known only after the last one.
-func fetchCSV(t *target, out, part string, q url.Values, headers map[string]string, fields []string) (exportedPart, error) {
+func fetchCSV(t *target, out, part string, q url.Values, headers map[string]string, fields []string, dec *decryptor, database, collection string) (exportedPart, error) {
 	tmp := strings.TrimSuffix(part, ".csv") + ".jsonl.tmp"
 	got, err := fetchPart(t, out, tmp, q, headers, true)
 	if err != nil {
@@ -323,6 +367,11 @@ func fetchCSV(t *target, out, part string, q url.Values, headers map[string]stri
 	}
 	tmpPath := filepath.Join(out, filepath.FromSlash(tmp))
 	defer func() { _ = os.Remove(tmpPath) }()
+	if dec != nil && len(dec.opened[database+"/"+collection]) > 0 {
+		if _, err := dec.part(out, tmp, database, collection); err != nil {
+			return exportedPart{}, err
+		}
+	}
 	src, err := os.Open(tmpPath)
 	if err != nil {
 		return exportedPart{}, err
@@ -570,4 +619,35 @@ func writeSecretFile(path, content string) error {
 		return err
 	}
 	return f.Close()
+}
+
+// fileSize is the size of a file of the package, 0 if it can't be read.
+func fileSize(dir, part string) int64 {
+	st, err := os.Stat(filepath.Join(dir, filepath.FromSlash(part)))
+	if err != nil {
+		return 0
+	}
+	return st.Size()
+}
+
+// ciphertextFields lists the encrypted fields a package still holds as ciphertext.
+func ciphertextFields(m *exportpkg.Manifest) []string {
+	var out []string
+	for _, e := range m.Encrypted {
+		if e.Form == exportpkg.FormCiphertext {
+			out = append(out, e.Database+"/"+e.Collection+"."+e.Path)
+		}
+	}
+	return out
+}
+
+// fetchKeyRecords reads the wrapped keys of the export from the server without keeping them in
+// the package (a CSV extract holds none).
+func fetchKeyRecords(t *target, headers map[string]string) (map[string]fieldcrypt.Record, error) {
+	res, err := t.open("_admin/export", url.Values{"part": {exportpkg.DataKeysName}}, headers)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	return readKeyRecords(res.Body)
 }

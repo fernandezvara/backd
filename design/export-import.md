@@ -188,7 +188,7 @@ The audit trail stays in `_system` and gets its own `backd audit export` later (
 | plaintext | not encrypted | imported as is |
 | ciphertext | not encrypted | refused unless the source key is supplied |
 
-The dry run lists which fields need which key, by name and fingerprint. `backd export decrypt <package> --field …` decrypts fields of an existing package with no server or database, using the wrapped keys in `_system/data_keys.jsonl`. The format is specified in [field-encryption.md](./field-encryption.md) §9.
+The dry run lists which fields need which key, by name and fingerprint. Key secrets themselves are never in a package; a restore gets them back with `backd secret create --type key --value …` (field-encryption §3.1, issue 16.1). `backd export decrypt <package> --field …` decrypts fields of an existing package with no server or database, using the wrapped keys in `_system/data_keys.jsonl`. The format is specified in [field-encryption.md](./field-encryption.md) §9.
 
 ## 10. Anonymized exports (issue 17.6)
 
