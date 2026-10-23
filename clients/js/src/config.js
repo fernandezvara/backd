@@ -124,14 +124,11 @@ export class Config {
   live(paths) {
     this.stopLive?.()
     const list = normalize(paths).split(',').filter(Boolean)
-    let first = true
     const stop = this.client.realtime.followConfig({
       paths: list,
-      ready: () => {
-        // The first open follows a load; later ones follow a gap, in which changes were not heard.
-        if (first) first = false
-        else void this.reread([])
-      },
+      // Whenever the stream opens, what happened before it did was not heard: a conditional read of what is
+      // held closes the gap, and costs a 304 when nothing moved.
+      ready: () => void this.reread([]),
       changed: (changed) => void this.reread(changed),
       error: (err) => {
         if (this.stopLive === stopOnce) this.stopLive = undefined

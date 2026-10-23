@@ -5,6 +5,7 @@ import { mockFetch, errorBody } from './helpers.js'
 
 /** @param {any} values @param {string} version @param {number} [ttl] @param {string} [etag] */
 const answer = (values, version, ttl = 300, etag = `W/"${version}"`) => ({ body: { values, version, cache_ttl: ttl }, headers: { ETag: etag } })
+const notModified = { status: 304 }
 
 function memoryStore() {
   /** @type {Map<string, string>} */
@@ -211,6 +212,7 @@ const until = async (/** @type {() => boolean} */ cond, what = 'a condition') =>
 test('live adds a _config subscription, and a config_changed rereads the branch held and emits change', async () => {
   const { client, f, streams } = live([
     answer({ maintenance: { enabled: false, message: '' } }, 'c1'),
+    notModified, // the stream opens: nothing moved while it was not
     answer({ maintenance: { enabled: true, message: '' } }, 'c2'),
   ])
   await client.config.load(['maintenance'])
@@ -225,25 +227,26 @@ test('live adds a _config subscription, and a config_changed rereads the branch 
   await until(() => changes.length === 1, 'the change')
   assert.deepEqual(changes[0], ['maintenance.enabled'])
   assert.equal(client.config.getSync('maintenance.enabled'), true)
-  assert.equal(f.calls.length, 2) // the load, then one read revalidated with the tag held
-  assert.equal(f.calls[1].headers['If-None-Match'], 'W/"c1"')
+  assert.equal(f.calls.length, 3) // the load, the check when the stream opened, then the change
+  assert.equal(f.calls[2].headers['If-None-Match'], 'W/"c1"')
   stop()
 })
 
 test('a change that is none of a held branch costs no request', async () => {
-  const { client, f, streams } = live([answer({ maintenance: { enabled: false } }, 'c1')])
+  const { client, f, streams } = live([answer({ maintenance: { enabled: false } }, 'c1'), notModified])
   await client.config.load(['maintenance'])
   client.config.live()
   await until(() => streams.length === 1)
   streams[0].push(frame('ready', {}))
   streams[0].push(frame('config_changed', { id: '_config', version: 'c2', paths: ['features.export.enabled'] }))
   await new Promise((r) => setTimeout(r, 100))
-  assert.equal(f.calls.length, 1)
+  assert.equal(f.calls.length, 2) // the load and the check when the stream opened, nothing for the change
 })
 
 test('an empty list of paths rereads everything held, and so does a reconnection', async () => {
   const { client, f, streams } = live([
     answer({ maintenance: { enabled: false } }, 'c1'),
+    notModified,
     answer({ maintenance: { enabled: true } }, 'c2'),
     answer({ maintenance: { enabled: false } }, 'c3'),
   ])
@@ -255,13 +258,13 @@ test('an empty list of paths rereads everything held, and so does a reconnection
   streams[0].push(frame('ready', {}))
   streams[0].push(frame('config_changed', { id: '_config', version: 'c2', paths: [] }))
   await until(() => seen.length === 1)
-  assert.equal(f.calls.length, 2)
+  assert.equal(f.calls.length, 3)
   // The stream drops and opens again: changes may have been missed, so the copy is revalidated.
   streams[0].end()
   await until(() => streams.length === 2, 'the reconnection')
   streams[1].push(frame('ready', {}))
   await until(() => seen.length === 2, 'the catch-up')
-  assert.equal(f.calls.length, 3)
+  assert.equal(f.calls.length, 4)
 })
 
 test('a refusal of the subscription goes to the error listener and ends live', async () => {

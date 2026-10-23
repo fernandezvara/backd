@@ -272,6 +272,8 @@ void configLiveTests() {
               'cache_ttl': 300,
             },
             {'ETag': 'W/"c1"'}))
+        // The stream opens: nothing moved while it was not.
+        ..answer(respond(304, {}))
         ..answer(respond(
             200,
             {
@@ -334,7 +336,8 @@ void configLiveTests() {
               'version': 'c1',
               'cache_ttl': 300,
             },
-            {'ETag': 'W/"c1"'}));
+            {'ETag': 'W/"c1"'}))
+        ..answer(respond(304, {}));
       final ctl = StreamController<List<int>>();
       final st = FakeStreamTransport()..controlled(ctl.stream);
       final c = testClient(t, apiKey: 'k', streamTransport: st);
@@ -351,7 +354,8 @@ void configLiveTests() {
         },
       })));
       await Future<void>.delayed(const Duration(milliseconds: 100));
-      expect(t.requests, hasLength(1));
+      // The load and the check when the stream opened; nothing for the change.
+      expect(t.requests, hasLength(2));
       stop();
       await ctl.close();
     });

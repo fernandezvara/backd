@@ -167,19 +167,13 @@ final class Config {
     _stopLive?.call();
     final list =
         _normalize(paths).split(',').where((p) => p.isNotEmpty).toList();
-    var first = true;
     late void Function() stopOnce;
     final stop = client.realtime.followConfig(ConfigFollower(
       paths: list,
-      ready: () {
-        // The first open follows a load; later ones follow a gap, in which
-        // changes were not heard.
-        if (first) {
-          first = false;
-        } else {
-          unawaited(_reread(const []));
-        }
-      },
+      // Whenever the stream opens, what happened before it did was not
+      // heard: a conditional read of what is held closes the gap, and costs
+      // a 304 when nothing moved.
+      ready: () => unawaited(_reread(const [])),
       changed: (changed) => unawaited(_reread(changed)),
       error: (err) {
         if (identical(_stopLive, stopOnce)) _stopLive = null;
