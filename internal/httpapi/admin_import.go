@@ -23,6 +23,7 @@ import (
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/exportpkg"
+	"github.com/fernandezvara/backd/internal/fieldcrypt"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage"
 )
@@ -56,10 +57,23 @@ type importRun struct {
 	skipInvalid bool
 	dryRun      bool
 	sourceRealm string
+	// fields are the encrypted fields the package holds as ciphertext that this server opens with
+	// the key the target shares with the source, by <database>/<collection>.
+	fields map[string][]importField
 
 	mu     sync.Mutex
 	owners map[string]bool // user id -> exists, remembered across chunks
 	orgs   map[string]bool
+	// dataKeys are the package's wrapped data keys, by id, sent before the documents.
+	dataKeys map[string]fieldcrypt.Record
+}
+
+// importField is an encrypted field of the package the target opens itself: both realms hold
+// the same field key (same fingerprint), so the package's wrapped data keys open with the
+// target's copy and the values are sealed again under the target's own keys as they are written.
+type importField struct {
+	path string
+	key  string // the target's field key name
 }
 
 // importBegin is the body of POST /_admin/import.
@@ -153,10 +167,6 @@ func (a *adminAPI) importBegin(w http.ResponseWriter, r *http.Request, realm str
 				missing = append(missing, Detail{Path: db.Name + "/" + col.Name, Reason: "the manifest names an unexpected part"})
 				continue
 			}
-			if len(c.Collections[col.Name].Encrypted) > 0 {
-				missing = append(missing, Detail{Path: db.Name + "/" + col.Name, Reason: "this collection encrypts fields, and import can't write them yet (issue 16.6)"})
-				continue
-			}
 			if files := c.Collections[col.Name].Files; len(files) > 0 {
 				fileFields[db.Name+"/"+col.Name] = slices.Sorted(maps.Keys(files))
 			}
@@ -167,6 +177,14 @@ func (a *adminAPI) importBegin(w http.ResponseWriter, r *http.Request, realm str
 		return
 	}
 	var warnings []string
+	convert, needs := a.planEncrypted(r.Context(), usersOf(r), rl, m)
+	if len(needs) > 0 && !in.DryRun {
+		refuse(w, r, "the package holds encrypted fields that can't be opened here: give the key each was encrypted with (--field <path>=<key:|env:|file:>), or leave their collections out", needs...)
+		return
+	}
+	for _, n := range needs {
+		warnings = append(warnings, n.Path+": "+n.Reason)
+	}
 	if m.Fingerprint != "" && m.Fingerprint != a.fingerprint {
 		warnings = append(warnings, "the package was made from a different configuration than this instance runs; every document is validated against this one")
 	}
@@ -183,7 +201,7 @@ func (a *adminAPI) importBegin(w http.ResponseWriter, r *http.Request, realm str
 	_, _ = rand.Read(id)
 	now := time.Now()
 	l := &exportLease{kind: leaseImport, id: hex.EncodeToString(id), actor: caller.Actor(), expires: now.Add(exportLeaseTTL), scope: realm,
-		outcomes: map[string]int64{}, imp: &importRun{mode: in.Mode, skipInvalid: in.SkipInvalid, dryRun: in.DryRun, sourceRealm: m.Realm, owners: map[string]bool{}, orgs: map[string]bool{}}}
+		outcomes: map[string]int64{}, imp: &importRun{fields: convert, mode: in.Mode, skipInvalid: in.SkipInvalid, dryRun: in.DryRun, sourceRealm: m.Realm, owners: map[string]bool{}, orgs: map[string]bool{}}}
 	if !a.exports.take(realm, caller.Actor(), r.Header.Get(exportHeader), l, now) {
 		writeError(w, r, http.StatusConflict, codeExportRunning, "an export or import of this realm is already running; wait for it to finish (a silent one is released after ten minutes)")
 		return
@@ -193,7 +211,8 @@ func (a *adminAPI) importBegin(w http.ResponseWriter, r *http.Request, realm str
 	})
 	writeJSON(w, http.StatusOK, map[string]any{
 		"lease": l.id, "expires_in": int(exportLeaseTTL.Seconds()), "max_chunk_bytes": a.fns.docs.maxBody / 2,
-		"warnings": orStrings(warnings), "file_fields": fileFields,
+		"warnings": orStrings(warnings), "file_fields": fileFields, "needs_keys": orDetails(needs),
+		"keys_needed": len(convert) > 0,
 	})
 }
 
@@ -206,8 +225,8 @@ type importDocResult struct {
 }
 
 func (a *adminAPI) importChunk(w http.ResponseWriter, r *http.Request, realm, phase, part string) {
-	if r.Method != http.MethodPost || (phase != "validate" && phase != "write") {
-		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "phase", Reason: "POST with phase validate or write"})
+	if r.Method != http.MethodPost || (phase != "validate" && phase != "write" && phase != "keys") {
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "phase", Reason: "POST with phase validate, write or keys"})
 		return
 	}
 	l := a.leaseKind(w, r, realm, leaseImport)
@@ -216,6 +235,10 @@ func (a *adminAPI) importChunk(w http.ResponseWriter, r *http.Request, realm, ph
 	}
 	if phase == "write" && l.imp.dryRun {
 		writeError(w, r, http.StatusConflict, codeExportLease, "this import is a dry run: it validates and writes nothing")
+		return
+	}
+	if part == exportpkg.DataKeysName && phase == "keys" {
+		a.importKeys(w, r, l)
 		return
 	}
 	if coll, isAuth := strings.CutPrefix(strings.TrimSuffix(part, ".jsonl"), "_system/auth/"); isAuth && strings.HasSuffix(part, ".jsonl") && slices.Contains(auth.PortableCollections, coll) {
@@ -313,6 +336,11 @@ func (a *adminAPI) importDocs(ctx context.Context, r *http.Request, c *registry.
 			continue
 		}
 		res.ID, _ = doc["id"].(string)
+		if problems := a.openEncrypted(ctx, r, c, run, doc); len(problems) > 0 {
+			res.Outcome, res.Problems = outInvalid, problems
+			out.docs = append(out.docs, res)
+			continue
+		}
 		if problems := a.checkImported(c, doc); len(problems) > 0 {
 			res.Outcome, res.Problems = outInvalid, problems
 			out.docs = append(out.docs, res)
@@ -766,5 +794,138 @@ func checkImportedMeta(meta map[string]any) []Detail {
 			problems = append(problems, Detail{Path: "_meta." + k, Reason: "is not a field the server keeps"})
 		}
 	}
+	return problems
+}
+
+func orDetails(d []Detail) []Detail {
+	if d == nil {
+		return []Detail{}
+	}
+	return d
+}
+
+// planEncrypted decides what the import does with each encrypted field the package holds as
+// ciphertext. If the target encrypts it with a key that is the same as the package's (same
+// fingerprint), the target opens the values itself; otherwise the importer must have opened them
+// with the source key before sending, and the field is reported as needing it.
+func (a *adminAPI) planEncrypted(ctx context.Context, svc *auth.Users, rl *registry.Realm, m *exportpkg.Manifest) (convert map[string][]importField, needs []Detail) {
+	convert = map[string][]importField{}
+	for _, e := range m.Encrypted {
+		if e.Form != exportpkg.FormCiphertext {
+			continue
+		}
+		where := e.Database + "/" + e.Collection + "." + e.Path
+		db := rl.Databases[e.Database]
+		if db == nil || db.Collections[e.Collection] == nil {
+			continue // reported as a collection the target doesn't have
+		}
+		c := db.Collections[e.Collection]
+		tf, configured := c.EncryptedAt(e.Path)
+		same := false
+		if configured && e.Fingerprint != "" {
+			if sec, err := svc.Store.SecretByScope(ctx, "", tf.Key); err == nil && sec.Type == auth.SecretTypeKey && sec.Fingerprint == e.Fingerprint {
+				same = true
+			}
+		}
+		if same {
+			convert[e.Database+"/"+e.Collection] = append(convert[e.Database+"/"+e.Collection], importField{path: e.Path, key: tf.Key})
+			continue
+		}
+		target := "the target does not encrypt it"
+		if configured {
+			target = "the target encrypts it with the key " + tf.Key + " (another one)"
+		}
+		needs = append(needs, Detail{Path: where, Reason: fmt.Sprintf("encrypted with the key %s (fingerprint %s) and %s", e.Key, orDash(e.Fingerprint), target)})
+	}
+	return convert, needs
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "unknown"
+	}
+	return s
+}
+
+// importKeys takes the package's wrapped data keys (`_system/data_keys.jsonl`), which the
+// conversion of ciphertext needs. They are useless without the field key and are kept in memory
+// for the import only.
+func (a *adminAPI) importKeys(w http.ResponseWriter, r *http.Request, l *exportLease) {
+	body, err := io.ReadAll(r.Body)
+	var tooBig *http.MaxBytesError
+	if errors.As(err, &tooBig) {
+		tooLarge(w, r, tooBig.Limit)
+		return
+	}
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, codeInvalidJSON, "could not read the request body")
+		return
+	}
+	n := 0
+	for i, line := range bytes.Split(body, []byte{'\n'}) {
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		rec, err := fieldcrypt.DecodeKeyLine(line)
+		if err != nil {
+			writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: fmt.Sprintf("line %d", i+1), Reason: err.Error()})
+			return
+		}
+		l.imp.mu.Lock()
+		if l.imp.dataKeys == nil {
+			l.imp.dataKeys = map[string]fieldcrypt.Record{}
+		}
+		if len(l.imp.dataKeys) < 1_000_000 {
+			l.imp.dataKeys[rec.ID] = rec
+		}
+		l.imp.mu.Unlock()
+		n++
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"keys": n})
+}
+
+// openEncrypted opens, in place, the encrypted values of an imported document that the target
+// can open itself (see importField), so the rest of the import sees plaintext, like any write;
+// writing seals them under the target's own keys. A value it can't open makes the document
+// invalid, saying where and never what.
+func (a *adminAPI) openEncrypted(ctx context.Context, r *http.Request, c *registry.Collection, run *importRun, doc map[string]any) []Detail {
+	var problems []Detail
+	id, _ := doc["id"].(string)
+	svc := usersOf(r)
+	for _, f := range run.fields[c.Database+"/"+c.Name] {
+		v, ok := docValueAt(doc, f.path)
+		if !ok {
+			continue
+		}
+		ct, sealed := v.(fieldcrypt.Ciphertext)
+		if !sealed {
+			continue
+		}
+		problem := func(reason string) { problems = append(problems, Detail{Path: f.path, Reason: reason}) }
+		kid, err := fieldcrypt.ParseID(ct)
+		if err != nil {
+			problem("is not a well-formed encrypted value")
+			continue
+		}
+		run.mu.Lock()
+		rec, found := run.dataKeys[fmt.Sprintf("%x", kid)]
+		run.mu.Unlock()
+		if !found {
+			problem("its data key is not in the package")
+			continue
+		}
+		m, err := svc.KeyMaterial(ctx, f.key)
+		if err != nil {
+			problem("the key " + f.key + " can't be read here (does this instance have the secrets master key?)")
+			continue
+		}
+		plain, err := fieldcrypt.OpenWith(m.Current, rec, run.sourceRealm, ct, id)
+		if err != nil {
+			problem("can't be opened with the key " + f.key + ": " + err.Error())
+			continue
+		}
+		setPath(doc, f.path, plain)
+	}
+	// A value left encrypted would be stored as binary where the schema expects its plain form.
 	return problems
 }

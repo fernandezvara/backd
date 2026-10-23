@@ -91,15 +91,20 @@ func Seal(dataKey, id, plaintext, associated []byte) (Ciphertext, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]byte, 0, Overhead+len(plaintext))
-	out = append(out, Version)
-	out = append(out, id...)
 	nonce := make([]byte, NonceSize)
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, err
 	}
+	return sealWithNonce(g, id, nonce, plaintext, associated), nil
+}
+
+// sealWithNonce is Seal with the nonce given: random in use, fixed in the test vectors.
+func sealWithNonce(g cipher.AEAD, id, nonce, plaintext, associated []byte) Ciphertext {
+	out := make([]byte, 0, Overhead+len(plaintext))
+	out = append(out, Version)
+	out = append(out, id...)
 	out = append(out, nonce...)
-	return g.Seal(out, nonce, plaintext, associated), nil
+	return g.Seal(out, nonce, plaintext, associated)
 }
 
 // ParseID returns the data key id of an encrypted value without opening it.
@@ -153,6 +158,13 @@ func Wrap(fieldKey, dataKey, id []byte, f Field, kind string) ([]byte, error) {
 	}
 	return g.Seal(nonce, nonce, dataKey, wrapAD(f, kind, id)), nil
 }
+
+// ValueAD, WrapAD and BlindAD are the associated data the format specifies, exported for the
+// tools that implement it and the tests that pin it down.
+func ValueAD(f Field, docID string) []byte { return valueAD(f, docID) }
+
+// WrapAD is the associated data of a wrapped data key (see ValueAD).
+func WrapAD(f Field, kind string, id []byte) []byte { return wrapAD(f, kind, id) }
 
 // Unwrap is the inverse of Wrap; a wrong field key gives ErrUnavailable.
 func Unwrap(fieldKey, wrapped, id []byte, f Field, kind string) ([]byte, error) {

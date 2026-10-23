@@ -98,7 +98,7 @@ A database can't compare what it can't read, so `backd` refuses, **at startup** 
 
 A request that filters or sorts by an encrypted field (`where`, `order_by`) answers `400 field_encrypted`, naming the field, unless the field has a [blind index](#search-an-encrypted-field), which answers equality. Who may see a field in the answer is decided by its [`reveal` rule](#who-sees-an-encrypted-field).
 
-Everything that reads documents sees the plain value: the API, `_batch`, functions (`ctx.db`), the admin data views, [triggers](../config-dir/#triggers) and realtime. The documents of a collection that encrypts a field can't be exported or imported yet (`422` naming the collections): the package format has to carry them as ciphertext first, and the server never decrypts for an export.
+Everything that reads documents sees the plain value: the API, `_batch`, functions (`ctx.db`), the admin data views, [triggers](../config-dir/#triggers) and realtime. [Exports](../../../operate/administration/export-import/encrypted-fields/) carry them as ciphertext, with their wrapped keys, and only someone who supplies the keys can open them; imports seal them again under the target's keys.
 
 ## Search an encrypted field
 

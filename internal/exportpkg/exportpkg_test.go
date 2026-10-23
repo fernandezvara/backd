@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/fernandezvara/backd/internal/fieldcrypt"
 )
 
 func TestDocumentRoundTrip(t *testing.T) {
@@ -104,5 +106,34 @@ func TestSelect(t *testing.T) {
 	}
 	if whole := Select(doc, []string{"address"}); len(whole["address"].(map[string]any)) != 2 || whole["_meta"] != nil {
 		t.Errorf("an object keeps all of it: %v", whole)
+	}
+}
+
+func TestEncryptedValuesTravelAsBinaryOfSubtypeSix(t *testing.T) {
+	ct := fieldcrypt.Ciphertext{1, 2, 3, 4, 5}
+	line, err := EncodeDocument(map[string]any{"id": "a", "notes": ct, "raw": []byte{9, 8}, "n": map[string]any{"deep": ct}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(line), `"subType":"06"`) || !strings.Contains(string(line), `"subType":"00"`) {
+		t.Fatalf("line = %s", line)
+	}
+	back, err := DecodeDocument(line)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := back["notes"].(fieldcrypt.Ciphertext); !ok || !bytes.Equal(got, ct) {
+		t.Errorf("notes = %T %v", back["notes"], back["notes"])
+	}
+	if got, ok := back["n"].(map[string]any)["deep"].(fieldcrypt.Ciphertext); !ok || !bytes.Equal(got, ct) {
+		t.Errorf("deep = %T", back["n"].(map[string]any)["deep"])
+	}
+	if got, ok := back["raw"].([]byte); !ok || !bytes.Equal(got, []byte{9, 8}) {
+		t.Errorf("raw = %T", back["raw"])
+	}
+	// A CSV extract shows an unopened value as base64 text, like any binary.
+	var out bytes.Buffer
+	if _, err := WriteCSV(strings.NewReader(string(line)+"\n"), &out, nil); err != nil || !strings.Contains(out.String(), "AQIDBAU=") {
+		t.Errorf("csv: %q %v", out.String(), err)
 	}
 }

@@ -242,18 +242,6 @@ func TestEncryptedFieldsAreCiphertextInMongoDBAndPlaintextThroughTheAPI(t *testi
 	}
 }
 
-func TestExportAndImportRefuseCollectionsWithEncryptedFields(t *testing.T) {
-	f, realm, _, _, _ := clinic(t)
-	_, adminKey, err := f.users[realm].CreateAPIKey(context.Background(), "ops", auth.KeyOptions{Role: auth.KeyRoleAdmin})
-	if err != nil {
-		t.Fatal(err)
-	}
-	rec, out := f.doH(t, "GET", "/v1/"+realm+"/_admin/export", "", map[string]string{"Authorization": "Bearer " + adminKey})
-	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "main/patients") {
-		t.Errorf("export: %d %v", rec.Code, out)
-	}
-}
-
 func TestSearchableEncryptedFieldsAnswerEqualityThroughTheBlindIndex(t *testing.T) {
 	f, realm, base, _, _ := clinic(t)
 	ada := signedIn(t, f, realm, "ada@example.com")

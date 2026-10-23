@@ -304,3 +304,21 @@ func TestAFieldMovedToAnotherKeyStartsANewGenerationAndOldValuesStayReadable(t *
 }
 
 func hexOf(b []byte) string { return hex.EncodeToString(b) }
+
+func TestKeyRecordsTravelAsLines(t *testing.T) {
+	rec := Record{ID: "aabbccdd00112233aabbccdd00112233", Database: "main", Collection: "patients", Path: "address.street", Kind: KindIndex,
+		Generation: 2, Key: "HEALTH", Wrapped: []byte{1, 2, 3, 4}, WrapVersion: 3, Status: StatusDecryptOnly}
+	line, err := EncodeKeyLine(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := DecodeKeyLine(line)
+	if err != nil || got.ID != rec.ID || got.Path != rec.Path || got.Kind != rec.Kind || got.Generation != 2 || got.Key != "HEALTH" || !bytes.Equal(got.Wrapped, rec.Wrapped) || got.WrapVersion != 3 || got.Status != StatusDecryptOnly {
+		t.Errorf("round trip: %+v %v", got, err)
+	}
+	for _, bad := range []string{`{}`, `not json`, `{"id":"x","path":"p","wrapped":"!!"}`} {
+		if _, err := DecodeKeyLine([]byte(bad)); err == nil {
+			t.Errorf("%s decoded", bad)
+		}
+	}
+}

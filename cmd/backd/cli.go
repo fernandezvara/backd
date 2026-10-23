@@ -526,9 +526,18 @@ func registerRemote(cfg *kli.Config) {
 		optional(cc, "staging-password", "with --anonymize --include auth: one password every user gets (env:<VAR>, file:<path> or key:<value>)")
 		optional(cc, "anonymize-files", "with --anonymize: keep, to export the files too (they often hold personal data)")
 		optional(cc, "auth-key-out", "write the export key of --include auth to this file (readable only by you) instead of showing it")
+		optional(cc, "field", "open encrypted fields with their keys: <path>=<key:|env:|file:…> entries separated by ';' (path as health_notes, or main/patients.health_notes); the others stay ciphertext")
 		directFlags(cc)
 		boolean(cc, "archive", "write one <out>.tar.gz instead of a directory")
 		boolean(cc, "no-files", "leave the files out: only the documents")
+	})
+
+	cfg.Command("export-decrypt").ShortHelp("open encrypted fields of an export package, offline").
+		LongHelp("Copies a package (--from: its directory or .tar.gz) to --out with the encrypted fields you give a key for opened (--field, as in backd export): no server, no database and no master key are involved, only the package's wrapped data keys and your field keys. Every key is checked against the fingerprint the manifest records, and a wrong one is reported by field and key name. Fields without a key stay ciphertext, and the manifest says which are which. The result holds plaintext: keep it as carefully as the keys.").
+		Func(act("export-decrypt", exportDecrypt)).Config(func(cc *kli.CommandConfig) {
+		required(cc, "from", "the package: its directory, or the .tar.gz that export --archive wrote")
+		required(cc, "out", "the directory to write the opened package to")
+		required(cc, "field", "the keys: <path>=<key:|env:|file:…> entries separated by ';'")
 	})
 
 	cfg.Command("import").ShortHelp("read an export package into a realm").
@@ -541,6 +550,7 @@ func registerRemote(cfg *kli.Config) {
 		boolean(cc, "skip-invalid", "leave out the documents that are invalid for the target instead of stopping")
 		optional(cc, "report", "write the problems found to this JSON file")
 		optional(cc, "auth-key", "the export key of a package exported with --include auth: key:<value>, env:<VAR> or file:<path>; without it users arrive without second factors and push devices")
+		optional(cc, "field", "keys for encrypted fields the package holds as ciphertext: <path>=<key:|env:|file:…> entries separated by ';'; needed when the target does not hold the same key (the dry run lists which fields need which)")
 		directFlags(cc)
 	})
 

@@ -5305,8 +5305,12 @@ paths:
         order, soft-deleted ones included, in the API representation with dates and binary values as
         MongoDB Extended JSON (relaxed). With `file` it streams a file's object through backd's
         storage client. Part and file requests carry the lease in `X-Backd-Export`. Memory does not
-        grow with the size of the collection. Encrypted fields, when a realm has them, are sent as
-        stored. Never exported: sessions, tokens, counters, jobs, history, secrets and the audit trail.
+        grow with the size of the collection. **Encrypted fields are always sent as stored (ciphertext,
+        BSON binary of subtype 6 as `{"$binary": {"base64": …, "subType": "06"}}`): the server never
+        decrypts for an export.** The manifest lists each (`encrypted_fields`, with the field key's name
+        and fingerprint), and `part=_system/data_keys.jsonl` streams their wrapped data and index keys
+        (format: "Encrypted fields format" in the documentation), which only the holder of the field
+        keys can open. Never exported: sessions, tokens, counters, jobs, history, secrets and the audit trail.
         Needs full admin access; a session also needs a fresh re-authentication on the plan request.
         Audited as `export` (the plan) and `export.done` (see `DELETE`), never with content.
       operationId: adminExport
@@ -5524,7 +5528,13 @@ paths:
         against the collection's schema, its files against the file fields, the documents the target
         already holds (`create` refuses a different document with the same id, `skip` keeps the
         existing one, `replace` overwrites it; an identical one is `unchanged` in every mode) and the
-        unique indexes. `write` also writes the documents that pass, with their ids and `_meta` kept,
+        unique indexes. An encrypted field the package holds as ciphertext is opened by the target
+        itself when it encrypts that field with the same key (same fingerprint): the CLI first sends
+        the package's wrapped data keys (`phase=keys`, part `_system/data_keys.jsonl`), the values are
+        opened with the target's copy of the key and sealed again under its own keys as they are
+        written. A field nobody here can open is refused at the start (`422`, naming each; a dry run
+        lists them in `needs_keys` instead): the importer opens it with the source key before sending
+        and says so in the manifest (`form: plaintext`). `write` also writes the documents that pass, with their ids and `_meta` kept,
         counts their files in the storage usage and queues the image versions their files wait for.
         Writing is idempotent, so an interrupted import is finished by sending the same chunks again.
         Users and organizations the target doesn't have are counted, not refused. Needs full admin
@@ -5540,10 +5550,10 @@ paths:
           schema: { type: string }
         - name: phase
           in: query
-          schema: { type: string, enum: [validate, write] }
+          schema: { type: string, enum: [validate, write, keys] }
         - name: part
           in: query
-          description: "`<database>/<collection>.jsonl`, with `phase`."
+          description: "`<database>/<collection>.jsonl`, with `phase`; `_system/data_keys.jsonl` with `phase=keys`."
           schema: { type: string }
       requestBody:
         content:
@@ -9814,6 +9824,15 @@ components:
         expires_in: { type: integer }
         max_chunk_bytes: { type: integer, format: int64, description: The largest chunk to send. }
         warnings: { type: array, items: { type: string } }
+        needs_keys:
+          type: array
+          description: On a dry run, the encrypted fields of the package nobody here can open, and why. Refused with `422` otherwise.
+          items:
+            type: object
+            properties:
+              path: { type: string, description: "`<database>/<collection>.<field>`." }
+              reason: { type: string }
+        keys_needed: { type: boolean, description: The target opens some ciphertext itself and wants the package's wrapped keys (`phase=keys`). }
         file_fields:
           type: object
           additionalProperties: { type: array, items: { type: string } }
@@ -9885,10 +9904,12 @@ components:
               items:
                 type: object
                 properties:
+                  database: { type: string }
+                  collection: { type: string }
                   path: { type: string }
-                  key: { type: string }
-                  fingerprint: { type: string }
-                  form: { type: string, enum: [ciphertext, plaintext] }
+                  key: { type: string, description: "The field key's name." }
+                  fingerprint: { type: string, description: "The field key's fingerprint, to check a key against." }
+                  form: { type: string, enum: [ciphertext, plaintext], description: "ciphertext: the documents hold the values as stored; plaintext: someone opened them with the key." }
             files: { type: integer, format: int64 }
             checksums: { type: object, additionalProperties: { type: string } }
             auth:

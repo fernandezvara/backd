@@ -18,6 +18,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/fernandezvara/backd/internal/fieldcrypt"
 )
 
 // FormatVersion is the version of the package layout; import refuses other versions.
@@ -81,6 +83,8 @@ type Collection struct {
 // EncryptedField records an encrypted field and whether the package holds it as ciphertext or
 // decrypted.
 type EncryptedField struct {
+	Database    string `json:"database"`
+	Collection  string `json:"collection"`
 	Path        string `json:"path"`
 	Key         string `json:"key"`
 	Fingerprint string `json:"fingerprint"`
@@ -162,6 +166,9 @@ func toExtended(v any) any {
 		return map[string]any{"$date": t.UTC().Format("2006-01-02T15:04:05.000Z")}
 	case []byte:
 		return map[string]any{"$binary": map[string]any{"base64": base64.StdEncoding.EncodeToString(t), "subType": "00"}}
+	case fieldcrypt.Ciphertext:
+		// An encrypted value, as stored: BSON binary subtype 6.
+		return map[string]any{"$binary": map[string]any{"base64": base64.StdEncoding.EncodeToString(t), "subType": "06"}}
 	case map[string]any:
 		out := make(map[string]any, len(t))
 		for k, e := range t {
@@ -179,7 +186,8 @@ func toExtended(v any) any {
 }
 
 // DecodeDocument reads a line EncodeDocument wrote: integers come back as int64, other numbers
-// as float64, and Extended JSON dates and binary as time.Time and []byte.
+// as float64, and Extended JSON dates and binary as time.Time and []byte (an encrypted value, binary
+// of subtype 6, as fieldcrypt.Ciphertext).
 func DecodeDocument(line []byte) (map[string]any, error) {
 	dec := json.NewDecoder(bytes.NewReader(line))
 	dec.UseNumber()
@@ -226,6 +234,9 @@ func fromExtended(v any) (any, error) {
 			raw, err := base64.StdEncoding.DecodeString(s)
 			if err != nil {
 				return nil, errors.New("invalid $binary")
+			}
+			if sub, _ := b["subType"].(string); sub == "06" {
+				return fieldcrypt.Ciphertext(raw), nil
 			}
 			return raw, nil
 		}

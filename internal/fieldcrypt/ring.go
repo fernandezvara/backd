@@ -401,7 +401,7 @@ func (r *Ring) Encrypt(ctx context.Context, c *registry.Collection, doc map[stri
 // field's active data key, and returns the id (32 hex characters) of the key it used.
 func (r *Ring) SealAt(ctx context.Context, c *registry.Collection, path, docID string, v any) (Ciphertext, string, error) {
 	f := r.field(c, path)
-	plain, err := json.Marshal(v)
+	plain, err := CanonicalJSON(v)
 	if err != nil {
 		return nil, "", fmt.Errorf("the field %s can't be encrypted: %w", path, errors.New("not a JSON value"))
 	}
@@ -424,7 +424,7 @@ func (r *Ring) blind(ctx context.Context, f Field, ef registry.EncryptedField, v
 	if err != nil {
 		return nil, err
 	}
-	plain, err := json.Marshal(Normalize(ef.Normalize, v))
+	plain, err := CanonicalJSON(Normalize(ef.Normalize, v))
 	if err != nil {
 		return nil, errors.New("not a JSON value")
 	}
@@ -565,6 +565,18 @@ func (r *Ring) HistoricPaths(ctx context.Context, c *registry.Collection) ([]str
 		}
 	}
 	return out, nil
+}
+
+// CanonicalJSON serializes a value the way the format specifies: JSON without insignificant
+// white space, object keys sorted, and no HTML escaping (`<`, `>` and `&` stay as they are).
+func CanonicalJSON(v any) ([]byte, error) {
+	var b bytes.Buffer
+	e := json.NewEncoder(&b)
+	e.SetEscapeHTML(false)
+	if err := e.Encode(v); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(b.Bytes(), []byte("\n")), nil
 }
 
 func decodeJSON(b []byte) (any, error) {

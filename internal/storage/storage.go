@@ -401,3 +401,18 @@ type FieldStatus struct {
 	Old        int64  // …sealed with another (Encrypted - Current)
 	Indexed    int64  // documents whose blind index is built (searchable fields)
 }
+
+type rawEncryptedKey struct{}
+
+// WithRawEncrypted marks reads made with the returned context to leave encrypted fields as they
+// are stored (ciphertext), instead of opening them. Only an export uses it: the server never
+// decrypts for one.
+func WithRawEncrypted(ctx context.Context) context.Context {
+	return context.WithValue(ctx, rawEncryptedKey{}, true)
+}
+
+// RawEncrypted reports whether reads with ctx leave encrypted fields as stored.
+func RawEncrypted(ctx context.Context) bool {
+	v, _ := ctx.Value(rawEncryptedKey{}).(bool)
+	return v
+}

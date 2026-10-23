@@ -130,7 +130,7 @@ func (r *Repository) seal(ctx context.Context, doc storage.Document) (storage.Do
 
 // open decrypts the encrypted fields of documents just read, in place.
 func (r *Repository) open(ctx context.Context, docs ...storage.Document) error {
-	if r.c == nil {
+	if r.c == nil || storage.RawEncrypted(ctx) {
 		return nil
 	}
 	if r.ring == nil {
