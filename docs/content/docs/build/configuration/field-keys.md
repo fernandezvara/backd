@@ -80,7 +80,7 @@ fields:
 - `schema.json` still describes the **plain** value, and requests are validated against it before the field is encrypted.
 - Create the keys first. `backd` checks, when it starts, that each field is declared in `schema.json` and that its key exists and **is a key** (not a plain secret); it refuses to start otherwise, naming the field and the command that creates the key. A realm with `auth: disabled` has nowhere to keep keys, so it can't declare encrypted fields.
 - At startup `backd` also gives each field a **data key** to write with. The same field never shares a data key with another, even when they share a field key.
-- The data written before a field was encrypted stays readable as it is. Encrypting it needs the migration that comes with a later release; until then, only values written from now on are encrypted.
+- The data written before a field was encrypted stays readable as it is, and stays plaintext until you [migrate it](#change-encryption-on-existing-data).
 
 What is stored is the encrypted value (BSON binary, about 45 bytes larger than the JSON of the value), bound to its realm, database, collection, field path and document id: a value copied into another document or field fails to decrypt instead of being accepted. A read of such a value answers `500` and logs where, never the value.
 
@@ -124,7 +124,7 @@ GET /v1/clinic/main/patients?where={"tax_id": {"$in": ["B1234", "C99"]}}
 **Only equality works** (`=`, `$eq` and `$in`; `null` can't be searched for). Ranges, `$ne`, text operators, sorting, counting distinct values and grouping answer `400 field_encrypted`. A read rule can compare the field the same way, with a value that doesn't come from the document: `document.tax_id == user.tax_id` or `document.code in ['X1', 'X2']`.
 
 {{< hint warning >}}
-**What a blind index reveals.** Equal values have equal indexes, so someone holding a dump can tell which documents share a value, though not what the value is. That is fine for values with many possibilities (tax ids, emails, card fingerprints). Do **not** use it for values with few (blood type, yes/no, a country): the groups they form would give them away. Documents written before the index existed aren't found by a search until the migration of a later release builds theirs.
+**What a blind index reveals.** Equal values have equal indexes, so someone holding a dump can tell which documents share a value, though not what the value is. That is fine for values with many possibilities (tax ids, emails, card fingerprints). Do **not** use it for values with few (blood type, yes/no, a country): the groups they form would give them away. Documents written before the index existed aren't found by a search until [a migration](#change-encryption-on-existing-data) builds theirs.
 {{< /hint >}}
 
 ## Who sees an encrypted field
@@ -155,6 +155,32 @@ so an app can tell *hidden* from *empty* (`null` means empty only when the path 
 - **Realtime** events carry the same view, evaluated for the caller who subscribed; a change to their access ends the stream.
 - **Administrators.** A full administrator reading through the [admin data route](../../../operate/administration/admin/#data) sees every field, and each such read is audited (`data.reveal`: the fields and how many documents, never a value). A read-only administrator who may read data always gets them redacted.
 - **Caching.** An answer with hidden fields has a representation tag in its `ETag` (`"12.r3f9a1c2b"`), so a caller whose view changes (a role granted, a document handed over) never gets a stale `304`. `If-Match` still compares the version only.
+
+## Change encryption on existing data
+
+Turning encryption on for a field that already has values, replacing a key, or turning it off must not need a downtime, so **reads accept every form**: plaintext left from before, values under an older data key, and values of a field the configuration no longer encrypts. **Writes always follow the current configuration.** Moving what is already stored is a background job you start when you are ready:
+
+| Situation | What to run | Cost |
+|---|---|---|
+| Routine replacement of a field key, or a copy of it may have leaked | [`backd secret rotate NAME`](#rotate-a-key) | instant: wraps its data keys again |
+| The data keys may have leaked (a server's memory, a decrypted dump) | `backd encrypt rekey --database d --collection c --field f`, then `migrate` | new generation for writes; a job seals the old values again |
+| A field moved to another key (`key:` changed in `collection.yaml`) | restart `backd`, then `migrate` | a new data key under the new key; a job seals the old values again |
+| A field is now encrypted (or searchable) and has values | `migrate` | a job seals them and builds the indexes |
+| A field is no longer encrypted | `migrate` | a job opens the values (the data keys stay until nothing uses them) |
+
+```sh
+backd encrypt status  --realm clinic                       # how every field is stored
+backd encrypt migrate --realm clinic --database main --collection patients --dry-run
+backd encrypt migrate --realm clinic --database main --collection patients
+```
+
+`status` counts, per field, the documents holding the value in plaintext, encrypted, sealed with the **current** data key and with an **old** one, how many have their blind index, the key with its fingerprint and the generations of its data keys. A collection is **complete** when nothing is left to migrate; `backd` also warns at startup about every field that is not.
+
+The migration runs on a worker, reads the collection in id order and rewrites only the documents that differ, at most 1,000 a second so the requests that use the collection are not starved. It never changes `_meta.version` or `updated_at`, and [triggers](../config-dir/#triggers) and realtime are not told: the document reads the same before and after. If a worker dies, another goes on from the place the job stored; a document someone else wrote meanwhile is already in the current form and is left alone. `--dry-run` counts and changes nothing; `--field` limits it to some fields (fields no longer encrypted are always opened). It needs a full administrator and a fresh proof, and is audited (`encrypt.start`, `encrypt.migrate`).
+
+- **Searching while it runs.** An equality search finds a document only once its blind index is built, so it can miss documents until the job ends; `status` shows the coverage.
+- **Retiring.** When the job ends and no value is left under an old generation (or a field is no longer encrypted and none is left at all), those data keys become `retired`. A retired key still opens a backup you restore; it only stops counting as in use, so the field key can be deleted when no active key is wrapped by it.
+- **Before the new configuration.** Run `backd provision` (or start with `PROVISION_MODE=apply`) so the database validator matches the configuration. It expects binary where a field is encrypted; documents already stored the old way stay valid to update.
 
 ## Rotate a key
 

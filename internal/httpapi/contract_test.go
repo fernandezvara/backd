@@ -2817,6 +2817,27 @@ func TestContract(t *testing.T) {
 		_ = other
 	}
 
+	// Encryption (16.5): the status of a realm that encrypts nothing, a migration queued once, and a
+	// rekey of a field the collection is made to encrypt for the moment.
+	req("GET", ad+"/encryption", "", key, 200)
+	req("GET", ad+"/encryption?collection=posts", "", key, 400)
+	req("GET", ad+"/encryption", "", nil, 401)
+	req("GET", ad+"/encryption", "", ada, 403)
+	req("POST", ad+"/encryption/migrate", `{"database": "app", "collection": "posts", "fields": ["title"]}`, json(key), 400)
+	req("POST", ad+"/encryption/migrate", `{"database": "app", "collection": "nosuch"}`, json(key), 404)
+	req("POST", ad+"/encryption/migrate", `{"database": "app", "collection": "posts"}`, nil, 401)
+	req("POST", ad+"/encryption/migrate", `{"database": "app", "collection": "posts"}`, with(ada, "Content-Type", "application/json"), 403)
+	req("POST", ad+"/encryption/migrate", `{"database": "app", "collection": "posts", "dry_run": true}`, json(key), 202)
+	req("POST", ad+"/encryption/migrate", `{"database": "app", "collection": "posts"}`, json(key), 409)
+	posts := f.reg.Realms["acme"].Databases["app"].Collections["posts"]
+	req("POST", ad+"/encryption/rekey", `{"database": "app", "collection": "posts", "field": "title"}`, json(key), 400)
+	posts.Encrypted = []registry.EncryptedField{{Path: "title", Key: "K"}}
+	req("POST", ad+"/encryption/rekey", `{"database": "app", "collection": "posts", "field": "title"}`, json(key), 200)
+	posts.Encrypted = nil
+	req("POST", ad+"/encryption/rekey", `{"database": "app", "collection": "nosuch", "field": "title"}`, json(key), 404)
+	req("POST", ad+"/encryption/rekey", `{"database": "app", "collection": "posts", "field": "title"}`, nil, 401)
+	req("POST", ad+"/encryption/rekey", `{"database": "app", "collection": "posts", "field": "title"}`, with(ada, "Content-Type", "application/json"), 403)
+
 	// The actions of a breach come last: they end every session the checks above used.
 	req("GET", ad+"/passwords", "", key, 200)
 	req("POST", ad+"/passwords/expire", `{"reason": 7}`, json(key), 400)

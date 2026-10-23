@@ -64,8 +64,15 @@ type Store interface {
 	// RewrapDataKey replaces a key's wrapping if it still has wrap version from; false when it
 	// no longer does (another process did it).
 	RewrapDataKey(ctx context.Context, id string, wrapped []byte, from, to int) (bool, error)
-	// DataKeysByKey counts the keys wrapped by a field key, whatever their version.
+	// DataKeysByKey counts the keys wrapped by a field key that are not retired.
 	DataKeysByKey(ctx context.Context, key string) (int64, error)
+	// DataKeysOf lists every key of a field (all kinds, generations and statuses), oldest first.
+	DataKeysOf(ctx context.Context, database, collection, path string) ([]Record, error)
+	// DataKeyPaths lists the paths of a collection that have data keys: the fields that are, or
+	// once were, encrypted.
+	DataKeyPaths(ctx context.Context, database, collection string) ([]string, error)
+	// SetDataKeyStatus changes a key's status (active, decrypt_only, retired).
+	SetDataKeyStatus(ctx context.Context, id, status string) error
 }
 
 // Material is what the secrets store gives of a field key: its value and version, and, while
@@ -90,6 +97,12 @@ type Ring struct {
 	mu     sync.Mutex
 	active map[string]activeKey
 	byID   map[string][]byte
+	paths  map[string]cachedPaths
+}
+
+type cachedPaths struct {
+	paths   []string
+	expires time.Time
 }
 
 type activeKey struct {
@@ -158,12 +171,24 @@ func (r *Ring) Ensure(ctx context.Context, c *registry.Collection) error {
 
 func (r *Ring) ensureKey(ctx context.Context, c *registry.Collection, ef registry.EncryptedField, kind string) error {
 	f := r.field(c, ef.Path)
-	if _, ok, err := r.Store.ActiveDataKey(ctx, f.Database, f.Collection, f.Path, kind); err != nil {
+	prev, ok, err := r.Store.ActiveDataKey(ctx, f.Database, f.Collection, f.Path, kind)
+	if err != nil {
 		return err
-	} else if ok {
+	}
+	if ok && prev.Key == ef.Key {
 		return nil
 	}
-	m, err := r.Keys(ctx, ef.Key)
+	if !ok {
+		prev = Record{}
+	}
+	// A field moved to another key starts a new generation under it; the old one stays to read.
+	return r.newGeneration(ctx, f, ef.Key, kind, prev)
+}
+
+// newGeneration creates the key after prev (the first one when prev is zero), wrapped by the
+// field key name, and makes it the one writes use; prev, if any, only decrypts from now on.
+func (r *Ring) newGeneration(ctx context.Context, f Field, keyName, kind string, prev Record) error {
+	m, err := r.Keys(ctx, keyName)
 	if err != nil {
 		return fmt.Errorf("%s/%s.%s: %w", f.Database, f.Collection, f.Path, err)
 	}
@@ -175,11 +200,84 @@ func (r *Ring) ensureKey(ctx context.Context, c *registry.Collection, ef registr
 	if err != nil {
 		return err
 	}
-	_, err = r.Store.CreateDataKey(ctx, Record{
+	created, err := r.Store.CreateDataKey(ctx, Record{
 		ID: hex.EncodeToString(id), Database: f.Database, Collection: f.Collection, Path: f.Path, Kind: kind,
-		Generation: 1, Key: ef.Key, Wrapped: wrapped, WrapVersion: m.Version, Status: StatusActive, CreatedAt: r.now().UTC(),
+		Generation: prev.Generation + 1, Key: keyName, Wrapped: wrapped, WrapVersion: m.Version, Status: StatusActive, CreatedAt: r.now().UTC(),
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if created && prev.ID != "" {
+		if err := r.Store.SetDataKeyStatus(ctx, prev.ID, StatusDecryptOnly); err != nil {
+			return err
+		}
+	}
+	r.mu.Lock()
+	r.active = nil // the next write picks the new key up
+	r.mu.Unlock()
+	return nil
+}
+
+// Rekey starts a new generation of the data key of an encrypted field, so writes use a fresh
+// key; values under the old one stay readable until a migration re-encrypts them. For data keys
+// that may have leaked; replacing the field key alone never needs it.
+func (r *Ring) Rekey(ctx context.Context, c *registry.Collection, path string) (Record, error) {
+	ef, ok := c.EncryptedAt(path)
+	if !ok {
+		return Record{}, fmt.Errorf("%s is not an encrypted field of %s/%s", path, c.Database, c.Name)
+	}
+	f := r.field(c, path)
+	prev, found, err := r.Store.ActiveDataKey(ctx, f.Database, f.Collection, f.Path, KindData)
+	if err != nil {
+		return Record{}, err
+	}
+	if !found {
+		return Record{}, fmt.Errorf("%w: the field %s has no data key yet", ErrUnavailable, path)
+	}
+	if err := r.newGeneration(ctx, f, ef.Key, KindData, prev); err != nil {
+		return Record{}, err
+	}
+	rec, _, err := r.Store.ActiveDataKey(ctx, f.Database, f.Collection, f.Path, KindData)
+	return rec, err
+}
+
+// ActiveID is the id (32 hex characters) of the data key new values of a field are sealed with.
+func (r *Ring) ActiveID(ctx context.Context, c *registry.Collection, path string) (string, error) {
+	f := r.field(c, path)
+	rec, ok, err := r.Store.ActiveDataKey(ctx, f.Database, f.Collection, f.Path, KindData)
+	if err != nil || !ok {
+		return "", err
+	}
+	return rec.ID, nil
+}
+
+// Retire marks as retired the keys of a field no value uses any more: used(id) says how many
+// values are still sealed with a key. The active data key of a field that is no longer encrypted
+// is retired too, once none is left. It returns the ids it retired.
+func (r *Ring) Retire(ctx context.Context, c *registry.Collection, path string, used func(id string) (int64, error)) ([]string, error) {
+	f := r.field(c, path)
+	recs, err := r.Store.DataKeysOf(ctx, f.Database, f.Collection, f.Path)
+	if err != nil {
+		return nil, err
+	}
+	_, configured := c.EncryptedAt(path)
+	var retired []string
+	for _, rec := range recs {
+		if rec.Kind != KindData || rec.Status == StatusRetired || (rec.Status == StatusActive && configured) {
+			continue
+		}
+		n, err := used(rec.ID)
+		if err != nil {
+			return retired, err
+		}
+		if n == 0 {
+			if err := r.Store.SetDataKeyStatus(ctx, rec.ID, StatusRetired); err != nil {
+				return retired, err
+			}
+			retired = append(retired, rec.ID)
+		}
+	}
+	return retired, nil
 }
 
 // writeKey returns the data key a field's new values are encrypted with.
@@ -252,10 +350,11 @@ func (r *Ring) Encrypt(ctx context.Context, c *registry.Collection, doc map[stri
 	id, _ := doc["id"].(string)
 	out := doc
 	copied := false
-	if _, has := doc[registry.BlindRoot]; has && len(c.Searchable()) > 0 {
-		// Blind indexes are the server's: whatever a client sent under that name is dropped.
+	if _, hasBlind := doc[registry.BlindRoot]; hasBlind || doc[registry.EncRoot] != nil {
+		// Blind indexes and key ids are the server's: whatever a client sent under those names is dropped.
 		out, copied = shallow(doc), true
 		delete(out, registry.BlindRoot)
+		delete(out, registry.EncRoot)
 	}
 	for _, ef := range c.Encrypted {
 		v, ok := lookup(doc, ef.Path)
@@ -265,23 +364,22 @@ func (r *Ring) Encrypt(ctx context.Context, c *registry.Collection, doc map[stri
 		if _, sealed := v.(Ciphertext); sealed {
 			continue
 		}
+		ct, kid, err := r.SealAt(ctx, c, ef.Path, id, v)
+		if err != nil {
+			return nil, err
+		}
 		f := r.field(c, ef.Path)
-		plain, err := json.Marshal(v)
-		if err != nil {
-			return nil, fmt.Errorf("the field %s can't be encrypted: %w", ef.Path, errors.New("not a JSON value"))
-		}
-		kid, dk, err := r.writeKey(ctx, f, KindData)
-		if err != nil {
-			return nil, err
-		}
-		ct, err := Seal(dk, kid, plain, valueAD(f, id))
-		if err != nil {
-			return nil, err
-		}
 		if !copied {
 			out, copied = shallow(doc), true
 		}
 		store(out, ef.Path, ct)
+		enc, _ := out[registry.EncRoot].(map[string]any)
+		nextEnc := make(map[string]any, len(enc)+1)
+		for k, x := range enc {
+			nextEnc[k] = x
+		}
+		nextEnc[registry.MarkerField(ef.Path)] = kid
+		out[registry.EncRoot] = nextEnc
 		if ef.Search != "" {
 			b, err := r.blind(ctx, f, ef, v)
 			if err != nil {
@@ -292,11 +390,30 @@ func (r *Ring) Encrypt(ctx context.Context, c *registry.Collection, doc map[stri
 			for k, x := range bidx {
 				next[k] = x
 			}
-			next[strings.ReplaceAll(ef.Path, ".", "~")] = b
+			next[registry.MarkerField(ef.Path)] = b
 			out[registry.BlindRoot] = next
 		}
 	}
 	return out, nil
+}
+
+// SealAt encrypts a plaintext value of the field at path for the document with that id, with the
+// field's active data key, and returns the id (32 hex characters) of the key it used.
+func (r *Ring) SealAt(ctx context.Context, c *registry.Collection, path, docID string, v any) (Ciphertext, string, error) {
+	f := r.field(c, path)
+	plain, err := json.Marshal(v)
+	if err != nil {
+		return nil, "", fmt.Errorf("the field %s can't be encrypted: %w", path, errors.New("not a JSON value"))
+	}
+	kid, dk, err := r.writeKey(ctx, f, KindData)
+	if err != nil {
+		return nil, "", err
+	}
+	ct, err := Seal(dk, kid, plain, valueAD(f, docID))
+	if err != nil {
+		return nil, "", err
+	}
+	return ct, hex.EncodeToString(kid), nil
 }
 
 // blind computes the blind index of a plaintext value of a searchable field: an HMAC-SHA-256,
@@ -345,15 +462,18 @@ func Normalize(ops []string, v any) any {
 	return s
 }
 
-// Decrypt opens the encrypted fields of a document read from storage, in place. A value that
-// isn't encrypted (data from before the field was encrypted) is left as it is.
+// Decrypt opens the encrypted fields of a document read from storage, in place: the ones the
+// collection configures and the ones it once did (data keys remain for them, and their values
+// stay encrypted until a migration opens them). A value that isn't encrypted (data from before
+// the field was encrypted) is left as it is.
 func (r *Ring) Decrypt(ctx context.Context, c *registry.Collection, doc map[string]any) error {
-	if len(c.Encrypted) == 0 {
-		return nil
+	paths, err := r.openPaths(ctx, c)
+	if err != nil {
+		return err
 	}
 	id, _ := doc["id"].(string)
-	for _, ef := range c.Encrypted {
-		v, ok := lookup(doc, ef.Path)
+	for _, path := range paths {
+		v, ok := lookup(doc, path)
 		if !ok {
 			continue
 		}
@@ -361,26 +481,90 @@ func (r *Ring) Decrypt(ctx context.Context, c *registry.Collection, doc map[stri
 		if !sealed {
 			continue
 		}
-		f := r.field(c, ef.Path)
-		kid, err := ParseID(ct)
+		val, err := r.OpenAt(ctx, c, path, id, ct)
 		if err != nil {
 			return err
 		}
-		dk, err := r.readKey(ctx, f, kid)
-		if err != nil {
-			return err
-		}
-		plain, err := Open(dk, ct, valueAD(f, id))
-		if err != nil {
-			return err
-		}
-		val, err := decodeJSON(plain)
-		if err != nil {
-			return ErrCorrupt
-		}
-		set(doc, ef.Path, val)
+		set(doc, path, val)
 	}
 	return nil
+}
+
+// OpenAt opens one encrypted value of the field at path in the document with that id.
+func (r *Ring) OpenAt(ctx context.Context, c *registry.Collection, path, docID string, ct Ciphertext) (any, error) {
+	f := r.field(c, path)
+	kid, err := ParseID(ct)
+	if err != nil {
+		return nil, err
+	}
+	dk, err := r.readKey(ctx, f, kid)
+	if err != nil {
+		return nil, err
+	}
+	plain, err := Open(dk, ct, valueAD(f, docID))
+	if err != nil {
+		return nil, err
+	}
+	val, err := decodeJSON(plain)
+	if err != nil {
+		return nil, ErrCorrupt
+	}
+	return val, nil
+}
+
+// pathsTTL is how long the list of fields that have data keys is remembered.
+const pathsTTL = time.Minute
+
+// openPaths lists the paths of a collection a read must try to open: the configured ones and the
+// ones that have data keys from before. Nearly every collection has none of the second kind, and
+// the answer is remembered.
+func (r *Ring) openPaths(ctx context.Context, c *registry.Collection) ([]string, error) {
+	key := c.Database + "\x00" + c.Name
+	now := r.now()
+	r.mu.Lock()
+	if p, ok := r.paths[key]; ok && now.Before(p.expires) {
+		r.mu.Unlock()
+		return p.paths, nil
+	}
+	r.mu.Unlock()
+	historic, err := r.Store.DataKeyPaths(ctx, c.Database, c.Name)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	var paths []string
+	for _, ef := range c.Encrypted {
+		seen[ef.Path] = true
+		paths = append(paths, ef.Path)
+	}
+	for _, p := range historic {
+		if !seen[p] {
+			paths = append(paths, p)
+		}
+	}
+	r.mu.Lock()
+	if r.paths == nil {
+		r.paths = map[string]cachedPaths{}
+	}
+	r.paths[key] = cachedPaths{paths: paths, expires: now.Add(pathsTTL)}
+	r.mu.Unlock()
+	return paths, nil
+}
+
+// HistoricPaths lists the paths of a collection with data keys that its configuration no longer
+// encrypts: values may still be stored encrypted there until a migration opens them.
+func (r *Ring) HistoricPaths(ctx context.Context, c *registry.Collection) ([]string, error) {
+	paths, err := r.openPaths(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, p := range paths {
+		if _, ok := c.EncryptedAt(p); !ok {
+			out = append(out, p)
+		}
+	}
+	return out, nil
 }
 
 func decodeJSON(b []byte) (any, error) {
@@ -500,6 +684,6 @@ func Rewrap(ctx context.Context, store Store, realm, key string, m Material) (in
 // Reset forgets every cached key, so the next use reads and unwraps them again.
 func (r *Ring) Reset() {
 	r.mu.Lock()
-	r.active, r.byID = nil, nil
+	r.active, r.byID, r.paths = nil, nil, nil
 	r.mu.Unlock()
 }

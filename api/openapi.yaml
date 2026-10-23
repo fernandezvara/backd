@@ -4756,6 +4756,173 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/encryption:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [admin]
+      summary: How encrypted fields are stored
+      description: |
+        For each collection that encrypts fields, or once did, and per field: how many documents
+        hold the value in plaintext, encrypted, sealed with the current data key (`current`) and
+        with an older one (`old`), how many have their blind index, the field key with its
+        fingerprint, the generations of its data keys with how many values each seals, and the
+        latest migration. A collection is `complete` when nothing is left to migrate. It counts
+        documents, so on a big collection it takes a moment. Needs the `data` area (reading is
+        enough).
+      operationId: adminGetEncryption
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { name: database, in: query, schema: { type: string } }
+        - { name: collection, in: query, description: "Needs `database`.", schema: { type: string } }
+      responses:
+        "200":
+          description: The collections that encrypt, or once did.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [collections]
+                properties:
+                  collections:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [database, collection, fields, complete, migration]
+                      properties:
+                        database: { type: string }
+                        collection: { type: string }
+                        complete: { type: boolean }
+                        fields:
+                          type: array
+                          items:
+                            type: object
+                            additionalProperties: false
+                            required: [path, configured, search, plaintext, encrypted, current, old, complete, generations]
+                            properties:
+                              path: { type: string }
+                              configured: { type: boolean, description: "False for a field the configuration no longer encrypts." }
+                              key: { type: string }
+                              fingerprint: { type: string }
+                              search: { type: boolean }
+                              plaintext: { type: integer }
+                              encrypted: { type: integer }
+                              current: { type: integer }
+                              old: { type: integer }
+                              indexed: { type: integer }
+                              unindexed: { type: integer }
+                              complete: { type: boolean }
+                              generations:
+                                type: array
+                                items:
+                                  type: object
+                                  additionalProperties: false
+                                  required: [kind, generation, status, key, wrap_version]
+                                  properties:
+                                    kind: { type: string, enum: [data, index] }
+                                    generation: { type: integer }
+                                    status: { type: string, enum: [active, decrypt_only, retired] }
+                                    key: { type: string }
+                                    wrap_version: { type: integer }
+                                    values: { type: integer }
+                        migration:
+                          type: [object, "null"]
+                          description: The latest migration job of the collection.
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/encryption/rekey:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [admin]
+      summary: Start a new generation of a field's data key
+      description: |
+        New values of the field are sealed with a fresh data key; the existing ones stay readable
+        until a migration seals them again. For data keys that may have leaked; replacing the
+        field key alone (`POST /_admin/secrets/{name}/rotate`) never needs it. Needs full admin
+        access and a fresh re-authentication; audited as `encrypt.rekey`.
+      operationId: adminRekeyField
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [database, collection, field]
+              properties:
+                database: { type: string }
+                collection: { type: string }
+                field: { type: string, description: "The encrypted field's path." }
+      responses:
+        "200":
+          description: The new generation is active.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [database, collection, field, generation, status]
+                properties:
+                  database: { type: string }
+                  collection: { type: string }
+                  field: { type: string }
+                  generation: { type: integer }
+                  status: { type: string }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/encryption/migrate:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [admin]
+      summary: Migrate a collection's documents to its encryption configuration
+      description: |
+        Queues a background job that reads the collection in id order (at most 1,000 documents a
+        second) and rewrites only what differs: plaintext values are encrypted, values under an
+        older data key or generation sealed again, blind indexes built or rebuilt, values of
+        fields that are no longer encrypted opened. `_meta.version` never changes. It goes on
+        from where it stopped if a worker dies, and at the end retires the data keys nothing
+        uses. With `dry_run` it only counts. One migration per collection at a time (`409`).
+        Needs full admin access and a fresh re-authentication; audited as `encrypt.start` and,
+        by the job, `encrypt.migrate`. Follow it with `GET /_admin/jobs/{id}`.
+      operationId: adminMigrateEncryption
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [database, collection]
+              properties:
+                database: { type: string }
+                collection: { type: string }
+                fields: { type: array, items: { type: string }, description: "Only these encrypted fields (fields no longer encrypted are always opened)." }
+                dry_run: { type: boolean }
+      responses:
+        "202":
+          description: The job is queued.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobSummary" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/config:
     parameters: [{ $ref: "#/components/parameters/realm" }]
     get:

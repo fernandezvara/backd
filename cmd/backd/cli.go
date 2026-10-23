@@ -694,6 +694,38 @@ func registerRemote(cfg *kli.Config) {
 		optional(cc, "where", "only documents matching this JSON filter")
 		boolean(cc, "dry-run", "count the documents without changing anything")
 	})
+	enc := cfg.Command("encrypt").ShortHelp("see and change how encrypted fields are stored")
+	encFlags := func(cc *kli.CommandConfig) {
+		required(cc, "realm", "the realm")
+		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+	}
+	enc.SubCommand("status").ShortHelp("count how the values of each encrypted field are stored").
+		LongHelp("For every collection that encrypts fields (or once did), per field: documents holding the value in plaintext, encrypted, sealed with the current data key and with an older one, how many have their blind index, the key with its fingerprint and the generations of its data keys. A collection is complete when nothing is left to migrate. It counts documents, so on a big collection it takes a moment. " + adminAPINote).
+		Func(act("encrypt status", encryptStatus)).Config(func(cc *kli.CommandConfig) {
+		encFlags(cc)
+		optional(cc, "database", "only this database")
+		optional(cc, "collection", "only this collection (needs --database)")
+		boolean(cc, "json", "print the answer as JSON")
+	})
+	enc.SubCommand("rekey").ShortHelp("start a new generation of a field's data key").
+		LongHelp("Gives an encrypted field a fresh data key: new values are sealed with it, and the existing ones stay readable until `backd encrypt migrate` seals them again. For data keys that may have leaked (a server's memory, a decrypted dump); replacing the field key (`backd secret rotate`) never needs it. Needs a full administrator and a fresh proof. " + adminAPINote).
+		Func(act("encrypt rekey", encryptRekey)).Config(func(cc *kli.CommandConfig) {
+		encFlags(cc)
+		required(cc, "database", "the database")
+		required(cc, "collection", "the collection")
+		required(cc, "field", "the encrypted field's path")
+	})
+	enc.SubCommand("migrate").ShortHelp("bring a collection's stored documents in line with its encryption configuration").
+		LongHelp("Runs a background job on a worker that reads the collection in id order, at most 1000 documents a second, and rewrites only what differs: plaintext values are encrypted, values under an older data key or generation sealed again, blind indexes built or rebuilt, and values of fields that are no longer encrypted opened. It goes on from where it stopped if a worker dies, never changes `_meta.version`, and at the end retires the data keys nothing uses. --dry-run only counts. Equality searches can miss documents whose index is not built yet until it finishes. Needs a full administrator and a fresh proof. " + adminAPINote).
+		Func(act("encrypt migrate", encryptMigrate)).Config(func(cc *kli.CommandConfig) {
+		encFlags(cc)
+		required(cc, "database", "the database")
+		required(cc, "collection", "the collection")
+		optional(cc, "field", "only these encrypted fields: comma-separated paths (fields no longer encrypted are always opened)")
+		boolean(cc, "dry-run", "count what would change without changing it")
+		boolean(cc, "no-wait", "start the job and print its id, without following it")
+		cc.Define("interval").String().Flag("interval").Default("2s").Description("how often to ask the server for progress")
+	})
 	fn := cfg.Command("functions").ShortHelp("build, call and inspect server-side functions")
 	fn.SubCommand("build").ShortHelp("bundle every function in CONFIG_DIR with deno").
 		LongHelp("Bundles every function in CONFIG_DIR with `deno bundle` into\n<realm>/<database>/_functions/.build/, one file per function named by its\ncontent hash, and records them in .build/manifest.json. Needs only CONFIG_DIR\nand Deno " + registry.DenoVersion + " (DENO, or deno on the PATH). --check also type-checks\nTypeScript. backd refuses to start while any bundle is missing or stale, so\nbuild after every change to a functions project, before provisioning or\ndeploying.").

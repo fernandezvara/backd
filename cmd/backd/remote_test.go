@@ -335,6 +335,11 @@ organizations:
 	c.expect(1, "404 not_found", "", "secret", "rotate", "--realm", "acme", "--name", "NOPE", "--generate")
 	c.expect(2, "exactly one of --generate, --value and --resume", "", "secret", "rotate", "--realm", "acme", "--name", "HEALTH")
 	c.expect(2, "exactly one of --generate, --value and --resume", "", "secret", "rotate", "--realm", "acme", "--name", "HEALTH", "--generate", "--resume")
+	// Encryption: nothing of this realm encrypts, and the commands say so or refuse.
+	c.expect(0, "no collection of this realm encrypts fields", "", "encrypt", "status", "--realm", "acme")
+	c.expect(2, "--collection needs --database", "", "encrypt", "status", "--realm", "acme", "--collection", "notes")
+	c.expect(1, "404 not_found", "", "encrypt", "migrate", "--realm", "acme", "--database", "app", "--collection", "nope")
+	c.expect(1, "400 validation_error", "", "encrypt", "rekey", "--realm", "acme", "--database", "app", "--collection", "notes", "--field", "title")
 	c.expect(0, `secret "realm.HEALTH" deleted`, "", "secret", "delete", "--realm", "acme", "--name", "HEALTH")
 	c.expect(0, `secret "realm.COPY" deleted`, "", "secret", "delete", "--realm", "acme", "--name", "COPY")
 

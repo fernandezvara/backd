@@ -481,6 +481,20 @@ func (m *MemStore) SetPasswordNoticeProgress(_ context.Context, jobID, after str
 	return nil
 }
 
+func (m *MemStore) SetEncryptProgress(_ context.Context, jobID, after string, c auth.EncryptCounts) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	j, ok := m.jobs[jobID]
+	if !ok || j.Encrypt == nil {
+		return auth.ErrNotFound
+	}
+	ej := *j.Encrypt
+	ej.After, ej.EncryptCounts = after, c
+	j.Encrypt = &ej
+	m.jobs[jobID] = j
+	return nil
+}
+
 func (m *MemStore) CountPasswordIdentities(context.Context) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

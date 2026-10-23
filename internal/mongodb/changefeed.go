@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -273,6 +274,11 @@ func (s *changeStream) Next(ctx context.Context) (changefeed.Event, error) {
 					if err := s.decrypt(ctx, n, d); err != nil {
 						return changefeed.Event{}, err
 					}
+				}
+				// A migration rewrites how a value is stored, not the value: when the document
+				// reads the same before and after, nobody needs to hear about it.
+				if c.Op == changefeed.Updated && c.Before != nil && c.After != nil && reflect.DeepEqual(c.Before, c.After) {
+					ok = false
 				}
 			}
 			pos := bytesCopy(s.cs.ResumeToken())

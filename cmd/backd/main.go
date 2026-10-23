@@ -251,6 +251,7 @@ func serve(ctx context.Context, a *app) error {
 	if err := a.ensureDataKeys(ctx); err != nil {
 		return err
 	}
+	a.logEncryption(ctx)
 	a.logSecurityWarnings()
 	a.logStorageSecrets(ctx, a.realmUsers())
 	a.logProviders(ctx, a.realmUsers())

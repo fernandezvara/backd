@@ -38,7 +38,10 @@ An admin role can open the whole admin API (`admin: true`), only some of its are
 | `invitations` | `/invitations` |
 | `apikeys` | `/apikeys` |
 | `secrets` | `/secrets` |
-| `audit` | `GET /audit` |
+| `audit` | `GET /encryption` | none; query `database`?, `collection`? | `200` with, per collection that encrypts (or once did) and per field, how the values are stored: `plaintext`, `encrypted`, `current`, `old`, `indexed`, the key with its fingerprint, the generations of its data keys and the latest migration; `complete` says nothing is left to migrate. Needs the `data` area (reading is enough) |
+| `POST /encryption/rekey` | `{"database", "collection", "field"}` | `200 {generation, status}`: a new generation of the field's data key. Full admin access and a fresh proof |
+| `POST /encryption/migrate` | `{"database", "collection", "fields"?, "dry_run"?}` | `202` with the [job](../../../build/functions/jobs/) that brings the stored documents in line with the configuration ([details](../../../build/configuration/field-keys/#change-encryption-on-existing-data)); `409` if one is running for the collection. Full admin access and a fresh proof |
+| `GET /audit` |
 | `functions` | `GET /triggers/status`, `GET /triggers/gaps` and `POST /triggers/gaps/{id}/resolve`; `POST /functions/{database}/{name}/invoke`, `GET /invocations`, `GET /jobs`, `GET /jobs/{id}`, `POST /jobs/{id}/cancel` and `…/rerun`, `GET /schedules`, and `POST /functions/{database}/{name}/pause` and `…/resume`; and reading any job through the data API |
 | `data` | the admin data route (documents past their collections' rules), and the [schema checks](../../../build/configuration/validation/#finding-documents-that-no-longer-match) (`GET` and `POST /data-checks`, read is enough; cancelling one needs only this area) |
 | `config` | `GET /config`, the read-only view of the realm's configuration, `POST /config/check`, which checks a change to the configuration, and `POST /storage/check`, which checks the realm's object storage |

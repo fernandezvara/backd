@@ -27,7 +27,9 @@ type Store struct {
 // Repository returns the repository of a configured collection.
 func (s *Store) Repository(c *registry.Collection) storage.Repository {
 	r := &Repository{coll: s.Client.Database(c.MongoDatabase).Collection(c.Name), c: c}
-	if len(c.Encrypted) > 0 && s.Crypt != nil {
+	if s.Crypt != nil {
+		// Also for a collection that encrypts nothing now: values of a field that once was
+		// encrypted are opened on read until a migration opens them for good.
 		r.ring = s.Crypt(c.Realm)
 	}
 	if c.Text != nil {
@@ -128,10 +130,13 @@ func (r *Repository) seal(ctx context.Context, doc storage.Document) (storage.Do
 
 // open decrypts the encrypted fields of documents just read, in place.
 func (r *Repository) open(ctx context.Context, docs ...storage.Document) error {
-	if r.c == nil || len(r.c.Encrypted) == 0 {
+	if r.c == nil {
 		return nil
 	}
 	if r.ring == nil {
+		if len(r.c.Encrypted) == 0 {
+			return nil
+		}
 		return fmt.Errorf("%w: this instance has no field encryption for the realm", fieldcrypt.ErrUnavailable)
 	}
 	for _, d := range docs {

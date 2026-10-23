@@ -162,6 +162,9 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		// area's readers may cancel as they start it: cancelJob looks at the job.
 		r.Post("/jobs/{id}/cancel", a.cancelJob)
 		r.With(a.needRead(registry.RightData)).Get("/data-checks", a.listDataChecks)
+		r.With(a.needRead(registry.RightData)).Get("/encryption", a.getEncryption)
+		r.With(a.need(registry.RightData), json).Post("/encryption/rekey", a.rekeyField)
+		r.With(a.need(registry.RightData), json).Post("/encryption/migrate", a.migrateEncryption)
 		r.With(a.needRead(registry.RightData)).Post("/data-checks", a.startDataCheck)
 		r.With(a.needRead(registry.RightData)).Get("/data-checks/{database}/{collection}", a.getDataCheck)
 		r.With(fns).Post("/jobs/{id}/rerun", a.rerunJob)
@@ -1395,6 +1398,11 @@ func (a *adminAPI) cancelJob(w http.ResponseWriter, r *http.Request) {
 			rightRefused(w, r, fmt.Sprintf("cancelling the notification of the users needs the %q admin right to change; your roles open: %s", registry.RightUsers, have))
 			return
 		}
+	} else if ok && found.Encrypt != nil {
+		if !have.CanWrite(registry.RightData) {
+			rightRefused(w, r, fmt.Sprintf("cancelling an encryption migration needs the %q admin right to change; your roles open: %s", registry.RightData, have))
+			return
+		}
 	} else if ok && found.Image != nil {
 		if !have.CanWrite(registry.RightConfig) {
 			rightRefused(w, r, fmt.Sprintf("cancelling a regeneration of image versions needs the %q admin right to change; your roles open: %s", registry.RightConfig, have))
@@ -1460,6 +1468,9 @@ func jobSummaryJSON(j auth.Job) map[string]any {
 	}
 	if j.PasswordNotice != nil {
 		function = "password-notice"
+	}
+	if j.Encrypt != nil {
+		function = "encrypt:" + j.Encrypt.Database + "/" + j.Encrypt.Collection
 	}
 	out := map[string]any{
 		"id":              j.ID,

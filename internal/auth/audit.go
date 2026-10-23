@@ -124,6 +124,10 @@ const (
 	// An administrator read encrypted fields in plain through the data route; details: database,
 	// collection, fields, documents. Never a value.
 	AuditDataReveal = "data.reveal"
+	// An administrator started an encryption migration, or rekeyed a field; and the job's result.
+	AuditEncryptStart   = "encrypt.start"   // details: database, collection, fields, dry_run, job_id
+	AuditEncryptRekey   = "encrypt.rekey"   // details: database, collection, field, generation
+	AuditEncryptMigrate = "encrypt.migrate" // by the job; details: job_id, counts, retired_keys
 	// AuditTriggerGapResolve is an administrator closing a recorded gap of the trigger dispatcher;
 	// AuditTriggerRescan one re-emitting the changes of a collection.
 	AuditTriggerGapResolve = "triggers.gap_resolve"

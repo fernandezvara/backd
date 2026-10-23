@@ -63,6 +63,7 @@ Each realm with `auth: enabled` keeps an **audit trail**: one record per securit
 | `invitation.create`, `invitation.revoke` | An invitation is created or revoked | `bound_to_email` (whether it is), `expires_at` |
 | `invitation.sent` | An invitation is emailed to its address | `expires_at` |
 | `admin.login` | A user holding an admin role logs in | `session_id` |
+| `encrypt.start`, `encrypt.rekey`, `encrypt.migrate` | An [encryption migration](../../../build/configuration/field-keys/#change-encryption-on-existing-data) was started, a field rekeyed, or a migration finished (by the job) | `database`, `collection`, `fields`, `dry_run`, `job_id`, `generation`; the counts and the number of retired keys; never a value |
 | `data.reveal` | A full administrator read documents that hold [encrypted fields](../../../build/configuration/field-keys/#who-sees-an-encrypted-field) in plain through the admin data route (one record per read) | `database`, `collection`, `fields`, `documents`; never a value |
 | `data.create`, `data.update`, `data.delete`, `data.restore`, `data.purge` | A document is written through the [admin data route](../admin/#data) (a batch audits each operation) | `database`, `collection`, `id`; the target is `doc:<database>/<collection>/<id>`; never content |
 | `session.revoke` | An administrator ends a user's session ([admin API](../admin/)) | `session` |

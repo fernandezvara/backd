@@ -3,6 +3,7 @@ package mongodb
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -114,5 +115,49 @@ func (s *AuthStore) RewrapDataKey(ctx context.Context, id string, wrapped []byte
 
 // DataKeysByKey implements fieldcrypt.Store.
 func (s *AuthStore) DataKeysByKey(ctx context.Context, key string) (int64, error) {
-	return s.dataKeys().CountDocuments(ctx, bson.D{{Key: "key", Value: key}})
+	return s.dataKeys().CountDocuments(ctx, bson.D{{Key: "key", Value: key}, {Key: "status", Value: bson.D{{Key: "$ne", Value: fieldcrypt.StatusRetired}}}})
+}
+
+// DataKeysOf implements fieldcrypt.Store.
+func (s *AuthStore) DataKeysOf(ctx context.Context, database, collection, path string) ([]fieldcrypt.Record, error) {
+	cur, err := s.dataKeys().Find(ctx, bson.D{{Key: "database", Value: database}, {Key: "collection", Value: collection}, {Key: "path", Value: path}},
+		options.Find().SetSort(bson.D{{Key: "kind", Value: 1}, {Key: "generation", Value: 1}}))
+	if err != nil {
+		return nil, err
+	}
+	var docs []dataKeyDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	out := make([]fieldcrypt.Record, len(docs))
+	for i, d := range docs {
+		out[i] = d.record()
+	}
+	return out, nil
+}
+
+// DataKeyPaths implements fieldcrypt.Store.
+func (s *AuthStore) DataKeyPaths(ctx context.Context, database, collection string) ([]string, error) {
+	vals, err := s.dataKeys().Distinct(ctx, "path", bson.D{{Key: "database", Value: database}, {Key: "collection", Value: collection}, {Key: "kind", Value: fieldcrypt.KindData}}).Raw()
+	if err != nil {
+		return nil, err
+	}
+	elems, err := vals.Values()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(elems))
+	for _, e := range elems {
+		if s, ok := e.StringValueOK(); ok {
+			out = append(out, s)
+		}
+	}
+	slices.Sort(out)
+	return out, nil
+}
+
+// SetDataKeyStatus implements fieldcrypt.Store.
+func (s *AuthStore) SetDataKeyStatus(ctx context.Context, id, status string) error {
+	_, err := s.dataKeys().UpdateOne(ctx, bson.D{{Key: "_id", Value: id}}, bson.D{{Key: "$set", Value: bson.D{{Key: "status", Value: status}}}})
+	return err
 }

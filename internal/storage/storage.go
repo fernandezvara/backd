@@ -315,3 +315,89 @@ type Scanner interface {
 
 // ErasedBy is what an erase records in _meta.updated_by.
 const ErasedBy = "backd:erase"
+
+// Migrator is what changing the encryption of existing documents needs of a collection's storage
+// (design/field-encryption.md §8). Only a repository of a collection that has, or had, encrypted
+// fields implements it meaningfully.
+type Migrator interface {
+	// Prepare makes sure every encrypted field of the collection has the keys to write with under
+	// the keys its configuration names (a field moved to another key starts a new generation).
+	Prepare(ctx context.Context) error
+	// Retire marks as retired the data keys of old generations that no value uses any more, and
+	// returns their ids.
+	Retire(ctx context.Context) ([]string, error)
+	// MigrateBatch brings up to limit documents after afterID, in id order, in line with the
+	// collection's configuration: plaintext values are encrypted, values under an old key or
+	// generation sealed again with the current one, blind indexes built or rebuilt, and values of
+	// fields that are no longer encrypted opened. With DryRun it only counts. Last is the id of the
+	// last document read ("" when there were none).
+	MigrateBatch(ctx context.Context, afterID string, limit int, o MigrateOptions) (MigrateResult, error)
+	// EncryptionStatus counts, per encrypted field (and per field that once was), how its values
+	// are stored.
+	EncryptionStatus(ctx context.Context) ([]FieldStatus, error)
+	// CountNotCurrent counts the documents holding an encrypted value at path that is not sealed
+	// with the active data key: what keeps an old generation from being retired.
+	CountNotCurrent(ctx context.Context, path string) (int64, error)
+	// CountSealedWith counts the documents whose value at path is marked as sealed with the data
+	// key with that id.
+	CountSealedWith(ctx context.Context, path, keyID string) (int64, error)
+	// Generations lists the keys of a field, oldest first, with how many values each seals.
+	Generations(ctx context.Context, path string) ([]KeyGeneration, error)
+	// Rekey starts a new generation of the field's data key and returns it.
+	Rekey(ctx context.Context, path string) (KeyGeneration, error)
+}
+
+// KeyGeneration is one key of an encrypted field.
+type KeyGeneration struct {
+	ID          string // 32 hex characters
+	Kind        string // "data" or "index"
+	Generation  int
+	Key         string // the field key that wraps it
+	Status      string // active, decrypt_only or retired
+	WrapVersion int
+	Values      int64 // values marked as sealed with it (data keys)
+}
+
+// MigrateOptions narrows a migration.
+type MigrateOptions struct {
+	// Fields are the configured encrypted paths to migrate; empty means all. Fields that are no
+	// longer encrypted are always opened: a document can't be left half way.
+	Fields []string
+	DryRun bool
+}
+
+// MigrateCounts is what a migration did (or, in a dry run, would do).
+type MigrateCounts struct {
+	Scanned     int64 `json:"scanned"`
+	Encrypted   int64 `json:"encrypted"`   // plaintext values sealed
+	Reencrypted int64 `json:"reencrypted"` // values under an old generation or key sealed again
+	Decrypted   int64 `json:"decrypted"`   // values of fields no longer encrypted opened
+	Indexed     int64 `json:"indexed"`     // blind indexes built or rebuilt
+	Marked      int64 `json:"marked"`      // key ids recorded on values that were already current
+	Conflicts   int64 `json:"conflicts"`   // documents changed by someone else meanwhile, left for their writer
+}
+
+// Add returns the sum of two counts.
+func (a MigrateCounts) Add(b MigrateCounts) MigrateCounts {
+	return MigrateCounts{a.Scanned + b.Scanned, a.Encrypted + b.Encrypted, a.Reencrypted + b.Reencrypted, a.Decrypted + b.Decrypted,
+		a.Indexed + b.Indexed, a.Marked + b.Marked, a.Conflicts + b.Conflicts}
+}
+
+// MigrateResult is one batch of a migration.
+type MigrateResult struct {
+	Last   string
+	Counts MigrateCounts
+}
+
+// FieldStatus is how the values of one encrypted field are stored.
+type FieldStatus struct {
+	Path       string
+	Configured bool   // the collection's configuration still encrypts it
+	Search     bool   // it has a blind index
+	ActiveID   string // the data key new values are sealed with ("" for a field no longer encrypted)
+	Plaintext  int64  // documents holding the value in plain
+	Encrypted  int64  // documents holding it encrypted
+	Current    int64  // …sealed with the active data key
+	Old        int64  // …sealed with another (Encrypted - Current)
+	Indexed    int64  // documents whose blind index is built (searchable fields)
+}

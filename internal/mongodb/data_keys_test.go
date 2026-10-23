@@ -61,7 +61,7 @@ func TestDataKeysAreStoredOncePerFieldAndGeneration(t *testing.T) {
 	if back, _, _ := s.DataKeyByID(ctx, "aa"); string(back.Wrapped) != "new" || back.WrapVersion != 2 {
 		t.Errorf("after: %+v", back)
 	}
-	if n, _ := s.DataKeysByKey(ctx, "HEALTH"); n != 3 {
+	if n, _ := s.DataKeysByKey(ctx, "HEALTH"); n != 2 { // the retired generation 3 does not count
 		t.Errorf("count = %d", n)
 	}
 	if n, _ := s.DataKeysByKey(ctx, "OTHER"); n != 0 {

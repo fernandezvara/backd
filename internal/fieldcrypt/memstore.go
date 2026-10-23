@@ -3,6 +3,7 @@ package fieldcrypt
 import (
 	"context"
 	"slices"
+	"strings"
 	"sync"
 )
 
@@ -85,9 +86,56 @@ func (m *MemStore) DataKeysByKey(_ context.Context, key string) (int64, error) {
 	defer m.mu.Unlock()
 	var n int64
 	for _, r := range m.Keys {
-		if r.Key == key {
+		if r.Key == key && r.Status != StatusRetired {
 			n++
 		}
 	}
 	return n, nil
+}
+
+func (m *MemStore) DataKeysOf(_ context.Context, database, collection, path string) ([]Record, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []Record
+	for _, r := range m.Keys {
+		if r.Database == database && r.Collection == collection && r.Path == path {
+			out = append(out, r)
+		}
+	}
+	slices.SortFunc(out, func(a, b Record) int {
+		if a.Kind != b.Kind {
+			return strings.Compare(a.Kind, b.Kind)
+		}
+		return a.Generation - b.Generation
+	})
+	return out, nil
+}
+
+func (m *MemStore) DataKeyPaths(_ context.Context, database, collection string) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	seen := map[string]bool{}
+	for _, r := range m.Keys {
+		if r.Database == database && r.Collection == collection && r.Kind == KindData {
+			seen[r.Path] = true
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for p := range seen {
+		out = append(out, p)
+	}
+	slices.Sort(out)
+	return out, nil
+}
+
+func (m *MemStore) SetDataKeyStatus(_ context.Context, id, status string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r, ok := m.Keys[id]
+	if !ok {
+		return nil
+	}
+	r.Status = status
+	m.Keys[id] = r
+	return nil
 }

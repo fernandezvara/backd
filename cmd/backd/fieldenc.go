@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/fernandezvara/backd/internal/fieldcrypt"
 	"github.com/fernandezvara/backd/internal/mongodb"
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/internal/storage"
 )
 
 // fieldRing returns the realm's field encryption: the data keys in its system database,
@@ -82,12 +84,65 @@ func (a *app) decryptDocument(ctx context.Context, realm, mongoDB, coll string, 
 			c = x
 		}
 	}
-	if c == nil || len(c.Encrypted) == 0 {
+	if c == nil {
 		return nil
 	}
 	ring := a.fieldRing(realm)
 	if ring == nil {
+		if len(c.Encrypted) == 0 {
+			return nil
+		}
 		return fieldcrypt.ErrUnavailable
 	}
+	// Also a collection that encrypts nothing now: values of a field that once was encrypted
+	// stay encrypted until a migration opens them.
 	return ring.Decrypt(ctx, c, doc)
+}
+
+// logEncryption says, for each collection that encrypts fields (or once did), whether its stored
+// documents all follow the configuration: a field with plaintext, old values or missing blind
+// indexes is named, with what to run. It looks for a few seconds at most per collection and never
+// stops startup; a collection too big to count in that time is reported as not checked.
+func (a *app) logEncryption(ctx context.Context) {
+	store := a.documentStore()
+	for _, rl := range a.reg.SortedRealms() {
+		if a.fieldRing(rl.Name) == nil {
+			continue
+		}
+		for _, db := range rl.Databases {
+			for _, c := range db.Collections {
+				m, ok := store.Repository(c).(storage.Migrator)
+				if !ok {
+					continue
+				}
+				cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+				statuses, err := m.EncryptionStatus(cctx)
+				cancel()
+				switch {
+				case err != nil && len(c.Encrypted) > 0:
+					a.log.Info("encrypted fields not checked: counting took too long or failed; run `backd encrypt status`", "realm", rl.Name, "collection", c.Database+"/"+c.Name, "error", err)
+					continue
+				case err != nil:
+					continue
+				}
+				for _, st := range statuses {
+					switch {
+					case st.Configured && (st.Plaintext > 0 || st.Old > 0 || (st.Search && st.Indexed < st.Encrypted)):
+						a.log.Warn("an encrypted field is not fully migrated: run `backd encrypt migrate` (until then searches can miss documents)",
+							"realm", rl.Name, "collection", c.Database+"/"+c.Name, "field", st.Path, "plaintext", st.Plaintext, "old", st.Old, "unindexed", max(st.Encrypted-st.Indexed, 0)*boolInt(st.Search))
+					case !st.Configured && st.Encrypted > 0:
+						a.log.Warn("a field that is no longer encrypted still has encrypted values: run `backd encrypt migrate`",
+							"realm", rl.Name, "collection", c.Database+"/"+c.Name, "field", st.Path, "encrypted", st.Encrypted)
+					}
+				}
+			}
+		}
+	}
+}
+
+func boolInt(b bool) int64 {
+	if b {
+		return 1
+	}
+	return 0
 }

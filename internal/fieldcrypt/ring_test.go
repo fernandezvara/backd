@@ -3,6 +3,7 @@ package fieldcrypt
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"testing"
@@ -240,3 +241,66 @@ func TestBlindIndexesAreEqualForEqualValuesAndNothingElse(t *testing.T) {
 		t.Error("a field without search has a blind index")
 	}
 }
+
+func TestAFieldMovedToAnotherKeyStartsANewGenerationAndOldValuesStayReadable(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemStore()
+	keys := map[string][]byte{"OLD": bytes.Repeat([]byte{1}, 32), "NEW": bytes.Repeat([]byte{2}, 32)}
+	ring := &Ring{Realm: "clinic", Store: store, Keys: func(_ context.Context, n string) (Material, error) {
+		return Material{Current: keys[n], Version: 1}, nil
+	}}
+	c := &registry.Collection{Realm: "clinic", Database: "main", Name: "patients", Encrypted: []registry.EncryptedField{{Path: "notes", Key: "OLD"}}}
+	if err := ring.Ensure(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	old, _ := ring.Encrypt(ctx, c, map[string]any{"id": "p1", "notes": "n"})
+
+	c.Encrypted[0].Key = "NEW" // the configuration points the field at another key
+	if err := ring.Ensure(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	recs, _ := store.DataKeysOf(ctx, "main", "patients", "notes")
+	if len(recs) != 2 || recs[0].Key != "OLD" || recs[0].Status != StatusDecryptOnly || recs[1].Key != "NEW" || recs[1].Status != StatusActive || recs[1].Generation != 2 {
+		t.Fatalf("keys: %+v", recs)
+	}
+	// Ensure again changes nothing.
+	if err := ring.Ensure(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	if recs, _ = store.DataKeysOf(ctx, "main", "patients", "notes"); len(recs) != 2 {
+		t.Errorf("a second Ensure made keys: %d", len(recs))
+	}
+	// New values use the new generation; the old one is still read, as long as OLD exists.
+	fresh, _ := ring.Encrypt(ctx, c, map[string]any{"id": "p2", "notes": "m"})
+	if id1, _ := ParseID(old["notes"].(Ciphertext)); hexOf(id1) == recs[1].ID {
+		t.Error("the old value was sealed with the new key")
+	}
+	if id2, _ := ParseID(fresh["notes"].(Ciphertext)); hexOf(id2) != recs[1].ID {
+		t.Error("a new value was not sealed with the new key")
+	}
+	if err := ring.Decrypt(ctx, c, old); err != nil || old["notes"] != "n" {
+		t.Errorf("old value: %v %v", old["notes"], err)
+	}
+	// Deleting OLD is refused by its data keys until they retire.
+	if n, _ := store.DataKeysByKey(ctx, "OLD"); n != 1 {
+		t.Errorf("data keys of OLD = %d", n)
+	}
+	retired, err := ring.Retire(ctx, c, "notes", func(string) (int64, error) { return 0, nil })
+	if err != nil || len(retired) != 1 {
+		t.Fatalf("retire: %v %v", retired, err)
+	}
+	if n, _ := store.DataKeysByKey(ctx, "OLD"); n != 0 {
+		t.Errorf("a retired key still counts: %d", n)
+	}
+	// The active key of a field that is no longer encrypted retires once nothing uses it.
+	c.Encrypted = nil
+	ring.Reset()
+	if paths, _ := ring.HistoricPaths(ctx, c); len(paths) != 1 || paths[0] != "notes" {
+		t.Errorf("historic paths = %v", paths)
+	}
+	if retired, _ = ring.Retire(ctx, c, "notes", func(string) (int64, error) { return 0, nil }); len(retired) != 1 {
+		t.Errorf("retire after removal: %v", retired)
+	}
+}
+
+func hexOf(b []byte) string { return hex.EncodeToString(b) }

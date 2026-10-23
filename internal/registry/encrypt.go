@@ -50,6 +50,13 @@ const BlindPrefix = "_bidx."
 // BlindRoot is the document field that holds the blind indexes.
 const BlindRoot = "_bidx"
 
+// EncRoot is the document field that records, per encrypted field, the id of the data key its
+// value is sealed with, so a count can tell current values from old ones without opening them.
+const EncRoot = "_enc"
+
+// MarkerField is the name an encrypted field has inside the BlindRoot and EncRoot maps.
+func MarkerField(path string) string { return strings.ReplaceAll(path, ".", "~") }
+
 // Searchable lists the encrypted fields that have a blind index.
 func (c *Collection) Searchable() []EncryptedField {
 	var out []EncryptedField

@@ -987,3 +987,20 @@ func TestOpTimeout(t *testing.T) {
 		t.Errorf("request took %s despite a 50ms op timeout", elapsed)
 	}
 }
+
+// memRepo can migrate nothing, but answers like a repository that does, so the admin API's
+// encryption routes can be exercised on the in-memory store.
+func (r *memRepo) Prepare(context.Context) error            { return nil }
+func (r *memRepo) Retire(context.Context) ([]string, error) { return nil, nil }
+func (r *memRepo) MigrateBatch(context.Context, string, int, storage.MigrateOptions) (storage.MigrateResult, error) {
+	return storage.MigrateResult{}, nil
+}
+func (r *memRepo) EncryptionStatus(context.Context) ([]storage.FieldStatus, error) { return nil, nil }
+func (r *memRepo) CountNotCurrent(context.Context, string) (int64, error)          { return 0, nil }
+func (r *memRepo) CountSealedWith(context.Context, string, string) (int64, error)  { return 0, nil }
+func (r *memRepo) Generations(context.Context, string) ([]storage.KeyGeneration, error) {
+	return nil, nil
+}
+func (r *memRepo) Rekey(context.Context, string) (storage.KeyGeneration, error) {
+	return storage.KeyGeneration{Generation: 2, Status: "active"}, nil
+}

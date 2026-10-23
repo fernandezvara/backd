@@ -276,6 +276,26 @@ test('secrets: a field key is rotated, generated, imported or resumed', async ()
   assert.deepEqual(m.calls[2].body, { resume: true })
 })
 
+test('encryption: status, rekey and migrate', async () => {
+  const job = { id: 'j1', function: 'encrypt:main/patients', status: 'queued', origin: 'backd:encrypt.migrate' }
+  const m = mockFetch([
+    { body: { collections: [{ database: 'main', collection: 'patients', complete: false, migration: null, fields: [{ path: 'notes', configured: true, search: false, plaintext: 5, encrypted: 0, current: 0, old: 0, complete: false, generations: [] }] }] } },
+    { body: { database: 'main', collection: 'patients', field: 'notes', generation: 2, status: 'active' } },
+    { status: 202, body: job },
+    { status: 202, body: job },
+  ])
+  const a = adminOf(m)
+  const [st] = await a.encryption.status({ database: 'main', collection: 'patients' })
+  assert.equal(st.fields[0].plaintext, 5)
+  assert.equal(m.calls[0].url.searchParams.get('collection'), 'patients')
+  assert.equal((await a.encryption.rekey({ database: 'main', collection: 'patients', field: 'notes' })).generation, 2)
+  assert.equal(m.calls[1].url.pathname, '/v1/acme/_admin/encryption/rekey')
+  await a.encryption.migrate({ database: 'main', collection: 'patients', fields: ['notes'], dryRun: true })
+  assert.deepEqual(m.calls[2].body, { database: 'main', collection: 'patients', fields: ['notes'], dry_run: true })
+  await a.encryption.migrate({ database: 'main', collection: 'patients' })
+  assert.deepEqual(m.calls[3].body, { database: 'main', collection: 'patients' })
+})
+
 test('invocations listing', async () => {
   const rec = { id: 'i1', at: '2026-10-02T10:00:00.000Z', function: 'main/refund_receipt', actor: 'user:u1', mode: 'async', status: 'ok', code: null,
     duration_ms: 12, request_id: 'r1', job_id: 'j1', parent_id: 'i0', origin: 'function', logs: [] }

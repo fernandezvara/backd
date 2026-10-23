@@ -63,6 +63,34 @@ import { Job } from './functions.js'
  */
 
 /**
+ * How the values of one encrypted field are stored.
+ * @typedef {object} EncryptedFieldStatus
+ * @property {string} path
+ * @property {boolean} configured     False for a field the configuration no longer encrypts.
+ * @property {string} [key]           The field key's name.
+ * @property {string} [fingerprint]   Its fingerprint.
+ * @property {boolean} search         Whether the field has a blind index.
+ * @property {number} plaintext       Documents holding the value in plain.
+ * @property {number} encrypted       …encrypted.
+ * @property {number} current         …sealed with the active data key.
+ * @property {number} old             …sealed with another.
+ * @property {number} [indexed]       Documents whose blind index is built (searchable fields).
+ * @property {number} [unindexed]
+ * @property {boolean} complete       Nothing is left to migrate for this field.
+ * @property {Array<{ kind: 'data' | 'index', generation: number, status: 'active' | 'decrypt_only' | 'retired', key: string, wrap_version: number, values?: number }>} generations
+ */
+
+/**
+ * How a collection's encrypted fields are stored, and its latest migration.
+ * @typedef {object} EncryptionStatus
+ * @property {string} database
+ * @property {string} collection
+ * @property {boolean} complete
+ * @property {EncryptedFieldStatus[]} fields
+ * @property {object | null} migration
+ */
+
+/**
  * What expiring every password did.
  * @typedef {object} PasswordsExpired
  * @property {string} valid_after   Passwords set before this stopped working.
@@ -394,6 +422,8 @@ export class Admin {
     this.users = new AdminUsers(this)
     /** Expire every password of the realm and tell the users (after a leak). */
     this.passwords = new AdminPasswords(this)
+    /** Encrypted fields: how they are stored, new data-key generations, migrations. */
+    this.encryption = new AdminEncryption(this)
     /** End every session of the realm. */
     this.sessions = new AdminSessions(this)
     /** Invitations for realms with `signup: invite`. */
@@ -797,6 +827,52 @@ class AdminUsers {
   async setNetworks(id, { adminNetworks = [], loginNetworks = [] }, opts) {
     const body = { admin_networks: adminNetworks, login_networks: loginNetworks }
     return (await this.admin._request({ method: 'PUT', path: ['users', id, 'networks'], body, ...opts })).data
+  }
+}
+
+class AdminEncryption {
+  /** @param {Admin} admin */
+  constructor(admin) {
+    /** @internal */
+    this.admin = admin
+  }
+
+  /**
+   * How the encrypted fields of the realm (or of one collection) are stored: plaintext, current and
+   * old values, blind index coverage, keys and generations.
+   * @param {{ database?: string, collection?: string }} [scope]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<EncryptionStatus[]>}
+   */
+  async status({ database, collection } = {}, opts) {
+    return (await this.admin._request({ method: 'GET', path: ['encryption'], query: { database, collection }, ...opts })).data.collections
+  }
+
+  /**
+   * Starts a new generation of an encrypted field's data key; existing values stay readable until
+   * a migration seals them again. Needs full admin access and a fresh re-authentication.
+   * @param {{ database: string, collection: string, field: string }} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ database: string, collection: string, field: string, generation: number, status: string }>}
+   */
+  async rekey(input, opts) {
+    return (await this.admin._request({ method: 'POST', path: ['encryption', 'rekey'], body: input, reauth: true, ...opts })).data
+  }
+
+  /**
+   * Queues the job that brings a collection's stored documents in line with its encryption
+   * configuration (`dryRun` only counts). Follow it with `admin.jobs.get`. Needs full admin access
+   * and a fresh re-authentication.
+   * @param {{ database: string, collection: string, fields?: string[], dryRun?: boolean }} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<Job>}
+   */
+  async migrate({ database, collection, fields, dryRun }, opts) {
+    /** @type {Record<string, unknown>} */
+    const body = { database, collection }
+    if (fields) body.fields = fields
+    if (dryRun) body.dry_run = true
+    return (await this.admin._request({ method: 'POST', path: ['encryption', 'migrate'], body, reauth: true, ...opts })).data
   }
 }
 

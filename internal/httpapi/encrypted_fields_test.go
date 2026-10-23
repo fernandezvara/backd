@@ -12,6 +12,7 @@ import (
 
 	"github.com/rs/xid"
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/fernandezvara/backd/internal/auth"
 )
@@ -562,4 +563,146 @@ func TestAdministratorsReadEncryptedFieldsThroughTheDataRoute(t *testing.T) {
 	if l := logs.String(); strings.Contains(l, "n1") || strings.Contains(l, "Main 1") {
 		t.Error("the log holds a value")
 	}
+}
+
+func TestAdministratorsMigrateAndRekeyThroughTheAPIAndTheWorker(t *testing.T) {
+	f, realm, base, _, _ := clinic(t)
+	ctx := context.Background()
+	_, adminKey, _ := f.users[realm].CreateAPIKey(ctx, "ops", auth.KeyOptions{Role: auth.KeyRoleAdmin})
+	boss := jsonHdr(adminKey)
+	admin := "/v1/" + realm + "/_admin"
+	ada := signedIn(t, f, realm, "ada@example.com")
+
+	// Data from before the fields were encrypted: plaintext, past the validator.
+	coll := f.mongo.Database(realm + "__main").Collection("patients")
+	for i := range 5 {
+		_, err := coll.InsertOne(ctx, bson.D{
+			{Key: "_id", Value: fmt.Sprintf("old%d", i)},
+			{Key: "_meta", Value: bson.D{{Key: "created_at", Value: time.Now()}, {Key: "updated_at", Value: time.Now()}, {Key: "version", Value: int64(1)}}},
+			{Key: "name", Value: fmt.Sprintf("Old %d", i)}, {Key: "tax_id", Value: fmt.Sprintf("B%d", i)}, {Key: "notes", Value: "old note"},
+		}, options.InsertOne().SetBypassDocumentValidation(true))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	status := func() map[string]any {
+		t.Helper()
+		rec, out := f.doH(t, "GET", admin+"/encryption?database=main&collection=patients", "", boss)
+		if rec.Code != http.StatusOK || len(out["collections"].([]any)) != 1 {
+			t.Fatalf("status: %d %s", rec.Code, rec.Body)
+		}
+		return out["collections"].([]any)[0].(map[string]any)
+	}
+	field := func(st map[string]any, path string) map[string]any {
+		for _, x := range st["fields"].([]any) {
+			if m := x.(map[string]any); m["path"] == path {
+				return m
+			}
+		}
+		t.Fatalf("no field %s in %v", path, st)
+		return nil
+	}
+	st := status()
+	if st["complete"] != false || field(st, "notes")["plaintext"] != float64(5) || field(st, "tax_id")["encrypted"] != float64(0) || field(st, "notes")["key"] != "HEALTH" || field(st, "notes")["fingerprint"] == "" {
+		t.Errorf("before: %v", st)
+	}
+	// Reads work on the old data, a search doesn't see it yet.
+	if rec, got := f.doH(t, "GET", base+"/old1", "", ada); rec.Code != 200 || got["notes"] != "old note" {
+		t.Errorf("reading old data: %d %v", rec.Code, got)
+	}
+	if _, out := f.doH(t, "GET", base+`?where={"tax_id":"B1"}`, "", ada); len(out["items"].([]any)) != 0 {
+		t.Error("a search found a document that has no index yet")
+	}
+
+	// Only a full administrator with proof; unknown fields refused.
+	if rec, _ := f.doH(t, "POST", admin+"/encryption/migrate", `{"database":"main","collection":"nope"}`, boss); rec.Code != http.StatusNotFound {
+		t.Errorf("unknown collection: %d", rec.Code)
+	}
+	if rec, _ := f.doH(t, "POST", admin+"/encryption/migrate", `{"database":"main","collection":"patients","fields":["name"]}`, boss); rec.Code != http.StatusBadRequest {
+		t.Errorf("a field that is not encrypted: %d", rec.Code)
+	}
+
+	// A dry run changes nothing and reports what it would.
+	w := NewWorker(Config{Registry: f.reg, Store: f.backing, Users: func(r string) *auth.Users { return f.users[r] }}, "t")
+	run := func(body string) map[string]any {
+		t.Helper()
+		rec, out := f.doH(t, "POST", admin+"/encryption/migrate", body, boss)
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("migrate: %d %s", rec.Code, rec.Body)
+		}
+		if rec2, _ := f.doH(t, "POST", admin+"/encryption/migrate", body, boss); rec2.Code != http.StatusConflict {
+			t.Errorf("a second migration of the same collection: %d", rec2.Code)
+		}
+		id := out["id"].(string)
+		for range 20 {
+			if j, _, _ := f.users[realm].GetJob(ctx, id); j.Result != nil {
+				break
+			}
+			w.RunOnce(ctx)
+		}
+		job, _, _ := f.users[realm].GetJob(ctx, id)
+		if job.Result == nil || job.Result.Status != "ok" {
+			t.Fatalf("job: %+v", job)
+		}
+		return map[string]any{"job": job}
+	}
+	res := run(`{"database":"main","collection":"patients","dry_run":true}`)["job"].(auth.Job)
+	if res.Encrypt.Scanned != 5 || res.Encrypt.Encrypted != 10 || res.Encrypt.Indexed != 5 || !res.Encrypt.DryRun {
+		t.Errorf("dry run counts: %+v", res.Encrypt)
+	}
+	if field(status(), "notes")["plaintext"] != float64(5) {
+		t.Error("a dry run changed the data")
+	}
+
+	res = run(`{"database":"main","collection":"patients"}`)["job"].(auth.Job)
+	if res.Encrypt.Encrypted != 10 || res.Encrypt.Indexed != 5 || res.Encrypt.After == "" {
+		t.Errorf("counts: %+v", res.Encrypt)
+	}
+	st = status()
+	if st["complete"] != true || field(st, "notes")["current"] != float64(5) || field(st, "tax_id")["indexed"] != float64(5) || st["migration"] == nil {
+		t.Errorf("after: %v", st)
+	}
+	if _, out := f.doH(t, "GET", base+`?where={"tax_id":"B1"}`, "", ada); len(out["items"].([]any)) != 1 {
+		t.Errorf("a search after the migration: %v", out)
+	}
+	if audit := f.auditNames(t, boss, realm); !strings.Contains(audit, "encrypt.start") || !strings.Contains(audit, "encrypt.migrate") {
+		t.Errorf("audit: %s", audit)
+	}
+
+	// Rekey: a new generation; the old values become "old" until another migration.
+	if rec, out := f.doH(t, "POST", admin+"/encryption/rekey", `{"database":"main","collection":"patients","field":"notes"}`, boss); rec.Code != http.StatusOK || out["generation"] != float64(2) {
+		t.Fatalf("rekey: %d %s", rec.Code, rec.Body)
+	}
+	if rec, _ := f.doH(t, "POST", admin+"/encryption/rekey", `{"database":"main","collection":"patients","field":"name"}`, boss); rec.Code != http.StatusBadRequest {
+		t.Errorf("rekey of a plain field: %d", rec.Code)
+	}
+	f.rings[realm].Reset()
+	st = status()
+	if n := field(st, "notes"); st["complete"] != false || n["old"] != float64(5) || n["current"] != float64(0) {
+		t.Errorf("after the rekey: %v", n)
+	}
+	if rec, got := f.doH(t, "GET", base+"/old2", "", ada); rec.Code != 200 || got["notes"] != "old note" {
+		t.Errorf("old values stay readable: %d %v", rec.Code, got)
+	}
+	run(`{"database":"main","collection":"patients"}`)
+	st = status()
+	notes := field(st, "notes")
+	gens := notes["generations"].([]any)
+	var statuses []string
+	for _, g := range gens {
+		statuses = append(statuses, g.(map[string]any)["status"].(string))
+	}
+	if st["complete"] != true || notes["current"] != float64(5) || strings.Join(statuses, ",") != "retired,active" {
+		t.Errorf("after the second migration: %v %v", st["complete"], notes)
+	}
+}
+
+func (f *fixture) auditNames(t *testing.T, hdr map[string]string, realm string) string {
+	t.Helper()
+	_, out := f.doH(t, "GET", "/v1/"+realm+"/_admin/audit?limit=100", "", hdr)
+	var names []string
+	for _, it := range out["items"].([]any) {
+		names = append(names, it.(map[string]any)["action"].(string))
+	}
+	return strings.Join(names, " ")
 }

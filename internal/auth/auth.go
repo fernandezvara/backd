@@ -217,6 +217,8 @@ type Store interface {
 	PasswordUserIDs(ctx context.Context, before time.Time, after string, limit int) ([]string, error)
 	// SetPasswordNoticeProgress keeps a notification job's place and counts.
 	SetPasswordNoticeProgress(ctx context.Context, jobID, after string, c PasswordNoticeCounts) error
+	// SetEncryptProgress keeps an encryption migration's place and counts.
+	SetEncryptProgress(ctx context.Context, jobID, after string, c EncryptCounts) error
 	// PutIdentity creates the identity, or, when one with the same provider
 	// and subject exists, updates its credentials and UpdatedAt (keeping its
 	// ID and CreatedAt). ErrIdentityExists when the user already has another
