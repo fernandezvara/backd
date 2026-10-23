@@ -3,8 +3,8 @@
 # package (what dart pub publish would upload), then adds it to a fresh Dart
 # project and uses it — the client, the storages and the error types — from a
 # script, exactly like the README's quickstart.
-# Needs Dart (the Flutter SDK bundles it); run `flutter pub get` in
-# clients/dart first.
+# Needs Dart (the Flutter SDK bundles it, but is not required); run
+# `dart pub get` in clients/dart first.
 #
 #   scripts/check-dart-package.sh        # or: make dart-package
 set -euo pipefail

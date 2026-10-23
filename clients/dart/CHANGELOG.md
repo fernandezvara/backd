@@ -1,3 +1,23 @@
+## 0.9.1
+
+- **Versions now follow the `backd` release train.** `package:backd` 0.9.1
+  goes with `backd` v0.9.1 and `backd-js` 0.9.1, as `backd-js` has done since
+  0.8.2. The API is the same as in 0.0.5; the number is the only change.
+- **Update the constraint.** A caret on a `0.0.x` version allows nothing
+  newer, so `backd: ^0.0.5` will not pick this release: use `backd: ^0.9.1`
+  (`dart pub add backd`). From here a `backd` X.Y matches the server's X.Y,
+  and patch releases are fixes.
+- The Flutter Shelf demo moved out of the package, from `example/` to
+  `clients/dart-examples` in the repository. The package no longer needs the
+  Flutter SDK to resolve, test or publish.
+- Works with everything `backd` v0.9.1 adds on the server side:
+  [encrypted fields](https://fernandezvara.github.io/backd/docs/build/encryption/)
+  read as `null` with `_meta.redacted` for a caller their reveal rule refuses
+  (already typed since 0.0.5), and `PasswordExpiredError` and
+  `FieldEncryptedError` for the new server errors. The Dart client has no
+  admin API, so the new `admin.encryption`, key and breach-response commands
+  stay in `backd-js`, the CLI and the admin UI.
+
 ## 0.0.5
 
 - New errors: `PasswordExpiredError` (`password_expired`, with

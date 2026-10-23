@@ -30,7 +30,7 @@ backd.config.get('maintenance.enabled')             // boolean | undefined
 A misspelled collection, a field the schema doesn't have, an operator a type doesn't allow and a wrong function input are now red in the editor ([the client reference](../../build/clients/js/#typed-client) lists what is typed).
 
 {{< hint style="tip" title="Writing the app in Dart?" >}}
-`backd types --realm shelf --lang dart` writes the same types as `types.dart`, and [`package:backd`](../../build/clients/dart/) — the hand-written Dart client — gives you `BackdClient<ShelfRealm>` with `client.typed.main.assets` and the rest typed. The [Shelf demo](https://github.com/fernandezvara/backd/tree/main/clients/dart/example) in `clients/dart/example/` is this tutorial's app as a Flutter desktop program.
+`backd types --realm shelf --lang dart` writes the same types as `types.dart`, and [`package:backd`](../../build/clients/dart/) — the hand-written Dart client — gives you `BackdClient<ShelfRealm>` with `client.typed.main.assets` and the rest typed. The [Shelf demo](https://github.com/fernandezvara/backd/tree/main/clients/dart-examples) in `clients/dart-examples/` is this tutorial's app as a Flutter desktop program.
 {{< /hint >}}
 
 ## Types for the functions

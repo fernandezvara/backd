@@ -1,5 +1,4 @@
-# What pub.dev does not need: the Flutter demo and the unit tests.
-example
+# What pub.dev does not need: the unit tests.
 test
 .dart_tool
 build

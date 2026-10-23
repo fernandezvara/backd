@@ -36,14 +36,11 @@ jobs:
       - name: The tag points at a commit on main
         working-directory: .
         run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
-      # Flutter, not bare Dart: `dart pub get` also resolves ./example,
-      # which needs flutter_test from the Flutter SDK.
-      - uses: subosito/flutter-action@v2
+      - uses: dart-lang/setup-dart@v1
         with:
-          channel: stable
-          cache: true
+          sdk: stable
       - name: Dependencies
-        run: flutter pub get
+        run: dart pub get
       - name: The tag matches the version in pubspec.yaml
         run: |
           version=$(awk '/^version:/{print $2}' pubspec.yaml)
