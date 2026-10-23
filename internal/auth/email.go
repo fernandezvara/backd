@@ -56,6 +56,9 @@ type EmailRequest struct {
 	Notice          bool
 	InvitationID    string
 	OrgInvitationID string
+	// ExportID is the personal data export a data-export-ready or data-export-made email is
+	// about: the worker takes the link and the expiry from its record.
+	ExportID string
 	// Custom marks an email a function asked for; Invocation is the
 	// invocation that asked (the parent of the job, and what the per-invocation
 	// cap counts). Address is then the user's, for to_user; Custom holds the
@@ -131,7 +134,7 @@ func (s *Users) QueueEmail(ctx context.Context, r EmailRequest) (Job, error) {
 	job := Job{
 		Database: database, Function: function, CallerActor: "backd", Origin: "backd:email." + r.Kind,
 		TimeoutMS: e.Timeout.Milliseconds(), RequestID: r.RequestID,
-		Email: &EmailJob{Kind: r.Kind, UserID: r.UserID, Locale: r.Locale, RedirectTo: r.RedirectTo, Org: r.Org, Draft: r.Draft, To: r.To, Notice: r.Notice, InvitationID: r.InvitationID, OrgInvitationID: r.OrgInvitationID, Event: r.Event, CodesLeft: r.CodesLeft, ChallengeID: r.ChallengeID, Custom: r.Custom},
+		Email: &EmailJob{Kind: r.Kind, UserID: r.UserID, Locale: r.Locale, RedirectTo: r.RedirectTo, Org: r.Org, Draft: r.Draft, To: r.To, Notice: r.Notice, InvitationID: r.InvitationID, OrgInvitationID: r.OrgInvitationID, ExportID: r.ExportID, Event: r.Event, CodesLeft: r.CodesLeft, ChallengeID: r.ChallengeID, Custom: r.Custom},
 	}
 	if r.Custom != nil {
 		job.CallerActor, job.Origin = "function:"+r.Custom.Function, "function:"+r.Custom.Function

@@ -2838,6 +2838,58 @@ func TestContract(t *testing.T) {
 		_ = other
 	}
 
+	// A user's own export of their personal data: asked for, followed and downloaded.
+	{
+		const ex = "/v1/acme/_auth/me/export"
+		proof := with(ada, reauthHeader, f.freshProof(t, f.ada))
+		req("POST", ex, "", proof, 404) // the realm does not export
+		req("GET", ex+"s", "", ada, 404)
+		req("GET", ex+"s/nosuch", "", ada, 404)
+		req("GET", ex+"s/nosuch/download", "", ada, 404)
+		prior := f.reg.Realms["acme"].Settings.Compliance
+		f.reg.Realms["acme"].Settings.Compliance = registry.ComplianceSettings{Export: true, ExportPage: "https://app.acme.example/my-data"}
+		req("POST", ex, "", nil, 401)
+		req("GET", ex+"s", "", nil, 401)
+		req("GET", ex+"s/nosuch", "", nil, 401)
+		req("GET", ex+"s/nosuch/download", "", nil, 401)
+		asked := req("POST", ex, "", proof, 202)
+		req("POST", ex, "", proof, 429)
+		req("GET", ex+"s", "", ada, 200)
+		req("GET", ex+"s/"+asked["id"].(string), "", ada, 200)
+		req("GET", ex+"s/"+asked["id"].(string)+"/download", "", ada, 409) // not built yet
+
+		// A built one and an expired one, put in the storage as the worker would have.
+		s3 := storagetest.New(t, "files")
+		st := f.reg.Realms["acme"].Settings.Storage
+		was := *st
+		st.Endpoint, st.Bucket, st.HTTP = s3.URL, "files", true
+		f.svc.Realm = "acme"
+		f.svc.Cipher, _ = auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
+		f.svc.Cache = auth.NewSecretCache()
+		for _, n := range []string{"STORAGE_ACCESS_KEY", "STORAGE_SECRET_KEY"} {
+			if err := f.svc.SetSecret(context.Background(), "", n, "v-"+n, "key:test"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		now := f.svc.Clock()
+		for id, expires := range map[string]time.Time{"ready1": now.Add(time.Hour), "old1": now.Add(-time.Hour)} {
+			key := exportObjectKey(st.Prefix, "acme", f.adaID, id)
+			s3.Put(key, []byte("PK-package"))
+			if err := f.svc.Store.CreateUserExport(context.Background(), auth.UserExport{ID: id, UserID: f.adaID, Status: auth.ExportReady, CreatedAt: now.Add(-2 * time.Hour), ExpiresAt: expires, Key: key, Size: 10, Counts: map[string]int64{"files": 0}}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		req("GET", ex+"s/ready1/download", "", ada, 302)
+		req("GET", ex+"s/ready1/download", "", with(ada, "Accept", "application/json"), 200)
+		req("GET", ex+"s/old1/download", "", ada, 410)
+		st.Download = registry.DownloadProxy
+		if rec, _ := f.doH(t, "GET", ex+"s/ready1/download", "", ada); rec.Code != 200 || rec.Header().Get("Content-Type") != "application/zip" {
+			t.Errorf("proxied export download: %d %v", rec.Code, rec.Header())
+		}
+		*st = was
+		f.reg.Realms["acme"].Settings.Compliance = prior
+	}
+
 	// The actions of a breach come last: they end every session the checks above used.
 	req("GET", ad+"/passwords", "", key, 200)
 	req("POST", ad+"/passwords/expire", `{"reason": 7}`, json(key), 400)

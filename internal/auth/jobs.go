@@ -89,6 +89,8 @@ type Job struct {
 	// Encrypt is set on the job that migrates a collection's documents to its encryption
 	// configuration (origin EncryptOrigin).
 	Encrypt *EncryptJob
+	// Export is set on the job that builds a user's personal data export (origin ExportOrigin).
+	Export *ExportJob
 	// Exclusive, when set, lets only one job of that name be unfinished at a
 	// time: enqueuing another fails with ErrJobExclusive.
 	Exclusive     string
@@ -186,6 +188,9 @@ type EmailJob struct {
 	// OrgInvitationID is the organization invitation an org-invitation email is for: the
 	// worker takes the address and the (sealed) link from it.
 	OrgInvitationID string
+	// ExportID is the personal data export the message is about (data-export-ready,
+	// data-export-made): the worker takes the link and the expiry from its record.
+	ExportID string
 	// Event and CodesLeft are what a security-notice says: which change it reports and, for
 	// a used recovery code, how many remain. Nothing secret.
 	Event     string
@@ -302,7 +307,7 @@ func (s *Users) RerunJob(ctx context.Context, id string, timeoutMS int64) (Job, 
 	if !found {
 		return Job{}, ErrNotFound
 	}
-	if j.Email != nil || j.Erase != nil || j.Check != nil || j.Image != nil || j.Assign != nil || j.OrgDelete != nil || j.Revoke != nil || j.Push != nil || j.PasswordNotice != nil || j.Encrypt != nil {
+	if j.Email != nil || j.Erase != nil || j.Check != nil || j.Image != nil || j.Assign != nil || j.OrgDelete != nil || j.Revoke != nil || j.Push != nil || j.PasswordNotice != nil || j.Encrypt != nil || j.Export != nil {
 		return Job{}, ErrJobNotFunction
 	}
 	if j.Status != JobDone {
