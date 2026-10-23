@@ -589,6 +589,34 @@ final class Collection {
       fileio.fileUrl(client, _path, id, field, fileId,
           version: version, options: options);
 
+  /// A fresh link to download a file, for the app to open (with
+  /// `url_launcher`, a browser, or an HTTP client): the same
+  /// `{ url, expiresAt }` as [fileUrl], never null. The link works without
+  /// credentials until it expires, so fetch it when the person asks.
+  Future<fileio.FileLink> downloadFile(
+    String id,
+    String field,
+    String fileId, {
+    RequestOptions? options,
+  }) async =>
+      (await fileio.fileUrl(client, _path, id, field, fileId, options: options))!;
+
+  /// Removes one file from a document. Resolves with the updated document.
+  /// `files(id, field).delete()` clears the whole field.
+  Future<Doc> deleteFile(
+    String id,
+    String field,
+    String fileId, {
+    Object? ifMatch,
+    RequestOptions? options,
+  }) {
+    if (fileId.isEmpty) {
+      throw ArgumentError.value(fileId, 'fileId',
+          'the id of the file to remove is required (files(id, field).delete() clears the field)');
+    }
+    return files(id, field).delete(fileId: fileId, ifMatch: ifMatch, options: options);
+  }
+
   /// One document; [NotFoundError] if it doesn't exist or the caller may not
   /// read it. A soft-deleted document is only found with [deleted] `only` or
   /// `include`.

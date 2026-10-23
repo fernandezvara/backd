@@ -236,6 +236,35 @@ void main() {
     });
   });
 
+  group('downloadFile and deleteFile', () {
+    test('downloadFile asks for a fresh link and never returns null', () async {
+      final t = FakeTransport()
+        ..answer(respond(200, {'url': 'https://cdn/y', 'expires_at': 'e'}));
+      final col = testClient(t, apiKey: 'k').db('main').collection('docs');
+      final l = await col.downloadFile('doc1', 'cover', 'fl_1');
+      expect(l.url, 'https://cdn/y');
+      expect(t.requests.single.url.queryParameters['link'], 'json');
+    });
+
+    test('deleteFile removes one file under If-Match', () async {
+      final t = FakeTransport()
+        ..answer(respond(200, {'id': 'doc1', 'attachments': <Object?>[]}));
+      final col = testClient(t, apiKey: 'k').db('main').collection('docs');
+      final doc = await col.deleteFile('doc1', 'attachments', 'fl_2', ifMatch: 3);
+      expect(doc['id'], 'doc1');
+      expect(t.requests.single.method, 'DELETE');
+      expect(t.requests.single.url.path,
+          '/v1/shelf/main/docs/doc1/_files/attachments/fl_2');
+      expect(t.requests.single.headers['If-Match'], '"3"');
+    });
+
+    test('deleteFile needs the file id', () {
+      final col =
+          testClient(FakeTransport(), apiKey: 'k').db('main').collection('docs');
+      expect(() => col.deleteFile('doc1', 'attachments', ''), throwsArgumentError);
+    });
+  });
+
   group('helpers', () {
     test('partSizeFor stays within bounds and part multiples', () {
       const mib = 1024 * 1024;

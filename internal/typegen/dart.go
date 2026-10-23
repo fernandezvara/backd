@@ -802,6 +802,7 @@ final class Meta {
     this.deletedAt,
     this.deletedBy,
     this.purgeAt,
+    this.redacted,
     this.chain,
     this.score,
   });
@@ -822,6 +823,7 @@ final class Meta {
         purgeAt: json['purge_at'] == null
             ? null
             : DateTimeString(json['purge_at'] as String),
+        redacted: (json['redacted'] as List?)?.cast<String>(),
         chain: json['chain'] == null
             ? null
             : Map<String, Object?>.from(json['chain'] as Map),
@@ -844,6 +846,11 @@ final class Meta {
   final DateTimeString? deletedAt;
   final String? deletedBy;
   final DateTimeString? purgeAt;
+
+  /// The encrypted fields the caller may not see (their reveal rule said no):
+  /// they come back null, and a null here is hidden, not empty. Null when
+  /// nothing is hidden.
+  final List<String>? redacted;
 
   /// Set on a write made by a trigger run: where it sits in a chain of such
   /// writes ({root, depth}).

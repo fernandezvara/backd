@@ -201,6 +201,24 @@ final class TypedCollection<D, I, C> {
   }) =>
       raw.fileUrl(id, field, fileId, version: version, options: options);
 
+  Future<fileio.FileLink> downloadFile(
+    String id,
+    String field,
+    String fileId, {
+    RequestOptions? options,
+  }) =>
+      raw.downloadFile(id, field, fileId, options: options);
+
+  Future<D> deleteFile(
+    String id,
+    String field,
+    String fileId, {
+    Object? ifMatch,
+    RequestOptions? options,
+  }) async =>
+      _decode(await raw.deleteFile(id, field, fileId,
+          ifMatch: ifMatch, options: options));
+
   Future<D> get(
     String id, {
     DeletedDocs? deleted,

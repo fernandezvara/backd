@@ -14,6 +14,7 @@
 library;
 
 export 'src/auth.dart';
+export 'src/buckets.dart';
 export 'src/cache.dart' show CacheEntry, CacheOptions, CacheStats, RevalidationCache;
 export 'src/client.dart';
 export 'src/config.dart';

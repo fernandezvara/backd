@@ -76,6 +76,25 @@ void main() {
       expect(of('expand_too_large'), isA<ExpandTooLargeError>());
     });
 
+    test('password_expired tells whether the reset email was queued', () {
+      BackdException expired(List<Map<String, Object?>> details) =>
+          errorFromResponse(respond(401, {
+            'error': {'code': 'password_expired', 'message': 'm', 'details': details},
+          }));
+      final queued = expired([
+        {'path': 'reset_email', 'reason': 'queued'},
+      ]);
+      expect(queued, isA<PasswordExpiredError>());
+      expect(queued, isA<AuthenticationError>());
+      expect((queued as PasswordExpiredError).resetEmailQueued, isTrue);
+      expect((expired([]) as PasswordExpiredError).resetEmailQueued, isFalse);
+    });
+
+    test('field_encrypted is a validation error', () {
+      expect(of('field_encrypted'), isA<FieldEncryptedError>());
+      expect(of('field_encrypted'), isA<ValidationError>());
+    });
+
     test('organization and team codes', () {
       expect(of('org_requires_mfa', 403), isA<OrgRequiresMFAError>());
       expect(of('org_role_requires_mfa', 403), isA<OrgRoleRequiresMFAError>());
