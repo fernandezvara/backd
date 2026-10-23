@@ -329,6 +329,29 @@ aggregate:
 - **A warning at startup** names each `group_by` field that no index leads with, and the line to add to [`indexes.json`](#indexesjson): grouping by it reads every matching document, in no useful order. `backd config check` prints the same warnings.
 - The request side, `GET …/_aggregate`, is in [Aggregations](../../api/aggregations/), with the [best practices](../../api/aggregations/#best-practices).
 
+### Encrypted fields
+
+`fields:` lists the fields stored encrypted, by dot path (any declared field, whatever its type, but not inside an array). The guide is [Field keys and encrypted fields](../field-keys/); the keys are:
+
+| Key | Meaning |
+|---|---|
+| `fields.<path>.encrypt.key` | **Required.** The name of the realm's `key` secret that wraps the field's data keys. Created with `backd secret create --type key`; `backd` refuses to start while it is missing |
+| `fields.<path>.encrypt.search` | `equality`: keep a blind index, so `where` can use `=` and `$in` on the field and read rules `==` and `in` |
+| `fields.<path>.encrypt.normalize` | With `search`: steps applied before indexing and searching, in order: `trim`, `lower`, `upper` |
+| `fields.<path>.encrypt.unique` | With `search`: two documents can't hold the same value (`409`) |
+| `fields.<path>.reveal` | An access rule (`document`, `user`, `hasRole`, organization helpers, `appConfig`) deciding who sees the plain value; the others get `null` and `_meta.redacted`. Without it, whoever can read the document sees it |
+
+```yaml
+fields:
+  tax_id:
+    encrypt: { key: TAX, search: equality, normalize: [trim, upper], unique: true }
+  health_notes:
+    encrypt: { key: HEALTH }
+    reveal: user != nil && hasRole(user, 'doctor')
+```
+
+What an encrypted field can't be used for (an index, a reference, a file field, an erase `replace`, an aggregation, a read rule beyond equality…) is refused at startup; [Errors and what to do](../../encryption/errors/) lists each message.
+
 ### Realtime
 
 ```yaml

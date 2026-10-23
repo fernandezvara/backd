@@ -18,6 +18,7 @@ backd already stores what it can safely: passwords as slow [argon2id](../../buil
 | Only session tokens (a log, a proxy cache) | [End every session](#1-stop-the-sessions-and-the-passwords) only |
 | An API key | [Revoke it and make a new one](#2-api-keys) |
 | The secrets master key (`BACKD_SECRETS_KEY`) | [Rotate it](#3-secrets), then the secrets it protected |
+| A [field key](../../build/configuration/field-keys/) (the file you saved), or the data keys of an encrypted field | [Field keys](#5-field-keys) |
 | The private key of encrypted backups | [Make a new key pair](#4-backups-and-their-key); old backups stay readable by whoever holds the old key |
 
 ## The first minutes
@@ -30,7 +31,7 @@ Work in this order. Each step is one command, and none needs the previous one to
 backd user expire-passwords --realm blog --yes --reason "leaked backup" --notify
 ```
 
-One write sets the realm's **password epoch** to now: every password set before it stops opening its account, and every session ends. Passwords are never changed or deleted, so the audit evidence stays. The answer says how many accounts and sessions it touched. `--notify` also starts the job that emails every user a link to choose a new password (a realm without `email` refuses it, before anything changes: use [reset links](#6-users-the-email-cannot-reach)).
+One write sets the realm's **password epoch** to now: every password set before it stops opening its account, and every session ends. Passwords are never changed or deleted, so the audit evidence stays. The answer says how many accounts and sessions it touched. `--notify` also starts the job that emails every user a link to choose a new password (a realm without `email` refuses it, before anything changes: use [reset links](#7-users-the-email-cannot-reach)).
 
 If only sessions leaked, `backd user revoke-sessions --realm blog --all --yes` ends them and leaves passwords alone.
 
@@ -60,7 +61,17 @@ Rotating the key protects the stored values from now on; it does not change the 
 
 A leaked backup cannot be recalled: assume whoever has it has everything it held on that day. Make a new `age` key pair, switch the backup job to the new public key and store the new private key apart from the backups ([Backup and restore](../backup/#encrypted-backups)). If a backup leaked *without* its key, the key is not compromised and nothing needs rotating but the data in it.
 
-### 5. Look at what happened
+### 5. Field keys
+
+Encrypted fields have two layers, and what you do depends on which leaked:
+
+- **A copy of a field key** (the file, a laptop, a chat): a dump of the database plus that key reads the field. Replace the key with `backd secret rotate --realm blog --name HEALTH --generate`. It is instant (no document is rewritten), prints the new key once, and re-wraps the data keys. Save the new key; **keep the old copy only for backups made before today**, which need the key that was current then, and treat those backups as exposed to whoever holds the old key.
+- **The data keys** (a server's memory, a decrypted dump): the field key alone doesn't cover it. Start a new generation with `backd encrypt rekey --realm blog --database main --collection patients --field health_notes`, then re-seal the stored values with `backd encrypt migrate`. Until the migration ends, old values are still under keys the attacker may have.
+- **The secrets master key together with a database dump:** the field keys were among the secrets. [Rotate the master key](#3-secrets), then every field key as above.
+
+Nothing here changes what an attacker already read. Rotation protects values from now on; if the plaintext was exposed, treat it as exposed. See [Field keys](../../build/configuration/field-keys/#change-encryption-on-existing-data) for the table of when to use which.
+
+### 6. Look at what happened
 
 ```sh
 backd audit --realm blog --since 7d
@@ -68,7 +79,7 @@ backd audit --realm blog --since 7d
 
 Look for sign-ins from unexpected places, role changes, API keys created, secrets set and exports (`export`, `export.done`). Every action on this page is itself recorded: `password.expire`, `password.expire_notify`, `session.revoke_all`, `password.reset_link`.
 
-### 6. Users the email cannot reach
+### 7. Users the email cannot reach
 
 A user whose mailbox is lost, or a realm without email, gets a one-time link from you instead:
 
