@@ -409,6 +409,9 @@ type Store interface {
 	OrgInvitationByID(ctx context.Context, org, id string) (OrgInvitation, error)
 	// ListOrgInvitations returns an organization's invitations, newest first.
 	ListOrgInvitations(ctx context.Context, org string) ([]OrgInvitation, error)
+	// OrgInvitationsAddressedTo returns the invitations, of every organization, that name the
+	// user (by id) or the address (bound to an email), newest first. For the export of a user's data.
+	OrgInvitationsAddressedTo(ctx context.Context, userID, email string) ([]OrgInvitation, error)
 	// CountPendingOrgInvitations counts the invitations that can still be used.
 	CountPendingOrgInvitations(ctx context.Context, org string, now time.Time) (int, error)
 	UseOrgInvitation(ctx context.Context, id string, now time.Time) (OrgInvitation, error)

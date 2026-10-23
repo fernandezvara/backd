@@ -9,7 +9,10 @@ import (
 	"github.com/fernandezvara/backd/internal/storage"
 )
 
-var _ storage.Eraser = (*memRepo)(nil)
+var (
+	_ storage.Eraser   = (*memRepo)(nil)
+	_ storage.Exporter = (*memRepo)(nil)
+)
 
 // pathGet, pathSet and pathUnset read and write a dotted path of a document.
 func pathGet(doc map[string]any, path string) (any, bool) {
@@ -287,4 +290,22 @@ func (r *memRepo) ClearOwnerInOrgs(_ context.Context, owner string, limit int, _
 		}
 	}
 	return n, nil
+}
+
+// ScanOwnedAfter and ScanReferencingAfter read in id order, with no rules, as the MongoDB repository does.
+func (r *memRepo) ScanOwnedAfter(_ context.Context, owner, afterID string, limit int) ([]storage.Document, error) {
+	return r.scanAfter(afterID, limit, ownedBy(owner)), nil
+}
+
+func (r *memRepo) ScanReferencingAfter(_ context.Context, field, value, afterID string, limit int) ([]storage.Document, error) {
+	return r.scanAfter(afterID, limit, holds(field, value)), nil
+}
+
+func (r *memRepo) scanAfter(afterID string, limit int, keep func(storage.Document) bool) []storage.Document {
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	return r.matching(limit, func(d storage.Document) bool {
+		id, _ := d["id"].(string)
+		return id > afterID && keep(d)
+	})
 }

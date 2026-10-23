@@ -54,7 +54,7 @@ func (s *AuthStore) RecordInvocation(ctx context.Context, r auth.InvocationRecor
 
 func (s *AuthStore) ListInvocations(ctx context.Context, f auth.InvocationFilter) ([]auth.InvocationRecord, bool, error) {
 	filter := bson.D{}
-	for _, c := range []struct{ key, value string }{{"function", f.Function}, {"request_id", f.RequestID}} {
+	for _, c := range []struct{ key, value string }{{"function", f.Function}, {"request_id", f.RequestID}, {"actor", f.Actor}} {
 		if c.value != "" {
 			filter = append(filter, bson.E{Key: c.key, Value: c.value})
 		}

@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -152,5 +153,95 @@ func TestConsentsToAccept(t *testing.T) {
 	// Someone who never accepted is gated once the current version's date has passed too.
 	if got := s.ConsentsPastDeadline(nil, time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)); len(got) != 1 {
 		t.Errorf("a missing consent past the version's date = %v", got)
+	}
+}
+
+const exportEmail = "email:\n  function: app/deliver\n  from: \"Acme <no-reply@acme.example>\"\n  public_url: https://api.acme.example\n  allowed_redirects: [https://app.acme.example]\n"
+
+func TestComplianceExportSettings(t *testing.T) {
+	ok := storageBase + exportEmail + "compliance:\n  export: true\n  export_page: https://app.acme.example/my-data\n"
+	s, errs := parseRealmSettings([]byte(ok))
+	if len(errs) != 0 {
+		t.Fatal(errs)
+	}
+	c := s.Compliance
+	if !c.Export || c.ExportPage != "https://app.acme.example/my-data" || c.ExportKeep() != DefaultExportRetention {
+		t.Errorf("settings = %+v", c)
+	}
+	s, errs = parseRealmSettings([]byte(ok + "  export_retention: 14d\n"))
+	if len(errs) != 0 || s.Compliance.ExportKeep() != 14*24*time.Hour {
+		t.Errorf("retention = %v %v", s.Compliance.ExportKeep(), errs)
+	}
+
+	for name, tc := range map[string]struct{ yaml, want string }{
+		"no storage":        {exportEmail + "compliance:\n  export: true\n  export_page: https://app.acme.example/x\n", "`storage:` must be configured"},
+		"no email":          {storageBase + "compliance:\n  export: true\n  export_page: https://app.acme.example/x\n", "`email:` must be configured"},
+		"no page":           {storageBase + exportEmail + "compliance:\n  export: true\n", "export_page: required"},
+		"page elsewhere":    {storageBase + exportEmail + "compliance:\n  export: true\n  export_page: https://evil.example/x\n", "within sign_in.allowed_redirects"},
+		"bad retention":     {ok + "  export_retention: soon\n", "export_retention"},
+		"zero retention":    {ok + "  export_retention: 0\n", "longer than zero"},
+		"page without it":   {"compliance:\n  export_page: https://app.acme.example/x\n", "no effect while compliance.export"},
+		"on, auth disabled": {"auth: disabled\n" + ok, "only apply when auth is enabled"},
+	} {
+		_, errs := parseRealmSettings([]byte(tc.yaml))
+		if len(errs) == 0 || !strings.Contains(errors.Join(errs...).Error(), tc.want) {
+			t.Errorf("%s: %v", name, errs)
+		}
+	}
+	// Off by default, and leaving it off asks for nothing.
+	if s, errs := parseRealmSettings([]byte("compliance:\n  consent_retention: 1y\n")); len(errs) != 0 || s.Compliance.Export {
+		t.Errorf("default: %+v %v", s.Compliance, errs)
+	}
+}
+
+func TestExportReadmeTemplates(t *testing.T) {
+	realm := "locales: [en, es]\ndefault_locale: en\n" + goodEmail + "  allowed_redirects: [https://app.shop.example]\n" + strings.Replace(storageBase, "\n", "\n", 1) +
+		"compliance:\n  export: true\n  export_page: https://app.shop.example/my-data\n"
+	tree := func(extra map[string]string) string {
+		files := esTemplates(t)
+		for k, v := range extra {
+			files[k] = v
+		}
+		return emailTree(t, realm, goodDeliver, files)
+	}
+
+	// None of its own: the built-in ones are used.
+	reg, err := Load(tree(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := reg.Realms["shop"].ExportReadme("en"); ok {
+		t.Error("a README that nobody wrote")
+	}
+
+	// Its own, for a language the realm lists; the other falls back.
+	reg, err = Load(tree(map[string]string{"shop/compliance/readme/es.html": "<p>Tus datos en {{Realm}}</p>"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if src, ok := reg.Realms["shop"].ExportReadme("es"); !ok || !strings.Contains(src, "Tus datos") {
+		t.Errorf("es = %q %v", src, ok)
+	}
+	if _, ok := reg.Realms["shop"].ExportReadme("en"); ok {
+		t.Error("English has no template of its own")
+	}
+	fpWith, _ := reg.Fingerprint()
+	reg2, err := Load(tree(map[string]string{"shop/compliance/readme/es.html": "<p>Otros datos en {{Realm}}</p>"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fp2, _ := reg2.Fingerprint(); fpWith == "" || fpWith == fp2 {
+		t.Error("changing the README keeps the fingerprint")
+	}
+
+	for name, tc := range map[string]struct{ file, content, want string }{
+		"bad syntax":       {"shop/compliance/readme/en.html", "<p>{{#Exclusions}}", "line"},
+		"unknown language": {"shop/compliance/readme/fr.html", "<p>x</p>", "not a language of this realm"},
+		"not html":         {"shop/compliance/readme/en.txt", "x", "<language>.html"},
+	} {
+		_, err := Load(tree(map[string]string{tc.file: tc.content}))
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: %v", name, err)
+		}
 	}
 }

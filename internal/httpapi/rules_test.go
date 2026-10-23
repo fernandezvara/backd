@@ -103,6 +103,9 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 		"acme/app/notes/collection.yaml":    "references:\n  status: {collection: archive}\n  secret: {field: title, collection: private}\n" + rulesSection("read: user != nil\nwrite: user != nil\n"),
 		"acme/app/private/schema.json":      postsSchema,
 		"acme/app/private/collection.yaml":  "realtime: true\npersonal_data:\n  export: exclude\n  reason: fraud scores, exempt from access requests\n",
+		// A collection where only some fields are the user's (see userexport_test.go).
+		"acme/app/contacts/schema.json":     `{"type": "object", "properties": {"title": {"type": "string"}, "body": {"type": "string"}, "internal_note": {"type": "string"}}}`,
+		"acme/app/contacts/collection.yaml": "personal_data:\n  fields: [title, body]\n  reason: internal notes about the customer are not their data\n",
 		// A collection that soft-deletes (see soft_delete_test.go).
 		// …and one that soft-deletes without a restore rule (nobody sees its trash).
 		"acme/app/archive/schema.json":     postsSchema,
