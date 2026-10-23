@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:backd/backd.dart';
 import 'package:flutter/material.dart';
 
@@ -5,7 +7,9 @@ import 'main.dart';
 
 /// The realm's app configuration through the typed getters of `ShelfConfig`:
 /// `features.export.enabled`, `maintenance.enabled`, `maintenance.message`.
-/// `refresh: true` goes to the server; without it the cache answers.
+/// `refresh: true` goes to the server; without it the cache answers. While
+/// the tab is open it follows the configuration live: a change made by an
+/// administrator or a cron function shows up without a refresh.
 class ConfigTab extends StatefulWidget {
   const ConfigTab({super.key, required this.state});
 
@@ -21,6 +25,8 @@ class _ConfigTabState extends State<ConfigTab> {
   String? message;
   String? error;
   bool cached = true;
+  void Function()? stopLive;
+  StreamSubscription<List<String>>? changes;
 
   Future<void> load({bool refresh = false}) async {
     final c = widget.state.typed.config;
@@ -46,6 +52,18 @@ class _ConfigTabState extends State<ConfigTab> {
   void initState() {
     super.initState();
     load();
+    final config = widget.state.client.config;
+    changes = config.changes.listen((_) {
+      if (mounted) load();
+    });
+    stopLive = config.live(['maintenance', 'features']);
+  }
+
+  @override
+  void dispose() {
+    stopLive?.call();
+    changes?.cancel();
+    super.dispose();
   }
 
   @override

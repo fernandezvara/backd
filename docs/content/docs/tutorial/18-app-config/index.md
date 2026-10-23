@@ -1,6 +1,6 @@
 ---
 title: "18. App configuration"
-description: "A maintenance banner every visitor sees, a switch that hides the export button and blocks the export function, changed by cron functions and administrators, cached by the client."
+description: "A maintenance banner every visitor sees, a switch that hides the export button and blocks the export function, changed by cron functions and administrators, cached by the client and pushed to open pages with realtime."
 weight: 380
 toc: true
 ---
@@ -25,6 +25,7 @@ The banner is public (`"true"`: even without a session); the `features` group ne
 await backd.config.load(['maintenance', 'features'])
 backd.config.getSync('maintenance.enabled', false)
 backd.config.on('change', (paths) => render(paths))
+backd.config.live(['maintenance', 'features'])   // see "Instantly" below
 ```
 
 The client keeps a copy per user, **fresh for the server's `cache_ttl`** (5 minutes unless `app_config.cache_ttl` in `realm.yaml` says otherwise) with no request at all; after that it serves the copy and revalidates it in the background with `If-None-Match`, which usually costs a `304` and no body. Signing out drops the copies, so the next person on the browser never sees what the previous one could read. The app shows the **maintenance banner** from `maintenance` and the **Export my assets** button from `features.export.enabled`, which a visitor can't read at all (the button isn't there signed out).
@@ -60,15 +61,24 @@ Time-based changes need nothing built in: scheduled functions with `config: writ
 
 `maintenance-close` is the same with `ctx.admin.config.reset(["maintenance"])`, which returns the group to its defaults. `backd functions invoke --function shelf/main/maintenance-open` runs one by hand, as the tour does.
 
+## Instantly, with realtime
+
+A copy is fresh for `cache_ttl`, which is the longest a page can be behind. A maintenance notice should not wait five minutes, so the app also follows the configuration live:
+
+```js
+backd.config.live(['maintenance', 'features'])
+```
+
+That adds a `_config` subscription to the client's [realtime stream](../../build/api/realtime/#following-the-configuration) (the same stream the live pins of [chapter 24](../24-live-pins/) use; it needs no collection of its own). When the window opens, backd tells each open page which keys changed **for that page**, the client reads those branches again with `If-None-Match`, and `change` fires: the banner appears without a reload, and disappears when the window closes. Everyone gets the banner, because it is public. Only signed-in members hear that `features.export.enabled` flipped; a signed-out visitor's page is told nothing about a key it can't read, and never learns that it exists.
+
+If the server has realtime off, or the user is offline, nothing breaks: `live()` reports it to `on('error')`, and the page still refreshes when it regains focus and its copy has expired.
+
 ## You should see
 
 - Opening the window (by the function) shows the banner to a signed-out visitor, and closing it hides it again.
 - Turning `features.export.enabled` off hides the **Export my assets** button for members and makes the `export` function answer `403`; turning it back on restores both.
 - `backd app-config history` lists each change with `function:main/maintenance-open` or the administrator as the actor, and `rollback` restores an earlier state as a new version.
 - A second read of the configuration with the `ETag` it returned answers `304`.
-
-{{< hint style="note" >}}
-Pushing a change to open pages instantly needs realtime updates, which come in a later milestone; until then a page sees a change within `cache_ttl`, or when it regains focus and the copy has expired.
-{{< /hint >}}
+- With `live()` on, a page that never asks again shows the banner within a moment of the window opening and hides it when it closes; a member's page follows the export switch, and a visitor's page is not told about it.
 
 The tour (`make shelf-tour`) checks all of it. Read [App configuration](../../build/configuration/app-config/) for the reference: the schema's limits, per-path rules, the admin API, the functions' `ctx.config` and the client's cache.
