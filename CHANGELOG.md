@@ -4,6 +4,12 @@ All notable changes to `backd` and to its JavaScript client `backd-js`, which ar
 
 Until a stable release is declared, a minor release may have breaking changes; they are listed first.
 
+## Unreleased
+
+### Added
+
+- **Live app configuration:** `client.config.live(paths?)` follows the realm's app configuration over realtime. A stream accepts a `config` subscription (no collection needed), and backd sends `config_changed` with the version and the keys that changed for that subscriber, filtered by their read rules and refreshed when their roles or consents change. The JavaScript and Dart clients read the branches they hold again with `If-None-Match` and emit `change`; `on("error")` (`config.errors` in Dart) reports a realm without configuration or without realtime. See [Live updates](https://fernandezvara.github.io/backd/docs/build/configuration/app-config/#live-updates).
+
 ## 0.9.1
 
 No breaking changes for existing configuration: field encryption and password expiry are off until you use them. Run `backd provision` with an admin-privileged `MONGO_URI` for this release: it creates the `data_keys` and `security_state` system collections and updates the validators of the existing system collections (password expiry dates, the hidden `_enc` and `_bidx` document fields). With `PROVISION_MODE=verify` the instances refuse to start until it has run. The server and both clients move to 0.9.1 together; the Dart client leaves its own `0.0.x` numbering, so change `backd: ^0.0.5` to `backd: ^0.9.1`.

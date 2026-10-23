@@ -111,6 +111,31 @@ const _reconnectBase = Duration(milliseconds: 500);
 /// resumes after a disconnection, reloads subscriptions the server resets
 /// (with jitter), reconnects at the end of the credential's lifetime and
 /// reopens the stream when the set of subscriptions changes.
+/// The id the `_config` subscription has on the wire.
+const _configId = '_config';
+
+/// Who hears of the configuration on the stream.
+final class ConfigFollower {
+  ConfigFollower({
+    required this.paths,
+    required this.ready,
+    required this.changed,
+    required this.error,
+  });
+
+  /// The branches followed; none: everything the caller reads.
+  final List<String> paths;
+
+  /// The stream is open (again): what was missed while it was down is read now.
+  final void Function() ready;
+
+  /// Keys that changed; none: any of them might have.
+  final void Function(List<String> paths) changed;
+
+  /// The subscription was refused or the stream ended for good.
+  final void Function(Object error) error;
+}
+
 final class Realtime {
   Realtime(this.client);
 
@@ -123,6 +148,26 @@ final class Realtime {
   StreamSubscription<List<int>>? _reader;
   var _syncing = false;
   var _ready = false;
+  ConfigFollower? _config;
+
+  /// Adds a `_config` subscription to the stream, which tells [follower]
+  /// when what the caller reads of the app configuration changes. One
+  /// follower at a time; `client.config.live` is what uses it. Returns what
+  /// removes it.
+  void Function() followConfig(ConfigFollower follower) {
+    _config = follower;
+    _schedule();
+    return () {
+      if (!identical(_config, follower)) return;
+      _config = null;
+      _schedule();
+    };
+  }
+
+  /// A credential changed: a followed stream opens again with the new one.
+  void credentialChanged() {
+    if (_config != null) _schedule();
+  }
   final _views = <LiveView>{};
 
   /// A source of randomness for the jitter after a reset.
@@ -201,7 +246,7 @@ final class Realtime {
     _reader?.cancel();
     _reader = null;
     _ready = false;
-    if (_subs.isEmpty) {
+    if (_subs.isEmpty && _config == null) {
       return;
     }
     for (final v in _views) {
@@ -218,7 +263,7 @@ final class Realtime {
     while (gen == _gen) {
       var reconnectNow = false;
       try {
-        final subscriptions = [
+        final subscriptions = <Map<String, Object?>>[
           for (final s in _subs.values)
             {
               'id': s.wire,
@@ -229,6 +274,13 @@ final class Realtime {
                 'where': s.spec.where,
             },
         ];
+        final config = _config;
+        if (config != null) {
+          subscriptions.add({
+            'id': _configId,
+            'config': {'paths': config.paths},
+          });
+        }
         final res = await client.openStream(
           path: const ['_realtime'],
           body: {
@@ -263,6 +315,18 @@ final class Realtime {
           final bad = at != null
               ? _subs.values.elementAtOrNull(int.parse(at.group(1)!))
               : null;
+          if (at != null &&
+              bad == null &&
+              _config != null &&
+              int.parse(at.group(1)!) == _subs.length) {
+            // The refusal is of the configuration subscription (the realm
+            // has none): only it ends.
+            final follower = _config!;
+            _config = null;
+            follower.error(err);
+            if (_subs.isEmpty) return;
+            continue;
+          }
           if (bad != null && _views.length > 1) {
             bad.view._fail(err);
             continue;
@@ -295,6 +359,9 @@ final class Realtime {
   }
 
   void _fail(Object err) {
+    final follower = _config;
+    _config = null;
+    follower?.error(err);
     _gen++;
     _ready = false;
     for (final v in _views.toList()) {
@@ -370,6 +437,12 @@ final class Realtime {
         for (final v in _views) {
           v._status();
         }
+        _config?.ready();
+        return null;
+      case 'config_changed':
+        _config?.changed([
+          for (final p in ev.data['paths'] as List? ?? const <Object?>[]) '$p',
+        ]);
         return null;
       case 'created':
       case 'updated':

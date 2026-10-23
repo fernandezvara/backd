@@ -795,3 +795,69 @@ func TestAccessIsReadAgainPeriodically(t *testing.T) {
 		t.Fatalf("%d periodic reloads", calls.Load())
 	}
 }
+
+// A stream following the configuration is told when the configuration changes, anonymous or not,
+// and hears nothing when the change is none of its business.
+func TestConfigSubscriptionHearsConfigChanges(t *testing.T) {
+	src := newFakeSource()
+	h := newHub(t, src, Limits{})
+	var calls atomic.Int64
+	cfg := &ConfigSub{ID: "cfg", Check: func(context.Context) (*ConfigNotice, error) {
+		if calls.Add(1) == 1 {
+			return &ConfigNotice{Version: "c1", Paths: []string{"maintenance.enabled"}}, nil
+		}
+		return nil, nil // the second change is of keys this caller does not read
+	}}
+	s, err := h.Open(Request{Realm: "r", Principal: "anon:1", Key: key, Config: cfg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Close)
+	var c collector
+	c.run(t, s)
+	src.settle()
+	src.add(system("app_config", "current", changefeed.Updated))
+	got := c.events(t, 1)
+	if got[0].Event != EventConfigChanged || got[0].Data == nil {
+		t.Fatalf("got %v", names(got))
+	}
+	var data struct {
+		ID, Version string
+		Paths       []string
+	}
+	if err := json.Unmarshal(got[0].Data, &data); err != nil || data.ID != "cfg" || data.Version != "c1" || len(data.Paths) != 1 || data.Paths[0] != "maintenance.enabled" {
+		t.Fatalf("data = %s (%v)", got[0].Data, err)
+	}
+	time.Sleep(300 * time.Millisecond)
+	src.add(system("app_config", "current", changefeed.Updated))
+	time.Sleep(500 * time.Millisecond)
+	if calls.Load() != 2 {
+		t.Fatalf("checks = %d, want 2", calls.Load())
+	}
+	// Other system collections are not its business.
+	src.add(system("sessions", "x", changefeed.Updated))
+	time.Sleep(200 * time.Millisecond)
+	if calls.Load() != 2 {
+		t.Fatalf("a session change ran a check: %d", calls.Load())
+	}
+}
+
+// A check that fails sends an empty list of paths: the client reads everything again.
+func TestConfigSubscriptionFailsTowardsReloading(t *testing.T) {
+	src := newFakeSource()
+	h := newHub(t, src, Limits{})
+	cfg := &ConfigSub{ID: "cfg", Check: func(context.Context) (*ConfigNotice, error) { return nil, errors.New("down") }}
+	s, err := h.Open(Request{Realm: "r", Principal: "anon:1", Key: key, Config: cfg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Close)
+	var c collector
+	c.run(t, s)
+	src.settle()
+	src.add(system("app_config", "current", changefeed.Updated))
+	got := c.events(t, 1)
+	if got[0].Event != EventConfigChanged || !contains(string(got[0].Data), `"paths":[]`) {
+		t.Fatalf("got %v %s", names(got), got[0].Data)
+	}
+}

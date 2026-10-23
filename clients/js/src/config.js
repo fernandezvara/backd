@@ -100,6 +100,74 @@ export class Config {
     this.inflight = new Map()
     /** @internal @type {Set<(paths: string[]) => void>} */
     this.listeners = new Set()
+    /** @internal @type {Set<(err: unknown) => void>} */
+    this.errorListeners = new Set()
+    /** @internal @type {(() => void) | undefined} */
+    this.stopLive = undefined
+  }
+
+  /**
+   * Follows the configuration live: adds a `_config` subscription to the client's realtime stream, and when
+   * backd says something the user reads changed, reads those branches again. The `change` listeners hear of
+   * the keys that differ, within the realtime delay instead of `cache_ttl`. The stream is the one
+   * `client.realtime` keeps (it needs realtime enabled in the deployment). Calling it again replaces the
+   * previous call. Errors (the realm has no configuration, realtime is off) go to `on('error')`.
+   *
+   * ```js
+   * await client.config.load(['maintenance'])
+   * const stop = client.config.live(['maintenance'])
+   * client.config.on('change', (paths) => rerender(paths))
+   * ```
+   * @param {string[] | string} [paths]  Branches to follow; everything readable by default.
+   * @returns {() => void} Stops following.
+   */
+  live(paths) {
+    this.stopLive?.()
+    const list = normalize(paths).split(',').filter(Boolean)
+    let first = true
+    const stop = this.client.realtime.followConfig({
+      paths: list,
+      ready: () => {
+        // The first open follows a load; later ones follow a gap, in which changes were not heard.
+        if (first) first = false
+        else void this.reread([])
+      },
+      changed: (changed) => void this.reread(changed),
+      error: (err) => {
+        if (this.stopLive === stopOnce) this.stopLive = undefined
+        this.emitError(err)
+      },
+    })
+    const stopOnce = () => {
+      if (this.stopLive === stopOnce) this.stopLive = undefined
+      stop()
+    }
+    this.stopLive = stopOnce
+    return stopOnce
+  }
+
+  /**
+   * The credentials of the client changed: a followed stream is opened again with the new ones, so it
+   * reports what the new user reads.
+   * @internal
+   */
+  credentialChanged() {
+    if (this.stopLive) this.client.realtime.schedule()
+  }
+
+  /**
+   * Reads again what is held of the branches that changed (all of it for none), waiting for a read that
+   * was already out, which may have started before the change.
+   * @internal
+   * @param {string[]} changed
+   */
+  async reread(changed) {
+    await this.scope()
+    for (const key of [...this.entries.keys()]) {
+      if (changed.length > 0 && !touches(key, changed)) continue
+      await this.inflight.get(key)?.catch(() => {})
+      await this.revalidate(key)
+    }
   }
 
   /**
@@ -224,15 +292,17 @@ export class Config {
   }
 
   /**
-   * Calls the listener with the dot paths whose value changed when a read brings a different configuration.
-   * @param {'change'} event
-   * @param {(paths: string[]) => void} listener
+   * `change`: calls the listener with the dot paths whose value changed when a read brings a different
+   * configuration. `error`: with the error that ended {@link Config.live}.
+   * @param {'change' | 'error'} event
+   * @param {(arg: any) => void} listener
    * @returns {() => void} Stops listening.
    */
   on(event, listener) {
-    if (event !== 'change') throw new TypeError("client.config.on: the only event is 'change'")
-    this.listeners.add(listener)
-    return () => this.listeners.delete(listener)
+    if (event !== 'change' && event !== 'error') throw new TypeError("client.config.on: the events are 'change' and 'error'")
+    const set = event === 'change' ? this.listeners : this.errorListeners
+    set.add(listener)
+    return () => set.delete(listener)
   }
 
   /** @internal @param {ConfigEntry} e */
@@ -331,6 +401,17 @@ export class Config {
     }
   }
 
+  /** @internal @param {unknown} err */
+  emitError(err) {
+    for (const l of this.errorListeners) {
+      try {
+        l(err)
+      } catch (e) {
+        console.error('backd: a client.config error listener failed:', e)
+      }
+    }
+  }
+
   /** @internal @param {string[]} paths */
   emit(paths) {
     for (const l of this.listeners) {
@@ -341,6 +422,16 @@ export class Config {
       }
     }
   }
+}
+
+/**
+ * Whether a request key (comma separated branches; '' is everything) holds any of the changed keys.
+ * @param {string} key
+ * @param {string[]} changed
+ */
+function touches(key, changed) {
+  if (key === '') return true
+  return key.split(',').some((p) => changed.some((c) => c === p || c.startsWith(p + '.') || p.startsWith(c + '.')))
 }
 
 /**

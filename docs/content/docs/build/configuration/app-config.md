@@ -115,7 +115,20 @@ The key must be a string literal naming a declared value. The value is read once
 
 ## Live updates
 
-Pushing a change to open pages without waiting for `cache_ttl` is planned with the realtime stream (`client.config.live()`); it is not built yet. Until then a page sees a change within `cache_ttl`, or when it calls `client.config.load()` after the copy expired, which revalidates for the cost of a `304`. Lower `app_config.cache_ttl` for switches that must reach people quickly: a request that answers `304` is cheap.
+Without realtime, a page sees a change within `cache_ttl`, or when it calls `client.config.load()` after the copy expired, which revalidates for the cost of a `304`. Lower `app_config.cache_ttl` for switches that must reach people quickly: a request that answers `304` is cheap.
+
+With [realtime](../../api/realtime/) available, a page can follow the configuration instead, and a change reaches open pages within the realtime delay:
+
+```js
+await client.config.load(["maintenance"]);
+const stop = client.config.live(["maintenance"]);   // or live() for everything the user reads
+client.config.on("change", (paths) => rerender(paths));
+```
+
+- **How it works:** the client adds a `_config` subscription to the realm's realtime stream (it needs no `realtime: true` collection). When the configuration changes, backd sends a [`config_changed` event](../../api/realtime/#following-the-configuration) with the new version and the keys that changed *for that subscriber*; the client reads those branches again with `If-None-Match` and `change` fires with the keys whose value differs.
+- **Rules apply:** a subscriber hears only of the keys their rules let them read. A change to a key they can't read produces no event, and the answer to "what changed" never names a hidden key. Anonymous callers can follow the branches whose rule is `true`, such as a public `maintenance`.
+- **Access changes count:** when a user's roles or consents change, what they read of the configuration can change too, and they are told.
+- **Cost:** one extra subscription on a stream the app may already have, and one conditional read per change and per subscriber, spread over a short random delay so a change does not reach the database all at once.
 
 ## Layered example
 

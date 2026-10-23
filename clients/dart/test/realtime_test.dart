@@ -29,6 +29,8 @@ Future<void> until(bool Function() cond,
 }
 
 void main() {
+  configLiveTests();
+
   test('subscribe requires specs', () {
     final c = testClient(FakeTransport(), streamTransport: FakeStreamTransport());
     expect(() => c.realtime.subscribe([]), throwsArgumentError);
@@ -252,5 +254,129 @@ void main() {
         isFalse);
     live.close();
     await ctl.close();
+  });
+}
+
+void configLiveTests() {
+  group('config.live', () {
+    test('adds a _config subscription; config_changed rereads the branch held',
+        () async {
+      final t = FakeTransport()
+        ..answer(respond(
+            200,
+            {
+              'values': {
+                'maintenance': {'enabled': false},
+              },
+              'version': 'c1',
+              'cache_ttl': 300,
+            },
+            {'ETag': 'W/"c1"'}))
+        ..answer(respond(
+            200,
+            {
+              'values': {
+                'maintenance': {'enabled': true},
+              },
+              'version': 'c2',
+              'cache_ttl': 300,
+            },
+            {'ETag': 'W/"c2"'}));
+      final ctl = StreamController<List<int>>();
+      final st = FakeStreamTransport()..controlled(ctl.stream);
+      final c = testClient(t, apiKey: 'k', streamTransport: st);
+      await c.config.load(['maintenance']);
+      final changes = <List<String>>[];
+      final sub = c.config.changes.listen(changes.add);
+      final stop = c.config.live(['maintenance']);
+      await until(() => st.requests.isNotEmpty);
+      final body = jsonDecode(utf8.decode(st.requests.single.body!)) as Map;
+      expect(body['subscriptions'], [
+        {
+          'id': '_config',
+          'config': {
+            'paths': ['maintenance']
+          },
+        },
+      ]);
+      ctl.add(utf8.encode(sse({
+        'event': 'ready',
+        'data': {
+          'subscriptions': ['_config']
+        }
+      })));
+      ctl.add(utf8.encode(sse({
+        'event': 'config_changed',
+        'data': {
+          'id': '_config',
+          'version': 'c2',
+          'paths': ['maintenance.enabled']
+        },
+      })));
+      await until(() => changes.isNotEmpty);
+      expect(changes.single, ['maintenance.enabled']);
+      expect(c.config.getSync('maintenance.enabled'), isTrue);
+      expect(headerOf(t.requests.last, 'If-None-Match'), 'W/"c1"');
+      stop();
+      stop(); // twice is fine
+      await sub.cancel();
+      await ctl.close();
+    });
+
+    test('a change that is none of a held branch costs no request', () async {
+      final t = FakeTransport()
+        ..answer(respond(
+            200,
+            {
+              'values': {
+                'maintenance': {'enabled': false},
+              },
+              'version': 'c1',
+              'cache_ttl': 300,
+            },
+            {'ETag': 'W/"c1"'}));
+      final ctl = StreamController<List<int>>();
+      final st = FakeStreamTransport()..controlled(ctl.stream);
+      final c = testClient(t, apiKey: 'k', streamTransport: st);
+      await c.config.load(['maintenance']);
+      final stop = c.config.live();
+      await until(() => st.requests.isNotEmpty);
+      ctl.add(utf8.encode(sse({'event': 'ready', 'data': {}})));
+      ctl.add(utf8.encode(sse({
+        'event': 'config_changed',
+        'data': {
+          'id': '_config',
+          'version': 'c2',
+          'paths': ['features.export.enabled']
+        },
+      })));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(t.requests, hasLength(1));
+      stop();
+      await ctl.close();
+    });
+
+    test('a refusal of the subscription reaches errors and ends live',
+        () async {
+      final t = FakeTransport();
+      final st = FakeStreamTransport()
+        ..fail(ValidationError(
+          status: 400,
+          code: 'invalid_query',
+          message: 'invalid subscription',
+          details: [
+            const ErrorDetail(
+                path: 'subscriptions[0].config',
+                reason: 'this realm declares no app configuration')
+          ],
+        ));
+      final c = testClient(t, apiKey: 'k', streamTransport: st);
+      final errors = <Object>[];
+      final sub = c.config.errors.listen(errors.add);
+      c.config.live();
+      await until(() => errors.isNotEmpty);
+      expect(errors.single, isA<ValidationError>());
+      await sub.cancel();
+    });
   });
 }

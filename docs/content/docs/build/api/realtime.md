@@ -59,6 +59,7 @@ data: {"subs":["mine"],"reason":"slow_consumer"}
 | `updated` | A document that was in the subscription changed. |
 | `removed` | A document left it: it was deleted, or an update made it invisible to this caller. Carries only the `id` and the last `version`. |
 | `reset` | Reload these subscriptions with normal reads (see below). |
+| `config_changed` | What the caller reads of the [app configuration](../../configuration/app-config/) changed. Only on a stream with a [`config` subscription](#following-the-configuration). |
 | `session_ended` | The session, user or API key behind the stream is gone (signed out, revoked, deleted, disabled). The stream closes; sign in again. |
 | `reauth` | The credential's lifetime is over. The stream closes; reconnect with a fresh credential and the last resume token. |
 | `: heartbeat` | A comment every 25 seconds so proxies keep the connection open. |
@@ -77,6 +78,30 @@ data: {"subs":["mine"],"reason":"slow_consumer"}
 | `doc` | Follow one document by id instead of a filter. |
 
 `order_by`, `limit`, `page` and `expand` are not part of a stream: ordering and loading belong to the client.
+
+## Following the configuration
+
+A subscription with `config` instead of `db` and `collection` follows the realm's [app configuration](../../configuration/app-config/#live-updates). It needs a realm that declares one, not a `realtime: true` collection, and may be the only subscription of the stream. A stream has at most one, and it counts toward the limit of subscriptions.
+
+```json
+{ "subscriptions": [{ "id": "cfg", "config": { "paths": ["maintenance", "features"] } }] }
+```
+
+| Field | |
+|---|---|
+| `config.paths` | Optional branches or keys to follow, as in `GET /_config?paths=`. Default: everything the caller may read. Unknown keys answer `400 invalid_query`. |
+
+When the configuration changes, or the caller's roles or consents do, the stream sends:
+
+```
+event: config_changed
+data: {"id":"cfg","version":"c42","paths":["maintenance.enabled"]}
+```
+
+- **`paths`** are the keys whose value *as this caller reads it* differs from the last time they were told: a key their rules hide never appears, and a change that concerns nothing they read sends no event. An **empty list** means "read it all again": backd could not tell what changed, and nothing is guessed.
+- **`version`** is the configuration version the paths were computed against.
+- **Not the `reset` reason of the same name.** That one (`reset` with `reason: "config_changed"`) says a collection's rules or `realtime:` opt-in changed; this event is about the app configuration's values.
+- **Not resumable:** `config_changed` carries no resume token and is not replayed. After a reconnection, read the configuration again (with `If-None-Match`, usually a `304`); the JavaScript client does it for you.
 
 ## Start from a known state
 

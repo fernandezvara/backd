@@ -5855,6 +5855,9 @@ paths:
         this caller), `reset` (`{subs, reason}`: reload those subscriptions; `reason` is
         `history_expired`, `access_changed`, `slow_consumer`, `preimage_missing` or
         `config_changed`, after which the subscription is gone and must be made again),
+        `config_changed` (`{id, version, paths}`: on a `config` subscription, the keys of the
+        app configuration whose value this caller reads differently now; an empty `paths`
+        means read it all again; never resumed or replayed),
         `session_ended` (the session, user or key is gone) and `reauth` (the credential's
         lifetime is over), both followed by the stream closing, and comments (`: heartbeat`). Each change's last event carries an SSE `id`, a signed resume
         token bound to this realm and caller: send it as `resume_from` (or `Last-Event-ID`)
@@ -5882,11 +5885,18 @@ paths:
                   items:
                     type: object
                     additionalProperties: false
-                    required: [id, db, collection]
+                    required: [id]
+                    description: "Either `db` and `collection` (a collection that declares `realtime: true`) or `config` (the realm's app configuration), not both."
                     properties:
                       id: { type: string, maxLength: 64, description: "Names the subscription in events; unique in the request." }
                       db: { type: string }
                       collection: { type: string }
+                      config:
+                        type: object
+                        additionalProperties: false
+                        description: "Follow the realm's app configuration. At most one per stream; counts toward the subscription limit."
+                        properties:
+                          paths: { type: array, items: { type: string }, description: "Configuration keys or branches to follow; default everything the caller may read." }
                       where: { type: object, description: "A filter, as in a list's `where`, limited to the operators listed above." }
                       doc: { type: string, description: "Follow one document by id instead of a filter." }
                 resume_from: { type: string, description: "A resume token from a previous stream." }

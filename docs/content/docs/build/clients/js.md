@@ -594,6 +594,13 @@ client.config.on("change", (paths) => rerender(paths));
 - **Where copies live:** per realm and per user, in `localStorage` in browsers and in memory elsewhere (`configStorage: false` for memory only, or any object with `getItem`, `setItem` and `removeItem`). Blocked storage falls back to memory. The copy of a page that has just reloaded is restored by the first `load()`.
 - **Clearing:** sign-out and signing in as another user drop every copy of the realm, so the next person on the same browser never sees the previous user's keys.
 - **`on("change")`** fires with the dot paths whose value changed when a read brings a different configuration.
+- **`live(paths?)`** follows the configuration over the client's [realtime stream](../../api/realtime/#following-the-configuration), so `change` fires within the realtime delay instead of at the next expiry. It reads again only the branches you hold that the event touches, with `If-None-Match`, and after a reconnection it revalidates everything held. It returns a function that stops following. It follows the signed-in user: signing in or out opens the stream again with the new credential. If the realm declares no configuration, or realtime is off, `on("error", fn)` hears of it.
+
+```js
+const stop = client.config.live(["maintenance"]);
+client.config.on("change", (paths) => rerender(paths));
+client.config.on("error", (err) => console.warn("no live updates:", err.message));
+```
 
 ## Typed client
 
