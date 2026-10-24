@@ -196,6 +196,8 @@ Each acceptance or withdrawal is a record in the realm's system database, never 
 
 The latest accepted version of each consent is also kept as a small summary on the user, which is what rules and sign-in read.
 
+A person's whole history, with the evidence, is part of their [personal data export](../personal-data/) (`_account/consents.jsonl`), so a request for "what did I agree to" is answered by the package.
+
 {{< hint style="warning" >}}
 A text must never be edited in place once people have accepted it: publish a new version and keep the old file. The hash in each record names the words that were shown, and an edited file would no longer match it.
 {{< /hint >}}
