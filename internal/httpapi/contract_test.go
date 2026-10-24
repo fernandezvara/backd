@@ -2091,6 +2091,58 @@ func TestContract(t *testing.T) {
 	req("POST", ad+"/encryption/rekey", `{"database": "app", "collection": "posts", "field": "title"}`, nil, 401)
 	req("POST", ad+"/encryption/rekey", `{"database": "app", "collection": "posts", "field": "title"}`, with(ada, "Content-Type", "application/json"), 403)
 
+	// Personal data exports, asked for and followed before the worker starts: the jobs stay queued
+	// (with a worker they could be done before the next request is made).
+	{
+		const ex = "/v1/acme/_auth/me/export"
+		adm := "/v1/acme/_admin/users/" + f.adaID
+		proof := with(ada, reauthHeader, f.freshProof(t, f.ada))
+		proofKey := with(key, reauthHeader, "") // an API key needs no proof
+		req("POST", ex, "", proof, 404)         // the realm does not export
+		req("POST", adm+"/export", "", key, 404)
+		req("GET", ex+"s", "", ada, 404)
+		req("GET", ex+"s/nosuch", "", ada, 404)
+		req("GET", ex+"s/nosuch/download", "", ada, 404)
+		prior := f.reg.Realms["acme"].Settings.Compliance
+		f.reg.Realms["acme"].Settings.Compliance = registry.ComplianceSettings{Export: true, ExportPage: "https://app.acme.example/my-data"}
+		req("POST", ex, "", nil, 401)
+		req("GET", ex+"s", "", nil, 401)
+		req("GET", ex+"s/nosuch", "", nil, 401)
+		req("GET", ex+"s/nosuch/download", "", nil, 401)
+		asked := req("POST", ex, "", proof, 202)
+		req("POST", ex, "", proof, 429)
+		req("GET", ex+"s", "", ada, 200)
+		req("GET", ex+"s/"+asked["id"].(string), "", ada, 200)
+		req("GET", ex+"s/"+asked["id"].(string)+"/download", "", ada, 409) // not built yet
+		if _, err := f.svc.CancelJob(context.Background(), mustExport(t, f.svc, f.adaID, asked["id"].(string)).JobID); err != nil {
+			t.Fatal(err)
+		}
+
+		// The administrator's side: the same package for a formal request.
+		req("POST", adm+"/export", "", nil, 401)
+		req("POST", adm+"/export", "", ada, 403)
+		req("POST", adm+"/nosuch/export", "", key, 404)
+		req("POST", adm+"/export", `{"no_notify": true}`, json(proofKey), 400)
+		made := req("POST", adm+"/export", `{"ticket": "REQ-1"}`, json(key), 202)
+		req("POST", adm+"/export", "", key, 409) // one is already on its way
+		req("GET", adm+"/exports", "", nil, 401)
+		req("GET", adm+"/exports", "", ada, 403)
+		req("GET", "/v1/acme/_admin/users/nosuch/exports", "", key, 404)
+		req("GET", adm+"/exports", "", key, 200)
+		req("GET", adm+"/exports/"+made["id"].(string), "", nil, 401)
+		req("GET", adm+"/exports/"+made["id"].(string), "", ada, 403)
+		req("GET", adm+"/exports/nosuch", "", key, 404)
+		req("GET", adm+"/exports/"+made["id"].(string), "", key, 200)
+		req("GET", adm+"/exports/anything/download", "", nil, 401)
+		req("GET", adm+"/exports/anything/download", "", ada, 403)
+		req("GET", adm+"/exports/nosuch/download", "", key, 404)
+		req("GET", adm+"/exports/"+made["id"].(string)+"/download", "", key, 409) // not built yet
+		if _, err := f.svc.CancelJob(context.Background(), mustExport(t, f.svc, f.adaID, made["id"].(string)).JobID); err != nil {
+			t.Fatal(err)
+		}
+		f.reg.Realms["acme"].Settings.Compliance = prior
+	}
+
 	// A worker runs from here on, for what waits on one: making versions of images.
 	runWorker(t, newTestWorker(t, f))
 	for _, base := range []string{"/v1/acme/app/library", ad + "/data/app/library"} {
@@ -2838,29 +2890,12 @@ func TestContract(t *testing.T) {
 		_ = other
 	}
 
-	// A user's own export of their personal data: asked for, followed and downloaded.
+	// Built exports, downloaded: put in the storage as the worker would have.
 	{
 		const ex = "/v1/acme/_auth/me/export"
-		proof := with(ada, reauthHeader, f.freshProof(t, f.ada))
-		req("POST", ex, "", proof, 404) // the realm does not export
 		adm := "/v1/acme/_admin/users/" + f.adaID
-		req("POST", adm+"/export", "", key, 404)
-		req("GET", ex+"s", "", ada, 404)
-		req("GET", ex+"s/nosuch", "", ada, 404)
-		req("GET", ex+"s/nosuch/download", "", ada, 404)
 		prior := f.reg.Realms["acme"].Settings.Compliance
 		f.reg.Realms["acme"].Settings.Compliance = registry.ComplianceSettings{Export: true, ExportPage: "https://app.acme.example/my-data"}
-		req("POST", ex, "", nil, 401)
-		req("GET", ex+"s", "", nil, 401)
-		req("GET", ex+"s/nosuch", "", nil, 401)
-		req("GET", ex+"s/nosuch/download", "", nil, 401)
-		asked := req("POST", ex, "", proof, 202)
-		req("POST", ex, "", proof, 429)
-		req("GET", ex+"s", "", ada, 200)
-		req("GET", ex+"s/"+asked["id"].(string), "", ada, 200)
-		req("GET", ex+"s/"+asked["id"].(string)+"/download", "", ada, 409) // not built yet
-
-		// A built one and an expired one, put in the storage as the worker would have.
 		s3 := storagetest.New(t, "files")
 		st := f.reg.Realms["acme"].Settings.Storage
 		was := *st
@@ -2874,13 +2909,18 @@ func TestContract(t *testing.T) {
 			}
 		}
 		now := f.svc.Clock()
-		for id, expires := range map[string]time.Time{"ready1": now.Add(time.Hour), "old1": now.Add(-time.Hour)} {
+		put := func(id string, by string, expires time.Time) {
 			key := exportObjectKey(st.Prefix, "acme", f.adaID, id)
 			s3.Put(key, []byte("PK-package"))
-			if err := f.svc.Store.CreateUserExport(context.Background(), auth.UserExport{ID: id, UserID: f.adaID, Status: auth.ExportReady, CreatedAt: now.Add(-2 * time.Hour), ExpiresAt: expires, Key: key, Size: 10, Counts: map[string]int64{"files": 0}}); err != nil {
+			if err := f.svc.Store.CreateUserExport(context.Background(), auth.UserExport{ID: id, UserID: f.adaID, Status: auth.ExportReady, Admin: by, CreatedAt: now.Add(-2 * time.Hour), ExpiresAt: expires, Key: key, Size: 10, Counts: map[string]int64{"files": 0}}); err != nil {
 				t.Fatal(err)
 			}
 		}
+		put("ready1", "", now.Add(time.Hour))
+		put("old1", "", now.Add(-time.Hour))
+		put("adm-ready", "key:support", now.Add(time.Hour))
+		put("adm-old", "key:support", now.Add(-time.Hour))
+
 		req("GET", ex+"s/ready1/download", "", ada, 302)
 		req("GET", ex+"s/ready1/download", "", with(ada, "Accept", "application/json"), 200)
 		req("GET", ex+"s/old1/download", "", ada, 410)
@@ -2888,41 +2928,9 @@ func TestContract(t *testing.T) {
 		if rec, _ := f.doH(t, "GET", ex+"s/ready1/download", "", ada); rec.Code != 200 || rec.Header().Get("Content-Type") != "application/zip" {
 			t.Errorf("proxied export download: %d %v", rec.Code, rec.Header())
 		}
-		*st = was
+		st.Download = was.Download
 
-		// The administrator's side: the same package for a formal request.
-		st.Endpoint, st.Bucket, st.HTTP = s3.URL, "files", true
-		for id, expires := range map[string]time.Time{"adm-ready": now.Add(time.Hour), "adm-old": now.Add(-time.Hour)} {
-			key := exportObjectKey(st.Prefix, "acme", f.adaID, id)
-			s3.Put(key, []byte("PK-package"))
-			if err := f.svc.Store.CreateUserExport(context.Background(), auth.UserExport{ID: id, UserID: f.adaID, Status: auth.ExportReady, Admin: "key:support", Notify: true, CreatedAt: now.Add(-2 * time.Hour), ExpiresAt: expires, Key: key, Size: 10}); err != nil {
-				t.Fatal(err)
-			}
-		}
-		// (The export asked for above is still queued: no worker runs here.)
-		if _, err := f.svc.CancelJob(context.Background(), mustExport(t, f.svc, f.adaID, asked["id"].(string)).JobID); err != nil {
-			t.Fatal(err)
-		}
-		proofKey := with(key, reauthHeader, "") // an API key needs no proof
-		req("POST", adm+"/export", "", nil, 401)
-		req("POST", adm+"/export", "", ada, 403)
-		req("POST", adm+"/nosuch/export", "", key, 404)
-		req("POST", adm+"/export", `{"no_notify": true}`, json(proofKey), 400)
-		made := req("POST", adm+"/export", `{"ticket": "REQ-1"}`, json(key), 202)
-		req("POST", adm+"/export", "", key, 409) // one is already on its way
-		req("GET", adm+"/exports", "", nil, 401)
-		req("GET", adm+"/exports", "", ada, 403)
-		req("GET", "/v1/acme/_admin/users/nosuch/exports", "", key, 404)
-		req("GET", adm+"/exports", "", key, 200)
-		req("GET", adm+"/exports/"+made["id"].(string), "", nil, 401)
-		req("GET", adm+"/exports/"+made["id"].(string), "", ada, 403)
-		req("GET", adm+"/exports/nosuch", "", key, 404)
-		req("GET", adm+"/exports/"+made["id"].(string), "", key, 200)
-		req("GET", adm+"/exports/adm-ready/download", "", nil, 401)
-		req("GET", adm+"/exports/adm-ready/download", "", ada, 403)
-		req("GET", adm+"/exports/nosuch/download", "", key, 404)
-		req("GET", adm+"/exports/"+made["id"].(string)+"/download", "", key, 409) // not built yet
-		req("GET", adm+"/exports/ready1/download", "", key, 403)                  // the user's own
+		req("GET", adm+"/exports/ready1/download", "", key, 403) // the user's own
 		req("GET", adm+"/exports/adm-old/download", "", key, 410)
 		if rec, _ := f.doH(t, "GET", adm+"/exports/adm-ready/download", "", key); rec.Code != 200 || rec.Header().Get("Content-Type") != "application/zip" {
 			t.Errorf("admin download: %d %v", rec.Code, rec.Header())
