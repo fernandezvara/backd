@@ -19,6 +19,7 @@ func TestComplianceScope(t *testing.T) {
 		}
 		_, _ = w.Write([]byte(`{"realm":"acme","auth":true,"collections":[
 			{"database":"app","collection":"orders","export":"include","owned":true,"pull":["members"],"files":["receipt"],"declared":false},
+			{"database":"app","collection":"comments","export":"include","owned":true,"pull":[],"files":[],"declared":false,"organization":true},
 			{"database":"app","collection":"scores","export":"exclude","owned":false,"pull":[],"files":[],"reason":"fraud scores","declared":true},
 			{"database":"app","collection":"notes","export":"include","owned":true,"fields":["title"],"reason":"the rest is internal","pull":[],"files":[],"declared":true}],
 			"system":{"included":["account: id, email"],"excluded":["password hashes"]}}`))
@@ -28,7 +29,7 @@ func TestComplianceScope(t *testing.T) {
 	out := c.expect(0, "app/scores", "", "compliance", "scope", "--realm", "acme", "--url", srv.URL)
 	for _, want := range []string{
 		"app/orders", "documents naming the user in members", "files of receipt",
-		"excluded: fraud scores", "fields title (the rest is internal)", "account: id, email", "password hashes",
+		"excluded: fraud scores", "fields title (the rest is internal)", "! organization documents, exported whole", "account: id, email", "password hashes",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("scope lacks %q:\n%s", want, out)

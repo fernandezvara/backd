@@ -88,6 +88,10 @@ type ScopeEntry struct {
 	Reason string
 	// Declared: personal_data is in the collection's collection.yaml.
 	Declared bool
+	// Organization: the documents belong to organizations and are exported whole, so they may
+	// hold the data of colleagues next to the user's own. The report flags it so that someone
+	// decides: narrow it with `fields`, or accept it.
+	Organization bool
 }
 
 // PersonalScope lists, collection by collection, what the export of a user's
@@ -123,6 +127,7 @@ func (r *Realm) PersonalScope() []ScopeEntry {
 			if e.Fields != nil {
 				slices.Sort(e.Fields)
 			}
+			e.Organization = c.InOrganizations() && e.Fields == nil
 			out = append(out, e)
 		}
 	}

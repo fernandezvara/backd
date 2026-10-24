@@ -47,6 +47,29 @@ func TestPersonalData(t *testing.T) {
 		t.Errorf("excluded scope = %+v", e)
 	}
 
+	// Organization documents exported whole are flagged, the others are not.
+	for name, tc := range map[string]struct {
+		yaml string
+		want bool
+	}{
+		"whole":                {"organization: required\non_org_delete: { action: keep }\nrules:\n  read: 'true'\n", true},
+		"narrowed":             {"organization: required\non_org_delete: { action: keep }\npersonal_data:\n  fields: [name]\n  reason: colleagues' notes\n", false},
+		"excluded":             {"organization: optional\non_org_delete: { action: keep }\npersonal_data:\n  export: exclude\n  reason: x\n", false},
+		"not in organizations": {"rules:\n  read: 'true'\n", false},
+	} {
+		orgTree, err := Load(writeTree(t, map[string]string{
+			"shop/realm.yaml":               "roles:\n  admin: {}\norganizations:\n  roles:\n    owner: { manage: [org, members, roles, teams] }\n",
+			"shop/db/items/schema.json":     personSchema,
+			"shop/db/items/collection.yaml": tc.yaml,
+		}))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got := orgTree.Realms["shop"].PersonalScope()[0].Organization; got != tc.want {
+			t.Errorf("%s: Organization = %v, want %v", name, got, tc.want)
+		}
+	}
+
 	for name, tc := range map[string]struct{ yaml, want string }{
 		"exclude without reason": {"personal_data:\n  export: exclude\n", "reason"},
 		"fields without reason":  {"personal_data:\n  fields: [name]\n", "reason"},
