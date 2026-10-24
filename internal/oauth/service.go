@@ -195,6 +195,10 @@ type Claims struct {
 	Picture       string
 	// Audience is the client id the token was issued to (the web client's, or a native app's).
 	Audience string
+	// HostedDomain is Google's hd (the Workspace domain of the account; empty for a personal
+	// account) and Tenant Microsoft's tid, as the verified token states them.
+	HostedDomain string
+	Tenant       string
 }
 
 type idClaims struct {
@@ -212,6 +216,7 @@ type idClaims struct {
 	FamilyName    string      `json:"family_name"`
 	Picture       string      `json:"picture"`
 	TenantID      string      `json:"tid"`
+	HostedDomain  string      `json:"hd"`
 	ObjectID      string      `json:"oid"`
 }
 
@@ -278,13 +283,16 @@ func (s *Service) Verify(ctx context.Context, p *registry.Provider, idToken, non
 		return bad("nonce")
 	}
 	out := Claims{Subject: c.Subject, Email: strings.TrimSpace(c.Email), EmailVerified: bool(c.EmailVerified), Name: c.Name, GivenName: c.GivenName, FamilyName: c.FamilyName, Picture: c.Picture}
+	if p.Name == registry.ProviderGoogle {
+		out.HostedDomain = strings.ToLower(c.HostedDomain)
+	}
 	if p.Name == registry.ProviderMicrosoft {
 		// The tenant and the object id name the person; an address in a token is
 		// whatever the tenant's administrator set, so it is never taken as verified.
 		if c.TenantID == "" || c.ObjectID == "" {
 			return bad("no tenant or object id")
 		}
-		out.Subject, out.EmailVerified = c.TenantID+":"+c.ObjectID, false
+		out.Subject, out.EmailVerified, out.Tenant = c.TenantID+":"+c.ObjectID, false, c.TenantID
 	}
 	if out.Subject == "" {
 		return bad("no subject")

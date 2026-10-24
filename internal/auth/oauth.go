@@ -57,8 +57,11 @@ func (e *RefusedError) Is(target error) bool { return target == ErrSignInRefused
 // sending the user to the provider and the provider sending them back. Its key is
 // the hash of the state value the provider echoes.
 type OAuthState struct {
-	ID            string // HashToken(state)
-	Provider      string
+	ID       string // HashToken(state)
+	Provider string
+	// Org is the organization whose connection the attempt goes through ("" for the realm's
+	// own providers): the callback must be the one of that organization.
+	Org           string
 	Intent        string
 	CodeChallenge string // the app's PKCE challenge (S256)
 	Verifier      string // backd's own PKCE verifier, for the provider
@@ -220,7 +223,10 @@ func (s *Users) StartProviderSession(ctx context.Context, u User, provider strin
 
 // ProviderLogin is a person an external provider has vouched for.
 type ProviderLogin struct {
-	Provider      string
+	Provider string
+	// Org is the organization whose connection vouched for the person; their identity is
+	// (Provider, Org, Subject). Such a login never links by address: TrustsEmail is false.
+	Org           string
 	Subject       string // the provider's stable id for the person
 	Email         string
 	EmailVerified bool // as the provider asserts it
@@ -263,7 +269,7 @@ func (s *Users) ResolveProviderLogin(ctx context.Context, in ProviderLogin) (Pro
 			email = ""
 		}
 	}
-	existing, err := s.Store.Identity(ctx, in.Provider, in.Subject)
+	existing, err := s.Store.IdentityIn(ctx, in.Provider, in.Org, in.Subject)
 	switch {
 	case err == nil:
 		return s.knownIdentity(ctx, in, existing, email)
@@ -345,7 +351,7 @@ func (s *Users) linkIdentity(ctx context.Context, in ProviderLogin, email string
 func (s *Users) addIdentity(ctx context.Context, u User, in ProviderLogin, email string) error {
 	now := s.now()
 	err := s.Store.PutIdentity(ctx, Identity{
-		ID: xid.New().String(), UserID: u.ID, Provider: in.Provider, Subject: in.Subject,
+		ID: xid.New().String(), UserID: u.ID, Provider: in.Provider, Org: in.Org, Subject: in.Subject,
 		Email: email, EmailVerified: in.EmailVerified && email != "", LastUsedAt: now, CreatedAt: now, UpdatedAt: now,
 	})
 	if errors.Is(err, ErrIdentityExists) {
@@ -354,7 +360,11 @@ func (s *Users) addIdentity(ctx context.Context, u User, in ProviderLogin, email
 	if err != nil {
 		return err
 	}
-	s.Audit(ctx, AuditIdentityLinked, userTarget(u.ID), map[string]any{"provider": in.Provider})
+	details := map[string]any{"provider": in.Provider}
+	if in.Org != "" {
+		details["org"] = in.Org
+	}
+	s.Audit(ctx, AuditIdentityLinked, userTarget(u.ID), details)
 	return nil
 }
 
@@ -367,7 +377,7 @@ func (s *Users) signInNewIdentity(ctx context.Context, in ProviderLogin, email s
 	u, err := s.Store.UserByEmail(ctx, email)
 	switch {
 	case err == nil:
-		if !in.TrustsEmail || !in.EmailVerified || !u.EmailVerified {
+		if in.Org != "" || !in.TrustsEmail || !in.EmailVerified || !u.EmailVerified {
 			return ProviderResult{}, ErrAccountExists
 		}
 		if err := s.mayStartSession(u, in.IP); err != nil {

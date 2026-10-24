@@ -123,6 +123,10 @@ type systemCollection struct {
 	name      string
 	validator map[string]any
 	indexes   []systemIndex
+	// obsolete are the keys of unique indexes an earlier version created and the current
+	// indexes replace: provisioning drops them after creating the new ones, and verifying
+	// reports them.
+	obsolete []bson.D
 }
 
 // SystemCollectionNames returns the collections of every system database.
@@ -164,6 +168,7 @@ var systemCollections = []systemCollection{
 			"user_id":       str(),
 			"provider":      map[string]any{"bsonType": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$"},
 			"subject":       str(),
+			"org":           str(),
 			"password_hash": str(),
 			// What an external provider reported (never for a password), and the
 			// last sign-in; an Apple identity also holds its encrypted refresh token.
@@ -177,10 +182,17 @@ var systemCollections = []systemCollection{
 			"updated_at":          typ("date"),
 		}),
 		indexes: []systemIndex{
-			{keys: bson.D{{Key: "provider", Value: 1}, {Key: "subject", Value: 1}}, unique: true},
-			// One identity per provider per user.
-			{keys: bson.D{{Key: "user_id", Value: 1}, {Key: "provider", Value: 1}}, unique: true},
+			// An organization's connection adds its id to the key (a realm identity has none).
+			{keys: bson.D{{Key: "provider", Value: 1}, {Key: "org", Value: 1}, {Key: "subject", Value: 1}}, unique: true},
+			// One identity per provider per user, and per organization.
+			{keys: bson.D{{Key: "user_id", Value: 1}, {Key: "provider", Value: 1}, {Key: "org", Value: 1}}, unique: true},
 			{keys: bson.D{{Key: "user_id", Value: 1}}},
+		},
+		// The keys before organization sign-in: stricter than the ones above, they would refuse
+		// a person's second identity with a provider. Dropped once the new ones exist.
+		obsolete: []bson.D{
+			{{Key: "provider", Value: 1}, {Key: "subject", Value: 1}},
+			{{Key: "user_id", Value: 1}, {Key: "provider", Value: 1}},
 		},
 	},
 	{
@@ -484,6 +496,7 @@ var systemCollections = []systemCollection{
 		validator: jsonSchema([]string{"_id", "provider", "intent", "code_challenge", "verifier", "nonce", "redirect_to", "created_at", "expires_at"}, map[string]any{
 			"_id":            str(),
 			"provider":       str(),
+			"org":            str(),
 			"intent":         map[string]any{"enum": bson.A{"signin", "link"}},
 			"code_challenge": str(),
 			"verifier":       str(),
@@ -907,6 +920,11 @@ func (p *Provisioner) applySystem(ctx context.Context) error {
 				}
 				p.Log.Info("index created", "database", dbName, "collection", sc.name, "index", name)
 			}
+			if err := dropObsoleteIndexes(ctx, coll, sc.obsolete, func(name string) {
+				p.Log.Info("obsolete index dropped", "database", dbName, "collection", sc.name, "index", name)
+			}); err != nil {
+				return fmt.Errorf("%s.%s: %w", dbName, sc.name, err)
+			}
 		}
 		p.warnUnknownSystemCollections(dbName, existing)
 	}
@@ -968,6 +986,19 @@ func (p *Provisioner) systemDiffs(ctx context.Context, realm string) ([]string, 
 		for _, ix := range missing {
 			diffs = append(diffs, fmt.Sprintf("%s: index (%s) missing", ns, keyList(ix.keys)))
 		}
+		if len(sc.obsolete) > 0 {
+			have, err := listIndexes(ctx, p.Client.Database(dbName).Collection(sc.name))
+			if err != nil {
+				return nil, nil, err
+			}
+			for _, k := range sc.obsolete {
+				for _, e := range have {
+					if e.keys == keyList(k) {
+						diffs = append(diffs, fmt.Sprintf("%s: index %s (%s) is obsolete and would refuse sign-ins of organizations", ns, e.name, e.keys))
+					}
+				}
+			}
+		}
 	}
 	return diffs, existing, nil
 }
@@ -983,6 +1014,28 @@ func prefixed(prefix string, msgs []string) []string {
 // compareSystemIndexes returns the wanted indexes that don't exist and
 // descriptions of existing ones whose options differ. Extra indexes are
 // left alone.
+// dropObsoleteIndexes removes the indexes with the given keys, if they exist.
+func dropObsoleteIndexes(ctx context.Context, coll *mongo.Collection, keys []bson.D, dropped func(name string)) error {
+	if len(keys) == 0 {
+		return nil
+	}
+	existing, err := listIndexes(ctx, coll)
+	if err != nil {
+		return err
+	}
+	for _, k := range keys {
+		for _, e := range existing {
+			if e.keys == keyList(k) {
+				if err := coll.Indexes().DropOne(ctx, e.name); err != nil {
+					return fmt.Errorf("drop the obsolete index %s: %w", e.name, err)
+				}
+				dropped(e.name)
+			}
+		}
+	}
+	return nil
+}
+
 func compareSystemIndexes(ctx context.Context, coll *mongo.Collection, want []systemIndex) ([]systemIndex, []string, error) {
 	existing, err := listIndexes(ctx, coll)
 	if err != nil {

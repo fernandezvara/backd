@@ -25,7 +25,7 @@ func (a *adminAPI) userIdentities(w http.ResponseWriter, r *http.Request) {
 // removes one of the user's sign-in methods, never the last, and it is audited as
 // identity.unlinked with the administrator as the actor.
 func (a *adminAPI) unlinkUserIdentity(w http.ResponseWriter, r *http.Request) {
-	err := usersOf(r).Unlink(r.Context(), adminUserOf(r).ID, chi.URLParam(r, "provider"), "admin")
+	err := usersOf(r).UnlinkIn(r.Context(), adminUserOf(r).ID, chi.URLParam(r, "provider"), r.URL.Query().Get("org"), "admin")
 	switch {
 	case errors.Is(err, auth.ErrNotFound):
 		writeError(w, r, http.StatusNotFound, codeNotFound, "the user has no sign-in method of that provider")

@@ -21,6 +21,7 @@ const (
 	codeSignupClosed      = "signup_closed"
 	codeInvitationInvalid = "invitation_invalid"
 	codeSignInRefused     = "signin_refused"
+	codeNotAllowed        = "not_allowed"
 	codeEmailRequired     = "email_required"
 	codeInvalidChallenge  = "invalid_challenge"
 	codeInvalidCode       = "invalid_code"
@@ -54,7 +55,7 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 	}
 	str := func(k string) string { v, _ := f[k].(string); return v }
 	svc := usersOf(r)
-	p, ok := a.provider(w, r)
+	p, sc, ok := a.provider(w, r)
 	if !ok {
 		return
 	}
@@ -102,6 +103,11 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 		a.providerUnavailable(w, r, "the provider could not be reached")
 		return
 	}
+	if p.Org != "" && !sc.conns[p.Name].Admits(signInClaimsOf(claims)) {
+		logger(r.Context()).Info("a native person the connection does not admit", "provider", p.Name, "org", p.Org)
+		writeError(w, r, http.StatusForbidden, codeNotAllowed, "this account is not allowed to sign in through this organization")
+		return
+	}
 	var refresh string
 	if p.Name == registry.ProviderApple && p.RevokeOnDelete {
 		if refresh, ok = a.appleRefreshToken(w, r, p, claims, str("authorization_code")); !ok {
@@ -109,7 +115,7 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	login := auth.ProviderLogin{
-		Provider: p.Name, Subject: claims.Subject, Email: claims.Email, EmailVerified: claims.EmailVerified, TrustsEmail: p.TrustsEmail(),
+		Provider: p.Name, Org: p.Org, Subject: claims.Subject, Email: claims.Email, EmailVerified: claims.EmailVerified, TrustsEmail: p.TrustsEmail(),
 		Intent: intent, LinkUserID: who.User.ID, Locales: append([]string{str("locale")}, acceptLanguages(r.Header.Get("Accept-Language"))...), IP: clientIP(r),
 		Profile:  profileOf(claims, nil),
 		Consents: consents, UserAgent: r.UserAgent(),

@@ -130,6 +130,10 @@ type Provider struct {
 	// account goes away.
 	TeamID, KeyID, PrivateKey string
 	RevokeOnDelete            bool
+	// Org is set on a provider built from an organization's connection (design/org-sso.md): the
+	// id of the organization. Its ClientSecret then names an organization secret, and the
+	// restrictions of the connection apply on top of the token checks.
+	Org string
 }
 
 // SecretNames are the realm secrets the provider needs.
@@ -146,7 +150,11 @@ func (p *Provider) SecretNames() []string {
 // TrustsEmail says whether an address the provider asserts as verified may link
 // an existing account on its own (Google and Apple; not Microsoft, whose address
 // claim a tenant administrator controls).
-func (p *Provider) TrustsEmail() bool { return p.Name == ProviderGoogle || p.Name == ProviderApple }
+func (p *Provider) TrustsEmail() bool {
+	// A connection an organization's managers control never vouches for an address: it can't
+	// link a sign-in to an account (design/org-sso.md §6).
+	return p.Org == "" && (p.Name == ProviderGoogle || p.Name == ProviderApple)
+}
 
 // Audiences are the client ids an ID token may be issued to: the web client and, for
 // the ID-token endpoint, the native ones.

@@ -65,3 +65,69 @@ func TestAuthStoreOrgConnections(t *testing.T) {
 		t.Errorf("get after delete: %v", err)
 	}
 }
+
+func TestAuthStoreOrganizationIdentitiesAndSlugs(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	put := func(id, user, org, subject string) error {
+		return s.PutIdentity(ctx, auth.Identity{ID: id, UserID: user, Provider: "google", Org: org, Subject: subject, CreatedAt: now, UpdatedAt: now})
+	}
+	if err := put("i1", "u1", "", "sub"); err != nil {
+		t.Fatal(err)
+	}
+	if err := put("i2", "u1", "o1", "sub"); err != nil {
+		t.Fatalf("the same person at an organization: %v", err)
+	}
+	if err := put("i3", "u1", "o1", "sub-2"); !errors.Is(err, auth.ErrIdentityExists) {
+		t.Errorf("a second identity of the user at the organization: %v", err)
+	}
+	if err := put("i4", "u2", "o1", "sub"); !errors.Is(err, auth.ErrIdentityExists) {
+		t.Errorf("the subject of another user at the organization: %v", err)
+	}
+	// The lookups keep them apart.
+	if id, err := s.Identity(ctx, "google", "sub"); err != nil || id.ID != "i1" || id.Org != "" {
+		t.Errorf("realm identity = %+v, %v", id, err)
+	}
+	if id, err := s.IdentityIn(ctx, "google", "o1", "sub"); err != nil || id.ID != "i2" || id.Org != "o1" {
+		t.Errorf("organization identity = %+v, %v", id, err)
+	}
+	if _, err := s.IdentityIn(ctx, "google", "o2", "sub"); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("another organization: %v", err)
+	}
+	if id, err := s.IdentityOf(ctx, "u1", "google"); err != nil || id.ID != "i1" {
+		t.Errorf("IdentityOf = %+v, %v", id, err)
+	}
+	if id, err := s.IdentityOfIn(ctx, "u1", "google", "o1"); err != nil || id.ID != "i2" {
+		t.Errorf("IdentityOfIn = %+v, %v", id, err)
+	}
+	if ids, _ := s.ListIdentities(ctx, "u1"); len(ids) != 2 {
+		t.Errorf("list = %+v", ids)
+	}
+	if err := s.DeleteIdentityIn(ctx, "u1", "google", "o1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Identity(ctx, "google", "sub"); err != nil {
+		t.Errorf("the realm identity went with the organization's: %v", err)
+	}
+	if err := s.DeleteIdentityIn(ctx, "u1", "google", "o1"); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("delete again: %v", err)
+	}
+
+	// Organizations by slug: not a deleted one.
+	if err := s.CreateOrg(ctx, auth.Org{ID: "o1", Name: "One", Slug: "one", Status: auth.OrgActive, CreatedAt: now, UpdatedAt: now}, auth.OrgMember{Org: "o1", User: "u1", JoinedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if o, err := s.OrgBySlug(ctx, "one"); err != nil || o.ID != "o1" {
+		t.Errorf("OrgBySlug = %+v, %v", o, err)
+	}
+	if _, err := s.OrgBySlug(ctx, "nope"); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("unknown slug: %v", err)
+	}
+	if _, err := s.ArchiveOrg(ctx, "o1", now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.OrgBySlug(ctx, "one"); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("a deleted organization's slug: %v", err)
+	}
+}

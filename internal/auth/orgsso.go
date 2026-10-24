@@ -402,3 +402,37 @@ func (s *Users) deleteConnection(ctx context.Context, orgID, provider, by string
 
 // HasBlocked reports whether a manager removed the user while the connection existed.
 func (c OrgConnection) HasBlocked(user string) bool { return slices.Contains(c.Blocked, user) }
+
+// SignInClaims is what a verified ID token says that a connection's restriction checks.
+type SignInClaims struct {
+	Email         string
+	EmailVerified bool
+	// HostedDomain is Google's hd, Tenant Microsoft's tid.
+	HostedDomain string
+	Tenant       string
+}
+
+// Admits says whether the person the token describes may come in through the connection: the
+// Workspace domain or the tenant is the connection's (the cryptographic restriction), Google's
+// address is verified, and the address is in one of email_domains when the connection lists any.
+// A token is checked for its signature, issuer and audience before this.
+func (c OrgConnection) Admits(in SignInClaims) bool {
+	switch c.Provider {
+	case registry.ProviderGoogle:
+		if c.HostedDomain == "" || !strings.EqualFold(in.HostedDomain, c.HostedDomain) || !in.EmailVerified {
+			return false
+		}
+	case registry.ProviderMicrosoft:
+		// The tenant proves the company; its administrator sets the address.
+		if c.Tenant == "" || !strings.EqualFold(in.Tenant, c.Tenant) {
+			return false
+		}
+	default:
+		return false
+	}
+	if len(c.EmailDomains) == 0 {
+		return true
+	}
+	_, domain, ok := strings.Cut(strings.ToLower(strings.TrimSpace(in.Email)), "@")
+	return ok && slices.Contains(c.EmailDomains, domain)
+}

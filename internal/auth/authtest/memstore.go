@@ -24,7 +24,7 @@ type MemStore struct {
 	mu          sync.Mutex
 	portable    map[string]map[string]map[string]any // collection -> id -> raw document (SeedPortable)
 	users       map[string]auth.User
-	identities  map[string]auth.Identity // provider/subject → identity
+	identities  map[string]auth.Identity // provider/org/subject → identity
 	sessions    map[string]auth.Session  // id → session
 	keys        map[string]auth.APIKey   // hash → key
 	attempts    map[string]memAttempts
@@ -305,7 +305,7 @@ func (m *MemStore) PutIdentity(_ context.Context, id auth.Identity) error {
 	if m.FailPutIdentity != nil {
 		return m.FailPutIdentity
 	}
-	k := id.Provider + "/" + id.Subject
+	k := identityKey(id.Provider, id.Org, id.Subject)
 	if cur, ok := m.identities[k]; ok {
 		if cur.UserID != id.UserID {
 			return auth.ErrIdentityExists
@@ -318,7 +318,7 @@ func (m *MemStore) PutIdentity(_ context.Context, id auth.Identity) error {
 		return nil
 	}
 	for _, other := range m.identities {
-		if other.UserID == id.UserID && other.Provider == id.Provider {
+		if other.UserID == id.UserID && other.Provider == id.Provider && other.Org == id.Org {
 			return auth.ErrIdentityExists
 		}
 	}
@@ -334,7 +334,7 @@ func (m *MemStore) PutIdentity(_ context.Context, id auth.Identity) error {
 func (m *MemStore) ForgetPasswordChangedAt(id auth.Identity) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	k := id.Provider + "/" + id.Subject
+	k := identityKey(id.Provider, id.Org, id.Subject)
 	cur, ok := m.identities[k]
 	if !ok {
 		return auth.ErrNotFound
@@ -373,11 +373,15 @@ func (m *MemStore) ListIdentities(_ context.Context, userID string) ([]auth.Iden
 	return out, nil
 }
 
-func (m *MemStore) IdentityOf(_ context.Context, userID, provider string) (auth.Identity, error) {
+func (m *MemStore) IdentityOf(ctx context.Context, userID, provider string) (auth.Identity, error) {
+	return m.IdentityOfIn(ctx, userID, provider, "")
+}
+
+func (m *MemStore) IdentityOfIn(_ context.Context, userID, provider, org string) (auth.Identity, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, i := range m.identities {
-		if i.UserID == userID && i.Provider == provider {
+		if i.UserID == userID && i.Provider == provider && i.Org == org {
 			return i, nil
 		}
 	}
@@ -413,11 +417,15 @@ func (m *MemStore) UpdateIdentity(_ context.Context, id string, upd auth.Identit
 	return auth.ErrNotFound
 }
 
-func (m *MemStore) DeleteIdentity(_ context.Context, userID, provider string) error {
+func (m *MemStore) DeleteIdentity(ctx context.Context, userID, provider string) error {
+	return m.DeleteIdentityIn(ctx, userID, provider, "")
+}
+
+func (m *MemStore) DeleteIdentityIn(_ context.Context, userID, provider, org string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for k, i := range m.identities {
-		if i.UserID == userID && i.Provider == provider {
+		if i.UserID == userID && i.Provider == provider && i.Org == org {
 			delete(m.identities, k)
 			return nil
 		}
@@ -425,10 +433,16 @@ func (m *MemStore) DeleteIdentity(_ context.Context, userID, provider string) er
 	return auth.ErrNotFound
 }
 
-func (m *MemStore) Identity(_ context.Context, provider, subject string) (auth.Identity, error) {
+func (m *MemStore) Identity(ctx context.Context, provider, subject string) (auth.Identity, error) {
+	return m.IdentityIn(ctx, provider, "", subject)
+}
+
+func identityKey(provider, org, subject string) string { return provider + "/" + org + "/" + subject }
+
+func (m *MemStore) IdentityIn(_ context.Context, provider, org, subject string) (auth.Identity, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	i, ok := m.identities[provider+"/"+subject]
+	i, ok := m.identities[identityKey(provider, org, subject)]
 	if !ok {
 		return auth.Identity{}, auth.ErrNotFound
 	}

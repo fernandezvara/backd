@@ -65,6 +65,17 @@ func (m *MemStore) OrgByID(_ context.Context, id string) (auth.Org, error) {
 	return org, nil
 }
 
+func (m *MemStore) OrgBySlug(_ context.Context, slug string) (auth.Org, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, o := range m.org().orgs {
+		if slug != "" && o.Slug == slug && o.Status != auth.OrgDeleted {
+			return o, nil
+		}
+	}
+	return auth.Org{}, auth.ErrNotFound
+}
+
 func (m *MemStore) OrgsByIDs(_ context.Context, ids []string) (map[string]auth.Org, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

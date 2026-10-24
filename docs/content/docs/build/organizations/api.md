@@ -157,8 +157,27 @@ A company can sign its people in with **its own** Google Workspace or Microsoft 
 - At most `max_per_org` connections, one per provider (`409 sso_limit`); `503 unavailable` when the instance has no `BACKD_SECRETS_KEY` to keep the secret with; `409 org_not_active` for a deleted organization.
 - Every change is audited as `org.sso.set` or `org.sso.deleted` with the provider, never the secret.
 
+### Signing in through a connection
+
+The people of the company sign in at the organization's own address, which is the realm's [provider flow](../../auth/providers/) with the connection's application, secret and restriction:
+
+| Request | What it does |
+|---|---|
+| `GET /_auth/orgs/{org}/providers` | `{"items": ["google"]}`: the connections an app may offer for this organization now. An unknown organization, one without connections and one with the feature off all answer `{"items": []}` |
+| `GET\|POST /_auth/orgs/{org}/oauth/{provider}/start` | Begins the redirect flow, as the realm's `start` does; `POST` with `"intent": "link"` links the connection to the signed-in user |
+| `GET\|POST /_auth/orgs/{org}/oauth/{provider}/callback` | The address registered with the provider; `{org}` is always the organization's id here |
+| `POST /_auth/orgs/{org}/oauth/{provider}/id-token` | Native apps: the token's audience is the connection's `client_id` or one of its `native_client_ids` |
+
+`{org}` is the id or the slug (except in the callback). Nothing needs a session, and the rate limits are the sign-in ones.
+
+- **Who comes in** is checked on the verified ID token, after its signature, issuer, audience and nonce: a Google token's `hd` must be the connection's Workspace domain and its address verified, a Microsoft token's `tid` must be the connection's tenant, and when the connection lists `email_domains` the address must be in one of them. Otherwise the flow ends at `redirect_to?backd_error=not_allowed` (`403 not_allowed` for a native token) and **nothing is created**.
+- **An unavailable connection answers like one that isn't there.** An unknown organization, a provider it never connected, a disabled connection, one without its secret and an organization that is not active (`orphaned` or deleted) all answer the same `404`, so the answer doesn't say which organizations exist.
+- **A callback finishes only what it started.** The attempt remembers the organization, so a sign-in begun for one organization cannot be finished at another's callback or at the realm's, and the realm's cannot be finished at an organization's: those end at the error page.
+- **Identities are keyed by organization.** The person's identity is `(provider, organization, subject)`: the same Google account at two organizations, or at an organization and at the realm, is separate identities, and a user holds one per provider per organization. `GET /_auth/me` lists them with the organization's id.
+- **It never links by address.** If an account already has the person's address, the flow ends at `backd_error=account_exists` even when Google says it is verified: an organization's managers control the connection, so their provider's word is not proof that an address is theirs. The person signs in the way they already do and links the connection with `intent: link`. Addresses from a connection are stored unverified.
+
 {{< hint style="note" >}}
-This page covers keeping the connections. Signing in through one, and what happens to the account of the person who does, arrive in the next steps of the same release and are documented with them.
+Joining the organization when a person signs in, the roles given on joining and the members who were removed come with the next step of the same release; until then signing in through a connection creates or finds the user without making them a member.
 {{< /hint >}}
 
 Realm administrators use the same under `/_admin/orgs/{org}/sso[/{provider}]` (the `users` area, no proof needed beyond their own session or key) and `backd orgs sso`, `sso-set` and `sso-delete`.

@@ -75,6 +75,7 @@ type identityDoc struct {
 	UserID       string `bson:"user_id"`
 	Provider     string `bson:"provider"`
 	Subject      string `bson:"subject"`
+	Org          string `bson:"org,omitempty"`
 	PasswordHash string `bson:"password_hash,omitempty"`
 	// What an external provider last reported, and the last sign-in.
 	Email         string    `bson:"email,omitempty"`
@@ -91,7 +92,7 @@ type identityDoc struct {
 
 func (d identityDoc) identity() auth.Identity {
 	return auth.Identity{
-		ID: d.ID, UserID: d.UserID, Provider: d.Provider, Subject: d.Subject, PasswordHash: d.PasswordHash,
+		ID: d.ID, UserID: d.UserID, Provider: d.Provider, Subject: d.Subject, Org: d.Org, PasswordHash: d.PasswordHash,
 		Email: d.Email, EmailVerified: d.EmailVerified, LastUsedAt: d.LastUsedAt.UTC(), PasswordChangedAt: d.PasswordChangedAt.UTC(),
 		AppleRefreshToken: d.AppleRefreshToken, AppleClientID: d.AppleClientID,
 		CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC(),
@@ -345,15 +346,27 @@ func (s *AuthStore) DeleteUser(ctx context.Context, id string) error {
 	return nil
 }
 
+// orgFilter selects the identities of one organization's connection, or the realm's own (those
+// without the field) for "". The realm's are never stored with an empty org.
+func orgFilter(org string) bson.E {
+	if org == "" {
+		return bson.E{Key: "org", Value: bson.D{{Key: "$exists", Value: false}}}
+	}
+	return bson.E{Key: "org", Value: org}
+}
+
 func (s *AuthStore) PutIdentity(ctx context.Context, id auth.Identity) error {
 	// The user is part of the filter: a provider account that belongs to someone else
 	// is not updated but refused (the insert hits the unique index).
-	filter := bson.D{{Key: "provider", Value: id.Provider}, {Key: "subject", Value: id.Subject}, {Key: "user_id", Value: id.UserID}}
+	filter := bson.D{{Key: "provider", Value: id.Provider}, {Key: "subject", Value: id.Subject}, {Key: "user_id", Value: id.UserID}, orgFilter(id.Org)}
 	set := bson.D{{Key: "updated_at", Value: id.UpdatedAt}}
 	if id.PasswordHash != "" {
 		set = append(set, bson.E{Key: "password_hash", Value: id.PasswordHash}, bson.E{Key: "password_changed_at", Value: id.UpdatedAt})
 	}
 	setOnInsert := bson.D{{Key: "_id", Value: id.ID}, {Key: "user_id", Value: id.UserID}, {Key: "created_at", Value: id.CreatedAt}}
+	if id.Org != "" {
+		setOnInsert = append(setOnInsert, bson.E{Key: "org", Value: id.Org})
+	}
 	if id.Email != "" {
 		set = append(set, bson.E{Key: "email", Value: id.Email})
 	}
@@ -385,8 +398,12 @@ func (s *AuthStore) ListIdentities(ctx context.Context, userID string) ([]auth.I
 }
 
 func (s *AuthStore) IdentityOf(ctx context.Context, userID, provider string) (auth.Identity, error) {
+	return s.IdentityOfIn(ctx, userID, provider, "")
+}
+
+func (s *AuthStore) IdentityOfIn(ctx context.Context, userID, provider, org string) (auth.Identity, error) {
 	var d identityDoc
-	err := s.identities().FindOne(ctx, bson.D{{Key: "user_id", Value: userID}, {Key: "provider", Value: provider}}).Decode(&d)
+	err := s.identities().FindOne(ctx, bson.D{{Key: "user_id", Value: userID}, {Key: "provider", Value: provider}, orgFilter(org)}).Decode(&d)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return auth.Identity{}, auth.ErrNotFound
 	}
@@ -424,7 +441,11 @@ func (s *AuthStore) UpdateIdentity(ctx context.Context, id string, upd auth.Iden
 }
 
 func (s *AuthStore) DeleteIdentity(ctx context.Context, userID, provider string) error {
-	res, err := s.identities().DeleteOne(ctx, bson.D{{Key: "user_id", Value: userID}, {Key: "provider", Value: provider}})
+	return s.DeleteIdentityIn(ctx, userID, provider, "")
+}
+
+func (s *AuthStore) DeleteIdentityIn(ctx context.Context, userID, provider, org string) error {
+	res, err := s.identities().DeleteOne(ctx, bson.D{{Key: "user_id", Value: userID}, {Key: "provider", Value: provider}, orgFilter(org)})
 	if err != nil {
 		return err
 	}
@@ -435,8 +456,12 @@ func (s *AuthStore) DeleteIdentity(ctx context.Context, userID, provider string)
 }
 
 func (s *AuthStore) Identity(ctx context.Context, provider, subject string) (auth.Identity, error) {
+	return s.IdentityIn(ctx, provider, "", subject)
+}
+
+func (s *AuthStore) IdentityIn(ctx context.Context, provider, org, subject string) (auth.Identity, error) {
 	var d identityDoc
-	err := s.identities().FindOne(ctx, bson.D{{Key: "provider", Value: provider}, {Key: "subject", Value: subject}}).Decode(&d)
+	err := s.identities().FindOne(ctx, bson.D{{Key: "provider", Value: provider}, {Key: "subject", Value: subject}, orgFilter(org)}).Decode(&d)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return auth.Identity{}, auth.ErrNotFound
 	}

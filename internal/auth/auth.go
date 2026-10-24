@@ -65,10 +65,14 @@ type User struct {
 // any number of providers. The password identity has no email of its own: the
 // user's is the one that counts.
 type Identity struct {
-	ID           string
-	UserID       string
-	Provider     string
-	Subject      string // unique per provider
+	ID       string
+	UserID   string
+	Provider string
+	Subject  string // unique per provider (and organization)
+	// Org is the organization whose connection signed the person in (design/org-sso.md); empty for
+	// the realm's own providers and the password. A user holds one identity per provider per
+	// organization.
+	Org          string
 	PasswordHash string // ProviderPassword only: argon2id, PHC string format
 	// Email and EmailVerified are what an external provider last reported.
 	Email         string
@@ -225,6 +229,11 @@ type Store interface {
 	// identity of the provider, or the provider account belongs to another user.
 	PutIdentity(ctx context.Context, id Identity) error
 	Identity(ctx context.Context, provider, subject string) (Identity, error)
+	// IdentityIn, IdentityOfIn and DeleteIdentityIn are the three lookups above for the identities of
+	// an organization's connection; the plain ones are the realm's (org "").
+	IdentityIn(ctx context.Context, provider, org, subject string) (Identity, error)
+	IdentityOfIn(ctx context.Context, userID, provider, org string) (Identity, error)
+	DeleteIdentityIn(ctx context.Context, userID, provider, org string) error
 	// ListIdentities returns a user's identities, oldest first.
 	ListIdentities(ctx context.Context, userID string) ([]Identity, error)
 	// IdentityOf returns a user's identity of a provider; ErrNotFound if none.
@@ -354,6 +363,8 @@ type Store interface {
 	CreateOrg(ctx context.Context, o Org, first OrgMember) error
 	// OrgByID returns the organization, deleted ones too; ErrNotFound if none.
 	OrgByID(ctx context.Context, id string) (Org, error)
+	// OrgBySlug returns the organization with that slug that isn't deleted; ErrNotFound if none.
+	OrgBySlug(ctx context.Context, slug string) (Org, error)
 	// OrgsByIDs returns the organizations that exist, by id.
 	OrgsByIDs(ctx context.Context, ids []string) (map[string]Org, error)
 	// UpdateOrg applies upd, sets UpdatedAt and returns the result; ErrSlugTaken, ErrNotFound.

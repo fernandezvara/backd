@@ -2211,6 +2211,244 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_auth/providers:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [auth]
+      summary: The providers a client may offer now
+      description: |
+        The names of the external providers (`google`, `microsoft`, `apple`) the realm has configured
+        **and** that are usable now: their secrets are set and backd's public address is known, which
+        is what makes `start` answer `503 provider_unavailable`, so the list and `start` agree. Apps use
+        it to choose which buttons to show. Public; the answer is the same for everyone and may be
+        cached for a minute. Password and magic links are not providers in this sense. At most 60 a
+        minute per address (`429`).
+      operationId: listProviders
+      security: [{}]
+      responses:
+        "200":
+          description: The provider names, sorted.
+          headers: { Cache-Control: { schema: { type: string, example: "public, max-age=60" } } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProviderNames" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/orgs/{org}/providers:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/orgSignIn" }
+    get:
+      tags: [auth, organizations]
+      summary: The providers an organization's people may sign in with now
+      description: |
+        The same as `GET /_auth/providers`, for the connections of one organization (see
+        `organizations.sso`): the providers it connected, enabled, with their secret set, while the
+        organization is active. An unknown organization, one without connections and one with the
+        feature off all answer `{"items": []}`, so the list says nothing about who exists.
+      operationId: listOrganizationProviders
+      security: [{}]
+      responses:
+        "200":
+          description: The provider names, sorted.
+          headers: { Cache-Control: { schema: { type: string, example: "public, max-age=60" } } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProviderNames" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/orgs/{org}/oauth/{provider}/start:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/orgSignIn" }
+      - { $ref: "#/components/parameters/oauthProvider" }
+    get:
+      tags: [auth, organizations]
+      summary: Start signing in through an organization's connection (a redirect)
+      description: |
+        The redirect flow of `GET /_auth/oauth/{provider}/start`, with the application, secret and
+        restrictions of the organization's connection (`google` or `microsoft`). The attempt remembers the
+        organization, and only that organization's callback can finish it. An unknown organization,
+        a disabled connection, one without its secret and an organization that is not active all
+        answer the same `404`. At most 30 starts a minute per address (`429`).
+      operationId: orgOAuthStart
+      parameters:
+        - { name: redirect_to, in: query, schema: { type: string }, description: "Where the flow ends; the realm's `sign_in.app_url` when absent." }
+        - { name: code_challenge, in: query, required: true, schema: { type: string, minLength: 43, maxLength: 43 } }
+        - { name: invitation, in: query, schema: { type: string } }
+        - { name: locale, in: query, schema: { type: string } }
+      responses:
+        "302":
+          description: To the provider.
+          headers:
+            Location: { schema: { type: string } }
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503":
+          description: "`provider_unavailable`: backd's public address (`BACKD_URL`) is unknown."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [auth, organizations]
+      summary: Start signing in through an organization's connection, or linking it
+      description: |
+        The same as `GET`, answering `authorize_url` in JSON, and the way to **link** the organization's
+        provider to the signed-in user (`intent: "link"`). A person who already has an account with the
+        same address links this way: an organization sign-in never links by address.
+      operationId: orgOAuthStartJSON
+      security: [{}, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [code_challenge]
+              properties:
+                redirect_to: { type: string }
+                code_challenge: { type: string, minLength: 43, maxLength: 43 }
+                intent: { type: string, enum: [signin, link], default: signin }
+                invitation: { type: string }
+                consents: { $ref: "#/components/schemas/ConsentsGiven" }
+                locale: { type: string }
+      responses:
+        "200":
+          description: Where to send the user.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [authorize_url]
+                properties:
+                  authorize_url: { type: string }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503":
+          description: "`provider_unavailable`."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/orgs/{org}/oauth/{provider}/callback:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/orgCallback" }
+      - { $ref: "#/components/parameters/oauthProvider" }
+    get:
+      tags: [auth, organizations]
+      summary: Where the provider sends the user back to, for an organization
+      description: |
+        The address a manager registers with the provider (`redirect_uri` of the connection, which
+        names the organization by its id). It works as `GET /_auth/oauth/{provider}/callback` and
+        answers `302` to the app with `backd_code`, `backd_linked` or `backd_error`, which adds
+        `not_allowed`: the person is not of the Google Workspace domain or the Microsoft tenant the
+        connection admits (or not of its `email_domains`), and nothing was created. A `state` that
+        belongs to another organization, or to the realm's providers, is a state that leads nowhere:
+        the `400` page.
+      operationId: orgOAuthCallback
+      parameters:
+        - { name: state, in: query, schema: { type: string } }
+        - { name: code, in: query, schema: { type: string } }
+        - { name: error, in: query, schema: { type: string } }
+      responses:
+        "302": { $ref: "#/components/responses/BackToApp" }
+        "400": { $ref: "#/components/responses/HostedPage" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [auth, organizations]
+      summary: The provider's callback as a form post, for an organization
+      description: The same, for a provider that answers with a form post.
+      operationId: orgOAuthCallbackForm
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                state: { type: string }
+                code: { type: string }
+                error: { type: string }
+      responses:
+        "303": { $ref: "#/components/responses/BackToApp" }
+        "400": { $ref: "#/components/responses/HostedPage" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/orgs/{org}/oauth/{provider}/id-token:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/orgSignIn" }
+      - { $ref: "#/components/parameters/oauthProvider" }
+    post:
+      tags: [auth, organizations]
+      summary: Sign in through an organization's connection with an ID token the app holds
+      description: |
+        As `POST /_auth/oauth/{provider}/id-token`, for the connection of one organization: the token's
+        audience is the connection's `client_id` or one of its `native_client_ids`, and the same
+        restriction applies. A person the connection does not admit is `403 not_allowed`.
+      operationId: orgOAuthIDToken
+      security: [{}, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [id_token, nonce]
+              properties:
+                id_token: { type: string }
+                nonce: { type: string }
+                intent: { type: string, enum: [signin, link], default: signin }
+                invitation: { type: string }
+                consents: { $ref: "#/components/schemas/ConsentsGiven" }
+                locale: { type: string }
+                cookie: { type: boolean }
+      responses:
+        "200":
+          description: "A session (as a login's), or `{\"linked\": \"<provider>\"}` for `intent: link`."
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/ProviderSession" }
+                  - { $ref: "#/components/schemas/MFAChallenge" }
+                  - { $ref: "#/components/schemas/MFAEnrollmentChallenge" }
+                  - { $ref: "#/components/schemas/ConsentChallenge" }
+                  - type: object
+                    additionalProperties: false
+                    required: [linked]
+                    properties:
+                      linked: { type: string }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403":
+          description: "`not_allowed` (the person is not of the organization the connection admits), or the errors of the realm's flow."
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_auth/oauth/{provider}/id-token:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -2916,13 +3154,16 @@ paths:
       tags: [auth]
       summary: Remove one of the user's sign-in methods
       description: |
-        Unlinks the user's sign-in method of that provider (`password` included). Needs a fresh
+        Unlinks the user's sign-in method of that provider (`password` included); `org` selects
+        the one that came through an organization's connection, absent means the realm's. Needs a fresh
         [re-authentication](#tag/auth) (`X-Backd-Reauth`). The last one can't be removed
         (`409 last_sign_in_method`), so a user can't lock themselves out. Audited as
         `identity.unlinked`.
       operationId: unlinkIdentity
       security: [{ session: [] }]
-      parameters: [{ $ref: "#/components/parameters/reauth" }]
+      parameters:
+        - { $ref: "#/components/parameters/reauth" }
+        - { name: org, in: query, description: "An organization's id: unlink the identity of that organization's connection.", schema: { type: string } }
       responses:
         "204": { description: Sign-in method removed. }
         "401": { $ref: "#/components/responses/Unauthenticated" }
@@ -4854,6 +5095,8 @@ paths:
         Needs the `users` area to change.
       operationId: adminUnlinkUserIdentity
       security: [{ apiKey: [] }, { session: [] }]
+      parameters:
+        - { name: org, in: query, description: "An organization's id: unlink the identity of that organization's connection.", schema: { type: string } }
       responses:
         "204":
           description: Sign-in method removed.
@@ -9395,6 +9638,18 @@ components:
         `true` adds `url` and `expires_at` to every file of the documents read: a
         link for apps to show or download it. Never stored, and not part of the ETag.
       schema: { type: string, enum: ["true"] }
+    orgSignIn:
+      name: org
+      in: path
+      required: true
+      description: An organization's id or slug.
+      schema: { type: string }
+    orgCallback:
+      name: org
+      in: path
+      required: true
+      description: An organization's id (the redirect address of a connection always uses it).
+      schema: { type: string }
     oauthProvider:
       name: provider
       in: path
@@ -10121,6 +10376,7 @@ components:
       required: [provider, email, email_verified, created_at, last_used_at]
       properties:
         provider: { type: string, description: "`password`, `google`, `microsoft`, `apple` or the name of a configured provider." }
+        org: { type: string, description: "Present when the identity came through an organization's connection: the organization's id. A user holds one identity per provider per organization." }
         email: { type: string, description: "The address the provider reported at the last sign-in; for `password`, the user's own." }
         email_verified: { type: boolean }
         created_at: { $ref: "#/components/schemas/Timestamp" }
@@ -10180,6 +10436,13 @@ components:
         last_used_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
         expires_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
         key: { type: string, pattern: "^bdk_" }
+
+    ProviderNames:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { type: string }, description: "Provider names, sorted." }
 
     OrganizationConnection:
       description: |
