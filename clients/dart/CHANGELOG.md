@@ -1,4 +1,4 @@
-## Unreleased
+## 0.9.2
 
 - **Your own data:** `client.account` asks for the export of the user's
   personal data (`requestExport`, with a fresh proof), follows it (`exports`,

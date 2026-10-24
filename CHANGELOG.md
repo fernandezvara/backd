@@ -4,7 +4,7 @@ All notable changes to `backd` and to its JavaScript client `backd-js`, which ar
 
 Until a stable release is declared, a minor release may have breaking changes; they are listed first.
 
-## Unreleased
+## 0.9.2
 
 ### Breaking
 
