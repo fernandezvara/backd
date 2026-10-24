@@ -156,11 +156,14 @@ blog__main.posts
 shop__orders.items
 ```
 
-### Upgrading to the next release (not yet tagged)
+### Upgrading to v0.9.2
+
+v0.9.2 changes where a realm keeps its content (breaking, step 1) and adds the personal data export and live app configuration. Run `backd config check` against your tree with the new binary first: it lists every folder to move.
 
 1. **Move the realm's content folders into `_realm/`.** `email`, `pages`, `push`, `consents`, `compliance` and `app-config` leave the top of each realm for `<realm>/_realm/` (`app-config` becomes `_realm/config`); `realm.yaml` and the databases stay where they are. For a realm called `acme`: `mkdir acme/_realm && mv acme/email acme/pages acme/push acme/consents acme/compliance acme/_realm/` (only the ones you have), and `mv acme/app-config acme/_realm/config`. The old layout stops loading, and the error names each folder and where it goes; `backd config check` shows it before you deploy. The [config fingerprint](deploying/) changes, so every instance must run the new tree.
 2. **Run `backd provision`** with an admin-privileged `MONGO_URI`. It creates the `user_exports` system collection (the records of [personal data exports](../build/auth/personal-data/)). With `PROVISION_MODE=verify` the instances refuse to start until it has run. If you run with least-privilege grants, `backd databases --collections` prints the new collection.
 3. **Nothing else changes until you turn exports on** (`compliance.export: true`, which needs `storage:` and `email:`). `data-export-ready` and `data-export-made` are built-in email kinds; `backd template realm` writes the English text and a `_realm/compliance/readme/en.html` to edit.
+4. **Move the clients with the server.** `backd-js` and `package:backd` are released on the same version: `0.9.2` (for Dart, `backd: ^0.9.2`).
 
 ### Upgrading to v0.9.1
 
