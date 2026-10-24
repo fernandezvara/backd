@@ -97,7 +97,7 @@ main/assets.jsonl, main/_files/…   their assets and the files those hold
 _account/account.jsonl, sessions.jsonl, consents.jsonl, audit.jsonl, …   the account data
 ```
 
-Never in it: the password hash, session and device tokens, second-factor secrets and recovery codes, and other people's details in the audit records. The `README.html` is a [template](../../build/auth/personal-data/#the-readme) in `config/shelf/compliance/readme/en.html`; Shelf's adds a paragraph about where its own data is.
+Never in it: the password hash, session and device tokens, second-factor secrets and recovery codes, and other people's details in the audit records. The `README.html` is a [template](../../build/auth/personal-data/#the-readme) in `config/shelf/_realm/compliance/readme/en.html`; Shelf's adds a paragraph about where its own data is.
 
 ## The email
 
