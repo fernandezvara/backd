@@ -44,6 +44,35 @@ flowchart LR
 - **Email and push** use the realm's templates and send through delivery functions you write.
 - **Realtime streams** each caller the changes their rules let them read.
 
+On disk, it is a tree of folders. A realm is a folder with a `realm.yaml`; every folder in it is a database, except `_realm`, which holds what the realm shows and configures (emails, pages, push and consent texts, app configuration) rather than data:
+
+```
+config/                         CONFIG_DIR
+└── shop/                       a realm
+    ├── realm.yaml              its settings: users, roles, sign-in, email, storage
+    ├── _realm/                 email, pages, push, consents, compliance, config
+    └── main/                   a database
+        ├── orders/             a collection
+        │   ├── schema.json     what a document may contain
+        │   ├── indexes.json    its indexes
+        │   └── collection.yaml who may read and write, files, triggers
+        └── _functions/         server-side functions
+```
+
+[Data model](../build/configuration/config-dir/) explains each file.
+
+## Who reads what
+
+The documentation has three sections, one per role. Pick yours and stay in it: each links to the others only where you need them.
+
+| You are… | You want to… | Start at |
+|---|---|---|
+| **A developer building an app** on backd | declare data, call the API, write functions | [Quickstart](../build/quickstart/), then the [Tutorial](../tutorial/) and [Build](../build/) |
+| **An operator** running backd for others | deploy, secure, monitor, back up, upgrade | [Operate](../operate/) and the [hardening checklist](../operate/checklist/) |
+| **A contributor** changing backd itself | build from source, run the tests, follow the workflow | [Contribute](../contribute/) |
+
+Something not working? [Troubleshooting](../troubleshooting/) lists the messages you are most likely to meet and what they mean.
+
 {{< hint warning >}}
 Realms with `auth: disabled` are open to anyone who can reach `backd`: never expose them to the internet. Before exposing any realm, go through the [hardening checklist](../operate/checklist/).
 {{< /hint >}}

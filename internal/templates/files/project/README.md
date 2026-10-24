@@ -7,6 +7,7 @@ A [backd](https://github.com/fernandezvara/backd) config repository: `config/` i
 ```
 config/__REALM__/
   realm.yaml
+  _realm/                      the email, pages, push and compliance texts the realm shows
   __DATABASE__/
     posts/                     a sample collection: schema, rules, indexes
     _functions/
@@ -27,11 +28,11 @@ AGENTS.md                      repo guide for AI coding assistants
 1. Create a `.env` file next to `compose.yaml` with the three secrets it needs — once; compose reads `.env` automatically on every run, so it survives new terminals and sessions (`.env` is gitignored):
 
    ```sh
-cat > .env <<EOF
-EXECUTOR_TOKEN=$(openssl rand -base64 32)
-CALLBACK_KEY=$(openssl rand -base64 32)
-EGRESS_KEY=$(openssl rand -base64 32)
-EOF
+   cat > .env <<EOF
+   EXECUTOR_TOKEN=$(openssl rand -base64 32)
+   CALLBACK_KEY=$(openssl rand -base64 32)
+   EGRESS_KEY=$(openssl rand -base64 32)
+   EOF
    ```
 
    The three are required: if one is missing, `docker compose` stops before starting anything and names it.

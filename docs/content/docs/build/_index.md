@@ -6,7 +6,7 @@ weight: 200
 toc: true
 ---
 
-You write the application; `backd` serves it. This section covers every feature an application uses, in roughly the order you meet them:
+This section is for the **developer** building an application on backd. New here? Run the [Quickstart](quickstart/), then follow the [Tutorial](../tutorial/) to build a complete app; this section is the reference you come back to. You write the application; `backd` serves it. This section covers every feature an application uses, in roughly the order you meet them:
 
 | I want to… | Go to |
 |---|---|

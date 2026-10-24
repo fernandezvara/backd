@@ -6,6 +6,8 @@ weight: 500
 toc: true
 ---
 
+This section is for the **contributor**: whoever changes `backd` itself. To run the repository's development stack and the example apps, start at [Local development](local-development/). Using backd to build an application is [Build](../build/); running it for others is [Operate](../operate/).
+
 ## Workflow
 
 - Work happens in small steps. Every step ends with exactly one commit with a concise message.

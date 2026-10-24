@@ -6,6 +6,8 @@ weight: 400
 toc: true
 ---
 
+This section is for the **operator**: whoever deploys, secures, monitors, backs up and upgrades a `backd` service, and does not necessarily write the application on it. Building an application is [Build](../build/); changing backd itself is [Contribute](../contribute/); a message you do not recognize may be in [Troubleshooting](../troubleshooting/).
+
 ## MongoDB
 
 `backd` needs MongoDB 8.2 running as a **replica set**. A single node is fine. Replica sets support transactions, which [atomic batch writes](../build/api/documents/#batch-writes) rely on, and every setup `backd` is tested with uses one. Sharded clusters (through `mongos`) work too.
