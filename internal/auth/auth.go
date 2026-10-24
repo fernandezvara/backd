@@ -427,6 +427,14 @@ type Store interface {
 	// ReplaceOrgInvitationToken swaps the token hash (and the sealed token, "" for none).
 	ReplaceOrgInvitationToken(ctx context.Context, org, id, tokenHash, sealed string) error
 	DeleteOrgInvitation(ctx context.Context, org, id string) error
+	// Organization sign-in connections (design/org-sso.md): one per organization and provider.
+	// PutOrgConnection creates or replaces it, keeping Blocked, CreatedAt and the id of an
+	// existing one. OrgConnection and DeleteOrgConnection return ErrNotFound for none.
+	PutOrgConnection(ctx context.Context, c OrgConnection) error
+	OrgConnection(ctx context.Context, org, provider string) (OrgConnection, error)
+	// OrgConnections lists an organization's connections, sorted by provider.
+	OrgConnections(ctx context.Context, org string) ([]OrgConnection, error)
+	DeleteOrgConnection(ctx context.Context, org, provider string) error
 	// ForgetUserInOrgs removes a user from the organization data (for an erase): their
 	// memberships (and so their teams), the invitations bound to their id or address, and
 	// created_by of the organizations and invitations they made. It returns the organizations

@@ -8,6 +8,8 @@ Until a stable release is declared, a minor release may have breaking changes; t
 
 ### Added
 
+- **Organization sign-in connections (30.3):** `organizations.sso` in `realm.yaml` (`enabled`, `providers`, `max_per_org`) and the capability `manage: sso` let the managers of an organization keep its own Google Workspace or Microsoft Entra tenant as a sign-in provider: `GET|PUT|DELETE /_orgs/{org}/sso[/{provider}]` (a change needs a fresh proof; the client secret is write-only and kept as an organization secret) and the realm administrator's `/_admin/orgs/{org}/sso[/{provider}]`, `backd orgs sso|sso-set|sso-delete`. A connection names who may come in (a Workspace domain or a tenant id; `common`, `organizations` and `consumers` are refused) and the roles `join_roles` that follow the granting rules. Off by default and `404` while off. Signing in through a connection arrives with the next steps. **Run `backd provision`** (a new system collection, `org_connections`).
+
 - **Organization-scoped secrets:** the secrets store has a third scope, an organization's, for the client secrets of the sign-in connections organizations will set up themselves (milestone 30, see `design/org-sso.md`). They are sealed with the instance key like every secret, cached per scope, listed with their `org` (never a value) and audited as `secret.set`/`secret.delete` with the organization. Nobody can read one back and `function.yaml` cannot name one, so functions never see them. Realm administrators write and delete them with `PUT|DELETE /_admin/secrets/{name}` and `org` / `?org=`, or `backd secret set|delete --org <id>`; `backd secret rotate-key` re-seals them with the rest. Nothing to provision.
 
 ## 0.9.2

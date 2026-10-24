@@ -2939,6 +2939,79 @@ func TestContract(t *testing.T) {
 		f.reg.Realms["acme"].Settings.Compliance = prior
 	}
 
+	// Organization sign-in connections (design/org-sso.md §4).
+	{
+		orgs, adm := "/v1/acme/_orgs", "/v1/acme/_admin/orgs"
+		const google = `{"client_id": "123-abc.apps.googleusercontent.com", "client_secret": "contract-secret", "hosted_domain": "acme.example", "join_roles": ["editor"]}`
+		made, err := f.svc.AdminCreateOrg(context.Background(), "Sign-in Inc", "", f.adaID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		org := made.Org.ID
+		sso := orgs + "/" + org + "/sso"
+		proof := func() map[string]string { return with(ada, reauthHeader, f.freshProof(t, f.ada)) }
+		// Without a secrets key the secret can't be kept; nothing is saved.
+		cipher := f.svc.Cipher
+		f.svc.Cipher = nil
+		req("PUT", sso+"/google", google, proof(), 503)
+		f.svc.Cipher, _ = auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
+		_ = cipher
+		req("GET", sso, "", nil, 401)
+		req("GET", sso, "", carl, 403)
+		req("GET", sso+"/google", "", nil, 401)
+		req("GET", sso+"/google", "", carl, 403)
+		req("GET", sso+"/google", "", ada, 404)
+		req("PUT", sso+"/google", google, nil, 401)
+		req("PUT", sso+"/google", google, carl, 403)
+		req("PUT", sso+"/google", `{"client_id": "c-1"}`, proof(), 400)
+		req("PUT", sso+"/apple", google, proof(), 404)
+		saved := req("PUT", sso+"/google", google, proof(), 200)
+		if saved["client_secret_set"] != true {
+			t.Errorf("connection = %v", saved)
+		}
+		req("GET", sso, "", ada, 200)
+		req("GET", sso+"/google", "", ada, 200)
+		req("GET", "/v1/nope/_orgs/"+org+"/sso", "", ada, 404)
+		// The limit: one connection per provider, as many as the realm allows.
+		limit := f.svc.Settings.Organizations.SSO.MaxPerOrg
+		f.svc.Settings.Organizations.SSO.MaxPerOrg = 1
+		req("PUT", sso+"/microsoft", `{"client_id": "11111111-2222-3333-4444-555555555555", "client_secret": "s", "tenant": "11111111-2222-3333-4444-555555555555"}`, proof(), 409)
+		f.svc.Settings.Organizations.SSO.MaxPerOrg = limit
+		req("DELETE", sso+"/google", "", nil, 401)
+		req("DELETE", sso+"/google", "", carl, 403)
+		req("DELETE", sso+"/microsoft", "", proof(), 404)
+		req("DELETE", sso+"/google", "", proof(), 204)
+
+		// The administrator's side.
+		asso := adm + "/" + org + "/sso"
+		req("GET", asso, "", nil, 401)
+		req("GET", asso, "", ada, 403)
+		req("GET", asso, "", key, 200)
+		req("GET", adm+"/nope/sso", "", key, 404)
+		req("GET", asso+"/google", "", nil, 401)
+		req("GET", asso+"/google", "", ada, 403)
+		req("GET", asso+"/google", "", key, 404)
+		req("PUT", asso+"/google", google, nil, 401)
+		req("PUT", asso+"/google", google, ada, 403)
+		req("PUT", asso+"/google", `{"client_id": "c-1"}`, json(key), 400)
+		req("PUT", adm+"/nope/sso/google", google, json(key), 404)
+		req("PUT", asso+"/google", google, json(key), 200)
+		req("GET", asso+"/google", "", key, 200)
+		f.svc.Cipher = nil
+		req("PUT", asso+"/microsoft", `{"client_id": "11111111-2222-3333-4444-555555555555", "client_secret": "s", "tenant": "11111111-2222-3333-4444-555555555555"}`, json(key), 503)
+		f.svc.Cipher = cipher
+		if cipher == nil {
+			f.svc.Cipher, _ = auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
+		}
+		req("DELETE", asso+"/google", "", nil, 401)
+		req("DELETE", asso+"/google", "", ada, 403)
+		req("DELETE", asso+"/google", "", key, 204)
+		req("DELETE", asso+"/google", "", key, 404)
+		// A deleted organization takes none.
+		req("DELETE", orgs+"/"+org, "", proof(), 204)
+		req("PUT", asso+"/google", google, json(key), 409)
+	}
+
 	// The actions of a breach come last: they end every session the checks above used.
 	req("GET", ad+"/passwords", "", key, 200)
 	req("POST", ad+"/passwords/expire", `{"reason": 7}`, json(key), 400)

@@ -28,15 +28,16 @@ const (
 	CapMembers                     // invite, remove members, revoke invitations
 	CapRoles                       // grant or remove any role
 	CapTeams                       // create, change and delete teams and their members
+	CapSSO                         // set, replace and remove the organization's sign-in connections
 
 	// AllCaps is every capability.
-	AllCaps = CapOrg | CapMembers | CapRoles | CapTeams
+	AllCaps = CapOrg | CapMembers | CapRoles | CapTeams | CapSSO
 )
 
 var capNames = []struct {
 	name string
 	cap  OrgCaps
-}{{"org", CapOrg}, {"members", CapMembers}, {"roles", CapRoles}, {"teams", CapTeams}}
+}{{"org", CapOrg}, {"members", CapMembers}, {"roles", CapRoles}, {"teams", CapTeams}, {"sso", CapSSO}}
 
 // Has reports whether c includes every capability in want.
 func (c OrgCaps) Has(want OrgCaps) bool { return c&want == want }
@@ -178,7 +179,26 @@ type OrgSettings struct {
 	Hooks OrgHooks
 	// InvitationLink is where invitation links point: it holds {token} and may hold {org}.
 	InvitationLink string
-	create         *rules.Rule
+	// SSO is the organization sign-in section (design/org-sso.md); nil when the realm doesn't
+	// let organizations set up their own providers.
+	SSO    *OrgSSOSettings
+	create *rules.Rule
+}
+
+// OrgSSOSettings is organizations.sso: the realm's switch for organization sign-in.
+type OrgSSOSettings struct {
+	// Providers are the ones an organization may connect.
+	Providers []string
+	// MaxPerOrg caps the connections of one organization.
+	MaxPerOrg int
+}
+
+// SSOProviders are the providers an organization may connect.
+var SSOProviders = []string{ProviderGoogle, ProviderMicrosoft}
+
+// Allows reports whether organizations may connect the provider.
+func (s *OrgSSOSettings) Allows(provider string) bool {
+	return s != nil && slices.Contains(s.Providers, provider)
 }
 
 // CreateRuleAllows evaluates the create rule for user.
@@ -249,12 +269,12 @@ func (m *manageDoc) UnmarshalYAML(n *yaml.Node) error {
 			names = append(names, c.Value)
 		}
 	default:
-		return fmt.Errorf("line %d: manage must be a capability or a list of them (org, members, roles, teams)", n.Line)
+		return fmt.Errorf("line %d: manage must be a capability or a list of them (org, members, roles, teams, sso)", n.Line)
 	}
 	for _, name := range names {
 		c, ok := capNamed(name)
 		if !ok {
-			return fmt.Errorf("line %d: unknown capability %q (want org, members, roles, teams)", n.Line, name)
+			return fmt.Errorf("line %d: unknown capability %q (want org, members, roles, teams, sso)", n.Line, name)
 		}
 		if m.Caps.Has(c) {
 			return fmt.Errorf("line %d: capability %q is listed twice", n.Line, name)
@@ -287,7 +307,12 @@ type orgsDoc struct {
 	AllowRequireMFA       *bool    `yaml:"allow_require_mfa"`
 	MembersVisibleTo      string   `yaml:"members_visible_to"`
 	InvitationLink        string   `yaml:"invitation_link"`
-	Hooks                 *struct {
+	SSO                   *struct {
+		Enabled   *bool    `yaml:"enabled"`
+		Providers []string `yaml:"providers"`
+		MaxPerOrg *int     `yaml:"max_per_org"`
+	} `yaml:"sso"`
+	Hooks *struct {
 		OnMemberJoined string `yaml:"on_member_joined"`
 		OnMemberLeft   string `yaml:"on_member_left"`
 		OnRolesChanged string `yaml:"on_roles_changed"`
@@ -448,6 +473,34 @@ func (d *orgsDoc) apply(s *RealmSettings) []error {
 		case !s.SignInRedirectAllowed(probe):
 			add("invitation_link: %q must be an absolute URL within sign_in.allowed_redirects (or email.allowed_redirects when it has none)", o.InvitationLink)
 		}
+	}
+	if d.SSO != nil && (d.SSO.Enabled == nil || *d.SSO.Enabled) {
+		sso := &OrgSSOSettings{Providers: d.SSO.Providers}
+		if len(sso.Providers) == 0 {
+			sso.Providers = slices.Clone(SSOProviders)
+		}
+		seen := map[string]bool{}
+		for i, name := range sso.Providers {
+			switch {
+			case !slices.Contains(SSOProviders, name):
+				add("sso.providers[%d]: %q isn't available to organizations yet; the choices are %s", i, name, strings.Join(SSOProviders, ", "))
+			case seen[name]:
+				add("sso.providers[%d]: %q is listed twice", i, name)
+			}
+			seen[name] = true
+		}
+		sso.MaxPerOrg = len(sso.Providers)
+		if m := d.SSO.MaxPerOrg; m != nil {
+			if *m < 1 || *m > len(sso.Providers) {
+				add("sso.max_per_org: must be between 1 and %d (an organization has one connection per provider), got %d", len(sso.Providers), *m)
+			} else {
+				sso.MaxPerOrg = *m
+			}
+		}
+		if !slices.ContainsFunc(slices.Collect(maps.Values(o.Roles)), func(r OrgRole) bool { return r.Manage.Has(CapSSO) }) {
+			add("sso: needs a role with manage: sso, or no member of an organization could set up its sign-in (realm administrators still could)")
+		}
+		o.SSO = sso
 	}
 	if len(errs) == 0 {
 		s.Organizations = o

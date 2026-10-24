@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -325,5 +326,101 @@ func TestCustomizableEmailKinds(t *testing.T) {
 	})
 	if _, err := Load(tree); err == nil || !strings.Contains(err.Error(), "email.customizable: needs the realm to enable organizations") {
 		t.Errorf("without organizations: %v", err)
+	}
+}
+
+const ssoRealm = `signup: open
+organizations:
+  roles:
+    owner: { manage: [org, members, roles, teams, sso] }
+    member: {}
+  default_roles: [member]
+  sso: SSO
+`
+
+func TestOrganizationSSOSettings(t *testing.T) {
+	// Off unless the section is there and enabled.
+	s, errs := parseRealmSettings([]byte(orgsRealm))
+	if len(errs) > 0 || s.Organizations.SSO != nil {
+		t.Fatalf("without the section: %v %+v", errs, s.Organizations.SSO)
+	}
+	s, errs = parseRealmSettings([]byte(strings.Replace(ssoRealm, "SSO", "{ enabled: false }", 1)))
+	if len(errs) > 0 || s.Organizations.SSO != nil {
+		t.Fatalf("disabled: %v %+v", errs, s.Organizations.SSO)
+	}
+
+	s, errs = parseRealmSettings([]byte(strings.Replace(ssoRealm, "SSO", "{ enabled: true }", 1)))
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	sso := s.Organizations.SSO
+	if sso == nil || !slices.Equal(sso.Providers, []string{"google", "microsoft"}) || sso.MaxPerOrg != 2 {
+		t.Fatalf("defaults: %+v", sso)
+	}
+	if !sso.Allows("google") || sso.Allows("apple") {
+		t.Error("Allows")
+	}
+	if !s.Organizations.Roles["owner"].Manage.Has(CapSSO) || s.Organizations.CapsOf([]string{"member"}).Has(CapSSO) {
+		t.Error("the capability is held by owner only")
+	}
+
+	s, errs = parseRealmSettings([]byte(strings.Replace(ssoRealm, "SSO", "{ providers: [microsoft], max_per_org: 1 }", 1)))
+	if len(errs) > 0 || !slices.Equal(s.Organizations.SSO.Providers, []string{"microsoft"}) || s.Organizations.SSO.MaxPerOrg != 1 {
+		t.Fatalf("narrowed: %v %+v", errs, s.Organizations.SSO)
+	}
+}
+
+func TestOrganizationSSOSettingsRefusals(t *testing.T) {
+	for name, tc := range map[string]struct{ sso, want string }{
+		"apple":              {"{ providers: [apple] }", `sso.providers[0]: "apple" isn't available to organizations yet`},
+		"twice":              {"{ providers: [google, google] }", `"google" is listed twice`},
+		"too many":           {"{ providers: [google], max_per_org: 2 }", "sso.max_per_org: must be between 1 and 1"},
+		"zero":               {"{ max_per_org: 0 }", "sso.max_per_org: must be between 1 and 2"},
+		"unknown key":        {"{ domains: [a.example] }", "domains"},
+		"nobody manages sso": {"{ enabled: true }", "needs a role with manage: sso"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			y := strings.Replace(ssoRealm, "SSO", tc.sso, 1)
+			if name == "nobody manages sso" {
+				y = strings.Replace(y, ", sso]", "]", 1)
+			}
+			_, errs := parseRealmSettings([]byte(y))
+			if len(errs) == 0 || !strings.Contains(errors.Join(errs...).Error(), tc.want) {
+				t.Fatalf("errors = %v, want %q", errs, tc.want)
+			}
+		})
+	}
+}
+
+// One validator for realm.yaml's providers and an organization's connections.
+func TestProviderFieldChecks(t *testing.T) {
+	const guid = "11111111-2222-3333-4444-555555555555"
+	if msg := ClientIDProblem(ProviderGoogle, "123-abc.apps.googleusercontent.com"); msg != "" {
+		t.Errorf("google id: %s", msg)
+	}
+	if ClientIDProblem(ProviderGoogle, "") == "" || ClientIDProblem(ProviderGoogle, "has space") == "" {
+		t.Error("a bad google id passed")
+	}
+	if ClientIDProblem(ProviderMicrosoft, "not-a-guid") == "" || ClientIDProblem(ProviderMicrosoft, guid) != "" {
+		t.Error("microsoft ids are GUIDs")
+	}
+	for _, tenant := range []string{"common", "organizations", "consumers"} {
+		if TenantProblem(tenant, true) != "" {
+			t.Errorf("%s refused for the realm", tenant)
+		}
+		if msg := TenantProblem(tenant, false); msg == "" || !strings.Contains(msg, "admit people of any organization") {
+			t.Errorf("%s accepted for an organization: %q", tenant, msg)
+		}
+	}
+	if TenantProblem(guid, false) != "" || TenantProblem("acme", true) == "" {
+		t.Error("tenant ids")
+	}
+	for domain, ok := range map[string]bool{"acme.example": true, "mail.acme.example": true, "xn--bcher-kva.example": true, "Acme.example": false, "acme": false, "acme..example": false, "-a.example": false, "a.example.": false, "a b.example": false} {
+		if (DomainProblem(domain) == "") != ok {
+			t.Errorf("DomainProblem(%q) = %q, ok = %v", domain, DomainProblem(domain), ok)
+		}
+	}
+	if got := ClientIDListProblems("native_client_ids", []string{"a1", "a1", "bad id"}); len(got) != 2 {
+		t.Errorf("list problems = %v", got)
 	}
 }

@@ -126,6 +126,43 @@ The answer always has `id`, `token` and `link` (the realm's [`invitation_link`](
 Deleting is not undoable for `delete` collections: reactivating an organization doesn't bring their documents back. Look at the report first.
 {{< /hint >}}
 
+## Sign-in connections
+
+A company can sign its people in with **its own** Google Workspace or Microsoft Entra tenant instead of the providers the realm configures. The realm switches the feature on with [`organizations.sso`](../../configuration/realm/#organizations); the managers of an organization (a role with `manage: sso`) then keep its **connections**: an application the company registered with the provider, a client secret, and the restriction that says who may come in. Everything answers `404` while the realm has it off.
+
+| Request | Needs | Answer |
+|---|---|---|
+| `GET /_orgs/{org}/sso` | `manage: sso` | `200` with `items` (the connections), `providers` and `max_connections` |
+| `GET /_orgs/{org}/sso/{provider}` | `manage: sso` | `200`, or `404` when there is none |
+| `PUT /_orgs/{org}/sso/{provider}` | `manage: sso`, fresh proof | `200` with the connection; creates it or replaces every field |
+| `DELETE /_orgs/{org}/sso/{provider}` | `manage: sso`, fresh proof | `204`; the client secret goes with it |
+
+`{provider}` is `google` or `microsoft`. A `PUT` takes:
+
+```json
+{
+  "client_id": "123-abc.apps.googleusercontent.com",
+  "client_secret": "…",
+  "hosted_domain": "acme.example",
+  "email_domains": ["acme.example"],
+  "join_roles": ["member"],
+  "enabled": true
+}
+```
+
+- **Who may come in** is cryptographic, not a claim: a Google connection names the Workspace `hosted_domain` (a personal Google account has none and is refused), a Microsoft one the company's `tenant` id (a GUID; `common`, `organizations` and `consumers` admit anyone and are refused). `email_domains` narrows it further and `native_client_ids` lists the extra client ids a mobile app uses.
+- **The client secret is write-only.** Send it when you create the connection (it is required then) or change it; leave it out to keep the stored one. It is kept as an [organization secret](../../functions/secrets/): sealed like every secret, readable by nobody, not by the managers and not by functions. The answers say only `client_secret_set`. A connection without its secret is unavailable.
+- **`join_roles`** are the organization roles a person receives on joining through the connection. They follow the same rule as [granting roles](#members): a manager can't give what they don't hold. With `manage: roles` any role can be named; with only `manage: sso`, only roles that open no capability.
+- **The redirect address** to register with the provider is in the answer (`redirect_uri`, built from `email.public_url` or `BACKD_URL`; `redirect_path` when neither is set): `/v1/{realm}/_auth/orgs/{org id}/oauth/{provider}/callback`. It always names the organization by its id.
+- At most `max_per_org` connections, one per provider (`409 sso_limit`); `503 unavailable` when the instance has no `BACKD_SECRETS_KEY` to keep the secret with; `409 org_not_active` for a deleted organization.
+- Every change is audited as `org.sso.set` or `org.sso.deleted` with the provider, never the secret.
+
+{{< hint style="note" >}}
+This page covers keeping the connections. Signing in through one, and what happens to the account of the person who does, arrive in the next steps of the same release and are documented with them.
+{{< /hint >}}
+
+Realm administrators use the same under `/_admin/orgs/{org}/sso[/{provider}]` (the `users` area, no proof needed beyond their own session or key) and `backd orgs sso`, `sso-set` and `sso-delete`.
+
 ## JavaScript client
 
 `backd.orgs` and `collection.inOrg(id)` wrap all of this: see [the client](../../clients/js/#organizations).

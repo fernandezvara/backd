@@ -432,6 +432,34 @@ func registerRemote(cfg *kli.Config) {
 		required(cc, "claims", "a JSON object, for example '{\"plan\": \"pro\"}'")
 	})
 
+	og.SubCommand("sso").ShortHelp("show an organization's sign-in connections (never their client secrets)").
+		LongHelp("Lists the connections an organization set up (design: organization sign-in), with the address to register\nwith each provider. Needs organizations.sso in realm.yaml. " + adminAPINote).
+		Func(act("orgs sso", orgsSSO)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+	})
+	og.SubCommand("sso-set").ShortHelp("create or replace an organization's sign-in connection").
+		LongHelp("Connects the organization to its own Google Workspace (--provider google --hosted-domain acme.example) or\nMicrosoft Entra tenant (--provider microsoft --tenant <tenant id>). The client secret is read from the terminal\nwithout echo, or the first line of standard input; --keep-secret leaves the stored one. It is stored as an\norganization secret nobody can read back. --join-roles are given to people who join through it. " + adminAPINote).
+		Func(act("orgs sso-set", orgsSSOSet)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+		cc.Define("provider").String().Flag("provider").Required().OneOf("google", "microsoft").Description("google or microsoft")
+		required(cc, "client-id", "the organization's application (client) id with the provider")
+		optional(cc, "tenant", "Microsoft: the tenant id (a GUID); common, organizations and consumers are refused")
+		optional(cc, "hosted-domain", "Google: the Workspace domain whose people may sign in")
+		optional(cc, "email-domains", "comma-separated: also require the verified email to be in one of these domains")
+		optional(cc, "native-client-ids", "comma-separated: extra client ids the id-token endpoint accepts (mobile apps)")
+		optional(cc, "join-roles", "comma-separated organization roles given to people who join through it")
+		boolean(cc, "disabled", "keep the connection but refuse sign-ins through it")
+		boolean(cc, "keep-secret", "do not ask for the client secret: keep the stored one")
+	})
+	og.SubCommand("sso-delete").ShortHelp("remove an organization's sign-in connection and its client secret").
+		Func(act("orgs sso-delete", orgsSSODelete)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+		cc.Define("provider").String().Flag("provider").Required().OneOf("google", "microsoft").Description("google or microsoft")
+	})
+
 	k := cfg.Command("apikey").ShortHelp("manage a realm's API keys").
 		LongHelp(adminAPINote + "\n\nAPI keys give server-side services full access to their realm's data.\nStore them as secrets.")
 	k.SubCommand("create").ShortHelp("create an API key and print it once").

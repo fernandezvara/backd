@@ -48,7 +48,7 @@ Everything lives in the realm's system database. An organization exists in one r
 | Meaning | the same in the whole realm | only inside one organization |
 | Held by | users, given by administrators | members, given by the organization's managers |
 | Checked with | `hasRole(user, 'editor')` | `hasOrgRole(document._meta.org, 'editor')` |
-| What they open | the [admin API areas](../../operate/administration/admin/) | `manage: [org, members, roles, teams]` inside the organization |
+| What they open | the [admin API areas](../../operate/administration/admin/) | `manage: [org, members, roles, teams, sso]` inside the organization |
 
 The two never mix. An organization or a team can't carry a **realm** role, so nobody becomes a realm administrator by joining the right team, and a realm role grants nothing inside an organization. Realm administrators act through the [admin API](../api/documents/#fixing-data-as-an-administrator), not by being members.
 

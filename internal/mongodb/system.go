@@ -74,6 +74,8 @@ const (
 	OrgMembersCollection     = "org_members"
 	OrgTeamsCollection       = "org_teams"
 	OrgInvitationsCollection = "org_invitations"
+	// OrgConnectionsCollection holds the sign-in connections organizations set up (design/org-sso.md).
+	OrgConnectionsCollection = "org_connections"
 	// OrgMemberSeqCollection holds, per organization and user, the sequence number of the last
 	// membership event handed to a hook (design/team-access.md §7).
 	OrgMemberSeqCollection = "org_member_seq"
@@ -656,6 +658,29 @@ var systemCollections = []systemCollection{
 		indexes: []systemIndex{
 			{keys: bson.D{{Key: "token_hash", Value: 1}}, unique: true},
 			{keys: bson.D{{Key: "org", Value: 1}, {Key: "created_at", Value: -1}}},
+		},
+	},
+	{
+		name: OrgConnectionsCollection,
+		validator: jsonSchema([]string{"_id", "org", "provider", "client_id", "enabled", "created_at", "updated_at"}, map[string]any{
+			"_id":               str(),
+			"org":               str(),
+			"provider":          map[string]any{"enum": bson.A{"google", "microsoft"}},
+			"client_id":         str(),
+			"tenant":            str(),
+			"hosted_domain":     str(),
+			"email_domains":     map[string]any{"bsonType": "array", "items": str()},
+			"native_client_ids": map[string]any{"bsonType": "array", "items": str()},
+			"join_roles":        map[string]any{"bsonType": "array", "items": str()},
+			"enabled":           typ("bool"),
+			"blocked":           map[string]any{"bsonType": "array", "items": str()},
+			"created_by":        str(),
+			"updated_by":        str(),
+			"created_at":        typ("date"),
+			"updated_at":        typ("date"),
+		}),
+		indexes: []systemIndex{
+			{keys: bson.D{{Key: "org", Value: 1}, {Key: "provider", Value: 1}}, unique: true},
 		},
 	},
 	{

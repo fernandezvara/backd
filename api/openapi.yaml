@@ -1336,6 +1336,101 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_orgs/{org}/sso:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+    get:
+      tags: [organizations]
+      summary: The organization's sign-in connections
+      description: |
+        The providers the organization connected, with what a client needs to finish the setup:
+        whether the client secret is stored (never its value) and the redirect address to register
+        with each provider. `providers` and `max_connections` are the realm's `organizations.sso`
+        limits. Needs `manage: sso`. With `organizations.sso` off in `realm.yaml` the whole surface answers `404`.
+      operationId: listOrganizationConnections
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The connections, sorted by provider.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationConnections" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/{org}/sso/{provider}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { $ref: "#/components/parameters/ssoProvider" }
+    get:
+      tags: [organizations]
+      summary: One sign-in connection
+      operationId: getOrganizationConnection
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The connection.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationConnection" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      tags: [organizations]
+      summary: Set the organization's sign-in connection
+      description: |
+        Creates the connection or replaces every field of it. The client secret is **write-only**:
+        sent here it is stored as an organization secret (sealed with the instance key, readable by
+        nobody, not by functions), and left out it keeps the stored one (required the first time).
+        Who may come in is the restriction: `hosted_domain` (Google Workspace) or `tenant` (a Microsoft
+        tenant id; `common`, `organizations` and `consumers` are refused). `join_roles` follow the
+        granting rules: nothing the caller couldn't give themselves.
+        Needs `manage: sso` and a fresh re-authentication. Audited as `org.sso.set`, without the secret.
+      operationId: setOrganizationConnection
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationConnectionInput" }
+      responses:
+        "200":
+          description: The connection, without its secret.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationConnection" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [organizations]
+      summary: Remove the organization's sign-in connection
+      description: |
+        Removes the connection and its client secret. Needs `manage: sso` and a fresh re-authentication. Audited as `org.sso.deleted`.
+      operationId: deleteOrganizationConnection
+      security: [{ session: [] }]
+      responses:
+        "204":
+          description: Removed.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_orgs/{org}/invitations:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -3898,6 +3993,101 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationRecord" }
         "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}/sso:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+    get:
+      tags: [admin]
+      summary: An organization's sign-in connections (administrator)
+      description: |
+        The providers the organization connected, with what a client needs to finish the setup:
+        whether the client secret is stored (never its value) and the redirect address to register
+        with each provider. `providers` and `max_connections` are the realm's `organizations.sso`
+        limits. Needs the `users` area. With `organizations.sso` off in `realm.yaml` the whole surface answers `404`.
+      operationId: adminListOrganizationConnections
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The connections, sorted by provider.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationConnections" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}/sso/{provider}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { $ref: "#/components/parameters/ssoProvider" }
+    get:
+      tags: [admin]
+      summary: One sign-in connection (administrator)
+      operationId: adminGetOrganizationConnection
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The connection.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationConnection" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      tags: [admin]
+      summary: Set an organization's sign-in connection (administrator)
+      description: |
+        Creates the connection or replaces every field of it. The client secret is **write-only**:
+        sent here it is stored as an organization secret (sealed with the instance key, readable by
+        nobody, not by functions), and left out it keeps the stored one (required the first time).
+        Who may come in is the restriction: `hosted_domain` (Google Workspace) or `tenant` (a Microsoft
+        tenant id; `common`, `organizations` and `consumers` are refused). `join_roles` follow the
+        granting rules: an administrator may give any role.
+        Audited as `org.sso.set`, without the secret.
+      operationId: adminSetOrganizationConnection
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationConnectionInput" }
+      responses:
+        "200":
+          description: The connection, without its secret.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationConnection" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      summary: Remove an organization's sign-in connection (administrator)
+      description: |
+        Removes the connection and its client secret. Audited as `org.sso.deleted`.
+      operationId: adminDeleteOrganizationConnection
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "204":
+          description: Removed.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -9064,6 +9254,12 @@ components:
       required: true
       description: An organization id.
       schema: { type: string }
+    ssoProvider:
+      name: provider
+      in: path
+      required: true
+      description: A provider organizations may connect (`organizations.sso.providers`).
+      schema: { type: string, enum: [google, microsoft] }
     orgQuery:
       name: org
       in: query
@@ -9984,6 +10180,52 @@ components:
         last_used_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
         expires_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
         key: { type: string, pattern: "^bdk_" }
+
+    OrganizationConnection:
+      description: |
+        An organization's sign-in provider. Signing in through it uses the same redirect flow as the
+        realm's providers; who may come in is limited by `hosted_domain` or `tenant`. The client
+        secret is never returned.
+      type: object
+      additionalProperties: false
+      required: [provider, client_id, enabled, client_secret_set, email_domains, native_client_ids, join_roles, redirect_path, created_at, updated_at]
+      properties:
+        provider: { type: string, enum: [google, microsoft] }
+        client_id: { type: string, description: "The organization's application with the provider." }
+        tenant: { type: string, description: "Microsoft: the organization's tenant id." }
+        hosted_domain: { type: string, description: "Google: the Workspace domain." }
+        email_domains: { type: array, items: { type: string }, description: "When set, the verified email's domain must also be one of these." }
+        native_client_ids: { type: array, items: { type: string }, description: "Extra client ids the id-token endpoint accepts (mobile apps)." }
+        join_roles: { type: array, items: { type: string }, description: "Organization roles given to people who join through it." }
+        enabled: { type: boolean, description: "A disabled connection refuses sign-ins." }
+        client_secret_set: { type: boolean, description: "Whether the client secret is stored. Without it the connection is unavailable." }
+        redirect_uri: { type: string, description: "The address to register with the provider, when backd knows its public address (`email.public_url` or `BACKD_URL`)." }
+        redirect_path: { type: string, description: "The same address without backd's public address." }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        updated_at: { $ref: "#/components/schemas/Timestamp" }
+
+    OrganizationConnections:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/OrganizationConnection" } }
+        providers: { type: array, items: { type: string }, description: "The providers the realm lets organizations connect." }
+        max_connections: { type: integer, description: "The most connections one organization may have." }
+
+    OrganizationConnectionInput:
+      type: object
+      additionalProperties: false
+      required: [client_id]
+      properties:
+        client_id: { type: string }
+        client_secret: { type: string, maxLength: 1024, description: "Write-only. Required the first time; left out, the stored secret is kept." }
+        tenant: { type: string, description: "Microsoft: required, a tenant id (GUID). `common`, `organizations` and `consumers` are refused." }
+        hosted_domain: { type: string, description: "Google: required, the Workspace domain (lower case)." }
+        email_domains: { type: array, maxItems: 20, items: { type: string } }
+        native_client_ids: { type: array, maxItems: 10, items: { type: string } }
+        join_roles: { type: array, items: { type: string } }
+        enabled: { type: boolean, description: "Defaults to true for a new connection and keeps the stored value on a replace." }
 
     Secret:
       description: A secret's metadata, as listed — never its value.

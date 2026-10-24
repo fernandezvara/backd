@@ -50,16 +50,16 @@ Two prefixes, each already in use, and the rule that picks one: **`_orgs` is the
 
 | Field | Notes |
 |---|---|
-| `id`, `org`, `provider` | unique on (`org`, `provider`); `provider` is `google` or `microsoft` |
+| `id`, `org`, `provider` | unique on (`org`, `provider`), and `id` is `<org>:<provider>`; `provider` is `google` or `microsoft` |
 | `client_id` | the organization's application with the provider |
 | `tenant` | Microsoft: a tenant id (GUID). Required; `common`, `organizations` and `consumers` are refused |
 | `hosted_domain` | Google: the Workspace domain. Required; a consumer account has no `hd` and is refused |
 | `email_domains` | optional extra restriction on the verified email's domain |
 | `join_roles` | roles given on joining; checked with the granting rules of [organizations.md §5.1](./organizations.md): a manager can't give what they don't hold |
 | `enabled`, `blocked` | `blocked` is the ids of members removed by a manager, up to 1000 |
-| `created_by`, `created_at`, `updated_at` | |
+| `created_by`, `updated_by`, `created_at`, `updated_at` | `updated_by` is who last set it: the one whose capabilities `join_roles` were checked against (§9) |
 
-- **API:** `GET /v1/{realm}/_orgs/{org}/sso`, `PUT /v1/{realm}/_orgs/{org}/sso/{provider}` (with `client_secret` when it is set or changed), `DELETE /v1/{realm}/_orgs/{org}/sso/{provider}`; realm admins have the same under `/v1/{realm}/_admin/orgs/{org}/sso` and `backd orgs sso …`. Changes need `manage: sso` and reauth; every one is audited (`org.sso.set`, `org.sso.deleted`) without the secret.
+- **API:** `GET /v1/{realm}/_orgs/{org}/sso`, `PUT /v1/{realm}/_orgs/{org}/sso/{provider}` (with `client_secret` when it is set or changed), `DELETE /v1/{realm}/_orgs/{org}/sso/{provider}`; realm admins have the same under `/v1/{realm}/_admin/orgs/{org}/sso` and `backd orgs sso`, `sso-set`, `sso-delete` (every CLI value is a flag, so the subcommands are single words, as `claims-set`). `GET …/sso/{provider}` reads one. Changes need `manage: sso` and reauth; every one is audited (`org.sso.set`, `org.sso.deleted`) without the secret.
 - **Response:** never the secret; whether it is set, and the redirect address to register with the provider.
 - **Validation:** the provider-field rules of `realm.yaml` (client id patterns, GUID tenants) come from one function extracted from the realm loader, so there is a single validator.
 - **Realm switch:** `organizations.sso: { enabled, providers: [google, microsoft], max_per_org }`. With it off the whole surface answers `404`.
