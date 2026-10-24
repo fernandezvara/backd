@@ -225,7 +225,7 @@ func TestPersonalExportHoldsWhatTheErasureModelFinds(t *testing.T) {
 	// Never a credential, a token, or another person's data, anywhere in the archive.
 	for name, raw := range pkg.files {
 		for _, forbidden := range []string{"argon2", "NOTE-FOR-STAFF-ONLY", "FRAUD-SCORE-0.9", "bob@example.com"} {
-			if strings.Contains(string(raw), forbidden) && !(forbidden == "bob@example.com" && name == "app/orders.jsonl") {
+			if strings.Contains(string(raw), forbidden) && (forbidden != "bob@example.com" || name != "app/orders.jsonl") {
 				t.Errorf("%s holds %q", name, forbidden)
 			}
 		}
