@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Your data from {{Realm}}</title>
+<style>
+body { font: 16px/1.5 system-ui, sans-serif; max-width: 46rem; margin: 2rem auto; padding: 0 1rem; color: #1b1b1f; }
+code { background: #f1f1f4; padding: 0 .25em; border-radius: 3px; }
+table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+th, td { text-align: left; padding: .35rem .6rem; border-bottom: 1px solid #ddd; vertical-align: top; }
+</style>
+</head>
+<body>
+<h1>Your data from {{Realm}}</h1>
+<p>This archive holds the data {{Realm}} keeps about <strong>{{Email}}</strong>, prepared on {{Generated}}. It is yours to keep, to read and to take elsewhere.</p>
+{{#Days}}<p>The copy kept by {{Realm}} for you to download is deleted after {{Days}} days. This archive is not changed afterwards.</p>{{/Days}}
+
+<h2>How to read it</h2>
+<p>Every <code>.jsonl</code> file is a text file with one record per line, written in JSON, which spreadsheets, databases and programming languages can read. Dates are in UTC, in the ISO 8601 format. <code>manifest.json</code> lists every file with its size check (SHA-256).</p>
+
+<h2>Your account</h2>
+<p>The folder <code>_account</code> holds what {{Realm}} keeps about your account itself.</p>
+<table>
+<tr><th>File</th><th>What it is</th><th>Records</th></tr>
+<tr><td><code>account.jsonl</code></td><td>Your account: address, language, roles, dates.</td><td>{{Count.account}}</td></tr>
+<tr><td><code>identities.jsonl</code></td><td>The ways you sign in (password, providers), without secrets.</td><td>{{Count.identities}}</td></tr>
+<tr><td><code>sessions.jsonl</code></td><td>Your sign-ins: when, for how long, how.</td><td>{{Count.sessions}}</td></tr>
+<tr><td><code>devices.jsonl</code></td><td>Devices registered for notifications.</td><td>{{Count.devices}}</td></tr>
+<tr><td><code>mfa.jsonl</code></td><td>Whether a second factor is on, and since when.</td><td>{{Count.mfa}}</td></tr>
+<tr><td><code>organizations.jsonl</code></td><td>The organizations you belong to, with your roles and teams.</td><td>{{Count.organizations}}</td></tr>
+<tr><td><code>invitations.jsonl</code></td><td>Invitations addressed to you.</td><td>{{Count.invitations}}</td></tr>
+<tr><td><code>consents.jsonl</code></td><td>Every consent you gave or withdrew, with the version and when.</td><td>{{Count.consents}}</td></tr>
+<tr><td><code>audit.jsonl</code></td><td>Events recorded about your account: what, when, and who did it.</td><td>{{Count.audit}}</td></tr>
+<tr><td><code>invocations.jsonl</code></td><td>The functions of the service you called: which, when, and how it ended.</td><td>{{Count.invocations}}</td></tr>
+</table>
+
+<h2>Your content</h2>
+{{#Collections}}
+<table>
+<tr><th>File</th><th>Records</th></tr>
+{{#Items}}<tr><td><code>{{Part}}</code></td><td>{{Documents}}</td></tr>
+{{/Items}}
+</table>
+<p>The documents you created, and those that name you. {{#Files}}{{Files}} file(s) are in the <code>_files</code> folders, named by the id the documents give them.{{/Files}}</p>
+{{/Collections}}
+{{^Collections}}<p>No content of yours is held.</p>{{/Collections}}
+
+{{#Exclusions}}
+<h2>What is not in this archive</h2>
+<table>
+<tr><th>What</th><th>Why</th></tr>
+{{#List}}<tr><td>{{What}}</td><td>{{Reason}}</td></tr>
+{{/List}}
+</table>
+{{/Exclusions}}
+
+{{#Truncated}}
+<h2>Incomplete parts</h2>
+<p>These files stopped at a limit, so they are not the whole history: {{#List}}<code>{{Name}}</code> {{/List}}. Ask {{Realm}} for the rest.</p>
+{{/Truncated}}
+
+<h2>What is never included</h2>
+<p>Passwords and password checks, session and device tokens, second factor secrets and recovery codes, invitation links, and data that belongs to other people.</p>
+<p>This archive is a copy of data, not legal advice. If you have questions about how {{Realm}} uses your data, ask {{Realm}}.</p>
+</body>
+</html>

@@ -46,8 +46,10 @@ type InvocationRecord struct {
 // InvocationFilter selects invocation records. Zero fields match everything.
 type InvocationFilter struct {
 	Function, RequestID string
-	Since, Until        time.Time
-	Limit, Skip         int
+	// Actor keeps the calls made by one caller ("user:<id>").
+	Actor        string
+	Since, Until time.Time
+	Limit, Skip  int
 }
 
 func (s *Users) logRetention() time.Duration {

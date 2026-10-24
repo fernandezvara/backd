@@ -850,7 +850,7 @@ func (m *MemStore) ListInvocations(_ context.Context, f auth.InvocationFilter) (
 	defer m.mu.Unlock()
 	var out []auth.InvocationRecord
 	for _, r := range m.invocations {
-		if (f.Function == "" || r.Function == f.Function) && (f.RequestID == "" || r.RequestID == f.RequestID) &&
+		if (f.Function == "" || r.Function == f.Function) && (f.RequestID == "" || r.RequestID == f.RequestID) && (f.Actor == "" || r.Actor == f.Actor) &&
 			(f.Since.IsZero() || !r.At.Before(f.Since)) && (f.Until.IsZero() || r.At.Before(f.Until)) {
 			out = append(out, r)
 		}

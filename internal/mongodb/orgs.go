@@ -568,6 +568,33 @@ func (s *AuthStore) ListOrgInvitations(ctx context.Context, org string) ([]auth.
 	return out, nil
 }
 
+func (s *AuthStore) OrgInvitationsAddressedTo(ctx context.Context, userID, email string) ([]auth.OrgInvitation, error) {
+	var any bson.A
+	if userID != "" {
+		any = append(any, bson.D{{Key: "binding", Value: auth.BindUser}, {Key: "user", Value: userID}})
+	}
+	if email != "" {
+		any = append(any, bson.D{{Key: "binding", Value: auth.BindEmail}, {Key: "email", Value: email}})
+	}
+	if len(any) == 0 {
+		return nil, nil
+	}
+	cur, err := s.orgInvitations().Find(ctx, bson.D{{Key: "$or", Value: any}},
+		options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}))
+	if err != nil {
+		return nil, err
+	}
+	var docs []orgInvitationDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	out := make([]auth.OrgInvitation, len(docs))
+	for i, d := range docs {
+		out[i] = d.invitation()
+	}
+	return out, nil
+}
+
 // pendingOrgInvitation matches the invitations that can still be used at now.
 func pendingOrgInvitation(now time.Time) bson.D {
 	return bson.D{

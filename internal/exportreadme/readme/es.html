@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Tus datos en {{Realm}}</title>
+<style>
+body { font: 16px/1.5 system-ui, sans-serif; max-width: 46rem; margin: 2rem auto; padding: 0 1rem; color: #1b1b1f; }
+code { background: #f1f1f4; padding: 0 .25em; border-radius: 3px; }
+table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+th, td { text-align: left; padding: .35rem .6rem; border-bottom: 1px solid #ddd; vertical-align: top; }
+</style>
+</head>
+<body>
+<h1>Tus datos en {{Realm}}</h1>
+<p>Este archivo contiene los datos que {{Realm}} guarda sobre <strong>{{Email}}</strong>, preparado el {{Generated}}. Son tuyos: puedes conservarlos, leerlos y llevarlos a otro servicio.</p>
+{{#Days}}<p>La copia que {{Realm}} conserva para que la descargues se borra a los {{Days}} días. Este archivo no cambia después.</p>{{/Days}}
+
+<h2>Cómo leerlo</h2>
+<p>Cada archivo <code>.jsonl</code> es un archivo de texto con un registro por línea, escrito en JSON, que pueden leer hojas de cálculo, bases de datos y lenguajes de programación. Las fechas están en UTC, en formato ISO 8601. <code>manifest.json</code> lista cada archivo con su comprobación de integridad (SHA-256).</p>
+
+<h2>Tu cuenta</h2>
+<p>La carpeta <code>_account</code> contiene lo que {{Realm}} guarda sobre tu cuenta.</p>
+<table>
+<tr><th>Archivo</th><th>Qué es</th><th>Registros</th></tr>
+<tr><td><code>account.jsonl</code></td><td>Tu cuenta: correo, idioma, roles, fechas.</td><td>{{Count.account}}</td></tr>
+<tr><td><code>identities.jsonl</code></td><td>Las formas en que inicias sesión (contraseña, proveedores), sin secretos.</td><td>{{Count.identities}}</td></tr>
+<tr><td><code>sessions.jsonl</code></td><td>Tus inicios de sesión: cuándo, durante cuánto y cómo.</td><td>{{Count.sessions}}</td></tr>
+<tr><td><code>devices.jsonl</code></td><td>Dispositivos registrados para notificaciones.</td><td>{{Count.devices}}</td></tr>
+<tr><td><code>mfa.jsonl</code></td><td>Si tienes un segundo factor activado y desde cuándo.</td><td>{{Count.mfa}}</td></tr>
+<tr><td><code>organizations.jsonl</code></td><td>Las organizaciones a las que perteneces, con tus roles y equipos.</td><td>{{Count.organizations}}</td></tr>
+<tr><td><code>invitations.jsonl</code></td><td>Invitaciones dirigidas a ti.</td><td>{{Count.invitations}}</td></tr>
+<tr><td><code>consents.jsonl</code></td><td>Cada consentimiento que diste o retiraste, con su versión y la fecha.</td><td>{{Count.consents}}</td></tr>
+<tr><td><code>audit.jsonl</code></td><td>Hechos registrados sobre tu cuenta: qué, cuándo y quién.</td><td>{{Count.audit}}</td></tr>
+<tr><td><code>invocations.jsonl</code></td><td>Las funciones del servicio que llamaste: cuál, cuándo y cómo terminó.</td><td>{{Count.invocations}}</td></tr>
+</table>
+
+<h2>Tu contenido</h2>
+{{#Collections}}
+<table>
+<tr><th>Archivo</th><th>Registros</th></tr>
+{{#Items}}<tr><td><code>{{Part}}</code></td><td>{{Documents}}</td></tr>
+{{/Items}}
+</table>
+<p>Los documentos que creaste y los que te nombran. {{#Files}}{{Files}} archivo(s) están en las carpetas <code>_files</code>, con el identificador que les dan los documentos.{{/Files}}</p>
+{{/Collections}}
+{{^Collections}}<p>No se guarda contenido tuyo.</p>{{/Collections}}
+
+{{#Exclusions}}
+<h2>Lo que no está en este archivo</h2>
+<table>
+<tr><th>Qué</th><th>Por qué</th></tr>
+{{#List}}<tr><td>{{What}}</td><td>{{Reason}}</td></tr>
+{{/List}}
+</table>
+{{/Exclusions}}
+
+{{#Truncated}}
+<h2>Partes incompletas</h2>
+<p>Estos archivos se detuvieron en un límite, así que no son el historial completo: {{#List}}<code>{{Name}}</code> {{/List}}. Pide a {{Realm}} el resto.</p>
+{{/Truncated}}
+
+<h2>Lo que nunca se incluye</h2>
+<p>Contraseñas y sus comprobaciones, tokens de sesión y de dispositivo, secretos y códigos de recuperación del segundo factor, enlaces de invitación y datos que pertenecen a otras personas.</p>
+<p>Este archivo es una copia de datos, no asesoramiento legal. Si tienes dudas sobre cómo {{Realm}} usa tus datos, consúltalas con {{Realm}}.</p>
+</body>
+</html>

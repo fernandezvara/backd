@@ -282,6 +282,19 @@ type Eraser interface {
 	ClearReference(ctx context.Context, field, value string, limit int, now time.Time) (int64, error)
 }
 
+// Exporter is what exporting a user's personal data needs of a collection's storage: the
+// documents the erasure model finds for them, read in id order in pages, soft-deleted ones
+// included, with no access rules (the scope is the user's own data, not what rules let them
+// read) and encrypted fields opened.
+type Exporter interface {
+	// ScanOwnedAfter returns up to limit documents whose _meta.owner is the user and whose id
+	// sorts after afterID ("" starts from the first).
+	ScanOwnedAfter(ctx context.Context, owner, afterID string, limit int) ([]Document, error)
+	// ScanReferencingAfter does the same for the documents where field (a string, or an
+	// array of strings) holds value.
+	ScanReferencingAfter(ctx context.Context, field, value, afterID string, limit int) ([]Document, error)
+}
+
 // OrgPurger is what deleting an organization (or a team) needs of a collection's storage: its
 // documents, soft-deleted ones included, are counted for the report and removed in batches
 // (call DeleteInOrg or DeleteInTeam until it returns 0). It returns the files of the documents

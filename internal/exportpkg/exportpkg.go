@@ -55,6 +55,16 @@ type Manifest struct {
 	// of the one-time export key their realm-sealed fields are sealed under.
 	Auth    []Collection `json:"auth,omitempty"`
 	AuthKey string       `json:"auth_key_fingerprint,omitempty"`
+	// Subject is the user a personal data export is about; Exclusions lists what it leaves out
+	// and why. Neither is in the export of a realm.
+	Subject    string      `json:"subject,omitempty"`
+	Exclusions []Exclusion `json:"exclusions,omitempty"`
+}
+
+// Exclusion is something a personal data export does not take, with the reason.
+type Exclusion struct {
+	What   string `json:"what"`
+	Reason string `json:"reason"`
 }
 
 // Flags are the package's properties an import has to respect.
@@ -65,6 +75,9 @@ type Flags struct {
 	NoFiles    bool `json:"no_files"`
 	// CSV marks a flat reporting extract: lossy, never importable.
 	CSV bool `json:"csv"`
+	// Personal marks the export of one user's personal data (always partial: it is not a copy of
+	// the realm and is never importable).
+	Personal bool `json:"personal,omitempty"`
 }
 
 // Database is a database of the realm in a package.
