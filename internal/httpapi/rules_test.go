@@ -129,7 +129,7 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 		"acme/app/ztally/collection.yaml":   "organization: required\non_org_delete:\n  action: delete\non_owner_delete:\n  action: delete\n  in_org: apply\n" + rulesSection("read: inOrg(document._meta.org)\ncreate: inOrg(data._meta.org)\n"),
 		// Teams (see orgs_team_documents_test.go).
 		"acme/app/requests/schema.json":     postsSchema,
-		"acme/app/requests/collection.yaml": "organization: required\non_org_delete:\n  action: delete\nteam: required\non_team_delete:\n  action: delete\n" + rulesSection("read: inTeam(document._meta.team) || hasTeamRole(document._meta.team, 'manager') || hasOrgRole(document._meta.org, 'owner')\ncreate: inOrg(data._meta.org) && inTeam(data._meta.team)\nupdate: hasTeamRole(document._meta.team, 'manager')\ndelete: hasTeamRole(document._meta.team, 'manager')\n"),
+		"acme/app/requests/collection.yaml": "organization: required\non_org_delete:\n  action: delete\nteam: required\non_team_delete:\n  action: delete\naggregate:\n  group_by: [_meta.team]\n" + rulesSection("read: inTeam(document._meta.team) || hasTeamRole(document._meta.team, 'manager') || hasOrgRole(document._meta.org, 'owner')\ncreate: inOrg(data._meta.org) && inTeam(data._meta.team)\nupdate: hasTeamRole(document._meta.team, 'manager')\ndelete: hasTeamRole(document._meta.team, 'manager')\n"),
 		"acme/app/memos/schema.json":        postsSchema,
 		"acme/app/memos/collection.yaml":    "organization: optional\non_org_delete:\n  action: keep\nteam: optional\non_team_delete:\n  action: keep\n" + rulesSection("read: user != nil\ncreate: user != nil\n"),
 		"acme/app/plans/schema.json":        postsSchema,

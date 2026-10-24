@@ -292,3 +292,36 @@ func (s *Users) SweepTeamRoles(ctx context.Context) (int64, error) {
 	}
 	return s.Store.PurgeExpiredTeamRoles(ctx, s.now().Add(-TeamRoleHistory))
 }
+
+// NextAccessChange is the next moment after now at which what the user's organization and team
+// role grants give them changes by the clock alone: the earliest `from` or `until` of any of their
+// grants that is still ahead. Zero when no grant has a boundary ahead. Nothing runs at that moment;
+// a realtime stream that wants to show the change at the second asks again then (design/team-access.md
+// §5). It reads the memberships as a request does.
+func (s *Users) NextAccessChange(ctx context.Context, userID string) (time.Time, error) {
+	if _, err := s.orgs(); err != nil {
+		return time.Time{}, nil // no organizations: no windows
+	}
+	mems, err := s.MyOrgs(ctx, userID)
+	if err != nil {
+		return time.Time{}, err
+	}
+	now := s.now()
+	var next time.Time
+	consider := func(t time.Time) {
+		if t.After(now) && (next.IsZero() || t.Before(next)) {
+			next = t
+		}
+	}
+	for _, m := range mems {
+		for _, g := range m.Member.Roles {
+			consider(g.From)
+			consider(g.Until)
+		}
+		for _, g := range m.Member.TeamRoles {
+			consider(g.From)
+			consider(g.Until)
+		}
+	}
+	return next, nil
+}

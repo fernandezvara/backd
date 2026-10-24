@@ -40,6 +40,11 @@ type Access struct {
 	UsesConfig bool
 	// Expires is when the credential stops being good; zero: never.
 	Expires time.Time
+	// NextChange is the next moment at which what the caller's role grants give them changes by
+	// the clock alone (a window of a team role opening or closing); zero: none. Nothing happens
+	// then in the database, so the stream reads its access again at that moment instead of
+	// waiting for the periodic read.
+	NextChange time.Time
 	// Reload reads the caller's access again and returns what each subscription (by id) shows
 	// now. Ended means the credential is no longer valid.
 	Reload func(ctx context.Context) (Reloaded, error)
@@ -51,7 +56,9 @@ type Reloaded struct {
 	Fingerprint string
 	Orgs        []string
 	Expires     time.Time
-	Subs        map[string]Visibility
+	// NextChange is Access.NextChange, as the access is now.
+	NextChange time.Time
+	Subs       map[string]Visibility
 }
 
 // Visibility is what decides, after a reload, what a subscription shows.
@@ -224,6 +231,7 @@ func (s *Stream) applyReload(res Reloaded, err error) {
 		return
 	}
 	moved := s.access.Fingerprint != res.Fingerprint
+	s.access.NextChange = res.NextChange
 	s.access.Orgs = res.Orgs
 	s.access.Fingerprint = res.Fingerprint
 	if !res.Expires.IsZero() {
@@ -244,6 +252,7 @@ func (s *Stream) applyReload(res Reloaded, err error) {
 		changed = append(changed, sub.ID)
 	}
 	s.mu.Unlock()
+	s.armBoundary(res.NextChange)
 	if moved {
 		// What the caller may read of the configuration can depend on their roles and consents.
 		s.configRefresh()
@@ -337,12 +346,33 @@ func (s *Stream) startExpiry() {
 	arm(exp)
 }
 
-// startRefresh reads the access again every RefreshEvery: what ends by the clock (a role's
-// window, a rule that reads `now`) has no change to report.
+// boundarySlack is how long after a window's boundary the stream reads its access: the boundary
+// is a second of the clock, and the read must be after it on every instance.
+const boundarySlack = 100 * time.Millisecond
+
+// armBoundary reads the access again at the next moment a role grant's window opens or closes
+// (design/team-access.md §5), replacing the timer of the one before. Zero: no boundary ahead.
+func (s *Stream) armBoundary(at time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.boundary != nil {
+		s.boundary.Stop()
+		s.boundary = nil
+	}
+	if at.IsZero() || s.closed || s.ending {
+		return
+	}
+	s.boundary = time.AfterFunc(max(at.Sub(s.hub.now()), 0)+boundarySlack, s.reload)
+}
+
+// startRefresh reads the access again every RefreshEvery: what ends by the clock and has no
+// boundary to tell (a rule that reads `now`) has no change to report. A role grant's window is
+// read at its boundary (armBoundary).
 func (s *Stream) startRefresh() {
 	if s.access == nil || s.access.Reload == nil {
 		return
 	}
+	s.armBoundary(s.access.NextChange)
 	every := s.hub.RefreshEvery
 	if every == 0 {
 		every = 5 * time.Minute
