@@ -6,6 +6,10 @@ Until a stable release is declared, a minor release may have breaking changes; t
 
 ## Unreleased
 
+### Breaking
+
+- **A realm keeps its content and configuration in `_realm/`:** `email`, `pages`, `push`, `consents`, `compliance` and `app-config` move from the top of the realm into `<realm>/_realm/` (`app-config` becomes `_realm/config`); `realm.yaml` stays where it is. A realm laid out the old way does not load: the error names each folder and where to move it. Any other folder starting with `_` is now an error (a realm has only `_realm`, a database only `_functions`), and every other folder of a realm is a database, so no name is reserved any more. `backd template` writes the new layout. See [the data model](https://fernandezvara.github.io/backd/docs/build/configuration/config-dir/).
+
 ### Added
 
 - **Shelf profiles live at the user's id (tutorial chapter 21):** `profiles` declares `custom_id: user`, so a profile is at `/v1/shelf/main/profiles/<user id>` and there is at most one per person without an index; the `author` reference expands from `_meta.owner` with the default `key: id`, replacing the `key: _meta.owner` recipe, and the unique index on `_meta.owner` is gone. A stack that ran the earlier chapter keeps profiles with generated ids and the old index until you recreate them.
