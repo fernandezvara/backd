@@ -14,10 +14,9 @@ Shelf now holds a lot about its members: their assets and pins, their files, pri
 
 ## A second required consent
 
-[Chapter 17](../17-consents/) made the terms a consent. The privacy notice is another one, with its text in a file:
+[Chapter 17](../17-consents/) made the terms a consent. The privacy notice is another one, with its text in a file. Replace the `consents` of `config/shelf/realm.yaml` with:
 
 ```yaml
-# config/shelf/realm.yaml
 consents:
   terms:
     required: true
@@ -47,7 +46,7 @@ Restart `backd`. A sign-up that ticks the terms but not the privacy notice is `4
 
 ## Let members download their data
 
-Turn the export on in `realm.yaml`:
+Add this to `config/shelf/realm.yaml` too:
 
 ```yaml
 compliance:
