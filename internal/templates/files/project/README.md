@@ -61,7 +61,7 @@ AGENTS.md                      repo guide for AI coding assistants
    deno test config/__REALM__/__DATABASE__/_functions/
    ```
 
-   `_functions/lib/testing.js` is a fake `ctx` (vendored from `@backd/functions-testing`, not yet published): `ctx.db` is an in-memory store shaped like the JS client. See `stats/index.test.ts` for the pattern, and its header comment for what it does and doesn't cover.
+   `_functions/lib/testing.js` is a fake `ctx` (vendored from `clients/functions-testing` in the backd repository): `ctx.db` is an in-memory store shaped like the JS client. See `stats/index.test.ts` for the pattern, and its header comment for what it does and doesn't cover.
 
 5. Call the sample function directly:
 
