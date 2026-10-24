@@ -57,7 +57,7 @@ toc: true
 | | `make example` | `make dev` / `make dev-examples` |
 |---|---|---|
 | For | Working **on** backd: you change the Go code, the admin UI, the docs or the client | Building **with** backd: you write realms, rules and functions |
-| Images | Built from your checkout every time it needs to | Released `ghcr.io/fernandezvara/backd-executor` (`BACKD_VERSION`, `latest` by default); only `make dev-build` pulls |
+| Images | Built from your checkout every time it needs to | Released `ghcr.io/fernandezvara/backd-executor` (`BACKD_VERSION`, `latest` by default); `BACKD_VERSION=local` builds them from your checkout with `make dev-build` |
 | Config | `examples/config` | `./config` (`CONFIG_DIR`), or the examples with `make dev-examples`; mounted read-write, followed live |
 | Worker | Folded into the API (`serve --with-worker`) | Its own service (`WORKERS=3 make dev`) that follows the config like the API |
 | Docs | Served from `docs/` with live reload | The online site |

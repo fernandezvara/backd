@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/fernandezvara/backd/internal/email"
+	"github.com/fernandezvara/backd/internal/exportreadme"
 	"github.com/fernandezvara/backd/internal/push"
 	"github.com/fernandezvara/backd/internal/registry"
 )
@@ -88,8 +89,19 @@ func Realm(configDir, realm string, sample bool) ([]File, error) {
 		}
 		out = append(out, more...)
 	}
+	// The README of a personal data export, in English: used once the realm sets
+	// `compliance.export`. Edit it to say what your users should know, or add one per language.
+	readme, ok := exportreadme.DefaultReadme(exportreadme.DefaultReadmeLocale)
+	if !ok {
+		return out, errors.New("the built-in README template is missing")
+	}
+	more, err := writeBytes(configDir, realm+"/"+exportreadme.ReadmeDirName+"/"+exportreadme.DefaultReadmeLocale+".html", readme)
+	if err != nil {
+		return out, err
+	}
+	out = append(out, more...)
 	// An example push template, used once the realm configures `push:`.
-	more, err := write(configDir, realm+"/"+push.DirName+"/example/en.yaml", "files/push/example.yaml")
+	more, err = write(configDir, realm+"/"+push.DirName+"/example/en.yaml", "files/push/example.yaml")
 	if err != nil {
 		return out, err
 	}

@@ -553,6 +553,24 @@ await backd.consents.withdraw('marketing');          // optional consents only
 - **After a `reaccept_by` date**, a request of a user who hasn't accepted throws a `ConsentRequiredError` (`403`): show the prompt and send `client.consents.accept(...)`, which stays open for them.
 - **Sign-ups through a magic link or a provider** take `consents` as an option (`auth.magicLink.request(email, consents: …)`, `auth.signInWith(provider, consents: …)`, `auth.signInWithIdToken(provider, …, consents: …)`); a new account made without them gets the challenge at its first sign-in.
 
+## Your own data
+
+`client.account` lets the signed-in user download a copy of everything the realm holds about them, when the realm sets [`compliance.export`](../../auth/personal-data/). Asking needs a fresh [proof](../../auth/reauth/); the rest only the session.
+
+```dart
+await backd.auth.reauth('password', password: password);
+final job = await backd.account.requestExport();          // {id, status: 'queued', …}
+final ready = await backd.account.waitForExport('${job['id']}',
+    onProgress: (e) => show(e['step']));
+final download = await backd.account.downloadExport('${ready['id']}');
+await File('my-data.zip').writeAsBytes(await download.bytes());
+// download.url is a link signed for five minutes, to open in a browser
+```
+
+- **`requestExport()`** is limited to one every 24 hours: a second is a `RetryableError` (`429`) whose `retryAfter` says how long to wait. A realm that does not export answers `NotFoundError`; a missing proof, `reauth_required`.
+- **`exports()`** lists the user's exports (newest first), **`export(id)`** reads one (`step` says what it is doing), and **`waitForExport(id)`** polls until it is `ready` and throws a `StateError` for a `failed` or `expired` one (`pollInterval`, `timeout`, `onProgress`).
+- **`downloadExport(id)`** asks for JSON so a page can use the link: `url` is signed for a few minutes (no credentials go to the storage) and `bytes()` reads it. A realm whose storage clients cannot reach sends the zip through the API instead, and `bytes()` reads that. `409` until it is ready, `410` once expired.
+
 ## App configuration
 
 `client.config` reads the realm's [app configuration](../../configuration/app-config/): feature flags, maintenance switches, limits. The server answers only what the signed-in user's rules allow, with defaults filled in.
@@ -569,6 +587,13 @@ backd.config.changes.listen((paths) => rerender(paths));
 - **Where copies live:** per realm and per user, in memory by default; `configStorage` takes any object with `getItem`, `setItem` and `removeItem` (a Flutter app passes a `SharedPreferences`-backed one). The copy of an app that has just restarted is restored by the first `load()`.
 - **Clearing:** sign-out and signing in as another user drop every copy of the realm, so the next person on the same device never sees the previous user's keys. `client.config.clear()` drops them on demand.
 - **`changes`** is a `Stream<List<String>>` of the dot paths whose value changed when a read brings a different configuration.
+- **`live([paths])`** follows the configuration over the client's [realtime stream](../../api/realtime/#following-the-configuration), so `changes` fires within the realtime delay instead of at the next expiry. It reads again only the branches you hold that the event touches, with `If-None-Match`, and whenever the stream opens or reopens it revalidates everything held, so a change made while it was down is not missed. It returns a function that stops following, and follows the signed-in user: signing in or out opens the stream again with the new credential. If the realm declares no configuration, or realtime is off, the error arrives on the `errors` stream.
+
+```dart
+final stop = backd.config.live(['maintenance']);
+backd.config.changes.listen((paths) => rerender(paths));
+backd.config.errors.listen((e) => print('no live updates: $e'));
+```
 
 ## Typed client
 

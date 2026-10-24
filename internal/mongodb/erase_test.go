@@ -295,3 +295,60 @@ func TestFileReferencesAreFoundByID(t *testing.T) {
 		t.Error("a file nobody holds was found")
 	}
 }
+
+// The export reads what the erasure model finds for a user: what they own and where they are
+// referenced, in id order and in pages, whoever may read it.
+func TestExporterOnMongoDB(t *testing.T) {
+	_, repo, ctx := eraseFixture(t)
+	ex := repo.(storage.Exporter)
+	var mine []string
+	for i := range 5 {
+		d := ownedDoc("u1", map[string]any{"buyer_name": "Ada", "total": int64(i)})
+		mine = append(mine, d["id"].(string))
+		if err := repo.Create(ctx, d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, d := range []storage.Document{
+		ownedDoc("u2", map[string]any{"buyer_name": "Bob", "members": []any{"ada@example.com", "bob@example.com"}, "paid_by": "u1"}),
+		ownedDoc("u2", map[string]any{"buyer_name": "Bob", "members": []any{"bob@example.com"}, "paid_by": "u2"}),
+	} {
+		if err := repo.Create(ctx, d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	slices.Sort(mine)
+
+	// Pages follow each other by id and end empty.
+	var got []string
+	after := ""
+	for {
+		page, err := ex.ScanOwnedAfter(ctx, "u1", after, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page) == 0 {
+			break
+		}
+		for _, d := range page {
+			got = append(got, d["id"].(string))
+		}
+		after = page[len(page)-1]["id"].(string)
+	}
+	if !slices.Equal(got, mine) {
+		t.Errorf("owned = %v, want %v", got, mine)
+	}
+
+	// An array field and a plain field are both found by equality.
+	inArray, err := ex.ScanReferencingAfter(ctx, "members", "ada@example.com", "", 10)
+	if err != nil || len(inArray) != 1 || inArray[0]["buyer_name"] != "Bob" {
+		t.Errorf("array reference: %v %v", inArray, err)
+	}
+	plain, err := ex.ScanReferencingAfter(ctx, "paid_by", "u1", "", 10)
+	if err != nil || len(plain) != 1 {
+		t.Errorf("plain reference: %v %v", plain, err)
+	}
+	if none, _ := ex.ScanOwnedAfter(ctx, "nobody", "", 10); len(none) != 0 {
+		t.Errorf("a stranger owns %v", none)
+	}
+}

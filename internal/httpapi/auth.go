@@ -92,6 +92,7 @@ func (a *authAPI) routes(r chi.Router) {
 			r.Get("/devices", a.devices)
 			r.Delete("/devices/{id}", a.removeDevice)
 			r.Delete("/sessions/{id}", a.revokeSession)
+			a.exportRoutes(r)
 		})
 	})
 }

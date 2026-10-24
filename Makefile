@@ -109,8 +109,10 @@ example:
 	scripts/example.sh
 
 # The development stack for people building ON backd: released images, your own ./config
-# (CONFIG_DIR), live reload, the API and the worker apart, Prometheus and Grafana. Nothing is
-# built; `make dev-build` pulls the images and makes the certificates once. docker-compose.dev.yml.
+# (CONFIG_DIR), live reload, the API and the worker apart, Prometheus and Grafana, and this
+# checkout's documentation on /docs/ (live reload too). `make dev-build` pulls the images, builds
+# the docs site's and makes the certificates once; with BACKD_VERSION=local it builds backd's
+# image from the checkout instead of pulling it. docker-compose.dev.yml.
 dev-build:
 	scripts/dev.sh build
 

@@ -739,6 +739,123 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_auth/me/export:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Ask for a copy of the user's personal data
+      description: |
+        Queues the export of everything the realm holds about the signed-in user (design: access and
+        portability). Needs a fresh [re-authentication](#tag/auth) (`X-Backd-Reauth`), and the realm
+        must set `compliance.export: true` (`404` otherwise). A user may ask once every 24 hours:
+        `429` with `Retry-After`; an export that failed does not count.
+
+        The export is built in the background as a **zip** (the [export package](#tag/auth) layout:
+        `manifest.json`, `<db>/<collection>.jsonl`, `<db>/_files/`, `_account/*.jsonl` and a
+        `README.html` in the user's language). When it is ready the user is emailed a link to the app's
+        download page (`compliance.export_page`), never to the file; the package is deleted after
+        `compliance.export_retention` (7 days by default). Poll `GET /_auth/me/exports/{id}`, or wait
+        for the email.
+      operationId: requestExport
+      security: [{ session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
+      responses:
+        "202":
+          description: The export was queued.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DataExport" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/me/exports:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [auth]
+      summary: The user's exports
+      description: |
+        The exports the user asked for, newest first, with their state and when each expires. Those an
+        administrator made on their behalf are not listed: the package went to the administrator.
+      operationId: listExports
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: Exports.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/DataExport" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/me/exports/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [auth]
+      summary: One export, for a page that waits for it
+      description: While it is queued or running, `step` names what it is doing.
+      operationId: getExport
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The export.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DataExport" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/me/exports/{id}/download:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [auth]
+      summary: Download a ready export
+      description: |
+        Redirects (`302`) to a signed link to the package that works for five minutes. A page that
+        fetches the API cannot follow a redirect to another origin: with `Accept: application/json` the
+        answer is `200` with the link instead. In a realm whose files are proxied (the storage is not
+        reachable by its clients) backd sends the zip itself, with `Content-Disposition: attachment`.
+        `409` while the export is not ready, `410` once it has expired. Each download is audited.
+      operationId: downloadExport
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The link as JSON (or the zip itself, when files are proxied).
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [url, expires_at]
+                properties:
+                  url: { type: string }
+                  expires_at: { $ref: "#/components/schemas/Timestamp" }
+            application/zip:
+              schema: { type: string, format: binary }
+        "302":
+          description: The signed link, in `Location`.
+          headers:
+            Location: { schema: { type: string } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "410": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_auth/password:
     parameters: [{ $ref: "#/components/parameters/realm" }]
     post:
@@ -4293,6 +4410,141 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/users/{id}/export:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    post:
+      tags: [admin]
+      summary: Export a user's personal data on their behalf
+      description: |
+        Produces, for a formal request, the same package the user can ask for themselves (see
+        `POST /_auth/me/export`): the documents the erasure model finds for them, their files, the
+        system data about them, a manifest and a `README.html`. The package goes to the administrator,
+        who downloads it with `GET /_admin/users/{id}/exports/{export}/download`; it is deleted after
+        `compliance.export_retention`.
+
+        The user is told by email (`data-export-made`) unless `no_notify` is true, which needs a
+        `reason` that is kept in the audit record: such exports are audited as
+        `user.data_export_requested_silently`, apart from those the user was told about
+        (`user.data_export_requested`). `ticket` is the reference of the request (a support ticket).
+
+        Needs **full admin access** and, for a signed-in administrator, a fresh
+        [re-authentication](#tag/auth) (`X-Backd-Reauth`). `404` when the realm does not export
+        (`compliance.export`), `409` for an erased user, or while another export of the user is
+        queued or running.
+      operationId: adminExportUser
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                ticket: { type: string, maxLength: 200 }
+                no_notify: { type: boolean, description: "Do not tell the user. Requires `reason`." }
+                reason: { type: string, maxLength: 500, description: "Why the user is not told; only with `no_notify`." }
+      responses:
+        "202":
+          description: The export was queued.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminDataExport" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/users/{id}/exports:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    get:
+      tags: [admin]
+      summary: A user's exports
+      description: |
+        All the exports of the user, newest first: those they asked for and those made for them, with
+        who asked, whether the user was told and, for a silent one, the reason. Needs the `users` area.
+      operationId: adminUserExports
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: Exports.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/AdminDataExport" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/users/{id}/exports/{export}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+      - { name: export, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [admin]
+      summary: One export, for a client that waits for it
+      description: While it is queued or running, `step` names what it is doing. Needs the `users` area.
+      operationId: adminUserExport
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The export.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminDataExport" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/users/{id}/exports/{export}/download:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+      - { name: export, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [admin]
+      summary: Download an export made for the user
+      description: |
+        The zip, through the API (never a link to the storage). Needs **full admin access** and a fresh
+        re-authentication, as making it did; audited as `user.data_export_downloaded` with who took it.
+        Only the exports an administrator made: what the user asked for themselves is theirs to
+        download (`403`). `409` until it is ready, `410` once it has expired.
+      operationId: adminDownloadUserExport
+      security: [{ apiKey: [] }, { session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
+      responses:
+        "200":
+          description: The package.
+          headers: { Content-Disposition: { schema: { type: string } } }
+          content:
+            application/zip:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "410": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/users/{id}/mfa:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -5855,6 +6107,9 @@ paths:
         this caller), `reset` (`{subs, reason}`: reload those subscriptions; `reason` is
         `history_expired`, `access_changed`, `slow_consumer`, `preimage_missing` or
         `config_changed`, after which the subscription is gone and must be made again),
+        `config_changed` (`{id, version, paths}`: on a `config` subscription, the keys of the
+        app configuration whose value this caller reads differently now; an empty `paths`
+        means read it all again; never resumed or replayed),
         `session_ended` (the session, user or key is gone) and `reauth` (the credential's
         lifetime is over), both followed by the stream closing, and comments (`: heartbeat`). Each change's last event carries an SSE `id`, a signed resume
         token bound to this realm and caller: send it as `resume_from` (or `Last-Event-ID`)
@@ -5882,11 +6137,18 @@ paths:
                   items:
                     type: object
                     additionalProperties: false
-                    required: [id, db, collection]
+                    required: [id]
+                    description: "Either `db` and `collection` (a collection that declares `realtime: true`) or `config` (the realm's app configuration), not both."
                     properties:
                       id: { type: string, maxLength: 64, description: "Names the subscription in events; unique in the request." }
                       db: { type: string }
                       collection: { type: string }
+                      config:
+                        type: object
+                        additionalProperties: false
+                        description: "Follow the realm's app configuration. At most one per stream; counts toward the subscription limit."
+                        properties:
+                          paths: { type: array, items: { type: string }, description: "Configuration keys or branches to follow; default everything the caller may read." }
                       where: { type: object, description: "A filter, as in a list's `where`, limited to the operators listed above." }
                       doc: { type: string, description: "Follow one document by id instead of a filter." }
                 resume_from: { type: string, description: "A resume token from a previous stream." }
@@ -10332,6 +10594,42 @@ components:
             given_name: { type: string }
             family_name: { type: string }
             picture: { type: string, description: A URL. }
+
+    DataExport:
+      type: object
+      required: [id, status, created_at]
+      properties:
+        id: { type: string }
+        status:
+          type: string
+          enum: [queued, running, ready, failed, expired]
+          description: "`ready` can be downloaded until `expires_at`; `failed` may be asked for again at once."
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        finished_at: { $ref: "#/components/schemas/Timestamp" }
+        expires_at: { $ref: "#/components/schemas/Timestamp", description: "When the package is deleted (ready only)." }
+        size: { type: integer, description: "Bytes of the zip (ready only)." }
+        counts:
+          type: object
+          additionalProperties: { type: integer }
+          description: "What the package holds (ready only): records per part, and `files`."
+        step: { type: string, description: "What it is doing now (queued or running only, on `GET /_auth/me/exports/{id}`)." }
+
+    AdminDataExport:
+      description: A data export as an administrator sees it.
+      allOf:
+        - { $ref: "#/components/schemas/DataExport" }
+        - type: object
+          required: [user, requested_by, downloads]
+          properties:
+            user: { type: string }
+            requested_by: { type: string, description: "`user`, or the administrator who made it." }
+            downloads: { type: integer }
+            ticket: { type: string }
+            silent: { type: boolean, description: "The user was not told." }
+            reason: { type: string, description: "Why the user was not told (silent only)." }
+            error: { type: string, description: "Why it failed (failed only)." }
+            notified: { type: boolean, description: "On creation: the user was sent `data-export-made`." }
+            notify_error: { type: string, description: "On creation: why the email could not be queued." }
 
     SessionInfo:
       type: object

@@ -8,11 +8,11 @@ toc: true
 
 ## The development stack
 
-The repository includes a development stack for building **on** backd: released images, your own configuration, nothing to build. You need Docker (or Podman with `podman-compose`) and the repository checkout, because the stack's files live in it.
+The repository includes a development stack for building **on** backd: released images, your own configuration, and the documentation of your checkout. You need Docker (or Podman with `podman-compose`) and the repository checkout, because the stack's files live in it.
 
 ```sh
-make dev-build     # once: pulls the images, makes the local CA and certificate, creates ./config
-make dev           # starts everything (nothing is pulled or built), prints the addresses, follows the logs
+make dev-build     # once: pulls the images, builds the docs site's, makes the local CA and certificate, creates ./config
+make dev           # starts everything (nothing is pulled), prints the addresses, follows the logs
 ```
 
 `make dev-build` pulls `ghcr.io/fernandezvara/backd-executor:latest` and the other images, and creates a starter configuration in `./config` (a realm `app` with a sample `blog` database) if you have none. Ctrl-C stops the stack and keeps its data.
@@ -23,11 +23,12 @@ make dev           # starts everything (nothing is pulled or built), prints the 
 | `https://localhost:8443/local-seed/` | The `local-seed/` files the page reads (`stack.json`, `credentials.json`) — gitignored, localhost only |
 | `https://localhost:8443/v1/…`, `/healthz`, `/readyz` | `backd`'s API, for the realms in your config |
 | `https://localhost:8443/_ui/` | The [admin web interface](../../operate/administration/admin-ui/) |
+| `https://localhost:8443/docs/` | The documentation of this checkout, with live reload: edit a page in `docs/` (or an example it quotes) and the open page reloads. The first start downloads Hugo's theme, so give it a minute |
 | `http://localhost:3000` | Grafana, with backd's [dashboards](../../operate/metrics/#dashboards) |
 | `http://localhost:9090` | Prometheus |
 | `http://localhost:9001` | The MinIO console (`backd-dev` / `dev-p4ssw0rd!`), for [files](../../build/files/) |
 
-Plain `http://localhost:8080` redirects to HTTPS. The stack runs MongoDB, the API, a **worker** of its own, the functions executor, egress, MinIO, Prometheus, Grafana and nginx. The documentation is the [online site](https://fernandezvara.github.io/backd/); the stack serves none.
+Plain `http://localhost:8080` redirects to HTTPS. The stack runs MongoDB, the API, a **worker** of its own, the functions executor, egress, MinIO, Prometheus, Grafana, the documentation site (Hugo) and nginx. With `make dev-examples` the pages also link to the example apps.
 
 ### Your configuration, live
 
@@ -65,13 +66,14 @@ In Grafana, the *Processes* dashboard shows the API, the workers, the executor a
 
 `BACKD_VERSION` pins the images (`BACKD_VERSION=v0.9.0 make dev-build`); the default is `latest`. The stack is for localhost and development: dev mode, fixed dev-only tokens and an open Grafana. Never use it for a deployment (see [Production deployment](../../operate/production/)).
 
-To test the stack against a build of your checkout instead of a release, build the executor image and name it `local`:
+To test the stack against a build of your checkout instead of a release, use the version `local`. `make dev-build` builds the executor image from the checkout (a snapshot of the Go code at that moment: run it again after you change code) and pulls the other images:
 
 ```sh
-docker build -f docker/executor/Dockerfile -t ghcr.io/fernandezvara/backd-executor:local .
-BACKD_VERSION=local make dev-build     # pulls the other images, not this one
-BACKD_VERSION=local make dev
+BACKD_VERSION=local make dev-build
+BACKD_VERSION=local make dev-examples
 ```
+
+The examples follow the code, so they need this when they use something newer than the last release; the stack says so if the released image refuses the configuration.
 
 `docker-compose.dev.yml` is checked by `make dev` itself: change it, run the stack, and check the API (`/readyz`), the worker (stop it and see a job stay `queued`), a change to a function while it runs, and `make dev-down` and `make dev-reset` leaving nothing behind.
 

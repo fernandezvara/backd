@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestComplianceScope(t *testing.T) {
@@ -80,4 +82,71 @@ func TestConsentsRecord(t *testing.T) {
 		t.Errorf("request: %s %v", path, got)
 	}
 	c.expect(2, "", "evidence", "consents", "record", "--realm", "acme", "--email", "ada@example.com", "--consent", "marketing", "--action", "withdrawn", "--url", srv.URL)
+}
+
+func TestUserExport(t *testing.T) {
+	var asked map[string]any
+	polls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		const user = "/v1/acme/_admin/users/u1"
+		switch {
+		case r.Method == "GET" && r.URL.Path == "/v1/acme/_admin/users":
+			_, _ = w.Write([]byte(`{"items":[{"id":"u1","email":"ada@example.com"}]}`))
+		case r.Method == "POST" && r.URL.Path == user+"/export":
+			asked = nil
+			_ = json.NewDecoder(r.Body).Decode(&asked)
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"id":"e1","status":"queued","silent":` + map[bool]string{true: "true", false: "false"}[asked["no_notify"] == true] + `,"notified":` + map[bool]string{true: "false", false: "true"}[asked["no_notify"] == true] + `}`))
+		case r.Method == "GET" && r.URL.Path == user+"/exports/e1":
+			polls++
+			if polls < 2 {
+				_, _ = w.Write([]byte(`{"id":"e1","status":"running","step":"Export: documents app/orders"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"id":"e1","status":"ready","expires_at":"2026-10-31T00:00:00Z","size":12}`))
+		case r.Method == "GET" && r.URL.Path == user+"/exports/e1/download":
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write([]byte("PK-the-package"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	exportPoll = time.Millisecond
+	t.Cleanup(func() { exportPoll = 2 * time.Second })
+	dir := t.TempDir()
+	c := &cliEnv{t: t, env: map[string]string{"BACKD_CREDENTIALS": filepath.Join(dir, "credentials"), "BACKD_API_KEY": "bdk_x"}}
+
+	out := filepath.Join(dir, "ada.zip")
+	c.expect(0, "wrote "+out, "", "user", "export", "--realm", "acme", "--email", "ada@example.com", "--ticket", "REQ-9", "--out", out, "--url", srv.URL)
+	if asked["ticket"] != "REQ-9" || asked["no_notify"] != nil {
+		t.Errorf("request = %v", asked)
+	}
+	if b, err := os.ReadFile(out); err != nil || string(b) != "PK-the-package" {
+		t.Errorf("file = %q %v", b, err)
+	}
+	// Never over a file that is there.
+	c.expect(1, "", "never overwritten", "user", "export", "--realm", "acme", "--email", "ada@example.com", "--out", out, "--url", srv.URL)
+	if b, _ := os.ReadFile(out); string(b) != "PK-the-package" {
+		t.Errorf("the existing file was changed: %q", b)
+	}
+
+	// Not telling the user needs the reason, checked before anything is asked.
+	asked = nil
+	c.expect(1, "", "--no-notify needs --reason", "user", "export", "--realm", "acme", "--email", "ada@example.com", "--no-notify", "--url", srv.URL)
+	if asked != nil {
+		t.Errorf("a request was made without the reason: %v", asked)
+	}
+	c.expect(1, "", "--reason only goes with --no-notify", "user", "export", "--realm", "acme", "--email", "ada@example.com", "--reason", "x", "--url", srv.URL)
+	polls = 0
+	silent := filepath.Join(dir, "silent.zip")
+	c.expect(0, "wrote "+silent, "", "user", "export", "--realm", "acme", "--email", "ada@example.com", "--no-notify", "--reason", "fraud inquiry", "--out", silent, "--url", srv.URL)
+	if asked["no_notify"] != true || asked["reason"] != "fraud inquiry" {
+		t.Errorf("silent request = %v", asked)
+	}
+
+	// --no-wait prints the id; the package is fetched later.
+	c.expect(0, "e1", "", "user", "export", "--realm", "acme", "--email", "ada@example.com", "--no-wait", "--url", srv.URL)
+	later := filepath.Join(dir, "later.zip")
+	c.expect(0, "wrote "+later, "", "user", "export-download", "--realm", "acme", "--email", "ada@example.com", "--export", "e1", "--out", later, "--url", srv.URL)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -163,6 +164,34 @@ func TestAuthStoreOrgInvitations(t *testing.T) {
 	list, _ := s.ListOrgInvitations(ctx, "o1")
 	if len(list) != 2 {
 		t.Errorf("list: %d", len(list))
+	}
+	// The invitations that name a user, or an address, whichever organization made them.
+	bound := func(id, org, binding, user, email string) auth.OrgInvitation {
+		i := inv(id, "hb-"+id, 1)
+		i.Org, i.Binding, i.User, i.Email = org, binding, user, email
+		return i
+	}
+	for _, i := range []auth.OrgInvitation{
+		bound("b1", "o1", auth.BindUser, "u7", ""),
+		bound("b2", "o2", auth.BindEmail, "", "ada@example.com"),
+		bound("b3", "o2", auth.BindEmail, "", "bob@example.com"),
+		bound("b4", "o2", auth.BindUser, "u8", ""),
+	} {
+		if err := s.CreateOrgInvitation(ctx, i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	addressed, err := s.OrgInvitationsAddressedTo(ctx, "u7", "ada@example.com")
+	var addressedIDs []string
+	for _, a := range addressed {
+		addressedIDs = append(addressedIDs, a.ID)
+	}
+	slices.Sort(addressedIDs)
+	if err != nil || !slices.Equal(addressedIDs, []string{"b1", "b2"}) {
+		t.Errorf("addressed: %v %v", addressedIDs, err)
+	}
+	if none, _ := s.OrgInvitationsAddressedTo(ctx, "", ""); len(none) != 0 {
+		t.Errorf("addressed to nobody: %v", none)
 	}
 	if err := s.CreateOrg(ctx, auth.Org{ID: "o1", Name: "x", Status: auth.OrgActive, CreatedAt: now, UpdatedAt: now}, auth.OrgMember{Org: "o1", User: "u1", JoinedAt: now}); err != nil {
 		t.Fatal(err)

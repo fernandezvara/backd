@@ -59,6 +59,7 @@ data: {"subs":["mine"],"reason":"slow_consumer"}
 | `updated` | A document that was in the subscription changed. |
 | `removed` | A document left it: it was deleted, or an update made it invisible to this caller. Carries only the `id` and the last `version`. |
 | `reset` | Reload these subscriptions with normal reads (see below). |
+| `config_changed` | What the caller reads of the [app configuration](../../configuration/app-config/) changed. Only on a stream with a [`config` subscription](#following-the-configuration). |
 | `session_ended` | The session, user or API key behind the stream is gone (signed out, revoked, deleted, disabled). The stream closes; sign in again. |
 | `reauth` | The credential's lifetime is over. The stream closes; reconnect with a fresh credential and the last resume token. |
 | `: heartbeat` | A comment every 25 seconds so proxies keep the connection open. |
@@ -77,6 +78,30 @@ data: {"subs":["mine"],"reason":"slow_consumer"}
 | `doc` | Follow one document by id instead of a filter. |
 
 `order_by`, `limit`, `page` and `expand` are not part of a stream: ordering and loading belong to the client.
+
+## Following the configuration
+
+A subscription with `config` instead of `db` and `collection` follows the realm's [app configuration](../../configuration/app-config/#live-updates). It needs a realm that declares one, not a `realtime: true` collection, and may be the only subscription of the stream. A stream has at most one, and it counts toward the limit of subscriptions.
+
+```json
+{ "subscriptions": [{ "id": "cfg", "config": { "paths": ["maintenance", "features"] } }] }
+```
+
+| Field | |
+|---|---|
+| `config.paths` | Optional branches or keys to follow, as in `GET /_config?paths=`. Default: everything the caller may read. Unknown keys answer `400 invalid_query`. |
+
+When the configuration changes, or the caller's roles or consents do, the stream sends:
+
+```
+event: config_changed
+data: {"id":"cfg","version":"c42","paths":["maintenance.enabled"]}
+```
+
+- **`paths`** are the keys whose value *as this caller reads it* differs from the last time they were told: a key their rules hide never appears, and a change that concerns nothing they read sends no event. An **empty list** means "read it all again": backd could not tell what changed, and nothing is guessed.
+- **`version`** is the configuration version the paths were computed against.
+- **Not the `reset` reason of the same name.** That one (`reset` with `reason: "config_changed"`) says a collection's rules or `realtime:` opt-in changed; this event is about the app configuration's values.
+- **Not resumable:** `config_changed` carries no resume token and is not replayed. After a reconnection, read the configuration again (with `If-None-Match`, usually a `304`); the JavaScript client does it for you.
 
 ## Start from a known state
 
@@ -160,7 +185,7 @@ A stream is tied to the session, user or API key that opened it, and to the role
 
 - **Sign-out, revocation, deletion or disabling** of the session, user or key: `session_ended` and the stream closes, within the time it takes the change to reach the instance. Reconnecting with the same credential fails with `401`.
 - **Roles, organization memberships, team roles, organization claims or `require_mfa`**: the stream reads the caller's access again. If the effective access to a subscription differs, that subscription gets `reset` with `access_changed` and follows the new access from then on; if it is the same, nothing is sent. Changes of an organization are coalesced into at most one reload per stream every quarter second.
-- **The app configuration:** a stream whose rules read it (`appConfig(...)`) reloads when the configuration changes. **Time:** access that ends by the clock (a role's window) has no event, so open streams read their access again every five minutes.
+- **The app configuration:** a stream whose rules read it (`appConfig(...)`) reloads when the configuration changes. **Time:** a role grant's window (`from` and `until` of a [team role](../../organizations/team-roles/#time-windows), or of an organization role) opening or closing has no event in the database, so the stream reads the caller's access again **at that moment**: the subscription that changes gets its `reset` within a fraction of a second of the boundary. A rule that reads `now` has no boundary to tell, so open streams also read their access every five minutes.
 - **Credential lifetime**: a stream never outlives its session or key: at its expiry the stream says `reauth` and closes.
 
 A rule that depends on the clock (`now`) is a different filter at each reload, so such a stream may get a `reset` it didn't need: it is harmless and costs one reload of that subscription.

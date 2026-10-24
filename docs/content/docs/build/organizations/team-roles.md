@@ -59,6 +59,7 @@ POST /v1/acme/_orgs/{org}/teams/{team}/roles
 { "user": "<user id>", "role": "delegate", "from": "2026-08-01T00:00:00Z", "until": "2026-08-15T00:00:00Z" }
 ```
 
+- **Open realtime streams follow the windows.** Nothing runs when a window opens or closes, and a [stream](../../api/realtime/#when-access-changes) reads the member's access again at that moment: a subscription whose rule depended on the role gets its `reset` with `access_changed` at the boundary, not minutes later.
 - **Left out when not in force.** Memberships are read at each request, and a grant outside its window is left out of what rules see, of the listing, and of what the member may grant.
 - **`until` must be after `from`** (`400` otherwise); both are optional.
 - **`PATCH` on the same path replaces the window** of a held grant (`404` if it isn't held). Granting a role the member already holds changes nothing: use `PATCH`.

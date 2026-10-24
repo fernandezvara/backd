@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/fernandezvara/backd/internal/appconfig"
+	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/rules"
 )
 
@@ -56,50 +58,23 @@ func (d *documents) readAppConfig(w http.ResponseWriter, r *http.Request) {
 		return false
 	}
 
-	view, err := (&appconfig.Service{Store: svc.Store, Config: cfg, Now: d.now}).Current(r.Context())
+	flat, version, public, signedIn, err := d.readableConfig(r.Context(), realm, caller, hasAuth, inScope)
 	if err != nil {
 		logger(r.Context()).Error("app configuration unreadable", "realm", realm, "error", err)
 		writeError(w, r, http.StatusInternalServerError, codeInternal, "internal error")
 		return
 	}
-
-	vals := rules.Values{Now: d.now().UTC()}
-	if hasAuth && caller.User != nil {
-		u := caller.User.User
-		mfa, methods := caller.SignInMethods()
-		vals.User = &rules.User{ID: u.ID, Email: u.Email, EmailVerified: u.EmailVerified, Roles: u.Roles, MFA: mfa, Methods: methods, Consents: u.Consents}
-	}
-
 	values := map[string]any{}
-	public := true
 	for _, p := range cfg.SortedPaths() {
-		if !cfg.Paths[p].Leaf || !inScope(p) {
-			continue
+		if v, ok := flat[p]; ok {
+			setNested(values, p, v)
 		}
-		chain, ruled := cfg.Effective(p)
-		if !ruled {
-			continue
-		}
-		allowed, literal := true, true
-		for _, rule := range chain {
-			ok, err := rule.Allow(vals)
-			if err != nil || !ok {
-				allowed = false
-				break
-			}
-			literal = literal && rule.AlwaysTrue()
-		}
-		if !allowed {
-			continue
-		}
-		public = public && literal
-		setNested(values, p, valueAt(view.Values, p))
 	}
 
 	body, _ := json.Marshal(values)
 	sum := sha256.Sum256(body)
 	tag := `W/"` + hex.EncodeToString(sum[:])[:32] + `"`
-	if len(values) > 0 && public && r.Header.Get("Authorization") == "" && r.Header.Get("Cookie") == "" && vals.User == nil {
+	if len(values) > 0 && public && r.Header.Get("Authorization") == "" && r.Header.Get("Cookie") == "" && !signedIn {
 		w.Header().Set("Cache-Control", "public, max-age="+strconv.Itoa(int(rl.Settings.AppConfigTTL().Seconds())))
 	}
 	w.Header().Set("ETag", tag)
@@ -107,7 +82,7 @@ func (d *documents) readAppConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"values": values, "version": appconfig.FormatVersion(view.Version),
+		"values": values, "version": appconfig.FormatVersion(version),
 		"cache_ttl": int(rl.Settings.AppConfigTTL().Seconds()),
 	})
 }
@@ -137,4 +112,48 @@ func setNested(m map[string]any, path string, v any) {
 		m = next
 	}
 	m[parts[len(parts)-1]] = v
+}
+
+// readableConfig is what the caller may read of the realm's configuration, as the values of
+// the leaf paths that pass inScope, defaults filled in, with the configuration's version.
+// public says every value returned is allowed by a rule that is literally true; signedIn,
+// that the caller is a user.
+func (d *documents) readableConfig(ctx context.Context, realm string, caller auth.Caller, hasAuth bool, inScope func(string) bool) (flat map[string]any, version int64, public, signedIn bool, err error) {
+	rl := d.reg.Realms[realm]
+	cfg, svc := rl.AppConfig, d.users(realm)
+	view, err := (&appconfig.Service{Store: svc.Store, Config: cfg, Now: d.now}).Current(ctx)
+	if err != nil {
+		return nil, 0, false, false, err
+	}
+	vals := rules.Values{Now: d.now().UTC()}
+	if hasAuth && caller.User != nil {
+		u := caller.User.User
+		mfa, methods := caller.SignInMethods()
+		vals.User = &rules.User{ID: u.ID, Email: u.Email, EmailVerified: u.EmailVerified, Roles: u.Roles, MFA: mfa, Methods: methods, Consents: u.Consents}
+	}
+	flat, public = map[string]any{}, true
+	for _, p := range cfg.SortedPaths() {
+		if !cfg.Paths[p].Leaf || !inScope(p) {
+			continue
+		}
+		chain, ruled := cfg.Effective(p)
+		if !ruled {
+			continue
+		}
+		allowed, literal := true, true
+		for _, rule := range chain {
+			ok, err := rule.Allow(vals)
+			if err != nil || !ok {
+				allowed = false
+				break
+			}
+			literal = literal && rule.AlwaysTrue()
+		}
+		if !allowed {
+			continue
+		}
+		public = public && literal
+		flat[p] = valueAt(view.Values, p)
+	}
+	return flat, view.Version, public, vals.User != nil, nil
 }

@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fernandezvara/backd/internal/appconfig"
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/auth/authtest"
 	"github.com/fernandezvara/backd/internal/changefeed"
@@ -88,16 +89,19 @@ type realtimeFixture struct {
 	feed *feedFake
 	svc  *auth.Users
 	mdb  string // the MongoDB database of acme/app
+	reg  *registry.Registry
 }
 
 func newRealtimeFixture(t *testing.T, lim realtime.Limits) *realtimeFixture {
 	t.Helper()
 	root := t.TempDir()
 	files := map[string]string{
-		"acme/realm.yaml":                "signup: open\n",
+		"acme/realm.yaml":                "signup: open\nroles:\n  staff: {}\n",
 		"acme/app/items/schema.json":     itemSchema,
 		"acme/app/items/collection.yaml": "realtime: true\nrules:\n  read: user != nil && document._meta.owner == user.id\n",
 		"acme/app/plain/schema.json":     itemSchema,
+		"acme/app-config/schema.json":    appConfigSchema,
+		"acme/app-config/rules.yaml":     appConfigRules,
 	}
 	for p, content := range files {
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, p)), 0o755); err != nil {
@@ -139,7 +143,7 @@ func newRealtimeFixture(t *testing.T, lim realtime.Limits) *realtimeFixture {
 	})
 	srv := httptest.NewServer(f.h)
 	t.Cleanup(srv.Close)
-	return &realtimeFixture{srv: srv, feed: feed, svc: svc, mdb: c.MongoDatabase}
+	return &realtimeFixture{srv: srv, feed: feed, svc: svc, mdb: c.MongoDatabase, reg: reg}
 }
 
 type sseEvent struct {
@@ -286,6 +290,9 @@ func TestRealtimeRefusals(t *testing.T) {
 		"doc and where": {ada, `{"subscriptions":[{"id":"a","db":"app","collection":"items","doc":"x","where":{"name":"a"}}]}`, 400, "invalid_query"},
 		"none":          {ada, `{"subscriptions":[]}`, 400, "invalid_query"},
 		"unknown field": {ada, `{"subscriptions":[{"id":"a","db":"app","collection":"items"}],"order_by":"name"}`, 400, "invalid_json"},
+		"config twice":  {ada, `{"subscriptions":[{"id":"a","config":{}},{"id":"b","config":{}}]}`, 400, "invalid_query"},
+		"config + coll": {ada, `{"subscriptions":[{"id":"a","db":"app","collection":"items","config":{}}]}`, 400, "invalid_query"},
+		"config key":    {ada, `{"subscriptions":[{"id":"a","config":{"paths":["nope"]}}]}`, 400, "invalid_query"},
 		"forged resume": {ada, `{"subscriptions":[{"id":"a","db":"app","collection":"items"}],"resume_from":"nope"}`, 400, "invalid_resume_token"},
 	} {
 		if got, code := status(tc.token, tc.body); got != tc.status || code != tc.code {
@@ -464,5 +471,30 @@ func TestRealtimeReloadFindsARevokedSession(t *testing.T) {
 	f.feed.add(changefeed.Change{Realm: "acme", DB: "acme__system", Coll: "org_members", System: true, Op: changefeed.Updated, Key: "o1/" + adaID})
 	if ev := next(t, evs); ev.Event != "session_ended" {
 		t.Fatalf("got %+v", ev)
+	}
+}
+
+// A stream that follows the configuration needs no collection, anonymous callers may, and the
+// event names the version and the keys that changed.
+func TestRealtimeFollowsTheConfiguration(t *testing.T) {
+	f := newRealtimeFixture(t, realtime.Limits{})
+	_, ev := f.subscribe(t, "", `{"subscriptions":[{"id":"cfg","config":{"paths":["maintenance"]}}]}`)
+	if ready := next(t, ev); ready.Event != "ready" || !strings.Contains(ready.Data, `"cfg"`) {
+		t.Fatalf("ready = %+v", ready)
+	}
+	f.feed.settle()
+
+	svc := &appconfig.Service{Store: f.svc.Store, Config: f.reg.Realms["acme"].AppConfig, Now: time.Now}
+	if _, err := svc.Apply(context.Background(), 0, appconfig.Input{Set: map[string]any{"maintenance.enabled": true}}, "test"); err != nil {
+		t.Fatal(err)
+	}
+	f.feed.add(changefeed.Change{Realm: "acme", DB: "acme___system", Coll: "app_config", System: true, Op: changefeed.Updated, Key: "current"})
+	got := next(t, ev)
+	var data struct {
+		ID, Version string
+		Paths       []string
+	}
+	if err := json.Unmarshal([]byte(got.Data), &data); err != nil || got.Event != "config_changed" || data.ID != "cfg" || data.Version != "c1" || len(data.Paths) != 1 || data.Paths[0] != "maintenance.enabled" {
+		t.Fatalf("got %+v (%v)", got, err)
 	}
 }

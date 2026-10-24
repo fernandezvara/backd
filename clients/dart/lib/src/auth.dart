@@ -1180,6 +1180,7 @@ final class Auth {
   Future<Session> _signedIn(Session session) async {
     client.clearDerivedState();
     if (session.token != null) await client.storage.set(session.token!);
+    client.config.credentialChanged();
     _events.add(AuthChange(AuthEvent.signedIn, session));
     return session;
   }
@@ -1188,6 +1189,7 @@ final class Auth {
   Future<void> _signedOut(AuthEvent event) async {
     client.clearDerivedState();
     await client.storage.remove();
+    client.config.credentialChanged();
     _events.add(AuthChange(event, null));
   }
 

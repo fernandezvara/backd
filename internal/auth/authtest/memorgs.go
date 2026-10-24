@@ -543,6 +543,21 @@ func (m *MemStore) OrgInvitationByID(_ context.Context, org, id string) (auth.Or
 	return auth.OrgInvitation{}, auth.ErrNotFound
 }
 
+func (m *MemStore) OrgInvitationsAddressedTo(_ context.Context, userID, email string) ([]auth.OrgInvitation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []auth.OrgInvitation
+	for _, inv := range m.org().invites {
+		if (inv.Binding == auth.BindUser && userID != "" && inv.User == userID) || (inv.Binding == auth.BindEmail && email != "" && inv.Email == email) {
+			out = append(out, inv)
+		}
+	}
+	slices.SortFunc(out, func(a, b auth.OrgInvitation) int {
+		return cmp.Or(b.CreatedAt.Compare(a.CreatedAt), cmp.Compare(b.ID, a.ID))
+	})
+	return out, nil
+}
+
 func (m *MemStore) ListOrgInvitations(_ context.Context, org string) ([]auth.OrgInvitation, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

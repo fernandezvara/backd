@@ -48,6 +48,8 @@ func TestInvocationsOnMongoDB(t *testing.T) {
 		{auth.InvocationFilter{Function: "app/checkout"}, []string{"a1", "a0"}},
 		{auth.InvocationFilter{Function: "app/stats"}, []string{"a2"}},
 		{auth.InvocationFilter{RequestID: "r2"}, []string{"a1"}},
+		{auth.InvocationFilter{Actor: "user:u1"}, []string{"a0"}},
+		{auth.InvocationFilter{Actor: "user:nobody"}, nil},
 		{auth.InvocationFilter{Since: t0.Add(time.Minute)}, []string{"a2", "a1"}},
 		{auth.InvocationFilter{Until: t0.Add(time.Minute)}, []string{"a0"}},
 	} {

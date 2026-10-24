@@ -421,3 +421,20 @@ func TestFeedOpensEncryptedFieldsWithTheDecryptHook(t *testing.T) {
 		}
 	}
 }
+
+// A realm with an app configuration and no realtime collection is still watched for the
+// configuration, so a stream can follow it.
+func TestRealtimeWatchSetFollowsAppConfigWithoutCollections(t *testing.T) {
+	reg := loadRegistryWith(t, "acme", "signup: open\n", map[string]string{
+		"app/plain":              `{"type":"object"}`,
+		"app-config/schema.json": `{"type":"object","additionalProperties":false,"properties":{"banner":{"type":"object","additionalProperties":false,"properties":{"on":{"type":"boolean","default":false}}}}}`,
+		"app-config/rules.yaml":  "read:\n  banner: \"true\"\n",
+	})
+	set := RealtimeWatchSet(reg)
+	if len(set.Collections) != 0 || len(set.System) != 1 || set.System[0].Coll != AppConfigCollection || set.System[0].DB != SystemDatabaseName("acme") {
+		t.Fatalf("watch set = %+v", set)
+	}
+	if set.Empty() {
+		t.Fatal("the set must not be empty: the feed would stay closed")
+	}
+}

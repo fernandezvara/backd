@@ -7,6 +7,7 @@ import 'package:meta/meta.dart';
 import 'auth.dart';
 import 'cache.dart';
 import 'config.dart';
+import 'account.dart';
 import 'consents.dart';
 import 'data.dart';
 import 'errors.dart';
@@ -224,6 +225,7 @@ class BackdClient<R> {
     configClear = config.clear;
     orgs = Orgs(this);
     consents = Consents(this);
+    account = Account(this);
     push = Push(this);
     realtime = Realtime(this);
   }
@@ -277,6 +279,10 @@ class BackdClient<R> {
 
   /// The consents the realm asks for: `client.consents`.
   late final Consents consents;
+
+  /// The signed-in user's own data: `client.account` asks for a copy of
+  /// everything the realm holds about them and downloads it.
+  late final Account account;
 
   /// Device registration for push notifications: `client.push`.
   late final Push push;

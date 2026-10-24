@@ -43,6 +43,9 @@ Each realm with `auth: enabled` keeps an **audit trail**: one record per securit
 | `user.disable`, `user.enable` | An administrator disables or re-enables a user | |
 | `user.delete` | An administrator erases a user (the tombstone is made; the data work is in the job) | `job_id` |
 | `user.erased` | The erase job finished, or failed for good | `job_id` and `counts` per `database/collection/operation`; `needs_attention` and `error` when it failed. Never content |
+| `user.data_export_requested`, `user.data_export_requested_silently` | A user asked for a [copy of their data](../../../build/auth/personal-data/), or an administrator made one for them and told them (`requested`) or did not (`_silently`, with the reason); the target is `user:<id>` | `export`, `ticket` (administrator), `reason` (silent) |
+| `user.data_exported`, `user.data_export_failed` | The export is ready, or failed for good | `export`, `size`, `by`; `error` |
+| `user.data_export_downloaded`, `user.data_export_expired` | A link to the package was given or its bytes sent, with who took it; the package was deleted at the end of its retention | `export`, `by` |
 | `user.delete_account` | A user deletes their own account (it is deactivated, not erased) | |
 | `user.networks` | A user's [network restrictions](../../../build/configuration/realm/#network-restrictions) change, through the API or from `realm.yaml` | `admin_networks`, `login_networks` |
 | `identity.apple_revoked` | Apple revoked a user's tokens after their account was erased or deleted, or Apple was unlinked | |

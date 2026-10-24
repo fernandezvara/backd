@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"maps"
+	"net/url"
 	"strings"
 	"time"
 
@@ -240,6 +241,29 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 		extra["code"], extra["expires_at"] = code, data.ExpiresAt.Format(time.RFC3339)
 		mask = append(mask, code)
 	}
+	if kind == email.DataExportReady || kind == email.DataExportMade {
+		// The message is about one export of this user's data; its record has the expiry and the
+		// reference. The ready link is the app's own page, never a link to the file.
+		rec, err := svc.UserExport(ctx, userID, job.Email.ExportID)
+		switch {
+		case errors.Is(err, auth.ErrNotFound):
+			w.fail(ctx, log, svc, job, "the export no longer exists")
+			return nil, nil, false
+		case err != nil:
+			log.Warn("read the export; leaving the job to be retried", "error", err)
+			return nil, nil, false
+		}
+		data.Data["ticket"], extra["ticket"] = rec.Ticket, rec.Ticket
+		if kind == email.DataExportReady {
+			page := rl.Settings.Compliance.ExportPage
+			if rec.Status != auth.ExportReady || page == "" {
+				w.fail(ctx, log, svc, job, "the export is not available any more")
+				return nil, nil, false
+			}
+			data.Link, data.ExpiresAt = exportPageLink(page, rec.ID), rec.ExpiresAt.UTC()
+			extra["link"], extra["expires_at"] = data.Link, data.ExpiresAt.Format(time.RFC3339)
+		}
+	}
 	if kind == email.TemplateFailed && org != "" {
 		data.Data["org_name"] = svc.OrgName(ctx, org)
 	}
@@ -332,4 +356,16 @@ func renderOverride(kind string, o email.Override, d email.Data, orgName string)
 	}
 	msg, _, err := c.Render(d, orgName)
 	return msg, err
+}
+
+// exportPageLink is the app's download page with the export it is about: page?export=<id>.
+func exportPageLink(page, id string) string {
+	u, err := url.Parse(page)
+	if err != nil {
+		return page
+	}
+	q := u.Query()
+	q.Set("export", id)
+	u.RawQuery = q.Encode()
+	return u.String()
 }

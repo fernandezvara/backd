@@ -94,6 +94,10 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 			r.Get("/identities", a.userIdentities)
 			r.Get("/mfa", a.userMFA)
 			r.Get("/consents", a.userConsents)
+			r.Post("/export", a.exportUser)
+			r.Get("/exports", a.userExports)
+			r.Get("/exports/{export}", a.userExport)
+			r.Get("/exports/{export}/download", a.downloadUserExport)
 			r.With(json).Post("/consents", a.recordUserConsent)
 			r.Post("/mfa/reset", a.resetUserMFA)
 			r.Delete("/identities/{provider}", a.unlinkUserIdentity)
@@ -1398,6 +1402,11 @@ func (a *adminAPI) cancelJob(w http.ResponseWriter, r *http.Request) {
 			rightRefused(w, r, fmt.Sprintf("cancelling the notification of the users needs the %q admin right to change; your roles open: %s", registry.RightUsers, have))
 			return
 		}
+	} else if ok && found.Export != nil {
+		if !have.CanWrite(registry.RightUsers) {
+			rightRefused(w, r, fmt.Sprintf("cancelling the export of a user's data needs the %q admin right to change; your roles open: %s", registry.RightUsers, have))
+			return
+		}
 	} else if ok && found.Encrypt != nil {
 		if !have.CanWrite(registry.RightData) {
 			rightRefused(w, r, fmt.Sprintf("cancelling an encryption migration needs the %q admin right to change; your roles open: %s", registry.RightData, have))
@@ -1471,6 +1480,9 @@ func jobSummaryJSON(j auth.Job) map[string]any {
 	}
 	if j.Encrypt != nil {
 		function = "encrypt:" + j.Encrypt.Database + "/" + j.Encrypt.Collection
+	}
+	if j.Export != nil {
+		function = "export:" + j.Export.UserID
 	}
 	out := map[string]any{
 		"id":              j.ID,

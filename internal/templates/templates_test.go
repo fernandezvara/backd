@@ -53,6 +53,8 @@ func emailFiles(realm string, created bool) []File {
 	for _, kind := range append(slices.Clone(email.PageKinds), email.OptionalPageKinds...) {
 		out = append(out, File{Path: realm + "/pages/" + kind + "/en.html", Created: created})
 	}
+	// The README of a personal data export.
+	out = append(out, File{Path: realm + "/compliance/readme/en.html", Created: created})
 	// An example push template.
 	out = append(out, File{Path: realm + "/push/example/en.yaml", Created: created})
 	return out
@@ -166,7 +168,7 @@ func TestProject(t *testing.T) {
 			t.Errorf("missing %s", p)
 		}
 	}
-	if want := len(wantPaths) + len(email.SystemKinds)*3 + len(email.PageKinds) + len(email.OptionalPageKinds) + 1 - 2; len(got) != want { // the two email files listed above are among the 24
+	if want := len(wantPaths) + len(email.SystemKinds)*3 + len(email.PageKinds) + len(email.OptionalPageKinds) + 2 - 2; len(got) != want { // +1 push example, +1 export README; the two email files listed above are among the 24
 		t.Errorf("got %d files, want %d: %v", len(got), want, files)
 	}
 

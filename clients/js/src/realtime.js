@@ -57,6 +57,18 @@ import { AuthenticationError, BackdError, ForbiddenError, InvalidResumeTokenErro
 
 const RECONNECT_BASE_MS = 500
 
+/** The id the `_config` subscription has on the wire. */
+const CONFIG_ID = '_config'
+
+/**
+ * Who hears of the configuration on the stream.
+ * @typedef {object} ConfigFollower
+ * @property {string[]} paths                 The branches followed; none: everything the caller reads.
+ * @property {() => void} ready               The stream is open (again): what was missed while it was down is read now.
+ * @property {(paths: string[]) => void} changed  Keys that changed; none: any of them might have.
+ * @property {(err: unknown) => void} error   The subscription was refused or the stream ended for good.
+ */
+
 /**
  * Live lists over one stream per client: the client multiplexes every subscription of every view over
  * `POST /v1/{realm}/_realtime`, loads each list stream-first (events received while the list loads are applied
@@ -87,6 +99,25 @@ export class Realtime {
     this.running = false
     /** @internal @type {Set<LiveView>} */
     this.views = new Set()
+    /** @internal @type {ConfigFollower | undefined} */
+    this.config = undefined
+  }
+
+  /**
+   * Adds a `_config` subscription to the stream, which tells the follower when what the caller reads of the
+   * app configuration changes. One follower at a time; `client.config.live()` is what uses it.
+   * @internal
+   * @param {ConfigFollower} follower
+   * @returns {() => void} Removes it.
+   */
+  followConfig(follower) {
+    this.config = follower
+    this.schedule()
+    return () => {
+      if (this.config !== follower) return
+      this.config = undefined
+      this.schedule()
+    }
   }
 
   /**
@@ -150,7 +181,7 @@ export class Realtime {
 
   /** @internal */
   reconcile() {
-    if (this.subs.size === 0) {
+    if (this.subs.size === 0 && !this.config) {
       this.gen++
       this.controller?.abort()
       this.controller = undefined
@@ -179,12 +210,14 @@ export class Realtime {
     while (gen === this.gen) {
       let reconnectNow = false
       try {
+        /** @type {Array<Record<string, unknown>>} */
         const subscriptions = [...this.subs.values()].map((s) => ({
           id: s.wire,
           db: s.spec.db,
           collection: s.spec.collection,
           ...(s.spec.doc !== undefined ? { doc: s.spec.doc } : s.spec.where ? { where: s.spec.where } : {}),
         }))
+        if (this.config) subscriptions.push({ id: CONFIG_ID, config: { paths: this.config.paths } })
         const body = { subscriptions, ...(this.token ? { resume_from: this.token } : {}) }
         const res = await this.client.openStream({ path: ['_realtime'], body, signal: controller.signal })
         attempt = 0
@@ -201,6 +234,14 @@ export class Realtime {
           // A refusal that names a subscription ends the view that asked for it; the others go on.
           const at = /^subscriptions\[(\d+)\]/.exec(err.details?.[0]?.path ?? '')
           const bad = at ? [...this.subs.values()][Number(at[1])] : undefined
+          if (at && !bad && this.config && Number(at[1]) === this.subs.size) {
+            // The refusal is of the configuration subscription (the realm has none): only it ends.
+            const follower = this.config
+            this.config = undefined
+            follower.error(err)
+            if (this.subs.size === 0) return
+            continue
+          }
           if (bad && this.views.size > 1) {
             bad.view.fail(err)
             this.token = this.token // unchanged: the rest resume where they were
@@ -232,6 +273,9 @@ export class Realtime {
    * @param {unknown} err
    */
   fail(err) {
+    const follower = this.config
+    this.config = undefined
+    follower?.error(err)
     this.gen++
     this.running = false
     this.ready = false
@@ -288,6 +332,10 @@ export class Realtime {
         this.ready = true
         for (const s of this.subs.values()) if (s.needsLoad || !s.loaded) s.view.load(s, false)
         for (const v of this.views) v.status()
+        this.config?.ready()
+        return undefined
+      case 'config_changed':
+        this.config?.changed(Array.isArray(ev.data.paths) ? ev.data.paths : [])
         return undefined
       case 'created':
       case 'updated': {

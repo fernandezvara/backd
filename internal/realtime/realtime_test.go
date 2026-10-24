@@ -795,3 +795,180 @@ func TestAccessIsReadAgainPeriodically(t *testing.T) {
 		t.Fatalf("%d periodic reloads", calls.Load())
 	}
 }
+
+// A stream following the configuration is told when the configuration changes, anonymous or not,
+// and hears nothing when the change is none of its business.
+func TestConfigSubscriptionHearsConfigChanges(t *testing.T) {
+	src := newFakeSource()
+	h := newHub(t, src, Limits{})
+	var calls atomic.Int64
+	cfg := &ConfigSub{ID: "cfg", Check: func(context.Context) (*ConfigNotice, error) {
+		if calls.Add(1) == 1 {
+			return &ConfigNotice{Version: "c1", Paths: []string{"maintenance.enabled"}}, nil
+		}
+		return nil, nil // the second change is of keys this caller does not read
+	}}
+	s, err := h.Open(Request{Realm: "r", Principal: "anon:1", Key: key, Config: cfg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Close)
+	var c collector
+	c.run(t, s)
+	src.settle()
+	src.add(system("app_config", "current", changefeed.Updated))
+	got := c.events(t, 1)
+	if got[0].Event != EventConfigChanged || got[0].Data == nil {
+		t.Fatalf("got %v", names(got))
+	}
+	var data struct {
+		ID, Version string
+		Paths       []string
+	}
+	if err := json.Unmarshal(got[0].Data, &data); err != nil || data.ID != "cfg" || data.Version != "c1" || len(data.Paths) != 1 || data.Paths[0] != "maintenance.enabled" {
+		t.Fatalf("data = %s (%v)", got[0].Data, err)
+	}
+	time.Sleep(300 * time.Millisecond)
+	src.add(system("app_config", "current", changefeed.Updated))
+	time.Sleep(500 * time.Millisecond)
+	if calls.Load() != 2 {
+		t.Fatalf("checks = %d, want 2", calls.Load())
+	}
+	// Other system collections are not its business.
+	src.add(system("sessions", "x", changefeed.Updated))
+	time.Sleep(200 * time.Millisecond)
+	if calls.Load() != 2 {
+		t.Fatalf("a session change ran a check: %d", calls.Load())
+	}
+}
+
+// A check that fails sends an empty list of paths: the client reads everything again.
+func TestConfigSubscriptionFailsTowardsReloading(t *testing.T) {
+	src := newFakeSource()
+	h := newHub(t, src, Limits{})
+	cfg := &ConfigSub{ID: "cfg", Check: func(context.Context) (*ConfigNotice, error) { return nil, errors.New("down") }}
+	s, err := h.Open(Request{Realm: "r", Principal: "anon:1", Key: key, Config: cfg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Close)
+	var c collector
+	c.run(t, s)
+	src.settle()
+	src.add(system("app_config", "current", changefeed.Updated))
+	got := c.events(t, 1)
+	if got[0].Event != EventConfigChanged || !contains(string(got[0].Data), `"paths":[]`) {
+		t.Fatalf("got %v %s", names(got), got[0].Data)
+	}
+}
+
+// A role grant's window opening or closing changes access with nothing in the database to say so: the
+// stream reads its access again at that moment, and arms the next boundary the read reports.
+func TestStreamReadsItsAccessAtAWindowBoundary(t *testing.T) {
+	src := newFakeSource()
+	h := newHub(t, src, Limits{})
+	h.RefreshEvery = -1 // only the boundaries read it
+	var reloads atomic.Int64
+	start := time.Now()
+	acc := &Access{SessionID: "s", UserID: "u", NextChange: start.Add(200 * time.Millisecond), Reload: func(context.Context) (Reloaded, error) {
+		r := Reloaded{}
+		if reloads.Add(1) == 1 {
+			r.NextChange = time.Now().Add(150 * time.Millisecond) // another window ends later
+		}
+		return r, nil
+	}}
+	openWith(t, h, "user:a", acc, sub("s", "a"))
+	time.Sleep(120 * time.Millisecond)
+	if n := reloads.Load(); n != 0 {
+		t.Fatalf("read %d times before the boundary", n)
+	}
+	waitFor := time.Now().Add(3 * time.Second)
+	for reloads.Load() < 2 && time.Now().Before(waitFor) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if n := reloads.Load(); n != 2 {
+		t.Fatalf("reads = %d, want one at each boundary", n)
+	}
+	// With no boundary left nothing reads it again.
+	time.Sleep(500 * time.Millisecond)
+	if n := reloads.Load(); n != 2 {
+		t.Errorf("read again with no boundary ahead: %d", n)
+	}
+}
+
+// A stream that is closed does not read its access at a boundary.
+func TestClosedStreamIgnoresItsBoundary(t *testing.T) {
+	src := newFakeSource()
+	h := newHub(t, src, Limits{})
+	h.RefreshEvery = -1
+	var reloads atomic.Int64
+	acc := &Access{SessionID: "s", UserID: "u", NextChange: time.Now().Add(100 * time.Millisecond), Reload: func(context.Context) (Reloaded, error) {
+		reloads.Add(1)
+		return Reloaded{}, nil
+	}}
+	s := openWith(t, h, "user:a", acc, sub("s", "a"))
+	s.Close()
+	time.Sleep(400 * time.Millisecond)
+	if n := reloads.Load(); n != 0 {
+		t.Errorf("a closed stream read its access %d times", n)
+	}
+}
+
+// A subscription filtered by `_meta.team` is found through that key: a change in one team is
+// checked against that team's subscribers only, and reaches only them.
+func TestTeamEqualityIsAGroupingKey(t *testing.T) {
+	src := newFakeSource()
+	h := newHub(t, src, Limits{StreamsPerUser: 100})
+	obs := &rec{}
+	h.Observer = obs
+	inTeam := func(id, team string) *Subscription {
+		s := &Subscription{
+			ID: id, DB: "db", Coll: "items",
+			Visible: func(d map[string]any) (bool, error) { return metaOf(d)["team"] == team, nil },
+			Render:  func(d map[string]any) map[string]any { return d },
+		}
+		// What a `where: {"_meta.team": team}` resolves to.
+		s.Keys = KeysOf(storage.Condition{Field: "_meta.team", Op: storage.OpEq, Value: team})
+		return s
+	}
+	teamDoc := func(id, team string, v int) map[string]any {
+		return map[string]any{"id": id, "_meta": map[string]any{"version": int64(v), "org": "o1", "team": team}}
+	}
+	if keys := KeysOf(storage.And{
+		storage.Condition{Field: "_meta.org", Op: storage.OpEq, Value: "o1"},
+		storage.Condition{Field: "_meta.team", Op: storage.OpEq, Value: "sales"},
+	}); len(keys) != 2 {
+		t.Fatalf("keys of an org and team filter: %v", keys)
+	}
+	var sales, support collector
+	sales.run(t, open(t, h, "user:a", inTeam("s", "sales")))
+	support.run(t, open(t, h, "user:b", inTeam("s", "support")))
+	for i := 0; i < 20; i++ { // other teams' subscribers
+		open(t, h, fmt.Sprintf("user:t%d", i), inTeam("s", fmt.Sprintf("team%d", i)))
+	}
+	src.settle()
+
+	src.add(changefeed.Change{DB: "db", Coll: "items", Op: changefeed.Created, Key: "1", After: teamDoc("1", "sales", 1), Version: 1})
+	if got := names(sales.events(t, 1)); got[0] != "created" {
+		t.Fatalf("sales: %v", got)
+	}
+	obs.mu.Lock()
+	indexed, scanned := obs.indexed, obs.scanned
+	obs.mu.Unlock()
+	if indexed != 1 || scanned != 0 {
+		t.Errorf("checked %d indexed and %d scanned subscriptions of 22, want 1 and 0", indexed, scanned)
+	}
+	// A document that moves to another team is removed there and appears here.
+	src.add(changefeed.Change{DB: "db", Coll: "items", Op: changefeed.Updated, Key: "1", Before: teamDoc("1", "sales", 1), After: teamDoc("1", "support", 2), Version: 2})
+	if got := names(sales.events(t, 2)); got[1] != "removed" {
+		t.Errorf("sales after the move: %v", got)
+	}
+	if got := names(support.events(t, 1)); got[0] != "created" {
+		t.Errorf("support after the move: %v", got)
+	}
+}
+
+func metaOf(d map[string]any) map[string]any {
+	m, _ := d["_meta"].(map[string]any)
+	return m
+}

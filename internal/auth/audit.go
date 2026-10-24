@@ -30,26 +30,35 @@ const (
 	AuditUserDisable       = "user.disable"
 	AuditUserEnable        = "user.enable"
 	AuditUserDelete        = "user.delete"
-	AuditAccountDelete     = "user.delete_account"  // self-service: the account is deactivated
-	AuditUserErased        = "user.erased"          // details: job_id and counts, or needs_attention
-	AuditUserNetworks      = "user.networks"        // details: admin_networks, login_networks
-	AuditSessionRevoke     = "session.revoke"       // by an administrator; details: session
-	AuditDeviceRemoved     = "device.removed"       // by an administrator; details: platform, device
-	AuditAppConfig         = "appconfig.change"     // details: version, kind (set, rollback), paths; never values
-	AuditPushTest          = "push.test"            // an administrator sent a test push; details: send, kind
-	AuditPushDevices       = "push.devices_removed" // an administrator removed every device of a platform (a rotated VAPID key); details: platform, count
-	AuditRoleAdd           = "role.add"             // details: role
-	AuditRoleRemove        = "role.remove"          // details: role
-	AuditAPIKeyCreate      = "apikey.create"        // details: role, expires_at, networks
-	AuditAPIKeyRevoke      = "apikey.revoke"
-	AuditEmailChanged      = "user.email_changed"         // details: by (self or admin)
-	AuditEmailReverted     = "user.email_change_reverted" // the old address undid a change
-	AuditInviteSent        = "invitation.sent"            // details: expires_at
-	AuditInviteCreate      = "invitation.create"          // details: bound_to_email, expires_at
-	AuditInviteRevoke      = "invitation.revoke"
-	AuditAdminLogin        = "admin.login"   // login of a user holding an admin role
-	AuditAdminRefused      = "admin.refused" // details: reason
-	AuditBootstrap         = "realm.bootstrap"
+	AuditAccountDelete     = "user.delete_account" // self-service: the account is deactivated
+	AuditUserErased        = "user.erased"         // details: job_id and counts, or needs_attention
+	// The export of a user's personal data (design/compliance.md §4): asked for (details: export,
+	// by "user" or the administrator, ticket, and, for a silent one, the reason), built, failed,
+	// downloaded (details: export, by) and deleted at the end of its retention.
+	AuditDataExportRequested  = "user.data_export_requested"
+	AuditDataExportSilent     = "user.data_export_requested_silently"
+	AuditDataExported         = "user.data_exported"
+	AuditDataExportFailed     = "user.data_export_failed"
+	AuditDataExportDownloaded = "user.data_export_downloaded"
+	AuditDataExportExpired    = "user.data_export_expired"
+	AuditUserNetworks         = "user.networks"        // details: admin_networks, login_networks
+	AuditSessionRevoke        = "session.revoke"       // by an administrator; details: session
+	AuditDeviceRemoved        = "device.removed"       // by an administrator; details: platform, device
+	AuditAppConfig            = "appconfig.change"     // details: version, kind (set, rollback), paths; never values
+	AuditPushTest             = "push.test"            // an administrator sent a test push; details: send, kind
+	AuditPushDevices          = "push.devices_removed" // an administrator removed every device of a platform (a rotated VAPID key); details: platform, count
+	AuditRoleAdd              = "role.add"             // details: role
+	AuditRoleRemove           = "role.remove"          // details: role
+	AuditAPIKeyCreate         = "apikey.create"        // details: role, expires_at, networks
+	AuditAPIKeyRevoke         = "apikey.revoke"
+	AuditEmailChanged         = "user.email_changed"         // details: by (self or admin)
+	AuditEmailReverted        = "user.email_change_reverted" // the old address undid a change
+	AuditInviteSent           = "invitation.sent"            // details: expires_at
+	AuditInviteCreate         = "invitation.create"          // details: bound_to_email, expires_at
+	AuditInviteRevoke         = "invitation.revoke"
+	AuditAdminLogin           = "admin.login"   // login of a user holding an admin role
+	AuditAdminRefused         = "admin.refused" // details: reason
+	AuditBootstrap            = "realm.bootstrap"
 	// Sign-in methods; the target is the user, details: provider, and by
 	// (self or admin) for an unlink.
 	AuditIdentityLinked   = "identity.linked"

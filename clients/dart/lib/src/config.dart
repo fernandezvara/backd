@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
 import 'client.dart';
+import 'realtime.dart' show ConfigFollower;
 
 /// Where `BackdClient.config` keeps its copies between runs: a file for
 /// standalone apps, a SharedPreferences-backed store for Flutter (supplied
@@ -140,6 +141,74 @@ final class Config {
   /// The dot paths whose value changed when a read brought a different
   /// configuration.
   Stream<List<String>> get changes => _changes.stream;
+
+  final _errors = StreamController<Object>.broadcast();
+
+  /// The error that ended [live]: the realm has no configuration, or
+  /// realtime is off.
+  Stream<Object> get errors => _errors.stream;
+
+  void Function()? _stopLive;
+
+  /// Follows the configuration live: adds a `_config` subscription to the
+  /// client's realtime stream, and when backd says something the user reads
+  /// changed, reads those branches again. [changes] hears of the keys that
+  /// differ, within the realtime delay instead of `cache_ttl`. The stream is
+  /// the one `client.realtime` keeps (it needs realtime enabled in the
+  /// deployment). Calling it again replaces the previous call. Returns what
+  /// stops following.
+  ///
+  /// ```dart
+  /// await client.config.load(['maintenance']);
+  /// final stop = client.config.live(['maintenance']);
+  /// client.config.changes.listen(render);
+  /// ```
+  void Function() live([Object? paths]) {
+    _stopLive?.call();
+    final list =
+        _normalize(paths).split(',').where((p) => p.isNotEmpty).toList();
+    late void Function() stopOnce;
+    final stop = client.realtime.followConfig(ConfigFollower(
+      paths: list,
+      // Whenever the stream opens, what happened before it did was not
+      // heard: a conditional read of what is held closes the gap, and costs
+      // a 304 when nothing moved.
+      ready: () => unawaited(_reread(const [])),
+      changed: (changed) => unawaited(_reread(changed)),
+      error: (err) {
+        if (identical(_stopLive, stopOnce)) _stopLive = null;
+        _errors.add(err);
+      },
+    ));
+    stopOnce = () {
+      if (identical(_stopLive, stopOnce)) _stopLive = null;
+      stop();
+    };
+    _stopLive = stopOnce;
+    return stopOnce;
+  }
+
+  /// The credentials of the client changed: a followed stream is opened
+  /// again with the new ones, so it reports what the new user reads.
+  void credentialChanged() {
+    if (_stopLive != null) client.realtime.credentialChanged();
+  }
+
+  /// Reads again what is held of the branches that changed (all of it for
+  /// none), waiting for a read that was already out, which may have started
+  /// before the change.
+  Future<void> _reread(List<String> changed) async {
+    await _scope();
+    for (final key in _entries.keys.toList()) {
+      if (changed.isNotEmpty && !_touches(key, changed)) continue;
+      try {
+        await _inflight[key];
+      } catch (_) {
+        // That read failed; this one asks again.
+      }
+      await _revalidate(key);
+    }
+  }
 
   /// Who the copies belong to: the credentials of the client, hashed
   /// (nothing secret is stored). Resets the copies when it changes.
@@ -392,4 +461,12 @@ int _ttlOf(Map<String, List<String>> headers, int fallback) {
   final m = RegExp('max-age=(\\d+)', caseSensitive: false)
       .firstMatch(headers['cache-control']?.first ?? '');
   return m != null ? int.parse(m.group(1)!) : fallback;
+}
+
+/// Whether a request key (comma separated branches; '' is everything) holds
+/// any of the changed keys.
+bool _touches(String key, List<String> changed) {
+  if (key.isEmpty) return true;
+  return key.split(',').any((p) => changed
+      .any((c) => c == p || c.startsWith('$p.') || p.startsWith('$c.')));
 }
