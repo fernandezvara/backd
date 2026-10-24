@@ -46,7 +46,7 @@ docker run --rm -v "$PWD/config:/config" -v "$(command -v backd):/usr/local/bin/
 docker compose up --build
 ```
 
-`backd` now listens on <http://127.0.0.1:8080>. The three secrets are shared between `backd`, the executor and the egress proxy; the [Running in production](../../../operate/functions-runtime/) page explains each.
+`backd` now listens on <http://127.0.0.1:8080>. The three secrets are shared between `backd`, the executor and the egress proxy; the [Executor, workers and egress](../../../operate/functions-runtime/) page explains each.
 
 ## 3. Call it
 

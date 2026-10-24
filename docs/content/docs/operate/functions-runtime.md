@@ -1,5 +1,5 @@
 ---
-title: "Running in production"
+title: "Executor, workers and egress"
 description: "The executor, workers and egress: how to run them."
 icon: "heartbeat"
 weight: 340

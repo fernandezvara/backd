@@ -25,6 +25,7 @@ Go through this page before any realm faces the internet, and again after changi
 - [ ] **`functions.log_retention` and `functions.job_retention`** ([function logs](../../build/functions/logs/), [async jobs](../../build/functions/jobs/)) match your privacy policy: both keep a function's own console output, and a job additionally keeps its input and output, in the realm's system database until they expire.
 - [ ] **Someone reviews the [audit trail](../administration/audit/)** (`backd audit --realm <realm> --since 7d`, or the `"msg":"audit"` log lines in your log pipeline), and `audit.retention` matches your privacy policy.
 - [ ] **Operators' machines protect the CLI's sessions** (`~/.config/backd/credentials`): log out with `backd logout` on shared machines, and prefer short session lifetimes for realms with administrators.
+- [ ] **`BACKD_DEV` is not set**, nor `BACKD_DEV_ANY_ADDR`. Dev mode reloads config and function bundles as files change and serves a landing page at `/`; it turns off the guarantee that bundles are frozen and checked at startup, and `backd` refuses it on an address that isn't localhost unless `BACKD_DEV_ANY_ADDR` is set. See [Dev mode](../../build/functions/testing/#dev-mode).
 
 ## Credentials
 
