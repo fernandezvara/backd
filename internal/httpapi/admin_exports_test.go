@@ -137,6 +137,8 @@ func TestAdministratorExportsAUsersData(t *testing.T) {
 	}
 
 	// What the user asked for themselves is theirs: an administrator does not download it.
+	for f.w.RunOnce(ctx) { // whatever is still queued (the export just made, its email) finishes first
+	}
 	code, mine := f.as(t, f.ada, "POST", exportsPath, "")
 	if code != http.StatusAccepted {
 		t.Fatalf("ada asks: %d %v", code, mine)
