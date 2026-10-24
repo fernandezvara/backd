@@ -9,7 +9,7 @@ import (
 
 // The realm's authentication data that moves with an app (design/export-import.md §7): the
 // system collections an export package can hold, in the order an import writes them.
-var PortableCollections = []string{"users", "identities", "orgs", "org_members", "org_teams", "mfa", "devices"}
+var PortableCollections = []string{"users", "identities", "orgs", "org_members", "org_teams", "org_connections", "mfa", "devices"}
 
 // PortableSealed names, per collection, the fields sealed with the realm's secrets cipher. An
 // export opens them and seals them again under the one-time export key; an import (after the
@@ -80,7 +80,8 @@ func (s *Users) portable() (PortableStore, error) {
 
 // AuthAnonymize turns the authentication data of an export into that of a staging copy:
 // emails become user-<id>@example.invalid, password hashes are dropped (or replaced by one
-// known password's), identities of external providers stay behind, and second factors and
+// known password's), identities of external providers stay behind, organization sign-in
+// connections keep their shape with the client ids blanked, and second factors and
 // devices are not exported at all (see AnonymizedCollections).
 type AuthAnonymize struct {
 	// PasswordHash, when set, is the hash every password identity gets.
@@ -89,7 +90,7 @@ type AuthAnonymize struct {
 
 // AnonymizedCollections are the portable collections an anonymized export carries.
 func AnonymizedCollections() []string {
-	return []string{"users", "identities", "orgs", "org_members", "org_teams"}
+	return []string{"users", "identities", "orgs", "org_members", "org_teams", "org_connections"}
 }
 
 // AnonymousEmail is the address an anonymized export gives the user with that id.
@@ -107,6 +108,11 @@ func (a *AuthAnonymize) apply(collection string, d map[string]any, now time.Time
 		// Whatever was done about passwords in production says nothing about the copy's own.
 		delete(d, "password_expired_at")
 		delete(d, "password_notified_at")
+	case "org_connections":
+		// A copy for staging keeps the shape of the connections, not the applications of
+		// production: their client ids are blanked, so none of them can sign anyone in.
+		d["client_id"] = ""
+		d["native_client_ids"] = []any{}
 	case "identities":
 		if d["provider"] != ProviderPassword {
 			return false

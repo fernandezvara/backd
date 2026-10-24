@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -209,5 +210,89 @@ func TestAuthStoreKeepsTheOrganizationOfASignIn(t *testing.T) {
 	}
 	if st, err := s.ClaimOAuthState(ctx, "st1", now); err != nil || st.Org != "o1" {
 		t.Errorf("state = %+v, %v", st, err)
+	}
+}
+
+// A connection moves between realms through the portable collections, without any secret.
+func TestOrgConnectionsAreExportedAndImported(t *testing.T) {
+	src, _ := authFixture(t)
+	dst, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	conn := auth.OrgConnection{ID: "o1:google", Org: "o1", Provider: "google", ClientID: "c-1", HostedDomain: "acme.example", EmailDomains: []string{"acme.example"},
+		NativeClientIDs: []string{"n-1"}, JoinRoles: []string{"member"}, Enabled: true, CreatedBy: "user:u1", UpdatedBy: "user:u1", CreatedAt: now, UpdatedAt: now}
+	if err := src.PutOrgConnection(ctx, conn); err != nil {
+		t.Fatal(err)
+	}
+	if err := src.BlockOrgMember(ctx, "o1", "u9"); err != nil {
+		t.Fatal(err)
+	}
+	cipher, _ := auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
+	svc := &auth.Users{Store: src, Cipher: cipher}
+	if err := svc.SetOrgSecret(ctx, "o1", "SSO_GOOGLE_CLIENT_SECRET", "the-secret", "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	docs, err := src.ExportSystem(ctx, "org_connections", "", 100)
+	if err != nil || len(docs) != 1 {
+		t.Fatalf("export: %v %v", docs, err)
+	}
+	if strings.Contains(fmt.Sprint(docs), "the-secret") || docs[0]["client_id"] != "c-1" {
+		t.Fatalf("export = %v", docs)
+	}
+	// Importing: created once, unchanged after, and the connection reads as it was.
+	res, err := dst.ImportSystem(ctx, "org_connections", docs, "create", true)
+	if err != nil || res[0].Outcome != auth.PortableCreated {
+		t.Fatalf("import: %+v %v", res, err)
+	}
+	if res, err = dst.ImportSystem(ctx, "org_connections", docs, "create", true); err != nil || res[0].Outcome != auth.PortableUnchanged {
+		t.Fatalf("import again: %+v %v", res, err)
+	}
+	got, err := dst.OrgConnection(ctx, "o1", "google")
+	if err != nil || got.ClientID != "c-1" || got.HostedDomain != "acme.example" || !got.HasBlocked("u9") || !got.Enabled || got.UpdatedBy != "user:u1" {
+		t.Fatalf("imported = %+v, %v", got, err)
+	}
+	// No secret came with it: the connection is unavailable until one is set.
+	dsvc := &auth.Users{Store: dst, Cipher: cipher}
+	if _, ok, _ := dsvc.OrgSecret(ctx, "o1", "SSO_GOOGLE_CLIENT_SECRET"); ok {
+		t.Error("a secret travelled")
+	}
+	// A different document with the same id is a conflict; a bad shape is invalid.
+	changed := map[string]any{}
+	for k, v := range docs[0] {
+		changed[k] = v
+	}
+	changed["client_id"] = "c-2"
+	if res, _ := dst.ImportSystem(ctx, "org_connections", []map[string]any{changed}, "create", true); res[0].Outcome != auth.PortableConflict {
+		t.Errorf("a different connection: %+v", res)
+	}
+	if res, _ := dst.ImportSystem(ctx, "org_connections", []map[string]any{{"id": "o1:microsoft", "org": "o1", "provider": "apple", "client_id": "x", "enabled": true, "created_at": now, "updated_at": now}}, "create", true); res[0].Outcome != auth.PortableInvalid {
+		t.Errorf("a provider organizations don't have: %+v", res)
+	}
+}
+
+// Erasing a user removes every identity they have, the ones through an organization's connection too.
+func TestErasingAUserRemovesTheirOrganizationIdentities(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	if err := s.CreateUser(ctx, auth.User{ID: "u1", Email: "u1@example.com", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	for id, org := range map[string]string{"i1": "", "i2": "o1", "i3": "o2"} {
+		if err := s.PutIdentity(ctx, auth.Identity{ID: id, UserID: "u1", Provider: "google", Org: org, Subject: "sub-" + org, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.EraseUser(ctx, "u1", "erased-u1@example.invalid", now); err != nil {
+		t.Fatal(err)
+	}
+	if ids, _ := s.ListIdentities(ctx, "u1"); len(ids) != 0 {
+		t.Errorf("identities after erasure: %+v", ids)
+	}
+	for _, org := range []string{"", "o1", "o2"} {
+		if _, err := s.IdentityIn(ctx, "google", org, "sub-"+org); err == nil {
+			t.Errorf("the identity of %q can still sign in", org)
+		}
 	}
 }

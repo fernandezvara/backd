@@ -88,10 +88,11 @@ A package holds documents only: the users who own them stay behind unless you as
 |---|---|
 | `users`, `identities` | Accounts and their sign-in methods, **password hashes included** |
 | `orgs`, `org_members`, `org_teams` | Organizations, memberships (with their roles) and teams |
+| `org_connections` | The [sign-in connections](../../../../build/organizations/api/#sign-in-connections) of organizations, **without their client secrets**: after an import a connection is there but unavailable until a manager or an administrator sets its secret again |
 | `mfa` | Second-factor enrollments (authenticator apps) |
 | `devices` | Push notification devices |
 
-Never included: sessions, login codes, challenges, email and invitation tokens, API keys, secrets and the audit trail. Users are signed out of the old instance's sessions, not carried: they sign in again.
+Never included: sessions, login codes, challenges, email and invitation tokens, API keys, secrets (an organization's client secrets among them) and the audit trail. Users are signed out of the old instance's sessions, not carried: they sign in again.
 
 Some of those fields are sealed with the **realm's secrets key** on the instance they come from: the authenticator secrets, the device tokens and Apple refresh tokens. That key never leaves an instance, so the server opens them and seals them again under a **one-time export key** it makes for this export and shows to you **once**:
 

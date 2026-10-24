@@ -119,6 +119,7 @@ The answer always has `id`, `token` and `link` (the realm's [`invitation_link`](
 
 - **Access ends at once.** The status becomes `deleted`, and memberships, teams and invitations are removed: nobody belongs to it any more, and its slug is free again.
 - **Then a job cleans up** (`backd:org.delete`, resumable) by each collection's [`on_org_delete`](../../configuration/config-dir/#organizations): `delete` removes the organization's documents, soft-deleted ones too, and queues their files for deletion; `keep` leaves them, readable only by realm administrators.
+- **Its sign-in connections and their client secrets are removed** by the same job (the connections were unavailable from the moment the organization was deleted, and so are those of an `orphaned` one). The audit record `org.deleted` counts them as `connections`. A reactivated organization starts without connections.
 - **The record stays** as `deleted`, with its name and dates, so `keep` documents still point at something readable. Audited as `org.delete` and, when the cleanup ends, `org.deleted` with counts and never content.
 - **Bringing it back:** `POST /_admin/orgs/{org}/reactivate` (`backd orgs reactivate`) makes it `active` **without members**, under its former slug unless that is in use (give another in `slug`); assign an owner next. Documents kept under `keep` are visible to members again; those under `delete` are gone.
 
@@ -173,6 +174,7 @@ The people of the company sign in at the organization's own address, which is th
 - **Who comes in** is checked on the verified ID token, after its signature, issuer, audience and nonce: a Google token's `hd` must be the connection's Workspace domain and its address verified, a Microsoft token's `tid` must be the connection's tenant, and when the connection lists `email_domains` the address must be in one of them. Otherwise the flow ends at `redirect_to?backd_error=not_allowed` (`403 not_allowed` for a native token) and **nothing is created**.
 - **An unavailable connection answers like one that isn't there.** An unknown organization, a provider it never connected, a disabled connection, one without its secret and an organization that is not active (`orphaned` or deleted) all answer the same `404`, so the answer doesn't say which organizations exist.
 - **A callback finishes only what it started.** The attempt remembers the organization, so a sign-in begun for one organization cannot be finished at another's callback or at the realm's, and the realm's cannot be finished at an organization's: those end at the error page.
+- **Erasing a user removes their identities through organizations too**, with every other sign-in method; nothing of theirs can sign in afterwards.
 - **Identities are keyed by organization.** The person's identity is `(provider, organization, subject)`: the same Google account at two organizations, or at an organization and at the realm, is separate identities, and a user holds one per provider per organization. `GET /_auth/me` lists them with the organization's id.
 - **It never links by address.** If an account already has the person's address, the flow ends at `backd_error=account_exists` even when Google says it is verified: an organization's managers control the connection, so their provider's word is not proof that an address is theirs. The person signs in the way they already do and links the connection with `intent: link`. Addresses from a connection are stored unverified.
 
@@ -190,6 +192,8 @@ The people of the company sign in at the organization's own address, which is th
 - **The roles are checked again at every join.** If the manager who last set the connection no longer holds the capabilities of its `join_roles`, backd disables the connection (`org.sso.disabled`) and the sign-in ends with `provider_error`, so a manager who lost a role doesn't leave a powerful default behind. A realm administrator's connection is not affected, and neither is one whose roles open nothing.
 - **Sessions remember where they came from.** The session a sign-in opens records the organization of the connection (also across a second step or a consent), for what comes later; nothing enforces it yet.
 - Audit: every sign-in is `org.sso.login` with `joined`, and a join is `org.member_add` with `by: sso`.
+
+Connections move with the realm: `--include auth` exports and imports them as `org_connections`, without their client secrets (see [Moving users](../../../operate/administration/export-import/moving-an-app/#moving-users)), so an imported connection stays unavailable until its secret is set again.
 
 Realm administrators use the same under `/_admin/orgs/{org}/sso[/{provider}]` (the `users` area, no proof needed beyond their own session or key) and `backd orgs sso`, `sso-set` and `sso-delete`.
 

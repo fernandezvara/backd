@@ -512,3 +512,32 @@ func (s *Users) AfterOrgSignIn(ctx context.Context, orgID, provider string, res 
 	}
 	return true
 }
+
+// RemoveOrgConnections removes every sign-in connection of an organization and every secret
+// kept for it, and returns how many connections there were. It is what the cleanup of a deleted
+// organization does, and it can be repeated: a second run finds nothing.
+func (s *Users) RemoveOrgConnections(ctx context.Context, orgID string) (int, error) {
+	list, err := s.Store.OrgConnections(ctx, orgID)
+	if err != nil {
+		return 0, err
+	}
+	for _, c := range list {
+		if err := s.Store.DeleteOrgConnection(ctx, orgID, c.Provider); err != nil && !errors.Is(err, ErrNotFound) {
+			return 0, err
+		}
+	}
+	// The secrets are looked for by scope, not by connection: one outlives its connection when
+	// an earlier run stopped half way.
+	secrets, err := s.Store.ListSecrets(ctx)
+	if err != nil {
+		return 0, err
+	}
+	for _, sec := range secrets {
+		if sec.Org == orgID {
+			if err := s.DeleteOrgSecret(ctx, orgID, sec.Name); err != nil && !errors.Is(err, ErrSecretNotFound) {
+				return 0, err
+			}
+		}
+	}
+	return len(list), nil
+}
