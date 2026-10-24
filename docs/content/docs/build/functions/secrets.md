@@ -32,6 +32,8 @@ backd secret list --realm blog
 backd secret delete --realm blog --database shop --name STRIPE_KEY
 ```
 
+The same commands take `--org <id>` instead of `--database` for an **organization's** secrets (`backd secret set --realm blog --org 01HX… --name SSO_GOOGLE_CLIENT_SECRET`). Those are not for functions: `function.yaml` cannot name them, and nothing reads them back; they hold the client secrets of an organization's own sign-in connections.
+
 Keys for [field encryption](../../configuration/field-keys/) live in the same store but are a type of their own: a function that declares one answers `secret_missing`, as if it didn't exist. Values are write-only: `backd secret list` and `GET /_admin/secrets` show only the scope, name and who last changed a secret, never its value. A changed or deleted value reaches running functions within about a minute (decrypted values are cached briefly, so `backd` doesn't decrypt on every call).
 
 ### Storage and the master key
@@ -49,4 +51,4 @@ BACKD_SECRETS_KEY=$OLD_KEY BACKD_SECRETS_NEW_KEY=$NEW_KEY \
   docker compose exec backd /backd secret rotate-key
 ```
 
-This re-encrypts every realm's secrets in place — unlike `set`/`list`/`delete`, it writes to MongoDB directly, so it needs `CONFIG_DIR` and `MONGO_URI`, not a session or API key. Afterward, restart every `backd`, `worker` and CLI use with `BACKD_SECRETS_KEY` set to the new key; the old one is no longer needed.
+This re-encrypts every realm's secrets in place, organization scopes included — unlike `set`/`list`/`delete`, it writes to MongoDB directly, so it needs `CONFIG_DIR` and `MONGO_URI`, not a session or API key. Afterward, restart every `backd`, `worker` and CLI use with `BACKD_SECRETS_KEY` set to the new key; the old one is no longer needed.

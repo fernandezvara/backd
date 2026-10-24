@@ -590,8 +590,9 @@ type Store interface {
 	SetScheduleState(ctx context.Context, st ScheduleState) error
 	// ListScheduleStates returns every stored state.
 	ListScheduleStates(ctx context.Context) ([]ScheduleState, error)
-	// UpsertSecret creates or replaces the secret at (database, name),
-	// keeping its original CreatedAt on an update.
+	// UpsertSecret creates or replaces the secret at (s.Scope(), s.Name),
+	// keeping its original CreatedAt on an update. A scope is the database
+	// name, "" for the realm, or OrgScope(id) for an organization.
 	UpsertSecret(ctx context.Context, s Secret) error
 	// CreateSecret stores a new secret, ErrSecretExists if the scope and name are taken.
 	CreateSecret(ctx context.Context, s Secret) error
@@ -599,10 +600,10 @@ type Store interface {
 	// when it does not (another rotation got there first).
 	ReplaceKeySecret(ctx context.Context, s Secret, ifVersion int) (bool, error)
 	// SecretByScope returns one secret; ErrSecretNotFound if none.
-	SecretByScope(ctx context.Context, database, name string) (Secret, error)
-	// ListSecrets returns every secret's metadata, sorted by database
+	SecretByScope(ctx context.Context, scope, name string) (Secret, error)
+	// ListSecrets returns every secret's metadata, sorted by scope
 	// (realm scope, "", first) then name.
 	ListSecrets(ctx context.Context) ([]Secret, error)
 	// DeleteSecret removes one; ErrSecretNotFound if none.
-	DeleteSecret(ctx context.Context, database, name string) error
+	DeleteSecret(ctx context.Context, scope, name string) error
 }

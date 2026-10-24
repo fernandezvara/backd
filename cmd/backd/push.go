@@ -179,7 +179,7 @@ func pushWebKeys(c *kli.CommandContext) error {
 	}
 	exists := false
 	for _, s := range page.Items {
-		exists = exists || (s.Database == "" && s.Name == name)
+		exists = exists || (s.Database == "" && s.Org == "" && s.Name == name)
 	}
 	if exists && !rotate {
 		return fmt.Errorf("the realm secret %s exists: a new key pair would make every web subscription useless. Use --rotate to replace it (every web device is then removed and apps subscribe again at their next launch)", name)

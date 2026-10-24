@@ -73,7 +73,7 @@ func keyIsHeld(t *target, name string) (bool, error) {
 		return false, err
 	}
 	for _, s := range page.Items {
-		if s.Database == "" && s.Name == name && s.Type == "key" {
+		if s.Database == "" && s.Org == "" && s.Name == name && s.Type == "key" {
 			return true, nil
 		}
 	}

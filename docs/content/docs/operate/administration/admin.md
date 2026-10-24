@@ -235,6 +235,7 @@ curl -X PUT https://localhost:8443/v1/blog/_admin/secrets/STRIPE_KEY \
 ```
 
 - Without `database`, the secret is in the **realm scope** (`realm.NAME` in `function.yaml`); with it, that **database's scope** (`NAME`, readable only by functions of that database — never another's, even in the same realm).
+- With `org` (an organization id) instead of `database`, it is an **organization's secret**: the client secrets of the sign-in connections an organization sets up itself. It is sealed like the others, but **nobody can read it back**, not the organization's managers and not functions (`function.yaml` has no way to name it); realm administrators can replace and delete it (`DELETE /secrets/{name}?org=…`). `GET /secrets` lists it with its `org`. Giving `org` and `database` together is `400`, and so is an organization the realm doesn't have.
 - `value` must not be empty; `name` must be upper-case letters, digits and `_`, starting with a letter (`400` otherwise). Setting an existing scope and name replaces its value; `GET /secrets` never includes it, only who last set it and when.
 - A change reaches running functions within about a minute (decrypted values are cached briefly); deleting one makes a function that declares it answer `500 secret_missing` again.
 - **Field keys** ([Field keys](../../../build/configuration/field-keys/)) are secrets of `type: key`: 32 bytes that only field encryption reads, never a function. `POST /secrets` generates one (returned once, base64url, with its fingerprint) or imports one; every other call lists them without the value.

@@ -65,12 +65,15 @@ func TestSecretRotateKey(t *testing.T) {
 	if err := svc.SetSecret(ctx, "", "SHARED", "shared-value", "test"); err != nil {
 		t.Fatal(err)
 	}
+	if err := svc.SetOrgSecret(ctx, "org1", "SSO_GOOGLE_CLIENT_SECRET", "org-value", "test"); err != nil {
+		t.Fatal(err)
+	}
 
 	c := &cliEnv{t: t, env: map[string]string{
 		"CONFIG_DIR": root, "MONGO_URI": uri, "LOG_LEVEL": "error",
 		"BACKD_SECRETS_KEY": oldKey, "BACKD_SECRETS_NEW_KEY": newKey,
 	}}
-	c.expect(0, realm+": 2 secret(s) rotated", "", "secret", "rotate-key")
+	c.expect(0, realm+": 3 secret(s) rotated", "", "secret", "rotate-key")
 
 	// Rotating again is a no-op: everything is already under the new key.
 	code, out, _ := c.run("", "secret", "rotate-key")
@@ -91,7 +94,13 @@ func TestSecretRotateKey(t *testing.T) {
 	if err != nil || len(missing) != 0 || values["KEY"] != "sk_live_1" || values["realm.SHARED"] != "shared-value" {
 		t.Fatalf("after rotation, under the new key: values=%+v missing=%v err=%v", values, missing, err)
 	}
+	if v, ok, err := svcNew.OrgSecret(ctx, "org1", "SSO_GOOGLE_CLIENT_SECRET"); err != nil || !ok || v != "org-value" {
+		t.Fatalf("an organization's secret after rotation: %q, %v, %v", v, ok, err)
+	}
 	svcOld := &auth.Users{Store: mongodb.NewAuthStore(client, realm), Realm: realm, Cipher: oldCipher}
+	if _, _, err := svcOld.OrgSecret(ctx, "org1", "SSO_GOOGLE_CLIENT_SECRET"); err == nil {
+		t.Fatal("an organization's secret rotated to the new key still opened under the old one")
+	}
 	if _, _, err := svcOld.ResolveSecrets(ctx, refs, "app"); err == nil {
 		t.Fatal("a secret rotated to the new key still opened under the old one")
 	}

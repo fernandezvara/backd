@@ -4,6 +4,12 @@ All notable changes to `backd` and to its JavaScript client `backd-js`, which ar
 
 Until a stable release is declared, a minor release may have breaking changes; they are listed first.
 
+## Unreleased
+
+### Added
+
+- **Organization-scoped secrets:** the secrets store has a third scope, an organization's, for the client secrets of the sign-in connections organizations will set up themselves (milestone 30, see `design/org-sso.md`). They are sealed with the instance key like every secret, cached per scope, listed with their `org` (never a value) and audited as `secret.set`/`secret.delete` with the organization. Nobody can read one back and `function.yaml` cannot name one, so functions never see them. Realm administrators write and delete them with `PUT|DELETE /_admin/secrets/{name}` and `org` / `?org=`, or `backd secret set|delete --org <id>`; `backd secret rotate-key` re-seals them with the rest. Nothing to provision.
+
 ## 0.9.2
 
 ### Breaking

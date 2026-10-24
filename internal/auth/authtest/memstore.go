@@ -62,44 +62,44 @@ func NewMemStore() *MemStore {
 	return &MemStore{users: map[string]auth.User{}, identities: map[string]auth.Identity{}, sessions: map[string]auth.Session{}, keys: map[string]auth.APIKey{}, attempts: map[string]memAttempts{}, invites: map[string]auth.Invitation{}, secrets: map[string]auth.Secret{}, schedules: map[string]auth.ScheduleState{}, checks: map[string]auth.CheckReport{}, journal: map[string]auth.FileJournalEntry{}, oauthStates: map[string]auth.OAuthState{}, loginCodes: map[string]auth.LoginCode{}, deletions: map[string]auth.FileDeletion{}, jobs: map[string]memJob{}, idempotency: map[string]auth.IdempotencyRecord{}}
 }
 
-func secretKey(database, name string) string { return database + "\x00" + name }
+func secretKey(scope, name string) string { return scope + "\x00" + name }
 
 func (m *MemStore) UpsertSecret(_ context.Context, s auth.Secret) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if existing, ok := m.secrets[secretKey(s.Database, s.Name)]; ok {
+	if existing, ok := m.secrets[secretKey(s.Scope(), s.Name)]; ok {
 		s.CreatedAt = existing.CreatedAt
 	}
-	m.secrets[secretKey(s.Database, s.Name)] = s
+	m.secrets[secretKey(s.Scope(), s.Name)] = s
 	return nil
 }
 
 func (m *MemStore) CreateSecret(_ context.Context, s auth.Secret) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.secrets[secretKey(s.Database, s.Name)]; ok {
+	if _, ok := m.secrets[secretKey(s.Scope(), s.Name)]; ok {
 		return auth.ErrSecretExists
 	}
-	m.secrets[secretKey(s.Database, s.Name)] = s
+	m.secrets[secretKey(s.Scope(), s.Name)] = s
 	return nil
 }
 
 func (m *MemStore) ReplaceKeySecret(_ context.Context, s auth.Secret, ifVersion int) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	have, ok := m.secrets[secretKey(s.Database, s.Name)]
+	have, ok := m.secrets[secretKey(s.Scope(), s.Name)]
 	if !ok || max(have.Version, 1) != ifVersion {
 		return false, nil
 	}
 	s.CreatedAt = have.CreatedAt
-	m.secrets[secretKey(s.Database, s.Name)] = s
+	m.secrets[secretKey(s.Scope(), s.Name)] = s
 	return true, nil
 }
 
-func (m *MemStore) SecretByScope(_ context.Context, database, name string) (auth.Secret, error) {
+func (m *MemStore) SecretByScope(_ context.Context, scope, name string) (auth.Secret, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	s, ok := m.secrets[secretKey(database, name)]
+	s, ok := m.secrets[secretKey(scope, name)]
 	if !ok {
 		return auth.Secret{}, auth.ErrSecretNotFound
 	}
@@ -114,7 +114,7 @@ func (m *MemStore) ListSecrets(context.Context) ([]auth.Secret, error) {
 		out = append(out, s)
 	}
 	slices.SortFunc(out, func(a, b auth.Secret) int {
-		if c := strings.Compare(a.Database, b.Database); c != 0 {
+		if c := strings.Compare(a.Scope(), b.Scope()); c != 0 {
 			return c
 		}
 		return strings.Compare(a.Name, b.Name)
@@ -122,10 +122,10 @@ func (m *MemStore) ListSecrets(context.Context) ([]auth.Secret, error) {
 	return out, nil
 }
 
-func (m *MemStore) DeleteSecret(_ context.Context, database, name string) error {
+func (m *MemStore) DeleteSecret(_ context.Context, scope, name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	k := secretKey(database, name)
+	k := secretKey(scope, name)
 	if _, ok := m.secrets[k]; !ok {
 		return auth.ErrSecretNotFound
 	}

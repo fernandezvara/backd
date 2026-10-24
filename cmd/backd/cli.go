@@ -455,7 +455,7 @@ func registerRemote(cfg *kli.Config) {
 	sec := cfg.Command("secret").ShortHelp("manage functions' secrets").
 		LongHelp("set, list and delete use the realm's admin API on a running backd, as the\nsession stored by `backd login` or with the admin API key in BACKD_API_KEY.")
 	sec.SubCommand("set").ShortHelp("create or replace a secret's value").
-		LongHelp("The value is read from the terminal without echo, or the first line of\nstandard input when it isn't a terminal. Without --database it's the realm\nscope (realm.NAME in function.yaml); with it, that database's scope (NAME, for\nfunctions of that database only, never another's).").
+		LongHelp("The value is read from the terminal without echo, or the first line of\nstandard input when it isn't a terminal. Without --database it's the realm\nscope (realm.NAME in function.yaml); with it, that database's scope (NAME, for\nfunctions of that database only, never another's). With --org it is an organization's\nsecret (its sign-in client secrets): sealed like the others, but nobody can read it back, functions included.").
 		Func(act("secret set", secretSet)).Config(secretFlags)
 	sec.SubCommand("create").ShortHelp("create a field key: generated and shown once, or imported").
 		LongHelp("Creates a key for field encryption (design: a `key` secret). With --generate the server makes 32\nrandom bytes and prints them, base64url, on standard output ONCE, with the fingerprint on standard error:\nsave the key outside backd, because nothing ever shows it again and a lost key means the values encrypted\nwith it are lost. With --value it imports a key you already hold (key:<base64url>, env:VAR or file:PATH),\nfor a restore or a staging copy. Needs a full administrator and a fresh proof that it is you. Audited with the\nname and fingerprint, never the key. With --direct it works straight on MongoDB and CONFIG_DIR, with no running backd: how\nyou create the key a field names when backd refuses to start without it, or restore keys after losing the secrets. " + adminAPINote).
@@ -839,6 +839,7 @@ func secretFlags(cc *kli.CommandConfig) {
 	remote(cc)
 	required(cc, "name", "the secret's name")
 	optional(cc, "database", "the database scope; without it, the realm scope")
+	optional(cc, "org", "the organization scope (an organization id), instead of --database")
 }
 
 func limit(cc *kli.CommandConfig) {

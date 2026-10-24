@@ -18,6 +18,7 @@ import (
 // secret is a secret's metadata, as the admin API returns it.
 type secret struct {
 	Database  string `json:"database"`
+	Org       string `json:"org"`
 	Name      string `json:"name"`
 	Type      string `json:"type"`
 	CreatedAt string `json:"created_at"`
@@ -33,7 +34,10 @@ func secretSet(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	name, database := str(c, "name"), str(c, "database")
+	name, database, org := str(c, "name"), str(c, "database"), str(c, "org")
+	if org != "" && database != "" {
+		return errors.New("--org and --database are different scopes: give one")
+	}
 	value, err := readSecretValue(ioOf(c), "Secret")
 	if err != nil {
 		return err
@@ -45,10 +49,13 @@ func secretSet(c *kli.CommandContext) error {
 	if database != "" {
 		body["database"] = database
 	}
+	if org != "" {
+		body["org"] = org
+	}
 	if err := t.call("PUT", "_admin/secrets/"+url.PathEscape(name), nil, body, nil); err != nil {
 		return err
 	}
-	fmt.Fprintf(c.Stdout(), "secret %q set\n", secretRef(database, name))
+	fmt.Fprintf(c.Stdout(), "secret %q set\n", secretRef(database+orgScope(org), name))
 	return nil
 }
 
@@ -65,7 +72,7 @@ func secretList(c *kli.CommandContext) error {
 	tw := tabwriter.NewWriter(c.Stdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "SCOPE\tNAME\tTYPE\tFINGERPRINT\tUPDATED\tUPDATED BY\tUSED BY")
 	for _, s := range page.Items {
-		scope := s.Database
+		scope := s.Database + orgScope(s.Org)
 		if scope == "" {
 			scope = "realm"
 		}
@@ -83,16 +90,22 @@ func secretDelete(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	name, database := str(c, "name"), str(c, "database")
+	name, database, org := str(c, "name"), str(c, "database"), str(c, "org")
+	if org != "" && database != "" {
+		return errors.New("--org and --database are different scopes: give one")
+	}
 	q := url.Values{}
 	if database != "" {
 		q.Set("database", database)
+	}
+	if org != "" {
+		q.Set("org", org)
 	}
 	var ae *apiError
 	var proof map[string]string
 	if held, err := keyIsHeld(t, name); err != nil {
 		return err
-	} else if held && database == "" {
+	} else if held && database == "" && org == "" {
 		// Deleting a key loses what it protects: a person proves who they are again first.
 		if proof, err = t.proof(ioOf(c)); err != nil {
 			return err
@@ -100,11 +113,11 @@ func secretDelete(c *kli.CommandContext) error {
 	}
 	if _, err := t.callHeaders("DELETE", "_admin/secrets/"+url.PathEscape(name), q, nil, nil, proof); err != nil {
 		if errors.As(err, &ae) && ae.Status == 404 {
-			return fmt.Errorf("no secret named %q", secretRef(database, name))
+			return fmt.Errorf("no secret named %q", secretRef(database+orgScope(org), name))
 		}
 		return err
 	}
-	fmt.Fprintf(c.Stdout(), "secret %q deleted\n", secretRef(database, name))
+	fmt.Fprintf(c.Stdout(), "secret %q deleted\n", secretRef(database+orgScope(org), name))
 	return nil
 }
 
@@ -112,11 +125,24 @@ func secretRotateKey(c *kli.CommandContext) error {
 	return rotateSecretsKey(context.Background(), c.Getenv, ioOf(c))
 }
 
-func secretRef(database, name string) string {
-	if database == "" {
+// secretRef names a secret as function.yaml would: realm.NAME for the realm scope, NAME for a
+// database's, and org:<id>.NAME for an organization's (scope is the database or orgScope).
+func secretRef(scope, name string) string {
+	switch {
+	case scope == "":
 		return "realm." + name
+	case strings.HasPrefix(scope, "org:"):
+		return scope + "." + name
 	}
 	return name
+}
+
+// orgScope is the scope string of an organization, "" when org is empty.
+func orgScope(org string) string {
+	if org == "" {
+		return ""
+	}
+	return auth.OrgScope(org)
 }
 
 // rotateSecretsKey re-encrypts every auth-enabled realm's secrets from
@@ -180,7 +206,7 @@ func rotateRealmSecrets(ctx context.Context, a *app, realm string, oldCipher, ne
 		}
 		plain, err := oldCipher.Open(s.Ciphertext, s.Nonce, s.KeyID)
 		if err != nil {
-			return n, fmt.Errorf("%s: %w", secretRef(s.Database, s.Name), err)
+			return n, fmt.Errorf("%s: %w", secretRef(s.Scope(), s.Name), err)
 		}
 		ct, nonce, err := newCipher.Seal(plain)
 		if err != nil {
@@ -190,7 +216,7 @@ func rotateRealmSecrets(ctx context.Context, a *app, realm string, oldCipher, ne
 		if s.PrevCiphertext != "" { // a key whose rotation is unfinished holds two values
 			prev, err := oldCipher.Open(s.PrevCiphertext, s.PrevNonce, s.KeyID)
 			if err != nil {
-				return n, fmt.Errorf("%s: %w", secretRef(s.Database, s.Name), err)
+				return n, fmt.Errorf("%s: %w", secretRef(s.Scope(), s.Name), err)
 			}
 			if s.PrevCiphertext, s.PrevNonce, err = newCipher.Seal(prev); err != nil {
 				return n, err
@@ -198,7 +224,7 @@ func rotateRealmSecrets(ctx context.Context, a *app, realm string, oldCipher, ne
 		}
 		s.KeyID = newCipher.KeyID
 		if err := store.UpsertSecret(ctx, s); err != nil {
-			return n, fmt.Errorf("%s: %w", secretRef(s.Database, s.Name), err)
+			return n, fmt.Errorf("%s: %w", secretRef(s.Scope(), s.Name), err)
 		}
 		n++
 	}

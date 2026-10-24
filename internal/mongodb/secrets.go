@@ -15,6 +15,7 @@ import (
 type secretDoc struct {
 	ID             string    `bson:"_id"`
 	Database       string    `bson:"database"`
+	Org            string    `bson:"org,omitempty"`
 	Name           string    `bson:"name"`
 	Type           string    `bson:"type,omitempty"`
 	Fingerprint    string    `bson:"fingerprint,omitempty"`
@@ -32,7 +33,7 @@ type secretDoc struct {
 
 func (d secretDoc) secret() auth.Secret {
 	return auth.Secret{
-		Database: d.Database, Name: d.Name, Type: d.Type, Fingerprint: d.Fingerprint,
+		Database: d.Database, Org: d.Org, Name: d.Name, Type: d.Type, Fingerprint: d.Fingerprint,
 		Version: d.Version, PrevCiphertext: d.PrevCiphertext, PrevNonce: d.PrevNonce, PrevVersion: d.PrevVersion, Ciphertext: d.Ciphertext, Nonce: d.Nonce, KeyID: d.KeyID,
 		CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC(), UpdatedBy: d.UpdatedBy,
 	}
@@ -42,8 +43,7 @@ func (s *AuthStore) secrets() *mongo.Collection { return s.db.Collection(Secrets
 
 // secretID is the deterministic document id of a secret: unique by
 // construction, so UpsertSecret needs no separate existence check.
-func secretID(database, name string) string {
-	scope := database
+func secretID(scope, name string) string {
 	if scope == "" {
 		scope = "realm"
 	}
@@ -53,10 +53,11 @@ func secretID(database, name string) string {
 // UpsertSecret creates or replaces the secret at (s.Database, s.Name),
 // keeping its original created_at on an update.
 func (s *AuthStore) UpsertSecret(ctx context.Context, sec auth.Secret) error {
-	id := secretID(sec.Database, sec.Name)
+	id := secretID(sec.Scope(), sec.Name)
 	update := bson.D{
 		{Key: "$set", Value: bson.D{
 			{Key: "database", Value: sec.Database},
+			{Key: "org", Value: sec.Org},
 			{Key: "name", Value: sec.Name},
 			{Key: "type", Value: sec.Type},
 			{Key: "fingerprint", Value: sec.Fingerprint},
@@ -80,7 +81,7 @@ func (s *AuthStore) UpsertSecret(ctx context.Context, sec auth.Secret) error {
 // the existence check.
 func (s *AuthStore) CreateSecret(ctx context.Context, sec auth.Secret) error {
 	_, err := s.secrets().InsertOne(ctx, secretDoc{
-		ID: secretID(sec.Database, sec.Name), Database: sec.Database, Name: sec.Name, Type: sec.Type, Fingerprint: sec.Fingerprint, Version: sec.Version,
+		ID: secretID(sec.Scope(), sec.Name), Database: sec.Database, Org: sec.Org, Name: sec.Name, Type: sec.Type, Fingerprint: sec.Fingerprint, Version: sec.Version,
 		Ciphertext: sec.Ciphertext, Nonce: sec.Nonce, KeyID: sec.KeyID, CreatedAt: sec.CreatedAt, UpdatedAt: sec.UpdatedAt, UpdatedBy: sec.UpdatedBy,
 	})
 	if mongo.IsDuplicateKeyError(err) {
@@ -96,7 +97,7 @@ func (s *AuthStore) ReplaceKeySecret(ctx context.Context, sec auth.Secret, ifVer
 	if ifVersion == 1 {
 		versionIs = bson.D{{Key: "$or", Value: bson.A{bson.D{{Key: "version", Value: 1}}, bson.D{{Key: "version", Value: bson.D{{Key: "$exists", Value: false}}}}}}}
 	}
-	filter := append(bson.D{{Key: "_id", Value: secretID(sec.Database, sec.Name)}}, versionIs...)
+	filter := append(bson.D{{Key: "_id", Value: secretID(sec.Scope(), sec.Name)}}, versionIs...)
 	res, err := s.secrets().UpdateOne(ctx, filter, bson.D{{Key: "$set", Value: bson.D{
 		{Key: "fingerprint", Value: sec.Fingerprint}, {Key: "version", Value: sec.Version},
 		{Key: "ciphertext", Value: sec.Ciphertext}, {Key: "nonce", Value: sec.Nonce}, {Key: "key_id", Value: sec.KeyID},
@@ -109,9 +110,9 @@ func (s *AuthStore) ReplaceKeySecret(ctx context.Context, sec auth.Secret, ifVer
 	return res.MatchedCount == 1, nil
 }
 
-func (s *AuthStore) SecretByScope(ctx context.Context, database, name string) (auth.Secret, error) {
+func (s *AuthStore) SecretByScope(ctx context.Context, scope, name string) (auth.Secret, error) {
 	var d secretDoc
-	err := s.secrets().FindOne(ctx, bson.D{{Key: "_id", Value: secretID(database, name)}}).Decode(&d)
+	err := s.secrets().FindOne(ctx, bson.D{{Key: "_id", Value: secretID(scope, name)}}).Decode(&d)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return auth.Secret{}, auth.ErrSecretNotFound
 	}
@@ -122,7 +123,7 @@ func (s *AuthStore) SecretByScope(ctx context.Context, database, name string) (a
 }
 
 func (s *AuthStore) ListSecrets(ctx context.Context) ([]auth.Secret, error) {
-	opts := options.Find().SetSort(bson.D{{Key: "database", Value: 1}, {Key: "name", Value: 1}})
+	opts := options.Find().SetSort(bson.D{{Key: "database", Value: 1}, {Key: "org", Value: 1}, {Key: "name", Value: 1}})
 	cur, err := s.secrets().Find(ctx, bson.D{}, opts)
 	if err != nil {
 		return nil, err
@@ -138,8 +139,8 @@ func (s *AuthStore) ListSecrets(ctx context.Context) ([]auth.Secret, error) {
 	return out, nil
 }
 
-func (s *AuthStore) DeleteSecret(ctx context.Context, database, name string) error {
-	res, err := s.secrets().DeleteOne(ctx, bson.D{{Key: "_id", Value: secretID(database, name)}})
+func (s *AuthStore) DeleteSecret(ctx context.Context, scope, name string) error {
+	res, err := s.secrets().DeleteOne(ctx, bson.D{{Key: "_id", Value: secretID(scope, name)}})
 	if err != nil {
 		return err
 	}

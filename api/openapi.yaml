@@ -4911,7 +4911,11 @@ paths:
         `ctx.secrets`, decrypted, within about a minute of this call.
         Without `database` it's the realm scope (`realm.NAME` in
         function.yaml); with it, that database's scope (`NAME`, for
-        functions of that database only — never another's).
+        functions of that database only — never another's). With `org`
+        it is an organization's secret (the client secrets of its sign-in
+        connections): sealed like the others, but no function can declare
+        it and no endpoint returns it. Audited as `secret.set` with the
+        organization, never the value.
       operationId: adminSetSecret
       security: [{ apiKey: [] }, { session: [] }]
       requestBody:
@@ -4925,6 +4929,7 @@ paths:
               properties:
                 value: { type: string, description: "The secret's new value; must not be empty." }
                 database: { type: string, description: "Scopes it to this database of the realm instead of the realm itself." }
+                org: { type: string, description: "Scopes it to this organization (its id) instead; not together with `database`." }
       responses:
         "204": { description: Secret set. }
         "400": { $ref: "#/components/responses/Error" }
@@ -4944,6 +4949,7 @@ paths:
       parameters:
         - { $ref: "#/components/parameters/reauth" }
         - { name: database, in: query, description: "Its database scope; absent means the realm scope.", schema: { type: string } }
+        - { name: org, in: query, description: "An organization's secret (its id), instead of `database`.", schema: { type: string } }
       responses:
         "204": { description: Secret deleted. }
         "401": { $ref: "#/components/responses/Unauthenticated" }
@@ -9985,7 +9991,8 @@ components:
       additionalProperties: false
       required: [database, name, type, created_at, updated_at, updated_by]
       properties:
-        database: { type: string, description: "Its database scope; empty means the realm scope." }
+        database: { type: string, description: "Its database scope; empty means the realm scope (or an organization's, when `org` is set)." }
+        org: { type: string, description: "Present on an organization's secrets: the organization id. Those hold an organization's sign-in client secrets; nothing reads them back, functions included." }
         name: { type: string }
         type:
           type: string
