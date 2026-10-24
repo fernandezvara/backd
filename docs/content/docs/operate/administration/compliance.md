@@ -17,7 +17,7 @@ Apps that handle personal data usually have to answer four questions: *what do y
 | Need | What backd gives you | What is still yours |
 |---|---|---|
 | **Knowing what is held about a person** | A personal data scope per collection (`personal_data:`), a report of it (`backd compliance scope`), and the system data it adds; the same model as erasure | Declaring what exempts a collection, and checking that collections mixing several people's data are narrowed with `fields` |
-| **A copy of the data** | The scope and the per-user reads you build on (`GET /_admin/users/{id}/owned`, consent history); the export package itself is planned | Answering the request within your legal deadline, and verifying who asks |
+| **A copy of the data** | A [personal data export](../../../build/auth/personal-data/): the user asks for their own (with a fresh proof), or support produces it for a formal request; a zip with their documents, files, account data, a list of exclusions and a README in their language | Answering the request within your legal deadline, and verifying who asks when it is not the account holder |
 | **Consent** | Versioned texts, records that name the exact words (a hash), withdrawal, re-acceptance, rules and email/push gating | The texts, which consents you need and why, and what each is used for |
 | **Erasure** | A tombstone, per-collection policies, reduced consent records, [retention](../erasure/) | The policies you declare, backups, and data held outside `backd` (your function's calls to other services) |
 | **Retention** | `audit.retention`, `functions.log_retention`, `compliance.consent_retention`, soft-delete retention | The periods themselves: they are legal decisions |

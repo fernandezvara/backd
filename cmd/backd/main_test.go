@@ -213,6 +213,7 @@ func emailLines(realm, prefix, suffix string) string {
 	for _, kind := range append(slices.Clone(email.PageKinds), email.OptionalPageKinds...) {
 		b.WriteString(prefix + realm + "/pages/" + kind + "/en.html" + suffix + "\n")
 	}
+	b.WriteString(prefix + realm + "/compliance/readme/en.html" + suffix + "\n")
 	b.WriteString(prefix + realm + "/push/example/en.yaml" + suffix + "\n")
 	return b.String()
 }

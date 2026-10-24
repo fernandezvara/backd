@@ -105,12 +105,12 @@ func (s *Users) RequestUserExport(ctx context.Context, userID string, req Export
 		return UserExport{}, err
 	}
 	now := s.now()
+	recent, err := s.UserExports(ctx, userID)
+	if err != nil {
+		return UserExport{}, err
+	}
 	if req.Admin == "" {
 		// The user's own: one a day. A failed one does not count, or a fault would lock them out.
-		recent, err := s.Store.ListUserExports(ctx, userID, 20)
-		if err != nil {
-			return UserExport{}, err
-		}
 		for _, e := range recent {
 			if e.ByAdmin() || e.Status == ExportFailed {
 				continue
@@ -119,6 +119,11 @@ func (s *Users) RequestUserExport(ctx context.Context, userID string, req Export
 				return UserExport{}, &ErrExportTooSoon{RetryAfter: wait}
 			}
 			break
+		}
+	}
+	for _, e := range recent {
+		if e.Status == ExportQueued || e.Status == ExportRunning {
+			return UserExport{}, ErrExportRunning // one at a time, refused before a record is made for it
 		}
 	}
 	locale := req.Locale
@@ -156,7 +161,14 @@ func (s *Users) RequestUserExport(ctx context.Context, userID string, req Export
 
 // UserExports lists a user's exports, newest first.
 func (s *Users) UserExports(ctx context.Context, userID string) ([]UserExport, error) {
-	return s.Store.ListUserExports(ctx, userID, 50)
+	list, err := s.Store.ListUserExports(ctx, userID, 50)
+	if err != nil {
+		return nil, err
+	}
+	for i := range list {
+		list[i] = s.settleExport(ctx, list[i])
+	}
+	return list, nil
 }
 
 // UserExport returns one of a user's exports, or ErrNotFound (another user's is not found).
@@ -168,5 +180,25 @@ func (s *Users) UserExport(ctx context.Context, userID, id string) (UserExport, 
 	if e.UserID != userID {
 		return UserExport{}, ErrNotFound
 	}
-	return e, nil
+	return s.settleExport(ctx, e), nil
+}
+
+// settleExport closes the record of an export whose job ended without finishing it: an
+// administrator cancelled the job, or it was removed. The record would otherwise stay queued for
+// ever and keep the user from asking again.
+func (s *Users) settleExport(ctx context.Context, e UserExport) UserExport {
+	if e.Status != ExportQueued && e.Status != ExportRunning {
+		return e
+	}
+	job, found, err := s.Store.GetJob(ctx, e.JobID)
+	if err != nil || (found && job.Status != JobDone) {
+		return e
+	}
+	e.Status, e.FinishedAt, e.Key = ExportFailed, s.now(), ""
+	e.Error = "the job that builds it was cancelled or removed"
+	if found && job.Result != nil && job.Result.Message != "" {
+		e.Error = job.Result.Message
+	}
+	_ = s.Store.ReplaceUserExport(context.WithoutCancel(ctx), e)
+	return e
 }

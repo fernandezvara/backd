@@ -179,6 +179,9 @@ func keysOf[V any](m map[string]V) func(func(string) bool) {
 // authEnabled reports whether the _auth route (the path after `_auth/`) exists in this realm.
 func (b *builder) authEnabled(route string) bool {
 	s := b.rl.Settings
+	if strings.HasPrefix(route, "me/export") {
+		return s.Compliance.Export
+	}
 	first, _, _ := strings.Cut(route, "/")
 	switch first {
 	case "signup":

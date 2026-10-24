@@ -255,6 +255,18 @@ func registerRemote(cfg *kli.Config) {
 	user("change-email", "change the user's email at once (needs email in realm.yaml); revokes all sessions", true, userChangeEmail, func(cc *kli.CommandConfig) {
 		required(cc, "new-email", "the new email address")
 	})
+	user("export", "export the user's personal data (a zip) for a formal request; the user is told unless --no-notify", true, userExport, func(cc *kli.CommandConfig) {
+		optional(cc, "out", "where to write the zip (default export-<id>.zip; an existing file is never overwritten)")
+		optional(cc, "ticket", "the reference of the request (a support ticket), kept with the export")
+		boolean(cc, "no-notify", "do not tell the user an export was made (needs --reason)")
+		optional(cc, "reason", "with --no-notify: why, kept in the audit record")
+		boolean(cc, "no-wait", "print the export's id and return; fetch it later with export-download")
+		optional(cc, "timeout", "how long to wait for the export (default 30m)")
+	})
+	user("export-download", "download an export made earlier with `user export --no-wait`", true, userExportDownload, func(cc *kli.CommandConfig) {
+		required(cc, "export", "the export's id")
+		optional(cc, "out", "where to write the zip (default export-<id>.zip; an existing file is never overwritten)")
+	})
 	user("identities", "list the user's ways to sign in: a password and the providers they use", true, userIdentities, nil)
 	user("unlink-identity", "remove one of the user's ways to sign in, never the last (password included)", true, userUnlinkIdentity, func(cc *kli.CommandConfig) {
 		required(cc, "provider", "the sign-in method to remove: password, google, microsoft, apple…")
