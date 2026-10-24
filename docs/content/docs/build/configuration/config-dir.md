@@ -461,7 +461,7 @@ personal_data:
 - **`backd` refuses to start** on unknown fields, a missing reason, or `personal_data` in a realm with `auth: disabled`.
 - **Read and `reveal` rules do not limit the scope**: an access request covers data *about* the person, whatever the app shows them.
 
-See what an export would take with `backd compliance scope --realm <r>` (or `GET /_admin/compliance/scope`): per collection what is included, which fields, and every exclusion with its reason, plus the system data an export adds (account, identities, sessions, devices, MFA status, consents, audit records about the user, invocations they made) and what it never holds (password hashes, tokens, secrets, function inputs, outputs and logs).
+See what an export would take with `backd compliance scope --realm <r>` (or `GET /_admin/compliance/scope`): per collection what is included, which fields, and every exclusion with its reason, with a flag on organization collections that are exported whole, plus the system data an export adds (account, identities, sessions, devices, MFA status, consents, audit records about the user, invocations they made) and what it never holds (password hashes, tokens, secrets, function inputs, outputs and logs).
 
 Building and delivering the export package is a later step: today the scope is declared, checked and reported. Backd provides the mechanisms; legal bases, deadlines and texts are yours.
 

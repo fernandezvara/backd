@@ -41,12 +41,12 @@ or keep a collection but only the person's own part (`fields: [title, notes]`, w
 
 Ask of each collection:
 
-1. **Does it hold other people's data next to the owner's?** (comments, reviews, shared notes.) Then narrow it with `fields`, or the whole document goes to whoever owns it.
+1. **Does it hold other people's data next to the owner's?** (comments, reviews, shared notes.) Then narrow it with `fields`, or the whole document goes to whoever owns it. This matters most in collections of an [organization](../../../build/organizations/): their documents are shared by design, and the scope report marks every one that is exported whole.
 2. **Is there a legal reason not to give it?** Declare `export: exclude` with that reason; a request can ask why.
 3. **Is the person named elsewhere** (an array of members, a `paid_by` field)? That is what `pull` and `unset` in [`on_owner_delete`](../erasure/) are for, and they also bring those documents into the scope.
 4. **Does it hold files?** They follow their documents.
 
-Then read `backd compliance scope --realm <r>` (or `GET /_admin/compliance/scope`): every collection with what is included, which fields and every exclusion with its reason. The [personal data export](../../../build/auth/personal-data/) builds exactly that, and [chapter 26 of the tutorial](../../../tutorial/26-your-data/) puts it behind a button.
+Then read `backd compliance scope --realm <r>` (or `GET /_admin/compliance/scope`): every collection with what is included, which fields and every exclusion with its reason, and a `!` on organization collections exported whole (`organization: true` in the API). The [personal data export](../../../build/auth/personal-data/) builds exactly that, and [chapter 26 of the tutorial](../../../tutorial/26-your-data/) puts it behind a button.
 
 ## Consents
 

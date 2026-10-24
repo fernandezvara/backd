@@ -9722,6 +9722,7 @@ components:
               files: { type: array, items: { type: string }, description: "File fields whose files are exported with their documents." }
               reason: { type: string, description: "Why the collection is excluded or exported in part." }
               declared: { type: boolean, description: "`personal_data` is in the collection's `collection.yaml`." }
+              organization: { type: boolean, description: "Present (true) when the documents belong to organizations and are exported whole: they may hold colleagues' data. Narrow them with `personal_data.fields`, or accept it." }
         system:
           type: object
           additionalProperties: false

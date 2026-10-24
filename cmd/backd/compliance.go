@@ -11,15 +11,16 @@ type complianceScope struct {
 	Realm       string `json:"realm"`
 	Auth        bool   `json:"auth"`
 	Collections []struct {
-		Database   string   `json:"database"`
-		Collection string   `json:"collection"`
-		Export     string   `json:"export"`
-		Owned      bool     `json:"owned"`
-		Fields     []string `json:"fields"`
-		Pull       []string `json:"pull"`
-		Files      []string `json:"files"`
-		Reason     string   `json:"reason"`
-		Declared   bool     `json:"declared"`
+		Database     string   `json:"database"`
+		Collection   string   `json:"collection"`
+		Export       string   `json:"export"`
+		Owned        bool     `json:"owned"`
+		Fields       []string `json:"fields"`
+		Pull         []string `json:"pull"`
+		Files        []string `json:"files"`
+		Reason       string   `json:"reason"`
+		Declared     bool     `json:"declared"`
+		Organization bool     `json:"organization"`
 	} `json:"collections"`
 	System struct {
 		Included []string `json:"included"`
@@ -62,6 +63,9 @@ func complianceScopeCmd(c *kli.CommandContext) error {
 		}
 		if len(e.Files) > 0 {
 			line += "; files of " + strings.Join(e.Files, ", ")
+		}
+		if e.Organization {
+			line += "\n  ! organization documents, exported whole: they may hold colleagues' data (narrow them with personal_data.fields)"
 		}
 		fmt.Fprintln(w, line)
 	}

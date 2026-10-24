@@ -54,6 +54,9 @@ func (a *adminAPI) complianceScope(w http.ResponseWriter, r *http.Request) {
 		if e.Reason != "" {
 			entry["reason"] = e.Reason
 		}
+		if e.Organization {
+			entry["organization"] = true
+		}
 		collections = append(collections, entry)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
