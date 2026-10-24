@@ -2,7 +2,7 @@
 
 - **Issues:** design 4.1 (#5) → features 4.3 (#11), 4.4 (#12), 4.5 (#13), 4.6 (#14), 4.7 (#15), 4.8, 4.9
 - **Status:** decided; §4.6 and §5 revised 2026-10-02 (deactivate by default, tombstone, opt-in policies)
-- **Related designs:** [email-delivery.md](./email-delivery.md) (templates, tokens, hosted pages, limits), [internal-functions.md](./internal-functions.md) (the deferred `account.on_delete` hook)
+- **Related designs:** [email-delivery.md](./email-delivery.md) (templates, tokens, hosted pages, limits), [internal-functions.md](./internal-functions.md) (the deferred `account.on_delete` hook), [org-sso.md](./org-sso.md) (organization sign-in creates users even when sign-up is `closed`; erasure removes organization-bound identities)
 
 ## 1. Decisions at a glance
 

@@ -2,7 +2,7 @@
 
 - **Issues:** features 14.1–14.13 (milestone `14-organizations`)
 - **Status:** decided
-- **Related designs:** [account-lifecycle.md](./account-lifecycle.md) (erasure, `on_owner_delete`), [mfa-passwordless.md](./mfa-passwordless.md) (session MFA flag, reauth), [email-delivery.md](./email-delivery.md) (invitation emails, limits), [file-storage.md](./file-storage.md) (deletion queue)
+- **Related designs:** [account-lifecycle.md](./account-lifecycle.md) (erasure, `on_owner_delete`), [mfa-passwordless.md](./mfa-passwordless.md) (session MFA flag, reauth), [email-delivery.md](./email-delivery.md) (invitation emails, limits), [file-storage.md](./file-storage.md) (deletion queue), [org-sso.md](./org-sso.md) (an organization's own sign-in providers)
 
 ## 1. The idea
 
@@ -160,6 +160,7 @@ All of these are under `/v1/{realm}/_orgs` and require a session. **A non-member
 - **`manage: roles`:** can grant or remove any role, including roles with capabilities.
 - **`manage: teams`:** see §8.
 - **`manage: org`:** covers rename, slug, `require_mfa` and deletion.
+- **`manage: sso`:** added by [org-sso.md](./org-sso.md): sets, replaces and removes the organization's sign-in connections and their client secrets, with reauth. Not part of any default role set; the example gives it to `owner` and `admin`. The roles a connection gives on joining follow the granting rules above.
 
 ### 5.2 Realm admins
 
@@ -269,7 +270,7 @@ Invitations and managers can give **direct roles or teams**. The docs explain, w
 
 ## 9. Leaving, removal and member erasure (issues 14.1 and 14.13)
 
-- **Leaving or removal:** documents in the organization stay, and the person loses access at once (no cache).
+- **Leaving or removal:** documents in the organization stay, and the person loses access at once (no cache). While the organization has a sign-in connection, a removed member is also kept from rejoining through it ([org-sso.md §6](./org-sso.md#6-accounts-and-joining-issue-305)); accepting an invitation lifts that.
 - **Erasure of a user:**
   - the user's memberships and team memberships are deleted;
   - invitations bound to them are deleted, while invitations they created stay, with `created_by` cleared;
@@ -311,6 +312,7 @@ Invitations and managers can give **direct roles or teams**. The docs explain, w
   - `delete` removes the documents, **soft-deleted ones included**, and queues their files for deletion;
   - `keep` leaves them, readable only by realm admins (no member remains).
 - **Report first:** `GET /_admin/orgs/{org}/owned` and `backd orgs owned` give counts per database and collection, and what each policy will do.
+- **Connections:** the organization's sign-in connections and their secrets are removed in the same job ([org-sso.md §7](./org-sso.md#7-lifecycle-and-portability-issue-306)); an `orphaned` organization's connections answer unavailable.
 - **Audit:** `org.deleted` with counts, never content.
 
 ## 13. Organization claims

@@ -3,7 +3,7 @@
 - **Issues:** #141 (this design) → #214 (several sign-in methods per user), #142 (Google, Microsoft, Apple), #143 (native ID tokens), #144 (Apple revocation), #145 (profile handover, `account.on_signup`), #146 (JS client), #215 (identities in the admin API, CLI and UI), #216 (integration testing guide), #157 (generic OpenID Connect), #158 (hosted sign-in page); supersedes #36
 - **Status:** decided
 - **Testing with real providers:** [identity-providers-testing.md](./identity-providers-testing.md)
-- **Related designs:** [account-lifecycle.md](./account-lifecycle.md) (verification, erasure, sign-up modes), [email-delivery.md](./email-delivery.md) (hosted pages, templates, `allowed_redirects`, `BACKD_URL`), [internal-functions.md](./internal-functions.md) (`account.on_signup`)
+- **Related designs:** [account-lifecycle.md](./account-lifecycle.md) (verification, erasure, sign-up modes), [email-delivery.md](./email-delivery.md) (hosted pages, templates, `allowed_redirects`, `BACKD_URL`), [internal-functions.md](./internal-functions.md) (`account.on_signup`), [org-sso.md](./org-sso.md) (the same flow for an organization's own provider connections)
 
 ## 1. Why, and what already exists
 
@@ -100,7 +100,7 @@ providers:
 
 - **A user is one account;** it holds no credentials. `users` has the id, one `email` (with `email_verified`), roles, `disabled`, `locale` and the network restrictions. Sessions, roles, rules, `_meta.owner` and file ownership all point at the user, never at the method used to sign in.
 - **A user has one or more sign-in methods,** each an `identities` document: `password`, `google`, `microsoft`, `apple` or a generic provider's name. Password and any number of different providers can coexist on the same user, and a user may sign in with any of them.
-- **At most one identity per provider per user,** and a `(provider, subject)` belongs to one user. Linking a second account of a provider the user already has, or an identity that belongs to another user, is `link_conflict`. A person who needs two Microsoft tenants uses two backd accounts.
+- **At most one identity per provider per user,** and a `(provider, subject)` belongs to one user. Linking a second account of a provider the user already has, or an identity that belongs to another user, is `link_conflict`. A person who needs two Microsoft tenants uses two backd accounts. *Organization sign-in ([org-sso.md](./org-sso.md)) adds an organization to the key: `identities` gain an optional `org`, the unique indexes become `(provider, org, subject)` and `(user_id, provider, org)`, and a user holds one identity per provider **per organization**. Realm providers have no `org`, so everything in this document holds unchanged for them.*
 - **Getting there:** a provider-first user adds a password with password reset; a password-first user links a provider explicitly (`intent: link`) or signs in with it and is linked automatically under the §6 conditions.
 - **Emails:** `users.email` is the account's address. An identity's email may differ (a work Google account on a personal-email user) and never changes `users.email`.
 - **The last method can't be removed** (§6).
@@ -172,6 +172,7 @@ sequenceDiagram
 - New users get `locale` from the request like any sign-up.
 - **Automatic linking happens only on first sight of an identity;** later changes of the provider's email never relink or change the user.
 - **Unlinking:** `DELETE /_auth/identities/{provider}` removes an identity, **never the last sign-in method** (password or provider) — a user can't lock themselves out. An administrator can do the same on a user's behalf (§13), with the same rule. A provider-only user who wants a password uses password reset.
+- **Organization sign-in never links by email.** The rows above are the realm's providers. A connection an organization's managers control ([org-sso.md §6](./org-sso.md#6-accounts-and-joining-issue-305)) gives `account_exists` for a known address and links only with `intent=link`; it creates users even when sign-up is `closed`, because the operator's switch for it is the consent.
 - **Pre-hijacking test:** an attacker's unverified password account with the victim's address never absorbs the victim's Google identity.
 
 ## 7. ID-token endpoint (native apps)
@@ -233,7 +234,8 @@ Paths are relative to `/v1/{realm}`: `/_auth/oauth/{provider}/start` is `/v1/{re
 | `POST /_auth/token` | redeem the one-time login code |
 | `POST /_auth/oauth/{provider}/id-token` | native sign-in |
 | `GET /_auth/me` | + linked identities (provider, email, linked at) |
-| `DELETE /_auth/identities/{provider}` | unlink (never the last method) |
+| `DELETE /_auth/identities/{provider}` | unlink (never the last method); organization identities take `?org=` ([org-sso.md](./org-sso.md)) |
+| `GET /_auth/providers` | the external providers a client may offer now (added by [org-sso.md §5](./org-sso.md#5-signing-in-issue-304), together with the same list per organization) |
 | `GET /_admin/users/{id}/identities` | admin view; `backd user identities` |
 | `DELETE /_admin/users/{id}/identities/{provider}` | admin unlink (never the last method) |
 
@@ -276,4 +278,5 @@ Paths are relative to `/v1/{realm}`: `/_auth/oauth/{provider}/start` is `/v1/{re
 ## 17. Follow-ups
 
 - #157 and #158 are designed above and built after #142.
+- Per-organization providers (Google, Microsoft; later Apple and generic OpenID Connect): [org-sso.md](./org-sso.md).
 - HttpOnly (backlog 7.11) cookie mode could later let backd complete web sign-ins without the login-code step.
