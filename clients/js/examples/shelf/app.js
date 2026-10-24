@@ -15,6 +15,7 @@
 //
 // Chapter 18 reads the realm's app configuration: a maintenance banner anyone
 // sees, and a switch that hides the export button (the server enforces it too).
+// The page follows the configuration live, so a change shows up without a reload.
 //
 // Chapter 16 adds a way in without a password (a link or code by email) and
 // a second factor: the step after the password, and the account page's
@@ -205,6 +206,9 @@ document.addEventListener('alpine:init', () => {
       // Back on the tab: the copy is fresh for its cache_ttl, then revalidated with a 304.
       window.addEventListener('focus', () => this.loadConfig())
       backd.config.on('change', () => this.readConfig())
+      // And instantly: backd tells this page when what it reads of the configuration changes.
+      backd.config.live(['maintenance', 'features'])
+      backd.config.on('error', () => {}) // no realtime on this server: focus and cache_ttl still work
       // ?s=<token> is the public share view — no session needed.
       const s = params.get('s')
       if (s) await this.openShare(s)

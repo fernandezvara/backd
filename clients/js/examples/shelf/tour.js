@@ -475,6 +475,35 @@ const tag17 = first17.headers.get('ETag') ?? ''
 const again17 = await fetch(`${url}/v1/shelf/_config?paths=maintenance`, { headers: { 'If-None-Match': tag17 } })
 check('an unchanged banner revalidates with a 304, and is public for a CDN', again17.status === 304 && /public, max-age=\d+/.test(first17.headers.get('Cache-Control') ?? ''), `${again17.status} ${first17.headers.get('Cache-Control')}`)
 
+// Instantly: clients that follow the configuration hear of a change without asking.
+{
+  const pollUntil = async (/** @type {() => boolean} */ cond, /** @type {number} */ ms = 15000) => {
+    for (const end = Date.now() + ms; !cond() && Date.now() < end; ) await new Promise((r) => setTimeout(r, 50))
+    return cond()
+  }
+  const watchers = [createClient({ url, realm: 'shelf' }), createClient({ url, realm: 'shelf', storage: member.storage })]
+  const [anon17, signed17] = watchers
+  const heard = watchers.map(() => /** @type {string[]} */ ([]))
+  for (const [i, w] of watchers.entries()) {
+    await w.config.load(['maintenance', 'features'])
+    w.config.on('change', (paths) => heard[i].push(...paths))
+    w.config.live(['maintenance', 'features'])
+  }
+  const opened = /** @type {any} */ (await operator.admin.invokeFunction('main/maintenance-open', { input: { message: 'Back at 05:00' } }))
+  await opened.wait({ pollIntervalMs: 300, timeoutMs: 90000 })
+  check('the window opens on a page that never asked again', await pollUntil(() => anon17.config.getSync('maintenance.message') === 'Back at 05:00' && signed17.config.getSync('maintenance.message') === 'Back at 05:00'), JSON.stringify(heard))
+  const closed = /** @type {any} */ (await operator.admin.invokeFunction('main/maintenance-close'))
+  await closed.wait({ pollIntervalMs: 300, timeoutMs: 90000 })
+  check('and closes the same way', await pollUntil(() => anon17.config.getSync('maintenance.enabled') === false && signed17.config.getSync('maintenance.message') === ''), JSON.stringify(heard))
+
+  const before = await currentVersion()
+  await adminConfig('PATCH', '', { set: { 'features.export.enabled': false } }, before)
+  check('a signed-in member hears the switch flip', await pollUntil(() => signed17.config.getSync('features.export.enabled') === false), JSON.stringify(heard[1]))
+  check('the visitor was never told about it', !heard[0].some((p) => p.startsWith('features')), JSON.stringify(heard[0]))
+  await adminConfig('PATCH', '', { reset: ['features'] }, await currentVersion())
+  check('and hears it come back', await pollUntil(() => signed17.config.getSync('features.export.enabled') === true), JSON.stringify(heard[1]))
+}
+
 // The switch the server enforces.
 let version17 = await currentVersion()
 const off17 = await adminConfig('PATCH', '', { set: { 'features.export.enabled': false } }, version17)
