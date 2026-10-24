@@ -143,7 +143,7 @@ Links and tokens in a message are credentials. `backd` hides the token from the 
 
 ## Sending email from functions
 
-A function that declares `email: true` in its [`function.yaml`](../reference/) can send **custom emails** with `ctx.email.send()`, through the realm's templates, languages, delivery function, queue and retries:
+A function that declares `email: true` in its [`function.yaml`](../reference/) can send **custom emails** with `ctx.email.send()` (a function that didn't declare it is refused with `403 email_not_declared`), through the realm's templates, languages, delivery function, queue and retries:
 
 ```ts
 await ctx.email.send({ kind: "order-shipped", to_user: order._meta.owner, data: { order_no: order.no } });   // a user of the realm

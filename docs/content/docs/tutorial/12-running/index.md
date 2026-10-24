@@ -71,3 +71,5 @@ This tutorial ran on a dev stack: `BACKD_DEV` on, `email-capture` storing mail, 
 - **Go deeper on functions:** the [cookbook](../../build/functions/cookbook/) (payments, exports, retries) and [Testing functions](../../build/functions/testing/).
 - **Use it from your own app:** the [JavaScript client](../../build/clients/js/) and the [API reference](../../build/api/) (`api/openapi.yaml`).
 - **Test the tutorial itself:** on a checkout, `make shelf-tour` replays everything in this tutorial against a running stack (`clients/js/examples/shelf/tour.js`), and `make shelf-tour-ci` builds the starter folder and the images from the checkout first — the check CI runs on every push, so this tutorial cannot drift from `backd` unnoticed.
+
+Next: [chapter 13](../13-files/) — files on assets.

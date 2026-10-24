@@ -29,6 +29,8 @@ HTTP ──▶ handlers ──────┴──▶ storage.Repository ──
 | `internal/jsonnum` | Normalizes JSON numbers to int64 or float64 |
 | `internal/mongodb` | Everything MongoDB-specific: connection, validator translation, provisioner (including realm system databases), `Repository` and `auth.Store` implementations |
 
+The packages above are the core. The features built on it have packages of their own, each driver-neutral where it can be (functions and the executor, egress, triggers and realtime over the change feed, email and push, field encryption, images, app configuration, sign-in providers, the type and OpenAPI generators): the [repository layout](../#repository-layout) says what each does, and `design/<feature>.md` in the repository holds the reasoning.
+
 No MongoDB driver types cross the `storage` interface. Another document store (for example Amazon DocumentDB) can be added as a new implementation without touching handlers or validation.
 
 ## Query pipeline

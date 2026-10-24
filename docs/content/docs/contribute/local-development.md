@@ -64,7 +64,7 @@ In Grafana, the *Processes* dashboard shows the API, the workers, the executor a
 | `make dev-logs` | Follows the logs; `S=worker` for one service. |
 | `make dev-backd ARGS='…'` | Runs the `backd` command line in the API container, for example `bootstrap`. |
 
-`BACKD_VERSION` pins the images (`BACKD_VERSION=v0.9.0 make dev-build`); the default is `latest`. The stack is for localhost and development: dev mode, fixed dev-only tokens and an open Grafana. Never use it for a deployment (see [Production deployment](../../operate/production/)).
+`BACKD_VERSION` pins the images (`BACKD_VERSION=v0.9.2 make dev-build`); the default is `latest`. The stack is for localhost and development: dev mode, fixed dev-only tokens and an open Grafana. Never use it for a deployment (see [Production deployment](../../operate/production/)).
 
 To test the stack against a build of your checkout instead of a release, use the version `local`. `make dev-build` builds the executor image from the checkout (a snapshot of the Go code at that moment: run it again after you change code) and pulls the other images:
 
@@ -115,6 +115,8 @@ examples/config/
         ├── orders/, refunds/, receipts/, reports/, digests/, events/
         └── _functions/{order_total, refund, refund_receipt, export_orders, nightly_cleanup, daily_digest, payment_webhook}/
 ```
+
+The tree shows the first examples; `examples/config` also holds `shelf` (the [tutorial](../../tutorial/)'s app, in its final state), `hr` (organizations), `idtest` (custom ids) and `adminui` (the admin interface's fixtures).
 
 The seeder reads each realm's `realm.yaml` for what to create — the seeded
 `roles.*.users`, the signup mode, `account.require_verified_email` and `storage:` —

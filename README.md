@@ -29,9 +29,9 @@ export CALLBACK_KEY=$(openssl rand -base64 32)
 export EGRESS_KEY=$(openssl rand -base64 32)
 docker compose up --build -d          # MongoDB + backd + the functions executor
 
-docker compose exec backd /backd bootstrap --realm demo --email me@example.com
+docker compose exec backd /usr/local/bin/backd bootstrap --realm demo --email me@example.com
 backd login --realm demo --url http://127.0.0.1:8080 --email me@example.com
-KEY=$(backd apikey create --realm demo --name local --expires 1d)
+KEY=$(backd apikey create --realm demo --name local --expires 1d)   # asks for your password again
 
 curl -X POST http://127.0.0.1:8080/v1/demo/main/posts \
   -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
@@ -44,16 +44,17 @@ curl http://127.0.0.1:8080/v1/demo/main/posts -H "Authorization: Bearer $KEY"
 To explore instead, this checkout ships example realms and applications on a local HTTPS stack:
 
 ```sh
-make dev-build && make dev-examples   # https://localhost:8443 — the apps index is at /example/
+BACKD_VERSION=local make dev-build && BACKD_VERSION=local make dev-examples   # https://localhost:8443 — the apps index is at /example/
 ```
 
-The stack creates (and renews) a local CA in `docker/certs/` and prints how to trust it. Under [`examples/config`](examples/config), the `shop` realm needs no key (`auth: disabled` — never expose such a realm) and `blog` answers reads to anyone while writes want a user or an API key; `make dev-backd ARGS='bootstrap --realm blog --email <email>'` creates the first administrator.
+`BACKD_VERSION=local` builds the images from your checkout, which the examples need when they use something newer than the last release. The stack creates (and renews) a local CA in `docker/certs/` and prints how to trust it. Under [`examples/config`](examples/config), the `shop` realm needs no key (`auth: disabled` — never expose such a realm) and `blog` answers reads to anyone while writes want a user or an API key; `make dev-backd ARGS='bootstrap --realm blog --email <email>'` creates the first administrator.
 
 ## Documentation
 
 | I want to… | Go to |
 |---|---|
 | Understand what backd is | [Getting started](https://fernandezvara.github.io/backd/docs/getting-started/) |
+| Fix an error I got | [Troubleshooting](https://fernandezvara.github.io/backd/docs/troubleshooting/) |
 | Run a realm end to end | [Quickstart](https://fernandezvara.github.io/backd/docs/build/quickstart/) |
 | Build a complete app, chapter by chapter | [Tutorial](https://fernandezvara.github.io/backd/docs/tutorial/) |
 | Reference: API, auth, functions, files, push, clients | [Build](https://fernandezvara.github.io/backd/docs/build/) |

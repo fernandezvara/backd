@@ -169,7 +169,7 @@ Be careful when taking an admin role away from yourself: once no one holds an ad
 | `backd serve [--with-worker]` | Load config, provision or verify MongoDB, serve HTTP; `--with-worker` also runs the worker role (see [Deploying config](../../deploying/)) |
 | `backd provision` | Load config, apply provisioning once and exit |
 | `backd worker` | Claim and run [async jobs](../../../build/functions/jobs/); `WORKER_CONCURRENCY` caps how many run at once |
-| `backd executor` | Run server-side functions for `backd` (needs Deno; see [Running in production](../../functions-runtime/)) |
+| `backd executor` | Run server-side functions for `backd` (needs Deno; see [Executor, workers and egress](../../functions-runtime/)) |
 | `backd egress` | Run the egress role, the executor's only way out (see [Outbound network](../../../build/functions/network/)) |
 
 **General:** `backd help`, `backd version`.

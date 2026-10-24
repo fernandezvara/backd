@@ -74,7 +74,7 @@ Repeat the first `curl` with other titles and `"tags":["docs"]` (four or five do
 
 ## The gallery
 
-The app you downloaded is the **finished Shelf app**, written once for all twenty-four chapters: a gallery, a form, my assets, notifications, an Admin view and an account page. You don't edit it; each chapter gives the *backend* what one more part of it needs, and that part comes alive. Until then the part reports an error (the Admin view says it needs a signed-in admin, notifications find no collection) — expected, not a mistake of yours.
+The app you downloaded is the **finished Shelf app**, written once for all twenty-six chapters: a gallery, a form, my assets, notifications, an Admin view and an account page. You don't edit it; each chapter gives the *backend* what one more part of it needs, and that part comes alive. Until then the part reports an error (the Admin view says it needs a signed-in admin, notifications find no collection) — expected, not a mistake of yours.
 
 What this chapter's backend already lights up, in `app/app.js`:
 

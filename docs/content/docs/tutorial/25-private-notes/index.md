@@ -88,3 +88,5 @@ The first package has the titles and the notes as ciphertext; the second has the
 Encrypted fields protect against someone with the **database** but not the keys: a dump, a backup, a stolen disk, an operator with MongoDB access. They do not protect against a compromised `backd` process (it holds the keys while it runs), against someone who holds the secrets master key **and** the database, or against a function that prints a note to its logs. [Security](../../operate/administration/security/) lists it all.
 
 The tutorial's [tour](https://github.com/fernandezvara/backd/blob/main/clients/js/examples/shelf/tour.js) checks everything on this page against a running stack.
+
+Next: [chapter 26](../26-your-data/) — your data.

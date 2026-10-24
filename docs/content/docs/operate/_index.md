@@ -6,6 +6,23 @@ weight: 400
 toc: true
 ---
 
+This section is for the **operator**: whoever deploys, secures, monitors, backs up and upgrades a `backd` service, and does not necessarily write the application on it. Building an application is [Build](../build/); changing backd itself is [Contribute](../contribute/); a message you do not recognize may be in [Troubleshooting](../troubleshooting/).
+
+## Where to find things
+
+| Task | Page |
+|---|---|
+| Deploy for real: TLS, MongoDB, rate limits | [Production deployment](production/) |
+| Run the functions executor, egress and workers | [Executor, workers and egress](functions-runtime/) |
+| Package and promote the config | [Deploying config](deploying/) |
+| Check before exposing it | [Hardening checklist](checklist/) and the [security model](administration/security/) |
+| Run it: users, API keys, secrets, the audit trail | [Administration](administration/) and the [command line](administration/cli/) |
+| Watch it | [Metrics](metrics/) and the [change feed](change-feed/) |
+| Back it up and restore it | [Backup and restore](backup/) and [Keeping storage tidy](storage-maintenance/) |
+| Connect email, storage and push providers | [Providers](providers/) |
+| Something leaked | [If credentials leak](if-credentials-leak/) |
+| Move to a new version | *Upgrading to* below |
+
 ## MongoDB
 
 `backd` needs MongoDB 8.2 running as a **replica set**. A single node is fine. Replica sets support transactions, which [atomic batch writes](../build/api/documents/#batch-writes) rely on, and every setup `backd` is tested with uses one. Sharded clusters (through `mongos`) work too.
@@ -139,10 +156,14 @@ blog__main.posts
 shop__orders.items
 ```
 
-### Upgrading to the next release (not yet tagged)
+### Upgrading to v0.9.2
 
-1. **Run `backd provision`** with an admin-privileged `MONGO_URI`. It creates the `user_exports` system collection (the records of [personal data exports](../build/auth/personal-data/)). With `PROVISION_MODE=verify` the instances refuse to start until it has run. If you run with least-privilege grants, `backd databases --collections` prints the new collection.
-2. **Nothing else changes until you turn exports on** (`compliance.export: true`, which needs `storage:` and `email:`). `data-export-ready` and `data-export-made` are built-in email kinds; `backd template realm` writes the English text and a `compliance/readme/en.html` to edit.
+v0.9.2 changes where a realm keeps its content (breaking, step 1) and adds the personal data export and live app configuration. Run `backd config check` against your tree with the new binary first: it lists every folder to move.
+
+1. **Move the realm's content folders into `_realm/`.** `email`, `pages`, `push`, `consents`, `compliance` and `app-config` leave the top of each realm for `<realm>/_realm/` (`app-config` becomes `_realm/config`); `realm.yaml` and the databases stay where they are. For a realm called `acme`: `mkdir acme/_realm && mv acme/email acme/pages acme/push acme/consents acme/compliance acme/_realm/` (only the ones you have), and `mv acme/app-config acme/_realm/config`. The old layout stops loading, and the error names each folder and where it goes; `backd config check` shows it before you deploy. The [config fingerprint](deploying/) changes, so every instance must run the new tree.
+2. **Run `backd provision`** with an admin-privileged `MONGO_URI`. It creates the `user_exports` system collection (the records of [personal data exports](../build/auth/personal-data/)). With `PROVISION_MODE=verify` the instances refuse to start until it has run. If you run with least-privilege grants, `backd databases --collections` prints the new collection.
+3. **Nothing else changes until you turn exports on** (`compliance.export: true`, which needs `storage:` and `email:`). `data-export-ready` and `data-export-made` are built-in email kinds; `backd template realm` writes the English text and a `_realm/compliance/readme/en.html` to edit.
+4. **Move the clients with the server.** `backd-js` and `package:backd` are released on the same version: `0.9.2` (for Dart, `backd: ^0.9.2`).
 
 ### Upgrading to v0.9.1
 

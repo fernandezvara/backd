@@ -97,3 +97,5 @@ A member who holds `editor` both ways keeps it after being taken out of the team
 - Deleting the team removes its pins, and `backd orgs owned` counted them first.
 
 Read [Organizations](../../build/organizations/api/) for the API, [Organizations in functions](../../build/organizations/functions/) for `ctx.user.orgs` and `ctx.admin.orgs`, and [the rules](../../build/auth/rules/#organizations) for `inOrg` and `hasOrgRole`.
+
+Next: [chapter 21](../21-authors/) — authors with references.

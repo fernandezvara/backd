@@ -77,3 +77,5 @@ This subscription has no equality on a grouping field, so it is a **scanned** on
 - Two members with the gallery open: a curator publishes a draft and it appears in both, thumbnail and author included; a delete removes it. A search shows "search — not live" until it is cleared.
 
 Read [Realtime](../../build/api/realtime/) for the protocol and the limits, and [live lists](../../build/clients/js/#live-lists) for the client.
+
+Next: [chapter 25](../25-private-notes/) — private notes.

@@ -58,7 +58,7 @@ The last member who can manage the organization (`manage: org`) can't leave, be 
 
 ## Requiring a second factor
 
-An organization can require its members to use [multi-factor authentication](../../auth/mfa/): `PATCH /_orgs/{org}` with `{"require_mfa": true}`, by `manage: org`, with a fresh proof of identity, when the realm's [`allow_require_mfa`](../../configuration/realm/#organizations) is true. It is audited as `org.require_mfa`. The caller's own session needs a second factor too, or their access would end at once.
+An organization can require its members to use [multi-factor authentication](../../auth/mfa/): `PATCH /_orgs/{org}` with `{"require_mfa": true}`, by `manage: org`, with a fresh proof of identity, when the realm's [`allow_require_mfa`](../../configuration/realm/#organizations) is true (otherwise `409 require_mfa_not_allowed`). It is audited as `org.require_mfa`. The caller's own session needs a second factor too, or their access would end at once.
 
 - **A session without a second factor doesn't count** as a member there. Rule helpers (`inOrg`, `hasOrgRole`, `orgClaims`) are false for it and leave the organization out of lists; `?org=` on a create answers `403 not_org_member`; and the organization's own routes answer `403 org_requires_mfa`, so the app can start the enrollment.
 - **Leaving stays possible** without one.

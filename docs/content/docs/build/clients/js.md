@@ -16,7 +16,7 @@ npm install backd-js
 
 It has no dependencies, needs no build step and works with any bundler. Without one, import it in a browser with an [import map](https://developer.mozilla.org/docs/Web/HTML/Element/script/type/importmap) pointing at the package's `src/index.js` (from a CDN such as `https://cdn.jsdelivr.net/npm/backd-js/src/index.js`, or from your own server), as the [example app](#example-app) does.
 
-The client is released on the same version as the server (`backd-js` 0.9.1 goes with `backd` v0.9.1). Versions of `backd-js` before 0.2 were an unrelated, older library.
+The client is released on the same version as the server (`backd-js` 0.9.2 goes with `backd` v0.9.2). Versions of `backd-js` before 0.2 were an unrelated, older library.
 
 ## Example app
 
@@ -76,7 +76,7 @@ await backd.auth.deleteAccount()             // needs a fresh proof; deactivates
 - In realms with `signup: invite`, pass the invitation: `signup({ email, password, invitation })`.
 - In a realm that [requires verified addresses](../../auth/sessions/#email-verification), `signup` creates the account and then rejects with a `VerificationRequiredError`: there is no session yet, and the user logs in after following the link in the email. A `login` before that rejects with a `ForbiddenError` whose `code` is `email_not_verified`. `redirectTo` names where the page after the link may send the user (it must be within the realm's `email.allowed_redirects`).
 - `logout` always removes the stored token, even if the server can't be reached or already forgot the session.
-- **Sensitive actions need a fresh proof.** `changePassword`, `requestEmailChange`, `deleteAccount`, `unlinkProvider` and (for an administrator signed in with a session) `admin.apiKeys.create` answer `401 reauth_required` without one. `auth.reauth({ method, … })` takes the strongest proof the user has (`me.reauth_methods`: `totp` or `recovery_code` with a second factor, `password`, or `email_code` after `requestReauthCode()`), and the client sends the token it gave with those requests for the realm's `reauth.ttl` (5 minutes by default): one prompt covers a settings page. See [Re-authentication](../../auth/reauth/).
+- **Sensitive actions need a fresh proof.** `changePassword`, `requestEmailChange`, `deleteAccount`, `unlinkProvider` and (for an administrator signed in with a session) `admin.apiKeys.create` answer `401 reauth_required` without one. `auth.hasFreshProof()` tells whether the client holds one that is still good. `auth.reauth({ method, … })` takes the strongest proof the user has (`me.reauth_methods`: `totp` or `recovery_code` with a second factor, `password`, or `email_code` after `requestReauthCode()`), and the client sends the token it gave with those requests for the realm's `reauth.ttl` (5 minutes by default): one prompt covers a settings page. See [Re-authentication](../../auth/reauth/).
 
 The endpoints behind these calls, and their rules, are described in [Sign-up, login and sessions](../../auth/sessions/).
 
@@ -718,11 +718,14 @@ await backd.orgs.teams(org.id).revokeRole(team.id, { user: userId, role: 'delega
 // An invitation answers the link once: show it, send it, or let the server email it.
 const inv = await backd.orgs.invitations(org.id).create({ binding: 'email', email: 'ana@example.com', roles: ['editor'], send: true })
 inv.link   // https://app.acme.example/join?token=…
+const again = await backd.orgs.invitations(org.id).newLink(inv.id)   // a new token and link for a pending one; the old link stops working
 
 // The person who got the link:
 const offer = await backd.orgs.invitations.preview(token)   // { org, roles, teams }
 await backd.orgs.invitations.accept(token)
 ```
+
+The rest of the surface, by object: `orgs` has `create`, `list`, `get`, `update`, `leave` (allowed without a second factor; the last manager cannot) and `delete`; `members(id)` has `list`, `update` and `remove`; `teams(id)` has `list`, `create`, `update`, `delete`, `members`, `addMember`, `removeMember`, `grantRole`, `setRoleWindow` and `revokeRole`; `invitations(id)` has `create`, `list`, `revoke`, `send` and `newLink`; `templates(id)` has `list`, `get`, `put`, `delete`, `preview` and `test`. Each maps to a route of the [organizations API](../../organizations/api/).
 
 **Documents belong to an organization** when their collection says so: `inOrg(id)` scopes a collection, so creates go there and lists show only that organization's documents (the read rule still decides what is seen).
 
@@ -853,6 +856,7 @@ await backd.admin.orgs.transfer('main', 'projects', docId, otherOrgId)   // move
 const access = await backd.admin.whoami()                         // level, areas it may read and change
 const posts = backd.admin.data('blog', 'posts')                  // the admin data route: list/get/create/replace/patch/delete/restore, past the rules
 const config = await backd.admin.config()                         // what this instance runs for the realm, read-only
+const check = await backd.admin.checkConfig({ 'main/notes/collection.yaml': 'rules:\n  read: user != nil\n' })   // validate a change against the whole config, without applying it
 const spec = await backd.admin.openapi()                       // the realm's admin OpenAPI document (needs the config area)
 const appSpec = await backd.admin.clientOpenapi()                 // the one for client applications: no admin routes
 const storage = await backd.admin.storage.check()                  // the realm's object storage: credentials, put/get, signed SHA-256, links

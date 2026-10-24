@@ -117,7 +117,7 @@ From chapter 2 on you use three accounts, all created in chapter 2 while sign-up
 
 ## How a chapter reads
 
-Each chapter is a diff on the state the previous one left: the files to create or change (quoted from the same files the repository runs and tests; a **fetch** block lists them as a download loop when you'd rather not type), the commands to run, and a **"you should see"** list at the end — if every line holds, the chapter worked. 
+Each chapter is a diff on the state the previous one left: the files to create or change (quoted from the same files the repository runs and tests; a **fetch** block lists them as a download loop when you'd rather not type), the commands to run, and a **"you should see"** list at the end — if every line holds, the chapter worked. Chapters follow each other: each starts from the state the previous one left, so do them in order (or start from the repository's `examples/config/shelf` when you want the finished realm). A chapter that needs something extra says so in its first lines, like chapter 13's storage, chapter 16's authenticator app or chapter 11's Node script. 
 ## When something is off
 
 - `curl -s http://localhost:8080/readyz` answers once MongoDB is a replica set and backd serves; for a minute after `up` it may not. `docker compose ps` shows which container is down.

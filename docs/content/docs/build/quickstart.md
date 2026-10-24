@@ -18,7 +18,7 @@ Each tagged version is published automatically:
 `backd version` prints what you got — from the binary, or from the image, whose entrypoint *is* `backd`:
 
 ```sh
-docker run --rm ghcr.io/fernandezvara/backd:v0.9.1 version
+docker run --rm ghcr.io/fernandezvara/backd:v0.9.2 version
 ```
 
 Checksums, SBOMs and signature verification are an operations concern: [Deploying config → Verifying a release](../../operate/deploying/#verifying-a-release).
@@ -35,6 +35,7 @@ cd my-app
 ```
 config/demo/
   realm.yaml
+  _realm/                  email, pages, push and compliance texts the realm shows
   main/
     posts/                 a sample collection: schema, rules, indexes
     _functions/stats/      a sample function, with a deno test
@@ -81,6 +82,8 @@ Sign in with the CLI — the template's `admin` role requires a second factor, s
 backd login --realm demo --url http://127.0.0.1:8080 --email me@example.com
 KEY=$(backd apikey create --realm demo --name local --expires 1d)
 ```
+
+`apikey create` asks for your password again, as a fresh proof for a sensitive action, and prints the key once on standard output: that is what `$KEY` holds. Something refused along the way? See [Troubleshooting](../../troubleshooting/).
 
 Create, read, update, query and delete a document:
 

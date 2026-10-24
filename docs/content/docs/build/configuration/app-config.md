@@ -73,7 +73,7 @@ read:
 
 ## Reading
 
-Apps read it with `GET /v1/{realm}/_config` (optionally `?paths=features,maintenance`): only the keys the caller's rules allow, defaults filled in, hidden keys absent without a hint.
+Apps read it with `GET /v1/{realm}/_config` (optionally `?paths=features,maintenance`): only the keys the caller's rules allow, defaults filled in, hidden keys absent without a hint. A path that names no declared key or group is `400 invalid_path`.
 
 - **`ETag` and `304`:** the weak `ETag` covers the returned values, so a client revalidating with `If-None-Match` pays a `304`.
 - **`cache_ttl`:** the seconds a client may use its copy without asking, set by `app_config.cache_ttl` in [`realm.yaml`](../realm/) (5 minutes by default).

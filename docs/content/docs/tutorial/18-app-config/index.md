@@ -82,3 +82,5 @@ If the server has realtime off, or the user is offline, nothing breaks: `live()`
 - With `live()` on, a page that never asks again shows the banner within a moment of the window opening and hides it when it closes; a member's page follows the export switch, and a visitor's page is not told about it.
 
 The tour (`make shelf-tour`) checks all of it. Read [App configuration](../../build/configuration/app-config/) for the reference: the schema's limits, per-path rules, the admin API, the functions' `ctx.config` and the client's cache.
+
+Next: [chapter 19](../19-types/) — types from the config.

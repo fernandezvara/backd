@@ -33,7 +33,8 @@ All runtime configuration comes from environment variables. At startup `backd` c
 | `SHUTDOWN_TIMEOUT` | no | `15s` | How long in-flight requests may take to finish after `SIGTERM` |
 | `TRUSTED_PROXIES` | no | none | Comma-separated IP addresses or CIDR networks of your reverse proxies; only they may set `X-Forwarded-For` (see [client addresses behind a proxy](../../operate/#client-addresses-behind-a-proxy)) |
 | `PASSWORD_HASH_CONCURRENCY` | no | `GOMAXPROCS` (which follows a container's CPU limit), capped by half the memory limit / 64 MiB | Maximum password hashes running at once in one process (see [Users and passwords](../auth/users/#password-storage)) |
-| `BACKD_EXECUTOR_URL`, `BACKD_EXECUTOR_TOKEN`, `BACKD_INTERNAL_ADDR`, `BACKD_CALLBACK_URL`, `BACKD_CALLBACK_KEY` | with functions | — (`:8081` for the address) | The functions executor and the internal listener: see [Running the executor](../../operate/functions-runtime/#running-the-executor) |
+| `BACKD_URL` | when the realms send email or use sign-in providers | none | `backd`'s public address (`https://api.example.com`), the base of the links in emails and of the providers' [callback URLs](../auth/providers/). A realm's `email.public_url` replaces it. Startup stops, naming the realm, when it needs one and has neither |
+| `BACKD_EXECUTOR_URL`, `BACKD_EXECUTOR_TOKEN`, `BACKD_EGRESS_KEY`, `BACKD_INTERNAL_ADDR`, `BACKD_CALLBACK_URL`, `BACKD_CALLBACK_KEY` | with functions | — (`:8081` for the address) | The functions executor and the internal listener: see [Running the executor](../../operate/functions-runtime/#running-the-executor) |
 | `BACKD_SECRETS_KEY` (or `BACKD_SECRETS_KEY_FILE`) | with functions that declare secrets | — | The master key functions' [secrets](../functions/secrets/#storage-and-the-master-key) are encrypted under |
 | `BACKD_ADMIN_API` | no | `true` | `false` makes this instance serve no `/v1/{realm}/_admin` route: they answer `404` like any unknown route. For public instances when an internal instance has the admin API (see [Production deployment](../../operate/production/#admin-api)) |
 | `BACKD_EVENTS` | no | `true` | `false` stops this instance from reading MongoDB's change stream for [realtime](../../operate/change-feed/): set it on API replicas when dedicated instances serve subscriptions. Nothing is read until there is something to serve, so `true` costs an idle instance nothing |
@@ -47,11 +48,14 @@ All runtime configuration comes from environment variables. At startup `backd` c
 | `BACKD_ADMIN_UI` | no | `false` | `true` serves the admin web interface at `/_ui/` when the binary was built with it (release images are); it needs the admin API on the same instance, or startup fails |
 | `BACKD_ADMIN_UI_IDLE` | no | `30m` | how long the admin interface may sit untouched before it signs out and revokes its session |
 | `BACKD_DEV` | no | `false` | `true` reloads the config and rebuilds function sources automatically as the files change (see [Dev mode](../functions/testing/#dev-mode)); `serve` refuses to start unless `HTTP_ADDR` is bound to localhost. Local development only |
+| `BACKD_DEV_LINKS` | no | none | Extra links on the [dev-mode landing page](../functions/testing/#dev-mode) (only while `BACKD_DEV=true`), as `Label=URL` pairs separated by `;`, for the tools next to the API, for example `MinIO console=http://127.0.0.1:9001` |
 | `BACKD_DEV_ANY_ADDR` | no | `false` | `true` lets `BACKD_DEV=true` run on an address that isn't localhost, for a container whose ports are published on the host's localhost only (the local [development stack](../../contribute/local-development/)). Never set it where anything else can reach `backd` |
 | `WORKER_CONCURRENCY` | no | `10` | [Async jobs](../functions/jobs/) one worker process runs at once, on `backd worker` or `backd serve --with-worker` |
 | `METRICS_ADDR`, `METRICS_TOKEN` | no | — | Where this process serves `/metrics`, and the bearer token it may require (see [Metrics](../../operate/metrics/)) |
 
 `backd functions build` also reads `DENO`, the Deno binary to bundle with (default: `deno` on the `PATH`); `BACKD_DEV` reads the same variable. `backd executor` and `backd egress` have their own variables (see [Running the executor](../../operate/functions-runtime/#running-the-executor) and [Egress](../functions/network/#egress-the-network-allowlist-completed)); `backd worker` reuses `BACKD_EXECUTOR_URL`/`BACKD_EXECUTOR_TOKEN`/`BACKD_CALLBACK_URL`/`BACKD_CALLBACK_KEY` (see [Running the worker](../../operate/functions-runtime/#running-the-worker)).
+
+The pages of this section show YAML in pieces: a snippet of `collection.yaml` assumes the schema fields, roles and secrets it names exist in the rest of the configuration. `backd config check` is the judge of a whole tree. The complete, tested trees are under `examples/config`.
 
 Durations use Go syntax, for example `500ms`, `10s` or `1m30s`.
 
