@@ -2,9 +2,9 @@ name: Publish Dart client
 
 # Publishes clients/dart to pub.dev (package "backd") when a dart- tag is pushed:
 #   1. set "version" in clients/dart/pubspec.yaml, merge it
-#   2. git tag dart-v0.0.2 && git push origin dart-v0.0.2
+#   2. git tag dart-v0.9.2 && git push origin dart-v0.9.2
 # The tag must match the version, and point at a commit on main. A version with
-# a suffix (dart-v0.0.2-rc.1) is a pub.dev pre-release automatically — pub.dev
+# a suffix (dart-v0.9.3-rc.1) is a pub.dev pre-release automatically — pub.dev
 # shows it only to users who ask for pre-release versions, so a suffix tag is
 # all it takes; `dart pub add backd` keeps getting the latest stable one.
 #
@@ -12,7 +12,7 @@ name: Publish Dart client
 # repository. Set it up once on pub.dev (package backd -> Admin -> Automated
 # publishing: GitHub Actions, repository fernandezvara/backd, workflow filename
 # publish-dart.yml, tag pattern dart-v{{version}}). pub itself exchanges the
-# GitHub OIDC token. See the docs page Development -> Releasing.
+# GitHub OIDC token. See the docs page Contribute -> Releasing.
 on:
   push:
     tags: ["dart-v[0-9]+.[0-9]+.[0-9]+", "dart-v[0-9]+.[0-9]+.[0-9]+-*"]
