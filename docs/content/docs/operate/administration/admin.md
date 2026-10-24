@@ -277,7 +277,7 @@ Nothing here can be changed through the API: configuration is a reviewed, versio
 A realm that [declares app configuration](../../../build/configuration/config-dir/#app-configuration) has its values under `/v1/{realm}/_admin/app-config` (`404` without), in the `config` area: read-only administrators read, full administrators change.
 
 - **`GET`** shows every key with its effective value, the keys clients can't read included, the values that differ from the defaults, stored values that stopped validating after a deploy (they read as their defaults until fixed or reset), and the latest history. The `ETag` is the version, such as `"c3"`.
-- **`PATCH`** with `{"set": {"maintenance.enabled": true}, "reset": ["features.export"]}` and `If-Match: "c3"` validates the result as a whole against the schema and applies it atomically, or applies nothing (`400` with the failing paths). A stale version answers `412`, a missing `If-Match` `428`. A change that leaves every value as it was makes no version.
+- **`PATCH`** with `{"set": {"maintenance.enabled": true}, "reset": ["features.export"]}` and `If-Match: "c3"` validates the result as a whole against the schema and applies it atomically, or applies nothing (`400` with the failing paths). A stale version answers `412`, a missing `If-Match` `428 precondition_required`. A change that leaves every value as it was makes no version.
 - **`GET /app-config/history`** lists versions newest first: who (`user:<id>`, `key:<name>` or a function), when, and each path's old and new value. The last 100 versions or 90 days are kept, whichever is longer.
 - **`POST /app-config/rollback`** with `{"version": "c2"}` restores that version's values as a new version (`c0` is the defaults), if they still fit the schema.
 
