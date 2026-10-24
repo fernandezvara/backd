@@ -117,7 +117,7 @@ await backd.auth.deleteAccount();              // needs a fresh proof; deactivat
 - In realms with `signup: invite`, pass the invitation: `signup(email, password, invitation: …)`.
 - In a realm that [requires verified addresses](../../auth/sessions/#email-verification), `signup` creates the account and then throws a `VerificationRequiredError`: there is no session yet, and the user logs in after following the link in the email. A `login` before that throws a `ForbiddenError` whose `code` is `email_not_verified`. `redirectTo` names where the page after the link may send the user (it must be within the realm's `email.allowed_redirects`).
 - `logout` always removes the stored token, even if the server can't be reached or already forgot the session.
-- **Sensitive actions need a fresh proof.** `changePassword`, `requestEmailChange`, `deleteAccount`, `unlinkProvider` answer `401 reauth_required` without one. `auth.reauth(method: …)` takes the strongest proof the user has (`me.reauthMethods`: `totp` or `recovery_code` with a second factor, `password`, or `email_code` after `requestReauthCode()`), and the client sends the token it gave with those requests for the realm's `reauth.ttl` (5 minutes by default): one prompt covers a settings page. `withProof((methods) async => …, () => sensitive())` asks the proof only when the server wants it, then retries the action. See [Re-authentication](../../auth/reauth/).
+- **Sensitive actions need a fresh proof.** `changePassword`, `requestEmailChange`, `deleteAccount`, `unlinkProvider` answer `401 reauth_required` without one. `auth.hasFreshProof()` tells whether the client holds one that is still good. `auth.reauth(method: …)` takes the strongest proof the user has (`me.reauthMethods`: `totp` or `recovery_code` with a second factor, `password`, or `email_code` after `requestReauthCode()`), and the client sends the token it gave with those requests for the realm's `reauth.ttl` (5 minutes by default): one prompt covers a settings page. `withProof((methods) async => …, () => sensitive())` asks the proof only when the server wants it, then retries the action. See [Re-authentication](../../auth/reauth/).
 
 The endpoints behind these calls, and their rules, are described in [Sign-up, login and sessions](../../auth/sessions/).
 
@@ -690,6 +690,8 @@ inv['link'];   // https://app.acme.example/join?token=…
 final offer = await backd.orgs.previewInvitation(token);   // {org, roles, teams}
 await backd.orgs.acceptInvitation(token);
 ```
+
+The rest of the surface, by object: `orgs` has `create`, `list`, `get`, `update`, `leave` (allowed without a second factor; the last manager cannot) and `delete`; `members(id)` has `list`, `update` and `remove`; `teams(id)` has `list`, `create`, `update`, `delete`, `members`, `addMember`, `removeMember`, `grantRole`, `setRoleWindow` and `revokeRole`; `invitations(id)` has `create`, `list`, `revoke`, `send` and `newLink`; `templates(id)` has `list`, `get`, `put`, `delete`, `preview` and `test`. Each maps to a route of the [organizations API](../../organizations/api/).
 
 **Documents belong to an organization** when their collection says so: `inOrg(id)` scopes a collection, so creates go there and lists show only that organization's documents (the read rule still decides what is seen).
 

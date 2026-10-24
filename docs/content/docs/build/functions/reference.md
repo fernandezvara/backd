@@ -14,7 +14,7 @@ Every key is optional. `backd` reads the file strictly: an unknown key or an inv
 |---|---|---|
 | `mode` | `sync` | `sync`: the caller waits for the output. `async`: the caller gets a [job](../jobs/) to check later. `webhook`: for callbacks from other services (see [Webhooks](../webhooks/)) — needs `invoke` set to a rule that allows anonymous callers |
 | `timeout` | `10s` (`sync`, `webhook`), `15m` (`async`) | The function is stopped after this long. At least `1s`; at most `60s` for `sync` and `webhook`, `24h` for `async` |
-| `memory` | `128MB` | Memory for the function's JavaScript heap, from `32MiB` to `4GiB` |
+| `memory` | `128MiB` | Memory for the function's JavaScript heap, from `32MiB` to `4GiB` |
 | `max_output` | `1MiB` | The largest output accepted, from `1KiB` to `64MiB` (`15MiB` for `async`) |
 | `concurrency` | `10` | How many calls of the function may run at once **on each `backd` instance** (1–1000). With several instances, up to that many times this value run at once |
 | `rate_limit` | none | Calls allowed per caller, counted across instances: `{per: user \| ip, limit: <n>, window: <duration>}`, window from `1s` to `24h` |
