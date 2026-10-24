@@ -630,7 +630,7 @@ func registerRemote(cfg *kli.Config) {
 		boolean(cc, "json", "print it as JSON")
 	})
 	appcfg.SubCommand("set").ShortHelp("change values").
-		LongHelp("Sets one value with --key and --value (JSON when it parses: true, 10, [\"a\"]; text otherwise), or several with\n--values '{\"a.b\": 1, \"c.d\": true}'. The result is validated as a whole against app-config/schema.json and applied\nor refused. The change is based on the version read just before (or --if-match). Needs the config area with write\naccess. Audited as appconfig.change. " + adminAPINote).
+		LongHelp("Sets one value with --key and --value (JSON when it parses: true, 10, [\"a\"]; text otherwise), or several with\n--values '{\"a.b\": 1, \"c.d\": true}'. The result is validated as a whole against _realm/config/schema.json and applied\nor refused. The change is based on the version read just before (or --if-match). Needs the config area with write\naccess. Audited as appconfig.change. " + adminAPINote).
 		Func(act("app-config set", appConfigSet)).Config(func(cc *kli.CommandConfig) {
 		required(cc, "realm", "the realm")
 		optional(cc, "key", "the key to set, as a dot path")

@@ -100,8 +100,8 @@ func newRealtimeFixture(t *testing.T, lim realtime.Limits) *realtimeFixture {
 		"acme/app/items/schema.json":     itemSchema,
 		"acme/app/items/collection.yaml": "realtime: true\nrules:\n  read: user != nil && document._meta.owner == user.id\n",
 		"acme/app/plain/schema.json":     itemSchema,
-		"acme/app-config/schema.json":    appConfigSchema,
-		"acme/app-config/rules.yaml":     appConfigRules,
+		"acme/_realm/config/schema.json": appConfigSchema,
+		"acme/_realm/config/rules.yaml":  appConfigRules,
 	}
 	for p, content := range files {
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, p)), 0o755); err != nil {

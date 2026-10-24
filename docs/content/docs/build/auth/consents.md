@@ -42,7 +42,7 @@ compliance:
 Texts are Markdown files, one per version and language of the realm:
 
 ```
-<realm>/consents/<name>/<version>/<locale>.md
+<realm>/_realm/consents/<name>/<version>/<locale>.md
 ```
 
 - `backd` loads them at startup, computes the **SHA-256** of each and includes them in the [config fingerprint](../../../operate/deploying/): changing a text changes the config.

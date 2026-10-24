@@ -161,7 +161,7 @@ func TestFunctionsAndFilesAndConfigAreTyped(t *testing.T) {
 		"app/main/_functions/total/output.schema.json": `{"type":"object","properties":{"sum":{"type":"number"}}}`,
 		"app/main/_functions/later/function.yaml":      "mode: async\ninvoke: user != nil\n",
 		"app/main/_functions/later/index.js":           "export default () => 1;\n",
-		"app/app-config/schema.json":                   `{"type":"object","additionalProperties":false,"properties":{"banner":{"type":"string","default":""}}}`,
+		"app/_realm/config/schema.json":                `{"type":"object","additionalProperties":false,"properties":{"banner":{"type":"string","default":""}}}`,
 	})
 	doc := generate(t, reg, "app")
 	paths := pathsOf(doc)

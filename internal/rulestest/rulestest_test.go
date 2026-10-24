@@ -334,7 +334,7 @@ func TestFixtureGivesAppConfig(t *testing.T) {
 		}
 	}
 	write("acme/realm.yaml", "roles:\n  admin: {}\n")
-	write("acme/app-config/schema.json", `{"type":"object","additionalProperties":false,"properties":{"features":{"type":"object","additionalProperties":false,"properties":{"export":{"type":"boolean","default":true}}}}}`)
+	write("acme/_realm/config/schema.json", `{"type":"object","additionalProperties":false,"properties":{"features":{"type":"object","additionalProperties":false,"properties":{"export":{"type":"boolean","default":true}}}}}`)
 	write("acme/app/posts/schema.json", schema)
 	write("acme/app/posts/collection.yaml", rulesSection("create: user != nil && appConfig(\"features.export\") == true\n"))
 	reg, err := registry.Load(root)

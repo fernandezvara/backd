@@ -13,7 +13,7 @@ import (
 )
 
 // PagesDirName is the folder of a realm that holds its hosted pages: the
-// pages the links in emails open (<realm>/pages/<kind>/<locale>.html).
+// pages the links in emails open (<realm>/_realm/pages/<kind>/<locale>.html).
 const PagesDirName = "pages"
 
 // The hosted pages. The first five are the forms a link opens; Result is
@@ -29,7 +29,7 @@ const (
 	PageInvalidToken       = "invalid-token"
 	// PageOAuthError is shown when a provider sends the user back with a sign-in
 	// attempt backd can't trace to an app. A realm may write its own
-	// (<realm>/pages/oauth-error/<locale>.html); without one the built-in English
+	// (<realm>/_realm/pages/oauth-error/<locale>.html); without one the built-in English
 	// page is shown. It is not among PageKinds: a realm that only sends email
 	// doesn't need it.
 	PageOAuthError = "oauth-error"
@@ -134,7 +134,7 @@ var samplePage = PageData{
 	Kind: "verify-email", Redirect: "https://example.com/welcome", DelaySeconds: 3, BackURL: "https://example.com",
 }
 
-// LoadPages reads <realm>/pages/ (dir): <kind>/<locale>.html for every kind
+// LoadPages reads <realm>/_realm/pages/ (dir): <kind>/<locale>.html for every kind
 // of PageKinds and every one of locales. It parses and test-renders each
 // page, and reports every problem together, naming the files.
 func LoadPages(dir string, locales []string) (*Pages, []error) {

@@ -30,7 +30,7 @@ consents:
 ```
 
 ```markdown
-<!-- config/shelf/consents/privacy/2026-10/en.md -->
+<!-- config/shelf/_realm/consents/privacy/2026-10/en.md -->
 # Shelf privacy notice
 
 Shelf keeps what you give it and what you do in it:

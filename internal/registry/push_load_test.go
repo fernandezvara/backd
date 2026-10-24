@@ -29,8 +29,8 @@ const pushRealm = "locales: [en, es]\npush:\n  android: {provider: capture}\n"
 
 func TestPushTemplatesAndFunctionsLoad(t *testing.T) {
 	root := pushTree(t, pushRealm, map[string]string{
-		"shop/push/order-shipped/en.yaml":           "title: Shipped\nbody: On its way\n",
-		"shop/push/order-shipped/es.yaml":           "title: Enviado\nbody: De camino\n",
+		"shop/_realm/push/order-shipped/en.yaml":    "title: Shipped\nbody: On its way\n",
+		"shop/_realm/push/order-shipped/es.yaml":    "title: Enviado\nbody: De camino\n",
 		"shop/notify/_functions/ship/function.yaml": "invoke: \"true\"\npush:\n  kinds: [order-shipped]\n  audience: true\n",
 	})
 	reg, err := Load(root)
@@ -50,7 +50,7 @@ func TestPushTemplatesAndFunctionsLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(root, "shop/push/order-shipped/en.yaml"), "title: Shipped!\nbody: On its way\n")
+	writeFile(t, filepath.Join(root, "shop/_realm/push/order-shipped/en.yaml"), "title: Shipped!\nbody: On its way\n")
 	reg2, err := Load(root)
 	if err != nil {
 		t.Fatal(err)
@@ -62,8 +62,8 @@ func TestPushTemplatesAndFunctionsLoad(t *testing.T) {
 
 func TestPushLoadErrors(t *testing.T) {
 	good := map[string]string{
-		"shop/push/order-shipped/en.yaml": "title: Shipped\nbody: On its way\n",
-		"shop/push/order-shipped/es.yaml": "title: Enviado\nbody: De camino\n",
+		"shop/_realm/push/order-shipped/en.yaml": "title: Shipped\nbody: On its way\n",
+		"shop/_realm/push/order-shipped/es.yaml": "title: Enviado\nbody: De camino\n",
 	}
 	with := func(extra map[string]string) map[string]string {
 		m := map[string]string{}
@@ -80,7 +80,7 @@ func TestPushLoadErrors(t *testing.T) {
 		files map[string]string
 		want  string
 	}{
-		"a language lacks it":  {pushRealm, map[string]string{"shop/push/order-shipped/en.yaml": "title: a\nbody: b\n"}, "es.yaml: missing"},
+		"a language lacks it":  {pushRealm, map[string]string{"shop/_realm/push/order-shipped/en.yaml": "title: a\nbody: b\n"}, "es.yaml: missing"},
 		"declared, no folder":  {pushRealm, with(map[string]string{"shop/notify/_functions/ship/function.yaml": "invoke: \"true\"\npush: {kinds: [nope]}\n"}), `declares the push kind "nope"`},
 		"declared, no push":    {"locales: [en]\n", map[string]string{"shop/notify/_functions/ship/function.yaml": "invoke: \"true\"\npush: true\n"}, "declares `push`, but this realm has no push section"},
 		"bad declaration":      {pushRealm, with(map[string]string{"shop/notify/_functions/ship/function.yaml": "invoke: \"true\"\npush: {kind: [a]}\n"}), "push.kind: unknown key"},
@@ -92,7 +92,7 @@ func TestPushLoadErrors(t *testing.T) {
 		}
 	}
 	// A realm without push: ignores a push folder, and `push` is not a database.
-	root := pushTree(t, "locales: [en]\n", map[string]string{"shop/push/x/en.yaml": "title: a\nbody: b\n"})
+	root := pushTree(t, "locales: [en]\n", map[string]string{"shop/_realm/push/x/en.yaml": "title: a\nbody: b\n"})
 	reg, err := Load(root)
 	if err != nil {
 		t.Fatal(err)

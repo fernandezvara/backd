@@ -26,7 +26,7 @@ func emailTree(t *testing.T, realmYAML, deliverYAML string, extra map[string]str
 			t.Fatal(err)
 		}
 		for name, data := range defaults {
-			files["shop/email/"+kind+"/"+name] = string(data)
+			files["shop/_realm/email/"+kind+"/"+name] = string(data)
 		}
 	}
 	for _, kind := range email.PageKinds {
@@ -34,7 +34,7 @@ func emailTree(t *testing.T, realmYAML, deliverYAML string, extra map[string]str
 		if err != nil {
 			t.Fatal(err)
 		}
-		files["shop/pages/"+kind+"/en.html"] = string(page)
+		files["shop/_realm/pages/"+kind+"/en.html"] = string(page)
 	}
 	for p, c := range extra {
 		files[p] = c
@@ -83,12 +83,12 @@ func esTemplates(t *testing.T) map[string]string {
 	for _, kind := range email.SystemKinds {
 		defaults, _ := email.DefaultFiles(kind)
 		for name, data := range defaults {
-			out["shop/email/"+kind+"/es"+strings.TrimPrefix(name, "en")] = string(data)
+			out["shop/_realm/email/"+kind+"/es"+strings.TrimPrefix(name, "en")] = string(data)
 		}
 	}
 	for _, kind := range email.PageKinds {
 		page, _ := email.DefaultPage(kind)
-		out["shop/pages/"+kind+"/es.html"] = string(page)
+		out["shop/_realm/pages/"+kind+"/es.html"] = string(page)
 	}
 	return out
 }
@@ -194,7 +194,7 @@ func TestEmailErrors(t *testing.T) {
 		{"function cap", goodEmail + "  limits:\n    per_function: {per_hour: 0}\n", goodDeliver, nil, "limits.per_function.per_hour: must be at least 1"},
 		{"recipients cap", goodEmail + "  limits:\n    recipients_per_message: 0\n", goodDeliver, nil, "limits.recipients_per_message"},
 		{"unknown key", goodEmail + "  smtp: x\n", goodDeliver, nil, "field smtp not found"},
-		{"template broken", goodEmail, goodDeliver, map[string]string{"shop/email/verify-email/en.txt": "{{.Link"}, "verify-email/en.txt"},
+		{"template broken", goodEmail, goodDeliver, map[string]string{"shop/_realm/email/verify-email/en.txt": "{{.Link"}, "verify-email/en.txt"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := Load(emailTree(t, tt.realm, tt.deliver, tt.extra))
@@ -225,7 +225,7 @@ func TestEmailTemplatesAreInTheFingerprint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "shop/email/welcome/en.txt"), []byte("changed {{.Realm}}\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "shop/_realm/email/welcome/en.txt"), []byte("changed {{.Realm}}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	reg, _ = Load(root)

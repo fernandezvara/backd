@@ -322,15 +322,15 @@ func templateFiles(realmDir string, rel func(string) string) map[string]any {
 	out := map[string]any{}
 	for _, dir := range []string{"email", "pages"} {
 		kinds := map[string][]string{}
-		entries, _ := os.ReadDir(filepath.Join(realmDir, dir))
+		entries, _ := os.ReadDir(registry.RealmPath(realmDir, dir))
 		for _, e := range entries {
 			if !e.IsDir() {
 				continue
 			}
-			files, _ := os.ReadDir(filepath.Join(realmDir, dir, e.Name()))
+			files, _ := os.ReadDir(registry.RealmPath(realmDir, dir, e.Name()))
 			for _, f := range files {
 				if !f.IsDir() {
-					kinds[e.Name()] = append(kinds[e.Name()], rel(filepath.Join(realmDir, dir, e.Name(), f.Name())))
+					kinds[e.Name()] = append(kinds[e.Name()], rel(registry.RealmPath(realmDir, dir, e.Name(), f.Name())))
 				}
 			}
 			sort.Strings(kinds[e.Name()])

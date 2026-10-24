@@ -35,7 +35,7 @@ const (
 	// may call the function and sees only `user`.
 	Invoke Op = "invoke"
 	// Config is the read rule of a path of the realm's app configuration
-	// (app-config/rules.yaml): it sees `user` and `now`, with no document.
+	// (_realm/config/rules.yaml): it sees `user` and `now`, with no document.
 	Config Op = "config"
 	// Reveal is the `reveal:` of an encrypted field: whether a caller who may read a document
 	// sees the field's value or null. It sees `document` (the whole plaintext) and `user`, and is

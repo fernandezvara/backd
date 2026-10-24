@@ -1,6 +1,6 @@
 // Package email holds what backd knows about the emails it asks a realm's
 // delivery function to send: the kinds, the templates (loaded from
-// <realm>/email/ into memory at startup and rendered per message), and the
+// <realm>/_realm/email/ into memory at startup and rendered per message), and the
 // shape of the message handed to the function. backd never sends mail itself.
 package email
 
@@ -247,7 +247,7 @@ var sample = Data{
 	Data:      map[string]any{"event": "mfa-enabled", "codes_left": 3, "code": "123456", "org_name": "Acme", "roles": []string{"editor"}, "ticket": "T-1042"},
 }
 
-// Load reads <realm>/email/ (dir): one folder per kind, with
+// Load reads <realm>/_realm/email/ (dir): one folder per kind, with
 // <locale>.subject.txt, <locale>.txt and <locale>.html per locale. It parses
 // and test-renders every template, requires the RequiredKinds, and requires
 // every kind found to be complete in every one of locales. Problems are

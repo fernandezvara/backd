@@ -887,7 +887,7 @@ func (a *app) logConsents(ctx context.Context, users func(string) *auth.Users) {
 		for _, ref := range refs {
 			c := rl.Settings.Consents[ref.Consent]
 			if c == nil || len(c.Texts[ref.Version]) == 0 {
-				a.log.Warn("consent records refer to a version whose text is not in the config: keep every published text (consents/<name>/<version>/<locale>.md), they are the proof of what was accepted",
+				a.log.Warn("consent records refer to a version whose text is not in the config: keep every published text (_realm/consents/<name>/<version>/<locale>.md), they are the proof of what was accepted",
 					"realm", rl.Name, "consent", ref.Consent, "version", ref.Version)
 			}
 		}

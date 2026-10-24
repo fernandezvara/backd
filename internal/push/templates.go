@@ -18,7 +18,7 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// DirName is the folder of a realm that holds its push templates: <realm>/push/<kind>/<locale>.yaml.
+// DirName is the folder of a realm that holds its push templates: <realm>/_realm/push/<kind>/<locale>.yaml.
 const DirName = "push"
 
 // RawKind is the kind of a message whose text the function wrote itself.

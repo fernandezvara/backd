@@ -54,7 +54,7 @@ export default async function (ctx, input) {
 ```
 
 ```gotemplate
-<!-- email/reset-password/en.html, pages/reset-password/en.html -->
+<!-- _realm/email/reset-password/en.html, _realm/pages/reset-password/en.html -->
 <h1 style="color: {{if .App}}{{.App.color}}{{else}}#222{{end}}">{{if .App}}{{.App.name}}{{else}}{{.Realm}}{{end}}</h1>
 ```
 

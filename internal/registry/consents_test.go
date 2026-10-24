@@ -26,12 +26,12 @@ compliance:
 
 func consentTree(realm string, extra map[string]string) map[string]string {
 	files := map[string]string{
-		"shop/realm.yaml":                   realm,
-		"shop/consents/terms/2026-10/en.md": "New terms",
-		"shop/consents/terms/2026-10/es.md": "Nuevos términos",
-		"shop/consents/terms/2026-03/en.md": "Old terms",
-		"shop/consents/marketing/1/en.md":   "Marketing",
-		"shop/consents/marketing/1/es.md":   "Publicidad",
+		"shop/realm.yaml":                          realm,
+		"shop/_realm/consents/terms/2026-10/en.md": "New terms",
+		"shop/_realm/consents/terms/2026-10/es.md": "Nuevos términos",
+		"shop/_realm/consents/terms/2026-03/en.md": "Old terms",
+		"shop/_realm/consents/marketing/1/en.md":   "Marketing",
+		"shop/_realm/consents/marketing/1/es.md":   "Publicidad",
 	}
 	for k, v := range extra {
 		files[k] = v
@@ -83,7 +83,7 @@ func TestConsentTextsAreInTheFingerprint(t *testing.T) {
 		}
 		return f
 	}
-	if fp(nil) == fp(map[string]string{"shop/consents/terms/2026-10/en.md": "New terms, changed"}) {
+	if fp(nil) == fp(map[string]string{"shop/_realm/consents/terms/2026-10/en.md": "New terms, changed"}) {
 		t.Error("a changed consent text keeps the fingerprint")
 	}
 }
@@ -94,7 +94,7 @@ func TestConsentsErrors(t *testing.T) {
 		extra map[string]string
 		want  string
 	}{
-		"missing locale":    {consentRealm, map[string]string{"shop/consents/terms/2026-10/es.md": ""}, ""}, // an empty file still counts
+		"missing locale":    {consentRealm, map[string]string{"shop/_realm/consents/terms/2026-10/es.md": ""}, ""}, // an empty file still counts
 		"no text":           {strings.Replace(consentRealm, "current: 1", "current: 9", 1), nil, "current version \"9\" has no text"},
 		"bad date":          {strings.Replace(consentRealm, "2026-11-15", "soon", 1), nil, "reaccept_by"},
 		"bad proof":         {strings.Replace(consentRealm, "[ip]", "[cookie]", 1), nil, "consent_proof"},
@@ -114,7 +114,7 @@ func TestConsentsErrors(t *testing.T) {
 	}
 	// A required current version needs its text in every language.
 	files := consentTree(consentRealm, nil)
-	delete(files, "shop/consents/terms/2026-10/es.md")
+	delete(files, "shop/_realm/consents/terms/2026-10/es.md")
 	if _, err := Load(writeTree(t, files)); err == nil || !strings.Contains(err.Error(), "language es") {
 		t.Errorf("missing es text: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestExportReadmeTemplates(t *testing.T) {
 	}
 
 	// Its own, for a language the realm lists; the other falls back.
-	reg, err = Load(tree(map[string]string{"shop/compliance/readme/es.html": "<p>Tus datos en {{Realm}}</p>"}))
+	reg, err = Load(tree(map[string]string{"shop/_realm/compliance/readme/es.html": "<p>Tus datos en {{Realm}}</p>"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ func TestExportReadmeTemplates(t *testing.T) {
 		t.Error("English has no template of its own")
 	}
 	fpWith, _ := reg.Fingerprint()
-	reg2, err := Load(tree(map[string]string{"shop/compliance/readme/es.html": "<p>Otros datos en {{Realm}}</p>"}))
+	reg2, err := Load(tree(map[string]string{"shop/_realm/compliance/readme/es.html": "<p>Otros datos en {{Realm}}</p>"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,9 +235,9 @@ func TestExportReadmeTemplates(t *testing.T) {
 	}
 
 	for name, tc := range map[string]struct{ file, content, want string }{
-		"bad syntax":       {"shop/compliance/readme/en.html", "<p>{{#Exclusions}}", "line"},
-		"unknown language": {"shop/compliance/readme/fr.html", "<p>x</p>", "not a language of this realm"},
-		"not html":         {"shop/compliance/readme/en.txt", "x", "<language>.html"},
+		"bad syntax":       {"shop/_realm/compliance/readme/en.html", "<p>{{#Exclusions}}", "line"},
+		"unknown language": {"shop/_realm/compliance/readme/fr.html", "<p>x</p>", "not a language of this realm"},
+		"not html":         {"shop/_realm/compliance/readme/en.txt", "x", "<language>.html"},
 	} {
 		_, err := Load(tree(map[string]string{tc.file: tc.content}))
 		if err == nil || !strings.Contains(err.Error(), tc.want) {

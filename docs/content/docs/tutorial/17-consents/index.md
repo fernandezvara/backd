@@ -28,8 +28,8 @@ consents:
 The texts are files, one per version and language of the realm (Shelf has English only):
 
 ```
-config/shelf/consents/terms/2026-10/en.md
-config/shelf/consents/marketing/1/en.md
+config/shelf/_realm/consents/terms/2026-10/en.md
+config/shelf/_realm/consents/marketing/1/en.md
 ```
 
 ```markdown

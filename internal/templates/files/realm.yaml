@@ -58,12 +58,12 @@ auth: enabled
 # Languages. One list for email and push: `default_locale` is the language
 # of the templates used when a user has none, and must be listed in
 # `locales`. Each listed language needs every email template (es.txt, ...),
-# every page in pages/ (es.html, ...) and every push template.
+# every page in _realm/pages/ (es.html, ...) and every push template.
 # default_locale: en
 # locales: [en]
 
 # Email. backd never sends mail itself: it renders each message from the
-# templates in this realm's `email/` folder (written next to this file; edit
+# templates in this realm's `_realm/email/` folder (written next to this file; edit
 # them freely) and hands it to ONE function of yours, which delivers it
 # through any provider (Postmark, SES, Resend, Mailgun, ...). That function
 # must be `internal: true` and `mode: async` (see the docs, Functions ->
@@ -98,7 +98,7 @@ auth: enabled
 # registers each device of a signed-in user (POST /_auth/devices) and a function sends with
 # ctx.push.send. Credentials are realm secrets, written secret:NAME and set with
 # `backd secret set --realm <name> --name NAME`; the instance needs BACKD_SECRETS_KEY.
-# Messages come from templates in push/<kind>/<locale>.yaml (see push/example/), in the
+# Messages come from templates in _realm/push/<kind>/<locale>.yaml (see _realm/push/example/), in the
 # languages listed above. Without this section the realm accepts no devices.
 # push:
 #   android:
@@ -224,7 +224,7 @@ mfa:
 #   ttl: 5m                        # 1m to 1h
 
 # Consents (docs: Authentication -> Consents). Versioned texts people accept and backd
-# keeps as proof. The texts are files: consents/<name>/<version>/<locale>.md for every
+# keeps as proof. The texts are files: _realm/consents/<name>/<version>/<locale>.md for every
 # language of the realm; keep old versions, they are what was accepted.
 # consents:
 #   terms:

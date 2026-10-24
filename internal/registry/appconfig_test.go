@@ -47,12 +47,12 @@ const appConfigRules = `read:
 
 func appConfigTree(schema, rules string) map[string]string {
 	files := map[string]string{
-		"shop/realm.yaml":                 appConfigRealm,
-		"shop/consents/marketing/1/en.md": "Marketing",
-		"shop/app-config/schema.json":     schema,
+		"shop/realm.yaml":                        appConfigRealm,
+		"shop/_realm/consents/marketing/1/en.md": "Marketing",
+		"shop/_realm/config/schema.json":         schema,
 	}
 	if rules != "" {
-		files["shop/app-config/rules.yaml"] = rules
+		files["shop/_realm/config/rules.yaml"] = rules
 	}
 	return files
 }
@@ -172,7 +172,7 @@ func TestAppConfigIsPartOfTheFingerprint(t *testing.T) {
 func TestAppConfigInRulesAndFunctions(t *testing.T) {
 	files := map[string]string{
 		"shop/realm.yaml":                "roles: {}\n",
-		"shop/app-config/schema.json":    appConfigSchema,
+		"shop/_realm/config/schema.json": appConfigSchema,
 		"shop/app/notes/schema.json":     `{"type":"object","properties":{"title":{"type":"string"}}}`,
 		"shop/app/notes/collection.yaml": "rules:\n  create: user != nil && appConfig(\"features.reports.enabled\") == true\n",
 		fnPrefix + "deno.json":           `{}`,
@@ -202,7 +202,7 @@ func TestAppConfigInRulesAndFunctions(t *testing.T) {
 			f["shop/app/notes/collection.yaml"] = "rules:\n  create: user != nil && appConfig(\"features\") == true\n"
 		}, "not a value of the app configuration"},
 		"no configuration": {func(f map[string]string) {
-			delete(f, "shop/app-config/schema.json")
+			delete(f, "shop/_realm/config/schema.json")
 		}, "declares no app configuration"},
 		"bad grant": {func(f map[string]string) {
 			f[fnPrefix+"promo/function.yaml"] = "mode: async\nconfig: admin\n"

@@ -11,8 +11,13 @@ The data model is a directory tree under `CONFIG_DIR`, loaded once at startup. D
 ```
 $CONFIG_DIR/<realm>/
     realm.yaml           # required — realm settings
-    email/<kind>/        # optional — email templates (see Functions → Email)
-    app-config/          # optional — app configuration: schema.json and rules.yaml
+    _realm/              # optional — what the realm shows and configures, not its data
+        email/<kind>/        # email templates (see Functions → Email)
+        pages/<page>/        # hosted pages
+        push/<kind>/         # push templates
+        consents/<name>/<version>/   # consent texts
+        compliance/readme/   # the README of a personal data export
+        config/              # app configuration: schema.json and rules.yaml
     <database>/<collection>/
         schema.json      # required — JSON Schema draft 2020-12
         indexes.json     # optional — index declarations
@@ -22,10 +27,11 @@ $CONFIG_DIR/<realm>/
 ```
 
 - Each directory under `CONFIG_DIR` is a **realm**. It must contain a [`realm.yaml`](../realm/).
-- Each directory inside a realm is a **database**, stored in the MongoDB database `<realm>__<database>`.
+- Each directory inside a realm is a **database**, stored in the MongoDB database `<realm>__<database>`, except `_realm`.
 - Each directory inside a database is a **collection**, stored in a MongoDB collection of the same name. It must contain a `schema.json`.
-- A realm's `email` folder holds its [email templates](../../functions/email/#templates), `pages` is reserved for the pages backd will serve, `push` holds [push templates](../../push/) and `consents` holds the [consent texts](../../auth/consents/): none is a database, so they are never read as one and can't be database names.
-- A realm's `app-config` folder declares its [app configuration](#app-configuration), and is not a database either.
+- A realm's `_realm` folder holds what the realm shows and configures, as opposed to its data: its [email templates](../../functions/email/#templates) and hosted `pages`, the [push templates](../../push/), the [consent texts](../../auth/consents/), the `compliance` files and the [app configuration](#app-configuration) (`config`). It is never read as a database, and `realm.yaml` stays next to it. A folder of `_realm` that is not one of those is an error, so a misspelled `emial` doesn't silently lose its templates.
+- Names starting with `_` are backd's: a realm has only `_realm` and a database has only `_functions`. Any other folder starting with `_` is an error, and so is a `_realm` inside a database. Every other folder of a realm is a database, whatever its name (`email` and `pages` are valid database names).
+- Realms laid out before `_realm` existed had `email`, `pages`, `push`, `consents`, `compliance` and `app-config` at the top. They no longer load: the error names the folder and where to move it (`email` to `_realm/email`, `app-config` to `_realm/config`).
 - A database's `_functions` directory holds its [functions](../../functions/), not a collection.
 - Other plain files at the realm and database levels are ignored, as are hidden entries (names starting with `.`).
 - Changing the config requires a restart — except with `BACKD_DEV=true`, which reloads it live (see [Dev mode](../../functions/testing/#dev-mode)).
@@ -469,7 +475,7 @@ Building and delivering the export package is a later step: today the scope is d
 
 ## App configuration
 
-A realm can declare one configuration for its client apps (feature flags, maintenance switches, limits) in `<realm>/app-config/`, with the same JSON Schema validation as collections and read rules in the same expression language. It needs a realm with auth enabled.
+A realm can declare one configuration for its client apps (feature flags, maintenance switches, limits) in `<realm>/_realm/config/`, with the same JSON Schema validation as collections and read rules in the same expression language. It needs a realm with auth enabled.
 
 ```json
 {

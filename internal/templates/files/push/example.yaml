@@ -1,4 +1,4 @@
-# An example push notification template: <realm>/push/<kind>/<locale>.yaml. The kind is the
+# An example push notification template: <realm>/_realm/push/<kind>/<locale>.yaml. The kind is the
 # folder's name (this one is "example"); every language the realm lists in `locales` needs
 # its own file of every kind, so add es.yaml next to this one when you list es.
 #

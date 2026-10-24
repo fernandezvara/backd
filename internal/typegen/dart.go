@@ -1521,7 +1521,7 @@ func (g *dartGen) functionMethod(w *strings.Builder, db string, fn *registry.Fun
 
 // config emits the configuration's tree class and the typed path getters.
 func (g *dartGen) config(prefix string, ac *registry.AppConfig) {
-	conv := newDartConverter(ac.RawSchema, prefix+"Config", "app-config/schema.json ", g.warn, g)
+	conv := newDartConverter(ac.RawSchema, prefix+"Config", "_realm/config/schema.json ", g.warn, g)
 	if isObject(ac.RawSchema) {
 		g.emit("/// The realm's app configuration.\n")
 		conv.emitClass(g.claim(prefix+"ConfigTree", "config tree"), ac.RawSchema, "", false)

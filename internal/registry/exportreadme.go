@@ -10,8 +10,8 @@ import (
 	"github.com/fernandezvara/backd/internal/exportreadme"
 )
 
-// ComplianceDir is the folder of a realm that holds its compliance files: today the README
-// templates of personal data exports (compliance/readme/<locale>.html).
+// ComplianceDir is the folder of _realm that holds the realm's compliance files: today the README
+// templates of personal data exports (_realm/compliance/readme/<locale>.html).
 const ComplianceDir = "compliance"
 
 // ExportReadme returns the realm's own README template for a language, and whether it has one.
@@ -21,10 +21,10 @@ func (r *Realm) ExportReadme(locale string) (string, bool) {
 	return src, ok
 }
 
-// loadExportReadmes reads <realm>/compliance/readme/<locale>.html of a realm that exports its
+// loadExportReadmes reads <realm>/_realm/compliance/readme/<locale>.html of a realm that exports its
 // users' data, and checks each: it parses, and it is for a language the realm lists.
 func loadExportReadmes(rl *Realm, realmPath string) []error {
-	dir := filepath.Join(realmPath, ComplianceDir, "readme")
+	dir := RealmPath(realmPath, ComplianceDir, "readme")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil // no templates: the built-in ones are used
