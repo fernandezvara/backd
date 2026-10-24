@@ -85,7 +85,7 @@ The periods are legal decisions for you. `backd`'s defaults are conveniences, no
 
 ### Updating the terms
 
-1. Add the folder `consents/terms/<new version>/<locale>.md` for every language, move `current`, and add `reaccept: true` (and a `reaccept_by` date) if people have to agree again.
+1. Add the folder `_realm/consents/terms/<new version>/<locale>.md` for every language, move `current`, and add `reaccept: true` (and a `reaccept_by` date) if people have to agree again.
 2. Deploy. Members are asked at their next sign-in; open sessions are refused after the date until they accept.
 3. Tell them if you want: `backd consents notify --realm <r> --consent terms`.
 4. Keep the old folder: it is the proof of what earlier members accepted.

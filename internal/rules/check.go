@@ -196,7 +196,7 @@ func check(r *Rule, schema Schema) error {
 		case !lit:
 			add("appConfig: give the key as one string literal, such as appConfig(\"features.export.enabled\")")
 		case schema.ConfigLeaf == nil:
-			add("appConfig: this realm declares no app configuration (app-config/schema.json)")
+			add("appConfig: this realm declares no app configuration (_realm/config/schema.json)")
 		case !schema.ConfigLeaf(*s):
 			add("appConfig: %q is not a value of the app configuration (keys are dot paths of declared values)", *s)
 		}

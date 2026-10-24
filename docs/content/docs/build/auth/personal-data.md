@@ -62,7 +62,7 @@ _account/invitations.jsonl, consents.jsonl, audit.jsonl, invocations.jsonl
 
 ## The README
 
-`README.html` explains the package in plain words. backd ships it in English and Spanish; a realm writes its own per language in `compliance/readme/<locale>.html` (`backd template realm` writes the English one to start from). The template is logic-less, like the [email templates of an organization](../../organizations/email-templates/): values, sections and inverted sections, no code, every value escaped.
+`README.html` explains the package in plain words. backd ships it in English and Spanish; a realm writes its own per language in `_realm/compliance/readme/<locale>.html` (`backd template realm` writes the English one to start from). The template is logic-less, like the [email templates of an organization](../../organizations/email-templates/): values, sections and inverted sections, no code, every value escaped.
 
 | Tag | Prints |
 |---|---|

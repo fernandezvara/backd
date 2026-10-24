@@ -426,9 +426,9 @@ func TestFeedOpensEncryptedFieldsWithTheDecryptHook(t *testing.T) {
 // configuration, so a stream can follow it.
 func TestRealtimeWatchSetFollowsAppConfigWithoutCollections(t *testing.T) {
 	reg := loadRegistryWith(t, "acme", "signup: open\n", map[string]string{
-		"app/plain":              `{"type":"object"}`,
-		"app-config/schema.json": `{"type":"object","additionalProperties":false,"properties":{"banner":{"type":"object","additionalProperties":false,"properties":{"on":{"type":"boolean","default":false}}}}}`,
-		"app-config/rules.yaml":  "read:\n  banner: \"true\"\n",
+		"app/plain":                 `{"type":"object"}`,
+		"_realm/config/schema.json": `{"type":"object","additionalProperties":false,"properties":{"banner":{"type":"object","additionalProperties":false,"properties":{"on":{"type":"boolean","default":false}}}}}`,
+		"_realm/config/rules.yaml":  "read:\n  banner: \"true\"\n",
 	})
 	set := RealtimeWatchSet(reg)
 	if len(set.Collections) != 0 || len(set.System) != 1 || set.System[0].Coll != AppConfigCollection || set.System[0].DB != SystemDatabaseName("acme") {

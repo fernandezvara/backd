@@ -5,6 +5,7 @@ package registry
 
 import (
 	"cmp"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -40,9 +41,30 @@ type Realm struct {
 	exportReadmes map[string]string
 }
 
-// ReservedDirs are folders of a realm that hold something other than a
-// database: they are never read as databases.
-var ReservedDirs = []string{email.DirName, email.PagesDirName, push.DirName, ConsentsDir, AppConfigDir, ComplianceDir}
+// RealmDir is the folder of a realm that holds what the realm shows and configures, as opposed to
+// its data: the email templates and hosted pages, the push templates, the consent texts, the
+// compliance files and the app configuration (design/realm-layout.md). realm.yaml stays next to it.
+// A folder of a realm whose name starts with "_" is never a database: this is the only one defined.
+const RealmDir = "_realm"
+
+// RealmFolders are the folders _realm may hold.
+var RealmFolders = []string{email.DirName, email.PagesDirName, push.DirName, ConsentsDir, ComplianceDir, AppConfigDir}
+
+// legacyFolders are the folders the realm layout had at the top of a realm before _realm existed,
+// with their names inside _realm. A realm that still has one is told to move it.
+var legacyFolders = map[string]string{
+	email.DirName:      email.DirName,
+	email.PagesDirName: email.PagesDirName,
+	push.DirName:       push.DirName,
+	ConsentsDir:        ConsentsDir,
+	ComplianceDir:      ComplianceDir,
+	"app-config":       AppConfigDir,
+}
+
+// RealmPath returns a path inside the _realm folder of the realm at realmPath.
+func RealmPath(realmPath string, parts ...string) string {
+	return filepath.Join(append([]string{realmPath, RealmDir}, parts...)...)
+}
 
 // Database is one application's data, stored in one MongoDB database.
 type Database struct {

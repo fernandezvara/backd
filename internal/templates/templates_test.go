@@ -47,16 +47,16 @@ func emailFiles(realm string, created bool) []File {
 	var out []File
 	for _, kind := range email.SystemKinds {
 		for _, name := range []string{"en.html", "en.subject.txt", "en.txt"} {
-			out = append(out, File{Path: realm + "/email/" + kind + "/" + name, Created: created})
+			out = append(out, File{Path: realm + "/_realm/email/" + kind + "/" + name, Created: created})
 		}
 	}
 	for _, kind := range append(slices.Clone(email.PageKinds), email.OptionalPageKinds...) {
-		out = append(out, File{Path: realm + "/pages/" + kind + "/en.html", Created: created})
+		out = append(out, File{Path: realm + "/_realm/pages/" + kind + "/en.html", Created: created})
 	}
 	// The README of a personal data export.
-	out = append(out, File{Path: realm + "/compliance/readme/en.html", Created: created})
+	out = append(out, File{Path: realm + "/_realm/compliance/readme/en.html", Created: created})
 	// An example push template.
-	out = append(out, File{Path: realm + "/push/example/en.yaml", Created: created})
+	out = append(out, File{Path: realm + "/_realm/push/example/en.yaml", Created: created})
 	return out
 }
 
@@ -148,8 +148,8 @@ func TestProject(t *testing.T) {
 		"config/shop/main/_functions/stats/function.yaml",
 		"config/shop/main/_functions/stats/index.ts",
 		"config/shop/main/_functions/stats/index.test.ts",
-		"config/shop/email/verify-email/en.txt",
-		"config/shop/email/invitation/en.html",
+		"config/shop/_realm/email/verify-email/en.txt",
+		"config/shop/_realm/email/invitation/en.html",
 		"compose.yaml",
 		".gitignore",
 		".github/workflows/backd.yml",

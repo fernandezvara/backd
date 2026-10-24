@@ -86,18 +86,18 @@ push:
 A push is written in the user's own language (`user.locale`, which is always one of the realm's `locales`; the realm's `default_locale` for a user who never chose one), from a **template**, like an email:
 
 ```
-<realm>/push/
+<realm>/_realm/push/
   order-shipped/   en.yaml  es.yaml
 ```
 
 ```yaml
-# <realm>/push/order-shipped/en.yaml
+# <realm>/_realm/push/order-shipped/en.yaml
 title: "Your order {{.Data.order_no}} is on its way"
 body: "It should arrive {{.Data.eta}}."
 link: "acme://orders/{{.Data.order_id}}"     # optional: opened when the notification is tapped
 ```
 
-- **One folder per kind, one file per language.** Every language the realm lists needs a file of every kind, or startup fails naming the missing files. Files are parsed and test-rendered at startup, kept in memory and part of the configuration fingerprint. `backd template realm` writes `push/example/en.yaml`.
+- **One folder per kind, one file per language.** Every language the realm lists needs a file of every kind, or startup fails naming the missing files. Files are parsed and test-rendered at startup, kept in memory and part of the configuration fingerprint. `backd template realm` writes `_realm/push/example/en.yaml`.
 - **Data:** `{{.Realm}}`, `{{.User.Locale}}` and `{{.Data}}`, the data of the call. Templates get no address or profile field, because lock screens are seen by others.
 - **Declaring kinds:** a function that sends pushes declares `push: true`, or `push: { kinds: [order-shipped], audience: false }` in `function.yaml`. `kinds` limits the named kinds; raw `title` and `body` sends stay available. Startup checks that every declared kind has templates, and that the realm has a `push:` section.
 - **Raw messages:** a function may pass `title` and `body` itself (kind `raw`), already in the right language, when the text is data, such as a chat preview.

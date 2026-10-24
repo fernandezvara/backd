@@ -163,7 +163,7 @@ A failed attempt goes back to your app as `redirect_to?backd_error=<code>`, with
 | `signin_refused` | The account can't sign in (disabled, or from this network); the real reason is only in the [audit](../../../operate/administration/audit/) as `identity.signin_refused` |
 | `provider_error` | The provider failed or answered something backd can't accept |
 
-An attempt backd can't trace to an app (an unknown, used or expired `state`) can't be sent anywhere: the user sees the realm's `pages/oauth-error/<locale>.html` page, or a built-in English one, with `400`. The page is written by `backd template realm`.
+An attempt backd can't trace to an app (an unknown, used or expired `state`) can't be sent anywhere: the user sees the realm's `_realm/pages/oauth-error/<locale>.html` page, or a built-in English one, with `400`. The page is written by `backd template realm`.
 
 ## Security
 

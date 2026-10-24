@@ -44,10 +44,10 @@ email:
 
 ## Templates
 
-`backd template realm --realm <realm>` writes English templates for every kind of email under `<realm>/email/`:
+`backd template realm --realm <realm>` writes English templates for every kind of email under `<realm>/_realm/email/`:
 
 ```
-<realm>/email/
+<realm>/_realm/email/
   verify-email/     en.subject.txt  en.txt  en.html
   reset-password/   en.subject.txt  en.txt  en.html
   account-exists/   …
@@ -69,7 +69,7 @@ The link in an email opens a **page served by backd**, so an app only chooses wh
 
 - **`GET` shows the page, `POST` acts.** Opening the link only shows a form (a button, or a form with a new password) and never uses the token up, so mail scanners and link previewers that open every link can't spoil it. The token is used when the person submits the form. A session is never issued by these pages: after verifying or resetting, users sign in as usual.
 - **One error page.** A token that is expired, already used, unknown or for another flow shows the same `invalid-token` page, so the page tells nobody which case it was.
-- **Pages are templates** you own: `backd template realm` writes them to `<realm>/pages/<kind>/<locale>.html` (`verify-email`, `reset-password`, `confirm-email-change`, `revert-email-change`, `accept-invitation`, `result` and `invalid-token`). Every listed locale needs every page, and they are parsed and test-rendered at startup like the email templates. A page can use `{{.Realm}}`, `{{.Locale}}`, `{{.Action}}` (where the form posts), `{{.Token}}` (the hidden field), `{{.Error}}` and `{{.ErrorCode}}` (`password_mismatch` or `password_policy`, to say it in the page's own words), `{{.Kind}}`, `{{.Redirect}}`, `{{.DelaySeconds}}` and `{{.BackURL}}`. The page is in the language of the browser's `Accept-Language`, matched against the realm's `locales`.
+- **Pages are templates** you own: `backd template realm` writes them to `<realm>/_realm/pages/<kind>/<locale>.html` (`verify-email`, `reset-password`, `confirm-email-change`, `revert-email-change`, `accept-invitation`, `result` and `invalid-token`). Every listed locale needs every page, and they are parsed and test-rendered at startup like the email templates. A page can use `{{.Realm}}`, `{{.Locale}}`, `{{.Action}}` (where the form posts), `{{.Token}}` (the hidden field), `{{.Error}}` and `{{.ErrorCode}}` (`password_mismatch` or `password_policy`, to say it in the page's own words), `{{.Kind}}`, `{{.Redirect}}`, `{{.DelaySeconds}}` and `{{.BackURL}}`. The page is in the language of the browser's `Accept-Language`, matched against the realm's `locales`.
 - **Where users go next.** After a success the `result` page waits `redirect_delay` (3 seconds by default, at most 30) and sends the user to the `redirect_to` the request stored with the token, or else to `email.redirects.<flow>` (`verify_email`, `reset_password`, `change_email`, `invitation`). Both must be within `email.allowed_redirects`: origins such as `https://app.acme.example` or an app's own scheme such as `acme://`. The address is checked when the email is requested and again when the page uses it.
 - **Your own pages instead.** `email.links.<flow>` replaces backd's address in the email with one of your app's pages, which must be within `allowed_redirects` and contain `{token}` once (`https://app.acme.example/reset?token={token}`). That page sends the token to the JSON endpoint of the same flow, `POST /v1/<realm>/_auth/<flow>` with `{"token"}` (and `{"password"}` for `reset-password` and `accept-invitation`), which answers `204`, or `400 invalid_token` for any token that doesn't work.
 
@@ -150,7 +150,7 @@ await ctx.email.send({ kind: "order-shipped", to_user: order._meta.owner, data: 
 await ctx.email.send({ kind: "invoice", to: [order.customer_email], cc: [accounting], data: { invoice_no: 7 } }); // addresses
 ```
 
-- **`kind`** is a folder of the realm's [`email/`](#templates) (`email/order-shipped/`), with the same files and languages as the others, checked at startup. A function can't send the kinds `backd` sends itself (`verify-email`, `reset-password`, …). A template prints the function's `data` as `{{.Data.order_no}}`; if the function leaves a field out, that send fails permanently (the delivery function is never called) and shows in the job list.
+- **`kind`** is a folder of the realm's [`_realm/email/`](#templates) (`_realm/email/order-shipped/`), with the same files and languages as the others, checked at startup. A function can't send the kinds `backd` sends itself (`verify-email`, `reset-password`, …). A template prints the function's `data` as `{{.Data.order_no}}`; if the function leaves a field out, that send fails permanently (the delivery function is never called) and shows in the job list.
 - **Recipients:** `to_user` (a realm user's id, in that user's language, which `backd` looks up) **or** `to` (addresses, in the realm's `default_locale` unless you pass a `locale`), plus optional `cc` and `bcc`. **Any recipient is allowed:** `backd` doesn't keep a list of who a function may write to. A function can't send a subject or a body of its own: the text comes from the template.
 - **It returns** `{ id, status: "queued" }`, the id of the email's job. The email is sent by a worker, like the others: a slow provider never slows the function down.
 - **`org`** names the organization the message is about: its [organization context](../../organizations/organization-context/) (`email.data_hook`) applies, and the delivery function receives `org` and `app` in `data`.

@@ -6050,7 +6050,7 @@ paths:
       tags: [documents]
       summary: Read the app configuration
       description: |
-        The realm's app configuration (declared in `app-config/`) as the caller may read
+        The realm's app configuration (declared in `_realm/config/`) as the caller may read
         it: defaults filled in, and only the keys whose read rules allow it (the rule of
         a key is its own ANDed with every ancestor's; a key with no rule is hidden).
         Hidden keys are absent, with no error. `paths` selects groups or keys, and a
@@ -6335,7 +6335,7 @@ paths:
       tags: [admin]
       summary: The app configuration with every value and its latest history
       description: |
-        The realm's app configuration as it is now (declared in `app-config/`): every
+        The realm's app configuration as it is now (declared in `_realm/config/`): every
         key with its effective value, including the keys clients can't read, the
         values that differ from the defaults, stored values that stopped validating
         after a deploy (they read as their defaults until fixed or reset), the declared
@@ -6362,7 +6362,7 @@ paths:
       summary: Change app configuration values
       description: |
         Sets values and returns keys to their defaults, as one change: the result is
-        validated as a whole against `app-config/schema.json` and applied atomically,
+        validated as a whole against `_realm/config/schema.json` and applied atomically,
         or nothing is. `If-Match` carries the version the change is based on (`412`
         when it is stale, `428` when missing). A change that leaves every value as it
         was makes no new version (`changed: false`). `set` names keys (not groups of

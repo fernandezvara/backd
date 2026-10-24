@@ -33,8 +33,8 @@ func testService(t *testing.T) (*Service, *MemStore, *time.Time) {
 	t.Helper()
 	dir := t.TempDir()
 	for name, content := range map[string]string{
-		"shop/realm.yaml":             "roles: {}\n",
-		"shop/app-config/schema.json": testSchema,
+		"shop/realm.yaml":                "roles: {}\n",
+		"shop/_realm/config/schema.json": testSchema,
 	} {
 		p := filepath.Join(dir, name)
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {

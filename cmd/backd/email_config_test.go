@@ -27,12 +27,12 @@ func TestEmailNeedsAPublicURL(t *testing.T) {
 		for _, kind := range email.SystemKinds {
 			defaults, _ := email.DefaultFiles(kind)
 			for name, data := range defaults {
-				files["acme/email/"+kind+"/"+name] = string(data)
+				files["acme/_realm/email/"+kind+"/"+name] = string(data)
 			}
 		}
 		for _, kind := range email.PageKinds {
 			page, _ := email.DefaultPage(kind)
-			files["acme/pages/"+kind+"/en.html"] = string(page)
+			files["acme/_realm/pages/"+kind+"/en.html"] = string(page)
 		}
 		root := writeConfig(t, files)
 		writeFuncManifest(t, filepath.Join(root, fnDir), "deliver")

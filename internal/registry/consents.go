@@ -15,8 +15,8 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// ConsentsDir is the folder of a realm that holds the consent texts:
-// <realm>/consents/<name>/<version>/<locale>.md. It is never read as a database.
+// ConsentsDir is the folder of _realm that holds the consent texts:
+// <realm>/_realm/consents/<name>/<version>/<locale>.md.
 const ConsentsDir = "consents"
 
 // DefaultConsentRetention is how long consent records are kept after their
@@ -256,7 +256,7 @@ func loadConsents(rl *Realm, realmPath string) []error {
 	var errs []error
 	for _, name := range slices.Sorted(mapKeys(rl.Settings.Consents)) {
 		c := rl.Settings.Consents[name]
-		dir := filepath.Join(realmPath, ConsentsDir, name)
+		dir := RealmPath(realmPath, ConsentsDir, name)
 		versions, _ := os.ReadDir(dir)
 		for _, v := range versions {
 			if !v.IsDir() || !consentVersionPattern.MatchString(v.Name()) {
@@ -276,12 +276,12 @@ func loadConsents(rl *Realm, realmPath string) []error {
 		}
 		for _, loc := range locales {
 			if _, ok := c.Texts[c.Current][loc]; !ok {
-				errs = append(errs, fmt.Errorf("%s: consents.%s: the current version %q has no text for the language %s (%s)", file, name, c.Current, loc, filepath.Join(ConsentsDir, name, c.Current, loc+".md")))
+				errs = append(errs, fmt.Errorf("%s: consents.%s: the current version %q has no text for the language %s (%s)", file, name, c.Current, loc, filepath.Join(RealmDir, ConsentsDir, name, c.Current, loc+".md")))
 			}
 		}
 		for v := range c.Versions {
 			if v != c.Current && len(c.Texts[v]) == 0 {
-				errs = append(errs, fmt.Errorf("%s: consents.%s.versions: %q has no text (%s): add its texts, or remove it from the list", file, name, v, filepath.Join(ConsentsDir, name, v, "<locale>.md")))
+				errs = append(errs, fmt.Errorf("%s: consents.%s.versions: %q has no text (%s): add its texts, or remove it from the list", file, name, v, filepath.Join(RealmDir, ConsentsDir, name, v, "<locale>.md")))
 			}
 		}
 	}

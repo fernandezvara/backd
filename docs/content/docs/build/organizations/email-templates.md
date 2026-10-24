@@ -16,7 +16,7 @@ email:
     permission: manage_org        # who edits: holders of manage: org (the default)
 ```
 
-Every listed kind must have a template in the realm's [`email/` folder](../../functions/email/#templates), which is what an organization's version replaces; startup checks it, and that the realm has organizations. `permission` is `manage_org`, `manage_members`, `manage_roles` or `manage_teams`: the [capability](../../configuration/realm/#organizations) that edits them.
+Every listed kind must have a template in the realm's [`_realm/email/` folder](../../functions/email/#templates), which is what an organization's version replaces; startup checks it, and that the realm has organizations. `permission` is `manage_org`, `manage_members`, `manage_roles` or `manage_teams`: the [capability](../../configuration/realm/#organizations) that edits them.
 
 ## The syntax
 

@@ -24,7 +24,7 @@ func (a *adminAPI) appConfigService(w http.ResponseWriter, r *http.Request) (*ap
 		return nil, nil, false
 	}
 	if rl.AppConfig == nil {
-		writeError(w, r, http.StatusNotFound, codeNotFound, "this realm declares no app configuration (app-config/schema.json)")
+		writeError(w, r, http.StatusNotFound, codeNotFound, "this realm declares no app configuration (_realm/config/schema.json)")
 		return nil, nil, false
 	}
 	return &appconfig.Service{Store: usersOf(r).Store, Config: rl.AppConfig, Now: usersOf(r).Clock}, rl.AppConfig, true

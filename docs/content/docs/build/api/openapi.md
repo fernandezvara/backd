@@ -21,7 +21,7 @@ curl -H "Authorization: Bearer $BACKD_API_KEY" https://api.example.com/v1/shop/_
 | Each collection | List, get, create, replace, patch and delete with the collection's schema as the document (plus `id` and `_meta`) and as the input (a collection with [`custom_id`](../../configuration/config-dir/#custom-ids) requires the `id`, with its pattern, in the create body and on the path), `where`, ordering, conditional reads, [soft delete](../../configuration/config-dir/#soft-delete) restore, and its [file fields](../../files/file-fields/) with their upload routes |
 | Sign-in | Only the methods the realm enables: login and sessions always; sign-up when `signup: open`; email flows with `email:`; providers with `providers:`; MFA unless `mfa.enabled: false`; devices with `push:`; consents when declared |
 | Functions | Every function that is not `internal`, with `input.schema.json` and `output.schema.json` as the call's request and response; async ones with their job route |
-| Configuration | `_config`, with the values typed from `app-config/schema.json` |
+| Configuration | `_config`, with the values typed from `_realm/config/schema.json` |
 | Batches, jobs, errors | The batch route of each database, the job route when a function is async, and the error codes |
 
 Not in it: internal functions, the admin API (`/_admin/…`), rules, and system collections. The admin API has its own document, [below](#the-admin-document).

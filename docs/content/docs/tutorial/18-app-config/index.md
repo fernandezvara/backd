@@ -9,13 +9,13 @@ Some things about Shelf should change **without a deploy**: a maintenance notice
 
 ## Declare it
 
-Create `config/shelf/app-config/schema.json`: a JSON Schema whose every value has a default, so the app always gets a complete configuration.
+Create `config/shelf/_realm/config/schema.json`: a JSON Schema whose every value has a default, so the app always gets a complete configuration.
 
-{{< example-file path="shelf/app-config/schema.json" >}}
+{{< example-file path="shelf/_realm/config/schema.json" >}}
 
-And `config/shelf/app-config/rules.yaml`: who may read what. A key with no rule, on itself or an ancestor, can't be read by apps at all.
+And `config/shelf/_realm/config/rules.yaml`: who may read what. A key with no rule, on itself or an ancestor, can't be read by apps at all.
 
-{{< example-file path="shelf/app-config/rules.yaml" >}}
+{{< example-file path="shelf/_realm/config/rules.yaml" >}}
 
 The banner is public (`"true"`: even without a session); the `features` group needs a signed-in member. Restart `backd`: it refuses to start on a value without a default, an object that doesn't close its properties, or a rule for a path the schema doesn't declare.
 

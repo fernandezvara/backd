@@ -19,9 +19,9 @@ import (
 	"github.com/fernandezvara/backd/internal/rules"
 )
 
-// AppConfigDir is the folder of a realm that declares its app configuration:
-// <realm>/app-config/schema.json and rules.yaml. It is never read as a database.
-const AppConfigDir = "app-config"
+// AppConfigDir is the folder of _realm that declares the realm's app configuration:
+// <realm>/_realm/config/schema.json and rules.yaml.
+const AppConfigDir = "config"
 
 const (
 	appConfigSchemaFile = "schema.json"
@@ -38,7 +38,7 @@ var appConfigKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]{0,63}$`)
 // the configuration is a tree of objects whose leaves hold plain values.
 var appConfigRefused = []string{"$ref", "$defs", "definitions", "allOf", "anyOf", "oneOf", "not", "if", "then", "else", "patternProperties", "dependentSchemas"}
 
-// AppConfig is a realm's declared app configuration (<realm>/app-config/): the
+// AppConfig is a realm's declared app configuration (<realm>/_realm/config/): the
 // keys, their types and defaults, and who may read which path.
 type AppConfig struct {
 	SchemaPath string
@@ -92,9 +92,9 @@ type appConfigRulesDoc struct {
 	Read map[string]string `yaml:"read"`
 }
 
-// loadAppConfig reads <realm>/app-config/ when it exists.
+// loadAppConfig reads <realm>/_realm/config/ when it exists.
 func loadAppConfig(rl *Realm, realmPath string) []error {
-	dir := filepath.Join(realmPath, AppConfigDir)
+	dir := RealmPath(realmPath, AppConfigDir)
 	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
 		return nil
 	}
@@ -105,7 +105,7 @@ func loadAppConfig(rl *Realm, realmPath string) []error {
 	data, err := os.ReadFile(schemaPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return []error{fmt.Errorf("%s: the app-config directory has no %s", dir, appConfigSchemaFile)}
+			return []error{fmt.Errorf("%s: the _realm/config directory has no %s", dir, appConfigSchemaFile)}
 		}
 		return []error{fmt.Errorf("%s: %w", schemaPath, err)}
 	}
@@ -335,7 +335,7 @@ func checkConfigGrants(rl *Realm, realmPath string) []error {
 		}
 		for _, name := range slices.Sorted(maps.Keys(db.Functions.Functions)) {
 			if db.Functions.Functions[name].ConfigWrite && rl.AppConfig == nil {
-				errs = append(errs, fmt.Errorf("%s: %s/%s declares `config: write`, but this realm declares no app configuration (%s/%s)", filepath.Join(realmPath, RealmFile), dbName, name, AppConfigDir, appConfigSchemaFile))
+				errs = append(errs, fmt.Errorf("%s: %s/%s declares `config: write`, but this realm declares no app configuration (%s)", filepath.Join(realmPath, RealmFile), dbName, name, filepath.Join(RealmDir, AppConfigDir, appConfigSchemaFile)))
 			}
 		}
 	}

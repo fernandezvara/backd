@@ -36,7 +36,7 @@ type File struct {
 }
 
 // Realm creates <realm>/realm.yaml, and the default email templates under
-// <realm>/email/, under configDir. With sample, it also
+// <realm>/_realm/email/, under configDir. With sample, it also
 // creates the database "main" with the blog sample collection.
 func Realm(configDir, realm string, sample bool) ([]File, error) {
 	if !registry.ValidName(realm) {
@@ -57,7 +57,7 @@ func Realm(configDir, realm string, sample bool) ([]File, error) {
 			return out, err
 		}
 		for _, name := range slices.Sorted(maps.Keys(defaults)) {
-			more, err := writeBytes(configDir, realm+"/"+email.DirName+"/"+kind+"/"+name, defaults[name])
+			more, err := writeBytes(configDir, realm+"/"+registry.RealmDir+"/"+email.DirName+"/"+kind+"/"+name, defaults[name])
 			if err != nil {
 				return out, err
 			}
@@ -70,7 +70,7 @@ func Realm(configDir, realm string, sample bool) ([]File, error) {
 		if err != nil {
 			return out, err
 		}
-		more, err := writeBytes(configDir, realm+"/"+email.PagesDirName+"/"+kind+"/en.html", data)
+		more, err := writeBytes(configDir, realm+"/"+registry.RealmDir+"/"+email.PagesDirName+"/"+kind+"/en.html", data)
 		if err != nil {
 			return out, err
 		}
@@ -83,7 +83,7 @@ func Realm(configDir, realm string, sample bool) ([]File, error) {
 		if err != nil {
 			return out, err
 		}
-		more, err := writeBytes(configDir, realm+"/"+email.PagesDirName+"/"+kind+"/en.html", data)
+		more, err := writeBytes(configDir, realm+"/"+registry.RealmDir+"/"+email.PagesDirName+"/"+kind+"/en.html", data)
 		if err != nil {
 			return out, err
 		}
@@ -95,13 +95,13 @@ func Realm(configDir, realm string, sample bool) ([]File, error) {
 	if !ok {
 		return out, errors.New("the built-in README template is missing")
 	}
-	more, err := writeBytes(configDir, realm+"/"+exportreadme.ReadmeDirName+"/"+exportreadme.DefaultReadmeLocale+".html", readme)
+	more, err := writeBytes(configDir, realm+"/"+registry.RealmDir+"/"+exportreadme.ReadmeDirName+"/"+exportreadme.DefaultReadmeLocale+".html", readme)
 	if err != nil {
 		return out, err
 	}
 	out = append(out, more...)
 	// An example push template, used once the realm configures `push:`.
-	more, err = write(configDir, realm+"/"+push.DirName+"/example/en.yaml", "files/push/example.yaml")
+	more, err = write(configDir, realm+"/"+registry.RealmDir+"/"+push.DirName+"/example/en.yaml", "files/push/example.yaml")
 	if err != nil {
 		return out, err
 	}
@@ -118,9 +118,6 @@ func Realm(configDir, realm string, sample bool) ([]File, error) {
 func Database(configDir, realm, database string, sample bool) ([]File, error) {
 	if !registry.ValidName(database) {
 		return nil, fmt.Errorf("invalid database name %q: must be lowercase letters and digits, optionally separated by single '-' or '_'", database)
-	}
-	if slices.Contains(registry.ReservedDirs, database) {
-		return nil, fmt.Errorf("%q can't be a database name: a realm's %s folder holds something else (email or push templates)", database, database)
 	}
 	if name := realm + "__" + database; len(name) >= 64 {
 		return nil, fmt.Errorf("MongoDB database name %q must be shorter than 64 characters", name)

@@ -195,7 +195,7 @@ func (g *gen) realm(rl *registry.Realm, o Options) string {
 
 	// App configuration.
 	if ac := rl.AppConfig; ac != nil {
-		c := newConverter(ac.RawSchema, "Config", "app-config/schema.json ", g.warn)
+		c := newConverter(ac.RawSchema, "Config", "_realm/config/schema.json ", g.warn)
 		fmt.Fprintf(&types, "export type Config = %s;\n", c.typeOf(ac.RawSchema, ""))
 		for _, name := range slices.Sorted(keys(c.defs)) {
 			fmt.Fprintf(&types, "export type %s = %s;\n", name, c.defs[name])

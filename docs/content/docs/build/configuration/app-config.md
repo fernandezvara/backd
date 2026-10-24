@@ -20,7 +20,7 @@ It is not a secrets store (see [No secrets, no encryption](#no-secrets-no-encryp
 
 ## Declaring
 
-A realm's `app-config/` folder holds `schema.json` and `rules.yaml`. It needs a realm with auth enabled, because the values live in the realm's system database.
+A realm's `_realm/config/` folder holds `schema.json` and `rules.yaml`. It needs a realm with auth enabled, because the values live in the realm's system database.
 
 ```json
 {
@@ -243,7 +243,7 @@ Keys for providers belong in [secrets](../../functions/secrets/), read by functi
 
 | What | Where |
 |---|---|
-| `app-config/schema.json`, `rules.yaml` | [Data model](../config-dir/#app-configuration) and above |
+| `_realm/config/schema.json`, `rules.yaml` | [Data model](../config-dir/#app-configuration) and above |
 | `app_config.cache_ttl` | [Realm settings](../realm/) |
 | `GET /v1/{realm}/_config` | [Reading](#reading) and the OpenAPI document (`readAppConfig`) |
 | `GET`, `PATCH /_admin/app-config`, `/history`, `/rollback` | [Admin API](../../../operate/administration/admin/#app-configuration) |

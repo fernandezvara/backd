@@ -81,7 +81,12 @@ func Load(root string) (*Registry, error) {
 			continue
 		}
 		for _, dbName := range dbDirs {
-			if slices.Contains(ReservedDirs, dbName) {
+			if dbName == RealmDir {
+				errs = append(errs, checkRealmFolder(filepath.Join(realmPath, dbName))...)
+				continue
+			}
+			if strings.HasPrefix(dbName, "_") {
+				errs = append(errs, reservedNameError(filepath.Join(realmPath, dbName), "a realm", RealmDir))
 				continue
 			}
 			db, dbErrs := loadDatabase(realm, dbName, filepath.Join(realmPath, dbName))
@@ -128,7 +133,7 @@ func loadPush(rl *Realm, realmPath string) []error {
 		return errs
 	}
 	_, locales := rl.Settings.Languages()
-	tpl, terrs := push.Load(filepath.Join(realmPath, push.DirName), locales)
+	tpl, terrs := push.Load(RealmPath(realmPath, push.DirName), locales)
 	rl.Push = tpl
 	errs = append(errs, terrs...)
 	for _, dbName := range slices.Sorted(maps.Keys(rl.Databases)) {
@@ -143,7 +148,7 @@ func loadPush(rl *Realm, realmPath string) []error {
 			}
 			for _, kind := range fp.Kinds {
 				if !tpl.HasKind(kind) {
-					errs = append(errs, fmt.Errorf("%s: %s/%s declares the push kind %q, which has no templates (push/%s/<locale>.yaml for every language of the realm)", file, dbName, name, kind, kind))
+					errs = append(errs, fmt.Errorf("%s: %s/%s declares the push kind %q, which has no templates (%s/%s/<locale>.yaml for every language of the realm)", file, dbName, name, kind, filepath.Join(RealmDir, push.DirName), kind))
 				}
 			}
 		}
@@ -244,7 +249,7 @@ func loadCustomizable(rl *Realm, realmPath string) []error {
 	var errs []error
 	for _, kind := range e.Customizable {
 		if !email.ValidKind(kind) || rl.Email == nil || !rl.Email.Has(kind, def) {
-			errs = append(errs, fmt.Errorf("%s: email.customizable: %q is not a kind of this realm's email folder (email/%s/ has the templates a company's version replaces)", file, kind, kind))
+			errs = append(errs, fmt.Errorf("%s: email.customizable: %q is not a kind of this realm's email folder (%s has the templates a company's version replaces)", file, kind, filepath.Join(RealmDir, email.DirName, kind)+"/"))
 		}
 	}
 	return errs
@@ -286,10 +291,10 @@ func loadEmail(rl *Realm, realmPath string) []error {
 		rl.Settings.Email.Timeout = fn.Timeout
 	}
 	_, locales := rl.Settings.Languages()
-	tpl, terrs := email.Load(filepath.Join(realmPath, email.DirName), locales)
+	tpl, terrs := email.Load(RealmPath(realmPath, email.DirName), locales)
 	rl.Email = tpl
 	errs = append(errs, terrs...)
-	pages, perrs := email.LoadPages(filepath.Join(realmPath, email.PagesDirName), locales)
+	pages, perrs := email.LoadPages(RealmPath(realmPath, email.PagesDirName), locales)
 	rl.Pages = pages
 	return append(errs, perrs...)
 }
@@ -298,6 +303,9 @@ func loadDatabase(rl *Realm, name, path string) (*Database, []error) {
 	realm := rl.Name
 	if !namePattern.MatchString(name) {
 		return nil, []error{nameError(path, "database")}
+	}
+	if err := legacyFolderError(path); err != nil {
+		return nil, []error{err}
 	}
 	mongoName := realm + "__" + name
 	if len(mongoName) >= maxMongoDBNameLen {
@@ -315,6 +323,10 @@ func loadDatabase(rl *Realm, name, path string) (*Database, []error) {
 			continue
 		}
 		collPath := filepath.Join(path, collName)
+		if strings.HasPrefix(collName, "_") {
+			errs = append(errs, reservedNameError(collPath, "a database", FunctionsDir))
+			continue
+		}
 		if !namePattern.MatchString(collName) {
 			errs = append(errs, nameError(collPath, "collection"))
 			continue
@@ -692,6 +704,53 @@ func subdirs(path string) ([]string, error) {
 		}
 	}
 	return out, nil
+}
+
+// checkRealmFolder reports the folders of _realm that are not one of RealmFolders: a misspelled
+// folder would otherwise silently drop the templates in it.
+func checkRealmFolder(path string) []error {
+	dirs, err := subdirs(path)
+	if err != nil {
+		return []error{err}
+	}
+	var errs []error
+	for _, d := range dirs {
+		if !slices.Contains(RealmFolders, d) {
+			errs = append(errs, fmt.Errorf("%s: unknown folder %q: %s holds %s", filepath.Join(path, d), d, RealmDir, strings.Join(RealmFolders, ", ")))
+		}
+	}
+	return errs
+}
+
+// reservedNameError is the error for a folder whose name starts with "_" where it has no meaning:
+// those names are backd's, and only one is defined at each level.
+func reservedNameError(path, where, allowed string) error {
+	return fmt.Errorf("%s: names starting with \"_\" are reserved for backd, and %s has only %s", path, where, allowed)
+}
+
+// legacyFolderError recognizes a folder at the top of a realm that is one of the folders _realm
+// holds now (email, pages, push, consents, compliance, app-config), and tells where to move it.
+// A database may have the same name: it is told apart by what it holds, which is never a
+// collection (a folder with a schema.json) or a schema.json of its own.
+func legacyFolderError(path string) error {
+	target, ok := legacyFolders[filepath.Base(path)]
+	if !ok {
+		return nil
+	}
+	legacy := false
+	if _, err := os.Stat(filepath.Join(path, schemaFile)); err == nil {
+		legacy = true
+	}
+	subs, _ := subdirs(path)
+	for _, s := range subs {
+		if _, err := os.Stat(filepath.Join(path, s, schemaFile)); err != nil {
+			legacy = true
+		}
+	}
+	if !legacy {
+		return nil
+	}
+	return fmt.Errorf("%s: this folder is not a database: the realm's %s now live in %s, so move it to %s", path, filepath.Base(path), RealmDir, filepath.Join(filepath.Dir(path), RealmDir, target))
 }
 
 // ValidName reports whether name is a valid realm, database or collection name.
