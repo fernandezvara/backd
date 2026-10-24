@@ -35,6 +35,9 @@ func Admin(reg *registry.Registry, realm string) (*Document, error) {
 // adminRoute reports whether the admin route (the path after `_admin/`) exists in this realm.
 func (b *builder) adminRoute(route string) bool {
 	s := b.rl.Settings
+	if strings.HasPrefix(route, "users/{id}/export") {
+		return s.Compliance.Export
+	}
 	first, _, _ := strings.Cut(route, "/")
 	switch first {
 	case "push":

@@ -139,6 +139,11 @@ blog__main.posts
 shop__orders.items
 ```
 
+### Upgrading to the next release (not yet tagged)
+
+1. **Run `backd provision`** with an admin-privileged `MONGO_URI`. It creates the `user_exports` system collection (the records of [personal data exports](../build/auth/personal-data/)). With `PROVISION_MODE=verify` the instances refuse to start until it has run. If you run with least-privilege grants, `backd databases --collections` prints the new collection.
+2. **Nothing else changes until you turn exports on** (`compliance.export: true`, which needs `storage:` and `email:`). `data-export-ready` and `data-export-made` are built-in email kinds; `backd template realm` writes the English text and a `compliance/readme/en.html` to edit.
+
 ### Upgrading to v0.9.1
 
 v0.9.1 adds [field encryption](../build/encryption/), breach-response tools (password expiry, ending every session, one-time reset links) and export and import with anonymized copies for staging. Nothing breaks for existing configuration, but the release adds system collections and validators, so it needs `backd provision`. What to check:

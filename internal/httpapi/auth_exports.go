@@ -161,7 +161,7 @@ func (a *authAPI) downloadExport(w http.ResponseWriter, r *http.Request) {
 	svc.Audit(r.Context(), auth.AuditDataExportDownloaded, "user:"+p.User.ID, map[string]any{"export": rec.ID, "by": "user"})
 
 	if proxied {
-		a.sendExport(w, r, obj, rec, name)
+		sendExportPackage(w, r, obj, rec.Key, name)
 		return
 	}
 	if strings.Contains(r.Header.Get("Accept"), "application/json") {
@@ -172,10 +172,10 @@ func (a *authAPI) downloadExport(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusFound)
 }
 
-// sendExport writes the package to the response, for a realm whose storage is not reachable by
-// its clients.
-func (a *authAPI) sendExport(w http.ResponseWriter, r *http.Request, obj *storage.Objects, rec auth.UserExport, name string) {
-	body, info, err := obj.Get(r.Context(), rec.Key, "")
+// sendExportPackage writes a package to the response: for a realm whose storage is not reachable
+// by its clients, and for the administrator, who always gets it through the API.
+func sendExportPackage(w http.ResponseWriter, r *http.Request, obj *storage.Objects, key, name string) {
+	body, info, err := obj.Get(r.Context(), key, "")
 	if errors.Is(err, storage.ErrObjectNotFound) {
 		writeError(w, r, http.StatusGone, "gone", "the package is no longer in the storage; ask for a new export")
 		return
@@ -217,7 +217,11 @@ func exportJSON(e auth.UserExport, admin bool) map[string]any {
 		out["finished_at"] = formatTime(e.FinishedAt)
 	}
 	if e.Status == auth.ExportReady {
-		out["expires_at"], out["size"], out["counts"] = formatTime(e.ExpiresAt), e.Size, e.Counts
+		counts := e.Counts
+		if counts == nil {
+			counts = map[string]int64{}
+		}
+		out["expires_at"], out["size"], out["counts"] = formatTime(e.ExpiresAt), e.Size, counts
 	}
 	if admin {
 		out["user"], out["downloads"] = e.UserID, e.Downloads

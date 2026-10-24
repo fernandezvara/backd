@@ -269,3 +269,29 @@ func TestExportFailsWhenTheStorageNeverAnswers(t *testing.T) {
 		t.Errorf("failure audit: %+v", recs)
 	}
 }
+
+// An export whose job an administrator cancelled is shown as failed, and does not keep the user from asking again.
+func TestCancelledExportDoesNotBlockTheUser(t *testing.T) {
+	f := newExportFixture(t)
+	f.enable()
+	ctx := context.Background()
+	code, out := f.as(t, f.ada, "POST", exportsPath, "")
+	if code != http.StatusAccepted {
+		t.Fatalf("ask: %d %v", code, out)
+	}
+	id := out["id"].(string)
+	rec, err := f.svc.UserExport(ctx, f.adaID, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.CancelJob(ctx, rec.JobID); err != nil {
+		t.Fatal(err)
+	}
+	code, got := f.as(t, f.ada, "GET", exportsPath+"s/"+id, "")
+	if code != 200 || got["status"] != "failed" {
+		t.Fatalf("after the cancel: %d %v", code, got)
+	}
+	if code, out := f.as(t, f.ada, "POST", exportsPath, ""); code != http.StatusAccepted {
+		t.Errorf("ask again: %d %v", code, out)
+	}
+}

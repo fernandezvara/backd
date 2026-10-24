@@ -1,7 +1,7 @@
 # Design: compliance — personal data export and consent records
 
 - **Issues:** features 19.1–19.11 (milestone `19-compliance`)
-- **Status:** decided (missing consent texts warn at startup instead of failing). Issue 19.2 (the export) was deferred until export packages (17.1) existed; they do now, and it is built in three parts: the package builder and its settings (`compliance.export`, `export_page`, `export_retention`, README templates), then the requests, delivery, retention and audit, then the administrator's export, notification and CLI
+- **Status:** decided (missing consent texts warn at startup instead of failing). Issue 19.2 (the export) was deferred until export packages (17.1) existed; they do now and it is built (see the docs page "Personal data export")
 - **Related designs:** [account-lifecycle.md](./account-lifecycle.md) (erasure and `on_owner_delete`), [export-import.md](./export-import.md) (package format), [organizations.md](./organizations.md), [mfa-passwordless.md](./mfa-passwordless.md) (sign-in challenges, reauth), [email-delivery.md](./email-delivery.md) and [push-notifications.md](./push-notifications.md) (gated sends), [field-encryption.md](./field-encryption.md) (decryption in personal exports), [file-storage.md](./file-storage.md)
 
 ## 1. The idea
@@ -74,7 +74,7 @@ personal_data:
 ### 4.1 Requesting
 
 - **Self-service:** `POST /_auth/me/export` with `X-Backd-Reauth` starts a job (progress as job steps). It's limited to one per user per 24 hours (`429` with `Retry-After`), and `GET /_auth/me/exports` lists exports with status and expiry.
-- **On behalf of a user:** `backd users export --realm <r> --user <u> [--ticket <ref>] [--no-notify --reason "<text>"]` and `POST /_admin/users/{id}/export`, by a full admin with reauth.
+- **On behalf of a user:** `backd user export --realm <r> --email <e> [--ticket <ref>] [--no-notify --reason "<text>"]` (the CLI's group is `user` and it finds users by `--email`, like its other commands) and `POST /_admin/users/{id}/export`, by a full admin with reauth.
   - The package goes to the admin.
   - The user is notified (`data-export-made`) unless `--no-notify`, which needs a reason stored in the audit record.
   - Silent exports are listed separately in the audit view.

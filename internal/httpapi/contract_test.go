@@ -2843,6 +2843,8 @@ func TestContract(t *testing.T) {
 		const ex = "/v1/acme/_auth/me/export"
 		proof := with(ada, reauthHeader, f.freshProof(t, f.ada))
 		req("POST", ex, "", proof, 404) // the realm does not export
+		adm := "/v1/acme/_admin/users/" + f.adaID
+		req("POST", adm+"/export", "", key, 404)
 		req("GET", ex+"s", "", ada, 404)
 		req("GET", ex+"s/nosuch", "", ada, 404)
 		req("GET", ex+"s/nosuch/download", "", ada, 404)
@@ -2885,6 +2887,45 @@ func TestContract(t *testing.T) {
 		st.Download = registry.DownloadProxy
 		if rec, _ := f.doH(t, "GET", ex+"s/ready1/download", "", ada); rec.Code != 200 || rec.Header().Get("Content-Type") != "application/zip" {
 			t.Errorf("proxied export download: %d %v", rec.Code, rec.Header())
+		}
+		*st = was
+
+		// The administrator's side: the same package for a formal request.
+		st.Endpoint, st.Bucket, st.HTTP = s3.URL, "files", true
+		for id, expires := range map[string]time.Time{"adm-ready": now.Add(time.Hour), "adm-old": now.Add(-time.Hour)} {
+			key := exportObjectKey(st.Prefix, "acme", f.adaID, id)
+			s3.Put(key, []byte("PK-package"))
+			if err := f.svc.Store.CreateUserExport(context.Background(), auth.UserExport{ID: id, UserID: f.adaID, Status: auth.ExportReady, Admin: "key:support", Notify: true, CreatedAt: now.Add(-2 * time.Hour), ExpiresAt: expires, Key: key, Size: 10}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		// (The export asked for above is still queued: no worker runs here.)
+		if _, err := f.svc.CancelJob(context.Background(), mustExport(t, f.svc, f.adaID, asked["id"].(string)).JobID); err != nil {
+			t.Fatal(err)
+		}
+		proofKey := with(key, reauthHeader, "") // an API key needs no proof
+		req("POST", adm+"/export", "", nil, 401)
+		req("POST", adm+"/export", "", ada, 403)
+		req("POST", adm+"/nosuch/export", "", key, 404)
+		req("POST", adm+"/export", `{"no_notify": true}`, json(proofKey), 400)
+		made := req("POST", adm+"/export", `{"ticket": "REQ-1"}`, json(key), 202)
+		req("POST", adm+"/export", "", key, 409) // one is already on its way
+		req("GET", adm+"/exports", "", nil, 401)
+		req("GET", adm+"/exports", "", ada, 403)
+		req("GET", "/v1/acme/_admin/users/nosuch/exports", "", key, 404)
+		req("GET", adm+"/exports", "", key, 200)
+		req("GET", adm+"/exports/"+made["id"].(string), "", nil, 401)
+		req("GET", adm+"/exports/"+made["id"].(string), "", ada, 403)
+		req("GET", adm+"/exports/nosuch", "", key, 404)
+		req("GET", adm+"/exports/"+made["id"].(string), "", key, 200)
+		req("GET", adm+"/exports/adm-ready/download", "", nil, 401)
+		req("GET", adm+"/exports/adm-ready/download", "", ada, 403)
+		req("GET", adm+"/exports/nosuch/download", "", key, 404)
+		req("GET", adm+"/exports/"+made["id"].(string)+"/download", "", key, 409) // not built yet
+		req("GET", adm+"/exports/ready1/download", "", key, 403)                  // the user's own
+		req("GET", adm+"/exports/adm-old/download", "", key, 410)
+		if rec, _ := f.doH(t, "GET", adm+"/exports/adm-ready/download", "", key); rec.Code != 200 || rec.Header().Get("Content-Type") != "application/zip" {
+			t.Errorf("admin download: %d %v", rec.Code, rec.Header())
 		}
 		*st = was
 		f.reg.Realms["acme"].Settings.Compliance = prior
@@ -3005,4 +3046,14 @@ func (f *fakeTriggerAdmin) ResolveGap(_ context.Context, _, id string, _ time.Ti
 	}
 	f.resolved = true
 	return true, nil
+}
+
+// mustExport reads an export record.
+func mustExport(t *testing.T, svc *auth.Users, userID, id string) auth.UserExport {
+	t.Helper()
+	e, err := svc.UserExport(context.Background(), userID, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e
 }
