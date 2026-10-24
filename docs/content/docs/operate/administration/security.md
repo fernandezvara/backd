@@ -211,7 +211,7 @@ What the numbers decided:
 - **A replay could show history made while access was different** (removed from a team, added back, resumed): tokens now carry an access fingerprint and are not replayed across a change.
 - **A change of the app configuration didn't reach open streams** whose rules read it, so documents a flag had just hidden kept flowing until reconnect. The configuration is watched and the streams reload.
 - **An organization-wide change made every member's stream read the database at once:** reads are now spread and bounded.
-- **Access that ends with the clock had no event:** open streams read their access every five minutes.
+- **Access that ends with the clock had no event:** open streams read their access every five minutes, and now also at the moment a role grant's window opens or closes.
 
 **Accepted, on purpose**
 

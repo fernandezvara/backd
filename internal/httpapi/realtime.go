@@ -349,6 +349,11 @@ func (d *documents) accessOf(r *http.Request, realm string, caller auth.Caller, 
 	fill(caller)
 	acc.Orgs = d.orgIDs(r, realm, caller)
 	acc.Fingerprint = d.accessFingerprint(r, realm, caller)
+	if caller.User != nil {
+		// A window of a role grant opening or closing changes access with nothing to report: the
+		// stream reads it again at that moment.
+		acc.NextChange, _ = svc.NextAccessChange(r.Context(), caller.User.User.ID)
+	}
 	for _, b := range built {
 		if b.c.Rules.UsesConfig() {
 			acc.UsesConfig = true
@@ -368,6 +373,9 @@ func (d *documents) accessOf(r *http.Request, realm string, caller auth.Caller, 
 		out := realtime.Reloaded{Subs: map[string]realtime.Visibility{}, Orgs: d.orgIDs(rr, realm, cur), Fingerprint: d.accessFingerprint(rr, realm, cur)}
 		if cur.User != nil && !cur.User.Session.ExpiresAt.IsZero() {
 			out.Expires = cur.User.Session.ExpiresAt
+		}
+		if cur.User != nil {
+			out.NextChange, _ = svc.NextAccessChange(ctx, cur.User.User.ID)
 		}
 		for _, b := range built {
 			filter, _, _ := d.resolve(rr, b.c, b.where)

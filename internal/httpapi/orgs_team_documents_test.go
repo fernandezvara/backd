@@ -250,3 +250,63 @@ func TestDeletingATeamAppliesOnTeamDelete(t *testing.T) {
 		}
 	}
 }
+
+// `_meta.team` groups an aggregation as `_meta.org` does, and what rules hide is not counted.
+func TestAggregateGroupsByTeam(t *testing.T) {
+	f := newRulesFixture(t)
+	f.svc.Now = func() time.Time { return *f.clock }
+	ctx := context.Background()
+	requests := "/v1/acme/app/requests"
+	org := f.orgOf(t, f.ada, "Departments")
+	if _, err := f.svc.AdminAddMember(ctx, org, f.bobID, []string{"editor"}); err != nil {
+		t.Fatal(err)
+	}
+	team := func(name string) string {
+		t.Helper()
+		rec, out := f.doH(t, "POST", orgsPath+"/"+org+"/teams", fmt.Sprintf(`{"name": %q}`, name), jsonHdr(f.ada))
+		if rec.Code != 201 {
+			t.Fatalf("team %s: %d %v", name, rec.Code, out)
+		}
+		return out["id"].(string)
+	}
+	sales, support := team("Sales"), team("Support")
+	for _, m := range []struct{ team, user string }{{sales, f.bobID}, {sales, f.adaID}, {support, f.adaID}} {
+		if rec, _ := f.doH(t, "PUT", orgsPath+"/"+org+"/teams/"+m.team+"/members/"+m.user, "", bearer(f.ada)); rec.Code != 200 {
+			t.Fatalf("%s joins %s: %d", m.user, m.team, rec.Code)
+		}
+	}
+	add := func(who map[string]string, team, title string) {
+		t.Helper()
+		if rec, out := f.doH(t, "POST", requests+"?org="+org+"&team="+team, fmt.Sprintf(`{"title": %q}`, title), who); rec.Code != 201 {
+			t.Fatalf("create %s: %d %v", title, rec.Code, out)
+		}
+	}
+	add(jsonHdr(f.bob), sales, "a")
+	add(jsonHdr(f.bob), sales, "b")
+	add(jsonHdr(f.ada), support, "c")
+
+	counts := func(token string) map[string]float64 {
+		t.Helper()
+		rec, out := f.doH(t, "GET", requests+"/_aggregate?org="+org+"&group_by=_meta.team", "", bearer(token))
+		if rec.Code != 200 {
+			t.Fatalf("aggregate: %d %v", rec.Code, out)
+		}
+		got := map[string]float64{}
+		for _, g := range out["groups"].([]any) {
+			m := g.(map[string]any)
+			got[m["key"].(map[string]any)["_meta.team"].(string)] = m["count"].(float64)
+		}
+		return got
+	}
+	// The organization's owner sees every team, bob only the one he belongs to.
+	if got := counts(f.ada); len(got) != 2 || got[sales] != 2 || got[support] != 1 {
+		t.Errorf("owner: %v", got)
+	}
+	if got := counts(f.bob); len(got) != 1 || got[sales] != 2 {
+		t.Errorf("a member of one team: %v", got)
+	}
+	// Grouping by a field only teams have is refused where there are none.
+	if rec, out := f.doH(t, "GET", "/v1/acme/app/sales/_aggregate?group_by=_meta.team", "", bearer(f.ada)); rec.Code != 400 {
+		t.Errorf("a collection without teams: %d %v", rec.Code, out)
+	}
+}

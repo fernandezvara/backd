@@ -82,9 +82,10 @@ type Stream struct {
 
 	access    *Access
 	config    *ConfigSub
-	checking  bool // a configuration check is running
-	recheck   bool // the configuration changed while it ran
-	ending    bool // an end event is queued: the stream closes once it is written
+	boundary  *time.Timer // reads the access again when a role grant's window opens or closes
+	checking  bool        // a configuration check is running
+	recheck   bool        // the configuration changed while it ran
+	ending    bool        // an end event is queued: the stream closes once it is written
 	reloading bool
 	dirty     bool
 
@@ -126,6 +127,10 @@ func (s *Stream) Close() {
 		freed := s.size
 		s.queue, s.size, s.pending = nil, 0, nil
 		cancel := s.cancel
+		if s.boundary != nil {
+			s.boundary.Stop()
+			s.boundary = nil
+		}
 		subs := s.subs
 		s.subs = nil
 		s.mu.Unlock()
