@@ -1351,12 +1351,15 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    // Chapter 21: one profile per user (a unique index on _meta.owner keeps it
-    // to one). It starts with the name before the @; the member can change it.
+    // Chapter 21: one profile per user, at the user's own id (`custom_id: user`): there is at
+    // most one because an id is unique. It starts with the name before the @; the member can
+    // change it.
     async ensureProfile() {
-      const mine = await profiles.list({ where: { '_meta.owner': this.user.id }, limit: 1 })
-      if (mine.items.length === 0) {
-        await profiles.create({ name: this.user.email.split('@')[0] })
+      try {
+        await profiles.get(this.user.id)
+      } catch (e) {
+        if (!(e instanceof NotFoundError)) throw e
+        await profiles.create({ id: this.user.id, name: this.user.email.split('@')[0] })
       }
     },
 

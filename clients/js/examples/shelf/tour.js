@@ -634,13 +634,16 @@ heading('Teams as organizations (ch20)')
 heading('Authors through expansion (ch21)')
 {
   const STAMP = Date.now().toString(36)
-  // One profile per member, found through the asset's owner. The member's
-  // session token is read from the client's storage to see the cost headers.
+  // One profile per member, at the member's own id. The member's session token is read from the
+  // client's storage to see the cost headers.
   const profiles = main(member).collection('profiles')
-  const mine = (await profiles.list({ where: { '_meta.owner': (await member.auth.me()).id }, limit: 1 })).items[0]
-  const profile = mine ?? (await profiles.create({ name: 'Ana', avatar: '🦊' }))
+  const memberId = (await member.auth.me()).id
+  const mine = await profiles.get(memberId).catch((e) => (e instanceof NotFoundError ? undefined : Promise.reject(e)))
+  const profile = mine ?? (await profiles.create({ id: memberId, name: 'Ana', avatar: '🦊' }))
   if (mine) await profiles.patch(profile.id, { name: 'Ana', avatar: '🦊' })
-  await refused('a second profile of the same person is refused by the unique index (409)', () => profiles.create({ name: 'Ana again' }), ConflictError, '')
+  check('the profile lives at the person\'s own id', profile.id === memberId && profile._meta.owner === memberId, JSON.stringify(profile._meta))
+  await refused('a second profile of the same person is refused: the id is taken (409)', () => profiles.create({ id: memberId, name: 'Ana again' }), IdTakenError, 'id_taken')
+  await refused('a profile at anyone else\'s id is refused (400)', () => profiles.create({ id: 'someone-else', name: 'Not me' }), InvalidIdError, 'invalid_id')
 
   const asset = await main(member).collection('assets').create({ title: `Authored ${STAMP}`, kind: 'note', body: 'Written by Ana' })
   const asMember = { Authorization: `Bearer ${await member.storage.get()}` }

@@ -191,7 +191,7 @@ func TestTutorialChaptersLoad(t *testing.T) {
 }
 
 // Chapter 21 prints the reference it adds to the assets: it has to be what the finished
-// realm declares, and the realm has to load with it (the profiles' unique index included).
+// realm declares, and the realm has to load with it (profiles at the user's id included).
 func TestTutorialAuthorsReference(t *testing.T) {
 	printed := blockAfter(t, "21-authors", "Add this at the end of `config/shelf/main/assets/collection.yaml`")
 	b, err := os.ReadFile(filepath.Join("..", "..", "examples", "config", "shelf", "main", "assets", "collection.yaml"))
@@ -215,7 +215,7 @@ func TestTutorialAuthorsReference(t *testing.T) {
 		t.Fatal(err)
 	}
 	c, ok := reg.Collection("shelf", "main", "assets")
-	if !ok || c.References["author"] == nil || c.References["author"].Key != "_meta.owner" {
+	if !ok || c.References["author"] == nil || c.References["author"].Key != "id" {
 		t.Fatalf("assets references = %+v", c.References)
 	}
 }

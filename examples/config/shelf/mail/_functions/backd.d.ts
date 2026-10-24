@@ -210,6 +210,8 @@ export type MainPinsOrderBy = MainPinsOrderByField | `${MainPinsOrderByField},${
 export type MainProfiles = { id: string; _meta: Meta } & { avatar?: string; bio?: string; name: string; };
 /** main/profiles */
 export type MainProfilesInput = { avatar?: string; bio?: string; name: string; };
+/** main/profiles: the id is chosen by the client and never changes; it must be the id of the signed-in user */
+export type MainProfilesCreate = { id: string } & { avatar?: string; bio?: string; name: string; };
 export type MainProfilesWhere = {
   id?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
   "_meta.created_at"?: DateTimeString | (Ops<DateTimeString> & NullOps & RangeOps<DateTimeString>);
@@ -307,7 +309,7 @@ export interface Realm {
         members: { doc: MainMembers; input: MainMembersInput; create: MainMembersCreate; where: MainMembersWhere; order_by: MainMembersOrderBy; expand: {}; aggregate: never; trigger: never };
         notifications: { doc: MainNotifications; input: MainNotificationsInput; create: MainNotificationsInput; where: MainNotificationsWhere; order_by: MainNotificationsOrderBy; expand: {}; aggregate: never; trigger: never };
         pins: { doc: MainPins; input: MainPinsInput; create: MainPinsInput; where: MainPinsWhere; order_by: MainPinsOrderBy; expand: {}; aggregate: { group_by: "author" | "_meta.created_at"; dates: "_meta.created_at"; metrics: never }; trigger: never };
-        profiles: { doc: MainProfiles; input: MainProfilesInput; create: MainProfilesInput; where: MainProfilesWhere; order_by: MainProfilesOrderBy; expand: {}; aggregate: never; trigger: never };
+        profiles: { doc: MainProfiles; input: MainProfilesInput; create: MainProfilesCreate; where: MainProfilesWhere; order_by: MainProfilesOrderBy; expand: {}; aggregate: never; trigger: never };
         shares: { doc: MainShares; input: MainSharesInput; create: MainSharesInput; where: MainSharesWhere; order_by: MainSharesOrderBy; expand: {}; aggregate: never; trigger: never };
         submissions: { doc: MainSubmissions; input: MainSubmissionsInput; create: MainSubmissionsInput; where: MainSubmissionsWhere; order_by: MainSubmissionsOrderBy; expand: {}; aggregate: never; trigger: MainSubmissionsTriggerInput };
       };
