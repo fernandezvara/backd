@@ -56,6 +56,9 @@ func Load(root string) (*Registry, error) {
 
 	reg := &Registry{Realms: map[string]*Realm{}, Root: root}
 	var errs []error
+	// Realms laid out the old way: everything that would follow from the missing templates,
+	// texts and configuration is left out of the report, the folders to move are the news.
+	oldLayout := map[string]bool{}
 	for _, realmName := range realmDirs {
 		realmPath := filepath.Join(root, realmName)
 		if !namePattern.MatchString(realmName) {
@@ -72,14 +75,23 @@ func Load(root string) (*Registry, error) {
 		}
 		realm := &Realm{Name: realmName, Settings: settings, Databases: map[string]*Database{}}
 		reg.Realms[realmName] = realm
-		// Before the databases: their rules may read the configuration.
-		errs = append(errs, loadAppConfig(realm, realmPath)...)
-
 		dbDirs, err := subdirs(realmPath)
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
+		for _, dbName := range dbDirs {
+			if err := legacyFolderError(filepath.Join(realmPath, dbName)); err != nil {
+				errs = append(errs, err)
+				oldLayout[realmName] = true
+			}
+		}
+		if oldLayout[realmName] {
+			continue
+		}
+		// Before the databases: their rules may read the configuration.
+		errs = append(errs, loadAppConfig(realm, realmPath)...)
+
 		for _, dbName := range dbDirs {
 			if dbName == RealmDir {
 				errs = append(errs, checkRealmFolder(filepath.Join(realmPath, dbName))...)
@@ -97,6 +109,9 @@ func Load(root string) (*Registry, error) {
 		}
 	}
 	for _, realmName := range reg.RealmNames() {
+		if oldLayout[realmName] {
+			continue
+		}
 		errs = append(errs, checkReferences(reg.Realms[realmName])...)
 		errs = append(errs, loadEmail(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadOnSignup(reg.Realms[realmName], filepath.Join(root, realmName))...)
@@ -303,9 +318,6 @@ func loadDatabase(rl *Realm, name, path string) (*Database, []error) {
 	realm := rl.Name
 	if !namePattern.MatchString(name) {
 		return nil, []error{nameError(path, "database")}
-	}
-	if err := legacyFolderError(path); err != nil {
-		return nil, []error{err}
 	}
 	mongoName := realm + "__" + name
 	if len(mongoName) >= maxMongoDBNameLen {
@@ -750,7 +762,7 @@ func legacyFolderError(path string) error {
 	if !legacy {
 		return nil
 	}
-	return fmt.Errorf("%s: this folder is not a database: the realm's %s now live in %s, so move it to %s", path, filepath.Base(path), RealmDir, filepath.Join(filepath.Dir(path), RealmDir, target))
+	return fmt.Errorf("%s: this folder is not a database: the realm's %s folder now lives in %s, so move it to %s", path, filepath.Base(path), RealmDir, filepath.Join(filepath.Dir(path), RealmDir, target))
 }
 
 // ValidName reports whether name is a valid realm, database or collection name.

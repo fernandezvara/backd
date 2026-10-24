@@ -101,3 +101,34 @@ func TestFilesAtTheRealmLevelAreIgnored(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A realm laid out the old way is told which folders to move, and nothing that follows from
+// them not being found (missing templates, texts or configuration).
+func TestOldLayoutReportsOnlyTheFoldersToMove(t *testing.T) {
+	_, err := Load(writeTree(t, map[string]string{
+		"shop/realm.yaml":                  "email:\n  function: main/send\n  from: a@example.com\n",
+		"shop/main/orders/schema.json":     layoutSchema,
+		"shop/email/welcome/en.html":       "x",
+		"shop/app-config/schema.json":      layoutSchema,
+		"shop/app-config/rules.yaml":       "read: {}\n",
+		"shop/main/notes/collection.yaml":  "rules:\n  read: appConfig('a')\n",
+		"shop/main/notes/schema.json":      layoutSchema,
+		"shop/consents/terms/1/en.md":      "x",
+		"shop/compliance/readme/en.html":   "x",
+		"shop/pages/result/en.html":        "x",
+		"shop/push/hello/en.yaml":          "x",
+		"shop/main/_functions/send/x.json": "{}",
+	}))
+	if err == nil {
+		t.Fatal("an old layout loaded")
+	}
+	lines := strings.Split(strings.TrimSpace(err.Error()), "\n")
+	if len(lines) != 6 {
+		t.Fatalf("%d errors, want the 6 folders to move:\n%v", len(lines), err)
+	}
+	for _, l := range lines {
+		if !strings.Contains(l, "now lives in _realm") {
+			t.Errorf("not about a folder to move: %s", l)
+		}
+	}
+}
