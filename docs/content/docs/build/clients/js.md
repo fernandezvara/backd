@@ -578,6 +578,25 @@ try {
 }
 ```
 
+## Your own data
+
+`client.account` lets the signed-in user download a copy of everything the realm holds about them, when the realm sets [`compliance.export`](../../auth/personal-data/). Asking needs a fresh [proof](../../auth/reauth/); the rest only the session.
+
+```js
+await backd.auth.reauth({ method: 'password', password })
+const job = await backd.account.requestExport()          // { id, status: 'queued', … }
+const ready = await backd.account.waitForExport(job.id, { onProgress: (e) => show(e.step) })
+const { url, bytes } = await backd.account.downloadExport(ready.id)
+location.assign(url)                                      // a link signed for five minutes
+// or, in Node or a service worker:
+await fs.writeFile('my-data.zip', await bytes())
+```
+
+- **`requestExport()`** is limited to one every 24 hours: a second is a `RetryableError` (`429`) whose `retryAfter` says in milliseconds how long to wait. A realm that does not export answers `NotFoundError`; a missing proof, a `reauth_required` error.
+- **`exports()`** lists the user's exports (newest first), **`export(id)`** reads one (`step` says what it is doing), and **`waitForExport(id)`** polls until it is `ready`, or throws for a `failed` or `expired` one (`pollIntervalMs`, `timeoutMs`, `onProgress`).
+- **`downloadExport(id)`** asks for JSON so a page can use the link: `url` is signed for a few minutes (no credentials go to the storage), `bytes()` reads it. A realm whose storage clients cannot reach sends the zip through the API instead, and `bytes()` reads that. `409` until it is ready, `410` once expired.
+- The user is also emailed a link to your app's page (`compliance.export_page?export=<id>`): that page is where you call `downloadExport(id)`.
+
 ## App configuration
 
 `client.config` reads the realm's [app configuration](../../configuration/app-config/): feature flags, maintenance switches, limits. The server answers only what the signed-in user's rules allow, with defaults filled in.

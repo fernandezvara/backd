@@ -19,6 +19,7 @@ export 'src/cache.dart' show CacheEntry, CacheOptions, CacheStats, RevalidationC
 export 'src/client.dart';
 export 'src/config.dart';
 export 'src/data.dart';
+export 'src/account.dart';
 export 'src/consents.dart';
 export 'src/errors.dart';
 export 'src/files.dart';

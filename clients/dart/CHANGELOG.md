@@ -1,5 +1,12 @@
 ## Unreleased
 
+- **Your own data:** `client.account` asks for the export of the user's
+  personal data (`requestExport`, with a fresh proof), follows it (`exports`,
+  `export`, `waitForExport`) and saves it (`downloadExport`: a signed link
+  and its `bytes()`, or the zip itself when the realm proxies its files). Needs
+  a backd server with `compliance.export`. See
+  [Personal data export](https://fernandezvara.github.io/backd/docs/build/auth/personal-data/).
+
 - **Live app configuration:** `client.config.live([paths])` follows the realm's
   app configuration over realtime. `config.changes` fires within the realtime
   delay instead of at the next `cache_ttl`; `config.errors` reports a realm
