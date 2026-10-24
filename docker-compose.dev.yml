@@ -221,8 +221,20 @@ services:
     depends_on:
       - prometheus
 
-  # One origin with TLS from the local CA: the API, the admin UI, the example apps and a page
-  # with links.
+  # The documentation site of this checkout (Hugo, live reload): edit docs/ or the examples the
+  # pages quote and the open page reloads. The first start builds the image and downloads the
+  # theme, which takes a minute. HUGO_PARAMS_EXAMPLEURL shows the links to the example apps
+  # (scripts/dev.sh sets it with EXAMPLES=1).
+  docs:
+    build: docker/docs
+    environment:
+      HUGO_PARAMS_EXAMPLEURL: ${HUGO_PARAMS_EXAMPLEURL:-}
+    volumes:
+      - .:/src:ro
+      - docs-cache:/cache
+
+  # One origin with TLS from the local CA: the API, the admin UI, the documentation, the example
+  # apps and a page with links.
   nginx:
     image: docker.io/library/nginx:1.29-alpine
     ports:
@@ -248,3 +260,4 @@ volumes:
   minio-data:
   prometheus-data:
   grafana-data:
+  docs-cache:
