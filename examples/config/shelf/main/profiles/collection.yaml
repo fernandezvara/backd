@@ -1,13 +1,18 @@
 # Chapter 21: a profile is what other members see of a person. The account
 # (email, password, roles) is private; a profile holds only what the person
 # chooses to show, so it can be read by every member and expanded into lists.
+#
+# A profile lives at the person's own id: /v1/shelf/main/profiles/<user id>. backd checks
+# that the id of a create is the creating user's, and an id is unique, so there is at most
+# one profile per person without an index to keep it so.
+custom_id: user
+
 rules:
   # Every signed-in member reads every profile; anonymous visitors none, so the
   # public gallery shows no authors (the reference expands to null there).
   read: user != nil
 
-  # A member makes their own profile. The unique index on _meta.owner (see
-  # indexes.json) keeps it to one: a second create is a 409.
+  # A member makes their own profile; the id says whose, and a second create is a 409.
   create: user != nil
 
   # Only the owner changes or removes it.

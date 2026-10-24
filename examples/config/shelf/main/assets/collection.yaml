@@ -60,15 +60,14 @@ files:
     max_size: 1GiB
 
 # Chapter 21: who wrote an asset. Nothing is stored for it: the reference reads
-# the owner of the asset (_meta.owner) and finds that person's profile, whose
-# _meta.owner is the same user (it has a unique index, which `key` requires).
-# A list asks for it with `expand=author(name,avatar)`; without that, nothing
+# the owner of the asset (_meta.owner) and finds that person's profile, which
+# lives at the user's own id (profiles use `custom_id: user`, and a reference's
+# default `key` is `id`). A list asks for it with `expand=author(name,avatar)`; without that, nothing
 # is looked up.
 references:
   author:
     field: _meta.owner
     collection: profiles
-    key: _meta.owner
 
 # Chapter 24: the gallery is live too. The read rule above decides, on every
 # change, who is told: publishing an asset makes it appear for every member.

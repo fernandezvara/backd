@@ -1,6 +1,6 @@
 ---
 title: "21. Authors with references"
-description: "Show who wrote each asset with one reference declared in collection.yaml, a profiles collection keyed by owner, and expand=author(name,avatar) on the list: the cost headers before and after selecting fields, a profile nobody can read, and writes that keep the asset's own ETag."
+description: "Show who wrote each asset with one reference declared in collection.yaml, a profiles collection keyed by user id, and expand=author(name,avatar) on the list: the cost headers before and after selecting fields, a profile nobody can read, and writes that keep the asset's own ETag."
 weight: 410
 toc: true
 ---
@@ -9,35 +9,33 @@ The gallery shows titles, but not **who** saved them. The name lives somewhere e
 
 ## A profile per person
 
-A profile is what other members see of a person. It belongs to its owner (`_meta.owner`, set by backd) and there is at most one per person, which a **unique index** on `_meta.owner` guarantees:
+A profile is what other members see of a person. It belongs to its owner (`_meta.owner`, set by backd), and its **id is the person's own id**: Ana's profile is at `/v1/shelf/main/profiles/<Ana's user id>`. There is at most one per person because an id is unique, with no index to maintain, and anyone who knows a user id (every document they own carries it in `_meta.owner`) can read their profile directly.
 
 {{< example-file path="shelf/main/profiles/schema.json" >}}
 
-```json
-[
-  { "fields": ["_meta.owner"], "unique": true }
-]
-```
-
-Add them as `config/shelf/main/profiles/schema.json` and `indexes.json`. Its rules are short: every signed-in member reads every profile, and only the owner changes their own.
+Its rules are short: every signed-in member reads every profile, and only the owner changes their own. The line that does the rest is `custom_id: user`:
 
 {{< example-file path="shelf/main/profiles/collection.yaml" >}}
 
-A second `create` by the same person is a `409`: the index says so, not a rule that has to count.
+With [`custom_id: user`](../../build/configuration/config-dir/#custom-ids) `backd` takes the id of a create from the client and checks that it is the creating user's: a profile at anyone else's id is a `400 invalid_id`, and a second profile of the same person is a `409 id_taken`. Add the two files as `config/shelf/main/profiles/schema.json` and `collection.yaml`.
+
+```js
+await profiles.create({ id: user.id, name: 'Ana', avatar: '🦊' })   // the typed client requires the id
+const mine = await profiles.get(user.id)                              // and finds it by it
+```
 
 ## Declare the reference
 
-An asset's author is the person who owns it, so the source is `_meta.owner` and the target is the profile whose own `_meta.owner` is the same user. Add this at the end of `config/shelf/main/assets/collection.yaml`:
+An asset's author is the person who owns it, so the source is `_meta.owner`, and the target is the profile **whose id is that value**: the default `key` of a reference is `id`, so nothing more is needed. Add this at the end of `config/shelf/main/assets/collection.yaml`:
 
 ```yaml
 references:
   author:
     field: _meta.owner
     collection: profiles
-    key: _meta.owner
 ```
 
-`backd` checks it when it starts: the collection exists, the source is something a reference can read, and `key` has a unique index (a `key` that could match two profiles is refused, with the file and the fix). Nothing is stored for the reference, and nothing changes for requests that don't ask.
+`backd` checks it when it starts: the collection exists and the source is something a reference can read. Nothing is stored for the reference: it is a read-time lookup, and a `key` other than `id` would have to be a field with a unique index.
 
 ## Ask for it
 
@@ -95,7 +93,7 @@ A page of nine cards costs **one** extra query, not nine. Those numbers don't ch
 
 ## You should see
 
-- A second profile for the same member is refused (`409`).
+- A second profile for the same member is refused (`409 id_taken`), and a profile at someone else's id is `400 invalid_id`; the profile's `id` is the member's user id.
 - `expand=author` returns the profile in `_expanded.author`; the asset and its `ETag` are as before, and the response is `private, no-cache`.
 - With `author(name)` only `id` and `name` come back; `X-Backd-Expand-Queries` is `1` for one asset and for a whole page.
 - An unknown reference is `400 invalid_expand` that names it; `where` on `author.name` is `400 invalid_query`.
