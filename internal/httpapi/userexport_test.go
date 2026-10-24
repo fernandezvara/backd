@@ -115,6 +115,8 @@ func TestPersonalExportHoldsWhatTheErasureModelFinds(t *testing.T) {
 	seedOrder(t, f, "o2", f.adaID, map[string]any{"buyer": "Ada Lovelace"})
 	seedOrder(t, f, "o3", f.bobID, map[string]any{"buyer": "Bob", "members": []any{"ada@example.com", "bob@example.com"}})
 	seedOrder(t, f, "o4", f.bobID, map[string]any{"buyer": "Bob", "members": []any{"bob@example.com"}})
+	// ...and one that names her in a field the erase clears (`unset`), written by someone else.
+	seedOrder(t, f, "o5", f.bobID, map[string]any{"buyer": "Bob", "paid_by": f.adaID})
 	// Only some fields of a collection are hers; another is exempt altogether.
 	seedDoc(t, f, "contacts", "k1", f.adaID, map[string]any{"title": "Ada's card", "body": "likes tea", "internal_note": "NOTE-FOR-STAFF-ONLY"})
 	seedDoc(t, f, "private", "p1", f.adaID, map[string]any{"title": "FRAUD-SCORE-0.9"})
@@ -139,7 +141,7 @@ func TestPersonalExportHoldsWhatTheErasureModelFinds(t *testing.T) {
 		ids = append(ids, o["id"].(string))
 	}
 	slices.Sort(ids)
-	if !slices.Equal(ids, []string{"o1", "o2", "o3"}) {
+	if !slices.Equal(ids, []string{"o1", "o2", "o3", "o5"}) {
 		t.Errorf("orders = %v", ids)
 	}
 	// The scope is hers, not what a rule lets her read: the phone is a field of her order.

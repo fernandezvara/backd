@@ -180,9 +180,9 @@ func (d *documents) buildPersonalExport(ctx context.Context, p personalExportPar
 			return nil, fmt.Errorf("%s: %w", name, err)
 		}
 		if c.Erasure != nil {
-			for _, field := range slices.Sorted(maps.Keys(c.Erasure.Pull)) {
+			for _, field := range slices.Sorted(maps.Keys(namedIn(c.Erasure))) {
 				value := user.ID
-				if c.Erasure.Pull[field] == registry.MatchEmail {
+				if namedIn(c.Erasure)[field] == registry.MatchEmail {
 					value = user.Email
 				}
 				if err := scanPages(ctx, func(after string) ([]storage.Document, error) {
@@ -435,4 +435,15 @@ pick:
 		data.Exclusions = append(data.Exclusions, exportreadme.ReadmeExclusion{What: x.What, Reason: x.Reason})
 	}
 	return exportreadme.RenderReadme(src, data)
+}
+
+// namedIn is the fields of a collection that an erase removes the user from, with what each holds
+// (their email or their id): the `pull` arrays and the `unset` fields.
+func namedIn(p *registry.ErasurePolicy) map[string]string {
+	out := maps.Clone(p.Pull)
+	if out == nil {
+		out = map[string]string{}
+	}
+	maps.Copy(out, p.Unset)
+	return out
 }

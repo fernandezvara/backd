@@ -55,7 +55,7 @@ _account/invitations.jsonl, consents.jsonl, audit.jsonl, invocations.jsonl
 ```
 
 - **The user's data, not what rules let them read.** Read and `reveal` rules decide who may *use* a document, not whose data it is, so they remove nothing from the package. Encrypted fields come out decrypted: the server opens them for this, and nothing else leaves it.
-- **Documents:** the ones the user owns (whatever their `on_owner_delete`), and those that name them in a `pull` field of an [erase policy](../../../operate/administration/erasure/), whole unless the collection narrows them with `personal_data.fields`.
+- **Documents:** the ones the user owns (whatever their `on_owner_delete`), and those that name them in a `pull` or `unset` field of an [erase policy](../../../operate/administration/erasure/), whole unless the collection narrows them with `personal_data.fields`.
 - **Never in it:** password hashes, session, device and invitation tokens, second-factor secrets and recovery codes, function inputs, outputs and logs, and other people's details in the audit records (they carry the event, the time and the ids).
 - **Exclusions are listed.** A collection that `personal_data` excludes, fields it leaves out, a file missing from the storage: each is in the manifest and the README with the reason you gave.
 - **It is a zip, not a backup.** The layout is that of an [export package](../../../operate/administration/export-import/), but the manifest marks it `personal` and `partial`, so `backd import` refuses it.

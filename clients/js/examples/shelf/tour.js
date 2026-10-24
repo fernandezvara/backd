@@ -20,7 +20,8 @@ import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { deflateSync } from 'node:zlib'
-import { createClient, expand, fillBuckets, AuthenticationError, ConflictError, ConsentRequiredError, ForbiddenError, IdTakenError, InvalidIdError, NotFoundError, SecondStepRequiredError, ValidationError, VersionMismatchError, versionStatus } from '../../src/index.js'
+import { createClient, expand, fillBuckets, AuthenticationError, ConflictError, ConsentRequiredError, ForbiddenError, IdTakenError, InvalidIdError, NotFoundError, RetryableError, SecondStepRequiredError, ValidationError, VersionMismatchError, versionStatus } from '../../src/index.js'
+import { readZip } from './lib/zip.js'
 
 const url = process.env.BACKD_URL ?? 'http://localhost:8080'
 const PASSWORD = 'dev-p4ssw0rd!'
@@ -47,13 +48,13 @@ async function refused(/** @type {string} */ what, /** @type {() => Promise<unkn
 }
 const heading = (/** @type {string} */ text) => console.log(`\n${text}`)
 
-// The consents of chapter 17: the terms are required (the version in force), and the
-// members of the tour also opt in to the digest by email.
+// The consents of chapters 17 and 26: the terms and the privacy notice are required (the version in
+// force), and the members of the tour also opt in to the digest by email.
 const consentVersions = await (async () => {
   const list = await createClient({ url, realm: 'shelf' }).consents.current()
   return Object.fromEntries(list.map((c) => [c.name, c.current.version]))
 })()
-const ALL_CONSENTS = { terms: consentVersions.terms, marketing: consentVersions.marketing }
+const ALL_CONSENTS = { terms: consentVersions.terms, privacy: consentVersions.privacy, marketing: consentVersions.marketing }
 
 /** Signs in; with no account yet, invites self through the operator and signs up. */
 async function signedIn(/** @type {string} */ email, /** @type {any} */ operator) {
@@ -949,6 +950,65 @@ heading('Private notes (ch25)')
     wrong = true
   }
   check('a wrong key is refused, by its fingerprint', wrong)
+}
+
+heading('Your data (ch26)')
+{
+  const STAMP = Date.now().toString(36)
+  const SECRET = `my private note ${STAMP}`
+  const listed = await anonymous.consents.current()
+  const privacy = listed.find((c) => c.name === 'privacy')
+  check('the realm also asks for the privacy notice (required), with a public text', privacy?.required === true && (await anonymous.consents.text('privacy', privacy.current.version)).text.includes('privacy notice'), JSON.stringify(privacy))
+  const invite = await operator.admin.invitations.create({ email: `only-terms-${STAMP}@shelf.example` })
+  await refused('a sign-up with the terms but not the privacy notice is refused (400 consent_required)', () => createClient({ url, realm: 'shelf' }).auth.signup({ email: `only-terms-${STAMP}@shelf.example`, password: PASSWORD, invitation: invite.token, consents: { terms: consentVersions.terms } }), ConsentRequiredError, 'consent_required')
+
+  // A member with something of their own: a pin in a team, with a private note (chapter 25).
+  const ana = await signedIn(`ana26-${STAMP}@shelf.example`, operator)
+  const anaEmail = (await ana.auth.me()).email
+  const team = await ana.orgs.create({ name: `Mine ${STAMP}` })
+  await main(ana).fn('pin', { org: team.id, title: 'Quote', private_notes: SECRET })
+
+  await refused('asking for a copy needs a fresh proof (401 reauth_required)', () => ana.account.requestExport(), AuthenticationError, 'reauth_required')
+  await ana.auth.reauth({ method: 'password', password: PASSWORD })
+  const asked = await ana.account.requestExport()
+  check('the request is queued', asked.status === 'queued' || asked.status === 'running', JSON.stringify(asked))
+  await refused('a second request in the same day is refused (429)', () => ana.account.requestExport(), RetryableError, 'too_many_requests')
+
+  const ready = await ana.account.waitForExport(asked.id, { pollIntervalMs: 500, timeoutMs: 120000 })
+  check('the worker builds it, and says what it holds', ready.status === 'ready' && ready.size > 0 && ready.counts?.['_account/account'] === 1 && ready.counts?.['main/pins.jsonl'] >= 1, JSON.stringify(ready))
+  check('it is listed, newest first', (await ana.account.exports())[0].id === asked.id)
+
+  const zip = readZip(await (await ana.account.downloadExport(asked.id)).bytes())
+  const manifest = JSON.parse(await zip.text('manifest.json'))
+  check('the package is a partial, personal export of this user, with checksums', manifest.flags.personal === true && manifest.flags.partial === true && manifest.subject.startsWith('user:') && Object.keys(manifest.checksums).length >= zip.names.length - 1, JSON.stringify(manifest.flags))
+  const readme = await zip.text('README.html')
+  check('the README names the member and lists the system data', readme.includes(anaEmail) && readme.includes('_account') && readme.includes('In Shelf'))
+  const pins = await zip.text('main/pins.jsonl')
+  check('the pin is in it, and its private note is in the clear (the server opens it for its owner)', pins.includes('Quote') && pins.includes(SECRET))
+  const account = await zip.text('_account/account.jsonl')
+  check('the account is in it; a password hash is not', account.includes(anaEmail) && !zip.names.some((n) => n.includes('password')) && !(await Promise.all(zip.names.map((n) => zip.text(n)))).some((t) => t.includes('$argon2')))
+
+  // It is theirs alone.
+  await refused('another member can neither read it (404)', () => member.account.export(asked.id), NotFoundError, 'not_found')
+  await refused('nor download it (404)', () => member.account.downloadExport(asked.id), NotFoundError, 'not_found')
+
+  // The email links the app's page, never the file.
+  /** @type {any} */
+  let mail
+  for (let i = 0; i < 30 && !mail; i++) { // the worker delivers the queued mail a moment later
+    mail = (await operator.db('mail').collection('outbox').list({ where: { kind: 'data-export-ready', to: anaEmail }, orderBy: '-_meta.created_at', limit: 1 })).items[0]
+    if (!mail) await new Promise((r) => setTimeout(r, 500))
+  }
+  check('the member was emailed a link to the app\'s page with the export id', mail?.link === `http://localhost:8080/?export=${asked.id}` && !mail.text.includes('.zip'), JSON.stringify(mail?.link))
+
+  // What support does for a formal request goes through the admin API, with the same package.
+  await operatorProof()
+  const forUser = await fetch(`${url}/v1/shelf/_admin/users/${(await ana.auth.me()).id}/export`, {
+    method: 'POST', headers: { Authorization: `Bearer ${await operator.storage.get()}`, 'X-Backd-Reauth': (operator.proof?.token ?? ''), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ticket: `REQ-${STAMP}`, no_notify: true, reason: 'the tour checks silent exports' }),
+  })
+  const made = /** @type {any} */ (await forUser.json())
+  check('an administrator can export a user\'s data without telling them, with the reason kept', forUser.status === 202 && made.silent === true && made.requested_by !== 'user', JSON.stringify(made))
 }
 
 heading('cleanup by hand (ch9)')

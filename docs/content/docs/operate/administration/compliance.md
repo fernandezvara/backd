@@ -25,7 +25,7 @@ Apps that handle personal data usually have to answer four questions: *what do y
 
 ## What counts as a person's data
 
-A user's data is, by default, **the documents whose `_meta.owner` is that user** (whatever their `on_owner_delete` action), the documents where their id or email is listed in a `pull` field of an [erase policy](../erasure/), and the files those documents hold, plus the account itself: identities, sessions, devices, second-factor status, consents, audit records about them and the function invocations they made. Credentials, tokens, secrets and other people's details are never part of it.
+A user's data is, by default, **the documents whose `_meta.owner` is that user** (whatever their `on_owner_delete` action), the documents where their id or email is listed in a `pull` or `unset` field of an [erase policy](../erasure/), and the files those documents hold, plus the account itself: identities, sessions, devices, second-factor status, consents, audit records about them and the function invocations they made. Credentials, tokens, secrets and other people's details are never part of it.
 
 Override it per collection in its `collection.yaml`:
 
