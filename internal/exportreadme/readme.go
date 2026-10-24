@@ -1,5 +1,5 @@
 // Package exportreadme renders the README.html of a personal data export from a logic-less
-// template: the realm's own (compliance/readme/<locale>.html) or the built-in one of its language.
+// template: the realm's own (_realm/compliance/readme/<locale>.html) or the built-in one of its language.
 package exportreadme
 
 import (
@@ -18,8 +18,8 @@ var readmeFiles embed.FS
 // ReadmeName is the human summary at the root of a personal data export.
 const ReadmeName = "README.html"
 
-// ReadmeDirName is where, inside a realm's folder, its own README templates live:
-// compliance/readme/<locale>.html (design/compliance.md §4.2).
+// ReadmeDirName is where, inside a realm's _realm folder, its own README templates live:
+// _realm/compliance/readme/<locale>.html (design/compliance.md §4.2).
 const ReadmeDirName = "compliance/readme"
 
 // DefaultReadmeLocale is the language of the template used when a realm has none for a user's.

@@ -28,8 +28,28 @@ This section is for the **contributor**: whoever changes `backd` itself. To run 
 | `internal/query/` | Parses and checks `where` / `order_by` / `count` against the schema |
 | `internal/storage/` | Backend-neutral repository interface and query conditions |
 | `internal/mongodb/` | MongoDB specifics: connection, `$jsonSchema` validator translation, provisioner (including realm system databases), repository, auth store |
+| `internal/appconfig/` | A realm's [app configuration](../build/configuration/app-config/): values over declared defaults, with history and rollback |
+| `internal/changefeed/` | A database's change history, driver-neutral: the base of triggers and realtime |
+| `internal/triggers/` | The dispatcher that runs a collection's [triggers](../build/functions/triggers/): one lease per deployment, a durable position |
+| `internal/realtime/` | [Realtime](../build/api/realtime/) subscriptions as server-sent events: limits, buffers, resume tokens |
+| `internal/functions/` | `backd functions build`: bundles each function with Deno and records the manifest startup checks |
+| `internal/executor/` | The supervisor behind `backd executor`: one Deno process per call, with its permissions and limits |
+| `internal/egress/` | `backd egress`: the only way a function reaches the network |
+| `internal/cron/` | Five-field cron expressions and their schedule, in UTC or a time zone |
+| `internal/email/` | Email kinds, templates (from `_realm/email`) and rendering |
+| `internal/push/`, `internal/pushsend/` | Push messages and templates; the FCM, APNs and Web Push senders |
+| `internal/oauth/` | Google, Microsoft and Apple sign-in: authorize URLs, code exchange, ID token checks |
+| `internal/fieldcrypt/` | [Field encryption](../build/encryption/): encrypting before the database, decrypting for readers |
+| `internal/imaging/` | Image versions: resizing safely, in pure Go, with the pixel count checked first |
+| `internal/exportpkg/`, `internal/exportreadme/` | The format of an export package, and the README of a personal data export |
+| `internal/typegen/`, `internal/openapigen/` | `backd types` (TypeScript and Dart) and `backd openapi` for a realm |
+| `internal/rulestest/` | The fixtures of `backd rules test` |
+| `internal/metrics/` | Prometheus instrumentation |
 | `api/openapi.yaml` | The [HTTP API contract](contract/) (OpenAPI 3.1) and its lint settings |
 | `clients/js/` | The [JavaScript client](../build/clients/js/) (`backd-js`) |
+| `clients/dart/`, `clients/dart-examples/` | The [Dart client](../build/clients/dart/) (`package:backd`) and the Flutter Shelf demo |
+| `clients/functions-testing/` | The fake `ctx` for [testing functions](../build/functions/testing/), vendored into the template project |
+| `design/` | The design of each feature (`design/<feature>.md`): the reasoning behind the behavior the docs describe |
 | `ui/admin/` | The [admin UI](../operate/administration/admin-ui/): TypeScript, Vue 3, Vite, Vue Router, Pinia and Tailwind. `npm run build` writes into `internal/adminui/dist`, which `internal/adminui` embeds (a Go build without it still works) |
 | `docs/` | This documentation site (Hugo + hugodoks) |
 | `examples/config/` | Sample `CONFIG_DIR` used by `docker-compose.yml` and by `make dev-examples`. `workshop/` is the functions cookbook: its code is what the Functions pages quote (through the `example-file` shortcode, which reads it from `examples/config/workshop`), and it is tested for real (Deno unit tests with `make functions-testing-test`, and `TestWorkshopExample`, which runs every function on MongoDB with a real executor and worker) |
