@@ -73,9 +73,22 @@ consents:
   terms:
     required: true
     current: "2026-10"
+  # Chapter 26: what Shelf keeps, and a second required consent: members who signed up
+  # before it exists are asked at their next sign-in.
+  privacy:
+    required: true
+    current: "2026-10"
   marketing:
     required: false
     current: "1"
+
+# Chapter 26 lets members download a copy of everything Shelf holds about them. The package
+# is kept in the storage below for a week; the email that says it is ready links this page
+# of the app (it adds ?export=<id>), within email.allowed_redirects.
+compliance:
+  export: true
+  export_page: http://localhost:8080/
+  export_retention: 7d
 
 roles:
   admin:

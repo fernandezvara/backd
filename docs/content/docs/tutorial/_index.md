@@ -62,12 +62,12 @@ for f in index.html app.js style.css; do
   curl -fsSL "https://fernandezvara.github.io/backd/tutorial/app/$f" -o "app/$f"
 done
 mkdir app/lib
-for f in pico.min.css alpine.min.js; do
+for f in pico.min.css alpine.min.js zip.js; do
   curl -fsSL "https://fernandezvara.github.io/backd/tutorial/app/lib/$f" -o "app/lib/$f"
 done
 
 # The JavaScript client the app imports (backd-js, as source).
-for f in admin auth cache client config consents data errors files functions index oauth orgs push sha256 storage xhr; do
+for f in account admin auth buckets cache client config consents data errors expand files functions index oauth orgs push realtime sha256 storage typed xhr; do
   curl -fsSL "https://fernandezvara.github.io/backd/tutorial/client/$f.js" -o "client/$f.js"
 done
 ```
@@ -107,6 +107,7 @@ Working on a `backd` checkout instead? The same files live in the repository: `e
 | 23 | [A pipeline on a status](23-pipelines/) | `triggers:` on a collection, a `when` over the transition, `by` from the session, ordered steps, chains and `_meta.chain`, `fakeTrigger`, `backd triggers status` |
 | 24 | [Live pins](24-live-pins/) | `realtime: true` on pins, a subscription filtered by team with `inOrg(...).subscribe()`, a list that follows other members' pins, what a removed member sees, `session_ended`, and the `realtime_subscription_checks_total` metric for grouped versus unfiltered subscriptions |
 | 25 | [Private notes](25-private-notes/) | an encrypted field on pins with a key you create and save, `reveal` for the author and the team's admins (`null` and `_meta.redacted` for the rest), the ciphertext in MongoDB, an instant key rotation and an export that opens the notes only with the key |
+| 26 | [Your data](26-your-data/) | a second required consent (the privacy notice), `compliance.export`, a **Download my data** button on the account page that asks with a fresh proof, follows the worker and shows the README read from the zip, the email that links the app, and `backd user export` for support |
 
 
 
