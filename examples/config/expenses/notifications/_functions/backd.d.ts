@@ -41,6 +41,8 @@ export interface Meta {
   deleted_at?: DateTimeString;
   deleted_by?: string;
   purge_at?: DateTimeString;
+  /** Encrypted fields the caller may not see: they come back null, and a null here is hidden, not empty. */
+  redacted?: string[];
   /** Set on a write made by a trigger run: where it sits in a chain of such writes. */
   chain?: { root: string; depth: number };
 }
@@ -150,6 +152,8 @@ export interface Realm {
       "account-exists": Record<string, unknown>;
       "change-email": Record<string, unknown>;
       "consent-updated": Record<string, unknown>;
+      "data-export-made": Record<string, unknown>;
+      "data-export-ready": Record<string, unknown>;
       "email-changed": Record<string, unknown>;
       "email-template-failed": Record<string, unknown>;
       invitation: Record<string, unknown>;
@@ -159,6 +163,7 @@ export interface Realm {
       "no-account": Record<string, unknown>;
       "org-invitation": Record<string, unknown>;
       "password-changed": Record<string, unknown>;
+      "password-expired": Record<string, unknown>;
       "reauth-code": Record<string, unknown>;
       "reset-password": Record<string, unknown>;
       "security-notice": Record<string, unknown>;
