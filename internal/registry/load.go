@@ -101,6 +101,7 @@ func Load(root string) (*Registry, error) {
 		errs = append(errs, loadCustomizable(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadPush(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, loadConsents(reg.Realms[realmName], filepath.Join(root, realmName))...)
+		errs = append(errs, loadExportReadmes(reg.Realms[realmName], filepath.Join(root, realmName))...)
 		errs = append(errs, checkConfigGrants(reg.Realms[realmName], filepath.Join(root, realmName))...)
 	}
 	if len(errs) > 0 {

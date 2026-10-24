@@ -81,7 +81,11 @@ type Stream struct {
 	resetDue map[string]bool
 
 	access    *Access
-	ending    bool // an end event is queued: the stream closes once it is written
+	config    *ConfigSub
+	boundary  *time.Timer // reads the access again when a role grant's window opens or closes
+	checking  bool        // a configuration check is running
+	recheck   bool        // the configuration changed while it ran
+	ending    bool        // an end event is queued: the stream closes once it is written
 	reloading bool
 	dirty     bool
 
@@ -95,7 +99,7 @@ type Stream struct {
 func newStream(h *Hub, req Request, lim Limits) *Stream {
 	return &Stream{
 		hub: h, realm: req.Realm, principal: req.Principal, key: req.Key, lim: lim,
-		subs: append([]*Subscription(nil), req.Subscriptions...), access: req.Access,
+		subs: append([]*Subscription(nil), req.Subscriptions...), access: req.Access, config: req.Config,
 		notify: make(chan struct{}, 1), done: make(chan struct{}), ended: make(chan struct{}),
 		resetAt: map[string]time.Time{}, resetDue: map[string]bool{},
 	}
@@ -123,6 +127,10 @@ func (s *Stream) Close() {
 		freed := s.size
 		s.queue, s.size, s.pending = nil, 0, nil
 		cancel := s.cancel
+		if s.boundary != nil {
+			s.boundary.Stop()
+			s.boundary = nil
+		}
 		subs := s.subs
 		s.subs = nil
 		s.mu.Unlock()

@@ -61,6 +61,9 @@ const (
 	// SecurityStateCollection holds the realm's operator decisions that outlive deployments:
 	// the password epoch (design/breach-response.md §3).
 	SecurityStateCollection = "security_state"
+	// UserExportsCollection holds the records of personal data exports (design/compliance.md §4):
+	// who asked, the state of the job that builds them, and where the package is stored.
+	UserExportsCollection = "user_exports"
 	// DataKeysCollection holds the wrapped data keys of encrypted fields, one per field and
 	// generation (design/field-encryption.md §4.2).
 	DataKeysCollection = "data_keys"
@@ -653,6 +656,34 @@ var systemCollections = []systemCollection{
 		indexes: []systemIndex{
 			{keys: bson.D{{Key: "token_hash", Value: 1}}, unique: true},
 			{keys: bson.D{{Key: "org", Value: 1}, {Key: "created_at", Value: -1}}},
+		},
+	},
+	{
+		name: UserExportsCollection,
+		validator: jsonSchema([]string{"_id", "user", "status", "created_at"}, map[string]any{
+			"_id":         str(),
+			"user":        str(),
+			"status":      map[string]any{"enum": bson.A{"queued", "running", "ready", "failed", "expired"}},
+			"job":         str(),
+			"admin":       str(),
+			"ticket":      str(),
+			"notify":      typ("bool"),
+			"silent":      typ("bool"),
+			"reason":      str(),
+			"locale":      str(),
+			"created_at":  typ("date"),
+			"started_at":  typ("date"),
+			"finished_at": typ("date"),
+			"expires_at":  typ("date"),
+			"key":         str(),
+			"size":        map[string]any{"bsonType": bson.A{"int", "long"}},
+			"counts":      typ("object"),
+			"error":       str(),
+			"downloads":   map[string]any{"bsonType": bson.A{"int", "long"}},
+		}),
+		indexes: []systemIndex{
+			{keys: bson.D{{Key: "user", Value: 1}, {Key: "created_at", Value: -1}}},
+			{keys: bson.D{{Key: "status", Value: 1}, {Key: "expires_at", Value: 1}}},
 		},
 	},
 	{

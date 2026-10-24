@@ -918,6 +918,7 @@ export class Auth {
     this.client.clearCache() // what was read as someone else (or no one) isn't theirs
     this.client.config.clear()
     await this.client.storage.set(session.token ?? COOKIE_SESSION)
+    this.client.config.credentialChanged()
     this.emit('SIGNED_IN', session)
     return session
   }
@@ -931,6 +932,7 @@ export class Auth {
     this.client.clearCache()
     this.client.config.clear()
     await this.client.storage.remove()
+    this.client.config.credentialChanged()
     this.emit(event, null)
   }
 

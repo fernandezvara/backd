@@ -1,7 +1,7 @@
 # Design: compliance — personal data export and consent records
 
 - **Issues:** features 19.1–19.11 (milestone `19-compliance`)
-- **Status:** decided (missing consent texts warn at startup instead of failing). Issue 19.2 (the export itself) is deferred until export packages (17.1) exist; 19.1 and 19.3–19.11 are built without it, and the export parts of 19.7–19.9 wait for it
+- **Status:** decided (missing consent texts warn at startup instead of failing). Issue 19.2 (the export) was deferred until export packages (17.1) existed; they do now and it is built (see the docs page "Personal data export")
 - **Related designs:** [account-lifecycle.md](./account-lifecycle.md) (erasure and `on_owner_delete`), [export-import.md](./export-import.md) (package format), [organizations.md](./organizations.md), [mfa-passwordless.md](./mfa-passwordless.md) (sign-in challenges, reauth), [email-delivery.md](./email-delivery.md) and [push-notifications.md](./push-notifications.md) (gated sends), [field-encryption.md](./field-encryption.md) (decryption in personal exports), [file-storage.md](./file-storage.md)
 
 ## 1. The idea
@@ -74,14 +74,14 @@ personal_data:
 ### 4.1 Requesting
 
 - **Self-service:** `POST /_auth/me/export` with `X-Backd-Reauth` starts a job (progress as job steps). It's limited to one per user per 24 hours (`429` with `Retry-After`), and `GET /_auth/me/exports` lists exports with status and expiry.
-- **On behalf of a user:** `backd users export --realm <r> --user <u> [--ticket <ref>] [--no-notify --reason "<text>"]` and `POST /_admin/users/{id}/export`, by a full admin with reauth.
+- **On behalf of a user:** `backd user export --realm <r> --email <e> [--ticket <ref>] [--no-notify --reason "<text>"]` (the CLI's group is `user` and it finds users by `--email`, like its other commands) and `POST /_admin/users/{id}/export`, by a full admin with reauth.
   - The package goes to the admin.
   - The user is notified (`data-export-made`) unless `--no-notify`, which needs a reason stored in the audit record.
   - Silent exports are listed separately in the audit view.
 
 ### 4.2 Building the package
 
-- **Format:** the [export package](./export-import.md) format: `manifest.json`, `<db>/<collection>.jsonl`, `<db>/_files/`, plus `_account/*.jsonl` for system data, and a `README.html`.
+- **Format:** the [export package](./export-import.md) layout: `manifest.json`, `<db>/<collection>.jsonl`, `<db>/_files/`, plus `_account/*.jsonl` for system data, and a `README.html`. The container is a **`.zip`**, which people open without tools (the realm export's `.tar.gz` is for operators); the manifest marks it `personal` and `partial`, so it is never importable.
 - **`README.html`:** localized in the user's language from a template (`<realm>/compliance/readme/<locale>.html`, written by `backd template realm`). It lists, in plain words, what each part is, counts, what was excluded and why, and how long the package is kept.
 - **Scope comes from §3, not from rules:** read and `reveal` rules don't remove documents or fields. Access rights cover data *about* the person.
 - **Encrypted fields are decrypted by the server.** This is a documented exception to "the server never decrypts for exports" (when field encryption, 16.x, exists).

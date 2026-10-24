@@ -49,6 +49,9 @@ type Worker struct {
 	lastTeamRoles map[string]time.Time // realm → last cleanup of ended team role grants
 	// pushSenders deliver pushes, by provider.
 	pushSenders map[string]push.Sender
+	// version and fingerprint are backd's version and the configuration this worker runs, which
+	// the manifests of personal data exports record.
+	version, fingerprint string
 }
 
 // NewWorker builds a worker from the same Config NewHandler uses. id
@@ -70,7 +73,7 @@ func NewWorker(cfg Config, id string) *Worker {
 	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, users: users, callbackKey: cfg.CallbackKey, objects: newRealmObjects(cfg.Registry, users)}
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, log: log, metrics: cfg.Metrics}
 	docs.imageMaxPixels = cfg.ImageMaxPixels
-	return &Worker{id: id, fns: fns, reg: cfg.Registry, backdURL: cfg.BackdURL, oauth: cfg.oauthService(), log: log, lastScheduled: map[string]time.Time{}, lastPurge: map[string]time.Time{}, lastDevices: map[string]time.Time{}, lastTeamRoles: map[string]time.Time{}, images: newImageEngine(cfg), pushSenders: pushSendersOf(cfg, users, now)}
+	return &Worker{id: id, fns: fns, reg: cfg.Registry, backdURL: cfg.BackdURL, oauth: cfg.oauthService(), log: log, lastScheduled: map[string]time.Time{}, lastPurge: map[string]time.Time{}, lastDevices: map[string]time.Time{}, lastTeamRoles: map[string]time.Time{}, images: newImageEngine(cfg), pushSenders: pushSendersOf(cfg, users, now), version: cfg.Version, fingerprint: cfg.ConfigFingerprint}
 }
 
 // newImageEngine builds the engine from the instance's settings: the concurrency is the
@@ -129,6 +132,7 @@ func (w *Worker) scheduleLoop(ctx context.Context) {
 		w.SweepDevicesDue(ctx)
 		w.SweepTeamRolesDue(ctx)
 		w.FilesDue(ctx)
+		w.ExportsDue(ctx)
 		select {
 		case <-ctx.Done():
 			return
@@ -314,6 +318,10 @@ func (w *Worker) runJob(ctx context.Context, realm string, svc *auth.Users, job 
 	}
 	if job.Encrypt != nil {
 		w.runEncrypt(ctx, log, realm, svc, job) // not a function: a worker rewrites how values are stored
+		return
+	}
+	if job.Export != nil {
+		w.runExport(ctx, log, realm, svc, job) // not a function: a worker gathers a user's data itself
 		return
 	}
 	if job.PasswordNotice != nil {
@@ -522,6 +530,9 @@ func jobKind(j auth.Job) string {
 	}
 	if j.Encrypt != nil {
 		return "encrypt"
+	}
+	if j.Export != nil {
+		return "export"
 	}
 	return metrics.JobKind(j.Email != nil, j.Erase != nil, j.Check != nil, j.Image != nil, j.Assign != nil || j.OrgDelete != nil, j.Scheduled)
 }

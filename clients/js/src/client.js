@@ -1,6 +1,7 @@
 import { Admin } from './admin.js'
 import { Push } from './push.js'
 import { Consents } from './consents.js'
+import { Account } from './account.js'
 import { Config } from './config.js'
 import { Orgs } from './orgs.js'
 import { Realtime } from './realtime.js'
@@ -174,6 +175,8 @@ export class Client {
     this.push = new Push(this)
     /** The consents the realm asks for: their texts, and what the signed-in user holds. */
     this.consents = new Consents(this)
+    /** The signed-in user's own data: ask for a copy of everything the realm holds about them, and download it. */
+    this.account = new Account(this)
     /** The realm's app configuration: flags, switches and limits, cached per user. */
     this.config = new Config(this, options.configStorage)
     /** Organizations of the signed-in user: members, teams and invitations. */

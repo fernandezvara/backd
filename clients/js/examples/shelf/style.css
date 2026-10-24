@@ -85,3 +85,6 @@ label.sm { font-size: .85rem; }
 
 /* Chapter 18: the maintenance banner. */
 .banner { padding: .6rem .9rem; border-radius: var(--pico-border-radius); background: var(--pico-mark-background-color); }
+
+/* Chapter 26: the export an email linked to. */
+.focus { background: var(--pico-mark-background-color, #fff3bf); border-radius: .3rem; padding: .2rem .4rem; }

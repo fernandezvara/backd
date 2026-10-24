@@ -17,7 +17,7 @@ Apps that handle personal data usually have to answer four questions: *what do y
 | Need | What backd gives you | What is still yours |
 |---|---|---|
 | **Knowing what is held about a person** | A personal data scope per collection (`personal_data:`), a report of it (`backd compliance scope`), and the system data it adds; the same model as erasure | Declaring what exempts a collection, and checking that collections mixing several people's data are narrowed with `fields` |
-| **A copy of the data** | The scope and the per-user reads you build on (`GET /_admin/users/{id}/owned`, consent history); the export package itself is planned | Answering the request within your legal deadline, and verifying who asks |
+| **A copy of the data** | A [personal data export](../../../build/auth/personal-data/): the user asks for their own (with a fresh proof), or support produces it for a formal request; a zip with their documents, files, account data, a list of exclusions and a README in their language | Answering the request within your legal deadline, and verifying who asks when it is not the account holder |
 | **Consent** | Versioned texts, records that name the exact words (a hash), withdrawal, re-acceptance, rules and email/push gating | The texts, which consents you need and why, and what each is used for |
 | **Erasure** | A tombstone, per-collection policies, reduced consent records, [retention](../erasure/) | The policies you declare, backups, and data held outside `backd` (your function's calls to other services) |
 | **Retention** | `audit.retention`, `functions.log_retention`, `compliance.consent_retention`, soft-delete retention | The periods themselves: they are legal decisions |
@@ -25,7 +25,7 @@ Apps that handle personal data usually have to answer four questions: *what do y
 
 ## What counts as a person's data
 
-A user's data is, by default, **the documents whose `_meta.owner` is that user** (whatever their `on_owner_delete` action), the documents where their id or email is listed in a `pull` field of an [erase policy](../erasure/), and the files those documents hold, plus the account itself: identities, sessions, devices, second-factor status, consents, audit records about them and the function invocations they made. Credentials, tokens, secrets and other people's details are never part of it.
+A user's data is, by default, **the documents whose `_meta.owner` is that user** (whatever their `on_owner_delete` action), the documents where their id or email is listed in a `pull` or `unset` field of an [erase policy](../erasure/), and the files those documents hold, plus the account itself: identities, sessions, devices, second-factor status, consents, audit records about them and the function invocations they made. Credentials, tokens, secrets and other people's details are never part of it.
 
 Override it per collection in its `collection.yaml`:
 
@@ -46,7 +46,7 @@ Ask of each collection:
 3. **Is the person named elsewhere** (an array of members, a `paid_by` field)? That is what `pull` and `unset` in [`on_owner_delete`](../erasure/) are for, and they also bring those documents into the scope.
 4. **Does it hold files?** They follow their documents.
 
-Then read `backd compliance scope --realm <r>` (or `GET /_admin/compliance/scope`): every collection with what is included, which fields and every exclusion with its reason.
+Then read `backd compliance scope --realm <r>` (or `GET /_admin/compliance/scope`): every collection with what is included, which fields and every exclusion with its reason. The [personal data export](../../../build/auth/personal-data/) builds exactly that, and [chapter 26 of the tutorial](../../../tutorial/26-your-data/) puts it behind a button.
 
 ## Consents
 
@@ -68,6 +68,7 @@ Where `backd` keeps personal data, for how long, and who decides:
 | Audit trail | actor and target ids, actions, times | `audit.retention` (365 days by default) | you: `realm.yaml` |
 | Function invocation records | caller, status, duration; the function's own console output | `functions.log_retention` (7 days) | you: `realm.yaml` |
 | Async job results | input and output of the job | `functions.job_retention` (24 hours) | you: `realm.yaml` |
+| Personal data exports | a zip of everything held about one person, their files included | `compliance.export_retention` (7 days by default), then the package is deleted and the record says `expired`; the audit records of asking and downloading follow `audit.retention` | you: `realm.yaml` |
 | Consent records | consent, version, text hash, action, method, time; IP and user agent if `consent_proof` lists them | with the account; after an erase, reduced and kept `compliance.consent_retention` (3 years by default) | you: `realm.yaml` |
 | Push send records | counts, never content | `push.send_retention` | you: `realm.yaml` |
 | Backups | everything at that moment | your backup retention | you |
@@ -91,14 +92,13 @@ The periods are legal decisions for you. `backd`'s defaults are conveniences, no
 
 ### Answering a request about a person
 
-1. Check who asks (that is on you).
-2. Read their records: `GET /_admin/users/{id}` and `/identities`, `/sessions`, `/devices`, `/consents` and `/owned` (the documents they own, by collection).
-3. For consents given by phone or paper, record them with their evidence: `backd consents record`.
-4. For erasure, `backd user delete --realm <r> --email <e> --yes` applies the policies and reduces the consent records; the retention table above says what remains and for how long.
+1. **Check who asks.** That is on you: the self-service export proves it is the account holder; a request from a third party is yours to verify before you press anything.
+2. **Make the copy.** `backd user export --realm <r> --email <e> --ticket <your reference> --out request.zip` builds the [personal data export](../../../build/auth/personal-data/#when-support-does-it) and writes it for you. The person is told by email that a copy was prepared, with your reference. If an inquiry must not warn them, `--no-notify --reason "…"` keeps the reason in the audit record, apart from the other requests.
+3. **Read it before you send it.** It is a zip with a `README.html` that explains each part and lists what is left out and why. Check that it holds what the law expects you to give, and decide how you deliver it: `backd` hands it to you, never to the person.
+4. **For consents given by phone or paper,** record them with their evidence: `backd consents record`.
+5. **For erasure,** `backd user delete --realm <r> --email <e> --yes` applies the policies and reduces the consent records; the retention table above says what remains and for how long.
 
-{{< hint style="note" >}}
-Planned: a single downloadable package (the personal data export, with a localized summary), requested by the person or by an administrator on their behalf. Until then the reads above are the way to assemble an answer.
-{{< /hint >}}
+Without turning the export on you can still assemble an answer from `GET /_admin/users/{id}` and `/identities`, `/sessions`, `/devices`, `/consents` and `/owned`.
 
 ## Minors
 

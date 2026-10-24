@@ -751,3 +751,139 @@ func mfaResetError(email string, err error) error {
 	}
 	return err
 }
+
+// userExport handles `backd user export`: it asks for the export of a user's personal data, waits
+// for it, and writes the package (a zip) to --out. The user is told, unless --no-notify and a
+// reason say why not.
+func userExport(c *userCtx) error {
+	body := map[string]any{}
+	if v := str(c.cmd, "ticket"); v != "" {
+		body["ticket"] = v
+	}
+	if flag(c.cmd, "no-notify") {
+		if strings.TrimSpace(str(c.cmd, "reason")) == "" {
+			return errors.New("--no-notify needs --reason: say why the user is not told, it is kept in the audit record")
+		}
+		body["no_notify"] = true
+		body["reason"] = str(c.cmd, "reason")
+	} else if str(c.cmd, "reason") != "" {
+		return errors.New("--reason only goes with --no-notify: it is why the user is not told")
+	}
+	wait := 30 * time.Minute
+	if v := str(c.cmd, "timeout"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d <= 0 {
+			return fmt.Errorf("--timeout %q: use a duration such as 10m", v)
+		}
+		wait = d
+	}
+	u, err := c.find()
+	if err != nil {
+		return err
+	}
+	proof, err := c.t.proof(c.uio)
+	if err != nil {
+		return err
+	}
+	base := "_admin/users/" + url.PathEscape(u.ID) + "/export"
+	var rec struct {
+		ID        string `json:"id"`
+		Status    string `json:"status"`
+		Step      string `json:"step"`
+		Error     string `json:"error"`
+		Silent    bool   `json:"silent"`
+		Notified  *bool  `json:"notified"`
+		NotifyErr string `json:"notify_error"`
+		ExpiresAt string `json:"expires_at"`
+		Size      int64  `json:"size"`
+	}
+	if _, err := c.t.callHeaders("POST", base, nil, body, &rec, proof); err != nil {
+		return err
+	}
+	switch {
+	case rec.Silent:
+		fmt.Fprintf(c.uio.stderr, "export %s of %s started; the user is not told (audited with your reason)\n", rec.ID, u.Email)
+	case rec.Notified != nil && !*rec.Notified:
+		fmt.Fprintf(c.uio.stderr, "export %s of %s started; the user could NOT be told: %s\n", rec.ID, u.Email, rec.NotifyErr)
+	default:
+		fmt.Fprintf(c.uio.stderr, "export %s of %s started; the user is told by email\n", rec.ID, u.Email)
+	}
+	if flag(c.cmd, "no-wait") {
+		fmt.Fprintln(c.uio.stdout, rec.ID)
+		return nil
+	}
+
+	deadline := time.Now().Add(wait)
+	last := ""
+	for rec.Status != "ready" {
+		if rec.Status == "failed" || rec.Status == "expired" {
+			return fmt.Errorf("the export %s: %s", rec.Status, rec.Error)
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("the export is still %s after %s; it goes on in the background: fetch it later with `backd user export-download` (id %s)", rec.Status, wait, rec.ID)
+		}
+		time.Sleep(exportPoll)
+		if err := c.t.call("GET", base+"s/"+url.PathEscape(rec.ID), nil, nil, &rec); err != nil {
+			return err
+		}
+		if rec.Step != "" && rec.Step != last {
+			last = rec.Step
+			fmt.Fprintln(c.uio.stderr, "  "+last)
+		}
+	}
+	out := str(c.cmd, "out")
+	if out == "" {
+		out = "export-" + rec.ID + ".zip"
+	}
+	return downloadExport(c, base+"s/"+url.PathEscape(rec.ID)+"/download", out, proof, rec.ExpiresAt)
+}
+
+// exportPoll is how often the CLI asks whether an export is ready.
+var exportPoll = 2 * time.Second
+
+// userExportDownload handles `backd user export-download`: it fetches an export made earlier.
+func userExportDownload(c *userCtx) error {
+	u, err := c.find()
+	if err != nil {
+		return err
+	}
+	proof, err := c.t.proof(c.uio)
+	if err != nil {
+		return err
+	}
+	id := str(c.cmd, "export")
+	out := str(c.cmd, "out")
+	if out == "" {
+		out = "export-" + id + ".zip"
+	}
+	return downloadExport(c, "_admin/users/"+url.PathEscape(u.ID)+"/exports/"+url.PathEscape(id)+"/download", out, proof, "")
+}
+
+// downloadExport writes a package to path, never over a file that is there.
+func downloadExport(c *userCtx, apiPath, path string, proof map[string]string, expires string) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return fmt.Errorf("can't write %s (an existing file is never overwritten): %w", path, err)
+	}
+	res, err := c.t.open(apiPath, nil, proof)
+	if err != nil {
+		f.Close()
+		_ = os.Remove(path)
+		return err
+	}
+	defer res.Body.Close()
+	n, err := io.Copy(f, res.Body)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		_ = os.Remove(path)
+		return fmt.Errorf("download: %w", err)
+	}
+	msg := fmt.Sprintf("wrote %s (%d bytes): personal data, keep it as carefully as the database", path, n)
+	if expires != "" {
+		msg += "; the copy kept by the server is deleted on " + expires
+	}
+	fmt.Fprintln(c.uio.stdout, msg)
+	return nil
+}

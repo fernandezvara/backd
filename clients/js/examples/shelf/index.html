@@ -666,6 +666,30 @@
           </div>
         </template>
         <hr>
+        <!-- Chapter 26: a copy of everything Shelf holds about me. -->
+        <template x-if="exports">
+          <div id="your-data">
+            <h3>Your data</h3>
+            <p class="muted">A zip with your assets and pins, your files, and the data about your account, with a README that explains it. We email you when it is ready; it is kept for a week.</p>
+            <button type="button" class="secondary" @click="askExport" :disabled="busy">Download my data</button>
+            <p class="muted" x-show="exportMsg" x-text="exportMsg"></p>
+            <template x-for="e in exports" :key="e.id">
+              <p :class="{ focus: e.id === exportFocus }">
+                <span x-text="new Date(e.created_at).toLocaleString()"></span> ·
+                <strong x-text="e.status"></strong>
+                <span x-show="e.status === 'ready'" class="muted" x-text="' · ' + Math.ceil(e.size / 1024) + ' KiB · until ' + new Date(e.expires_at).toLocaleDateString()"></span>
+                <button type="button" class="outline" x-show="e.status === 'ready'" @click="saveExport(e.id)" :disabled="busy">Save the zip</button>
+              </p>
+            </template>
+            <template x-if="exportReadme">
+              <details open>
+                <summary>README.html, from the package you saved</summary>
+                <iframe sandbox :srcdoc="exportReadme" title="README of your data" style="width:100%; height:26rem; background:#fff"></iframe>
+              </details>
+            </template>
+          </div>
+        </template>
+        <hr>
         <!-- Chapter 16: the second factor. -->
         <h3>Two-step sign-in</h3>
         <template x-if="recoveryCodes">

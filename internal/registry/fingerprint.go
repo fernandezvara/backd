@@ -70,6 +70,17 @@ func (r *Registry) Fingerprint() (string, error) {
 				return nil
 			})
 		}
+		if rl.Settings.Compliance.Export {
+			// What the README of a user's data export says.
+			_ = filepath.WalkDir(filepath.Join(r.Root, rl.Name, ComplianceDir), func(path string, d fs.DirEntry, err error) error {
+				if err == nil && d.Type().IsRegular() && !strings.HasPrefix(d.Name(), ".") {
+					if rel, err := filepath.Rel(r.Root, path); err == nil {
+						files = append(files, filepath.ToSlash(rel))
+					}
+				}
+				return nil
+			})
+		}
 		if rl.AppConfig != nil {
 			// What the configuration may hold and who may read it.
 			add(filepath.Join(rl.Name, AppConfigDir, appConfigSchemaFile))

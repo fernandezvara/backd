@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"fmt"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -304,4 +305,83 @@ func TestDelegatesCannotOutliveOrExtendTheirOwnRole(t *testing.T) {
 	if rec, out := f.doH(t, "PATCH", roles, grant(f.bobID, "delegate", at(60*24*time.Hour)), jsonHdr(f.ada)); rec.Code != 200 {
 		t.Errorf("an owner extends it: %d %v", rec.Code, out)
 	}
+}
+
+// The next moment a window opens or closes is what a realtime stream waits for: the earliest
+// boundary still ahead, of any grant of the user, and none once they have all passed.
+func TestNextAccessChangeIsTheEarliestBoundaryAhead(t *testing.T) {
+	f := newRulesFixture(t)
+	ctx := context.Background()
+	f.svc.Now = func() time.Time { return *f.clock }
+	org := f.orgOf(t, f.ada, "Boundaries")
+	teams := orgsPath + "/" + org + "/teams"
+	if _, err := f.svc.AdminAddMember(ctx, org, f.bobID, nil); err != nil {
+		t.Fatal(err)
+	}
+	rec, out := f.doH(t, "POST", teams, `{"name": "Sales"}`, jsonHdr(f.ada))
+	if rec.Code != 201 {
+		t.Fatalf("team: %d %v", rec.Code, out)
+	}
+	sales := teams + "/" + out["id"].(string) + "/roles"
+	at := func(d time.Duration) string { return f.clock.Add(d).UTC().Format(time.RFC3339) }
+	next := func() time.Time {
+		t.Helper()
+		n, err := f.svc.NextAccessChange(ctx, f.bobID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	if n := next(); !n.IsZero() {
+		t.Errorf("no grants with a window: %v", n)
+	}
+	// Manager from tomorrow for a day: the opening is the next boundary, then the closing.
+	body := func(role, from, until string) string {
+		return fmt.Sprintf(`{"user": %q, "role": %q, "from": %q, "until": %q}`, f.bobID, role, from, until)
+	}
+	if rec, out := f.doH(t, "POST", sales, body("manager", at(24*time.Hour), at(48*time.Hour)), jsonHdr(f.ada)); rec.Code != 200 {
+		t.Fatalf("grant: %d %v", rec.Code, out)
+	}
+	if n := next(); !n.Equal(f.clock.Add(24 * time.Hour).Truncate(time.Second)) {
+		t.Errorf("before the window opens = %v, want its opening", n)
+	}
+	// A stream opened by the user knows it, when it opens and each time it reads its access again.
+	d := &documents{reg: f.reg, now: func() time.Time { return *f.clock }, users: func(string) *auth.Users { return f.svc }}
+	req := httptest.NewRequest("POST", "/v1/acme/_realtime", nil)
+	req.Header.Set("Authorization", "Bearer "+f.bob)
+	caller, err := f.svc.Identify(ctx, f.bob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	acc := d.accessOf(req, "acme", caller, nil)
+	if !acc.NextChange.Equal(f.clock.Add(24 * time.Hour).Truncate(time.Second)) {
+		t.Errorf("a stream opens knowing the boundary: %v", acc.NextChange)
+	}
+	if res, err := acc.Reload(ctx); err != nil || !res.NextChange.Equal(acc.NextChange) {
+		t.Errorf("a reload reports it too: %v %v", res.NextChange, err)
+	}
+	// A grant that ends sooner brings the boundary forward.
+	if rec, out := f.doH(t, "POST", sales, body("delegate", at(-time.Hour), at(2*time.Hour)), jsonHdr(f.ada)); rec.Code != 200 {
+		t.Fatalf("grant: %d %v", rec.Code, out)
+	}
+	if n := next(); !n.Equal(f.clock.Add(2 * time.Hour).Truncate(time.Second)) {
+		t.Errorf("with a grant ending in two hours = %v", n)
+	}
+	// Inside the first window the next boundary is its end; after all of them, none.
+	*f.clock = f.clock.Add(25 * time.Hour)
+	if n := next(); !n.Equal(f.clock.Add(23 * time.Hour).Truncate(time.Second)) {
+		t.Errorf("inside the window = %v, want its end", n)
+	}
+	*f.clock = f.clock.Add(24 * time.Hour)
+	if n := next(); !n.IsZero() {
+		t.Errorf("after every window: %v", n)
+	}
+	// A realm without organizations has no windows to wait for.
+	prior := f.svc.Settings.Organizations
+	f.svc.Settings.Organizations = nil
+	if n, err := f.svc.NextAccessChange(ctx, f.bobID); err != nil || !n.IsZero() {
+		t.Errorf("without organizations: %v %v", n, err)
+	}
+	f.svc.Settings.Organizations = prior
 }

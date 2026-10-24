@@ -86,6 +86,9 @@ An empty file, or one with only comments, is valid: every key has a default.
 | `consents` | none | The consents the realm asks for, each with `required`, `current` and per-version `reaccept`; texts live in `consents/<name>/<version>/<locale>.md`. See [Consents](../../auth/consents/) |
 | `compliance.consent_proof` | `[ip, user_agent]` | What each consent record keeps besides time, method and text hash |
 | `compliance.consent_retention` | `3y` | How long consent records are kept after their user was erased; `0` deletes them at erasure |
+| `compliance.export` | `false` | `true`: users can download a copy of their personal data and administrators can produce one. Needs `storage:` and `email:`. See [Personal data export](../../auth/personal-data/) |
+| `compliance.export_page` | none | Your app's download page, the one the "your data is ready" email links to (`?export=<id>` is added); required with `export`, within `allowed_redirects` |
+| `compliance.export_retention` | `7d` | How long a package is kept before it is deleted |
 | `reauth.ttl` | `5m` | How long a [re-authentication](../../auth/reauth/) token works (`1m` to `1h`) |
 | `mfa.required_roles` | none | Roles that must use a second factor, or `all`. A sign-in without one sets it up first. See [Required by role](../../auth/mfa/#required-by-role) |
 | `account.require_verified_email` | `false` | `true`: no session until the address is verified. See [Account](#account) |

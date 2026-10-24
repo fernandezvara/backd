@@ -1,7 +1,7 @@
 {
   "generator": "1",
   "realm": "shelf",
-  "fingerprint": "cfacdef9fe2646a46d8a405935ef0f6033ded599433179e16c238f66891603ad",
+  "fingerprint": "40fa0247cc5a48305a3b16ee08760410a53093f75d5435ddd2c08f8b2913ec7d",
   "entries": {
     "collection mail/outbox": "",
     "collection main/assets": "",
@@ -11,6 +11,7 @@
     "collection main/notifications": "",
     "collection main/pins": "",
     "collection main/profiles": "",
+    "collection main/profiles id": " user=true",
     "collection main/shares": "",
     "collection main/submissions": "",
     "config features.export.enabled": "boolean",
@@ -153,6 +154,8 @@
     "template email account-exists": "",
     "template email change-email": "",
     "template email consent-updated": "",
+    "template email data-export-made": "",
+    "template email data-export-ready": "",
     "template email email-changed": "",
     "template email email-template-failed": "",
     "template email invitation": "",

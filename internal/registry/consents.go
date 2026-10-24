@@ -3,6 +3,7 @@ package registry
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -72,6 +73,24 @@ type ComplianceSettings struct {
 	ConsentRetention time.Duration
 	// ConsentRetentionSet says whether realm.yaml chose a retention (0 is a choice).
 	ConsentRetentionSet bool
+	// Export turns on the export of a user's personal data (compliance.export): users can
+	// ask for their data and support can produce it. It needs the realm's file storage.
+	Export bool
+	// ExportPage is the app's page the "your export is ready" email links to; it is within
+	// the realm's allowed redirects. ExportRetention is how long a package is kept.
+	ExportPage      string
+	ExportRetention time.Duration
+}
+
+// DefaultExportRetention is how long a personal data export is kept before it is deleted.
+const DefaultExportRetention = 7 * 24 * time.Hour
+
+// ExportKeep is how long a personal data export is kept: the realm's choice, or the default.
+func (c ComplianceSettings) ExportKeep() time.Duration {
+	if c.ExportRetention > 0 {
+		return c.ExportRetention
+	}
+	return DefaultExportRetention
 }
 
 // Retention is how long consent records outlive their user: the realm's choice, or the default.
@@ -104,6 +123,9 @@ type consentVerDoc struct {
 type complianceDoc struct {
 	ConsentProof     []string `yaml:"consent_proof"`
 	ConsentRetention *string  `yaml:"consent_retention"`
+	Export           bool     `yaml:"export"`
+	ExportPage       string   `yaml:"export_page"`
+	ExportRetention  *string  `yaml:"export_retention"`
 }
 
 // parseConsents reads the consents section of realm.yaml.
@@ -193,6 +215,20 @@ func parseCompliance(n yaml.Node) (ComplianceSettings, []error) {
 		} else {
 			out.ConsentRetention, out.ConsentRetentionSet = d, true
 		}
+	}
+	out.Export = doc.Export
+	out.ExportPage = strings.TrimSpace(doc.ExportPage)
+	if doc.ExportRetention != nil {
+		if d, err := parseRetention(*doc.ExportRetention); err != nil {
+			errs = append(errs, fmt.Errorf("compliance.export_retention: %w", err))
+		} else if d <= 0 {
+			errs = append(errs, errors.New("compliance.export_retention: must be longer than zero (the default is 7d)"))
+		} else {
+			out.ExportRetention = d
+		}
+	}
+	if !out.Export && (out.ExportPage != "" || doc.ExportRetention != nil) {
+		errs = append(errs, errors.New("compliance.export_page, compliance.export_retention: have no effect while compliance.export is not true"))
 	}
 	return out, errs
 }
@@ -292,4 +328,28 @@ func (s RealmSettings) ConsentsPastDeadline(held map[string]string, now time.Tim
 		}
 	}
 	return out
+}
+
+// checkExport checks what a realm needs to export its users' personal data: the packages are
+// kept in its file storage, the user is told by email, and the link in that email goes to the
+// app, within the redirects the realm allows.
+func checkExport(s RealmSettings) []error {
+	c := s.Compliance
+	if !c.Export {
+		return nil
+	}
+	var errs []error
+	if s.Storage == nil {
+		errs = append(errs, errors.New("compliance.export: personal data exports are kept in the realm's file storage, so `storage:` must be configured"))
+	}
+	if s.Email == nil {
+		errs = append(errs, errors.New("compliance.export: the user is told by email when an export is ready, so `email:` must be configured"))
+	}
+	switch {
+	case c.ExportPage == "":
+		errs = append(errs, errors.New("compliance.export_page: required with compliance.export: the page of your app that the \"your data is ready\" email links to"))
+	case !s.SignInRedirectAllowed(c.ExportPage):
+		errs = append(errs, fmt.Errorf("compliance.export_page: %q must be an absolute URL within sign_in.allowed_redirects (or email.allowed_redirects when it has none)", c.ExportPage))
+	}
+	return errs
 }

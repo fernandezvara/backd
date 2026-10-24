@@ -132,13 +132,46 @@ func TestTutorialChaptersLoad(t *testing.T) {
 			writeFile(t, filepath.Join(d, "main/shares/collection.yaml"), blockAfter(t, "03-rules", "And `config/shelf/main/shares/collection.yaml`"))
 		})
 	})
-	t.Run("chapter 20 is the finished realm", func(t *testing.T) {
+	t.Run("chapter 20", func(t *testing.T) {
 		loadChapter(t, func(d string) {
 			src := filepath.Join("..", "..", "examples", "config", "shelf")
 			if err := os.CopyFS(d, os.DirFS(src)); err != nil {
 				t.Fatal(err)
 			}
 			writeFile(t, filepath.Join(d, "realm.yaml"), ch20)
+		})
+	})
+	// Chapter 26 replaces the consents (adding the privacy notice) and adds the export settings.
+	ch26 := func() string {
+		var m map[string]any
+		if err := yaml.Unmarshal([]byte(ch20), &m); err != nil {
+			t.Fatal(err)
+		}
+		for _, snippet := range []string{
+			blockAfter(t, "26-your-data", "Replace the `consents` of `config/shelf/realm.yaml` with:"),
+			blockAfter(t, "26-your-data", "Add this to `config/shelf/realm.yaml` too:"),
+		} {
+			var add map[string]any
+			if err := yaml.Unmarshal([]byte(snippet), &add); err != nil {
+				t.Fatal(err)
+			}
+			for k, v := range add {
+				m[k] = v
+			}
+		}
+		out, err := yaml.Marshal(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(out)
+	}()
+	t.Run("chapter 26 is the finished realm", func(t *testing.T) {
+		loadChapter(t, func(d string) {
+			src := filepath.Join("..", "..", "examples", "config", "shelf")
+			if err := os.CopyFS(d, os.DirFS(src)); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, filepath.Join(d, "realm.yaml"), ch26)
 		})
 		final, err := os.ReadFile(filepath.Join("..", "..", "examples", "config", "shelf", "realm.yaml"))
 		if err != nil {
@@ -148,7 +181,7 @@ func TestTutorialChaptersLoad(t *testing.T) {
 		if err := yaml.Unmarshal(final, &a); err != nil {
 			t.Fatal(err)
 		}
-		if err := yaml.Unmarshal([]byte(ch20), &b); err != nil {
+		if err := yaml.Unmarshal([]byte(ch26), &b); err != nil {
 			t.Fatal(err)
 		}
 		if !reflect.DeepEqual(a, b) {
@@ -158,7 +191,7 @@ func TestTutorialChaptersLoad(t *testing.T) {
 }
 
 // Chapter 21 prints the reference it adds to the assets: it has to be what the finished
-// realm declares, and the realm has to load with it (the profiles' unique index included).
+// realm declares, and the realm has to load with it (profiles at the user's id included).
 func TestTutorialAuthorsReference(t *testing.T) {
 	printed := blockAfter(t, "21-authors", "Add this at the end of `config/shelf/main/assets/collection.yaml`")
 	b, err := os.ReadFile(filepath.Join("..", "..", "examples", "config", "shelf", "main", "assets", "collection.yaml"))
@@ -182,7 +215,7 @@ func TestTutorialAuthorsReference(t *testing.T) {
 		t.Fatal(err)
 	}
 	c, ok := reg.Collection("shelf", "main", "assets")
-	if !ok || c.References["author"] == nil || c.References["author"].Key != "_meta.owner" {
+	if !ok || c.References["author"] == nil || c.References["author"].Key != "id" {
 		t.Fatalf("assets references = %+v", c.References)
 	}
 }

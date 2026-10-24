@@ -2,8 +2,10 @@
 # The development stack (docker-compose.dev.yml): released backd images over your own config,
 # on https://localhost:8443 with the local CA of `make example` (docker/certs/).
 #
-#   scripts/dev.sh build   pull the images, make the certificates and a starter ./config
-#   scripts/dev.sh up      start the stack (nothing is pulled or built) and follow the logs
+#   scripts/dev.sh build   pull the images (BACKD_VERSION=local builds ours from this checkout), make the
+#                          certificates and a starter ./config
+#   scripts/dev.sh up      start the stack (nothing is pulled) and follow the logs; it includes the docs site of
+#                          this checkout, with live reload, on /docs/
 #   scripts/dev.sh down    stop it, keeping the data
 #   scripts/dev.sh reset   stop it and delete the data (mongo, minio, prometheus, grafana)
 #   scripts/dev.sh logs    follow the logs; S=worker for one service
@@ -11,7 +13,8 @@
 #
 # Settings, from the environment:
 #   CONFIG_DIR     your config (default ./config), mounted read-write: backd follows it
-#   BACKD_VERSION  the image tag (default latest); `local` uses images you built yourself
+#   BACKD_VERSION  the image tag (default latest); `local` is built from this checkout by
+#                  `make dev-build` (rebuild it after changing Go code)
 #   WORKERS        how many workers (default 1)
 #   LOG_LEVEL      info by default
 #   EXAMPLES=1     run the example realms of the repository (examples/config) and their apps, seeded
@@ -24,7 +27,10 @@ for cmd in docker curl; do
 done
 
 # EXAMPLES=1 runs the repository's example realms (examples/config) and seeds them.
-if [ "${EXAMPLES:-}" = 1 ]; then export CONFIG_DIR="${CONFIG_DIR:-./examples/config}"; fi
+if [ "${EXAMPLES:-}" = 1 ]; then
+  export CONFIG_DIR="${CONFIG_DIR:-./examples/config}"
+  export HUGO_PARAMS_EXAMPLEURL=/example/   # the docs show the links to the example apps
+fi
 export CONFIG_DIR="${CONFIG_DIR:-./config}"
 export BACKD_VERSION="${BACKD_VERSION:-latest}"
 export DEV_UID="${DEV_UID:-$(id -u)}" DEV_GID="${DEV_GID:-$(id -g)}"
@@ -55,7 +61,7 @@ write_stack_json() {
       {"href": "/readyz", "label": "/readyz", "note": "the API; try /v1/{realm}/…"},
       {"href": "/_ui/", "label": "/_ui/", "note": "the admin web interface"},
       $example_link
-      {"href": "https://fernandezvara.github.io/backd/", "label": "Documentation", "note": "online"}
+      {"href": "/docs/", "label": "/docs/", "note": "the documentation of this checkout (edits in docs/ reload the page)"}
     ]},
     {"title": "Observe", "links": [
       {"href": "http://localhost:3000/", "label": "Grafana", "note": "backd's dashboards"},
@@ -93,17 +99,41 @@ stop_all() { # [-v]
   if [ "${1:-}" = -v ]; then "${compose[@]}" down -v >/dev/null 2>&1 || true; fi
 }
 
+# What to say when the stack's own binary can't read the config: with BACKD_VERSION=local the
+# image is a snapshot of the checkout it was built from, and with a released tag it can't know
+# the configuration formats added since.
+image_hint() {
+  {
+    echo
+    echo "backd could not start from $image."
+    if [ "$BACKD_VERSION" = local ]; then
+      echo "Did you rebuild the local image after your last change? It is a snapshot of the code at the"
+      echo "moment it was built (here: $(docker image inspect "$image" --format '{{.Created}}' 2>/dev/null || echo 'not built'))."
+      echo "Run 'BACKD_VERSION=local make dev-build', then start the stack again."
+    else
+      echo "This image is the release '$BACKD_VERSION': a config that uses something newer than that release"
+      echo "(the repository's examples follow the code, not the release) is refused, with the errors above."
+      echo "To run this checkout, use 'BACKD_VERSION=local make dev-build' and then 'BACKD_VERSION=local make dev'"
+      echo "(or make dev-examples)."
+    fi
+  } >&2
+}
+
 case "${1:-up}" in
   build)
     scripts/local-certs.sh
     starter
     if [ "$BACKD_PULL" = never ]; then
-      echo "BACKD_VERSION=local: the backd images are the ones you built; pulling the others…"
+      echo "BACKD_VERSION=local: building $image from this checkout…"
+      docker build -f docker/executor/Dockerfile -t "$image" .
+      echo "Pulling the other images…"
       "${compose[@]}" pull mongo minio minio-setup prometheus grafana nginx
     else
       echo "Pulling the images ($image and the stack's)…"
       "${compose[@]}" pull
     fi
+    echo "Building the docs site's image (Hugo)…"
+    "${compose[@]}" build docs
     echo
     echo "Ready. Start the stack with: make dev"
     ;;
@@ -134,7 +164,14 @@ case "${1:-up}" in
       echo "$CONFIG_DIR is missing or empty: run 'make dev-build' to create a starter config, or set CONFIG_DIR." >&2
       exit 1
     fi
-    docker image inspect "$image" >/dev/null 2>&1 || { echo "The image $image is not here yet: run 'make dev-build' first." >&2; exit 1; }
+    if ! docker image inspect "$image" >/dev/null 2>&1; then
+      if [ "$BACKD_VERSION" = local ]; then
+        echo "The image $image is not built yet: run 'BACKD_VERSION=local make dev-build' first (it builds it from this checkout)." >&2
+      else
+        echo "The image $image is not here yet: run 'make dev-build' first." >&2
+      fi
+      exit 1
+    fi
 
     follower=""
     cleanup() {
@@ -153,15 +190,15 @@ case "${1:-up}" in
 
     scripts/local-certs.sh   # renews the certificate when it is about to expire; the CA stays
     write_stack_json         # before nginx mounts $seed_dir, so it is yours, not root's
-    echo "Starting the stack from $image (nothing is built)…"
+    echo "Starting the stack from $image (the docs site is built the first time)…"
     # backd refuses stale or missing bundles: build them first, and wait for it (not every
     # compose implementation waits for a one-shot service).
-    "${compose[@]}" run --rm functions-build
+    "${compose[@]}" run --rm functions-build || { image_hint; exit 1; }
     if [ "${EXAMPLES:-}" = 1 ]; then
       # The Shelf's private notes (tutorial chapter 25) are encrypted with a key backd must find
       # at start; the examples are disposable, so the value is not kept.
-      "${compose[@]}" run --rm backd provision >/dev/null
-      "${compose[@]}" run --rm --no-deps backd secret create --direct --realm shelf --type key --generate --name SHELF_NOTES --skip-existing >/dev/null
+      "${compose[@]}" run --rm backd provision >/dev/null || { image_hint; exit 1; }
+      "${compose[@]}" run --rm --no-deps backd secret create --direct --realm shelf --type key --generate --name SHELF_NOTES --skip-existing >/dev/null || { image_hint; exit 1; }
     fi
     "${compose[@]}" up -d --scale "worker=${WORKERS:-1}"
 
@@ -192,7 +229,7 @@ case "${1:-up}" in
   $origin/v1/…         the API, with the realms in $CONFIG_DIR
   $origin/_ui/         the admin web interface
 $examples  http://localhost:3000/ Grafana    http://localhost:9090/ Prometheus    http://localhost:9001/ MinIO console
-  Docs: https://fernandezvara.github.io/backd/
+  $origin/docs/        the documentation of this checkout (edits in docs/ reload the page)
 
   $trust
 

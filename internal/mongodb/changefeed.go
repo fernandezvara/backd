@@ -70,6 +70,12 @@ func RealtimeWatchSet(reg *registry.Registry) changefeed.WatchSet {
 		set.Collections = append(set.Collections, changefeed.Namespace{Realm: c.Realm, DB: c.MongoDatabase, Coll: c.Name})
 		realms[c.Realm] = true
 	}
+	// A stream can follow a realm's app configuration with no realtime collection at all.
+	for realm, rl := range reg.Realms {
+		if rl.AppConfig != nil && !realms[realm] {
+			set.System = append(set.System, changefeed.Namespace{Realm: realm, DB: SystemDatabaseName(realm), Coll: AppConfigCollection})
+		}
+	}
 	for realm := range realms {
 		for _, name := range AccessCollections {
 			set.System = append(set.System, changefeed.Namespace{Realm: realm, DB: SystemDatabaseName(realm), Coll: name})

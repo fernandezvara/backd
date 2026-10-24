@@ -1,9 +1,16 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
+	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/realtime"
 )
 
 func (f *rulesFixture) readConfig(t *testing.T, cred, query string, hdr map[string]string) (int, map[string]any, http.Header) {
@@ -114,5 +121,85 @@ func TestReadAppConfig(t *testing.T) {
 	// Bad credentials are refused, as everywhere.
 	if code, _, _ := f.readConfig(t, "bdk_nope", "", nil); code != 401 {
 		t.Errorf("bad credential = %d", code)
+	}
+}
+
+// A configuration subscription reports, per caller, only the keys they read that changed.
+func TestConfigSubscriptionReportsWhatTheCallerReads(t *testing.T) {
+	f := newRulesFixture(t)
+	d := &documents{reg: f.reg, now: time.Now, users: func(string) *auth.Users { return f.svc }}
+	mk := func(token string, paths ...string) *realtime.ConfigSub {
+		t.Helper()
+		r := httptest.NewRequest("POST", "/v1/acme/_realtime", nil)
+		var caller auth.Caller
+		hasAuth := token != ""
+		if hasAuth {
+			r.Header.Set("Authorization", "Bearer "+token)
+			var err error
+			if caller, err = f.svc.Identify(r.Context(), token); err != nil {
+				t.Fatal(err)
+			}
+		}
+		sub, problem := d.configSub(r, "acme", caller, hasAuth, "cfg", paths)
+		if sub == nil {
+			t.Fatalf("configSub: %s", problem)
+		}
+		return sub
+	}
+	anon, ada := mk(""), mk(f.ada)
+	check := func(sub *realtime.ConfigSub) *realtime.ConfigNotice {
+		t.Helper()
+		n, err := sub.Check(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if check(anon) != nil || check(ada) != nil {
+		t.Fatal("nothing changed yet")
+	}
+
+	// A change of a public key reaches everyone, with the version it made.
+	if code, out, _ := f.configDo(t, "PATCH", "/app-config", `{"set": {"maintenance.enabled": true}}`, f.key, map[string]string{"If-Match": `"c0"`}); code != 200 {
+		t.Fatalf("PATCH = %d %v", code, out)
+	}
+	for who, sub := range map[string]*realtime.ConfigSub{"anonymous": anon, "ada": ada} {
+		n := check(sub)
+		if n == nil || n.Version != "c1" || !slices.Equal(n.Paths, []string{"maintenance.enabled"}) {
+			t.Errorf("%s: %+v", who, n)
+		}
+	}
+
+	// A key only staff read reaches nobody else, and the same change twice says nothing new.
+	if code, out, _ := f.configDo(t, "PATCH", "/app-config", `{"set": {"features.export.enabled": false}}`, f.key, map[string]string{"If-Match": `"c1"`}); code != 200 {
+		t.Fatalf("PATCH = %d %v", code, out)
+	}
+	if check(anon) != nil || check(ada) != nil {
+		t.Error("a hidden key was reported")
+	}
+	f.bobHolds(t, "staff")
+	staff := mk(f.bob)
+	if code, out, _ := f.configDo(t, "PATCH", "/app-config", `{"reset": ["features.export"]}`, f.key, map[string]string{"If-Match": `"c2"`}); code != 200 {
+		t.Fatalf("PATCH = %d %v", code, out)
+	}
+	if n := check(staff); n == nil || n.Version != "c3" || !slices.Equal(n.Paths, []string{"features.export.enabled"}) {
+		t.Errorf("staff: %+v", n)
+	}
+
+	// Following one branch ignores the others.
+	branch := mk("", "maintenance")
+	if check(branch) != nil {
+		t.Error("the first look is the baseline")
+	}
+	if code, _, _ := f.configDo(t, "PATCH", "/app-config", `{"set": {"maintenance.message": "back soon"}}`, f.key, map[string]string{"If-Match": `"c3"`}); code != 200 {
+		t.Fatal("PATCH")
+	}
+	if n := check(branch); n == nil || !slices.Equal(n.Paths, []string{"maintenance.message"}) {
+		t.Errorf("branch: %+v", n)
+	}
+
+	// Unknown keys are refused when subscribing.
+	if sub, problem := d.configSub(httptest.NewRequest("POST", "/", nil), "acme", auth.Caller{}, false, "c", []string{"nope"}); sub != nil || problem == "" {
+		t.Errorf("unknown key: %v %q", sub, problem)
 	}
 }

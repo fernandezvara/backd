@@ -505,7 +505,7 @@ func TestAdministratorsReadEncryptedFieldsThroughTheDataRoute(t *testing.T) {
 	f, realm, base, logs := revealClinic(t)
 	ctx := context.Background()
 	ada := signedIn(t, f, realm, "ada@example.com")
-	rec, created := f.doH(t, "POST", base+"/patients", `{"name": "Ana", "notes": "n1", "history": {"visits": 1}, "address": {"street": "Main 1"}}`, ada)
+	rec, created := f.doH(t, "POST", base+"/patients", `{"name": "Ana", "notes": "private-note-7", "history": {"visits": 1}, "address": {"street": "Main 1"}}`, ada)
 	if rec.Code != http.StatusCreated {
 		t.Fatal(rec.Body)
 	}
@@ -517,7 +517,7 @@ func TestAdministratorsReadEncryptedFieldsThroughTheDataRoute(t *testing.T) {
 	data := "/v1/" + realm + "/_admin/data/main/patients"
 	// A full administrator sees plaintext (past the reveal rules), and each read is audited with fields and a count.
 	rec, got := f.doH(t, "GET", data+"/"+id, "", boss)
-	if rec.Code != http.StatusOK || got["notes"] != "n1" || got["address"].(map[string]any)["street"] != "Main 1" {
+	if rec.Code != http.StatusOK || got["notes"] != "private-note-7" || got["address"].(map[string]any)["street"] != "Main 1" {
 		t.Fatalf("admin get: %d %v", rec.Code, got)
 	}
 	f.doH(t, "GET", data, "", boss)
@@ -530,7 +530,7 @@ func TestAdministratorsReadEncryptedFieldsThroughTheDataRoute(t *testing.T) {
 	if list["documents"] != float64(2) || list["fields"] != "address.street,history,notes" || list["collection"] != "patients" {
 		t.Errorf("the list's record: %v", list)
 	}
-	if raw := fmt.Sprint(trail); strings.Contains(raw, "n1") || strings.Contains(raw, "Main 1") {
+	if raw := fmt.Sprint(trail); strings.Contains(raw, "private-note-7") || strings.Contains(raw, "Main 1") {
 		t.Error("the audit trail holds a value")
 	}
 
@@ -548,7 +548,7 @@ func TestAdministratorsReadEncryptedFieldsThroughTheDataRoute(t *testing.T) {
 	if n := len(trail["items"].([]any)); n != 2 {
 		t.Errorf("a redacted read was audited as a reveal: %d records", n)
 	}
-	if l := logs.String(); strings.Contains(l, "n1") || strings.Contains(l, "Main 1") {
+	if l := logs.String(); strings.Contains(l, "private-note-7") || strings.Contains(l, "Main 1") {
 		t.Error("the log holds a value")
 	}
 }

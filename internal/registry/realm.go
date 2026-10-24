@@ -902,6 +902,7 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 			errs = append(errs, es...)
 			s.Compliance, es = parseCompliance(doc.Compliance)
 			errs = append(errs, es...)
+			errs = append(errs, checkExport(s)...)
 		}
 	}
 

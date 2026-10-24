@@ -13,8 +13,13 @@
 // sends the types' fingerprint, so a schema change the app hasn't been
 // regenerated for shows up as a warning in the console.
 //
+// Chapter 26 lets a member download a copy of everything Shelf holds about them:
+// the account page asks for it (with a fresh proof), follows it, saves the zip and
+// shows the README inside it. The email that says it is ready links `/?export=<id>`.
+//
 // Chapter 18 reads the realm's app configuration: a maintenance banner anyone
 // sees, and a switch that hides the export button (the server enforces it too).
+// The page follows the configuration live, so a change shows up without a reload.
 //
 // Chapter 16 adds a way in without a password (a link or code by email) and
 // a second factor: the step after the password, and the account page's
@@ -24,7 +29,8 @@
 // and up to five attachments (straight to the bucket, with a progress bar), the
 // worker makes a thumbnail of an image (a declared version), downloads are counted by the
 // `download` function, and a shared asset comes with links to its files.
-import { createClient, expand, localStorageStorage, NotFoundError, SecondStepRequiredError, VersionMismatchError, versionStatus } from 'backd-js'
+import { createClient, expand, localStorageStorage, NotFoundError, RetryableError, SecondStepRequiredError, VersionMismatchError, versionStatus } from 'backd-js'
+import { readZip } from './lib/zip.js'
 
 /** @typedef {import('./backd/types').Realm} Realm */
 
@@ -97,6 +103,12 @@ document.addEventListener('alpine:init', () => {
     consentList: [],
     ticked: {}, // name → true
     consentState: null,
+    // Chapter 26: my exports (null: this realm does not export), what the page says about
+    // the one in progress, and the README of the one just saved.
+    exports: null,
+    exportMsg: null,
+    exportReadme: null,
+    exportFocus: null, // the id the email linked to
     // Chapter 18: the app configuration (`client.config`): the banner everyone
     // sees, and the switch that shows the export button.
     maintenance: { enabled: false, message: '' },
@@ -205,6 +217,12 @@ document.addEventListener('alpine:init', () => {
       // Back on the tab: the copy is fresh for its cache_ttl, then revalidated with a 304.
       window.addEventListener('focus', () => this.loadConfig())
       backd.config.on('change', () => this.readConfig())
+      // And instantly: backd tells this page when what it reads of the configuration changes.
+      backd.config.live(['maintenance', 'features'])
+      backd.config.on('error', () => {}) // no realtime on this server: focus and cache_ttl still work
+      // The email that says an export is ready links the account page with ?export=<id>.
+      this.exportFocus = params.get('export')
+      if (this.exportFocus) window.location.hash = '#account'
       // ?s=<token> is the public share view — no session needed.
       const s = params.get('s')
       if (s) await this.openShare(s)
@@ -223,7 +241,7 @@ document.addEventListener('alpine:init', () => {
         this.open = e instanceof NotFoundError
       }
       await this.refilter()
-      if (this.user) await Promise.all([this.loadMine(), this.loadDrafts(), this.loadInvites(), this.loadShares(), this.loadNotifs(), this.ensureMember(), this.loadAdmin(), this.loadMfa(), this.loadConsents()])
+      if (this.user) await Promise.all([this.loadMine(), this.loadDrafts(), this.loadInvites(), this.loadShares(), this.loadNotifs(), this.ensureMember(), this.loadAdmin(), this.loadMfa(), this.loadConsents(), this.loadExports()])
       if (this.user) await this.loadNames()
       if (this.user) await this.loadTeams()
       this.syncView()
@@ -1333,12 +1351,15 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    // Chapter 21: one profile per user (a unique index on _meta.owner keeps it
-    // to one). It starts with the name before the @; the member can change it.
+    // Chapter 21: one profile per user, at the user's own id (`custom_id: user`): there is at
+    // most one because an id is unique. It starts with the name before the @; the member can
+    // change it.
     async ensureProfile() {
-      const mine = await profiles.list({ where: { '_meta.owner': this.user.id }, limit: 1 })
-      if (mine.items.length === 0) {
-        await profiles.create({ name: this.user.email.split('@')[0] })
+      try {
+        await profiles.get(this.user.id)
+      } catch (e) {
+        if (!(e instanceof NotFoundError)) throw e
+        await profiles.create({ id: this.user.id, name: this.user.email.split('@')[0] })
       }
     },
 
@@ -1490,6 +1511,67 @@ document.addEventListener('alpine:init', () => {
           : await backd.consents.accept({ [c.name]: c.version })
       } catch (e) {
         this.error = e.message
+      } finally {
+        this.busy = false
+      }
+    },
+
+    // --- my data (chapter 26) -----------------------------------------------------
+
+    // My exports, newest first. A realm that does not export answers 404: the card is hidden.
+    async loadExports() {
+      try {
+        this.exports = await backd.account.exports()
+      } catch {
+        this.exports = null
+      }
+    },
+
+    // Asks for one (a fresh proof first: the password, or the second factor's code) and follows it
+    // to the end; the email says so too, for a member who closes the page.
+    async askExport() {
+      this.busy = true
+      this.exportMsg = null
+      this.exportReadme = null
+      try {
+        const job = await backd.auth.withProof((methods) => this.askProof(methods), () => backd.account.requestExport())
+        await this.followExport(job.id)
+      } catch (e) {
+        this.exportMsg =
+          e instanceof RetryableError
+            ? `You asked for a copy in the last 24 hours: try again in ${Math.ceil((e.retryAfter ?? 0) / 3600000)} hour(s), or use the one below.`
+            : e.message
+      } finally {
+        this.busy = false
+        await this.loadExports()
+      }
+    },
+
+    async followExport(id) {
+      await backd.account.waitForExport(id, {
+        pollIntervalMs: 1500,
+        onProgress: (e) => (this.exportMsg = e.step ? e.step.replace(/^Export: /, 'Preparing: ') : 'Waiting for the worker…'),
+      })
+      this.exportMsg = 'Your data is ready.'
+    },
+
+    // Saves the zip and shows the README inside it, read from the package itself.
+    async saveExport(id) {
+      this.busy = true
+      this.exportMsg = null
+      try {
+        const download = await backd.account.downloadExport(id)
+        const bytes = await download.bytes()
+        this.exportReadme = await readZip(bytes).text('README.html')
+        const a = Object.assign(document.createElement('a'), {
+          href: URL.createObjectURL(new Blob([bytes], { type: 'application/zip' })),
+          download: 'shelf-my-data.zip',
+        })
+        a.click()
+        URL.revokeObjectURL(a.href)
+        this.exportFocus = null
+      } catch (e) {
+        this.exportMsg = e.message
       } finally {
         this.busy = false
       }

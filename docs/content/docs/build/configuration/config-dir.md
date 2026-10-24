@@ -441,7 +441,7 @@ A document that stops being readable by anonymous callers (unpublished, deleted)
 
 ### Personal data scope
 
-A user's right to a copy of their data is answered from the same model as erasure: **the documents whose `_meta.owner` is the user** (whatever their `on_owner_delete` action), the documents where the user's id or email appears in a `pull` field, and the files those documents hold. `personal_data:` overrides that per collection:
+A user's right to a copy of their data is answered from the same model as erasure: **the documents whose `_meta.owner` is the user** (whatever their `on_owner_delete` action), the documents where the user's id or email appears in a `pull` or `unset` field, and the files those documents hold. `personal_data:` overrides that per collection:
 
 ```yaml
 personal_data:

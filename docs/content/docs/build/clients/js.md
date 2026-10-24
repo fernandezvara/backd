@@ -578,6 +578,25 @@ try {
 }
 ```
 
+## Your own data
+
+`client.account` lets the signed-in user download a copy of everything the realm holds about them, when the realm sets [`compliance.export`](../../auth/personal-data/). Asking needs a fresh [proof](../../auth/reauth/); the rest only the session.
+
+```js
+await backd.auth.reauth({ method: 'password', password })
+const job = await backd.account.requestExport()          // { id, status: 'queued', … }
+const ready = await backd.account.waitForExport(job.id, { onProgress: (e) => show(e.step) })
+const { url, bytes } = await backd.account.downloadExport(ready.id)
+location.assign(url)                                      // a link signed for five minutes
+// or, in Node or a service worker:
+await fs.writeFile('my-data.zip', await bytes())
+```
+
+- **`requestExport()`** is limited to one every 24 hours: a second is a `RetryableError` (`429`) whose `retryAfter` says in milliseconds how long to wait. A realm that does not export answers `NotFoundError`; a missing proof, a `reauth_required` error.
+- **`exports()`** lists the user's exports (newest first), **`export(id)`** reads one (`step` says what it is doing), and **`waitForExport(id)`** polls until it is `ready`, or throws for a `failed` or `expired` one (`pollIntervalMs`, `timeoutMs`, `onProgress`).
+- **`downloadExport(id)`** asks for JSON so a page can use the link: `url` is signed for a few minutes (no credentials go to the storage), `bytes()` reads it. A realm whose storage clients cannot reach sends the zip through the API instead, and `bytes()` reads that. `409` until it is ready, `410` once expired.
+- The user is also emailed a link to your app's page (`compliance.export_page?export=<id>`): that page is where you call `downloadExport(id)`.
+
 ## App configuration
 
 `client.config` reads the realm's [app configuration](../../configuration/app-config/): feature flags, maintenance switches, limits. The server answers only what the signed-in user's rules allow, with defaults filled in.
@@ -594,6 +613,13 @@ client.config.on("change", (paths) => rerender(paths));
 - **Where copies live:** per realm and per user, in `localStorage` in browsers and in memory elsewhere (`configStorage: false` for memory only, or any object with `getItem`, `setItem` and `removeItem`). Blocked storage falls back to memory. The copy of a page that has just reloaded is restored by the first `load()`.
 - **Clearing:** sign-out and signing in as another user drop every copy of the realm, so the next person on the same browser never sees the previous user's keys.
 - **`on("change")`** fires with the dot paths whose value changed when a read brings a different configuration.
+- **`live(paths?)`** follows the configuration over the client's [realtime stream](../../api/realtime/#following-the-configuration), so `change` fires within the realtime delay instead of at the next expiry. It reads again only the branches you hold that the event touches, with `If-None-Match`, and whenever the stream opens or reopens it revalidates everything held, so a change made while it was down is not missed. It returns a function that stops following. It follows the signed-in user: signing in or out opens the stream again with the new credential. If the realm declares no configuration, or realtime is off, `on("error", fn)` hears of it.
+
+```js
+const stop = client.config.live(["maintenance"]);
+client.config.on("change", (paths) => rerender(paths));
+client.config.on("error", (err) => console.warn("no live updates:", err.message));
+```
 
 ## Typed client
 

@@ -1,0 +1,5 @@
+Hello,
+
+{{.Realm}} prepared a copy of the personal data it holds about you{{if .Data.ticket}}, in answer to your request {{.Data.ticket}}{{end}}. The copy was given to the team that handles these requests; it was not sent to anyone else.
+
+If you did not expect this, reply to this message or contact us.

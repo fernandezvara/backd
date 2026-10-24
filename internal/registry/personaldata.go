@@ -80,7 +80,8 @@ type ScopeEntry struct {
 	Owned bool
 	// Fields lists the exported fields when the export is partial; nil means whole documents.
 	Fields []string
-	// Pull lists the arrays that hold the user, whose documents are included whoever owns them.
+	// Pull lists the fields that hold the user (the arrays of `pull` and the fields of `unset` of
+	// the erase policy), whose documents are included whoever owns them.
 	Pull []string
 	// Files lists the file fields whose files are part of the export.
 	Files  []string
@@ -107,7 +108,16 @@ func (r *Realm) PersonalScope() []ScopeEntry {
 				continue
 			}
 			if c.Erasure != nil {
-				e.Pull = slices.Sorted(mapKeys(c.Erasure.Pull))
+				// An erase removes the user from these fields: the documents that name them there
+				// are theirs to be given, as much as to be cleaned.
+				named := map[string]bool{}
+				for f := range c.Erasure.Pull {
+					named[f] = true
+				}
+				for f := range c.Erasure.Unset {
+					named[f] = true
+				}
+				e.Pull = slices.Sorted(mapKeys(named))
 			}
 			e.Files = slices.Sorted(mapKeys(c.Files))
 			if e.Fields != nil {

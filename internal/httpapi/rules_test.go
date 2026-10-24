@@ -103,6 +103,9 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 		"acme/app/notes/collection.yaml":    "references:\n  status: {collection: archive}\n  secret: {field: title, collection: private}\n" + rulesSection("read: user != nil\nwrite: user != nil\n"),
 		"acme/app/private/schema.json":      postsSchema,
 		"acme/app/private/collection.yaml":  "realtime: true\npersonal_data:\n  export: exclude\n  reason: fraud scores, exempt from access requests\n",
+		// A collection where only some fields are the user's (see userexport_test.go).
+		"acme/app/contacts/schema.json":     `{"type": "object", "properties": {"title": {"type": "string"}, "body": {"type": "string"}, "internal_note": {"type": "string"}}}`,
+		"acme/app/contacts/collection.yaml": "personal_data:\n  fields: [title, body]\n  reason: internal notes about the customer are not their data\n",
 		// A collection that soft-deletes (see soft_delete_test.go).
 		// …and one that soft-deletes without a restore rule (nobody sees its trash).
 		"acme/app/archive/schema.json":     postsSchema,
@@ -126,7 +129,7 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 		"acme/app/ztally/collection.yaml":   "organization: required\non_org_delete:\n  action: delete\non_owner_delete:\n  action: delete\n  in_org: apply\n" + rulesSection("read: inOrg(document._meta.org)\ncreate: inOrg(data._meta.org)\n"),
 		// Teams (see orgs_team_documents_test.go).
 		"acme/app/requests/schema.json":     postsSchema,
-		"acme/app/requests/collection.yaml": "organization: required\non_org_delete:\n  action: delete\nteam: required\non_team_delete:\n  action: delete\n" + rulesSection("read: inTeam(document._meta.team) || hasTeamRole(document._meta.team, 'manager') || hasOrgRole(document._meta.org, 'owner')\ncreate: inOrg(data._meta.org) && inTeam(data._meta.team)\nupdate: hasTeamRole(document._meta.team, 'manager')\ndelete: hasTeamRole(document._meta.team, 'manager')\n"),
+		"acme/app/requests/collection.yaml": "organization: required\non_org_delete:\n  action: delete\nteam: required\non_team_delete:\n  action: delete\naggregate:\n  group_by: [_meta.team]\n" + rulesSection("read: inTeam(document._meta.team) || hasTeamRole(document._meta.team, 'manager') || hasOrgRole(document._meta.org, 'owner')\ncreate: inOrg(data._meta.org) && inTeam(data._meta.team)\nupdate: hasTeamRole(document._meta.team, 'manager')\ndelete: hasTeamRole(document._meta.team, 'manager')\n"),
 		"acme/app/memos/schema.json":        postsSchema,
 		"acme/app/memos/collection.yaml":    "organization: optional\non_org_delete:\n  action: keep\nteam: optional\non_team_delete:\n  action: keep\n" + rulesSection("read: user != nil\ncreate: user != nil\n"),
 		"acme/app/plans/schema.json":        postsSchema,

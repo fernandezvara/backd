@@ -51,7 +51,7 @@ Open the board with the team filter and pin something: `indexed` goes up by one 
 
 The gallery is the other list that goes stale: a curator publishes, and members find out on their next reload. Add the same line at the end of `config/shelf/main/assets/collection.yaml`:
 
-{{< example-file path="shelf/main/assets/collection.yaml" lines="73-75" >}}
+{{< example-file path="shelf/main/assets/collection.yaml" lines="72-74" >}}
 
 The app follows what it used to list:
 
