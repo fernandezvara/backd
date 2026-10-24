@@ -1,3 +1,12 @@
+## Unreleased
+
+- **Live app configuration:** `client.config.live([paths])` follows the realm's
+  app configuration over realtime. `config.changes` fires within the realtime
+  delay instead of at the next `cache_ttl`; `config.errors` reports a realm
+  without configuration or without realtime. Needs a backd server with the
+  `config` realtime subscription. See
+  [Live updates](https://fernandezvara.github.io/backd/docs/build/configuration/app-config/#live-updates).
+
 ## 0.9.1
 
 - **Versions now follow the `backd` release train.** `package:backd` 0.9.1

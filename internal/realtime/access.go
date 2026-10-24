@@ -71,7 +71,7 @@ func (h *Hub) systemChange(c changefeed.Change) {
 	h.mu.Lock()
 	var streams []*Stream
 	for s := range h.streams {
-		if s.realm == c.Realm && s.access != nil {
+		if s.realm == c.Realm && (s.access != nil || (s.config != nil && c.Coll == appConfigColl)) {
 			streams = append(streams, s)
 		}
 	}
@@ -82,7 +82,13 @@ func (h *Hub) systemChange(c changefeed.Change) {
 }
 
 func (s *Stream) systemChange(c changefeed.Change) {
+	if c.Coll == appConfigColl {
+		s.configRefresh()
+	}
 	a := s.access
+	if a == nil {
+		return
+	}
 	removed := c.Op == changefeed.Removed
 	switch c.Coll {
 	case sessionsColl:
@@ -217,6 +223,7 @@ func (s *Stream) applyReload(res Reloaded, err error) {
 		s.mu.Unlock()
 		return
 	}
+	moved := s.access.Fingerprint != res.Fingerprint
 	s.access.Orgs = res.Orgs
 	s.access.Fingerprint = res.Fingerprint
 	if !res.Expires.IsZero() {
@@ -237,6 +244,10 @@ func (s *Stream) applyReload(res Reloaded, err error) {
 		changed = append(changed, sub.ID)
 	}
 	s.mu.Unlock()
+	if moved {
+		// What the caller may read of the configuration can depend on their roles and consents.
+		s.configRefresh()
+	}
 	if len(changed) == 0 {
 		return
 	}

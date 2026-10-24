@@ -149,6 +149,8 @@ type Request struct {
 	// Access ties the stream to its caller's session, user or key, so that changes of them
 	// reach it; nil for anonymous callers and realms without authentication.
 	Access *Access
+	// Config follows the realm's app configuration, which needs no collection; nil for none.
+	Config *ConfigSub
 }
 
 // ErrTooManySubscriptions is returned when a request has more subscriptions than allowed.

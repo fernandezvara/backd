@@ -16,10 +16,12 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/fernandezvara/backd/internal/appconfig"
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/query"
 	"github.com/fernandezvara/backd/internal/realtime"
@@ -48,6 +50,14 @@ type realtimeSubscription struct {
 	Collection string         `json:"collection"`
 	Where      map[string]any `json:"where"`
 	Doc        string         `json:"doc"`
+	// Config follows the realm's app configuration instead of a collection.
+	Config *realtimeConfigSub `json:"config"`
+}
+
+// realtimeConfigSub is a `_config` subscription: the branches to follow (default: everything
+// the caller may read).
+type realtimeConfigSub struct {
+	Paths []string `json:"paths"`
 }
 
 // maxRealtimeBody bounds a subscribe request: twenty subscriptions of small filters.
@@ -117,6 +127,7 @@ func (d *documents) realtime(w http.ResponseWriter, r *http.Request) {
 
 	subs := make([]*realtime.Subscription, 0, len(req.Subscriptions))
 	var built []*builtSub
+	var cfgSub *realtime.ConfigSub
 	seen := map[string]bool{}
 	for i, s := range req.Subscriptions {
 		at := "subscriptions[" + strconv.Itoa(i) + "]"
@@ -128,6 +139,22 @@ func (d *documents) realtime(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		seen[s.ID] = true
+		if s.Config != nil {
+			if s.DB != "" || s.Collection != "" || s.Doc != "" || s.Where != nil {
+				bad("config", "cannot be combined with a collection")
+				return
+			}
+			if cfgSub != nil {
+				bad("config", "a stream follows the configuration once")
+				return
+			}
+			var problem string
+			if cfgSub, problem = d.configSub(r, realm, caller, hasAuth, s.ID, s.Config.Paths); cfgSub == nil {
+				bad("config", problem)
+				return
+			}
+			continue
+		}
 		c, ok := d.reg.Collection(realm, s.DB, s.Collection)
 		if !ok {
 			bad("collection", "no such collection")
@@ -161,6 +188,7 @@ func (d *documents) realtime(w http.ResponseWriter, r *http.Request) {
 		Realm: realm, Principal: principal, Key: key, Subscriptions: subs, Resume: req.ResumeFrom,
 		MaxStreamsPerUser: rl.Settings.Realtime.MaxStreamsPerUser,
 		Access:            d.accessOf(r, realm, caller, built),
+		Config:            cfgSub,
 	})
 	switch {
 	case errors.Is(err, realtime.ErrBadToken):
@@ -207,7 +235,11 @@ func (d *documents) realtime(w http.ResponseWriter, r *http.Request) {
 		}
 		return rc.Flush()
 	}
-	ready, _ := json.Marshal(map[string]any{"subscriptions": stream.IDs()})
+	ids := stream.IDs()
+	if cfgSub != nil {
+		ids = append(ids, cfgSub.ID)
+	}
+	ready, _ := json.Marshal(map[string]any{"subscriptions": ids})
 	if err := write(realtime.Frame{Event: "ready", Data: ready}); err != nil {
 		return
 	}
@@ -300,13 +332,6 @@ func (d *documents) accessOf(r *http.Request, realm string, caller auth.Caller, 
 		return nil
 	}
 	acc := &realtime.Access{}
-	credential, _ := bearerToken(r)
-	behalf := r.Header.Get(onBehalfHeader)
-	// The credential is only used from here on, in memory, to read the access again: the
-	// stream ends with it.
-	if cs, src, _ := credentialOf(r, svc.Settings); credential == "" && src == fromCookie {
-		credential = cs
-	}
 	fill := func(c auth.Caller) {
 		if c.User != nil {
 			acc.SessionID, acc.UserID = c.User.Session.ID, c.User.User.ID
@@ -329,13 +354,9 @@ func (d *documents) accessOf(r *http.Request, realm string, caller auth.Caller, 
 			acc.UsesConfig = true
 		}
 	}
-	base := context.WithoutCancel(r.Context())
+	reid := d.reidentifier(r, realm, caller)
 	acc.Reload = func(ctx context.Context) (realtime.Reloaded, error) {
-		ctx = context.WithValue(mergeValues(ctx, base), callerKey{}, caller)
-		cur, err := svc.Identify(ctx, credential)
-		if err == nil && behalf != "" {
-			cur, err = svc.OnBehalfOf(ctx, cur, behalf)
-		}
+		cur, err := reid(ctx)
 		switch {
 		case errors.Is(err, auth.ErrUnauthenticated), errors.Is(err, auth.ErrUserDisabled), errors.Is(err, auth.ErrNotFound):
 			return realtime.Reloaded{Ended: true}, nil
@@ -439,4 +460,95 @@ func (d *documents) processKey() []byte {
 		_, _ = rand.Read(d.procKey)
 	})
 	return d.procKey
+}
+
+// reidentifier returns what reads the caller of a stream again, with the credential it opened
+// with: its roles, consents and memberships as they are now. The credential stays in memory
+// and the stream ends with it.
+func (d *documents) reidentifier(r *http.Request, realm string, caller auth.Caller) func(ctx context.Context) (auth.Caller, error) {
+	svc := d.users(realm)
+	if svc == nil || (caller.User == nil && caller.Key == nil) {
+		return func(context.Context) (auth.Caller, error) { return caller, nil }
+	}
+	credential, _ := bearerToken(r)
+	behalf := r.Header.Get(onBehalfHeader)
+	if cs, src, _ := credentialOf(r, svc.Settings); credential == "" && src == fromCookie {
+		credential = cs
+	}
+	base := context.WithoutCancel(r.Context())
+	return func(ctx context.Context) (auth.Caller, error) {
+		ctx = context.WithValue(mergeValues(ctx, base), callerKey{}, caller)
+		cur, err := svc.Identify(ctx, credential)
+		if err == nil && behalf != "" {
+			cur, err = svc.OnBehalfOf(ctx, cur, behalf)
+		}
+		return cur, err
+	}
+}
+
+// configSub follows the configuration for a stream: Check keeps what the caller read last and
+// reports the keys that differ now, so a change reaches a subscriber only when it concerns
+// something their rules let them read. It returns nil and the reason when the subscription
+// can't be made.
+func (d *documents) configSub(r *http.Request, realm string, caller auth.Caller, hasAuth bool, id string, paths []string) (*realtime.ConfigSub, string) {
+	rl := d.reg.Realms[realm]
+	if rl == nil || rl.AppConfig == nil || d.users(realm) == nil {
+		return nil, "this realm declares no app configuration"
+	}
+	for _, p := range paths {
+		if !rl.AppConfig.HasPath(p) {
+			return nil, strconv.Quote(p) + " is not a configuration key"
+		}
+	}
+	inScope := func(leaf string) bool {
+		if len(paths) == 0 {
+			return true
+		}
+		for _, p := range paths {
+			if leaf == p || strings.HasPrefix(leaf, p+".") {
+				return true
+			}
+		}
+		return false
+	}
+	reid := d.reidentifier(r, realm, caller)
+	var mu sync.Mutex
+	var last map[string]any
+	read := func(ctx context.Context) (map[string]any, int64, error) {
+		cur, err := reid(ctx)
+		if err != nil {
+			return nil, 0, err
+		}
+		flat, version, _, _, err := d.readableConfig(ctx, realm, cur, hasAuth, inScope)
+		return flat, version, err
+	}
+	// The first look is what the client is about to load: it is told of what differs from it.
+	if flat, _, err := read(r.Context()); err == nil {
+		last = flat
+	}
+	return &realtime.ConfigSub{ID: id, Check: func(ctx context.Context) (*realtime.ConfigNotice, error) {
+		flat, version, err := read(ctx)
+		if err != nil {
+			return nil, err
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		var changed []string
+		for p, v := range flat {
+			if old, ok := last[p]; !ok || !reflect.DeepEqual(old, v) {
+				changed = append(changed, p)
+			}
+		}
+		for p := range last {
+			if _, ok := flat[p]; !ok {
+				changed = append(changed, p)
+			}
+		}
+		last = flat
+		if len(changed) == 0 {
+			return nil, nil
+		}
+		slices.Sort(changed)
+		return &realtime.ConfigNotice{Version: appconfig.FormatVersion(version), Paths: changed}, nil
+	}}, ""
 }

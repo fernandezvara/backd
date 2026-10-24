@@ -5,6 +5,7 @@ import { mockFetch, errorBody } from './helpers.js'
 
 /** @param {any} values @param {string} version @param {number} [ttl] @param {string} [etag] */
 const answer = (values, version, ttl = 300, etag = `W/"${version}"`) => ({ body: { values, version, cache_ttl: ttl }, headers: { ETag: etag } })
+const notModified = { status: 304 }
 
 function memoryStore() {
   /** @type {Map<string, string>} */
@@ -172,4 +173,126 @@ test('blocked storage falls back to memory', async () => {
   assert.deepEqual(await client.config.load(), { a: 1 })
   assert.equal(client.config.get('a'), 1)
   assert.equal(f.calls.length, 1)
+})
+
+/**
+ * A client whose fetch serves the configuration and one realtime stream the test writes to.
+ * @param {Parameters<typeof mockFetch>[0]} answers
+ */
+function live(answers) {
+  const f = mockFetch(answers)
+  /** @type {Array<{ push(text: string): void, end(): void, body: any }>} */
+  const streams = []
+  const enc = new TextEncoder()
+  const fetch = async (/** @type {any} */ input, /** @type {any} */ init = {}) => {
+    if (init.method === 'POST' && String(input).endsWith('/_realtime')) {
+      /** @type {any} */
+      let controller
+      const body = new ReadableStream({ start: (c) => (controller = c) })
+      init.signal?.addEventListener('abort', () => {
+        try {
+          controller.error(new Error('aborted'))
+        } catch {}
+      })
+      streams.push({ body: JSON.parse(init.body), push: (t) => controller.enqueue(enc.encode(t)), end: () => controller.close() })
+      return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+    }
+    return f.fetch(input, init)
+  }
+  const client = createClient({ url: 'https://api.test', realm: 'acme', fetch, configStorage: false })
+  return { client, f, streams }
+}
+
+const frame = (/** @type {string} */ event, /** @type {any} */ data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
+const until = async (/** @type {() => boolean} */ cond, what = 'a condition') => {
+  for (let i = 0; i < 200 && !cond(); i++) await new Promise((r) => setTimeout(r, 10))
+  assert.ok(cond(), 'timed out waiting for ' + what)
+}
+
+test('live adds a _config subscription, and a config_changed rereads the branch held and emits change', async () => {
+  const { client, f, streams } = live([
+    answer({ maintenance: { enabled: false, message: '' } }, 'c1'),
+    notModified, // the stream opens: nothing moved while it was not
+    answer({ maintenance: { enabled: true, message: '' } }, 'c2'),
+  ])
+  await client.config.load(['maintenance'])
+  const changes = /** @type {string[][]} */ ([])
+  client.config.on('change', (paths) => changes.push(paths))
+  const stop = client.config.live(['maintenance'])
+  await until(() => streams.length === 1, 'the stream')
+  assert.deepEqual(streams[0].body.subscriptions, [{ id: '_config', config: { paths: ['maintenance'] } }])
+
+  streams[0].push(frame('ready', { subscriptions: ['_config'] }))
+  streams[0].push(frame('config_changed', { id: '_config', version: 'c2', paths: ['maintenance.enabled'] }))
+  await until(() => changes.length === 1, 'the change')
+  assert.deepEqual(changes[0], ['maintenance.enabled'])
+  assert.equal(client.config.getSync('maintenance.enabled'), true)
+  assert.equal(f.calls.length, 3) // the load, the check when the stream opened, then the change
+  assert.equal(f.calls[2].headers['If-None-Match'], 'W/"c1"')
+  stop()
+})
+
+test('a change that is none of a held branch costs no request', async () => {
+  const { client, f, streams } = live([answer({ maintenance: { enabled: false } }, 'c1'), notModified])
+  await client.config.load(['maintenance'])
+  client.config.live()
+  await until(() => streams.length === 1)
+  streams[0].push(frame('ready', {}))
+  streams[0].push(frame('config_changed', { id: '_config', version: 'c2', paths: ['features.export.enabled'] }))
+  await new Promise((r) => setTimeout(r, 100))
+  assert.equal(f.calls.length, 2) // the load and the check when the stream opened, nothing for the change
+})
+
+test('an empty list of paths rereads everything held, and so does a reconnection', async () => {
+  const { client, f, streams } = live([
+    answer({ maintenance: { enabled: false } }, 'c1'),
+    notModified,
+    answer({ maintenance: { enabled: true } }, 'c2'),
+    answer({ maintenance: { enabled: false } }, 'c3'),
+  ])
+  await client.config.load()
+  const seen = /** @type {string[][]} */ ([])
+  client.config.on('change', (p) => seen.push(p))
+  client.config.live()
+  await until(() => streams.length === 1)
+  streams[0].push(frame('ready', {}))
+  streams[0].push(frame('config_changed', { id: '_config', version: 'c2', paths: [] }))
+  await until(() => seen.length === 1)
+  assert.equal(f.calls.length, 3)
+  // The stream drops and opens again: changes may have been missed, so the copy is revalidated.
+  streams[0].end()
+  await until(() => streams.length === 2, 'the reconnection')
+  streams[1].push(frame('ready', {}))
+  await until(() => seen.length === 2, 'the catch-up')
+  assert.equal(f.calls.length, 4)
+})
+
+test('a refusal of the subscription goes to the error listener and ends live', async () => {
+  const f = mockFetch([])
+  const fetch = async (/** @type {any} */ input, /** @type {any} */ init = {}) => {
+    if (String(input).endsWith('/_realtime')) {
+      return new Response(JSON.stringify({ error: { code: 'invalid_query', message: 'invalid subscription', details: [{ path: 'subscriptions[0].config', reason: 'this realm declares no app configuration' }] } }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+    return f.fetch(input, init)
+  }
+  const client = createClient({ url: 'https://api.test', realm: 'acme', fetch, configStorage: false })
+  const errors = /** @type {any[]} */ ([])
+  client.config.on('error', (e) => errors.push(e))
+  client.config.live()
+  await until(() => errors.length === 1, 'the error')
+  assert.equal(errors[0].code, 'invalid_query')
+})
+
+test('stopping live removes the subscription and closes the stream when nothing else uses it', async () => {
+  const { client, streams } = live([])
+  const stop = client.config.live()
+  await until(() => streams.length === 1)
+  stop()
+  stop() // twice is fine
+  await new Promise((r) => setTimeout(r, 50))
+  assert.equal(streams.length, 1)
+  assert.equal(client.realtime.running, false)
 })

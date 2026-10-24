@@ -569,6 +569,13 @@ backd.config.changes.listen((paths) => rerender(paths));
 - **Where copies live:** per realm and per user, in memory by default; `configStorage` takes any object with `getItem`, `setItem` and `removeItem` (a Flutter app passes a `SharedPreferences`-backed one). The copy of an app that has just restarted is restored by the first `load()`.
 - **Clearing:** sign-out and signing in as another user drop every copy of the realm, so the next person on the same device never sees the previous user's keys. `client.config.clear()` drops them on demand.
 - **`changes`** is a `Stream<List<String>>` of the dot paths whose value changed when a read brings a different configuration.
+- **`live([paths])`** follows the configuration over the client's [realtime stream](../../api/realtime/#following-the-configuration), so `changes` fires within the realtime delay instead of at the next expiry. It reads again only the branches you hold that the event touches, with `If-None-Match`, and whenever the stream opens or reopens it revalidates everything held, so a change made while it was down is not missed. It returns a function that stops following, and follows the signed-in user: signing in or out opens the stream again with the new credential. If the realm declares no configuration, or realtime is off, the error arrives on the `errors` stream.
+
+```dart
+final stop = backd.config.live(['maintenance']);
+backd.config.changes.listen((paths) => rerender(paths));
+backd.config.errors.listen((e) => print('no live updates: $e'));
+```
 
 ## Typed client
 
