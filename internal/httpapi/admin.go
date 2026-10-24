@@ -1398,6 +1398,11 @@ func (a *adminAPI) cancelJob(w http.ResponseWriter, r *http.Request) {
 			rightRefused(w, r, fmt.Sprintf("cancelling the notification of the users needs the %q admin right to change; your roles open: %s", registry.RightUsers, have))
 			return
 		}
+	} else if ok && found.Export != nil {
+		if !have.CanWrite(registry.RightUsers) {
+			rightRefused(w, r, fmt.Sprintf("cancelling the export of a user's data needs the %q admin right to change; your roles open: %s", registry.RightUsers, have))
+			return
+		}
 	} else if ok && found.Encrypt != nil {
 		if !have.CanWrite(registry.RightData) {
 			rightRefused(w, r, fmt.Sprintf("cancelling an encryption migration needs the %q admin right to change; your roles open: %s", registry.RightData, have))
@@ -1471,6 +1476,9 @@ func jobSummaryJSON(j auth.Job) map[string]any {
 	}
 	if j.Encrypt != nil {
 		function = "encrypt:" + j.Encrypt.Database + "/" + j.Encrypt.Collection
+	}
+	if j.Export != nil {
+		function = "export:" + j.Export.UserID
 	}
 	out := map[string]any{
 		"id":              j.ID,

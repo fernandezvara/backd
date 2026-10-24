@@ -345,6 +345,8 @@ export interface Realm {
       "account-exists": Record<string, unknown>;
       "change-email": Record<string, unknown>;
       "consent-updated": Record<string, unknown>;
+      "data-export-made": Record<string, unknown>;
+      "data-export-ready": Record<string, unknown>;
       "email-changed": Record<string, unknown>;
       "email-template-failed": Record<string, unknown>;
       invitation: Record<string, unknown>;

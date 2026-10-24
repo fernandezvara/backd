@@ -407,6 +407,14 @@ type Store interface {
 	CreateOrgInvitation(ctx context.Context, inv OrgInvitation) error
 	OrgInvitationByHash(ctx context.Context, hash string) (OrgInvitation, error)
 	OrgInvitationByID(ctx context.Context, org, id string) (OrgInvitation, error)
+	// The records of personal data exports (see UserExport): created when asked for, replaced as
+	// the job builds them. ListUserExports returns a user's, newest first.
+	// ListExpiredUserExports returns the ready ones whose retention ended by now, oldest first.
+	CreateUserExport(ctx context.Context, e UserExport) error
+	UserExportByID(ctx context.Context, id string) (UserExport, error)
+	ReplaceUserExport(ctx context.Context, e UserExport) error
+	ListUserExports(ctx context.Context, userID string, limit int) ([]UserExport, error)
+	ListExpiredUserExports(ctx context.Context, now time.Time, limit int) ([]UserExport, error)
 	// ListOrgInvitations returns an organization's invitations, newest first.
 	ListOrgInvitations(ctx context.Context, org string) ([]OrgInvitation, error)
 	// OrgInvitationsAddressedTo returns the invitations, of every organization, that name the

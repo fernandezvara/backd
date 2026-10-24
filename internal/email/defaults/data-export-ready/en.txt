@@ -1,0 +1,7 @@
+Hello,
+
+The copy of your data from {{.Realm}} that you asked for is ready. Sign in and download it here:
+
+{{.Link}}
+
+It is available until {{.ExpiresAt.Format "2 January 2006, 15:04 UTC"}}, and is deleted after that. If you did not ask for it, sign in and change your password.

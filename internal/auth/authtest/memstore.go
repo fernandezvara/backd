@@ -48,6 +48,7 @@ type MemStore struct {
 	mfa         map[string]auth.MFARecord         // user id → second factors
 	devices     map[string]auth.Device            // id → registered device
 	consents    []auth.ConsentRecord              // append-only consent history
+	userExports map[string]auth.UserExport        // id → personal data export
 	sends       map[string]*memSend               // id → push send
 	outbox      []auth.PushOutboxEntry            // what the capture provider took
 	orgState    *memOrgs                          // organizations and their members

@@ -63,16 +63,22 @@ const (
 	// when there is one. It is sent by `backd user expire-passwords --notify` and when an expired
 	// password is used to sign in.
 	PasswordExpired = "password-expired"
+	// DataExportReady tells a user that the export of their personal data they asked for is ready:
+	// {{.Link}} is the download page of the app (compliance.export_page), {{.ExpiresAt}} when the
+	// copy is deleted. DataExportMade tells a user that an administrator made an export of their
+	// data on their behalf ({{.Data.ticket}} is the reference given, if any).
+	DataExportReady = "data-export-ready"
+	DataExportMade  = "data-export-made"
 )
 
 // SystemKinds are the kinds backd knows; `backd template realm` writes an
 // English template for each.
-var SystemKinds = []string{VerifyEmail, ResetPassword, AccountExists, PasswordChanged, Welcome, ChangeEmail, EmailChanged, Invitation, OrgInvitation, SecurityNotice, MFAFailed, ReauthCode, MFAReset, MagicLink, NoAccount, TemplateFailed, ConsentUpdated, PasswordExpired}
+var SystemKinds = []string{VerifyEmail, ResetPassword, AccountExists, PasswordChanged, Welcome, ChangeEmail, EmailChanged, Invitation, OrgInvitation, SecurityNotice, MFAFailed, ReauthCode, MFAReset, MagicLink, NoAccount, TemplateFailed, ConsentUpdated, PasswordExpired, DataExportReady, DataExportMade}
 
 // BuiltInKinds are system kinds a realm does not have to ship: when its email folder has
 // none, the built-in English text is used for every listed locale, so a realm that
 // existed before them keeps working. A folder of the kind replaces the built-in text.
-var BuiltInKinds = []string{OrgInvitation, SecurityNotice, MFAFailed, ReauthCode, MFAReset, MagicLink, NoAccount, TemplateFailed, ConsentUpdated, PasswordExpired}
+var BuiltInKinds = []string{OrgInvitation, SecurityNotice, MFAFailed, ReauthCode, MFAReset, MagicLink, NoAccount, TemplateFailed, ConsentUpdated, PasswordExpired, DataExportReady, DataExportMade}
 
 // RequiredKinds must have a template in every realm that configures email.
 var RequiredKinds = []string{VerifyEmail, ResetPassword, AccountExists, PasswordChanged}
@@ -238,7 +244,7 @@ var sample = Data{
 	User:      User{Email: "ana@example.com", Locale: "en"},
 	Link:      "https://example.com/v1/sample/_auth/verify-email?token=sample",
 	ExpiresAt: time.Date(2030, 1, 2, 15, 4, 0, 0, time.UTC),
-	Data:      map[string]any{"event": "mfa-enabled", "codes_left": 3, "code": "123456", "org_name": "Acme", "roles": []string{"editor"}},
+	Data:      map[string]any{"event": "mfa-enabled", "codes_left": 3, "code": "123456", "org_name": "Acme", "roles": []string{"editor"}, "ticket": "T-1042"},
 }
 
 // Load reads <realm>/email/ (dir): one folder per kind, with
