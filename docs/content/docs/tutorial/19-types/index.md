@@ -101,3 +101,5 @@ TypeScript is not the only language this trick reaches. `backd openapi --realm s
 - The app's console warns once when its types are out of date; `--check` fails and `--diff` lists the change.
 
 Read [Generated types](../../build/clients/types/) for the mapping from JSON Schema, and [Typed functions](../../build/functions/writing/#typed-functions) for the context.
+
+Next: [chapter 20](../20-teams/) — teams as organizations.

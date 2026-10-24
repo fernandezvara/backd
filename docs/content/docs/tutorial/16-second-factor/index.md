@@ -101,3 +101,5 @@ await backd.auth.withProof(
 - The import log answers `200` to the operator and `403` to a curator.
 
 The tour of the tutorial (`make shelf-tour`) checks all of it with the same client library, including the operator's enrolment through a computed TOTP code. Read [Multi-factor authentication](../../build/auth/mfa/) and [Magic links](../../build/auth/magic-links/) for the whole picture: limits, lockouts, break-glass resets and the recovery flow.
+
+Next: [chapter 17](../17-consents/) — terms and consents.

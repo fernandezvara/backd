@@ -100,3 +100,5 @@ A page of nine cards costs **one** extra query, not nine. Those numbers don't ch
 - The gallery cards show *by Ana*; signed out they show no author.
 
 Read [Expanding references](../../build/api/documents/#expanding-references) for the limits and [the client](../../build/clients/js/#expanding-references) for typed `_expanded`.
+
+Next: [chapter 22](../22-search-dashboard/) — search and a team dashboard.

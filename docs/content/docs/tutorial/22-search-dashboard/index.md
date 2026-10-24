@@ -103,3 +103,5 @@ const { groups } = await pins.inOrg(team).aggregate({
 - After `team-plan` gives the team a `timezone`, the Teams view shows *Pins per member per month* in that zone, and an outsider's aggregate is refused or empty.
 
 Read [Full-text search](../../build/api/querying/#full-text-search), [Aggregations](../../build/api/aggregations/) and [the client](../../build/clients/js/#aggregations-and-search).
+
+Next: [chapter 23](../23-pipelines/) — a pipeline on a status.

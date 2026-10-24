@@ -57,3 +57,5 @@ backd triggers gaps                                          # what could not be
 - The proposal's history shows `_meta.chain.depth` 0 for the curator's write and 1 for the function's, both with the same `root`.
 
 Read [Triggers](../../build/functions/triggers/) for the delivery guarantees, the cost and how to operate them.
+
+Next: [chapter 24](../24-live-pins/) — live pins.
